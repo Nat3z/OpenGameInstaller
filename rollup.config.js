@@ -4,6 +4,8 @@ import resolve from '@rollup/plugin-node-resolve';
 import livereload from 'rollup-plugin-livereload';
 import { terser } from 'rollup-plugin-terser';
 import css from 'rollup-plugin-css-only';
+import postcss from 'rollup-plugin-postcss';
+import { sveltePreprocess } from 'svelte-preprocess';
 
 const production = !process.env.ROLLUP_WATCH;
 
@@ -37,12 +39,20 @@ export default {
 		file: 'public/build/bundle.js'
 	},
 	plugins: [
+		postcss({
+      plugins: [
+        require('tailwindcss'),
+        require('autoprefixer'),
+      ],
+      extract: true, // Extract CSS to a file
+      minimize: production, // Minify CSS in production
+    }),
 		svelte({
-			compilerOptions: {
-				// enable run-time checks when not in production
-				dev: !production
-			}
-		}),
+      compilerOptions: {
+        dev: !production
+      },
+			preprocess: sveltePreprocess({ postcss: true})
+    }),
 		// we'll extract any component CSS out into
 		// a separate file - better for performance
 		css({ output: 'bundle.css' }),

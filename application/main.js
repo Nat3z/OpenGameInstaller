@@ -3,7 +3,7 @@ const { app, BrowserWindow } = require('electron');
 const { join } = require('path');
 const serve = require('electron-serve');
 const loadURL = serve({ directory: 'public' });
-const { app: serverApp, port } = require('./server/addon-server');
+const { server, port } = require('./server/addon-server');
 
 // Keep a global reference of the window object, if you don't, the window will
 // be closed automatically when the JavaScript object is garbage collected.
@@ -63,9 +63,11 @@ function createWindow() {
 // Some APIs can only be used after this event occurs.
 app.on('ready', () => {
     createWindow();
-    serverApp.listen(port, () => {
-        console.log(`Server is running on http://localhost:${port}`);
-    }); 
+    if (!isDev()) {
+        server.listen(port, () => {
+            console.log(`Server is running on http://localhost:${port}`);
+        }); 
+    }
 });
 
 // Quit when all windows are closed.

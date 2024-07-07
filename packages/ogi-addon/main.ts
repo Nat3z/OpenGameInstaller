@@ -2,12 +2,19 @@ import ws, { WebSocket } from 'ws';
 import events from 'node:events';
 
 export type OGIAddonEvent = 'connect' | 'disconnect' | 'configure';
+export type OGIAddonServerSendEvent = 'authenticate' | 'configure';
+
 const defaultPort = 7654;
 
 export interface EventListenerTypes {
   connect: (socket: ws) => void;
   disconnect: (reason: string) => void;
   configure: (config: any) => Promise<void>;
+}
+
+export interface WebsocketMessage {
+  event: OGIAddonEvent;
+  args: any;
 }
 
 export interface OGIAddonConfiguration {

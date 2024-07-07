@@ -3,5 +3,9 @@
   "private": true,
   "workspaces": [
     "packages/*"
-  ]
+  ],
+  "dependencies": {
+    "@types/ws": "^8.5.10",
+    "ws": "^8.18.0"
+  }
 }

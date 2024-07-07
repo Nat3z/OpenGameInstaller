@@ -28,7 +28,9 @@
     "electron-pack": "electron-builder"
   },
   "dependencies": {
+    "@types/express": "^4.17.21",
     "electron-serve": "^1.1.0",
+    "express": "^4.19.2",
     "rollup-plugin-postcss": "^4.0.2"
   },
   "devDependencies": {

@@ -1,8 +1,9 @@
 // Modules to control application life and create native browser window
 const { app, BrowserWindow } = require('electron');
-const path = require('path');
+const { join } = require('path');
 const serve = require('electron-serve');
 const loadURL = serve({ directory: 'public' });
+const { app: serverApp, port } = require('./server/addon-server');
 
 // Keep a global reference of the window object, if you don't, the window will
 // be closed automatically when the JavaScript object is garbage collected.
@@ -19,11 +20,11 @@ function createWindow() {
         height: 600,
         webPreferences: {
             nodeIntegration: true,
-            preload: path.join(__dirname, 'preload.js'),
+            preload: join(__dirname, 'preload.js'),
             // enableRemoteModule: true,
             // contextIsolation: false
         },
-        icon: path.join(__dirname, 'public/favicon.png'),
+        icon: join(__dirname, 'public/favicon.png'),
         show: false
     });
 
@@ -60,7 +61,12 @@ function createWindow() {
 // This method will be called when Electron has finished
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
-app.on('ready', createWindow);
+app.on('ready', () => {
+    createWindow();
+    serverApp.listen(port, () => {
+        console.log(`Server is running on http://localhost:${port}`);
+    }); 
+});
 
 // Quit when all windows are closed.
 app.on('window-all-closed', function () {

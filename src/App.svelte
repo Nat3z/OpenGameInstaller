@@ -1,19 +1,23 @@
 <script>
+  import GameInstall from "./views/GameInstall.svelte";
+
 </script>
 
-<main>
+<main class="flex justify-center items-center flex-col gap-4">
 
-	<div class="manager">
-		<button class="bg-red-500">Settings</button>
-	</div>
-	<input placeholder="Search for Game"/>
-	<div class="games">
-
-	</div>
+	<header class="flex justify-center gap-4 flex-row">
+		<button>Settings</button>
+		<button>Manage Addons</button>
+	</header>
+	<GameInstall />
 </main>
 
-<style>
+<style global>
 	@tailwind base;
 	@tailwind components;
 	@tailwind utilities;
+
+	header button {
+		@apply rounded border border-gray-800 p-2;
+	}
 </style>

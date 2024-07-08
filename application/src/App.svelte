@@ -1,4 +1,4 @@
-<script>
+<script lang="ts">
   import GameInstall from "./views/GameInstall.svelte";
 
 </script>

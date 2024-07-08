@@ -1,0 +1,11 @@
+{
+  "name": "test-addon",
+  "module": "main.ts",
+  "type": "module",
+  "dependencies": {
+    "ogi-addon": "*"
+  },
+  "peerDependencies": {
+    "typescript": "^5.0.0"
+  }
+}

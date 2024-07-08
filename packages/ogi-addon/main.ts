@@ -16,7 +16,10 @@ export interface WebsocketMessage {
   event: OGIAddonEvent;
   args: any;
 }
-
+export interface WebsocketMessageServer {
+  event: OGIAddonServerSendEvent;
+  args: any;
+}
 export interface OGIAddonConfiguration {
   name: string;
   description: string;

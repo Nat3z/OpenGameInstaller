@@ -2,6 +2,7 @@
   "name": "ogi-monorepo",
   "private": true,
   "workspaces": [
-    "packages/*"
+    "packages/*",
+    "application"
   ]
 }

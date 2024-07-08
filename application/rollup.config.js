@@ -5,7 +5,8 @@ import livereload from 'rollup-plugin-livereload';
 import { terser } from 'rollup-plugin-terser';
 import css from 'rollup-plugin-css-only';
 import postcss from 'rollup-plugin-postcss';
-import { sveltePreprocess } from 'svelte-preprocess';
+import typescript from '@rollup/plugin-typescript';
+import { sveltePreprocess } from 'svelte-preprocess'
 
 const production = !process.env.ROLLUP_WATCH;
 
@@ -31,7 +32,7 @@ function serve() {
 }
 
 export default {
-	input: 'src/main.js',
+	input: 'src/main.ts',
 	output: {
 		sourcemap: true,
 		format: 'iife',
@@ -48,11 +49,14 @@ export default {
       minimize: production, // Minify CSS in production
     }),
 		svelte({
-      compilerOptions: {
+			preprocess: sveltePreprocess({ postcss: true, sourceMap: !production }),
+			compilerOptions: {
         dev: !production
       },
-			preprocess: sveltePreprocess({ postcss: true})
     }),
+		commonjs(),
+		typescript({ sourceMap: !production, inlineSources: !production }),
+
 		// we'll extract any component CSS out into
 		// a separate file - better for performance
 		css({ output: 'bundle.css' }),

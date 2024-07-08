@@ -4,6 +4,7 @@ import http from 'http';
 import wsLib from 'ws';
 import { OGIAddonConfiguration, WebsocketMessageServer } from "ogi-addon";
 import { ConfigurationOption } from 'ogi-addon/lib/ConfigurationBuilder';
+import addonDataRoute from './api/get-addon-data';
 
 const app = express();
 const server = http.createServer(app);
@@ -76,7 +77,10 @@ wss.on('connection', (ws) => {
   });
 });
 
-app.get('/', (req, res) => {
+app.use(express.json());
+app.use('/addons', addonDataRoute);
+
+app.get('/', (_, res) => {
   res.send('Hello World!');
 });
 export { app, port, server, wss, clients };

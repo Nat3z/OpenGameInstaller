@@ -1,4 +1,3 @@
-import OGIAddon from "../main";
 import z, { ZodError } from "zod"
 
 export interface ConfigurationFile {
@@ -67,7 +66,7 @@ export class ConfigurationOption {
 
 
   validate(input: string): boolean {
-    throw new Error('Validation not implemented')
+    throw new Error('Validation code not implemented. Value: ' + input)
   };
 }
 

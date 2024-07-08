@@ -16,6 +16,8 @@ public/build/
 
 # Electron Distribution
 dist
+build
+build-addons
 
 # Project Build Automation Directory
 private

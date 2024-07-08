@@ -22,12 +22,12 @@
     "build": "rollup -c --bundleConfigAsCjs",
     "dev": "rollup -c -w --bundleConfigAsCjs",
     "start": "sirv public --no-clear",
-    "electron": "wait-on http://localhost:8080 && electron .",
-    "start:server": "nodemon --watch server --ext js,json --exec \"ts-node server/dev-server.ts\"",
+    "electron": "wait-on http://localhost:8080 && tsc --p tsconfig.electron.json && electron ./build/main.js",
+    "dev:server": "nodemon --watch server --ext ts,json --exec \"tsc --p tsconfig.addonserver.json && node build-addons/dev-server.js\"",
     "electron-dev": "concurrently \"bun run dev\" \"bun run electron\"",
     "preelectron-pack": "bun run build",
     "electron-pack": "electron-builder",
-    "check": "svelte-check --tsconfig ./tsconfig.json"
+    "check": "svelte-check --tsconfig ./tsconfig.svelte.json"
   },
   "dependencies": {
     "@types/express": "^4.17.21",

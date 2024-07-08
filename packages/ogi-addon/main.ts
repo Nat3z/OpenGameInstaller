@@ -1,6 +1,6 @@
 import ws, { WebSocket } from 'ws';
 import events from 'node:events';
-import { ConfigurationBuilder, ConfigurationFile } from './lib/ConfigurationBuilder';
+import { ConfigurationBuilder } from './lib/ConfigurationBuilder';
 
 export type OGIAddonEvent = 'connect' | 'disconnect' | 'configure';
 export type OGIAddonServerSendEvent = 'authenticate' | 'configure';

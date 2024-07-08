@@ -1,12 +1,10 @@
 import { app, BrowserWindow } from 'electron';
 import { join } from 'path';
-import serve from 'electron-serve';
 import { app as server, port } from "./server/addon-server"
-const loadURL = serve({ directory: 'public' });
-
+import { applicationAddonSecret } from './server/constants';
 // Keep a global reference of the window object, if you don't, the window will
 // be closed automatically when the JavaScript object is garbage collected.
-let mainWindow;
+let mainWindow: BrowserWindow | null;
 
 function isDev() {
     return !app.isPackaged;
@@ -19,7 +17,6 @@ function createWindow() {
         height: 600,
         webPreferences: {
             nodeIntegration: true,
-            preload: join(__dirname, 'preload.js'),
             // enableRemoteModule: true,
             // contextIsolation: false
         },
@@ -30,9 +27,9 @@ function createWindow() {
     // This block of code is intended for development purpose only.
     // Delete this entire block of code when you are ready to package the application.
     if (isDev()) {
-        mainWindow.loadURL('http://localhost:8080/');
+        mainWindow.loadURL('http://localhost:8080/?secret=' + applicationAddonSecret);
     } else {
-        loadURL(mainWindow);
+        mainWindow.loadURL("file://" + join(__dirname, 'index.html') + "?secret=" + applicationAddonSecret);
     }
     
     // Uncomment the following line of code when app is ready to be packaged.
@@ -53,7 +50,7 @@ function createWindow() {
     // Emitted when the window is ready to be shown
     // This helps in showing the window gracefully.
     mainWindow.once('ready-to-show', () => {
-        mainWindow.show()
+        mainWindow!!.show()
     });
 }
 
@@ -63,7 +60,8 @@ function createWindow() {
 app.on('ready', () => {
     createWindow();
     server.listen(port, () => {
-        console.log(`Server is running on http://localhost:${port}`);
+        console.log(`Addon Server is running on http://localhost:${port}`);
+        console.log(`Server is being executed by electron!`)
     }); 
 });
 

@@ -1,15 +1,15 @@
 <script lang="ts">
-  import GameInstall from "./views/GameInstall.svelte";
-
+  import ConfigView from "./views/ConfigView.svelte";
+  // import GameInstallView from "./views/GameInstallView.svelte";
 </script>
 
-<main class="flex justify-center items-center flex-col gap-4">
+<main class="flex justify-center items-center flex-col gap-4 w-full h-full">
 
 	<header class="flex justify-center gap-4 flex-row">
 		<button>Settings</button>
 		<button>Manage Addons</button>
 	</header>
-	<GameInstall />
+	<ConfigView />
 </main>
 
 <style global>

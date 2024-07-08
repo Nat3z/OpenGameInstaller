@@ -43,10 +43,12 @@ export class ConfigurationBuilder {
   }
 }
 
-class ConfigurationOption {
+export type ConfigurationOptionType = 'string' | 'number' | 'unset'
+export class ConfigurationOption {
   public name: string = '';
   public displayName: string = '';
   public description: string = '';
+  public type: ConfigurationOptionType = 'unset'
   
   setName(name: string) {
     this.name = name;
@@ -71,6 +73,7 @@ class ConfigurationOption {
 
 class StringOption extends ConfigurationOption {
   public allowedValues: string[] = [];
+  public type: ConfigurationOptionType = 'string'
 
   setAllowedValues(allowedValues: string[]) {
     this.allowedValues = allowedValues;
@@ -88,6 +91,7 @@ class StringOption extends ConfigurationOption {
 class NumberOption extends ConfigurationOption {
   public min: number = 0;
   public max: number = Number.MAX_SAFE_INTEGER;
+  public type: ConfigurationOptionType = 'number'
 
   setMin(min: number) {
     this.min = min;

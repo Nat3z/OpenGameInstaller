@@ -4,8 +4,8 @@
   "description": "The boilerplate code to get started creating Cross-platform Desktop Apps with Electron and Svelte as front-end technology.",
   "private": false,
   "license": "MIT",
-  "main": "main.js",
-  "author": "Souleh Shaikh <soulehshaikh99@gmail.com>",
+  "main": "main.ts",
+  "author": "Nat3z",
   "build": {
     "icon": "public/favicon.png",
     "productName": "Svelte and Electron App",
@@ -24,7 +24,7 @@
     "start": "sirv public --no-clear",
     "electron": "wait-on http://localhost:8080 && electron .",
     "start:server": "nodemon --watch server --ext js,json --exec \"ts-node server/dev-server.ts\"",
-    "electron-dev": "concurrently \"bun run dev\" \"bun run electron\" \"bun run start:server\"",
+    "electron-dev": "concurrently \"bun run dev\" \"bun run electron\"",
     "preelectron-pack": "bun run build",
     "electron-pack": "electron-builder",
     "check": "svelte-check --tsconfig ./tsconfig.json"

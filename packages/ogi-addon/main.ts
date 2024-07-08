@@ -70,7 +70,11 @@ class OGIAddonWSListener {
       // send a configuration request
       let configBuilder = new ConfigurationBuilder();
       this.eventEmitter.emit('configure', configBuilder);
-      console.log('Configuration:', configBuilder.build());
+      
+      this.socket.send(JSON.stringify({
+        event: 'configure',
+        args: configBuilder.build()
+      }));
     });
 
     this.socket.on('error', (error) => {

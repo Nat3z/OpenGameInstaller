@@ -1,9 +1,8 @@
-// Modules to control application life and create native browser window
-const { app, BrowserWindow } = require('electron');
-const { join } = require('path');
-const serve = require('electron-serve');
+import { app, BrowserWindow } from 'electron';
+import { join } from 'path';
+import serve from 'electron-serve';
+import { app as server, port } from "./server/addon-server"
 const loadURL = serve({ directory: 'public' });
-const { server, port } = require('./server/addon-server');
 
 // Keep a global reference of the window object, if you don't, the window will
 // be closed automatically when the JavaScript object is garbage collected.
@@ -63,11 +62,9 @@ function createWindow() {
 // Some APIs can only be used after this event occurs.
 app.on('ready', () => {
     createWindow();
-    if (!isDev()) {
-        server.listen(port, () => {
-            console.log(`Server is running on http://localhost:${port}`);
-        }); 
-    }
+    server.listen(port, () => {
+        console.log(`Server is running on http://localhost:${port}`);
+    }); 
 });
 
 // Quit when all windows are closed.

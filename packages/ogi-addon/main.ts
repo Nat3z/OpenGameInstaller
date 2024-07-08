@@ -1,5 +1,6 @@
 import ws, { WebSocket } from 'ws';
 import events from 'node:events';
+import { ConfigurationBuilder, ConfigurationFile } from './lib/ConfigurationBuilder';
 
 export type OGIAddonEvent = 'connect' | 'disconnect' | 'configure';
 export type OGIAddonServerSendEvent = 'authenticate' | 'configure';
@@ -9,7 +10,7 @@ const defaultPort = 7654;
 export interface EventListenerTypes {
   connect: (socket: ws) => void;
   disconnect: (reason: string) => void;
-  configure: (config: any) => Promise<void>;
+  configure: (config: ConfigurationBuilder) => ConfigurationBuilder;
 }
 
 export interface WebsocketMessage {
@@ -29,8 +30,8 @@ export interface OGIAddonConfiguration {
   repository: string;
 }
 export default class OGIAddon {
-  private eventEmitter = new events.EventEmitter();
-  private addonWSListener: OGIAddonWSListener;
+  public eventEmitter = new events.EventEmitter();
+  public addonWSListener: OGIAddonWSListener;
   public configuration: OGIAddonConfiguration;
   constructor(configuration: OGIAddonConfiguration) {
     this.configuration = configuration;
@@ -65,6 +66,26 @@ class OGIAddonWSListener {
           ...this.addon.configuration
         }
       }));
+
+      // send a configuration request
+      let configBuilder = new ConfigurationBuilder();
+      this.eventEmitter.emit('configure', configBuilder);
+      console.log('Configuration:', configBuilder.build());
+    });
+
+    this.socket.on('error', (error) => {
+      if (error.message.includes('Failed to connect')) {
+        throw new Error('OGI Addon Server is not running/is unreachable. Please start the server and try again.');
+      }
+      console.error('An error occurred:', error);
+    })
+
+    this.socket.on('close', (code, reason) => {
+      if (code === 1008) {
+        console.error('Authentication failed:', reason);
+        return;
+      }
+      this.eventEmitter.emit('disconnect', reason);
 
     });
   }

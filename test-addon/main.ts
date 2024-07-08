@@ -7,3 +7,8 @@ const addon = new OGIAddon({
   description: 'A test addon',
   repository: 'Repository URL'
 });
+
+addon.on('configure', (config) => config
+  .addStringOption(option => option.setDisplayName('Test Option').setName('testOption').setDescription('A test option'))
+  .addNumberOption(option => option.setDisplayName('Test Number Option').setName('testNumberOption').setDescription('A test number option'))
+)

@@ -10,6 +10,14 @@ const configValidation = z.object({
   description: z.string().min(1),
 })
 
+export function isStringOption(option: ConfigurationOption): option is StringOption {
+    return option.type === 'string';
+  }
+
+export function isNumberOption(option: ConfigurationOption): option is NumberOption {
+  return option.type === 'number';
+}
+
 export class ConfigurationBuilder {
   private options: ConfigurationOption[] = [];
   public addNumberOption(option: (option: NumberOption) => NumberOption): ConfigurationBuilder {
@@ -70,12 +78,24 @@ export class ConfigurationOption {
   };
 }
 
-class StringOption extends ConfigurationOption {
+export class StringOption extends ConfigurationOption {
   public allowedValues: string[] = [];
+  public minTextLength: number = 0;
+  public maxTextLength: number = Number.MAX_SAFE_INTEGER;
   public type: ConfigurationOptionType = 'string'
 
-  setAllowedValues(allowedValues: string[]) {
+  setAllowedValues(allowedValues: string[]): this {
     this.allowedValues = allowedValues;
+    return this;
+  }
+
+  setMinTextLength(minTextLength: number): this {
+    this.minTextLength = minTextLength;
+    return this;
+  }
+
+  setMaxTextLength(maxTextLength: number): this {
+    this.maxTextLength = maxTextLength;
     return this;
   }
 
@@ -87,17 +107,17 @@ class StringOption extends ConfigurationOption {
   }
 }
 
-class NumberOption extends ConfigurationOption {
+export class NumberOption extends ConfigurationOption {
   public min: number = 0;
   public max: number = Number.MAX_SAFE_INTEGER;
   public type: ConfigurationOptionType = 'number'
 
-  setMin(min: number) {
+  setMin(min: number): this {
     this.min = min;
     return this;
   }
 
-  setMax(max: number) {
+  setMax(max: number): this {
     this.max = max;
     return this
   }

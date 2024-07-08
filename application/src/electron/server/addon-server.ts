@@ -79,7 +79,6 @@ wss.on('connection', (ws) => {
 });
 
 app.all('*', (_, res, next) => {
-  console.log("MIDDLEWARE BITCH")
   res.header("Access-Control-Allow-Origin", "*");
   res.header("Access-Control-Allow-Credentials", "true");
   next();

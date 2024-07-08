@@ -23,6 +23,7 @@ export interface WebsocketMessageServer {
 }
 export interface OGIAddonConfiguration {
   name: string;
+  id: string;
   description: string;
   version: string;
 

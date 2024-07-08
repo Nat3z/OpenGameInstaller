@@ -4,7 +4,7 @@
   "description": "The boilerplate code to get started creating Cross-platform Desktop Apps with Electron and Svelte as front-end technology.",
   "private": false,
   "license": "MIT",
-  "main": "main.ts",
+  "main": "public/build/bundle.js",
   "author": "Nat3z",
   "build": {
     "icon": "public/favicon.png",

@@ -1,9 +1,10 @@
 import express from 'express';
+import cors from 'cors';
 const port = 7654;
 import http from 'http';
 import wsLib from 'ws';
 import { OGIAddonConfiguration, WebsocketMessageServer } from "ogi-addon";
-import { ConfigurationOption } from 'ogi-addon/lib/ConfigurationBuilder';
+import { ConfigurationFile } from 'ogi-addon/lib/ConfigurationBuilder';
 import addonDataRoute from './api/get-addon-data';
 
 const app = express();
@@ -12,7 +13,7 @@ const wss = new wsLib.Server({ server });
 interface WebsocketInfo {
   ws: wsLib.WebSocket,
   info: OGIAddonConfiguration,
-  configTemplate: unknown | ConfigurationOption
+  configTemplate: unknown | ConfigurationFile
 }
 const clients: Map<string, WebsocketInfo> = new Map();
 
@@ -77,10 +78,24 @@ wss.on('connection', (ws) => {
   });
 });
 
+app.all('*', (_, res, next) => {
+  console.log("MIDDLEWARE BITCH")
+  res.header("Access-Control-Allow-Origin", "*");
+  res.header("Access-Control-Allow-Credentials", "true");
+  next();
+})
+// allow cors for localhost:8080 and file urls
+app.use(cors({
+  origin: ['http://localhost:8080', 'file://']
+}))
+
+
+
 app.use(express.json());
 app.use('/addons', addonDataRoute);
 
 app.get('/', (_, res) => {
   res.send('Hello World!');
 });
-export { app, port, server, wss, clients };
+
+export { port, server, wss, clients };

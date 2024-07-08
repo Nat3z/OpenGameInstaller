@@ -1,7 +1,7 @@
 import z, { ZodError } from "zod"
 
 export interface ConfigurationFile {
-  [key: string]: any;
+  [key: string]: ConfigurationOption;
 }
 
 const configValidation = z.object({

@@ -1,6 +1,6 @@
 import { app, BrowserWindow } from 'electron';
 import { join } from 'path';
-import { app as server, port } from "./server/addon-server"
+import { server, port } from "./server/addon-server"
 import { applicationAddonSecret } from './server/constants';
 // Keep a global reference of the window object, if you don't, the window will
 // be closed automatically when the JavaScript object is garbage collected.

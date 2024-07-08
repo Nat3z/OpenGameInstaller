@@ -30,12 +30,14 @@
     "check": "svelte-check --tsconfig ./tsconfig.svelte.json"
   },
   "dependencies": {
+    "@types/cors": "^2.8.17",
     "@types/express": "^4.17.21",
+    "cors": "^2.8.5",
     "electron-serve": "^1.1.0",
     "express": "^4.19.2",
+    "ogi-addon": "*",
     "rollup-plugin-postcss": "^4.0.2",
-    "ws": "^8.18.0",
-    "ogi-addon": "*"
+    "ws": "^8.18.0"
   },
   "devDependencies": {
     "@rollup/plugin-commonjs": "^23.0.2",

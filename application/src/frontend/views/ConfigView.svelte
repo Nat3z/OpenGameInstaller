@@ -1,18 +1,35 @@
 <script lang="ts">
-  // send a request to localhost:7654/addons?secret={secret} and get the list of addons
+  import type { OGIAddonConfiguration } from "ogi-addon";
+  import type { ConfigurationFile } from "ogi-addon/lib/ConfigurationBuilder";
+  import { onMount } from "svelte";
+  import { safeFetch } from "../utils";
+  interface AddonsData extends OGIAddonConfiguration {
+    configTemplate: ConfigurationFile;
+  }
+  let addons: AddonsData[] = [];
+  onMount(() => {
+    safeFetch("http://localhost:7654/addons").then((data) => {
+      addons = data;
+    });
+  });
   
 </script>
 
 <div class="config">
   <div class="w-2/6 border-r-2 border-gray-800 h-full">
-    <section>
-      <h2>Game Name</h2>
-      <p>Lorem ipsum dolor sit amet consectetur adipisicing elit.</p>
-    </section>
+    {#if addons.length !== 0}
+      {#each addons as addon}
+        <section>
+          <h2>{addon.name}</h2>
+          <p>{addon.description}</p>
+        </section>
+      {/each}
+    {/if}
   </div>
 
   <article>
-
+    
+ 
   </article>
 </div>
 

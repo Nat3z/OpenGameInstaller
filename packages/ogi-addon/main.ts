@@ -92,6 +92,7 @@ class OGIAddonWSListener {
       this.eventEmitter.emit('disconnect', reason);
 
     });
+
   }
 
   public send(event: OGIAddonEvent, ...args: Parameters<EventListenerTypes[OGIAddonEvent]>) {

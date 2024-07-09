@@ -5,7 +5,7 @@ import http from 'http';
 import wsLib from 'ws';
 import { OGIAddonConfiguration, WebsocketMessageServer } from "ogi-addon";
 import { ConfigurationFile } from 'ogi-addon/lib/ConfigurationBuilder';
-import addonDataRoute from './api/get-addon-data';
+import addonDataRoute from './api/addons';
 
 const app = express();
 const server = http.createServer(app);

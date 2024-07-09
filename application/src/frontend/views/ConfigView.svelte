@@ -22,6 +22,41 @@
     }
   }
 
+  function updateConfig() {
+    const config: any = {};
+    Object.keys(selectedAddon.configTemplate).forEach((key) => {
+      const element = document.getElementById(key) as HTMLInputElement;
+      if (element) {
+        if (selectedAddon.configTemplate[key].type === "string") {
+          config[key] = element.value;
+        }
+        if (selectedAddon.configTemplate[key].type === "number") {
+          config[key] = parseInt(element.value);
+        }
+      }
+    });
+
+    console.log(config);
+    safeFetch("http://localhost:7654/addons/" + selectedAddon.id + "/config", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(config),
+      consume: 'text'
+    });
+    // save this config to local storage
+    localStorage.setItem(selectedAddon.id, JSON.stringify(config));
+  }
+
+  function getStoredOrDefaultValue(key: string) {
+    const storedConfig = localStorage.getItem(selectedAddon.id);
+    if (storedConfig) {
+      return JSON.parse(storedConfig)[key];
+    }
+    return selectedAddon.configTemplate[key].defaultValue;
+  }
+
   
 </script>
 
@@ -49,10 +84,10 @@
             <div class="flex flex-row gap-2">
               <label for={key}>{key}</label>
               {#if selectedAddon.configTemplate[key].type === "string"}
-                <input type="text" id={key} maxlength={selectedAddon.configTemplate[key].maxTextLength} minlength={selectedAddon.configTemplate[key].minTextLength} />
+                <input type="text" on:change={updateConfig} value={getStoredOrDefaultValue(key)} id={key} maxlength={selectedAddon.configTemplate[key].maxTextLength} minlength={selectedAddon.configTemplate[key].minTextLength} />
               {/if}
               {#if selectedAddon.configTemplate[key].type === "number"}
-                <input type="number" id={key} max={selectedAddon.configTemplate[key].max} min={selectedAddon.configTemplate[key].min} />
+                <input type="number" id={key} on:change={updateConfig} value={getStoredOrDefaultValue(key)} max={selectedAddon.configTemplate[key].max} min={selectedAddon.configTemplate[key].min} />
               {/if}
             </div>
           {/each}

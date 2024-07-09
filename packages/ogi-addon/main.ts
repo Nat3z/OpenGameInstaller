@@ -1,9 +1,10 @@
 import ws, { WebSocket } from 'ws';
 import events from 'node:events';
 import { ConfigurationBuilder } from './lib/ConfigurationBuilder';
+import { Configuration } from './lib/Configuration';
 
 export type OGIAddonEvent = 'connect' | 'disconnect' | 'configure';
-export type OGIAddonServerSendEvent = 'authenticate' | 'configure';
+export type OGIAddonServerSendEvent = 'authenticate' | 'configure' | 'config-update';
 
 const defaultPort = 7654;
 
@@ -52,6 +53,7 @@ class OGIAddonWSListener {
   private socket: WebSocket;
   public eventEmitter: events.EventEmitter;
   public addon: OGIAddon;
+  public configuration: Configuration = new Configuration({});
 
   constructor(ogiAddon: OGIAddon, eventEmitter: events.EventEmitter) {
     this.addon = ogiAddon;
@@ -71,11 +73,12 @@ class OGIAddonWSListener {
       // send a configuration request
       let configBuilder = new ConfigurationBuilder();
       this.eventEmitter.emit('configure', configBuilder);
-      
+     
       this.socket.send(JSON.stringify({
         event: 'configure',
-        args: configBuilder.build()
+        args: configBuilder.build(false) 
       }));
+      this.configuration = new Configuration(configBuilder.build(true));
     });
 
     this.socket.on('error', (error) => {
@@ -94,6 +97,26 @@ class OGIAddonWSListener {
 
     });
 
+    this.registerMessageReceiver();
+  }
+
+  private registerMessageReceiver() {
+    this.socket.on('message', (data: string) => {
+      const message: WebsocketMessageServer = JSON.parse(data);
+      switch (message.event) {
+        case 'config-update':
+          console.log(message)
+          const result = this.configuration.updateConfig(message.args);
+          if (!result[0]) {
+            this.socket.send(JSON.stringify({
+              event: 'config-update-response',
+              args: result[1]
+            }));
+          }
+
+          break 
+      }
+    });
   }
 
   public send(event: OGIAddonEvent, ...args: Parameters<EventListenerTypes[OGIAddonEvent]>) {

@@ -17,4 +17,18 @@ app.get('/', (req, res) => {
   res.json(info);
 });
 
+app.post('/:addonID/config', (req, res) => {
+  if (req.headers.authorization !== applicationAddonSecret) {
+    res.status(401).send('Unauthorized');
+    return;
+  }
+  const client = clients.get(req.params.addonID);
+  if (!client) {
+    res.status(404).send('Client not found');
+    return;
+  }
+
+  client.ws.send(JSON.stringify({ event: 'config-update', args: req.body }));
+  res.send('OK');
+});
 export default app

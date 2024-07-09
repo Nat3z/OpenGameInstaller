@@ -4,7 +4,10 @@ function getSecret() {
   return addonSecret;
 }
 
-export async function safeFetch(url: string, options: RequestInit = {}) {
+interface ConsumableRequest extends RequestInit {
+  consume?: 'json' | 'text';
+}
+export async function safeFetch(url: string, options: ConsumableRequest = { consume: 'json' }) {
   return fetch(url, {
     ...options,
     headers: {
@@ -15,6 +18,9 @@ export async function safeFetch(url: string, options: RequestInit = {}) {
     if (!response.ok) {
       throw new Error(response.statusText);
     }
-    return response.json();
+
+    if (!options.consume || options.consume === 'json') return response.json();
+    else if (options.consume === 'text') return response.text();
+    else throw new Error('Invalid consume type');
   });
 }

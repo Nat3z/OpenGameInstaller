@@ -1,7 +1,7 @@
 import z, { ZodError } from "zod"
 
 export interface ConfigurationFile {
-  [key: string]: ConfigurationOption;
+  [key: string]: ConfigurationOption
 }
 
 const configValidation = z.object({
@@ -16,6 +16,10 @@ export function isStringOption(option: ConfigurationOption): option is StringOpt
 
 export function isNumberOption(option: ConfigurationOption): option is NumberOption {
   return option.type === 'number';
+}
+
+export function isBooleanOption(option: ConfigurationOption): option is BooleanOption {
+  return option.type === 'boolean';
 }
 
 export class ConfigurationBuilder {
@@ -34,25 +38,38 @@ export class ConfigurationBuilder {
     return this;
   }
 
-  public build(): ConfigurationFile {
+  public addBooleanOption(option: (option: BooleanOption) => BooleanOption) {
+    let newOption = new BooleanOption();
+    newOption = option(newOption);
+    this.options.push(newOption);
+    return this;
+  }
+
+  public build(includeFunctions: boolean): ConfigurationFile {
     let config: ConfigurationFile = {};
     this.options.forEach(option => {
       // remove all functions from the option object
-      option = JSON.parse(JSON.stringify(option));
-      const optionData = configValidation.safeParse(option)
-      if (!optionData.success) {
-        throw new ZodError(optionData.error.errors)
-      }
+      if (!includeFunctions) {
+        option = JSON.parse(JSON.stringify(option));
+        const optionData = configValidation.safeParse(option)
+        if (!optionData.success) {
+          throw new ZodError(optionData.error.errors)
+        }
 
-      config[option.name] = option;
+        config[option.name] = option;
+      }
+      else {
+        config[option.name] = option;
+      }
     });
     return config;
   }
 }
 
-export type ConfigurationOptionType = 'string' | 'number' | 'unset'
+export type ConfigurationOptionType = 'string' | 'number' | 'boolean' | 'unset'
 export class ConfigurationOption {
   public name: string = '';
+  public defaultValue: unknown = '';
   public displayName: string = '';
   public description: string = '';
   public type: ConfigurationOptionType = 'unset'
@@ -73,7 +90,7 @@ export class ConfigurationOption {
   }
 
 
-  validate(input: string): boolean {
+  validate(input: unknown): boolean {
     throw new Error('Validation code not implemented. Value: ' + input)
   };
 }
@@ -82,10 +99,16 @@ export class StringOption extends ConfigurationOption {
   public allowedValues: string[] = [];
   public minTextLength: number = 0;
   public maxTextLength: number = Number.MAX_SAFE_INTEGER;
+  public defaultValue: string = '';
   public type: ConfigurationOptionType = 'string'
 
   setAllowedValues(allowedValues: string[]): this {
     this.allowedValues = allowedValues;
+    return this;
+  }
+
+  setDefaultValue(defaultValue: string): this {
+    this.defaultValue = defaultValue;
     return this;
   }
 
@@ -99,7 +122,10 @@ export class StringOption extends ConfigurationOption {
     return this;
   }
 
-  override validate(input: string): boolean {
+  override validate(input: unknown): boolean {
+    if (typeof input !== 'string') {
+      return false;
+    }
     if (this.allowedValues.length === 0 && input.length !== 0)
       return true;
 
@@ -110,6 +136,7 @@ export class StringOption extends ConfigurationOption {
 export class NumberOption extends ConfigurationOption {
   public min: number = 0;
   public max: number = Number.MAX_SAFE_INTEGER;
+  public defaultValue: number = 0;
   public type: ConfigurationOptionType = 'number'
 
   setMin(min: number): this {
@@ -122,8 +149,31 @@ export class NumberOption extends ConfigurationOption {
     return this
   }
 
-  override validate(input: string): boolean {
+  setDefaultValue(defaultValue: number): this {
+    this.defaultValue = defaultValue;
+    return this;
+  }
+
+  override validate(input: unknown): boolean {
     if (isNaN(Number(input))) {
+      return false;
+    }
+    return true;
+  }
+
+}
+
+export class BooleanOption extends ConfigurationOption {
+  public type: ConfigurationOptionType = 'number'
+  public defaultValue: boolean = false;
+
+  setDefaultValue(defaultValue: boolean): this {
+    this.defaultValue = defaultValue;
+    return this;
+  }
+
+  override validate(input: unknown): boolean {
+    if (typeof input !== 'boolean') {
       return false;
     }
     return true;

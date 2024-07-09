@@ -22,7 +22,7 @@ export class AddonConnection {
       }, 1000);
 
       this.ws.on('message', (message) => {
-        const data: WebsocketMessageServer = JSON.parse(message.toString());
+        const data: WebsocketMessageClient = JSON.parse(message.toString());
 
         switch (data.event) {
           case 'authenticate':

@@ -15,3 +15,14 @@ addon.on('configure', (config) => config
   .addNumberOption(option => option.setDisplayName('Test Number Option').setName('testNumberOption').setDescription('A test number option').setMax(10))
   .addBooleanOption(option => option.setDisplayName('Test Boolean Option').setName('testBooleanOption').setDescription('A test boolean option'))
 )
+
+addon.on('search', (query, event) => {
+  event.resolve([{ 
+    name: 'Test Result',
+    description: 'A test result',
+    coverURL: 'https://via.placeholder.com/150',
+    downloadSize: 100,
+    downloadURL: 'https://via.placeholder.com/150',
+    downloadType: 'direct'
+  }]);
+});

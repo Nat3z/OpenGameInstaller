@@ -2,9 +2,12 @@ import ws, { WebSocket } from 'ws';
 import events from 'node:events';
 import { ConfigurationBuilder } from './lib/ConfigurationBuilder';
 import { Configuration } from './lib/Configuration';
+import EventResponse from './lib/EventResponse';
+import { SearchResult } from './lib/SearchEngine';
 
-export type OGIAddonEvent = 'connect' | 'disconnect' | 'configure' | 'response';
-export type OGIAddonServerSendEvent = 'authenticate' | 'configure' | 'config-update';
+export type OGIAddonEvent = 'connect' | 'disconnect' | 'configure' | 'authenticate' | 'search';
+export type OGIAddonClientSentEvent = 'response' | 'authenticate' | 'configure';
+export type OGIAddonServerSentEvent = 'authenticate' | 'configure' | 'config-update' | 'search';
 
 const defaultPort = 7654;
 
@@ -13,15 +16,17 @@ export interface EventListenerTypes {
   disconnect: (reason: string) => void;
   configure: (config: ConfigurationBuilder) => ConfigurationBuilder;
   response: (response: any) => void;
+  authenticate: (config: any) => void;
+  search: (query: string, event: EventResponse<SearchResult[]>) => void;
 }
 
 export interface WebsocketMessageClient {
-  event: OGIAddonEvent;
+  event: OGIAddonClientSentEvent;
   id?: string;
   args: any;
 }
 export interface WebsocketMessageServer {
-  event: OGIAddonServerSendEvent;
+  event: OGIAddonServerSentEvent;
   id?: string;
   args: any;
 }
@@ -104,7 +109,7 @@ class OGIAddonWSListener {
   }
 
   private registerMessageReceiver() {
-    this.socket.on('message', (data: string) => {
+    this.socket.on('message', async (data: string) => {
       const message: WebsocketMessageServer = JSON.parse(data);
       switch (message.event) {
         case 'config-update':
@@ -116,7 +121,39 @@ class OGIAddonWSListener {
             this.respondToMessage(message.id!!, { success: true });
           }
           break 
+        case 'search':
+          let searchResult = new EventResponse<SearchResult[]>();
+          this.eventEmitter.emit('search', message.args, searchResult);
+          await this.waitForEventToRespond(searchResult);          
+          this.respondToMessage(message.id!!, searchResult.data);
+          break
       }
+    });
+  }
+
+  private waitForEventToRespond<T>(event: EventResponse<T>) {
+    return new Promise((resolve, reject) => {
+      const dataGet = setInterval(() => {
+        if (event.data) {
+          resolve(event);
+          clearTimeout(timeout);
+        }
+      }, 5);      
+
+      const timeout = setTimeout(() => {
+        if (event.deffered) {
+          clearInterval(dataGet);
+          const interval = setInterval(() => {
+            if (event.data) {
+              clearInterval(interval);
+              resolve(event);
+            }
+          }, 100);
+        }
+        else {
+          reject('Event did not respond in time');
+        }
+      }, 5000)
     });
   }
 
@@ -134,15 +171,6 @@ class OGIAddonWSListener {
       event,
       args
     }));
-  }
-
-  public receive(event: OGIAddonEvent, listener: EventListenerTypes[OGIAddonEvent]) {
-    this.socket.on('message', (data) => {
-      const message = JSON.parse(data.toString());
-      if (message.event === event) {
-        listener(message.args);
-      }
-    });
   }
 
   public close() {

@@ -8,17 +8,28 @@
       addons = data;
     });
   });
-	const results: any[] = [];
+	let results: any[] = [];
+
+	let loadingResults = false;
 	async function search() {
+		results = [];
 		const search = document.getElementById("search")!! as HTMLInputElement;
 		const query = search.value = search.value.toLowerCase();
+		loadingResults = true;
 		for (const addon of addons) {
-			const searchResults = await safeFetch("http://localhost:7654/addons/" + addon.id + "/search?query=" + query)
-			results.push(...searchResults);
+			safeFetch("http://localhost:7654/addons/" + addon.id + "/search?query=" + query).then((data) => {
+				loadingResults = false;
+				results = [ ...results, ...data];
+			});
 		}
 	}
 </script>
 <input id="search" on:change={search} placeholder="Search for Game" class="border border-gray-800 px-2 py-1 w-2/3 outline-none"/>
+{#if loadingResults}
+	<div class="flex justify-center items-center w-1/6 border p-4 border-gray-800 bg-gray-200">
+		<p>Loading...</p>
+	</div>
+{/if}
 <div class="games">
 	{#each results as result}
 		<div>

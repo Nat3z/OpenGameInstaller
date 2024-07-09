@@ -1,9 +1,10 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  // import ConfigView from "./views/ConfigView.svelte";
+  import ConfigView from "./views/ConfigView.svelte";
   import { safeFetch } from "./utils";
   import GameInstallView from "./views/GameInstallView.svelte";
-
+	type Views = "gameInstall" | "config";
+	let selectedView: Views = "gameInstall";
 
 	// post config to server for each addon
 	onMount(() => {
@@ -31,10 +32,15 @@
 
 	<header class="flex justify-center gap-4 flex-row">
 		<button>Settings</button>
-		<button>Manage Addons</button>
+		<button on:click={() => selectedView = "gameInstall"}>Game Install</button>
+		<button on:click={() => selectedView = "config"}>Manage Addons</button>
 	</header>
-	<!-- <ConfigView /> -->
-	<GameInstallView />
+	{#if selectedView === "config"}
+		<ConfigView />
+	{:else if selectedView === "gameInstall"}
+		<GameInstallView />
+	{/if}
+
 </main>
 
 <style global>

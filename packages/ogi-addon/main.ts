@@ -42,9 +42,11 @@ export interface OGIAddonConfiguration {
 export default class OGIAddon {
   public eventEmitter = new events.EventEmitter();
   public addonWSListener: OGIAddonWSListener;
-  public configuration: OGIAddonConfiguration;
-  constructor(configuration: OGIAddonConfiguration) {
-    this.configuration = configuration;
+  public addonInfo: OGIAddonConfiguration;
+  public config: Configuration = new Configuration({});
+
+  constructor(addonInfo: OGIAddonConfiguration) {
+    this.addonInfo = addonInfo;
     this.addonWSListener = new OGIAddonWSListener(this, this.eventEmitter);
   }
   
@@ -61,7 +63,6 @@ class OGIAddonWSListener {
   private socket: WebSocket;
   public eventEmitter: events.EventEmitter;
   public addon: OGIAddon;
-  public configuration: Configuration = new Configuration({});
 
   constructor(ogiAddon: OGIAddon, eventEmitter: events.EventEmitter) {
     this.addon = ogiAddon;
@@ -74,7 +75,7 @@ class OGIAddonWSListener {
       this.socket.send(JSON.stringify({
         event: 'authenticate',
         args: {
-          ...this.addon.configuration
+          ...this.addon.addonInfo
         }
       }));
 
@@ -86,7 +87,7 @@ class OGIAddonWSListener {
         event: 'configure',
         args: configBuilder.build(false) 
       }));
-      this.configuration = new Configuration(configBuilder.build(true));
+      this.addon.config = new Configuration(configBuilder.build(true));
     });
 
     this.socket.on('error', (error) => {
@@ -113,7 +114,7 @@ class OGIAddonWSListener {
       const message: WebsocketMessageServer = JSON.parse(data);
       switch (message.event) {
         case 'config-update':
-          const result = this.configuration.updateConfig(message.args);
+          const result = this.addon.config.updateConfig(message.args);
           if (!result[0]) {
             this.respondToMessage(message.id!!, { success: false, error: result[1] });
           }

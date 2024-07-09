@@ -38,11 +38,11 @@ export async function safeFetch(url: string, options: ConsumableRequest = { cons
             clearInterval(deferInterval);
             resolve(taskData);
           }
-        }, 100);
+        }, 850);
       }
       else {
-        if (!options.consume || options.consume === 'json') return resolve(response.json());
-        else if (options.consume === 'text') return resolve(response.text());
+        if (!options.consume || options.consume === 'json') return resolve(await response.json());
+        else if (options.consume === 'text') return resolve(await response.text());
         else throw new Error('Invalid consume type');
       }
     });

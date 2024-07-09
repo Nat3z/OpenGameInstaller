@@ -2,6 +2,7 @@
 import wsLib from 'ws';
 import { OGIAddonConfiguration, WebsocketMessageClient, WebsocketMessageServer } from "ogi-addon";
 import { ConfigurationFile } from 'ogi-addon/lib/ConfigurationBuilder';
+import { clients } from './addon-server';
 
 export class AddonConnection {
   public addonInfo: OGIAddonConfiguration;
@@ -30,6 +31,14 @@ export class AddonConnection {
 
             // authentication
             this.addonInfo = data.args;
+
+            if (clients.has(this.addonInfo.id)) {
+              console.error('Client attempted to authenticate with an ID that is already in use');
+              clients.delete(this.addonInfo.id);
+              this.ws.close(1008, 'Client attempted to authenticate with an ID that is already in use');
+              resolve(false)
+              break
+            }
             console.log('Client authenticated:', data.args.name);
             resolve(true);
             break;

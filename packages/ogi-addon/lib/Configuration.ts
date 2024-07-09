@@ -1,4 +1,4 @@
-import { ConfigurationBuilder, ConfigurationFile } from "./ConfigurationBuilder";
+import { ConfigurationFile } from "./ConfigurationBuilder";
 
 interface DefiniteConfig {
   [key: string]: string | number | boolean;
@@ -22,7 +22,8 @@ export class Configuration {
   private validateConfig(): [ boolean, { keyErrored: string, error: string }? ] {
     for (const key in this.storedConfigTemplate) {
       if (this.definiteConfig[key] === null || this.definiteConfig[key] === undefined) {
-        throw new Error('Option ' + key + ' is not defined. Value: ' + this.definiteConfig[key]);
+        console.warn('Option ' + key + ' is not defined. Using default value Value: ' + this.definiteConfig[key]);
+        this.definiteConfig[key] = this.storedConfigTemplate[key].defaultValue as string | number | boolean;
       }
       if (this.storedConfigTemplate[key].type !== typeof this.definiteConfig[key]) {
         throw new Error('Option ' + key + ' is not of the correct type');

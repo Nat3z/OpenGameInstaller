@@ -33,10 +33,17 @@
         if (selectedAddon.configTemplate[key].type === "number") {
           config[key] = parseInt(element.value);
         }
+        if (selectedAddon.configTemplate[key].type === "boolean") {
+          config[key] = element.checked;
+        }
       }
     });
-
-    console.log(config);
+    document.querySelectorAll("[data-error-message]").forEach((element) => {
+      element.textContent = "";
+      element.parentElement!!.querySelector("input")!!.classList.remove("outline-red-500");
+      element.parentElement!!.querySelector("input")!!.classList.remove("outline-4");
+      element.parentElement!!.querySelector("input")!!.classList.remove("outline");
+    }); 
     safeFetch("http://localhost:7654/addons/" + selectedAddon.id + "/config", {
       method: "POST",
       headers: {
@@ -46,10 +53,12 @@
     }).then((data) => {
       if (!data.success) {
         console.error(data);
-        const element = document.getElementById(data.keyErrored)
+        const element = document.getElementById(data.error.keyErrored)
         if (!element) return console.error("element not found");
-        element.classList.add("border-red-500");
-        element.parentElement!!.querySelector("p")!!.textContent = data.message;
+        element.classList.add("outline-red-500");
+        element.classList.add("outline-4");
+        element.classList.add("outline");
+        element.parentElement!!.querySelector("p")!!.textContent = data.error.error;
       }
     });
     // save this config to local storage
@@ -86,22 +95,27 @@
       <h2>{selectedAddon.name}</h2>
       <p>{selectedAddon.description}</p>
       <div class="options">
-        <article>
-          <div class="flex flex-row gap-2 hidden border-red-500">
+        <div class="hidden outline-red-500 outline-4">
+        </div>
+        {#each Object.keys(selectedAddon.configTemplate) as key}
+          <div class="flex flex-row gap-2 items-center">
+            <label for={key}>{selectedAddon.configTemplate[key].displayName}</label>
+            {#if selectedAddon.configTemplate[key].type === "string"}
+              <input type="text" on:change={updateConfig} value={getStoredOrDefaultValue(key)} id={key} maxlength={selectedAddon.configTemplate[key].maxTextLength} minlength={selectedAddon.configTemplate[key].minTextLength} />
+            {/if}
+            {#if selectedAddon.configTemplate[key].type === "number"}
+              <input type="number" id={key} on:change={updateConfig} value={getStoredOrDefaultValue(key)} max={selectedAddon.configTemplate[key].max} min={selectedAddon.configTemplate[key].min} />
+            {/if}
+            {#if selectedAddon.configTemplate[key].type === "boolean"}
+              {#if getStoredOrDefaultValue(key)}
+                <input type="checkbox" id={key} on:change={updateConfig} checked />
+              {:else}
+                <input type="checkbox" id={key} on:change={updateConfig} />
+              {/if}
+            {/if}
+            <p data-error-message class="text-red-500"></p>
           </div>
-          {#each Object.keys(selectedAddon.configTemplate) as key}
-            <div class="flex flex-row gap-2">
-              <label for={key}>{key}</label>
-              {#if selectedAddon.configTemplate[key].type === "string"}
-                <input type="text" on:change={updateConfig} value={getStoredOrDefaultValue(key)} id={key} maxlength={selectedAddon.configTemplate[key].maxTextLength} minlength={selectedAddon.configTemplate[key].minTextLength} />
-              {/if}
-              {#if selectedAddon.configTemplate[key].type === "number"}
-                <input type="number" id={key} on:change={updateConfig} value={getStoredOrDefaultValue(key)} max={selectedAddon.configTemplate[key].max} min={selectedAddon.configTemplate[key].min} />
-              {/if}
-              <p data-error-message>hello world</p>
-            </div>
-          {/each}
-        </article>
+        {/each}
       </div>
     {/if}    
  
@@ -127,14 +141,12 @@
 	section .download {
 		@apply bg-blue-500 text-white p-2 rounded;
 	}
-	.games div article {
-		@apply flex flex-col gap-2;
-	}
+	.options {
+    @apply gap-2 flex flex-col border-t-2 border-gray-800 p-2;
+  }
+
 	article h2 {
 		@apply text-xl;
-	}
-	article p {
-		@apply text-sm text-gray-500;
 	}
 
 </style>

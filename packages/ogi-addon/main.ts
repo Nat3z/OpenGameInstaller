@@ -108,7 +108,6 @@ class OGIAddonWSListener {
       const message: WebsocketMessageServer = JSON.parse(data);
       switch (message.event) {
         case 'config-update':
-          console.log(message)
           const result = this.configuration.updateConfig(message.args);
           if (!result[0]) {
             this.respondToMessage(message.id!!, { success: false, error: result[1] });
@@ -127,6 +126,7 @@ class OGIAddonWSListener {
       id: messageID,
       args: response
     }));
+    console.log("dispatched response to " + messageID)
   }
 
   public send(event: OGIAddonEvent, ...args: Parameters<EventListenerTypes[OGIAddonEvent]>) {

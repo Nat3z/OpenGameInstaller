@@ -13,7 +13,7 @@ export class AddonConnection {
   }
 
   public async setupWebsocket(): Promise<boolean> {
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve, _) => {
 
       const authenticationTimeout = setTimeout(() => {
         this.ws.close(1008, 'Authentication timeout');
@@ -56,22 +56,25 @@ export class AddonConnection {
         if (err) {
           reject(err);
         }
-        if (expectResponse) {
-          const waitResponse = () => {
-            this.ws.once('message', (messageRaw) => {
-              const messageFromClient: WebsocketMessageClient = JSON.parse(messageRaw.toString())
-              if (messageFromClient.event === "response" && messageFromClient.id === message.id) {
-                resolve(JSON.parse(message.toString()));
-              }
-              else {
-                waitResponse();
-              }
-            });
-          }
-          waitResponse();
-        }
-        resolve({ event: 'response', args: 'OK' });
       });
+      if (expectResponse) {
+        const waitResponse = () => {
+          console.log("registered listerner for " + message.id)
+          this.ws.once('message', (messageRaw) => {
+            const messageFromClient: WebsocketMessageClient = JSON.parse("" + messageRaw.toString())
+            if (messageFromClient.event === "response" && messageFromClient.id === message.id) {
+              resolve(messageFromClient);
+            }
+            else {
+              waitResponse();
+            }
+          });
+        }
+        waitResponse();
+      }
+      else {
+        resolve({ event: 'response', args: 'OK' });
+      }
     });
   }
 }

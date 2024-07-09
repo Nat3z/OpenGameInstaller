@@ -158,13 +158,16 @@ export class NumberOption extends ConfigurationOption {
     if (isNaN(Number(input))) {
       return false;
     }
+    if (Number(input) < this.min || Number(input) > this.max) {
+      return false;
+    }
     return true;
   }
 
 }
 
 export class BooleanOption extends ConfigurationOption {
-  public type: ConfigurationOptionType = 'number'
+  public type: ConfigurationOptionType = 'boolean'
   public defaultValue: boolean = false;
 
   setDefaultValue(defaultValue: boolean): this {

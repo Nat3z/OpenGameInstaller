@@ -27,7 +27,7 @@ app.post('/:addonID/config', async (req, res) => {
     res.status(404).send('Client not found');
     return;
   }
-  const response = await client.sendEventMessage({ event: 'configure', args: req.body });
+  const response = await client.sendEventMessage({ event: 'config-update', args: req.body });
   if (response.args.success)
     res.json({ success: true });
   else {

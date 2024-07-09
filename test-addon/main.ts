@@ -17,12 +17,15 @@ addon.on('configure', (config) => config
 )
 
 addon.on('search', (query, event) => {
-  event.resolve([{ 
-    name: 'Test Result',
-    description: 'A test result',
-    coverURL: 'https://via.placeholder.com/150',
-    downloadSize: 100,
-    downloadURL: 'https://via.placeholder.com/150',
-    downloadType: 'direct'
-  }]);
+  event.defer();
+  setTimeout(() => {
+    event.resolve([{ 
+      name: query,
+      description: 'A test result',
+      coverURL: 'https://via.placeholder.com/150',
+      downloadSize: 100,
+      downloadURL: 'https://via.placeholder.com/150',
+      downloadType: 'direct'
+    }]);
+  }, 10000);
 });

@@ -34,7 +34,6 @@ export class AddonConnection {
             resolve(true);
             break;
           case 'configure':
-            console.log('Client configuration received:', data.args);
             if (!this.addonInfo) {
               console.error('Client attempted to send config before authentication');
               this.ws.close(1008, 'Client attempted to send config before authentication');

@@ -122,19 +122,20 @@ class OGIAddonWSListener {
           }
           break 
         case 'search':
-          let searchResult = new EventResponse<SearchResult[]>();
-          this.eventEmitter.emit('search', message.args, searchResult);
-          await this.waitForEventToRespond(searchResult);          
+          let searchResultEvent = new EventResponse<SearchResult[]>();
+          this.eventEmitter.emit('search', message.args, searchResultEvent);
+          const searchResult = await this.waitForEventToRespond(searchResultEvent);         
+          console.log(searchResult.data)
           this.respondToMessage(message.id!!, searchResult.data);
           break
       }
     });
   }
 
-  private waitForEventToRespond<T>(event: EventResponse<T>) {
+  private waitForEventToRespond<T>(event: EventResponse<T>): Promise<EventResponse<T>> {
     return new Promise((resolve, reject) => {
       const dataGet = setInterval(() => {
-        if (event.data) {
+        if (event.resolved) {
           resolve(event);
           clearTimeout(timeout);
         }
@@ -144,7 +145,7 @@ class OGIAddonWSListener {
         if (event.deffered) {
           clearInterval(dataGet);
           const interval = setInterval(() => {
-            if (event.data) {
+            if (event.resolved) {
               clearInterval(interval);
               resolve(event);
             }

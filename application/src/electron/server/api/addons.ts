@@ -1,6 +1,8 @@
 import express from "express";
 import { clients } from "../addon-server";
 import { applicationAddonSecret } from "../constants";
+import { DeferrableTask } from "../DeferrableTask";
+import { DefferedTasks } from "./defer";
 
 const app = express.Router();
 
@@ -33,5 +35,25 @@ app.post('/:addonID/config', async (req, res) => {
   else {
     res.json({ success: false, error: response.args.error, keyErrored: response.args.keyErrored })
   }
+});
+// an expensive task.
+app.get('/:addonID/search', async (req, res) => {
+  if (req.headers.authorization !== applicationAddonSecret) {
+    return res.status(401).send('Unauthorized');
+  }
+  if (!req.query.query) {
+    return res.status(400).send('No query provided');
+  }
+  const client = clients.get(req.params.addonID);
+  if (!client)
+    return res.status(404).send('Client not found');
+
+  const deferrableTask = new DeferrableTask(async () => {
+    const event = await client.sendEventMessage({ event: 'search', args: req.query.query })
+    return event.args;
+  });
+  deferrableTask.run();
+  DefferedTasks.set(deferrableTask.id, deferrableTask);
+  return res.status(202).json({ deferred: true, taskID: deferrableTask.id });
 });
 export default app

@@ -4,6 +4,7 @@ const port = 7654;
 import http from 'http';
 import wsLib from 'ws';
 import addonDataRoute from './api/addons';
+import deferRoute from './api/defer';
 import { AddonConnection } from './AddonConnection';
 
 const app = express();
@@ -40,6 +41,7 @@ app.use(cors({
 
 app.use(express.json());
 app.use('/addons', addonDataRoute);
+app.use('/defer', deferRoute);
 
 app.get('/', (_, res) => {
   res.send('Hello World!');

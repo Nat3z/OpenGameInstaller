@@ -62,11 +62,11 @@
       }
     });
     // save this config to local storage
-    localStorage.setItem(selectedAddon.id, JSON.stringify(config));
+    localStorage.setItem("addon-" + selectedAddon.id, JSON.stringify(config));
   }
 
   function getStoredOrDefaultValue(key: string) {
-    const storedConfig = localStorage.getItem(selectedAddon.id);
+    const storedConfig = localStorage.getItem("addon-" + selectedAddon.id);
     if (storedConfig) {
       return JSON.parse(storedConfig)[key];
     }

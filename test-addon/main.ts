@@ -27,5 +27,5 @@ addon.on('search', (query, event) => {
       downloadURL: 'https://via.placeholder.com/150',
       downloadType: 'direct'
     }]);
-  }, 500);
+  }, 2000);
 });

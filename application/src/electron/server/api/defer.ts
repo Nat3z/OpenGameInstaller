@@ -23,7 +23,7 @@ app.get('/:taskID', (req, res) => {
   }
 
   else {
-    res.status(202).json("TASK_NOT_READY");
+    res.status(202).send("TASK_NOT_READY");
   }
 });
 

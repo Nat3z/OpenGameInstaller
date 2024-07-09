@@ -1,8 +1,8 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import ConfigView from "./views/ConfigView.svelte";
+  // import ConfigView from "./views/ConfigView.svelte";
   import { safeFetch } from "./utils";
-  // import GameInstallView from "./views/GameInstallView.svelte";
+  import GameInstallView from "./views/GameInstallView.svelte";
 
 
 	// post config to server for each addon
@@ -27,13 +27,14 @@
 	})
 </script>
 
-<main class="flex justify-center items-center flex-col gap-4 w-full h-full">
+<main class="flex items-center flex-col gap-4 w-full h-full">
 
 	<header class="flex justify-center gap-4 flex-row">
 		<button>Settings</button>
 		<button>Manage Addons</button>
 	</header>
-	<ConfigView />
+	<!-- <ConfigView /> -->
+	<GameInstallView />
 </main>
 
 <style global>

@@ -1,15 +1,37 @@
-<input placeholder="Search for Game" class="border border-gray-800 px-2 py-1 w-2/3 outline-none"/>
+<script lang="ts">
+  import { onMount } from "svelte";
+  import { safeFetch } from "../utils";
+
+	let addons: any[] = [];
+  onMount(() => {
+    safeFetch("http://localhost:7654/addons").then((data) => {
+      addons = data;
+    });
+  });
+	const results: any[] = [];
+	async function search() {
+		const search = document.getElementById("search")!! as HTMLInputElement;
+		const query = search.value = search.value.toLowerCase();
+		for (const addon of addons) {
+			const searchResults = await safeFetch("http://localhost:7654/addons/" + addon.id + "/search?query=" + query)
+			results.push(...searchResults);
+		}
+	}
+</script>
+<input id="search" on:change={search} placeholder="Search for Game" class="border border-gray-800 px-2 py-1 w-2/3 outline-none"/>
 <div class="games">
-  <div>
-    <img src="https://via.placeholder.com/150" alt="Game Image" />
-    <article>
-      <h2>Game Name</h2>
-      <p>Lorem ipsum dolor sit amet consectetur adipisicing elit. Omnis, amet facilis. Sint esse soluta vitae harum non, natus aperiam adipisci voluptas rerum? Eveniet dolor deleniti tenetur quia a, accusamus ducimus!</p>
-      <section>
-        <button class="download">Download</button>
-      </section>
-    </article>
-  </div>
+	{#each results as result}
+		<div>
+			<img src={result.coverURL} alt="Game" />
+			<article>
+					<h2>{result.name}</h2>
+					<p>{result.description}</p>
+					<section>
+						<button class="download">Download</button>
+					</section>
+			</article>
+		</div>
+	{/each}
 </div>
 
 <style>

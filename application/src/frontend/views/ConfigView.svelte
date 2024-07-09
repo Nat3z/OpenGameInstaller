@@ -43,7 +43,14 @@
         "Content-Type": "application/json",
       },
       body: JSON.stringify(config),
-      consume: 'text'
+    }).then((data) => {
+      if (!data.success) {
+        console.error(data);
+        const element = document.getElementById(data.keyErrored)
+        if (!element) return console.error("element not found");
+        element.classList.add("border-red-500");
+        element.parentElement!!.querySelector("p")!!.textContent = data.message;
+      }
     });
     // save this config to local storage
     localStorage.setItem(selectedAddon.id, JSON.stringify(config));
@@ -80,6 +87,8 @@
       <p>{selectedAddon.description}</p>
       <div class="options">
         <article>
+          <div class="flex flex-row gap-2 hidden border-red-500">
+          </div>
           {#each Object.keys(selectedAddon.configTemplate) as key}
             <div class="flex flex-row gap-2">
               <label for={key}>{key}</label>
@@ -89,6 +98,7 @@
               {#if selectedAddon.configTemplate[key].type === "number"}
                 <input type="number" id={key} on:change={updateConfig} value={getStoredOrDefaultValue(key)} max={selectedAddon.configTemplate[key].max} min={selectedAddon.configTemplate[key].min} />
               {/if}
+              <p data-error-message>hello world</p>
             </div>
           {/each}
         </article>

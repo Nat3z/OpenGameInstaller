@@ -11,13 +11,13 @@ app.get('/', (req, res) => {
   }
   let info = [];
   for (const client of clients.values()) {
-    info.push({ ...client.info, configTemplate: client.configTemplate });
+    info.push({ ...client.addonInfo, configTemplate: client.configTemplate });
   }
 
   res.json(info);
 });
 
-app.post('/:addonID/config', (req, res) => {
+app.post('/:addonID/config', async (req, res) => {
   if (req.headers.authorization !== applicationAddonSecret) {
     res.status(401).send('Unauthorized');
     return;
@@ -27,8 +27,11 @@ app.post('/:addonID/config', (req, res) => {
     res.status(404).send('Client not found');
     return;
   }
-
-  client.ws.send(JSON.stringify({ event: 'config-update', args: req.body }));
-  res.send('OK');
+  const response = await client.sendEventMessage({ event: 'configure', args: req.body });
+  if (response.args.success)
+    res.json({ success: true });
+  else {
+    res.json({ success: false, error: response.args.error, keyErrored: response.args.keyErrored })
+  }
 });
 export default app

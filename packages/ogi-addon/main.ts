@@ -3,7 +3,7 @@ import events from 'node:events';
 import { ConfigurationBuilder } from './lib/ConfigurationBuilder';
 import { Configuration } from './lib/Configuration';
 
-export type OGIAddonEvent = 'connect' | 'disconnect' | 'configure';
+export type OGIAddonEvent = 'connect' | 'disconnect' | 'configure' | 'response';
 export type OGIAddonServerSendEvent = 'authenticate' | 'configure' | 'config-update';
 
 const defaultPort = 7654;
@@ -12,14 +12,17 @@ export interface EventListenerTypes {
   connect: (socket: ws) => void;
   disconnect: (reason: string) => void;
   configure: (config: ConfigurationBuilder) => ConfigurationBuilder;
+  response: (response: any) => void;
 }
 
-export interface WebsocketMessage {
+export interface WebsocketMessageClient {
   event: OGIAddonEvent;
+  id?: string;
   args: any;
 }
 export interface WebsocketMessageServer {
   event: OGIAddonServerSendEvent;
+  id?: string;
   args: any;
 }
 export interface OGIAddonConfiguration {
@@ -108,15 +111,22 @@ class OGIAddonWSListener {
           console.log(message)
           const result = this.configuration.updateConfig(message.args);
           if (!result[0]) {
-            this.socket.send(JSON.stringify({
-              event: 'config-update-response',
-              args: result[1]
-            }));
+            this.respondToMessage(message.id!!, { success: false, error: result[1] });
           }
-
+          else {
+            this.respondToMessage(message.id!!, { success: true });
+          }
           break 
       }
     });
+  }
+
+  public respondToMessage(messageID: string, response: any) {
+    this.socket.send(JSON.stringify({
+      event: 'response',
+      id: messageID,
+      args: response
+    }));
   }
 
   public send(event: OGIAddonEvent, ...args: Parameters<EventListenerTypes[OGIAddonEvent]>) {

@@ -8,10 +8,10 @@
   },
   "scripts": {
     "auto-build": "tsc -w",
+    "build": "tsc",
     "test": "bun test ./tests/**/*.test.ts"
   },
   "devDependencies": {
-    "@types/bun": "^1.0.0",
     "typescript": "^5.0.0"
   }
 }

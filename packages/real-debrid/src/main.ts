@@ -42,7 +42,7 @@ const AddTorrentZod = z.object({
 type $Hosts = z.infer<typeof HostsZod>;
 const REAL_DEBRID_API_URL = 'https://api.real-debrid.com/rest/1.0';
 export default class RealDebrid {
-  constructor(private configuration: RealDebridConfiguration) {}
+  constructor(public configuration: RealDebridConfiguration) {}
 
   public async getUserInfo() {
     const response = await fetch(`${REAL_DEBRID_API_URL}/user`, {

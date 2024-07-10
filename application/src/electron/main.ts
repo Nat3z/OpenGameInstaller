@@ -3,10 +3,15 @@ import { server, port } from "./server/addon-server"
 import { applicationAddonSecret } from './server/constants';
 import { app, BrowserWindow, ipcMain } from 'electron';
 import fs from 'fs';
+import RealDebrid from 'node-real-debrid';
+import http from 'http';
+
 // Keep a global reference of the window object, if you don't, the window will
 // be closed automatically when the JavaScript object is garbage collected.
 let mainWindow: any;
-
+let realDebridClient = new RealDebrid({
+    apiKey: 'UNSET'
+}); 
 function isDev() {
     return !app.isPackaged;
 }
@@ -92,6 +97,59 @@ function createWindow() {
                 }
                 event.returnValue = 'success';
             });
+        });
+
+        ipcMain.on('real-debrid:set-key', async (event, arg) => {
+            realDebridClient = new RealDebrid({
+                apiKey: arg
+            });
+            event.returnValue = 'success';
+        });
+        // real-debrid binding
+        ipcMain.on('real-debrid:get-user-info', async (event, _) => {
+            const userInfo = await realDebridClient.getUserInfo();
+            event.returnValue = userInfo;
+        });
+
+        ipcMain.on('real-debrid:unrestrict-link', async (event, arg) => {
+            const unrestrictedLink = await realDebridClient.unrestrictLink(arg);
+            event.returnValue = unrestrictedLink;
+        });
+            
+        ipcMain.on('real-debrid:get-hosts', async (event, _) => {
+            const hosts = await realDebridClient.getHosts();
+            event.returnValue = hosts;
+        });
+        ipcMain.on('real-debrid:add-magnet', async (event, arg) => {
+            const torrentAdded = await realDebridClient.addMagnet(arg.url, arg.host);
+            event.returnValue = torrentAdded;
+        });
+
+        ipcMain.on('ddl:download', async (event, arg: { link: string, path: string }) => {
+            const downloadID = Math.random().toString(36).substring(7);
+            // arg is a link
+            // download the link
+            let fileStream = fs.createWriteStream(arg.path);
+            http.get(arg.link, (response) => {
+                response.pipe(fileStream);
+                // send the download status/progress as it goes to the client
+                response.on('data', (chunk) => {
+                    mainWindow.webContents.send('ddl:download-progress', { id: downloadID, amount: chunk.length });
+                });
+
+                response.on('error', (err) => {
+                    console.error(err);
+                    mainWindow.webContents.send('ddl:download-error', { id: downloadID, error: err });
+                    fileStream.close();
+                });
+
+                fileStream.on('finish', () => {
+                    fileStream.close();
+                    mainWindow.webContents.send('ddl:download-complete', { id: downloadID });
+                });
+            })
+            // stream the download 
+            event.returnValue = downloadID;
         });
 
         mainWindow!!.show()

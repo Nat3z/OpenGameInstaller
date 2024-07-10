@@ -38,6 +38,7 @@
     "electron-serve": "^1.1.0",
     "express": "^4.19.2",
     "ogi-addon": "*",
+    "node-real-debrid": "*",
     "rollup-plugin-postcss": "^4.0.2",
     "ws": "^8.18.0"
   },

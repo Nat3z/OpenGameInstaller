@@ -1,16 +1,22 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { safeFetch } from "../utils";
+  import type { ConfigurationFile } from "ogi-addon/build/config/ConfigurationBuilder";
+  import { isStringOption, isNumberOption, isBooleanOption } from "ogi-addon/build/config/ConfigurationBuilder";
+  import type { OGIAddonConfiguration } from "ogi-addon";
+
   let addons: any[] = [];
   onMount(() => {
     safeFetch("http://localhost:7654/addons").then((data) => {
       addons = data;
     });
   });
-
-  let selectedAddon: any = null;
+  interface ConfigTemplateAndInfo extends OGIAddonConfiguration {
+    configTemplate: ConfigurationFile
+  }
+  let selectedAddon: ConfigTemplateAndInfo | null = null;
   
-  function selectAddon(addon: any) {
+  function selectAddon(addon: ConfigTemplateAndInfo) {
     const selected = document.querySelector(".selected");
     if (selected) {
       selected.classList.remove("selected");
@@ -23,8 +29,10 @@
   }
 
   function updateConfig() {
-    const config: any = {};
+    if (!selectedAddon) return;
+    let config: Record<string, string | number | boolean> = {};
     Object.keys(selectedAddon.configTemplate).forEach((key) => {
+    if (!selectedAddon) return;
       const element = document.getElementById(key) as HTMLInputElement;
       if (element) {
         if (selectedAddon.configTemplate[key].type === "string") {
@@ -66,13 +74,13 @@
   }
 
   function getStoredOrDefaultValue(key: string) {
+    if (!selectedAddon) return;
     const storedConfig = localStorage.getItem("addon-" + selectedAddon.id);
     if (storedConfig) {
       return JSON.parse(storedConfig)[key];
     }
     return selectedAddon.configTemplate[key].defaultValue;
   }
-
   
 </script>
 
@@ -100,13 +108,13 @@
         {#each Object.keys(selectedAddon.configTemplate) as key}
           <div class="flex flex-row gap-2 items-center">
             <label for={key}>{selectedAddon.configTemplate[key].displayName}</label>
-            {#if selectedAddon.configTemplate[key].type === "string"}
+            {#if isStringOption(selectedAddon.configTemplate[key])}
               <input type="text" on:change={updateConfig} value={getStoredOrDefaultValue(key)} id={key} maxlength={selectedAddon.configTemplate[key].maxTextLength} minlength={selectedAddon.configTemplate[key].minTextLength} />
             {/if}
-            {#if selectedAddon.configTemplate[key].type === "number"}
-              <input type="number" id={key} on:change={updateConfig} value={getStoredOrDefaultValue(key)} max={selectedAddon.configTemplate[key].max} min={selectedAddon.configTemplate[key].min} />
+            {#if isNumberOption(selectedAddon.configTemplate[key])}
+              <input type="number" id={key} on:change={updateConfig} value={getStoredOrDefaultValue(key)} max={isNumberOption(selectedAddon.configTemplate[key]) ? selectedAddon.configTemplate[key].max : 0} min={isNumberOption(selectedAddon.configTemplate[key]) ? selectedAddon.configTemplate[key].min : 0} />
             {/if}
-            {#if selectedAddon.configTemplate[key].type === "boolean"}
+            {#if isBooleanOption(selectedAddon.configTemplate[key])}
               {#if getStoredOrDefaultValue(key)}
                 <input type="checkbox" id={key} on:change={updateConfig} checked />
               {:else}

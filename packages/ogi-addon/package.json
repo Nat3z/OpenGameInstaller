@@ -1,8 +1,8 @@
 {
   "name": "ogi-addon",
-  "module": "main.ts",
+  "module": "./build/main.js",
   "type": "module",
-  "main": "main.ts",
+  "main": "./build/main.js",
   "dependencies": {
     "ws": "^8.4.0",
     "zod": "^3.23.8"

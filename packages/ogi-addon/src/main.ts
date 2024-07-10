@@ -1,9 +1,9 @@
 import ws, { WebSocket } from 'ws';
 import events from 'node:events';
-import { ConfigurationBuilder } from './lib/ConfigurationBuilder';
-import { Configuration } from './lib/Configuration';
-import EventResponse from './lib/EventResponse';
-import { SearchResult } from './lib/SearchEngine';
+import { ConfigurationBuilder } from './config/ConfigurationBuilder';
+import { Configuration } from './config/Configuration';
+import EventResponse from './EventResponse';
+import { SearchResult } from './SearchEngine';
 
 export type OGIAddonEvent = 'connect' | 'disconnect' | 'configure' | 'authenticate' | 'search';
 export type OGIAddonClientSentEvent = 'response' | 'authenticate' | 'configure';

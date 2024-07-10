@@ -22,6 +22,7 @@
       description: "Configure Real Debrid",
       options: {
         debridApiKey: {
+
           displayName: "Real Debrid API Key",
           description: "Your Real Debrid API Key",
           defaultValue: "",

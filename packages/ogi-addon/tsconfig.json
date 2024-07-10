@@ -1,14 +1,14 @@
 {
   "compilerOptions": {
-	"target": "es2020",
-	"module": "commonjs",
-	"declaration": true,
-	"outDir": "./lib",
-	"rootDir": "./",
-	"strict": true,
-	"esModuleInterop": true,
-	"skipLibCheck": true,
-	"forceConsistentCasingInFileNames": true
-  },
-  "exclude": ["node_modules", "test", "**/*.spec.ts"]
+		"target": "es2020",
+		"module": "commonjs",
+		"declaration": true,
+		"outDir": "./build",
+		"rootDir": "./src/",
+		"strict": true,
+		"esModuleInterop": true,
+		"skipLibCheck": true,
+		"forceConsistentCasingInFileNames": true
+	},
+  "exclude": ["node_modules", "test", "**/*.spec.ts", "./build/"]
 }

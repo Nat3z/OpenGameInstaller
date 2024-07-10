@@ -20,7 +20,8 @@
   },
   "scripts": {
     "build": "rollup -c --bundleConfigAsCjs",
-    "dev": "rollup -c -w --bundleConfigAsCjs",
+    "build:ogiaddon": "cd ../packages/ogi-addon/ && tsc --p ./tsconfig.json",
+    "dev": "bun run build:ogiaddon && rollup -c -w --bundleConfigAsCjs",
     "start": "sirv public --no-clear",
     "electron": "wait-on http://localhost:8080 && tsc --p tsconfig.electron.json && electron ./build/main.js",
     "dev:server": "nodemon --watch server --ext ts,json --exec \"tsc --p tsconfig.addonserver.json && bun run --bun build-addons/dev-server.js\"",
@@ -35,11 +36,12 @@
     "cors": "^2.8.5",
     "electron-serve": "^1.1.0",
     "express": "^4.19.2",
-    "ogi-addon": "*",
+    "ogi-addon": "workspace:*",
     "rollup-plugin-postcss": "^4.0.2",
     "ws": "^8.18.0"
   },
   "devDependencies": {
+    "@rollup/plugin-alias": "^5.1.0",
     "@rollup/plugin-commonjs": "^23.0.2",
     "@rollup/plugin-node-resolve": "^15.0.1",
     "@rollup/plugin-typescript": "^11.1.6",

@@ -1,7 +1,7 @@
 
 import wsLib from 'ws';
 import { OGIAddonConfiguration, WebsocketMessageClient, WebsocketMessageServer } from "ogi-addon";
-import { ConfigurationFile } from 'ogi-addon/lib/ConfigurationBuilder';
+import { ConfigurationFile } from 'ogi-addon/src/config/ConfigurationBuilder';
 import { clients } from './addon-server';
 
 export class AddonConnection {

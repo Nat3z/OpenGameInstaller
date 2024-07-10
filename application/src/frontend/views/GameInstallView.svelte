@@ -41,10 +41,13 @@
 					return;
 				}
 				// get the first host
-				const hosts = window.electronAPI.realdebrid.getHosts();	
-				// add magnet link
-				const magnetLink = window.electronAPI.realdebrid.addMagnet(result.downloadURL, hosts[0]);
-				const download = await window.electronAPI.realdebrid.unrestrictLink(magnetLink.uri);
+				// const hosts = window.electronAPI.realdebrid.getHosts();	
+				// // add magnet link
+				// const magnetLink = window.electronAPI.realdebrid.addMagnet(result.downloadURL, hosts[0]);
+				// const download = await window.electronAPI.realdebrid.unrestrictLink(magnetLink.uri);
+
+				//! for testing purposes, we will use a direct link
+				const download = await window.electronAPI.realdebrid.unrestrictLink(result.downloadURL);
 				if (download === null) {
 					alert("Failed to download the file.");
 					return;

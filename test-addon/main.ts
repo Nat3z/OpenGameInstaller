@@ -24,8 +24,8 @@ addon.on('search', (query, event) => {
       description: addon.config.getStringValue('testOption') || 'No description',
       coverURL: 'https://dummyimage.com/375x500/968d96/ffffff',
       downloadSize: 100,
-      downloadURL: 'https://dummyimage.com/375x500/968d96/ffffff',
-      downloadType: 'direct'
+      downloadURL: 'https://real-debrid.com/d/O4GZCDAA73QEQFB5',
+      downloadType: 'real-debrid'
     }]);
   }, 2000);
 });

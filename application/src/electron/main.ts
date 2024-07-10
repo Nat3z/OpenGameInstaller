@@ -147,12 +147,18 @@ function createWindow() {
             const downloadID = Math.random().toString(36).substring(7);
             // arg is a link
             // download the link
+            // get the name of the file
+            arg.path = arg.path + '/' + arg.link.split('/').pop();
             let fileStream = fs.createWriteStream(arg.path);
             http.get(arg.link, (response) => {
                 response.pipe(fileStream);
                 // send the download status/progress as it goes to the client
+                // send how much is done and the download speed
                 response.on('data', (chunk) => {
-                    mainWindow.webContents.send('ddl:download-progress', { id: downloadID, amount: chunk.length });
+                    // get the download speed
+                    const downloadSpeed = chunk.length / 1024;
+                    const progress = fileStream.bytesWritten / parseFloat(response!!.headers!!['content-length']!!);
+                    mainWindow.webContents.send('ddl:download-progress', { id: downloadID, progress, downloadSpeed });
                 });
 
                 response.on('error', (err) => {

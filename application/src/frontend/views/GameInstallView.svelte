@@ -1,8 +1,12 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { safeFetch } from "../utils";
-
-	let addons: any[] = [];
+  import { fetchAddonsWithConfigure, safeFetch } from "../utils";
+  import type { OGIAddonConfiguration } from "ogi-addon";
+  import type { ConfigurationFile } from "ogi-addon/build/config/ConfigurationBuilder";
+	interface ConfigTemplateAndInfo extends OGIAddonConfiguration {
+    configTemplate: ConfigurationFile
+  }
+	let addons: ConfigTemplateAndInfo[] = [];
   onMount(() => {
     safeFetch("http://localhost:7654/addons").then((data) => {
       addons = data;
@@ -12,6 +16,9 @@
 
 	let loadingResults = false;
 	async function search() {
+		// fetch addons first
+		loadingResults = true;
+		addons = await fetchAddonsWithConfigure();
 		results = [];
 		const search = document.getElementById("search")!! as HTMLInputElement;
 		const query = search.value = search.value.toLowerCase();
@@ -26,9 +33,16 @@
 </script>
 <input id="search" on:change={search} placeholder="Search for Game" class="border border-gray-800 px-2 py-1 w-2/3 outline-none"/>
 {#if loadingResults}
-	<div class="flex justify-center items-center w-1/6 border p-4 border-gray-800 bg-gray-200">
-		<p>Loading...</p>
-	</div>
+	{#if addons.length === 0}
+		<div class="flex justify-center text-center flex-col items-center gap-2 w-4/6 border p-4 border-gray-800 bg-gray-200">
+			<p class="text-2xl">Hey, you have no addons!</p>
+			<p class="text-gray-400 text-sm w-full">Addons are the core of OpenGameInstaller, and you need them to download, search, and install your games! Get some online, okay?</p>
+		</div>
+	{:else}
+		<div class="flex justify-center items-center w-1/6 border p-4 border-gray-800 bg-gray-200">
+			<p>Loading...</p>
+		</div>
+	{/if}
 {/if}
 <div class="games">
 	{#each results as result}

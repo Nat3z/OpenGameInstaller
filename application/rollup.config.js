@@ -77,7 +77,7 @@ export default {
 		resolve({
 			browser: true,
 			modulePaths: ['node_modules'],
-			dedupe: ['svelte', 'ogi-addon']
+			dedupe: ['svelte', 'ogi-addon', '@electron/remote']
 		}),
 
 		// In dev mode, call `npm run start` once

@@ -1,11 +1,13 @@
-import { app, BrowserWindow } from 'electron';
 import { join } from 'path';
 import { server, port } from "./server/addon-server"
 import { applicationAddonSecret } from './server/constants';
+import { BrowserWindow, app } from '@electron/remote'
+import { initialize, enable } from '@electron/remote/main';
 // Keep a global reference of the window object, if you don't, the window will
 // be closed automatically when the JavaScript object is garbage collected.
-let mainWindow: BrowserWindow | null;
+let mainWindow: any;
 
+initialize();
 function isDev() {
     return !app.isPackaged;
 }
@@ -17,12 +19,14 @@ function createWindow() {
         height: 600,
         webPreferences: {
             nodeIntegration: true,
-            // enableRemoteModule: true,
-            // contextIsolation: false
+            
+            contextIsolation: false
         },
         icon: join(__dirname, 'public/favicon.png'),
         show: false
     });
+
+    enable(mainWindow.webContents);
 
     // This block of code is intended for development purpose only.
     // Delete this entire block of code when you are ready to package the application.

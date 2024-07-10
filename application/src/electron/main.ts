@@ -51,12 +51,13 @@ function createWindow() {
     // Emitted when the window is ready to be shown
     // This helps in showing the window gracefully.
     fs.mkdir("./config/", (_) => {});
-    fs.mkdir("./config/options/", (_) => {});
+    fs.mkdir("./config/option/", (_) => {});
     mainWindow.once('ready-to-show', () => {
         ipcMain.on('fs:read', (event, arg) => {
             fs.readFile(arg, 'utf-8', (err, data) => {
                 if (err) {
                     event.returnValue = err;
+                    console.error(err);
                     return;
                 }
                 event.returnValue = data;
@@ -66,6 +67,7 @@ function createWindow() {
             fs.access(arg, (err) => {
                 if (err) {
                     event.returnValue = false;
+                    console.error(err);
                     return;
                 }
                 event.returnValue = true;
@@ -75,6 +77,7 @@ function createWindow() {
             fs.writeFile(arg.path, arg.data, (err) => {
                 if (err) {
                     event.returnValue = err;
+                    console.error(err);
                     return;
                 }
                 event.returnValue = 'success';
@@ -84,6 +87,7 @@ function createWindow() {
             fs.mkdir(arg, (err) => {
                 if (err) {
                     event.returnValue = err;
+                    console.error(err);
                     return;
                 }
                 event.returnValue = 'success';

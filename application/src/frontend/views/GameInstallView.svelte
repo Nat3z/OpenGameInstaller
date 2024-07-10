@@ -47,7 +47,7 @@
 <div class="games">
 	{#each results as result}
 		<div>
-			<img src={result.coverURL} alt="Game" />
+			<img src={result.coverURL} class="w-[187.5px] h-[250px]" alt="Game" />
 			<article>
 					<h2>{result.name}</h2>
 					<p>{result.description}</p>

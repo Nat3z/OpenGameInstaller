@@ -1,0 +1,17 @@
+{
+  "name": "node-real-debrid",
+  "module": "./build/main.js",
+  "type": "module",
+  "main": "./build/main.js",
+  "dependencies": {
+    "zod": "^3.23.8"
+  },
+  "scripts": {
+    "auto-build": "tsc -w",
+    "test": "bun test ./tests/**/*.test.ts"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.0.0",
+    "typescript": "^5.0.0"
+  }
+}

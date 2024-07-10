@@ -22,9 +22,9 @@ addon.on('search', (query, event) => {
     event.resolve([{ 
       name: query,
       description: addon.config.getStringValue('testOption') || 'No description',
-      coverURL: 'https://via.placeholder.com/150',
+      coverURL: 'https://dummyimage.com/375x500/968d96/ffffff',
       downloadSize: 100,
-      downloadURL: 'https://via.placeholder.com/150',
+      downloadURL: 'https://dummyimage.com/375x500/968d96/ffffff',
       downloadType: 'direct'
     }]);
   }, 2000);

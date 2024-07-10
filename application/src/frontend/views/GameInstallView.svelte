@@ -1,8 +1,9 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { fetchAddonsWithConfigure, safeFetch } from "../utils";
-  import type { OGIAddonConfiguration } from "ogi-addon";
+  import type { OGIAddonConfiguration, SearchResult } from "ogi-addon";
   import type { ConfigurationFile } from "ogi-addon/build/config/ConfigurationBuilder";
+  import { currentDownloads } from "../store";
 	interface ConfigTemplateAndInfo extends OGIAddonConfiguration {
     configTemplate: ConfigurationFile
   }
@@ -30,6 +31,43 @@
 			});
 		}
 	}
+
+	async function startDownload(result: SearchResult) {
+		switch (result.downloadType) {
+			case 'real-debrid':
+				const worked = window.electronAPI.realdebrid.updateKey();
+				if (!worked) {
+					alert("Please set your Real-Debrid API key in the settings.");
+					return;
+				}
+				// get the first host
+				const hosts = window.electronAPI.realdebrid.getHosts();	
+				// add magnet link
+				const magnetLink = window.electronAPI.realdebrid.addMagnet(result.downloadURL, hosts[0]);
+				const download = await window.electronAPI.realdebrid.unrestrictLink(magnetLink.uri);
+				if (download === null) {
+					alert("Failed to download the file.");
+					return;
+				}
+
+				const downloadID = window.electronAPI.ddl.download(download, "C:\\Users\\apbro\\Documents\\TestFolder");
+				currentDownloads.update((downloads) => {
+					return [...downloads, { 
+						id: downloadID, 
+						status: 'downloading', 
+						downloadPath: 'C:\\Users\\apbro\\Documents\\TestFolder', 
+						downloadSpeed: 0,
+						progress: 0,
+						...result 
+					}];
+				});
+				break;
+			case 'torrent':
+			case "direct":
+				alert("Currently not supported.")
+				break;
+		}
+	}
 </script>
 <input id="search" on:change={search} placeholder="Search for Game" class="border border-gray-800 px-2 py-1 w-2/3 outline-none"/>
 {#if loadingResults}
@@ -52,7 +90,7 @@
 					<h2>{result.name}</h2>
 					<p>{result.description}</p>
 					<section>
-						<button class="download">Download</button>
+						<button class="download" on:click={() => startDownload(result)}>Download</button>
 					</section>
 			</article>
 		</div>

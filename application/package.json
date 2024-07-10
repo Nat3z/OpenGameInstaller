@@ -11,8 +11,7 @@
     "productName": "Svelte and Electron App",
     "files": [
       "public/**/*",
-      "main.js",
-      "preload.js"
+      "./build/**/*"
     ],
     "win": {},
     "linux": {},

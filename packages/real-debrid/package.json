@@ -1,7 +1,7 @@
 {
   "name": "node-real-debrid",
   "module": "./build/main.js",
-  "type": "module",
+  "type": "commonjs",
   "main": "./build/main.js",
   "dependencies": {
     "zod": "^3.23.8"

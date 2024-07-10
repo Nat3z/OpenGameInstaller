@@ -1,4 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron';
+import type { $Hosts } from 'node-real-debrid';
+
 contextBridge.exposeInMainWorld('electronAPI', {
   fs: {
     read: (path: string) => ipcRenderer.sendSync('fs:read', path),
@@ -10,20 +12,23 @@ contextBridge.exposeInMainWorld('electronAPI', {
     setKey: (key: string) => ipcRenderer.sendSync('real-debrid:set-key', key),
     getUserInfo: () => ipcRenderer.sendSync('real-debrid:get-user-info'),
     unrestrictLink: (link: string) => ipcRenderer.sendSync('real-debrid:unrestrict-link', link),
-    getHosts: () => ipcRenderer.sendSync('real-debrid:get-hosts')
+    addMagnet: (url: string, host: $Hosts) => ipcRenderer.sendSync('real-debrid:add-magnet', { url, host }),
+    getHosts: () => ipcRenderer.sendSync('real-debrid:get-hosts'),
+    updateKey: () => ipcRenderer.sendSync('real-debrid:update-key')
   },
   ddl: {
     download: (link: string, path: string) => ipcRenderer.sendSync('ddl:download', { link, path })
   }
 })
 
-ipcRenderer.on('ddl:download-progress', (event, arg) => {
-
+ipcRenderer.on('ddl:download-progress', (_, arg) => {
+  document.dispatchEvent(new CustomEvent('ddl:download-progress', { detail: arg }));
 })
 
-ipcRenderer.on('ddl:download-error', (event, arg) => {
-
+ipcRenderer.on('ddl:download-error', (_, arg) => {
+  document.dispatchEvent(new CustomEvent('ddl:download-error', { detail: arg }));
 });
-ipcRenderer.on('ddl:download-complete', (event, arg) => {
+ipcRenderer.on('ddl:download-complete', (_, arg) => {
+  document.dispatchEvent(new CustomEvent('ddl:download-complete', { detail: arg }));
 
 });

@@ -105,6 +105,24 @@ function createWindow() {
             });
             event.returnValue = 'success';
         });
+
+        ipcMain.on('real-debrid:update-key', async (event) => {
+            if (!fs.existsSync('./config/option/real-debrid.json')) {
+                return event.returnValue = 'error';
+            }
+            const rdInfo = fs.readFileSync('./config/option/real-debrid.json', 'utf-8');
+            const rdInfoJson = JSON.parse(rdInfo);
+            realDebridClient = new RealDebrid({
+                apiKey: rdInfoJson.apiKey
+            });
+            return event.returnValue = 'success';
+        });
+
+        ipcMain.on('real-debrid:add-magnet', async (event, arg) => {
+            const torrentAdded = await realDebridClient.addMagnet(arg.url, arg.host);
+            event.returnValue = torrentAdded;
+        });
+
         // real-debrid binding
         ipcMain.on('real-debrid:get-user-info', async (event, _) => {
             const userInfo = await realDebridClient.getUserInfo();

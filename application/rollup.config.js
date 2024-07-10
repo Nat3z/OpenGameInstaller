@@ -56,7 +56,7 @@ export default {
       },
     }),
 		commonjs({
-			include: ['node_modules/**', '../packages/ogi-addon/**']
+			include: ['node_modules/**', '../packages/ogi-addon/**', '../packages/real-debrid/**']
 		}),
 		typescript({ sourceMap: !production, inlineSources: !production }),
 
@@ -77,7 +77,7 @@ export default {
 		resolve({
 			browser: true,
 			modulePaths: ['node_modules'],
-			dedupe: ['svelte', 'ogi-addon', '@electron/remote']
+			dedupe: ['svelte', 'ogi-addon']
 		}),
 
 		// In dev mode, call `npm run start` once

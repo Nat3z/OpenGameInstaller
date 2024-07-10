@@ -4,7 +4,7 @@ export interface RealDebridConfiguration {
   apiKey: string;
 }
 
-const UnrestrictLinkZod = z.object({
+export const UnrestrictLinkZod = z.object({
   id: z.string(),
   filename: z.string(),
   mimeType: z.string(),
@@ -17,7 +17,7 @@ const UnrestrictLinkZod = z.object({
   streamable: z.number(),
 });
 
-const UserInfoZod = z.object({
+export const UserInfoZod = z.object({
   id: z.number(),
   username: z.string(),
   email: z.string(),
@@ -29,17 +29,21 @@ const UserInfoZod = z.object({
   expiration: z.string(),
 });
 
-const HostsZod = z.object({
+export const HostsZod = z.object({
   host: z.string().url(),
   max_file_size: z.number(),
 });
 
-const AddTorrentZod = z.object({
+export const AddTorrentOrMagnetZod = z.object({
   id: z.string(),
   uri: z.string().url(),
 });
 
-type $Hosts = z.infer<typeof HostsZod>;
+export type $Hosts = z.infer<typeof HostsZod>;
+export type $UnrestrictLink = z.infer<typeof UnrestrictLinkZod>;
+export type $UserInfo = z.infer<typeof UserInfoZod>;
+export type $AddTorrentOrMagnet = z.infer<typeof AddTorrentOrMagnetZod>;
+
 const REAL_DEBRID_API_URL = 'https://api.real-debrid.com/rest/1.0';
 export default class RealDebrid {
   constructor(public configuration: RealDebridConfiguration) {}
@@ -90,7 +94,7 @@ export default class RealDebrid {
       throw new Error(`Failed to add torrent: ${response.statusText}`);
     }
     const data = await response.json();
-    const result = AddTorrentZod.parse(data);
+    const result = AddTorrentOrMagnetZod.parse(data);
     return result;
   }
 

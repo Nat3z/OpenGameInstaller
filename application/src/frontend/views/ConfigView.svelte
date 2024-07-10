@@ -3,6 +3,7 @@
   import { safeFetch } from "../utils";
   import type { BooleanOption, ConfigurationFile, ConfigurationOption, NumberOption, StringOption } from "ogi-addon/build/config/ConfigurationBuilder";
   import type { OGIAddonConfiguration } from "ogi-addon";
+  const fs = window.electronAPI.fs;
 
   function isStringOption(option: ConfigurationOption): option is StringOption {
       return option.type === 'string';
@@ -80,16 +81,18 @@
       }
     });
     // save this config to local storage
-    localStorage.setItem("addon-" + selectedAddon.id, JSON.stringify(config));
+    fs.write("./config/" + selectedAddon.id + ".json", JSON.stringify(config));
   }
 
   function getStoredOrDefaultValue(key: string) {
     if (!selectedAddon) return;
-    const storedConfig = localStorage.getItem("addon-" + selectedAddon.id);
-    if (storedConfig) {
-      return JSON.parse(storedConfig)[key];
+    if (!fs.exists("./config/" + selectedAddon.id + ".json")) {
+      return selectedAddon.configTemplate[key].defaultValue;
     }
-    return selectedAddon.configTemplate[key].defaultValue;
+    else {
+      const storedConfig = JSON.parse(fs.read("./config/" + selectedAddon.id + ".json"));
+      return storedConfig[key];
+    }
   }
   
 </script>

@@ -45,7 +45,7 @@ export class Configuration {
   }
 
   getStringValue(optionName: string): string {
-    if (!this.definiteConfig[optionName]) {
+    if (!this.definiteConfig[optionName] === null) {
       throw new Error('Option ' + optionName + ' is not defined');
     }
     if (typeof this.definiteConfig[optionName] !== 'string') {
@@ -55,7 +55,7 @@ export class Configuration {
   }
 
   getNumberValue(optionName: string): number {
-    if (!this.definiteConfig[optionName]) {
+    if (!this.definiteConfig[optionName] === null) {
       throw new Error('Option ' + optionName + ' is not defined');
     }
     if (typeof this.definiteConfig[optionName] !== 'number') {
@@ -65,7 +65,7 @@ export class Configuration {
   }
 
   getBooleanValue(optionName: string): boolean {
-    if (!this.definiteConfig[optionName]) {
+    if (this.definiteConfig[optionName] === null) {
       throw new Error('Option ' + optionName + ' is not defined');
     }
     if (typeof this.definiteConfig[optionName] !== 'boolean') {

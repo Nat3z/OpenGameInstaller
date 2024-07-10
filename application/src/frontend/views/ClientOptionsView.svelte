@@ -1,6 +1,8 @@
 <script lang="ts">
+  const fs = window.electronAPI.fs;
   interface OptionsCategory {
     name: string;
+    id: string;
     description: string;
     options: {
       [key: string]: {
@@ -19,6 +21,7 @@
   let options: OptionsCategory[] = [
     {
       name: "Real Debrid",
+      id: "realdebrid",
       description: "Configure Real Debrid",
       options: {
         debridApiKey: {
@@ -72,16 +75,18 @@
     }); 
     // save this config to local storage
     if (!selectedOption) return; 
-    localStorage.setItem("option-" + selectedOption.name, JSON.stringify(config));
+    fs.write("./config/option/" + selectedOption.id + ".json", JSON.stringify(config));
   }
 
   function getStoredOrDefaultValue(key: string) {
-    if (selectedOption === null) return;
-    const storedConfig = localStorage.getItem("option-" + selectedOption.name);
-    if (storedConfig) {
-      return JSON.parse(storedConfig)[key];
+    if (!selectedOption) return;
+    if (!fs.exists("./config/option/" + selectedOption.id + ".json")) {
+      return selectedOption.options[key].defaultValue;
     }
-    return selectedOption.options[key].defaultValue;
+    else {
+      const storedConfig = JSON.parse(fs.read("./config/option/" + selectedOption.id + ".json"));
+      return storedConfig[key];
+    }
   }
 
   

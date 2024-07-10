@@ -1,13 +1,12 @@
 import { join } from 'path';
 import { server, port } from "./server/addon-server"
 import { applicationAddonSecret } from './server/constants';
-import { BrowserWindow, app } from '@electron/remote'
-import { initialize, enable } from '@electron/remote/main';
+import { app, BrowserWindow, ipcMain } from 'electron';
+import fs from 'fs';
 // Keep a global reference of the window object, if you don't, the window will
 // be closed automatically when the JavaScript object is garbage collected.
 let mainWindow: any;
 
-initialize();
 function isDev() {
     return !app.isPackaged;
 }
@@ -19,14 +18,12 @@ function createWindow() {
         height: 600,
         webPreferences: {
             nodeIntegration: true,
-            
-            contextIsolation: false
+            contextIsolation: true,
+            preload: join(__dirname, 'preload.js')
         },
         icon: join(__dirname, 'public/favicon.png'),
         show: false
     });
-
-    enable(mainWindow.webContents);
 
     // This block of code is intended for development purpose only.
     // Delete this entire block of code when you are ready to package the application.
@@ -53,7 +50,46 @@ function createWindow() {
 
     // Emitted when the window is ready to be shown
     // This helps in showing the window gracefully.
+    fs.mkdir("./config/", (_) => {});
+    fs.mkdir("./config/options/", (_) => {});
     mainWindow.once('ready-to-show', () => {
+        ipcMain.on('fs:read', (event, arg) => {
+            fs.readFile(arg, 'utf-8', (err, data) => {
+                if (err) {
+                    event.returnValue = err;
+                    return;
+                }
+                event.returnValue = data;
+            });
+        });
+        ipcMain.on('fs:exists', (event, arg) => {
+            fs.access(arg, (err) => {
+                if (err) {
+                    event.returnValue = false;
+                    return;
+                }
+                event.returnValue = true;
+            });
+        });
+        ipcMain.on('fs:write', (event, arg) => {
+            fs.writeFile(arg.path, arg.data, (err) => {
+                if (err) {
+                    event.returnValue = err;
+                    return;
+                }
+                event.returnValue = 'success';
+            });
+        });
+        ipcMain.on('fs:mkdir', (event, arg) => {
+            fs.mkdir(arg, (err) => {
+                if (err) {
+                    event.returnValue = err;
+                    return;
+                }
+                event.returnValue = 'success';
+            });
+        });
+
         mainWindow!!.show()
     });
 }

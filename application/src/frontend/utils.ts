@@ -1,12 +1,11 @@
 import type { OGIAddonConfiguration } from "ogi-addon";
 import type { ConfigurationFile } from "ogi-addon/build/config/ConfigurationBuilder";
-import { require } from '@electron/remote'
-const fs = require('fs/promises')
 function getSecret() {
   const urlParams = new URLSearchParams(window.location.search);
   const addonSecret = urlParams.get('secret');
   return addonSecret;
 }
+const fs = window.electronAPI.fs;
 
 interface ConsumableRequest extends RequestInit {
   consume?: 'json' | 'text';
@@ -15,52 +14,42 @@ export interface ConfigTemplateAndInfo extends OGIAddonConfiguration {
   configTemplate: ConfigurationFile
 }
 
-export async function fsCheckAndMake(path: string, fileType: 'directory' | 'file', data?: string | Record<string, any>) {
-  try {
-    await fs.access(path);
-  } catch (e) {
-    if (fileType === 'directory') {
-      await fs.mkdir(path);
-    }
-    else if (fileType === 'file') {
-      await fs.writeFile(path, typeof data === 'string' ? data : JSON.stringify(data, null, 2));
-    }
-  }
-}
 export async function fsCheck(path: string) {
   try {
-    await fs.access(path);
-    return true;
+    return fs.exists(path);
   } catch (e) {
     return false;
   }
 }
 
+export function getConfigClientOption<T>(id: string): T | null {
+  if (!fs.exists(`./config/options/${id}.json`)) return null;
+  const config = fs.read(`./config/options/${id}.json`);
+  return JSON.parse(config);
+}
 export function fetchAddonsWithConfigure() {
   return new Promise<ConfigTemplateAndInfo[]>((resolve, reject) => {
     safeFetch('http://localhost:7654/addons').then(async (addons: ConfigTemplateAndInfo[]) => {
       // now configure each addon
       for (const addon of addons) {
         // check if file exists
-        const configExists = await fsCheck(`./config/${addon.id}.json`);
-        if (!configExists) {
+        if (!fs.exists(`./config/${addon.id}.json`)) {
           // if it doesn't exist, create it with default values
           let defaultConfig: Record<string, number | boolean | string> = {};
           for (const key in addon.configTemplate) {
             defaultConfig[key] = addon.configTemplate[key].defaultValue as number | boolean | string;
           }
-          await fs.writeFile(`./config/${addon.id}.json`, JSON.stringify(defaultConfig, null, 2));
-          continue
+          fs.write(`./config/${addon.id}.json`, JSON.stringify(defaultConfig, null, 2));
         }
-        const storedConfig = JSON.parse(await fs.readFile(`./config/${addon.id}.json`, 'utf-8'));
+        const storedConfig = JSON.parse(fs.read(`./config/${addon.id}.json`));
         if (storedConfig) {
-          console.log("Posting stored config for addon", addon.id);
+          console.log("Posting stored config for addon", addon.id, storedConfig);
           safeFetch("http://localhost:7654/addons/" + addon.id + "/config", {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
             },
-            body: storedConfig,
+            body: JSON.stringify(storedConfig),
             consume: 'text'
           });
         }
@@ -71,7 +60,7 @@ export function fetchAddonsWithConfigure() {
             defaultConfig[key] = addon.configTemplate[key].defaultValue as number | boolean | string;
           }
           // then store with fs
-          await fs.writeFile(`./config/${addon.id}.json`, JSON.stringify(defaultConfig, null, 2));
+          fs.write(`./config/${addon.id}.json`, JSON.stringify(defaultConfig, null, 2));
           // then post
           safeFetch("http://localhost:7654/addons/" + addon.id + "/config", {
             method: "POST",

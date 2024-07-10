@@ -1,7 +1,7 @@
 import svelte from 'rollup-plugin-svelte';
 import commonjs from '@rollup/plugin-commonjs';
 import resolve from '@rollup/plugin-node-resolve';
-import alias from '@rollup/plugin-alias';
+import replace from '@rollup/plugin-replace';
 import livereload from 'rollup-plugin-livereload';
 import { terser } from 'rollup-plugin-terser';
 import css from 'rollup-plugin-css-only';
@@ -56,7 +56,7 @@ export default {
       },
     }),
 		commonjs({
-			include: ['node_modules/**']
+			include: ['node_modules/**', '../packages/ogi-addon/**']
 		}),
 		typescript({ sourceMap: !production, inlineSources: !production }),
 
@@ -69,14 +69,14 @@ export default {
 		// some cases you'll need additional configuration -
 		// consult the documentation for details:
 		// https://github.com/rollup/plugins/tree/master/packages/commonjs
-    alias({
-      entries: [
-        { find: 'ogi-addon', replacement: '../packages/ogi-addon/' },
-      ],
-    }),
+		// replace the ogi-addon resolutions to the local package
+		// replace({
+		// 	'ogi-addon': '../packages/ogi-addon',
+		// }),
+		
 		resolve({
 			browser: true,
-			modulePaths: ['../packages/ogi-addon', 'node_modules'],
+			modulePaths: ['node_modules'],
 			dedupe: ['svelte', 'ogi-addon']
 		}),
 

@@ -1,11 +1,21 @@
-<script lang="ts">
+<script lang="ts" type="module">
   import { onMount } from "svelte";
   import { safeFetch } from "../utils";
-  import type { ConfigurationFile } from "ogi-addon/build/config/ConfigurationBuilder";
-  import { isStringOption, isNumberOption, isBooleanOption } from "ogi-addon/build/config/ConfigurationBuilder";
+  import type { BooleanOption, ConfigurationFile, ConfigurationOption, NumberOption, StringOption } from "ogi-addon/build/config/ConfigurationBuilder";
   import type { OGIAddonConfiguration } from "ogi-addon";
 
-  let addons: any[] = [];
+  function isStringOption(option: ConfigurationOption): option is StringOption {
+      return option.type === 'string';
+    }
+
+  function isNumberOption(option: ConfigurationOption): option is NumberOption {
+    return option.type === 'number';
+  }
+
+  function isBooleanOption(option: ConfigurationOption): option is BooleanOption {
+    return option.type === 'boolean';
+  }
+  let addons: ConfigTemplateAndInfo[] = [];
   onMount(() => {
     safeFetch("http://localhost:7654/addons").then((data) => {
       addons = data;

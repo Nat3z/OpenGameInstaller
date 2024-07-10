@@ -36,7 +36,7 @@
     "cors": "^2.8.5",
     "electron-serve": "^1.1.0",
     "express": "^4.19.2",
-    "ogi-addon": "workspace:*",
+    "ogi-addon": "*",
     "rollup-plugin-postcss": "^4.0.2",
     "ws": "^8.18.0"
   },
@@ -44,6 +44,7 @@
     "@rollup/plugin-alias": "^5.1.0",
     "@rollup/plugin-commonjs": "^23.0.2",
     "@rollup/plugin-node-resolve": "^15.0.1",
+    "@rollup/plugin-replace": "^5.0.7",
     "@rollup/plugin-typescript": "^11.1.6",
     "@tsconfig/svelte": "^5.0.4",
     "@types/sass": "^1.45.0",

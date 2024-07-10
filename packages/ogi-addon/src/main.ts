@@ -7,8 +7,9 @@ import { SearchResult } from './SearchEngine';
 
 export type OGIAddonEvent = 'connect' | 'disconnect' | 'configure' | 'authenticate' | 'search';
 export type OGIAddonClientSentEvent = 'response' | 'authenticate' | 'configure';
-export type OGIAddonServerSentEvent = 'authenticate' | 'configure' | 'config-update' | 'search';
 
+export type OGIAddonServerSentEvent = 'authenticate' | 'configure' | 'config-update' | 'search';
+export { ConfigurationBuilder, Configuration, EventResponse, SearchResult };
 const defaultPort = 7654;
 
 export interface EventListenerTypes {

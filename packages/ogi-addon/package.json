@@ -7,6 +7,9 @@
     "ws": "^8.4.0",
     "zod": "^3.23.8"
   },
+  "scripts": {
+    "auto-build": "tsc -w"
+  },
   "devDependencies": {
     "@types/ws": "^8.4.0",
     "typescript": "^5.0.0"

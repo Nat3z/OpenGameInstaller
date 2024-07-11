@@ -1,10 +1,6 @@
 <script lang="ts">
   import { currentDownloads } from "../store";
 
-  currentDownloads.subscribe((downloads) => {
-    console.log(downloads);
-  });
-
   function correctParsingSize(size: number) {
     if (size < 1024) {
       return size + "B";
@@ -26,8 +22,11 @@
         <h2>{download.name}</h2>
         {#if download.status === 'completed'}
           <p class="text-green-500 font-mono">COMPLETED</p>
+          <p class="text-green-600 font-mono">Setting up with {download.addonSource}</p>
         {:else if download.status === 'error'}
           <p class="text-red-500 font-mono">ERROR</p>
+        {:else if download.status === 'setup-complete'}
+          <p class="text-green-500 font-mono">SETUP COMPLETE</p>
         {:else}
           <section class="flex flex-row gap-8 w-full items-center p-4">
             <section class="flex-col flex w-1/3 justify-center items-center">

@@ -10,5 +10,9 @@ export default class EventResponse<T> {
     this.resolved = true;
     this.data = data;
   }
+
+  public complete() {
+    this.resolved = true;
+  }
   
 }

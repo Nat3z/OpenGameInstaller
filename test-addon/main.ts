@@ -29,3 +29,10 @@ addon.on('search', (query, event) => {
     }]);
   }, 2000);
 });
+
+addon.on('setup', (path, event) => {
+  event.defer();
+  setTimeout(() => {
+    event.complete();
+  }, 2000);
+});

@@ -18,7 +18,7 @@ app.get('/:taskID', (req, res) => {
 
   const task = DefferedTasks.get(req.params.taskID)!!;
   if (task.finished) {
-    res.json(task.data);
+    res.send(task.data);
     DefferedTasks.delete(req.params.taskID);
   }
 

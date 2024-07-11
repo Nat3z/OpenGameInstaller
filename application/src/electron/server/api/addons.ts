@@ -56,4 +56,25 @@ app.get('/:addonID/search', async (req, res) => {
   DefferedTasks.set(deferrableTask.id, deferrableTask);
   return res.status(202).json({ deferred: true, taskID: deferrableTask.id });
 });
+
+app.post('/:addonID/setup-app', async (req, res) => {
+  if (req.headers.authorization !== applicationAddonSecret) {
+    return res.status(401).send('Unauthorized');
+  }
+  const client = clients.get(req.params.addonID);
+  if (!client)
+    return res.status(404).send('Client not found');
+  if (!req.body || req.body.path === undefined  || typeof req.body.path !== 'string') {
+    return res.status(400).send('No path provided');
+  }
+
+  const deferrableTask = new DeferrableTask(async () => {
+    await client.sendEventMessage({ event: 'setup', args: req.body.path });
+    return "success";
+  });
+
+  deferrableTask.run();
+  DefferedTasks.set(deferrableTask.id, deferrableTask);
+  return res.status(202).json({ deferred: true, taskID: deferrableTask.id });
+});
 export default app

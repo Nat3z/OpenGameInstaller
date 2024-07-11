@@ -68,9 +68,14 @@ export class AddonConnection {
       if (expectResponse) {
         const waitResponse = () => {
           console.log("registered listerner for " + message.id)
+          if (this.ws.readyState === wsLib.CLOSED) {
+            reject('Websocket closed');
+            return;
+          }
           this.ws.once('message', (messageRaw) => {
             const messageFromClient: WebsocketMessageClient = JSON.parse("" + messageRaw.toString())
             if (messageFromClient.event === "response" && messageFromClient.id === message.id) {
+              console.log(messageFromClient)
               resolve(messageFromClient);
             }
             else {

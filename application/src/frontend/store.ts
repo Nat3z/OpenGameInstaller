@@ -1,9 +1,9 @@
 import type { SearchResult } from 'ogi-addon'
 import { writable, type Writable } from 'svelte/store'
 
-interface DownloadStatusAndInfo extends SearchResult {
+export interface DownloadStatusAndInfo extends SearchResult {
   id: string;
-  status: 'downloading' | 'paused' | 'completed' | 'error';
+  status: 'downloading' | 'paused' | 'completed' | 'error' | 'setup-complete';
   progress: number;
   downloadPath: string;
   downloadSpeed: number;

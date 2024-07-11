@@ -103,14 +103,15 @@ export async function safeFetch(url: string, options: ConsumableRequest = { cons
             clearInterval(deferInterval);
           }
           if (taskResponse.status === 200) {
-            const taskData = await taskResponse.json();
             clearInterval(deferInterval);
-            resolve(taskData);
+            if (!options || !options.consume || options.consume === 'json') return resolve(await taskResponse.json());
+            else if (options.consume === 'text') return resolve(await taskResponse.text());
+            else throw new Error('Invalid consume type');
           }
         }, 850);
       }
       else {
-        if (!options.consume || options.consume === 'json') return resolve(await response.json());
+        if (!options || !options.consume || options.consume === 'json') return resolve(await response.json());
         else if (options.consume === 'text') return resolve(await response.text());
         else throw new Error('Invalid consume type');
       }

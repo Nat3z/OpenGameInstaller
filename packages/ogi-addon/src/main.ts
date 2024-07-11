@@ -5,10 +5,10 @@ import { Configuration } from './config/Configuration';
 import EventResponse from './EventResponse';
 import { SearchResult } from './SearchEngine';
 
-export type OGIAddonEvent = 'connect' | 'disconnect' | 'configure' | 'authenticate' | 'search';
+export type OGIAddonEvent = 'connect' | 'disconnect' | 'configure' | 'authenticate' | 'search' | 'setup';
 export type OGIAddonClientSentEvent = 'response' | 'authenticate' | 'configure';
 
-export type OGIAddonServerSentEvent = 'authenticate' | 'configure' | 'config-update' | 'search';
+export type OGIAddonServerSentEvent = 'authenticate' | 'configure' | 'config-update' | 'search' | 'setup';
 export { ConfigurationBuilder, Configuration, EventResponse, SearchResult };
 const defaultPort = 7654;
 
@@ -19,6 +19,7 @@ export interface EventListenerTypes {
   response: (response: any) => void;
   authenticate: (config: any) => void;
   search: (query: string, event: EventResponse<SearchResult[]>) => void;
+  setup: (path: string, event: EventResponse<undefined | null>) => void;
 }
 
 export interface WebsocketMessageClient {
@@ -130,6 +131,12 @@ class OGIAddonWSListener {
           const searchResult = await this.waitForEventToRespond(searchResultEvent);         
           console.log(searchResult.data)
           this.respondToMessage(message.id!!, searchResult.data);
+          break
+        case 'setup':
+          let setupEvent = new EventResponse<undefined | null>();
+          this.eventEmitter.emit('setup', message.args, setupEvent);
+          const setupResult = await this.waitForEventToRespond(setupEvent);
+          this.respondToMessage(message.id!!, setupResult.data);
           break
       }
     });

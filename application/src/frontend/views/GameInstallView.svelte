@@ -30,9 +30,16 @@
 		const query = search.value = search.value.toLowerCase();
 		loadingResults = true;
 		for (const addon of addons) {
-			safeFetch("http://localhost:7654/addons/" + addon.id + "/search?query=" + query).then((data) => {
+			safeFetch("http://localhost:7654/addons/" + addon.id + "/search?query=" + query, { consume: 'json' }).then((data) => {
 				loadingResults = false;
-				results = [ ...results, { ...data, addonSource: addon.id } ];
+				results = [ ...results, 
+					...data.map((result: SearchResult) => {
+						return {
+							...result,
+							addonSource: addon.id
+						}
+					})
+				 ];
 			});
 		}
 	}

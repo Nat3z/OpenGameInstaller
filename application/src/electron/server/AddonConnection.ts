@@ -57,13 +57,15 @@ export class AddonConnection {
               this.ws.close(1008, 'Client attempted to send defer-update before authentication');
               return;
             }
+            if (!data.args)
+              return;
 
-            if (!data.id) {
+            if (!data.args.deferID) {
               console.error('Client attempted to send defer-update without an ID');
               this.ws.close(1008, 'Client attempted to send defer-update without an ID');
               return;
             }
-            const deferredTask = DefferedTasks.get(data.id);
+            const deferredTask = DefferedTasks.get(data.args.deferID);
             if (!deferredTask) {
               console.error('Client attempted to send defer-update with an invalid ID');
               this.ws.close(1008, 'Client attempted to send defer-update with an invalid ID');
@@ -94,7 +96,6 @@ export class AddonConnection {
       });
       if (expectResponse) {
         const waitResponse = () => {
-          console.log("registered listerner for " + message.id)
           if (this.ws.readyState === wsLib.CLOSED) {
             reject('Websocket closed');
             return;

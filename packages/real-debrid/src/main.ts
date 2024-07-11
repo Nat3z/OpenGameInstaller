@@ -87,10 +87,10 @@ export default class RealDebrid {
 
   public async addTorrent(torrent: string, host: $Hosts) {
     const formData = new URLSearchParams();
-    formData.append('torrent', torrent);
+    formData.append('file', torrent);
     formData.append('host', host.host);
     const response = await axios(`${REAL_DEBRID_API_URL}/torrents/addTorrent`, {
-      method: 'POST',
+      method: 'PUT',
       headers: {
         Authorization: `Bearer ${this.configuration.apiKey}`,
         'Content-Type': 'application/x-www-form-urlencoded',

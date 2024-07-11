@@ -19,7 +19,6 @@
     if (!isCustomEvent(event)) return;
     const downloadID = event.detail.id;
     const log: string[] = event.detail.log;
-    const progressEvent: number = event.detail.progress;
     const download = document.querySelector(`[data-id="${downloadID}"]`);
     if (download === null) return;
     const code = download.querySelector('code')!!;
@@ -31,9 +30,16 @@
       code.appendChild(document.createElement('br'));
     });
     code.scrollTop = code.scrollHeight;
-    const progress = download.querySelector('progress')!!;
-    progress.value = progressEvent;
+  });
 
+  document.addEventListener('setup:progress', (event: Event) => {
+    if (!isCustomEvent(event)) return;
+    const downloadID = event.detail.id;
+    const progress = event.detail.progress;
+    const download = document.querySelector(`[data-id="${downloadID}"]`);
+    if (download === null) return;
+    const progressBar = download.querySelector('progress')!!;
+    progressBar.value = progress;
   });
 </script>
 
@@ -51,7 +57,7 @@
         {#if download.status === 'completed'}
           <p class="text-green-500 font-mono">COMPLETED</p>
           <p class="text-green-600 font-mono">Setting up with {download.addonSource}</p>
-          <progress class="w-full mb-2" value="0" max="1"></progress>
+          <progress class="w-full mb-2" value="0" max="100"></progress>
           <code class="h-[9.1rem] p-4 bg-gray-400 border border-black overflow-y-auto">
           </code>
         {:else if download.status === 'error'}
@@ -81,7 +87,7 @@
 
 <style>
 	.downloads {
-		@apply flex flex-row gap-2 w-5/6;
+		@apply flex flex-col gap-2 w-5/6;
 	}
 	.downloads div {
 		@apply border border-gray-800 p-2 flex flex-row gap-2 w-full bg-gray-200 h-fit ;

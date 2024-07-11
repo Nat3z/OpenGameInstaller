@@ -144,21 +144,17 @@ class OGIAddonWSListener {
           break
         case 'setup':
           let setupEvent = new EventResponse<undefined | null>();
-          this.eventEmitter.emit('setup', message.args, setupEvent);
+          this.eventEmitter.emit('setup', message.args.path, setupEvent);
           const interval = setInterval(() => {
             if (setupEvent.resolved) {
               clearInterval(interval);
               return;
             }
-            if (setupEvent.progress > 1) {
-              clearInterval(interval);
-              this.socket.close();
-              throw new Error('Event progress is larger than expected (>1)');
-            }
-            this.send(message.id!!, 'defer-update', {
+            this.send('defer-update', { 
               logs: setupEvent.logs,
+              deferID: message.args.deferID,
               progress: setupEvent.progress
-            });
+            } as any);
           }, 100);
           const setupResult = await this.waitForEventToRespond(setupEvent);
           this.respondToMessage(message.id!!, setupResult.data);
@@ -202,10 +198,9 @@ class OGIAddonWSListener {
     console.log("dispatched response to " + messageID)
   }
 
-  public send(id: string, event: OGIAddonClientSentEvent, ...args: Parameters<ClientSentEventTypes[OGIAddonClientSentEvent]>) {
+  public send(event: OGIAddonClientSentEvent, args: Parameters<ClientSentEventTypes[OGIAddonClientSentEvent]>) {
     this.socket.send(JSON.stringify({
       event,
-      id,
       args
     }));
   }

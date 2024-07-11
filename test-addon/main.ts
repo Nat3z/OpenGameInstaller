@@ -32,7 +32,6 @@ addon.on('search', (query, event) => {
       description: addon.config.getStringValue('testOption') || 'No description',
       coverURL: 'https://dummyimage.com/375x500/968d96/ffffff',
       downloadSize: 100,
-      downloadURL: 'https://eu-cdn.moriyashrine.org/monthly_2022_05/1856062793_Touhou8-ImperishableNight.zip_torrent.0b35d728a68acbae0c92f7133a3f1648?X-Amz-Expires=1200&response-content-disposition=filename=%22Touhou%25208%2520-%2520Imperishable%2520Night.zip.torrent%22&response-content-type=application/x-unknown;charset=UTF-8',
       downloadType: 'real-debrid-torrent'
     }]);
   }, 2000);

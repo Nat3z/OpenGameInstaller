@@ -4,7 +4,7 @@ import { applicationAddonSecret } from './server/constants';
 import { app, BrowserWindow, ipcMain } from 'electron';
 import fs from 'fs';
 import RealDebrid from 'node-real-debrid';
-import http from 'http';
+import https from 'https';
 
 // Keep a global reference of the window object, if you don't, the window will
 // be closed automatically when the JavaScript object is garbage collected.
@@ -107,15 +107,15 @@ function createWindow() {
         });
 
         ipcMain.on('real-debrid:update-key', async (event) => {
-            if (!fs.existsSync('./config/option/real-debrid.json')) {
-                return event.returnValue = 'error';
+            if (!fs.existsSync('./config/option/realdebrid.json')) {
+                return event.returnValue = false;
             }
-            const rdInfo = fs.readFileSync('./config/option/real-debrid.json', 'utf-8');
+            const rdInfo = fs.readFileSync('./config/option/realdebrid.json', 'utf-8');
             const rdInfoJson = JSON.parse(rdInfo);
             realDebridClient = new RealDebrid({
-                apiKey: rdInfoJson.apiKey
+                apiKey: rdInfoJson.debridApiKey
             });
-            return event.returnValue = 'success';
+            return event.returnValue = true;
         });
 
         ipcMain.on('real-debrid:add-magnet', async (event, arg) => {
@@ -148,30 +148,61 @@ function createWindow() {
             // arg is a link
             // download the link
             // get the name of the file
-            arg.path = arg.path + '/' + arg.link.split('/').pop();
-            let fileStream = fs.createWriteStream(arg.path);
-            http.get(arg.link, (response) => {
-                response.pipe(fileStream);
-                // send the download status/progress as it goes to the client
-                // send how much is done and the download speed
-                response.on('data', (chunk) => {
-                    // get the download speed
-                    const downloadSpeed = chunk.length / 1024;
-                    const progress = fileStream.bytesWritten / parseFloat(response!!.headers!!['content-length']!!);
-                    mainWindow.webContents.send('ddl:download-progress', { id: downloadID, progress, downloadSpeed });
-                });
+            new Promise<void>(async (resolve, reject) => {
+                console.log(arg.link, arg.path);
+                let fileStream = fs.createWriteStream(arg.path);
 
-                response.on('error', (err) => {
+                // get file size first
+                const url = new URL(arg.link);
+                const fileSize = await new Promise<number>((resolve, reject) => https.get({
+                    method: 'HEAD',
+                    host: url.host,
+                    href: url.href,
+                }, (response) => {
+                    if (response.statusCode !== 200) return reject(new Error('Invalid status code'));
+                    resolve(parseFloat(response.headers['content-length']!!)!!);
+                }));
+                console.log("Starting download...")
+                https.get(arg.link, (response) => {
+                    console.log("Starting download...")
+                    response.pipe(fileStream);
+                    // send the download status/progress as it goes to the client
+                    // send how much is done and the download speed
+                    
+                }).on('error', (err) => {
                     console.error(err);
                     mainWindow.webContents.send('ddl:download-error', { id: downloadID, error: err });
                     fileStream.close();
+                    fs.unlinkSync(arg.path);
+                    reject();
+                });
+                fileStream.on('data', (chunk) => {
+                    // get the download speed
+                    const downloadSpeed = chunk.length / 1024;
+                    const progress = fileStream.bytesWritten / fileSize;
+                    console.log("Progress: ", progress, " Download Speed: ", downloadSpeed);
+                    mainWindow.webContents.send('ddl:download-progress', { id: downloadID, progress, downloadSpeed });
+                });
+
+                fileStream.on('error', (err) => {
+                    console.error(err);
+                    mainWindow.webContents.send('ddl:download-error', { id: downloadID, error: err });
+                    fileStream.close();
+                    reject()
                 });
 
                 fileStream.on('finish', () => {
+                    console.log("Download complete!")
                     fileStream.close();
                     mainWindow.webContents.send('ddl:download-complete', { id: downloadID });
+                    resolve();
                 });
-            })
+            }).then(() => {
+                console.log('Download complete!!');
+            }).catch((err) => {
+                console.log('Download failed');
+                console.error(err);
+            });
             // stream the download 
             event.returnValue = downloadID;
         });

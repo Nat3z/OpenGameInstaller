@@ -52,8 +52,9 @@
 					alert("Failed to download the file.");
 					return;
 				}
-
-				const downloadID = window.electronAPI.ddl.download(download, "C:\\Users\\apbro\\Documents\\TestFolder");
+				console.log(download.link)
+				const downloadID = await window.electronAPI.ddl.download(download.link, "C:\\Users\\apbro\\Documents\\TestFolder\\" + download.filename);
+				console.log(downloadID);
 				currentDownloads.update((downloads) => {
 					return [...downloads, { 
 						id: downloadID, 

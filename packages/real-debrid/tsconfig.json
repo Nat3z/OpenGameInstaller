@@ -2,8 +2,7 @@
   "compilerOptions": {
     // project options
     "lib": [
-      "ESNext",
-      "DOM"
+      "ESNext"
     ], // specifies which default set of type definitions to use ("DOM", "ES6", etc)
     "outDir": "build", // .js (as well as .d.ts, .js.map, etc.) files will be emitted into this directory.,
     "removeComments": true, // Strips all comments from TypeScript files when converting into JavaScript- you rarely read compiled code so this saves space

@@ -1,8 +1,6 @@
 import z from "zod"
+import axios from "axios";
 
-import { RequestInfo, RequestInit } from "node-fetch";
-
-const fetch = (url: RequestInfo, init?: RequestInit) =>  import("node-fetch").then(({ default: fetch }) => fetch(url, init));
 export interface RealDebridConfiguration {
   apiKey: string;
 }
@@ -52,66 +50,72 @@ export default class RealDebrid {
   constructor(public configuration: RealDebridConfiguration) {}
 
   public async getUserInfo() {
-    const response = await fetch(`${REAL_DEBRID_API_URL}/user`, {
+    const response = await axios(`${REAL_DEBRID_API_URL}/user`, {
       headers: {
         Authorization: `Bearer ${this.configuration.apiKey}`,
       },
+      validateStatus: () => true,
     });
-    if (!response.ok) {
+    if (response.status !== 200) {
       throw new Error(`Failed to fetch user info: ${response.statusText}`);
     }
-    const data = await response.json();
-    const result = UserInfoZod.parse(data);
+    const result = UserInfoZod.parse(response.data);
 
     return result;
   }
 
-  public async unrestrictLink(link: string) {
-    const response = await fetch(`${REAL_DEBRID_API_URL}/unrestrict/link`, {
+  public async unrestrictLink(link: string, password: string = '') {
+    console.log(this.configuration.apiKey)
+    const formData = new URLSearchParams();
+    formData.append('link', link);
+    formData.append('password', password);
+    const response = await axios(`${REAL_DEBRID_API_URL}/unrestrict/link`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${this.configuration.apiKey}`,
-        'Content-Type': 'application/json',
+        'Content-Type': 'application/x-www-form-urlencoded',
       },
-      body: JSON.stringify({ link }),
+      data: formData,
+      validateStatus: () => true,
     });
-    if (!response.ok) {
+    if (response.status !== 200) {
       throw new Error(`Failed to unrestrict link: ${response.statusText}`);
     }
-    const data = await response.json();
-
-    const result = UnrestrictLinkZod.parse(data);
+    const result = UnrestrictLinkZod.parse(response.data);
     return result;
   }
 
   public async addMagnet(magnet: string, host: $Hosts) {
-    const response = await fetch(`${REAL_DEBRID_API_URL}/torrents/addMagnet`, {
+    const formData = new URLSearchParams();
+    formData.append('magnet', magnet);
+    formData.append('host', host.host);
+    const response = await axios(`${REAL_DEBRID_API_URL}/torrents/addMagnet`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${this.configuration.apiKey}`,
-        'Content-Type': 'application/json',
+        'Content-Type': 'application/x-www-form-urlencoded',
       },
-      body: JSON.stringify({ magnet, host: host.host }),
+      data: formData,
+      validateStatus: () => true,
     });
-    if (!response.ok) {
+    if (response.status !== 200) {
       throw new Error(`Failed to add torrent: ${response.statusText}`);
     }
-    const data = await response.json();
-    const result = AddTorrentOrMagnetZod.parse(data);
+    const result = AddTorrentOrMagnetZod.parse(response.data);
     return result;
   }
 
   public async getHosts() {
-    const response = await fetch(`${REAL_DEBRID_API_URL}/torrents/availableHosts`, {
+    const response = await axios.get(`${REAL_DEBRID_API_URL}/torrents/availableHosts`, {
       headers: {
         Authorization: `Bearer ${this.configuration.apiKey}`,
       },
+      validateStatus: () => true,
     });
-    if (!response.ok) {
+    if (response.status !== 200) {
       throw new Error(`Failed to fetch hosts: ${response.statusText}`);
     }
-    const data = await response.json();
-    const result = HostsZod.parse(data);
+    const result = HostsZod.parse(response.data);
     return result;
   }
 }

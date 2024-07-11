@@ -104,7 +104,8 @@ class OGIAddonWSListener {
         return;
       }
       this.eventEmitter.emit('disconnect', reason);
-
+      console.log("Disconnected from OGI Addon Server")
+      this.socket.close();
     });
 
     this.registerMessageReceiver();

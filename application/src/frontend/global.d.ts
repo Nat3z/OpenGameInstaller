@@ -1,7 +1,8 @@
 /// <reference types="svelte" />
 type $AddTorrentOrMagnet = import("node-real-debrid").$AddTorrentOrMagnet
 type $Hosts = import("node-real-debrid").$Hosts
-
+type $UnrestrictLink = import("node-real-debrid").$UnrestrictLink;
+type $UserInfo = import("node-real-debrid").$UserInfo;
 interface Window {
   electronAPI: {
     fs: {
@@ -11,15 +12,15 @@ interface Window {
       exists: (path: string) => boolean
     },
     realdebrid: {
-      setKey: (key: string) => void,
-      getUserInfo: () => any,
-      unrestrictLink: (link: string) => any,
-      getHosts: () => $Hosts[],
-      addMagnet: (url: string, host: $Hosts) => $AddTorrentOrMagnet,
-      updateKey: () => "success" | "error"
+      setKey: (key: string) => Promise<boolean>,
+      getUserInfo: () => Promise<$UserInfo>,
+      unrestrictLink: (link: string) => Promise<$UnrestrictLink>,
+      getHosts: () => Promise<$Hosts[]>,
+      addMagnet: (url: string, host: $Hosts) => Promise<$AddTorrentOrMagnet>,
+      updateKey: () => Promise<boolean>
     },
     ddl: {
-      download: (link: string, path: string) => string
+      download: (link: string, path: string) => Promise<string>
     }
   }
 }

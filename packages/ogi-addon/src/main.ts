@@ -1,16 +1,26 @@
 import ws, { WebSocket } from 'ws';
 import events from 'node:events';
-import { ConfigurationBuilder } from './config/ConfigurationBuilder';
+import { ConfigurationBuilder, ConfigurationFile } from './config/ConfigurationBuilder';
 import { Configuration } from './config/Configuration';
 import EventResponse from './EventResponse';
 import { SearchResult } from './SearchEngine';
 
 export type OGIAddonEvent = 'connect' | 'disconnect' | 'configure' | 'authenticate' | 'search' | 'setup';
-export type OGIAddonClientSentEvent = 'response' | 'authenticate' | 'configure';
+export type OGIAddonClientSentEvent = 'response' | 'authenticate' | 'configure' | 'defer-update';
 
 export type OGIAddonServerSentEvent = 'authenticate' | 'configure' | 'config-update' | 'search' | 'setup';
 export { ConfigurationBuilder, Configuration, EventResponse, SearchResult };
 const defaultPort = 7654;
+
+export interface ClientSentEventTypes {
+  response: any;
+  authenticate: any;
+  configure: ConfigurationFile;
+  'defer-update': {
+    logs: string[], 
+    progress: number
+  };
+}
 
 export interface EventListenerTypes {
   connect: (socket: ws) => void;
@@ -135,6 +145,21 @@ class OGIAddonWSListener {
         case 'setup':
           let setupEvent = new EventResponse<undefined | null>();
           this.eventEmitter.emit('setup', message.args, setupEvent);
+          const interval = setInterval(() => {
+            if (setupEvent.resolved) {
+              clearInterval(interval);
+              return;
+            }
+            if (setupEvent.progress > 1) {
+              clearInterval(interval);
+              this.socket.close();
+              throw new Error('Event progress is larger than expected (>1)');
+            }
+            this.send(message.id!!, 'defer-update', {
+              logs: setupEvent.logs,
+              progress: setupEvent.progress
+            });
+          }, 100);
           const setupResult = await this.waitForEventToRespond(setupEvent);
           this.respondToMessage(message.id!!, setupResult.data);
           break
@@ -177,9 +202,10 @@ class OGIAddonWSListener {
     console.log("dispatched response to " + messageID)
   }
 
-  public send(event: OGIAddonEvent, ...args: Parameters<EventListenerTypes[OGIAddonEvent]>) {
+  public send(id: string, event: OGIAddonClientSentEvent, ...args: Parameters<ClientSentEventTypes[OGIAddonClientSentEvent]>) {
     this.socket.send(JSON.stringify({
       event,
+      id,
       args
     }));
   }

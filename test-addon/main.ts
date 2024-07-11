@@ -32,7 +32,13 @@ addon.on('search', (query, event) => {
 
 addon.on('setup', (path, event) => {
   event.defer();
-  setTimeout(() => {
-    event.complete();
-  }, 2000);
+  const inter = setInterval(() => {
+    if (event.progress === 1) {
+      clearInterval(inter);
+      event.complete();
+      return
+    }
+    event.progress += 0.1;
+    event.log("Setting up...")
+  }, 1000)
 });

@@ -9,6 +9,8 @@ const fs = window.electronAPI.fs;
 
 interface ConsumableRequest extends RequestInit {
   consume?: 'json' | 'text';
+  onProgress?: (progress: number) => void;
+  onLogs?: (logs: string[]) => void;
 }
 export interface ConfigTemplateAndInfo extends OGIAddonConfiguration {
   configTemplate: ConfigurationFile
@@ -78,10 +80,16 @@ export function fetchAddonsWithConfigure() {
 }
 export async function safeFetch(url: string, options: ConsumableRequest = { consume: 'json' }) {
   return new Promise<any>((resolve, reject) => {
+    // remove the functions on the options object
+    const fetchOptions = { ...options };
+    delete fetchOptions.consume;
+    delete fetchOptions.onProgress;
+    delete fetchOptions.onLogs;
+
     fetch(url, {
-      ...options,
+      ...fetchOptions,
       headers: {
-        ...options.headers,
+        ...fetchOptions.headers,
         'Authorization': getSecret()!!
       }
     }).then(async (response) => {
@@ -107,6 +115,11 @@ export async function safeFetch(url: string, options: ConsumableRequest = { cons
             if (!options || !options.consume || options.consume === 'json') return resolve(await taskResponse.json());
             else if (options.consume === 'text') return resolve(await taskResponse.text());
             else throw new Error('Invalid consume type');
+          }
+          if (taskResponse.status === 202) {
+            const taskData = await taskResponse.json();
+            if (options.onProgress) options.onProgress(taskData.progress);
+            if (options.onLogs) options.onLogs(taskData.logs);
           }
         }, 850);
       }

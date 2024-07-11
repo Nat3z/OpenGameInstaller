@@ -5,8 +5,12 @@ export class DeferrableTask<T> {
 
   public data: T | null;
   public id: string = Math.random().toString(36).substring(7);
-  constructor(task: () => Promise<T>) {
+  public addonOwner = '';
+  public logs: string[] = [];
+  public progress = 0;
+  constructor(task: () => Promise<T>, addonOwner: string) {
     this.task = task;
+    this.addonOwner = addonOwner;
   }
 
   public async run() {

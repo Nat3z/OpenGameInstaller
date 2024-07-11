@@ -51,7 +51,7 @@ app.get('/:addonID/search', async (req, res) => {
   const deferrableTask = new DeferrableTask(async () => {
     const event = await client.sendEventMessage({ event: 'search', args: req.query.query })
     return event.args;
-  });
+  }, client.addonInfo.id);
   deferrableTask.run();
   DefferedTasks.set(deferrableTask.id, deferrableTask);
   return res.status(202).json({ deferred: true, taskID: deferrableTask.id });
@@ -71,7 +71,7 @@ app.post('/:addonID/setup-app', async (req, res) => {
   const deferrableTask = new DeferrableTask(async () => {
     await client.sendEventMessage({ event: 'setup', args: req.body.path });
     return "success";
-  });
+  }, client.addonInfo.id);
 
   deferrableTask.run();
   DefferedTasks.set(deferrableTask.id, deferrableTask);

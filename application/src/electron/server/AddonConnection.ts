@@ -3,6 +3,7 @@ import wsLib from 'ws';
 import { OGIAddonConfiguration, WebsocketMessageClient, WebsocketMessageServer } from "ogi-addon";
 import { ConfigurationFile } from 'ogi-addon/src/config/ConfigurationBuilder';
 import { clients } from './addon-server';
+import { DefferedTasks } from './api/defer';
 
 export class AddonConnection {
   public addonInfo: OGIAddonConfiguration;
@@ -49,6 +50,32 @@ export class AddonConnection {
               return;
             }
             this.configTemplate = data.args;
+            break;
+          case 'defer-update':
+            if (!this.addonInfo) {
+              console.error('Client attempted to send defer-update before authentication');
+              this.ws.close(1008, 'Client attempted to send defer-update before authentication');
+              return;
+            }
+
+            if (!data.id) {
+              console.error('Client attempted to send defer-update without an ID');
+              this.ws.close(1008, 'Client attempted to send defer-update without an ID');
+              return;
+            }
+            const deferredTask = DefferedTasks.get(data.id);
+            if (!deferredTask) {
+              console.error('Client attempted to send defer-update with an invalid ID');
+              this.ws.close(1008, 'Client attempted to send defer-update with an invalid ID');
+              return;
+            }
+            if (deferredTask.addonOwner !== this.addonInfo.id) {
+              console.error('Client attempted to send defer-update with an ID that does not belong to them');
+              this.ws.close(1008, 'Client attempted to send defer-update with an ID that does not belong to them');
+              return;
+            }
+            deferredTask.logs = data.args.logs;
+            deferredTask.progress = data.args.progress;
             break;
         }
       });

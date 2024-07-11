@@ -85,6 +85,26 @@ export default class RealDebrid {
     return result;
   }
 
+  public async addTorrent(torrent: string, host: $Hosts) {
+    const formData = new URLSearchParams();
+    formData.append('torrent', torrent);
+    formData.append('host', host.host);
+    const response = await axios(`${REAL_DEBRID_API_URL}/torrents/addTorrent`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${this.configuration.apiKey}`,
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      data: formData,
+      validateStatus: () => true,
+    });
+    if (response.status !== 200) {
+      throw new Error(`Failed to add torrent: ${response.statusText}`);
+    }
+    const result = AddTorrentOrMagnetZod.parse(response.data);
+    return result;
+  }
+
   public async addMagnet(magnet: string, host: $Hosts) {
     const formData = new URLSearchParams();
     formData.append('magnet', magnet);

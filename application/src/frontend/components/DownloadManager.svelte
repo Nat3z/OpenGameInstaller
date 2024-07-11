@@ -53,6 +53,22 @@
       body: JSON.stringify({
         path: downloadedItem.downloadPath
       }),
+      onLogs: (log) => {
+        document.dispatchEvent(new CustomEvent('setup:log', {
+          detail: {
+            id: downloadedItem?.id,
+            log
+          }
+        }));
+      },
+      onProgress: (progress) => {
+        document.dispatchEvent(new CustomEvent('setup:progress', {
+          detail: {
+            id: downloadedItem?.id,
+            progress
+          }
+        }));
+      },
       consume: "text"
     }).then((data) => {
       if (downloadedItem === undefined) return;

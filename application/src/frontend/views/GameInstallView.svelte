@@ -148,14 +148,32 @@
 {/if}
 <div class="games">
 	{#each results as result}
-		<div>
+		<div class="relative">
 			<img src={result.coverURL} class="w-[187.5px] h-[250px]" alt="Game" />
 			<article>
 					<h2>{result.name}</h2>
 					<p>{result.description}</p>
 					<section>
-						<button class="download" on:click={(event) => startDownload(result, event)}>Download</button>
+						<nav class="flex flex-col items-center gap-2">
+							<button class="download flex justify-center items-center gap-2" on:click={(event) => startDownload(result, event)}>
+								{#if result.downloadType === 'real-debrid-magnet' || result.downloadType === 'real-debrid-torrent'}
+									<img class="w-4 h-4" src="./rd-logo.png" alt="Real Debrid" />
+								{/if}
+								Download
+							</button>
+							<nav class="flex flex-row justify-center items-center gap-2">
+								{#if result.downloadType.includes('magnet')}
+									<img class="w-4 h-4" src="./magnet-icon.gif" alt="Magnet" />
+									<p>Magnet Link</p>
+								{:else if result.downloadType.includes('torrent')}
+									<img class="w-4 h-4" src="./torrent.png" alt="Torrent" />
+									<p>Torrent File</p>
+								{/if}
+							</nav>
+						</nav>
 					</section>
+
+					<p class="absolute top-0 right-2 text-right">{result.addonSource}</p>
 			</article>
 		</div>
 	{/each}
@@ -166,7 +184,7 @@
 		@apply flex flex-col gap-2 bg-gray-200 w-5/6;
 	}
 	.games div {
-		@apply border border-gray-800 p-2 flex flex-row gap-2;
+		@apply border border-gray-800 p-2 flex flex-row gap-4;
 	}
 	.games section {
 		@apply flex flex-row gap-2;

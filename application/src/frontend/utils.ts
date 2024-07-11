@@ -121,7 +121,7 @@ export async function safeFetch(url: string, options: ConsumableRequest = { cons
             if (options.onProgress) options.onProgress(taskData.progress);
             if (options.onLogs) options.onLogs(taskData.logs);
           }
-        }, 850);
+        }, 100);
       }
       else {
         if (!options || !options.consume || options.consume === 'json') return resolve(await response.json());

@@ -161,7 +161,7 @@ function createWindow() {
             const torrents = await realDebridClient.getTorrents();
             event.returnValue = torrents;
         });
-        ipcMain.handle('real-debrid:add-torrent', async (event, arg) => {
+        ipcMain.handle('real-debrid:add-torrent', async (_, arg) => {
             // arg.url is a link to the download, we need to get the file
             // and send it to the real-debrid API
             console.log(arg);
@@ -187,9 +187,10 @@ function createWindow() {
                 console.log("Downloaded torrent! Now adding to readDebrid")
                 const data = await realDebridClient.addTorrent(torrentData);
                 console.log("Added torrent to real-debrid!")
-                event.returnValue = data;
+                return data
             } catch (except) {
                 console.error(except);
+                return null;
             }
 
         })

@@ -40,6 +40,69 @@ export const AddTorrentOrMagnetZod = z.object({
   uri: z.string().url(),
 });
 
+/*
+[
+    {
+        "id": "string",
+        "filename": "string",
+        "original_filename": "string", // Original name of the torrent
+        "hash": "string", // SHA1 Hash of the torrent
+        "bytes": int, // Size of selected files only
+        "original_bytes": int, // Total size of the torrent
+        "host": "string", // Host main domain
+        "split": int, // Split size of links
+        "progress": int, // Possible values: 0 to 100
+        "status": "downloaded", // Current status of the torrent: magnet_error, magnet_conversion, waiting_files_selection, queued, downloading, downloaded, error, virus, compressing, uploading, dead
+        "added": "string", // jsonDate
+        "files": [
+            {
+                "id": int,
+                "path": "string", // Path to the file inside the torrent, starting with "/"
+                "bytes": int,
+                "selected": int // 0 or 1
+            },
+            {
+                "id": int,
+                "path": "string", // Path to the file inside the torrent, starting with "/"
+                "bytes": int,
+                "selected": int // 0 or 1
+            }
+        ],
+        "links": [
+            "string" // Host URL
+        ],
+        "ended": "string", // !! Only present when finished, jsonDate
+        "speed": int, // !! Only present in "downloading", "compressing", "uploading" status
+        "seeders": int // !! Only present in "downloading", "magnet_conversion" status
+    }
+]
+
+*/
+
+export const TorrentInfoZod = z.object({
+  id: z.string(),
+  filename: z.string(),
+  original_filename: z.string(),
+  hash: z.string(),
+  bytes: z.number(),
+  original_bytes: z.number(),
+  host: z.string(),
+  split: z.number(),
+  progress: z.number(),
+  status: z.enum(['magnet_error', 'magnet_conversion', 'waiting_files_selection', 'queued', 'downloading', 'downloaded', 'error', 'virus', 'compressing', 'uploading', 'dead']),
+  added: z.string(),
+  files: z.array(z.object({
+    id: z.number(),
+    path: z.string(),
+    bytes: z.number(),
+    selected: z.number(),
+  })),
+  links: z.array(z.string()),
+  ended: z.string().optional(),
+  speed: z.number().optional(),
+  seeders: z.number().optional(),
+});
+
 export type $Hosts = z.infer<typeof HostsZod>;
 export type $UnrestrictLink = z.infer<typeof UnrestrictLinkZod>;
 export type $UserInfo = z.infer<typeof UserInfoZod>;
@@ -87,6 +150,7 @@ export default class RealDebrid {
 
   public async addTorrent(torrent: string, host: $Hosts) {
     const formData = new URLSearchParams();
+    
     formData.append('file', torrent);
     formData.append('host', host.host);
     const response = await axios(`${REAL_DEBRID_API_URL}/torrents/addTorrent`, {
@@ -102,6 +166,20 @@ export default class RealDebrid {
       throw new Error(`Failed to add torrent: ${response.statusText}`);
     }
     const result = AddTorrentOrMagnetZod.parse(response.data);
+    return result;
+  }
+
+  public async getTorrentInfo(id: string) {
+    const response = await axios(`${REAL_DEBRID_API_URL}/torrents/info/${id}`, {
+      headers: {
+        Authorization: `Bearer ${this.configuration.apiKey}`,
+      },
+      validateStatus: () => true,
+    });
+    if (response.status !== 200) {
+      throw new Error(`Failed to fetch torrent info: ${response.statusText}`);
+    }
+    const result = TorrentInfoZod.parse(response.data);
     return result;
   }
 
@@ -123,6 +201,33 @@ export default class RealDebrid {
     }
     const result = AddTorrentOrMagnetZod.parse(response.data);
     return result;
+  }
+
+  public async selectTorrents(files: number[]): Promise<boolean> {
+    const formData = new URLSearchParams();
+    formData.append('files', files.join(','));
+    const response = await axios(`${REAL_DEBRID_API_URL}/torrents/selectFiles`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${this.configuration.apiKey}`,
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      data: formData,
+      validateStatus: () => true,
+    });
+    if (response.status === 200 || response.status === 202) {
+      return true;
+    }
+    if (response.status !== 200) {
+      throw new Error(`Failed to select files: ${response.statusText}`);
+    }
+
+    return false;
+  }
+
+  public async isTorrentReady(id: string) {
+    const torrentInfo = await this.getTorrentInfo(id);
+    return torrentInfo.status === 'downloaded';
   }
 
   public async getHosts() {

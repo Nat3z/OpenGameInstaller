@@ -143,6 +143,42 @@ function createWindow() {
             event.returnValue = torrentAdded;
         });
 
+        ipcMain.on('real-debrid:get-torrent-info', async (event, arg) => {
+            const torrents = await realDebridClient.getTorrentInfo(arg);
+            event.returnValue = torrents;
+        });
+
+        ipcMain.on('real-debrid:is-torrent-ready', async (event, arg) => {
+            const torrentReady = await realDebridClient.isTorrentReady(arg);
+            event.returnValue = torrentReady;
+        })
+
+        ipcMain.on('real-debrid:select-torrent', async (event, arg) => {
+            const selected = await realDebridClient.selectTorrents(arg);
+            event.returnValue = selected;
+        })
+
+        ipcMain.on('real-debrid:add-torrent', async (event, arg) => {
+            // arg.url is a link to the download, we need to get the file
+            // and send it to the real-debrid API
+            const torrentData = await new Promise<string>((resolve, reject) => {
+                https.get(arg.url, (response) => {
+                    let data = '';
+                    response.on('data', (chunk) => {
+                        data += chunk;
+                    });
+                    response.on('end', async () => {
+                        resolve(data);
+                    });
+                    response.on('error', (err) => {
+                        reject(err);
+                    });
+                });
+            });
+            const torrentAdded = await realDebridClient.addTorrent(torrentData, arg.host);
+            event.returnValue = torrentAdded;
+        })
+
         ipcMain.on('ddl:download', async (event, arg: { link: string, path: string }) => {
             const downloadID = Math.random().toString(36).substring(7);
             // arg is a link

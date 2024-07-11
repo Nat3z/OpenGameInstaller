@@ -2,7 +2,7 @@ import { join } from 'path';
 import { server, port } from "./server/addon-server"
 import { applicationAddonSecret } from './server/constants';
 import { app, BrowserWindow, ipcMain } from 'electron';
-import fs from 'fs';
+import fs, { ReadStream } from 'fs';
 import RealDebrid from 'node-real-debrid';
 import https from 'https';
 
@@ -157,26 +157,41 @@ function createWindow() {
             const selected = await realDebridClient.selectTorrents(arg);
             event.returnValue = selected;
         })
-
-        ipcMain.on('real-debrid:add-torrent', async (event, arg) => {
+        ipcMain.on('real-debrid:get-torrents', async (event, _) => {
+            const torrents = await realDebridClient.getTorrents();
+            event.returnValue = torrents;
+        });
+        ipcMain.handle('real-debrid:add-torrent', async (event, arg) => {
             // arg.url is a link to the download, we need to get the file
             // and send it to the real-debrid API
-            const torrentData = await new Promise<string>((resolve, reject) => {
-                https.get(arg.url, (response) => {
-                    let data = '';
-                    response.on('data', (chunk) => {
-                        data += chunk;
-                    });
-                    response.on('end', async () => {
-                        resolve(data);
-                    });
-                    response.on('error', (err) => {
-                        reject(err);
+            console.log(arg);
+            try {
+                const torrentData = await new Promise<ReadStream>((resolve, reject) => {
+                    const url = new URL(arg.torrent);
+                    const options = {
+                        "method": "GET",
+                        "hostname": url.hostname,
+                        "port": null,
+                        "path": url.pathname
+                    };
+                    https.get(options, (response) => {
+                        response.pipe(fs.createWriteStream('./temp.torrent'));
+                        response.on('end', async () => {
+                            resolve(fs.createReadStream('./temp.torrent'));
+                        });
+                        response.on('error', (err) => {
+                            reject(err);
+                        });
                     });
                 });
-            });
-            const torrentAdded = await realDebridClient.addTorrent(torrentData, arg.host);
-            event.returnValue = torrentAdded;
+                console.log("Downloaded torrent! Now adding to readDebrid")
+                const data = await realDebridClient.addTorrent(torrentData);
+                console.log("Added torrent to real-debrid!")
+                event.returnValue = data;
+            } catch (except) {
+                console.error(except);
+            }
+
         })
 
         ipcMain.on('ddl:download', async (event, arg: { link: string, path: string }) => {

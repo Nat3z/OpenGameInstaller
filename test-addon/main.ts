@@ -32,7 +32,6 @@ addon.on('search', (query, event) => {
       description: addon.config.getStringValue('testOption') || 'No description',
       coverURL: 'https://dummyimage.com/375x500/968d96/ffffff',
       downloadSize: 100,
-      downloadURL: // nuh uh uh,
       downloadType: 'real-debrid-torrent'
     }]);
   }, 2000);

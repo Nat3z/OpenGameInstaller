@@ -1,5 +1,6 @@
 import z from "zod"
 import axios from "axios";
+import { ReadStream } from "fs";
 
 export interface RealDebridConfiguration {
   apiKey: string;
@@ -31,7 +32,7 @@ export const UserInfoZod = z.object({
 });
 
 export const HostsZod = z.object({
-  host: z.string().url(),
+  host: z.string(),
   max_file_size: z.number(),
 });
 
@@ -40,66 +41,17 @@ export const AddTorrentOrMagnetZod = z.object({
   uri: z.string().url(),
 });
 
-/*
-[
-    {
-        "id": "string",
-        "filename": "string",
-        "original_filename": "string", // Original name of the torrent
-        "hash": "string", // SHA1 Hash of the torrent
-        "bytes": int, // Size of selected files only
-        "original_bytes": int, // Total size of the torrent
-        "host": "string", // Host main domain
-        "split": int, // Split size of links
-        "progress": int, // Possible values: 0 to 100
-        "status": "downloaded", // Current status of the torrent: magnet_error, magnet_conversion, waiting_files_selection, queued, downloading, downloaded, error, virus, compressing, uploading, dead
-        "added": "string", // jsonDate
-        "files": [
-            {
-                "id": int,
-                "path": "string", // Path to the file inside the torrent, starting with "/"
-                "bytes": int,
-                "selected": int // 0 or 1
-            },
-            {
-                "id": int,
-                "path": "string", // Path to the file inside the torrent, starting with "/"
-                "bytes": int,
-                "selected": int // 0 or 1
-            }
-        ],
-        "links": [
-            "string" // Host URL
-        ],
-        "ended": "string", // !! Only present when finished, jsonDate
-        "speed": int, // !! Only present in "downloading", "compressing", "uploading" status
-        "seeders": int // !! Only present in "downloading", "magnet_conversion" status
-    }
-]
-
-*/
-
 export const TorrentInfoZod = z.object({
+  status: z.enum(['magnet_error', 'magnet_conversion', 'waiting_files_selection', 'queued', 'downloading', 'downloaded', 'error', 'virus', 'compressing', 'uploading', 'dead']),
   id: z.string(),
   filename: z.string(),
-  original_filename: z.string(),
   hash: z.string(),
   bytes: z.number(),
-  original_bytes: z.number(),
   host: z.string(),
   split: z.number(),
   progress: z.number(),
-  status: z.enum(['magnet_error', 'magnet_conversion', 'waiting_files_selection', 'queued', 'downloading', 'downloaded', 'error', 'virus', 'compressing', 'uploading', 'dead']),
   added: z.string(),
-  files: z.array(z.object({
-    id: z.number(),
-    path: z.string(),
-    bytes: z.number(),
-    selected: z.number(),
-  })),
   links: z.array(z.string()),
-  ended: z.string().optional(),
-  speed: z.number().optional(),
   seeders: z.number().optional(),
 });
 
@@ -149,24 +101,36 @@ export default class RealDebrid {
     return result;
   }
 
-  public async addTorrent(torrent: string, host: $Hosts) {
-    const formData = new URLSearchParams();
-    
-    formData.append('file', torrent);
-    formData.append('host', host.host);
+  public async addTorrent(torrent: ReadStream) {
+    // set the type to binary
     const response = await axios(`${REAL_DEBRID_API_URL}/torrents/addTorrent`, {
       method: 'PUT',
       headers: {
         Authorization: `Bearer ${this.configuration.apiKey}`,
-        'Content-Type': 'application/x-www-form-urlencoded',
+        'Content-Type': 'application/octet-stream',
       },
-      data: formData,
+      data: torrent,
+      validateStatus: () => true,
+    });
+    if (response.status !== 201) {
+      throw new Error(`Failed to add torrent: ${response.statusText}`);
+    }
+    torrent.close();
+    const result = AddTorrentOrMagnetZod.parse(response.data);
+    return result;
+  }
+
+  public async getTorrents() {
+    const response = await axios(`${REAL_DEBRID_API_URL}/torrents`, {
+      headers: {
+        Authorization: `Bearer ${this.configuration.apiKey}`,
+      },
       validateStatus: () => true,
     });
     if (response.status !== 200) {
-      throw new Error(`Failed to add torrent: ${response.statusText}`);
+      throw new Error(`Failed to fetch torrents: ${response.statusText}`);
     }
-    const result = AddTorrentOrMagnetZod.parse(response.data);
+    const result = TorrentInfoZod.array().parse(response.data);
     return result;
   }
 
@@ -207,6 +171,7 @@ export default class RealDebrid {
   public async selectTorrents(id: string): Promise<boolean> {
     const formData = new URLSearchParams();
     formData.append('files', 'all');
+    formData.append('check_cache', '1');
     const response = await axios(`${REAL_DEBRID_API_URL}/torrents/selectFiles/` + id, {
       method: 'POST',
       headers: {
@@ -216,7 +181,7 @@ export default class RealDebrid {
       data: formData,
       validateStatus: () => true,
     });
-    if (response.status === 200 || response.status === 202) {
+    if (response.status === 200 || response.status === 204) {
       return true;
     }
     if (response.status !== 200) {
@@ -241,7 +206,7 @@ export default class RealDebrid {
     if (response.status !== 200) {
       throw new Error(`Failed to fetch hosts: ${response.statusText}`);
     }
-    const result = HostsZod.parse(response.data);
+    const result = HostsZod.array().parse(response.data);
     return result;
   }
 }

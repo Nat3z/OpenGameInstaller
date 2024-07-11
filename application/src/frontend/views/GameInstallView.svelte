@@ -89,21 +89,14 @@
 					alert("Please set your Real-Debrid API key in the settings.");
 					return;
 				}
-				// get the first host
-				const hosts = window.electronAPI.realdebrid.getHosts();
-
 				// add torrent link
-				const torrentLink = window.electronAPI.realdebrid.addTorrent(result.downloadURL, hosts[0]);
-				if (torrentLink === null) {
-					alert("Failed to add the torrent link.");
-					return;
-				}
-				const isReady = window.electronAPI.realdebrid.isTorrentReady(torrentLink.id);
+				const torrent = await window.electronAPI.realdebrid.addTorrent(result.downloadURL);
+				const isReady = window.electronAPI.realdebrid.isTorrentReady(torrent.id);
 				if (!isReady) {
-					window.electronAPI.realdebrid.selectTorrent(torrentLink.id);
+					window.electronAPI.realdebrid.selectTorrent(torrent.id);
 					await new Promise<void>((resolve) => {
 						const interval = setInterval(async () => {
-							const isReady = await window.electronAPI.realdebrid.isTorrentReady(torrentLink.id);
+							const isReady = await window.electronAPI.realdebrid.isTorrentReady(torrent.id);
 							if (isReady) {
 								clearInterval(interval);
 								resolve();
@@ -113,7 +106,9 @@
 				}
 
 
-				const download = await window.electronAPI.realdebrid.unrestrictLink(torrentLink.uri);
+				const torrentInfo = await window.electronAPI.realdebrid.getTorrentInfo(torrent.id);
+				// currently only supporting the first link
+				const download = await window.electronAPI.realdebrid.unrestrictLink(torrentInfo.links[0]);
 				if (download === null) {
 					alert("Failed to download the file.");
 					return;

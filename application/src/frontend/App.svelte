@@ -8,7 +8,7 @@
 
   import { fetchAddonsWithConfigure } from "./utils";
 	type Views = "gameInstall" | "config" | "clientoptions" | "downloader";
-	let selectedView: Views = "gameInstall";
+	let selectedView: Views = "downloader";
 	// post config to server for each addon
 	onMount(() => {
 		fetchAddonsWithConfigure();

@@ -9,13 +9,15 @@
     const downloadID = event.detail.id;
     const progress = event.detail.progress;
     const downloadSpeed = event.detail.downloadSpeed;
+    const fileSize = event.detail.fileSize;
     currentDownloads.update((downloads) => {
       return downloads.map((download) => {
         if (download.id === downloadID) {
           return {
             ...download,
             progress,
-            downloadSpeed
+            downloadSpeed,
+            downloadSize: fileSize
           }
         }
         return download;

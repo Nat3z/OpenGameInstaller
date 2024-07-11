@@ -7,5 +7,7 @@ interface DownloadStatusAndInfo extends SearchResult {
   progress: number;
   downloadPath: string;
   downloadSpeed: number;
+  downloadSize: number;
+  addonSource: string;
 }
 export const currentDownloads: Writable<DownloadStatusAndInfo[]> = writable([])

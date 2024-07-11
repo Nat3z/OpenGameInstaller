@@ -13,7 +13,12 @@
       addons = data;
     });
   });
-	let results: any[] = [];
+
+	interface SearchResultWithAddon extends SearchResult {
+		addonSource: string
+	}
+
+	let results: SearchResultWithAddon[] = [];
 
 	let loadingResults = false;
 	async function search() {
@@ -27,12 +32,18 @@
 		for (const addon of addons) {
 			safeFetch("http://localhost:7654/addons/" + addon.id + "/search?query=" + query).then((data) => {
 				loadingResults = false;
-				results = [ ...results, ...data];
+				results = [ ...results, { ...data, addonSource: addon.id } ];
 			});
 		}
 	}
 
-	async function startDownload(result: SearchResult) {
+	async function startDownload(result: SearchResultWithAddon, event: MouseEvent) {
+		if (event === null) return;
+		if (event.target === null) return;
+		const htmlButton = (event.target as HTMLButtonElement);
+		htmlButton.textContent = "Downloading...";
+		htmlButton.disabled = true;
+
 		switch (result.downloadType) {
 			case 'real-debrid':
 				const worked = window.electronAPI.realdebrid.updateKey();
@@ -52,9 +63,7 @@
 					alert("Failed to download the file.");
 					return;
 				}
-				console.log(download.link)
-				const downloadID = await window.electronAPI.ddl.download(download.link, "C:\\Users\\apbro\\Documents\\TestFolder\\" + download.filename);
-				console.log(downloadID);
+				const downloadID = await window.electronAPI.ddl.download(download.download, "C:\\Users\\apbro\\Documents\\TestFolder\\" + download.filename);
 				currentDownloads.update((downloads) => {
 					return [...downloads, { 
 						id: downloadID, 
@@ -94,7 +103,7 @@
 					<h2>{result.name}</h2>
 					<p>{result.description}</p>
 					<section>
-						<button class="download" on:click={() => startDownload(result)}>Download</button>
+						<button class="download" on:click={(event) => startDownload(result, event)}>Download</button>
 					</section>
 			</article>
 		</div>
@@ -114,6 +123,9 @@
 
 	section .download {
 		@apply bg-blue-500 text-white p-2 rounded;
+	}
+	section .download:disabled {
+		@apply bg-yellow-500 text-white p-2 rounded;
 	}
 	.games div article {
 		@apply flex flex-col gap-2;

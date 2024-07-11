@@ -156,33 +156,13 @@ function createWindow() {
                 const url = new URL(arg.link);
                 const fileSize = await new Promise<number>((resolve, reject) => https.get({
                     method: 'HEAD',
-                    host: url.host,
-                    href: url.href,
+                    hostname: url.hostname,
+                    path: url.pathname,
                 }, (response) => {
                     if (response.statusCode !== 200) return reject(new Error('Invalid status code'));
                     resolve(parseFloat(response.headers['content-length']!!)!!);
                 }));
                 console.log("Starting download...")
-                https.get(arg.link, (response) => {
-                    console.log("Starting download...")
-                    response.pipe(fileStream);
-                    // send the download status/progress as it goes to the client
-                    // send how much is done and the download speed
-                    
-                }).on('error', (err) => {
-                    console.error(err);
-                    mainWindow.webContents.send('ddl:download-error', { id: downloadID, error: err });
-                    fileStream.close();
-                    fs.unlinkSync(arg.path);
-                    reject();
-                });
-                fileStream.on('data', (chunk) => {
-                    // get the download speed
-                    const downloadSpeed = chunk.length / 1024;
-                    const progress = fileStream.bytesWritten / fileSize;
-                    console.log("Progress: ", progress, " Download Speed: ", downloadSpeed);
-                    mainWindow.webContents.send('ddl:download-progress', { id: downloadID, progress, downloadSpeed });
-                });
 
                 fileStream.on('error', (err) => {
                     console.error(err);
@@ -191,12 +171,40 @@ function createWindow() {
                     reject()
                 });
 
-                fileStream.on('finish', () => {
-                    console.log("Download complete!")
+                https.get(arg.link, (response) => {
+                    console.log("Starting download...")
+                    response.pipe(fileStream);
+
+                    response.on('data', (chunk) => {
+                        const downloadSpeed = chunk.length / 1024;
+                        const progress = fileStream.bytesWritten / fileSize;
+                        mainWindow.webContents.send('ddl:download-progress', { id: downloadID, progress, downloadSpeed, fileSize });
+                    });
+
+                    response.on('end', () => {
+                        console.log("Download complete!")
+                        fileStream.close();
+                        mainWindow.webContents.send('ddl:download-complete', { id: downloadID });
+                        resolve();
+                    });
+
+                    response.on('error', (err) => {
+                        console.error(err);
+                        mainWindow.webContents.send('ddl:download-error', { id: downloadID, error: err });
+                        fileStream.close();
+                        fs.unlinkSync(arg.path);
+                        reject();
+                    });
+                    // send the download status/progress as it goes to the client
+                    // send how much is done and the download speed
+                }).on('error', (err) => {
+                    console.error(err);
+                    mainWindow.webContents.send('ddl:download-error', { id: downloadID, error: err });
                     fileStream.close();
-                    mainWindow.webContents.send('ddl:download-complete', { id: downloadID });
-                    resolve();
+                    fs.unlinkSync(arg.path);
+                    reject();
                 });
+                
             }).then(() => {
                 console.log('Download complete!!');
             }).catch((err) => {

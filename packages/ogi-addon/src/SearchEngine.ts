@@ -3,6 +3,6 @@ export interface SearchResult {
   description: string;
   coverURL: string;
   downloadURL: string;
-  downloadType: 'torrent' | 'direct' | 'real-debrid';
+  downloadType: 'torrent' | 'direct' | 'real-debrid-magnet' | 'real-debrid-torrent';
   downloadSize: number;
 }

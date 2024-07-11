@@ -107,6 +107,7 @@ export type $Hosts = z.infer<typeof HostsZod>;
 export type $UnrestrictLink = z.infer<typeof UnrestrictLinkZod>;
 export type $UserInfo = z.infer<typeof UserInfoZod>;
 export type $AddTorrentOrMagnet = z.infer<typeof AddTorrentOrMagnetZod>;
+export type $TorrentInfo = z.infer<typeof TorrentInfoZod>;
 
 const REAL_DEBRID_API_URL = 'https://api.real-debrid.com/rest/1.0';
 export default class RealDebrid {
@@ -203,10 +204,10 @@ export default class RealDebrid {
     return result;
   }
 
-  public async selectTorrents(files: number[]): Promise<boolean> {
+  public async selectTorrents(id: string): Promise<boolean> {
     const formData = new URLSearchParams();
-    formData.append('files', files.join(','));
-    const response = await axios(`${REAL_DEBRID_API_URL}/torrents/selectFiles`, {
+    formData.append('files', 'all');
+    const response = await axios(`${REAL_DEBRID_API_URL}/torrents/selectFiles/` + id, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${this.configuration.apiKey}`,

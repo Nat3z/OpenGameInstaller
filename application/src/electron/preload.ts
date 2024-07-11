@@ -14,7 +14,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     unrestrictLink: (link: string) => ipcRenderer.sendSync('real-debrid:unrestrict-link', link),
     addMagnet: (url: string, host: $Hosts) => ipcRenderer.sendSync('real-debrid:add-magnet', { url, host }),
     getHosts: () => ipcRenderer.sendSync('real-debrid:get-hosts'),
-    updateKey: () => ipcRenderer.sendSync('real-debrid:update-key')
+    updateKey: () => ipcRenderer.sendSync('real-debrid:update-key'),
+    addTorrent: (torrent: string, host: $Hosts) => ipcRenderer.sendSync('real-debrid:add-torrent', { torrent, host }),
+    selectTorrent: (torrents: number[]) => ipcRenderer.sendSync('real-debrid:select-torrent', torrents),
+    isTorrentReady: (id: string) => ipcRenderer.sendSync('real-debrid:is-torrent-ready', id),
+    getTorrentInfo: (id: string) => ipcRenderer.sendSync('real-debrid:get-torrent-info', id)
+
   },
   ddl: {
     download: (link: string, path: string) => ipcRenderer.sendSync('ddl:download', { link, path })

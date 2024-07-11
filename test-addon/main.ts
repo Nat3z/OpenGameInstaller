@@ -20,12 +20,20 @@ addon.on('search', (query, event) => {
   event.defer();
   setTimeout(() => {
     event.resolve([{ 
-      name: query,
+      name: "Real Debrid Test",
       description: addon.config.getStringValue('testOption') || 'No description',
       coverURL: 'https://dummyimage.com/375x500/968d96/ffffff',
       downloadSize: 100,
       downloadURL: 'https://real-debrid.com/d/O4GZCDAA73QEQFB5',
-      downloadType: 'real-debrid'
+      downloadType: 'real-debrid-magnet'
+    },
+    {
+      name: "Torrent Test",
+      description: addon.config.getStringValue('testOption') || 'No description',
+      coverURL: 'https://dummyimage.com/375x500/968d96/ffffff',
+      downloadSize: 100,
+      downloadURL: // nuh uh uh,
+      downloadType: 'real-debrid-torrent'
     }]);
   }, 2000);
 });

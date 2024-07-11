@@ -52,7 +52,7 @@
 		htmlButton.disabled = true;
 
 		switch (result.downloadType) {
-			case 'real-debrid':
+			case 'real-debrid-magnet': {
 				const worked = window.electronAPI.realdebrid.updateKey();
 				if (!worked) {
 					alert("Please set your Real-Debrid API key in the settings.");
@@ -82,6 +82,55 @@
 					}];
 				});
 				break;
+			}
+			case "real-debrid-torrent": {
+				const worked = window.electronAPI.realdebrid.updateKey();
+				if (!worked) {
+					alert("Please set your Real-Debrid API key in the settings.");
+					return;
+				}
+				// get the first host
+				const hosts = window.electronAPI.realdebrid.getHosts();
+
+				// add torrent link
+				const torrentLink = window.electronAPI.realdebrid.addTorrent(result.downloadURL, hosts[0]);
+				if (torrentLink === null) {
+					alert("Failed to add the torrent link.");
+					return;
+				}
+				const isReady = window.electronAPI.realdebrid.isTorrentReady(torrentLink.id);
+				if (!isReady) {
+					window.electronAPI.realdebrid.selectTorrent(torrentLink.id);
+					await new Promise<void>((resolve) => {
+						const interval = setInterval(async () => {
+							const isReady = await window.electronAPI.realdebrid.isTorrentReady(torrentLink.id);
+							if (isReady) {
+								clearInterval(interval);
+								resolve();
+							}
+						}, 1000);
+					});
+				}
+
+
+				const download = await window.electronAPI.realdebrid.unrestrictLink(torrentLink.uri);
+				if (download === null) {
+					alert("Failed to download the file.");
+					return;
+				}
+				const downloadID = await window.electronAPI.ddl.download(download.download, "C:\\Users\\apbro\\Documents\\TestFolder\\" + download.filename);
+				currentDownloads.update((downloads) => {
+					return [...downloads, { 
+						id: downloadID, 
+						status: 'downloading', 
+						downloadPath: 'C:\\Users\\apbro\\Documents\\TestFolder', 
+						downloadSpeed: 0,
+						progress: 0,
+						...result 
+					}];
+				});
+				break;
+			}
 			case 'torrent':
 			case "direct":
 				alert("Currently not supported.")

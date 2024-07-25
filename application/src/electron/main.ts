@@ -25,6 +25,14 @@ interface Notification {
   type: 'info' | 'error' | 'success' | 'warning';
 }
 export function sendNotification(notification: Notification) {
+    if (!mainWindow) {
+        console.error('Main window is not ready yet. Cannot send notification.');
+        return;
+    }
+    if (!mainWindow.webContents) {
+        console.error('Main window web contents is not ready yet. Cannot send notification.');
+        return;
+    }
     mainWindow.webContents.send('notification', notification);
 }
 
@@ -218,6 +226,10 @@ function createWindow() {
                         });
                     });
                 }).catch(err => {
+                    if (!mainWindow.webContents) {
+                        console.error("Seems like the window is closed. Cannot send error message to renderer.")
+                        return
+                    }
                     console.error(err);
                     mainWindow.webContents.send('ddl:download-error', { id: downloadID, error: err });
                     fileStream.close();
@@ -272,7 +284,8 @@ function createWindow() {
 
                 fileStream.on('error', (err) => {
                     console.error(err);
-                    mainWindow.webContents.send('ddl:download-error', { id: downloadID, error: err });
+                    if (mainWindow.webContents)
+                        mainWindow.webContents.send('ddl:download-error', { id: downloadID, error: err });
                     fileStream.close();
                     reject()
                 });
@@ -285,25 +298,31 @@ function createWindow() {
                     response.data.on('data', (chunk: Buffer) => {
                         const downloadSpeed = chunk.length / 1024;
                         const progress = fileStream.bytesWritten / fileSize;
-                        mainWindow.webContents.send('ddl:download-progress', { id: downloadID, progress, downloadSpeed, fileSize });
+                        if (mainWindow.webContents)
+                            mainWindow.webContents.send('ddl:download-progress', { id: downloadID, progress, downloadSpeed, fileSize });
+                        else
+                            response.data.destroy()
                     });
 
                     response.data.on('end', () => {
                         console.log("Download complete!")
                         fileStream.close();
-                        mainWindow.webContents.send('ddl:download-complete', { id: downloadID });
+                        if (mainWindow.webContents)
+                            mainWindow.webContents.send('ddl:download-complete', { id: downloadID });
                         resolve();
                     });
 
                     response.data.on('error', () => {
-                        mainWindow.webContents.send('ddl:download-error', { id: downloadID, error: '' });
+                        if (mainWindow.webContents)
+                            mainWindow.webContents.send('ddl:download-error', { id: downloadID, error: '' });
                         fileStream.close();
                         fs.unlinkSync(arg.path);
                         reject();
                     });
                 }).catch(err => {
                     console.error(err);
-                    mainWindow.webContents.send('ddl:download-error', { id: downloadID, error: err });
+                    if (mainWindow.webContents)
+                        mainWindow.webContents.send('ddl:download-error', { id: downloadID, error: err });
                     fileStream.close();
                     fs.unlinkSync(arg.path);
                     sendNotification({

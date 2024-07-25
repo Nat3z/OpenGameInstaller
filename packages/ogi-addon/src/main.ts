@@ -77,6 +77,9 @@ class OGIAddonWSListener {
   public addon: OGIAddon;
 
   constructor(ogiAddon: OGIAddon, eventEmitter: events.EventEmitter) {
+    if (process.argv[process.argv.length - 1].split('=')[0] !== '--addonSecret') {
+      throw new Error('No secret provided. This usually happens because the addon was not started by the OGI Addon Server.');
+    }
     this.addon = ogiAddon;
     this.eventEmitter = eventEmitter;
     this.socket = new ws('ws://localhost:' + defaultPort);
@@ -87,7 +90,8 @@ class OGIAddonWSListener {
       this.socket.send(JSON.stringify({
         event: 'authenticate',
         args: {
-          ...this.addon.addonInfo
+          ...this.addon.addonInfo,
+          secret: process.argv[process.argv.length - 1].split('=')[1]
         }
       }));
 

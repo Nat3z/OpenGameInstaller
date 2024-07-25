@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { createNotification } from "../store";
+
   const fs = window.electronAPI.fs;
   interface OptionsCategory {
     name: string;
@@ -10,7 +12,7 @@
         description: string;
         defaultValue: string | number | boolean;
         value: string | number | boolean;
-        type: "string" | "number" | "boolean" | "file-folder";
+        type: "string" | "number" | "boolean" | "file-folder" | 'textarea';
         maxTextLength?: number;
         minTextLength?: number;
         max?: number;
@@ -31,6 +33,13 @@
           value: "",
           type: "file-folder",
         },
+        addons: {
+          displayName: "Addons",
+          description: "The addons you want to use",
+          defaultValue: "",
+          value: "",
+          type: "textarea",
+        }
       }
     },
     {
@@ -73,6 +82,46 @@
         if (selectedOption.options[key].type === "string" || selectedOption.options[key].type === "file-folder") {
           config[key] = element.value;
         }
+        if (selectedOption.options[key].type === "textarea") {
+          if (key === "addons") {
+            config[key] = element.value.split("\n");
+            if (config[key].length === 1 && config[key][0] === "") {
+              config[key] = [];
+            }
+            else {
+              // verify that each line is a link
+              try {
+                config[key].forEach((line: string) => {
+                  if (!line || line.length === 0) return;
+                  if (line.startsWith('local:')) {
+                    if (!window.electronAPI.fs.exists(line.split('local:')[1])) {
+                      createNotification({
+                        id: Math.random().toString(36).substring(7),
+                        message: "Invalid Local File in Addons",
+                        type: "error",
+                      });
+                      return;
+                    }
+                  }
+                  else {
+                    new URL(line);
+                  }
+                });
+              } catch (error) {
+                createNotification({
+                  id: Math.random().toString(36).substring(7),
+                  message: "Invalid URL in Addons",
+                  type: "error",
+                });
+                return;
+              }
+            }
+          }
+
+          else {
+            config[key] = element.value;
+          }
+        }
         if (selectedOption.options[key].type === "number") {
           config[key] = parseInt(element.value);
         }
@@ -81,12 +130,6 @@
         }
       }
     });
-    document.querySelectorAll("[data-error-message]").forEach((element) => {
-      element.textContent = "";
-      element.parentElement!!.querySelector("input")!!.classList.remove("outline-red-500");
-      element.parentElement!!.querySelector("input")!!.classList.remove("outline-4");
-      element.parentElement!!.querySelector("input")!!.classList.remove("outline");
-    }); 
     // save this config to local storage
     if (!selectedOption) return; 
     fs.write("./config/option/" + selectedOption.id + ".json", JSON.stringify(config));
@@ -115,6 +158,19 @@
     });
   }
 
+  function installAddons() {
+    const addons = getStoredOrDefaultValue("addons") as string[];
+    if (!addons || addons.length === 0) {
+      createNotification({
+        id: Math.random().toString(36).substring(7),
+        message: "No addons to install",
+        type: "error",
+      });
+      return;
+    }
+    window.electronAPI.installAddons(addons);
+  }
+
   
 </script>
 
@@ -140,7 +196,7 @@
         <div class="hidden outline-red-500 outline-4">
         </div>
         {#each Object.keys(selectedOption.options) as key}
-          <div class="flex flex-row gap-2 items-center">
+          <div class={`flex ${selectedOption.options[key].type === "textarea" ? 'flex-col' : 'flex-row'} gap-2 items-center`}>
             <label for={key}>{selectedOption.options[key].displayName}</label>
             {#if selectedOption.options[key].type === "string"}
               <input type="text" on:change={updateConfig} value={getStoredOrDefaultValue(key)} id={key} maxlength={selectedOption.options[key].maxTextLength} minlength={selectedOption.options[key].minTextLength} />
@@ -148,6 +204,9 @@
             {#if  selectedOption.options[key].type === "file-folder"}
               <input type="text" on:change={updateConfig} value={getStoredOrDefaultValue(key)} id={key} maxlength={selectedOption.options[key].maxTextLength} minlength={selectedOption.options[key].minTextLength} />
               <button class="bg-blue-500 text-white p-2 rounded" on:click={(ev) => browseForFolder(ev)}>Browse</button>
+            {/if}
+            {#if selectedOption.options[key].type === "textarea"}
+              <textarea class="w-full h-32" id={key} on:change={updateConfig} value={getStoredOrDefaultValue(key)}></textarea>
             {/if}
             {#if selectedOption.options[key].type === "number"}
               <input type="number" id={key} on:change={updateConfig} value={getStoredOrDefaultValue(key)} max={selectedOption.options[key].max} min={selectedOption.options[key].min} />
@@ -162,6 +221,13 @@
             <p data-error-message class="text-red-500"></p>
           </div>
         {/each}
+
+        {#if selectedOption.id === "general"}
+          <div class="flex justify-center items-center flex-row gap-2">
+            <button class="bg-green-500 text-white p-2 rounded" on:click={() => installAddons()}>Install Addons</button>
+            <button class="bg-red-500 text-white p-2 rounded">Clean Addons</button>
+          </div>
+        {/if}
       </div>
     {/if}    
  

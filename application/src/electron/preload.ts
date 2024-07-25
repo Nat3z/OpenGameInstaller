@@ -29,7 +29,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   ddl: {
     download: (link: string, path: string) => ipcRenderer.sendSync('ddl:download', { link, path })
-  }
+  },
+  installAddons: (addons: string[]) => ipcRenderer.invoke('install-addons', addons),
 })
 
 ipcRenderer.on('ddl:download-progress', (_, arg) => {

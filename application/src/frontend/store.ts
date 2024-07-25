@@ -18,3 +18,7 @@ export interface Notification {
 }
 export const currentDownloads: Writable<DownloadStatusAndInfo[]> = writable([])
 export const notifications: Writable<Notification[]> = writable([])
+
+export function createNotification(notification: Notification) {
+  notifications.update((n) => [...n, notification])
+}

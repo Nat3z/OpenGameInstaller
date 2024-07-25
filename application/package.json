@@ -39,7 +39,8 @@
     "node-real-debrid": "*",
     "ogi-addon": "*",
     "rollup-plugin-postcss": "^4.0.2",
-    "ws": "^8.18.0"
+    "ws": "^8.18.0",
+    "zod": "^3.23.8"
   },
   "devDependencies": {
     "@rollup/plugin-alias": "^5.1.0",

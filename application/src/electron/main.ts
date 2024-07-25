@@ -5,6 +5,8 @@ import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
 import fs, { ReadStream } from 'fs';
 import RealDebrid from 'node-real-debrid';
 import https from 'https';
+import { exec } from 'child_process';
+import { setupAddon } from './addon-init-configure';
 
 // Keep a global reference of the window object, if you don't, the window will
 // be closed automatically when the JavaScript object is garbage collected.
@@ -21,8 +23,8 @@ interface Notification {
   id: string;
   type: 'info' | 'error' | 'success';
 }
-function sendNotification(notification: Notification) {
-    ipcMain.emit('notification', notification);
+export function sendNotification(notification: Notification) {
+    mainWindow.webContents.send('notification', notification);
 }
 
 function createWindow() {    
@@ -310,6 +312,87 @@ function createWindow() {
             event.returnValue = downloadID;
         });
 
+        ipcMain.handle('install-addons', async (_, addons) => {
+            // addons is an array of URLs to the addons to install. these should be valid git repositories
+            // check if git is installed
+            if (!fs.existsSync('./addons/')) {
+                fs.mkdirSync('./addons/');
+            }
+
+            // check if git is installed
+            const gitInstalled = await new Promise<boolean>((resolve, _) => {
+                exec('git --version', (err, stdout, _) => {
+                    if (err) {
+                        resolve(false);
+                    }
+                    console.log(stdout);
+                    resolve(true);
+                });
+            });
+            if (!gitInstalled) {
+                sendNotification({
+                    message: 'Git is not installed. Please install git and try again.',
+                    id: Math.random().toString(36).substring(7),
+                    type: 'error'
+                });
+                return;
+            }
+
+            for (const addon of addons) {
+                const addonName = addon.split('/').pop()!!;
+                const isLocal = addon.startsWith('local:');
+                let addonPath = `./addons/${addonName}`;
+                if (addon.startsWith('local:')) {
+                    addonPath = addon.split('local:')[1];
+                }
+                if (fs.existsSync(join(addonPath, 'setup.log'))) {
+                    console.log(`Addon ${addonName} already installed and setup.`);
+                    sendNotification({
+                        message: `Addon ${addonName} already installed and setup.`,
+                        id: Math.random().toString(36).substring(7),
+                        type: 'info'
+                    });
+                    continue;
+                }
+
+                if (!isLocal) {
+                    await new Promise<void>((resolve, reject) => {
+                        exec(`git clone ${addon} ${addonPath}`, (err, stdout, _) => {
+                            if (err) {
+                                sendNotification({
+                                    message: `Failed to install addon ${addonName}`,
+                                    id: Math.random().toString(36).substring(7),
+                                    type: 'error'
+                                });
+                                console.error(err);
+                                return reject();
+                            }
+                            console.log(stdout);
+                            resolve();
+                        });
+                   });
+                }
+
+                const hasAddonBeenSetup = await setupAddon(addonPath);
+                if (!hasAddonBeenSetup) {
+                    sendNotification({
+                        message: `Failed to install addon ${addonName}`,
+                        id: Math.random().toString(36).substring(7),
+                        type: 'error'
+                    });
+                }
+                else {
+                    sendNotification({
+                        message: `Addon ${addonName} installed successfully.`,
+                        id: Math.random().toString(36).substring(7),
+                        type: 'success'
+                    });
+                }
+            }
+
+            return;
+        });
+        
         mainWindow!!.show()
     });
 }

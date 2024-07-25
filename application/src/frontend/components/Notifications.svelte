@@ -20,6 +20,8 @@
   }
 
   document.addEventListener('new-notification', (event) => {
+    // @ts-ignore
+    console.log(event.detail);
     if (!isCustomEvent(event)) return;
     notifications.update((update) => [
       ...update,

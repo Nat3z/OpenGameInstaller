@@ -1,0 +1,11 @@
+
+Running pre-setup script for C:\Users\apbro\Documents\Code\JavaScript\OpenGameInstaller\test-addon...
+> echo 'preSetup script is running'
+      'preSetup script is running'
+
+Running setup script for C:\Users\apbro\Documents\Code\JavaScript\OpenGameInstaller\test-addon...
+> echo 'setup script is running'
+      
+Running post-setup script for C:\Users\apbro\Documents\Code\JavaScript\OpenGameInstaller\test-addon...
+> echo 'postSetup script is running'
+      

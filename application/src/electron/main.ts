@@ -1,12 +1,13 @@
 import { join } from 'path';
-import { server, port } from "./server/addon-server"
+import { server, port, clients } from "./server/addon-server"
 import { applicationAddonSecret } from './server/constants';
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
 import fs, { ReadStream } from 'fs';
 import RealDebrid from 'node-real-debrid';
 import https from 'https';
 import { exec } from 'child_process';
-import { setupAddon } from './addon-init-configure';
+import { processes, setupAddon, startAddon } from './addon-init-configure';
+import { isSecurityCheckEnabled } from './server/AddonConnection';
 
 // Keep a global reference of the window object, if you don't, the window will
 // be closed automatically when the JavaScript object is garbage collected.
@@ -21,7 +22,7 @@ function isDev() {
 interface Notification {
   message: string;
   id: string;
-  type: 'info' | 'error' | 'success';
+  type: 'info' | 'error' | 'success' | 'warning';
 }
 export function sendNotification(notification: Notification) {
     mainWindow.webContents.send('notification', notification);
@@ -339,13 +340,13 @@ function createWindow() {
             }
 
             for (const addon of addons) {
-                const addonName = addon.split('/').pop()!!;
+                const addonName = addon.split(/\/|\\/).pop()!!;
                 const isLocal = addon.startsWith('local:');
                 let addonPath = `./addons/${addonName}`;
                 if (addon.startsWith('local:')) {
                     addonPath = addon.split('local:')[1];
                 }
-                if (fs.existsSync(join(addonPath, 'setup.log'))) {
+                if (fs.existsSync(join(addonPath, 'installation.log'))) {
                     console.log(`Addon ${addonName} already installed and setup.`);
                     sendNotification({
                         message: `Addon ${addonName} already installed and setup.`,
@@ -376,7 +377,7 @@ function createWindow() {
                 const hasAddonBeenSetup = await setupAddon(addonPath);
                 if (!hasAddonBeenSetup) {
                     sendNotification({
-                        message: `Failed to install addon ${addonName}`,
+                        message: `An error occurred when setting up ${addonName}`,
                         id: Math.random().toString(36).substring(7),
                         type: 'error'
                     });
@@ -392,8 +393,43 @@ function createWindow() {
 
             return;
         });
-        
+
+        ipcMain.handle('restart-addon-server', async (_) => {
+            sendNotification({
+                message: 'Frequently restarting the addon server can cause issues. Only restart if necessary.',
+                id: Math.random().toString(36).substring(7),
+                type: 'warning'
+            });
+            // stop the server
+            console.log('Stopping server...');
+            server.close();
+            clients.clear();
+            // stop all of the addons
+            for (const process of Object.keys(processes)) {
+                console.log(`Killing process ${process}`);
+                processes[process].kill();
+            }
+            // start the server
+            server.listen(port, () => {
+                console.log(`Addon Server is running on http://localhost:${port}`);
+                console.log(`Server is being executed by electron!`)
+            });
+            startAddons();
+
+            sendNotification({
+                message: 'Addon server restarted successfully.',
+                id: Math.random().toString(36).substring(7),
+                type: 'success'
+            });
+        });
         mainWindow!!.show()
+        if (!isSecurityCheckEnabled) {
+            sendNotification({
+                message: 'Security checks are disabled and application security LOWERED. Only enable if you know what you\'re doing.',
+                id: Math.random().toString(36).substring(7),
+                type: 'warning'
+            });
+        }
     });
 }
 
@@ -406,13 +442,61 @@ app.on('ready', () => {
         console.log(`Addon Server is running on http://localhost:${port}`);
         console.log(`Server is being executed by electron!`)
     }); 
+    startAddons();
+
 });
+
+function startAddons() {
+    // start all of the addons
+    if (!fs.existsSync('./config/option/general.json')) {
+        return
+    }
+
+    const generalConfig = JSON.parse(fs.readFileSync('./config/option/general.json', 'utf-8'));
+    const addons = generalConfig.addons;
+    for (const addon of addons) {
+        let addonPath = '';
+        if (addon.startsWith('local:')) {
+            addonPath = addon.split('local:')[1];
+        }
+        else {
+            addonPath = join(__dirname, 'addons', addon.split(/\/|\\/).pop());
+        }
+
+        if (!fs.existsSync(addonPath)) {
+            console.error(`Addon ${addonPath} does not exist`);
+            sendNotification({
+                message: `Addon ${addonPath} does not exist`,
+                id: Math.random().toString(36).substring(7),
+                type: 'error'
+            });
+            continue;
+        }
+
+        if (!fs.existsSync(join(addonPath, 'installation.log'))) {
+            console.log(`Addon ${addonPath} has not been installed yet.`);
+            continue;
+        }
+
+        console.log(`Starting addon ${addonPath}`);
+        startAddon(addonPath);
+    }
+}
 
 // Quit when all windows are closed.
 app.on('window-all-closed', function () {
     // On macOS it is common for applications and their menu bar
     // to stay active until the user quits explicitly with Cmd + Q
     if (process.platform !== 'darwin') app.quit()
+
+    // stop the server
+    console.log('Stopping server...');
+    server.close();
+    // stop all of the addons
+    for (const process of Object.keys(processes)) {
+        console.log(`Killing process ${process}`);
+        processes[process].kill();
+    }
 });
 
 app.on('activate', function () {

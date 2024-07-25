@@ -81,7 +81,6 @@ export default class RealDebrid {
   }
 
   public async unrestrictLink(link: string, password: string = '') {
-    console.log(this.configuration.apiKey)
     const formData = new URLSearchParams();
     formData.append('link', link);
     formData.append('password', password);

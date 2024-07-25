@@ -6,7 +6,7 @@ import EventResponse from './EventResponse';
 import { SearchResult } from './SearchEngine';
 
 export type OGIAddonEvent = 'connect' | 'disconnect' | 'configure' | 'authenticate' | 'search' | 'setup';
-export type OGIAddonClientSentEvent = 'response' | 'authenticate' | 'configure' | 'defer-update';
+export type OGIAddonClientSentEvent = 'response' | 'authenticate' | 'configure' | 'defer-update' | 'notification';
 
 export type OGIAddonServerSentEvent = 'authenticate' | 'configure' | 'config-update' | 'search' | 'setup';
 export { ConfigurationBuilder, Configuration, EventResponse, SearchResult };
@@ -20,6 +20,7 @@ export interface ClientSentEventTypes {
     logs: string[], 
     progress: number
   };
+  notification: Notification;
 }
 
 export interface EventListenerTypes {
@@ -69,8 +70,16 @@ export default class OGIAddon {
   public emit<T extends OGIAddonEvent>(event: T, ...args: Parameters<EventListenerTypes[T]>) {
     this.eventEmitter.emit(event, ...args);
   }
-}
 
+  public notify(notification: Notification) {
+    this.addonWSListener.send('notification', [ notification ]);
+  }
+}
+interface Notification {
+  type: 'warning' | 'error' | 'info' | 'success';
+  message: string;
+  id: string
+}
 class OGIAddonWSListener {
   private socket: WebSocket;
   public eventEmitter: events.EventEmitter;
@@ -94,6 +103,8 @@ class OGIAddonWSListener {
           secret: process.argv[process.argv.length - 1].split('=')[1]
         }
       }));
+
+      this.eventEmitter.emit('connect');
 
       // send a configuration request
       let configBuilder = new ConfigurationBuilder();
@@ -212,4 +223,6 @@ class OGIAddonWSListener {
   public close() {
     this.socket.close();
   }
+
+  
 }

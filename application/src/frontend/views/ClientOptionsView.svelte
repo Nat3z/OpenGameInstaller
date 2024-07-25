@@ -56,6 +56,20 @@
           type: "string",
         },
       }
+    },
+    {
+      "name": "Developer",
+      "id": "developer",
+      "description": "Developer Settings",
+      options: {
+        disableSecretCheck: {
+          displayName: "Disable Server Secret Check",
+          description: "Disables the secret check (WARNING - This is a security risk as anyone can connect to your server)",
+          defaultValue: false,
+          value: false,
+          type: "boolean",
+        }
+      }
     }
   ];
 
@@ -223,9 +237,15 @@
         {/each}
 
         {#if selectedOption.id === "general"}
-          <div class="flex justify-center items-center flex-row gap-2">
-            <button class="bg-green-500 text-white p-2 rounded" on:click={() => installAddons()}>Install Addons</button>
-            <button class="bg-red-500 text-white p-2 rounded">Clean Addons</button>
+          <div class="flex justify-center items-center flex-col gap-2">
+            <div class="flex justify-center items-center flex-row gap-2">
+              <button class="bg-green-500 text-white p-2 rounded" on:click={() => installAddons()}>Install Addons</button>
+              <button class="bg-red-500 text-white p-2 rounded">Clean Addons</button>
+            </div>
+
+            <div class="flex justify-center items-center flex-row gap-2">
+              <button class="bg-red-500 text-white p-2 rounded" on:click={() => window.electronAPI.restartAddonServer()}>Restart Addon Server</button>
+            </div>
           </div>
         {/if}
       </div>

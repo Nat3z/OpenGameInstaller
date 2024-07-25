@@ -5,6 +5,10 @@ import z from 'zod';
 import exec from 'child_process';
 import { addonSecret } from './server/constants';
 
+export let processes: { 
+  [key: string]: exec.ChildProcess
+} = {};
+
 export const AddonFileConfigurationSchema = z.object({
   author: z.string(),
   scripts: z.object({
@@ -16,6 +20,7 @@ export const AddonFileConfigurationSchema = z.object({
 });
 export async function setupAddon(addonPath: string): Promise<boolean> {
   const addonConfig = await readFile(join(addonPath, 'addon.json'), 'utf-8');
+  const addonName = addonPath.split(/\/|\\/).pop();
   if (!addonConfig) {
     sendNotification({
       type: 'error',
@@ -31,14 +36,14 @@ export async function setupAddon(addonPath: string): Promise<boolean> {
   if (addon.scripts.preSetup) {
     try {
       setupLogs += `
-Running pre-setup script for ${addonPath.split('/').pop()}...
+Running pre-setup script for ${addonName}...
 > ${addon.scripts.preSetup}
       `
       setupLogs += await executeScript('pre-setup', addon.scripts.preSetup, addonPath);
     } catch (e) {
       sendNotification({
         type: 'error',
-        message: 'Error running pre-setup script for ' + addonPath.split('/').pop(),
+        message: 'Error running pre-setup script for ' + addonName,
         id: Math.random().toString(36).substring(7)
       });
       return false;
@@ -48,14 +53,14 @@ Running pre-setup script for ${addonPath.split('/').pop()}...
   if (addon.scripts.setup) {
     try {
       setupLogs += `
-Running setup script for ${addonPath.split('/').pop()}...
+Running setup script for ${addonName}...
 > ${addon.scripts.setup}
       `
       await executeScript('setup', addon.scripts.setup, addonPath);
     } catch (e) {
       sendNotification({
         type: 'error',
-        message: 'Error running setup script for ' + addonPath.split('/').pop(),
+        message: 'Error running setup script for ' + addonName,
         id: Math.random().toString(36).substring(7)
       });
       return false;
@@ -65,30 +70,31 @@ Running setup script for ${addonPath.split('/').pop()}...
   if (addon.scripts.postSetup) {
     try {
       setupLogs += `
-Running post-setup script for ${addonPath.split('/').pop()}...
+Running post-setup script for ${addonName}...
 > ${addon.scripts.postSetup}
       `
       await executeScript('post-setup', addon.scripts.postSetup, addonPath);
     } catch (e) {
       sendNotification({
         type: 'error',
-        message: 'Error running post-setup script for ' + addonPath.split('/').pop(),
+        message: 'Error running post-setup script for ' + addonName,
         id: Math.random().toString(36).substring(7)
       });
       return false;
     }
   }
 
-  await writeFile(join(addonPath, 'setup.log'), setupLogs);
+  await writeFile(join(addonPath, 'installation.log'), setupLogs);
   return true;
 }
 
 export async function startAddon(addonPath: string) {
   const addonConfig = await readFile(join(addonPath, 'addon.json'), 'utf-8');
+  const addonName = addonPath.split('/').pop();
   if (!addonConfig) {
     sendNotification({
       type: 'error',
-      message: 'Addon configuration not found for ' + addonPath.split('/').pop(),
+      message: 'Addon configuration not found for ' + addonName,
       id: Math.random().toString(36).substring(7)
     });
     return;
@@ -96,7 +102,7 @@ export async function startAddon(addonPath: string) {
   const addonJSON: any = JSON.parse(addonConfig);
   const addon = AddonFileConfigurationSchema.parse(addonJSON);
   try {
-    executeScript('run', addon.scripts.run + "--addonSecret=\"" + addonSecret + "\"", addonPath);
+    executeScript('run', addon.scripts.run + " --addonSecret=\"" + addonSecret + "\"", addonPath);
   } catch (e) {
     sendNotification({
       type: 'error',
@@ -108,12 +114,12 @@ export async function startAddon(addonPath: string) {
 
 async function executeScript(scriptName: string, script: string, addonPath: string): Promise<string> {
   return new Promise((resolve, reject) => {
-    exec.exec(script, {
+    processes[addonPath] = exec.exec(script, {
       cwd: addonPath,
     }, (err, stdout, stderr) => {
       if (err) {
         // write the error to a log file
-        writeFile(join(addonPath, scriptName + '.log'), stderr);
+        writeFile(join(addonPath, scriptName + '.log'), '' + stderr);
         reject(err);
         return;
       }

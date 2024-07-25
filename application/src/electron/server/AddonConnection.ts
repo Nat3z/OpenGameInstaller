@@ -4,7 +4,19 @@ import { OGIAddonConfiguration, WebsocketMessageClient, WebsocketMessageServer }
 import { ConfigurationFile } from 'ogi-addon/src/config/ConfigurationBuilder';
 import { clients } from './addon-server';
 import { DefferedTasks } from './api/defer';
-
+import { addonSecret } from './constants';
+import { existsSync, readFileSync } from 'fs';
+import { sendNotification } from '../main';
+export let isSecurityCheckEnabled = true;
+if (existsSync('./config/option/developer.json')) {
+  const developerConfig = JSON.parse(readFileSync('./config/option/developer.json', 'utf-8'));
+  isSecurityCheckEnabled = developerConfig.disableSecretCheck !== true;
+  if (!isSecurityCheckEnabled) {
+    for (let i = 0; i < 10; i++) {
+      console.warn('WARNING Security check is disabled. THIS IS A MAJOR SECURITY RISK. PLEASE ENABLE DURING NORMAL USE.');
+    }
+  }
+}
 export class AddonConnection {
   public addonInfo: OGIAddonConfiguration;
   public ws: wsLib.WebSocket;
@@ -25,14 +37,21 @@ export class AddonConnection {
 
       this.ws.on('message', (message) => {
         const data: WebsocketMessageClient = JSON.parse(message.toString());
-
         switch (data.event) {
+          case 'notification':
+            sendNotification(data.args[0]);
+            break;
           case 'authenticate':
             clearTimeout(authenticationTimeout);
 
             // authentication
             this.addonInfo = data.args;
-
+            if (isSecurityCheckEnabled && (!data.args.secret || data.args.secret !== addonSecret)) {
+              console.error('Client attempted to authenticate with an invalid secret');
+              this.ws.close(1008, 'Client attempted to authenticate with an invalid secret');
+              resolve(false)
+              break;
+            }
             if (clients.has(this.addonInfo.id)) {
               console.error('Client attempted to authenticate with an ID that is already in use');
               clients.delete(this.addonInfo.id);
@@ -103,7 +122,6 @@ export class AddonConnection {
           this.ws.once('message', (messageRaw) => {
             const messageFromClient: WebsocketMessageClient = JSON.parse("" + messageRaw.toString())
             if (messageFromClient.event === "response" && messageFromClient.id === message.id) {
-              console.log(messageFromClient)
               resolve(messageFromClient);
             }
             else {

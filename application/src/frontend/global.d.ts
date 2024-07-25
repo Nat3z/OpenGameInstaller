@@ -36,6 +36,7 @@ interface Window {
     ddl: {
       download: (link: string, path: string) => string
     },
-    installAddons: (addons: string[]) => Promise<void>
+    installAddons: (addons: string[]) => Promise<void>,
+    restartAddonServer: () => Promise<void>,
   }
 }

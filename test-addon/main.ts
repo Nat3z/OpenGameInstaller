@@ -17,8 +17,12 @@ addon.on('configure', (config) => config
   .addNumberOption(option => option.setDisplayName('Test Number Range Option').setName('testNumberRangeOption').setDescription('A test number option').setInputType("range").setMin(1).setMax(20))
   .addBooleanOption(option => option.setDisplayName('Test Boolean Option').setName('testBooleanOption').setDescription('A test boolean option'))
 )
+addon.on('connect', () => {
+  addon.notify({ type: 'info', message: 'Connected', id: 'connect' });
+})
 
 addon.on('search', (query, event) => {
+  addon.notify({ type: 'info', message: 'Searching...', id: 'search' });
   event.resolve([{ 
     name: "Real Debrid Test",
     description: addon.config.getStringValue('testOption') || 'No description',

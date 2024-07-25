@@ -3,7 +3,7 @@ import { server, port, clients } from "./server/addon-server"
 import { applicationAddonSecret } from './server/constants';
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
 import fs, { ReadStream } from 'fs';
-import RealDebrid from 'node-real-debrid';
+import RealDebrid from 'real-debrid-js';
 import { exec } from 'child_process';
 import { processes, setupAddon, startAddon } from './addon-init-configure';
 import { isSecurityCheckEnabled } from './server/AddonConnection';

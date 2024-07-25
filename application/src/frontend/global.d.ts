@@ -1,11 +1,11 @@
 /// <reference types="svelte" />
 
 
-type $AddTorrentOrMagnet = import("node-real-debrid").$AddTorrentOrMagnet
-type $Hosts = import("node-real-debrid").$Hosts
-type $UnrestrictLink = import("node-real-debrid").$UnrestrictLink;
-type $UserInfo = import("node-real-debrid").$UserInfo;
-type $TorrentInfo = import("node-real-debrid").$TorrentInfo;
+type $AddTorrentOrMagnet = import("real-debrid-js").$AddTorrentOrMagnet
+type $Hosts = import("real-debrid-js").$Hosts
+type $UnrestrictLink = import("real-debrid-js").$UnrestrictLink;
+type $UserInfo = import("real-debrid-js").$UserInfo;
+type $TorrentInfo = import("real-debrid-js").$TorrentInfo;
 
 interface Window {
   electronAPI: {

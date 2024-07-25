@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { $Hosts } from 'node-real-debrid';
+import type { $Hosts } from 'real-debrid-js';
 
 contextBridge.exposeInMainWorld('electronAPI', {
   fs: {

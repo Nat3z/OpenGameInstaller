@@ -3,12 +3,19 @@
   "module": "./build/main.js",
   "type": "module",
   "main": "./build/main.js",
+  "author": {
+    "name": "Nat3z",
+    "email": "me@nat3z.com",
+    "url": "https://nat3z.com/"
+  },
+  "version": "0.1.0",
   "dependencies": {
     "ws": "^8.4.0",
     "zod": "^3.23.8"
   },
   "scripts": {
-    "auto-build": "tsc -w"
+    "auto-build": "tsc -w",
+    "publish": "bunx tsc && npm publish"
   },
   "devDependencies": {
     "@types/ws": "^8.4.0",

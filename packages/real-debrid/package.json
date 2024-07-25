@@ -1,7 +1,13 @@
 {
-  "name": "node-real-debrid",
+  "name": "real-debrid-js",
+  "version": "1.0.0",
   "module": "./build/main.js",
   "type": "commonjs",
+  "author": {
+    "name": "Nat3z",
+    "email": "me@nat3z.com",
+    "url": "https://nat3z.com/"
+  },
   "main": "./build/main.js",
   "dependencies": {
     "axios": "^1.7.2",
@@ -10,7 +16,8 @@
   "scripts": {
     "auto-build": "tsc -w",
     "build": "tsc",
-    "test": "bun test ./tests/**/*.test.ts"
+    "test": "bun test ./tests/**/*.test.ts",
+    "publish": "bun run build && npm publish"
   },
   "devDependencies": {
     "typescript": "^5.0.0"

@@ -1,9 +1,10 @@
 <script lang="ts">
-  import { notifications } from "../store";
+  import { notifications, type Notification } from "../store";
 
   notifications.subscribe((value) => {
     // latest value is the last element in the array
     const latest = value[value.length - 1];
+    if (!latest) return;
     setTimeout(() => {
       const element = document.getElementById("notification-" + latest.id);
       if (!element) return;
@@ -14,21 +15,26 @@
     }, 3000);
   });
 
-  setInterval(() => {
+  function isCustomEvent(event: Event): event is CustomEvent<Notification> {
+    return event instanceof CustomEvent && event.detail && event.detail.type && event.detail.message;
+  }
+
+  document.addEventListener('new-notification', (event) => {
+    if (!isCustomEvent(event)) return;
     notifications.update((update) => [
       ...update,
       {
         id: Math.random().toString(36).substring(7),
-        type: "info",
-        message: "This is a test notification",
+        type: event.detail.type,
+        message: event.detail.message,
       },
     ]);
-  }, 2000)
+  });
 
 </script>
 <div class="fixed bottom-2 right-2 gap-2 w-5/6 flex justify-end items-end flex-col-reverse">
   {#each $notifications as notification (notification.id)}
-    <div class="flex bg-gray-300 p-2 w-5/12 relative items-center gap-[2px] h-fit" id={"notification-" + notification.id}>
+    <div class="flex bg-gray-300 border border-black p-2 w-5/12 relative items-center gap-[2px] h-fit" id={"notification-" + notification.id}>
       <img src={`./${notification.type}.svg`} alt={notification.type} class="w-4 h-4" />
       {notification.message}
     </div>

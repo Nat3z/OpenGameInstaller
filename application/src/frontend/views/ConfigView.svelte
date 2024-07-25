@@ -3,6 +3,7 @@
   import { safeFetch } from "../utils";
   import type { BooleanOption, ConfigurationFile, ConfigurationOption, NumberOption, StringOption } from "ogi-addon/build/config/ConfigurationBuilder";
   import type { OGIAddonConfiguration } from "ogi-addon";
+  import { notifications } from "../store";
   const fs = window.electronAPI.fs;
 
   function isStringOption(option: ConfigurationOption): option is StringOption {
@@ -37,6 +38,9 @@
       element.classList.add("selected");
       selectedAddon = addon;
     }
+    setTimeout(() => {
+      updateConfig();
+    }, 100);
   }
 
   function updateConfig() {
@@ -71,17 +75,30 @@
       body: JSON.stringify(config),
     }).then((data) => {
       if (!data.success) {
-        console.error(data);
-        const element = document.getElementById(data.error.keyErrored)
-        if (!element) return console.error("element not found");
-        element.classList.add("outline-red-500");
-        element.classList.add("outline-4");
-        element.classList.add("outline");
-        element.parentElement!!.querySelector("p")!!.textContent = data.error.error;
+        for (const key in data.errors) {
+          const element = document.getElementById(key);
+          if (!element) return console.error("element not found");
+          element.classList.add("outline-red-500");
+          element.classList.add("outline-4");
+          element.classList.add("outline");
+          element.parentElement!!.querySelector("p")!!.innerHTML = `
+            <img src="./error.svg" alt="error" class="w-6 h-6" />
+          `;
+          
+          element.parentElement!!.querySelector("p")!!.setAttribute("data-context", data.errors[key]);
+        }
+        notifications.update((update) => [
+            ...update,
+            {
+              id: Math.random().toString(36).substring(7),
+              type: "error",
+              message: "Failed to validate configuration. Configuration will not be usable.",
+            },
+          ]);
       }
     });
     // save this config to local storage
-    fs.write("./config/" + selectedAddon.id + ".json", JSON.stringify(config));
+    fs.write("./config/" + selectedAddon!!.id + ".json", JSON.stringify(config));
   }
 
   function getStoredOrDefaultValue(key: string) {
@@ -93,6 +110,28 @@
       const storedConfig = JSON.parse(fs.read("./config/" + selectedAddon.id + ".json"));
       return storedConfig[key];
     }
+  }
+
+  function showContextHint(event: MouseEvent) {
+    const element = event.target as HTMLElement;
+    const context = element.getAttribute("data-context");
+    if (!context) return;
+    const contextual = element.parentElement!!.querySelector("[data-contextual]")!! as HTMLDivElement;
+    contextual.style.display = "flex";
+    
+    const hint = contextual.querySelector("p")!!;
+    hint.textContent = context;
+    contextual.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 200, fill: "forwards" });
+  }
+
+  function hideContextHint(event: MouseEvent) {
+    const element = event.target as HTMLElement;
+    const contextual = element.parentElement!!.querySelector("[data-contextual]")!! as HTMLDivElement;
+    contextual.style.display = "flex";
+    contextual.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 200, fill: "forwards" });
+    setTimeout(() => {
+      contextual.style.display = "none";
+    }, 200);
   }
   
 </script>
@@ -111,7 +150,7 @@
     {/if}
   </div>
 
-  <article>
+  <article class="w-8/12">
     {#if selectedAddon}
       <h2>{selectedAddon.name}</h2>
       <p>{selectedAddon.description}</p>
@@ -119,7 +158,7 @@
         <div class="hidden outline-red-500 outline-4">
         </div>
         {#each Object.keys(selectedAddon.configTemplate) as key}
-          <div class="flex flex-row gap-2 items-center">
+          <div class="flex flex-row gap-2 items-center relative">
             <label for={key}>{selectedAddon.configTemplate[key].displayName}</label>
             {#if isStringOption(selectedAddon.configTemplate[key])}
               <input type="text" on:change={updateConfig} value={getStoredOrDefaultValue(key)} id={key} maxlength={selectedAddon.configTemplate[key].maxTextLength} minlength={selectedAddon.configTemplate[key].minTextLength} />
@@ -134,7 +173,13 @@
                 <input type="checkbox" id={key} on:change={updateConfig} />
               {/if}
             {/if}
-            <p data-error-message class="text-red-500"></p>
+            <p data-error-message class="text-red-500" data-context="" on:mouseenter={showContextHint} on:mouseleave={hideContextHint}>
+            </p>
+
+            <div data-contextual style="display: none" class="absolute flex flex-row gap-2 justify-start items-center z-20 top-8 border border-black left-0 bg-gray-300 text-sm p-2 rounded-md shadow-lg w-full">
+              <img src="./error.svg" alt="error" class="w-4 h-4" />
+              <p class="relative -top-[1.5px]"></p>
+            </div>
           </div>
         {/each}
       </div>
@@ -163,7 +208,7 @@
 		@apply bg-blue-500 text-white p-2 rounded;
 	}
 	.options {
-    @apply gap-2 flex flex-col border-t-2 border-gray-800 p-2;
+    @apply gap-2 flex flex-col border-t-2 border-gray-800 w-11/12 p-2;
   }
 
 	article h2 {

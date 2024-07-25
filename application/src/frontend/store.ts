@@ -14,7 +14,7 @@ export interface DownloadStatusAndInfo extends SearchResult {
 export interface Notification {
   message: string;
   id: string;
-  type: 'info' | 'error' | 'success';
+  type: 'info' | 'error' | 'success' | 'warning';
 }
 export const currentDownloads: Writable<DownloadStatusAndInfo[]> = writable([])
 export const notifications: Writable<Notification[]> = writable([])

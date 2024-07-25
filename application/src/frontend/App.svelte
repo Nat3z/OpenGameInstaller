@@ -9,7 +9,7 @@
   import { fetchAddonsWithConfigure } from "./utils";
   import Notifications from "./components/Notifications.svelte";
 	type Views = "gameInstall" | "config" | "clientoptions" | "downloader";
-	let selectedView: Views = "downloader";
+	let selectedView: Views = "config";
 	// post config to server for each addon
 	onMount(() => {
 		fetchAddonsWithConfigure();

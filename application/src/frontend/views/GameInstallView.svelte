@@ -3,7 +3,7 @@
   import { fetchAddonsWithConfigure, safeFetch } from "../utils";
   import type { OGIAddonConfiguration, SearchResult } from "ogi-addon";
   import type { ConfigurationFile } from "ogi-addon/build/config/ConfigurationBuilder";
-  import { currentDownloads } from "../store";
+  import { currentDownloads, notifications } from "../store";
 	interface ConfigTemplateAndInfo extends OGIAddonConfiguration {
     configTemplate: ConfigurationFile
   }
@@ -86,7 +86,7 @@
 			case "real-debrid-torrent": {
 				const worked = window.electronAPI.realdebrid.updateKey();
 				if (!worked) {
-					alert("Please set your Real-Debrid API key in the settings.");
+					notifications.update((notifications) => [...notifications, { id: Math.random().toString(36).substring(7), type: 'error', message: "Please set your Real-Debrid API key in the settings." }]);
 					return;
 				}
 				// add torrent link

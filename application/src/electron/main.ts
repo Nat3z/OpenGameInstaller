@@ -16,6 +16,15 @@ function isDev() {
     return !app.isPackaged;
 }
 
+interface Notification {
+  message: string;
+  id: string;
+  type: 'info' | 'error' | 'success';
+}
+function sendNotification(notification: Notification) {
+    ipcMain.emit('notification', notification);
+}
+
 function createWindow() {    
     // Create the browser window.
     mainWindow = new BrowserWindow({
@@ -199,6 +208,11 @@ function createWindow() {
                 return data
             } catch (except) {
                 console.error(except);
+                sendNotification({
+                    message: "Failed to add torrent to Real-Debrid",
+                    id: Math.random().toString(36).substring(7),
+                    type: 'error'
+                });
                 return null;
             }
 
@@ -263,6 +277,11 @@ function createWindow() {
                     mainWindow.webContents.send('ddl:download-error', { id: downloadID, error: err });
                     fileStream.close();
                     fs.unlinkSync(arg.path);
+                    sendNotification({
+                        message: 'Download failed for ' + arg.path,
+                        id: downloadID,
+                        type: 'error'
+                    });
                     reject();
                 });
                 
@@ -270,6 +289,11 @@ function createWindow() {
                 console.log('Download complete!!');
             }).catch((err) => {
                 console.log('Download failed');
+                sendNotification({
+                    message: 'Download failed for ' + arg.link,
+                    id: downloadID,
+                    type: 'error'
+                });
                 console.error(err);
             });
             // stream the download 

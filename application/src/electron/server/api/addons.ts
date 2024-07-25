@@ -33,7 +33,7 @@ app.post('/:addonID/config', async (req, res) => {
   if (response.args.success)
     res.json({ success: true });
   else {
-    res.json({ success: false, error: response.args.error, keyErrored: response.args.keyErrored })
+    res.json({ success: false, errors: response.args.error })
   }
 });
 // an expensive task.

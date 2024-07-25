@@ -38,3 +38,7 @@ ipcRenderer.on('ddl:download-error', (_, arg) => {
 ipcRenderer.on('ddl:download-complete', (_, arg) => {
   document.dispatchEvent(new CustomEvent('ddl:download-complete', { detail: arg }));
 });
+
+ipcRenderer.on('notification', (_, arg) => {
+  document.dispatchEvent(new CustomEvent('new-notification', { detail: arg }));
+});

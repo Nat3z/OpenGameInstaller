@@ -90,7 +90,7 @@ export class ConfigurationOption {
   }
 
 
-  validate(input: unknown): boolean {
+  validate(input: unknown): [ boolean, string ] {
     throw new Error('Validation code not implemented. Value: ' + input)
   };
 }
@@ -122,14 +122,17 @@ export class StringOption extends ConfigurationOption {
     return this;
   }
 
-  override validate(input: unknown): boolean {
+  override validate(input: unknown): [ boolean, string ] {
     if (typeof input !== 'string') {
-      return false;
+      return [ false, 'Input is not a string' ];
     }
     if (this.allowedValues.length === 0 && input.length !== 0)
-      return true;
+      return [ true, '' ];
+    if (input.length < this.minTextLength || input.length > this.maxTextLength) {
+      return [ false, 'Input is not within the text length ' + this.minTextLength + ' and ' + this.maxTextLength + ' characters (currently ' + input.length + ' characters)' ];
+    }
 
-    return this.allowedValues.includes(input);
+    return [ this.allowedValues.includes(input), 'Input is not an allowed value' ];
   }
 }
 
@@ -154,14 +157,14 @@ export class NumberOption extends ConfigurationOption {
     return this;
   }
 
-  override validate(input: unknown): boolean {
+  override validate(input: unknown): [ boolean, string ] {
     if (isNaN(Number(input))) {
-      return false;
+      return [ false, 'Input is not a number' ];
     }
     if (Number(input) < this.min || Number(input) > this.max) {
-      return false;
+      return [ false, 'Input is not within the range of ' + this.min + ' and ' + this.max ];
     }
-    return true;
+    return [ true, '' ];
   }
 
 }
@@ -175,11 +178,11 @@ export class BooleanOption extends ConfigurationOption {
     return this;
   }
 
-  override validate(input: unknown): boolean {
+  override validate(input: unknown): [ boolean, string ] {
     if (typeof input !== 'boolean') {
-      return false;
+      return [ false, 'Input is not a boolean' ];
     }
-    return true;
+    return [ true, '' ];
   }
 
 }

@@ -10,16 +10,17 @@ export class Configuration {
     this.storedConfigTemplate = configTemplate;
   }
 
-  updateConfig(config: DefiniteConfig, validate: boolean = true): [ boolean, { keyErrored: string, error: string }? ] {
+  updateConfig(config: DefiniteConfig, validate: boolean = true): [ boolean, { [key: string]: string } ] {
     this.definiteConfig = config;
     if (validate) {
       const result = this.validateConfig();
       return result;
     }
-    return [ true ];
+    return [ true, {} ];
   }
   // provides falsey or truthy value, and an error message if falsey
-  private validateConfig(): [ boolean, { keyErrored: string, error: string }? ] {
+  private validateConfig(): [ boolean, { [key: string]: string } ] {
+    const erroredKeys = new Map<string, string>();
     for (const key in this.storedConfigTemplate) {
       if (this.definiteConfig[key] === null || this.definiteConfig[key] === undefined) {
         console.warn('Option ' + key + ' is not defined. Using default value Value: ' + this.definiteConfig[key]);
@@ -30,8 +31,8 @@ export class Configuration {
       }
 
       const result = this.storedConfigTemplate[key].validate(this.definiteConfig[key]);
-      if (!result) {
-        return [ false, { keyErrored: key, error: "Did not pass validation" }  ];
+      if (!result[0]) {
+        erroredKeys.set(key, result[1]);
       }
     }
 
@@ -41,7 +42,11 @@ export class Configuration {
       }
     }
 
-    return [ true ];
+    if (erroredKeys.size > 0) {
+      return [ false, Object.fromEntries(erroredKeys) ];
+    }
+
+    return [ true, Object.fromEntries(erroredKeys) ];
   }
 
   getStringValue(optionName: string): string {

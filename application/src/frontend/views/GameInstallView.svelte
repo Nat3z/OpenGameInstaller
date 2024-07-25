@@ -95,7 +95,7 @@
 					return [...downloads, { 
 						id: '' + localID, 
 						status: 'rd-downloading', 
-						downloadPath: 'C:\\Users\\apbro\\Documents\\TestFolder', 
+						downloadPath: 'C:\\Users\\apbro\\Documents\\TestFolder\\' + result.name, 
 						downloadSpeed: 0,
 						progress: 0,
 						...result 
@@ -126,10 +126,11 @@
 				}
 				const downloadID = await window.electronAPI.ddl.download(download.download, "C:\\Users\\apbro\\Documents\\TestFolder\\" + download.filename);
 				currentDownloads.update((downloads) => {
-					const download = downloads.find((d) => d.id === localID + '')!!
-					download.status = 'downloading';
-					download.id = downloadID;
-					downloads[downloads.indexOf(download)] = download;
+					const matchingDownload = downloads.find((d) => d.id === localID + '')!!
+					matchingDownload.status = 'downloading';
+					matchingDownload.id = downloadID;
+					matchingDownload.downloadPath = 'C:\\Users\\apbro\\Documents\\TestFolder\\' + download.filename;
+					downloads[downloads.indexOf(matchingDownload)] = matchingDownload;
 					return downloads;
 				});
 				break;

@@ -48,7 +48,7 @@
     let config: Record<string, string | number | boolean> = {};
     Object.keys(selectedAddon.configTemplate).forEach((key) => {
     if (!selectedAddon) return;
-      const element = document.getElementById(key) as HTMLInputElement;
+      const element = document.getElementById(key) as HTMLInputElement | HTMLSelectElement;
       if (element) {
         if (selectedAddon.configTemplate[key].type === "string") {
           config[key] = element.value;
@@ -56,16 +56,16 @@
         if (selectedAddon.configTemplate[key].type === "number") {
           config[key] = parseInt(element.value);
         }
-        if (selectedAddon.configTemplate[key].type === "boolean") {
+        if (selectedAddon.configTemplate[key].type === "boolean" && element.type === "checkbox") {
           config[key] = element.checked;
         }
       }
     });
     document.querySelectorAll("[data-error-message]").forEach((element) => {
       element.textContent = "";
-      element.parentElement!!.querySelector("input")!!.classList.remove("outline-red-500");
-      element.parentElement!!.querySelector("input")!!.classList.remove("outline-4");
-      element.parentElement!!.querySelector("input")!!.classList.remove("outline");
+      element.parentElement!!.querySelector("[data-input]")!!.classList.remove("outline-red-500");
+      element.parentElement!!.querySelector("[data-input]")!!.classList.remove("outline-4");
+      element.parentElement!!.querySelector("[data-input]")!!.classList.remove("outline");
     }); 
     safeFetch("http://localhost:7654/addons/" + selectedAddon.id + "/config", {
       method: "POST",
@@ -161,16 +161,24 @@
           <div class="flex flex-row gap-2 items-center relative">
             <label for={key}>{selectedAddon.configTemplate[key].displayName}</label>
             {#if isStringOption(selectedAddon.configTemplate[key])}
-              <input type="text" on:change={updateConfig} value={getStoredOrDefaultValue(key)} id={key} maxlength={selectedAddon.configTemplate[key].maxTextLength} minlength={selectedAddon.configTemplate[key].minTextLength} />
+              {#if selectedAddon.configTemplate[key].allowedValues.length !== 0}
+                <select data-input id={key} on:change={updateConfig} value={getStoredOrDefaultValue(key)}>
+                  {#each selectedAddon.configTemplate[key].allowedValues as value}
+                    <option value={value}>{value}</option>
+                  {/each}
+                </select>
+              {:else}
+                <input data-input type="text" on:change={updateConfig} value={getStoredOrDefaultValue(key)} id={key} maxlength={selectedAddon.configTemplate[key].maxTextLength} minlength={selectedAddon.configTemplate[key].minTextLength} />
+              {/if}
             {/if}
             {#if isNumberOption(selectedAddon.configTemplate[key])}
-              <input type="number" id={key} on:change={updateConfig} value={getStoredOrDefaultValue(key)} max={isNumberOption(selectedAddon.configTemplate[key]) ? selectedAddon.configTemplate[key].max : 0} min={isNumberOption(selectedAddon.configTemplate[key]) ? selectedAddon.configTemplate[key].min : 0} />
+              <input data-input type="number" id={key} on:change={updateConfig} value={getStoredOrDefaultValue(key)} max={isNumberOption(selectedAddon.configTemplate[key]) ? selectedAddon.configTemplate[key].max : 0} min={isNumberOption(selectedAddon.configTemplate[key]) ? selectedAddon.configTemplate[key].min : 0} />
             {/if}
             {#if isBooleanOption(selectedAddon.configTemplate[key])}
               {#if getStoredOrDefaultValue(key)}
-                <input type="checkbox" id={key} on:change={updateConfig} checked />
+                <input data-input type="checkbox" id={key} on:change={updateConfig} checked />
               {:else}
-                <input type="checkbox" id={key} on:change={updateConfig} />
+                <input data-input type="checkbox" id={key} on:change={updateConfig} />
               {/if}
             {/if}
             <p data-error-message class="text-red-500" data-context="" on:mouseenter={showContextHint} on:mouseleave={hideContextHint}>

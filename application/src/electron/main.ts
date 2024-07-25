@@ -107,14 +107,13 @@ function createWindow() {
                 event.returnValue = 'success';
             });
         });
-        ipcMain.on('fs:show-file-loc', (event, arg) => {
-            const path = join(__dirname, arg);
-            if (!fs.existsSync(path
-            )) {
+        ipcMain.on('fs:show-file-loc', (event, path) => {
+            if (!fs.existsSync(path)) {
                 event.returnValue = false;
                 return;
             }
             shell.showItemInFolder(path);
+            event.returnValue = true;
         });
 
         ipcMain.on('real-debrid:set-key', async (event, arg) => {

@@ -134,7 +134,14 @@
     }, 200);
   }
   
+  function updateInputNum(event: Event) {
+    const element = event.target as HTMLInputElement;
+    if (element.type === "range") {
+      element.parentElement!!.querySelector("p")!!.textContent = element.value;
+    }
+  }
 </script>
+
 
 <div class="config">
   <div class="w-2/6 border-r-2 border-gray-800 h-full">
@@ -172,13 +179,16 @@
               {/if}
             {/if}
             {#if isNumberOption(selectedAddon.configTemplate[key])}
-              <input data-input type="number" id={key} on:change={updateConfig} value={getStoredOrDefaultValue(key)} max={isNumberOption(selectedAddon.configTemplate[key]) ? selectedAddon.configTemplate[key].max : 0} min={isNumberOption(selectedAddon.configTemplate[key]) ? selectedAddon.configTemplate[key].min : 0} />
+              <input data-input type={selectedAddon.configTemplate[key].inputType} id={key} on:input={(event) => updateInputNum(event)} on:change={updateConfig} value={getStoredOrDefaultValue(key)} max={isNumberOption(selectedAddon.configTemplate[key]) ? selectedAddon.configTemplate[key].max : 0} min={isNumberOption(selectedAddon.configTemplate[key]) ? selectedAddon.configTemplate[key].min : 0} />
+              {#if selectedAddon.configTemplate[key].inputType === "range"}
+                <p>{getStoredOrDefaultValue(key)}</p>
+              {/if}
             {/if}
             {#if isBooleanOption(selectedAddon.configTemplate[key])}
               {#if getStoredOrDefaultValue(key)}
-                <input data-input type="checkbox" id={key} on:change={updateConfig} checked />
+                <input data-input type="checkbox" id={key} on:change={updateConfig} class="top-[2px] relative" checked />
               {:else}
-                <input data-input type="checkbox" id={key} on:change={updateConfig} />
+                <input data-input type="checkbox" id={key} on:change={updateConfig} class="top-[2px] relative" />
               {/if}
             {/if}
             <p data-error-message class="text-red-500" data-context="" on:mouseenter={showContextHint} on:mouseleave={hideContextHint}>

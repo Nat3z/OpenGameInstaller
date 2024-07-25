@@ -141,9 +141,14 @@ export class NumberOption extends ConfigurationOption {
   public max: number = Number.MAX_SAFE_INTEGER;
   public defaultValue: number = 0;
   public type: ConfigurationOptionType = 'number'
-
+  public inputType: 'range' | 'number' = 'number';
   setMin(min: number): this {
     this.min = min;
+    return this;
+  }
+
+  setInputType(type: 'range' | 'number'): this {
+    this.inputType = type;
     return this;
   }
 

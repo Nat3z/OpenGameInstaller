@@ -35,6 +35,9 @@ function createWindow() {
             contextIsolation: true,
             preload: join(__dirname, 'preload.js')
         },
+        title: 'OpenGameInstaller',
+        fullscreenable: false,
+        resizable: false,
         icon: join(__dirname, 'public/favicon.png'),
         show: false
     });
@@ -44,7 +47,7 @@ function createWindow() {
     if (isDev()) {
         mainWindow.loadURL('http://localhost:8080/?secret=' + applicationAddonSecret);
     } else {
-        mainWindow.loadURL("file://" + join(__dirname, 'index.html') + "?secret=" + applicationAddonSecret);
+        mainWindow.loadURL("file://" + join(__dirname, '../public/index.html') + "?secret=" + applicationAddonSecret);
     }
     
     // Uncomment the following line of code when app is ready to be packaged.

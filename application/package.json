@@ -4,11 +4,11 @@
   "description": "The boilerplate code to get started creating Cross-platform Desktop Apps with Electron and Svelte as front-end technology.",
   "private": false,
   "license": "MIT",
-  "main": "public/build/bundle.js",
+  "main": "./build/main.js",
   "author": "Nat3z",
   "build": {
     "icon": "public/favicon.png",
-    "productName": "Svelte and Electron App",
+    "productName": "OpenGameInstaller",
     "files": [
       "public/**/*",
       "./build/**/*"
@@ -19,13 +19,13 @@
   },
   "scripts": {
     "build": "rollup -c --bundleConfigAsCjs",
-    "build:ogiaddon": "cd ../packages/ogi-addon/ && tsc --p ./tsconfig.json",
+    "build:ogiaddon": "cd ../packages/ogi-addon/ && tsc --p ./tsconfig.json && cd ../real-debrid/ && tsc --p ./tsconfig.json",
     "dev": "bun run build:ogiaddon && rollup -c -w --bundleConfigAsCjs",
     "start": "sirv public --no-clear",
     "electron": "wait-on http://localhost:8080 && tsc --p tsconfig.electron.json && electron ./build/main.js",
     "dev:server": "nodemon --watch server --ext ts,json --exec \"tsc --p tsconfig.addonserver.json && bun run --bun build-addons/dev-server.js\"",
     "electron-dev": "concurrently \"bun run dev\" \"bun run electron\"",
-    "preelectron-pack": "bun run build",
+    "preelectron-pack": "bun run build && bun run build:ogiaddon && bunx tsc --p tsconfig.electron.json",
     "electron-pack": "electron-builder",
     "check": "svelte-check --tsconfig ./tsconfig.svelte.json"
   },

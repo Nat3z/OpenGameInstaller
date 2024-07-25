@@ -17,7 +17,7 @@
     "auto-build": "tsc -w",
     "build": "tsc",
     "test": "bun test ./tests/**/*.test.ts",
-    "publish": "bun run build && npm publish"
+    "release": "bun run build && npm publish"
   },
   "devDependencies": {
     "typescript": "^5.0.0"

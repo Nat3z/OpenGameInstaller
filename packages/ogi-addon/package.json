@@ -15,7 +15,7 @@
   },
   "scripts": {
     "auto-build": "tsc -w",
-    "publish": "bunx tsc && npm publish"
+    "release": "bunx tsc && npm publish"
   },
   "devDependencies": {
     "@types/ws": "^8.4.0",

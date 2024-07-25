@@ -5,5 +5,8 @@
     "packages/ogi-addon",
     "packages/real-debrid",
     "application"
-  ]
+  ],
+  "scripts": {
+    "release": "cd packages/ogi-addon && bun run release && cd ../real-debrid && bun run release"
+  }
 }

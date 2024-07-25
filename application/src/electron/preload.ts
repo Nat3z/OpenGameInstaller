@@ -7,7 +7,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     write: (path: string, data: string) => ipcRenderer.sendSync('fs:write', { path, data }),
     mkdir: (path: string) => ipcRenderer.sendSync('fs:mkdir', path),
     exists: (path: string) => ipcRenderer.sendSync('fs:exists', path),
-    showFileLoc: (path: string) => ipcRenderer.sendSync('fs:show-file-loc', path)
+    showFileLoc: (path: string) => ipcRenderer.sendSync('fs:show-file-loc', path),
+    dialog: {
+      showOpenDialog: (options: Electron.OpenDialogOptions) => ipcRenderer.invoke('fs:dialog:show-open-dialog', options),
+      showSaveDialog: (options: Electron.SaveDialogOptions) => ipcRenderer.invoke('fs:dialog:show-save-dialog', options)
+    }
   },
   realdebrid: {
     setKey: (key: string) => ipcRenderer.sendSync('real-debrid:set-key', key),

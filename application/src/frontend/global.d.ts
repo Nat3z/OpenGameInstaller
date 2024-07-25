@@ -14,7 +14,11 @@ interface Window {
       write: (path: string, data: string) => void,
       mkdir: (path: string) => void,
       exists: (path: string) => boolean,
-      showFileLoc: (path: string) => void
+      showFileLoc: (path: string) => void,
+      dialog: {
+        showOpenDialog: (options: Electron.OpenDialogOptions) => Promise<string | undefined>,
+        showSaveDialog: (options: Electron.SaveDialogOptions) => Promise<string | undefined>
+      }
     },
     realdebrid: {
       setKey: (key: string) => boolean,

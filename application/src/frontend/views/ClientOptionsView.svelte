@@ -10,7 +10,7 @@
         description: string;
         defaultValue: string | number | boolean;
         value: string | number | boolean;
-        type: "string" | "number" | "boolean";
+        type: "string" | "number" | "boolean" | "file-folder";
         maxTextLength?: number;
         minTextLength?: number;
         max?: number;
@@ -19,6 +19,20 @@
     };
   }
   let options: OptionsCategory[] = [
+    {
+      name: "General",
+      id: "general",
+      description: "General Settings",
+      options: {
+        fileDownloadLocation: {
+          displayName: "Download Location",
+          description: "The location where files will be downloaded to",
+          defaultValue: "./downloads",
+          value: "",
+          type: "file-folder",
+        },
+      }
+    },
     {
       name: "Real Debrid",
       id: "realdebrid",
@@ -56,7 +70,7 @@
       if (!selectedOption) return;
       const element = document.getElementById(key) as HTMLInputElement;
       if (element && selectedOption!!.options[key]) {
-        if (selectedOption.options[key].type === "string") {
+        if (selectedOption.options[key].type === "string" || selectedOption.options[key].type === "file-folder") {
           config[key] = element.value;
         }
         if (selectedOption.options[key].type === "number") {
@@ -89,6 +103,18 @@
     }
   }
 
+  function browseForFolder(event: MouseEvent) {
+    const dialog = window.electronAPI.fs.dialog;
+    const element = (event.target as HTMLElement).parentElement!!.querySelector("input") as HTMLInputElement;
+    dialog.showOpenDialog({ properties: ["openDirectory"] }).then((path) => {
+      if (!path) return;
+      if (element) {
+        element.value = path;
+      }
+      updateConfig();
+    });
+  }
+
   
 </script>
 
@@ -118,6 +144,10 @@
             <label for={key}>{selectedOption.options[key].displayName}</label>
             {#if selectedOption.options[key].type === "string"}
               <input type="text" on:change={updateConfig} value={getStoredOrDefaultValue(key)} id={key} maxlength={selectedOption.options[key].maxTextLength} minlength={selectedOption.options[key].minTextLength} />
+            {/if}
+            {#if  selectedOption.options[key].type === "file-folder"}
+              <input type="text" on:change={updateConfig} value={getStoredOrDefaultValue(key)} id={key} maxlength={selectedOption.options[key].maxTextLength} minlength={selectedOption.options[key].minTextLength} />
+              <button class="bg-blue-500 text-white p-2 rounded" on:click={(ev) => browseForFolder(ev)}>Browse</button>
             {/if}
             {#if selectedOption.options[key].type === "number"}
               <input type="number" id={key} on:change={updateConfig} value={getStoredOrDefaultValue(key)} max={selectedOption.options[key].max} min={selectedOption.options[key].min} />

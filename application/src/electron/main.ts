@@ -1,7 +1,7 @@
 import { join } from 'path';
 import { server, port } from "./server/addon-server"
 import { applicationAddonSecret } from './server/constants';
-import { app, BrowserWindow, ipcMain, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
 import fs, { ReadStream } from 'fs';
 import RealDebrid from 'node-real-debrid';
 import https from 'https';
@@ -117,6 +117,14 @@ function createWindow() {
             }
             shell.showItemInFolder(path);
             event.returnValue = true;
+        });
+        ipcMain.handle('fs:dialog:show-open-dialog', async (_, options) => {
+            const result = await dialog.showOpenDialog(options);
+            return result.filePaths[0];
+        });
+        ipcMain.handle('fs:dialog:show-save-dialog', async (_, options) => {
+            const result = await dialog.showSaveDialog(options);
+            return result.filePath;
         });
 
         ipcMain.on('real-debrid:set-key', async (event, arg) => {

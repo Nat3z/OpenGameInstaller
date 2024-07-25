@@ -90,6 +90,17 @@
 					return;
 				}
 				// add torrent link
+				const localID = Math.floor(Math.random() * 1000000);
+				currentDownloads.update((downloads) => {
+					return [...downloads, { 
+						id: '' + localID, 
+						status: 'rd-downloading', 
+						downloadPath: 'C:\\Users\\apbro\\Documents\\TestFolder', 
+						downloadSpeed: 0,
+						progress: 0,
+						...result 
+					}];
+				});
 				const torrent = await window.electronAPI.realdebrid.addTorrent(result.downloadURL);
 				const isReady = window.electronAPI.realdebrid.isTorrentReady(torrent.id);
 				if (!isReady) {
@@ -115,14 +126,11 @@
 				}
 				const downloadID = await window.electronAPI.ddl.download(download.download, "C:\\Users\\apbro\\Documents\\TestFolder\\" + download.filename);
 				currentDownloads.update((downloads) => {
-					return [...downloads, { 
-						id: downloadID, 
-						status: 'downloading', 
-						downloadPath: 'C:\\Users\\apbro\\Documents\\TestFolder', 
-						downloadSpeed: 0,
-						progress: 0,
-						...result 
-					}];
+					const download = downloads.find((d) => d.id === localID + '')!!
+					download.status = 'downloading';
+					download.id = downloadID;
+					downloads[downloads.indexOf(download)] = download;
+					return downloads;
 				});
 				break;
 			}

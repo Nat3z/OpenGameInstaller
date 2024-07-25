@@ -64,6 +64,9 @@
           <p class="text-red-500 font-mono">ERROR</p>
         {:else if download.status === 'setup-complete'}
           <p class="text-green-500 font-mono">SETUP COMPLETE</p>
+          <button class="bg-blue-500 text-white p-2 rounded" on:click={() => window.electronAPI.fs.showFileLoc(download.downloadPath)}>Show File Location</button>
+        {:else if download.status === 'rd-downloading'}
+          <p class="text-yellow-500 font-mono">Waiting for Real-Debrid to download torrent...</p>
         {:else}
           <section class="flex flex-row gap-8 w-full items-center p-4">
             <section class="flex-col flex w-1/3 justify-center items-center">

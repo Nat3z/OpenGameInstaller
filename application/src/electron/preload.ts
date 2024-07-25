@@ -6,7 +6,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     read: (path: string) => ipcRenderer.sendSync('fs:read', path),
     write: (path: string, data: string) => ipcRenderer.sendSync('fs:write', { path, data }),
     mkdir: (path: string) => ipcRenderer.sendSync('fs:mkdir', path),
-    exists: (path: string) => ipcRenderer.sendSync('fs:exists', path)
+    exists: (path: string) => ipcRenderer.sendSync('fs:exists', path),
+    showFileLoc: (path: string) => ipcRenderer.sendSync('fs:show-file-loc', path)
   },
   realdebrid: {
     setKey: (key: string) => ipcRenderer.sendSync('real-debrid:set-key', key),
@@ -36,5 +37,4 @@ ipcRenderer.on('ddl:download-error', (_, arg) => {
 });
 ipcRenderer.on('ddl:download-complete', (_, arg) => {
   document.dispatchEvent(new CustomEvent('ddl:download-complete', { detail: arg }));
-
 });

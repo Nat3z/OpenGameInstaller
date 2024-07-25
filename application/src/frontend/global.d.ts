@@ -13,7 +13,8 @@ interface Window {
       read: (path: string) => string,
       write: (path: string, data: string) => void,
       mkdir: (path: string) => void,
-      exists: (path: string) => boolean
+      exists: (path: string) => boolean,
+      showFileLoc: (path: string) => void
     },
     realdebrid: {
       setKey: (key: string) => boolean,

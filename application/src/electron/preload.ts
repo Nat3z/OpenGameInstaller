@@ -21,7 +21,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getHosts: () => ipcRenderer.sendSync('real-debrid:get-hosts'),
     updateKey: () => ipcRenderer.sendSync('real-debrid:update-key'),
     addTorrent: (torrent: string, host: $Hosts) => ipcRenderer.invoke('real-debrid:add-torrent', { torrent, host }),
-    getTorrents: () => ipcRenderer.sendSync('real-debrid:get-torrents'),
     selectTorrent: (torrents: number[]) => ipcRenderer.sendSync('real-debrid:select-torrent', torrents),
     isTorrentReady: (id: string) => ipcRenderer.sendSync('real-debrid:is-torrent-ready', id),
     getTorrentInfo: (id: string) => ipcRenderer.sendSync('real-debrid:get-torrent-info', id)

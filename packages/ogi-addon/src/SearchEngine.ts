@@ -5,4 +5,5 @@ export interface SearchResult {
   downloadURL: string;
   downloadType: 'torrent' | 'direct' | 'real-debrid-magnet' | 'real-debrid-torrent';
   downloadSize: number;
+  filename?: string;
 }

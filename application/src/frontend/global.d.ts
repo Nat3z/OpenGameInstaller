@@ -27,7 +27,6 @@ interface Window {
       getHosts: () => $Hosts[],
       addMagnet: (url: string, host: $Hosts) => $AddTorrentOrMagnet,
       addTorrent: (torrent: string) => Promise<$AddTorrentOrMagnet>,
-      getTorrents: () => $TorrentInfo[],
       selectTorrent: (torrent: string) => boolean,
       isTorrentReady: (id: string) => boolean,
       getTorrentInfo: (id: string) => $TorrentInfo,

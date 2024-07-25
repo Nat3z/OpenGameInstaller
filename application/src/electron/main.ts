@@ -4,10 +4,10 @@ import { applicationAddonSecret } from './server/constants';
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
 import fs, { ReadStream } from 'fs';
 import RealDebrid from 'node-real-debrid';
-import https from 'https';
 import { exec } from 'child_process';
 import { processes, setupAddon, startAddon } from './addon-init-configure';
 import { isSecurityCheckEnabled } from './server/AddonConnection';
+import axios from 'axios';
 
 // Keep a global reference of the window object, if you don't, the window will
 // be closed automatically when the JavaScript object is garbage collected.
@@ -188,35 +188,51 @@ function createWindow() {
             const selected = await realDebridClient.selectTorrents(arg);
             event.returnValue = selected;
         })
-        ipcMain.on('real-debrid:get-torrents', async (event, _) => {
-            const torrents = await realDebridClient.getTorrents();
-            event.returnValue = torrents;
-        });
         ipcMain.handle('real-debrid:add-torrent', async (_, arg) => {
             // arg.url is a link to the download, we need to get the file
             // and send it to the real-debrid API
             console.log(arg);
             try {
+
+                const fileStream = fs.createWriteStream('./temp.torrent');
+                const downloadID = Math.random().toString(36).substring(7);
                 const torrentData = await new Promise<ReadStream>((resolve, reject) => {
-                    const url = new URL(arg.torrent);
-                    const options = {
-                        "method": "GET",
-                        "hostname": url.hostname,
-                        "port": null,
-                        "path": url.pathname
-                    };
-                    https.get(options, (response) => {
-                        response.pipe(fs.createWriteStream('./temp.torrent'));
-                        response.on('end', async () => {
+                    axios({
+                        method: 'get',
+                        url: arg.torrent,
+                        responseType: 'stream'
+                    }).then(response => {
+                        response.data.pipe(fileStream);
+
+                        fileStream.on('finish', () => {
+                            console.log('Download complete!!');
+                            fileStream.close();
                             resolve(fs.createReadStream('./temp.torrent'));
                         });
-                        response.on('error', (err) => {
-                            reject(err);
+
+                        fileStream.on('error', (err) => {
+                            console.error(err);
+                            fileStream.close();
+                            fs.unlinkSync(arg.path);
+                            reject();
                         });
                     });
+                }).catch(err => {
+                    console.error(err);
+                    mainWindow.webContents.send('ddl:download-error', { id: downloadID, error: err });
+                    fileStream.close();
+                    fs.unlinkSync(arg.path);
+                    sendNotification({
+                        message: 'Download failed for ' + arg.path,
+                        id: downloadID,
+                        type: 'error'
+                    });
                 });
+                if (!torrentData) {
+                    return null;
+                }
                 console.log("Downloaded torrent! Now adding to readDebrid")
-                const data = await realDebridClient.addTorrent(torrentData);
+                const data = await realDebridClient.addTorrent(torrentData as ReadStream);
                 console.log("Added torrent to real-debrid!")
                 return data
             } catch (except) {
@@ -241,15 +257,17 @@ function createWindow() {
                 let fileStream = fs.createWriteStream(arg.path);
 
                 // get file size first
-                const url = new URL(arg.link);
-                const fileSize = await new Promise<number>((resolve, reject) => https.get({
-                    method: 'HEAD',
-                    hostname: url.hostname,
-                    path: url.pathname,
-                }, (response) => {
-                    if (response.statusCode !== 200) return reject(new Error('Invalid status code'));
-                    resolve(parseFloat(response.headers['content-length']!!)!!);
-                }));
+                const fileSize = await new Promise<number>((resolve, reject) => {
+                    axios({
+                        method: 'head',
+                        url: arg.link
+                    }).then(response => {
+                        resolve(parseFloat(response.headers['content-length']!! as string)!!);
+                    }).catch(err => {
+                        console.error(err);
+                        reject(err);
+                    });
+                });
                 console.log("Starting download...")
 
                 fileStream.on('error', (err) => {
@@ -258,34 +276,32 @@ function createWindow() {
                     fileStream.close();
                     reject()
                 });
-
-                https.get(arg.link, (response) => {
-                    console.log("Starting download...")
-                    response.pipe(fileStream);
-
-                    response.on('data', (chunk) => {
+                axios({
+                    method: 'get',
+                    url: arg.link,
+                    responseType: 'stream'
+                }).then(response => {
+                    response.data.pipe(fileStream);
+                    response.data.on('data', (chunk: Buffer) => {
                         const downloadSpeed = chunk.length / 1024;
                         const progress = fileStream.bytesWritten / fileSize;
                         mainWindow.webContents.send('ddl:download-progress', { id: downloadID, progress, downloadSpeed, fileSize });
                     });
 
-                    response.on('end', () => {
+                    response.data.on('end', () => {
                         console.log("Download complete!")
                         fileStream.close();
                         mainWindow.webContents.send('ddl:download-complete', { id: downloadID });
                         resolve();
                     });
 
-                    response.on('error', (err) => {
-                        console.error(err);
-                        mainWindow.webContents.send('ddl:download-error', { id: downloadID, error: err });
+                    response.data.on('error', () => {
+                        mainWindow.webContents.send('ddl:download-error', { id: downloadID, error: '' });
                         fileStream.close();
                         fs.unlinkSync(arg.path);
                         reject();
                     });
-                    // send the download status/progress as it goes to the client
-                    // send how much is done and the download speed
-                }).on('error', (err) => {
+                }).catch(err => {
                     console.error(err);
                     mainWindow.webContents.send('ddl:download-error', { id: downloadID, error: err });
                     fileStream.close();
@@ -297,7 +313,6 @@ function createWindow() {
                     });
                     reject();
                 });
-                
             }).then(() => {
                 console.log('Download complete!!');
             }).catch((err) => {

@@ -23,21 +23,33 @@ addon.on('connect', () => {
 
 addon.on('search', (query, event) => {
   addon.notify({ type: 'info', message: 'Searching...', id: 'search' });
-  event.resolve([{ 
-    name: "Real Debrid Test",
-    description: addon.config.getStringValue('testOption') || 'No description',
-    coverURL: 'https://dummyimage.com/375x500/968d96/ffffff',
-    downloadSize: 100,
-    downloadURL: 'https://real-debrid.com/d/O4GZCDAA73QEQFB5',
-    downloadType: 'real-debrid-magnet'
-  },
-  {
-    name: "Torrent Test",
-    description: addon.config.getStringValue('testOption') || 'No description',
-    coverURL: 'https://dummyimage.com/375x500/968d96/ffffff',
-    downloadSize: 100,
-    downloadType: 'real-debrid-torrent'
-  }]);
+  event.resolve([
+    { 
+      name: "Real Debrid Test",
+      description: addon.config.getStringValue('testOption') || 'No description',
+      coverURL: 'https://dummyimage.com/375x500/968d96/ffffff',
+      downloadSize: 100,
+      downloadURL: 'magnet:?xt=urn:btih:dd8255ecdc7ca55fb0bbf81323d87062db1f6d1c&dn=Big+Buck+Bunny&tr=udp%3A%2F%2Fexplodie.org%3A6969&tr=udp%3A%2F%2Ftracker.coppersurfer.tk%3A6969&tr=udp%3A%2F%2Ftracker.empire-js.us%3A1337&tr=udp%3A%2F%2Ftracker.leechers-paradise.org%3A6969&tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337&tr=wss%3A%2F%2Ftracker.btorrent.xyz&tr=wss%3A%2F%2Ftracker.fastcast.nz&tr=wss%3A%2F%2Ftracker.openwebtorrent.com&ws=https%3A%2F%2Fwebtorrent.io%2Ftorrents%2F&xs=https%3A%2F%2Fwebtorrent.io%2Ftorrents%2Fbig-buck-bunny.torrent',
+      downloadType: 'real-debrid-magnet'
+    },
+    {
+      name: "Torrent Test",
+      description: addon.config.getStringValue('testOption') || 'No description',
+      coverURL: 'https://dummyimage.com/375x500/968d96/ffffff',
+      downloadURL: "https://webtorrent.io/torrents/tears-of-steel.torrent",
+      downloadSize: 100,
+      downloadType: 'real-debrid-torrent'
+    },
+    {
+      name: "Direct Download Test",
+      description: addon.config.getStringValue('testOption') || 'No description',
+      coverURL: 'https://dummyimage.com/375x500/968d96/ffffff',
+      downloadURL: 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf',
+      downloadSize: 100,
+      filename: 'dummy.pdf',
+      downloadType: 'direct'
+    }
+  ]);
 });
 
 addon.on('setup', (path, event) => {

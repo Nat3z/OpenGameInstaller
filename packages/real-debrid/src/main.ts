@@ -119,20 +119,6 @@ export default class RealDebrid {
     return result;
   }
 
-  public async getTorrents() {
-    const response = await axios(`${REAL_DEBRID_API_URL}/torrents`, {
-      headers: {
-        Authorization: `Bearer ${this.configuration.apiKey}`,
-      },
-      validateStatus: () => true,
-    });
-    if (response.status !== 200) {
-      throw new Error(`Failed to fetch torrents: ${response.statusText}`);
-    }
-    const result = TorrentInfoZod.array().parse(response.data);
-    return result;
-  }
-
   public async getTorrentInfo(id: string) {
     const response = await axios(`${REAL_DEBRID_API_URL}/torrents/info/${id}`, {
       headers: {
@@ -160,8 +146,8 @@ export default class RealDebrid {
       data: formData,
       validateStatus: () => true,
     });
-    if (response.status !== 200) {
-      throw new Error(`Failed to add torrent: ${response.statusText}`);
+    if (response.status !== 201) {
+      throw new Error(`Failed to add magnet: ${response.statusText}`);
     }
     const result = AddTorrentOrMagnetZod.parse(response.data);
     return result;

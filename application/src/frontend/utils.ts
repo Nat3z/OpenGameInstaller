@@ -1,5 +1,6 @@
 import type { OGIAddonConfiguration } from "ogi-addon";
 import type { ConfigurationFile } from "ogi-addon/build/config/ConfigurationBuilder";
+import { createNotification } from "./store";
 function getSecret() {
   const urlParams = new URLSearchParams(window.location.search);
   const addonSecret = urlParams.get('secret');
@@ -14,6 +15,22 @@ interface ConsumableRequest extends RequestInit {
 }
 export interface ConfigTemplateAndInfo extends OGIAddonConfiguration {
   configTemplate: ConfigurationFile
+}
+
+export function getDownloadPath() {
+  if (!fs.exists('./config/option/general.json')) {
+    if (!fs.exists('./downloads')) fs.mkdir('./downloads');
+    createNotification({
+      message: 'Download path not set, using default path (./downloads)',
+      id: 'download-path',
+      type: 'info'
+    })
+    return "./downloads";
+  }
+  if (!fs.exists('./downloads')) fs.mkdir('./downloads');
+  const file = fs.read('./config/option/general.json');
+  const data = JSON.parse(file);
+  return data.fileDownloadLocation;
 }
 
 export async function fsCheck(path: string) {

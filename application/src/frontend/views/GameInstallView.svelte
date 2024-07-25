@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { fetchAddonsWithConfigure, safeFetch } from "../utils";
+  import { fetchAddonsWithConfigure, getDownloadPath, safeFetch } from "../utils";
   import type { OGIAddonConfiguration, SearchResult } from "ogi-addon";
   import type { ConfigurationFile } from "ogi-addon/build/config/ConfigurationBuilder";
   import { currentDownloads, notifications } from "../store";
@@ -59,23 +59,37 @@
 					return;
 				}
 				// get the first host
-				// const hosts = window.electronAPI.realdebrid.getHosts();	
-				// // add magnet link
-				// const magnetLink = window.electronAPI.realdebrid.addMagnet(result.downloadURL, hosts[0]);
-				// const download = await window.electronAPI.realdebrid.unrestrictLink(magnetLink.uri);
+				const hosts = window.electronAPI.realdebrid.getHosts();	
+				// add magnet link
+				const magnetLink = window.electronAPI.realdebrid.addMagnet(result.downloadURL, hosts[0]);
+				const isReady = window.electronAPI.realdebrid.isTorrentReady(magnetLink.id);
+				if (!isReady) {
+					window.electronAPI.realdebrid.selectTorrent(magnetLink.id);
+					await new Promise<void>((resolve) => {
+						const interval = setInterval(async () => {
+							const isReady = await window.electronAPI.realdebrid.isTorrentReady(magnetLink.id);
+							if (isReady) {
+								clearInterval(interval);
+								resolve();
+							}
+						}, 1000);
+					});
+				}
 
-				//! for testing purposes, we will use a direct link
-				const download = await window.electronAPI.realdebrid.unrestrictLink(result.downloadURL);
+
+				const torrentInfo = await window.electronAPI.realdebrid.getTorrentInfo(magnetLink.id);
+				const download = window.electronAPI.realdebrid.unrestrictLink(torrentInfo.links[0]);
+
 				if (download === null) {
 					alert("Failed to download the file.");
 					return;
 				}
-				const downloadID = await window.electronAPI.ddl.download(download.download, "C:\\Users\\apbro\\Documents\\TestFolder\\" + download.filename);
+				const downloadID = await window.electronAPI.ddl.download(download.download, getDownloadPath() + "\\" + download.filename);
 				currentDownloads.update((downloads) => {
 					return [...downloads, { 
 						id: downloadID, 
 						status: 'downloading', 
-						downloadPath: 'C:\\Users\\apbro\\Documents\\TestFolder', 
+						downloadPath: getDownloadPath() + "\\" + download.filename, 
 						downloadSpeed: 0,
 						progress: 0,
 						...result 
@@ -95,7 +109,7 @@
 					return [...downloads, { 
 						id: '' + localID, 
 						status: 'rd-downloading', 
-						downloadPath: 'C:\\Users\\apbro\\Documents\\TestFolder\\' + result.name, 
+						downloadPath: getDownloadPath() + "\\" + result.name, 
 						downloadSpeed: 0,
 						progress: 0,
 						...result 
@@ -124,20 +138,34 @@
 					alert("Failed to download the file.");
 					return;
 				}
-				const downloadID = await window.electronAPI.ddl.download(download.download, "C:\\Users\\apbro\\Documents\\TestFolder\\" + download.filename);
+
+				const downloadID = await window.electronAPI.ddl.download(download.download, getDownloadPath() + "\\" + download.filename);
 				currentDownloads.update((downloads) => {
 					const matchingDownload = downloads.find((d) => d.id === localID + '')!!
 					matchingDownload.status = 'downloading';
 					matchingDownload.id = downloadID;
-					matchingDownload.downloadPath = 'C:\\Users\\apbro\\Documents\\TestFolder\\' + download.filename;
+
+					matchingDownload.downloadPath = getDownloadPath() + "\\" + download.filename;
 					downloads[downloads.indexOf(matchingDownload)] = matchingDownload;
 					return downloads;
 				});
 				break;
 			}
 			case 'torrent':
-			case "direct":
 				alert("Currently not supported.")
+				break;
+			case "direct":
+				const downloadID = window.electronAPI.ddl.download(result.downloadURL, getDownloadPath() + "\\" + (result.filename || result.downloadURL.split(/\\|\//).pop()));
+				currentDownloads.update((downloads) => {
+					return [...downloads, { 
+						id: downloadID, 
+						status: 'downloading', 
+						downloadPath: getDownloadPath() + "\\" + (result.filename || result.downloadURL.split(/\\|\//).pop()), 
+						downloadSpeed: 0,
+						progress: 0,
+						...result 
+					}];
+				});
 				break;
 		}
 	}

@@ -8,7 +8,7 @@ import { exec } from 'child_process';
 import { processes, setupAddon, startAddon } from './addon-init-configure';
 import { isSecurityCheckEnabled } from './server/AddonConnection';
 import axios from 'axios';
-
+import { addTorrent } from './webtorrent-connect';
 // Keep a global reference of the window object, if you don't, the window will
 // be closed automatically when the JavaScript object is garbage collected.
 let mainWindow: any;
@@ -257,7 +257,82 @@ function createWindow() {
                 return null;
             }
 
-        })
+        });
+
+        ipcMain.handle('torrent:download-torrent', async (_, arg: { link: string, path: string }) => {
+            try {
+                const fileStream = fs.createWriteStream('./temp.torrent');
+                const downloadID = Math.random().toString(36).substring(7);
+                const torrentData = await new Promise<Uint8Array>((resolve, reject) => {
+                    axios({
+                        method: 'get',
+                        url: arg.link,
+                        responseType: 'stream'
+                    }).then(response => {
+                        response.data.pipe(fileStream);
+
+                        fileStream.on('finish', () => {
+                            console.log('Download complete!!');
+                            fileStream.close();
+                            resolve(fs.readFileSync('./temp.torrent'));
+                        });
+
+                        fileStream.on('error', (err) => {
+                            console.error(err);
+                            fileStream.close();
+                            fs.unlinkSync(arg.path);
+                            reject();
+                        });
+                    });
+                }).catch(err => {
+                    if (!mainWindow.webContents) {
+                        console.error("Seems like the window is closed. Cannot send error message to renderer.")
+                        return
+                    }
+                    console.error(err);
+                    mainWindow.webContents.send('ddl:download-error', { id: downloadID, error: err });
+                    fileStream.close();
+                    fs.unlinkSync(arg.path);
+                    sendNotification({
+                        message: 'Download failed for ' + arg.path,
+                        id: downloadID,
+                        type: 'error'
+                    });
+                });
+                if (!torrentData) {
+                    return null;
+                }
+
+                addTorrent(torrentData, arg.path, 
+                    (downloadTotal, speed, progress) => {
+                        if (!mainWindow.webContents) {
+                            console.error("Seems like the window is closed. Cannot send progress message to renderer.")
+                            return
+                        }
+                        mainWindow.webContents.send('torrent:download-progress', { id: downloadID, downloadTotal, speed, progress });
+                    },
+                    () => {
+                        if (!mainWindow.webContents) {
+                            console.error("Seems like the window is closed. Cannot send progress message to renderer.")
+                            return
+                        }
+                        mainWindow.webContents.send('torrent:download-complete', { id: downloadID });
+                    }
+                );
+
+                return downloadID;
+
+                
+            } catch (except) {
+                console.error(except);
+                sendNotification({
+                    message: "Failed to add torrent to Real-Debrid",
+                    id: Math.random().toString(36).substring(7),
+                    type: 'error'
+                });
+                return null;
+            }
+        });
 
         ipcMain.on('ddl:download', async (event, arg: { link: string, path: string }) => {
             const downloadID = Math.random().toString(36).substring(7);
@@ -454,6 +529,24 @@ function createWindow() {
                 message: 'Addon server restarted successfully.',
                 id: Math.random().toString(36).substring(7),
                 type: 'success'
+            });
+        });
+
+        ipcMain.handle('clean-addons', async (_) => {
+            // stop all of the addons
+            for (const process of Object.keys(processes)) {
+                console.log(`Killing process ${process}`);
+                processes[process].kill();
+            }
+
+            // delete all of the addons
+            fs.rmdirSync('./addons/', { recursive: true });
+            fs.mkdirSync('./addons/');
+
+            sendNotification({
+                message: 'Successfully cleaned addons.',
+                id: Math.random().toString(36).substring(7),
+                type: 'info'
             });
         });
         mainWindow!!.show()

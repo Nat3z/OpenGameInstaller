@@ -112,6 +112,22 @@
     }
   }
 
+  function showDescription(event: MouseEvent | FocusEvent) {
+    const element = event.target as HTMLElement;
+    const contextual = element.parentElement!!.querySelector("[data-description]")!! as HTMLDivElement;
+    contextual.style.display = "flex";
+    contextual.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 200, fill: "forwards" });
+  }
+
+  function hideDescription(event: MouseEvent) {
+    const element = event.target as HTMLElement;
+    const contextual = element.parentElement!!.querySelector("[data-description]")!! as HTMLDivElement;
+    contextual.style.display = "flex";
+    contextual.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 200, fill: "forwards" });
+    setTimeout(() => {
+      contextual.style.display = "none";
+    }, 200);
+  }
   function showContextHint(event: MouseEvent) {
     const element = event.target as HTMLElement;
     const context = element.getAttribute("data-context");
@@ -166,7 +182,7 @@
         </div>
         {#each Object.keys(selectedAddon.configTemplate) as key}
           <div class="flex flex-row gap-2 items-center relative">
-            <label for={key}>{selectedAddon.configTemplate[key].displayName}</label>
+            <label for={key} on:mouseover={showDescription} on:focus={showDescription} on:mouseleave={hideDescription}>{selectedAddon.configTemplate[key].displayName}</label>
             {#if isStringOption(selectedAddon.configTemplate[key])}
               {#if selectedAddon.configTemplate[key].allowedValues.length !== 0}
                 <select data-input id={key} on:change={updateConfig} value={getStoredOrDefaultValue(key)}>
@@ -197,6 +213,10 @@
             <div data-contextual style="display: none" class="absolute flex flex-row gap-2 justify-start items-center z-20 top-8 border border-black left-0 bg-gray-300 text-sm p-2 rounded-md shadow-lg w-full">
               <img src="./error.svg" alt="error" class="w-4 h-4" />
               <p class="relative -top-[1.5px]"></p>
+            </div>
+            <div data-description style="display: none" class="absolute flex flex-row gap-2 justify-start items-center z-20 top-8 border border-black left-0 bg-gray-300 text-sm p-2 rounded-md shadow-lg w-full">
+              <img src="./info.svg" alt="error" class="w-4 h-4" />
+              <p class="relative -top-[1.5px]">{selectedAddon.configTemplate[key].description}</p>
             </div>
           </div>
         {/each}

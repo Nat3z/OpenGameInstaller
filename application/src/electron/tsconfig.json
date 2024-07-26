@@ -3,6 +3,7 @@
   "compilerOptions": {
     "outDir": "../../build",
     "target": "ES2015",
+    "allowJs": true,
     "module": "commonjs",
     "sourceMap": true,
     "stripInternal": true,

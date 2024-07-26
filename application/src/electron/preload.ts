@@ -24,13 +24,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
     selectTorrent: (torrents: number[]) => ipcRenderer.sendSync('real-debrid:select-torrent', torrents),
     isTorrentReady: (id: string) => ipcRenderer.sendSync('real-debrid:is-torrent-ready', id),
     getTorrentInfo: (id: string) => ipcRenderer.sendSync('real-debrid:get-torrent-info', id)
-
   },
   ddl: {
     download: (link: string, path: string) => ipcRenderer.sendSync('ddl:download', { link, path })
   },
+  torrent: {
+    downloadTorrent: (torrent: string, path: string) => ipcRenderer.sendSync('torrent:download-torrent', { link: torrent, path }),
+  },
   installAddons: (addons: string[]) => ipcRenderer.invoke('install-addons', addons),
-  restartAddonServer: () => ipcRenderer.invoke('restart-addon-server')
+  restartAddonServer: () => ipcRenderer.invoke('restart-addon-server'),
+  cleanAddons: () => ipcRenderer.invoke('clean-addons'),
 })
 
 ipcRenderer.on('ddl:download-progress', (_, arg) => {

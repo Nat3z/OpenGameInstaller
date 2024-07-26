@@ -1,12 +1,12 @@
 {
   "name": "ogi-monorepo",
   "private": true,
+  "scripts": {
+    "release": "cd packages/ogi-addon && bun run release && cd ../real-debrid && bun run release"
+  },
   "workspaces": [
     "packages/ogi-addon",
     "packages/real-debrid",
     "application"
-  ],
-  "scripts": {
-    "release": "cd packages/ogi-addon && bun run release && cd ../real-debrid && bun run release"
-  }
+  ]
 }

@@ -55,9 +55,9 @@
       <section class="flex flex-col w-full">
         <h2 class="truncate w-96">{download.name}</h2>
         {#if download.status === 'completed'}
-          <p class="text-green-500 font-mono">COMPLETED</p>
+          <p class="text-green-500 font-mono">COMPLETED DOWNLOAD</p>
           <p class="text-green-600 font-mono">Setting up with {download.addonSource}</p>
-          <progress class="w-full mb-2" value="0" max="100"></progress>
+          <progress class="w-full mb-2 rounded" value="0" max="100"></progress>
           <code class="h-[9.1rem] p-4 bg-gray-400 border border-black overflow-y-auto">
           </code>
         {:else if download.status === 'error'}

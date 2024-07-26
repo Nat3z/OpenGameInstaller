@@ -47,8 +47,8 @@
 	async function startDownload(result: SearchResultWithAddon, event: MouseEvent) {
 		if (event === null) return;
 		if (event.target === null) return;
-		const htmlButton = (event.target as HTMLButtonElement);
-		htmlButton.textContent = "Downloading...";
+		const htmlButton = (event.target as HTMLElement).closest('button')!!;
+		htmlButton.querySelector('[data-dwtext]')!!.textContent = "Downloading...";
 		htmlButton.disabled = true;
 
 		switch (result.downloadType) {
@@ -185,18 +185,27 @@
 {/if}
 <div class="games">
 	{#each results as result}
-		<div class="relative">
+		<div class="relative rounded">
 			<img src={result.coverURL} class="w-[187.5px] h-[250px]" alt="Game" />
-			<article>
+			<article class="w-full">
 					<h2>{result.name}</h2>
-					<p>{result.description}</p>
-					<section>
-						<nav class="flex flex-col items-center gap-2">
-							<button class="download flex justify-center items-center gap-2" on:click={(event) => startDownload(result, event)}>
-								{#if result.downloadType === 'real-debrid-magnet' || result.downloadType === 'real-debrid-torrent'}
-									<img class="w-4 h-4" src="./rd-logo.png" alt="Real Debrid" />
-								{/if}
-								Download
+					<section class="h-5/6 mr-2 overflow-y-auto">
+						<p>{result.description}</p>
+					</section>
+					<section class="flex flex-col w-full mt-auto">
+						<nav class="flex flex-row items-center gap-4 mt-auto">
+							<button class="download" on:click={(event) => startDownload(result, event)}>
+								<section class="flex flex-row">
+									{#if result.downloadType === 'real-debrid-magnet' || result.downloadType === 'real-debrid-torrent'}
+										<img class="w-4 h-4" src="./rd-logo.png" alt="Real Debrid" />
+									{/if}
+									<h3 class="relative -top-1" data-dwtext>Download</h3>
+								</section>
+
+								<section class="w-full flex justify-center items-center">
+									<img alt="" width="14" height="14" src="./apps.svg"/>
+									<h3 class="text-white text-xs relative -top-[0.9px] -ml-[2px]">{result.addonSource}</h3>
+								</section>
 							</button>
 							<nav class="flex flex-row justify-center items-center gap-2">
 								{#if result.downloadType.includes('magnet')}
@@ -205,32 +214,39 @@
 								{:else if result.downloadType.includes('torrent')}
 									<img class="w-4 h-4" src="./torrent.png" alt="Torrent" />
 									<p>Torrent File</p>
+								{:else if result.downloadType === 'direct'}
+									<p>Direct Download</p>
 								{/if}
 							</nav>
 						</nav>
 					</section>
 
-					<p class="absolute top-0 right-2 text-right">{result.addonSource}</p>
 			</article>
 		</div>
 	{/each}
+
+	{#if results.length === 0 && !loadingResults}
+		<div class="flex justify-center text-center flex-col items-center gap-2 w-full border p-4 border-gray-800 bg-gray-200">
+			<p class="text-2xl">No Results</p>
+		</div>
+	{/if}
 </div>
 
 <style>
 	.games {
-		@apply flex flex-col gap-2 bg-gray-200 w-5/6;
+		@apply flex flex-col gap-2 w-5/6 pb-4;
 	}
 	.games div {
-		@apply border border-gray-800 p-2 flex flex-row gap-4;
+		@apply border border-gray-800 bg-gray-200 p-2 flex flex-row gap-4;
 	}
 	.games section {
 		@apply flex flex-row gap-2;
 	}
 
-	section .download {
-		@apply bg-blue-500 text-white p-2 rounded;
+	.download {
+		@apply bg-blue-500 text-white p-2 rounded w-36 flex flex-col justify-center items-center;
 	}
-	section .download:disabled {
+	.download:disabled {
 		@apply bg-yellow-500 text-white p-2 rounded;
 	}
 	.games div article {

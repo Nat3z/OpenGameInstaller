@@ -32,10 +32,14 @@ interface Window {
       getTorrentInfo: (id: string) => $TorrentInfo,
       updateKey: () => boolean
     },
+    torrent: {
+      downloadTorrent: (torrent: string, path: string) => Promise<string>,
+    },
     ddl: {
       download: (link: string, path: string) => string
     },
     installAddons: (addons: string[]) => Promise<void>,
     restartAddonServer: () => Promise<void>,
+    cleanAddons: () => Promise<void>,
   }
 }

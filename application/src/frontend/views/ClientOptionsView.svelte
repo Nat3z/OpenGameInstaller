@@ -185,6 +185,10 @@
     window.electronAPI.installAddons(addons);
   }
 
+  function cleanAddons() {
+    window.electronAPI.cleanAddons();
+  }
+
   
 </script>
 
@@ -220,7 +224,7 @@
               <button class="bg-blue-500 text-white p-2 rounded" on:click={(ev) => browseForFolder(ev)}>Browse</button>
             {/if}
             {#if selectedOption.options[key].type === "textarea"}
-              <textarea class="w-full h-32" id={key} on:change={updateConfig} value={getStoredOrDefaultValue(key)}></textarea>
+              <textarea class="w-full h-32 resize-none" id={key} on:change={updateConfig} value={getStoredOrDefaultValue(key)}></textarea>
             {/if}
             {#if selectedOption.options[key].type === "number"}
               <input type="number" id={key} on:change={updateConfig} value={getStoredOrDefaultValue(key)} max={selectedOption.options[key].max} min={selectedOption.options[key].min} />
@@ -240,7 +244,7 @@
           <div class="flex justify-center items-center flex-col gap-2">
             <div class="flex justify-center items-center flex-row gap-2">
               <button class="bg-green-500 text-white p-2 rounded" on:click={() => installAddons()}>Install Addons</button>
-              <button class="bg-red-500 text-white p-2 rounded">Clean Addons</button>
+              <button class="bg-red-500 text-white p-2 rounded" on:click={() => cleanAddons()}>Clean Addons</button>
             </div>
 
             <div class="flex justify-center items-center flex-row gap-2">

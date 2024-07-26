@@ -1,6 +1,6 @@
 {
   "name": "real-debrid-js",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "module": "./build/main.js",
   "type": "commonjs",
   "author": {

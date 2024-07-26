@@ -151,10 +151,21 @@
 				});
 				break;
 			}
-			case 'torrent':
-				alert("Currently not supported.")
+			case 'torrent': {
+				const downloadID = await window.electronAPI.torrent.downloadTorrent(result.downloadURL, getDownloadPath() + "\\" + (result.filename || result.downloadURL.split(/\\|\//).pop()));
+				currentDownloads.update((downloads) => {
+					return [...downloads, { 
+						id: downloadID, 
+						status: 'downloading', 
+						downloadPath: getDownloadPath() + "\\" + (result.filename || result.downloadURL.split(/\\|\//).pop()), 
+						downloadSpeed: 0,
+						progress: 0,
+						...result 
+					}];
+				});
 				break;
-			case "direct":
+			}
+			case "direct": {
 				const downloadID = window.electronAPI.ddl.download(result.downloadURL, getDownloadPath() + "\\" + (result.filename || result.downloadURL.split(/\\|\//).pop()));
 				currentDownloads.update((downloads) => {
 					return [...downloads, { 
@@ -167,6 +178,7 @@
 					}];
 				});
 				break;
+			}
 		}
 	}
 </script>

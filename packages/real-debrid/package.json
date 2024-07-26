@@ -20,6 +20,7 @@
     "release": "bun run build && npm publish"
   },
   "devDependencies": {
+    "@types/node": "^20.14.12",
     "typescript": "^5.0.0"
   }
 }

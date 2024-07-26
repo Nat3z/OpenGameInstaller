@@ -2,6 +2,7 @@
   "name": "create-svelte-electron-app",
   "version": "1.2.0",
   "description": "The boilerplate code to get started creating Cross-platform Desktop Apps with Electron and Svelte as front-end technology.",
+  "type": "commonjs",
   "private": false,
   "license": "MIT",
   "main": "./build/main.js",
@@ -40,7 +41,6 @@
     "ogi-addon": "*",
     "real-debrid-js": "*",
     "rollup-plugin-postcss": "^4.0.2",
-    "webtorrent": "^2.4.12",
     "ws": "^8.18.0",
     "zod": "^3.23.8"
   },
@@ -52,7 +52,6 @@
     "@rollup/plugin-typescript": "^11.1.6",
     "@tsconfig/svelte": "^5.0.4",
     "@types/sass": "^1.45.0",
-    "@types/webtorrent": "^2.0.0",
     "autoprefixer": "^10.4.19",
     "concurrently": "^7.5.0",
     "electron": "^21.2.0",

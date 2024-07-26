@@ -18,6 +18,7 @@
     "release": "bunx tsc && npm publish"
   },
   "devDependencies": {
+    "@types/node": "^20.14.12",
     "@types/ws": "^8.4.0",
     "typescript": "^5.0.0"
   }

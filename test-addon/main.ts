@@ -33,12 +33,20 @@ addon.on('search', (query, event) => {
       downloadType: 'real-debrid-magnet'
     },
     {
-      name: "Torrent Test",
+      name: "Real Debrid Torrent Test",
       description: addon.config.getStringValue('testOption') || 'No description',
       coverURL: 'https://dummyimage.com/375x500/968d96/ffffff',
       downloadURL: "https://webtorrent.io/torrents/tears-of-steel.torrent",
       downloadSize: 100,
       downloadType: 'real-debrid-torrent'
+    },
+    {
+      name: "Direct Torrent Test",
+      description: addon.config.getStringValue('testOption') || 'No description',
+      coverURL: 'https://dummyimage.com/375x500/968d96/ffffff',
+      downloadURL: "https://webtorrent.io/torrents/tears-of-steel.torrent",
+      downloadSize: 100,
+      downloadType: 'torrent'
     },
     {
       name: "Direct Download Test",

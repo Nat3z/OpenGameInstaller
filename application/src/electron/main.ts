@@ -8,7 +8,8 @@ import { exec } from 'child_process';
 import { processes, setupAddon, startAddon } from './addon-init-configure';
 import { isSecurityCheckEnabled } from './server/AddonConnection';
 import axios from 'axios';
-import { addTorrent } from './webtorrent-connect';
+import { addTorrent, stopClient } from './webtorrent-connect';
+
 // Keep a global reference of the window object, if you don't, the window will
 // be closed automatically when the JavaScript object is garbage collected.
 let mainWindow: any;
@@ -304,12 +305,12 @@ function createWindow() {
                 }
 
                 addTorrent(torrentData, arg.path, 
-                    (downloadTotal, speed, progress) => {
+                    (_, speed, progress, length) => {
                         if (!mainWindow.webContents) {
                             console.error("Seems like the window is closed. Cannot send progress message to renderer.")
                             return
                         }
-                        mainWindow.webContents.send('torrent:download-progress', { id: downloadID, downloadTotal, speed, progress });
+                        mainWindow.webContents.send('torrent:download-progress', { id: downloadID, downloadSpeed: speed, progress, fileSize: length });
                     },
                     () => {
                         if (!mainWindow.webContents) {
@@ -611,11 +612,13 @@ function startAddons() {
 }
 
 // Quit when all windows are closed.
-app.on('window-all-closed', function () {
+app.on('window-all-closed', async function () {
     // On macOS it is common for applications and their menu bar
     // to stay active until the user quits explicitly with Cmd + Q
     if (process.platform !== 'darwin') app.quit()
-
+    // stop torrenting
+    console.log('Stopping torrent client...');
+    await stopClient();
     // stop the server
     console.log('Stopping server...');
     server.close();

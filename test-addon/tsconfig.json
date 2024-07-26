@@ -23,6 +23,7 @@
     // Some stricter flags (disabled by default)
     "noUnusedLocals": false,
     "noUnusedParameters": false,
-    "noPropertyAccessFromIndexSignature": false
+    "noPropertyAccessFromIndexSignature": false,
+    "typeRoots": ["node_modules/@types", "../typings"],
   }
 }

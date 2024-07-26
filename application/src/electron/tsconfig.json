@@ -4,7 +4,7 @@
     "outDir": "../../build",
     "target": "ES2015",
     "allowJs": true,
-    "module": "commonjs",
+    "module": "CommonJS",
     "sourceMap": true,
     "stripInternal": true,
     "lib": ["es2015", "esnext", "dom"],
@@ -22,8 +22,8 @@
     "emitDecoratorMetadata": true,
     "experimentalDecorators": true,
     "esModuleInterop": true,
-    "isolatedModules": true
+    "isolatedModules": true,
   },
-  "include": ["."],
+  "include": [".", "../typings"],
   "exclude": ["node_modules"]
 }

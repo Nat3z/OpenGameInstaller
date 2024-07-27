@@ -2,14 +2,14 @@ import express from 'express';
 import cors from 'cors';
 const port = 7654;
 import http from 'http';
-import wsLib from 'ws';
-import addonDataRoute from './api/addons';
-import deferRoute from './api/defer';
-import { AddonConnection } from './AddonConnection';
+import { WebSocketServer } from 'ws'
+import addonDataRoute from './api/addons.js';
+import deferRoute from './api/defer.js';
+import { AddonConnection } from './AddonConnection.js';
 
 const app = express();
 const server = http.createServer(app);
-const wss = new wsLib.Server({ server });
+const wss = new WebSocketServer({ server });
 
 const clients: Map<string, AddonConnection> = new Map();
 

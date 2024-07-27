@@ -1,13 +1,19 @@
 {
   "name": "real-debrid-js",
   "version": "1.0.1",
-  "module": "./build/main.js",
-  "type": "commonjs",
+  "module": "./build/main.mjs",
   "author": {
     "name": "Nat3z",
     "email": "me@nat3z.com",
     "url": "https://nat3z.com/"
   },
+  "exports": {
+    ".": {
+      "import": "./build/main.mjs",
+      "require": "./build/main.js"
+    }
+  },
+  "types": "./build/main.d.ts",
   "main": "./build/main.js",
   "dependencies": {
     "axios": "^1.7.2",
@@ -15,12 +21,13 @@
   },
   "scripts": {
     "auto-build": "tsc -w",
-    "build": "tsc",
+    "build": "tsup --config tsup.config.js",
     "test": "bun test ./tests/**/*.test.ts",
     "release": "bun run build && npm publish"
   },
   "devDependencies": {
     "@types/node": "^20.14.12",
+    "tsup": "^8.2.3",
     "typescript": "^5.0.0"
   }
 }

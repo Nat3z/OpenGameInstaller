@@ -1,8 +1,8 @@
 import express from "express";
-import { clients } from "../addon-server";
-import { applicationAddonSecret } from "../constants";
-import { DeferrableTask } from "../DeferrableTask";
-import { DefferedTasks } from "./defer";
+import { clients } from "../addon-server.js";
+import { applicationAddonSecret } from "../constants.js";
+import { DeferrableTask } from "../DeferrableTask.js";
+import { DefferedTasks } from "./defer.js";
 
 const app = express.Router();
 

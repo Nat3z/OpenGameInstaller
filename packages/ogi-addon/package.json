@@ -2,7 +2,14 @@
   "name": "ogi-addon",
   "module": "./build/main.js",
   "type": "module",
-  "main": "./build/main.js",
+  "main": "./build/main.cjs",
+  "exports": {
+    ".": {
+      "import": "./build/main.js",
+      "require": "./build/main.cjs"
+    }
+  },
+  "types": "./build/main.d.ts",
   "author": {
     "name": "Nat3z",
     "email": "me@nat3z.com",
@@ -15,11 +22,13 @@
   },
   "scripts": {
     "auto-build": "tsc -w",
+    "build": "tsup --config tsup.config.js",
     "release": "bunx tsc && npm publish"
   },
   "devDependencies": {
     "@types/node": "^20.14.12",
     "@types/ws": "^8.4.0",
+    "tsup": "^8.2.3",
     "typescript": "^5.0.0"
   }
 }

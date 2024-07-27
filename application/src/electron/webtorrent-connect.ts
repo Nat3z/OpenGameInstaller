@@ -1,8 +1,5 @@
-let client: any;
-(async () => {
-  const webtorrent = await import('webtorrent');
-  client = new webtorrent();
-})();
+import webtorrent from 'webtorrent';
+let client = new webtorrent();
 
 export function addTorrent(torrentId: string | Uint8Array, path: string, onProgress: (downloadTotal: number, speed: number, progress: number, length: number) => void, onDone: () => void) {
   return new Promise<void>((resolve, _) => {

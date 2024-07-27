@@ -1,14 +1,19 @@
 import { join } from 'path';
-import { server, port, clients } from "./server/addon-server"
-import { applicationAddonSecret } from './server/constants';
+import { server, port, clients } from "./server/addon-server.js"
+import { applicationAddonSecret } from './server/constants.js';
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
 import fs, { ReadStream } from 'fs';
 import RealDebrid from 'real-debrid-js';
 import { exec } from 'child_process';
-import { processes, setupAddon, startAddon } from './addon-init-configure';
-import { isSecurityCheckEnabled } from './server/AddonConnection';
+import { processes, setupAddon, startAddon } from './addon-init-configure.js';
+import { isSecurityCheckEnabled } from './server/AddonConnection.js';
 import axios from 'axios';
-import { addTorrent, stopClient } from './webtorrent-connect';
+import { addTorrent, stopClient } from './webtorrent-connect.js';
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 // Keep a global reference of the window object, if you don't, the window will
 // be closed automatically when the JavaScript object is garbage collected.
@@ -45,7 +50,7 @@ function createWindow() {
         webPreferences: {
             nodeIntegration: true,
             contextIsolation: true,
-            preload: join(__dirname, 'preload.js')
+            preload: join(__dirname, 'preload.mjs')
         },
         title: 'OpenGameInstaller',
         fullscreenable: false,

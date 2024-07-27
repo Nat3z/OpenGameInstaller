@@ -2,7 +2,7 @@
   "name": "create-svelte-electron-app",
   "version": "1.2.0",
   "description": "The boilerplate code to get started creating Cross-platform Desktop Apps with Electron and Svelte as front-end technology.",
-  "type": "commonjs",
+  "type": "module",
   "private": false,
   "license": "MIT",
   "main": "./build/main.js",
@@ -20,7 +20,7 @@
   },
   "scripts": {
     "build": "rollup -c --bundleConfigAsCjs",
-    "build:ogiaddon": "cd ../packages/ogi-addon/ && tsc --p ./tsconfig.json && cd ../real-debrid/ && tsc --p ./tsconfig.json",
+    "build:ogiaddon": "cd ../packages/ogi-addon/ && tsup && cd ../real-debrid/ && tsup",
     "dev": "bun run build:ogiaddon && rollup -c -w --bundleConfigAsCjs",
     "start": "sirv public --no-clear",
     "electron": "wait-on http://localhost:8080 && tsc --p tsconfig.electron.json && electron ./build/main.js",
@@ -28,7 +28,8 @@
     "electron-dev": "concurrently \"bun run dev\" \"bun run electron\"",
     "preelectron-pack": "bun run build && bun run build:ogiaddon && bunx tsc --p tsconfig.electron.json",
     "electron-pack": "electron-builder",
-    "check": "svelte-check --tsconfig ./tsconfig.svelte.json"
+    "check": "svelte-check --tsconfig ./tsconfig.svelte.json",
+    "rebuild": "npm rebuild"
   },
   "dependencies": {
     "@electron/remote": "^2.1.2",
@@ -41,6 +42,7 @@
     "ogi-addon": "*",
     "real-debrid-js": "*",
     "rollup-plugin-postcss": "^4.0.2",
+    "webtorrent": "1.9.7",
     "ws": "^8.18.0",
     "zod": "^3.23.8"
   },
@@ -52,9 +54,10 @@
     "@rollup/plugin-typescript": "^11.1.6",
     "@tsconfig/svelte": "^5.0.4",
     "@types/sass": "^1.45.0",
+    "@types/ws": "^8.5.11",
     "autoprefixer": "^10.4.19",
     "concurrently": "^7.5.0",
-    "electron": "^21.2.0",
+    "electron": "^31.3.0",
     "electron-builder": "^23.6.0",
     "nodemon": "^3.1.4",
     "postcss-loader": "^8.1.1",

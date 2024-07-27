@@ -2,11 +2,11 @@
 import wsLib from 'ws';
 import { OGIAddonConfiguration, WebsocketMessageClient, WebsocketMessageServer } from "ogi-addon";
 import { ConfigurationFile } from 'ogi-addon/src/config/ConfigurationBuilder';
-import { clients } from './addon-server';
-import { DefferedTasks } from './api/defer';
-import { addonSecret } from './constants';
+import { clients } from './addon-server.js';
+import { DefferedTasks } from './api/defer.js';
+import { addonSecret } from './constants.js';
 import { existsSync, readFileSync } from 'fs';
-import { sendNotification } from '../main';
+import { sendNotification } from '../main.js';
 export let isSecurityCheckEnabled = true;
 if (existsSync('./config/option/developer.json')) {
   const developerConfig = JSON.parse(readFileSync('./config/option/developer.json', 'utf-8'));

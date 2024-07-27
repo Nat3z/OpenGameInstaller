@@ -1,5 +1,5 @@
-import { applicationAddonSecret } from "../constants";
-import { DeferrableTask } from "../DeferrableTask";
+import { applicationAddonSecret } from "../constants.js";
+import { DeferrableTask } from "../DeferrableTask.js";
 import express from "express";
 
 const app = express.Router();

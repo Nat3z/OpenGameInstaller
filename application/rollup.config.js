@@ -57,6 +57,7 @@ export default {
 		commonjs({
 			include: ['node_modules/**', '../packages/ogi-addon/**', '../packages/real-debrid/**']
 		}),
+		
 		typescript({ sourceMap: !production, inlineSources: !production }),
 
 		// we'll extract any component CSS out into

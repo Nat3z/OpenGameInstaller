@@ -1,5 +1,5 @@
-import { server, port } from './addon-server';
-import { addonSecret, applicationAddonSecret } from './constants';
+import { server, port } from './addon-server.js';
+import { addonSecret, applicationAddonSecret } from './constants.js';
 console.log("Addon Secret is: " + addonSecret);
 console.log("Application Addon Secret is: " + applicationAddonSecret);
 

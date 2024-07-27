@@ -41,6 +41,8 @@
     const progressBar = download.querySelector('progress')!!;
     progressBar.value = progress;
   });
+
+  // taken from: https://stackoverflow.com/questions/14783869/convert-a-decimal-number-to-a-fraction-rational-number
   var toFraction = function (dec: number) {
     var is_neg = dec < 0;
     dec = Math.abs(dec);
@@ -72,7 +74,7 @@
   };
   function toRatio(x: number) {
     const fraction = toFraction(x);
-    return fraction[0] + ":" + fraction[1];
+    return (fraction[0] < 1 ? fraction[0].toFixed(2) : fraction[0]) + ":" + (fraction[1] < 1 ? fraction[1].toFixed(2) : fraction[1]);
   }
 </script>
 
@@ -135,6 +137,19 @@
               <p class="font-mono text-gray-400">SIZE</p>
             </section>
           </section>
+
+          {#if download.part !== undefined}
+            <section class="flex flex-row gap-8 w-full justify-center items-center p-4">
+              <section class="flex-col flex w-1/3 justify-center items-center">
+                <p class="text-yellow-500 font-mono text-2xl">{download.part}</p>
+                <p class="font-mono text-gray-400">CURR. PART</p>
+              </section>
+              <section class="flex-col flex w-1/3 justify-center items-center">
+                <p class="text-green-500 font-mono text-2xl">{download.totalParts}</p>
+                <p class="font-mono text-gray-400">TOTAL PARTS</p>
+              </section>
+            </section>
+          {/if}
         {/if}
 
       </section>

@@ -26,7 +26,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getTorrentInfo: (id: string) => ipcRenderer.sendSync('real-debrid:get-torrent-info', id)
   },
   ddl: {
-    download: (link: string, path: string) => ipcRenderer.sendSync('ddl:download', { link, path })
+    download: (downloads: { link: string, path: string }[]) => ipcRenderer.sendSync('ddl:download', downloads)
   },
   torrent: {
     downloadTorrent: (torrent: string, path: string) => ipcRenderer.invoke('torrent:download-torrent', { link: torrent, path }),

@@ -37,7 +37,7 @@ interface Window {
       downloadMagnet: (magnet: string, path: string) => Promise<string>,
     },
     ddl: {
-      download: (link: string, path: string) => string
+      download: (files: { link: string, path: string }[]) => string
     },
     installAddons: (addons: string[]) => Promise<void>,
     restartAddonServer: () => Promise<void>,

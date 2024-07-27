@@ -46,10 +46,18 @@ addon.on('search', (query, event) => {
       name: "Direct Download Test",
       description: addon.config.getStringValue('testOption') || 'No description',
       coverURL: 'https://dummyimage.com/375x500/968d96/ffffff',
-      downloadURL: 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf',
       downloadSize: 100,
-      filename: 'dummy.pdf',
-      downloadType: 'direct'
+      downloadType: 'direct',
+      files: [
+        {
+          name: 'otherfile.zip',
+          downloadURL: 'https://github.com/Nat3z/calendar-prod/archive/refs/heads/master.zip'
+        },
+        {
+          name: 'file.zip',
+          downloadURL: 'https://github.com/Nat3z/mc-discord-bot/archive/refs/heads/master.zip'
+        }
+      ]
     }
   ]);
 });

@@ -14,7 +14,7 @@
     });
   });
 
-	interface SearchResultWithAddon extends SearchResult {
+	type SearchResultWithAddon = SearchResult & {
 		addonSource: string
 	}
 
@@ -61,6 +61,14 @@
 
 		switch (downloadType) {
 			case 'real-debrid-magnet': {
+				if (!result.downloadURL) {
+					createNotification({
+						id: Math.random().toString(36).substring(7),
+						type: 'error',
+						message: "Addon did not provide a magnet link."
+					});
+					return;
+				}
 				const worked = window.electronAPI.realdebrid.updateKey();
 				if (!worked) {
 					createNotification({
@@ -100,7 +108,7 @@
 					});
 					return;
 				}
-				const downloadID = await window.electronAPI.ddl.download(download.download, getDownloadPath() + "\\" + download.filename);
+				const downloadID = await window.electronAPI.ddl.download([ { link: download.download, path: getDownloadPath() + "\\" + download.filename } ]);
 				currentDownloads.update((downloads) => {
 					return [...downloads, { 
 						id: downloadID, 
@@ -114,6 +122,15 @@
 				break;
 			}
 			case "real-debrid-torrent": {
+				if (!result.name || !result.downloadURL) {
+					createNotification({
+						id: Math.random().toString(36).substring(7),
+						type: 'error',
+						message: "Addon did not provide a name for the torrent."
+					});
+					return;
+				}
+
 				const worked = window.electronAPI.realdebrid.updateKey();
 				if (!worked) {
 					notifications.update((notifications) => [...notifications, { id: Math.random().toString(36).substring(7), type: 'error', message: "Please set your Real-Debrid API key in the settings." }]);
@@ -159,7 +176,7 @@
 					return;
 				}
 
-				const downloadID = await window.electronAPI.ddl.download(download.download, getDownloadPath() + "\\" + download.filename);
+				const downloadID = await window.electronAPI.ddl.download([ { link: download.download, path: getDownloadPath() + "\\" + download.filename } ]);
 				currentDownloads.update((downloads) => {
 					const matchingDownload = downloads.find((d) => d.id === localID + '')!!
 					matchingDownload.status = 'downloading';
@@ -172,7 +189,7 @@
 				break;
 			}
 			case 'torrent': {
-				if (!result.filename) {
+				if (!result.filename || !result.downloadURL) {
 						createNotification({
 							id: Math.random().toString(36).substring(7),
 							type: 'error',
@@ -200,7 +217,7 @@
 			}
 
 			case 'magnet': {
-				if (!result.filename) {
+				if (!result.filename || !result.downloadURL) {
 					createNotification({
 						id: Math.random().toString(36).substring(7),
 						type: 'error',
@@ -209,7 +226,7 @@
 					return;
 				}
 
-				const downloadID = await window.electronAPI.torrent.downloadMagnet(result.downloadURL, getDownloadPath() + "\\" + result.filename);
+				const downloadID = await window.electronAPI.torrent.downloadMagnet(result.downloadURL!!, getDownloadPath() + "\\" + result.filename!!);
 				if (downloadID === null) {
 					htmlButton.querySelector('[data-dwtext]')!!.textContent = "Download";
 					htmlButton.disabled = false;
@@ -229,7 +246,7 @@
 			}
 
 			case "direct": {
-				if (!result.filename) {
+				if (!result.filename && !result.files) {
 						createNotification({
 							id: Math.random().toString(36).substring(7),
 							type: 'error',
@@ -237,7 +254,15 @@
 						});
 					return;
 				}
-				const downloadID = window.electronAPI.ddl.download(result.downloadURL, getDownloadPath() + "\\" + result.filename);
+
+				let collectedFiles = [ { path: getDownloadPath() + "\\" + result.filename!!, link: result.downloadURL!! } ];
+				if (result.files) {
+					collectedFiles = result.files.map((file) => {
+						return { path: getDownloadPath() + "\\" + file.name, link: file.downloadURL };
+					});
+				}
+
+				const downloadID = window.electronAPI.ddl.download(collectedFiles);
 				if (downloadID === null) {
 					htmlButton.querySelector('[data-dwtext]')!!.textContent = "Download";
 					htmlButton.disabled = false;

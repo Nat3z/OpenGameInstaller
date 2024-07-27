@@ -582,85 +582,92 @@ function createWindow() {
             }      
             return null;          
         });
-        ipcMain.on('ddl:download', async (event, arg: { link: string, path: string }) => {
+        ipcMain.on('ddl:download', async (event, args: { link: string, path: string }[]) => {
             const downloadID = Math.random().toString(36).substring(7);
             // arg is a link
             // download the link
             // get the name of the file
             new Promise<void>(async (resolve, reject) => {
-                console.log(arg.link, arg.path);
-                let fileStream = fs.createWriteStream(arg.path);
+                let parts = 0
+                for (const arg of args) {
+                    parts++
+                    if (fs.existsSync(arg.path)) {
+                        sendNotification({
+                            message: 'File at path already exists. Please delete the file and try again.',
+                            id: downloadID,
+                            type: 'error'
+                        });
+                        return reject();
+                    }
+                    let fileStream = fs.createWriteStream(arg.path);
 
-                // get file size first
-                const fileSize = await new Promise<number>((resolve, reject) => {
-                    axios({
-                        method: 'head',
-                        url: arg.link
-                    }).then(response => {
-                        resolve(parseFloat(response.headers['content-length']!! as string)!!);
-                    }).catch(err => {
+                    // get file size first
+                    console.log("Starting download...")
+
+                    fileStream.on('error', (err) => {
                         console.error(err);
-                        reject(err);
-                    });
-                });
-                console.log("Starting download...")
-
-                fileStream.on('error', (err) => {
-                    console.error(err);
-                    if (mainWindow.webContents)
-                        mainWindow.webContents.send('ddl:download-error', { id: downloadID, error: err });
-                    fileStream.close();
-                    reject()
-                });
-                axios({
-                    method: 'get',
-                    url: arg.link,
-                    responseType: 'stream'
-                }).then(response => {
-                    response.data.pipe(fileStream);
-                    response.data.on('data', (chunk: Buffer) => {
-                        const downloadSpeed = chunk.length / 1024;
-                        const progress = fileStream.bytesWritten / fileSize;
                         if (mainWindow.webContents)
-                            mainWindow.webContents.send('ddl:download-progress', { id: downloadID, progress, downloadSpeed, fileSize });
-                        else
-                            response.data.destroy()
-                    });
-
-                    response.data.on('end', () => {
-                        console.log("Download complete!")
+                            mainWindow.webContents.send('ddl:download-error', { id: downloadID, error: err });
                         fileStream.close();
-                        if (mainWindow.webContents)
-                            mainWindow.webContents.send('ddl:download-complete', { id: downloadID });
-                        resolve();
+                        reject()
                     });
+                    await new Promise<void>((resolve_dw, reject_dw) => 
+                        axios({
+                            method: 'get',
+                            url: arg.link,
+                            responseType: 'stream'
+                        }).then(response => {
+                            let fileSize = response.headers['content-length']!!;
+                            const startTime = Date.now();
+                            response.data.pipe(fileStream);
+                            response.data.on('data', () => {
+                                const progress = fileStream.bytesWritten / fileSize;
+                                const elapsedTime = (Date.now() - startTime) / 1000; // in seconds
+                                const downloadSpeed = response.data.socket.bytesRead / elapsedTime;
+                                if (mainWindow.webContents)
+                                    mainWindow.webContents.send('ddl:download-progress', { id: downloadID, progress, downloadSpeed, fileSize, part: parts, totalParts: args.length });
+                                else
+                                    response.data.destroy()
+                            });
 
-                    response.data.on('error', () => {
-                        if (mainWindow.webContents)
-                            mainWindow.webContents.send('ddl:download-error', { id: downloadID, error: '' });
-                        fileStream.close();
-                        fs.unlinkSync(arg.path);
-                        reject();
-                    });
-                }).catch(err => {
-                    console.error(err);
-                    if (mainWindow.webContents)
-                        mainWindow.webContents.send('ddl:download-error', { id: downloadID, error: err });
-                    fileStream.close();
-                    fs.unlinkSync(arg.path);
-                    sendNotification({
-                        message: 'Download failed for ' + arg.path,
-                        id: downloadID,
-                        type: 'error'
-                    });
-                    reject();
-                });
+                            response.data.on('end', () => {
+                                console.log("Download complete for part " + parts)
+                                fileStream.close();
+                                resolve_dw();
+                            });
+
+                            response.data.on('error', () => {
+                                if (mainWindow.webContents)
+                                    mainWindow.webContents.send('ddl:download-error', { id: downloadID, error: '' });
+                                fileStream.close();
+                                fs.unlinkSync(arg.path);
+                                reject_dw();
+                            });
+                        }).catch(err => {
+                            console.error(err);
+                            if (mainWindow.webContents)
+                                mainWindow.webContents.send('ddl:download-error', { id: downloadID, error: err });
+                            fileStream.close();
+                            fs.unlinkSync(arg.path);
+                            sendNotification({
+                                message: 'Download failed for ' + arg.path,
+                                id: downloadID,
+                                type: 'error'
+                            });
+                            reject_dw();
+                        })
+                    );
+                }
+
+                mainWindow.webContents.send('ddl:download-complete', { id: downloadID });
+                resolve();
+                
             }).then(() => {
                 console.log('Download complete!!');
             }).catch((err) => {
                 console.log('Download failed');
                 sendNotification({
-                    message: 'Download failed for ' + arg.link,
+                    message: 'Direct Download Failed',
                     id: downloadID,
                     type: 'error'
                 });

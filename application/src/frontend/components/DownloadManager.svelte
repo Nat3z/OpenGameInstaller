@@ -9,8 +9,12 @@
     if (!isCustomEvent(event)) return;
     const downloadID = event.detail.id;
     const progress = event.detail.progress;
-    const downloadSpeed = event.detail.downloadSpeed;
-    const fileSize = event.detail.fileSize;
+    let downloadSpeed = event.detail.downloadSpeed;
+    let fileSize = event.detail.fileSize;
+
+    if (!fileSize) {
+      fileSize = 0;
+    }
     currentDownloads.update((downloads) => {
       return downloads.map((download) => {
         if (download.id === downloadID) {
@@ -18,7 +22,9 @@
             ...download,
             progress,
             downloadSpeed,
-            downloadSize: fileSize
+            downloadSize: fileSize,
+            totalParts: event.detail.totalParts,
+            part: event.detail.part
           }
         }
         return download;
@@ -40,7 +46,8 @@
             progress,
             downloadSpeed,
             downloadSize: fileSize,
-            ratio: event.detail.ratio
+            ratio: event.detail.ratio,
+            
           }
         }
         return download;

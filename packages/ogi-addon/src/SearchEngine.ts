@@ -1,9 +1,14 @@
-export interface SearchResult {
+export type SearchResult = {
   name: string;
   description: string;
   coverURL: string;
-  downloadURL: string;
   downloadType: 'torrent' | 'direct' | 'magnet';
   downloadSize: number;
-  filename: string;
+  filename?: string;
+  downloadURL?: string;
+  files?: {
+    name: string;
+    downloadURL: string;
+  }[];
 }
+

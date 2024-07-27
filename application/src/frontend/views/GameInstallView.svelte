@@ -1,9 +1,9 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { fetchAddonsWithConfigure, getDownloadPath, safeFetch } from "../utils";
+  import { fetchAddonsWithConfigure, getConfigClientOption, getDownloadPath, safeFetch } from "../utils";
   import type { OGIAddonConfiguration, SearchResult } from "ogi-addon";
   import type { ConfigurationFile } from "ogi-addon/config";
-  import { currentDownloads, notifications } from "../store";
+  import { createNotification, currentDownloads, notifications } from "../store";
 	interface ConfigTemplateAndInfo extends OGIAddonConfiguration {
     configTemplate: ConfigurationFile
   }
@@ -50,12 +50,24 @@
 		const htmlButton = (event.target as HTMLElement).closest('button')!!;
 		htmlButton.querySelector('[data-dwtext]')!!.textContent = "Downloading...";
 		htmlButton.disabled = true;
+		let downloadType = result.downloadType;
+		if (downloadType === "torrent" || downloadType === 'magnet') {
+			const generalOptions = getConfigClientOption('general') as any;
+			const torrentClient: "webtorrent" | "qbittorrent" | "real-debrid" = (generalOptions ? generalOptions.torrentClient : null) ?? 'webtorrent';
+			if (torrentClient === 'real-debrid') {
+				downloadType = 'real-debrid-' + downloadType;
+			}
+		}
 
-		switch (result.downloadType) {
+		switch (downloadType) {
 			case 'real-debrid-magnet': {
 				const worked = window.electronAPI.realdebrid.updateKey();
 				if (!worked) {
-					alert("Please set your Real-Debrid API key in the settings.");
+					createNotification({
+						id: Math.random().toString(36).substring(7),
+						type: 'error',
+						message: "Please set your Real-Debrid API key in the settings."
+					});
 					return;
 				}
 				// get the first host
@@ -81,7 +93,11 @@
 				const download = window.electronAPI.realdebrid.unrestrictLink(torrentInfo.links[0]);
 
 				if (download === null) {
-					alert("Failed to download the file.");
+					createNotification({
+						id: Math.random().toString(36).substring(7),
+						type: 'error',
+						message: "Failed to unrestrict the link."
+					});
 					return;
 				}
 				const downloadID = await window.electronAPI.ddl.download(download.download, getDownloadPath() + "\\" + download.filename);
@@ -135,7 +151,11 @@
 				// currently only supporting the first link
 				const download = await window.electronAPI.realdebrid.unrestrictLink(torrentInfo.links[0]);
 				if (download === null) {
-					alert("Failed to download the file.");
+					createNotification({
+						id: Math.random().toString(36).substring(7),
+						type: 'error',
+						message: "Failed to unrestrict the link."
+					});
 					return;
 				}
 
@@ -152,12 +172,25 @@
 				break;
 			}
 			case 'torrent': {
+				if (!result.filename) {
+						createNotification({
+							id: Math.random().toString(36).substring(7),
+							type: 'error',
+							message: "Addon did not provide a filename for the torrent."
+						});
+					return;
+				}
 				const downloadID = await window.electronAPI.torrent.downloadTorrent(result.downloadURL, getDownloadPath() + "\\" + (result.filename || result.downloadURL.split(/\\|\//).pop()));
+				if (downloadID === null) {
+					htmlButton.querySelector('[data-dwtext]')!!.textContent = "Download";
+					htmlButton.disabled = false;
+					return;
+				}
 				currentDownloads.update((downloads) => {
 					return [...downloads, { 
 						id: downloadID, 
 						status: 'downloading', 
-						downloadPath: getDownloadPath() + "\\" + (result.filename || result.downloadURL.split(/\\|\//).pop()), 
+						downloadPath: getDownloadPath() + "\\" + result.filename, 
 						downloadSpeed: 0,
 						progress: 0,
 						...result 
@@ -165,13 +198,56 @@
 				});
 				break;
 			}
-			case "direct": {
-				const downloadID = window.electronAPI.ddl.download(result.downloadURL, getDownloadPath() + "\\" + (result.filename || result.downloadURL.split(/\\|\//).pop()));
+
+			case 'magnet': {
+				if (!result.filename) {
+					createNotification({
+						id: Math.random().toString(36).substring(7),
+						type: 'error',
+						message: "Addon did not provide a filename for the magnet link."
+					});
+					return;
+				}
+
+				const downloadID = await window.electronAPI.torrent.downloadMagnet(result.downloadURL, getDownloadPath() + "\\" + result.filename);
+				if (downloadID === null) {
+					htmlButton.querySelector('[data-dwtext]')!!.textContent = "Download";
+					htmlButton.disabled = false;
+					return;
+				}
 				currentDownloads.update((downloads) => {
 					return [...downloads, { 
 						id: downloadID, 
 						status: 'downloading', 
-						downloadPath: getDownloadPath() + "\\" + (result.filename || result.downloadURL.split(/\\|\//).pop()), 
+						downloadPath: getDownloadPath() + "\\" + result.filename, 
+						downloadSpeed: 0,
+						progress: 0,
+						...result 
+					}];
+				});
+				break;
+			}
+
+			case "direct": {
+				if (!result.filename) {
+						createNotification({
+							id: Math.random().toString(36).substring(7),
+							type: 'error',
+							message: "Addon did not provide a filename for the direct download."
+						});
+					return;
+				}
+				const downloadID = window.electronAPI.ddl.download(result.downloadURL, getDownloadPath() + "\\" + result.filename);
+				if (downloadID === null) {
+					htmlButton.querySelector('[data-dwtext]')!!.textContent = "Download";
+					htmlButton.disabled = false;
+					return;
+				}
+				currentDownloads.update((downloads) => {
+					return [...downloads, { 
+						id: downloadID, 
+						status: 'downloading', 
+						downloadPath: getDownloadPath() + "\\" + result.filename, 
 						downloadSpeed: 0,
 						progress: 0,
 						...result 
@@ -208,9 +284,9 @@
 						<nav class="flex flex-row items-center gap-4 mt-auto">
 							<button class="download" on:click={(event) => startDownload(result, event)}>
 								<section class="flex flex-row">
-									{#if result.downloadType === 'real-debrid-magnet' || result.downloadType === 'real-debrid-torrent'}
+									<!-- {#if result.downloadType === 'magnet' || result.downloadType === 'real-debrid-torrent'}
 										<img class="w-4 h-4" src="./rd-logo.png" alt="Real Debrid" />
-									{/if}
+									{/if} -->
 									<h3 class="relative -top-1" data-dwtext>Download</h3>
 								</section>
 

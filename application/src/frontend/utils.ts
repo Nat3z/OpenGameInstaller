@@ -43,8 +43,8 @@ export async function fsCheck(path: string) {
 }
 
 export function getConfigClientOption<T>(id: string): T | null {
-  if (!fs.exists(`./config/options/${id}.json`)) return null;
-  const config = fs.read(`./config/options/${id}.json`);
+  if (!fs.exists(`./config/option/${id}.json`)) return null;
+  const config = fs.read(`./config/option/${id}.json`);
   return JSON.parse(config);
 }
 export function fetchAddonsWithConfigure() {

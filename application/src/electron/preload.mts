@@ -30,6 +30,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   torrent: {
     downloadTorrent: (torrent: string, path: string) => ipcRenderer.invoke('torrent:download-torrent', { link: torrent, path }),
+    downloadMagnet: (magnet: string, path: string) => ipcRenderer.invoke('torrent:download-magnet', { link: magnet, path }),
   },
   installAddons: (addons: string[]) => ipcRenderer.invoke('install-addons', addons),
   restartAddonServer: () => ipcRenderer.invoke('restart-addon-server'),

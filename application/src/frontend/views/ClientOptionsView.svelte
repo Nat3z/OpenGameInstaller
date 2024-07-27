@@ -39,7 +39,7 @@
           description: "What will do the torrenting for you",
           defaultValue: "webtorrent",
           value: "",
-          choice: [ "webtorrent", "qbittorrent" ],
+          choice: [ "webtorrent", "qbittorrent", "real-debrid" ],
           type: "string",
         },
         addons: {
@@ -64,20 +64,6 @@
           value: "",
           type: "string",
         },
-      }
-    },
-    {
-      "name": "Developer",
-      "id": "developer",
-      "description": "Developer Settings",
-      options: {
-        disableSecretCheck: {
-          displayName: "Disable Server Secret Check",
-          description: "Disables the secret check (WARNING - This is a security risk as anyone can connect to your server)",
-          defaultValue: false,
-          value: false,
-          type: "boolean",
-        }
       }
     },
     {
@@ -116,7 +102,21 @@
           type: "string",
         },
       }
-    }
+    },
+    {
+      "name": "Developer",
+      "id": "developer",
+      "description": "Developer Settings",
+      options: {
+        disableSecretCheck: {
+          displayName: "Disable Server Secret Check",
+          description: "Disables the secret check (WARNING - This is a security risk as anyone can connect to your server)",
+          defaultValue: false,
+          value: false,
+          type: "boolean",
+        }
+      }
+    },
   ];
 
   let selectedOption: OptionsCategory | null = null;
@@ -264,7 +264,7 @@
             <label for={key}>{selectedOption.options[key].displayName}</label>
             {#if selectedOption.options[key].type === "string"}
               {#if selectedOption.options[key].choice}
-                <select id={key} on:change={updateConfig}>
+                <select id={key} on:change={updateConfig} value={getStoredOrDefaultValue(key)}>
                   {#each selectedOption.options[key].choice as choice}
                     <option value={choice}>{choice}</option>
                   {/each}

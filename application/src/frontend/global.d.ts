@@ -34,6 +34,7 @@ interface Window {
     },
     torrent: {
       downloadTorrent: (torrent: string, path: string) => Promise<string>,
+      downloadMagnet: (magnet: string, path: string) => Promise<string>,
     },
     ddl: {
       download: (link: string, path: string) => string

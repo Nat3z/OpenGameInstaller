@@ -41,26 +41,35 @@
     const progressBar = download.querySelector('progress')!!;
     progressBar.value = progress;
   });
-
-  // from: https://stackoverflow.com/questions/23575218/convert-decimal-number-to-fraction-in-javascript-or-closest-fraction
-  function toFraction(x: number, tolerance: number = 0.0001) {
-    if (x == 0) return [0, 1];
-    if (x < 0) x = -x;
-    var num = 1, den = 1;
-
-    function iterate() {
-        var R = num/den;
-        if (Math.abs((R-x)/x) < tolerance) return;
-
-        if (R < x) num++;
-        else den++;
-        iterate();
+  var toFraction = function (dec: number) {
+    var is_neg = dec < 0;
+    dec = Math.abs(dec);
+    var done = false;
+    //you can adjust the epsilon to a larger number if you don't need very high precision
+    var n1 = 0, d1 = 1, n2 = 1, d2 = 0, n = 0, q = dec, num = 0, den = 0, epsilon = 1e-13;
+    while (!done) {
+      n++;
+      if (n > 10000) {
+          done = true;
+      }
+      var a = q;
+      num = n1 + a * n2;
+      den = d1 + a * d2;
+      var e = (q - a);
+      if (e < epsilon) {
+        done = true;
+      }
+      q = 1 / e;
+      n1 = n2;
+      d1 = d2;
+      n2 = num;
+      d2 = den;
+      if (Math.abs(num / den - dec) < epsilon || n > 30) {
+          done = true;
+      }
     }
-
-    iterate();
-    return [num, den];
-  }
-
+    return [is_neg ? -num : num, den];
+  };
   function toRatio(x: number) {
     const fraction = toFraction(x);
     return fraction[0] + ":" + fraction[1];

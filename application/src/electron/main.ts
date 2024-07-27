@@ -12,13 +12,13 @@ import axios from 'axios';
 import { addTorrent, stopClient } from './webtorrent-connect.js';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
-import { qBittorrentClient, TorrentAddParameters } from '@robertklep/qbittorrent';
+import { QBittorrent } from '@ctrl/qbittorrent';
 import { getStoredValue, refreshCached } from './config-util.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-let qbitClient: qBittorrentClient | undefined = undefined;
-
+let qbitClient: QBittorrent | undefined = undefined;
+let torrentIntervals: NodeJS.Timeout[] = []
 // Keep a global reference of the window object, if you don't, the window will
 // be closed automatically when the JavaScript object is garbage collected.
 let mainWindow: any;
@@ -271,62 +271,109 @@ function createWindow() {
         });
 
         ipcMain.handle('torrent:download-torrent', async (_, arg: { link: string, path: string }) => {
+            refreshCached('general');
             const torrentClient: string = await getStoredValue('general', 'torrentClient') ?? 'webtorrent';
 
             switch (torrentClient) {
                 case 'qbittorrent': {
-                    refreshCached('qbittorrent');
-                    qbitClient = new qBittorrentClient(((await getStoredValue('qbittorrent', 'qbitHost')) ?? 'http://127.0.0.1') + ((await getStoredValue('qbittorrent', 'qbitPort')) ?? '8080'), (await getStoredValue('qbittorrent', 'qbitUsername')) ?? 'admin', (await getStoredValue('qbittorrent', 'qbitPassword')) ?? '');
-
-                    const downloadID = Math.random().toString(36).substring(7);
-                    const torrentData = await new Promise<Buffer>((resolve, reject) => {
-                        axios({
-                            method: 'get',
-                            url: arg.link,
-                            responseType: 'stream'
-                        }).then(response => {
-                            const fileStream = fs.createWriteStream('./temp.torrent');
-                            response.data.pipe(fileStream);
-
-                            fileStream.on('finish', async () => {
-                                console.log('Download complete!!');
-                                fileStream.close();
-                                resolve(await readFile('./temp.torrent'));
+                    try {
+                        refreshCached('qbittorrent');
+                        if (!qbitClient)
+                            qbitClient = new QBittorrent({
+                                baseUrl: ((await getStoredValue('qbittorrent', 'qbitHost')) ?? 'http://127.0.0.1') + ":" + ((await getStoredValue('qbittorrent', 'qbitPort')) ?? '8080'),
+                                username: (await getStoredValue('qbittorrent', 'qbitUsername')) ?? 'admin', 
+                                password: (await getStoredValue('qbittorrent', 'qbitPassword')) ?? ''
+                            })
+                        if (fs.existsSync(arg.path)) {
+                            sendNotification({
+                                message: 'File at path already exists. Please delete the file and try again.',
+                                id: Math.random().toString(36).substring(7),
+                                type: 'error'
                             });
+                            return null;
+                        }
+                        const downloadID = Math.random().toString(36).substring(7);
+                        const torrentData = await new Promise<Buffer>((resolve, reject) => {
+                            axios({
+                                method: 'get',
+                                url: arg.link,
+                                responseType: 'stream'
+                            }).then(response => {
+                                const fileStream = fs.createWriteStream('./temp.torrent');
+                                response.data.pipe(fileStream);
 
-                            fileStream.on('error', (err) => {
-                                console.error(err);
-                                fileStream.close();
-                                fs.unlinkSync(arg.path);
-                                reject();
+                                fileStream.on('finish', async () => {
+                                    console.log('Download complete!!');
+                                    fileStream.close();
+                                    resolve(await readFile('./temp.torrent'));
+                                });
+
+                                fileStream.on('error', (err) => {
+                                    console.error(err);
+                                    fileStream.close();
+                                    fs.unlinkSync(arg.path);
+                                    reject();
+                                });
+                            });
+                        }).catch(err => {
+                            if (!mainWindow.webContents) {
+                                console.error("Seems like the window is closed. Cannot send error message to renderer.")
+                                return
+                            }
+                            console.error(err);
+                            mainWindow.webContents.send('ddl:download-error', { id: downloadID, error: err });
+                            sendNotification({
+                                message: 'Download failed for ' + arg.path,
+                                id: downloadID,
+                                type: 'error'
                             });
                         });
-                    }).catch(err => {
-                        if (!mainWindow.webContents) {
-                            console.error("Seems like the window is closed. Cannot send error message to renderer.")
-                            return
+
+                        if (!torrentData) {
+                            return null;
                         }
-                        console.error(err);
-                        mainWindow.webContents.send('ddl:download-error', { id: downloadID, error: err });
+                        await qbitClient.addTorrent(torrentData, {
+                            savepath: arg.path
+                        })
+                        let alreadyNotified = false;
+                        const torrentInterval = setInterval(async () => {
+                            if (!qbitClient) {
+                                clearInterval(torrentInterval);
+                                return;
+                            }
+                            const torrent = (await qbitClient.getAllData()).torrents.find(torrent => torrent.savePath === arg.path);
+                            if (!torrent) {
+                                clearInterval(torrentInterval);
+                                console.error('Torrent not found in qBitTorrent...');
+                                return;
+                            }
+
+                            const progress = torrent.progress;
+                            const downloadSpeed = torrent.downloadSpeed;
+                            const fileSize = torrent.totalSize;
+                            const ratio = torrent.totalUploaded / torrent.totalDownloaded;
+                            if (!mainWindow.webContents) {
+                                console.error("Seems like the window is closed. Cannot send progress message to renderer.")
+                                return
+                            }
+                            mainWindow.webContents.send('torrent:download-progress', { id: downloadID, downloadSpeed, progress, fileSize, ratio });
+                            if (torrent.isCompleted && !alreadyNotified) {
+                                mainWindow.webContents.send('torrent:download-complete', { id: downloadID });
+                                alreadyNotified = true;
+                                console.log('Torrent download finished');
+                            }
+                        }, 250);
+                        torrentIntervals.push(torrentInterval);
+                        return downloadID;
+                    } catch (except) {
+                        console.error(except);
                         sendNotification({
-                            message: 'Download failed for ' + arg.path,
-                            id: downloadID,
+                            message: "Failed to download torrent.",
+                            id: Math.random().toString(36).substring(7),
                             type: 'error'
                         });
-                    });
-
-                    if (!torrentData) {
                         return null;
                     }
-
-                    await qbitClient.torrents.add(<TorrentAddParameters>{
-                        torrents: {
-                            buffer: torrentData,
-                        },
-                        savepath: arg.path,
-                    });
-
-                    return downloadID;
                     break;
                 }
                 case 'webtorrent': {
@@ -418,6 +465,123 @@ function createWindow() {
             return null;          
         });
 
+        ipcMain.handle('torrent:download-magnet', async (_, arg: { link: string, path: string }) => {
+            refreshCached('general');
+            const torrentClient: string = await getStoredValue('general', 'torrentClient') ?? 'webtorrent';
+
+            switch (torrentClient) {
+                case 'qbittorrent': {
+                    try {
+                        refreshCached('qbittorrent');
+                        if (!qbitClient)
+                            qbitClient = new QBittorrent({
+                                baseUrl: ((await getStoredValue('qbittorrent', 'qbitHost')) ?? 'http://127.0.0.1') + ":" + ((await getStoredValue('qbittorrent', 'qbitPort')) ?? '8080'),
+                                username: (await getStoredValue('qbittorrent', 'qbitUsername')) ?? 'admin', 
+                                password: (await getStoredValue('qbittorrent', 'qbitPassword')) ?? ''
+                            })
+
+                        if (fs.existsSync(arg.path)) {
+                            sendNotification({
+                                message: 'File at path already exists. Please delete the file and try again.',
+                                id: Math.random().toString(36).substring(7),
+                                type: 'error'
+                            });
+                            return null;
+                        }
+
+                        const downloadID = Math.random().toString(36).substring(7);
+                        await qbitClient.addMagnet(arg.link, {
+                            savepath: arg.path
+                        })
+                        let alreadyNotified = false;
+                        const torrentInterval = setInterval(async () => {
+                            if (!qbitClient) {
+                                clearInterval(torrentInterval);
+                                return;
+                            }
+                            const torrent = (await qbitClient.getAllData()).torrents.find(torrent => torrent.savePath === arg.path);
+                            if (!torrent) {
+                                clearInterval(torrentInterval);
+                                console.error('Torrent not found in qBitTorrent...');
+                                return;
+                            }
+
+                            const progress = torrent.progress;
+                            const downloadSpeed = torrent.downloadSpeed;
+                            const fileSize = torrent.totalSize;
+                            const ratio = torrent.totalUploaded / torrent.totalDownloaded;
+                            if (!mainWindow.webContents) {
+                                console.error("Seems like the window is closed. Cannot send progress message to renderer.")
+                                return
+                            }
+                            mainWindow.webContents.send('torrent:download-progress', { id: downloadID, downloadSpeed, progress, fileSize, ratio });
+                            if (torrent.isCompleted && !alreadyNotified) {
+                                mainWindow.webContents.send('torrent:download-complete', { id: downloadID });
+                                alreadyNotified = true;
+                                console.log('Torrent download finished');
+                            }
+                        }, 250);
+                        torrentIntervals.push(torrentInterval);
+                        return downloadID;
+                    } catch (except) {
+                        console.error(except);
+                        sendNotification({
+                            message: "Failed to download torrent.",
+                            id: Math.random().toString(36).substring(7),
+                            type: 'error'
+                        });
+                        return null;
+                    }
+                    break;
+                }
+                case 'webtorrent': {
+                    try {
+                        const downloadID = Math.random().toString(36).substring(7);
+
+                        if (fs.existsSync(arg.path)) {
+                            sendNotification({
+                                message: 'File at path already exists. Please delete the file and try again.',
+                                id: downloadID,
+                                type: 'error'
+                            });
+                            return null;
+                        }
+
+                        addTorrent(arg.link, arg.path, 
+                            (_, speed, progress, length, ratio) => {
+                                if (!mainWindow.webContents) {
+                                    console.error("Seems like the window is closed. Cannot send progress message to renderer.")
+                                    return
+                                }
+                                mainWindow.webContents.send('torrent:download-progress', { id: downloadID, downloadSpeed: speed, progress, fileSize: length, ratio });
+                            },
+                            () => {
+                                if (!mainWindow.webContents) {
+                                    console.error("Seems like the window is closed. Cannot send progress message to renderer.")
+                                    return
+                                }
+                                mainWindow.webContents.send('torrent:download-complete', { id: downloadID });
+                                console.log('Torrent download finished');
+                            }
+                        );
+
+                        return downloadID;
+
+                        
+                    } catch (except) {
+                        console.error(except);
+                        sendNotification({
+                            message: "Failed to download torrent.",
+                            id: Math.random().toString(36).substring(7),
+                            type: 'error'
+                        });
+                        return null;
+                    }
+                    break;
+                }
+            }      
+            return null;          
+        });
         ipcMain.on('ddl:download', async (event, arg: { link: string, path: string }) => {
             const downloadID = Math.random().toString(36).substring(7);
             // arg is a link
@@ -709,6 +873,10 @@ app.on('window-all-closed', async function () {
     for (const process of Object.keys(processes)) {
         console.log(`Killing process ${process}`);
         processes[process].kill();
+    }
+    // stopping all of the torrent intervals
+    for (const interval of torrentIntervals) {
+        clearInterval(interval);
     }
 });
 

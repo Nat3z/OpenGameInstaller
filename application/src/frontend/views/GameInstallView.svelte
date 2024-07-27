@@ -116,6 +116,7 @@
 						downloadPath: getDownloadPath() + "\\" + download.filename, 
 						downloadSpeed: 0,
 						progress: 0,
+						usedRealDebrid: true,
 						...result 
 					}];
 				});
@@ -144,6 +145,7 @@
 						status: 'rd-downloading', 
 						downloadPath: getDownloadPath() + "\\" + result.name, 
 						downloadSpeed: 0,
+						usedRealDebrid: true,
 						progress: 0,
 						...result 
 					}];
@@ -181,6 +183,7 @@
 					const matchingDownload = downloads.find((d) => d.id === localID + '')!!
 					matchingDownload.status = 'downloading';
 					matchingDownload.id = downloadID;
+					matchingDownload.usedRealDebrid = true;
 
 					matchingDownload.downloadPath = getDownloadPath() + "\\" + download.filename;
 					downloads[downloads.indexOf(matchingDownload)] = matchingDownload;
@@ -210,6 +213,7 @@
 						downloadPath: getDownloadPath() + "\\" + result.filename, 
 						downloadSpeed: 0,
 						progress: 0,
+						usedRealDebrid: false,
 						...result 
 					}];
 				});
@@ -239,6 +243,7 @@
 						downloadPath: getDownloadPath() + "\\" + result.filename, 
 						downloadSpeed: 0,
 						progress: 0,
+						usedRealDebrid: false,
 						...result 
 					}];
 				});
@@ -274,6 +279,7 @@
 						status: 'downloading', 
 						downloadPath: getDownloadPath() + "\\" + result.filename, 
 						downloadSpeed: 0,
+						usedRealDebrid: false,
 						progress: 0,
 						...result 
 					}];

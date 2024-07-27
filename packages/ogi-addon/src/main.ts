@@ -30,7 +30,7 @@ export interface EventListenerTypes {
   response: (response: any) => void;
   authenticate: (config: any) => void;
   search: (query: string, event: EventResponse<SearchResult[]>) => void;
-  setup: (path: string, event: EventResponse<undefined | null>) => void;
+  setup: (path: string, downloadType: 'direct' | 'torrent' | 'magnet', name: string, usedRealDebrid: boolean, event: EventResponse<undefined | null>) => void;
 }
 
 export interface WebsocketMessageClient {
@@ -159,7 +159,7 @@ class OGIAddonWSListener {
           break
         case 'setup':
           let setupEvent = new EventResponse<undefined | null>();
-          this.eventEmitter.emit('setup', message.args.path, setupEvent);
+          this.eventEmitter.emit('setup', message.args.path, message.args.type, message.args.name, message.args.usedRealDebrid, setupEvent);
           const interval = setInterval(() => {
             if (setupEvent.resolved) {
               clearInterval(interval);

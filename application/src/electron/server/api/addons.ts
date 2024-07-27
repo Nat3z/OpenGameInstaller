@@ -64,12 +64,21 @@ app.post('/:addonID/setup-app', async (req, res) => {
   const client = clients.get(req.params.addonID);
   if (!client)
     return res.status(404).send('Client not found');
-  if (!req.body || req.body.path === undefined  || typeof req.body.path !== 'string') {
+  if (!req.body || req.body.path === undefined || typeof req.body.path !== 'string') {
     return res.status(400).send('No path provided');
+  }
+  if (!req.body || req.body.type === undefined || typeof req.body.type !== 'string') {
+    return res.status(400).send('No type provided');
+  }
+  if (!req.body || req.body.name === undefined || typeof req.body.name !== 'string') {
+    return res.status(400).send('No name provided');
+  }
+  if (!req.body || req.body.usedRealDebrid === undefined || typeof req.body.usedRealDebrid !== 'boolean') {
+    return res.status(400).send('No usedRealDebrid provided');
   }
 
   const deferrableTask = new DeferrableTask(async () => {
-    await client.sendEventMessage({ event: 'setup', args: { path: req.body.path, deferID: deferrableTask.id!! } });
+    await client.sendEventMessage({ event: 'setup', args: { path: req.body.path, type: req.body.type, usedRealDebrid: req.body.usedRealDebrid, name: req.body.name, deferID: deferrableTask.id!! } });
     return "success";
   }, client.addonInfo.id);
 

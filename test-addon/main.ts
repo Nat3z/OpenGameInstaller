@@ -62,7 +62,7 @@ addon.on('search', (query, event) => {
   ]);
 });
 
-addon.on('setup', (path, event) => {
+addon.on('setup', (path, type, name, usedRealDebrid, event) => {
   event.defer();
   const inter = setInterval(() => {
     if (event.progress >= 100) {
@@ -71,6 +71,6 @@ addon.on('setup', (path, event) => {
       return
     }
     event.progress += 10;
-    event.log("Setting up...")
+    event.log("Setting up... " + path + " " + type + " " + name);
   }, 1000)
 });

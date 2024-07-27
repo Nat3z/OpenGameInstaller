@@ -5,6 +5,7 @@ export type DownloadStatusAndInfo = SearchResult & {
   id: string;
   status: 'downloading' | 'paused' | 'completed' | 'error' | 'setup-complete' | 'rd-downloading' | 'seeding';
   progress: number;
+  usedRealDebrid: boolean;
   downloadPath: string;
   downloadSpeed: number;
   downloadSize: number;

@@ -80,7 +80,10 @@
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
-        path: downloadedItem.downloadPath
+        path: downloadedItem.downloadPath,
+        type: downloadedItem.downloadType,
+        name: downloadedItem.name,
+        usedRealDebrid: downloadedItem.usedRealDebrid
       }),
       onLogs: (log) => {
         document.dispatchEvent(new CustomEvent('setup:log', {
@@ -154,7 +157,10 @@
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
-        path: downloadedItem.downloadPath
+        path: downloadedItem.downloadPath,
+        type: downloadedItem.downloadType,
+        name: downloadedItem.name,
+        usedRealDebrid: downloadedItem.usedRealDebrid
       }),
       onLogs: (log) => {
         document.dispatchEvent(new CustomEvent('setup:log', {

@@ -1,6 +1,6 @@
 {
   "name": "real-debrid-js",
-  "version": "1.0.1",
+  "version": "1.0.3",
   "module": "./build/main.mjs",
   "author": {
     "name": "Nat3z",
@@ -9,8 +9,14 @@
   },
   "exports": {
     ".": {
-      "import": "./build/main.mjs",
-      "require": "./build/main.js"
+      "import": {
+        "default": "./build/main.mjs",
+        "types": "./build/main.d.ts"
+      },
+      "require": {
+        "default": "./build/main.cjs",
+        "types": "./build/main.d.cts"
+      }
     }
   },
   "types": "./build/main.d.ts",

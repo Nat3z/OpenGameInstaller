@@ -29,7 +29,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     download: (link: string, path: string) => ipcRenderer.sendSync('ddl:download', { link, path })
   },
   torrent: {
-    downloadTorrent: (torrent: string, path: string) => ipcRenderer.sendSync('torrent:download-torrent', { link: torrent, path }),
+    downloadTorrent: (torrent: string, path: string) => ipcRenderer.invoke('torrent:download-torrent', { link: torrent, path }),
   },
   installAddons: (addons: string[]) => ipcRenderer.invoke('install-addons', addons),
   restartAddonServer: () => ipcRenderer.invoke('restart-addon-server'),
@@ -49,4 +49,16 @@ ipcRenderer.on('ddl:download-complete', (_, arg) => {
 
 ipcRenderer.on('notification', (_, arg) => {
   document.dispatchEvent(new CustomEvent('new-notification', { detail: arg }));
+});
+
+ipcRenderer.on('torrent:download-progress', (_, arg) => {
+  document.dispatchEvent(new CustomEvent('torrent:download-progress', { detail: arg }));
+});
+
+ipcRenderer.on('torrent:download-error', (_, arg) => {
+  document.dispatchEvent(new CustomEvent('torrent:download-error', { detail: arg }));
+});
+
+ipcRenderer.on('torrent:download-complete', (_, arg) => {
+  document.dispatchEvent(new CustomEvent('torrent:download-complete', { detail: arg }));
 });

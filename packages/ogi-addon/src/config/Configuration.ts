@@ -1,4 +1,4 @@
-import { ConfigurationFile } from "./ConfigurationBuilder";
+import { ConfigurationFile, ConfigurationBuilder, BooleanOption, ConfigurationOption, ConfigurationOptionType, NumberOption, StringOption, isBooleanOption, isNumberOption, isStringOption } from "./ConfigurationBuilder";
 
 interface DefiniteConfig {
   [key: string]: string | number | boolean;
@@ -79,3 +79,5 @@ export class Configuration {
     return this.definiteConfig[optionName];
   }
 }
+
+export { ConfigurationFile, ConfigurationBuilder, BooleanOption, ConfigurationOption, ConfigurationOptionType, NumberOption, StringOption, isBooleanOption, isNumberOption, isStringOption };

@@ -2,7 +2,7 @@
   import { onMount } from "svelte";
   import { fetchAddonsWithConfigure, getDownloadPath, safeFetch } from "../utils";
   import type { OGIAddonConfiguration, SearchResult } from "ogi-addon";
-  import type { ConfigurationFile } from "ogi-addon/build/config/ConfigurationBuilder";
+  import type { ConfigurationFile } from "ogi-addon/config";
   import { currentDownloads, notifications } from "../store";
 	interface ConfigTemplateAndInfo extends OGIAddonConfiguration {
     configTemplate: ConfigurationFile

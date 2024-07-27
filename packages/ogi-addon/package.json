@@ -5,17 +5,33 @@
   "main": "./build/main.cjs",
   "exports": {
     ".": {
-      "import": "./build/main.js",
-      "require": "./build/main.cjs"
+      "import": {
+        "default": "./build/main.js",
+        "types": "./build/main.d.ts"
+      },
+      "require": {
+        "default": "./build/main.cjs",
+        "types": "./build/main.d.cts"
+      }
+    },
+    "./config": {
+      "import": {
+        "default": "./build/config/Configuration.js",
+        "types": "./build/config/Configuration.d.ts"
+      },
+      "require": {
+        "default": "./build/config/Configuration.cjs",
+        "types": "./build/config/Configuration.d.cts"
+      }
     }
   },
-  "types": "./build/main.d.ts",
+  "typings": "./build/main.d.ts",
   "author": {
     "name": "Nat3z",
     "email": "me@nat3z.com",
     "url": "https://nat3z.com/"
   },
-  "version": "0.1.1",
+  "version": "0.1.4",
   "dependencies": {
     "ws": "^8.4.0",
     "zod": "^3.23.8"
@@ -23,7 +39,7 @@
   "scripts": {
     "auto-build": "tsc -w",
     "build": "tsup --config tsup.config.js",
-    "release": "bunx tsc && npm publish"
+    "release": "bun run build && npm publish"
   },
   "devDependencies": {
     "@types/node": "^20.14.12",

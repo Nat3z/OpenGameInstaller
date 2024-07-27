@@ -309,13 +309,22 @@ function createWindow() {
                     return null;
                 }
 
+                if (fs.existsSync(arg.path)) {
+                    sendNotification({
+                        message: 'File at path already exists. Please delete the file and try again.',
+                        id: downloadID,
+                        type: 'error'
+                    });
+                    return null;
+                }
+
                 addTorrent(torrentData, arg.path, 
-                    (_, speed, progress, length) => {
+                    (_, speed, progress, length, ratio) => {
                         if (!mainWindow.webContents) {
                             console.error("Seems like the window is closed. Cannot send progress message to renderer.")
                             return
                         }
-                        mainWindow.webContents.send('torrent:download-progress', { id: downloadID, downloadSpeed: speed, progress, fileSize: length });
+                        mainWindow.webContents.send('torrent:download-progress', { id: downloadID, downloadSpeed: speed, progress, fileSize: length, ratio });
                     },
                     () => {
                         if (!mainWindow.webContents) {
@@ -323,6 +332,7 @@ function createWindow() {
                             return
                         }
                         mainWindow.webContents.send('torrent:download-complete', { id: downloadID });
+                        console.log('Torrent download finished');
                     }
                 );
 
@@ -332,7 +342,7 @@ function createWindow() {
             } catch (except) {
                 console.error(except);
                 sendNotification({
-                    message: "Failed to add torrent to Real-Debrid",
+                    message: "Failed to download torrent.",
                     id: Math.random().toString(36).substring(7),
                     type: 'error'
                 });

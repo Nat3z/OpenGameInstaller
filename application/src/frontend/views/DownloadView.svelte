@@ -41,6 +41,25 @@
     const progressBar = download.querySelector('progress')!!;
     progressBar.value = progress;
   });
+
+  // from: https://stackoverflow.com/questions/23575218/convert-decimal-number-to-fraction-in-javascript-or-closest-fraction
+  function toFraction(x: number, tolerance: number = 0.0001) {
+    if (x == 0) return [0, 1];
+    if (x < 0) x = -x;
+    var num = 1, den = 1;
+
+    function iterate() {
+        var R = num/den;
+        if (Math.abs((R-x)/x) < tolerance) return;
+
+        if (R < x) num++;
+        else den++;
+        iterate();
+    }
+
+    iterate();
+    return [num, den];
+}
 </script>
 
 <div class="downloads">
@@ -54,6 +73,24 @@
       <img src={download.coverURL} alt="Game"/>
       <section class="flex flex-col w-full">
         <h2 class="truncate w-96">{download.name}</h2>
+
+        {#if download.status === 'seeding' && download.ratio !== undefined}
+          <h1 class="text-blue-400 font-mono">Seeding</h1>
+          <section class="flex flex-row gap-8 w-full items-center justify-center p-4">
+            <section class="flex-col flex w-1/3 justify-center items-center">
+              <p class="text-blue-800 font-mono text-2xl">{toFraction(download.ratio)}</p>
+              <p class="font-mono text-gray-400">RATIO</p>
+            </section>
+            <section class="flex-col flex w-1/3 justify-center items-center">
+              <p class="text-yellow-500 font-mono text-2xl">{correctParsingSize(Math.floor(download.downloadSpeed))}/s</p>
+              <p class="font-mono text-gray-400">SPEED</p>
+            </section>
+            <section class="flex-col flex w-1/3 justify-center items-center">
+              <p class="text-gray-700 font-mono text-2xl">{correctParsingSize(download.downloadSize)}</p>
+              <p class="font-mono text-gray-400">SIZE</p>
+            </section>
+          </section>
+        {/if}
         {#if download.status === 'completed'}
           <p class="text-green-500 font-mono">COMPLETED DOWNLOAD</p>
           <p class="text-green-600 font-mono">Setting up with {download.addonSource}</p>
@@ -62,8 +99,10 @@
           </code>
         {:else if download.status === 'error'}
           <p class="text-red-500 font-mono">ERROR</p>
-        {:else if download.status === 'setup-complete'}
-          <p class="text-green-500 font-mono">SETUP COMPLETE</p>
+        {:else if download.status === 'setup-complete' || download.status === 'seeding'}
+          {#if download.status === 'setup-complete'}
+            <p class="text-green-500 font-mono">SETUP COMPLETE</p>
+          {/if}
           <button class="bg-blue-500 text-white p-2 rounded" on:click={() => window.electronAPI.fs.showFileLoc(download.downloadPath)}>Show File Location</button>
         {:else if download.status === 'rd-downloading'}
           <p class="text-yellow-500 font-mono">Waiting for Real-Debrid to download torrent...</p>
@@ -83,6 +122,7 @@
             </section>
           </section>
         {/if}
+
       </section>
     </div>
   {/each}

@@ -1,5 +1,6 @@
 import type { OGIAddonConfiguration } from "ogi-addon";
-import type { ConfigurationFile } from "ogi-addon/build/config/ConfigurationBuilder";
+import type { ConfigurationFile } from "ogi-addon/config";
+
 import { createNotification } from "./store";
 function getSecret() {
   const urlParams = new URLSearchParams(window.location.search);
@@ -47,7 +48,7 @@ export function getConfigClientOption<T>(id: string): T | null {
   return JSON.parse(config);
 }
 export function fetchAddonsWithConfigure() {
-  return new Promise<ConfigTemplateAndInfo[]>((resolve, reject) => {
+  return new Promise<ConfigTemplateAndInfo[]>((resolve, _) => {
     safeFetch('http://localhost:7654/addons').then(async (addons: ConfigTemplateAndInfo[]) => {
       // now configure each addon
       for (const addon of addons) {

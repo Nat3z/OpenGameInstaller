@@ -3,12 +3,13 @@ import { writable, type Writable } from 'svelte/store'
 
 export interface DownloadStatusAndInfo extends SearchResult {
   id: string;
-  status: 'downloading' | 'paused' | 'completed' | 'error' | 'setup-complete' | 'rd-downloading';
+  status: 'downloading' | 'paused' | 'completed' | 'error' | 'setup-complete' | 'rd-downloading' | 'seeding';
   progress: number;
   downloadPath: string;
   downloadSpeed: number;
   downloadSize: number;
   addonSource: string;
+  ratio?: number;
 }
 
 export interface Notification {

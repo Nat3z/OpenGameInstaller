@@ -11,6 +11,7 @@
         displayName: string;
         description: string;
         defaultValue: string | number | boolean;
+        choice?: string[];
         value: string | number | boolean;
         type: "string" | "number" | "boolean" | "file-folder" | 'textarea';
         maxTextLength?: number;
@@ -32,6 +33,14 @@
           defaultValue: "./downloads",
           value: "",
           type: "file-folder",
+        },
+        torrentClient: {
+          displayName: "Torrent Client",
+          description: "What will do the torrenting for you",
+          defaultValue: "webtorrent",
+          value: "",
+          choice: [ "webtorrent", "qbittorrent" ],
+          type: "string",
         },
         addons: {
           displayName: "Addons",
@@ -70,6 +79,43 @@
           type: "boolean",
         }
       }
+    },
+    {
+      name: "qBittorrent",
+      description: "Configure qBittorrent",
+      id: "qbittorrent",
+      options: {
+        qbitHost: {
+          displayName: "Host",
+          description: "The host of the qBittorrent server",
+          defaultValue: "http://127.0.0.1",
+          value: "",
+          type: "string",
+        },
+        qbitPort: {
+          displayName: "Port",
+          description: "The port of the qBittorrent server",
+          defaultValue: 8080,
+          value: 8080,
+          type: "number",
+          max: 65535,
+          min: 1,
+        },
+        qbitUsername: {
+          displayName: "Username",
+          description: "The username of the qBittorrent server",
+          defaultValue: "admin",
+          value: "",
+          type: "string",
+        },
+        qbitPassword: {
+          displayName: "Password",
+          description: "The password of the qBittorrent server",
+          defaultValue: "admin",
+          value: "",
+          type: "string",
+        },
+      }
     }
   ];
 
@@ -91,7 +137,7 @@
     const config: any = {};
     Object.keys(selectedOption!!.options).forEach((key) => {
       if (!selectedOption) return;
-      const element = document.getElementById(key) as HTMLInputElement;
+      const element = document.getElementById(key) as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement;
       if (element && selectedOption!!.options[key]) {
         if (selectedOption.options[key].type === "string" || selectedOption.options[key].type === "file-folder") {
           config[key] = element.value;
@@ -139,7 +185,7 @@
         if (selectedOption.options[key].type === "number") {
           config[key] = parseInt(element.value);
         }
-        if (selectedOption.options[key].type === "boolean") {
+        if (selectedOption.options[key].type === "boolean" && element instanceof HTMLInputElement) {
           config[key] = element.checked;
         }
       }
@@ -217,7 +263,15 @@
           <div class={`flex ${selectedOption.options[key].type === "textarea" ? 'flex-col' : 'flex-row'} gap-2 items-center`}>
             <label for={key}>{selectedOption.options[key].displayName}</label>
             {#if selectedOption.options[key].type === "string"}
-              <input type="text" on:change={updateConfig} value={getStoredOrDefaultValue(key)} id={key} maxlength={selectedOption.options[key].maxTextLength} minlength={selectedOption.options[key].minTextLength} />
+              {#if selectedOption.options[key].choice}
+                <select id={key} on:change={updateConfig}>
+                  {#each selectedOption.options[key].choice as choice}
+                    <option value={choice}>{choice}</option>
+                  {/each}
+                </select>
+              {:else}
+                <input type="text" on:change={updateConfig} value={getStoredOrDefaultValue(key)} id={key} maxlength={selectedOption.options[key].maxTextLength} minlength={selectedOption.options[key].minTextLength} />
+              {/if}
             {/if}
             {#if  selectedOption.options[key].type === "file-folder"}
               <input type="text" on:change={updateConfig} value={getStoredOrDefaultValue(key)} id={key} maxlength={selectedOption.options[key].maxTextLength} minlength={selectedOption.options[key].minTextLength} />

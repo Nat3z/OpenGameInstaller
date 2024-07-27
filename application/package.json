@@ -33,6 +33,7 @@
   },
   "dependencies": {
     "@electron/remote": "^2.1.2",
+    "@robertklep/qbittorrent": "^1.0.1",
     "@types/cors": "^2.8.17",
     "@types/express": "^4.17.21",
     "axios": "^1.7.2",

@@ -3,6 +3,7 @@ import { server, port, clients } from "./server/addon-server.js"
 import { applicationAddonSecret } from './server/constants.js';
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
 import fs, { ReadStream } from 'fs';
+import { readFile } from 'fs/promises';
 import RealDebrid from 'real-debrid-js';
 import { exec } from 'child_process';
 import { processes, setupAddon, startAddon } from './addon-init-configure.js';
@@ -11,9 +12,12 @@ import axios from 'axios';
 import { addTorrent, stopClient } from './webtorrent-connect.js';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
+import { qBittorrentClient, TorrentAddParameters } from '@robertklep/qbittorrent';
+import { getStoredValue, refreshCached } from './config-util.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
+let qbitClient: qBittorrentClient | undefined = undefined;
 
 // Keep a global reference of the window object, if you don't, the window will
 // be closed automatically when the JavaScript object is garbage collected.
@@ -250,6 +254,7 @@ function createWindow() {
                     return null;
                 }
                 console.log("Downloaded torrent! Now adding to readDebrid")
+                
                 const data = await realDebridClient.addTorrent(torrentData as ReadStream);
                 console.log("Added torrent to real-debrid!")
                 return data
@@ -266,88 +271,151 @@ function createWindow() {
         });
 
         ipcMain.handle('torrent:download-torrent', async (_, arg: { link: string, path: string }) => {
-            try {
-                const fileStream = fs.createWriteStream('./temp.torrent');
-                const downloadID = Math.random().toString(36).substring(7);
-                const torrentData = await new Promise<Uint8Array>((resolve, reject) => {
-                    axios({
-                        method: 'get',
-                        url: arg.link,
-                        responseType: 'stream'
-                    }).then(response => {
-                        response.data.pipe(fileStream);
+            const torrentClient: string = await getStoredValue('general', 'torrentClient') ?? 'webtorrent';
 
-                        fileStream.on('finish', () => {
-                            console.log('Download complete!!');
-                            fileStream.close();
-                            resolve(fs.readFileSync('./temp.torrent'));
+            switch (torrentClient) {
+                case 'qbittorrent': {
+                    refreshCached('qbittorrent');
+                    qbitClient = new qBittorrentClient(((await getStoredValue('qbittorrent', 'qbitHost')) ?? 'http://127.0.0.1') + ((await getStoredValue('qbittorrent', 'qbitPort')) ?? '8080'), (await getStoredValue('qbittorrent', 'qbitUsername')) ?? 'admin', (await getStoredValue('qbittorrent', 'qbitPassword')) ?? '');
+
+                    const downloadID = Math.random().toString(36).substring(7);
+                    const torrentData = await new Promise<Buffer>((resolve, reject) => {
+                        axios({
+                            method: 'get',
+                            url: arg.link,
+                            responseType: 'stream'
+                        }).then(response => {
+                            const fileStream = fs.createWriteStream('./temp.torrent');
+                            response.data.pipe(fileStream);
+
+                            fileStream.on('finish', async () => {
+                                console.log('Download complete!!');
+                                fileStream.close();
+                                resolve(await readFile('./temp.torrent'));
+                            });
+
+                            fileStream.on('error', (err) => {
+                                console.error(err);
+                                fileStream.close();
+                                fs.unlinkSync(arg.path);
+                                reject();
+                            });
                         });
+                    }).catch(err => {
+                        if (!mainWindow.webContents) {
+                            console.error("Seems like the window is closed. Cannot send error message to renderer.")
+                            return
+                        }
+                        console.error(err);
+                        mainWindow.webContents.send('ddl:download-error', { id: downloadID, error: err });
+                        sendNotification({
+                            message: 'Download failed for ' + arg.path,
+                            id: downloadID,
+                            type: 'error'
+                        });
+                    });
 
-                        fileStream.on('error', (err) => {
+                    if (!torrentData) {
+                        return null;
+                    }
+
+                    await qbitClient.torrents.add(<TorrentAddParameters>{
+                        torrents: {
+                            buffer: torrentData,
+                        },
+                        savepath: arg.path,
+                    });
+
+                    return downloadID;
+                    break;
+                }
+                case 'webtorrent': {
+                    try {
+                        const fileStream = fs.createWriteStream('./temp.torrent');
+                        const downloadID = Math.random().toString(36).substring(7);
+                        const torrentData = await new Promise<Uint8Array>((resolve, reject) => {
+                            axios({
+                                method: 'get',
+                                url: arg.link,
+                                responseType: 'stream'
+                            }).then(response => {
+                                response.data.pipe(fileStream);
+
+                                fileStream.on('finish', () => {
+                                    console.log('Download complete!!');
+                                    fileStream.close();
+                                    resolve(fs.readFileSync('./temp.torrent'));
+                                });
+
+                                fileStream.on('error', (err) => {
+                                    console.error(err);
+                                    fileStream.close();
+                                    fs.unlinkSync(arg.path);
+                                    reject();
+                                });
+                            });
+                        }).catch(err => {
+                            if (!mainWindow.webContents) {
+                                console.error("Seems like the window is closed. Cannot send error message to renderer.")
+                                return
+                            }
                             console.error(err);
+                            mainWindow.webContents.send('ddl:download-error', { id: downloadID, error: err });
                             fileStream.close();
                             fs.unlinkSync(arg.path);
-                            reject();
+                            sendNotification({
+                                message: 'Download failed for ' + arg.path,
+                                id: downloadID,
+                                type: 'error'
+                            });
                         });
-                    });
-                }).catch(err => {
-                    if (!mainWindow.webContents) {
-                        console.error("Seems like the window is closed. Cannot send error message to renderer.")
-                        return
-                    }
-                    console.error(err);
-                    mainWindow.webContents.send('ddl:download-error', { id: downloadID, error: err });
-                    fileStream.close();
-                    fs.unlinkSync(arg.path);
-                    sendNotification({
-                        message: 'Download failed for ' + arg.path,
-                        id: downloadID,
-                        type: 'error'
-                    });
-                });
-                if (!torrentData) {
-                    return null;
-                }
-
-                if (fs.existsSync(arg.path)) {
-                    sendNotification({
-                        message: 'File at path already exists. Please delete the file and try again.',
-                        id: downloadID,
-                        type: 'error'
-                    });
-                    return null;
-                }
-
-                addTorrent(torrentData, arg.path, 
-                    (_, speed, progress, length, ratio) => {
-                        if (!mainWindow.webContents) {
-                            console.error("Seems like the window is closed. Cannot send progress message to renderer.")
-                            return
+                        if (!torrentData) {
+                            return null;
                         }
-                        mainWindow.webContents.send('torrent:download-progress', { id: downloadID, downloadSpeed: speed, progress, fileSize: length, ratio });
-                    },
-                    () => {
-                        if (!mainWindow.webContents) {
-                            console.error("Seems like the window is closed. Cannot send progress message to renderer.")
-                            return
+
+                        if (fs.existsSync(arg.path)) {
+                            sendNotification({
+                                message: 'File at path already exists. Please delete the file and try again.',
+                                id: downloadID,
+                                type: 'error'
+                            });
+                            return null;
                         }
-                        mainWindow.webContents.send('torrent:download-complete', { id: downloadID });
-                        console.log('Torrent download finished');
+
+                        addTorrent(torrentData, arg.path, 
+                            (_, speed, progress, length, ratio) => {
+                                if (!mainWindow.webContents) {
+                                    console.error("Seems like the window is closed. Cannot send progress message to renderer.")
+                                    return
+                                }
+                                mainWindow.webContents.send('torrent:download-progress', { id: downloadID, downloadSpeed: speed, progress, fileSize: length, ratio });
+                            },
+                            () => {
+                                if (!mainWindow.webContents) {
+                                    console.error("Seems like the window is closed. Cannot send progress message to renderer.")
+                                    return
+                                }
+                                mainWindow.webContents.send('torrent:download-complete', { id: downloadID });
+                                console.log('Torrent download finished');
+                            }
+                        );
+
+                        return downloadID;
+
+                        
+                    } catch (except) {
+                        console.error(except);
+                        sendNotification({
+                            message: "Failed to download torrent.",
+                            id: Math.random().toString(36).substring(7),
+                            type: 'error'
+                        });
+                        return null;
                     }
-                );
-
-                return downloadID;
-
-                
-            } catch (except) {
-                console.error(except);
-                sendNotification({
-                    message: "Failed to download torrent.",
-                    id: Math.random().toString(36).substring(7),
-                    type: 'error'
-                });
-                return null;
-            }
+                    break;
+                }
+            }      
+            return null;          
         });
 
         ipcMain.on('ddl:download', async (event, arg: { link: string, path: string }) => {

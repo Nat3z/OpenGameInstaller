@@ -59,7 +59,12 @@
 
     iterate();
     return [num, den];
-}
+  }
+
+  function toRatio(x: number) {
+    const fraction = toFraction(x);
+    return fraction[0] + ":" + fraction[1];
+  }
 </script>
 
 <div class="downloads">
@@ -78,7 +83,7 @@
           <h1 class="text-blue-400 font-mono">Seeding</h1>
           <section class="flex flex-row gap-8 w-full items-center justify-center p-4">
             <section class="flex-col flex w-1/3 justify-center items-center">
-              <p class="text-blue-800 font-mono text-2xl">{toFraction(download.ratio)}</p>
+              <p class="text-blue-800 font-mono text-2xl">{toRatio(download.ratio)}</p>
               <p class="font-mono text-gray-400">RATIO</p>
             </section>
             <section class="flex-col flex w-1/3 justify-center items-center">
@@ -107,13 +112,13 @@
         {:else if download.status === 'rd-downloading'}
           <p class="text-yellow-500 font-mono">Waiting for Real-Debrid to download torrent...</p>
         {:else}
-          <section class="flex flex-row gap-8 w-full items-center p-4">
+          <section class="flex flex-row gap-8 w-full justify-center items-center p-4">
             <section class="flex-col flex w-1/3 justify-center items-center">
               <p class="text-blue-800 font-mono text-2xl">{Math.floor(download.progress * 100)}%</p>
               <p class="font-mono text-gray-400">DOWNLOADED</p>
             </section>
             <section class="flex-col flex w-1/3 justify-center items-center">
-              <p class="text-yellow-500 font-mono text-2xl">{Math.floor(download.downloadSpeed)} MB/s</p>
+              <p class="text-yellow-500 font-mono text-2xl">{correctParsingSize(download.downloadSpeed)}/s</p>
               <p class="font-mono text-gray-400">SPEED</p>
             </section>
             <section class="flex-col flex w-1/3 justify-center items-center">
@@ -130,7 +135,7 @@
 
 <style>
 	.downloads {
-		@apply flex flex-col gap-2 w-5/6;
+		@apply flex flex-col gap-2 w-5/6 pb-8;
 	}
 	.downloads div {
 		@apply border border-gray-800 p-2 flex flex-row gap-2 w-full bg-gray-200 h-fit ;

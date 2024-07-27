@@ -1,7 +1,7 @@
 <script lang="ts" type="module">
   import { onMount } from "svelte";
   import { safeFetch } from "../utils";
-  import type { BooleanOption, ConfigurationFile, ConfigurationOption, NumberOption, StringOption } from "ogi-addon/build/config/ConfigurationBuilder";
+  import type { BooleanOption, ConfigurationFile, ConfigurationOption, NumberOption, StringOption } from "ogi-addon/config";
   import type { OGIAddonConfiguration } from "ogi-addon";
   import { notifications } from "../store";
   const fs = window.electronAPI.fs;

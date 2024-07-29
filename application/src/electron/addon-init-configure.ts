@@ -18,6 +18,12 @@ export const AddonFileConfigurationSchema = z.object({
     postSetup: z.string().optional()
   })
 });
+
+function stripAnsiCodes(input: string): string {
+  // Regular expression to match ANSI escape codes
+  const ansiRegex = /\x1b\[[0-9;]*m/g;
+  return input.replace(ansiRegex, '');
+}
 export async function setupAddon(addonPath: string): Promise<boolean> {
   const addonConfig = await readFile(join(addonPath, 'addon.json'), 'utf-8');
   const addonName = addonPath.split(/\/|\\/).pop();
@@ -84,7 +90,7 @@ Running post-setup script for ${addonName}...
     }
   }
 
-  await writeFile(join(addonPath, 'installation.log'), setupLogs);
+  await writeFile(join(addonPath, 'installation.log'), stripAnsiCodes(setupLogs));
   return true;
 }
 
@@ -119,7 +125,7 @@ async function executeScript(scriptName: string, script: string, addonPath: stri
     }, (err, stdout, stderr) => {
       if (err) {
         // write the error to a log file
-        writeFile(join(addonPath, scriptName + '.log'), '' + stderr);
+        writeFile(join(addonPath, scriptName + '-crash.log'), stripAnsiCodes(stderr));
         reject(err);
         return;
       }

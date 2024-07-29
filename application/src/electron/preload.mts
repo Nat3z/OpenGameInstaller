@@ -8,25 +8,27 @@ contextBridge.exposeInMainWorld('electronAPI', {
     mkdir: (path: string) => ipcRenderer.sendSync('fs:mkdir', path),
     exists: (path: string) => ipcRenderer.sendSync('fs:exists', path),
     showFileLoc: (path: string) => ipcRenderer.sendSync('fs:show-file-loc', path),
+    unrar: (data: { outputDir: string, rarFilePath: string }) => ipcRenderer.invoke('fs:extract-rar', data),
+    getFilesInDir: (path: string) => ipcRenderer.invoke('fs:get-files-in-dir', path),
     dialog: {
       showOpenDialog: (options: Electron.OpenDialogOptions) => ipcRenderer.invoke('fs:dialog:show-open-dialog', options),
       showSaveDialog: (options: Electron.SaveDialogOptions) => ipcRenderer.invoke('fs:dialog:show-save-dialog', options)
     }
   },
   realdebrid: {
-    setKey: (key: string) => ipcRenderer.sendSync('real-debrid:set-key', key),
-    getUserInfo: () => ipcRenderer.sendSync('real-debrid:get-user-info'),
-    unrestrictLink: (link: string) => ipcRenderer.sendSync('real-debrid:unrestrict-link', link),
-    addMagnet: (url: string, host: $Hosts) => ipcRenderer.sendSync('real-debrid:add-magnet', { url, host }),
-    getHosts: () => ipcRenderer.sendSync('real-debrid:get-hosts'),
-    updateKey: () => ipcRenderer.sendSync('real-debrid:update-key'),
+    setKey: (key: string) => ipcRenderer.invoke('real-debrid:set-key', key),
+    getUserInfo: () => ipcRenderer.invoke('real-debrid:get-user-info'),
+    unrestrictLink: (link: string) => ipcRenderer.invoke('real-debrid:unrestrict-link', link),
+    addMagnet: (url: string, host: $Hosts) => ipcRenderer.invoke('real-debrid:add-magnet', { url, host }),
+    getHosts: () => ipcRenderer.invoke('real-debrid:get-hosts'),
+    updateKey: () => ipcRenderer.invoke('real-debrid:update-key'),
     addTorrent: (torrent: string, host: $Hosts) => ipcRenderer.invoke('real-debrid:add-torrent', { torrent, host }),
-    selectTorrent: (torrents: number[]) => ipcRenderer.sendSync('real-debrid:select-torrent', torrents),
-    isTorrentReady: (id: string) => ipcRenderer.sendSync('real-debrid:is-torrent-ready', id),
-    getTorrentInfo: (id: string) => ipcRenderer.sendSync('real-debrid:get-torrent-info', id)
+    selectTorrent: (torrents: number[]) => ipcRenderer.invoke('real-debrid:select-torrent', torrents),
+    isTorrentReady: (id: string) => ipcRenderer.invoke('real-debrid:is-torrent-ready', id),
+    getTorrentInfo: (id: string) => ipcRenderer.invoke('real-debrid:get-torrent-info', id)
   },
   ddl: {
-    download: (downloads: { link: string, path: string }[]) => ipcRenderer.sendSync('ddl:download', downloads)
+    download: (downloads: { link: string, path: string }[]) => ipcRenderer.invoke('ddl:download', downloads)
   },
   torrent: {
     downloadTorrent: (torrent: string, path: string) => ipcRenderer.invoke('torrent:download-torrent', { link: torrent, path }),

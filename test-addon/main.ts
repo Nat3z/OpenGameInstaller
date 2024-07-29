@@ -25,7 +25,7 @@ addon.on('search', (query, event) => {
   addon.notify({ type: 'info', message: 'Searching...', id: 'search' });
   event.resolve([
     { 
-      name: "Real Debrid Test",
+      name: "Magnet Link Test",
       description: addon.config.getStringValue('testOption') || 'No description',
       coverURL: 'https://dummyimage.com/375x500/968d96/ffffff',
       downloadSize: 100,
@@ -62,8 +62,15 @@ addon.on('search', (query, event) => {
   ]);
 });
 
-addon.on('setup', (path, type, name, usedRealDebrid, event) => {
+addon.on('setup', ({ path, type, name, usedRealDebrid, multiPartFiles }, event) => {
   event.defer();
+  event.log(`
+path: ${path}
+type: ${type}
+name: ${name}
+usedRealDebrid: ${usedRealDebrid}
+multiPartFiles: ${multiPartFiles} 
+  `)
   const inter = setInterval(() => {
     if (event.progress >= 100) {
       clearInterval(inter);
@@ -71,6 +78,5 @@ addon.on('setup', (path, type, name, usedRealDebrid, event) => {
       return
     }
     event.progress += 10;
-    event.log("Setting up... " + path + " " + type + " " + name);
   }, 1000)
 });

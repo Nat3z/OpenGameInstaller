@@ -14,6 +14,7 @@ import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import { QBittorrent } from '@ctrl/qbittorrent';
 import { getStoredValue, refreshCached } from './config-util.js';
+import { createExtractorFromFile } from 'node-unrar-js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -147,64 +148,79 @@ function createWindow() {
             const result = await dialog.showSaveDialog(options);
             return result.filePath;
         });
+        
+        ipcMain.handle('fs:get-files-in-dir', async (_, arg) => {
+            const files = fs.readdirSync(arg);
+            return files;
+        });
+        ipcMain.handle('fs:extract-rar', async (_, arg) => {
+            const { rarFilePath, outputDir } = arg;
 
-        ipcMain.on('real-debrid:set-key', async (event, arg) => {
+            if (!fs.existsSync(rarFilePath)) {
+                throw new Error('RAR file does not exist');
+            }
+
+            if (!fs.existsSync(outputDir)) {
+                fs.mkdirSync(outputDir, { recursive: true });
+            }
+            console.log(rarFilePath);
+            (await createExtractorFromFile(rarFilePath)).extract(outputDir);
+            return outputDir;
+        });
+
+        ipcMain.handle('real-debrid:set-key', async (_, arg) => {
             realDebridClient = new RealDebrid({
                 apiKey: arg
             });
-            event.returnValue = 'success';
+            return 'success';
         });
 
-        ipcMain.on('real-debrid:update-key', async (event) => {
+        ipcMain.handle('real-debrid:update-key', async () => {
             if (!fs.existsSync('./config/option/realdebrid.json')) {
-                return event.returnValue = false;
+                return false;
             }
             const rdInfo = fs.readFileSync('./config/option/realdebrid.json', 'utf-8');
             const rdInfoJson = JSON.parse(rdInfo);
             realDebridClient = new RealDebrid({
                 apiKey: rdInfoJson.debridApiKey
             });
-            return event.returnValue = true;
+            return true;
         });
 
-        ipcMain.on('real-debrid:add-magnet', async (event, arg) => {
+        ipcMain.handle('real-debrid:add-magnet', async (_, arg) => {
             const torrentAdded = await realDebridClient.addMagnet(arg.url, arg.host);
-            event.returnValue = torrentAdded;
+            return torrentAdded;
         });
 
         // real-debrid binding
-        ipcMain.on('real-debrid:get-user-info', async (event, _) => {
+        ipcMain.handle('real-debrid:get-user-info', async () => {
             const userInfo = await realDebridClient.getUserInfo();
-            event.returnValue = userInfo;
+            return userInfo;
         });
 
-        ipcMain.on('real-debrid:unrestrict-link', async (event, arg) => {
+        ipcMain.handle('real-debrid:unrestrict-link', async (_, arg) => {
             const unrestrictedLink = await realDebridClient.unrestrictLink(arg);
-            event.returnValue = unrestrictedLink;
+            return unrestrictedLink;
         });
             
-        ipcMain.on('real-debrid:get-hosts', async (event, _) => {
+        ipcMain.handle('real-debrid:get-hosts', async () => {
             const hosts = await realDebridClient.getHosts();
-            event.returnValue = hosts;
-        });
-        ipcMain.on('real-debrid:add-magnet', async (event, arg) => {
-            const torrentAdded = await realDebridClient.addMagnet(arg.url, arg.host);
-            event.returnValue = torrentAdded;
+            return hosts;
         });
 
-        ipcMain.on('real-debrid:get-torrent-info', async (event, arg) => {
+        ipcMain.handle('real-debrid:get-torrent-info', async (_, arg) => {
             const torrents = await realDebridClient.getTorrentInfo(arg);
-            event.returnValue = torrents;
+            return torrents;
         });
 
-        ipcMain.on('real-debrid:is-torrent-ready', async (event, arg) => {
+        ipcMain.handle('real-debrid:is-torrent-ready', async (_, arg) => {
             const torrentReady = await realDebridClient.isTorrentReady(arg);
-            event.returnValue = torrentReady;
+            return torrentReady;
         })
 
-        ipcMain.on('real-debrid:select-torrent', async (event, arg) => {
+        ipcMain.handle('real-debrid:select-torrent', async (_, arg) => {
             const selected = await realDebridClient.selectTorrents(arg);
-            event.returnValue = selected;
+            return selected;
         })
         ipcMain.handle('real-debrid:add-torrent', async (_, arg) => {
             // arg.url is a link to the download, we need to get the file
@@ -271,25 +287,26 @@ function createWindow() {
         });
 
         ipcMain.handle('torrent:download-torrent', async (_, arg: { link: string, path: string }) => {
-            refreshCached('general');
+            await refreshCached('general');
             const torrentClient: string = await getStoredValue('general', 'torrentClient') ?? 'webtorrent';
 
             switch (torrentClient) {
                 case 'qbittorrent': {
                     try {
-                        refreshCached('qbittorrent');
+                        await refreshCached('qbittorrent');
                         if (!qbitClient)
                             qbitClient = new QBittorrent({
                                 baseUrl: ((await getStoredValue('qbittorrent', 'qbitHost')) ?? 'http://127.0.0.1') + ":" + ((await getStoredValue('qbittorrent', 'qbitPort')) ?? '8080'),
                                 username: (await getStoredValue('qbittorrent', 'qbitUsername')) ?? 'admin', 
                                 password: (await getStoredValue('qbittorrent', 'qbitPassword')) ?? ''
                             })
-                        if (fs.existsSync(arg.path)) {
+                        if (fs.existsSync(arg.path + '.torrent')) {
                             sendNotification({
                                 message: 'File at path already exists. Please delete the file and try again.',
                                 id: Math.random().toString(36).substring(7),
                                 type: 'error'
                             });
+                            mainWindow.webContents.send('ddl:download-error', { id: Math.random().toString(36).substring(7), error: 'File at path already exists. Please delete the file and try again.' });
                             return null;
                         }
                         const downloadID = Math.random().toString(36).substring(7);
@@ -333,7 +350,7 @@ function createWindow() {
                             return null;
                         }
                         await qbitClient.addTorrent(torrentData, {
-                            savepath: arg.path
+                            savepath: arg.path + '.torrent'
                         })
                         let alreadyNotified = false;
                         const torrentInterval = setInterval(async () => {
@@ -368,7 +385,7 @@ function createWindow() {
                     } catch (except) {
                         console.error(except);
                         sendNotification({
-                            message: "Failed to download torrent.",
+                            message: "Failed to download torrent. Check if qBitTorrent is running.",
                             id: Math.random().toString(36).substring(7),
                             type: 'error'
                         });
@@ -420,16 +437,18 @@ function createWindow() {
                             return null;
                         }
 
-                        if (fs.existsSync(arg.path)) {
+                        if (fs.existsSync(arg.path + '.torrent')) {
                             sendNotification({
                                 message: 'File at path already exists. Please delete the file and try again.',
                                 id: downloadID,
                                 type: 'error'
                             });
+
+                            mainWindow.webContents.send('ddl:download-error', { id: Math.random().toString(36).substring(7), error: 'File at path already exists. Please delete the file and try again.' });
                             return null;
                         }
 
-                        addTorrent(torrentData, arg.path, 
+                        addTorrent(torrentData, arg.path + '.torrent', 
                             (_, speed, progress, length, ratio) => {
                                 if (!mainWindow.webContents) {
                                     console.error("Seems like the window is closed. Cannot send progress message to renderer.")
@@ -480,7 +499,7 @@ function createWindow() {
                                 password: (await getStoredValue('qbittorrent', 'qbitPassword')) ?? ''
                             })
 
-                        if (fs.existsSync(arg.path)) {
+                        if (fs.existsSync(arg.path + '.torrent')) {
                             sendNotification({
                                 message: 'File at path already exists. Please delete the file and try again.',
                                 id: Math.random().toString(36).substring(7),
@@ -491,7 +510,7 @@ function createWindow() {
 
                         const downloadID = Math.random().toString(36).substring(7);
                         await qbitClient.addMagnet(arg.link, {
-                            savepath: arg.path
+                            savepath: arg.path + '.torrent'
                         })
                         let alreadyNotified = false;
                         const torrentInterval = setInterval(async () => {
@@ -526,7 +545,7 @@ function createWindow() {
                     } catch (except) {
                         console.error(except);
                         sendNotification({
-                            message: "Failed to download torrent.",
+                            message: "Failed to download torrent. Check if qBitTorrent is running.",
                             id: Math.random().toString(36).substring(7),
                             type: 'error'
                         });
@@ -538,16 +557,17 @@ function createWindow() {
                     try {
                         const downloadID = Math.random().toString(36).substring(7);
 
-                        if (fs.existsSync(arg.path)) {
+                        if (fs.existsSync(arg.path + '.torrent')) {
                             sendNotification({
                                 message: 'File at path already exists. Please delete the file and try again.',
                                 id: downloadID,
                                 type: 'error'
                             });
+                            mainWindow.webContents.send('ddl:download-error', { id: Math.random().toString(36).substring(7), error: 'File at path already exists. Please delete the file and try again.' });
                             return null;
                         }
 
-                        addTorrent(arg.link, arg.path, 
+                        addTorrent(arg.link, arg.path + '.torrent', 
                             (_, speed, progress, length, ratio) => {
                                 if (!mainWindow.webContents) {
                                     console.error("Seems like the window is closed. Cannot send progress message to renderer.")
@@ -582,7 +602,7 @@ function createWindow() {
             }      
             return null;          
         });
-        ipcMain.on('ddl:download', async (event, args: { link: string, path: string }[]) => {
+        ipcMain.handle('ddl:download', async (_, args: { link: string, path: string }[]) => {
             const downloadID = Math.random().toString(36).substring(7);
             // arg is a link
             // download the link
@@ -597,6 +617,8 @@ function createWindow() {
                             id: downloadID,
                             type: 'error'
                         });
+                        if (mainWindow.webContents)
+                            mainWindow.webContents.send('ddl:download-error', { id: downloadID, error: 'File at path already exists. Please delete the file and try again.' });
                         return reject();
                     }
                     let fileStream = fs.createWriteStream(arg.path);
@@ -674,7 +696,7 @@ function createWindow() {
                 console.error(err);
             });
             // stream the download 
-            event.returnValue = downloadID;
+            return downloadID;
         });
 
         ipcMain.handle('install-addons', async (_, addons) => {

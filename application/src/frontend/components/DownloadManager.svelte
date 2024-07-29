@@ -1,6 +1,6 @@
 <script lang="ts">
   import { currentDownloads, type DownloadStatusAndInfo } from "../store";
-  import { safeFetch } from "../utils";
+  import { getDownloadPath, safeFetch } from "../utils";
 
   function isCustomEvent(event: Event): event is CustomEvent {
     return event instanceof CustomEvent;
@@ -55,7 +55,7 @@
     });
   });
 
-  document.addEventListener('torrent:download-complete', (event: Event) => {
+  document.addEventListener('torrent:download-complete', async (event: Event) => {
     if (!isCustomEvent(event)) return;
     const downloadID = event.detail.id;
     let downloadedItem: DownloadStatusAndInfo | undefined = undefined;
@@ -74,13 +74,26 @@
     if (downloadedItem === undefined) return;
     downloadedItem = downloadedItem as DownloadStatusAndInfo;
 
+    // then, because it's a torrent, we need to get the directory within the download path
+    let outputDir = downloadedItem.downloadPath;
+    if (outputDir.endsWith('.torrent')) {
+      const filesInDir = await window.electronAPI.fs.getFilesInDir(outputDir);
+      if (filesInDir.length === 1) {
+        outputDir = downloadedItem.downloadPath + "\\" + filesInDir[0] + "\\";
+        console.log("Newly calculated outputDir: ", outputDir);
+      }
+      else {
+        console.error("Error: More than one file in the directory, cannot determine the output directory.");
+      }
+    }
+
     safeFetch("http://localhost:7654/addons/" + downloadedItem.addonSource + "/setup-app", {
       method: "POST",
       headers: {
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
-        path: downloadedItem.downloadPath,
+        path: outputDir,
         type: downloadedItem.downloadType,
         name: downloadedItem.name,
         usedRealDebrid: downloadedItem.usedRealDebrid
@@ -132,7 +145,7 @@
     });
   });
 
-  document.addEventListener('ddl:download-complete', (event: Event) => {
+  document.addEventListener('ddl:download-complete', async (event: Event) => {
     if (!isCustomEvent(event)) return;
     const downloadID = event.detail.id;
     let downloadedItem: DownloadStatusAndInfo | undefined = undefined;
@@ -151,6 +164,11 @@
     if (downloadedItem === undefined) return;
     downloadedItem = downloadedItem as DownloadStatusAndInfo;
 
+    if (downloadedItem.usedRealDebrid) {
+      const outputDir = await window.electronAPI.fs.unrar({ outputDir: getDownloadPath() + '\\' + downloadedItem.name, rarFilePath: downloadedItem.downloadPath });
+      downloadedItem.downloadPath = outputDir;
+    }
+
     safeFetch("http://localhost:7654/addons/" + downloadedItem.addonSource + "/setup-app", {
       method: "POST",
       headers: {
@@ -160,7 +178,8 @@
         path: downloadedItem.downloadPath,
         type: downloadedItem.downloadType,
         name: downloadedItem.name,
-        usedRealDebrid: downloadedItem.usedRealDebrid
+        usedRealDebrid: downloadedItem.usedRealDebrid,
+        multiPartFiles: downloadedItem.files
       }),
       onLogs: (log) => {
         document.dispatchEvent(new CustomEvent('setup:log', {

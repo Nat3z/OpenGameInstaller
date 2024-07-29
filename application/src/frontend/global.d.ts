@@ -15,29 +15,31 @@ interface Window {
       mkdir: (path: string) => void,
       exists: (path: string) => boolean,
       showFileLoc: (path: string) => void,
+      unrar: (data: { outputDir: string, rarFilePath: string }) => Promise<string>,
+      getFilesInDir: (path: string) => Promise<string[]>,
       dialog: {
         showOpenDialog: (options: Electron.OpenDialogOptions) => Promise<string | undefined>,
         showSaveDialog: (options: Electron.SaveDialogOptions) => Promise<string | undefined>
       }
     },
     realdebrid: {
-      setKey: (key: string) => boolean,
-      getUserInfo: () => $UserInfo,
-      unrestrictLink: (link: string) => $UnrestrictLink,
-      getHosts: () => $Hosts[],
-      addMagnet: (url: string, host: $Hosts) => $AddTorrentOrMagnet,
+      setKey: (key: string) => Promise<boolean>,
+      getUserInfo: () => Promise<$UserInfo>,
+      unrestrictLink: (link: string) => Promise<$UnrestrictLink>,
+      getHosts: () => Promise<$Hosts[]>,
+      addMagnet: (url: string, host: $Hosts) => Promise<$AddTorrentOrMagnet>,
       addTorrent: (torrent: string) => Promise<$AddTorrentOrMagnet>,
-      selectTorrent: (torrent: string) => boolean,
-      isTorrentReady: (id: string) => boolean,
-      getTorrentInfo: (id: string) => $TorrentInfo,
-      updateKey: () => boolean
+      selectTorrent: (torrent: string) => Promise<boolean>,
+      isTorrentReady: (id: string) => Promise<boolean>,
+      getTorrentInfo: (id: string) => Promise<$TorrentInfo>,
+      updateKey: () => Promise<boolean>
     },
     torrent: {
       downloadTorrent: (torrent: string, path: string) => Promise<string>,
       downloadMagnet: (magnet: string, path: string) => Promise<string>,
     },
     ddl: {
-      download: (files: { link: string, path: string }[]) => string
+      download: (files: { link: string, path: string }[]) => Promise<string>
     },
     installAddons: (addons: string[]) => Promise<void>,
     restartAddonServer: () => Promise<void>,

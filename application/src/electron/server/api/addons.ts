@@ -78,7 +78,7 @@ app.post('/:addonID/setup-app', async (req, res) => {
   }
 
   const deferrableTask = new DeferrableTask(async () => {
-    await client.sendEventMessage({ event: 'setup', args: { path: req.body.path, type: req.body.type, usedRealDebrid: req.body.usedRealDebrid, name: req.body.name, deferID: deferrableTask.id!! } });
+    await client.sendEventMessage({ event: 'setup', args: { path: req.body.path, type: req.body.type, usedRealDebrid: req.body.usedRealDebrid, name: req.body.name, multiFiles: req.body.multiPartFiles, deferID: deferrableTask.id!! } });
     return "success";
   }, client.addonInfo.id);
 

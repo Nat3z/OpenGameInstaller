@@ -69,7 +69,7 @@
 					});
 					return;
 				}
-				const worked = window.electronAPI.realdebrid.updateKey();
+				const worked = await window.electronAPI.realdebrid.updateKey();
 				if (!worked) {
 					createNotification({
 						id: Math.random().toString(36).substring(7),
@@ -79,10 +79,10 @@
 					return;
 				}
 				// get the first host
-				const hosts = window.electronAPI.realdebrid.getHosts();	
+				const hosts = await window.electronAPI.realdebrid.getHosts();	
 				// add magnet link
-				const magnetLink = window.electronAPI.realdebrid.addMagnet(result.downloadURL, hosts[0]);
-				const isReady = window.electronAPI.realdebrid.isTorrentReady(magnetLink.id);
+				const magnetLink = await window.electronAPI.realdebrid.addMagnet(result.downloadURL, hosts[0]);
+				const isReady = await window.electronAPI.realdebrid.isTorrentReady(magnetLink.id);
 				if (!isReady) {
 					window.electronAPI.realdebrid.selectTorrent(magnetLink.id);
 					await new Promise<void>((resolve) => {
@@ -98,7 +98,7 @@
 
 
 				const torrentInfo = await window.electronAPI.realdebrid.getTorrentInfo(magnetLink.id);
-				const download = window.electronAPI.realdebrid.unrestrictLink(torrentInfo.links[0]);
+				const download = await window.electronAPI.realdebrid.unrestrictLink(torrentInfo.links[0]);
 
 				if (download === null) {
 					createNotification({
@@ -132,7 +132,7 @@
 					return;
 				}
 
-				const worked = window.electronAPI.realdebrid.updateKey();
+				const worked = await window.electronAPI.realdebrid.updateKey();
 				if (!worked) {
 					notifications.update((notifications) => [...notifications, { id: Math.random().toString(36).substring(7), type: 'error', message: "Please set your Real-Debrid API key in the settings." }]);
 					return;
@@ -151,7 +151,7 @@
 					}];
 				});
 				const torrent = await window.electronAPI.realdebrid.addTorrent(result.downloadURL);
-				const isReady = window.electronAPI.realdebrid.isTorrentReady(torrent.id);
+				const isReady = await window.electronAPI.realdebrid.isTorrentReady(torrent.id);
 				if (!isReady) {
 					window.electronAPI.realdebrid.selectTorrent(torrent.id);
 					await new Promise<void>((resolve) => {
@@ -210,7 +210,7 @@
 					return [...downloads, { 
 						id: downloadID, 
 						status: 'downloading', 
-						downloadPath: getDownloadPath() + "\\" + result.filename, 
+						downloadPath: getDownloadPath() + "\\" + result.filename + ".torrent", 
 						downloadSpeed: 0,
 						progress: 0,
 						usedRealDebrid: false,
@@ -240,7 +240,7 @@
 					return [...downloads, { 
 						id: downloadID, 
 						status: 'downloading', 
-						downloadPath: getDownloadPath() + "\\" + result.filename, 
+						downloadPath: getDownloadPath() + "\\" + result.filename + ".torrent", 
 						downloadSpeed: 0,
 						progress: 0,
 						usedRealDebrid: false,
@@ -267,7 +267,7 @@
 					});
 				}
 
-				const downloadID = window.electronAPI.ddl.download(collectedFiles);
+				const downloadID = await window.electronAPI.ddl.download(collectedFiles);
 				if (downloadID === null) {
 					htmlButton.querySelector('[data-dwtext]')!!.textContent = "Download";
 					htmlButton.disabled = false;
@@ -277,7 +277,7 @@
 					return [...downloads, { 
 						id: downloadID, 
 						status: 'downloading', 
-						downloadPath: getDownloadPath() + "\\" + result.filename, 
+						downloadPath: (result.files ? getDownloadPath() + "\\" : getDownloadPath() + "\\" + result.filename), 
 						downloadSpeed: 0,
 						usedRealDebrid: false,
 						progress: 0,

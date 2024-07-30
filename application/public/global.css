@@ -65,3 +65,12 @@ button:not(:disabled):active {
 button:focus {
 	border-color: #666;
 }
+
+@font-face {
+	font-family: 'Archivo';
+	src: url(./Archivo-VariableFont_wdth\,wght.ttf);
+}
+@font-face {
+	font-family: 'Open Sans';
+	src: url(./OpenSans-VariableFont_wdth\,wght.ttf);
+}

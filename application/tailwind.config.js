@@ -4,6 +4,15 @@ module.exports = {
   content: ["./src/**/*.svelte"],
   theme: {
     extend: {
+      colors: {
+        accent: '#428a91',
+        'accent-dark': '#2d626a',
+        'accent-light': '#aecdc7'
+      },
+      fontFamily: {
+        'archivo': ['Archivo', 'sans-serif'],
+        'open-sans': ['Open Sans', 'sans-serif'],
+      },
       animation: {
         'fade-in': 'fadeIn 0.5s ease-in-out',
         'fade-in-slow': 'fadeIn 2s ease-in-out',

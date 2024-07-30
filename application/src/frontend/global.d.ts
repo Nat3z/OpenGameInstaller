@@ -41,6 +41,9 @@ interface Window {
     ddl: {
       download: (files: { link: string, path: string }[]) => Promise<string>
     },
+    oobe: {
+      downloadTools: () => Promise<void>,
+    },
     installAddons: (addons: string[]) => Promise<void>,
     restartAddonServer: () => Promise<void>,
     cleanAddons: () => Promise<void>,

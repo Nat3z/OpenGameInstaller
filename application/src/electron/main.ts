@@ -839,6 +839,192 @@ function createWindow() {
                 type: 'info'
             });
         });
+
+        const sevenZipDownload = "https://www.7-zip.org/a/7z1900-x64.exe"
+
+        ipcMain.handle('oobe:download-tools', async (_) => {
+            // check if 7zip is installed
+            let sevenZipPath = '';
+            if (process.platform === 'win32') {
+                sevenZipPath = 'C:\\Program Files\\7-Zip\\7z.exe';
+            }
+            else {
+                sevenZipPath = '7z';
+            }
+            const sevenZipInstalled = await new Promise<boolean>((resolve, _) => {
+                exec(sevenZipPath + ' --help', (err, stdout, _) => {
+                    if (err) {
+                        resolve(false);
+                    }
+                    console.log(stdout);
+                    resolve(true);
+                });
+            });
+            if (!sevenZipInstalled) {
+                await new Promise<void>((resolve, reject) => axios({
+                    method: 'get',
+                    url: sevenZipDownload,
+                    responseType: 'stream'
+                }).then(response => {
+                    const fileStream = fs.createWriteStream('./7z-install.exe');
+                    response.data.pipe(fileStream);
+                    fileStream.on('finish', async () => {
+                        console.log('Downloaded 7zip');
+                        fileStream.close();
+                        exec('./7z-install.exe /S /D=C:/Program Files/7-Zip/', (err, stdout, stderr) => {
+                            if (err) {
+                                console.error(err);
+                                reject();
+                                return;
+                            }
+                            console.log(stdout);
+                            console.log(stderr);
+                            fs.unlinkSync('./7z-install.exe');
+                            sendNotification({
+                                message: 'Successfully installed 7zip.',
+                                id: Math.random().toString(36).substring(7),
+                                type: 'info'
+                            });
+                            resolve();
+                        })
+                    });
+
+                    fileStream.on('error', (err) => {
+                        console.error(err);
+                        fileStream.close();
+                        fs.unlinkSync('./7z-install.exe');
+                    });
+                }).catch(err => {
+                    console.error(err);
+                }));
+                
+            }
+
+            // check if git is installed
+            const gitInstalled = await new Promise<boolean>((resolve, _) => {
+                exec('git --version', (err, stdout, _) => {
+                    if (err) {
+                        resolve(false);
+                    }
+                    console.log(stdout);
+                    resolve(true);
+                });
+            });
+            if (!gitInstalled) {
+                const gitDownload = "https://github.com/git-for-windows/git/releases/download/v2.46.0.windows.1/Git-2.46.0-64-bit.exe"
+                await new Promise<void>((resolve, reject) => axios({
+                    method: 'get',
+                    url: gitDownload,
+                    responseType: 'stream'
+                }).then(response => {
+                    const fileStream = fs.createWriteStream('./git-install.exe');
+                    response.data.pipe(fileStream);
+                    fileStream.on('finish', async () => {
+                        console.log('Downloaded git');
+                        fileStream.close();
+
+                        fs.writeFileSync('git_install.ini', `
+[Setup]
+Lang=default
+Dir=C:\Program Files\Git
+Group=Git
+NoIcons=0
+SetupType=default
+Components=gitlfs,assoc,assoc_sh,windowsterminal
+Tasks=
+EditorOption=VIM
+CustomEditorPath=
+DefaultBranchOption=main
+PathOption=Cmd
+SSHOption=OpenSSH
+TortoiseOption=false
+CURLOption=WinSSL
+CRLFOption=CRLFCommitAsIs
+BashTerminalOption=MinTTY
+GitPullBehaviorOption=Merge
+UseCredentialManager=Enabled
+PerformanceTweaksFSCache=Enabled
+EnableSymlinks=Disabled
+EnablePseudoConsoleSupport=Disabled
+EnableFSMonitor=Disabled
+                        `)
+                        exec('./git-install.exe /VERYSILENT /NORESTART /NOCANCEL /LOADINF=git_options.ini', (err, stdout, stderr) => {
+                            if (err) {
+                                console.error(err);
+                                reject();
+                                return;
+                            }
+                            console.log(stdout);
+                            console.log(stderr);
+                            fs.unlinkSync('./git-install.exe');
+                            sendNotification({
+                                message: 'Successfully installed git.',
+                                id: Math.random().toString(36).substring(7),
+                                type: 'info'
+                            });
+                            resolve();
+                        })
+                    });
+
+                    fileStream.on('error', (err) => {
+                        console.error(err);
+                        fileStream.close();
+                        fs.unlinkSync('./git-install.exe');
+                    });
+                }).catch(err => {
+                    console.error(err);
+                }));
+
+            }
+
+            // check if bun is installed
+            const bunInstalled = await new Promise<boolean>((resolve, _) => {
+                exec('bun --version', (err, stdout, _) => {
+                    if (err) {
+                        resolve(false);
+                    }
+                    console.log(stdout);
+                    resolve(true);
+                });
+            });
+
+            if (!bunInstalled) {
+                await new Promise<void>((resolve, reject) => exec('powershell -c "irm bun.sh/install.ps1 | iex"', (err, stdout, stderr) => {
+                    if (err) {
+                        console.error(err);
+                        reject();
+                        return;
+                    }
+                    console.log(stdout);
+                    console.log(stderr);
+                    sendNotification({
+                        message: 'Successfully installed bun.',
+                        id: Math.random().toString(36).substring(7),
+                        type: 'info'
+                    });
+                    resolve();
+                }))
+            }
+            else {
+                await new Promise<void>((resolve, reject) => exec('bun upgrade', (err, stdout, stderr) => {
+                    if (err) {
+                        console.error(err);
+                        reject();
+                        return;
+                    }
+                    console.log(stdout);
+                    console.log(stderr);
+                    sendNotification({
+                        message: 'Successfully upgraded bun.',
+                        id: Math.random().toString(36).substring(7),
+                        type: 'info'
+                    });
+                    resolve();
+                }))
+            }
+
+            return;
+        });
         mainWindow!!.show()
         if (!isSecurityCheckEnabled) {
             sendNotification({

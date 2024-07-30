@@ -21,7 +21,7 @@ let qbitClient: QBittorrent | undefined = undefined;
 let torrentIntervals: NodeJS.Timeout[] = []
 // Keep a global reference of the window object, if you don't, the window will
 // be closed automatically when the JavaScript object is garbage collected.
-let mainWindow: any;
+let mainWindow: BrowserWindow | null;
 let realDebridClient = new RealDebrid({
     apiKey: 'UNSET'
 }); 
@@ -122,7 +122,7 @@ function createWindow() {
             });
         });
         ipcMain.on('fs:mkdir', (event, arg) => {
-            fs.mkdir(arg, (err) => {
+            fs.mkdir(arg, { recursive: true }, (err) => {
                 if (err) {
                     event.returnValue = err;
                     console.error(err);
@@ -265,7 +265,7 @@ function createWindow() {
                         });
                     });
                 }).catch(err => {
-                    if (!mainWindow.webContents) {
+                    if (!mainWindow || !mainWindow.webContents) {
                         console.error("Seems like the window is closed. Cannot send error message to renderer.")
                         return
                     }
@@ -319,7 +319,8 @@ function createWindow() {
                                 id: Math.random().toString(36).substring(7),
                                 type: 'error'
                             });
-                            mainWindow.webContents.send('ddl:download-error', { id: Math.random().toString(36).substring(7), error: 'File at path already exists. Please delete the file and try again.' });
+                            if (mainWindow && mainWindow.webContents)
+                                mainWindow.webContents.send('ddl:download-error', { id: Math.random().toString(36).substring(7), error: 'File at path already exists. Please delete the file and try again.' });
                             return null;
                         }
                         const downloadID = Math.random().toString(36).substring(7);
@@ -346,7 +347,7 @@ function createWindow() {
                                 });
                             });
                         }).catch(err => {
-                            if (!mainWindow.webContents) {
+                            if (!mainWindow || !mainWindow.webContents) {
                                 console.error("Seems like the window is closed. Cannot send error message to renderer.")
                                 return
                             }
@@ -382,7 +383,7 @@ function createWindow() {
                             const downloadSpeed = torrent.downloadSpeed;
                             const fileSize = torrent.totalSize;
                             const ratio = torrent.totalUploaded / torrent.totalDownloaded;
-                            if (!mainWindow.webContents) {
+                            if (!mainWindow || !mainWindow.webContents) {
                                 console.error("Seems like the window is closed. Cannot send progress message to renderer.")
                                 return
                             }
@@ -432,7 +433,7 @@ function createWindow() {
                                 });
                             });
                         }).catch(err => {
-                            if (!mainWindow.webContents) {
+                            if (!mainWindow || !mainWindow.webContents) {
                                 console.error("Seems like the window is closed. Cannot send error message to renderer.")
                                 return
                             }
@@ -456,21 +457,21 @@ function createWindow() {
                                 id: downloadID,
                                 type: 'error'
                             });
-
-                            mainWindow.webContents.send('ddl:download-error', { id: Math.random().toString(36).substring(7), error: 'File at path already exists. Please delete the file and try again.' });
+                            if (mainWindow && mainWindow.webContents)
+                                mainWindow.webContents.send('ddl:download-error', { id: Math.random().toString(36).substring(7), error: 'File at path already exists. Please delete the file and try again.' });
                             return null;
                         }
 
                         addTorrent(torrentData, arg.path + '.torrent', 
                             (_, speed, progress, length, ratio) => {
-                                if (!mainWindow.webContents) {
+                                if (!mainWindow || !mainWindow.webContents) {
                                     console.error("Seems like the window is closed. Cannot send progress message to renderer.")
                                     return
                                 }
                                 mainWindow.webContents.send('torrent:download-progress', { id: downloadID, downloadSpeed: speed, progress, fileSize: length, ratio });
                             },
                             () => {
-                                if (!mainWindow.webContents) {
+                                if (!mainWindow || !mainWindow.webContents) {
                                     console.error("Seems like the window is closed. Cannot send progress message to renderer.")
                                     return
                                 }
@@ -542,7 +543,7 @@ function createWindow() {
                             const downloadSpeed = torrent.downloadSpeed;
                             const fileSize = torrent.totalSize;
                             const ratio = torrent.totalUploaded / torrent.totalDownloaded;
-                            if (!mainWindow.webContents) {
+                            if (!mainWindow || !mainWindow.webContents) {
                                 console.error("Seems like the window is closed. Cannot send progress message to renderer.")
                                 return
                             }
@@ -576,20 +577,21 @@ function createWindow() {
                                 id: downloadID,
                                 type: 'error'
                             });
-                            mainWindow.webContents.send('ddl:download-error', { id: Math.random().toString(36).substring(7), error: 'File at path already exists. Please delete the file and try again.' });
+                            if (mainWindow && mainWindow.webContents)
+                                mainWindow.webContents.send('ddl:download-error', { id: Math.random().toString(36).substring(7), error: 'File at path already exists. Please delete the file and try again.' });
                             return null;
                         }
 
                         addTorrent(arg.link, arg.path + '.torrent', 
                             (_, speed, progress, length, ratio) => {
-                                if (!mainWindow.webContents) {
+                                if (!mainWindow || !mainWindow.webContents) {
                                     console.error("Seems like the window is closed. Cannot send progress message to renderer.")
                                     return
                                 }
                                 mainWindow.webContents.send('torrent:download-progress', { id: downloadID, downloadSpeed: speed, progress, fileSize: length, ratio });
                             },
                             () => {
-                                if (!mainWindow.webContents) {
+                                if (!mainWindow || !mainWindow.webContents) {
                                     console.error("Seems like the window is closed. Cannot send progress message to renderer.")
                                     return
                                 }
@@ -630,7 +632,7 @@ function createWindow() {
                             id: downloadID,
                             type: 'error'
                         });
-                        if (mainWindow.webContents)
+                        if (mainWindow && mainWindow.webContents)
                             mainWindow.webContents.send('ddl:download-error', { id: downloadID, error: 'File at path already exists. Please delete the file and try again.' });
                         return reject();
                     }
@@ -641,7 +643,7 @@ function createWindow() {
 
                     fileStream.on('error', (err) => {
                         console.error(err);
-                        if (mainWindow.webContents)
+                        if (mainWindow && mainWindow.webContents)
                             mainWindow.webContents.send('ddl:download-error', { id: downloadID, error: err });
                         fileStream.close();
                         reject()
@@ -659,7 +661,7 @@ function createWindow() {
                                 const progress = fileStream.bytesWritten / fileSize;
                                 const elapsedTime = (Date.now() - startTime) / 1000; // in seconds
                                 const downloadSpeed = response.data.socket.bytesRead / elapsedTime;
-                                if (mainWindow.webContents)
+                                if (mainWindow && mainWindow.webContents)
                                     mainWindow.webContents.send('ddl:download-progress', { id: downloadID, progress, downloadSpeed, fileSize, part: parts, totalParts: args.length });
                                 else
                                     response.data.destroy()
@@ -672,7 +674,7 @@ function createWindow() {
                             });
 
                             response.data.on('error', () => {
-                                if (mainWindow.webContents)
+                                if (mainWindow && mainWindow.webContents)
                                     mainWindow.webContents.send('ddl:download-error', { id: downloadID, error: '' });
                                 fileStream.close();
                                 fs.unlinkSync(arg.path);
@@ -680,7 +682,7 @@ function createWindow() {
                             });
                         }).catch(err => {
                             console.error(err);
-                            if (mainWindow.webContents)
+                            if (mainWindow && mainWindow.webContents)
                                 mainWindow.webContents.send('ddl:download-error', { id: downloadID, error: err });
                             fileStream.close();
                             fs.unlinkSync(arg.path);
@@ -693,8 +695,8 @@ function createWindow() {
                         })
                     );
                 }
-
-                mainWindow.webContents.send('ddl:download-complete', { id: downloadID });
+                if (mainWindow && mainWindow.webContents)
+                    mainWindow.webContents.send('ddl:download-complete', { id: downloadID });
                 resolve();
                 
             }).then(() => {
@@ -844,9 +846,10 @@ function createWindow() {
 
         ipcMain.handle('oobe:download-tools', async (_) => {
             // check if 7zip is installed
+            let cleanlyDownloadedAll = true;
             let sevenZipPath = '';
             if (process.platform === 'win32') {
-                sevenZipPath = 'C:\\Program Files\\7-Zip\\7z.exe';
+                sevenZipPath = '"C:\\Program Files\\7-Zip\\7z.exe"';
             }
             else {
                 sevenZipPath = '7z';
@@ -871,9 +874,15 @@ function createWindow() {
                     fileStream.on('finish', async () => {
                         console.log('Downloaded 7zip');
                         fileStream.close();
-                        exec('./7z-install.exe /S /D=C:/Program Files/7-Zip/', (err, stdout, stderr) => {
+                        exec('7z-install.exe /S /D=C:/Program Files/7-Zip/', (err, stdout, stderr) => {
                             if (err) {
                                 console.error(err);
+                                sendNotification({
+                                    message: 'Failed to install 7zip. Please allow the installer to run as administrator.',
+                                    id: Math.random().toString(36).substring(7),
+                                    type: 'error'
+                                });
+                                cleanlyDownloadedAll = false;
                                 reject();
                                 return;
                             }
@@ -893,6 +902,7 @@ function createWindow() {
                         console.error(err);
                         fileStream.close();
                         fs.unlinkSync('./7z-install.exe');
+                        cleanlyDownloadedAll = false;
                     });
                 }).catch(err => {
                     console.error(err);
@@ -948,10 +958,11 @@ EnableSymlinks=Disabled
 EnablePseudoConsoleSupport=Disabled
 EnableFSMonitor=Disabled
                         `)
-                        exec('./git-install.exe /VERYSILENT /NORESTART /NOCANCEL /LOADINF=git_options.ini', (err, stdout, stderr) => {
+                        exec('git-install.exe /VERYSILENT /NORESTART /NOCANCEL /LOADINF=git_options.ini', (err, stdout, stderr) => {
                             if (err) {
                                 console.error(err);
                                 reject();
+                                cleanlyDownloadedAll = false;
                                 return;
                             }
                             console.log(stdout);
@@ -993,6 +1004,7 @@ EnableFSMonitor=Disabled
                     if (err) {
                         console.error(err);
                         reject();
+                        cleanlyDownloadedAll = false;
                         return;
                     }
                     console.log(stdout);
@@ -1023,7 +1035,7 @@ EnableFSMonitor=Disabled
                 }))
             }
 
-            return;
+            return cleanlyDownloadedAll;
         });
         mainWindow!!.show()
         if (!isSecurityCheckEnabled) {
@@ -1033,6 +1045,11 @@ EnableFSMonitor=Disabled
                 type: 'warning'
             });
         }
+
+        mainWindow!!.webContents.setWindowOpenHandler((details) => {
+            shell.openExternal(details.url)
+            return { action: 'deny' }
+        })
     });
 }
 

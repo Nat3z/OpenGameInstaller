@@ -42,7 +42,7 @@ interface Window {
       download: (files: { link: string, path: string }[]) => Promise<string>
     },
     oobe: {
-      downloadTools: () => Promise<void>,
+      downloadTools: () => Promise<boolean>,
     },
     installAddons: (addons: string[]) => Promise<void>,
     restartAddonServer: () => Promise<void>,

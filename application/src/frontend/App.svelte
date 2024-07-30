@@ -7,17 +7,33 @@
 	import DownloadManager from "./components/DownloadManager.svelte";
 	import OOBE from './views/OutOfBoxExperience.svelte';
 
-  import { fetchAddonsWithConfigure } from "./utils";
+  import { fetchAddonsWithConfigure, getConfigClientOption } from "./utils";
   import Notifications from "./components/Notifications.svelte";
 	type Views = "gameInstall" | "config" | "clientoptions" | "downloader";
 	let selectedView: Views = "gameInstall";
 	// post config to server for each addon
+
+	let finishedOOBE = false;
+	let loading = true;
 	onMount(() => {
-		fetchAddonsWithConfigure();
+		loading = true;
+		setTimeout(() => {
+			fetchAddonsWithConfigure();
+			const installedOption = getConfigClientOption('installed') as { installed: boolean };
+			if (!installedOption || !installedOption.installed) {
+				finishedOOBE = false;
+			}
+			loading = false;
+		}, 1000);
+		
 	});
 </script>
 
-<OOBE />
+{#if !finishedOOBE}
+	<OOBE finishedSetup={() => finishedOOBE = true}/>
+{/if}
+
+{#if !loading}
 <main class="flex items-center flex-col gap-4 w-full h-full">
 
 	<header class="flex justify-center gap-4 flex-row">
@@ -42,7 +58,7 @@
 	<Notifications />
 
 </main>
-
+{/if}
 <style global>
 	@tailwind base;
 	@tailwind components;

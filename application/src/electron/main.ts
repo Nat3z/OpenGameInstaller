@@ -66,9 +66,10 @@ function createWindow() {
     // This block of code is intended for development purpose only.
     // Delete this entire block of code when you are ready to package the application.
     if (isDev()) {
-        mainWindow.loadURL('http://localhost:8080/?secret=' + applicationAddonSecret);
+        mainWindow!!.loadURL('http://localhost:8080/?secret=' + applicationAddonSecret);
+        console.log('Running in development');
     } else {
-        mainWindow.loadURL("file://" + join(__dirname, '../public/index.html') + "?secret=" + applicationAddonSecret);
+        mainWindow!!.loadURL("file://" + join(__dirname, '../public/index.html') + "?secret=" + applicationAddonSecret);
     }
     
     // Uncomment the following line of code when app is ready to be packaged.
@@ -1037,6 +1038,8 @@ EnableFSMonitor=Disabled
 
             return cleanlyDownloadedAll;
         });
+
+            
         mainWindow!!.show()
         if (!isSecurityCheckEnabled) {
             sendNotification({
@@ -1050,6 +1053,19 @@ EnableFSMonitor=Disabled
             shell.openExternal(details.url)
             return { action: 'deny' }
         })
+
+
+        app.on('web-contents-created', (_, contents) => {
+
+            contents.on('will-navigate', (event, navigationUrl) => {
+                const parsedUrl = new URL(navigationUrl)
+
+                if (parsedUrl.origin !== 'http://localhost:8080' && parsedUrl.origin !== 'file://') {
+                    event.preventDefault()
+                    throw new Error('Navigating to that address is not allowed.')
+                }
+            })
+        });
     });
 }
 

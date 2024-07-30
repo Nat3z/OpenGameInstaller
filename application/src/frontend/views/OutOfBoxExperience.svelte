@@ -1,9 +1,12 @@
 <script lang="ts">
-  let stage = 3;
+  let stage = 0;
 
-  let selectedTorrenter: "qbittorrent" | "rd" | "webtorrent" | "" = "";
+  let selectedTorrenter: "qbittorrent" | "real-debrid" | "webtorrent" | "" = "";
   let fulfilledRequirements = false;
+  let addons = "";
 
+  export let finishedSetup: () => void;
+  
   async function downloadTools(event: MouseEvent) {
     console.log("Downloading tools");
     const button = event.target as HTMLButtonElement;
@@ -18,7 +21,7 @@
   }
 
   function submitTorrenter() {
-    if (selectedTorrenter === "rd") {
+    if (selectedTorrenter === "real-debrid") {
       console.log("Submitting RD API Key");
       // save a file with the api key
       const apiKey = document.querySelector("input[data-rd-key]") as HTMLInputElement;
@@ -58,11 +61,32 @@
     });
 
   }
+
+  function updateAddons(event: Event) {
+    const textarea = event.target as HTMLTextAreaElement;
+    addons = textarea.value;
+  }
+
+  async function finishSetup() {
+    stage = 6;
+    const addonsSplitted = addons.split("\n").filter((addon) => addon !== "");
+    let generalConfig = {
+      fileDownloadLocation: downloadLocation,
+      addons: addonsSplitted,
+      torrentClient: selectedTorrenter,
+    }
+    window.electronAPI.fs.mkdir('./config/option/')
+    window.electronAPI.fs.write('./config/option/general.json', JSON.stringify(generalConfig));
+    window.electronAPI.fs.write('./config/option/installed.json', JSON.stringify({ installed: true }));
+    await window.electronAPI.installAddons(addonsSplitted);
+    await window.electronAPI.restartAddonServer();
+    finishedSetup();
+  }
 </script>
 
 <main class="flex items-center flex-col justify-center w-full h-full p-8 bg-white fixed top-0 left-0 outline">
   {#if stage > 0}
-    <progress class="animate-fade-in-slow" max="10" value={stage - 1}></progress>
+    <progress class="animate-fade-in-slow" max="4" value={stage - 1}></progress>
   {/if}
 
   {#if stage === 0}
@@ -116,7 +140,7 @@
         <button on:click={() => selectedTorrenter = "qbittorrent"} class="flex justify-start p-2 pl-2 gap-4 items-center flex-row w-8/12 h-14 bg-slate-100 rounded-lg">
           <img class="p-4 w-20 h-20" src="./qbittorrent.svg" />
         </button>
-        <button on:click={() => selectedTorrenter = "rd"} class="flex justify-start p-2 pl-2 gap-4 items-center flex-row w-8/12 h-14 bg-slate-100 rounded-lg">
+        <button on:click={() => selectedTorrenter = "real-debrid"} class="flex justify-start p-2 pl-2 gap-4 items-center flex-row w-8/12 h-14 bg-slate-100 rounded-lg">
           <img class="p-4 w-20 h-20" src="./rd-logo.png" />
         </button>
         <button on:click={() => selectedTorrenter = "webtorrent"} class="flex justify-start p-2 pl-2 gap-4 items-center flex-row w-8/12 h-14 bg-slate-100 rounded-lg">
@@ -125,7 +149,7 @@
       </div>
 
       <form on:submit|preventDefault={submitTorrenter} class="flex flex-col items-center justify-start w-full">
-        {#if selectedTorrenter === "rd"}
+        {#if selectedTorrenter === "real-debrid"}
           <input data-rd-key type="text" on:change={submitTorrenter} placeholder="Real Debrid API Key" class="w-8/12 p-2 pl-2 bg-slate-100 rounded-lg" />
           <label class="text-left text-sm text-gray-300">Insert your <a href="https://real-debrid.com/apitoken" target="_blank" class="underline">Real Debrid API Key</a></label>
         {:else if selectedTorrenter === "qbittorrent"}
@@ -161,15 +185,37 @@
       {/if}
     </div>
   {:else if stage === 3}
-    <div class="animate-fade-in-pop flex justify-start items-center h-full flex-col gap-4 p-10 w-full">
+    <div class="animate-fade-in-pop flex justify-center items-center h-full flex-col gap-4 p-10 w-full">
       <h1 class="text-3xl font-archivo font-semibold mt-2">Download Location</h1>
-      <h2 class="font-open-sans text-sm mb-6">Where to download?</h2>
+      <h2 class="font-open-sans text-sm mb-6">Where should we download your games?</h2>
       <div class="flex justify-center items-center flex-row gap-2 w-full">
         <input data-dwloc type="text" class="py-2 w-8/12 pl-2" />
         <button on:click={updateDownloadLocation} class="bg-accent hover:bg-accent-dark text-white font-open-sans font-semibold py-2 px-4 rounded">Browse</button>
       </div>
 
       <button on:click={() => stage = 4} class="bg-accent hover:bg-accent-dark text-white font-open-sans font-semibold py-2 px-4 rounded">Continue</button>
+    </div>
+  {:else if stage === 4}
+    <div class="animate-fade-in-pop flex justify-start items-center h-full flex-col gap-4 p-10 w-full">
+      <h1 class="text-3xl font-archivo font-semibold mt-2">Addons</h1>
+      <h2 class="font-open-sans">Kickstart OpenGameInstaller and download some addons!</h2>
+      <h2 class="font-open-sans text-sm mb-4 -mt-2 w-8/12 text-center">Insert the Github/Git Repo link of your addons to download them. Split each addon by new line.</h2>
+      <textarea on:change={updateAddons} class="w-8/12 h-48 p-2 pl-2 bg-slate-100 rounded-lg resize-none" placeholder="Addons to download" value="" />
+      <button on:click={() => stage = 5} class="bg-accent hover:bg-accent-dark text-white font-open-sans font-semibold py-2 px-4 rounded">Continue</button>
+    </div>
+  {:else if stage === 5}
+    <div class="animate-fade-in-pop flex justify-center items-center h-full flex-col gap-4 p-10 w-full">
+      <img src="./favicon.png" alt="OpenGameInstaller Logo" class="w-32 h-32" />
+      <h1 class="text-3xl font-archivo font-semibold mt-2">You're all set!</h1>
+      <h2 class="font-open-sans text-center mb-6">OpenGameInstaller is ready to go! Click below to start downloading your games!</h2>
+
+      <button on:click={finishSetup} class="bg-accent hover:bg-accent-dark text-white font-open-sans font-semibold py-2 px-4 rounded">Finish</button>
+    </div>
+  {:else if stage === 6}
+    <div class="animate-fade-in-pop flex justify-center items-center h-full flex-col gap-4 p-10 w-full">
+      <img src="./favicon.png" alt="OpenGameInstaller Logo" class="w-32 h-32" />
+      <h1 class="text-3xl font-archivo font-semibold mt-2">Setting up addons.</h1>
+      <h2 class="font-open-sans text-center mb-6">OpenGameInstaller is setting up your addons. Please hold while we do this, it shouldn't take too long!</h2>
     </div>
   {:else}
     <p>Unknown stage</p>

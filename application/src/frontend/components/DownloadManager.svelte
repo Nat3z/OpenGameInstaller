@@ -123,7 +123,8 @@
             if (download.id === downloadedItem?.id) {
               return {
                 ...download,
-                status: 'seeding'
+                status: 'seeding',
+                downloadPath: outputDir
               }
             }
             return download;
@@ -164,7 +165,13 @@
     if (downloadedItem === undefined) return;
     downloadedItem = downloadedItem as DownloadStatusAndInfo;
 
-    if (downloadedItem.usedRealDebrid) {
+    if (downloadedItem.usedRealDebrid && !downloadedItem.files) {
+      document.dispatchEvent(new CustomEvent('setup:log', {
+        detail: {
+          id: downloadedItem?.id,
+          log: "Extracting the downloaded file..."
+        }
+      }));
       const outputDir = await window.electronAPI.fs.unrar({ outputDir: getDownloadPath() + '\\' + downloadedItem.name, rarFilePath: downloadedItem.downloadPath });
       downloadedItem.downloadPath = outputDir;
     }
@@ -206,7 +213,8 @@
             if (download.id === downloadedItem?.id) {
               return {
                 ...download,
-                status: 'setup-complete'
+                status: 'setup-complete',
+                downloadPath: downloadedItem.downloadPath
               }
             }
             return download;

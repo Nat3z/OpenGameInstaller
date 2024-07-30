@@ -14,7 +14,6 @@ import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import { QBittorrent } from '@ctrl/qbittorrent';
 import { getStoredValue, refreshCached } from './config-util.js';
-import { createExtractorFromFile } from 'node-unrar-js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -163,8 +162,22 @@ function createWindow() {
             if (!fs.existsSync(outputDir)) {
                 fs.mkdirSync(outputDir, { recursive: true });
             }
-            console.log(rarFilePath);
-            (await createExtractorFromFile(rarFilePath)).extract(outputDir);
+
+            // use 7zip to extract the rar file
+            let s7ZipPath = '"C:\\Program Files\\7-Zip\\7z.exe"';
+            if (process.platform === 'linux' || process.platform === 'darwin') {
+                s7ZipPath = '7z';
+            }
+            new Promise<void>((resolve, reject) => exec(`${s7ZipPath} x "${rarFilePath}" -o"${outputDir}"`, (err, stdout, stderr) => {
+                if (err) {
+                    console.error(err);
+                    reject();
+                    throw new Error('Failed to extract RAR file');
+                }
+                console.log(stdout);
+                console.log(stderr);
+                resolve();
+            }));
             return outputDir;
         });
 

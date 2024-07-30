@@ -5,6 +5,7 @@
   import ClientOptionsView from "./views/ClientOptionsView.svelte";
 	import DownloadView from "./views/DownloadView.svelte";
 	import DownloadManager from "./components/DownloadManager.svelte";
+	import OOBE from './views/OutOfBoxExperience.svelte';
 
   import { fetchAddonsWithConfigure } from "./utils";
   import Notifications from "./components/Notifications.svelte";
@@ -16,6 +17,7 @@
 	});
 </script>
 
+<OOBE />
 <main class="flex items-center flex-col gap-4 w-full h-full">
 
 	<header class="flex justify-center gap-4 flex-row">

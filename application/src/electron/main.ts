@@ -60,6 +60,7 @@ function createWindow() {
         fullscreenable: false,
         resizable: false,
         icon: join(__dirname, 'public/favicon.png'),
+        autoHideMenuBar: true,
         show: false
     });
 
@@ -92,6 +93,13 @@ function createWindow() {
     fs.mkdir("./config/", (_) => {});
     fs.mkdir("./config/option/", (_) => {});
     mainWindow.once('ready-to-show', () => {
+
+        ipcMain.handle('app:close', () => {
+            mainWindow?.close();
+        });
+        ipcMain.handle('app:minimize', () => {
+            mainWindow?.minimize();
+        });
         ipcMain.on('fs:read', (event, arg) => {
             fs.readFile(arg, 'utf-8', (err, data) => {
                 if (err) {
@@ -801,32 +809,7 @@ function createWindow() {
         });
 
         ipcMain.handle('restart-addon-server', async (_) => {
-            sendNotification({
-                message: 'Frequently restarting the addon server can cause issues. Only restart if necessary.',
-                id: Math.random().toString(36).substring(7),
-                type: 'warning'
-            });
-            // stop the server
-            console.log('Stopping server...');
-            server.close();
-            clients.clear();
-            // stop all of the addons
-            for (const process of Object.keys(processes)) {
-                console.log(`Killing process ${process}`);
-                processes[process].kill();
-            }
-            // start the server
-            server.listen(port, () => {
-                console.log(`Addon Server is running on http://localhost:${port}`);
-                console.log(`Server is being executed by electron!`)
-            });
-            startAddons();
-
-            sendNotification({
-                message: 'Addon server restarted successfully.',
-                id: Math.random().toString(36).substring(7),
-                type: 'success'
-            });
+            restartAddonServer(); 
         });
 
         ipcMain.handle('clean-addons', async (_) => {
@@ -1043,6 +1026,85 @@ EnableFSMonitor=Disabled
             return cleanlyDownloadedAll;
         });
 
+        ipcMain.handle('update-addons', async (_) => {
+            // stop all of the addons
+            for (const process of Object.keys(processes)) {
+                console.log(`Killing process ${process}`);
+                processes[process].kill();
+            }
+
+            // pull all of the addons
+            const addons = fs.readdirSync('./addons/');
+            let addonsUpdated = 0;
+            let failed = false;
+            for (const addon of addons) {
+                const addonPath = join(__dirname, 'addons', addon);
+                if (!fs.existsSync(join(addonPath, '.git'))) {
+                    console.log(`Addon ${addon} is not a git repository`);
+                    continue;
+                }
+                // get rid of the installation log
+                if (fs.existsSync(join(addonPath, 'installation.log'))) {
+                    fs.unlinkSync(join(addonPath, 'installation.log'));
+                }
+
+                new Promise<void>((resolve, reject) => {
+                    exec(`git -C "${addonPath}" pull`, (err, stdout, _) => {
+                        if (err) {
+                            sendNotification({
+                                message: `Failed to update addon ${addon}`,
+                                id: Math.random().toString(36).substring(7),
+                                type: 'error'
+                            });
+                            console.error(err);
+                            failed = true;
+                            return reject();
+                        }
+                        console.log(stdout);
+
+                        // setup the addon
+                        setupAddon(addonPath).then((success) => {
+                            if (!success) {
+                                sendNotification({
+                                    message: `An error occurred when setting up ${addon}`,
+                                    id: Math.random().toString(36).substring(7),
+                                    type: 'error'
+                                });
+                                failed = true;
+                                reject();
+                                return;
+                            }
+                            addonsUpdated++;
+                            console.log(`Addon ${addon} updated successfully.`);
+                            resolve();
+                        });
+                    });
+                });
+            }
+
+            await new Promise<void>((resolve, reject) => {
+                const interval = setInterval(() => {
+                    if (addonsUpdated === addons.length) {
+                        resolve();
+                        clearInterval(interval);
+                    }
+                    if (failed) {
+                        reject();
+                        clearInterval(interval);
+                    }
+                }, 50)
+            });
+
+            // restart all of the addons
+            restartAddonServer();
+
+            sendNotification({
+                message: 'Successfully updated addons.',
+                id: Math.random().toString(36).substring(7),
+                type: 'info'
+            });
+        });
+
             
         mainWindow!!.show()
         if (!isSecurityCheckEnabled) {
@@ -1056,6 +1118,11 @@ EnableFSMonitor=Disabled
         mainWindow!!.webContents.setWindowOpenHandler((details) => {
             shell.openExternal(details.url)
             return { action: 'deny' }
+        })
+
+        // disable devtools
+        mainWindow!!.webContents.on('devtools-opened', () => {
+            mainWindow!!.webContents.closeDevTools()
         })
 
 
@@ -1121,6 +1188,30 @@ function startAddons() {
         console.log(`Starting addon ${addonPath}`);
         startAddon(addonPath);
     }
+}
+
+function restartAddonServer() {
+    // stop the server
+    console.log('Stopping server...');
+    server.close();
+    clients.clear();
+    // stop all of the addons
+    for (const process of Object.keys(processes)) {
+        console.log(`Killing process ${process}`);
+        processes[process].kill();
+    }
+    // start the server
+    server.listen(port, () => {
+        console.log(`Addon Server is running on http://localhost:${port}`);
+        console.log(`Server is being executed by electron!`)
+    });
+    startAddons();
+
+    sendNotification({
+        message: 'Addon server restarted successfully.',
+        id: Math.random().toString(36).substring(7),
+        type: 'success'
+    });
 }
 
 // Quit when all windows are closed.

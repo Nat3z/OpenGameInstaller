@@ -289,12 +289,12 @@
 		}
 	}
 </script>
-<input id="search" on:change={search} placeholder="Search for Game" class="p-2 pl-2 bg-slate-100 rounded-lg w-2/3"/>
+<input id="search" on:change={search} type="text" placeholder="Search for Game" class="p-2 pl-2 bg-slate-100 rounded-lg w-2/3"/>
 {#if loadingResults}
 	{#if addons.length === 0}
-		<div class="flex justify-center text-center flex-col items-center gap-2 w-4/6 bg-slate-100 rounded">
+		<div class="flex justify-center text-center flex-col items-center gap-2 w-4/6 bg-slate-100 rounded p-4">
 			<p class="text-2xl">Hey, you have no addons!</p>
-			<p class="text-gray-400 text-sm w-full">Addons are the core of OpenGameInstaller, and you need them to download, search, and install your games! Get some online, okay?</p>
+			<p class="text-gray-400 text-sm w-full">Addons are the core of OpenGameInstaller, and you need them to download, search, and setup your games! Get some online, okay?</p>
 		</div>
 	{:else}
 		<div class="flex justify-center items-center w-1/6 border p-4 bg-slate-100 rounded">

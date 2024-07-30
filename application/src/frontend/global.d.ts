@@ -44,6 +44,11 @@ interface Window {
     oobe: {
       downloadTools: () => Promise<boolean>,
     },
+    app: {
+      close: () => Promise<void>,
+      minimize: () => Promise<void>,
+    },
+    updateAddons: () => Promise<void>,
     installAddons: (addons: string[]) => Promise<void>,
     restartAddonServer: () => Promise<void>,
     cleanAddons: () => Promise<void>,

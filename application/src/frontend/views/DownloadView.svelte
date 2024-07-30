@@ -111,7 +111,7 @@
           <p class="text-green-500 font-mono">COMPLETED DOWNLOAD</p>
           <p class="text-green-600 font-mono">Setting up with {download.addonSource}</p>
           <progress class="w-full mb-2 rounded" value="0" max="100"></progress>
-          <code class="h-[9.1rem] p-4 bg-gray-400 border border-black overflow-y-auto">
+          <code class="h-[9.1rem] p-4 bg-slate-200 rounded overflow-y-auto">
           </code>
         {:else if download.status === 'error'}
           <p class="text-red-500 font-mono">ERROR</p>
@@ -174,7 +174,7 @@
   }
 
   progress {
-    @apply pr-2 pl-2 w-full h-2 [&::-webkit-progress-bar]:rounded-lg [&::-webkit-progress-bar]:bg-accent-light;
+    @apply w-full h-2 [&::-webkit-progress-bar]:rounded-lg [&::-webkit-progress-bar]:bg-accent-light;
   }
   ::-webkit-progress-value {
     transition: width 1s;

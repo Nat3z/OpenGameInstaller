@@ -86,9 +86,8 @@
     const textarea = event.target as HTMLTextAreaElement;
     addons = textarea.value;
   }
-
+  let completedSetup = false;
   async function finishSetup() {
-    stage = 6;
     const addonsSplitted = addons.split("\n").filter((addon) => addon !== "");
     let generalConfig = {
       fileDownloadLocation: downloadLocation,
@@ -100,11 +99,24 @@
     window.electronAPI.fs.write('./config/option/installed.json', JSON.stringify({ installed: true }));
     await window.electronAPI.installAddons(addonsSplitted);
     await window.electronAPI.restartAddonServer();
-    finishedSetup();
+    completedSetup = true;
+  }
+
+  function waitForSetup() {
+    stage = 6;
+    const waitFor = setInterval(() => {
+      if (completedSetup) {
+        document.getElementById("oobe")?.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 500, fill: "forwards" });
+        setTimeout(() => {
+          finishedSetup();
+        }, 500);
+        clearInterval(waitFor);
+      }
+    }, 200);
   }
 </script>
 
-<main class="flex items-center flex-col justify-center w-full h-full p-8 bg-white fixed top-0 left-0 outline">
+<main class="flex items-center flex-col justify-center w-full h-full p-8 bg-white fixed top-0 left-0 outline" id="oobe">
   {#if stage > 0}
     <progress class="animate-fade-in-slow" max="4" value={stage - 1}></progress>
   {/if}
@@ -220,8 +232,8 @@
       <h1 class="text-3xl font-archivo font-semibold mt-2">Addons</h1>
       <h2 class="font-open-sans">Kickstart OpenGameInstaller and download some addons!</h2>
       <h2 class="font-open-sans text-sm mb-4 -mt-2 w-8/12 text-center">Insert the Github/Git Repo link of your addons to download them. Split each addon by new line.</h2>
-      <textarea on:change={updateAddons} class="w-8/12 h-48 text-sm p-2 pl-2 bg-slate-100 rounded-lg resize-none" placeholder="Addons to download" value="" />
-      <button on:click={() => stage = 5} class="bg-accent hover:bg-accent-dark text-white font-open-sans font-semibold py-2 px-4 rounded">Continue</button>
+      <textarea on:change={updateAddons} class="w-8/12 h-48 text-xs p-2 pl-2 bg-slate-100 rounded-lg resize-none" placeholder="Addons to download" value="" />
+      <button on:click={() => {finishSetup(); stage = 5}} class="bg-accent hover:bg-accent-dark text-white font-open-sans font-semibold py-2 px-4 rounded">Continue</button>
     </div>
   {:else if stage === 5}
     <div class="animate-fade-in-pop flex justify-center items-center h-full flex-col gap-4 p-10 w-full">
@@ -229,7 +241,7 @@
       <h1 class="text-3xl font-archivo font-semibold mt-2">You're all set!</h1>
       <h2 class="font-open-sans text-center mb-6">OpenGameInstaller is ready to go! Click below to start downloading your games!</h2>
 
-      <button on:click={finishSetup} class="bg-accent hover:bg-accent-dark text-white font-open-sans font-semibold py-2 px-4 rounded">Finish</button>
+      <button on:click={waitForSetup} class="bg-accent hover:bg-accent-dark text-white font-open-sans font-semibold py-2 px-4 rounded">Finish</button>
     </div>
   {:else if stage === 6}
     <div class="animate-fade-in-pop flex justify-center items-center h-full flex-col gap-4 p-10 w-full">

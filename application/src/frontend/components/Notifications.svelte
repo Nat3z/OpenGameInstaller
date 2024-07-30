@@ -32,19 +32,9 @@
     ]);
   });
 
-  setTimeout(() => {
-    document.dispatchEvent(
-      new CustomEvent('new-notification', {
-        detail: {
-          type: 'success',
-          message: 'This is a success message',
-        },
-      })
-    );
-  }, 1000);
 
 </script>
-<div class="fixed bottom-2 right-2 gap-2 w-5/6 flex justify-end items-end flex-col-reverse">
+<div class="fixed bottom-2 right-2 gap-2 w-5/6 flex justify-end items-end flex-col-reverse pointer-events-none">
   {#each $notifications as notification (notification.id)}
     <div class="flex bg-slate-100 rounded border animate-fade-in p-2 w-7/12 relative items-center gap-2 h-fit" id={"notification-" + notification.id}>
       <img src={`./${notification.type}.svg`} alt={notification.type} class="w-4 h-4" />

@@ -160,7 +160,7 @@
 
 
 <div class="config">
-  <div class="w-64 rounded bg-slate-100 h-full">
+  <div class="w-52 rounded bg-slate-100 h-full">
     <section class="selected hidden">
     </section>
     {#if addons.length !== 0}
@@ -173,7 +173,7 @@
     {/if}
   </div>
 
-  <article class="w-8/12 bg-slate-100 rounded p-4 py-2">
+  <article class="w-5/6 bg-slate-100 rounded p-4 py-2">
     {#if selectedAddon}
       <h2>{selectedAddon.name}</h2>
       <p>{selectedAddon.description}</p>
@@ -243,7 +243,7 @@
     @apply text-sm text-gray-500; 
   }  
 	.options {
-    @apply gap-2 flex flex-col w-full py-2 border-t-2 border-gray-200 mt-2;
+    @apply gap-2 flex flex-col w-full py-2 border-t-2 border-gray-200 mt-2 h-5/6 overflow-y-auto;
   }
 
 	article h2 {
@@ -260,6 +260,6 @@
     -moz-appearance: none;
     appearance: none;
     margin: 0; 
-}
+  }
 
 </style>

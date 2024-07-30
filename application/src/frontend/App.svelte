@@ -34,13 +34,12 @@
 {/if}
 
 {#if !loading}
-<main class="flex items-center flex-col gap-4 w-full h-full">
-
-	<header class="flex justify-center gap-4 flex-row">
-		<button on:click={() => selectedView = "clientoptions"} data-selected-header={selectedView === "clientoptions"}>Settings</button>
+<main class="flex items-center flex-col gap-4 w-full h-full py-2">
+	<header class="flex justify-center gap-4 flex-row items-center">
+		<button on:click={() => selectedView = "clientoptions"} data-selected-header={selectedView === "clientoptions"} class="mr-auto">Settings</button>
 		<button on:click={() => selectedView = "gameInstall"} data-selected-header={selectedView === "gameInstall"}>Game Install</button>
 		<button on:click={() => selectedView = "downloader"} data-selected-header={selectedView === "downloader"}>Downloads</button>
-		<button on:click={() => selectedView = "config"} data-selected-header={selectedView === "config"}>Manage Addons</button>
+		<button on:click={() => selectedView = "config"} data-selected-header={selectedView === "config"} class="ml-auto">Manage Addons</button>
 	</header>
 	<DownloadManager />
 	{#if selectedView === "config"}
@@ -78,5 +77,27 @@
 					-ms-user-select: none; /* Internet Explorer/Edge */
 							user-select: none; /* Non-prefixed version, currently
 																		supported by Chrome, Edge, Opera and Firefox */
+	}
+
+	::-webkit-scrollbar{
+		width: 5px;
+	}
+
+	::-webkit-scrollbar-thumb{
+		background-color: #cbcbcb51;
+		@apply rounded-lg bg-opacity-10;
+	}
+
+	::-webkit-scrollbar-thumb:hover{
+		background-color: #909090;
+		@apply rounded-lg bg-opacity-100;
+	}
+
+	textarea:focus, input[type="text"]:focus, input[type="password"]:focus, input[type="number"]:focus {
+		@apply outline outline-accent-light;
+	}
+
+	button {
+		@apply font-open-sans
 	}
 </style>

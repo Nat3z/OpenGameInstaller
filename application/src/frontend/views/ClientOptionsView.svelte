@@ -117,6 +117,12 @@
         }
       }
     },
+    {
+      "name": "About",
+      id: "about",
+      description: "About the application",
+      options: {}
+    }
   ];
 
   let selectedOption: OptionsCategory | null = null;
@@ -218,7 +224,11 @@
     });
   }
 
-  function installAddons() {
+  async function installAddons() {
+    const buttonsToDisable = document.querySelectorAll("[data-disable]");
+    buttonsToDisable.forEach((button) => {
+      button.setAttribute("disabled", "true");
+    });
     const addons = getStoredOrDefaultValue("addons") as string[];
     if (!addons || addons.length === 0) {
       createNotification({
@@ -228,18 +238,39 @@
       });
       return;
     }
-    window.electronAPI.installAddons(addons);
+    await window.electronAPI.installAddons(addons);
+    buttonsToDisable.forEach((button) => {
+      button.removeAttribute("disabled");
+    });
   }
 
-  function cleanAddons() {
-    window.electronAPI.cleanAddons();
+  async function cleanAddons() {
+    const buttonsToDisable = document.querySelectorAll("[data-disable]");
+    buttonsToDisable.forEach((button) => {
+      button.setAttribute("disabled", "true");
+    });
+    await window.electronAPI.cleanAddons();
+    buttonsToDisable.forEach((button) => {
+      button.removeAttribute("disabled");
+    });
+  }
+
+  async function updateAddons() {
+    const buttonsToDisable = document.querySelectorAll("[data-disable]");
+    buttonsToDisable.forEach((button) => {
+      button.setAttribute("disabled", "true");
+    });
+    await window.electronAPI.updateAddons();
+    buttonsToDisable.forEach((button) => {
+      button.removeAttribute("disabled");
+    });
   }
 
   
 </script>
 
 <div class="config">
-  <div class="w-2/6 border-r-2 border-gray-800 h-full">
+  <div class="w-52 rounded bg-slate-100 h-full">
     <section class="selected hidden">
     </section>
     {#if options.length !== 0}
@@ -252,11 +283,13 @@
     {/if}
   </div>
 
-  <article>
+  <article class="w-5/6 bg-slate-100 rounded p-4 py-2 relative">
     {#if selectedOption}
-      <h2>{selectedOption.name}</h2>
-      <p>{selectedOption.description}</p>
-      <div class="options">
+      {#if selectedOption.id !== "about"}
+        <h2>{selectedOption.name}</h2>
+        <p>{selectedOption.description}</p>
+      {/if}
+      <div class={`options overflow-y-auto h-5/6 ${selectedOption.id === "about" && "!border-t-0"}`}>
         <div class="hidden outline-red-500 outline-4">
         </div>
         {#each Object.keys(selectedOption.options) as key}
@@ -273,9 +306,12 @@
                 <input type="text" on:change={updateConfig} value={getStoredOrDefaultValue(key)} id={key} maxlength={selectedOption.options[key].maxTextLength} minlength={selectedOption.options[key].minTextLength} />
               {/if}
             {/if}
-            {#if  selectedOption.options[key].type === "file-folder"}
-              <input type="text" on:change={updateConfig} value={getStoredOrDefaultValue(key)} id={key} maxlength={selectedOption.options[key].maxTextLength} minlength={selectedOption.options[key].minTextLength} />
-              <button class="bg-blue-500 text-white p-2 rounded" on:click={(ev) => browseForFolder(ev)}>Browse</button>
+            {#if selectedOption.options[key].type === "file-folder"}
+              <div class="flex-col items-center w-full gap-2">
+                <input type="text" on:change={updateConfig} value={getStoredOrDefaultValue(key)} id={key} maxlength={selectedOption.options[key].maxTextLength} minlength={selectedOption.options[key].minTextLength} />
+                <button class="bg-blue-500 text-white px-2 rounded" on:click={(ev) => browseForFolder(ev)}>Browse</button>
+              </div>
+
             {/if}
             {#if selectedOption.options[key].type === "textarea"}
               <textarea class="w-full h-32 resize-none" id={key} on:change={updateConfig} value={getStoredOrDefaultValue(key)}></textarea>
@@ -297,13 +333,32 @@
         {#if selectedOption.id === "general"}
           <div class="flex justify-center items-center flex-col gap-2">
             <div class="flex justify-center items-center flex-row gap-2">
-              <button class="bg-green-500 text-white p-2 rounded" on:click={() => installAddons()}>Install Addons</button>
-              <button class="bg-red-500 text-white p-2 rounded" on:click={() => cleanAddons()}>Clean Addons</button>
+              <button class="bg-green-500 text-white p-2 rounded" on:click={() => installAddons()} data-disable>Install All</button>
+              <button class="bg-yellow-500 text-white p-2 rounded" on:click={() => updateAddons()} data-disable>Update</button>
+              <button class="bg-red-500 text-white p-2 rounded" on:click={() => cleanAddons()} data-disable>Clean All</button>
             </div>
 
             <div class="flex justify-center items-center flex-row gap-2">
-              <button class="bg-red-500 text-white p-2 rounded" on:click={() => window.electronAPI.restartAddonServer()}>Restart Addon Server</button>
+              <button class="bg-red-500 text-white p-2 rounded" on:click={() => window.electronAPI.restartAddonServer()} data-disable>Restart Addon Server</button>
             </div>
+          </div>
+        {/if}
+
+        {#if selectedOption.id === 'about'}
+          <div class="flex-col flex justify-start items-center h-full">
+            <img src="./favicon.png" alt="Favicon" class="w-32 h-32" />
+            <h1 class="font-archivo font-semibold text-xl">OpenGameInstaller</h1>
+            <p class="font-normal">By Nat3z & the OGI Team</p>
+            <ul class="flex-row justify-center items-center list-disc">
+              <li class="inline">
+                <a href="https://github.com/Nat3z/OpenGameInstaller" target="_blank" class="text-blue-500">GitHub</a>
+              </li>
+              <li class="inline">
+                •
+                <a href="https://github.com/Nat3z/OpenGameInstaller/blob/main/application/LICENSE" target="_blank" class="text-blue-500">License</a>
+              </li>
+          </ul>
+            <p class="mt-auto absolute bottom-2">v1.2</p>
           </div>
         {/if}
       </div>
@@ -314,10 +369,10 @@
 
 <style>
   .selected {
-    @apply bg-gray-400;
+    @apply bg-slate-200;
   }
 	.config {
-		@apply flex flex-row gap-2 bg-gray-300 w-5/6 h-5/6 border-gray-800 rounded;
+		@apply flex flex-row gap-2 w-5/6 h-5/6 rounded;
 	}
   section {
     @apply p-2;
@@ -328,15 +383,28 @@
   section p {
     @apply text-sm text-gray-500; 
   }  
-	section .download {
-		@apply bg-blue-500 text-white p-2 rounded;
-	}
 	.options {
-    @apply gap-2 flex flex-col border-t-2 border-gray-800 p-2;
+    @apply gap-2 flex flex-col w-full py-2 border-t-2 border-gray-200 mt-2;
   }
 
 	article h2 {
 		@apply text-xl;
 	}
+
+  input[type="text"], input[type="number"], textarea {
+    @apply px-1 pl-2 bg-white rounded-lg appearance-none;
+  }
+
+  textarea {
+    @apply resize-none text-xs py-2;
+  }
+
+  input[type=number]::-webkit-inner-spin-button, 
+  input[type=number]::-webkit-outer-spin-button { 
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+    margin: 0; 
+  }
 
 </style>

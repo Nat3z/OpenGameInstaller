@@ -37,6 +37,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   oobe: {
     downloadTools: () => ipcRenderer.invoke('oobe:download-tools'),
   },
+  app: {
+    close: () => ipcRenderer.invoke('app:close'),
+    minimize: () => ipcRenderer.invoke('app:minimize'),
+  },
+  updateAddons: () => ipcRenderer.invoke('update-addons'),
   installAddons: (addons: string[]) => ipcRenderer.invoke('install-addons', addons),
   restartAddonServer: () => ipcRenderer.invoke('restart-addon-server'),
   cleanAddons: () => ipcRenderer.invoke('clean-addons'),

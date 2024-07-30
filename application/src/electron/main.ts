@@ -308,12 +308,11 @@ function createWindow() {
                 case 'qbittorrent': {
                     try {
                         await refreshCached('qbittorrent');
-                        if (!qbitClient)
-                            qbitClient = new QBittorrent({
-                                baseUrl: ((await getStoredValue('qbittorrent', 'qbitHost')) ?? 'http://127.0.0.1') + ":" + ((await getStoredValue('qbittorrent', 'qbitPort')) ?? '8080'),
-                                username: (await getStoredValue('qbittorrent', 'qbitUsername')) ?? 'admin', 
-                                password: (await getStoredValue('qbittorrent', 'qbitPassword')) ?? ''
-                            })
+                        qbitClient = new QBittorrent({
+                            baseUrl: ((await getStoredValue('qbittorrent', 'qbitHost')) ?? 'http://127.0.0.1') + ":" + ((await getStoredValue('qbittorrent', 'qbitPort')) ?? '8080'),
+                            username: (await getStoredValue('qbittorrent', 'qbitUsername')) ?? 'admin', 
+                            password: (await getStoredValue('qbittorrent', 'qbitPassword')) ?? ''
+                        })
                         if (fs.existsSync(arg.path + '.torrent')) {
                             sendNotification({
                                 message: 'File at path already exists. Please delete the file and try again.',
@@ -367,6 +366,9 @@ function createWindow() {
                         await qbitClient.addTorrent(torrentData, {
                             savepath: arg.path + '.torrent'
                         })
+
+                        arg.path = arg.path + '.torrent';
+                        console.log("[torrent] Checking for torrent at path: " + arg.path)
                         let alreadyNotified = false;
                         const torrentInterval = setInterval(async () => {
                             if (!qbitClient) {
@@ -500,19 +502,18 @@ function createWindow() {
         });
 
         ipcMain.handle('torrent:download-magnet', async (_, arg: { link: string, path: string }) => {
-            refreshCached('general');
+            await refreshCached('general');
             const torrentClient: string = await getStoredValue('general', 'torrentClient') ?? 'webtorrent';
 
             switch (torrentClient) {
                 case 'qbittorrent': {
                     try {
-                        refreshCached('qbittorrent');
-                        if (!qbitClient)
-                            qbitClient = new QBittorrent({
-                                baseUrl: ((await getStoredValue('qbittorrent', 'qbitHost')) ?? 'http://127.0.0.1') + ":" + ((await getStoredValue('qbittorrent', 'qbitPort')) ?? '8080'),
-                                username: (await getStoredValue('qbittorrent', 'qbitUsername')) ?? 'admin', 
-                                password: (await getStoredValue('qbittorrent', 'qbitPassword')) ?? ''
-                            })
+                        await refreshCached('qbittorrent');
+                        qbitClient = new QBittorrent({
+                            baseUrl: ((await getStoredValue('qbittorrent', 'qbitHost')) ?? 'http://127.0.0.1') + ":" + ((await getStoredValue('qbittorrent', 'qbitPort')) ?? '8080'),
+                            username: (await getStoredValue('qbittorrent', 'qbitUsername')) ?? 'admin', 
+                            password: (await getStoredValue('qbittorrent', 'qbitPassword')) ?? ''
+                        })
 
                         if (fs.existsSync(arg.path + '.torrent')) {
                             sendNotification({
@@ -528,11 +529,14 @@ function createWindow() {
                             savepath: arg.path + '.torrent'
                         })
                         let alreadyNotified = false;
+                        arg.path = arg.path + '.torrent';
+                        console.log("[magnet] Checking for torrent at path: " + arg.path)
                         const torrentInterval = setInterval(async () => {
                             if (!qbitClient) {
                                 clearInterval(torrentInterval);
                                 return;
                             }
+                            
                             const torrent = (await qbitClient.getAllData()).torrents.find(torrent => torrent.savePath === arg.path);
                             if (!torrent) {
                                 clearInterval(torrentInterval);

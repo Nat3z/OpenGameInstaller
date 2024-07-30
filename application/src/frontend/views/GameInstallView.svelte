@@ -289,16 +289,16 @@
 		}
 	}
 </script>
-<input id="search" on:change={search} placeholder="Search for Game" class="border border-gray-800 px-2 py-1 w-2/3 outline-none"/>
+<input id="search" on:change={search} placeholder="Search for Game" class="p-2 pl-2 bg-slate-100 rounded-lg w-2/3"/>
 {#if loadingResults}
 	{#if addons.length === 0}
-		<div class="flex justify-center text-center flex-col items-center gap-2 w-4/6 border p-4 border-gray-800 bg-gray-200">
+		<div class="flex justify-center text-center flex-col items-center gap-2 w-4/6 bg-slate-100 rounded">
 			<p class="text-2xl">Hey, you have no addons!</p>
 			<p class="text-gray-400 text-sm w-full">Addons are the core of OpenGameInstaller, and you need them to download, search, and install your games! Get some online, okay?</p>
 		</div>
 	{:else}
-		<div class="flex justify-center items-center w-1/6 border p-4 border-gray-800 bg-gray-200">
-			<p>Loading...</p>
+		<div class="flex justify-center items-center w-1/6 border p-4 bg-slate-100 rounded">
+			<p class="text-lg">Loading...</p>
 		</div>
 	{/if}
 {/if}
@@ -318,7 +318,7 @@
 									<!-- {#if result.downloadType === 'magnet' || result.downloadType === 'real-debrid-torrent'}
 										<img class="w-4 h-4" src="./rd-logo.png" alt="Real Debrid" />
 									{/if} -->
-									<h3 class="relative -top-1" data-dwtext>Download</h3>
+									<h3 class="relative -top-1 font-archivo font-semibold" data-dwtext>Download</h3>
 								</section>
 
 								<section class="w-full flex justify-center items-center">
@@ -345,7 +345,7 @@
 	{/each}
 
 	{#if results.length === 0 && !loadingResults}
-		<div class="flex justify-center text-center flex-col items-center gap-2 w-full border p-4 border-gray-800 bg-gray-200">
+		<div class="flex justify-center text-center flex-col items-center gap-2 w-full border bg-slate-100 rounded">
 			<p class="text-2xl">No Results</p>
 		</div>
 	{/if}
@@ -356,14 +356,14 @@
 		@apply flex flex-col gap-2 w-5/6 pb-4;
 	}
 	.games div {
-		@apply border border-gray-800 bg-gray-200 p-2 flex flex-row gap-4;
+		@apply border bg-slate-100 border-gray-200 p-2 flex flex-row gap-4;
 	}
 	.games section {
 		@apply flex flex-row gap-2;
 	}
 
 	.download {
-		@apply bg-blue-500 text-white p-2 rounded w-36 flex flex-col justify-center items-center;
+		@apply bg-accent text-white p-2 rounded w-36 flex flex-col justify-center items-center;
 	}
 	.download:disabled {
 		@apply bg-yellow-500 text-white p-2 rounded;

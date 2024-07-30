@@ -8,7 +8,7 @@
     setTimeout(() => {
       const element = document.getElementById("notification-" + latest.id);
       if (!element) return;
-      element.animate([{ opacity: 1, right: "0px" }, { opacity: 0, right: "-120px" }], { duration: 500, fill: "forwards" });
+      element.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 500, fill: "forwards" });
       setTimeout(() => {
         notifications.update((n) => n.filter((notification) => notification.id !== latest.id));
       }, 500);
@@ -32,12 +32,23 @@
     ]);
   });
 
+  setTimeout(() => {
+    document.dispatchEvent(
+      new CustomEvent('new-notification', {
+        detail: {
+          type: 'success',
+          message: 'This is a success message',
+        },
+      })
+    );
+  }, 1000);
+
 </script>
 <div class="fixed bottom-2 right-2 gap-2 w-5/6 flex justify-end items-end flex-col-reverse">
   {#each $notifications as notification (notification.id)}
-    <div class="flex bg-gray-300 border border-black p-2 w-7/12 relative items-center gap-2 h-fit" id={"notification-" + notification.id}>
+    <div class="flex bg-slate-100 rounded border animate-fade-in p-2 w-7/12 relative items-center gap-2 h-fit" id={"notification-" + notification.id}>
       <img src={`./${notification.type}.svg`} alt={notification.type} class="w-4 h-4" />
-      {notification.message}
+      <p class="font-open-sans">{notification.message}</p>
     </div>
   {/each}
 </div>

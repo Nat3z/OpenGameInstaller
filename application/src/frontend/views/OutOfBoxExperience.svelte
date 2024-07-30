@@ -62,6 +62,26 @@
 
   }
 
+  function sendDownloadLocation(event: MouseEvent) {
+
+    const htmlElement = document.querySelector("input[data-dwloc]")!! as HTMLInputElement;
+    downloadLocation = htmlElement.value;
+    if (downloadLocation === "" || !window.electronAPI.fs.exists(downloadLocation)) {
+      console.error("No download location selected");
+      const button = event.target as HTMLButtonElement;
+      button.textContent = "Invalid location";
+      button.style.backgroundColor = "#f55045";
+      button.disabled = true;
+      setTimeout(() => {
+        button.textContent = "Continue";
+        button.style.backgroundColor = "";
+        button.disabled = false; 
+      }, 2000);
+      return;
+    }
+    stage = 4;
+  }
+
   function updateAddons(event: Event) {
     const textarea = event.target as HTMLTextAreaElement;
     addons = textarea.value;
@@ -181,26 +201,26 @@
         {/if}
       </form>
       {#if fulfilledRequirements || selectedTorrenter === "webtorrent"}
-        <button on:click={() => stage = 3} class="bg-accent hover:bg-accent-dark text-white font-open-sans font-semibold py-2 px-4 rounded">Continue</button>
+        <button on:click={() => stage = 3} class="bg-accent animate-fade-in hover:bg-accent-dark text-white font-open-sans font-semibold py-2 px-4 rounded">Continue</button>
       {/if}
     </div>
   {:else if stage === 3}
     <div class="animate-fade-in-pop flex justify-center items-center h-full flex-col gap-4 p-10 w-full">
       <h1 class="text-3xl font-archivo font-semibold mt-2">Download Location</h1>
-      <h2 class="font-open-sans text-sm mb-6">Where should we download your games?</h2>
+      <h2 class="font-open-sans text-sm mb-6">Where should we save your games?</h2>
       <div class="flex justify-center items-center flex-row gap-2 w-full">
         <input data-dwloc type="text" class="py-2 w-8/12 pl-2" />
         <button on:click={updateDownloadLocation} class="bg-accent hover:bg-accent-dark text-white font-open-sans font-semibold py-2 px-4 rounded">Browse</button>
       </div>
 
-      <button on:click={() => stage = 4} class="bg-accent hover:bg-accent-dark text-white font-open-sans font-semibold py-2 px-4 rounded">Continue</button>
+      <button on:click={sendDownloadLocation} class="bg-accent hover:bg-accent-dark text-white font-open-sans font-semibold py-2 px-4 rounded">Continue</button>
     </div>
   {:else if stage === 4}
     <div class="animate-fade-in-pop flex justify-start items-center h-full flex-col gap-4 p-10 w-full">
       <h1 class="text-3xl font-archivo font-semibold mt-2">Addons</h1>
       <h2 class="font-open-sans">Kickstart OpenGameInstaller and download some addons!</h2>
       <h2 class="font-open-sans text-sm mb-4 -mt-2 w-8/12 text-center">Insert the Github/Git Repo link of your addons to download them. Split each addon by new line.</h2>
-      <textarea on:change={updateAddons} class="w-8/12 h-48 p-2 pl-2 bg-slate-100 rounded-lg resize-none" placeholder="Addons to download" value="" />
+      <textarea on:change={updateAddons} class="w-8/12 h-48 text-sm p-2 pl-2 bg-slate-100 rounded-lg resize-none" placeholder="Addons to download" value="" />
       <button on:click={() => stage = 5} class="bg-accent hover:bg-accent-dark text-white font-open-sans font-semibold py-2 px-4 rounded">Continue</button>
     </div>
   {:else if stage === 5}

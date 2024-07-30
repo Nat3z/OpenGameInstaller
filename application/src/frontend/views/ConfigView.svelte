@@ -64,7 +64,7 @@
     document.querySelectorAll("[data-error-message]").forEach((element) => {
       element.textContent = "";
       element.parentElement!!.querySelector("[data-input]")!!.classList.remove("outline-red-500");
-      element.parentElement!!.querySelector("[data-input]")!!.classList.remove("outline-4");
+      element.parentElement!!.querySelector("[data-input]")!!.classList.remove("outline-2");
       element.parentElement!!.querySelector("[data-input]")!!.classList.remove("outline");
     }); 
     safeFetch("http://localhost:7654/addons/" + selectedAddon.id + "/config", {
@@ -79,7 +79,7 @@
           const element = document.getElementById(key);
           if (!element) return console.error("element not found");
           element.classList.add("outline-red-500");
-          element.classList.add("outline-4");
+          element.classList.add("outline-2");
           element.classList.add("outline");
           element.parentElement!!.querySelector("p")!!.innerHTML = `
             <img src="./error.svg" alt="error" class="w-6 h-6" />
@@ -160,7 +160,7 @@
 
 
 <div class="config">
-  <div class="w-2/6 border-r-2 border-gray-800 h-full">
+  <div class="w-64 rounded bg-slate-100 h-full">
     <section class="selected hidden">
     </section>
     {#if addons.length !== 0}
@@ -173,7 +173,7 @@
     {/if}
   </div>
 
-  <article class="w-8/12">
+  <article class="w-8/12 bg-slate-100 rounded p-4 py-2">
     {#if selectedAddon}
       <h2>{selectedAddon.name}</h2>
       <p>{selectedAddon.description}</p>
@@ -210,13 +210,13 @@
             <p data-error-message class="text-red-500" data-context="" on:mouseenter={showContextHint} on:mouseleave={hideContextHint}>
             </p>
 
-            <div data-contextual style="display: none" class="absolute flex flex-row gap-2 justify-start items-center z-20 top-8 border border-black left-0 bg-gray-300 text-sm p-2 rounded-md shadow-lg w-full">
+            <div data-contextual style="display: none" class="absolute flex flex-row gap-2 justify-start items-center z-20 top-8 border border-gray-200 left-0 bg-slate-100 text-sm p-2 rounded-md shadow-lg w-full">
               <img src="./error.svg" alt="error" class="w-4 h-4" />
-              <p class="relative -top-[1.5px]"></p>
+              <p class=""></p>
             </div>
-            <div data-description style="display: none" class="absolute flex flex-row gap-2 justify-start items-center z-20 top-8 border border-black left-0 bg-gray-300 text-sm p-2 rounded-md shadow-lg w-full">
+            <div data-description style="display: none" class="absolute flex flex-row gap-2 justify-start items-center z-20 top-8 border border-gray-200 left-0 bg-slate-100 text-sm p-2 rounded-md shadow-lg w-full">
               <img src="./info.svg" alt="error" class="w-4 h-4" />
-              <p class="relative -top-[1.5px]">{selectedAddon.configTemplate[key].description}</p>
+              <p class="">{selectedAddon.configTemplate[key].description}</p>
             </div>
           </div>
         {/each}
@@ -228,10 +228,10 @@
 
 <style>
   .selected {
-    @apply bg-gray-400;
+    @apply bg-slate-200;
   }
 	.config {
-		@apply flex flex-row gap-2 bg-gray-300 w-5/6 h-5/6 border-gray-800 rounded;
+		@apply flex flex-row gap-2 w-5/6 h-5/6 rounded;
 	}
   section {
     @apply p-2;
@@ -242,15 +242,24 @@
   section p {
     @apply text-sm text-gray-500; 
   }  
-	section .download {
-		@apply bg-blue-500 text-white p-2 rounded;
-	}
 	.options {
-    @apply gap-2 flex flex-col border-t-2 border-gray-800 w-11/12 p-2;
+    @apply gap-2 flex flex-col w-full py-2 border-t-2 border-gray-200 mt-2;
   }
 
 	article h2 {
 		@apply text-xl;
 	}
+
+  input[type="text"], input[type="number"] {
+    @apply px-1 pl-2 bg-white rounded-lg appearance-none;
+  }
+
+  input[type=number]::-webkit-inner-spin-button, 
+  input[type=number]::-webkit-outer-spin-button { 
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+    margin: 0; 
+}
 
 </style>

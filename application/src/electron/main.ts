@@ -59,7 +59,7 @@ function createWindow() {
         title: 'OpenGameInstaller',
         fullscreenable: false,
         resizable: false,
-        icon: join(__dirname, 'public/favicon.png'),
+        icon: join(__dirname, 'public/favicon.ico'),
         autoHideMenuBar: true,
         show: false
     });

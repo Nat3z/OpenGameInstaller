@@ -1,11 +1,14 @@
 import { BrowserWindow, app, ipcMain, shell } from 'electron';
 import axios from 'axios';
 import fs from 'fs';
-import yauzl from 'yauzl';
 import path from 'path';
+import yauzl from 'yauzl';
 let mainWindow;
-const __dirname = app.getAppPath();
 
+function isDev() {
+  return !app.isPackaged;
+}
+const __dirname = isDev() ? app.getAppPath() : path.parse(app.getPath('exe')).dir;
 process.noAsar = true;
 
 function correctParsingSize(size) {
@@ -34,16 +37,19 @@ async function createWindow() {
     height: 400,
     frame: false,
     webPreferences: {
-      preload: `${__dirname}/src/preload.mjs`,
+      preload: `${app.getAppPath()}/src/preload.mjs`,
       nodeIntegration: true,
       contextIsolation: true,
     },
   });
-  mainWindow.loadURL(`file://${__dirname}/public/index.html`);
+  mainWindow.loadURL(`file://${app.getAppPath()}/public/index.html`);
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
-
+  // disable opening devtools
+  mainWindow.webContents.on('devtools-opened', () => {
+    mainWindow.webContents.closeDevTools();
+  });
   // check for updates
   const gitRepo = "Nat3z/OpenGameInstaller"
   // check the github releases 
@@ -52,15 +58,18 @@ async function createWindow() {
   // if the version is different, download the new version
   let release;
   for (const rel of response.data) {
+    console.log(rel.tag_name, localVersion);
+    if (rel.tag_name === localVersion) {
+      break;
+    }
     if (rel.prerelease && usingBleedingEdge && rel.tag_name !== localVersion) {
       release = rel;
       break;
-    } else if (!rel.prerelease && !usingBleedingEdge && rel.tag_name !== localVersion) {
+    } else if (!rel.prerelease && rel.tag_name !== localVersion) {
       release = rel;
       break;
     }
   }
-  mainWindow.webContents.send('text', 'No Updates Found');
   let updating = release !== undefined;
   if (release) {
     // download the new version usinng axios stream
@@ -111,9 +120,19 @@ async function createWindow() {
     launchApp();
 }
 
-function launchApp() {
-  shell.openPath(path.join(__dirname, 'update', 'OpenGameInstaller.exe'));
-  app.quit();
+async function launchApp() {
+  if (!fs.existsSync(path.join(__dirname, 'update', 'OpenGameInstaller.exe'))) {
+    mainWindow.webContents.send('text', 'Installation not found');
+    return;
+  }
+  const error = await shell.openPath(path.join(__dirname, 'update', 'OpenGameInstaller.exe'));
+  if (error) {
+    console.error(error);
+    console.log('Error Launching OpenGameInstaller');
+    mainWindow.webContents.send('text', 'Error Launching OpenGameInstaller');
+  }
+  else  
+    app.quit();
 }
 app.on('ready', createWindow);
 // taken from https://stackoverflow.com/questions/63932027/how-to-unzip-to-a-folder-using-yauzl
@@ -146,6 +165,11 @@ const unzip = (zipPath, unzipToDir) => {
                             // Create the directory then read the next entry.
                             console.log('Creating directory:', dirToMake);
                             fs.mkdirSync(path.join(unzipToDir, dirToMake), { recursive: true });
+                        }
+                        // check if entry is a directory
+                        if (/\/$/.test(entry.fileName)) {
+                            zipFile.readEntry();
+                            return;
                         }
                         // Files
                         zipFile.openReadStream(entry, (readErr, readStream) => {

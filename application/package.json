@@ -8,7 +8,7 @@
   "main": "./build/main.js",
   "author": "Nat3z",
   "build": {
-    "icon": "public/favicon-256x256.png",
+    "icon": "public/favicon.ico",
     "productName": "OpenGameInstaller",
     "extends": null,
     "files": [

@@ -177,7 +177,6 @@
     @apply w-full h-2 [&::-webkit-progress-bar]:rounded-lg [&::-webkit-progress-bar]:bg-accent-light;
   }
   ::-webkit-progress-value {
-    transition: width 1s;
     @apply rounded-lg bg-accent;
   }
   

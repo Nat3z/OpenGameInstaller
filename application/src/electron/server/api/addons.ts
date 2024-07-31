@@ -41,12 +41,15 @@ app.get('/:addonID/search', async (req, res) => {
   if (req.headers.authorization !== applicationAddonSecret) {
     return res.status(401).send('Unauthorized');
   }
-  if (!req.query.query) {
+ 
+  if (!req.query.query || !req.query.steamappid) {
     return res.status(400).send('No query provided');
-  }
+  } 
+
   const client = clients.get(req.params.addonID);
   if (!client)
     return res.status(404).send('Client not found');
+
 
   const deferrableTask = new DeferrableTask(async () => {
     const event = await client.sendEventMessage({ event: 'search', args: req.query.query })

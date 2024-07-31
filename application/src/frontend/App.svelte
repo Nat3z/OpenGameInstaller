@@ -9,6 +9,7 @@
 
   import { fetchAddonsWithConfigure, getConfigClientOption } from "./utils";
   import Notifications from "./components/Notifications.svelte";
+  import SteamStorePage from "./components/SteamStorePage.svelte";
 	type Views = "gameInstall" | "config" | "clientoptions" | "downloader";
 	let selectedView: Views = "gameInstall";
 	// post config to server for each addon
@@ -35,6 +36,7 @@
 
 {#if !loading}
 <main class="flex items-center flex-col gap-4 w-full h-full py-2">
+	<SteamStorePage appID={1868140} />
 	<header class="flex justify-center gap-4 flex-row items-center">
 		<button on:click={() => selectedView = "clientoptions"} data-selected-header={selectedView === "clientoptions"} class="mr-auto">Settings</button>
 		<button on:click={() => selectedView = "gameInstall"} data-selected-header={selectedView === "gameInstall"}>Game Install</button>

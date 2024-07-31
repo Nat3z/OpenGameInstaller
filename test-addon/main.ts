@@ -46,6 +46,7 @@ addon.on('search', (query, event) => {
       name: "Direct Download Test",
       description: addon.config.getStringValue('testOption') || 'No description',
       coverURL: 'https://dummyimage.com/375x500/968d96/ffffff',
+      steamAppID: 1868140,
       downloadSize: 100,
       downloadType: 'direct',
       files: [

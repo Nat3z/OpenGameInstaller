@@ -1,6 +1,7 @@
 /// <reference types="svelte" />
 
-
+type AxiosResponse = import("axios").AxiosResponse
+type AxiosRequestConfig = import("axios").AxiosRequestConfig
 type $AddTorrentOrMagnet = import("real-debrid-js").$AddTorrentOrMagnet
 type $Hosts = import("real-debrid-js").$Hosts
 type $UnrestrictLink = import("real-debrid-js").$UnrestrictLink;
@@ -47,6 +48,7 @@ interface Window {
     app: {
       close: () => Promise<void>,
       minimize: () => Promise<void>,
+      axios: (options: AxiosRequestConfig) => Promise<{ status: number, success: boolean, data: any }>,
     },
     updateAddons: () => Promise<void>,
     getVersion: () => string,

@@ -314,7 +314,7 @@
 
             {/if}
             {#if selectedOption.options[key].type === "textarea"}
-              <textarea class="w-full h-32 resize-none" id={key} on:change={updateConfig} value={getStoredOrDefaultValue(key)}></textarea>
+              <textarea class="w-full h-32 resize-none" id={key} on:change={updateConfig} value={getStoredOrDefaultValue(key).join('\n')}></textarea>
             {/if}
             {#if selectedOption.options[key].type === "number"}
               <input type="number" id={key} on:change={updateConfig} value={getStoredOrDefaultValue(key)} max={selectedOption.options[key].max} min={selectedOption.options[key].min} />

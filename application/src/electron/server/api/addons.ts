@@ -42,7 +42,7 @@ app.get('/:addonID/search', async (req, res) => {
     return res.status(401).send('Unauthorized');
   }
  
-  if (!req.query.query || !req.query.steamappid) {
+  if (!req.query.query && !req.query.steamappid) {
     return res.status(400).send('No query provided');
   } 
 
@@ -52,7 +52,7 @@ app.get('/:addonID/search', async (req, res) => {
 
 
   const deferrableTask = new DeferrableTask(async () => {
-    const event = await client.sendEventMessage({ event: 'search', args: req.query.query })
+    const event = await client.sendEventMessage({ event: 'search', args: { text: req.query.query ?? req.query.steamappid, type:  req.query.query ? 'query' : 'steamapp' } });
     return event.args;
   }, client.addonInfo.id);
   deferrableTask.run();

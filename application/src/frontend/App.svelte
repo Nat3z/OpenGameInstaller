@@ -35,30 +35,40 @@
 {/if}
 
 {#if !loading}
-<main class="flex items-center flex-col gap-4 w-full h-full py-2">
-	<SteamStorePage appID={1868140} />
-	<header class="flex justify-center gap-4 flex-row items-center">
-		<button on:click={() => selectedView = "clientoptions"} data-selected-header={selectedView === "clientoptions"} class="mr-auto">Settings</button>
-		<button on:click={() => selectedView = "gameInstall"} data-selected-header={selectedView === "gameInstall"}>Game Install</button>
+<div class="flex items-center justify-center flex-row h-screen w-screen">
+	<nav class="flex justify-start flex-col items-center h-full w-1/6">
+		<img src="./favicon.png" alt="logo">
+		<button on:click={() => selectedView = "clientoptions"} data-selected-header={selectedView === "clientoptions"}>
+			<img src="./settings.svg" alt="Settings" />
+			<label>Settings</label>
+		</button>
+		<button on:click={() => selectedView = "gameInstall"} data-selected-header={selectedView === "gameInstall"}>
+			Game Install
+		</button>
 		<button on:click={() => selectedView = "downloader"} data-selected-header={selectedView === "downloader"}>Downloads</button>
-		<button on:click={() => selectedView = "config"} data-selected-header={selectedView === "config"} class="ml-auto">Manage Addons</button>
-	</header>
-	<DownloadManager />
-	{#if selectedView === "config"}
-		<ConfigView />
-	{:else if selectedView === "gameInstall"}
-		<GameInstallView />
-	{:else if selectedView === "clientoptions"}
-		<ClientOptionsView />
-	{:else if selectedView === "downloader"}
-		<DownloadView />
-	{:else}
-		<p>Unknown view</p>
-	{/if}
+		<button on:click={() => selectedView = "config"} data-selected-header={selectedView === "config"}>Manage Addons</button>
+	</nav>
+	<main class="flex items-center flex-col gap-4 w-full h-full py-2">
+		<SteamStorePage appID={1868140} />
+		
+		<DownloadManager />
+		{#if selectedView === "config"}
+			<ConfigView />
+		{:else if selectedView === "gameInstall"}
+			<GameInstallView />
+		{:else if selectedView === "clientoptions"}
+			<ClientOptionsView />
+		{:else if selectedView === "downloader"}
+			<DownloadView />
+		{:else}
+			<p>Unknown view</p>
+		{/if}
 
-	<Notifications />
+		<Notifications />
 
-</main>
+	</main>
+</div>
+
 {/if}
 <style global>
 	@tailwind base;
@@ -101,5 +111,16 @@
 
 	button {
 		@apply font-open-sans
+	}
+
+	nav button {
+		/* show the label once the button is hovered */
+		@apply w-full h-12 border-none bg-transparent flex flex-row items-center justify-center gap-1 hover:bg-slate-100;
+	}
+	nav button img {
+		@apply w-6 h-6;
+	}
+	nav button label {
+
 	}
 </style>

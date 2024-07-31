@@ -1,6 +1,8 @@
 <script lang="ts">
   // fetch the Steam store page
   import { onMount } from 'svelte';
+  import { fetchAddonsWithConfigure, safeFetch, startDownload, type SearchResultWithAddon } from '../utils';
+  import type { SearchResult } from 'ogi-addon';
   export let appID: number;
   type GameRequirements = {
     minimum: string;
@@ -102,9 +104,13 @@
       date: string;
     };
   };
+	let results: SearchResultWithAddon[] = [];
+
+
 
   let gameData: GameData;
   let loading = true;
+  let queryingSources = false;
   onMount(async () => {
     const response = await window.electronAPI.app.axios({
       method: 'get',
@@ -116,11 +122,32 @@
     }
     gameData = response.data[appID].data;
     loading = false;
+    // fetch addons and see if they have a download
 
+		let addons = await fetchAddonsWithConfigure();
+
+    queryingSources = true;
+    let sourcesQueries = 0;
+    for (const addon of addons) {
+			safeFetch("http://localhost:7654/addons/" + addon.id + "/search?steamappid=" + appID, { consume: 'json' }).then((data) => {
+        sourcesQueries++;
+        if (sourcesQueries === addons.length) {
+          queryingSources = false;
+        }
+				results = [ ...results, 
+					...data.map((result: SearchResult) => {
+						return {
+							...result,
+							addonSource: addon.id
+						}
+					})
+				 ];
+			});
+		}
   });
 </script>
 
-<main class="fixed flex w-full h-full z-10 top-0 left-0 bg-white">
+<main class="flex w-full h-full z-10 bg-white">
   {#if loading}
     <p>Loading...</p>
   {:else}
@@ -143,7 +170,36 @@
 
     </div>
     <div class="flex justify-start p-4 bg-slate-100 h-full w-3/6">
-      
+      {#if results.length > 0}
+        <div class="flex flex-col gap-2 w-full">
+          <h2 class="text-2xl font-archivo font-medium">Sources</h2>
+          {#each results as result}
+            <div class="flex flex-col gap-2 bg-slate-200 rounded p-4 w-full">
+              <p>{result.addonSource}</p>
+              <button class="px-4 py-2 bg-blue-300 rounded" on:click={(event) => startDownload(result, event)}>Download</button>
+              <nav class="flex flex-row justify-center items-center gap-2 text-xs">
+								{#if result.downloadType.includes('magnet')}
+									<img class="w-4 h-4" src="./magnet-icon.gif" alt="Magnet" />
+									<p>Magnet Link</p>
+								{:else if result.downloadType.includes('torrent')}
+									<img class="w-4 h-4" src="./torrent.png" alt="Torrent" />
+									<p>Torrent File</p>
+								{:else if result.downloadType === 'direct'}
+									<p>Direct Download</p>
+								{/if}
+							</nav>
+            </div>
+          {/each}
+        </div>
+      {/if}
+
+      {#if results.length === 0 && !queryingSources}
+        <div class="flex justify-center text-center flex-col items-center gap-2 w-full bg-slate-100 rounded">
+          <p class="text-2xl">
+            No Results
+          </p>
+        </div>
+      {/if}
     </div>
   {/if}
 </main>

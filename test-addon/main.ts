@@ -21,7 +21,21 @@ addon.on('connect', () => {
   addon.notify({ type: 'info', message: 'Connected', id: 'connect' });
 })
 
-addon.on('search', (query, event) => {
+addon.on('search', ({ text, type }, event) => {
+  if (type === "steamapp") {
+    event.resolve([
+      // {
+      //   name: "Dave The Diver",
+      //   description: "A game about diving",
+      //   coverURL: 'https://dummyimage.com/375x500/968d96/ffffff',
+      //   downloadSize: 100,
+      //   steamAppID: 1868140,
+      //   downloadType: 'direct',
+      //   downloadURL: 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf'
+      // }
+    ]);
+    return;
+  }
   addon.notify({ type: 'info', message: 'Searching...', id: 'search' });
   event.resolve([
     { 

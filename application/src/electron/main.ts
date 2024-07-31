@@ -830,7 +830,7 @@ function createWindow() {
             });
         });
 
-        const sevenZipDownload = "https://www.7-zip.org/a/7z1900-x64.exe"
+        const sevenZipDownload = "https://7-zip.org/a/7z2407-x64.exe"
 
         ipcMain.handle('oobe:download-tools', async (_) => {
             // check if 7zip is installed
@@ -862,7 +862,7 @@ function createWindow() {
                     fileStream.on('finish', async () => {
                         console.log('Downloaded 7zip');
                         fileStream.close();
-                        exec('7z-install.exe /S /D=C:/Program Files/7-Zip/', (err, stdout, stderr) => {
+                        exec('7z-install.exe /S /D="C:\\Program Files\\7-Zip"', (err, stdout, stderr) => {
                             if (err) {
                                 console.error(err);
                                 sendNotification({

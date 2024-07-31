@@ -49,6 +49,7 @@ interface Window {
       minimize: () => Promise<void>,
     },
     updateAddons: () => Promise<void>,
+    getVersion: () => string,
     installAddons: (addons: string[]) => Promise<void>,
     restartAddonServer: () => Promise<void>,
     cleanAddons: () => Promise<void>,

@@ -358,7 +358,7 @@
                 <a href="https://github.com/Nat3z/OpenGameInstaller/blob/main/application/LICENSE" target="_blank" class="text-blue-500">License</a>
               </li>
           </ul>
-            <p class="mt-auto absolute bottom-2">v1.2</p>
+            <p class="mt-auto absolute bottom-2">v{window.electronAPI.getVersion()}</p>
           </div>
         {/if}
       </div>

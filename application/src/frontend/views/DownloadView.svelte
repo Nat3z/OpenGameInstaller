@@ -86,7 +86,7 @@
   {/if}
   {#each $currentDownloads as download}
     <div data-id={download.id}>
-      <img src={download.coverURL} alt="Game"/>
+      <img src={download.coverURL} alt="Game" class="rounded"/>
       <section class="flex flex-col w-full">
         <h2 class="truncate w-96">{download.name}</h2>
 
@@ -110,8 +110,8 @@
         {#if download.status === 'completed'}
           <p class="text-green-500 font-mono">COMPLETED DOWNLOAD</p>
           <p class="text-green-600 font-mono">Setting up with {download.addonSource}</p>
-          <progress class="w-full mb-2 rounded" value="0" max="100"></progress>
-          <code class="h-[9.1rem] p-4 bg-slate-200 rounded overflow-y-auto">
+          <progress class="mb-2 rounded" value="0" max="100"></progress>
+          <code class="h-[9.1rem] p-4 bg-slate-200 rounded overflow-y-auto w-[26rem] overflow-x-auto">
           </code>
         {:else if download.status === 'error'}
           <p class="text-red-500 font-mono">ERROR</p>
@@ -174,7 +174,7 @@
   }
 
   progress {
-    @apply w-full h-2 [&::-webkit-progress-bar]:rounded-lg [&::-webkit-progress-bar]:bg-accent-light;
+    @apply w-[26rem] h-2 [&::-webkit-progress-bar]:rounded-lg [&::-webkit-progress-bar]:bg-accent-light;
   }
   ::-webkit-progress-value {
     @apply rounded-lg bg-accent;

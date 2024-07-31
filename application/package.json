@@ -1,7 +1,7 @@
 {
-  "name": "create-svelte-electron-app",
-  "version": "1.2.0",
-  "description": "The boilerplate code to get started creating Cross-platform Desktop Apps with Electron and Svelte as front-end technology.",
+  "name": "opengameinstaller-gui",
+  "version": "1.2.2",
+  "description": "The front-facing GUI for OpenGameInstaller and the addon-server.",
   "type": "module",
   "private": false,
   "license": "MIT",

@@ -7,7 +7,7 @@
   "author": "Nat3z",
   "build": {
     "icon": "public/favicon.ico",
-    "productName": "OpenGameInstaller",
+    "productName": "OpenGameInstaller Updater",
     "files": [
       "public/**/*",
       "./src/**/*"

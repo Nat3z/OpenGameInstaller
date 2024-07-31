@@ -41,6 +41,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     close: () => ipcRenderer.invoke('app:close'),
     minimize: () => ipcRenderer.invoke('app:minimize'),
   },
+  getVersion: () => ipcRenderer.sendSync('get-version'),
   updateAddons: () => ipcRenderer.invoke('update-addons'),
   installAddons: (addons: string[]) => ipcRenderer.invoke('install-addons', addons),
   restartAddonServer: () => ipcRenderer.invoke('restart-addon-server'),

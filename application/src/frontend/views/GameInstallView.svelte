@@ -80,6 +80,18 @@
 				}
 				// get the first host
 				const hosts = await window.electronAPI.realdebrid.getHosts();	
+				const localID = Math.floor(Math.random() * 1000000);
+				currentDownloads.update((downloads) => {
+					return [...downloads, { 
+						id: '' + localID, 
+						status: 'rd-downloading', 
+						downloadPath: getDownloadPath() + "\\" + result.name, 
+						downloadSpeed: 0,
+						usedRealDebrid: true,
+						progress: 0,
+						...result 
+					}];
+				});
 				// add magnet link
 				const magnetLink = await window.electronAPI.realdebrid.addMagnet(result.downloadURL, hosts[0]);
 				const isReady = await window.electronAPI.realdebrid.isTorrentReady(magnetLink.id);
@@ -110,15 +122,14 @@
 				}
 				const downloadID = await window.electronAPI.ddl.download([ { link: download.download, path: getDownloadPath() + "\\" + download.filename } ]);
 				currentDownloads.update((downloads) => {
-					return [...downloads, { 
-						id: downloadID, 
-						status: 'downloading', 
-						downloadPath: getDownloadPath() + "\\" + download.filename, 
-						downloadSpeed: 0,
-						progress: 0,
-						usedRealDebrid: true,
-						...result 
-					}];
+					const matchingDownload = downloads.find((d) => d.id === localID + '')!!;
+					matchingDownload.status = 'downloading';
+					matchingDownload.id = downloadID;
+					matchingDownload.usedRealDebrid = true;
+
+					matchingDownload.downloadPath = getDownloadPath() + "\\" + download.filename;
+					downloads[downloads.indexOf(matchingDownload)] = matchingDownload;
+					return downloads;
 				});
 				break;
 			}
@@ -305,7 +316,7 @@
 <div class="games">
 	{#each results as result}
 		<div class="relative rounded">
-			<img src={result.coverURL} class="w-[187.5px] h-[250px]" alt="Game" />
+			<img src={result.coverURL} class="w-[187.5px] h-[250px] rounded" alt="Game" />
 			<article class="w-full">
 					<h2>{result.name}</h2>
 					<section class="h-5/6 mr-2 overflow-y-auto">

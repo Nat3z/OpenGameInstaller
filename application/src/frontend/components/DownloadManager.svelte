@@ -169,7 +169,9 @@
       document.dispatchEvent(new CustomEvent('setup:log', {
         detail: {
           id: downloadedItem?.id,
-          log: "Extracting the downloaded file..."
+          log: [
+            "Extracting downloaded RAR file..."
+          ]
         }
       }));
       const outputDir = await window.electronAPI.fs.unrar({ outputDir: getDownloadPath() + '\\' + downloadedItem.filename, rarFilePath: downloadedItem.downloadPath });

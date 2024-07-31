@@ -1,7 +1,7 @@
 import { join } from 'path';
 import { server, port, clients } from "./server/addon-server.js"
 import { applicationAddonSecret } from './server/constants.js';
-import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
+import { app, BrowserWindow, dialog, globalShortcut, ipcMain, shell } from 'electron';
 import fs, { ReadStream } from 'fs';
 import { readFile } from 'fs/promises';
 import RealDebrid from 'real-debrid-js';
@@ -14,6 +14,8 @@ import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import { QBittorrent } from '@ctrl/qbittorrent';
 import { getStoredValue, refreshCached } from './config-util.js';
+
+const VERSION = app.getVersion();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -177,7 +179,7 @@ function createWindow() {
             if (process.platform === 'linux' || process.platform === 'darwin') {
                 s7ZipPath = '7z';
             }
-            new Promise<void>((resolve, reject) => exec(`${s7ZipPath} x "${rarFilePath}" -o"${outputDir}"`, (err, stdout, stderr) => {
+            await new Promise<void>((resolve, reject) => exec(`${s7ZipPath} x "${rarFilePath}" -o"${outputDir}"`, (err, stdout, stderr) => {
                 if (err) {
                     console.error(err);
                     reject();
@@ -1026,6 +1028,10 @@ EnableFSMonitor=Disabled
             return cleanlyDownloadedAll;
         });
 
+        ipcMain.on('get-version', async (event) => {
+            event.returnValue = VERSION;
+        });
+
         ipcMain.handle('update-addons', async (_) => {
             // stop all of the addons
             for (const process of Object.keys(processes)) {
@@ -1121,6 +1127,20 @@ EnableFSMonitor=Disabled
             shell.openExternal(details.url)
             return { action: 'deny' }
         })
+
+        app.on('browser-window-focus', function () {
+            globalShortcut.register("CommandOrControl+R", () => {
+                console.log("CommandOrControl+R is pressed: Shortcut Disabled");
+            });
+            globalShortcut.register("F5", () => {
+                console.log("F5 is pressed: Shortcut Disabled");
+            });
+        });
+
+        app.on('browser-window-blur', function () {
+            globalShortcut.unregister("CommandOrControl+R");
+            globalShortcut.unregister("F5");
+        });
 
         // disable devtools
         mainWindow!!.webContents.on('devtools-opened', () => {

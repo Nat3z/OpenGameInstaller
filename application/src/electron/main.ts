@@ -10,15 +10,13 @@ import { processes, setupAddon, startAddon } from './addon-init-configure.js';
 import { isSecurityCheckEnabled } from './server/AddonConnection.js';
 import axios from 'axios';
 import { addTorrent, stopClient } from './webtorrent-connect.js';
-import { fileURLToPath } from 'url';
-import { dirname } from 'path';
+import path from 'path';
 import { QBittorrent } from '@ctrl/qbittorrent';
 import { getStoredValue, refreshCached } from './config-util.js';
-
+import * as JsSearch from 'js-search'
 const VERSION = app.getVersion();
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
+const __dirname = isDev() ? app.getAppPath() + "/../" : path.parse(app.getPath('exe')).dir;
 let qbitClient: QBittorrent | undefined = undefined;
 let torrentIntervals: NodeJS.Timeout[] = []
 // Keep a global reference of the window object, if you don't, the window will
@@ -30,7 +28,28 @@ let realDebridClient = new RealDebrid({
 function isDev() {
     return !app.isPackaged;
 }
+let steamApps: { appid: string, name: string }[] = [];
+let steamAppSearcher = new JsSearch.Search('name');
+steamAppSearcher.addIndex('name');
 
+async function getSteamApps(): Promise<{ appid: string, name: string }[]> {
+  if (fs.existsSync('steam-apps.json')) {
+    const steamApps: { timeSinceUpdate: number, data: {appid: string, name: string}[] } = JSON.parse(fs.readFileSync('steam-apps.json', 'utf-8'));
+    if (Date.now() - steamApps.timeSinceUpdate < 86400000) { //24 hours
+      return steamApps.data;
+    }
+  }
+  const response = await axios.get('https://api.steampowered.com/ISteamApps/GetAppList/v0002/?key=STEAMKEY&format=json') 
+  const steamApps = response.data.applist.apps;
+  fs.writeFileSync('steam-apps.json', JSON.stringify({ timeSinceUpdate: Date.now(), data: steamApps }, null, 2));
+  return steamApps
+}
+// lazy tasks
+new Promise<void>(async (resolve) => {
+    steamApps = await getSteamApps();
+    steamAppSearcher.addDocuments(steamApps);
+    resolve();
+});
 interface Notification {
   message: string;
   id: string;
@@ -51,17 +70,17 @@ export function sendNotification(notification: Notification) {
 function createWindow() {    
     // Create the browser window.
     mainWindow = new BrowserWindow({
-        width: 800,
-        height: 600,
+        width: 1000,
+        height: 700,
         webPreferences: {
             nodeIntegration: true,
             contextIsolation: true,
-            preload: join(__dirname, 'preload.mjs')
+            preload: isDev() ? join(app.getAppPath(), 'preload.mjs') : join(app.getAppPath(), 'build/preload.mjs')
         },
         title: 'OpenGameInstaller',
         fullscreenable: false,
         resizable: false,
-        icon: join(__dirname, 'public/favicon.ico'),
+        icon: join(app.getAppPath(), 'public/favicon.ico'),
         autoHideMenuBar: true,
         show: false
     });
@@ -72,7 +91,7 @@ function createWindow() {
         mainWindow!!.loadURL('http://localhost:8080/?secret=' + applicationAddonSecret);
         console.log('Running in development');
     } else {
-        mainWindow!!.loadURL("file://" + join(__dirname, '../public/index.html') + "?secret=" + applicationAddonSecret);
+        mainWindow!!.loadURL("file://" + join(app.getAppPath(), 'public', 'index.html') + "?secret=" + applicationAddonSecret);
     }
     
     // Uncomment the following line of code when app is ready to be packaged.
@@ -102,6 +121,15 @@ function createWindow() {
         ipcMain.handle('app:minimize', () => {
             mainWindow?.minimize();
         });
+        ipcMain.handle('app:axios', async (_, options) => {
+            const response = await axios(options);
+            return { data: response.data, status: response.status, success: response.status >= 200 && response.status < 300 };
+        });
+        ipcMain.handle('app:search-id', async (_, query) => {
+            const results = steamAppSearcher.search(query);
+            return results;
+        })
+
         ipcMain.on('fs:read', (event, arg) => {
             fs.readFile(arg, 'utf-8', (err, data) => {
                 if (err) {
@@ -818,7 +846,7 @@ function createWindow() {
             // stop all of the addons
             for (const process of Object.keys(processes)) {
                 console.log(`Killing process ${process}`);
-                processes[process].kill();
+                processes[process].kill('SIGKILL');
             }
 
             // delete all of the addons
@@ -1036,26 +1064,27 @@ EnableFSMonitor=Disabled
             // stop all of the addons
             for (const process of Object.keys(processes)) {
                 console.log(`Killing process ${process}`);
-                processes[process].kill();
+                processes[process].kill('SIGKILL');
             }
 
             // pull all of the addons
             const addons = fs.readdirSync('./addons/');
+
             let addonsUpdated = 0;
             let failed = false;
             for (const addon of addons) {
-                const addonPath = join(__dirname, 'addons', addon);
-                if (!fs.existsSync(join(addonPath, '.git'))) {
+                const addonPath = './addons/' + addon;
+                if (!fs.existsSync(addonPath + '/.git')) {
                     console.log(`Addon ${addon} is not a git repository`);
                     continue;
                 }
                 // get rid of the installation log
-                if (fs.existsSync(join(addonPath, 'installation.log'))) {
-                    fs.unlinkSync(join(addonPath, 'installation.log'));
+                if (fs.existsSync(addonPath + '/installation.log')) {
+                    fs.unlinkSync(addonPath + '/installation.log');
                 }
 
                 new Promise<void>((resolve, reject) => {
-                    exec(`git -C "${addonPath}" pull`, (err, stdout, _) => {
+                    exec(`git pull`, { cwd: addonPath },  (err, stdout, _) => {
                         if (err) {
                             sendNotification({
                                 message: `Failed to update addon ${addon}`,
@@ -1144,7 +1173,8 @@ EnableFSMonitor=Disabled
 
         // disable devtools
         mainWindow!!.webContents.on('devtools-opened', () => {
-            mainWindow!!.webContents.closeDevTools()
+            if (!isDev())
+                mainWindow!!.webContents.closeDevTools()
         })
 
 
@@ -1220,7 +1250,8 @@ function restartAddonServer() {
     // stop all of the addons
     for (const process of Object.keys(processes)) {
         console.log(`Killing process ${process}`);
-        processes[process].kill();
+        const killed = processes[process].kill('SIGKILL');
+        console.log(`Killed process ${process}: ${killed}`);
     }
     // start the server
     server.listen(port, () => {
@@ -1250,7 +1281,7 @@ app.on('window-all-closed', async function () {
     // stop all of the addons
     for (const process of Object.keys(processes)) {
         console.log(`Killing process ${process}`);
-        processes[process].kill();
+        processes[process].kill('SIGKILL');
     }
     // stopping all of the torrent intervals
     for (const interval of torrentIntervals) {

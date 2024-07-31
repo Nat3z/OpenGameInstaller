@@ -76,19 +76,20 @@
     const fraction = toFraction(x);
     return (fraction[0] < 1 ? fraction[0].toFixed(2) : fraction[0]) + ":" + (fraction[1] < 1 ? fraction[1].toFixed(2) : fraction[1]);
   }
+
 </script>
 
-<div class="downloads">
+<div class="downloads mt-4">
   {#if $currentDownloads.length === 0}
     <div class="flex justify-center text-center flex-col items-center gap-2 w-4/6 border p-8 border-gray-800 bg-gray-200">
 			<p class="text-2xl">No Downloads in Progress</p>
 		</div>
   {/if}
   {#each $currentDownloads as download}
-    <div data-id={download.id}>
-      <img src={download.coverURL} alt="Game" class="rounded"/>
-      <section class="flex flex-col w-full">
-        <h2 class="truncate w-96">{download.name}</h2>
+    <div data-id={download.id} class="relative">
+      <img src={download.coverURL} alt="Game" style="absolute w-1/4 h-1/4"/>
+      <section class="flex flex-col w-full justify-start">
+        <!-- <h2 class="truncate w-96 text-lg">{download.name}</h2> -->
 
         {#if download.status === 'seeding' && download.ratio !== undefined}
           <h1 class="text-blue-400 font-mono">Seeding</h1>
@@ -108,10 +109,9 @@
           </section>
         {/if}
         {#if download.status === 'completed'}
-          <p class="text-green-500 font-mono">COMPLETED DOWNLOAD</p>
           <p class="text-green-600 font-mono">Setting up with {download.addonSource}</p>
           <progress class="mb-2 rounded" value="0" max="100"></progress>
-          <code class="h-[9.1rem] p-4 bg-slate-200 rounded overflow-y-auto w-[26rem] overflow-x-auto">
+          <code class="h-[8.4rem] p-4 bg-slate-200 rounded overflow-y-auto w-[26rem] overflow-x-auto">
           </code>
         {:else if download.status === 'error'}
           <p class="text-red-500 font-mono">ERROR</p>
@@ -162,11 +162,11 @@
 		@apply flex flex-col gap-2 w-5/6 pb-8;
 	}
 	.downloads div {
-		@apply border border-gray-200 rounded p-2 flex flex-row gap-2 w-full bg-slate-100 h-fit ;
+		@apply border border-gray-200 rounded p-2 flex flex-row gap-2 w-full bg-slate-100 h-48 justify-center items-center;
 	}
 
   .downloads img {
-    @apply w-[187.5px] h-[250px];
+    @apply w-52 h-24 rounded-lg;
   }
 
   .downloads h2 {

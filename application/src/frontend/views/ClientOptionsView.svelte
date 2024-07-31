@@ -270,12 +270,12 @@
 </script>
 
 <div class="config">
-  <div class="w-52 rounded bg-slate-100 h-full">
+  <div class="w-72 rounded h-full">
     <section class="selected hidden">
     </section>
     {#if options.length !== 0}
       {#each options as addon}
-        <section class="" on:keypress={() => {}} on:click={() => selectOption(addon)} id={"cfg-" + addon.name}>
+        <section class="hover:bg-slate-100 hover:cursor-pointer" on:keypress={() => {}} on:click={() => selectOption(addon)} id={"cfg-" + addon.name}>
           <h2>{addon.name}</h2>
           <p>{addon.description}</p>
         </section>
@@ -283,7 +283,7 @@
     {/if}
   </div>
 
-  <article class="w-5/6 bg-slate-100 rounded p-4 py-2 relative">
+  <article class="w-full h-full bg-slate-100 p-4 py-2 border-l-2 border-gray-200">
     {#if selectedOption}
       {#if selectedOption.id !== "about"}
         <h2>{selectedOption.name}</h2>
@@ -314,7 +314,7 @@
 
             {/if}
             {#if selectedOption.options[key].type === "textarea"}
-              <textarea class="w-full h-32 resize-none" id={key} on:change={updateConfig} value={getStoredOrDefaultValue(key)}></textarea>
+              <textarea class="w-full h-32 resize-none" id={key} on:change={updateConfig} value={getStoredOrDefaultValue(key).join('\n')}></textarea>
             {/if}
             {#if selectedOption.options[key].type === "number"}
               <input type="number" id={key} on:change={updateConfig} value={getStoredOrDefaultValue(key)} max={selectedOption.options[key].max} min={selectedOption.options[key].min} />
@@ -372,7 +372,7 @@
     @apply bg-slate-200;
   }
 	.config {
-		@apply flex flex-row gap-2 w-5/6 h-5/6 rounded;
+		@apply flex flex-row w-full h-full rounded justify-center items-start;
 	}
   section {
     @apply p-2;
@@ -384,7 +384,7 @@
     @apply text-sm text-gray-500; 
   }  
 	.options {
-    @apply gap-2 flex flex-col w-full py-2 border-t-2 border-gray-200 mt-2;
+    @apply gap-2 flex flex-col w-full py-2 border-t-2 border-gray-200 mt-2 h-5/6 overflow-y-auto;
   }
 
 	article h2 {

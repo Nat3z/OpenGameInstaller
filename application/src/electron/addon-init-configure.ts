@@ -39,6 +39,11 @@ export async function setupAddon(addonPath: string): Promise<boolean> {
   const addon = AddonFileConfigurationSchema.parse(addonJSON);
 
   let setupLogs = '';
+  sendNotification({
+    type: 'info',
+    message: 'Setting up ' + addonName,
+    id: Math.random().toString(36).substring(7)
+  });
   if (addon.scripts.preSetup) {
     try {
       setupLogs += `

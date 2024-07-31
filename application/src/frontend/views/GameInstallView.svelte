@@ -1,9 +1,9 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { fetchAddonsWithConfigure, getConfigClientOption, getDownloadPath, safeFetch } from "../utils";
-  import type { OGIAddonConfiguration, SearchResult } from "ogi-addon";
+  import { fetchAddonsWithConfigure, safeFetch, type GameData } from "../utils";
+	import { currentStorePageOpened } from '../store'
+  import type { OGIAddonConfiguration } from "ogi-addon";
   import type { ConfigurationFile } from "ogi-addon/config";
-  import { createNotification, currentDownloads, notifications } from "../store";
 	interface ConfigTemplateAndInfo extends OGIAddonConfiguration {
     configTemplate: ConfigurationFile
   }
@@ -13,12 +13,43 @@
       addons = data;
     });
   });
-
-	type SearchResultWithAddon = SearchResult & {
-		addonSource: string
+	function extractSimpleName(input: string) {
+		// Regular expression to match the game name
+		const regex = /^(.+?)([:\-–])/;
+		const match = input.match(regex);
+		return match ? match[1].trim() : null;
 	}
 
-	let results: SearchResultWithAddon[] = [];
+	async function getRealGame(titleId: string): Promise<string | undefined> {
+		const response = await window.electronAPI.app.axios({
+			method: "GET",
+			url: `https://store.steampowered.com/api/appdetails?appids=${titleId}`
+		});
+		if (!response.data[titleId].success) {
+			return undefined;
+		}
+		if (response.data[titleId].data.type === 'game') {
+			return titleId;
+		}
+
+		if (response.data[titleId].data.type === 'dlc' || response.data[titleId].data.type === 'dlc_sub' || response.data[titleId].data.type === 'music' || response.data[titleId].data.type === 'video' || response.data[titleId].data.type === 'episode') { 
+			return response.data[titleId].data.fullgame.appid;
+		}
+		if (response.data[titleId].data.type === 'demo') {
+			return response.data[titleId].data.fullgame.appid;
+		}
+
+		return undefined;
+	}
+	async function matchSteamAppID(title: string): Promise<{ appid: string, name: string }[] | undefined> {
+		const steamAppId = await window.electronAPI.app.searchFor(title); 
+		if (steamAppId.length === 0) {
+			return undefined;
+		}
+		return steamAppId;
+	}
+
+	let results: GameData[] = [];
 
 	let loadingResults = false;
 	async function search() {
@@ -27,280 +58,49 @@
 		addons = await fetchAddonsWithConfigure();
 		results = [];
 		const search = document.getElementById("search")!! as HTMLInputElement;
-		const query = search.value = search.value.toLowerCase();
-		loadingResults = true;
-		for (const addon of addons) {
-			safeFetch("http://localhost:7654/addons/" + addon.id + "/search?query=" + query, { consume: 'json' }).then((data) => {
-				loadingResults = false;
-				results = [ ...results, 
-					...data.map((result: SearchResult) => {
-						return {
-							...result,
-							addonSource: addon.id
-						}
-					})
-				 ];
+		const query = search.value;
+		if (!query) {
+			loadingResults = false;
+			return;
+		}
+		// first get the steam app id
+		const possibleSteamApps = await matchSteamAppID(extractSimpleName(query) ?? query);
+		if (!possibleSteamApps) {
+			loadingResults = false;
+			return;
+		}
+		let amountSearched = 0;
+		for (const possibleSteamApp of possibleSteamApps) {
+			amountSearched++;
+			const real = await getRealGame(possibleSteamApp.appid);
+			console.log(real);
+			if (!real) {
+				continue;
+			}
+			const response = await window.electronAPI.app.axios({
+				method: "GET",
+				url: `https://store.steampowered.com/api/appdetails?appids=${real}`
 			});
+			if (!response.data[real].success) {
+				console.error("Failed to fetch Steam store page");
+				return;
+			}
+			const gameData: GameData = response.data[real].data;
+			// check if the appid is already in the results
+			if (results.find((result) => result.steam_appid === gameData.steam_appid)) {
+				continue;
+			}
+			results = [...results, gameData];
+			if (amountSearched >= 10) {
+				break;
+			}
 		}
+		loadingResults = false;
 	}
 
-	async function startDownload(result: SearchResultWithAddon, event: MouseEvent) {
-		if (event === null) return;
-		if (event.target === null) return;
-		const htmlButton = (event.target as HTMLElement).closest('button')!!;
-		htmlButton.querySelector('[data-dwtext]')!!.textContent = "Downloading...";
-		htmlButton.disabled = true;
-		let downloadType = result.downloadType;
-		if (downloadType === "torrent" || downloadType === 'magnet') {
-			const generalOptions = getConfigClientOption('general') as any;
-			const torrentClient: "webtorrent" | "qbittorrent" | "real-debrid" = (generalOptions ? generalOptions.torrentClient : null) ?? 'webtorrent';
-			if (torrentClient === 'real-debrid') {
-				downloadType = 'real-debrid-' + downloadType;
-			}
-		}
-
-		switch (downloadType) {
-			case 'real-debrid-magnet': {
-				if (!result.downloadURL) {
-					createNotification({
-						id: Math.random().toString(36).substring(7),
-						type: 'error',
-						message: "Addon did not provide a magnet link."
-					});
-					return;
-				}
-				const worked = await window.electronAPI.realdebrid.updateKey();
-				if (!worked) {
-					createNotification({
-						id: Math.random().toString(36).substring(7),
-						type: 'error',
-						message: "Please set your Real-Debrid API key in the settings."
-					});
-					return;
-				}
-				// get the first host
-				const hosts = await window.electronAPI.realdebrid.getHosts();	
-				const localID = Math.floor(Math.random() * 1000000);
-				currentDownloads.update((downloads) => {
-					return [...downloads, { 
-						id: '' + localID, 
-						status: 'rd-downloading', 
-						downloadPath: getDownloadPath() + "\\" + result.name, 
-						downloadSpeed: 0,
-						usedRealDebrid: true,
-						progress: 0,
-						...result 
-					}];
-				});
-				// add magnet link
-				const magnetLink = await window.electronAPI.realdebrid.addMagnet(result.downloadURL, hosts[0]);
-				const isReady = await window.electronAPI.realdebrid.isTorrentReady(magnetLink.id);
-				if (!isReady) {
-					window.electronAPI.realdebrid.selectTorrent(magnetLink.id);
-					await new Promise<void>((resolve) => {
-						const interval = setInterval(async () => {
-							const isReady = await window.electronAPI.realdebrid.isTorrentReady(magnetLink.id);
-							if (isReady) {
-								clearInterval(interval);
-								resolve();
-							}
-						}, 1000);
-					});
-				}
-
-
-				const torrentInfo = await window.electronAPI.realdebrid.getTorrentInfo(magnetLink.id);
-				const download = await window.electronAPI.realdebrid.unrestrictLink(torrentInfo.links[0]);
-
-				if (download === null) {
-					createNotification({
-						id: Math.random().toString(36).substring(7),
-						type: 'error',
-						message: "Failed to unrestrict the link."
-					});
-					return;
-				}
-				const downloadID = await window.electronAPI.ddl.download([ { link: download.download, path: getDownloadPath() + "\\" + download.filename } ]);
-				currentDownloads.update((downloads) => {
-					const matchingDownload = downloads.find((d) => d.id === localID + '')!!;
-					matchingDownload.status = 'downloading';
-					matchingDownload.id = downloadID;
-					matchingDownload.usedRealDebrid = true;
-
-					matchingDownload.downloadPath = getDownloadPath() + "\\" + download.filename;
-					downloads[downloads.indexOf(matchingDownload)] = matchingDownload;
-					return downloads;
-				});
-				break;
-			}
-			case "real-debrid-torrent": {
-				if (!result.name || !result.downloadURL) {
-					createNotification({
-						id: Math.random().toString(36).substring(7),
-						type: 'error',
-						message: "Addon did not provide a name for the torrent."
-					});
-					return;
-				}
-
-				const worked = await window.electronAPI.realdebrid.updateKey();
-				if (!worked) {
-					notifications.update((notifications) => [...notifications, { id: Math.random().toString(36).substring(7), type: 'error', message: "Please set your Real-Debrid API key in the settings." }]);
-					return;
-				}
-				// add torrent link
-				const localID = Math.floor(Math.random() * 1000000);
-				currentDownloads.update((downloads) => {
-					return [...downloads, { 
-						id: '' + localID, 
-						status: 'rd-downloading', 
-						downloadPath: getDownloadPath() + "\\" + result.name, 
-						downloadSpeed: 0,
-						usedRealDebrid: true,
-						progress: 0,
-						...result 
-					}];
-				});
-				const torrent = await window.electronAPI.realdebrid.addTorrent(result.downloadURL);
-				const isReady = await window.electronAPI.realdebrid.isTorrentReady(torrent.id);
-				if (!isReady) {
-					window.electronAPI.realdebrid.selectTorrent(torrent.id);
-					await new Promise<void>((resolve) => {
-						const interval = setInterval(async () => {
-							const isReady = await window.electronAPI.realdebrid.isTorrentReady(torrent.id);
-							if (isReady) {
-								clearInterval(interval);
-								resolve();
-							}
-						}, 1000);
-					});
-				}
-
-
-				const torrentInfo = await window.electronAPI.realdebrid.getTorrentInfo(torrent.id);
-				// currently only supporting the first link
-				const download = await window.electronAPI.realdebrid.unrestrictLink(torrentInfo.links[0]);
-				if (download === null) {
-					createNotification({
-						id: Math.random().toString(36).substring(7),
-						type: 'error',
-						message: "Failed to unrestrict the link."
-					});
-					return;
-				}
-
-				const downloadID = await window.electronAPI.ddl.download([ { link: download.download, path: getDownloadPath() + "\\" + download.filename } ]);
-				currentDownloads.update((downloads) => {
-					const matchingDownload = downloads.find((d) => d.id === localID + '')!!
-					matchingDownload.status = 'downloading';
-					matchingDownload.id = downloadID;
-					matchingDownload.usedRealDebrid = true;
-
-					matchingDownload.downloadPath = getDownloadPath() + "\\" + download.filename;
-					downloads[downloads.indexOf(matchingDownload)] = matchingDownload;
-					return downloads;
-				});
-				break;
-			}
-			case 'torrent': {
-				if (!result.filename || !result.downloadURL) {
-						createNotification({
-							id: Math.random().toString(36).substring(7),
-							type: 'error',
-							message: "Addon did not provide a filename for the torrent."
-						});
-					return;
-				}
-				const downloadID = await window.electronAPI.torrent.downloadTorrent(result.downloadURL, getDownloadPath() + "\\" + (result.filename || result.downloadURL.split(/\\|\//).pop()));
-				if (downloadID === null) {
-					htmlButton.querySelector('[data-dwtext]')!!.textContent = "Download";
-					htmlButton.disabled = false;
-					return;
-				}
-				currentDownloads.update((downloads) => {
-					return [...downloads, { 
-						id: downloadID, 
-						status: 'downloading', 
-						downloadPath: getDownloadPath() + "\\" + result.filename + ".torrent", 
-						downloadSpeed: 0,
-						progress: 0,
-						usedRealDebrid: false,
-						...result 
-					}];
-				});
-				break;
-			}
-
-			case 'magnet': {
-				if (!result.filename || !result.downloadURL) {
-					createNotification({
-						id: Math.random().toString(36).substring(7),
-						type: 'error',
-						message: "Addon did not provide a filename for the magnet link."
-					});
-					return;
-				}
-
-				const downloadID = await window.electronAPI.torrent.downloadMagnet(result.downloadURL!!, getDownloadPath() + "\\" + result.filename!!);
-				if (downloadID === null) {
-					htmlButton.querySelector('[data-dwtext]')!!.textContent = "Download";
-					htmlButton.disabled = false;
-					return;
-				}
-				currentDownloads.update((downloads) => {
-					return [...downloads, { 
-						id: downloadID, 
-						status: 'downloading', 
-						downloadPath: getDownloadPath() + "\\" + result.filename + ".torrent", 
-						downloadSpeed: 0,
-						progress: 0,
-						usedRealDebrid: false,
-						...result 
-					}];
-				});
-				break;
-			}
-
-			case "direct": {
-				if (!result.filename && !result.files) {
-						createNotification({
-							id: Math.random().toString(36).substring(7),
-							type: 'error',
-							message: "Addon did not provide a filename for the direct download."
-						});
-					return;
-				}
-
-				let collectedFiles = [ { path: getDownloadPath() + "\\" + result.filename!!, link: result.downloadURL!! } ];
-				if (result.files) {
-					collectedFiles = result.files.map((file) => {
-						return { path: getDownloadPath() + "\\" + file.name, link: file.downloadURL };
-					});
-				}
-
-				const downloadID = await window.electronAPI.ddl.download(collectedFiles);
-				if (downloadID === null) {
-					htmlButton.querySelector('[data-dwtext]')!!.textContent = "Download";
-					htmlButton.disabled = false;
-					return;
-				}
-				currentDownloads.update((downloads) => {
-					return [...downloads, { 
-						id: downloadID, 
-						status: 'downloading', 
-						downloadPath: (result.files ? getDownloadPath() + "\\" : getDownloadPath() + "\\" + result.filename), 
-						downloadSpeed: 0,
-						usedRealDebrid: false,
-						progress: 0,
-						...result 
-					}];
-				});
-				break;
-			}
-		}
-	}
+	
 </script>
-<input id="search" on:change={search} type="text" placeholder="Search for Game" class="p-2 pl-2 bg-slate-100 rounded-lg w-2/3"/>
+<input id="search" on:change={search} type="text" placeholder="Search for Game" class="p-2 pl-2 bg-slate-100 rounded-lg w-2/3 mt-4"/>
 {#if loadingResults}
 	{#if addons.length === 0}
 		<div class="flex justify-center text-center flex-col items-center gap-2 w-4/6 bg-slate-100 rounded p-4">
@@ -316,42 +116,11 @@
 <div class="games">
 	{#each results as result}
 		<div class="relative rounded">
-			<img src={result.coverURL} class="w-[187.5px] h-[250px] rounded" alt="Game" />
-			<article class="w-full">
-					<h2>{result.name}</h2>
-					<section class="h-5/6 mr-2 overflow-y-auto">
-						<p>{result.description}</p>
-					</section>
-					<section class="flex flex-col w-full mt-auto">
-						<nav class="flex flex-row items-center gap-4 mt-auto">
-							<button class="download" on:click={(event) => startDownload(result, event)}>
-								<section class="flex flex-row">
-									<!-- {#if result.downloadType === 'magnet' || result.downloadType === 'real-debrid-torrent'}
-										<img class="w-4 h-4" src="./rd-logo.png" alt="Real Debrid" />
-									{/if} -->
-									<h3 class="relative -top-1 font-archivo font-semibold" data-dwtext>Download</h3>
-								</section>
-
-								<section class="w-full flex justify-center items-center">
-									<img alt="" width="14" height="14" src="./apps.svg"/>
-									<h3 class="text-white text-xs relative -top-[0.9px] -ml-[2px]">{result.addonSource}</h3>
-								</section>
-							</button>
-							<nav class="flex flex-row justify-center items-center gap-2">
-								{#if result.downloadType.includes('magnet')}
-									<img class="w-4 h-4" src="./magnet-icon.gif" alt="Magnet" />
-									<p>Magnet Link</p>
-								{:else if result.downloadType.includes('torrent')}
-									<img class="w-4 h-4" src="./torrent.png" alt="Torrent" />
-									<p>Torrent File</p>
-								{:else if result.downloadType === 'direct'}
-									<p>Direct Download</p>
-								{/if}
-							</nav>
-						</nav>
-					</section>
-
-			</article>
+			<img src={result.header_image} alt={result.name} class="rounded w-1/4 h-full object-cover"/>
+			<span class="h-full flex flex-col justify-start items-start">
+				<h1 class="font-archivo">{result.name}</h1>
+				<button class="mt-auto py-2 px-4 hover:underline rounded" on:click={() => currentStorePageOpened.set(result.steam_appid)}>Go to Listing</button>
+			</span>
 		</div>
 	{/each}
 

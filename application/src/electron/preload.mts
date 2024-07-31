@@ -1,3 +1,4 @@
+import { AxiosRequestConfig } from 'axios';
 import { contextBridge, ipcRenderer } from 'electron';
 import type { $Hosts } from 'real-debrid-js';
 
@@ -40,6 +41,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   app: {
     close: () => ipcRenderer.invoke('app:close'),
     minimize: () => ipcRenderer.invoke('app:minimize'),
+    axios: (options: AxiosRequestConfig) => ipcRenderer.invoke('app:axios', options),
+    searchFor: (query: string) => ipcRenderer.invoke('app:search-id', query),
   },
   getVersion: () => ipcRenderer.sendSync('get-version'),
   updateAddons: () => ipcRenderer.invoke('update-addons'),

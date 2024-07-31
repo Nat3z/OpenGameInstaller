@@ -116,7 +116,7 @@
   }
 </script>
 
-<main class="flex items-center flex-col justify-center w-full h-full p-8 bg-white fixed top-0 left-0 outline" id="oobe">
+<main class="flex items-center flex-col justify-center w-full h-full p-8 bg-white fixed top-0 left-0 outline z-10" id="oobe">
   {#if stage > 0}
     <progress class="animate-fade-in-slow" max="4" value={stage - 1}></progress>
   {/if}

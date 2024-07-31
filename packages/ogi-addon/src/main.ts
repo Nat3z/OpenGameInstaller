@@ -29,7 +29,7 @@ export interface EventListenerTypes {
   configure: (config: ConfigurationBuilder) => ConfigurationBuilder;
   response: (response: any) => void;
   authenticate: (config: any) => void;
-  search: (query: string, event: EventResponse<SearchResult[]>) => void;
+  search: (query: { type: 'steamapp' | 'query', text: string }, event: EventResponse<SearchResult[]>) => void;
   setup: (
     data: { 
       path: string, 

@@ -155,8 +155,8 @@ export type SearchResultWithAddon = SearchResult & {
 export async function startDownload(result: SearchResultWithAddon, event: MouseEvent) {
 	if (event === null) return;
 	if (event.target === null) return;
-	const htmlButton = (event.target as HTMLElement).closest('button')!!;
-	htmlButton.querySelector('[data-dwtext]')!!.textContent = "Downloading...";
+	const htmlButton = event.target as HTMLButtonElement;
+	htmlButton.textContent = "Downloading...";
 	htmlButton.disabled = true;
 	let downloadType = result.downloadType;
 	if (downloadType === "torrent" || downloadType === 'magnet') {
@@ -321,7 +321,7 @@ export async function startDownload(result: SearchResultWithAddon, event: MouseE
 			}
 			const downloadID = await window.electronAPI.torrent.downloadTorrent(result.downloadURL, getDownloadPath() + "\\" + (result.filename || result.downloadURL.split(/\\|\//).pop()));
 			if (downloadID === null) {
-				htmlButton.querySelector('[data-dwtext]')!!.textContent = "Download";
+				htmlButton.textContent = "Download";
 				htmlButton.disabled = false;
 				return;
 			}
@@ -351,7 +351,7 @@ export async function startDownload(result: SearchResultWithAddon, event: MouseE
 
 			const downloadID = await window.electronAPI.torrent.downloadMagnet(result.downloadURL!!, getDownloadPath() + "\\" + result.filename!!);
 			if (downloadID === null) {
-				htmlButton.querySelector('[data-dwtext]')!!.textContent = "Download";
+				htmlButton.textContent = "Download";
 				htmlButton.disabled = false;
 				return;
 			}
@@ -388,7 +388,7 @@ export async function startDownload(result: SearchResultWithAddon, event: MouseE
 
 			const downloadID = await window.electronAPI.ddl.download(collectedFiles);
 			if (downloadID === null) {
-				htmlButton.querySelector('[data-dwtext]')!!.textContent = "Download";
+				htmlButton.textContent = "Download";
 				htmlButton.disabled = false;
 				return;
 			}

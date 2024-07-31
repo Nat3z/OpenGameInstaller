@@ -34,12 +34,15 @@ steamAppSearcher.addIndex('name');
 
 async function getSteamApps(): Promise<{ appid: string, name: string }[]> {
   if (fs.existsSync('steam-apps.json')) {
-    const steamApps: { appid: string, name: string }[] = JSON.parse(fs.readFileSync('steam-apps.json', 'utf-8'));
-    return steamApps;
+    const steamApps: { timeSinceUpdate: number, data: {appid: string, name: string}[] } = JSON.parse(fs.readFileSync('steam-apps.json', 'utf-8'));
+    if (Date.now() - steamApps.timeSinceUpdate < 86400000) { //24 hours
+      return steamApps.data;
+    }
   }
   const response = await axios.get('https://api.steampowered.com/ISteamApps/GetAppList/v0002/?key=STEAMKEY&format=json') 
-  fs.writeFileSync('steam-apps.json', JSON.stringify(response.data.applist.apps, null, 2));
-  return response.data.applist.apps
+  const steamApps = response.data.applist.apps;
+  fs.writeFileSync('steam-apps.json', JSON.stringify({ timeSinceUpdate: Date.now(), data: steamApps }, null, 2));
+  return steamApps
 }
 // lazy tasks
 new Promise<void>(async (resolve) => {
@@ -843,7 +846,7 @@ function createWindow() {
             // stop all of the addons
             for (const process of Object.keys(processes)) {
                 console.log(`Killing process ${process}`);
-                processes[process].kill();
+                processes[process].kill('SIGKILL');
             }
 
             // delete all of the addons
@@ -1061,7 +1064,7 @@ EnableFSMonitor=Disabled
             // stop all of the addons
             for (const process of Object.keys(processes)) {
                 console.log(`Killing process ${process}`);
-                processes[process].kill();
+                processes[process].kill('SIGKILL');
             }
 
             // pull all of the addons
@@ -1247,7 +1250,7 @@ function restartAddonServer() {
     // stop all of the addons
     for (const process of Object.keys(processes)) {
         console.log(`Killing process ${process}`);
-        const killed = processes[process].kill();
+        const killed = processes[process].kill('SIGKILL');
         console.log(`Killed process ${process}: ${killed}`);
     }
     // start the server
@@ -1278,7 +1281,7 @@ app.on('window-all-closed', async function () {
     // stop all of the addons
     for (const process of Object.keys(processes)) {
         console.log(`Killing process ${process}`);
-        processes[process].kill();
+        processes[process].kill('SIGKILL');
     }
     // stopping all of the torrent intervals
     for (const interval of torrentIntervals) {

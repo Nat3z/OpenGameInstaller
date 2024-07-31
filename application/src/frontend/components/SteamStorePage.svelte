@@ -13,6 +13,9 @@
     const response = await window.electronAPI.app.axios({
       method: 'get',
       url: 'https://store.steampowered.com/api/appdetails?appids=' + appID,
+      headers: {
+        'Accept-Language': 'en-US,en;q=0.5'
+      }
     });
     if (!response.data[appID].success) {
       console.error('Failed to fetch Steam store page');
@@ -36,6 +39,8 @@
 					...data.map((result: SearchResult) => {
 						return {
 							...result,
+              coverURL: gameData.capsule_image,
+              name: gameData.name,
 							addonSource: addon.id
 						}
 					})
@@ -74,7 +79,7 @@
           {#each results as result}
             <div class="flex flex-col gap-2 bg-slate-200 rounded p-4 w-full">
               <p>{result.addonSource}</p>
-              <button class="px-4 py-2 bg-blue-300 rounded" on:click={(event) => startDownload(result, event)}>Download</button>
+              <button class="px-4 py-2 bg-blue-300 rounded disabled:bg-yellow-300" on:click={(event) => startDownload(result, event)}>Download</button>
               <nav class="flex flex-row justify-center items-center gap-2 text-xs">
 								{#if result.downloadType.includes('magnet')}
 									<img class="w-4 h-4" src="./magnet-icon.gif" alt="Magnet" />

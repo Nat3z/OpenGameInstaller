@@ -134,6 +134,9 @@
 		/* show the label once the button is hovered */
 		@apply w-full h-12 border-none bg-transparent flex flex-row items-center justify-start px-4 gap-1 hover:bg-slate-100;
 	}
+	nav button[data-selected-header="true"] {
+		@apply bg-slate-200;
+	}
 	nav button img {
 		@apply w-6 h-6;
 	}

@@ -186,7 +186,7 @@
           <label class="text-left text-sm text-gray-300">Insert your <a href="https://real-debrid.com/apitoken" target="_blank" class="underline">Real Debrid API Key</a></label>
         {:else if selectedTorrenter === "qbittorrent"}
           <!-- TODO: WORK ON OUR OWN TUTORIAL -->
-          <a href="https://lgallardo.com/2014/09/29/como-activar-la-interfaz-web-de-qbittorrent/" class="font-open-sans mb-4 text-sm underline">Enable qBittorrent's WebUI so OpenGameInstaller can interact with the client.</a>
+          <a href="https://lgallardo.com/2014/09/29/como-activar-la-interfaz-web-de-qbittorrent/" class="font-open-sans mb-4 text-sm underline" target="_blank">Enable qBittorrent's WebUI so OpenGameInstaller can interact with the client.</a>
           <div class="justify-center items-center flex flex-row gap-2 mb-4">
             <span class="items-center justify-center flex flex-col">
               <input data-qb-ip type="text" on:change={submitTorrenter} placeholder="Host" value="http://127.0.0.1" class="w-72 p-2 pl-2 bg-slate-100 rounded-lg" />

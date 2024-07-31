@@ -28,7 +28,7 @@
     "dev:server": "nodemon --watch server --ext ts,json --exec \"tsc --p tsconfig.addonserver.json && bun run --bun build-addons/dev-server.js\"",
     "electron-dev": "concurrently \"bun run dev\" \"bun run electron\"",
     "preelectron-pack": "bun run build && bun run build:ogiaddon && bunx tsc --p tsconfig.electron.json",
-    "electron-pack": "electron-builder",
+    "electron-pack": "electron-builder && 7z a -tzip ./dist/OpenGameInstaller-Portable.zip ./dist/win-unpacked/*",
     "check": "svelte-check --tsconfig ./tsconfig.svelte.json",
     "rebuild": "npm rebuild"
   },

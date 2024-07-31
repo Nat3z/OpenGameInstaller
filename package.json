@@ -8,6 +8,7 @@
   "workspaces": [
     "packages/ogi-addon",
     "packages/real-debrid",
-    "application"
+    "application",
+    "updater"
   ]
 }

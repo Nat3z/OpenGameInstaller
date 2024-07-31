@@ -1,0 +1,29 @@
+{
+  "name": "ogi-updater",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "A simple updater for OpenGameInstaller",
+  "main": "src/main.js",
+  "author": "Nat3z",
+  "build": {
+    "icon": "public/favicon-256x256.png",
+    "productName": "OpenGameInstaller",
+    "files": [
+      "public/**/*",
+      "./build/**/*"
+    ],
+    "win": {},
+    "linux": {},
+    "mac": {}
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "electron-dev": "electron ."
+  },
+  "license": "ISC",
+  "dependencies": {
+    "axios": "^1.7.2",
+    "electron": "^31.3.1",
+    "yauzl": "^3.1.3"
+  }
+}

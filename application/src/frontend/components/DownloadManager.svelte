@@ -172,7 +172,7 @@
           log: "Extracting the downloaded file..."
         }
       }));
-      const outputDir = await window.electronAPI.fs.unrar({ outputDir: getDownloadPath() + '\\' + downloadedItem.name, rarFilePath: downloadedItem.downloadPath });
+      const outputDir = await window.electronAPI.fs.unrar({ outputDir: getDownloadPath() + '\\' + downloadedItem.filename, rarFilePath: downloadedItem.downloadPath });
       downloadedItem.downloadPath = outputDir;
     }
 

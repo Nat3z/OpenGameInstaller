@@ -13,7 +13,7 @@ import { addTorrent, stopClient } from './webtorrent-connect.js';
 import path from 'path';
 import { QBittorrent } from '@ctrl/qbittorrent';
 import { getStoredValue, refreshCached } from './config-util.js';
-
+import * as JsSearch from 'js-search'
 const VERSION = app.getVersion();
 
 const __dirname = isDev() ? app.getAppPath() + "/../" : path.parse(app.getPath('exe')).dir;
@@ -28,7 +28,25 @@ let realDebridClient = new RealDebrid({
 function isDev() {
     return !app.isPackaged;
 }
+let steamApps: { appid: string, name: string }[] = [];
+let steamAppSearcher = new JsSearch.Search('name');
+steamAppSearcher.addIndex('name');
 
+async function getSteamApps(): Promise<{ appid: string, name: string }[]> {
+  if (fs.existsSync('steam-apps.json')) {
+    const steamApps: { appid: string, name: string }[] = JSON.parse(fs.readFileSync('steam-apps.json', 'utf-8'));
+    return steamApps;
+  }
+  const response = await axios.get('https://api.steampowered.com/ISteamApps/GetAppList/v0002/?key=STEAMKEY&format=json') 
+  fs.writeFileSync('steam-apps.json', JSON.stringify(response.data.applist.apps, null, 2));
+  return response.data.applist.apps
+}
+// lazy tasks
+new Promise<void>(async (resolve) => {
+    steamApps = await getSteamApps();
+    steamAppSearcher.addDocuments(steamApps);
+    resolve();
+});
 interface Notification {
   message: string;
   id: string;
@@ -104,6 +122,10 @@ function createWindow() {
             const response = await axios(options);
             return { data: response.data, status: response.status, success: response.status >= 200 && response.status < 300 };
         });
+        ipcMain.handle('app:search-id', async (_, query) => {
+            const results = steamAppSearcher.search(query);
+            return results;
+        })
 
         ipcMain.on('fs:read', (event, arg) => {
             fs.readFile(arg, 'utf-8', (err, data) => {

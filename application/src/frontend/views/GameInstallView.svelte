@@ -1,7 +1,8 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { fetchAddonsWithConfigure, safeFetch, startDownload, type SearchResultWithAddon } from "../utils";
-  import type { OGIAddonConfiguration, SearchResult } from "ogi-addon";
+  import { fetchAddonsWithConfigure, safeFetch, type GameData } from "../utils";
+	import { currentStorePageOpened } from '../store'
+  import type { OGIAddonConfiguration } from "ogi-addon";
   import type { ConfigurationFile } from "ogi-addon/config";
 	interface ConfigTemplateAndInfo extends OGIAddonConfiguration {
     configTemplate: ConfigurationFile
@@ -12,9 +13,43 @@
       addons = data;
     });
   });
+	function extractSimpleName(input: string) {
+		// Regular expression to match the game name
+		const regex = /^(.+?)([:\-–])/;
+		const match = input.match(regex);
+		return match ? match[1].trim() : null;
+	}
 
+	async function getRealGame(titleId: string): Promise<string | undefined> {
+		const response = await window.electronAPI.app.axios({
+			method: "GET",
+			url: `https://store.steampowered.com/api/appdetails?appids=${titleId}`
+		});
+		if (!response.data[titleId].success) {
+			return undefined;
+		}
+		if (response.data[titleId].data.type === 'game') {
+			return titleId;
+		}
 
-	let results: SearchResultWithAddon[] = [];
+		if (response.data[titleId].data.type === 'dlc' || response.data[titleId].data.type === 'dlc_sub' || response.data[titleId].data.type === 'music' || response.data[titleId].data.type === 'video' || response.data[titleId].data.type === 'episode') { 
+			return response.data[titleId].data.fullgame.appid;
+		}
+		if (response.data[titleId].data.type === 'demo') {
+			return response.data[titleId].data.fullgame.appid;
+		}
+
+		return undefined;
+	}
+	async function matchSteamAppID(title: string): Promise<{ appid: string, name: string }[] | undefined> {
+		const steamAppId = await window.electronAPI.app.searchFor(title); 
+		if (steamAppId.length === 0) {
+			return undefined;
+		}
+		return steamAppId;
+	}
+
+	let results: GameData[] = [];
 
 	let loadingResults = false;
 	async function search() {
@@ -23,26 +58,44 @@
 		addons = await fetchAddonsWithConfigure();
 		results = [];
 		const search = document.getElementById("search")!! as HTMLInputElement;
-		const query = search.value = search.value.toLowerCase();
-		loadingResults = true;
-		for (const addon of addons) {
-			safeFetch("http://localhost:7654/addons/" + addon.id + "/search?query=" + query, { consume: 'json' }).then((data) => {
-				loadingResults = false;
-				results = [ ...results, 
-					...data.map((result: SearchResult) => {
-						return {
-							...result,
-							addonSource: addon.id
-						}
-					})
-				 ];
-			});
+		const query = search.value;
+		if (!query) {
+			loadingResults = false;
+			return;
 		}
+		// first get the steam app id
+		const possibleSteamApps = await matchSteamAppID(extractSimpleName(query) ?? query);
+		if (!possibleSteamApps) {
+			loadingResults = false;
+			return;
+		}
+		for (const possibleSteamApp of possibleSteamApps) {
+			const real = await getRealGame(possibleSteamApp.appid);
+			console.log(real);
+			if (!real) {
+				continue;
+			}
+			const response = await window.electronAPI.app.axios({
+				method: "GET",
+				url: `https://store.steampowered.com/api/appdetails?appids=${real}`
+			});
+			if (!response.data[real].success) {
+				console.error("Failed to fetch Steam store page");
+				return;
+			}
+			const gameData: GameData = response.data[real].data;
+			// check if the appid is already in the results
+			if (results.find((result) => result.steam_appid === gameData.steam_appid)) {
+				continue;
+			}
+			results = [...results, gameData];
+		}
+		loadingResults = false;
 	}
 
 	
 </script>
-<input id="search" on:change={search} type="text" placeholder="Search for Game" class="p-2 pl-2 bg-slate-100 rounded-lg w-2/3"/>
+<input id="search" on:change={search} type="text" placeholder="Search for Game" class="p-2 pl-2 bg-slate-100 rounded-lg w-2/3 mt-4"/>
 {#if loadingResults}
 	{#if addons.length === 0}
 		<div class="flex justify-center text-center flex-col items-center gap-2 w-4/6 bg-slate-100 rounded p-4">
@@ -58,42 +111,11 @@
 <div class="games">
 	{#each results as result}
 		<div class="relative rounded">
-			<img src={result.coverURL} class="w-[187.5px] h-[250px] rounded" alt="Game" />
-			<article class="w-full">
-					<h2>{result.name}</h2>
-					<section class="h-5/6 mr-2 overflow-y-auto">
-						<p>{result.description}</p>
-					</section>
-					<section class="flex flex-col w-full mt-auto">
-						<nav class="flex flex-row items-center gap-4 mt-auto">
-							<button class="download" on:click={(event) => startDownload(result, event)}>
-								<section class="flex flex-row">
-									<!-- {#if result.downloadType === 'magnet' || result.downloadType === 'real-debrid-torrent'}
-										<img class="w-4 h-4" src="./rd-logo.png" alt="Real Debrid" />
-									{/if} -->
-									<h3 class="relative -top-1 font-archivo font-semibold" data-dwtext>Download</h3>
-								</section>
-
-								<section class="w-full flex justify-center items-center">
-									<img alt="" width="14" height="14" src="./apps.svg"/>
-									<h3 class="text-white text-xs relative -top-[0.9px] -ml-[2px]">{result.addonSource}</h3>
-								</section>
-							</button>
-							<nav class="flex flex-row justify-center items-center gap-2">
-								{#if result.downloadType.includes('magnet')}
-									<img class="w-4 h-4" src="./magnet-icon.gif" alt="Magnet" />
-									<p>Magnet Link</p>
-								{:else if result.downloadType.includes('torrent')}
-									<img class="w-4 h-4" src="./torrent.png" alt="Torrent" />
-									<p>Torrent File</p>
-								{:else if result.downloadType === 'direct'}
-									<p>Direct Download</p>
-								{/if}
-							</nav>
-						</nav>
-					</section>
-
-			</article>
+			<img src={result.header_image} alt={result.name} class="rounded w-1/4 h-full object-cover"/>
+			<span class="h-full flex flex-col justify-start items-start">
+				<h1 class="font-archivo">{result.name}</h1>
+				<button class="mt-auto py-2 px-4 hover:underline rounded" on:click={() => currentStorePageOpened.set(result.steam_appid)}>Go to Listing</button>
+			</span>
 		</div>
 	{/each}
 

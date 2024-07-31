@@ -78,7 +78,7 @@
   }
 </script>
 
-<div class="downloads">
+<div class="downloads mt-4">
   {#if $currentDownloads.length === 0}
     <div class="flex justify-center text-center flex-col items-center gap-2 w-4/6 border p-8 border-gray-800 bg-gray-200">
 			<p class="text-2xl">No Downloads in Progress</p>

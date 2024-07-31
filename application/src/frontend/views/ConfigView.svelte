@@ -160,12 +160,12 @@
 
 
 <div class="config">
-  <div class="w-52 rounded bg-slate-100 h-full">
+  <div class="w-72 h-full gap-2 flex flex-col">
     <section class="selected hidden">
     </section>
     {#if addons.length !== 0}
       {#each addons as addon}
-        <section class="" on:keypress={() => {}} on:click={() => selectAddon(addon)} id={"cfg-" + addon.id}>
+        <section class="hover:bg-slate-100 hover:cursor-pointer" on:keypress={() => {}} on:click={() => selectAddon(addon)} id={"cfg-" + addon.id}>
           <h2>{addon.name}</h2>
           <p>{addon.description}</p>
         </section>
@@ -173,7 +173,7 @@
     {/if}
   </div>
 
-  <article class="w-5/6 bg-slate-100 rounded p-4 py-2">
+  <article class="w-full h-full bg-slate-100 p-4 py-2 border-l-2 border-gray-200">
     {#if selectedAddon}
       <h2>{selectedAddon.name}</h2>
       <p>{selectedAddon.description}</p>
@@ -231,7 +231,7 @@
     @apply bg-slate-200;
   }
 	.config {
-		@apply flex flex-row gap-2 w-5/6 h-5/6 rounded;
+		@apply flex flex-row w-full h-full rounded justify-center items-start;
 	}
   section {
     @apply p-2;

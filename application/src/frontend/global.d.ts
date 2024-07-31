@@ -49,6 +49,7 @@ interface Window {
       close: () => Promise<void>,
       minimize: () => Promise<void>,
       axios: (options: AxiosRequestConfig) => Promise<{ status: number, success: boolean, data: any }>,
+      searchFor: (query: string) => Promise<{ appid: string, name: string }[]>
     },
     updateAddons: () => Promise<void>,
     getVersion: () => string,

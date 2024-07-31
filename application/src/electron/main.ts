@@ -1107,6 +1107,8 @@ EnableFSMonitor=Disabled
 
             
         mainWindow!!.show()
+        // start the app with it being focused
+        mainWindow!!.focus()
         if (!isSecurityCheckEnabled) {
             sendNotification({
                 message: 'Security checks are disabled and application security LOWERED. Only enable if you know what you\'re doing.',

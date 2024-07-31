@@ -5,14 +5,15 @@
   "type": "module",
   "private": false,
   "license": "MIT",
-  "main": "./src/main.js",
+  "main": "./build/main.js",
   "author": "Nat3z",
   "build": {
     "icon": "public/favicon-256x256.png",
     "productName": "OpenGameInstaller",
+    "extends": null,
     "files": [
       "public/**/*",
-      "./src/**/*"
+      "./build/**/*"
     ],
     "win": {},
     "linux": {},

@@ -1,10 +1,12 @@
-import { BrowserWindow, app, ipcMain } from 'electron';
+import { BrowserWindow, app, ipcMain, shell } from 'electron';
 import axios from 'axios';
 import fs from 'fs';
 import yauzl from 'yauzl';
 import path from 'path';
 let mainWindow;
 const __dirname = app.getAppPath();
+
+process.noAsar = true;
 
 function correctParsingSize(size) {
   if (size < 1024) {
@@ -50,22 +52,27 @@ async function createWindow() {
   // if the version is different, download the new version
   let release;
   for (const rel of response.data) {
-    if (rel.prerelease && usingBleedingEdge && response.data.tag_name !== localVersion) {
+    if (rel.prerelease && usingBleedingEdge && rel.tag_name !== localVersion) {
       release = rel;
       break;
-    } else if (!rel.prerelease && !usingBleedingEdge && response.data.tag_name !== localVersion) {
+    } else if (!rel.prerelease && !usingBleedingEdge && rel.tag_name !== localVersion) {
       release = rel;
       break;
     }
   }
   mainWindow.webContents.send('text', 'No Updates Found');
-  
+  let updating = release !== undefined;
   if (release) {
     // download the new version usinng axios stream
     const writer = fs.createWriteStream(`./update.zip`);
     mainWindow.webContents.send('text', 'Downloading Update');
+    const assetWithPortable = release.assets.find((asset) => asset.name.toLowerCase().includes('portable') || asset.name.toLowerCase().includes('portrable'));
+    if (!assetWithPortable) {
+      mainWindow.webContents.send('text', 'No Portable Version Found');
+      return
+    }
     const response = await axios({
-      url: release.assets[0].browser_download_url,
+      url: assetWithPortable.browser_download_url,
       method: 'GET',
       responseType: 'stream',
     });
@@ -95,11 +102,19 @@ async function createWindow() {
       fs.writeFileSync(`./version.txt`, release.tag_name);
       // restart the app
       console.log('App Ready.')
+
+      mainWindow.webContents.send('text', 'Launching OpenGameInstaller');
+      launchApp();
     });
   }
-    
+  if (!updating)
+    launchApp();
 }
 
+function launchApp() {
+  shell.openPath(path.join(__dirname, 'update', 'OpenGameInstaller.exe'));
+  app.quit();
+}
 app.on('ready', createWindow);
 // taken from https://stackoverflow.com/questions/63932027/how-to-unzip-to-a-folder-using-yauzl
 const unzip = (zipPath, unzipToDir) => {
@@ -125,37 +140,36 @@ const unzip = (zipPath, unzipToDir) => {
                 zipFile.on('entry', (entry) => {
                     try {
                         // Directories
-                        if (/\/$/.test(entry.fileName)) {
+                        console.log(entry.fileName);
+                        if (/(.*)\/(?:.*?)$/.test(entry.fileName)) {
+                            const dirToMake = /(.*)\/(?:.*?)$/.exec(entry.fileName)[1];
                             // Create the directory then read the next entry.
-                            fs.mkdirSync(path.join(unzipToDir, entry.fileName), { recursive: true });
-                            zipFile.readEntry();
+                            console.log('Creating directory:', dirToMake);
+                            fs.mkdirSync(path.join(unzipToDir, dirToMake), { recursive: true });
                         }
                         // Files
-                        else {
-                            // Write the file to disk.
-                            zipFile.openReadStream(entry, (readErr, readStream) => {
-                                if (readErr) {
-                                    zipFile.close();
-                                    reject(readErr);
-                                    return;
-                                }
+                        zipFile.openReadStream(entry, (readErr, readStream) => {
+                            if (readErr) {
+                                zipFile.close();
+                                reject(readErr);
+                                return;
+                            }
 
-                                const file = fs.createWriteStream(path.join(unzipToDir, entry.fileName));
-                                readStream.pipe(file);
-                                file.on('finish', () => {
-                                    // Wait until the file is finished writing, then read the next entry.
-                                    // @ts-ignore: Typing for close() is wrong.
-                                    file.close(() => {
-                                        zipFile.readEntry();
-                                    });
-
-                                    file.on('error', (err) => {
-                                        zipFile.close();
-                                        reject(err);
-                                    });
+                            const file = fs.createWriteStream(path.join(unzipToDir, entry.fileName));
+                            readStream.pipe(file);
+                            file.on('finish', () => {
+                                // Wait until the file is finished writing, then read the next entry.
+                                // @ts-ignore: Typing for close() is wrong.
+                                file.close(() => {
+                                    zipFile.readEntry();
                                 });
-                              });
-                          }
+
+                                file.on('error', (err) => {
+                                    zipFile.close();
+                                    reject(err);
+                                });
+                            });
+                      });
                     } catch (e) {
                       zipFile.close();
                       reject(e);

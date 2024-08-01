@@ -68,7 +68,7 @@ export function sendNotification(notification: Notification) {
     mainWindow.webContents.send('notification', notification);
 }
 
-export let currentScreens = new Map<string, ConfigurationFile>();
+export let currentScreens = new Map<string, { [key: string]: string | boolean | number } | undefined>();
 
 export function sendAskForInput(id: string, config: ConfigurationFile, name: string, description: string) {
     if (!mainWindow) {
@@ -80,7 +80,7 @@ export function sendAskForInput(id: string, config: ConfigurationFile, name: str
         return;
     }
     mainWindow.webContents.send('input-asked', { id, config, name, description });
-    currentScreens.set(id, config);
+    currentScreens.set(id, undefined);
 }
 
 function createWindow() {    
@@ -146,14 +146,8 @@ function createWindow() {
             return results;
         });
         ipcMain.handle('app:screen-input', async (_, data) => {
-            const screen = currentScreens.get(data.id);
-            if (!screen) {
-                return null;
-            }
-            for (const key in data.data) {
-                screen[key] = data.data[key];
-            }
-            return screen;
+            currentScreens.set(data.id, data.data)
+            return;
         });
 
         ipcMain.on('fs:read', (event, arg) => {

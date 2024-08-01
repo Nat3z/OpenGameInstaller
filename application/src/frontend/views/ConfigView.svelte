@@ -112,6 +112,18 @@
     }
   }
 
+  function browseForFolder(event: MouseEvent, type: 'file' | 'folder') {
+    const dialog = window.electronAPI.fs.dialog;
+    const element = (event.target as HTMLElement).parentElement!!.querySelector("input") as HTMLInputElement;
+    dialog.showOpenDialog({ properties: type === 'file' ? ['openDirectory'] : ['openFile'] }).then((path) => {
+      if (!path) return;
+      if (element) {
+        element.value = path;
+      }
+      updateConfig();
+    });
+  }
+
   function showDescription(event: MouseEvent | FocusEvent) {
     const element = event.target as HTMLElement;
     const contextual = element.parentElement!!.querySelector("[data-description]")!! as HTMLDivElement;
@@ -190,8 +202,17 @@
                     <option value={value}>{value}</option>
                   {/each}
                 </select>
-              {:else}
-                <input data-input type="text" on:change={updateConfig} value={getStoredOrDefaultValue(key)} id={key} maxlength={selectedAddon.configTemplate[key].maxTextLength} minlength={selectedAddon.configTemplate[key].minTextLength} />
+              {:else if selectedAddon.configTemplate[key].inputType === "text" || selectedAddon.configTemplate[key].inputType === "password"}
+                <input data-input type={selectedAddon.configTemplate[key].inputType} on:change={updateConfig} value={getStoredOrDefaultValue(key)} id={key} maxlength={selectedAddon.configTemplate[key].maxTextLength} minlength={selectedAddon.configTemplate[key].minTextLength} />
+              {:else if selectedAddon.configTemplate[key].inputType === "file" || selectedAddon.configTemplate[key].inputType === "folder"}
+                <input type="text" data-input on:change={updateConfig} value={getStoredOrDefaultValue(key)} id={key} />
+
+                {#if selectedAddon.configTemplate[key].inputType === "folder"}
+                  <button class="bg-blue-500 text-white px-2 rounded" on:click={(ev) => browseForFolder(ev, 'folder')}>Browse</button>
+                {:else if  selectedAddon.configTemplate[key].inputType === "file"}
+                  <button class="bg-blue-500 text-white px-2 rounded" on:click={(ev) => browseForFolder(ev, 'file')}>Browse</button>
+                {/if}
+
               {/if}
             {/if}
             {#if isNumberOption(selectedAddon.configTemplate[key])}

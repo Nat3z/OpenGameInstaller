@@ -143,16 +143,20 @@ class OGIAddonWSListener {
       }
       this.eventEmitter.emit('disconnect', reason);
       console.log("Disconnected from OGI Addon Server")
+      console.log(reason.toString())
       this.socket.close();
     });
 
     this.registerMessageReceiver();
   }
 
-  private async userInputAsked(configBuilt: ConfigurationBuilder, name: string, description: string): Promise<ConfigurationFile> {
+  private async userInputAsked(configBuilt: ConfigurationBuilder, name: string, description: string, socket: WebSocket): Promise<{ [key: string]: number | boolean | string }> {
     const config = configBuilt.build(false);
     const id = Math.random().toString(36).substring(7);
-    this.socket.send(JSON.stringify({
+    if (!socket) {
+      return {};
+    }
+    socket.send(JSON.stringify({
       event: 'input-asked',
       args: {
         config,
@@ -178,14 +182,14 @@ class OGIAddonWSListener {
           }
           break 
         case 'search':
-          let searchResultEvent = new EventResponse<SearchResult[]>(this.userInputAsked);
+          let searchResultEvent = new EventResponse<SearchResult[]>((screen, name, description) => this.userInputAsked(screen, name, description, this.socket));
           this.eventEmitter.emit('search', message.args, searchResultEvent);
           const searchResult = await this.waitForEventToRespond(searchResultEvent);         
           console.log(searchResult.data)
           this.respondToMessage(message.id!!, searchResult.data);
           break
         case 'setup':
-          let setupEvent = new EventResponse<undefined | null>(this.userInputAsked);
+          let setupEvent = new EventResponse<undefined | null>((screen, name, description) => this.userInputAsked(screen, name, description, this.socket));
           this.eventEmitter.emit('setup', { path: message.args.path, type: message.args.type, name: message.args.name, usedRealDebrid: message.args.usedRealDebrid, multiPartFiles: message.args.multiPartFiles }, setupEvent);
           const interval = setInterval(() => {
             if (setupEvent.resolved) {
@@ -248,6 +252,7 @@ class OGIAddonWSListener {
           this.socket.once('message', waiter);
           return;
         }
+        console.log("received response from " + messageID)
 
         if (message.id === messageID) {
           resolve(message.args);

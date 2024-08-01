@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { ConfigurationBuilder, type BooleanOption, type ConfigurationFile, type ConfigurationOption, type NumberOption, type StringOption } from "ogi-addon/config";
+  import { type BooleanOption, type ConfigurationFile, type ConfigurationOption, type NumberOption, type StringOption } from "ogi-addon/config";
   function isStringOption(option: ConfigurationOption): option is StringOption {
     return option.type === 'string';
   }
@@ -15,15 +15,11 @@
     return event instanceof CustomEvent;
   }
 
-  let screenRendering: ConfigurationFile | undefined = new ConfigurationBuilder()
-    .addBooleanOption(option => option.setName('boop').setDisplayName('boop').setDescription('boop'))
-    .addNumberOption(option => option.setName('number').setDisplayName('number').setDescription('number').setInputType('range').setMin(0).setMax(100).setDefaultValue(50))
-    .addStringOption(option => option.setName('string').setDisplayName('string').setDescription('string').setMinTextLength(0).setMaxTextLength(100).setAllowedValues(['a', 'b', 'c']).setDefaultValue('a'))
-    .build(false);
+  let screenRendering: ConfigurationFile | undefined = undefined 
 
   let screenID: string | undefined;
-  let screenName: string | undefined = "Screen Name";
-  let screenDescription: string | undefined = "Screen Description";
+  let screenName: string | undefined = undefined;
+  let screenDescription: string | undefined = undefined;
 
   document.addEventListener('input-asked', (e) => {
     if (!isCustomEvent(e)) return;
@@ -87,9 +83,21 @@
       data[element.id] = element.type === "checkbox" ? element.checked : element.value;
     });
     window.electronAPI.app.inputSend(screenID!!, data);
+    console.log(data);
     // delete the screen
     screenRendering = undefined;
     screenID = undefined;
+  }
+
+  function browseForFolder(event: MouseEvent, type: 'file' | 'folder') {
+    const dialog = window.electronAPI.fs.dialog;
+    const element = (event.target as HTMLElement).parentElement!!.querySelector("input") as HTMLInputElement;
+    dialog.showOpenDialog({ properties: type === 'folder' ? [ 'openDirectory' ] : [ 'openFile' ]}).then((path) => {
+      if (!path) return;
+      if (element) {
+        element.value = path;
+      }
+    });
   }
 </script>
 
@@ -112,8 +120,15 @@
                     <option value={value}>{value}</option>
                   {/each}
                 </select>
-              {:else}
-                <input data-input type="text" value={screenRendering[key].defaultValue || ''} id={key} maxlength={screenRendering[key].maxTextLength} minlength={screenRendering[key].minTextLength} />
+              {:else if screenRendering[key].inputType === "text" || screenRendering[key].inputType === "password"}
+                <input data-input type={screenRendering[key].inputType} value={screenRendering[key].defaultValue ?? ''} id={key} maxlength={screenRendering[key].maxTextLength} minlength={screenRendering[key].minTextLength} />
+              {:else if screenRendering[key].inputType === "file" || screenRendering[key].inputType === "folder"}
+                <input type="text" data-input value={screenRendering[key].defaultValue ?? ''} id={key} />
+                {#if screenRendering[key].inputType === "folder"}
+                  <button class="bg-blue-500 text-white px-2 rounded" on:click={(ev) => browseForFolder(ev, 'folder')}>Browse</button>
+                {:else}
+                  <button class="bg-blue-500 text-white px-2 rounded" on:click={(ev) => browseForFolder(ev, 'file')}>Browse</button>
+                {/if}
               {/if}
             {/if}
             {#if isNumberOption(screenRendering[key])}

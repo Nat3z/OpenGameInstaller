@@ -1,4 +1,3 @@
-import { ConfigurationFile } from "./config/ConfigurationBuilder";
 import { ConfigurationBuilder } from "./main";
 
 export default class EventResponse<T> {
@@ -7,9 +6,9 @@ export default class EventResponse<T> {
   resolved: boolean = false;
   progress: number = 0;
   logs: string[] = [];
-  onInputAsked?: (screen: ConfigurationBuilder, name: string, description: string) => Promise<ConfigurationFile>;
+  onInputAsked?: (screen: ConfigurationBuilder, name: string, description: string) => Promise<{ [key: string]: boolean | string | number }>;
 
-  constructor(onInputAsked?: (screen: ConfigurationBuilder, name: string, description: string) => Promise<ConfigurationFile>) {
+  constructor(onInputAsked?: (screen: ConfigurationBuilder, name: string, description: string) => Promise<{ [key: string]: boolean | string | number }>) {
     this.onInputAsked = onInputAsked;
   }
   

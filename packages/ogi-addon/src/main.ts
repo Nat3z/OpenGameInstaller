@@ -6,9 +6,9 @@ import EventResponse from './EventResponse';
 import { SearchResult } from './SearchEngine';
 
 export type OGIAddonEvent = 'connect' | 'disconnect' | 'configure' | 'authenticate' | 'search' | 'setup';
-export type OGIAddonClientSentEvent = 'response' | 'authenticate' | 'configure' | 'defer-update' | 'notification';
+export type OGIAddonClientSentEvent = 'response' | 'authenticate' | 'configure' | 'defer-update' | 'notification' | 'input-asked';
 
-export type OGIAddonServerSentEvent = 'authenticate' | 'configure' | 'config-update' | 'search' | 'setup';
+export type OGIAddonServerSentEvent = 'authenticate' | 'configure' | 'config-update' | 'search' | 'setup' | 'response';
 export { ConfigurationBuilder, Configuration, EventResponse, SearchResult };
 const defaultPort = 7654;
 
@@ -21,6 +21,7 @@ export interface ClientSentEventTypes {
     progress: number
   };
   notification: Notification;
+  'input-asked': ConfigurationBuilder;
 }
 
 export interface EventListenerTypes {
@@ -148,6 +149,21 @@ class OGIAddonWSListener {
     this.registerMessageReceiver();
   }
 
+  private async userInputAsked(configBuilt: ConfigurationBuilder, name: string, description: string): Promise<ConfigurationFile> {
+    const config = configBuilt.build(false);
+    const id = Math.random().toString(36).substring(7);
+    this.socket.send(JSON.stringify({
+      event: 'input-asked',
+      args: {
+        config,
+        name,
+        description
+      },
+      id: id
+    }));
+    return await this.waitForResponseFromServer(id);
+  }
+
   private registerMessageReceiver() {
     this.socket.on('message', async (data: string) => {
       const message: WebsocketMessageServer = JSON.parse(data);
@@ -162,14 +178,14 @@ class OGIAddonWSListener {
           }
           break 
         case 'search':
-          let searchResultEvent = new EventResponse<SearchResult[]>();
+          let searchResultEvent = new EventResponse<SearchResult[]>(this.userInputAsked);
           this.eventEmitter.emit('search', message.args, searchResultEvent);
           const searchResult = await this.waitForEventToRespond(searchResultEvent);         
           console.log(searchResult.data)
           this.respondToMessage(message.id!!, searchResult.data);
           break
         case 'setup':
-          let setupEvent = new EventResponse<undefined | null>();
+          let setupEvent = new EventResponse<undefined | null>(this.userInputAsked);
           this.eventEmitter.emit('setup', { path: message.args.path, type: message.args.type, name: message.args.name, usedRealDebrid: message.args.usedRealDebrid, multiPartFiles: message.args.multiPartFiles }, setupEvent);
           const interval = setInterval(() => {
             if (setupEvent.resolved) {
@@ -222,6 +238,26 @@ class OGIAddonWSListener {
       args: response
     }));
     console.log("dispatched response to " + messageID)
+  }
+
+  public waitForResponseFromServer<T>(messageID: string): Promise<T> {
+    return new Promise((resolve) => {
+      const waiter = (data: string) => {
+        const message: WebsocketMessageClient = JSON.parse(data);
+        if (message.event !== 'response') {
+          this.socket.once('message', waiter);
+          return;
+        }
+
+        if (message.id === messageID) {
+          resolve(message.args);
+        }
+        else {
+          this.socket.once('message', waiter);
+        }
+      }
+      this.socket.once('message', waiter);
+    });
   }
 
   public send(event: OGIAddonClientSentEvent, args: Parameters<ClientSentEventTypes[OGIAddonClientSentEvent]>) {

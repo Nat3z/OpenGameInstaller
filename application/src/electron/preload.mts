@@ -43,6 +43,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     minimize: () => ipcRenderer.invoke('app:minimize'),
     axios: (options: AxiosRequestConfig) => ipcRenderer.invoke('app:axios', options),
     searchFor: (query: string) => ipcRenderer.invoke('app:search-id', query),
+    inputSend: (id: string, data: any) => ipcRenderer.invoke('app:screen-input', { id, data }),
   },
   getVersion: () => ipcRenderer.sendSync('get-version'),
   updateAddons: () => ipcRenderer.invoke('update-addons'),
@@ -76,4 +77,8 @@ ipcRenderer.on('torrent:download-error', (_, arg) => {
 
 ipcRenderer.on('torrent:download-complete', (_, arg) => {
   document.dispatchEvent(new CustomEvent('torrent:download-complete', { detail: arg }));
+});
+
+ipcRenderer.on('input-asked', (_, arg) => {
+  document.dispatchEvent(new CustomEvent('input-asked', { detail: arg }));
 });

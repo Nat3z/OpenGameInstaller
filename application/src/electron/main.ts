@@ -14,6 +14,7 @@ import path from 'path';
 import { QBittorrent } from '@ctrl/qbittorrent';
 import { getStoredValue, refreshCached } from './config-util.js';
 import * as JsSearch from 'js-search'
+import { ConfigurationFile } from 'ogi-addon/build/config/ConfigurationBuilder.js';
 const VERSION = app.getVersion();
 
 const __dirname = isDev() ? app.getAppPath() + "/../" : path.parse(app.getPath('exe')).dir;
@@ -65,6 +66,21 @@ export function sendNotification(notification: Notification) {
         return;
     }
     mainWindow.webContents.send('notification', notification);
+}
+
+export let currentScreens = new Map<string, ConfigurationFile>();
+
+export function sendAskForInput(id: string, config: ConfigurationFile, name: string, description: string) {
+    if (!mainWindow) {
+        console.error('Main window is not ready yet. Cannot send ask for input.');
+        return;
+    }
+    if (!mainWindow.webContents) {
+        console.error('Main window web contents is not ready yet. Cannot send ask for input.');
+        return;
+    }
+    mainWindow.webContents.send('input-asked', { id, config, name, description });
+    currentScreens.set(id, config);
 }
 
 function createWindow() {    
@@ -128,7 +144,17 @@ function createWindow() {
         ipcMain.handle('app:search-id', async (_, query) => {
             const results = steamAppSearcher.search(query);
             return results;
-        })
+        });
+        ipcMain.handle('app:screen-input', async (_, data) => {
+            const screen = currentScreens.get(data.id);
+            if (!screen) {
+                return null;
+            }
+            for (const key in data.data) {
+                screen[key] = data.data[key];
+            }
+            return screen;
+        });
 
         ipcMain.on('fs:read', (event, arg) => {
             fs.readFile(arg, 'utf-8', (err, data) => {

@@ -1,3 +1,6 @@
+# 1.4 Branch
+This Branch is devoted to the development of v1.4 of OpenGameInstaller. This update will allow for addons to ask for inputs before performing tasks, as well as add support for game libraries.
+
 # OpenGameInstaller
 A game installation platform built with developers in mind.
 

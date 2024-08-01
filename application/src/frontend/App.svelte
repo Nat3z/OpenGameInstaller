@@ -11,6 +11,7 @@
   import Notifications from "./components/Notifications.svelte";
   import { currentStorePageOpened } from "./store";
   import SteamStorePage from "./components/SteamStorePage.svelte";
+  import InputScreenManager from "./components/InputScreenManager.svelte";
 	type Views = "gameInstall" | "config" | "clientoptions" | "downloader";
 	let selectedView: Views = "gameInstall";
 	// post config to server for each addon
@@ -83,6 +84,7 @@
 		<Notifications />
 
 	</main>
+	<InputScreenManager />
 </div>
 
 {/if}

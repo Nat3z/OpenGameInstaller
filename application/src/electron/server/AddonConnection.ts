@@ -6,7 +6,7 @@ import { clients } from './addon-server.js';
 import { DefferedTasks } from './api/defer.js';
 import { addonSecret } from './constants.js';
 import { existsSync, readFileSync } from 'fs';
-import { sendNotification } from '../main.js';
+import { currentScreens, sendAskForInput, sendNotification } from '../main.js';
 export let isSecurityCheckEnabled = true;
 if (existsSync('./config/option/developer.json')) {
   const developerConfig = JSON.parse(readFileSync('./config/option/developer.json', 'utf-8'));
@@ -97,6 +97,45 @@ export class AddonConnection {
             }
             deferredTask.logs = data.args.logs;
             deferredTask.progress = data.args.progress;
+            break;
+          case 'input-asked':
+            if (!this.addonInfo) {
+              console.error('Client attempted to send input-asked before authentication');
+              this.ws.close(1008, 'Client attempted to send input-asked before authentication');
+              return;
+            }
+            if (!data.args)
+              return;
+            if (!data.args.config || !data.args.name || !data.args.description) {
+              console.error('Client attempted to send input-asked without a configuration');
+              this.ws.close(1008, 'Client attempted to send input-asked without a configuration');
+              return;
+            }
+
+            if (!data.id) {
+              console.error('Client attempted to send input-asked without an ID');
+              this.ws.close(1008, 'Client attempted to send input-asked without an ID');
+              return;
+            }
+            const configurationAsked = data.args.config as ConfigurationFile | undefined;
+            const name = data.args.name as string;
+            const description = data.args.description as string;
+            if (!configurationAsked || !name || !description) {
+              console.error('Client attempted to send input-asked without a configuration');
+              this.ws.close(1008, 'Client attempted to send input-asked without a configuration');
+              return;
+            }
+            // now send the configuration to the client
+            sendAskForInput(data.id, configurationAsked, name, description);
+            const waitForClient = setInterval(() => {
+              const screenData = currentScreens.get(data.id!!);
+              if (screenData) {
+                clearInterval(waitForClient);
+                currentScreens.delete(data.id!!);
+                this.sendEventMessage({ event: 'response', args: screenData, id: data.id!! }, false);
+              }
+            }, 100);
+            
             break;
         }
       });

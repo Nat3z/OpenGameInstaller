@@ -53,6 +53,7 @@ interface Window {
       inputSend: (id: string, data: any) => Promise<void>,
       insertApp: (info: LibraryInfo) => Promise<void>,
       getAllApps: () => Promise<LibraryInfo[]>,
+      launchGame: (appid: string) => Promise<void>,
     },
     updateAddons: () => Promise<void>,
     getVersion: () => string,

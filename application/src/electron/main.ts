@@ -150,6 +150,37 @@ function createWindow() {
             currentScreens.set(data.id, data.data)
             return;
         });
+        ipcMain.handle('app:launch-game', async (_, appid) => {
+            if (!fs.existsSync('./library')) {
+                return;
+            }
+            if (!fs.existsSync('./library/' + appid + '.json')) {
+                return;
+            }
+            const appInfo: LibraryInfo = JSON.parse(fs.readFileSync('./library/' + appid + '.json', 'utf-8'));
+            exec(appInfo.cwd + '\\' + appInfo.launchExecutable, {
+                cwd: appInfo.cwd,
+            }, (err, _, stderr) => {
+                if (err) {
+                    console.error(err);
+                    sendNotification({
+                        message: 'Failed to launch game',
+                        id: Math.random().toString(36).substring(7),
+                        type: 'error'
+                    });
+                    return;
+                }
+                if (stderr) {
+                    console.error(stderr);
+                    sendNotification({
+                        message: 'Failed to launch game',
+                        id: Math.random().toString(36).substring(7),
+                        type: 'error'
+                    });
+                    return;
+                }
+            });
+        });
 
         
         ipcMain.handle('app:insert-app', async (_, data: LibraryInfo) => {

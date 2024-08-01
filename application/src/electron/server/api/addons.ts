@@ -84,7 +84,7 @@ app.post('/:addonID/setup-app', async (req, res) => {
   }
 
   const deferrableTask = new DeferrableTask(async () => {
-    const data = await client.sendEventMessage({ event: 'setup', args: { path: req.body.path, type: req.body.type, usedRealDebrid: req.body.usedRealDebrid, name: req.body.name, multiFiles: req.body.multiPartFiles, deferID: deferrableTask.id!! } });
+    const data = await client.sendEventMessage({ event: 'setup', args: { path: req.body.path, steamAppID: req.body.steamAppID, type: req.body.type, usedRealDebrid: req.body.usedRealDebrid, name: req.body.name, multiFiles: req.body.multiPartFiles, deferID: deferrableTask.id!! } });
     return data.args;
   }, client.addonInfo.id);
 

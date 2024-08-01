@@ -15,6 +15,7 @@ import { QBittorrent } from '@ctrl/qbittorrent';
 import { getStoredValue, refreshCached } from './config-util.js';
 import * as JsSearch from 'js-search'
 import { ConfigurationFile } from 'ogi-addon/build/config/ConfigurationBuilder.js';
+import { LibraryInfo } from 'ogi-addon';
 const VERSION = app.getVersion();
 
 const __dirname = isDev() ? app.getAppPath() + "/../" : path.parse(app.getPath('exe')).dir;
@@ -148,6 +149,28 @@ function createWindow() {
         ipcMain.handle('app:screen-input', async (_, data) => {
             currentScreens.set(data.id, data.data)
             return;
+        });
+
+        
+        ipcMain.handle('app:insert-app', async (_, data: LibraryInfo) => {
+            if (!fs.existsSync('./library')) 
+                fs.mkdirSync('./library');
+
+            const appPath = `./library/${data.steamAppID}.json`;
+            fs.writeFileSync(appPath, JSON.stringify(data, null, 2));
+            return;
+        });
+        ipcMain.handle('app:get-all-apps', async () => {
+            if (!fs.existsSync('./library')) {
+                return [];
+            }
+            const files = fs.readdirSync('./library');
+            const apps: LibraryInfo[] = [];
+            for (const file of files) {
+                const data = fs.readFileSync(`./library/${file}`, 'utf-8');
+                apps.push(JSON.parse(data));
+            }
+            return apps;
         });
 
         ipcMain.on('fs:read', (event, arg) => {

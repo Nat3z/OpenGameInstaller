@@ -86,7 +86,7 @@ addon.on('search', ({ text, type }, event) => {
   ]);
 });
 
-addon.on('setup', ({ path, type, name, usedRealDebrid, multiPartFiles }, event) => {
+addon.on('setup', ({ path, type, name, usedRealDebrid, steamAppID, multiPartFiles }, event) => {
   event.defer();
   event.log(`
 path: ${path}
@@ -102,7 +102,14 @@ multiPartFiles: ${multiPartFiles}
   ).then((input) => {
     event.log(`Code: ${input.code}`);
     setTimeout(() => {
-      event.complete();
+      event.resolve({
+        cwd: path,
+        capsuleImage: `https://steamcdn-a.akamaihd.net/steam/apps/${steamAppID}/library_600x900_2x.jpg`,
+        launchExecutable: 'test.exe',
+        name: name,
+        steamAppID: steamAppID,
+        version: '1.0.0'
+      })
     }, 5000);
   });
 });

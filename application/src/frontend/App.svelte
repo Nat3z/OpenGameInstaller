@@ -12,8 +12,9 @@
   import { currentStorePageOpened } from "./store";
   import SteamStorePage from "./components/SteamStorePage.svelte";
   import InputScreenManager from "./components/InputScreenManager.svelte";
-	type Views = "gameInstall" | "config" | "clientoptions" | "downloader";
-	let selectedView: Views = "gameInstall";
+  import LibraryView from "./views/LibraryView.svelte";
+	type Views = "gameInstall" | "config" | "clientoptions" | "downloader" | "library";
+	let selectedView: Views = "library";
 	// post config to server for each addon
 
 	let finishedOOBE = true;
@@ -29,9 +30,39 @@
 			loading = false;
 		}, 100);
 	});
+
+	let heldPageOpened: number | undefined;
+	currentStorePageOpened.subscribe((value) => {
+		if (value) {
+			heldPageOpened = value;
+		}
+	});
+
+	let isStoreOpen = false;
+	currentStorePageOpened.subscribe((value) => {
+		if (value) {
+			heldPageOpened = value;
+			isStoreOpen = true;
+		}
+	});
 	function setView(view: Views) {
-		currentStorePageOpened.set(undefined)
+		if (isStoreOpen && selectedView === 'gameInstall' && view === 'gameInstall' && heldPageOpened) {
+			isStoreOpen = false;
+			currentStorePageOpened.set(undefined);
+			selectedView = view;
+			heldPageOpened = undefined;
+			return;
+		}
+
+		if (view === 'gameInstall' && heldPageOpened) {
+			currentStorePageOpened.set(heldPageOpened);
+			selectedView = view;
+			isStoreOpen = true;
+			return;
+		}
 		selectedView = view;
+		currentStorePageOpened.set(undefined)
+		isStoreOpen = false;
 	}
 </script>
 
@@ -49,6 +80,10 @@
 		<button on:click={() => setView('gameInstall')} data-selected-header={selectedView === "gameInstall"}>
 			<img src="./search.svg" alt="Search" />
 			<label>Search</label>
+		</button>
+		<button on:click={() => setView('library')} data-selected-header={selectedView === "library"}>
+			<img src="./library.svg" alt="Library" />
+			<label>Library</label>
 		</button>
 		<button on:click={() => setView('downloader')} data-selected-header={selectedView === "downloader"}>
 			<img src="./download.svg" alt="Downloads" />
@@ -75,6 +110,8 @@
 				<ClientOptionsView />
 			{:else if selectedView === "downloader"}
 				<DownloadView />
+			{:else if selectedView === "library"}
+				<LibraryView />
 			{:else}
 				<p>Unknown view</p>
 			{/if}

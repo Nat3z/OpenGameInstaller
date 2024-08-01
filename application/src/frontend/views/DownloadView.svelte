@@ -166,7 +166,7 @@
 	}
 
   .downloads img {
-    @apply w-52 h-24 rounded-lg;
+    @apply rounded-lg w-1/4 h-full;
   }
 
   .downloads h2 {

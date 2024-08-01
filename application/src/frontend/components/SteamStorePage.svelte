@@ -39,7 +39,7 @@
 					...data.map((result: SearchResult) => {
 						return {
 							...result,
-              coverURL: gameData.capsule_image,
+              coverURL: `https://steamcdn-a.akamaihd.net/steam/apps/${appID}/library_600x900_2x.jpg`,
               name: gameData.name,
 							addonSource: addon.id
 						}
@@ -50,9 +50,9 @@
   });
 </script>
 
-<main class="flex w-full h-full z-10 bg-white">
+<main class="flex w-full h-full bg-white">
   {#if loading}
-    <p>Loading...</p>
+    <p class="py-2 px-4">Loading...</p>
   {:else}
     <div class="flex justify-start flex-col p-4 gap-2 w-full overflow-y-auto h-full">
       <div class="flex flex-col object-cover relative gap-2">

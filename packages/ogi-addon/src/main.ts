@@ -11,6 +11,7 @@ export type OGIAddonClientSentEvent = 'response' | 'authenticate' | 'configure' 
 export type OGIAddonServerSentEvent = 'authenticate' | 'configure' | 'config-update' | 'search' | 'setup' | 'response';
 export { ConfigurationBuilder, Configuration, EventResponse, SearchResult };
 const defaultPort = 7654;
+const version = process.env.npm_package_version;
 
 export interface ClientSentEventTypes {
   response: any;
@@ -30,7 +31,7 @@ export interface EventListenerTypes {
   configure: (config: ConfigurationBuilder) => ConfigurationBuilder;
   response: (response: any) => void;
   authenticate: (config: any) => void;
-  search: (query: { type: 'steamapp' | 'query', text: string }, event: EventResponse<SearchResult[]>) => void;
+  search: (query: { type: 'steamapp', text: string }, event: EventResponse<SearchResult[]>) => void;
   setup: (
     data: { 
       path: string, 
@@ -41,7 +42,8 @@ export interface EventListenerTypes {
         name: string,
         downloadURL: string
       }[],
-    }, event: EventResponse<undefined | null>
+      steamAppID: number
+    }, event: EventResponse<LibraryInfo>
   ) => void;
 }
 
@@ -87,6 +89,15 @@ export default class OGIAddon {
     this.addonWSListener.send('notification', [ notification ]);
   }
 }
+
+export interface LibraryInfo {
+  name: string;
+  version: string;
+  cwd: string;
+  steamAppID: number;
+  launchExecutable: string;
+  capsuleImage: string;
+}
 interface Notification {
   type: 'warning' | 'error' | 'info' | 'success';
   message: string;
@@ -106,13 +117,15 @@ class OGIAddonWSListener {
     this.socket = new ws('ws://localhost:' + defaultPort);
     this.socket.on('open', () => {
       console.log('Connected to OGI Addon Server');
+      console.log('OGI Addon Server Version:', version);
 
       // Authenticate with OGI Addon Server
       this.socket.send(JSON.stringify({
         event: 'authenticate',
         args: {
           ...this.addon.addonInfo,
-          secret: process.argv[process.argv.length - 1].split('=')[1]
+          secret: process.argv[process.argv.length - 1].split('=')[1],
+          ogiVersion: version
         }
       }));
 
@@ -189,8 +202,8 @@ class OGIAddonWSListener {
           this.respondToMessage(message.id!!, searchResult.data);
           break
         case 'setup':
-          let setupEvent = new EventResponse<undefined | null>((screen, name, description) => this.userInputAsked(screen, name, description, this.socket));
-          this.eventEmitter.emit('setup', { path: message.args.path, type: message.args.type, name: message.args.name, usedRealDebrid: message.args.usedRealDebrid, multiPartFiles: message.args.multiPartFiles }, setupEvent);
+          let setupEvent = new EventResponse<LibraryInfo>((screen, name, description) => this.userInputAsked(screen, name, description, this.socket));
+          this.eventEmitter.emit('setup', { path: message.args.path, steamAppID: message.args.steamAppID, type: message.args.type, name: message.args.name, usedRealDebrid: message.args.usedRealDebrid, multiPartFiles: message.args.multiPartFiles }, setupEvent);
           const interval = setInterval(() => {
             if (setupEvent.resolved) {
               clearInterval(interval);

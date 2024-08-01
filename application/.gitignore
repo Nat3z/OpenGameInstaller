@@ -28,3 +28,4 @@ config
 temp.torrent
 addons/
 steam-apps.json
+library/

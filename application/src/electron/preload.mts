@@ -1,5 +1,6 @@
 import { AxiosRequestConfig } from 'axios';
 import { contextBridge, ipcRenderer } from 'electron';
+import { LibraryInfo } from 'ogi-addon';
 import type { $Hosts } from 'real-debrid-js';
 
 contextBridge.exposeInMainWorld('electronAPI', {
@@ -44,6 +45,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     axios: (options: AxiosRequestConfig) => ipcRenderer.invoke('app:axios', options),
     searchFor: (query: string) => ipcRenderer.invoke('app:search-id', query),
     inputSend: (id: string, data: any) => ipcRenderer.invoke('app:screen-input', { id, data }),
+    insertApp: (info: LibraryInfo) => ipcRenderer.invoke('app:insert-app', info),
+    getAllApps: () => ipcRenderer.invoke('app:get-all-apps'),
   },
   getVersion: () => ipcRenderer.sendSync('get-version'),
   updateAddons: () => ipcRenderer.invoke('update-addons'),

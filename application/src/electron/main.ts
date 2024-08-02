@@ -1201,7 +1201,8 @@ EnableFSMonitor=Disabled
                             });
                             console.error(err);
                             failed = true;
-                            return reject();
+                            reject();
+                            return;
                         }
                         console.log(stdout);
 

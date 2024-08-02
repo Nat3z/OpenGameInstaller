@@ -42,8 +42,10 @@
 				viewOpenedWhenChanged.set($selectedView);
 		}
 	});
+	let exitPlayPage: () => void;
 	function setView(view: Views) {
 		iTriggeredIt = true;
+		
     if (isStoreOpen && $selectedView === view) {
       // If the store is open and the same tab is clicked again, close the store
       isStoreOpen = false;
@@ -59,10 +61,14 @@
 			console.log("Switching back to tab that had the store")
     } else {
       // Otherwise, just switch to the new tab
-			selectedView.set(view);
-      currentStorePageOpened.set(undefined);
-      isStoreOpen = false;
-			console.log("Otherwise, just switch to the new tab");
+			if ($selectedView === view && view === "library") {
+				exitPlayPage();
+			} else {
+				selectedView.set(view);
+				currentStorePageOpened.set(undefined);
+				isStoreOpen = false;
+				console.log("Otherwise, just switch to the new tab");
+			}
     }
 		iTriggeredIt = false;
   }
@@ -113,7 +119,7 @@
 			{:else if $selectedView === "downloader"}
 				<DownloadView />
 			{:else if $selectedView === "library"}
-				<LibraryView />
+				<LibraryView bind:exitPlayPage={exitPlayPage} />
 			{:else}
 				<p>Unknown view</p>
 			{/if}

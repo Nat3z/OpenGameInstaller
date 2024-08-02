@@ -30,6 +30,18 @@
     playButton.disabled = true;
     playButton.querySelector('p')!!.textContent = "PLAYING";
     playButton.querySelector('svg')!!.style.display = "none";
+    if (!window.electronAPI.fs.exists('./internals')) {
+      window.electronAPI.fs.mkdir('./internals');
+      window.electronAPI.fs.write('./internals/apps.json', JSON.stringify([], null, 2));
+    }
+    if (window.electronAPI.fs.exists('./internals/apps.json')) {
+      let appsOrdered: number[] = JSON.parse(window.electronAPI.fs.read('./internals/apps.json'));
+      // remove the appID from the list
+      appsOrdered = appsOrdered.filter((id) => id !== appID);
+      // add it to the front
+      appsOrdered.unshift(appID);
+      window.electronAPI.fs.write('./internals/apps.json', JSON.stringify(appsOrdered, null, 2));
+    }
   }
   const unsubscribe = gamesLaunched.subscribe((games) => {
       if (!playButton) return;

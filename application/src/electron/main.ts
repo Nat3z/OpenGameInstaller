@@ -158,9 +158,13 @@ function createWindow() {
             if (!fs.existsSync('./library')) {
                 return;
             }
+            if (!fs.existsSync('./internals')) {
+                fs.mkdirSync('./internals');
+            }
             if (!fs.existsSync('./library/' + appid + '.json')) {
                 return;
             }
+            
             const appInfo: LibraryInfo = JSON.parse(fs.readFileSync('./library/' + appid + '.json', 'utf-8'));
             const args = appInfo.launchArguments ?? ''
             const spawnedItem = spawn(appInfo.cwd + '\\' + appInfo.launchExecutable, [args], {
@@ -191,6 +195,16 @@ function createWindow() {
 
             const appPath = `./library/${data.steamAppID}.json`;
             fs.writeFileSync(appPath, JSON.stringify(data, null, 2));
+            if (!fs.existsSync('./internals')) {
+                fs.mkdirSync('./internals');
+            }
+            // write to the internal file
+            if (!fs.existsSync('./internals/apps.json')) {
+                fs.writeFileSync('./internals/apps.json', JSON.stringify([], null, 2));
+            }
+            const appsInternal = JSON.parse(fs.readFileSync('./internals/apps.json', 'utf-8'));
+            appsInternal.push(data.steamAppID);
+            fs.writeFileSync('./internals/apps.json', JSON.stringify(appsInternal, null, 2));
             return;
         });
         ipcMain.handle('app:get-all-apps', async () => {

@@ -3,10 +3,31 @@
   import { onMount } from "svelte";
   import PlayPage from "../components/PlayPage.svelte";
   let library: LibraryInfo[] = [];
-  let selectedApp: LibraryInfo;
+  let selectedApp: LibraryInfo | undefined;
+  export const exitPlayPage = () => {
+    selectedApp = undefined;
+  }
 
   onMount(async () => {
-    library = await window.electronAPI.app.getAllApps();
+    const apps = await window.electronAPI.app.getAllApps();
+    
+    if (window.electronAPI.fs.exists('./internals/apps.json')) {
+      const appsOrdered: number[] = JSON.parse(window.electronAPI.fs.read('./internals/apps.json'));
+      let libraryWithUndefined = appsOrdered.map((id) => apps.find((app) => app.steamAppID === id) ?? undefined);
+      // get rid of undefined values
+      library = libraryWithUndefined.filter((app) => app !== undefined) as LibraryInfo[];
+      // see if other apps are not in the list, if so add them
+      apps.forEach((app) => {
+        if (!library.find((libApp) => libApp.steamAppID === app.steamAppID)) {
+          console.log("Adding app to library: " + app.name);
+          library.push(app);
+        }
+      });
+    }
+    else {
+      library = apps;
+    }
+
   });
 </script>
 

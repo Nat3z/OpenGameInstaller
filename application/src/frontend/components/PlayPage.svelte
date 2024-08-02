@@ -2,7 +2,7 @@
   import type { LibraryInfo } from "ogi-addon";
   import PlayIcon from "../Icons/PlayIcon.svelte";
   import { currentStorePageOpened, gamesLaunched } from "../store";
-  import { onMount } from "svelte";
+  import { onMount, onDestroy } from "svelte";
   import SettingsFilled from "../Icons/SettingsFilled.svelte";
   import GameConfiguration from "./GameConfiguration.svelte";
 
@@ -31,9 +31,8 @@
     playButton.querySelector('p')!!.textContent = "PLAYING";
     playButton.querySelector('svg')!!.style.display = "none";
   }
-
-  onMount(() => {
-    gamesLaunched.subscribe((games) => {
+  const unsubscribe = gamesLaunched.subscribe((games) => {
+      if (!playButton) return;
       // wait for playButton to be defined
       if (!games[appID]) {
         playButton.disabled = false;
@@ -50,7 +49,9 @@
         playButton.querySelector('p')!!.textContent = "ERROR";
         playButton.querySelector('svg')!!.style.display = "none";
       }
-    }); 
+  }); 
+  onMount(() => {
+    
   });
   let openedGameConfiguration = false;
   function openGameConfiguration() {
@@ -66,12 +67,12 @@
     libraryInfo.launchArguments = data.launchArguments;
     window.electronAPI.fs.write('./library/' + appID + '.json', JSON.stringify(libraryInfo, null, 2));   
   }
-  
+  onDestroy(unsubscribe);
 </script>
 {#if openedGameConfiguration}
   <GameConfiguration gameInfo={libraryInfo} onFinish={onFinish} />
 {/if}
-<div class="flex flex-col top-0 left-0 absolute w-full h-full bg-white z-[2] animate-fade-in" >
+<div class="flex flex-col top-0 left-0 absolute w-full h-full bg-white z-[2] animate-fade-in-pop-fast" >
   <div class="relative flex justify-center items-center w-full">
     <img src={`https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/${appID}/library_hero.jpg`} alt="header" class="w-full h-full" style="position: relative; z-index: 1;" />
     {#await doesLinkExist(`https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/${appID}/logo_2x.png`)}

@@ -2,7 +2,7 @@
   // fetch the Steam store page
   import { onMount } from 'svelte';
   import { fetchAddonsWithConfigure, safeFetch, startDownload, type GameData, type SearchResultWithAddon } from '../utils';
-  import { currentStorePageOpened, selectedView, viewOpenedWhenChanged } from '../store';
+  import { createNotification, currentStorePageOpened, selectedView, viewOpenedWhenChanged } from '../store';
   import type { SearchResult } from 'ogi-addon';
   export let appID: number;
 
@@ -13,47 +13,58 @@
 
 	let alreadyOwns = window.electronAPI.fs.exists('./library/' + appID + '.json');
   onMount(async () => {
-    const response = await window.electronAPI.app.axios({
-      method: 'get',
-      url: 'https://store.steampowered.com/api/appdetails?appids=' + appID,
-      headers: {
-        'Accept-Language': 'en-US,en;q=0.5'
-      }
-    });
-    if (!response.data[appID].success) {
-      console.error('Failed to fetch Steam store page');
-      return;
-    }
-    gameData = response.data[appID].data;
-    loading = false;
-    // fetch addons and see if they have a download
-
-		let addons = await fetchAddonsWithConfigure();
-
-    queryingSources = true;
-    let sourcesQueries = 0;
-    if (alreadyOwns) {
-      queryingSources = false;
-      return;
-    }
-    for (const addon of addons) {
-			safeFetch("http://localhost:7654/addons/" + addon.id + "/search?steamappid=" + appID, { consume: 'json' }).then((data) => {
-        sourcesQueries++;
-        if (sourcesQueries === addons.length) {
-          queryingSources = false;
+    try {
+      const response = await window.electronAPI.app.axios({
+        method: 'get',
+        url: 'https://store.steampowered.com/api/appdetails?appids=' + appID,
+        headers: {
+          'Accept-Language': 'en-US,en;q=0.5'
         }
-				results = [ ...results, 
-					...data.map((result: SearchResult) => {
-						return {
-							...result,
-              coverURL: `https://steamcdn-a.akamaihd.net/steam/apps/${appID}/library_600x900_2x.jpg`,
-              name: gameData.name,
-							addonSource: addon.id
-						}
-					})
-				 ];
-			});
-		}
+      });
+      if (!response.data[appID].success) {
+        console.error('Failed to fetch Steam store page');
+        return;
+      }
+      gameData = response.data[appID].data;
+      loading = false;
+      // fetch addons and see if they have a download
+
+      let addons = await fetchAddonsWithConfigure();
+
+      queryingSources = true;
+      let sourcesQueries = 0;
+      if (alreadyOwns) {
+        queryingSources = false;
+        return;
+      }
+      for (const addon of addons) {
+        safeFetch("http://localhost:7654/addons/" + addon.id + "/search?steamappid=" + appID, { consume: 'json' }).then((data) => {
+          sourcesQueries++;
+          if (sourcesQueries === addons.length) {
+            queryingSources = false;
+          }
+          results = [ ...results, 
+            ...data.map((result: SearchResult) => {
+              return {
+                ...result,
+                coverURL: `https://steamcdn-a.akamaihd.net/steam/apps/${appID}/library_600x900_2x.jpg`,
+                name: gameData.name,
+                addonSource: addon.id
+              }
+            })
+          ];
+        });
+      }
+    } catch (ex) {
+      console.error(ex);
+      createNotification({
+        id: Math.random().toString(36).substring(7),
+        message: 'Failed to fetch Steam store page',
+        type: 'error'
+      });
+      currentStorePageOpened.set(undefined);
+    }
+
   });
 
   function playGame() {
@@ -62,7 +73,7 @@
     currentStorePageOpened.set(undefined);
   }
 </script>
-
+{#if gameData}
 <main class="flex w-full h-full bg-white">
   {#if loading}
     <p class="py-2 px-4">Loading...</p>
@@ -73,9 +84,9 @@
         <img src={gameData.header_image} alt={gameData.name} class="relative w-full rounded object-cover z-0" />
           <h1 class="text-3xl font-archivo font-medium">{gameData.name}</h1>
           <h2 class="text-sm">
-            <p class="text-gray-500 inline">Developer:</p> {gameData.developers.join(', ')}
+            <p class="text-gray-500 inline">Developer:</p> {(gameData.developers ?? []).join(', ')}
             <span class="mx-2"></span>
-            <p class="text-gray-500 inline">Publisher:</p> {gameData.publishers.join(', ')}
+            <p class="text-gray-500 inline">Publisher:</p> {(gameData.publishers ?? []).join(', ')}
             <span class="block"></span>
             <p class="text-gray-500 inline">Release Date:</p> {gameData.release_date.date}
           </h2>
@@ -127,7 +138,7 @@
     </div>
   {/if}
 </main>
-
+{/if}
 <style global>
   #g-descript {
     @apply p-4 bg-slate-100 rounded flex flex-col gap-2; 

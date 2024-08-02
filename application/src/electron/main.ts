@@ -139,8 +139,12 @@ function createWindow() {
             mainWindow?.minimize();
         });
         ipcMain.handle('app:axios', async (_, options) => {
-            const response = await axios(options);
-            return { data: response.data, status: response.status, success: response.status >= 200 && response.status < 300 };
+            try {
+                const response = await axios(options);
+                return { data: response.data, status: response.status, success: response.status >= 200 && response.status < 300 };
+            } catch (err) {
+                return { data: err.response.data, status: err.response.status, success: false };
+            }
         });
         ipcMain.handle('app:search-id', async (_, query) => {
             const results = steamAppSearcher.search(query);

@@ -46,44 +46,6 @@ addon.on('search', ({ text, type }, event) => {
     return;
   }
   addon.notify({ type: 'info', message: 'Searching...', id: 'search' });
-  event.resolve([
-    { 
-      name: "Magnet Link Test",
-      description: addon.config.getStringValue('testOption') || 'No description',
-      coverURL: 'https://dummyimage.com/375x500/968d96/ffffff',
-      downloadSize: 100,
-      downloadURL: 'magnet:?xt=urn:btih:dd8255ecdc7ca55fb0bbf81323d87062db1f6d1c&dn=Big+Buck+Bunny&tr=udp%3A%2F%2Fexplodie.org%3A6969&tr=udp%3A%2F%2Ftracker.coppersurfer.tk%3A6969&tr=udp%3A%2F%2Ftracker.empire-js.us%3A1337&tr=udp%3A%2F%2Ftracker.leechers-paradise.org%3A6969&tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337&tr=wss%3A%2F%2Ftracker.btorrent.xyz&tr=wss%3A%2F%2Ftracker.fastcast.nz&tr=wss%3A%2F%2Ftracker.openwebtorrent.com&ws=https%3A%2F%2Fwebtorrent.io%2Ftorrents%2F&xs=https%3A%2F%2Fwebtorrent.io%2Ftorrents%2Fbig-buck-bunny.torrent',
-      downloadType: 'magnet',
-      filename: 'Big Buck Bunny'
-    },
-    {
-      name: "Torrent Test",
-      description: addon.config.getStringValue('testOption') || 'No description',
-      coverURL: 'https://dummyimage.com/375x500/968d96/ffffff',
-      downloadURL: "https://webtorrent.io/torrents/tears-of-steel.torrent",
-      downloadSize: 100,
-      downloadType: 'torrent',
-      filename: 'Tears of Steel'
-    },
-    {
-      name: "Direct Download Test",
-      description: addon.config.getStringValue('testOption') || 'No description',
-      coverURL: 'https://dummyimage.com/375x500/968d96/ffffff',
-      steamAppID: 1868140,
-      downloadSize: 100,
-      downloadType: 'direct',
-      files: [
-        {
-          name: 'otherfile.zip',
-          downloadURL: 'https://github.com/Nat3z/calendar-prod/archive/refs/heads/master.zip'
-        },
-        {
-          name: 'file.zip',
-          downloadURL: 'https://github.com/Nat3z/mc-discord-bot/archive/refs/heads/master.zip'
-        }
-      ]
-    }
-  ]);
 });
 
 addon.on('setup', ({ path, type, name, usedRealDebrid, steamAppID, multiPartFiles }, event) => {

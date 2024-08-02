@@ -1,5 +1,6 @@
 <script lang="ts">
   import { type BooleanOption, type ConfigurationFile, type ConfigurationOption, type NumberOption, type StringOption } from "ogi-addon/config";
+  import { writable, type Writable } from "svelte/store";
   function isStringOption(option: ConfigurationOption): option is StringOption {
     return option.type === 'string';
   }
@@ -20,15 +21,12 @@
   let screenID: string | undefined;
   let screenName: string | undefined = undefined;
   let screenDescription: string | undefined = undefined;
-
+  let listOfScreensQueued: Writable<{ config: ConfigurationFile, id: string, name: string, description: string }[]> = writable([]);
   document.addEventListener('input-asked', (e) => {
     if (!isCustomEvent(e)) return;
     const { detail } = e;
     const { config, id, name, description }: { config: ConfigurationFile, id: string, name: string, description: string } = detail;
-    screenRendering = config;
-    screenID = id;
-    screenName = name;
-    screenDescription = description;
+    listOfScreensQueued.update((screens) => screens.concat({ config, id, name, description }));
   });
   
   function updateInputNum(event: Event) {
@@ -37,6 +35,17 @@
       element.parentElement!!.querySelector("p")!!.textContent = element.value;
     }
   }
+
+  listOfScreensQueued.subscribe((screens) => {
+    if (screens.length === 0) return;
+    if (screenRendering) return;
+    const screen = screens[0];
+    screenRendering = screen.config;
+    screenID = screen.id;
+    screenName = screen.name;
+    screenDescription = screen.description;
+    listOfScreensQueued.update((screens) => screens.slice(1));
+  });
 
   function pushChanges() {
     const inputs = document.querySelectorAll("[data-input]");
@@ -50,6 +59,18 @@
     // delete the screen
     screenRendering = undefined;
     screenID = undefined;
+
+    if ($listOfScreensQueued.length !== 0) {
+      listOfScreensQueued.update((screens) => {
+        if (screens.length === 0) return [];
+        const screen = screens[0];
+        screenRendering = screen.config;
+        screenID = screen.id;
+        screenName = screen.name;
+        screenDescription = screen.description;
+        return screens.slice(1);
+      });
+    }
   }
 
   function browseForFolder(event: MouseEvent, type: 'file' | 'folder') {

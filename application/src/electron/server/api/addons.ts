@@ -76,7 +76,7 @@ app.post('/:addonID/setup-app', async (req, res) => {
   if (!req.body || req.body.name === undefined || typeof req.body.name !== 'string') {
     return res.status(400).send('No name provided');
   }
-  if (req.body.steamAppID === undefined || typeof req.body.steamAppID !== 'number') {
+  if (req.body.steamAppID === undefined) {
     return res.status(400).send('No steamAppID provided');
   }
   if (!req.body || req.body.usedRealDebrid === undefined || typeof req.body.usedRealDebrid !== 'boolean') {

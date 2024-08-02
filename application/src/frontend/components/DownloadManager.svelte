@@ -97,7 +97,8 @@
         path: outputDir,
         type: downloadedItem.downloadType,
         name: downloadedItem.name,
-        usedRealDebrid: downloadedItem.usedRealDebrid
+        usedRealDebrid: downloadedItem.usedRealDebrid,
+        steamAppID: downloadedItem.steamAppID
       }),
       onLogs: (log) => {
         document.dispatchEvent(new CustomEvent('setup:log', {

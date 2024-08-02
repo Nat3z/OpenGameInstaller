@@ -96,6 +96,7 @@ export function fetchAddonsWithConfigure() {
   });
 }
 export async function safeFetch(url: string, options: ConsumableRequest = { consume: 'json' }) {
+	console.log(url, options.body)
   return new Promise<any>((resolve, reject) => {
     // remove the functions on the options object
     const fetchOptions = { ...options };
@@ -107,7 +108,8 @@ export async function safeFetch(url: string, options: ConsumableRequest = { cons
       ...fetchOptions,
       headers: {
         ...fetchOptions.headers,
-        'Authorization': getSecret()!!
+        'Authorization': getSecret()!!,
+				'Cache-Control': 'no-store'
       }
     }).then(async (response) => {
       if (!response.ok) {
@@ -229,6 +231,21 @@ export async function startDownload(result: SearchResultWithAddon, event: MouseE
 				return;
 			}
 			const downloadID = await window.electronAPI.ddl.download([ { link: download.download, path: getDownloadPath() + "\\" + download.filename } ]);
+			if (downloadID === null) {
+				if (htmlButton) {
+					htmlButton.textContent = "Download";
+					htmlButton.disabled = false;
+				}
+				currentDownloads.update((downloads) => {
+					const matchingDownload = downloads.find((d) => d.id === localID + '')!!;
+					matchingDownload.status = 'error';
+					matchingDownload.usedRealDebrid = true;
+					downloads[downloads.indexOf(matchingDownload)] = matchingDownload;
+					return downloads;
+				});
+
+				return;
+			}
 			currentDownloads.update((downloads) => {
 				const matchingDownload = downloads.find((d) => d.id === localID + '')!!;
 				matchingDownload.status = 'downloading';
@@ -298,6 +315,21 @@ export async function startDownload(result: SearchResultWithAddon, event: MouseE
 			}
 
 			const downloadID = await window.electronAPI.ddl.download([ { link: download.download, path: getDownloadPath() + "\\" + download.filename } ]);
+			if (downloadID === null) {
+				if (htmlButton) {
+					htmlButton.textContent = "Download";
+					htmlButton.disabled = false;
+				}
+				currentDownloads.update((downloads) => {
+					const matchingDownload = downloads.find((d) => d.id === localID + '')!!;
+					matchingDownload.status = 'error';
+					matchingDownload.usedRealDebrid = true;
+					downloads[downloads.indexOf(matchingDownload)] = matchingDownload;
+					return downloads;
+				});
+
+				return;
+			}
 			currentDownloads.update((downloads) => {
 				const matchingDownload = downloads.find((d) => d.id === localID + '')!!
 				matchingDownload.status = 'downloading';
@@ -395,7 +427,7 @@ export async function startDownload(result: SearchResultWithAddon, event: MouseE
 			currentDownloads.update((downloads) => {
 				return [...downloads, { 
 					id: downloadID, 
-					status: 'downloading', 
+					status: 'downloading',
 					downloadPath: (result.files ? getDownloadPath() + "\\" : getDownloadPath() + "\\" + result.filename), 
 					downloadSpeed: 0,
 					usedRealDebrid: false,

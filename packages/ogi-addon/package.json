@@ -31,7 +31,7 @@
     "email": "me@nat3z.com",
     "url": "https://nat3z.com/"
   },
-  "version": "0.2.1",
+  "version": "0.3.0",
   "dependencies": {
     "ws": "^8.4.0",
     "zod": "^3.23.8"

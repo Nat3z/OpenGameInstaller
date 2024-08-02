@@ -54,6 +54,7 @@ interface Window {
       insertApp: (info: LibraryInfo) => Promise<void>,
       getAllApps: () => Promise<LibraryInfo[]>,
       launchGame: (appid: string) => Promise<void>,
+      removeApp: (appid: number) => Promise<void>,
     },
     updateAddons: () => Promise<void>,
     getVersion: () => string,

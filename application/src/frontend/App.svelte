@@ -186,9 +186,9 @@
 		@apply bg-slate-200;
 	}
 	nav button img {
-		@apply w-6 h-6;
+		@apply w-6 h-6 pointer-events-none;
 	}
 	nav button label {
-
+		@apply pointer-events-none;
 	}
 </style>

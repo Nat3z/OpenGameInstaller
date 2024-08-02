@@ -5,7 +5,7 @@ import { app, BrowserWindow, dialog, globalShortcut, ipcMain, shell } from 'elec
 import fs, { ReadStream } from 'fs';
 import { readFile } from 'fs/promises';
 import RealDebrid from 'real-debrid-js';
-import { exec, spawn } from 'child_process';
+import { exec } from 'child_process';
 import { processes, setupAddon, startAddon } from './addon-init-configure.js';
 import { isSecurityCheckEnabled } from './server/AddonConnection.js';
 import axios from 'axios';
@@ -167,9 +167,8 @@ function createWindow() {
             
             const appInfo: LibraryInfo = JSON.parse(fs.readFileSync('./library/' + appid + '.json', 'utf-8'));
             const args = appInfo.launchArguments ?? ''
-            const spawnedItem = spawn(appInfo.cwd + '\\' + appInfo.launchExecutable, [args], {
-                cwd: appInfo.cwd,
-                detached: true
+            const spawnedItem = exec(appInfo.launchExecutable + " " + args, {
+                cwd: appInfo.cwd
             })
             spawnedItem.on('error', () => {
                 sendNotification({
@@ -186,6 +185,26 @@ function createWindow() {
             });
 
             mainWindow?.webContents.send('game:launch', { id: appInfo.steamAppID });
+        });
+
+        ipcMain.handle('app:remove-app', async (_, appid: number) => {
+            if (!fs.existsSync('./library')) {
+                return;
+            }
+            if (!fs.existsSync('./internals')) {
+                fs.mkdirSync('./internals');
+            }
+            if (!fs.existsSync('./library/' + appid + '.json')) {
+                return;
+            }
+            fs.unlinkSync('./library/' + appid + '.json');
+            const appsInternal = JSON.parse(fs.readFileSync('./internals/apps.json', 'utf-8'));
+            const index = appsInternal.indexOf(appid);
+            if (index > -1) {
+                appsInternal.splice(index, 1);
+            }
+            fs.writeFileSync('./internals/apps.json', JSON.stringify(appsInternal, null, 2));
+            return;
         });
 
         

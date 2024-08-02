@@ -8,6 +8,7 @@
 
   export let appID: number;
   export let libraryInfo: LibraryInfo;
+  export let exitPlayPage: () => void;
   async function doesLinkExist(url: string) {
     const response = await window.electronAPI.app.axios({
       method: 'get',
@@ -82,7 +83,7 @@
   onDestroy(unsubscribe);
 </script>
 {#if openedGameConfiguration}
-  <GameConfiguration gameInfo={libraryInfo} onFinish={onFinish} />
+  <GameConfiguration gameInfo={libraryInfo} onFinish={onFinish} exitPlayPage={exitPlayPage} />
 {/if}
 <div class="flex flex-col top-0 left-0 absolute w-full h-full bg-white z-[2] animate-fade-in-pop-fast" >
   <div class="relative flex justify-center items-center w-full">

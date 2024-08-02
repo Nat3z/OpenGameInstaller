@@ -1,6 +1,9 @@
 <script lang="ts">
   import type { LibraryInfo } from "ogi-addon";
   import { ConfigurationBuilder, type BooleanOption, type ConfigurationFile, type ConfigurationOption, type NumberOption, type StringOption } from "ogi-addon/config";
+  import { createNotification } from "../store";
+
+  export let exitPlayPage: () => void;
   function isStringOption(option: ConfigurationOption): option is StringOption {
     return option.type === 'string';
   }
@@ -25,7 +28,7 @@
     .addStringOption(option => option
       .setDisplayName("Game Executable")
       .setName("launchExecutable")
-      .setDescription("The game executable (relative to the working directory)")
+      .setDescription("The game executable path")
       .setInputType("file")
       .setDefaultValue(gameInfo.launchExecutable ?? "game.exe")
     )
@@ -69,6 +72,16 @@
         element.value = path;
       }
     });
+  }
+
+  async function removeFromList() {
+    await window.electronAPI.app.removeApp(gameInfo.steamAppID);
+    createNotification({
+      id: Math.random().toString(36).substring(7),
+      message: 'Game removed from library. (Not deleted from disk)',
+      type: 'success'
+    });
+    exitPlayPage();
   }
 </script>
 
@@ -123,7 +136,10 @@
           <h2 class="block text-xs text-gray-300">{screenRendering[key].description}</h2>
         </div>
       {/each}
-      <button on:click={pushChanges} class="px-4 py-1 rounded w-fit bg-blue-300 mt-4">Save</button>
+      <div class="flex flex-row justify-start items-center gap-2">
+        <button on:click={pushChanges} class="px-4 py-1 rounded w-fit border-none bg-blue-300 mt-4">Save</button>
+        <button on:click={removeFromList} class="px-4 py-1 rounded w-fit border-none bg-red-300 mt-4">Remove</button>
+      </div>
     </div>
 
   </article>

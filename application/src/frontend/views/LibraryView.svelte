@@ -6,16 +6,17 @@
   let selectedApp: LibraryInfo | undefined;
   export const exitPlayPage = () => {
     selectedApp = undefined;
+    reloadLibrary();
   }
-
-  onMount(async () => {
+  async function reloadLibrary() {
     const apps = await window.electronAPI.app.getAllApps();
     
     if (window.electronAPI.fs.exists('./internals/apps.json')) {
       const appsOrdered: number[] = JSON.parse(window.electronAPI.fs.read('./internals/apps.json'));
       let libraryWithUndefined = appsOrdered.map((id) => apps.find((app) => app.steamAppID === id) ?? undefined);
-      // get rid of undefined values
+      // get rid of undefined values and duplicate apps
       library = libraryWithUndefined.filter((app) => app !== undefined) as LibraryInfo[];
+      library = library.filter((app, index) => library.findIndex((libApp) => libApp.steamAppID === app.steamAppID) === index);
       // see if other apps are not in the list, if so add them
       apps.forEach((app) => {
         if (!library.find((libApp) => libApp.steamAppID === app.steamAppID)) {
@@ -27,13 +28,15 @@
     else {
       library = apps;
     }
-
+  }
+  onMount(async () => {
+    await reloadLibrary();
   });
 </script>
 
 <div class="relative w-full h-full">
   {#if selectedApp}
-    <PlayPage appID={selectedApp.steamAppID} libraryInfo={selectedApp} />
+    <PlayPage appID={selectedApp.steamAppID} libraryInfo={selectedApp} exitPlayPage={exitPlayPage} />
   {/if}
   <span class="flex flex-row p-4 gap-2 justify-start items-start w-full h-full relative">
     

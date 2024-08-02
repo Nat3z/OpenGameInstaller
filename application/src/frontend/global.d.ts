@@ -2,12 +2,12 @@
 
 type AxiosResponse = import("axios").AxiosResponse
 type AxiosRequestConfig = import("axios").AxiosRequestConfig
+type LibraryInfo = import("ogi-addon").LibraryInfo
 type $AddTorrentOrMagnet = import("real-debrid-js").$AddTorrentOrMagnet
 type $Hosts = import("real-debrid-js").$Hosts
 type $UnrestrictLink = import("real-debrid-js").$UnrestrictLink;
 type $UserInfo = import("real-debrid-js").$UserInfo;
 type $TorrentInfo = import("real-debrid-js").$TorrentInfo;
-
 interface Window {
   electronAPI: {
     fs: {
@@ -49,7 +49,11 @@ interface Window {
       close: () => Promise<void>,
       minimize: () => Promise<void>,
       axios: (options: AxiosRequestConfig) => Promise<{ status: number, success: boolean, data: any }>,
-      searchFor: (query: string) => Promise<{ appid: string, name: string }[]>
+      searchFor: (query: string) => Promise<{ appid: string, name: string }[]>,
+      inputSend: (id: string, data: any) => Promise<void>,
+      insertApp: (info: LibraryInfo) => Promise<void>,
+      getAllApps: () => Promise<LibraryInfo[]>,
+      launchGame: (appid: string) => Promise<void>,
     },
     updateAddons: () => Promise<void>,
     getVersion: () => string,

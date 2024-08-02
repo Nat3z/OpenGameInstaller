@@ -5,7 +5,7 @@ import { app, BrowserWindow, dialog, globalShortcut, ipcMain, shell } from 'elec
 import fs, { ReadStream } from 'fs';
 import { readFile } from 'fs/promises';
 import RealDebrid from 'real-debrid-js';
-import { exec } from 'child_process';
+import { exec, spawn } from 'child_process';
 import { processes, setupAddon, startAddon } from './addon-init-configure.js';
 import { isSecurityCheckEnabled } from './server/AddonConnection.js';
 import axios from 'axios';
@@ -14,6 +14,8 @@ import path from 'path';
 import { QBittorrent } from '@ctrl/qbittorrent';
 import { getStoredValue, refreshCached } from './config-util.js';
 import * as JsSearch from 'js-search'
+import { ConfigurationFile } from 'ogi-addon/build/config/ConfigurationBuilder.js';
+import { LibraryInfo } from 'ogi-addon';
 const VERSION = app.getVersion();
 
 const __dirname = isDev() ? app.getAppPath() + "/../" : path.parse(app.getPath('exe')).dir;
@@ -65,6 +67,21 @@ export function sendNotification(notification: Notification) {
         return;
     }
     mainWindow.webContents.send('notification', notification);
+}
+
+export let currentScreens = new Map<string, { [key: string]: string | boolean | number } | undefined>();
+
+export function sendAskForInput(id: string, config: ConfigurationFile, name: string, description: string) {
+    if (!mainWindow) {
+        console.error('Main window is not ready yet. Cannot send ask for input.');
+        return;
+    }
+    if (!mainWindow.webContents) {
+        console.error('Main window web contents is not ready yet. Cannot send ask for input.');
+        return;
+    }
+    mainWindow.webContents.send('input-asked', { id, config, name, description });
+    currentScreens.set(id, undefined);
 }
 
 function createWindow() {    
@@ -122,13 +139,86 @@ function createWindow() {
             mainWindow?.minimize();
         });
         ipcMain.handle('app:axios', async (_, options) => {
-            const response = await axios(options);
-            return { data: response.data, status: response.status, success: response.status >= 200 && response.status < 300 };
+            try {
+                const response = await axios(options);
+                return { data: response.data, status: response.status, success: response.status >= 200 && response.status < 300 };
+            } catch (err) {
+                return { data: err.response.data, status: err.response.status, success: false };
+            }
         });
         ipcMain.handle('app:search-id', async (_, query) => {
             const results = steamAppSearcher.search(query);
             return results;
-        })
+        });
+        ipcMain.handle('app:screen-input', async (_, data) => {
+            currentScreens.set(data.id, data.data)
+            return;
+        });
+        ipcMain.handle('app:launch-game', async (_, appid) => {
+            if (!fs.existsSync('./library')) {
+                return;
+            }
+            if (!fs.existsSync('./internals')) {
+                fs.mkdirSync('./internals');
+            }
+            if (!fs.existsSync('./library/' + appid + '.json')) {
+                return;
+            }
+            
+            const appInfo: LibraryInfo = JSON.parse(fs.readFileSync('./library/' + appid + '.json', 'utf-8'));
+            const args = appInfo.launchArguments ?? ''
+            const spawnedItem = spawn(appInfo.cwd + '\\' + appInfo.launchExecutable, [args], {
+                cwd: appInfo.cwd,
+                detached: true
+            })
+            spawnedItem.on('error', () => {
+                sendNotification({
+                    message: 'Failed to launch game',
+                    id: Math.random().toString(36).substring(7),
+                    type: 'error'
+                });
+                console.error('Failed to launch game');
+                mainWindow?.webContents.send('game:launch-error', { id: appInfo.steamAppID })
+            });
+            spawnedItem.on('exit', (exit) => {
+                console.log('Game exited with code: ' + exit);
+                mainWindow?.webContents.send('game:exit', { id: appInfo.steamAppID });
+            });
+
+            mainWindow?.webContents.send('game:launch', { id: appInfo.steamAppID });
+        });
+
+        
+        ipcMain.handle('app:insert-app', async (_, data: LibraryInfo) => {
+            if (!fs.existsSync('./library')) 
+                fs.mkdirSync('./library');
+
+            const appPath = `./library/${data.steamAppID}.json`;
+            fs.writeFileSync(appPath, JSON.stringify(data, null, 2));
+            if (!fs.existsSync('./internals')) {
+                fs.mkdirSync('./internals');
+            }
+            // write to the internal file
+            if (!fs.existsSync('./internals/apps.json')) {
+                fs.writeFileSync('./internals/apps.json', JSON.stringify([], null, 2));
+            }
+            const appsInternal = JSON.parse(fs.readFileSync('./internals/apps.json', 'utf-8'));
+            appsInternal.push(data.steamAppID);
+            fs.writeFileSync('./internals/apps.json', JSON.stringify(appsInternal, null, 2));
+            return;
+        });
+        ipcMain.handle('app:get-all-apps', async () => {
+            if (!fs.existsSync('./library')) {
+                return [];
+            }
+            const files = fs.readdirSync('./library');
+            const apps: LibraryInfo[] = [];
+            for (const file of files) {
+                const data = fs.readFileSync(`./library/${file}`, 'utf-8');
+                apps.push(JSON.parse(data));
+            }
+            return apps;
+        });
 
         ipcMain.on('fs:read', (event, arg) => {
             fs.readFile(arg, 'utf-8', (err, data) => {
@@ -144,7 +234,6 @@ function createWindow() {
             fs.access(arg, (err) => {
                 if (err) {
                     event.returnValue = false;
-                    console.error(err);
                     return;
                 }
                 event.returnValue = true;

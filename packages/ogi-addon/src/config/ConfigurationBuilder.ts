@@ -100,6 +100,7 @@ export class StringOption extends ConfigurationOption {
   public minTextLength: number = 0;
   public maxTextLength: number = Number.MAX_SAFE_INTEGER;
   public defaultValue: string = '';
+  public inputType: 'text' | 'file' | 'password' | 'folder' = 'text';
   public type: ConfigurationOptionType = 'string'
 
   setAllowedValues(allowedValues: string[]): this {
@@ -119,6 +120,11 @@ export class StringOption extends ConfigurationOption {
 
   setMaxTextLength(maxTextLength: number): this {
     this.maxTextLength = maxTextLength;
+    return this;
+  }
+
+  setInputType(inputType: 'text' | 'file' | 'password' | 'folder'): this {
+    this.inputType = inputType;
     return this;
   }
 

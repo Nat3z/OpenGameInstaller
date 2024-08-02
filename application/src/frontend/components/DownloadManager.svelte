@@ -1,4 +1,5 @@
 <script lang="ts">
+  import type { LibraryInfo } from "ogi-addon";
   import { currentDownloads, type DownloadStatusAndInfo } from "../store";
   import { getDownloadPath, safeFetch } from "../utils";
 
@@ -188,7 +189,8 @@
         type: downloadedItem.downloadType,
         name: downloadedItem.name,
         usedRealDebrid: downloadedItem.usedRealDebrid,
-        multiPartFiles: downloadedItem.files
+        multiPartFiles: downloadedItem.files,
+        steamAppID: downloadedItem.steamAppID
       }),
       onLogs: (log) => {
         document.dispatchEvent(new CustomEvent('setup:log', {
@@ -206,35 +208,22 @@
           }
         }));
       },
-      consume: "text"
-    }).then((data) => {
+      consume: "json"
+    }).then((data: LibraryInfo) => {
       if (downloadedItem === undefined) return;
-      if (data === "success") {
-        currentDownloads.update((downloads) => {
-          return downloads.map((download) => {
-            if (download.id === downloadedItem?.id) {
-              return {
-                ...download,
-                status: 'setup-complete',
-                downloadPath: downloadedItem.downloadPath
-              }
+      window.electronAPI.app.insertApp(data);
+      currentDownloads.update((downloads) => {
+        return downloads.map((download) => {
+          if (download.id === downloadedItem?.id) {
+            return {
+              ...download,
+              status: 'setup-complete',
+              downloadPath: downloadedItem.downloadPath
             }
-            return download;
-          });
+          }
+          return download;
         });
-      } else {
-        currentDownloads.update((downloads) => {
-          return downloads.map((download) => {
-            if (download.id === downloadedItem?.id) {
-              return {
-                ...download,
-                status: 'error'
-              }
-            }
-            return download;
-          });
-        });
-      }
+      });
     })
   });
 

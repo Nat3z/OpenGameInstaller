@@ -23,7 +23,11 @@ export interface Notification {
 export const currentDownloads: Writable<DownloadStatusAndInfo[]> = writable([])
 export const notifications: Writable<Notification[]> = writable([])
 export const currentStorePageOpened: Writable<number | undefined> = writable()
+export const gamesLaunched: Writable<Record<string, 'launched' | 'error'>> = writable({})
+export type Views = "gameInstall" | "config" | "clientoptions" | "downloader" | "library";
+export const selectedView: Writable<Views> = writable("library");
 
+export const viewOpenedWhenChanged: Writable<Views | undefined>  = writable(undefined);
 export function createNotification(notification: Notification) {
   notifications.update((n) => [...n, notification])
 }

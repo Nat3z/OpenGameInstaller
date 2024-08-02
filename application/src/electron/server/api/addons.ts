@@ -42,7 +42,7 @@ app.get('/:addonID/search', async (req, res) => {
     return res.status(401).send('Unauthorized');
   }
  
-  if (!req.query.query && !req.query.steamappid) {
+  if (!req.query.steamappid) {
     return res.status(400).send('No query provided');
   } 
 
@@ -52,7 +52,7 @@ app.get('/:addonID/search', async (req, res) => {
 
 
   const deferrableTask = new DeferrableTask(async () => {
-    const event = await client.sendEventMessage({ event: 'search', args: { text: req.query.query ?? req.query.steamappid, type:  req.query.query ? 'query' : 'steamapp' } });
+    const event = await client.sendEventMessage({ event: 'search', args: { text: req.query.query ?? req.query.steamappid, type: 'steamapp' } });
     return event.args;
   }, client.addonInfo.id);
   deferrableTask.run();
@@ -76,13 +76,16 @@ app.post('/:addonID/setup-app', async (req, res) => {
   if (!req.body || req.body.name === undefined || typeof req.body.name !== 'string') {
     return res.status(400).send('No name provided');
   }
+  if (req.body.steamAppID === undefined || typeof req.body.steamAppID !== 'number') {
+    return res.status(400).send('No steamAppID provided');
+  }
   if (!req.body || req.body.usedRealDebrid === undefined || typeof req.body.usedRealDebrid !== 'boolean') {
     return res.status(400).send('No usedRealDebrid provided');
   }
 
   const deferrableTask = new DeferrableTask(async () => {
-    await client.sendEventMessage({ event: 'setup', args: { path: req.body.path, type: req.body.type, usedRealDebrid: req.body.usedRealDebrid, name: req.body.name, multiFiles: req.body.multiPartFiles, deferID: deferrableTask.id!! } });
-    return "success";
+    const data = await client.sendEventMessage({ event: 'setup', args: { path: req.body.path, steamAppID: req.body.steamAppID, type: req.body.type, usedRealDebrid: req.body.usedRealDebrid, name: req.body.name, multiFiles: req.body.multiPartFiles, deferID: deferrableTask.id!! } });
+    return data.args;
   }, client.addonInfo.id);
 
   deferrableTask.run();

@@ -1,4 +1,4 @@
-import OGIAddon from "ogi-addon";
+import OGIAddon, { ConfigurationBuilder } from "ogi-addon";
 
 const addon = new OGIAddon({
   name: 'test-addon',
@@ -24,15 +24,24 @@ addon.on('connect', () => {
 addon.on('search', ({ text, type }, event) => {
   if (type === "steamapp") {
     event.resolve([
-      { 
-        name: "Magnet Link Test",
+      {
+        name: "Direct Download Test",
         description: addon.config.getStringValue('testOption') || 'No description',
         coverURL: 'https://dummyimage.com/375x500/968d96/ffffff',
+        steamAppID: parseInt(text),
         downloadSize: 100,
-        downloadURL: 'magnet:?xt=urn:btih:dd8255ecdc7ca55fb0bbf81323d87062db1f6d1c&dn=Big+Buck+Bunny&tr=udp%3A%2F%2Fexplodie.org%3A6969&tr=udp%3A%2F%2Ftracker.coppersurfer.tk%3A6969&tr=udp%3A%2F%2Ftracker.empire-js.us%3A1337&tr=udp%3A%2F%2Ftracker.leechers-paradise.org%3A6969&tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337&tr=wss%3A%2F%2Ftracker.btorrent.xyz&tr=wss%3A%2F%2Ftracker.fastcast.nz&tr=wss%3A%2F%2Ftracker.openwebtorrent.com&ws=https%3A%2F%2Fwebtorrent.io%2Ftorrents%2F&xs=https%3A%2F%2Fwebtorrent.io%2Ftorrents%2Fbig-buck-bunny.torrent',
-        downloadType: 'magnet',
-        filename: 'Big Buck Bunny'
-      },
+        downloadType: 'direct',
+        files: [
+          {
+            name: 'otherfile.zip',
+            downloadURL: 'https://github.com/Nat3z/calendar-prod/archive/refs/heads/master.zip'
+          },
+          {
+            name: 'file.zip',
+            downloadURL: 'https://github.com/Nat3z/mc-discord-bot/archive/refs/heads/master.zip'
+          }
+        ]
+      }
     ]);
     return;
   }
@@ -77,7 +86,7 @@ addon.on('search', ({ text, type }, event) => {
   ]);
 });
 
-addon.on('setup', ({ path, type, name, usedRealDebrid, multiPartFiles }, event) => {
+addon.on('setup', ({ path, type, name, usedRealDebrid, steamAppID, multiPartFiles }, event) => {
   event.defer();
   event.log(`
 path: ${path}
@@ -86,12 +95,21 @@ name: ${name}
 usedRealDebrid: ${usedRealDebrid}
 multiPartFiles: ${multiPartFiles} 
   `)
-  const inter = setInterval(() => {
-    if (event.progress >= 100) {
-      clearInterval(inter);
-      event.complete();
-      return
-    }
-    event.progress += 10;
-  }, 1000)
+
+  const waitForInput = event.askForInput('Please enter the code', 'code', 
+    new ConfigurationBuilder()
+      .addNumberOption(option => option.setDisplayName('Code').setName('code').setDescription('Enter the code').setMin(1).setMax(100))
+  ).then((input) => {
+    event.log(`Code: ${input.code}`);
+    setTimeout(() => {
+      event.resolve({
+        cwd: path,
+        capsuleImage: `https://steamcdn-a.akamaihd.net/steam/apps/${steamAppID}/library_600x900_2x.jpg`,
+        launchExecutable: 'test.exe',
+        name: name,
+        steamAppID: steamAppID,
+        version: '1.0.0'
+      })
+    }, 5000);
+  });
 });

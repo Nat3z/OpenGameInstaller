@@ -96,6 +96,7 @@ export interface LibraryInfo {
   cwd: string;
   steamAppID: number;
   launchExecutable: string;
+  launchArguments?: string;
   capsuleImage: string;
 }
 interface Notification {

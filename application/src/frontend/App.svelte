@@ -9,12 +9,12 @@
 
   import { fetchAddonsWithConfigure, getConfigClientOption } from "./utils";
   import Notifications from "./components/Notifications.svelte";
-  import { currentStorePageOpened } from "./store";
+  import { currentStorePageOpened, selectedView, viewOpenedWhenChanged, type Views } from "./store";
   import SteamStorePage from "./components/SteamStorePage.svelte";
   import InputScreenManager from "./components/InputScreenManager.svelte";
   import LibraryView from "./views/LibraryView.svelte";
-	type Views = "gameInstall" | "config" | "clientoptions" | "downloader" | "library";
-	let selectedView: Views = "library";
+  import GameManager from "./components/GameManager.svelte";
+	
 	// post config to server for each addon
 
 	let finishedOOBE = true;
@@ -32,38 +32,40 @@
 	});
 
 	let heldPageOpened: number | undefined;
-	currentStorePageOpened.subscribe((value) => {
-		if (value) {
-			heldPageOpened = value;
-		}
-	});
-
 	let isStoreOpen = false;
+	let iTriggeredIt = false;
 	currentStorePageOpened.subscribe((value) => {
 		if (value) {
 			heldPageOpened = value;
 			isStoreOpen = true;
+			if (!$viewOpenedWhenChanged && !iTriggeredIt)
+				viewOpenedWhenChanged.set($selectedView);
 		}
 	});
 	function setView(view: Views) {
-		if (isStoreOpen && selectedView === 'gameInstall' && view === 'gameInstall' && heldPageOpened) {
-			isStoreOpen = false;
-			currentStorePageOpened.set(undefined);
-			selectedView = view;
-			heldPageOpened = undefined;
-			return;
-		}
-
-		if (view === 'gameInstall' && heldPageOpened) {
-			currentStorePageOpened.set(heldPageOpened);
-			selectedView = view;
-			isStoreOpen = true;
-			return;
-		}
-		selectedView = view;
-		currentStorePageOpened.set(undefined)
-		isStoreOpen = false;
-	}
+		iTriggeredIt = true;
+    if (isStoreOpen && $selectedView === view) {
+      // If the store is open and the same tab is clicked again, close the store
+      isStoreOpen = false;
+      currentStorePageOpened.set(undefined);
+      heldPageOpened = undefined;
+			viewOpenedWhenChanged.set(undefined);
+			console.log("Removing store from view");
+    } else if (view === $viewOpenedWhenChanged && heldPageOpened !== undefined) {
+      // If switching back to the tab that had the store, reopen the store
+      currentStorePageOpened.set(heldPageOpened);
+			selectedView.set(view);
+      isStoreOpen = true;
+			console.log("Switching back to tab that had the store")
+    } else {
+      // Otherwise, just switch to the new tab
+			selectedView.set(view);
+      currentStorePageOpened.set(undefined);
+      isStoreOpen = false;
+			console.log("Otherwise, just switch to the new tab");
+    }
+		iTriggeredIt = false;
+  }
 </script>
 
 {#if !finishedOOBE}
@@ -77,23 +79,23 @@
 			<img src="./favicon.png" alt="logo" class="w-5/12 h-5/12">
 		</div>
 
-		<button on:click={() => setView('gameInstall')} data-selected-header={selectedView === "gameInstall"}>
+		<button on:click={() => setView('gameInstall')} data-selected-header={$selectedView === "gameInstall"}>
 			<img src="./search.svg" alt="Search" />
 			<label>Search</label>
 		</button>
-		<button on:click={() => setView('library')} data-selected-header={selectedView === "library"}>
+		<button on:click={() => setView('library')} data-selected-header={$selectedView === "library"}>
 			<img src="./library.svg" alt="Library" />
 			<label>Library</label>
 		</button>
-		<button on:click={() => setView('downloader')} data-selected-header={selectedView === "downloader"}>
+		<button on:click={() => setView('downloader')} data-selected-header={$selectedView === "downloader"}>
 			<img src="./download.svg" alt="Downloads" />
 			<label>Downloads</label>
 		</button>
-		<button on:click={() => setView('config')} data-selected-header={selectedView === "config"}>
+		<button on:click={() => setView('config')} data-selected-header={$selectedView === "config"}>
 			<img src="./apps.svg" alt="addon">
 			Addons
 		</button>
-		<button on:click={() => setView('clientoptions')} data-selected-header={selectedView === "clientoptions"}>
+		<button on:click={() => setView('clientoptions')} data-selected-header={$selectedView === "clientoptions"}>
 			<img src="./settings.svg" alt="Settings" />
 			<label>Settings</label>
 		</button>
@@ -102,15 +104,15 @@
 		{#if $currentStorePageOpened}
 			<SteamStorePage appID={$currentStorePageOpened} />
 		{:else}
-			{#if selectedView === "config"}
+			{#if $selectedView === "config"}
 				<ConfigView />
-			{:else if selectedView === "gameInstall"}
+			{:else if $selectedView === "gameInstall"}
 				<GameInstallView />
-			{:else if selectedView === "clientoptions"}
+			{:else if $selectedView === "clientoptions"}
 				<ClientOptionsView />
-			{:else if selectedView === "downloader"}
+			{:else if $selectedView === "downloader"}
 				<DownloadView />
-			{:else if selectedView === "library"}
+			{:else if $selectedView === "library"}
 				<LibraryView />
 			{:else}
 				<p>Unknown view</p>
@@ -122,6 +124,7 @@
 
 	</main>
 	<InputScreenManager />
+	<GameManager />
 </div>
 
 {/if}

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { fetchAddonsWithConfigure, safeFetch, type GameData } from "../utils";
-	import { currentStorePageOpened } from '../store'
+	import { currentStorePageOpened, viewOpenedWhenChanged } from '../store'
   import type { OGIAddonConfiguration } from "ogi-addon";
   import type { ConfigurationFile } from "ogi-addon/config";
 	interface ConfigTemplateAndInfo extends OGIAddonConfiguration {
@@ -98,7 +98,10 @@
 		loadingResults = false;
 	}
 
-	
+	function goToListing(steam_appid: number) {
+		currentStorePageOpened.set(steam_appid)
+		viewOpenedWhenChanged.set('gameInstall');
+	}	
 </script>
 <input id="search" on:change={search} type="text" placeholder="Search for Game" class="p-2 pl-2 bg-slate-100 rounded-lg w-2/3 mt-4"/>
 {#if loadingResults}
@@ -119,7 +122,7 @@
 			<img src={result.header_image} alt={result.name} class="rounded w-1/4 h-full object-cover"/>
 			<span class="h-full flex flex-col justify-start items-start">
 				<h1 class="font-archivo">{result.name}</h1>
-				<button class="mt-auto py-2 px-4 hover:underline rounded" on:click={() => currentStorePageOpened.set(result.steam_appid)}>Go to Listing</button>
+				<button class="mt-auto py-2 px-4 hover:underline rounded" on:click={() => goToListing(result.steam_appid)}>Go to Listing</button>
 			</span>
 		</div>
 	{/each}

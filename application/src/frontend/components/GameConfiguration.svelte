@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { type BooleanOption, type ConfigurationFile, type ConfigurationOption, type NumberOption, type StringOption } from "ogi-addon/config";
+  import type { LibraryInfo } from "ogi-addon";
+  import { ConfigurationBuilder, type BooleanOption, type ConfigurationFile, type ConfigurationOption, type NumberOption, type StringOption } from "ogi-addon/config";
   function isStringOption(option: ConfigurationOption): option is StringOption {
     return option.type === 'string';
   }
@@ -11,25 +12,35 @@
   function isBooleanOption(option: ConfigurationOption): option is BooleanOption {
     return option.type === 'boolean';
   }
-  function isCustomEvent(event: Event): event is CustomEvent {
-    return event instanceof CustomEvent;
-  }
+  export let gameInfo: LibraryInfo;
 
-  let screenRendering: ConfigurationFile | undefined = undefined 
+  let screenRendering: ConfigurationFile = new ConfigurationBuilder()
+    .addStringOption(option => option
+      .setDisplayName("Game Path")
+      .setName("cwd")
+      .setDescription("The path to the game executable")
+      .setInputType("folder")
+      .setDefaultValue(gameInfo.cwd ?? "C:\\Program Files\\Game")
+    )
+    .addStringOption(option => option
+      .setDisplayName("Game Executable")
+      .setName("launchExecutable")
+      .setDescription("The game executable (relative to the working directory)")
+      .setInputType("file")
+      .setDefaultValue(gameInfo.launchExecutable ?? "game.exe")
+    )
+    .addStringOption(option => option
+      .setDisplayName("Game Arguments")
+      .setName("launchArguments")
+      .setDescription("The arguments to pass to the game executable")
+      .setInputType("text")
+      .setDefaultValue(gameInfo.launchArguments ?? "")
+    )
+    .build(false);
 
-  let screenID: string | undefined;
-  let screenName: string | undefined = undefined;
-  let screenDescription: string | undefined = undefined;
-
-  document.addEventListener('input-asked', (e) => {
-    if (!isCustomEvent(e)) return;
-    const { detail } = e;
-    const { config, id, name, description }: { config: ConfigurationFile, id: string, name: string, description: string } = detail;
-    screenRendering = config;
-    screenID = id;
-    screenName = name;
-    screenDescription = description;
-  });
+  let screenName = gameInfo.name;
+  let screenDescription = "Define the game configuration";
+  export let onFinish: (data: { [key: string]: any } | undefined) => void;
   
   function updateInputNum(event: Event) {
     const element = event.target as HTMLInputElement;
@@ -45,11 +56,8 @@
       const element = input as HTMLInputElement | HTMLSelectElement;
       data[element.id] = element.type === "checkbox" ? element.checked : element.value;
     });
-    window.electronAPI.app.inputSend(screenID!!, data);
-    console.log(data);
-    // delete the screen
-    screenRendering = undefined;
-    screenID = undefined;
+
+    onFinish(data);
   }
 
   function browseForFolder(event: MouseEvent, type: 'file' | 'folder') {
@@ -64,9 +72,12 @@
   }
 </script>
 
-{#if screenRendering}
-<div class="w-full h-full fixed bg-slate-900/50 flex justify-center items-center z-20">
-  <article class="w-3/6 h-5/6 bg-slate-100 p-4 py-2 border-gray-200 animate-fade-in-pop rounded-lg">
+<div class="w-full h-full fixed bg-slate-900/50 flex justify-center items-center top-0 left-0 z-10">
+  <!-- close button at top right-->
+  <article class="w-3/6 h-5/6 bg-slate-100 p-4 py-2 border-gray-200 animate-fade-in-pop rounded-lg relative">
+    <button class="absolute top-4 right-4 text-white px-2 py-2 border-none rounded-lg" on:click={() => onFinish(undefined)}>
+      <img src="./close.svg" alt="close" />
+    </button>
     <h1>{screenName}</h1>
     <h2>{screenDescription}</h2>
     <div class="options">
@@ -112,23 +123,16 @@
           <h2 class="block text-xs text-gray-300">{screenRendering[key].description}</h2>
         </div>
       {/each}
-      <button on:click={pushChanges} class="px-4 py-1 rounded w-fit bg-blue-300 mt-4">Submit</button>
+      <button on:click={pushChanges} class="px-4 py-1 rounded w-fit bg-blue-300 mt-4">Save</button>
     </div>
 
   </article>
 </div>
-{/if}
 
 
 <style>
   article h1 {
     @apply text-2xl font-bold;
-  }
-  artcile h2 {
-    @apply text-lg font-semibold;
-  }
-	.options {
-    @apply gap-2 flex flex-col w-full py-2 border-t-2 border-gray-200 mt-2 h-5/6 overflow-y-auto;
   }
 
   input[type="text"], input[type="number"] {

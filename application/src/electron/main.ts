@@ -5,7 +5,7 @@ import { app, BrowserWindow, dialog, globalShortcut, ipcMain, shell } from 'elec
 import fs, { ReadStream } from 'fs';
 import { readFile } from 'fs/promises';
 import RealDebrid from 'real-debrid-js';
-import { exec } from 'child_process';
+import { exec, spawn } from 'child_process';
 import { processes, setupAddon, startAddon } from './addon-init-configure.js';
 import { isSecurityCheckEnabled } from './server/AddonConnection.js';
 import axios from 'axios';
@@ -158,28 +158,26 @@ function createWindow() {
                 return;
             }
             const appInfo: LibraryInfo = JSON.parse(fs.readFileSync('./library/' + appid + '.json', 'utf-8'));
-            exec(appInfo.cwd + '\\' + appInfo.launchExecutable, {
+            const args = appInfo.launchArguments ?? ''
+            const spawnedItem = spawn(appInfo.cwd + '\\' + appInfo.launchExecutable, [args], {
                 cwd: appInfo.cwd,
-            }, (err, _, stderr) => {
-                if (err) {
-                    console.error(err);
-                    sendNotification({
-                        message: 'Failed to launch game',
-                        id: Math.random().toString(36).substring(7),
-                        type: 'error'
-                    });
-                    return;
-                }
-                if (stderr) {
-                    console.error(stderr);
-                    sendNotification({
-                        message: 'Failed to launch game',
-                        id: Math.random().toString(36).substring(7),
-                        type: 'error'
-                    });
-                    return;
-                }
+                detached: true
+            })
+            spawnedItem.on('error', () => {
+                sendNotification({
+                    message: 'Failed to launch game',
+                    id: Math.random().toString(36).substring(7),
+                    type: 'error'
+                });
+                console.error('Failed to launch game');
+                mainWindow?.webContents.send('game:launch-error', { id: appInfo.steamAppID })
             });
+            spawnedItem.on('exit', (exit) => {
+                console.log('Game exited with code: ' + exit);
+                mainWindow?.webContents.send('game:exit', { id: appInfo.steamAppID });
+            });
+
+            mainWindow?.webContents.send('game:launch', { id: appInfo.steamAppID });
         });
 
         
@@ -218,7 +216,6 @@ function createWindow() {
             fs.access(arg, (err) => {
                 if (err) {
                     event.returnValue = false;
-                    console.error(err);
                     return;
                 }
                 event.returnValue = true;

@@ -86,3 +86,10 @@ ipcRenderer.on('torrent:download-complete', (_, arg) => {
 ipcRenderer.on('input-asked', (_, arg) => {
   document.dispatchEvent(new CustomEvent('input-asked', { detail: arg }));
 });
+
+ipcRenderer.on('game:launch-error', (_, arg) => {
+  document.dispatchEvent(new CustomEvent('game:launched', { detail: arg }));
+});
+ipcRenderer.on('game:exit', (_, arg) => {
+  document.dispatchEvent(new CustomEvent('game:exit', { detail: arg }));
+});

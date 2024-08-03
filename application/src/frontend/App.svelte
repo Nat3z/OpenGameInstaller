@@ -49,7 +49,7 @@
 					}
 				});
 			}
-		}, 5);
+		}, 100);
 	});
 
 	let heldPageOpened: number | undefined;

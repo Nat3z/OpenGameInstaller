@@ -1,9 +1,9 @@
 <script lang="ts" type="module">
-  import { onMount } from "svelte";
+  import { onDestroy, onMount } from "svelte";
   import { safeFetch } from "../utils";
   import type { BooleanOption, ConfigurationFile, ConfigurationOption, NumberOption, StringOption } from "ogi-addon/config";
   import type { OGIAddonConfiguration } from "ogi-addon";
-  import { notifications } from "../store";
+  import { addonUpdates, notifications } from "../store";
   const fs = window.electronAPI.fs;
 
   function isStringOption(option: ConfigurationOption): option is StringOption {
@@ -168,6 +168,14 @@
       element.parentElement!!.querySelector("p")!!.textContent = element.value;
     }
   }
+  let addonsWithUpdates: string[] = [];
+  const unsubscribe = addonUpdates.subscribe((update) => {
+    addonsWithUpdates = update;
+  });
+
+  onDestroy(() => {
+    unsubscribe();
+  });
 </script>
 
 
@@ -180,6 +188,9 @@
         <section class="hover:bg-slate-100 hover:cursor-pointer" on:keypress={() => {}} on:click={() => selectAddon(addon)} id={"cfg-" + addon.id}>
           <h2>{addon.name}</h2>
           <p>{addon.description}</p>
+          {#if addonsWithUpdates.includes(addon.id)}
+            <p class="!text-yellow-500">Update available</p>
+          {/if}
         </section>
       {/each}
     {/if}

@@ -1192,7 +1192,7 @@ EnableFSMonitor=Disabled
                 }
 
                 new Promise<void>((resolve, reject) => {
-                    exec(`git pull`, { cwd: addonPath },  (err, stdout, _) => {
+                    exec(`git fetch`, { cwd: addonPath },  (err, stdout, _) => {
                         if (err) {
                             sendNotification({
                                 message: `Failed to update addon ${addon}`,
@@ -1205,7 +1205,11 @@ EnableFSMonitor=Disabled
                             return;
                         }
                         console.log(stdout);
-
+                        sendNotification({
+                            message: `Addon ${addon} updated successfully.`,
+                            id: Math.random().toString(36).substring(7),
+                            type: 'info'
+                        });
                         // setup the addon
                         setupAddon(addonPath).then((success) => {
                             if (!success) {
@@ -1253,6 +1257,8 @@ EnableFSMonitor=Disabled
         mainWindow!!.show()
         // start the app with it being focused
         mainWindow!!.focus()
+
+        checkForAddonUpdates()
         if (!isSecurityCheckEnabled) {
             sendNotification({
                 message: 'Security checks are disabled and application security LOWERED. Only enable if you know what you\'re doing.',
@@ -1298,9 +1304,66 @@ EnableFSMonitor=Disabled
                 }
             })
         });
+
     });
 }
 
+async function checkForGitUpdates(repoPath: string): Promise<boolean> {
+    // Change the directory to the repository path and run 'git fetch --dry-run'
+    return new Promise((resolve, _) => {
+        exec('git fetch --dry-run', { cwd: repoPath }, (error, stdout, stderr) => {
+            if (error) {
+                sendNotification({
+                    message: 'Failed to check for updates',
+                    id: Math.random().toString(36).substring(7),
+                    type: 'error'
+                });
+                console.log(error);
+                resolve(false);
+                return
+            }
+
+            // If stdout is not empty, it means there are updates
+            // auto remove the warning:
+            const output = stdout + stderr;
+            const cleanedOutput = output.replace(/warning: redirecting to .*/, '');
+            console.log(cleanedOutput);
+
+            if (cleanedOutput.trim()) {
+                resolve(true);
+            } else {
+                resolve(false);
+            }
+        });
+    });
+}
+
+function checkForAddonUpdates() {
+    const addons = fs.readdirSync('./addons/');
+    for (const addon of addons) {
+        const addonPath = './addons/' + addon;
+        if (!fs.existsSync(addonPath + '/.git')) {
+            console.log(`Addon ${addon} is not a git repository`);
+            continue;
+        }
+
+        new Promise<void>(async (resolve, _) => {
+            const isUpdate = await checkForGitUpdates(addonPath)
+            if (isUpdate) {
+                sendNotification({
+                    message: `Addon ${addon} has updates.`,
+                    id: Math.random().toString(36).substring(7),
+                    type: 'info'
+                });
+                mainWindow!!.webContents.send('addon:update-available', addon);
+                console.log(`Addon ${addon} has updates.`);
+                resolve();
+            }
+            console.log(`Addon ${addon} is up to date.`);
+            resolve();
+        });
+    }
+}
 // This method will be called when Electron has finished
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.

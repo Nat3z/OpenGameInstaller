@@ -28,6 +28,7 @@ export type Views = "gameInstall" | "config" | "clientoptions" | "downloader" | 
 export const selectedView: Writable<Views> = writable("library");
 
 export const viewOpenedWhenChanged: Writable<Views | undefined>  = writable(undefined);
+export const addonUpdates: Writable<string[]> = writable([])
 export function createNotification(notification: Notification) {
   notifications.update((n) => [...n, notification])
 }

@@ -333,13 +333,13 @@
         {#if selectedOption.id === "general"}
           <div class="flex justify-center items-center flex-col gap-2">
             <div class="flex justify-center items-center flex-row gap-2">
-              <button class="bg-green-500 text-white p-2 rounded" on:click={() => installAddons()} data-disable>Install All</button>
-              <button class="bg-yellow-500 text-white p-2 rounded" on:click={() => updateAddons()} data-disable>Update</button>
-              <button class="bg-red-500 text-white p-2 rounded" on:click={() => cleanAddons()} data-disable>Clean All</button>
+              <button class="bg-green-500 disabled:bg-slate-400 text-white p-2 rounded" on:click={() => installAddons()} data-disable>Install All</button>
+              <button class="bg-yellow-500 disabled:bg-slate-400 text-white p-2 rounded" on:click={() => updateAddons()} data-disable>Update</button>
+              <button class="bg-red-500 disabled:bg-slate-400 text-white p-2 rounded" on:click={() => cleanAddons()} data-disable>Clean All</button>
             </div>
 
             <div class="flex justify-center items-center flex-row gap-2">
-              <button class="bg-red-500 text-white p-2 rounded" on:click={() => window.electronAPI.restartAddonServer()} data-disable>Restart Addon Server</button>
+              <button class="bg-red-500 disabled:bg-slate-400 text-white p-2 rounded" on:click={() => window.electronAPI.restartAddonServer()} data-disable>Restart Addon Server</button>
             </div>
           </div>
         {/if}

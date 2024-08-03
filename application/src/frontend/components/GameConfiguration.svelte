@@ -88,8 +88,8 @@
 <div class="w-full h-full fixed bg-slate-900/50 flex justify-center items-center top-0 left-0 z-10">
   <!-- close button at top right-->
   <article class="w-3/6 h-5/6 bg-slate-100 p-4 py-2 border-gray-200 animate-fade-in-pop rounded-lg relative">
-    <button class="absolute top-4 right-4 text-white px-2 py-2 border-none rounded-lg" on:click={() => onFinish(undefined)}>
-      <img src="./close.svg" alt="close" />
+    <button class="absolute top-4 right-4 text-white hover:bg-slate-200 px-2 py-2 border-none rounded-lg" on:click={() => onFinish(undefined)}>
+      <img src="./close.svg" alt="close" class="pointer-events-none" />
     </button>
     <h1>{screenName}</h1>
     <h2>{screenDescription}</h2>

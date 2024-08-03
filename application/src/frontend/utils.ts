@@ -6,7 +6,6 @@ function getSecret() {
   const addonSecret = urlParams.get('secret');
   return addonSecret;
 }
-const fs = window.electronAPI.fs;
 
 interface ConsumableRequest extends RequestInit {
   consume?: 'json' | 'text';
@@ -18,8 +17,8 @@ export interface ConfigTemplateAndInfo extends OGIAddonConfiguration {
 }
 
 export function getDownloadPath() {
-  if (!fs.exists('./config/option/general.json')) {
-    if (!fs.exists('./downloads')) fs.mkdir('./downloads');
+  if (!window.electronAPI.fs.exists('./config/option/general.json')) {
+    if (!window.electronAPI.fs.exists('./downloads')) window.electronAPI.fs.mkdir('./downloads');
     createNotification({
       message: 'Download path not set, using default path (./downloads)',
       id: 'download-path',
@@ -27,23 +26,23 @@ export function getDownloadPath() {
     })
     return "./downloads";
   }
-  if (!fs.exists('./downloads')) fs.mkdir('./downloads');
-  const file = fs.read('./config/option/general.json');
+  if (!window.electronAPI.fs.exists('./downloads')) window.electronAPI.fs.mkdir('./downloads');
+  const file = window.electronAPI.fs.read('./config/option/general.json');
   const data = JSON.parse(file);
   return data.fileDownloadLocation;
 }
 
 export async function fsCheck(path: string) {
   try {
-    return fs.exists(path);
+    return window.electronAPI.fs.exists(path);
   } catch (e) {
     return false;
   }
 }
 
 export function getConfigClientOption<T>(id: string): T | null {
-  if (!fs.exists(`./config/option/${id}.json`)) return null;
-  const config = fs.read(`./config/option/${id}.json`);
+  if (!window.electronAPI.fs.exists(`./config/option/${id}.json`)) return null;
+  const config = window.electronAPI.fs.read(`./config/option/${id}.json`);
   return JSON.parse(config);
 }
 export function fetchAddonsWithConfigure() {
@@ -52,15 +51,15 @@ export function fetchAddonsWithConfigure() {
       // now configure each addon
       for (const addon of addons) {
         // check if file exists
-        if (!fs.exists(`./config/${addon.id}.json`)) {
+        if (!window.electronAPI.fs.exists(`./config/${addon.id}.json`)) {
           // if it doesn't exist, create it with default values
           let defaultConfig: Record<string, number | boolean | string> = {};
           for (const key in addon.configTemplate) {
             defaultConfig[key] = addon.configTemplate[key].defaultValue as number | boolean | string;
           }
-          fs.write(`./config/${addon.id}.json`, JSON.stringify(defaultConfig, null, 2));
+          window.electronAPI.fs.write(`./config/${addon.id}.json`, JSON.stringify(defaultConfig, null, 2));
         }
-        const storedConfig = JSON.parse(fs.read(`./config/${addon.id}.json`));
+        const storedConfig = JSON.parse(window.electronAPI.fs.read(`./config/${addon.id}.json`));
         if (storedConfig) {
           console.log("Posting stored config for addon", addon.id, storedConfig);
           safeFetch("http://localhost:7654/addons/" + addon.id + "/config", {
@@ -79,7 +78,7 @@ export function fetchAddonsWithConfigure() {
             defaultConfig[key] = addon.configTemplate[key].defaultValue as number | boolean | string;
           }
           // then store with fs
-          fs.write(`./config/${addon.id}.json`, JSON.stringify(defaultConfig, null, 2));
+          window.electronAPI.fs.write(`./config/${addon.id}.json`, JSON.stringify(defaultConfig, null, 2));
           // then post
           safeFetch("http://localhost:7654/addons/" + addon.id + "/config", {
             method: "POST",

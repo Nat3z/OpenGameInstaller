@@ -94,3 +94,6 @@ ipcRenderer.on('game:launch-error', (_, arg) => {
 ipcRenderer.on('game:exit', (_, arg) => {
   document.dispatchEvent(new CustomEvent('game:exit', { detail: arg }));
 });
+ipcRenderer.on('addon:update-available', (_, arg) => {
+  document.dispatchEvent(new CustomEvent('addon:update-available', { detail: arg }));
+});

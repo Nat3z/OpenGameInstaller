@@ -9,7 +9,7 @@
 
   import { fetchAddonsWithConfigure, getConfigClientOption } from "./utils";
   import Notifications from "./components/Notifications.svelte";
-  import { currentStorePageOpened, selectedView, viewOpenedWhenChanged, type Views } from "./store";
+  import { addonUpdates, currentStorePageOpened, selectedView, viewOpenedWhenChanged, type Views } from "./store";
   import SteamStorePage from "./components/SteamStorePage.svelte";
   import InputScreenManager from "./components/InputScreenManager.svelte";
   import LibraryView from "./views/LibraryView.svelte";
@@ -28,12 +28,22 @@
 				finishedOOBE = false;
 			}
 			loading = false;
-		}, 100);
+		}, 5);
 	});
 
 	let heldPageOpened: number | undefined;
 	let isStoreOpen = false;
 	let iTriggeredIt = false;
+
+	document.addEventListener("addon:update-available", (event) => {
+		if (event instanceof CustomEvent) {
+			const { detail } = event;
+			addonUpdates.update((value) => {
+				value.push(detail);
+				return value;
+			});
+		}
+	});
 	currentStorePageOpened.subscribe((value) => {
 		if (value) {
 			heldPageOpened = value;

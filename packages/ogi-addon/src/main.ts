@@ -5,10 +5,10 @@ import { Configuration } from './config/Configuration';
 import EventResponse from './EventResponse';
 import { SearchResult } from './SearchEngine';
 
-export type OGIAddonEvent = 'connect' | 'disconnect' | 'configure' | 'authenticate' | 'search' | 'setup';
+export type OGIAddonEvent = 'connect' | 'disconnect' | 'configure' | 'authenticate' | 'search' | 'setup' | 'library-search' | 'game-details';
 export type OGIAddonClientSentEvent = 'response' | 'authenticate' | 'configure' | 'defer-update' | 'notification' | 'input-asked';
 
-export type OGIAddonServerSentEvent = 'authenticate' | 'configure' | 'config-update' | 'search' | 'setup' | 'response';
+export type OGIAddonServerSentEvent = 'authenticate' | 'configure' | 'config-update' | 'search' | 'setup' | 'response' | 'library-search' | 'game-details';
 export { ConfigurationBuilder, Configuration, EventResponse, SearchResult };
 const defaultPort = 7654;
 const version = process.env.npm_package_version;
@@ -25,13 +25,19 @@ export interface ClientSentEventTypes {
   'input-asked': ConfigurationBuilder;
 }
 
+export interface BasicLibraryInfo {
+  name: string;
+  capsuleImage: string;
+  appID: number;
+}
+
 export interface EventListenerTypes {
   connect: (socket: ws) => void;
   disconnect: (reason: string) => void;
   configure: (config: ConfigurationBuilder) => ConfigurationBuilder;
   response: (response: any) => void;
   authenticate: (config: any) => void;
-  search: (query: { type: 'steamapp', text: string }, event: EventResponse<SearchResult[]>) => void;
+  search: (query: { type: 'steamapp' | 'internal', text: string }, event: EventResponse<SearchResult[]>) => void;
   setup: (
     data: { 
       path: string, 
@@ -42,11 +48,26 @@ export interface EventListenerTypes {
         name: string,
         downloadURL: string
       }[],
-      steamAppID: number
+      appID: number,
+      storefront: 'steam' | 'internal'
     }, event: EventResponse<LibraryInfo>
   ) => void;
+  'library-search': (query: string, event: EventResponse<BasicLibraryInfo[]>) => void;
+  'game-details': (appID: number, event: EventResponse<StoreData>) => void;
 }
 
+export interface StoreData {
+  name: string;
+  publishers: string[];
+  developers: string[];
+  appID: number;
+  releaseDate: string;
+  capsuleImage: string;
+  coverImage: string;
+  basicDescription: string;
+  description: string;
+  headerImage: string;
+}
 export interface WebsocketMessageClient {
   event: OGIAddonClientSentEvent;
   id?: string;
@@ -94,10 +115,12 @@ export interface LibraryInfo {
   name: string;
   version: string;
   cwd: string;
-  steamAppID: number;
+  appID: number;
   launchExecutable: string;
   launchArguments?: string;
   capsuleImage: string;
+  coverImage?: string;
+  titleImage?: string;
 }
 interface Notification {
   type: 'warning' | 'error' | 'info' | 'success';
@@ -219,11 +242,32 @@ class OGIAddonWSListener {
           const setupResult = await this.waitForEventToRespond(setupEvent);
           this.respondToMessage(message.id!!, setupResult.data);
           break
+        case 'library-search':
+          let librarySearchEvent = new EventResponse<BasicLibraryInfo[]>((screen, name, description) => this.userInputAsked(screen, name, description, this.socket));
+          if (this.eventEmitter.listenerCount('game-details') === 0) {
+            this.respondToMessage(message.id!!, []);
+            break;
+          }
+          this.eventEmitter.emit('library-search', message.args, librarySearchEvent);
+          const librarySearchResult = await this.waitForEventToRespond(librarySearchEvent);
+          this.respondToMessage(message.id!!, librarySearchResult.data);
+          break
+        case 'game-details':
+          let gameDetailsEvent = new EventResponse<StoreData>((screen, name, description) => this.userInputAsked(screen, name, description, this.socket));
+          if (this.eventEmitter.listenerCount('game-details') === 0) {
+            this.respondToMessage(message.id!!, { error: 'No event listener for game-details' });
+            break;
+          }
+          this.eventEmitter.emit('game-details', message.args, gameDetailsEvent);
+          const gameDetailsResult = await this.waitForEventToRespond(gameDetailsEvent);
+          this.respondToMessage(message.id!!, gameDetailsResult.data);
+          break
       }
     });
   }
 
   private waitForEventToRespond<T>(event: EventResponse<T>): Promise<EventResponse<T>> {
+    // check the handlers to see if there even is any
     return new Promise((resolve, reject) => {
       const dataGet = setInterval(() => {
         if (event.resolved) {

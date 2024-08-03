@@ -4,7 +4,8 @@ export type SearchResult = {
   coverURL: string;
   downloadType: 'torrent' | 'direct' | 'magnet';
   downloadSize: number;
-  steamAppID: number;
+  appID: number;
+  storefront: 'steam' | 'internal';
   filename?: string;
   downloadURL?: string;
   files?: {

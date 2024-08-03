@@ -98,7 +98,8 @@
         type: downloadedItem.downloadType,
         name: downloadedItem.name,
         usedRealDebrid: downloadedItem.usedRealDebrid,
-        steamAppID: downloadedItem.steamAppID
+        appID: downloadedItem.appID,
+        storefront: downloadedItem.storefront
       }),
       onLogs: (log) => {
         document.dispatchEvent(new CustomEvent('setup:log', {
@@ -191,7 +192,8 @@
         name: downloadedItem.name,
         usedRealDebrid: downloadedItem.usedRealDebrid,
         multiPartFiles: downloadedItem.files,
-        steamAppID: downloadedItem.steamAppID
+        appID: downloadedItem.appID,
+        storefront: downloadedItem.storefront
       }),
       onLogs: (log) => {
         document.dispatchEvent(new CustomEvent('setup:log', {

@@ -42,7 +42,7 @@ app.get('/:addonID/search', async (req, res) => {
     return res.status(401).send('Unauthorized');
   }
  
-  if (!req.query.steamappid) {
+  if (!req.query.steamappid || !req.query.gameID) {
     return res.status(400).send('No query provided');
   } 
 
@@ -52,7 +52,26 @@ app.get('/:addonID/search', async (req, res) => {
 
 
   const deferrableTask = new DeferrableTask(async () => {
-    const event = await client.sendEventMessage({ event: 'search', args: { text: req.query.query ?? req.query.steamappid, type: 'steamapp' } });
+    const event = await client.sendEventMessage({ event: 'search', args: { text: req.query.gameID ?? req.query.steamappid, type: req.query.gameID ? 'internal' : req.query.steamappid ? 'steamapp' : '' } });
+    return event.args;
+  }, client.addonInfo.id);
+  deferrableTask.run();
+  DefferedTasks.set(deferrableTask.id, deferrableTask);
+  return res.status(202).json({ deferred: true, taskID: deferrableTask.id });
+});
+app.post('/:addonID/search-query', async (req, res) => {
+  if (req.headers.authorization !== applicationAddonSecret) {
+    return res.status(401).send('Unauthorized');
+  }
+  if (!req.body || req.body.query === undefined || typeof req.body.query !== 'string') {
+    return res.status(400).send('No query provided');
+  }
+  const client = clients.get(req.params.addonID);
+  if (!client)
+    return res.status(404).send('Client not found');
+
+  const deferrableTask = new DeferrableTask(async () => {
+    const event = await client.sendEventMessage({ event: 'library-search', args: req.body.query });
     return event.args;
   }, client.addonInfo.id);
   deferrableTask.run();
@@ -85,6 +104,27 @@ app.post('/:addonID/setup-app', async (req, res) => {
 
   const deferrableTask = new DeferrableTask(async () => {
     const data = await client.sendEventMessage({ event: 'setup', args: { path: req.body.path, steamAppID: req.body.steamAppID, type: req.body.type, usedRealDebrid: req.body.usedRealDebrid, name: req.body.name, multiFiles: req.body.multiPartFiles, deferID: deferrableTask.id!! } });
+    return data.args;
+  }, client.addonInfo.id);
+
+  deferrableTask.run();
+  DefferedTasks.set(deferrableTask.id, deferrableTask);
+  return res.status(202).json({ deferred: true, taskID: deferrableTask.id });
+});
+
+app.post('/:addonID/game-details', async (req, res) => {
+  if (req.headers.authorization !== applicationAddonSecret) {
+    return res.status(401).send('Unauthorized');
+  }
+  const client = clients.get(req.params.addonID);
+  if (!client)
+    return res.status(404).send('Client not found');
+  if (!req.body || req.body.gameID === undefined) {
+    return res.status(400).send('No steamAppID provided');
+  }
+
+  const deferrableTask = new DeferrableTask(async () => {
+    const data = await client.sendEventMessage({ event: 'game-details', args: req.body.gameID });
     return data.args;
   }, client.addonInfo.id);
 

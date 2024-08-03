@@ -212,7 +212,7 @@ function createWindow() {
             if (!fs.existsSync('./library')) 
                 fs.mkdirSync('./library');
 
-            const appPath = `./library/${data.steamAppID}.json`;
+            const appPath = `./library/${data.appID}.json`;
             fs.writeFileSync(appPath, JSON.stringify(data, null, 2));
             if (!fs.existsSync('./internals')) {
                 fs.mkdirSync('./internals');
@@ -222,7 +222,7 @@ function createWindow() {
                 fs.writeFileSync('./internals/apps.json', JSON.stringify([], null, 2));
             }
             const appsInternal = JSON.parse(fs.readFileSync('./internals/apps.json', 'utf-8'));
-            appsInternal.push(data.steamAppID);
+            appsInternal.push(data.appID);
             fs.writeFileSync('./internals/apps.json', JSON.stringify(appsInternal, null, 2));
             return;
         });

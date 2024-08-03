@@ -87,14 +87,18 @@
 {/if}
 <div class="flex flex-col top-0 left-0 absolute w-full h-full bg-white z-[2] animate-fade-in-pop-fast" >
   <div class="relative flex justify-center items-center w-full">
-    <img src={`https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/${appID}/library_hero.jpg`} alt="header" class="w-full h-full" style="position: relative; z-index: 1;" />
-    {#await doesLinkExist(`https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/${appID}/logo_2x.png`)}
-      <div class="absolute z-[2] w-full h-full"></div>
-    {:then result}
-      {#if result}
-        <img src={`https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/${appID}/logo_2x.png`} alt="logo" class="rounded absolute z-[2] w-2/4 h-1/4 drop-shadow-lg" style="top: 50%; left: 50%; transform: translate(-50%, -50%);" />
-      {/if}
-    {/await}
+    <img src={libraryInfo.coverImage ?? `https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/${appID}/library_hero.jpg`} alt="header" class="w-full h-full" style="position: relative; z-index: 1;" />
+    {#if libraryInfo.titleImage}
+      <img src={libraryInfo.titleImage} alt="title" class="absolute z-[2] w-1/4 h-1/4 drop-shadow-lg" style="top: 50%; left: 50%; transform: translate(-50%, -50%);" />
+    {:else}
+      {#await doesLinkExist(`https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/${appID}/logo_2x.png`)}
+        <div class="absolute z-[2] w-full h-full"></div>
+      {:then result}
+        {#if result}
+          <img src={`https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/${appID}/logo_2x.png`} alt="logo" class="rounded absolute z-[2] w-2/4 h-1/4 drop-shadow-lg" style="top: 50%; left: 50%; transform: translate(-50%, -50%);" />
+        {/if}
+      {/await}
+    {/if}
   </div>
   <div class="w-full bg-slate-200 p-4 flex-row flex justify-start items-center gap-8">
     <button bind:this={playButton} class="px-8 py-4 flex border-none rounded-lg justify-center bg-green-500 items-center flex-row gap-2 disabled:bg-yellow-500" on:click={launchGame}>

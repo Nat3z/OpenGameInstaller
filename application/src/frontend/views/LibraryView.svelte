@@ -36,7 +36,7 @@
 
 <div class="relative w-full h-full">
   {#if selectedApp}
-    <PlayPage appID={selectedApp.steamAppID} libraryInfo={selectedApp} exitPlayPage={exitPlayPage} />
+    <PlayPage appID={selectedApp.appID ?? selectedApp.steamAppID} libraryInfo={selectedApp} exitPlayPage={exitPlayPage} />
   {/if}
   <span class="flex flex-row p-4 gap-2 justify-start items-start w-full h-full relative">
     

@@ -1,21 +1,19 @@
 <script lang="ts">
-  // fetch the Steam store page
   import { onMount } from 'svelte';
   import { safeFetch, startDownload, type SearchResultWithAddon } from '../utils';
-  import { createNotification, currentStorePageOpened, selectedView, viewOpenedWhenChanged } from '../store';
+  import { createNotification, currentStorePageOpened, currentStorePageOpenedSource, selectedView, viewOpenedWhenChanged } from '../store';
   import type { SearchResult, StoreData } from 'ogi-addon';
   export let appID: number;
-
+  export let addonSource: string;
 	let results: SearchResultWithAddon[] = [];
   let gameData: StoreData;
   let loading = true;
-  let addonSource: string;
   let queryingSources = false;
 
 	let alreadyOwns = window.electronAPI.fs.exists('./library/' + appID + '.json');
   onMount(async () => {
     try {
-      const response: StoreData = await safeFetch("http://localhost:7654/addons/" + addonSource + '/game-details', { body: JSON.stringify({ gameID: appID }), consume: 'json' }); 
+      const response: StoreData = await safeFetch("http://localhost:7654/addons/" + addonSource + '/game-details?gameID=' + appID, { consume: 'json' }); 
       loading = false;
       gameData = response;
       safeFetch("http://localhost:7654/addons/" + addonSource + "/search?gameID=" + appID, { consume: 'json' }).then((data: SearchResult[]) => {
@@ -34,10 +32,11 @@
       console.error(ex);
       createNotification({
         id: Math.random().toString(36).substring(7),
-        message: 'Failed to fetch Steam store page',
+        message: 'Failed to fetch Custom store page',
         type: 'error'
       });
       currentStorePageOpened.set(undefined);
+      currentStorePageOpenedSource.set(undefined);
     }
 
   });

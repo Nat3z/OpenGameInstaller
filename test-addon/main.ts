@@ -22,7 +22,7 @@ addon.on('connect', () => {
 })
 
 addon.on('search', ({ text, type }, event) => {
-  if (type === "steamapp") {
+  if (type === "internal" || type === "steamapp") {
     event.resolve([
       {
         name: "Direct Download Test",
@@ -49,7 +49,7 @@ addon.on('search', ({ text, type }, event) => {
   addon.notify({ type: 'info', message: 'Searching...', id: 'search' });
 });
 
-addon.on('setup', ({ path, type, name, usedRealDebrid, steamAppID, multiPartFiles }, event) => {
+addon.on('setup', ({ path, type, name, usedRealDebrid, appID, storefront, multiPartFiles }, event) => {
   event.defer();
   event.log(`
 path: ${path}
@@ -67,12 +67,41 @@ multiPartFiles: ${multiPartFiles}
     setTimeout(() => {
       event.resolve({
         cwd: path,
-        capsuleImage: `https://steamcdn-a.akamaihd.net/steam/apps/${steamAppID}/library_600x900_2x.jpg`,
+        capsuleImage: `https://steamcdn-a.akamaihd.net/steam/apps/${appID}/library_600x900_2x.jpg`,
         launchExecutable: 'test.exe',
         name: name,
-        steamAppID: steamAppID,
+        appID: appID,
+        storefront: 'steam',
+        addonsource: 'test-addon',
+        coverImage: `https://steamcdn-a.akamaihd.net/steam/apps/${appID}/library_600x900_2x.jpg`,
+        titleImage: `https://steamcdn-a.akamaihd.net/steam/apps/${appID}/library_600x900_2x.jpg`,
         version: '1.0.0'
       })
     }, 5000);
   });
+});
+
+addon.on('library-search', (text, event) => {
+  event.resolve([
+    {
+      appID: 1,
+      capsuleImage: 'https://dummyimage.com/375x500/968d96/ffffff',
+      name: 'Test App'
+    }
+  ])
+});
+
+addon.on('game-details', (appID, event) => {
+  event.resolve({
+    appID: appID,
+    basicDescription: 'The Coolest Test App',
+    capsuleImage: 'https://dummyimage.com/375x500/968d96/ffffff',
+    description: 'This is a test app',
+    coverImage: 'https://dummyimage.com/375x500/968d96/ffffff',
+    name: 'Test App',
+    developers: ['OGI Developers'],
+    headerImage: 'https://dummyimage.com/500x350/968d96/ffffff',
+    publishers: ['OGI Developers'],
+    releaseDate: new Date().toISOString(),
+  })
 });

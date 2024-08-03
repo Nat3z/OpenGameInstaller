@@ -13,13 +13,13 @@
     
     if (window.electronAPI.fs.exists('./internals/apps.json')) {
       const appsOrdered: number[] = JSON.parse(window.electronAPI.fs.read('./internals/apps.json'));
-      let libraryWithUndefined = appsOrdered.map((id) => apps.find((app) => app.steamAppID === id) ?? undefined);
+      let libraryWithUndefined = appsOrdered.map((id) => apps.find((app) => app.appID === id) ?? undefined);
       // get rid of undefined values and duplicate apps
       library = libraryWithUndefined.filter((app) => app !== undefined) as LibraryInfo[];
-      library = library.filter((app, index) => library.findIndex((libApp) => libApp.steamAppID === app.steamAppID) === index);
+      library = library.filter((app, index) => library.findIndex((libApp) => libApp.appID === app.appID) === index);
       // see if other apps are not in the list, if so add them
       apps.forEach((app) => {
-        if (!library.find((libApp) => libApp.steamAppID === app.steamAppID)) {
+        if (!library.find((libApp) => libApp.appID === app.appID)) {
           console.log("Adding app to library: " + app.name);
           library.push(app);
         }
@@ -36,7 +36,7 @@
 
 <div class="relative w-full h-full">
   {#if selectedApp}
-    <PlayPage appID={selectedApp.appID ?? selectedApp.steamAppID} libraryInfo={selectedApp} exitPlayPage={exitPlayPage} />
+    <PlayPage appID={selectedApp.appID ?? selectedApp.appID} libraryInfo={selectedApp} exitPlayPage={exitPlayPage} />
   {/if}
   <span class="flex flex-row p-4 gap-2 justify-start items-start w-full h-full relative">
     

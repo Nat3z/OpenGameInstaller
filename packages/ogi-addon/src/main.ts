@@ -25,7 +25,7 @@ export interface ClientSentEventTypes {
   'input-asked': ConfigurationBuilder;
 }
 
-export interface BasicLibraryInfo {
+export type BasicLibraryInfo = {
   name: string;
   capsuleImage: string;
   appID: number;
@@ -119,8 +119,10 @@ export interface LibraryInfo {
   launchExecutable: string;
   launchArguments?: string;
   capsuleImage: string;
-  coverImage?: string;
-  titleImage?: string;
+  storefront: 'steam' | 'internal';
+  addonsource: string;
+  coverImage: string;
+  titleImage: string;
 }
 interface Notification {
   type: 'warning' | 'error' | 'info' | 'success';
@@ -227,7 +229,7 @@ class OGIAddonWSListener {
           break
         case 'setup':
           let setupEvent = new EventResponse<LibraryInfo>((screen, name, description) => this.userInputAsked(screen, name, description, this.socket));
-          this.eventEmitter.emit('setup', { path: message.args.path, steamAppID: message.args.steamAppID, type: message.args.type, name: message.args.name, usedRealDebrid: message.args.usedRealDebrid, multiPartFiles: message.args.multiPartFiles }, setupEvent);
+          this.eventEmitter.emit('setup', { path: message.args.path, appID: message.args.appID, storefront: message.args.storefront, type: message.args.type, name: message.args.name, usedRealDebrid: message.args.usedRealDebrid, multiPartFiles: message.args.multiPartFiles }, setupEvent);
           const interval = setInterval(() => {
             if (setupEvent.resolved) {
               clearInterval(interval);

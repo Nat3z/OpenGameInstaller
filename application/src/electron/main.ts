@@ -177,14 +177,14 @@ function createWindow() {
                     type: 'error'
                 });
                 console.error('Failed to launch game');
-                mainWindow?.webContents.send('game:launch-error', { id: appInfo.steamAppID })
+                mainWindow?.webContents.send('game:launch-error', { id: appInfo.appID })
             });
             spawnedItem.on('exit', (exit) => {
                 console.log('Game exited with code: ' + exit);
-                mainWindow?.webContents.send('game:exit', { id: appInfo.steamAppID });
+                mainWindow?.webContents.send('game:exit', { id: appInfo.appID });
             });
 
-            mainWindow?.webContents.send('game:launch', { id: appInfo.steamAppID });
+            mainWindow?.webContents.send('game:launch', { id: appInfo.appID });
         });
 
         ipcMain.handle('app:remove-app', async (_, appid: number) => {
@@ -1272,6 +1272,8 @@ EnableFSMonitor=Disabled
             return { action: 'deny' }
         })
 
+        convertLibrary();
+
         app.on('browser-window-focus', function () {
             globalShortcut.register("CommandOrControl+R", () => {
                 console.log("CommandOrControl+R is pressed: Shortcut Disabled");
@@ -1308,6 +1310,31 @@ EnableFSMonitor=Disabled
     });
 }
 
+async function convertLibrary() {
+    // read the library directory
+    const libraryPath = './library/';
+    if (!fs.existsSync(libraryPath)) {
+        return;
+    }
+    const files = fs.readdirSync(libraryPath);
+    for (const file of files) {
+        const filePath = join(libraryPath, file);
+        const fileData = fs.readFileSync(filePath, 'utf-8');
+        let data: LibraryInfo & { steamAppID?: number } = JSON.parse(fileData);
+        if (data.steamAppID) {
+            // convert the app id to an appID
+            data.appID = data.steamAppID;
+            delete data.steamAppID;
+            data.coverImage = `https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/${data.appID}/library_hero.jpg`;
+            data.titleImage = `https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/${data.appID}/logo_2x.png`;
+            data.addonsource = 'steam';
+            data.storefront = 'steam';
+            fs.writeFileSync(filePath, JSON.stringify(data, null, 4));
+            console.log(`Converted ${file} to new format`);
+        }
+    }
+
+}
 async function checkForGitUpdates(repoPath: string): Promise<boolean> {
     // Change the directory to the repository path and run 'git fetch --dry-run'
     return new Promise((resolve, _) => {

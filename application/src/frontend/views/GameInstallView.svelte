@@ -1,8 +1,8 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { fetchAddonsWithConfigure, safeFetch, type GameData } from "../utils";
-	import { createNotification, currentStorePageOpened, viewOpenedWhenChanged } from '../store'
-  import type { OGIAddonConfiguration } from "ogi-addon";
+	import { createNotification, currentStorePageOpened, currentStorePageOpenedSource, viewOpenedWhenChanged } from '../store'
+  import type { BasicLibraryInfo, OGIAddonConfiguration } from "ogi-addon";
   import type { ConfigurationFile } from "ogi-addon/config";
 	interface ConfigTemplateAndInfo extends OGIAddonConfiguration {
     configTemplate: ConfigurationFile
@@ -52,7 +52,8 @@
 		return steamAppId;
 	}
 
-	let results: GameData[] = [];
+	type SearchResult = BasicLibraryInfo & { addonsource: string };
+	let results: SearchResult[] = [];
 
 	let loadingResults = false;
 	async function search() {
@@ -67,6 +68,19 @@
 				loadingResults = false;
 				return;
 			}
+			// send to addons first for internal search
+			Promise.all(addons.map(async (addon) => {
+				const response: BasicLibraryInfo[] = await safeFetch("http://localhost:7654/addons/" + addon.id + "/search-query?query=" + query, { consume: 'json' });
+				results = [...results, ...response.map((result) => {
+					return {
+						appID: result.appID,
+						name: result.name,
+						capsuleImage: result.capsuleImage,
+						addonsource: addon.id
+					}
+				}) ];
+			}));
+
 			// first get the steam app id
 			const possibleSteamApps = await matchSteamAppID(extractSimpleName(query) ?? query);
 			if (!possibleSteamApps) {
@@ -90,10 +104,16 @@
 				}
 				const gameData: GameData = response.data[real].data;
 				// check if the appid is already in the results
-				if (results.find((result) => result.steam_appid === gameData.steam_appid)) {
+				if (results.find((result) => result.appID === gameData.steam_appid)) {
 					continue;
 				}
-				results = [...results, gameData];
+				results = [...results, {
+					appID: gameData.steam_appid,
+					name: gameData.name,
+					capsuleImage: gameData.header_image,
+					addonsource: "steam"
+				}];
+				
 				amountSearched++;
 				if (amountSearched >= 10) {
 					break;
@@ -113,8 +133,15 @@
 
 	}
 
-	function goToListing(steam_appid: number) {
-		currentStorePageOpened.set(steam_appid)
+	function goToListing(appID: number, addonSource: string) {
+		if (addonSource === "steam") {
+			currentStorePageOpened.set(appID);
+			viewOpenedWhenChanged.set("gameInstall");
+			currentStorePageOpenedSource.set(addonSource);
+			return;
+		}
+		currentStorePageOpened.set(appID);
+		currentStorePageOpenedSource.set(addonSource);
 		viewOpenedWhenChanged.set('gameInstall');
 	}	
 </script>
@@ -123,10 +150,10 @@
 <div class="games">
 	{#each results as result}
 		<div class="relative rounded">
-			<img src={result.header_image} alt={result.name} class="rounded w-1/4 h-full object-cover"/>
+			<img src={result.capsuleImage} alt={result.name} class="rounded w-1/4 h-full object-cover"/>
 			<span class="h-full flex flex-col justify-start items-start">
 				<h1 class="font-archivo">{result.name}</h1>
-				<button class="mt-auto py-2 px-4 hover:underline rounded" on:click={() => goToListing(result.steam_appid)}>Go to Listing</button>
+				<button class="mt-auto py-2 px-4 hover:underline rounded" on:click={() => goToListing(result.appID, result.addonsource)}>Go to Listing</button>
 			</span>
 		</div>
 	{/each}

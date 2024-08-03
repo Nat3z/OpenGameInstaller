@@ -9,11 +9,12 @@
 
   import { fetchAddonsWithConfigure, getConfigClientOption } from "./utils";
   import Notifications from "./components/Notifications.svelte";
-  import { addonUpdates, currentStorePageOpened, selectedView, viewOpenedWhenChanged, type Views } from "./store";
+  import { addonUpdates, currentStorePageOpened, currentStorePageOpenedSource, selectedView, viewOpenedWhenChanged, type Views } from "./store";
   import SteamStorePage from "./components/SteamStorePage.svelte";
   import InputScreenManager from "./components/InputScreenManager.svelte";
   import LibraryView from "./views/LibraryView.svelte";
   import GameManager from "./components/GameManager.svelte";
+  import CustomStorePage from "./components/CustomStorePage.svelte";
 	
 	// post config to server for each addon
 
@@ -60,6 +61,7 @@
       // If the store is open and the same tab is clicked again, close the store
       isStoreOpen = false;
       currentStorePageOpened.set(undefined);
+			currentStorePageOpenedSource.set(undefined);
       heldPageOpened = undefined;
 			viewOpenedWhenChanged.set(undefined);
 			console.log("Removing store from view");
@@ -118,7 +120,11 @@
 	</nav>
 	<main class="flex items-center flex-col gap-4 w-full h-full overflow-y-auto">
 		{#if $currentStorePageOpened}
+			{#if $currentStorePageOpenedSource === 'steam'}
 			<SteamStorePage appID={$currentStorePageOpened} />
+			{:else if $currentStorePageOpenedSource}
+				<CustomStorePage appID={$currentStorePageOpened} addonSource={$currentStorePageOpenedSource} />
+			{/if}
 		{:else}
 			{#if $selectedView === "config"}
 				<ConfigView />

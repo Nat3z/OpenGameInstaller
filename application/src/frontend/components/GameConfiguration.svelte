@@ -75,7 +75,7 @@
   }
 
   async function removeFromList() {
-    await window.electronAPI.app.removeApp(gameInfo.steamAppID);
+    await window.electronAPI.app.removeApp(gameInfo.appID);
     createNotification({
       id: Math.random().toString(36).substring(7),
       message: 'Game removed from library. (Not deleted from disk)',

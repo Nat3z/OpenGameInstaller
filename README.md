@@ -3,7 +3,7 @@
 </p>
 
 # OpenGameInstaller
-A game installation platform built with developers in mind.
+A game installation and management platform built with developers in mind.
 
 **Using third-party addons is your responsibility. We at OpenGameInstaller are not responsible for the content you download with our utility. Please download responsibly.**
 

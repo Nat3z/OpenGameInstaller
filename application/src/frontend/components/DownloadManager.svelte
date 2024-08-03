@@ -117,35 +117,22 @@
           }
         }));
       },
-      consume: "text"
-    }).then((data) => {
+      consume: "json"
+    }).then((data: LibraryInfo) => {
       if (downloadedItem === undefined) return;
-      if (data === "success") {
-        currentDownloads.update((downloads) => {
-          return downloads.map((download) => {
-            if (download.id === downloadedItem?.id) {
-              return {
-                ...download,
-                status: 'seeding',
-                downloadPath: outputDir
-              }
+      window.electronAPI.app.insertApp(data);
+      currentDownloads.update((downloads) => {
+        return downloads.map((download) => {
+          if (download.id === downloadedItem?.id) {
+            return {
+              ...download,
+              status: 'seeding',
+              downloadPath: downloadedItem.downloadPath
             }
-            return download;
-          });
+          }
+          return download;
         });
-      } else {
-        currentDownloads.update((downloads) => {
-          return downloads.map((download) => {
-            if (download.id === downloadedItem?.id) {
-              return {
-                ...download,
-                status: 'error'
-              }
-            }
-            return download;
-          });
-        });
-      }
+      });
     });
   });
 

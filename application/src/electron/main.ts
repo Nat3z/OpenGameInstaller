@@ -170,14 +170,15 @@ function createWindow() {
             const spawnedItem = exec("\"" + appInfo.launchExecutable + "\" " + args, {
                 cwd: appInfo.cwd
             })
-            spawnedItem.on('error', () => {
+            spawnedItem.on('error', (error) => {
+                console.error(error);
                 sendNotification({
                     message: 'Failed to launch game',
                     id: Math.random().toString(36).substring(7),
                     type: 'error'
                 });
                 console.error('Failed to launch game');
-                mainWindow?.webContents.send('game:launch-error', { id: appInfo.appID })
+                mainWindow?.webContents.send('game:exit', { id: appInfo.appID });
             });
             spawnedItem.on('exit', (exit) => {
                 console.log('Game exited with code: ' + exit);
@@ -187,6 +188,7 @@ function createWindow() {
                         id: Math.random().toString(36).substring(7),
                         type: 'error'
                     });
+
                     mainWindow?.webContents.send('game:exit', { id: appInfo.appID });
                     return
                 }
@@ -1186,6 +1188,9 @@ EnableFSMonitor=Disabled
             }
 
             // pull all of the addons
+            if (!fs.existsSync('./addons/')) {
+                return;
+            }
             const addons = fs.readdirSync('./addons/');
 
             let addonsUpdated = 0;
@@ -1376,6 +1381,9 @@ async function checkForGitUpdates(repoPath: string): Promise<boolean> {
 }
 
 function checkForAddonUpdates() {
+    if (!fs.existsSync('./addons/')) {
+        return;
+    }
     const addons = fs.readdirSync('./addons/');
     for (const addon of addons) {
         const addonPath = './addons/' + addon;

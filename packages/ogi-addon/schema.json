@@ -1,0 +1,31 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "AddonFileConfigurationSchema",
+  "type": "object",
+  "properties": {
+    "author": {
+      "type": "string"
+    },
+    "scripts": {
+      "type": "object",
+      "properties": {
+        "setup": {
+          "type": "string"
+        },
+        "run": {
+          "type": "string"
+        },
+        "preSetup": {
+          "type": "string"
+        },
+        "postSetup": {
+          "type": "string"
+        }
+      },
+      "required": ["run"],
+      "additionalProperties": false
+    }
+  },
+  "required": ["author", "scripts"],
+  "additionalProperties": false
+}

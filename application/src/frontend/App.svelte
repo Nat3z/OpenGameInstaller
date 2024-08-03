@@ -9,9 +9,10 @@
 
   import { fetchAddonsWithConfigure, getConfigClientOption } from "./utils";
   import Notifications from "./components/Notifications.svelte";
-  import { addonUpdates, currentStorePageOpened, currentStorePageOpenedSource, selectedView, viewOpenedWhenChanged, type Views } from "./store";
+  import { addonUpdates, currentStorePageOpened, currentStorePageOpenedSource, gameFocused, launchGameTrigger, selectedView, viewOpenedWhenChanged, type Views } from "./store";
   import SteamStorePage from "./components/SteamStorePage.svelte";
   import InputScreenManager from "./components/InputScreenManager.svelte";
+	import PlayIcon from './Icons/PlayIcon.svelte';
   import LibraryView from "./views/LibraryView.svelte";
   import GameManager from "./components/GameManager.svelte";
   import CustomStorePage from "./components/CustomStorePage.svelte";
@@ -20,6 +21,8 @@
 
 	let finishedOOBE = true;
 	let loading = true;
+
+	let recentlyLaunchedApps: LibraryInfo[] = [];
 	onMount(() => {
 		loading = true;
 		setTimeout(() => {
@@ -29,6 +32,23 @@
 				finishedOOBE = false;
 			}
 			loading = false;
+
+			// get recently launched apps
+			let exists = window.electronAPI.fs.exists('./internals/apps.json');
+			let itemsAdded = 0;
+			if (exists) {
+				let apps: number[] = JSON.parse(window.electronAPI.fs.read('./internals/apps.json'));
+				// then get the app info via the ./library/{appID}.json
+				apps.forEach((appID) => {
+					let exists = window.electronAPI.fs.exists(`./library/${appID}.json`);
+					if (itemsAdded >= 3) return;
+					if (exists) {
+						let appInfo: LibraryInfo = JSON.parse(window.electronAPI.fs.read(`./library/${appID}.json`));
+						recentlyLaunchedApps.push(appInfo);
+						itemsAdded++;
+					}
+				});
+			}
 		}, 5);
 	});
 
@@ -84,6 +104,17 @@
     }
 		iTriggeredIt = false;
   }
+
+	function playGame(gameID: number) {
+		console.log("Playing game with ID: " + gameID);
+    selectedView.set('library');
+    viewOpenedWhenChanged.set('library');
+    currentStorePageOpened.set(undefined);
+		gameFocused.set(gameID);
+		setTimeout(() => {
+			launchGameTrigger.set(gameID);
+		}, 5);	
+  }
 </script>
 
 {#if !finishedOOBE}
@@ -117,6 +148,25 @@
 			<img src="./settings.svg" alt="Settings" />
 			<label>Settings</label>
 		</button>
+
+		<span class="flex flex-col justify-start items-center w-full p-4">
+			{#if recentlyLaunchedApps.length > 0}
+			<h1 class="text-left !font-archivo w-full">Recently Played</h1>
+				{#each recentlyLaunchedApps as app}
+					<div class="flex flex-row justify-start items-center w-full gap-4 p-2 h-22 rounded hover:bg-gray-100 transition-colors" on:click={() => playGame(app.appID)}>
+						<img src={app.capsuleImage} alt="capsule" class="w-12 h-22 rounded" />
+						<div class="flex flex-col ">
+							<h1 class="font-open-sans text-sm">{app.name}</h1>
+							<div class="flex flex-row gap-2">
+								<PlayIcon width="12px" fill="#d1d5db" /> 
+
+								<p class="font-archivo text-gray-300">Start</p>
+							</div>
+						</div>
+					</div>
+				{/each}
+			{/if}
+		</span>
 	</nav>
 	<main class="flex items-center flex-col gap-4 w-full h-full overflow-y-auto">
 		{#if $currentStorePageOpened}

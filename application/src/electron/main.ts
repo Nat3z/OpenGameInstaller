@@ -181,6 +181,16 @@ function createWindow() {
             });
             spawnedItem.on('exit', (exit) => {
                 console.log('Game exited with code: ' + exit);
+                if (exit !== 0) {
+                    sendNotification({
+                        message: 'Game Crashed',
+                        id: Math.random().toString(36).substring(7),
+                        type: 'error'
+                    });
+                    mainWindow?.webContents.send('game:launch-error', { id: appInfo.appID })
+                    return
+                }
+                
                 mainWindow?.webContents.send('game:exit', { id: appInfo.appID });
             });
 

@@ -1,15 +1,15 @@
 <script lang="ts">
   import type { LibraryInfo } from "ogi-addon";
   import PlayIcon from "../Icons/PlayIcon.svelte";
-  import { currentStorePageOpened, currentStorePageOpenedSource, gamesLaunched } from "../store";
+  import { currentStorePageOpened, currentStorePageOpenedSource, gamesLaunched, launchGameTrigger } from "../store";
   import { onMount, onDestroy } from "svelte";
   import SettingsFilled from "../Icons/SettingsFilled.svelte";
   import GameConfiguration from "./GameConfiguration.svelte";
 
-  export let appID: number;
   export let libraryInfo: LibraryInfo;
   export let exitPlayPage: () => void;
-  async function doesLinkExist(url: string) {
+  async function doesLinkExist(url: string | undefined) {
+    if (!url) return false;
     const response = await window.electronAPI.app.axios({
       method: 'get',
       url: url,
@@ -22,10 +22,11 @@
 
   let playButton: HTMLButtonElement;
   async function launchGame() {
-    console.log("Launching game with appID: " + appID);
-    await window.electronAPI.app.launchGame("" + appID);
+    if ($gamesLaunched[libraryInfo.appID] === 'launched') return;
+    console.log("Launching game with appID: " + libraryInfo.appID);
+    await window.electronAPI.app.launchGame("" + libraryInfo.appID);
     gamesLaunched.update((games) => {
-      games[appID] = 'launched'
+      games[libraryInfo.appID] = 'launched'
       return games;
     });
     playButton.disabled = true;
@@ -38,30 +39,39 @@
     if (window.electronAPI.fs.exists('./internals/apps.json')) {
       let appsOrdered: number[] = JSON.parse(window.electronAPI.fs.read('./internals/apps.json'));
       // remove the appID from the list
-      appsOrdered = appsOrdered.filter((id) => id !== appID);
+      appsOrdered = appsOrdered.filter((id) => id !== libraryInfo.appID);
       // add it to the front
-      appsOrdered.unshift(appID);
+      appsOrdered.unshift(libraryInfo.appID);
       window.electronAPI.fs.write('./internals/apps.json', JSON.stringify(appsOrdered, null, 2));
     }
   }
+
+  const unsubscribe2 = launchGameTrigger.subscribe((game) => {
+    console.log('launchGameTrigger', libraryInfo.appID);
+    if (game === libraryInfo.appID) {
+      launchGame();
+      launchGameTrigger.set(undefined)
+    }
+  });
   const unsubscribe = gamesLaunched.subscribe((games) => {
-      if (!playButton) return;
-      // wait for playButton to be defined
-      if (!games[appID]) {
-        playButton.disabled = false;
-        playButton.querySelector('p')!!.textContent = "PLAY";
-        playButton.querySelector('svg')!!.style.display = "block";
-        return;
-      }
-      if (games[appID] === 'launched') {
-        playButton.disabled = true;
-        playButton.querySelector('p')!!.textContent = "PLAYING";
-        playButton.querySelector('svg')!!.style.display = "none";
-      } else if (games[appID] === 'error') {
-        playButton.disabled = false;
-        playButton.querySelector('p')!!.textContent = "ERROR";
-        playButton.querySelector('svg')!!.style.display = "none";
-      }
+    if (!playButton) return;
+    // wait for playButton to be defined
+    if (!games[libraryInfo.appID]) {
+      playButton.disabled = false;
+      playButton.querySelector('p')!!.textContent = "PLAY";
+      playButton.querySelector('svg')!!.style.display = "block";
+      return;
+    }
+    if (games[libraryInfo.appID] === 'launched') {
+      playButton.disabled = true;
+      playButton.querySelector('p')!!.textContent = "PLAYING";
+      playButton.querySelector('svg')!!.style.display = "none";
+    } else if (games[libraryInfo.appID] === 'error') {
+      console.log('Error launching game');
+      playButton.disabled = false;
+      playButton.querySelector('p')!!.textContent = "ERROR";
+      playButton.querySelector('svg')!!.style.display = "none";
+    }
   }); 
   onMount(() => {
     
@@ -78,9 +88,12 @@
     libraryInfo.cwd = data.cwd;
     libraryInfo.launchExecutable = data.launchExecutable;
     libraryInfo.launchArguments = data.launchArguments;
-    window.electronAPI.fs.write('./library/' + appID + '.json', JSON.stringify(libraryInfo, null, 2));   
+    window.electronAPI.fs.write('./library/' + libraryInfo.appID + '.json', JSON.stringify(libraryInfo, null, 2));   
   }
-  onDestroy(unsubscribe);
+  onDestroy(() => {
+    unsubscribe();
+    unsubscribe2();
+  });
 </script>
 {#if openedGameConfiguration}
   <GameConfiguration gameInfo={libraryInfo} onFinish={onFinish} exitPlayPage={exitPlayPage} />
@@ -92,7 +105,7 @@
       <div class="absolute z-[2] w-full h-full"></div>
     {:then result}
       {#if result}
-        <img src={`https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/${appID}/logo_2x.png`} alt="logo" class="rounded absolute z-[2] w-2/4 h-1/4 drop-shadow-lg" style="top: 50%; left: 50%; transform: translate(-50%, -50%);" />
+        <img src={libraryInfo.titleImage} alt="logo" class="rounded absolute z-[2] w-2/4 h-1/4 drop-shadow-lg" style="top: 50%; left: 50%; transform: translate(-50%, -50%);" />
       {/if}
     {/await}
   </div>
@@ -112,7 +125,7 @@
     </button>
   </div>
   <div class="w-full flex-row bg-slate-200 p-4 py-2 flex justify-start items-center">
-    <button class="hover:bg-slate-400 border-none rounded-lg p-4 py-2" on:click={() => {currentStorePageOpened.set(appID); currentStorePageOpenedSource.set(libraryInfo.addonsource)}}>
+    <button class="hover:bg-slate-400 border-none rounded-lg p-4 py-2" on:click={() => {currentStorePageOpened.set(libraryInfo.appID); currentStorePageOpenedSource.set(libraryInfo.addonsource)}}>
       <p class="font-archivo text-black">Store Page</p>
     </button>
   </div>

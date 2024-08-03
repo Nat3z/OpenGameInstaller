@@ -122,7 +122,7 @@ export interface LibraryInfo {
   storefront: 'steam' | 'internal';
   addonsource: string;
   coverImage: string;
-  titleImage: string;
+  titleImage?: string;
 }
 interface Notification {
   type: 'warning' | 'error' | 'info' | 'success';

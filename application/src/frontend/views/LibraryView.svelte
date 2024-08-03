@@ -1,11 +1,14 @@
 <script lang="ts">
   import type { LibraryInfo } from "ogi-addon";
-  import { onMount } from "svelte";
+  import { onDestroy, onMount } from "svelte";
   import PlayPage from "../components/PlayPage.svelte";
+  import { gameFocused } from "../store";
+  import { writable, type Writable } from "svelte/store";
   let library: LibraryInfo[] = [];
-  let selectedApp: LibraryInfo | undefined;
+  let selectedApp: Writable<LibraryInfo | undefined> = writable(undefined);
+  let loading = true;
   export const exitPlayPage = () => {
-    selectedApp = undefined;
+    $selectedApp = undefined;
     reloadLibrary();
   }
   async function reloadLibrary() {
@@ -28,24 +31,42 @@
     else {
       library = apps;
     }
+    loading = false;
   }
   onMount(async () => {
     await reloadLibrary();
   });
+
+  const unsubscribe = gameFocused.subscribe((game) => {
+    if (game) {
+      $selectedApp = library.find((app) => app.appID === game);
+    }
+  });
+  onDestroy(() => {
+    unsubscribe();
+  });
+
 </script>
 
 <div class="relative w-full h-full">
-  {#if selectedApp}
-    <PlayPage appID={selectedApp.appID ?? selectedApp.appID} libraryInfo={selectedApp} exitPlayPage={exitPlayPage} />
+  {#if $selectedApp}
+    <PlayPage libraryInfo={$selectedApp} exitPlayPage={exitPlayPage} />
   {/if}
   <span class="flex flex-row p-4 gap-2 justify-start items-start w-full h-full relative">
-    
     {#each library as app}
-      <button data-library-item class="flex border-none flex-col gap-2 transition-all shadow-md" on:click={() => selectedApp = app}>
+      <button data-library-item class="flex border-none flex-col gap-2 transition-all shadow-md" on:click={() => $selectedApp = app}>
         <img src={app.capsuleImage} alt={app.name} class="w-44 h-64 rounded object-cover" />
       </button>
     {/each}
+    {#if library.length === 0 && !loading}
+      <div class="flex flex-col gap-2 w-full justify-center items-center h-full">
+        <img src="./favicon.png" alt="content" class="w-32 h-32" />
+        <h1 class="text-2xl text-black">No games in library</h1>
+      </div>
+
+    {/if}
   </span>
+  
 </div>
 
 

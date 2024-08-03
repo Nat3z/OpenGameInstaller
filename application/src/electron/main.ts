@@ -167,7 +167,7 @@ function createWindow() {
             
             const appInfo: LibraryInfo = JSON.parse(fs.readFileSync('./library/' + appid + '.json', 'utf-8'));
             const args = appInfo.launchArguments ?? ''
-            const spawnedItem = exec(appInfo.launchExecutable + " " + args, {
+            const spawnedItem = exec("\"" + appInfo.launchExecutable + "\" " + args, {
                 cwd: appInfo.cwd
             })
             spawnedItem.on('error', () => {

@@ -125,9 +125,9 @@ app.get('/:addonID/game-details', async (req, res) => {
   if (!req.query || req.query.gameID === undefined) {
     return res.status(400).send('No gameID provided');
   }
-
+  const gameID = parseInt(req.query.gameID as string);
   const deferrableTask = new DeferrableTask(async () => {
-    const data = await client.sendEventMessage({ event: 'game-details', args: req.query.gameID });
+    const data = await client.sendEventMessage({ event: 'game-details', args: gameID });
     return data.args;
   }, client.addonInfo.id);
 

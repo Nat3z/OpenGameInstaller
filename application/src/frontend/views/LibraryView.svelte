@@ -38,8 +38,11 @@
   });
 
   const unsubscribe = gameFocused.subscribe((game) => {
-    if (game) {
-      $selectedApp = library.find((app) => app.appID === game);
+    if (game !== undefined) {
+      setTimeout(() => {
+        selectedApp.set(library.find((app) => app.appID === game));
+        gameFocused.set(undefined);
+      }, 100);
     }
   });
   onDestroy(() => {

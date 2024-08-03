@@ -24,6 +24,7 @@ export const currentDownloads: Writable<DownloadStatusAndInfo[]> = writable([])
 export const notifications: Writable<Notification[]> = writable([])
 export const currentStorePageOpened: Writable<number | undefined> = writable()
 export const currentStorePageOpenedSource: Writable<string | undefined> = writable()
+export const currentStorePageOpenedStorefront: Writable<string | undefined> = writable()
 export const gameFocused: Writable<number | undefined> = writable();
 export const launchGameTrigger: Writable<number | undefined> = writable(undefined)
 export const gamesLaunched: Writable<Record<string, 'launched' | 'error'>> = writable({})

@@ -63,7 +63,7 @@ multiPartFiles: ${multiPartFiles}
         launchExecutable: 'test.exe',
         name: name,
         appID: appID,
-        storefront: 'steam',
+        storefront: 'internal',
         addonsource: 'test-addon',
         version: '1.0.0'
       })

@@ -11,7 +11,7 @@
   document.addEventListener('game:launch-error', (event: Event) => {
     const appID = (event as CustomEvent).detail.id;
     gamesLaunched.update((games) => {
-      games[appID] = 'error'
+      delete games[appID];
       return games;
     });
   });

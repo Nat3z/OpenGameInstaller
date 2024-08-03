@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { safeFetch, startDownload, type SearchResultWithAddon } from '../utils';
-  import { createNotification, currentStorePageOpened, currentStorePageOpenedSource, selectedView, viewOpenedWhenChanged } from '../store';
+  import { createNotification, currentStorePageOpened, currentStorePageOpenedSource, currentStorePageOpenedStorefront, gameFocused, launchGameTrigger, selectedView, viewOpenedWhenChanged } from '../store';
   import type { SearchResult, StoreData } from 'ogi-addon';
   export let appID: number;
   export let addonSource: string;
@@ -37,14 +37,22 @@
       });
       currentStorePageOpened.set(undefined);
       currentStorePageOpenedSource.set(undefined);
+      currentStorePageOpenedStorefront.set(undefined);
     }
 
   });
 
   function playGame() {
+    console.log("Playing game with ID: " + gameData.appID);
     selectedView.set('library');
     viewOpenedWhenChanged.set('library');
     currentStorePageOpened.set(undefined);
+		currentStorePageOpenedStorefront.set(undefined);
+    console.log(typeof gameData.appID);
+		gameFocused.set(gameData.appID);
+		setTimeout(() => {
+			launchGameTrigger.set(gameData.appID);
+		}, 5);	
   }
 </script>
 {#if gameData}

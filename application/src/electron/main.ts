@@ -187,7 +187,7 @@ function createWindow() {
                         id: Math.random().toString(36).substring(7),
                         type: 'error'
                     });
-                    mainWindow?.webContents.send('game:launch-error', { id: appInfo.appID })
+                    mainWindow?.webContents.send('game:exit', { id: appInfo.appID });
                     return
                 }
                 

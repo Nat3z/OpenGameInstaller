@@ -2,7 +2,7 @@
   // fetch the Steam store page
   import { onMount } from 'svelte';
   import { fetchAddonsWithConfigure, safeFetch, startDownload, type GameData, type SearchResultWithAddon } from '../utils';
-  import { createNotification, currentStorePageOpened, selectedView, viewOpenedWhenChanged } from '../store';
+  import { createNotification, currentStorePageOpened, currentStorePageOpenedStorefront, gameFocused, launchGameTrigger, selectedView, viewOpenedWhenChanged } from '../store';
   import type { SearchResult } from 'ogi-addon';
   export let appID: number;
 
@@ -68,9 +68,15 @@
   });
 
   function playGame() {
+    console.log("Playing game with ID: " + gameData.steam_appid);
     selectedView.set('library');
     viewOpenedWhenChanged.set('library');
     currentStorePageOpened.set(undefined);
+		currentStorePageOpenedStorefront.set(undefined);
+		gameFocused.set(gameData.steam_appid);
+		setTimeout(() => {
+			launchGameTrigger.set(gameData.steam_appid);
+		}, 5);	
   }
 </script>
 {#if gameData}

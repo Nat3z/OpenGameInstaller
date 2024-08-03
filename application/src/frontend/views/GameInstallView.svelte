@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { fetchAddonsWithConfigure, safeFetch, type GameData } from "../utils";
-	import { createNotification, currentStorePageOpened, currentStorePageOpenedSource, viewOpenedWhenChanged } from '../store'
+	import { createNotification, currentStorePageOpened, currentStorePageOpenedSource, currentStorePageOpenedStorefront, viewOpenedWhenChanged } from '../store'
   import type { BasicLibraryInfo, OGIAddonConfiguration } from "ogi-addon";
   import type { ConfigurationFile } from "ogi-addon/config";
 	interface ConfigTemplateAndInfo extends OGIAddonConfiguration {
@@ -138,10 +138,12 @@
 			currentStorePageOpened.set(appID);
 			viewOpenedWhenChanged.set("gameInstall");
 			currentStorePageOpenedSource.set(addonSource);
+			currentStorePageOpenedStorefront.set('steam');
 			return;
 		}
 		currentStorePageOpened.set(appID);
 		currentStorePageOpenedSource.set(addonSource);
+		currentStorePageOpenedStorefront.set('internal');
 		viewOpenedWhenChanged.set('gameInstall');
 	}	
 </script>

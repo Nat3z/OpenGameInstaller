@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { LibraryInfo } from "ogi-addon";
   import PlayIcon from "../Icons/PlayIcon.svelte";
-  import { currentStorePageOpened, currentStorePageOpenedSource, gamesLaunched, launchGameTrigger } from "../store";
+  import { currentStorePageOpened, currentStorePageOpenedSource, currentStorePageOpenedStorefront, gamesLaunched, launchGameTrigger } from "../store";
   import { onMount, onDestroy } from "svelte";
   import SettingsFilled from "../Icons/SettingsFilled.svelte";
   import GameConfiguration from "./GameConfiguration.svelte";
@@ -48,10 +48,13 @@
 
   const unsubscribe2 = launchGameTrigger.subscribe((game) => {
     console.log('launchGameTrigger', libraryInfo.appID);
-    if (game === libraryInfo.appID) {
-      launchGame();
-      launchGameTrigger.set(undefined)
-    }
+    setTimeout(() => {
+      if (game === libraryInfo.appID) {
+        launchGame();
+        launchGameTrigger.set(undefined)
+      } 
+    }, 100);
+    
   });
   const unsubscribe = gamesLaunched.subscribe((games) => {
     if (!playButton) return;
@@ -105,12 +108,12 @@
       <div class="absolute z-[2] w-full h-full"></div>
     {:then result}
       {#if result}
-        <img src={libraryInfo.titleImage} alt="logo" class="rounded absolute z-[2] w-2/4 h-1/4 drop-shadow-lg" style="top: 50%; left: 50%; transform: translate(-50%, -50%);" />
+        <img src={libraryInfo.titleImage} alt="logo" class="rounded p-32 pointer-events-none top-0 left-0 absolute z-[2] drop-shadow-lg" style="top: 50%; left: 50%; transform: translate(-50%, -50%);" />
       {/if}
     {/await}
   </div>
   <div class="w-full bg-slate-200 p-4 flex-row flex justify-start items-center gap-8">
-    <button bind:this={playButton} class="px-8 py-4 flex border-none rounded-lg justify-center bg-green-500 items-center flex-row gap-2 disabled:bg-yellow-500" on:click={launchGame}>
+    <button bind:this={playButton} class="px-8 py-4 flex border-none rounded-lg justify-center bg-green-500 items-center flex-row gap-2 disabled:bg-yellow-500" on:click={() => launchGameTrigger.set(libraryInfo.appID)}>
       <PlayIcon fill="#86efac" />
       <p class="font-archivo font-semibold text-white">PLAY</p>
     </button>
@@ -125,7 +128,7 @@
     </button>
   </div>
   <div class="w-full flex-row bg-slate-200 p-4 py-2 flex justify-start items-center">
-    <button class="hover:bg-slate-400 border-none rounded-lg p-4 py-2" on:click={() => {currentStorePageOpened.set(libraryInfo.appID); currentStorePageOpenedSource.set(libraryInfo.addonsource)}}>
+    <button class="hover:bg-slate-400 border-none rounded-lg p-4 py-2" on:click={() => {currentStorePageOpened.set(libraryInfo.appID); currentStorePageOpenedSource.set(libraryInfo.addonsource); currentStorePageOpenedStorefront.set(libraryInfo.storefront)}}>
       <p class="font-archivo text-black">Store Page</p>
     </button>
   </div>

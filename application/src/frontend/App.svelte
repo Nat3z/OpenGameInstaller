@@ -9,7 +9,7 @@
 
   import { fetchAddonsWithConfigure, getConfigClientOption } from "./utils";
   import Notifications from "./components/Notifications.svelte";
-  import { addonUpdates, currentStorePageOpened, currentStorePageOpenedSource, gameFocused, launchGameTrigger, selectedView, viewOpenedWhenChanged, type Views } from "./store";
+  import { addonUpdates, currentStorePageOpened, currentStorePageOpenedSource, currentStorePageOpenedStorefront, gameFocused, launchGameTrigger, selectedView, viewOpenedWhenChanged, type Views } from "./store";
   import SteamStorePage from "./components/SteamStorePage.svelte";
   import InputScreenManager from "./components/InputScreenManager.svelte";
 	import PlayIcon from './Icons/PlayIcon.svelte';
@@ -34,23 +34,28 @@
 			loading = false;
 
 			// get recently launched apps
-			let exists = window.electronAPI.fs.exists('./internals/apps.json');
-			let itemsAdded = 0;
-			if (exists) {
-				let apps: number[] = JSON.parse(window.electronAPI.fs.read('./internals/apps.json'));
-				// then get the app info via the ./library/{appID}.json
-				apps.forEach((appID) => {
-					let exists = window.electronAPI.fs.exists(`./library/${appID}.json`);
-					if (itemsAdded >= 3) return;
-					if (exists) {
-						let appInfo: LibraryInfo = JSON.parse(window.electronAPI.fs.read(`./library/${appID}.json`));
-						recentlyLaunchedApps.push(appInfo);
-						itemsAdded++;
-					}
-				});
-			}
+			updateRecents();
 		}, 100);
 	});
+
+	function updateRecents() {
+		let exists = window.electronAPI.fs.exists('./internals/apps.json');
+		let itemsAdded = 0;
+		if (exists) {
+			let apps: number[] = JSON.parse(window.electronAPI.fs.read('./internals/apps.json'));
+			// then get the app info via the ./library/{appID}.json
+			recentlyLaunchedApps = [];
+			apps.forEach((appID) => {
+				let exists = window.electronAPI.fs.exists(`./library/${appID}.json`);
+				if (itemsAdded >= 3) return;
+				if (exists) {
+					let appInfo: LibraryInfo = JSON.parse(window.electronAPI.fs.read(`./library/${appID}.json`));
+					recentlyLaunchedApps.push(appInfo);
+					itemsAdded++;
+				}
+			});
+		}
+	}
 
 	let heldPageOpened: number | undefined;
 	let isStoreOpen = false;
@@ -104,12 +109,17 @@
     }
 		iTriggeredIt = false;
   }
-
+	launchGameTrigger.subscribe(() => {
+		setTimeout(() => {
+			updateRecents();	
+		}, 200);
+	});
 	function playGame(gameID: number) {
 		console.log("Playing game with ID: " + gameID);
     selectedView.set('library');
     viewOpenedWhenChanged.set('library');
     currentStorePageOpened.set(undefined);
+		currentStorePageOpenedStorefront.set(undefined);
 		gameFocused.set(gameID);
 		setTimeout(() => {
 			launchGameTrigger.set(gameID);
@@ -153,9 +163,9 @@
 			{#if recentlyLaunchedApps.length > 0}
 			<h1 class="text-left !font-archivo w-full">Recently Played</h1>
 				{#each recentlyLaunchedApps as app}
-					<div class="flex flex-row justify-start items-center w-full gap-4 p-2 h-22 rounded hover:bg-gray-100 transition-colors" on:click={() => playGame(app.appID)}>
+					<div data-recently-item class="flex flex-row justify-start items-center w-full gap-4 p-2 h-22 rounded hover:bg-gray-100 hover:cursor-pointer transition-colors" on:click={() => playGame(app.appID)}>
 						<img src={app.capsuleImage} alt="capsule" class="w-12 h-22 rounded" />
-						<div class="flex flex-col ">
+						<div class="flex flex-col">
 							<h1 class="font-open-sans text-sm">{app.name}</h1>
 							<div class="flex flex-row gap-2">
 								<PlayIcon width="12px" fill="#d1d5db" /> 
@@ -170,9 +180,9 @@
 	</nav>
 	<main class="flex items-center flex-col gap-4 w-full h-full overflow-y-auto">
 		{#if $currentStorePageOpened}
-			{#if $currentStorePageOpenedSource === 'steam'}
+			{#if $currentStorePageOpenedStorefront === 'steam'}
 			<SteamStorePage appID={$currentStorePageOpened} />
-			{:else if $currentStorePageOpenedSource}
+			{:else if $currentStorePageOpenedSource && $currentStorePageOpenedStorefront === 'internal'}
 				<CustomStorePage appID={$currentStorePageOpened} addonSource={$currentStorePageOpenedSource} />
 			{/if}
 		{:else}
@@ -256,5 +266,12 @@
 	}
 	nav button label {
 		@apply pointer-events-none;
+	}
+
+	[data-recently-item]:hover p {
+		@apply text-green-300 transition-colors duration-300;
+	}
+	[data-recently-item]:hover svg {
+		@apply fill-green-300 transition-colors duration-300;
 	}
 </style>

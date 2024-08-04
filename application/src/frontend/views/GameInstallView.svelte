@@ -89,6 +89,7 @@
 			}
 			let amountSearched = 0;
 			for (const possibleSteamApp of possibleSteamApps) {
+				amountSearched++;
 				const real = await getRealGame(possibleSteamApp.appid);
 				console.log(real);
 				if (!real) {
@@ -114,7 +115,6 @@
 					addonsource: "steam"
 				}];
 				
-				amountSearched++;
 				if (amountSearched >= 10) {
 					break;
 				}

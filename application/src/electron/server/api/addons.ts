@@ -71,7 +71,7 @@ app.get('/:addonID/search-query', async (req, res) => {
     return res.status(404).send('Client not found');
 
   const deferrableTask = new DeferrableTask(async () => {
-    const event = await client.sendEventMessage({ event: 'library-search', args: req.body.query });
+    const event = await client.sendEventMessage({ event: 'library-search', args: req.query.query });
     return event.args;
   }, client.addonInfo.id);
   deferrableTask.run();

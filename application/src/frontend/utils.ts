@@ -213,7 +213,7 @@ export async function startDownload(result: SearchResultWithAddon, event: MouseE
 							clearInterval(interval);
 							resolve();
 						}
-					}, 1000);
+					}, 3000);
 				});
 			}
 
@@ -296,7 +296,7 @@ export async function startDownload(result: SearchResultWithAddon, event: MouseE
 							clearInterval(interval);
 							resolve();
 						}
-					}, 1000);
+					}, 3000);
 				});
 			}
 

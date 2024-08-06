@@ -8,6 +8,7 @@ import RealDebrid from 'real-debrid-js';
 import { exec } from 'child_process';
 import { processes, setupAddon, startAddon } from './addon-init-configure.js';
 import { isSecurityCheckEnabled } from './server/AddonConnection.js';
+import os from 'os';
 import axios from 'axios';
 import { addTorrent, stopClient } from './webtorrent-connect.js';
 import path from 'path';
@@ -18,7 +19,11 @@ import { ConfigurationFile } from 'ogi-addon/build/config/ConfigurationBuilder.j
 import { LibraryInfo } from 'ogi-addon';
 const VERSION = app.getVersion();
 
-const __dirname = isDev() ? app.getAppPath() + "/../" : path.parse(app.getPath('exe')).dir;
+let __dirname = isDev() ? app.getAppPath() + "/../" : path.dirname(process.execPath);
+if (process.platform === 'linux') {
+    // it's most likely sandboxed, so just use ./
+    __dirname = './';
+}
 let qbitClient: QBittorrent | undefined = undefined;
 let torrentIntervals: NodeJS.Timeout[] = []
 // Keep a global reference of the window object, if you don't, the window will
@@ -146,6 +151,10 @@ function createWindow() {
                 return { data: err.response.data, status: err.response.status, success: false };
             }
         });
+
+        ipcMain.handle('app:get-os', () => {
+            return process.platform;
+        });
         ipcMain.handle('app:search-id', async (_, query) => {
             const results = steamAppSearcher.search(query);
             return results;
@@ -236,6 +245,30 @@ function createWindow() {
             const appsInternal = JSON.parse(fs.readFileSync('./internals/apps.json', 'utf-8'));
             appsInternal.push(data.appID);
             fs.writeFileSync('./internals/apps.json', JSON.stringify(appsInternal, null, 2));
+
+            if (process.platform === 'linux') {
+                // use steamtinkerlaunch to add the game to steam
+                exec(`./bin/steamtinkerlaunch/steamtinkerlaunch addnonsteamgame --app-name="${data.name}" --exepath="${data.launchExecutable}" --startdir="${data.cwd}" --launchoptions=${data.launchArguments ?? ''} --compatibilitytool="default"`, {
+                    cwd: __dirname
+                }, (error, stdout, stderr) => {
+                    if (error) {
+                        console.error(error);
+                        sendNotification({
+                            message: 'Failed to add game to Steam',
+                            id: Math.random().toString(36).substring(7),
+                            type: 'error'
+                        });
+                        return;
+                    }
+                    console.log(stdout);
+                    console.log(stderr);
+                    sendNotification({
+                        message: 'Game added to Steam',
+                        id: Math.random().toString(36).substring(7),
+                        type: 'success'
+                    });
+                });
+            }
             return;
         });
         ipcMain.handle('app:get-all-apps', async () => {
@@ -322,21 +355,38 @@ function createWindow() {
                 fs.mkdirSync(outputDir, { recursive: true });
             }
 
-            // use 7zip to extract the rar file
-            let s7ZipPath = '"C:\\Program Files\\7-Zip\\7z.exe"';
-            if (process.platform === 'linux' || process.platform === 'darwin') {
-                s7ZipPath = '7z';
+            // use 7zip to extract the rar file or unrar if on linux
+            if (process.platform === 'win32') {
+                let s7ZipPath = '"C:\\Program Files\\7-Zip\\7z.exe"';
+                await new Promise<void>((resolve, reject) => exec(`${s7ZipPath} x "${rarFilePath}" -o"${outputDir}"`, (err, stdout, stderr) => {
+                    if (err) {
+                        console.error(err);
+                        reject();
+                        throw new Error('Failed to extract RAR file');
+                    }
+                    console.log(stdout);
+                    console.log(stderr);
+                    resolve();
+                }));
             }
-            await new Promise<void>((resolve, reject) => exec(`${s7ZipPath} x "${rarFilePath}" -o"${outputDir}"`, (err, stdout, stderr) => {
-                if (err) {
-                    console.error(err);
-                    reject();
-                    throw new Error('Failed to extract RAR file');
+
+            if (process.platform === 'linux') {
+                if (rarFilePath.endsWith('.rar')) {
+                    await new Promise<void>((resolve) => exec(`unrar x "${rarFilePath}" "${outputDir}"`, (stdout, stderr) => {
+                        console.log(stdout);
+                        console.log(stderr);
+                        resolve();
+                    }));
                 }
-                console.log(stdout);
-                console.log(stderr);
-                resolve();
-            }));
+                else if (rarFilePath.endsWith('.zip')) {
+                    await new Promise<void>((resolve) => exec(`unzip "${rarFilePath}" -d "${outputDir}"`, (stdout, stderr) => {
+                        console.log(stdout);
+                        console.log(stderr);
+                        resolve();
+                    }));
+                }
+            }
+                
             return outputDir;
         });
 
@@ -988,64 +1038,62 @@ function createWindow() {
             let sevenZipPath = '';
             if (process.platform === 'win32') {
                 sevenZipPath = '"C:\\Program Files\\7-Zip\\7z.exe"';
-            }
-            else {
-                sevenZipPath = '7z';
-            }
-            const sevenZipInstalled = await new Promise<boolean>((resolve, _) => {
-                exec(sevenZipPath + ' --help', (err, stdout, _) => {
-                    if (err) {
-                        resolve(false);
-                    }
-                    console.log(stdout);
-                    resolve(true);
+                const sevenZipInstalled = await new Promise<boolean>((resolve, _) => {
+                    exec(sevenZipPath + ' --help', (err, stdout, _) => {
+                        if (err) {
+                            resolve(false);
+                        }
+                        console.log(stdout);
+                        resolve(true);
+                    });
                 });
-            });
-            if (!sevenZipInstalled) {
-                await new Promise<void>((resolve, reject) => axios({
-                    method: 'get',
-                    url: sevenZipDownload,
-                    responseType: 'stream'
-                }).then(response => {
-                    const fileStream = fs.createWriteStream('./7z-install.exe');
-                    response.data.pipe(fileStream);
-                    fileStream.on('finish', async () => {
-                        console.log('Downloaded 7zip');
-                        fileStream.close();
-                        exec('7z-install.exe /S /D="C:\\Program Files\\7-Zip"', (err, stdout, stderr) => {
-                            if (err) {
-                                console.error(err);
+                if (!sevenZipInstalled) {
+                    await new Promise<void>((resolve, reject) => axios({
+                        method: 'get',
+                        url: sevenZipDownload,
+                        responseType: 'stream'
+                    }).then(response => {
+                        const fileStream = fs.createWriteStream('./7z-install.exe');
+                        response.data.pipe(fileStream);
+                        fileStream.on('finish', async () => {
+                            console.log('Downloaded 7zip');
+                            fileStream.close();
+                            exec('7z-install.exe /S /D="C:\\Program Files\\7-Zip"', (err, stdout, stderr) => {
+                                if (err) {
+                                    console.error(err);
+                                    sendNotification({
+                                        message: 'Failed to install 7zip. Please allow the installer to run as administrator.',
+                                        id: Math.random().toString(36).substring(7),
+                                        type: 'error'
+                                    });
+                                    cleanlyDownloadedAll = false;
+                                    reject();
+                                    return;
+                                }
+                                console.log(stdout);
+                                console.log(stderr);
+                                fs.unlinkSync('./7z-install.exe');
                                 sendNotification({
-                                    message: 'Failed to install 7zip. Please allow the installer to run as administrator.',
+                                    message: 'Successfully installed 7zip.',
                                     id: Math.random().toString(36).substring(7),
-                                    type: 'error'
+                                    type: 'info'
                                 });
-                                cleanlyDownloadedAll = false;
-                                reject();
-                                return;
-                            }
-                            console.log(stdout);
-                            console.log(stderr);
-                            fs.unlinkSync('./7z-install.exe');
-                            sendNotification({
-                                message: 'Successfully installed 7zip.',
-                                id: Math.random().toString(36).substring(7),
-                                type: 'info'
-                            });
-                            resolve();
-                        })
-                    });
+                                resolve();
+                            })
+                        });
 
-                    fileStream.on('error', (err) => {
+                        fileStream.on('error', (err) => {
+                            console.error(err);
+                            fileStream.close();
+                            fs.unlinkSync('./7z-install.exe');
+                            cleanlyDownloadedAll = false;
+                        });
+                    }).catch(err => {
                         console.error(err);
-                        fileStream.close();
-                        fs.unlinkSync('./7z-install.exe');
-                        cleanlyDownloadedAll = false;
-                    });
-                }).catch(err => {
-                    console.error(err);
-                }));
-                
+                    }));
+                    
+                }
+
             }
 
             // check if git is installed
@@ -1059,44 +1107,87 @@ function createWindow() {
                 });
             });
             if (!gitInstalled) {
-                const gitDownload = "https://github.com/git-for-windows/git/releases/download/v2.46.0.windows.1/Git-2.46.0-64-bit.exe"
-                await new Promise<void>((resolve, reject) => axios({
-                    method: 'get',
-                    url: gitDownload,
-                    responseType: 'stream'
-                }).then(response => {
-                    const fileStream = fs.createWriteStream('./git-install.exe');
-                    response.data.pipe(fileStream);
-                    fileStream.on('finish', async () => {
-                        console.log('Downloaded git');
-                        fileStream.close();
+                if (process.platform === 'win32') {
 
-                        fs.writeFileSync('git_install.ini', `
-[Setup]
-Lang=default
-Dir=C:\Program Files\Git
-Group=Git
-NoIcons=0
-SetupType=default
-Components=gitlfs,assoc,assoc_sh,windowsterminal
-Tasks=
-EditorOption=VIM
-CustomEditorPath=
-DefaultBranchOption=main
-PathOption=Cmd
-SSHOption=OpenSSH
-TortoiseOption=false
-CURLOption=WinSSL
-CRLFOption=CRLFCommitAsIs
-BashTerminalOption=MinTTY
-GitPullBehaviorOption=Merge
-UseCredentialManager=Enabled
-PerformanceTweaksFSCache=Enabled
-EnableSymlinks=Disabled
-EnablePseudoConsoleSupport=Disabled
-EnableFSMonitor=Disabled
-                        `)
-                        exec('git-install.exe /VERYSILENT /NORESTART /NOCANCEL /LOADINF=git_options.ini', (err, stdout, stderr) => {
+                    const gitDownload = "https://github.com/git-for-windows/git/releases/download/v2.46.0.windows.1/Git-2.46.0-64-bit.exe"
+                    await new Promise<void>((resolve, reject) => axios({
+                        method: 'get',
+                        url: gitDownload,
+                        responseType: 'stream'
+                    }).then(response => {
+                        const fileStream = fs.createWriteStream('./git-install.exe');
+                        response.data.pipe(fileStream);
+                        fileStream.on('finish', async () => {
+                            console.log('Downloaded git');
+                            fileStream.close();
+
+                            fs.writeFileSync('git_install.ini', `
+    [Setup]
+    Lang=default
+    Dir=C:\Program Files\Git
+    Group=Git
+    NoIcons=0
+    SetupType=default
+    Components=gitlfs,assoc,assoc_sh,windowsterminal
+    Tasks=
+    EditorOption=VIM
+    CustomEditorPath=
+    DefaultBranchOption=main
+    PathOption=Cmd
+    SSHOption=OpenSSH
+    TortoiseOption=false
+    CURLOption=WinSSL
+    CRLFOption=CRLFCommitAsIs
+    BashTerminalOption=MinTTY
+    GitPullBehaviorOption=Merge
+    UseCredentialManager=Enabled
+    PerformanceTweaksFSCache=Enabled
+    EnableSymlinks=Disabled
+    EnablePseudoConsoleSupport=Disabled
+    EnableFSMonitor=Disabled
+                            `)
+                            exec('git-install.exe /VERYSILENT /NORESTART /NOCANCEL /LOADINF=git_options.ini', (err, stdout, stderr) => {
+                                if (err) {
+                                    console.error(err);
+                                    reject();
+                                    cleanlyDownloadedAll = false;
+                                    return;
+                                }
+                                console.log(stdout);
+                                console.log(stderr);
+                                fs.unlinkSync('./git-install.exe');
+                                sendNotification({
+                                    message: 'Successfully installed git.',
+                                    id: Math.random().toString(36).substring(7),
+                                    type: 'info'
+                                });
+                                resolve();
+                            })
+                        });
+
+                        fileStream.on('error', (err) => {
+                            console.error(err);
+                            fileStream.close();
+                            fs.unlinkSync('./git-install.exe');
+                        });
+                    }).catch(err => {
+                        console.error(err);
+                    }));
+                }
+                else {
+                    sendNotification({
+                        id: Math.random().toString(36).substring(7),
+                        message: "Missing Git and auto-install is not supported for linux.",
+                        type: "error"
+                    });
+                }
+            }
+
+            // check if steamtinkerlaunch is installed
+            if (process.platform === 'linux') {
+                if (!fs.existsSync('./bin/steamtinkerlaunch/steamtinkerlaunch')) {
+                    await new Promise<void>((resolve, reject) => {
+                    exec('git clone https://github.com/sonic2kk/steamtinkerlaunch ' + './bin/steamtinkerlaunch', (err, stdout, stderr) => {
                             if (err) {
                                 console.error(err);
                                 reject();
@@ -1105,25 +1196,67 @@ EnableFSMonitor=Disabled
                             }
                             console.log(stdout);
                             console.log(stderr);
-                            fs.unlinkSync('./git-install.exe');
-                            sendNotification({
-                                message: 'Successfully installed git.',
-                                id: Math.random().toString(36).substring(7),
-                                type: 'info'
-                            });
-                            resolve();
-                        })
-                    });
+                            // run chmod +x on the file
+                            exec('chmod +x ./bin/steamtinkerlaunch/steamtinkerlaunch', (err) => {
+                                if (err) {
+                                    console.error(err);
+                                    reject();
+                                    cleanlyDownloadedAll = false;
+                                    return;
+                                }
 
-                    fileStream.on('error', (err) => {
-                        console.error(err);
-                        fileStream.close();
-                        fs.unlinkSync('./git-install.exe');
+                                // now executing steamtinkerlaunch
+                                exec('./bin/steamtinkerlaunch/steamtinkerlaunch', (err, stdout, stderr) => {
+                                    if (err) {
+                                        console.error(err);
+                                        reject();
+                                        cleanlyDownloadedAll = false;
+                                        return;
+                                    }
+                                    console.log(stdout);
+                                    console.log(stderr);
+                                    sendNotification({
+                                        message: 'Successfully installed steamtinkerlaunch.',
+                                        id: Math.random().toString(36).substring(7),
+                                        type: 'info'
+                                    });
+                                    resolve();
+                                });
+                            }); 
+                        });
                     });
-                }).catch(err => {
-                    console.error(err);
-                }));
-
+                }
+                else {
+                    await new Promise<void>((resolve, reject) => {
+                        exec('git pull', { cwd: './bin/steamtinkerlaunch' }, (err, stdout, stderr) => {
+                            if (err) {
+                                console.error(err);
+                                reject();
+                                cleanlyDownloadedAll = false;
+                                return;
+                            }
+                            console.log(stdout);
+                            console.log(stderr);
+                            // run chmod +x on the file
+                            exec('chmod +x ./bin/steamtinkerlaunch/steamtinkerlaunch', (err, stdout, stderr) => {
+                                if (err) {
+                                    console.error(err);
+                                    reject();
+                                    cleanlyDownloadedAll = false;
+                                    return;
+                                }
+                                console.log(stdout);
+                                console.log(stderr);
+                                sendNotification({
+                                    message: 'Successfully updated steamtinkerlaunch.',
+                                    id: Math.random().toString(36).substring(7),
+                                    type: 'info'
+                                });
+                                resolve();
+                            }); 
+                        });
+                    });
+                }
             }
 
             // check if bun is installed
@@ -1138,22 +1271,61 @@ EnableFSMonitor=Disabled
             });
 
             if (!bunInstalled) {
-                await new Promise<void>((resolve, reject) => exec('powershell -c "irm bun.sh/install.ps1 | iex"', (err, stdout, stderr) => {
-                    if (err) {
-                        console.error(err);
-                        reject();
-                        cleanlyDownloadedAll = false;
-                        return;
-                    }
-                    console.log(stdout);
-                    console.log(stderr);
-                    sendNotification({
-                        message: 'Successfully installed bun.',
-                        id: Math.random().toString(36).substring(7),
-                        type: 'info'
-                    });
-                    resolve();
-                }))
+                if (process.platform === 'win32') {
+                    await new Promise<void>((resolve, reject) => exec('powershell -c "irm bun.sh/install.ps1 | iex"', (err, stdout, stderr) => {
+                        if (err) {
+                            console.error(err);
+                            reject();
+                            cleanlyDownloadedAll = false;
+                            return;
+                        }
+                        console.log(stdout);
+                        console.log(stderr);
+                        sendNotification({
+                            message: 'Successfully installed bun.',
+                            id: Math.random().toString(36).substring(7),
+                            type: 'info'
+                        });
+                        resolve();
+                    }))
+                }
+                else if (process.platform === 'linux') {
+                        await new Promise<void>((resolve, reject) => {
+                            exec('curl -fsSL https://bun.sh/install | bash', (err, stdout, stderr) => {
+                                // then export to path
+                                if (err) {
+                                    console.error(err);
+                                    reject();
+                                    cleanlyDownloadedAll = false;
+                                    return;
+                                }
+                                console.log(stdout);
+                                console.log(stderr);
+                                // get linux name 
+                                const linuxName = os.userInfo().username;
+
+                                exec('echo "export PATH=$PATH:/home/' + linuxName + '/.bun/bin" >> ~/.bashrc', (err, stdout, stderr) => {
+                                    if (err) {
+                                        console.error(err);
+                                        reject();
+                                        cleanlyDownloadedAll = false;
+                                        return;
+                                    }
+                                    console.log(stdout);
+                                    console.log(stderr);
+                                    sendNotification({
+                                        message: 'Successfully installed bun and added to path.',
+                                        id: Math.random().toString(36).substring(7),
+                                        type: 'info'
+                                    });
+                                    resolve();
+
+                                });
+
+                            })
+                        })
+                }
+                
             }
             else {
                 await new Promise<void>((resolve, reject) => exec('bun upgrade', (err, stdout, stderr) => {

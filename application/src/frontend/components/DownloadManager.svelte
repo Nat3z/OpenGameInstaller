@@ -164,7 +164,7 @@
           ]
         }
       }));
-      const outputDir = await window.electronAPI.fs.unrar({ outputDir: getDownloadPath() + '\\' + downloadedItem.filename, rarFilePath: downloadedItem.downloadPath });
+      const outputDir = await window.electronAPI.fs.unrar({ outputDir: getDownloadPath() + '/' + downloadedItem.filename, rarFilePath: downloadedItem.downloadPath });
       downloadedItem.downloadPath = outputDir;
     }
 

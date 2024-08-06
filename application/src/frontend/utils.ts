@@ -194,7 +194,7 @@ export async function startDownload(result: SearchResultWithAddon, event: MouseE
 				return [...downloads, { 
 					id: '' + localID, 
 					status: 'rd-downloading', 
-					downloadPath: getDownloadPath() + "\\" + result.name, 
+					downloadPath: getDownloadPath() + "/" + result.name, 
 					downloadSpeed: 0,
 					usedRealDebrid: true,
 					progress: 0,
@@ -229,7 +229,7 @@ export async function startDownload(result: SearchResultWithAddon, event: MouseE
 				});
 				return;
 			}
-			const downloadID = await window.electronAPI.ddl.download([ { link: download.download, path: getDownloadPath() + "\\" + download.filename } ]);
+			const downloadID = await window.electronAPI.ddl.download([ { link: download.download, path: getDownloadPath() + "/" + download.filename } ]);
 			if (downloadID === null) {
 				if (htmlButton) {
 					htmlButton.textContent = "Download";
@@ -251,7 +251,7 @@ export async function startDownload(result: SearchResultWithAddon, event: MouseE
 				matchingDownload.id = downloadID;
 				matchingDownload.usedRealDebrid = true;
 
-				matchingDownload.downloadPath = getDownloadPath() + "\\" + download.filename;
+				matchingDownload.downloadPath = getDownloadPath() + "/" + download.filename;
 				downloads[downloads.indexOf(matchingDownload)] = matchingDownload;
 				return downloads;
 			});
@@ -278,7 +278,7 @@ export async function startDownload(result: SearchResultWithAddon, event: MouseE
 				return [...downloads, { 
 					id: '' + localID, 
 					status: 'rd-downloading', 
-					downloadPath: getDownloadPath() + "\\" + result.name, 
+					downloadPath: getDownloadPath() + "/" + result.name, 
 					downloadSpeed: 0,
 					usedRealDebrid: true,
 					progress: 0,
@@ -313,7 +313,7 @@ export async function startDownload(result: SearchResultWithAddon, event: MouseE
 				return;
 			}
 
-			const downloadID = await window.electronAPI.ddl.download([ { link: download.download, path: getDownloadPath() + "\\" + download.filename } ]);
+			const downloadID = await window.electronAPI.ddl.download([ { link: download.download, path: getDownloadPath() + "/" + download.filename } ]);
 			if (downloadID === null) {
 				if (htmlButton) {
 					htmlButton.textContent = "Download";
@@ -335,7 +335,7 @@ export async function startDownload(result: SearchResultWithAddon, event: MouseE
 				matchingDownload.id = downloadID;
 				matchingDownload.usedRealDebrid = true;
 
-				matchingDownload.downloadPath = getDownloadPath() + "\\" + download.filename;
+				matchingDownload.downloadPath = getDownloadPath() + "/" + download.filename;
 				downloads[downloads.indexOf(matchingDownload)] = matchingDownload;
 				return downloads;
 			});
@@ -350,7 +350,7 @@ export async function startDownload(result: SearchResultWithAddon, event: MouseE
 					});
 				return;
 			}
-			const downloadID = await window.electronAPI.torrent.downloadTorrent(result.downloadURL, getDownloadPath() + "\\" + (result.filename || result.downloadURL.split(/\\|\//).pop()));
+			const downloadID = await window.electronAPI.torrent.downloadTorrent(result.downloadURL, getDownloadPath() + "/" + (result.filename || result.downloadURL.split(/\\|\//).pop()));
 			if (downloadID === null) {
 				htmlButton.textContent = "Download";
 				htmlButton.disabled = false;
@@ -360,7 +360,7 @@ export async function startDownload(result: SearchResultWithAddon, event: MouseE
 				return [...downloads, { 
 					id: downloadID, 
 					status: 'downloading', 
-					downloadPath: getDownloadPath() + "\\" + result.filename + ".torrent", 
+					downloadPath: getDownloadPath() + "/" + result.filename + ".torrent", 
 					downloadSpeed: 0,
 					progress: 0,
 					usedRealDebrid: false,
@@ -380,7 +380,7 @@ export async function startDownload(result: SearchResultWithAddon, event: MouseE
 				return;
 			}
 
-			const downloadID = await window.electronAPI.torrent.downloadMagnet(result.downloadURL!!, getDownloadPath() + "\\" + result.filename!!);
+			const downloadID = await window.electronAPI.torrent.downloadMagnet(result.downloadURL!!, getDownloadPath() + "/" + result.filename!!);
 			if (downloadID === null) {
 				htmlButton.textContent = "Download";
 				htmlButton.disabled = false;
@@ -390,7 +390,7 @@ export async function startDownload(result: SearchResultWithAddon, event: MouseE
 				return [...downloads, { 
 					id: downloadID, 
 					status: 'downloading', 
-					downloadPath: getDownloadPath() + "\\" + result.filename + ".torrent", 
+					downloadPath: getDownloadPath() + "/" + result.filename + ".torrent", 
 					downloadSpeed: 0,
 					progress: 0,
 					usedRealDebrid: false,
@@ -410,10 +410,10 @@ export async function startDownload(result: SearchResultWithAddon, event: MouseE
 				return;
 			}
 
-			let collectedFiles = [ { path: getDownloadPath() + "\\" + result.filename!!, link: result.downloadURL!! } ];
+			let collectedFiles = [ { path: getDownloadPath() + "/" + result.filename!!, link: result.downloadURL!! } ];
 			if (result.files) {
 				collectedFiles = result.files.map((file) => {
-					return { path: getDownloadPath() + "\\" + file.name, link: file.downloadURL };
+					return { path: getDownloadPath() + "/" + file.name, link: file.downloadURL };
 				});
 			}
 
@@ -427,7 +427,7 @@ export async function startDownload(result: SearchResultWithAddon, event: MouseE
 				return [...downloads, { 
 					id: downloadID, 
 					status: 'downloading',
-					downloadPath: (result.files ? getDownloadPath() + "\\" : getDownloadPath() + "\\" + result.filename), 
+					downloadPath: (result.files ? getDownloadPath() + "/" : getDownloadPath() + "/" + result.filename), 
 					downloadSpeed: 0,
 					usedRealDebrid: false,
 					progress: 0,

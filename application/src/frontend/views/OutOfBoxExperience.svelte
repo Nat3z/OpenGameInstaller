@@ -136,15 +136,31 @@
       <h1 class="text-3xl font-archivo font-semibold mt-2">Install Tools</h1>
       <h2 class="font-open-sans mb-6 text-sm">These tools are required for launching and running OpenGameInstaller services.</h2>
       <div class="w-full justify center items-center flex flex-col gap-4 mb-6">
-        <div class="flex justify-start p-2 pl-2 gap-4 items-center flex-row w-8/12 h-14 bg-slate-100 rounded-lg">
-          <div class="flex justify-center items-center w-16">
-            <h4 class="font-archivo font-extrabold">7z</h4>
-          </div>
-          <span class="flex flex-col justify-start items-start">
-            <span class="font-open-sans text-sm font-bold">7zip</span>
-            <span class="font-open-sans text-xs">Required for unzipping .rar file extensions</span>
-          </span>
-        </div>    
+        {#await window.electronAPI.app.getOS()}
+          
+        {:then result} 
+          {#if result === 'win32'} 
+            <div class="flex justify-start p-2 pl-2 gap-4 items-center flex-row w-8/12 h-14 bg-slate-100 rounded-lg">
+              <div class="flex justify-center items-center w-16">
+                <h4 class="font-archivo font-extrabold">7z</h4>
+              </div>
+              <span class="flex flex-col justify-start items-start">
+                <span class="font-open-sans text-sm font-bold">7zip</span>
+                <span class="font-open-sans text-xs">Required for unzipping .rar file extensions</span>
+              </span>
+            </div>    
+          {:else if result === 'linux'}
+            <div class="flex justify-start p-2 pl-2 gap-4 items-center flex-row w-8/12 h-14 bg-slate-100 rounded-lg">
+              <div class="flex justify-center items-center w-16">
+                <h4 class="font-archivo font-extrabold">stl</h4>
+              </div>
+              <span class="flex flex-col justify-start items-start">
+                <span class="font-open-sans text-sm font-bold">Steamtinkerlaunch</span>
+                <span class="font-open-sans text-xs">Required for adding games to Steam</span>
+              </span>
+            </div>
+          {/if}
+        {/await}
         <div class="flex justify-start p-2 pl-2 gap-4 items-center flex-row w-8/12 h-14 bg-slate-100 rounded-lg">
           <img class="p-4 w-16 h-16" src="./bun.svg" />
           <span class="flex flex-col justify-start items-start">

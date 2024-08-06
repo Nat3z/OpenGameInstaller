@@ -56,18 +56,30 @@
     <PlayPage libraryInfo={$selectedApp} exitPlayPage={exitPlayPage} />
   {/if}
   <span class="flex flex-row p-4 gap-2 justify-start items-start w-full h-full relative">
-    {#each library as app}
-      <button data-library-item class="flex border-none flex-col gap-2 transition-all shadow-md" on:click={() => $selectedApp = app}>
-        <img src={app.capsuleImage} alt={app.name} class="w-44 h-64 rounded object-cover" />
-      </button>
-    {/each}
-    {#if library.length === 0 && !loading}
-      <div class="flex flex-col gap-2 w-full justify-center items-center h-full">
-        <img src="./favicon.png" alt="content" class="w-32 h-32" />
-        <h1 class="text-2xl text-black">No games in library</h1>
-      </div>
-
-    {/if}
+    {#await window.electronAPI.app.getOS()}
+      <div></div>
+    {:then os}
+      {#if os === 'win32'}
+        {#each library as app}
+          <button data-library-item class="flex border-none flex-col gap-2 transition-all shadow-md" on:click={() => $selectedApp = app}>
+            <img src={app.capsuleImage} alt={app.name} class="w-44 h-64 rounded object-cover" />
+          </button>
+        {/each}
+        {#if library.length === 0 && !loading}
+          <div class="flex flex-col gap-2 w-full justify-center items-center h-full">
+            <img src="./favicon.png" alt="content" class="w-32 h-32" />
+            <h1 class="text-2xl text-black">No games in library</h1>
+          </div>
+        {/if}
+      {:else if os === 'linux'}
+        <div class="flex flex-col gap-2 w-full justify-center items-center h-full">
+          <img src="./favicon.png" alt="content" class="w-32 h-32" />
+          <h1 class="text-2xl text-black">Library Unsupported</h1>
+          <h1 class="text-lg text-gray-500 text-center">We're sorry, but library is currently unsupported for Linux. Use Steam + Proton to launch games, we already configure it for you!</h1>
+        </div>
+      {/if}
+    {/await}
+    
   </span>
   
 </div>

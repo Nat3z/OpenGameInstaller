@@ -248,7 +248,7 @@ function createWindow() {
 
             if (process.platform === 'linux') {
                 // use steamtinkerlaunch to add the game to steam
-                exec(`./bin/steamtinkerlaunch/steamtinkerlaunch addnonsteamgame --app-name="${data.name}" --exepath="${data.launchExecutable}" --startdir="${data.cwd}" --launchoptions=${data.launchArguments ?? ''} --compatibilitytool="default"`, {
+                exec(`./bin/steamtinkerlaunch/steamtinkerlaunch addnonsteamgame --appname="${data.name}" --exepath="${data.launchExecutable}" --startdir="${data.cwd}" --launchoptions=${data.launchArguments ?? ''} --compatibilitytool="proton_experimental" --use-steamgriddb`, {
                     cwd: __dirname
                 }, (error, stdout, stderr) => {
                     if (error) {

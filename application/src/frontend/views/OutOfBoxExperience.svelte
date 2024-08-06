@@ -1,4 +1,6 @@
 <script lang="ts">
+    import WineIcon from "../Icons/WineIcon.svelte";
+
   let stage = 0;
 
   let selectedTorrenter: "qbittorrent" | "real-debrid" | "webtorrent" | "" = "";
@@ -157,6 +159,15 @@
               <span class="flex flex-col justify-start items-start">
                 <span class="font-open-sans text-sm font-bold">Steamtinkerlaunch</span>
                 <span class="font-open-sans text-xs">Required for adding games to Steam</span>
+              </span>
+            </div>
+            <div class="flex justify-start p-2 pl-2 gap-4 items-center flex-row w-8/12 h-14 bg-slate-100 rounded-lg">
+              <div class="p-4 w-16 h-16 flex justify-center items-center">
+                <WineIcon />
+              </div>
+              <span class="flex flex-col justify-start items-start">
+                <span class="font-open-sans text-sm font-bold">Wine</span>
+                <span class="font-open-sans text-xs">Required for launching games/installer. <strong>MUST BE INSTALLED BY YOURSELF</strong></span>
               </span>
             </div>
           {/if}

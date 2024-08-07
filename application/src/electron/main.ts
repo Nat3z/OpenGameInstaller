@@ -38,8 +38,8 @@ function isDev() {
 }
 let steamApps: { appid: string, name: string }[] = [];
 let steamAppSearcher = new JsSearch.Search('name');
-steamAppSearcher.addIndex('name');
 steamAppSearcher.indexStrategy = new JsSearch.ExactWordIndexStrategy();
+steamAppSearcher.addIndex('name');
 
 async function getSteamApps(): Promise<{ appid: string, name: string }[]> {
   if (fs.existsSync('steam-apps.json')) {

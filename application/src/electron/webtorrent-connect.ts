@@ -11,18 +11,19 @@ export function addTorrent(torrentId: string | Uint8Array, path: string, onProgr
       torrent.files.forEach((file: any) => {
         length += file.length;
       });
-      torrent.on('download', () => {
+      const interval = setInterval(() => {
         const downloadTotal = torrent.downloaded;
         const speed = torrent.downloadSpeed;
         const progress = torrent.progress;
         onProgress(downloadTotal, speed, progress, length, torrent.ratio);
       });
+      
       torrent.on('done', async () => {
         onDone();
         resolve();
+        clearInterval(interval);
         console.log('Torrent download finished');
       });
-
     });
   });
 }

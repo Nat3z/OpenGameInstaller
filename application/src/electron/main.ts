@@ -586,7 +586,7 @@ function createWindow() {
                                 clearInterval(torrentInterval);
                                 return;
                             }
-                            const torrent = (await qbitClient.getAllData()).torrents.find(torrent => torrent.savePath === arg.path);
+                            const torrent = (await qbitClient.getAllData()).torrents.find(torrent => torrent.savePath === arg.path.replaceAll("/", "\\"));
                             if (!torrent) {
                                 clearInterval(torrentInterval);
                                 console.error('Torrent not found in qBitTorrent...');
@@ -748,7 +748,7 @@ function createWindow() {
                                 return;
                             }
                             
-                            const torrent = (await qbitClient.getAllData()).torrents.find(torrent => torrent.savePath === arg.path);
+                            const torrent = (await qbitClient.getAllData()).torrents.find(torrent => torrent.savePath === arg.path.replaceAll("/", "\\"));
                             if (!torrent) {
                                 clearInterval(torrentInterval);
                                 console.error('Torrent not found in qBitTorrent...');

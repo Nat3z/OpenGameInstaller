@@ -44,6 +44,7 @@ async function createWindow() {
     webPreferences: {
       preload: `${app.getAppPath()}/src/preload.mjs`,
       nodeIntegration: true,
+      devTools: false,
       contextIsolation: true,
     },
   });

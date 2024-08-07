@@ -98,6 +98,7 @@ function createWindow() {
         webPreferences: {
             nodeIntegration: true,
             contextIsolation: true,
+            devTools: isDev(),
             preload: isDev() ? join(app.getAppPath(), 'preload.mjs') : join(app.getAppPath(), 'build/preload.mjs')
         },
         title: 'OpenGameInstaller',

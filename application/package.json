@@ -15,13 +15,15 @@
       "public/**/*",
       "./build/**/*"
     ],
-    "win": {},
+    "win": {
+    },
     "linux": {
       "icon": "public/favicon-256x256.png",
       "target": [
         "AppImage"
       ],
-      "category": "Development"
+      "category": "Development",
+      "artifactName": "${productName}-Portable.${ext}"
     },
     "mac": {}
   },
@@ -34,7 +36,7 @@
     "dev:server": "nodemon --watch server --ext ts,json --exec \"tsc --p tsconfig.addonserver.json && bun run --bun build-addons/dev-server.js\"",
     "electron-dev": "concurrently \"bun run dev\" \"bun run electron\"",
     "preelectron-pack": "bun run build && bun run build:ogiaddon && bun x tsc --p tsconfig.electron.json",
-    "electron-pack": "electron-builder && 7z a -tzip ./dist/OpenGameInstaller-Portable.zip ./dist/win-unpacked/*",
+    "electron-pack": "electron-builder",
     "check": "svelte-check --tsconfig ./tsconfig.svelte.json",
     "rebuild": "npm rebuild"
   },

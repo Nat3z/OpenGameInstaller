@@ -1,6 +1,6 @@
 {
   "name": "ogi-updater",
-  "version": "1.1.0",
+  "version": "1.0.0",
   "type": "module",
   "description": "A simple updater for OpenGameInstaller",
   "main": "src/main.js",
@@ -12,8 +12,20 @@
       "public/**/*",
       "./src/**/*"
     ],
-    "win": {},
-    "linux": {},
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "artifactName": "${productName}-Setup.${ext}"
+    },
+    "linux": {
+      "icon": "public/favicon-256x256.png",
+      "target": [
+        "AppImage"
+      ],
+      "category": "Development",
+      "artifactName": "${productName}-Setup.${ext}"
+    },
     "mac": {}
   },
   "scripts": {

@@ -47,7 +47,7 @@ jobs:
         with:
           bun-version: latest
       - name: Install Dependencies
-        run: bun install
+        run: bun install && cd application && bun run build:ogiaddon
       
       - name: Build Release Client
         run: cd application && bun run preelectron-pack && bun run electron-pack

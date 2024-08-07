@@ -1039,6 +1039,7 @@ function createWindow() {
             // check if 7zip is installed
             let cleanlyDownloadedAll = true;
             let sevenZipPath = '';
+            let requireRestart = false;
             if (process.platform === 'win32') {
                 sevenZipPath = '"C:\\Program Files\\7-Zip\\7z.exe"';
                 const sevenZipInstalled = await new Promise<boolean>((resolve, _) => {
@@ -1081,6 +1082,7 @@ function createWindow() {
                                     id: Math.random().toString(36).substring(7),
                                     type: 'info'
                                 });
+                                requireRestart = true;
                                 resolve();
                             })
                         });
@@ -1111,7 +1113,11 @@ function createWindow() {
             });
             if (!gitInstalled) {
                 if (process.platform === 'win32') {
-
+                    sendNotification({
+                        message: "Git is not installed. Downloading git now.",
+                        id: Math.random().toString(36).substring(7),
+                        type: "info"
+                    });
                     const gitDownload = "https://github.com/git-for-windows/git/releases/download/v2.46.0.windows.1/Git-2.46.0-64-bit.exe"
                     await new Promise<void>((resolve, reject) => axios({
                         method: 'get',
@@ -1164,6 +1170,7 @@ function createWindow() {
                                     id: Math.random().toString(36).substring(7),
                                     type: 'info'
                                 });
+                                requireRestart = true;
                                 resolve();
                             })
                         });
@@ -1289,6 +1296,7 @@ function createWindow() {
                             id: Math.random().toString(36).substring(7),
                             type: 'info'
                         });
+                        requireRestart = true;
                         resolve();
                     }))
                 }
@@ -1322,6 +1330,7 @@ function createWindow() {
                                         type: 'info'
                                     });
                                     resolve();
+                                    requireRestart = true;
 
                                 });
 
@@ -1348,7 +1357,7 @@ function createWindow() {
                 }))
             }
 
-            return cleanlyDownloadedAll;
+            return [ cleanlyDownloadedAll, requireRestart ];
         });
 
         ipcMain.on('get-version', async (event) => {
@@ -1366,12 +1375,19 @@ function createWindow() {
             if (!fs.existsSync('./addons/')) {
                 return;
             }
-            const addons = fs.readdirSync('./addons/');
-
             let addonsUpdated = 0;
             let failed = false;
+            const generalConfig = JSON.parse(fs.readFileSync('./config/option/general.json', 'utf-8'));
+            const addons = generalConfig.addons as string[];
+
             for (const addon of addons) {
-                const addonPath = './addons/' + addon;
+                let addonPath = '';
+                if (addon.startsWith('local:')) {
+                    addonPath = addon.split('local:')[1];
+                }
+                else {
+                    addonPath = join(__dirname, 'addons', addon.split(/\/|\\/).pop()!!);
+                }
                 if (!fs.existsSync(addonPath + '/.git')) {
                     console.log(`Addon ${addon} is not a git repository`);
                     continue;
@@ -1400,6 +1416,8 @@ function createWindow() {
                             id: Math.random().toString(36).substring(7),
                             type: 'info'
                         });
+
+                        mainWindow!!.webContents.send('addon:updated', addon);
                         // setup the addon
                         setupAddon(addonPath).then((success) => {
                             if (!success) {
@@ -1559,11 +1577,20 @@ function checkForAddonUpdates() {
     if (!fs.existsSync('./addons/')) {
         return;
     }
-    const addons = fs.readdirSync('./addons/');
+    const generalConfig = JSON.parse(fs.readFileSync('./config/option/general.json', 'utf-8'));
+    const addons = generalConfig.addons;
     for (const addon of addons) {
-        const addonPath = './addons/' + addon;
+        let addonPath = '';
+        let addonName = addon.split(/\/|\\/).pop()!!;
+        if (addon.startsWith('local:')) {
+            addonPath = addon.split('local:')[1];
+        }
+        else {
+            addonPath = join(__dirname, 'addons', addonName);
+        }
+
         if (!fs.existsSync(addonPath + '/.git')) {
-            console.log(`Addon ${addon} is not a git repository`);
+            console.log(`Addon ${addonName} is not a git repository`);
             continue;
         }
 
@@ -1571,15 +1598,15 @@ function checkForAddonUpdates() {
             const isUpdate = await checkForGitUpdates(addonPath)
             if (isUpdate) {
                 sendNotification({
-                    message: `Addon ${addon} has updates.`,
+                    message: `Addon ${addonName} has updates.`,
                     id: Math.random().toString(36).substring(7),
                     type: 'info'
                 });
                 mainWindow!!.webContents.send('addon:update-available', addon);
-                console.log(`Addon ${addon} has updates.`);
+                console.log(`Addon ${addonName} has updates.`);
                 resolve();
             }
-            console.log(`Addon ${addon} is up to date.`);
+            console.log(`Addon ${addonName} is up to date.`);
             resolve();
         });
     }

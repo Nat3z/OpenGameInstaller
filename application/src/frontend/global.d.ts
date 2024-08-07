@@ -43,7 +43,8 @@ interface Window {
       download: (files: { link: string, path: string }[]) => Promise<string>
     },
     oobe: {
-      downloadTools: () => Promise<boolean>,
+      // [ boolean, boolean ] => [ cleanInstalled, shouldRestart ]
+      downloadTools: () => Promise<[ boolean, boolean ]>,
     },
     app: {
       close: () => Promise<void>,

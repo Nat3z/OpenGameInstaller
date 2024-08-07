@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from "svelte";
     import WineIcon from "../Icons/WineIcon.svelte";
 
   let stage = 0;
@@ -14,12 +15,20 @@
     const button = event.target as HTMLButtonElement;
     button.disabled = true;
     button.textContent = "Downloading...";
-    if (!await window.electronAPI.oobe.downloadTools()) {
+    const result = await window.electronAPI.oobe.downloadTools()
+    if (!result[0]) {
       button.disabled = false;
       button.textContent = "Install";
       return;
     }
-    stage = 2;
+
+    // WARNING: CHANGE IN PROD
+    if (!result[1]) {
+      stage = 1.5;
+      window.electronAPI.fs.write('./config/option/installed.json', JSON.stringify({ restartRequired: true, installed: false }));
+    }
+    else
+      stage = 2;
   }
 
   function submitTorrenter() {
@@ -116,9 +125,22 @@
       }
     }, 200);
   }
+
+  onMount(() => {
+    if (window.electronAPI.fs.exists('./config/option/installed.json')) {
+      const installed = JSON.parse(window.electronAPI.fs.read('./config/option/installed.json'));
+      if (installed.restartRequired) {
+        stage = 2;
+        new Promise<void>(async (resolve) => {
+          window.electronAPI.fs.write('./config/option/installed.json', JSON.stringify({ restartRequired: false, installed: false }));
+          resolve();
+        });
+      }
+    }
+  });
 </script>
 
-<main class="flex items-center flex-col justify-center w-full h-full p-8 bg-white fixed top-0 left-0 outline z-10" id="oobe">
+<main class="flex items-center flex-col justify-center w-full h-full p-8 bg-white fixed top-0 left-0 z-[5]" id="oobe">
   {#if stage > 0}
     <progress class="animate-fade-in-slow" max="4" value={stage - 1}></progress>
   {/if}
@@ -190,7 +212,12 @@
 
       <button on:click={downloadTools} class="bg-accent hover:bg-accent-dark text-white disabled:text-white disabled:bg-yellow-300 font-open-sans font-semibold py-2 px-4 rounded">Install</button>
     </div>
-  
+  {:else if stage === 1.5}
+    <div class="animate-fade-in-pop flex justify-center items-center h-full flex-col gap-4 p-10 w-full">
+      <h1 class="text-3xl font-archivo font-semibold mt-2">Restart Required</h1>
+      <h2 class="font-open-sans text-sm mb-6">OpenGameInstaller requires a restart to continue the setup process.</h2>
+      <button on:click={() => window.electronAPI.app.close()} class="bg-accent hover:bg-accent-dark text-white font-open-sans font-semibold py-2 px-4 rounded">Close</button>
+    </div>
   {:else if stage === 2}
     <div class="animate-fade-in-pop flex justify-start items-center h-full flex-col gap-4 p-10 w-full">
       <h1 class="text-3xl font-archivo font-semibold mt-2">Torrenting</h1>

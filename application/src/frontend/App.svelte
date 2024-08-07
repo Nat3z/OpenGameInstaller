@@ -70,6 +70,15 @@
 			});
 		}
 	});
+	document.addEventListener("addon:updated", (event) => {
+		if (event instanceof CustomEvent) {
+			const { detail } = event;
+			addonUpdates.update((value) => {
+				value = value.filter((addon) => addon !== detail);
+				return value;
+			});
+		}
+	});
 	currentStorePageOpened.subscribe((value) => {
 		if (value) {
 			heldPageOpened = value;
@@ -127,6 +136,7 @@
   }
 </script>
 
+<Notifications />
 {#if !finishedOOBE}
 	<OOBE finishedSetup={() => finishedOOBE = true}/>
 {/if}
@@ -202,7 +212,6 @@
 		{/if}
 		
 		<DownloadManager />
-		<Notifications />
 
 	</main>
 	<InputScreenManager />

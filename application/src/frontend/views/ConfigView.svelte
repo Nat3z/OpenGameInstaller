@@ -108,7 +108,7 @@
     }
     else {
       const storedConfig = JSON.parse(fs.read("./config/" + selectedAddon.id + ".json"));
-      return storedConfig[key];
+      return storedConfig[key] || selectedAddon.configTemplate[key].defaultValue;
     }
   }
 

@@ -98,3 +98,6 @@ ipcRenderer.on('game:exit', (_, arg) => {
 ipcRenderer.on('addon:update-available', (_, arg) => {
   document.dispatchEvent(new CustomEvent('addon:update-available', { detail: arg }));
 });
+ipcRenderer.on('addon:updated', (_, arg) => {
+  document.dispatchEvent(new CustomEvent('addon:updated', { detail: arg }));
+});

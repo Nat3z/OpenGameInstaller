@@ -12,7 +12,7 @@ jobs:
     permissions:
       contents: write
     name: Create Github Release
-    if: startsWith(github.event.head_commit.message, '[major]') || startsWith(github.event.head_commit.message, '[hotfix]') 
+    if: (startsWith(github.event.head_commit.message, '[major]') || startsWith(github.event.head_commit.message, '[hotfix]')) && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     outputs:
       upload_url: ${{ steps.create_release.outputs.upload_url }}
@@ -24,9 +24,9 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
         tag_name: ${{ github.ref_name }}
-        release_name: Release ${{ github.ref_name }}
+        release_name: ${{ github.ref_name }}
         draft: true
-        prerelease: true
+        prerelease: false
 
     - name: Output Release URL File
       run: echo "${{ steps.create_release.outputs.upload_url }}" > release_url.txt

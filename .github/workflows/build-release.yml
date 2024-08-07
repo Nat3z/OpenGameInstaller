@@ -70,6 +70,8 @@ jobs:
       - name: Upload Release Portable Windows
         if: matrix.os == 'windows-latest'
         uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ needs.release.outputs.upload_url }}
           asset_path: application/dist/OpenGameInstaller-Portable.zip
@@ -79,6 +81,8 @@ jobs:
       - name: Upload Setup Windows
         if: matrix.os == 'windows-latest'
         uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ needs.release.outputs.upload_url }}
           asset_path: updater/dist/OpenGameInstaller-Setup.exe
@@ -88,6 +92,8 @@ jobs:
       - name: Upload Setup Linux
         if: matrix.os == 'ubuntu-latest'
         uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ needs.release.outputs.upload_url }}
           asset_path: updater/dist/OpenGameInstaller-Setup.AppImage
@@ -97,8 +103,11 @@ jobs:
       - name: Upload Release Linux
         if: matrix.os == 'ubuntu-latest'
         uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ needs.release.outputs.upload_url }}
           asset_path: application/dist/OpenGameInstaller-Portable.AppImage
           asset_name: OpenGameInstaller-linux-pt.AppImage
           asset_content_type: application/octet-stream
+        

@@ -10,6 +10,7 @@ on:
 jobs:
   release:
     name: Create Github Release
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
     - name: Create Release
@@ -47,7 +48,7 @@ jobs:
         with:
           bun-version: latest
       - name: Install Dependencies
-        run: bun install && cp ./node_modules/electron ./application/node_modules/electron && cp ./node_modules/electron ./updater/node_modules/electron
+        run: bun install && cp -r ./node_modules/electron ./application/node_modules/electron && cp -r ./node_modules/electron ./updater/node_modules/electron
       
       - name: Build Release Client
         run: cd application && bun run preelectron-pack && bun run electron-pack

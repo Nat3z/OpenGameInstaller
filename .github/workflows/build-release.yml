@@ -59,12 +59,21 @@ jobs:
         if: matrix.os == 'windows-latest'
         run: |
           Compress-Archive -Path application/dist/win-unpacked/* -Destination application/dist/OpenGameInstaller-Portable.zip
+      - name: Get Release File Name & Upload URL
+        id: get_release_info
+        run: |
+          echo ::set-output name=file_name::${REPOSITORY_NAME##*/}-${TAG_REF_NAME##*/v} # RepositoryName-v1.0.0
+          value=`cat release_url/release_url.txt`
+          echo ::set-output name=upload_url::$value
+        env:
+          TAG_REF_NAME: ${{ github.ref }}
+          REPOSITORY_NAME: ${{ github.repository }}
 
       - name: Upload Release Portable Windows
         if: matrix.os == 'windows-latest'
         uses: actions/upload-release-asset@v1
         with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          upload_url: ${{ steps.get_release_info.outputs.upload_url }}
           asset_path: application/dist/OpenGameInstaller-Portable.zip
           asset_name: OpenGameInstaller-Portable.zip
           asset_content_type: application/zip
@@ -73,7 +82,7 @@ jobs:
         if: matrix.os == 'windows-latest'
         uses: actions/upload-release-asset@v1
         with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          upload_url: ${{ steps.get_release_info.outputs.upload_url }}
           asset_path: updater/dist/OpenGameInstaller-Setup.exe
           asset_name: OpenGameInstaller-Setup.exe
           asset_content_type: application/octet-stream
@@ -82,7 +91,7 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         uses: actions/upload-release-asset@v1
         with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          upload_url: ${{ steps.get_release_info.outputs.upload_url }}
           asset_path: updater/dist/OpenGameInstaller-Setup.AppImage
           asset_name: OpenGameInstaller-Setup.AppImage
           asset_content_type: application/octet-stream
@@ -91,7 +100,7 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         uses: actions/upload-release-asset@v1
         with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          upload_url: ${{ steps.get_release_info.outputs.upload_url }}
           asset_path: application/dist/OpenGameInstaller-Portable.AppImage
           asset_name: OpenGameInstaller-linux-pt.AppImage
           asset_content_type: application/octet-stream

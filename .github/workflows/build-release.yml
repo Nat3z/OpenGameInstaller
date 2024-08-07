@@ -47,7 +47,7 @@ jobs:
         with:
           bun-version: latest
       - name: Install Dependencies
-        run: bun install && cd application && bun run build:ogiaddon
+        run: bun install && cp ./node_modules/electron ./application/node_modules/electron && cp ./node_modules/electron ./updater/node_modules/electron
       
       - name: Build Release Client
         run: cd application && bun run preelectron-pack && bun run electron-pack

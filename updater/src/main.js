@@ -187,6 +187,7 @@ async function launchApp() {
     spawn('./OpenGameInstaller.AppImage', {
       cwd: path.join(__dirname, 'update'),
       detached: true,
+      stdio: 'ignore'
     });
     app.quit();
   }

@@ -3,7 +3,7 @@ import axios from 'axios';
 import fs from 'fs';
 import path from 'path';
 import yauzl from 'yauzl';
-import { exec } from 'child_process';
+import { exec, spawn } from 'child_process';
 let mainWindow;
 
 function isDev() {
@@ -184,8 +184,9 @@ async function launchApp() {
       mainWindow.webContents.send('text', 'Installation not found');
       return;
     }
-    exec('./OpenGameInstaller.AppImage', {
+    spawn('./OpenGameInstaller.AppImage', {
       cwd: path.join(__dirname, 'update'),
+      detached: true,
     });
     app.quit();
   }

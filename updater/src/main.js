@@ -8,7 +8,12 @@ let mainWindow;
 function isDev() {
   return !app.isPackaged;
 }
-const __dirname = isDev() ? app.getAppPath() : path.parse(app.getPath('exe')).dir;
+
+let __dirname = isDev() ? app.getAppPath() + "/../" : path.dirname(process.execPath);
+if (process.platform === 'linux') {
+  // it's most likely sandboxed, so just use ./
+  __dirname = './';
+}
 process.noAsar = true;
 
 function correctParsingSize(size) {
@@ -73,66 +78,119 @@ async function createWindow() {
   let updating = release !== undefined;
   if (release) {
     // download the new version usinng axios stream
-    const writer = fs.createWriteStream(`./update.zip`);
-    mainWindow.webContents.send('text', 'Downloading Update');
-    const assetWithPortable = release.assets.find((asset) => asset.name.toLowerCase().includes('portable') || asset.name.toLowerCase().includes('portrable'));
-    if (!assetWithPortable) {
-      mainWindow.webContents.send('text', 'No Portable Version Found');
-      return
-    }
-    const response = await axios({
-      url: assetWithPortable.browser_download_url,
-      method: 'GET',
-      responseType: 'stream',
-    });
-    response.data.pipe(writer);
-    const startTime = Date.now();
-    const fileSize = response.headers['content-length'];
-    response.data.on('data', () => {
-      const elapsedTime = (Date.now() - startTime) / 1000; // in seconds
-      const downloadSpeed = response.data.socket.bytesRead / elapsedTime;
-      mainWindow.webContents.send('text', 'Downloading Update', writer.bytesWritten, fileSize, correctParsingSize(downloadSpeed) + '/s');
-    });
-    response.data.on('end', async () => {
-      mainWindow.webContents.send('text', 'Download Complete');
-      // extract the zip file
-      const prefix = __dirname + "/update";
-      if (!fs.existsSync(prefix)) {
-        fs.mkdirSync(prefix);
+    if (process.platform === 'win32') {
+      const writer = fs.createWriteStream(`./update.zip`);
+      mainWindow.webContents.send('text', 'Downloading Update');
+      const assetWithPortable = release.assets.find((asset) => asset.name.toLowerCase().includes('portable') || asset.name.toLowerCase().includes('portrable'));
+      if (!assetWithPortable) {
+        mainWindow.webContents.send('text', 'No Portable Version Found');
+        return
       }
-      await new Promise(async (resolve, reject) => {
-        mainWindow.webContents.send('text', 'Extracting Update');
-        await unzip(`./update.zip`, prefix);
-        resolve();
+      const response = await axios({
+        url: assetWithPortable.browser_download_url,
+        method: 'GET',
+        responseType: 'stream',
       });
-      // delete the zip file
-      fs.unlinkSync(`./update.zip`);
-      // update the version file
-      fs.writeFileSync(`./version.txt`, release.tag_name);
-      // restart the app
-      console.log('App Ready.')
+      response.data.pipe(writer);
+      const startTime = Date.now();
+      const fileSize = response.headers['content-length'];
+      response.data.on('data', () => {
+        const elapsedTime = (Date.now() - startTime) / 1000; // in seconds
+        const downloadSpeed = response.data.socket.bytesRead / elapsedTime;
+        mainWindow.webContents.send('text', 'Downloading Update', writer.bytesWritten, fileSize, correctParsingSize(downloadSpeed) + '/s');
+      });
+      response.data.on('end', async () => {
+        mainWindow.webContents.send('text', 'Download Complete');
+        // extract the zip file
+        const prefix = __dirname + "/update";
+        if (!fs.existsSync(prefix)) {
+          fs.mkdirSync(prefix);
+        }
+        await new Promise(async (resolve, reject) => {
+          mainWindow.webContents.send('text', 'Extracting Update');
+          await unzip(`./update.zip`, prefix);
+          resolve();
+        });
+        // delete the zip file
+        fs.unlinkSync(`./update.zip`);
+        // update the version file
+        fs.writeFileSync(`./version.txt`, release.tag_name);
+        // restart the app
+        console.log('App Ready.')
 
-      mainWindow.webContents.send('text', 'Launching OpenGameInstaller');
-      launchApp();
-    });
+        mainWindow.webContents.send('text', 'Launching OpenGameInstaller');
+        launchApp();
+      });
+    }
+    else if (process.platform === 'linux') {
+      if (!fs.existsSync(`./update`)) {
+        fs.mkdirSync(`./update`);
+      }
+      const writer = fs.createWriteStream(`./update/OpenGameInstaller.AppImage`);
+      mainWindow.webContents.send('text', 'Downloading Update');
+      const assetWithPortable = release.assets.find((asset) => asset.name.toLowerCase().includes('linux-pt.appimage'));
+
+      if (!assetWithPortable) {
+        mainWindow.webContents.send('text', 'No Portable Version Found');
+        return
+      }
+
+      const response = await axios({
+        url: assetWithPortable.browser_download_url,
+        method: 'GET',
+        responseType: 'stream',
+      });
+      response.data.pipe(writer);
+      const startTime = Date.now();
+      const fileSize = response.headers['content-length'];
+      response.data.on('data', () => {
+        const elapsedTime = (Date.now() - startTime) / 1000; // in seconds
+        const downloadSpeed = response.data.socket.bytesRead / elapsedTime;
+        mainWindow.webContents.send('text', 'Downloading Update', writer.bytesWritten, fileSize, correctParsingSize(downloadSpeed) + '/s');
+      });
+      response.data.on('end', async () => {
+        mainWindow.webContents.send('text', 'Download Complete');
+        fs.writeFileSync(`./version.txt`, release.tag_name);
+        console.log('App Ready.')
+        mainWindow.webContents.send('text', 'Launching OpenGameInstaller');
+        launchApp();
+      });
+    }
+
   }
   if (!updating)
     launchApp();
 }
 
 async function launchApp() {
-  if (!fs.existsSync(path.join(__dirname, 'update', 'OpenGameInstaller.exe'))) {
-    mainWindow.webContents.send('text', 'Installation not found');
-    return;
+  if (process.platform === 'win32') {
+    if (!fs.existsSync(path.join(__dirname, 'update', 'OpenGameInstaller.exe'))) {
+      mainWindow.webContents.send('text', 'Installation not found');
+      return;
+    }
+    const error = await shell.openPath(path.join(__dirname, 'update', 'OpenGameInstaller.exe'));
+    if (error) {
+      console.error(error);
+      console.log('Error Launching OpenGameInstaller');
+      mainWindow.webContents.send('text', 'Error Launching OpenGameInstaller');
+    }
+    else  
+      app.quit();
   }
-  const error = await shell.openPath(path.join(__dirname, 'update', 'OpenGameInstaller.exe'));
-  if (error) {
-    console.error(error);
-    console.log('Error Launching OpenGameInstaller');
-    mainWindow.webContents.send('text', 'Error Launching OpenGameInstaller');
+  else if (process.platform === 'linux') {
+    if (!fs.existsSync(path.join(__dirname, 'update', 'OpenGameInstaller.AppImage'))) {
+      mainWindow.webContents.send('text', 'Installation not found');
+      return;
+    }
+    const error = await shell.openPath(path.join(__dirname, 'update', 'OpenGameInstaller.AppImage'));
+    if (error) {
+      console.error(error);
+      console.log('Error Launching OpenGameInstaller');
+      mainWindow.webContents.send('text', 'Error Launching OpenGameInstaller');
+    }
+    else
+      app.quit();
   }
-  else  
-    app.quit();
 }
 app.on('ready', createWindow);
 // taken from https://stackoverflow.com/questions/63932027/how-to-unzip-to-a-folder-using-yauzl

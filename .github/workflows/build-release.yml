@@ -4,8 +4,7 @@ on:
   push:
     branches:
       - main
-    tags:
-      - 'v*'
+
 
 jobs:
   release:

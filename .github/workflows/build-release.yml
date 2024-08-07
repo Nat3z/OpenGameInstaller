@@ -10,7 +10,6 @@ on:
 jobs:
   release:
     name: Create Github Release
-    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
     - name: Create Release

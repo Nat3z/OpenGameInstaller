@@ -184,8 +184,8 @@ async function launchApp() {
       mainWindow.webContents.send('text', 'Installation not found');
       return;
     }
-    exec('./update/OpenGameInstaller.AppImage', {
-      cwd: './update'
+    exec('./OpenGameInstaller.AppImage', {
+      cwd: path.join(__dirname, 'update'),
     });
     app.quit();
   }

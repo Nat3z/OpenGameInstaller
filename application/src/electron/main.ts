@@ -1381,7 +1381,7 @@ function createWindow() {
                 }
 
                 new Promise<void>((resolve, reject) => {
-                    exec(`git fetch`, { cwd: addonPath },  (err, stdout, _) => {
+                    exec(`git pull`, { cwd: addonPath },  (err, stdout, _) => {
                         if (err) {
                             sendNotification({
                                 message: `Failed to update addon ${addon}`,

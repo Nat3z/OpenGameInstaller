@@ -5,13 +5,14 @@ import { Configuration } from './config/Configuration';
 import EventResponse from './EventResponse';
 import { SearchResult } from './SearchEngine';
 
-export type OGIAddonEvent = 'connect' | 'disconnect' | 'configure' | 'authenticate' | 'search' | 'setup' | 'library-search' | 'game-details';
+export type OGIAddonEvent = 'connect' | 'disconnect' | 'configure' | 'authenticate' | 'search' | 'setup' | 'library-search' | 'game-details' | 'exit';
 export type OGIAddonClientSentEvent = 'response' | 'authenticate' | 'configure' | 'defer-update' | 'notification' | 'input-asked';
 
 export type OGIAddonServerSentEvent = 'authenticate' | 'configure' | 'config-update' | 'search' | 'setup' | 'response' | 'library-search' | 'game-details';
 export { ConfigurationBuilder, Configuration, EventResponse, SearchResult };
 const defaultPort = 7654;
-const version = process.env.npm_package_version;
+import pjson from '../package.json';
+const version = pjson.version;
 
 export interface ClientSentEventTypes {
   response: any;
@@ -54,6 +55,7 @@ export interface EventListenerTypes {
   ) => void;
   'library-search': (query: string, event: EventResponse<BasicLibraryInfo[]>) => void;
   'game-details': (appID: number, event: EventResponse<StoreData>) => void;
+  exit: () => void;
 }
 
 export interface StoreData {
@@ -182,7 +184,8 @@ class OGIAddonWSListener {
       }
       this.eventEmitter.emit('disconnect', reason);
       console.log("Disconnected from OGI Addon Server")
-      console.log(reason.toString())
+      console.error(reason.toString())
+      this.eventEmitter.emit('exit');
       this.socket.close();
     });
 
@@ -224,7 +227,6 @@ class OGIAddonWSListener {
           let searchResultEvent = new EventResponse<SearchResult[]>((screen, name, description) => this.userInputAsked(screen, name, description, this.socket));
           this.eventEmitter.emit('search', message.args, searchResultEvent);
           const searchResult = await this.waitForEventToRespond(searchResultEvent);         
-          console.log(searchResult.data)
           this.respondToMessage(message.id!!, searchResult.data);
           break
         case 'setup':

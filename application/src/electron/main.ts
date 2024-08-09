@@ -38,6 +38,22 @@ let realDebridClient = new RealDebrid({
 function isDev() {
     return !app.isPackaged;
 }
+
+// restore the backup if it exists
+if (fs.existsSync(join(app.getPath('temp'), 'ogi-update-backup')) && process.platform === 'win32') {
+    // restore the backup
+    const directory = join(app.getPath('temp'), 'ogi-update-backup');
+    console.log('[backup] Restoring backup...');
+    for (const file of fs.readdirSync(directory)) {
+        console.log('[backup] Restoring ' + file);
+        fs.cpSync(join(directory, file), join(__dirname, file), { recursive: true, force: true });
+        console.log('[backup] Restored ' + file);
+    }
+
+    // remove the backup
+    fs.rmdirSync(directory, { recursive: true });
+    console.log('[backup] Backup restored successfully!');
+}
 let steamApps: { appid: string, name: string }[] = [];
 let steamAppSearcher = new JsSearch.Search('name');
 steamAppSearcher.indexStrategy = new JsSearch.ExactWordIndexStrategy();

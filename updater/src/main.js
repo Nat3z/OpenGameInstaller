@@ -19,8 +19,9 @@ if (process.platform === 'linux') {
 }
 console.log(__dirname);
 const SETUP_VERSION = pjson.version;
-
-// fs.writeFile(join(__dirname, 'updater-version.txt'), SETUP_VERSION);
+fs.writeFile(join(__dirname, 'updater-version.txt'), SETUP_VERSION, () => {
+  console.log('Wrote version file');
+});
 process.noAsar = true;
 
 function correctParsingSize(size) {

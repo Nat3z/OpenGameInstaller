@@ -1,6 +1,6 @@
 import axios from "axios";
 import { app, BrowserWindow, net } from "electron";
-import { cpSync, createWriteStream, existsSync, mkdirSync, readFileSync } from "original-fs";
+import { cpSync, createWriteStream, existsSync, mkdirSync, readFileSync, rmSync } from "original-fs";
 import { __dirname } from "./main.js";
 import { basename, join } from 'path';
 import { setTimeout as setTimeoutPromise } from 'timers/promises';
@@ -210,7 +210,12 @@ export function checkIfInstallerUpdateAvailable() {
 
             setTimeout(() => {
               // rename the temp-setup-OGI.AppImage to the OpenGameInstaller-Setup.AppImage
-              cpSync('../temp-setup-OGI.AppImage', '../OpenGameInstaller-Setup.AppImage', { force: true });
+              console.log(`[updater] Renaming setup to OpenGameInstaller-Setup.AppImage`);
+              rmSync('../OpenGameInstaller-Setup.AppImage', { force: true });
+              console.log(`[updater] Moving over setup to OpenGameInstaller-Setup.AppImage`);
+              cpSync('../temp-setup-OGI.AppImage', '../OpenGameInstaller-Setup.AppImage');
+              rmSync('../temp-setup-OGI.AppImage', { force: true });
+              console.log(`[updater] Copied setup to OpenGameInstaller-Setup.AppImage`);
               spawn(`../OpenGameInstaller-Setup.AppImage`, {
                 detached: true,
                 stdio: 'ignore',

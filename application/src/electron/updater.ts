@@ -30,11 +30,22 @@ export function checkIfInstallerUpdateAvailable() {
     }
 
     // check dirname of self
-    if (basename(__dirname) !== 'update') {
+    if (basename(__dirname) !== 'update' && process.platform !== 'linux') {
       console.log("[updater] Running portably, skipping update check.");
       console.log(`[updater] Current directory: ${basename(__dirname)}`);
       resolve();
       return;
+    }
+
+    if (process.platform === 'linux') {
+      console.log("[updater] Running on linux, most likely running the updater? let's just check to see if the thing exists.");
+      if (!existsSync('../OpenGameInstaller-Setup.AppImage')) {
+        console.error("[updater] No setup found, exiting.");
+        resolve();
+        return;
+      }
+
+      console.log("[updater] Setup found, continuing update process.");
     }
 
     const localVersion = existsSync(`${__dirname}/../updater-version.txt`) ? readFileSync(`${__dirname}/../updater-version.txt`, 'utf8') || '0.0.0' : '0.0.0';
@@ -114,7 +125,8 @@ export function checkIfInstallerUpdateAvailable() {
         // download the latest setup
         const response = await axios.get(latestSetupVersionUrl, { responseType: 'stream' });
         if (process.platform === 'win32') {
-          const writer = createWriteStream(`./setup-ogi.exe`);
+          const directory = app.getPath('temp') + '\\ogi-setup.exe';
+          const writer = createWriteStream(directory);
           response.data.pipe(writer);
             const startTime = Date.now();
             const fileSize = response.headers['content-length'];
@@ -148,12 +160,11 @@ export function checkIfInstallerUpdateAvailable() {
             mainWindow.webContents.send('text', 'Starting Setup')
 
             setTimeout(() => {
-              spawn(`./setup-ogi.exe`, {
+              spawn(directory, {
                 detached: true,
                 stdio: 'ignore'
               }).unref(); 
               mainWindow.close();
-              resolve();
               process.exit(0); 
             }, 500);
             

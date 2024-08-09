@@ -124,7 +124,6 @@ export function checkIfInstallerUpdateAvailable() {
 
         mainWindow.webContents.send('text', 'Downloading latest Setup...')
         // wait for the ETXTBSY error to go away
-        await setTimeoutPromise(1000)
         // download the latest setup
         const response = await axios.get(latestSetupVersionUrl, { responseType: 'stream' });
         if (process.platform === 'win32') {
@@ -175,7 +174,8 @@ export function checkIfInstallerUpdateAvailable() {
         }
 
         else if (process.platform === 'linux') {
-          const writer = createWriteStream('../OpenGameInstaller-Setup.AppImage');
+          await setTimeoutPromise(3000)
+          const writer = createWriteStream('../temp-setup-OGI.AppImage');
           response.data.pipe(writer);
           const startTime = Date.now();
           const fileSize = response.headers['content-length'];
@@ -209,9 +209,12 @@ export function checkIfInstallerUpdateAvailable() {
             mainWindow.webContents.send('text', 'Starting Setup')
 
             setTimeout(() => {
+              // rename the temp-setup-OGI.AppImage to the OpenGameInstaller-Setup.AppImage
+              cpSync('../temp-setup-OGI.AppImage', '../OpenGameInstaller-Setup.AppImage', { force: true });
               spawn(`../OpenGameInstaller-Setup.AppImage`, {
                 detached: true,
-                stdio: 'ignore'
+                stdio: 'ignore',
+                cwd: '../'
               }).unref(); 
               mainWindow.close();
               resolve();

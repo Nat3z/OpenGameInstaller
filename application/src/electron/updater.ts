@@ -3,6 +3,7 @@ import { app, BrowserWindow, net } from "electron";
 import { cpSync, createWriteStream, existsSync, mkdirSync, readFileSync } from "original-fs";
 import { __dirname } from "./main.js";
 import { basename, join } from 'path';
+import { setTimeout as setTimeoutPromise } from 'timers/promises';
 import { spawn } from 'child_process';
 function isDev() {
   return !app.isPackaged;
@@ -122,6 +123,8 @@ export function checkIfInstallerUpdateAvailable() {
         mainWindow.loadURL("file://" + join(app.getAppPath(), 'public', 'updater.html'));
 
         mainWindow.webContents.send('text', 'Downloading latest Setup...')
+        // wait for the ETXTBSY error to go away
+        await setTimeoutPromise(1000)
         // download the latest setup
         const response = await axios.get(latestSetupVersionUrl, { responseType: 'stream' });
         if (process.platform === 'win32') {

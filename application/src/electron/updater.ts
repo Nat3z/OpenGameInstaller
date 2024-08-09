@@ -208,7 +208,7 @@ export function checkIfInstallerUpdateAvailable() {
 
             mainWindow.webContents.send('text', 'Starting Setup')
 
-            setTimeout(() => {
+            setTimeout(async () => {
               // rename the temp-setup-OGI.AppImage to the OpenGameInstaller-Setup.AppImage
               console.log(`[updater] Renaming setup to OpenGameInstaller-Setup.AppImage`);
               rmSync('../OpenGameInstaller-Setup.AppImage', { force: true });
@@ -216,13 +216,9 @@ export function checkIfInstallerUpdateAvailable() {
               cpSync('../temp-setup-OGI.AppImage', '../OpenGameInstaller-Setup.AppImage');
               rmSync('../temp-setup-OGI.AppImage', { force: true });
               console.log(`[updater] Copied setup to OpenGameInstaller-Setup.AppImage`);
-              spawn(`../OpenGameInstaller-Setup.AppImage`, {
-                detached: true,
-                stdio: 'ignore',
-                cwd: '../'
-              }).unref(); 
+              mainWindow.webContents.send('text', 'Shutting Down OpenGameInstaller', 'Please open OpenGameInstaller again');
+              await setTimeoutPromise(3000);
               mainWindow.close();
-              resolve();
               process.exit(0); 
             }, 500);
             

@@ -12,7 +12,10 @@
   let queryingSources = false;
 
 	let alreadyOwns = window.electronAPI.fs.exists('./library/' + appID + '.json');
+  let errored: [boolean, string] = [false, ''];
   onMount(async () => {
+    isOnline = await window.electronAPI.app.isOnline();
+    if (!isOnline) return;
     try {
       const response = await window.electronAPI.app.axios({
         method: 'get',
@@ -63,6 +66,7 @@
         type: 'error'
       });
       currentStorePageOpened.set(undefined);
+      errored = [true, 'Failed to fetch Steam store page'];
     }
 
   });
@@ -78,9 +82,11 @@
 			launchGameTrigger.set(gameData.steam_appid);
 		}, 5);	
   }
+
+  let isOnline = true;
 </script>
 {#if gameData}
-<main class="flex w-full h-full bg-white">
+  <main class="flex w-full h-full bg-white">
   {#if loading}
     <p class="py-2 px-4">Loading...</p>
   {:else}
@@ -143,7 +149,18 @@
       {/if}
     </div>
   {/if}
-</main>
+  </main>
+
+{:else if !isOnline}
+  <div class="flex flex-col gap-2 w-full justify-center items-center h-full">
+		<img src="./favicon.png" alt="content" class="w-32 h-32" />
+		<h1 class="text-2xl text-black">You're Offline</h1>
+		<h1 class="text-lg text-gray-500 text-center">Loading Game Stores is unsupported when you're offline.</h1>
+	</div>
+{:else}
+  <div class="flex justify-center items-center w-full h-full">
+    <p class="text-2xl">Loading...</p>
+  </div>
 {/if}
 <style global>
   #g-descript {

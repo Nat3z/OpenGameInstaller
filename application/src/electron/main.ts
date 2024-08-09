@@ -1,7 +1,7 @@
 import { join } from 'path';
 import { server, port, clients } from "./server/addon-server.js"
 import { applicationAddonSecret } from './server/constants.js';
-import { app, BrowserWindow, dialog, globalShortcut, ipcMain, shell } from 'electron';
+import { app, BrowserWindow, dialog, globalShortcut, ipcMain, net, shell } from 'electron';
 import fs, { ReadStream } from 'fs';
 import { readFile } from 'fs/promises';
 import RealDebrid from 'real-debrid-js';
@@ -25,6 +25,7 @@ if (process.platform === 'linux') {
     __dirname = './';
 }
 console.log("Running in directory: " + __dirname);
+
 let qbitClient: QBittorrent | undefined = undefined;
 let torrentIntervals: NodeJS.Timeout[] = []
 // Keep a global reference of the window object, if you don't, the window will
@@ -165,6 +166,10 @@ function createWindow() {
         ipcMain.handle('app:screen-input', async (_, data) => {
             currentScreens.set(data.id, data.data)
             return;
+        });
+
+        ipcMain.handle('app:is-online', async () => {
+            return net.isOnline();
         });
         ipcMain.handle('app:launch-game', async (_, appid) => {
             if (!fs.existsSync('./library')) {

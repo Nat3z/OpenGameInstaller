@@ -87,7 +87,7 @@ addon.on('game-details', (appID, event) => {
     appID: appID,
     basicDescription: 'The Coolest Test App',
     capsuleImage: 'https://dummyimage.com/375x500/968d96/ffffff',
-    description: 'This is a test app',
+    description: '<script>alert("hello world")</script><h1>hello world</h1>',
     coverImage: 'https://dummyimage.com/375x500/968d96/ffffff',
     name: 'Test App',
     developers: ['OGI Developers'],

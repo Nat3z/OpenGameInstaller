@@ -50,6 +50,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     launchGame: (appid: string) => ipcRenderer.invoke('app:launch-game', appid),
     removeApp: (appid: number) => ipcRenderer.invoke('app:remove-app', appid),
     getOS: () => ipcRenderer.invoke('app:get-os'),
+    isOnline: () => ipcRenderer.invoke('app:is-online'),
   },
   getVersion: () => ipcRenderer.sendSync('get-version'),
   updateAddons: () => ipcRenderer.invoke('update-addons'),

@@ -8,10 +8,16 @@
     configTemplate: ConfigurationFile
   }
 	let addons: ConfigTemplateAndInfo[] = [];
+
+	let isOnline = true;
   onMount(() => {
     safeFetch("http://localhost:7654/addons").then((data) => {
       addons = data;
     });
+
+		window.electronAPI.app.isOnline().then((online) => {
+			isOnline = online;
+		});
   });
 	function extractSimpleName(input: string) {
 		// Regular expression to match the game name
@@ -134,6 +140,7 @@
 	}
 
 	function goToListing(appID: number, addonSource: string) {
+		if (!isOnline) return;
 		if (addonSource === "steam") {
 			currentStorePageOpened.set(appID);
 			viewOpenedWhenChanged.set("gameInstall");
@@ -147,38 +154,48 @@
 		viewOpenedWhenChanged.set('gameInstall');
 	}	
 </script>
-<input id="search" on:change={search} type="text" placeholder="Search for Game" class="p-2 pl-2 bg-slate-100 rounded-lg w-2/3 mt-4"/>
 
-<div class="games">
-	{#each results as result}
-		<div class="relative rounded">
-			<img src={result.capsuleImage} alt={result.name} class="rounded w-1/4 h-full object-cover"/>
-			<span class="h-full flex flex-col justify-start items-start">
-				<h1 class="font-archivo">{result.name}</h1>
-				<button class="mt-auto py-2 px-4 hover:underline rounded" on:click={() => goToListing(result.appID, result.addonsource)}>Go to Listing</button>
-			</span>
-		</div>
-	{/each}
-
-	{#if results.length === 0 && !loadingResults}
-		<div class="flex justify-center text-center flex-col items-center gap-2 w-full border bg-slate-100 rounded">
-			<p class="text-2xl">No Results</p>
-		</div>
-	{/if}
-</div>
-{#if loadingResults}
-	{#if addons.length === 0}
-		<div class="flex justify-center text-center flex-col items-center gap-2 w-4/6 bg-slate-100 rounded p-4">
-			<p class="text-2xl">Hey, you have no addons!</p>
-			<p class="text-gray-400 text-sm w-full">Addons are the core of OpenGameInstaller, and you need them to download, search, and setup your games! Get some online, okay?</p>
-		</div>
-	{:else}
-		<div class="flex justify-center items-center w-1/6 border p-4 bg-slate-100 rounded">
-			<p class="text-lg">Loading...</p>
-		</div>
-	{/if}
+{#if isOnline}
+	<input id="search" on:change={search} type="text" placeholder="Search for Game" class="p-2 pl-2 bg-slate-100 rounded-lg w-2/3 mt-4"/>
+{:else}
+	<div class="flex flex-col gap-2 w-full justify-center items-center h-full">
+		<img src="./favicon.png" alt="content" class="w-32 h-32" />
+		<h1 class="text-2xl text-black">You're Offline</h1>
+		<h1 class="text-lg text-gray-500 text-center">Searching for Games is unsupported when you're offline.</h1>
+	</div>
 {/if}
 
+{#if isOnline}
+	<div class="games">
+		{#each results as result}
+			<div class="relative rounded">
+				<img src={result.capsuleImage} alt={result.name} class="rounded w-1/4 h-full object-cover"/>
+				<span class="h-full flex flex-col justify-start items-start">
+					<h1 class="font-archivo">{result.name}</h1>
+					<button class="mt-auto py-2 px-4 hover:underline rounded" on:click={() => goToListing(result.appID, result.addonsource)}>Go to Listing</button>
+				</span>
+			</div>
+		{/each}
+
+		{#if results.length === 0 && !loadingResults}
+			<div class="flex justify-center text-center flex-col items-center gap-2 w-full border bg-slate-100 rounded">
+				<p class="text-2xl">No Results</p>
+			</div>
+		{/if}
+	</div>
+	{#if loadingResults}
+		{#if addons.length === 0}
+			<div class="flex justify-center text-center flex-col items-center gap-2 w-4/6 bg-slate-100 rounded p-4">
+				<p class="text-2xl">Hey, you have no addons!</p>
+				<p class="text-gray-400 text-sm w-full">Addons are the core of OpenGameInstaller, and you need them to download, search, and setup your games! Get some online, okay?</p>
+			</div>
+		{:else}
+			<div class="flex justify-center items-center w-1/6 border p-4 bg-slate-100 rounded">
+				<p class="text-lg">Loading...</p>
+			</div>
+		{/if}
+	{/if}
+{/if}
 <style>
 	.games {
 		@apply flex flex-col gap-2 w-5/6 pb-4;

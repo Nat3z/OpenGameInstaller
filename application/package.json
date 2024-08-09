@@ -15,8 +15,7 @@
       "public/**/*",
       "./build/**/*"
     ],
-    "win": {
-    },
+    "win": {},
     "linux": {
       "icon": "public/favicon-256x256.png",
       "target": [
@@ -54,6 +53,7 @@
     "ogi-addon": "*",
     "real-debrid-js": "*",
     "rollup-plugin-postcss": "^4.0.2",
+    "sanitize-html": "^2.13.0",
     "webtorrent": "1.9.7",
     "ws": "^8.18.0",
     "zod": "^3.23.8"
@@ -65,6 +65,7 @@
     "@rollup/plugin-replace": "^5.0.7",
     "@rollup/plugin-typescript": "^11.1.6",
     "@tsconfig/svelte": "^5.0.4",
+    "@types/sanitize-html": "^2.11.0",
     "@types/sass": "^1.45.0",
     "@types/ws": "^8.5.11",
     "autoprefixer": "^10.4.19",

@@ -10,7 +10,7 @@
     <main>
       <img src="./favicon-256x256.png" alt="OpenGameInstaller Logo" width="128" height="128">
 
-      <h1>Checking for Updates</h1>
+      <h1 style="width: 100%; text-align: center;">Checking for Updates</h1>
       <progress value="10" max="100" style="display: none;"></progress>
       <p style="display: none;">hello</p>
     </main>
@@ -27,11 +27,15 @@
       progressHTML.value = progress;
       progressHTML.max = max;
       progressHTML.style.display = 'block';
+    }
+    else {
+      progressHTML.style.display = 'none';
+    }
+    if (subtext) {
       subTextHTML.textContent = subtext;
       subTextHTML.style.display = 'block';
     }
     else {
-      progressHTML.style.display = 'none';
       subTextHTML.style.display = 'none';
       subTextHTML.textContent = '';
       subTextHTML.style.display = 'none';

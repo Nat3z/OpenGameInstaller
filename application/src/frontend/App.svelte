@@ -170,22 +170,27 @@
 		</button>
 
 		<span class="flex flex-col justify-start items-center w-full p-4">
-			{#if recentlyLaunchedApps.length > 0}
-			<h1 class="text-left !font-archivo w-full">Recently Played</h1>
-				{#each recentlyLaunchedApps as app}
-					<div data-recently-item class="flex flex-row justify-start items-center w-full gap-4 p-2 h-22 rounded hover:bg-gray-100 hover:cursor-pointer transition-colors" on:click={() => playGame(app.appID)}>
-						<img src={app.capsuleImage} alt="capsule" class="w-12 h-22 rounded" />
-						<div class="flex flex-col">
-							<h1 class="font-open-sans text-sm">{app.name}</h1>
-							<div class="flex flex-row gap-2">
-								<PlayIcon width="12px" fill="#d1d5db" /> 
+			{#await window.electronAPI.app.getOS()}
+			{:then os}
+			{#if os === "win32"}
+				{#if recentlyLaunchedApps.length > 0}
+					<h1 class="text-left !font-archivo w-full">Recently Played</h1>
+						{#each recentlyLaunchedApps as app}
+							<div data-recently-item class="flex flex-row justify-start items-center w-full gap-4 p-2 h-22 rounded hover:bg-gray-100 hover:cursor-pointer transition-colors" on:click={() => playGame(app.appID)}>
+								<img src={app.capsuleImage} alt="capsule" class="w-12 h-22 rounded" />
+								<div class="flex flex-col">
+									<h1 class="font-open-sans text-sm">{app.name}</h1>
+									<div class="flex flex-row gap-2">
+										<PlayIcon width="12px" fill="#d1d5db" /> 
 
-								<p class="font-archivo text-gray-300">Start</p>
+										<p class="font-archivo text-gray-300">Start</p>
+									</div>
+								</div>
 							</div>
-						</div>
-					</div>
-				{/each}
-			{/if}
+						{/each}
+					{/if}
+				{/if}
+			{/await}
 		</span>
 	</nav>
 	<main class="flex items-center flex-col gap-4 w-full h-full overflow-y-auto">

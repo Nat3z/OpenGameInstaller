@@ -57,6 +57,7 @@ interface Window {
       launchGame: (appid: string) => Promise<void>,
       removeApp: (appid: number) => Promise<void>,
       getOS: () => Promise<string>,
+      isOnline: () => Promise<boolean>,
     },
     updateAddons: () => Promise<void>,
     getVersion: () => string,

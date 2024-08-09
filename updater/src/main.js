@@ -1,4 +1,4 @@
-import { BrowserWindow, app, ipcMain, shell } from 'electron';
+import { BrowserWindow, app, ipcMain, net, shell } from 'electron';
 import axios from 'axios';
 import fs from 'fs';
 import path from 'path';
@@ -10,11 +10,12 @@ function isDev() {
   return !app.isPackaged;
 }
 
-let __dirname = isDev() ? app.getAppPath() + "/../" : path.dirname(process.execPath);
+let __dirname = isDev() ? app.getAppPath() + "/" : path.dirname(process.execPath);
 if (process.platform === 'linux') {
   // it's most likely sandboxed, so just use ./
   __dirname = './';
 }
+console.log(__dirname);
 process.noAsar = true;
 
 function correctParsingSize(size) {
@@ -60,136 +61,158 @@ async function createWindow() {
   // check for updates
   const gitRepo = "Nat3z/OpenGameInstaller"
   // check the github releases 
-  const response = await axios.get(`https://api.github.com/repos/${gitRepo}/releases`);
-  mainWindow.webContents.send('text', 'Checking for Updates');
-  // if the version is different, download the new version
-  let release;
-  for (const rel of response.data) {
-    console.log(rel.tag_name, localVersion);
-    if (rel.tag_name === localVersion) {
-      break;
-    }
-    if (rel.prerelease && usingBleedingEdge && rel.tag_name !== localVersion) {
-      release = rel;
-      break;
-    } else if (!rel.prerelease && rel.tag_name !== localVersion) {
-      release = rel;
-      break;
-    }
-  }
-  let updating = release !== undefined;
-  if (release) {
-    // download the new version usinng axios stream
-    if (process.platform === 'win32') {
-      const writer = fs.createWriteStream(`./update.zip`);
-      mainWindow.webContents.send('text', 'Downloading Update');
-      const assetWithPortable = release.assets.find((asset) => asset.name.toLowerCase().includes('portable') || asset.name.toLowerCase().includes('portrable'));
-      if (!assetWithPortable) {
-        mainWindow.webContents.send('text', 'No Portable Version Found');
-        return
+  try {
+    const response = await axios.get(`https://api.github.com/repos/${gitRepo}/releases`);
+    mainWindow.webContents.send('text', 'Checking for Updates');
+    // if the version is different, download the new version
+    let release;
+    for (const rel of response.data) {
+      console.log(rel.tag_name, localVersion);
+      if (rel.tag_name === localVersion) {
+        break;
       }
-      const response = await axios({
-        url: assetWithPortable.browser_download_url,
-        method: 'GET',
-        responseType: 'stream',
-      });
-      response.data.pipe(writer);
-      const startTime = Date.now();
-      const fileSize = response.headers['content-length'];
-      response.data.on('data', () => {
-        const elapsedTime = (Date.now() - startTime) / 1000; // in seconds
-        const downloadSpeed = response.data.socket.bytesRead / elapsedTime;
-        mainWindow.webContents.send('text', 'Downloading Update', writer.bytesWritten, fileSize, correctParsingSize(downloadSpeed) + '/s');
-      });
-      response.data.on('end', async () => {
-        mainWindow.webContents.send('text', 'Download Complete');
-        // extract the zip file
-        const prefix = __dirname + "/update";
-        if (!fs.existsSync(prefix)) {
-          fs.mkdirSync(prefix);
+      if (rel.prerelease && usingBleedingEdge && rel.tag_name !== localVersion) {
+        release = rel;
+        break;
+      } else if (!rel.prerelease && rel.tag_name !== localVersion) {
+        release = rel;
+        break;
+      }
+    }
+    let updating = release !== undefined;
+    if (release) {
+      // download the new version usinng axios stream
+      if (process.platform === 'win32') {
+        const writer = fs.createWriteStream(`./update.zip`);
+        mainWindow.webContents.send('text', 'Downloading Update');
+        const assetWithPortable = release.assets.find((asset) => asset.name.toLowerCase().includes('portable') || asset.name.toLowerCase().includes('portrable'));
+        if (!assetWithPortable) {
+          mainWindow.webContents.send('text', 'No Portable Version Found');
+          return
         }
-        await new Promise(async (resolve, reject) => {
-          mainWindow.webContents.send('text', 'Extracting Update');
-          await unzip(`./update.zip`, prefix);
-          resolve();
+        const response = await axios({
+          url: assetWithPortable.browser_download_url,
+          method: 'GET',
+          responseType: 'stream',
         });
-        // delete the zip file
-        fs.unlinkSync(`./update.zip`);
-        // update the version file
-        fs.writeFileSync(`./version.txt`, release.tag_name);
-        // restart the app
-        console.log('App Ready.')
+        response.data.pipe(writer);
+        const startTime = Date.now();
+        const fileSize = response.headers['content-length'];
+        response.data.on('data', () => {
+          const elapsedTime = (Date.now() - startTime) / 1000; // in seconds
+          const downloadSpeed = response.data.socket.bytesRead / elapsedTime;
+          mainWindow.webContents.send('text', 'Downloading Update', writer.bytesWritten, fileSize, correctParsingSize(downloadSpeed) + '/s');
+        });
+        response.data.on('end', async () => {
+          mainWindow.webContents.send('text', 'Download Complete');
+          // extract the zip file
+          const prefix = __dirname + "/update";
+          if (!fs.existsSync(prefix)) {
+            fs.mkdirSync(prefix);
+          }
+          await new Promise(async (resolve, reject) => {
+            mainWindow.webContents.send('text', 'Extracting Update');
+            await unzip(`./update.zip`, prefix);
+            resolve();
+          });
+          // delete the zip file
+          fs.unlinkSync(`./update.zip`);
+          // update the version file
+          fs.writeFileSync(`./version.txt`, release.tag_name);
+          // restart the app
+          console.log('App Ready.')
 
-        mainWindow.webContents.send('text', 'Launching OpenGameInstaller');
-        launchApp();
-      });
-    }
-    else if (process.platform === 'linux') {
-      if (!fs.existsSync(`./update`)) {
-        fs.mkdirSync(`./update`);
+          mainWindow.webContents.send('text', 'Launching OpenGameInstaller');
+          launchApp(true);
+        });
       }
-      const writer = fs.createWriteStream(`./update/OpenGameInstaller.AppImage`);
-      mainWindow.webContents.send('text', 'Downloading Update');
-      const assetWithPortable = release.assets.find((asset) => asset.name.toLowerCase().includes('linux-pt.appimage'));
+      else if (process.platform === 'linux') {
+        if (!fs.existsSync(`./update`)) {
+          fs.mkdirSync(`./update`);
+        }
+        const writer = fs.createWriteStream(`./update/OpenGameInstaller.AppImage`);
+        mainWindow.webContents.send('text', 'Downloading Update');
+        const assetWithPortable = release.assets.find((asset) => asset.name.toLowerCase().includes('linux-pt.appimage'));
 
-      if (!assetWithPortable) {
-        mainWindow.webContents.send('text', 'No Portable Version Found');
-        return
+        if (!assetWithPortable) {
+          mainWindow.webContents.send('text', 'No Portable Version Found');
+          return
+        }
+
+        const response = await axios({
+          url: assetWithPortable.browser_download_url,
+          method: 'GET',
+          responseType: 'stream',
+        });
+        response.data.pipe(writer);
+        const startTime = Date.now();
+        const fileSize = response.headers['content-length'];
+        response.data.on('data', () => {
+          const elapsedTime = (Date.now() - startTime) / 1000; // in seconds
+          const downloadSpeed = response.data.socket.bytesRead / elapsedTime;
+          mainWindow.webContents.send('text', 'Downloading Update', writer.bytesWritten, fileSize, correctParsingSize(downloadSpeed) + '/s');
+        });
+        response.data.on('end', async () => {
+          mainWindow.webContents.send('text', 'Download Complete');
+          fs.writeFileSync(`./version.txt`, release.tag_name);
+          console.log('App Ready.')
+          mainWindow.webContents.send('text', 'Launching OpenGameInstaller');
+          writer.close();
+          launchApp(true);
+        });
       }
 
-      const response = await axios({
-        url: assetWithPortable.browser_download_url,
-        method: 'GET',
-        responseType: 'stream',
-      });
-      response.data.pipe(writer);
-      const startTime = Date.now();
-      const fileSize = response.headers['content-length'];
-      response.data.on('data', () => {
-        const elapsedTime = (Date.now() - startTime) / 1000; // in seconds
-        const downloadSpeed = response.data.socket.bytesRead / elapsedTime;
-        mainWindow.webContents.send('text', 'Downloading Update', writer.bytesWritten, fileSize, correctParsingSize(downloadSpeed) + '/s');
-      });
-      response.data.on('end', async () => {
-        mainWindow.webContents.send('text', 'Download Complete');
-        fs.writeFileSync(`./version.txt`, release.tag_name);
-        console.log('App Ready.')
-        mainWindow.webContents.send('text', 'Launching OpenGameInstaller');
-        launchApp();
-      });
     }
-
+    if (!updating) {
+      mainWindow.webContents.send('text', 'Launching OpenGameInstaller', 'No Updates Found');
+      // check if the user is offline
+      launchApp(net.isOnline());
+    }
+  } catch (e) {
+    console.error(e);
+    mainWindow.webContents.send('text', 'Launching OpenGameInstaller', 'Failed to check for updates');
+    // check if the user is offline
+    launchApp(net.isOnline());
   }
-  if (!updating)
-    launchApp();
+  
 }
 
-async function launchApp() {
+/**
+ * 
+ * @param {boolean} online 
+ * @returns {Promise<void>}
+ */
+async function launchApp(online) {
+  console.log('Launching in ' + (online ? 'online' : 'offline') + ' mode');
+  mainWindow.webContents.send('text', 'Launching OpenGameInstaller');
   if (process.platform === 'win32') {
     if (!fs.existsSync(path.join(__dirname, 'update', 'OpenGameInstaller.exe'))) {
-      mainWindow.webContents.send('text', 'Installation not found');
+      mainWindow.webContents.send('text', 'Installation not found', 'Launch Failed');
       return;
     }
-    const error = await shell.openPath(path.join(__dirname, 'update', 'OpenGameInstaller.exe'));
-    if (error) {
-      console.error(error);
-      console.log('Error Launching OpenGameInstaller');
-      mainWindow.webContents.send('text', 'Error Launching OpenGameInstaller');
-    }
-    else  
-      app.quit();
-  }
-  else if (process.platform === 'linux') {
-    if (!fs.existsSync(path.join(__dirname, 'update', 'OpenGameInstaller.AppImage'))) {
-      mainWindow.webContents.send('text', 'Installation not found');
-      return;
-    }
-    spawn('./OpenGameInstaller.AppImage', {
+    const spawned = spawn('./OpenGameInstaller.exe', ['--online=' + online], {
       cwd: path.join(__dirname, 'update'),
       detached: true,
       stdio: 'ignore'
     });
+    spawned.unref(); 
     app.quit();
+  }
+  else if (process.platform === 'linux') {
+    if (!fs.existsSync(path.join(__dirname, 'update', 'OpenGameInstaller.AppImage'))) {
+      mainWindow.webContents.send('text', 'Installation not found', 'Launch Failed');
+      return;
+    }
+    setTimeout(() => {
+      const spawned = spawn('./OpenGameInstaller.AppImage', ['online=' + online], {
+        cwd: path.join(__dirname, 'update'),
+        detached: true,
+        stdio: 'ignore'
+      });
+      spawned.unref();
+      app.quit(); 
+    }, 200);
+    
   }
 }
 app.on('ready', createWindow);

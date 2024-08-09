@@ -3,6 +3,7 @@ import { clients } from "../addon-server.js";
 import { applicationAddonSecret } from "../constants.js";
 import { DeferrableTask } from "../DeferrableTask.js";
 import { DefferedTasks } from "./defer.js";
+import sanitize from "sanitize-html";
 
 const app = express.Router();
 
@@ -128,6 +129,7 @@ app.get('/:addonID/game-details', async (req, res) => {
   const gameID = parseInt(req.query.gameID as string);
   const deferrableTask = new DeferrableTask(async () => {
     const data = await client.sendEventMessage({ event: 'game-details', args: gameID });
+    data.args.description = sanitize(data.args.description);
     return data.args;
   }, client.addonInfo.id);
 

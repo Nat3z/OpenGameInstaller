@@ -17,9 +17,10 @@ import { getStoredValue, refreshCached } from './config-util.js';
 import * as JsSearch from 'js-search'
 import { ConfigurationFile } from 'ogi-addon/build/config/ConfigurationBuilder.js';
 import { LibraryInfo } from 'ogi-addon';
+import { checkIfInstallerUpdateAvailable } from './updater.js';
 const VERSION = app.getVersion();
 
-let __dirname = isDev() ? app.getAppPath() + "/../" : path.dirname(process.execPath);
+export let __dirname = isDev() ? app.getAppPath() + "/../" : path.dirname(process.execPath);
 if (process.platform === 'linux') {
     // it's most likely sandboxed, so just use ./
     __dirname = './';
@@ -94,6 +95,7 @@ export function sendAskForInput(id: string, config: ConfigurationFile, name: str
 
 function createWindow() {    
     // Create the browser window.
+
     mainWindow = new BrowserWindow({
         width: 1000,
         height: 700,
@@ -1619,7 +1621,10 @@ function checkForAddonUpdates() {
 // This method will be called when Electron has finished
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
-app.on('ready', () => {
+app.on('ready', async () => {
+    // check updates for setup
+    await checkIfInstallerUpdateAvailable();
+
     createWindow();
     server.listen(port, () => {
         console.log(`Addon Server is running on http://localhost:${port}`);

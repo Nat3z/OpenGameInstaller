@@ -294,7 +294,7 @@
         </div>
         {#each Object.keys(selectedOption.options) as key}
           <div class={`flex ${selectedOption.options[key].type === "textarea" ? 'flex-col' : 'flex-row'} gap-2 items-center`}>
-            <label for={key}>{selectedOption.options[key].displayName}</label>
+            <label class="min-w-max" for={key}>{selectedOption.options[key].displayName}</label>
             {#if selectedOption.options[key].type === "string"}
               {#if selectedOption.options[key].choice}
                 <select id={key} on:change={updateConfig} value={getStoredOrDefaultValue(key)}>

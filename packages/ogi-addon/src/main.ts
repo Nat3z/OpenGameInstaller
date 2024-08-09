@@ -12,7 +12,7 @@ export type OGIAddonServerSentEvent = 'authenticate' | 'configure' | 'config-upd
 export { ConfigurationBuilder, Configuration, EventResponse, SearchResult };
 const defaultPort = 7654;
 import pjson from '../package.json';
-const version = pjson.version;
+export const version = pjson.version;
 
 export interface ClientSentEventTypes {
   response: any;

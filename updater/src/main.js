@@ -1,10 +1,12 @@
 import { BrowserWindow, app, ipcMain, net, shell } from 'electron';
 import axios from 'axios';
 import fs from 'fs';
-import path from 'path';
+import fsPromises from 'fs/promises';
+import path, { join } from 'path';
 import yauzl from 'yauzl';
 import { exec, spawn } from 'child_process';
 let mainWindow;
+import pjson from '../package.json' assert { "type": "json" };
 
 function isDev() {
   return !app.isPackaged;
@@ -16,6 +18,9 @@ if (process.platform === 'linux') {
   __dirname = './';
 }
 console.log(__dirname);
+const SETUP_VERSION = pjson.version;
+
+// fs.writeFile(join(__dirname, 'updater-version.txt'), SETUP_VERSION);
 process.noAsar = true;
 
 function correctParsingSize(size) {
@@ -81,6 +86,9 @@ async function createWindow() {
     }
     let updating = release !== undefined;
     if (release) {
+
+      // check if the setup has a new update
+
       // download the new version usinng axios stream
       if (process.platform === 'win32') {
         const writer = fs.createWriteStream(`./update.zip`);

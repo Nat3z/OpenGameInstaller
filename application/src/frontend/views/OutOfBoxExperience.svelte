@@ -22,7 +22,6 @@
       return;
     }
 
-    // WARNING: CHANGE IN PROD
     if (result[1]) {
       stage = 1.5;
       window.electronAPI.fs.write('./config/option/installed.json', JSON.stringify({ restartRequired: true, installed: false }));

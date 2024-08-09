@@ -166,6 +166,8 @@ async function createWindow() {
           fs.writeFileSync(`./version.txt`, release.tag_name);
           console.log('App Ready.')
           mainWindow.webContents.send('text', 'Launching OpenGameInstaller');
+          // make the file executable
+          fs.chmodSync(`./update/OpenGameInstaller.AppImage`, '755');
           writer.close();
           launchApp(true);
         });

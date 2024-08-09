@@ -1,6 +1,6 @@
 {
   "name": "ogi-updater",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "type": "module",
   "description": "A simple updater for OpenGameInstaller",
   "main": "src/main.js",

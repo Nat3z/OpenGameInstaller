@@ -51,6 +51,7 @@ export function checkIfInstallerUpdateAvailable() {
 
     const localVersion = existsSync(`${__dirname}/../updater-version.txt`) ? readFileSync(`${__dirname}/../updater-version.txt`, 'utf8') || '0.0.0' : '0.0.0';
     console.log(`[updater] Local version: ${localVersion}`);
+    const bleedingEdge = existsSync(`${__dirname}/../bleeding-edge.txt`);
     // check for updates
     try {
       const gitRepo = 'nat3z/OpenGameInstaller'
@@ -68,7 +69,7 @@ export function checkIfInstallerUpdateAvailable() {
         if (latestSetupVersion === localVersion) {
           break;
         }
-        if (rel.prerelease && latestSetupVersion !== localVersion) {
+        if (rel.prerelease && bleedingEdge && latestSetupVersion !== localVersion) {
           latestRelease = rel;
           break;
         } else if (!rel.prerelease && latestSetupVersion !== localVersion) {

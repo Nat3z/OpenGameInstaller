@@ -1,0 +1,96 @@
+---
+import Layout from "./Layout.astro";
+const { frontmatter } = Astro.props;
+import { Image } from 'astro:assets';
+import Favicon from '../../public/favicon.png';
+
+const section = frontmatter.section;
+const part: number = frontmatter.part;
+
+// now read each part of the section
+const docsInSection = await Astro.glob(`../**/*.{md,mdx}`);
+// sort docs by part, descending to ascending
+docsInSection.sort((a, b) => a.frontmatter.part - b.frontmatter.part);
+// we are 1 index based, so subtract 1 twice
+const previousSection = part - 1 > 0 ? docsInSection[part - 2] : null;
+const nextSection = part + 1 <= docsInSection.length ? docsInSection[part] : null;
+---
+
+<Layout title={frontmatter.title}>
+  <header class="flex flex-row justify-start items-center py-4 px-8 gap-4 border-b-2 border-slate-300 shadow-lg">
+		<Image class="w-12 drop-shadow-xl" src={Favicon} alt="OpenGameInstaller Logo" />
+    <h1 class="font-archivo font-bold text-xl">OpenGameInstaller Docs</h1>
+  </header>
+
+  <main class="bg-slate-200 w-full h-full flex flex-row justify-start items-start">
+    <div class="h-full bg-slate-100 w-3/12 py-8 px-4 flex flex-col pl-8 gap-2">
+      <h1 class="font-semibold font-open-sans">{section}</h1>
+      <div class="flex flex-col pl-4 border-l-2 border-l-slate-300">
+        {docsInSection.map((doc) => (
+          <a href={doc.url} class="px-4 py-2 hover:bg-slate-200 transition-colors rounded-lg">{doc.frontmatter.title}</a>
+        ))}
+      </div>
+      
+    </div>
+    <div class="w-9/12 h-max p-12">
+      <div class="flex flex-col justify-start items-start border-b-2 border-slate-300 pb-4 w-full mb-4 gap-2">
+        <h1 class="font-archivo font-bold text-5xl">{frontmatter.title}</h1>
+        <h2 class="text-slate-400 font-normal text-lg px-2">{frontmatter.description}</h2>
+      </div>
+      <article class="p-2">
+        <slot />
+      </article>
+
+      <div class="flex flex-row justify-start items-center mt-8 gap-4">
+        {previousSection && (
+          <a href={previousSection.url} class="border-slate-300 hover:border-slate-400 border-2 w-72 h-24 rounded-lg py-8 px-4 flex flex-row justify-start items-center gap-4 ">
+            <span class="material-symbols-outlined">arrow_back</span>
+            <div class="flex flex-col">
+              <p class="text-slate-400">Next</p>
+              <h1 class="text-lg">{previousSection.frontmatter.title}</h1>
+            </div>
+          </a>
+        )}
+        {nextSection && (
+          <a href={nextSection.url} class="border-slate-300 hover:border-slate-400 border-2 w-72 h-24 rounded-lg py-8 px-4 flex flex-row justify-end items-center gap-4 ">
+            <div class="flex flex-col">
+              <p class="text-slate-400">Next</p>
+              <h1 class="text-lg">{nextSection.frontmatter.title}</h1>
+            </div>
+            <span class="material-symbols-outlined">arrow_forward</span>
+          </a>
+        )}
+      </div>
+    </div>
+  </main>
+</Layout>
+
+<style>
+  article {
+    h1 {
+      @apply text-4xl font-semibold;
+    }
+    h2 {
+      @apply text-2xl font-semibold;
+    }
+    h3 {
+      @apply text-xl font-semibold;
+    }
+    p {
+      @apply text-lg font-normal;
+    }
+    ul {
+      @apply list-disc list-inside;
+    }
+    ol {
+      @apply list-decimal list-inside;
+    }
+    code {
+      @apply bg-slate-300 text-slate-800 p-1 rounded-md;
+    }
+    pre {
+      @apply bg-slate-300 text-slate-800 p-4 rounded-md;
+    }
+
+  }
+</style>

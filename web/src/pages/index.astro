@@ -1,14 +1,20 @@
 ---
+import { Image } from 'astro:assets';
 import Layout from '../layouts/Layout.astro';
+import Favicon from '../../public/favicon.png';
+import LibraryPage from '../../public/librarypage.png';
+import StorePage from '../../public/storepage.png';
+import DeckImage from '../../public/deck.png';
+import CodeSnippet from '../../public/code-snippet.png';
 ---
 
 <Layout title="OpenGameInstaller">
 	<main class="animate-fade-in flex justify-center items-center w-screen h-screen flex-col gap-2 p-0 m-0">
-		<img class="w-64 drop-shadow-xl" src="/favicon.png" alt="OpenGameInstaller Logo" />
+		<Image class="w-64 drop-shadow-xl" src={Favicon} alt="OpenGameInstaller Logo" />
 		<h1 class="font-archivo font-semibold text-5xl text-transparent bg-clip-text bg-gradient-to-b from-accent to-accent-dark text-center">OpenGameInstaller</h1>	
 		<h2 class="font-open-sans font-semibold">The Next-Generation Game Manager</h2>
-		<div class="mt-4 flex flex-row justify-center items-center gap-4">
-			<button class="bg-accent-dark rounded-lg px-6 py-4 font-open-sans text-white flex justify-center items-center gap-2 font-semibold transition-all hover:bg-accent">
+		<div class="mt-4 flex flex-row justify-center items-center gap-4 animate-fade-in-pop">
+			<button class="bg-accent-dark rounded-lg px-6 py-4 font-open-sans text-white flex justify-center items-center gap-2 font-semibold transition-all hover:bg-accent hover:shadow-2xl">
 				<span class="material-symbols-outlined">
 					download
 				</span>
@@ -22,14 +28,43 @@ import Layout from '../layouts/Layout.astro';
 			</button>
 		</div>
 	</main>
-	<div class="w-full h-screen bg-slate-200 rounded-t-[4rem] -mt-12 p-24 flex justify-center items-center flex-col">
-		<div class="flex justify-center items-center flex-row gap-8">
-			<img class="w-1/2 shadow-lg rounded-lg object-cover" src="/librarypage.png" alt="OpenGameInstaller Library" />
-			<div class="flex flex-col justify-center items-start gap-4 h-full">
+	<div class="w-full h-screen bg-slate-200 rounded-t-[4rem] -mt-12 p-24 flex justify-center items-center flex-col animate-fade-in">
+		<div class="flex justify-center items-center flex-col lg:flex-row gap-8">
+			<Image class="w-full lg:w-1/2 shadow-lg rounded-lg object-cover hover:scale-105 transition-all hover:shadow-2xl" src={LibraryPage} alt="OpenGameInstaller Library" />
+			<div class="flex flex-col justify-center items-start pl-6 gap-4 h-full">
 				<h1 class="font-archivo font-semibold text-5xl text-accent-dark">Your Library, All in One Spot</h1>
-				<p class="pr-8 text-2xl font-open-sans font-semibold">No matter how many games you have from different sources, we organize them all and help you manage them.</p>
+				<p class="pr-8 text-2xl font-open-sans font-medium">No matter how many games you have from different sources, we organize them all and help you manage them.</p>
 			</div>
 		</div>
 	</div>
+	<div class="w-full h-screen bg-slate-100 rounded-t-[4rem] -mt-12 p-24 flex justify-center items-center flex-col animate-fade-in">
+		<div class="flex justify-center items-center flex-col-reverse lg:flex-row gap-8">
+			<div class="flex flex-col justify-center items-start pr-6 gap-4 h-full">
+				<h1 class="font-archivo font-semibold text-5xl text-accent-dark">Discover Hundreds of Games</h1>
+				<p class="pr-8 text-2xl font-open-sans font-medium">Search Steam's entire game catalog plus your addons' catologs and pick and download your favorite games!</p>
+			</div>
+			<Image class="w-full lg:w-1/2 shadow-lg rounded-lg object-cover hover:scale-105 transition-all hover:shadow-2xl" src={StorePage} alt="OpenGameInstaller Store Page" />
+		</div>
+	</div>
+	<div class="w-full h-screen bg-slate-200 rounded-t-[4rem] -mt-12 p-24 flex justify-center items-center flex-col animate-fade-in">
+		<div class="flex justify-center items-center flex-col lg:flex-row gap-8">
+			<Image class="w-full lg:w-1/2 shadow-lg rounded-lg object-cover hover:scale-105 transition-all hover:shadow-2xl" src={CodeSnippet} alt="OpenGameInstaller Code Snippet in Typescript" />
+			<div class="flex flex-col justify-center items-start pl-6 gap-4 h-full">
+				<h1 class="font-archivo font-semibold text-5xl text-accent-dark">Built with Developers First</h1>
+				<p class="pr-8 text-2xl font-open-sans font-medium">Our client is built with developers first. The client is built with addons in mind, giving you as a developer everything you need to succeed.</p>
+			</div>
+		</div>
+	</div>
+	<div class="w-full h-3/4 bg-slate-100 rounded-t-[4rem] -mt-12 flex justify-center items-center flex-col animate-fade-in mb-12">
+		<div class="flex justify-center items-center flex-col gap-8 w-full">
+			<h1 class="font-archivo font-semibold text-5xl text-accent-dark text-center mt-24 lg:mt-0">Compatible on Steam Deck & Windows PCs</h1>
+			<p class="font-open-sans text-xl font-semibold">Compatible on Gaben's gift to planet Earth and Windows PCs*</p>
+			<Image class="w-full lg:w-5/12 rounded-lg object-cover transition-all" src={DeckImage} alt="Steam Deck Image" />
+			<p class="text-gray-500 font-open-sans text-sm">*Only Windows PCs that are 64 bit, x86 architecuture. Windows 10/11 only.</p>
+		</div>
+	</div>
+	<footer class="mt-12 w-full h-12 bg-slate-100 flex flex-row justify-start px-8 items-center">
+		<p class="font-open-sans text-gray-500 text-sm">© 2024 Nat3z, with love by the OGI Team.</p>
+	</footer>
 </Layout>
 

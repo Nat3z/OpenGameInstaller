@@ -9,6 +9,7 @@
     "packages/ogi-addon",
     "packages/real-debrid",
     "application",
-    "updater"
+    "updater",
+    "web"
   ]
 }

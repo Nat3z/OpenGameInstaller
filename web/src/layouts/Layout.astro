@@ -1,0 +1,44 @@
+---
+interface Props {
+	title: string;
+}
+
+const { title } = Astro.props;
+---
+
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="description" content="Astro description" />
+		<meta name="viewport" content="width=device-width" />
+		<link rel="icon" type="image/svg+xml" href="/favicon.png" />
+		<meta name="generator" content={Astro.generator} />
+		<title>{title}</title>
+		<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" />
+	</head>
+	<body>
+		<slot />
+	</body>
+</html>
+<style is:global>
+	@font-face {
+		font-family: 'Archivo';
+		src: url(./Archivo-VariableFont_wdth\,wght.ttf);
+	}
+	@font-face {
+		font-family: 'Open Sans';
+		src: url(./OpenSans-VariableFont_wdth\,wght.ttf);
+	}
+	body {
+		@apply bg-slate-100 w-screen h-screen;
+	}	
+	.material-symbols-outlined {
+		font-variation-settings:
+		'FILL' 0,
+		'wght' 500,
+		'GRAD' 0,
+		'opsz' 24
+	}
+
+</style>

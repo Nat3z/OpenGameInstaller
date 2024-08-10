@@ -1,0 +1,35 @@
+---
+import Layout from '../layouts/Layout.astro';
+---
+
+<Layout title="OpenGameInstaller">
+	<main class="animate-fade-in flex justify-center items-center w-screen h-screen flex-col gap-2 p-0 m-0">
+		<img class="w-64 drop-shadow-xl" src="/favicon.png" alt="OpenGameInstaller Logo" />
+		<h1 class="font-archivo font-semibold text-5xl text-transparent bg-clip-text bg-gradient-to-b from-accent to-accent-dark text-center">OpenGameInstaller</h1>	
+		<h2 class="font-open-sans font-semibold">The Next-Generation Game Manager</h2>
+		<div class="mt-4 flex flex-row justify-center items-center gap-4">
+			<button class="bg-accent-dark rounded-lg px-6 py-4 font-open-sans text-white flex justify-center items-center gap-2 font-semibold transition-all hover:bg-accent">
+				<span class="material-symbols-outlined">
+					download
+				</span>
+				Download
+			</button>
+			<button class="bg-transparent rounded-lg px-6 py-4 font-open-sans text-black flex justify-center items-center gap-2 font-semibold hover:bg-slate-200 transition-colors">
+				<span class="material-symbols-outlined">
+					article
+				</span>
+				Documentation
+			</button>
+		</div>
+	</main>
+	<div class="w-full h-screen bg-slate-200 rounded-t-[4rem] -mt-12 p-24 flex justify-center items-center flex-col">
+		<div class="flex justify-center items-center flex-row gap-8">
+			<img class="w-1/2 shadow-lg rounded-lg object-cover" src="/librarypage.png" alt="OpenGameInstaller Library" />
+			<div class="flex flex-col justify-center items-start gap-4 h-full">
+				<h1 class="font-archivo font-semibold text-5xl text-accent-dark">Your Library, All in One Spot</h1>
+				<p class="pr-8 text-2xl font-open-sans font-semibold">No matter how many games you have from different sources, we organize them all and help you manage them.</p>
+			</div>
+		</div>
+	</div>
+</Layout>
+

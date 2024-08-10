@@ -33,12 +33,51 @@ export type BasicLibraryInfo = {
 }
 
 export interface EventListenerTypes {
+  /**
+   * This event is emitted when the addon connects to the OGI Addon Server. Addon does not need to resolve anything.
+   * @param socket 
+   * @returns 
+   */
   connect: (socket: ws) => void;
+
+  /**
+   * This event is emitted when the client requests for the addon to disconnect. Addon does not need to resolve this event, but we recommend `process.exit(0)` so the addon can exit gracefully instead of by force by the addon server.
+   * @param reason 
+   * @returns 
+   */
   disconnect: (reason: string) => void;
+  /**
+   * This event is emitted when the client requests for the addon to configure itself. Addon should resolve the event with the internal configuration. (See ConfigurationBuilder) 
+   * @param config 
+   * @returns 
+   */
   configure: (config: ConfigurationBuilder) => ConfigurationBuilder;
+  /**
+   * This event is called when the client provides a response to any event. This should be treated as middleware. 
+   * @param response 
+   * @returns 
+   */
   response: (response: any) => void;
+
+  /**
+   * This event is called when the client requests for the addon to authenticate itself. You don't need to provide any info. 
+   * @param config 
+   * @returns 
+   */
   authenticate: (config: any) => void;
+  /**
+   * This event is emitted when the client requests for a torrent/direct download search to be performed. Addon is given the gameID (could be a steam appID or custom store appID), along with the storefront type. Addon should resolve the event with the search results. (See SearchResult) 
+   * @param query 
+   * @param event 
+   * @returns 
+   */
   search: (query: { type: 'steamapp' | 'internal', text: string }, event: EventResponse<SearchResult[]>) => void;
+  /**
+   * This event is emitted when the client requests for app setup to be performed. Addon should resolve the event with the metadata for the library entry. (See LibraryInfo)
+   * @param data 
+   * @param event 
+   * @returns 
+   */
   setup: (
     data: { 
       path: string, 
@@ -53,6 +92,13 @@ export interface EventListenerTypes {
       storefront: 'steam' | 'internal'
     }, event: EventResponse<LibraryInfo>
   ) => void;
+
+  /**
+   * This event is emitted when the client requires for a search to be performed. Input is the search query. 
+   * @param query 
+   * @param event 
+   * @returns 
+   */
   'library-search': (query: string, event: EventResponse<BasicLibraryInfo[]>) => void;
   'game-details': (appID: number, event: EventResponse<StoreData>) => void;
   exit: () => void;
@@ -89,6 +135,22 @@ export interface OGIAddonConfiguration {
   author: string;
   repository: string;
 }
+
+/**
+ * The main class for the OGI Addon. This class is used to interact with the OGI Addon Server. The OGI Addon Server provides a `--addonSecret` to the addon so it can securely connect.
+ * @example 
+ * ```typescript
+ * const addon = new OGIAddon({
+ *  name: 'Test Addon',
+*   id: 'test-addon',
+ *  description: 'A test addon',
+ *  version: '1.0.0',
+ *  author: 'OGI Developers',
+ *  repository: ''
+ * });
+ * ```
+ * 
+ */
 export default class OGIAddon {
   public eventEmitter = new events.EventEmitter();
   public addonWSListener: OGIAddonWSListener;
@@ -100,6 +162,11 @@ export default class OGIAddon {
     this.addonWSListener = new OGIAddonWSListener(this, this.eventEmitter);
   }
   
+  /**
+   * Register an event listener for the addon. (See EventListenerTypes) 
+   * @param event {OGIAddonEvent}
+   * @param listener {EventListenerTypes[OGIAddonEvent]} 
+   */
   public on<T extends OGIAddonEvent>(event: T, listener: EventListenerTypes[T]) {
     this.eventEmitter.on(event, listener);
   }
@@ -108,11 +175,18 @@ export default class OGIAddon {
     this.eventEmitter.emit(event, ...args);
   }
 
+  /**
+   * Notify the client using a notification. Provide the type of notification, the message, and an ID. 
+   * @param notification {Notification}
+   */
   public notify(notification: Notification) {
     this.addonWSListener.send('notification', [ notification ]);
   }
 }
 
+/**
+ * Library Info is the metadata for a library entry after setting up a game.
+ */
 export interface LibraryInfo {
   name: string;
   version: string;

@@ -24,6 +24,12 @@ export function isBooleanOption(option: ConfigurationOption): option is BooleanO
 
 export class ConfigurationBuilder {
   private options: ConfigurationOption[] = [];
+
+  /**
+   * Add a number option to the configuration builder and return the builder for chaining. You must provide a name, display name, and description for the option.
+   * @param option { (option: NumberOption) => NumberOption }
+   * @returns 
+   */
   public addNumberOption(option: (option: NumberOption) => NumberOption): ConfigurationBuilder {
     let newOption = new NumberOption();
     newOption = option(newOption);
@@ -31,6 +37,10 @@ export class ConfigurationBuilder {
     return this;
   }
 
+  /**
+   * Add a string option to the configuration builder and return the builder for chaining. You must provide a name, display name, and description for the option.
+   * @param option { (option: StringOption) => StringOption }
+  */
   public addStringOption(option: (option: StringOption) => StringOption) {
     let newOption = new StringOption();
     newOption = option(newOption);
@@ -38,6 +48,10 @@ export class ConfigurationBuilder {
     return this;
   }
 
+  /**
+   * Add a boolean option to the configuration builder and return the builder for chaining. You must provide a name, display name, and description for the option.
+   * @param option { (option: BooleanOption) => BooleanOption }
+  */
   public addBooleanOption(option: (option: BooleanOption) => BooleanOption) {
     let newOption = new BooleanOption();
     newOption = option(newOption);
@@ -74,22 +88,39 @@ export class ConfigurationOption {
   public description: string = '';
   public type: ConfigurationOptionType = 'unset'
   
+  /**
+   * Set the name of the option. **REQUIRED**
+   * @param name {string} The name of the option. This is used to reference the option in the configuration file.
+   */
   setName(name: string) {
     this.name = name;
     return this;
   }
 
+  /**
+   * Set the display name of the option. This is used to show the user a human readable version of what the option is. **REQUIRED** 
+   * @param displayName {string} The display name of the option. 
+   * @returns 
+   */
   setDisplayName(displayName: string) {
     this.displayName = displayName;
     return this;
   }
 
+  /**
+   * Set the description of the option. This is to show the user a brief description of what this option does. **REQUIRED**
+   * @param description {string} The description of the option. 
+   * @returns 
+   */
   setDescription(description: string) {
     this.description = description;
     return this;
   }
 
-
+  /**
+   * Validation code for the option. This is called when the user provides input to the option. If the validation fails, the user will be prompted to provide input again.
+   * @param input {unknown} The input to validate
+   */
   validate(input: unknown): [ boolean, string ] {
     throw new Error('Validation code not implemented. Value: ' + input)
   };
@@ -103,26 +134,46 @@ export class StringOption extends ConfigurationOption {
   public inputType: 'text' | 'file' | 'password' | 'folder' = 'text';
   public type: ConfigurationOptionType = 'string'
 
+  /**
+   * Set the allowed values for the string. If the array is empty, any value is allowed. When provided, the client will act like this option is a dropdown.  
+   * @param allowedValues {string[]} An array of allowed values for the string. If the array is empty, any value is allowed.
+   */
   setAllowedValues(allowedValues: string[]): this {
     this.allowedValues = allowedValues;
     return this;
   }
 
+  /**
+   * Set the default value for the string. This value will be used if the user does not provide a value. **HIGHLY RECOMMENDED**
+   * @param defaultValue {string} The default value for the string.
+   */
   setDefaultValue(defaultValue: string): this {
     this.defaultValue = defaultValue;
     return this;
   }
 
+  /**
+   * Set the minimum text length for the string. If the user provides a string that is less than this value, the validation will fail. 
+   * @param minTextLength {number} The minimum text length for the string. 
+   */
   setMinTextLength(minTextLength: number): this {
     this.minTextLength = minTextLength;
     return this;
   }
 
+  /**
+   * Set the maximum text length for the string. If the user provides a string that is greater than this value, the validation will fail. 
+   * @param maxTextLength {number} The maximum text length for the string.
+   */
   setMaxTextLength(maxTextLength: number): this {
     this.maxTextLength = maxTextLength;
     return this;
   }
 
+  /**
+   * Set the input type for the string. This will change how the client renders the input. 
+   * @param inputType {'text' | 'file' | 'password' | 'folder'} The input type for the string. 
+   */
   setInputType(inputType: 'text' | 'file' | 'password' | 'folder'): this {
     this.inputType = inputType;
     return this;
@@ -148,21 +199,38 @@ export class NumberOption extends ConfigurationOption {
   public defaultValue: number = 0;
   public type: ConfigurationOptionType = 'number'
   public inputType: 'range' | 'number' = 'number';
+
+  /**
+   * Set the minimum value for the number. If the user provides a number that is less than this value, the validation will fail.
+   * @param min {number} The minimum value for the number.
+   */
   setMin(min: number): this {
     this.min = min;
     return this;
   }
 
+  /**
+   * Set the input type for the number. This will change how the client renders the input. 
+   * @param type {'range' | 'number'} The input type for the number. 
+   */
   setInputType(type: 'range' | 'number'): this {
     this.inputType = type;
     return this;
   }
 
+  /**
+   * Set the maximum value for the number. If the user provides a number that is greater than this value, the validation will fail.
+   * @param max {number} The maximum value for the number.
+   */
   setMax(max: number): this {
     this.max = max;
     return this
   }
 
+  /**
+   * Set the default value for the number. This value will be used if the user does not provide a value. **HIGHLY RECOMMENDED**
+   * @param defaultValue {number} The default value for the number.
+   */
   setDefaultValue(defaultValue: number): this {
     this.defaultValue = defaultValue;
     return this;
@@ -184,6 +252,10 @@ export class BooleanOption extends ConfigurationOption {
   public type: ConfigurationOptionType = 'boolean'
   public defaultValue: boolean = false;
 
+  /**
+   * Set the default value for the boolean. This value will be used if the user does not provide a value. **HIGHLY RECOMMENDED**
+   * @param defaultValue {boolean} The default value for the boolean.
+   */
   setDefaultValue(defaultValue: boolean): this {
     this.defaultValue = defaultValue;
     return this;

@@ -2,7 +2,7 @@
 layout: ../../../layouts/BlogLayout.astro
 title: Test 1
 description: A guide on how to make your first addon for OpenGameInstaller.
-part: 2
+part: 1
 section: First Addon
 ---
 

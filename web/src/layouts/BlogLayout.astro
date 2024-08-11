@@ -3,17 +3,53 @@ import Layout from "./Layout.astro";
 const { frontmatter } = Astro.props;
 import { Image } from 'astro:assets';
 import Favicon from '../../public/favicon.png';
-
-const section = frontmatter.section;
+import { dirname, basename } from 'path';
+const sectionName = frontmatter.section;
 const part: number = frontmatter.part;
 
+function hasExactlyTwoSlashes(str: string) {
+  const regex = /^[^/]*\/[^/]*\/[^/]*$/;
+  return regex.test(str) || str === "/docs";
+}
 // now read each part of the section
-const docsInSection = await Astro.glob(`../**/*.{md,mdx}`);
-// sort docs by part, descending to ascending
+// read every document in the docs folder, and get the basename of the file
+let docsInSection = await Astro.glob(`../**/*.{md,mdx}`);
+let sections: string[] = []
+
+docsInSection.map((doc) => {
+  const section = doc.frontmatter.section
+  if (sections.includes(section)) {
+    return;
+  }
+  sections.push(section);
+})
+
+// sort sections by the index.md's (part 0) priority #
+sections = sections.sort((a, b) => {
+  const partA = docsInSection.find((doc) => doc.frontmatter.section === a && doc.frontmatter.part === 0);
+  if (partA === undefined) {
+    throw new Error(`Section ${a} does not have a part 0, index.md`);
+  }
+  const partB = docsInSection.find((doc) => doc.frontmatter.section === b && doc.frontmatter.part === 0);
+  if  (partB === undefined) {
+    throw new Error(`Section ${b} does not have a part 0, index.md`);
+  }
+  return partA.frontmatter.priority - partB.frontmatter.priority;
+});
 docsInSection.sort((a, b) => a.frontmatter.part - b.frontmatter.part);
-// we are 1 index based, so subtract 1 twice
-const previousSection = part - 1 > 0 ? docsInSection[part - 2] : null;
-const nextSection = part + 1 <= docsInSection.length ? docsInSection[part] : null;
+
+let docsConnectedToSections: Map<string, any[]> = new Map();
+for (let section of sections) {
+  docsConnectedToSections.set(section, docsInSection.filter((doc) => {
+    const docSection = doc.frontmatter.section;
+    return docSection === section;
+  }));
+}
+// sort docs by part, descending to ascending
+const previousSection = part - 1 > 0 ? docsConnectedToSections.get(sectionName)!![part - 1] : null;
+const nextSection = part + 1 < docsConnectedToSections.get(sectionName)!!.length ? docsConnectedToSections.get(sectionName)!![part + 1] : null;
+const selectedSection = docsConnectedToSections.get(sectionName)!![part];
+console.log(part)
 ---
 
 <Layout title={frontmatter.title}>
@@ -23,20 +59,23 @@ const nextSection = part + 1 <= docsInSection.length ? docsInSection[part] : nul
   </header>
 
   <main class="bg-slate-200 w-full h-full flex flex-row justify-start items-start">
-    <div class="h-full bg-slate-100 w-3/12 py-8 px-4 flex flex-col pl-8 gap-2">
-      <h1 class="font-semibold font-open-sans">{section}</h1>
-      <div class="flex flex-col pl-4 border-l-2 border-l-slate-300">
-        {docsInSection.map((doc) => (
-          <a href={doc.url} class="px-4 py-2 hover:bg-slate-200 transition-colors rounded-lg">{doc.frontmatter.title}</a>
-        ))}
-      </div>
-      
+    <div class="h-full bg-slate-100 w-3/12 py-8 px-4 flex flex-col pl-8 gap-1">
+      {sections.map((section) => (
+        <a href={`${docsConnectedToSections.get(section)?.find((val) => val.frontmatter.part === 0)?.url}`} class="hover:bg-slate-200 transition-colors rounded-lg px-4 py-2">{section}</a>
+        <div class="flex flex-col pl-4 border-l-2 border-l-slate-300 gap-1">
+          {docsConnectedToSections.get(section)!!.map((doc) => (
+            doc.frontmatter.part !== 0 && <a href={doc.url} class={`px-4 py-2 hover:bg-slate-200 transition-colors rounded-lg ${selectedSection.frontmatter.title === doc.frontmatter.title && 'bg-slate-300'}`}>{doc.frontmatter.title}</a>
+          ))}
+        </div>
+      ))}
     </div>
     <div class="w-9/12 h-max p-12">
-      <div class="flex flex-col justify-start items-start border-b-2 border-slate-300 pb-4 w-full mb-4 gap-2">
-        <h1 class="font-archivo font-bold text-5xl">{frontmatter.title}</h1>
-        <h2 class="text-slate-400 font-normal text-lg px-2">{frontmatter.description}</h2>
-      </div>
+      {(frontmatter.showTopBar || frontmatter.showTopBar === undefined) && (
+        <div class="flex flex-col justify-start items-start border-b-2 border-slate-300 pb-4 w-full mb-4 gap-2">
+          <h1 class="font-archivo font-bold text-5xl">{frontmatter.title}</h1>
+        </div>
+      )}
+
       <article class="p-2">
         <slot />
       </article>
@@ -45,15 +84,15 @@ const nextSection = part + 1 <= docsInSection.length ? docsInSection[part] : nul
         {previousSection && (
           <a href={previousSection.url} class="border-slate-300 hover:border-slate-400 border-2 w-72 h-24 rounded-lg py-8 px-4 flex flex-row justify-start items-center gap-4 ">
             <span class="material-symbols-outlined">arrow_back</span>
-            <div class="flex flex-col">
-              <p class="text-slate-400">Next</p>
+            <div class="flex flex-col mr-auto">
+              <p class="text-slate-400">Previous</p>
               <h1 class="text-lg">{previousSection.frontmatter.title}</h1>
             </div>
           </a>
         )}
         {nextSection && (
           <a href={nextSection.url} class="border-slate-300 hover:border-slate-400 border-2 w-72 h-24 rounded-lg py-8 px-4 flex flex-row justify-end items-center gap-4 ">
-            <div class="flex flex-col">
+            <div class="flex flex-col mr-auto">
               <p class="text-slate-400">Next</p>
               <h1 class="text-lg">{nextSection.frontmatter.title}</h1>
             </div>
@@ -68,7 +107,7 @@ const nextSection = part + 1 <= docsInSection.length ? docsInSection[part] : nul
 <style>
   article {
     h1 {
-      @apply text-4xl font-semibold;
+      @apply text-4xl font-semibold ;
     }
     h2 {
       @apply text-2xl font-semibold;
@@ -91,6 +130,6 @@ const nextSection = part + 1 <= docsInSection.length ? docsInSection[part] : nul
     pre {
       @apply bg-slate-300 text-slate-800 p-4 rounded-md;
     }
-
+    
   }
 </style>

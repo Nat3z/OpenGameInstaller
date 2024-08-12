@@ -14,12 +14,15 @@ import CodeSnippet from '../../public/code-snippet.png';
 		<h1 class="font-archivo font-semibold text-5xl text-transparent bg-clip-text bg-gradient-to-b from-accent to-accent-dark text-center">OpenGameInstaller</h1>	
 		<h2 class="font-open-sans font-semibold">The Next-Generation Game Manager</h2>
 		<div class="mt-4 flex flex-row justify-center items-center gap-4 animate-fade-in-pop">
-			<button class="bg-accent-dark rounded-lg px-6 py-4 font-open-sans text-white flex justify-center items-center gap-2 font-semibold transition-all hover:bg-accent hover:shadow-2xl">
-				<span class="material-symbols-outlined">
-					download
-				</span>
-				Download
-			</button>
+			<a href="appearance-none" data-download>
+				<button class="bg-accent-dark rounded-lg px-6 py-4 font-open-sans text-white flex justify-center items-center gap-2 font-semibold transition-all hover:bg-accent hover:shadow-2xl">
+					<span class="material-symbols-outlined">
+						download
+					</span>
+					Download
+				</button>
+			</a>
+
 			<a class="appearance-none" href="./docs/">
 				<button class="bg-transparent rounded-lg px-6 py-4 font-open-sans text-black flex justify-center items-center gap-2 font-semibold hover:bg-slate-200 transition-colors">
 					<span class="material-symbols-outlined">
@@ -71,3 +74,35 @@ import CodeSnippet from '../../public/code-snippet.png';
 	</footer>
 </Layout>
 
+<script type="module">
+	let resolvedHREF = '';
+	fetch('https://api.github.com/repos/Nat3z/OpenGameInstaller/releases/latest')
+		.then((res) => res.json())
+		.then((data) => {
+			// get the user agent
+			const userAgent = navigator.userAgent;
+			// check if the user agent is a windows machine
+			if (userAgent.includes('Windows')) {
+				// get the windows download link
+				resolvedHREF = data.assets.find((asset) => asset.name.includes('-Setup.exe')).browser_download_url;
+				document.querySelector('[data-download]')?.setAttribute('href', resolvedHREF);
+			} else if (userAgent.includes('Linux')) {
+				// get the linux download link
+				resolvedHREF = data.assets.find((asset) => asset.name.includes('-Setup.AppImage')).browser_download_url;
+				document.querySelector('[data-download]')?.setAttribute('href', resolvedHREF);
+			}
+			else {
+				document.querySelector('[data-download]')?.setAttribute('href', 'error');
+				document.querySelector('[data-download]').innerHTML = 'Not Supported';
+			}
+		})
+		.catch((err) => {
+			console.error(err);
+		});
+</script>
+
+<style>
+	[href="error"] {
+		@apply pointer-events-none cursor-not-allowed bg-red-500 rounded-lg px-6 py-4 font-open-sans text-white flex justify-center items-center gap-2 font-semibold transition-all hover:bg-accent hover:shadow-2xl;
+	}
+</style>

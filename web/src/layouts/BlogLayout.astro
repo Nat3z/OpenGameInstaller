@@ -2,8 +2,8 @@
 import Layout from "./Layout.astro";
 const { frontmatter } = Astro.props;
 import { Image } from 'astro:assets';
+import GitHubLogo from '../../public/github-mark.svg';
 import Favicon from '../../public/favicon.png';
-import { dirname, basename } from 'path';
 const sectionName = frontmatter.section;
 const part: number = frontmatter.part;
 
@@ -54,8 +54,15 @@ console.log(part)
 
 <Layout title={frontmatter.title}>
   <header class="flex flex-row justify-start items-center py-4 px-8 gap-4 border-b-2 border-slate-300 shadow-lg">
-		<Image class="w-12 drop-shadow-xl" src={Favicon} alt="OpenGameInstaller Logo" />
-    <h1 class="font-archivo font-bold text-xl">OpenGameInstaller Docs</h1>
+    <a href="/" class="appearance-none flex flex-row justify-start items-center gap-2 ">
+      <Image class="w-12 drop-shadow-xl" src={Favicon} alt="OpenGameInstaller Logo" />
+      <h1 class="font-archivo font-bold text-xl">OpenGameInstaller Docs</h1>
+    </a>
+
+    <a href="https://github.com/Nat3z/OpenGameInstaller" class="ml-auto flex flex-row justify-center items-center gap-2 font-archivo hover:bg-slate-300 p-4 py-2 rounded-lg transition-colors text-slate-500">
+      <h1 class="font-archivo font-bold text-lg">GitHub</h1>
+    </a>
+
   </header>
 
   <main class=" w-full flex flex-row justify-start items-start">

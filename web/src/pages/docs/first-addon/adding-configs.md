@@ -36,8 +36,22 @@ option.setDisplayName(string)
 option.setDescription(string)
 ```
 
-`.setName(string)` sets the key for your option in the generated JSON file. This is also used when referencing config values when getting them.
+`option.setName(string)` sets the key for your option in the generated JSON file. This is also used when referencing config values when getting them.
 
-`.setDisplayName(string)` sets the display name for your option which the user sees. This should be human-readable and **concise**.
+`option.setDisplayName(string)` sets the display name for your option which the user sees. This should be human-readable and **concise**.
 
-`.setDescription(string)` sets the description for your option when the user hovers over it for information. This should be human-readable and short.
+`option.setDescription(string)` sets the description for your option when the user hovers over it for information. This should be human-readable and short.
+
+You can see how the config looks by restarting OpenGameInstaller.
+
+## How do I get configuration values?
+
+To get the values of your config, you can use the functions:
+
+`addon.config.getStringValue(key)`
+
+`addon.config.getNumberValue(key)`
+
+`addon.config.getBooleanValue(key)`
+
+The `key` should be the same string you provided to `option.setName(string)` when making the option.

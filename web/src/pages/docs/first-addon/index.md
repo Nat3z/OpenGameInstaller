@@ -13,10 +13,10 @@ Firstly, install the OpenGameInstaller client by going to our [download](/) link
 
 Then, in a new npm project, run:
 ```shell
-$ bun install ogi-addon
+$ bun add ogi-addon@latest
 ```
 
-## Create a .gitignore file
+# Create a .gitignore file
 It is additionally recommended that you create a .gitignore file to protect your development environment from leaking important info. Here is a basic template you can use:
 ```md
 # dependencies

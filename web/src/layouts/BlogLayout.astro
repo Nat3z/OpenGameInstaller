@@ -46,7 +46,7 @@ for (let section of sections) {
   }));
 }
 // sort docs by part, descending to ascending
-const previousSection = part - 1 > 0 ? docsConnectedToSections.get(sectionName)!![part - 1] : null;
+const previousSection = part - 1 >= 0 ? docsConnectedToSections.get(sectionName)!![part - 1] : null;
 const nextSection = part + 1 < docsConnectedToSections.get(sectionName)!!.length ? docsConnectedToSections.get(sectionName)!![part + 1] : null;
 const selectedSection = docsConnectedToSections.get(sectionName)!![part];
 console.log(part)
@@ -58,10 +58,10 @@ console.log(part)
     <h1 class="font-archivo font-bold text-xl">OpenGameInstaller Docs</h1>
   </header>
 
-  <main class="bg-slate-200 w-full h-full flex flex-row justify-start items-start">
+  <main class=" w-full flex flex-row justify-start items-start">
     <div class="h-full bg-slate-100 w-3/12 py-8 px-4 flex flex-col pl-8 gap-1">
       {sections.map((section) => (
-        <a href={`${docsConnectedToSections.get(section)?.find((val) => val.frontmatter.part === 0)?.url}`} class="hover:bg-slate-200 transition-colors rounded-lg px-4 py-2">{section}</a>
+        <a href={`${docsConnectedToSections.get(section)?.find((val) => val.frontmatter.part === 0)?.url}`} class={`hover:bg-slate-200 transition-colors rounded-lg px-4 py-2 ${section === sectionName && 'bg-slate-300'}`}>{section}</a>
         <div class="flex flex-col pl-4 border-l-2 border-l-slate-300 gap-1">
           {docsConnectedToSections.get(section)!!.map((doc) => (
             doc.frontmatter.part !== 0 && <a href={doc.url} class={`px-4 py-2 hover:bg-slate-200 transition-colors rounded-lg ${selectedSection.frontmatter.title === doc.frontmatter.title && 'bg-slate-300'}`}>{doc.frontmatter.title}</a>
@@ -69,7 +69,7 @@ console.log(part)
         </div>
       ))}
     </div>
-    <div class="w-9/12 h-max p-12">
+    <div class="min-h-screen w-9/12 p-12 bg-slate-200">
       {(frontmatter.showTopBar || frontmatter.showTopBar === undefined) && (
         <div class="flex flex-col justify-start items-start border-b-2 border-slate-300 pb-4 w-full mb-4 gap-2">
           <h1 class="font-archivo font-bold text-5xl">{frontmatter.title}</h1>
@@ -107,13 +107,13 @@ console.log(part)
 <style>
   article {
     h1 {
-      @apply text-4xl font-semibold ;
+      @apply text-4xl font-semibold border-b-2 border-slate-300 pb-2 pr-8 w-fit my-2;
     }
     h2 {
-      @apply text-2xl font-semibold;
+      @apply text-3xl font-semibold border-b-2 border-slate-300 pb-2 pr-8 w-fit my-2;
     }
     h3 {
-      @apply text-xl font-semibold;
+      @apply text-2xl font-semibold;
     }
     p {
       @apply text-lg font-normal;
@@ -125,11 +125,28 @@ console.log(part)
       @apply list-decimal list-inside;
     }
     code {
-      @apply bg-slate-300 text-slate-800 p-1 rounded-md;
+      @apply text-slate-800 rounded-md bg-slate-300 p-1;
     }
     pre {
-      @apply bg-slate-300 text-slate-800 p-4 rounded-md;
+      @apply text-slate-800 p-4 rounded-md;
     }
+    pre code {
+      @apply !bg-transparent !p-0;
+    }
+    a {
+      @apply text-blue-500 underline;
+    }
+
+    table {
+      @apply w-full border-collapse;
+    }
+    th, td {
+      @apply border border-slate-300 p-2;
+    }
+    th {
+      @apply bg-slate-300;
+    }
+    @apply flex flex-col gap-2;
     
   }
 </style>

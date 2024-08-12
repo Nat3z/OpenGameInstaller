@@ -4,9 +4,26 @@ title: Your First Addon
 description: A guide on how to make your first addon for OpenGameInstaller.
 part: 0
 priority: 1
-section: First Addon
+section: Your First Addon
 ---
 
-## Welcome to the OpenGameInstaller Documentation
+Making an OpenGameInstaller addon is simple, as our Type-Safe library lets you connect to the client gracefully without any restraints.
 
-hello
+Firstly, install the OpenGameInstaller client by going to our [download](/) link. 
+
+Then, in a new npm project, run:
+```shell
+$ bun install ogi-addon
+```
+
+## Create a .gitignore file
+It is additionally recommended that you create a .gitignore file to protect your development environment from leaking important info. Here is a basic template you can use:
+```md
+# dependencies
+node_modules/
+# required because crashes make a *-crash.log file and client uses an installation.log file to verify addon installs.
+*.log
+# add this because auto-update doesn't like it when lock files are committed.
+bun.lockb
+```
+Follow the next guide to learn how to create an `addon.json` file, which is essential for OpenGameInstaller to get metadata about your addon.

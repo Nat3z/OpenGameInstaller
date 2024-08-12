@@ -56,7 +56,7 @@ console.log(part)
   <header class="flex flex-row justify-start items-center py-4 px-8 gap-4 border-b-2 border-slate-300 shadow-lg">
     <a href="/" class="appearance-none flex flex-row justify-start items-center gap-2 ">
       <Image class="w-12 drop-shadow-xl" src={Favicon} alt="OpenGameInstaller Logo" />
-      <h1 class="font-archivo font-bold text-xl">OpenGameInstaller Docs</h1>
+      <h1 class="font-archivo font-bold hidden lg:block text-xl truncate">OpenGameInstaller Docs</h1>
     </a>
 
     <a href="https://github.com/Nat3z/OpenGameInstaller" class="ml-auto flex flex-row justify-center items-center gap-2 font-archivo hover:bg-slate-300 p-4 py-2 rounded-lg transition-colors text-slate-500">
@@ -65,8 +65,8 @@ console.log(part)
 
   </header>
 
-  <main class=" w-full flex flex-row justify-start items-start">
-    <div class="h-full bg-slate-100 w-3/12 py-8 px-4 flex flex-col pl-8 gap-1">
+  <main class="flex flex-col-reverse lg:flex-row justify-start items-start">
+    <div class="h-full bg-slate-100 w-full lg:w-3/12 py-8 px-4 flex flex-col pl-8 gap-1">
       {sections.map((section) => (
         <a href={`${docsConnectedToSections.get(section)?.find((val) => val.frontmatter.part === 0)?.url}`} class={`hover:bg-slate-200 transition-colors rounded-lg px-4 py-2 ${section === sectionName && 'bg-slate-300'}`}>{section}</a>
         <div class="flex flex-col pl-4 border-l-2 border-l-slate-300 gap-1">
@@ -76,18 +76,18 @@ console.log(part)
         </div>
       ))}
     </div>
-    <div class="min-h-screen w-9/12 p-12 bg-slate-200">
+    <div class="min-h-screen w-full lg:w-9/12 p-8 lg:p-12 bg-slate-200">
       {(frontmatter.showTopBar || frontmatter.showTopBar === undefined) && (
         <div class="flex flex-col justify-start items-start border-b-2 border-slate-300 pb-4 w-full mb-4 gap-2">
-          <h1 class="font-archivo font-bold text-5xl">{frontmatter.title}</h1>
+          <h1 class="font-archivo font-bold text-3xl lg:text-5xl w-fit">{frontmatter.title}</h1>
         </div>
       )}
 
-      <article class="p-2">
+      <article class="lg:p-2">
         <slot />
       </article>
 
-      <div class="flex flex-row justify-start items-center mt-8 gap-4">
+      <div class="flex flex-col lg:flex-row justify-start items-center mt-8 gap-4">
         {previousSection && (
           <a href={previousSection.url} class="border-slate-300 hover:border-slate-400 border-2 w-72 h-24 rounded-lg py-8 px-4 flex flex-row justify-start items-center gap-4 ">
             <span class="material-symbols-outlined">arrow_back</span>
@@ -114,10 +114,10 @@ console.log(part)
 <style>
   article {
     h1 {
-      @apply text-4xl font-semibold border-b-2 border-slate-300 pb-2 pr-8 w-fit my-2;
+      @apply text-2xl lg:text-4xl font-semibold border-b-2 border-slate-300 pb-2 pr-8 my-2;
     }
     h2 {
-      @apply text-3xl font-semibold border-b-2 border-slate-300 pb-2 pr-8 w-fit my-2;
+      @apply text-xl lg:text-3xl font-semibold border-b-2 border-slate-300 pb-2 pr-8 my-2;
     }
     h3 {
       @apply text-2xl font-semibold;

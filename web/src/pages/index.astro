@@ -11,7 +11,7 @@ import CodeSnippet from '../../public/code-snippet.png';
 <Layout title="OpenGameInstaller">
 	<main class="animate-fade-in flex justify-center items-center min-h-[40rem] w-screen lg:min-h-screen flex-col gap-2 p-0 m-0">
 		<Image class="w-64 drop-shadow-xl" src={Favicon} alt="OpenGameInstaller Logo" />
-		<h1 class="font-archivo font-semibold text-3xl lg:text-5xl text-transparent bg-clip-text bg-gradient-to-b from-accent to-accent-dark text-center">OpenGameInstaller</h1>	
+		<h1 class="font-archivo font-bold text-3xl lg:text-5xl text-transparent bg-clip-text bg-gradient-to-b from-accent to-accent-dark text-center">OpenGameInstaller</h1>	
 		<h2 class="font-open-sans font-semibold">The Next-Generation Game Manager</h2>
 		<div class="mt-4 flex flex-col lg:flex-row justify-center items-center gap-4 animate-fade-in-pop">
 			<a href="appearance-none" data-download>
@@ -107,9 +107,16 @@ import CodeSnippet from '../../public/code-snippet.png';
 
 <style>
 	[href="error"] {
-		@apply pointer-events-none cursor-not-allowed bg-red-500 rounded-lg px-6 py-4 font-open-sans text-white flex justify-center items-center gap-2 font-semibold transition-all hover:bg-accent hover:shadow-2xl;
+		@apply pointer-events-none cursor-not-allowed bg-slate-400 rounded-lg px-6 py-4 font-open-sans text-white flex justify-center items-center gap-2 font-semibold transition-all;
 	}
-
+	main {
+		inset: 0;
+		height: 100%;
+		width: 100%;
+		background-image: linear-gradient(to right, #80808012 1px, transparent 1px),
+    linear-gradient(to bottom, #80808012 1px, transparent 1px);
+		background-size: 24px 24px;
+	}
 	/* styles.css */
 	.container {
 		@apply flex justify-center items-center flex-col lg:flex-row gap-8;

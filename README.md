@@ -2,6 +2,12 @@
   <img src="https://github.com/user-attachments/assets/f1725eb8-930b-4fca-a2dd-3fdef22dbef1" alt="ogi logo (courtesy of hoyoverse)" />
 </p>
 
+<p align="center">
+  <a href="https://ogi.nat3z.com">website</a>
+  •
+  <a href="https://ogi.nat3z.com/docs/">documentation</a>
+</p>
+
 # OpenGameInstaller
 A game installation and management platform built with developers in mind.
 
@@ -19,10 +25,14 @@ Go to the [latest release](https://github.com/Nat3z/OpenGameInstaller/releases/l
 
 
 # What is this repository?
-This is the npm workspace which stores all of the packages required for OpenGameInstaller, including the front-facing GUI `application`, a library to interface with the Real-Debrid API `packages/real-debrid`, and a library to interface with OpenGameInstaller's addons platform `packages/ogi-addon`.
+This is the npm workspace which stores all of the packages required for OpenGameInstaller, including the front-facing GUI `application`, a web-interface for docs `web`, a library to interface with the Real-Debrid API `packages/real-debrid`, and a library to interface with OpenGameInstaller's addons platform `packages/ogi-addon`.
+
+# How do I build addons?
+Follow the [Building your first addon](https://ogi.nat3z.com/docs/first-addon) guide to learn how you can create awesome addons that expand OpenGameInstaller!
+
 
 **READMEs are in each package to describe how to use them.**
 
-The LICENSE of each of these packages are in their directories.
+The LICENSE of each package are in their directories.
 
 *logo is Firefly by Hoyoverse's Honkai Star Rail. We do not claim ownership of this image nor the character, we just love the game.*

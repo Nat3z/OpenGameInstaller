@@ -1,0 +1,7 @@
+{
+  "name": "{addon-id}",
+  "module": "main.ts",
+  "type": "module",
+  "dependencies": {
+  }
+}

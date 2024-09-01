@@ -1,0 +1,20 @@
+{
+  "name": "create-ogi-addon",
+  "version": "1.0.1",
+  "author": {
+    "name": "Nat3z",
+    "url": "https://nat3z.com/"
+  },
+  "module": "main.js",
+  "type": "module",
+  "bin": "./main.js",
+  "scripts": {
+    "release": "npm publish"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "dependencies": {
+    "@inquirer/prompts": "^5.3.8"
+  }
+}

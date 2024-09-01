@@ -1,0 +1,7 @@
+{
+  "name": "{addon-id}",
+  "module": "main.js",
+  "type": "module",
+  "dependencies": {
+  }
+}

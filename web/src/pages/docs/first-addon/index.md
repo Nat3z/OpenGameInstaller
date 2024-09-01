@@ -7,16 +7,29 @@ priority: 1
 section: Your First Addon
 ---
 
+# CLI Tool
+
+The quickest way to create an OpenGameInstaller is to use `create-ogi-addon`!
+
+```shell
+$ bun create ogi-addon
+```
+
+This will setup a simple project skeleton which gets you ready for developing OGI addons!
+
+# Manual
+
 Making an OpenGameInstaller addon is simple, as our Type-Safe library lets you connect to the client gracefully without any restraints.
 
 Firstly, install the OpenGameInstaller client by going to our [download](/) link. 
 
 Then, in a new npm project, run:
+
 ```shell
 $ bun add ogi-addon@latest
 ```
 
-# Create a .gitignore file
+## Create a .gitignore file
 It is additionally recommended that you create a .gitignore file to protect your development environment from leaking important info. Here is a basic template you can use:
 ```md
 # dependencies

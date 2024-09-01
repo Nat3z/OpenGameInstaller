@@ -1,0 +1,73 @@
+---
+import { Image } from "astro:assets";
+import Layout from "../layouts/Layout.astro";
+import Favicon from "../../public/favicon.png";
+let addons = await Astro.glob(`../../community/*.{md,mdx}`);
+addons = addons.filter((addon) => addon.frontmatter.name !== 'YOUR ADDON NAME');
+addons = addons.sort((a, b) => a.frontmatter.name.localeCompare(b.frontmatter.name));
+---
+
+<Layout title="Community Addons">
+  <header class="flex flex-row justify-start items-center py-4 px-8 gap-4 border-b-2 border-slate-300">
+    <a href="/" class="appearance-none flex flex-row justify-start items-center gap-2 ">
+      <Image class="w-12" src={Favicon} alt="OpenGameInstaller Logo" />
+      <h1 class="font-archivo font-bold hidden lg:block text-xl truncate">OpenGameInstaller</h1>
+    </a>
+
+  </header>
+  <main class="flex flex-col mt-8 gap-4 items-center justify-center">
+    <h1 class="text-4xl font-bold">Community Addons</h1>
+    <h2 class="text-center text-base p-4 -mt-4 lg:-mt-0 lg:p-0 lg:text-lg">Community addons are not affiliated with OpenGameInstaller. This is a community listing and anyone can add to this list.</h2>
+    <a href="/docs/for-users/community" class="text-blue-500 -mt-6 lg:-mt-2 hover:underline">Learn how to add your addon to this list</a>
+    <div class="flex flex-col gap-4 w-full lg:w-3/4 justify-center px-4 lg:px-0 items-center">
+      {addons.map((addon) => (
+        <div class="flex flex-col gap-2 border rounded-lg p-8 w-full lg:w-3/4">
+          <div class="flex flex-row gap-4 items-center relative">
+            <img src={addon.frontmatter.img} alt={addon.frontmatter.name} class="w-16 h-16 rounded-lg" />
+            <div class="flex flex-col relative">
+              <h2 class="text-2xl font-bold">{addon.frontmatter.name}</h2>
+              <h3 data-source class="p-1 px-2 rounded-lg border text-xs w-fit text-balance lg:text-sm lg:w-full bg-slate-200 truncate cursor-pointer transition-all">{addon.frontmatter.source}</h3>
+            </div>
+          </div>
+          
+
+          <div set:html={addon.compiledContent()}>
+          </div>
+        </div>
+      ))}
+    </div>
+  </main>
+
+</Layout>
+<script>
+  function copyToClipboard(text: string, target: HTMLElement) {
+    var dummy = document.createElement("textarea");
+    document.body.appendChild(dummy);
+    dummy.value = text;
+    dummy.select();
+    document.execCommand("copy");
+    document.body.removeChild(dummy);
+
+    target.innerHTML += `
+      <img src="/check-icon.svg" class="w-4 h-4 inline ml-1" /> 
+    `
+    setTimeout(() => {
+      target.innerHTML = text
+    }, 2000);
+  }
+
+  document.addEventListener("click", (e) => {
+    if (e.target instanceof HTMLElement && e.target.getAttribute("data-source") !== null) {
+      copyToClipboard(e.target.textContent!!, e.target);
+    }
+  });
+</script>
+<style>
+  header {
+    inset: 0;
+		width: 100%;
+		background-image: linear-gradient(to right, #80808012 1px, transparent 1px),
+    linear-gradient(to bottom, #80808012 1px, transparent 1px);
+		background-size: 24px 24px;
+  }
+</style>

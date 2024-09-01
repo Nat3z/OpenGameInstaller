@@ -1,0 +1,8 @@
+---
+name: YOUR ADDON NAME
+author: AUTHOR NAME
+source: YOUR REPO LINK
+img: A NICE IMG :)
+---
+
+**BRIEF** ADDON DESCRIPTION HERE

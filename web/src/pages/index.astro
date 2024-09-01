@@ -9,13 +9,14 @@ import CodeSnippet from '../../public/code-snippet.png';
 ---
 
 <Layout title="OpenGameInstaller">
+	<h1 id="head"></h1>
 	<main class="animate-fade-in flex justify-center items-center min-h-[40rem] w-screen lg:min-h-screen flex-col gap-2 p-0 m-0">
 		<Image class="w-64 drop-shadow-xl" src={Favicon} alt="OpenGameInstaller Logo" />
 		<h1 class="font-archivo font-bold text-3xl lg:text-5xl text-transparent bg-clip-text bg-gradient-to-b from-accent to-accent-dark text-center">OpenGameInstaller</h1>	
 		<h2 class="font-open-sans font-semibold">The Next-Generation Game Manager</h2>
 		<div class="mt-4 flex flex-col lg:flex-row justify-center items-center gap-4 animate-fade-in-pop">
-			<a href="appearance-none" data-download>
-				<button class="bg-accent-dark rounded-lg px-6 py-4 font-open-sans text-white flex justify-center items-center gap-2 font-semibold transition-all hover:bg-accent hover:shadow-2xl">
+			<a href="appearance-none" data-download class="w-48">
+				<button class="bg-accent-dark rounded-lg px-6 py-4 w-full font-open-sans text-white flex justify-center items-center gap-2 font-semibold transition-all hover:bg-accent">
 					<span class="material-symbols-outlined">
 						download
 					</span>
@@ -23,16 +24,23 @@ import CodeSnippet from '../../public/code-snippet.png';
 				</button>
 			</a>
 
-			<a class="appearance-none" href="./docs/">
-				<button class="bg-transparent rounded-lg px-6 py-4 font-open-sans text-black flex justify-center items-center gap-2 font-semibold hover:bg-slate-200 transition-colors">
+			<a class="appearance-none" href="./docs/" class:list="w-48">
+				<button class="bg-slate-200 rounded-lg px-6 py-4 font-open-sans text-black flex justify-center items-center gap-2 font-semibold hover:bg-slate-300 transition-all">
 					<span class="material-symbols-outlined">
 						article
 					</span>
 					Documentation
 				</button>
 			</a>
-
 		</div>
+		<a href="/community" class="appearance-none">
+			<button class="bg-transparent rounded-lg px-6 py-4 font-open-sans text-black flex justify-center items-center gap-2 font-semibold hover:bg-slate-200 transition-colors">
+				<span class="material-symbols-outlined">
+					list
+				</span>
+				Addons List
+			</button>
+		</a>
 	</main>
 	<div class="w-full min-h-[40rem] lg:min-h-screen bg-slate-200 rounded-t-[4rem] -mt-12 p-8 lg:p-24 flex justify-center items-center flex-col animate-fade-in">
 		<div class="flex justify-center items-center flex-col lg:flex-row gap-8">
@@ -64,13 +72,27 @@ import CodeSnippet from '../../public/code-snippet.png';
 		</div>
 	</div>
 
-	<div class="w-full p-4 lg:p-0 min-h-3/4 lg:min-h-screen bg-slate-100 rounded-t-[4rem] -mt-12 flex justify-center items-center flex-col animate-fade-in mb-12">
+	<div class="w-full p-4 lg:p-0 min-h-3/4 lg:min-h-screen bg-slate-100 rounded-t-[4rem] -mt-12 flex justify-center items-center flex-col animate-fade-in mb-4">
 		<div class="flex justify-center items-center flex-col gap-8 w-full">
 			<h1 class="font-archivo font-semibold text-5xl text-accent-dark text-center mt-24 lg:mt-0">Compatible on Steam Deck & Windows PCs</h1>
 			<p class="font-open-sans text-sm text-center lg:text-xl font-semibold">Compatible on Gaben's gift to planet Earth and Windows PCs*</p>
 			<Image class="w-full lg:w-5/12 rounded-lg object-cover transition-all" src={DeckImage} alt="Steam Deck Image" />
 			<p class="text-gray-500 font-open-sans text-sm text-center">*Only Windows PCs that are 64 bit, x86 architecuture. Windows 10/11 only.</p>
 		</div>
+		
+		
+	</div>
+
+	<div class="w-full flex flex-col justify-center items-center p-4">
+		<h1 class="font-archivo font-semibold text-3xl text-black text-center mt-24 lg:mt-0">You're too far to not download it now.</h1>
+		<a href="/#head" class="mt-4">
+			<button class="bg-accent-dark rounded-lg px-6 py-4 font-open-sans text-white flex justify-center items-center gap-2 font-semibold transition-all hover:bg-accent">
+				<span class="material-symbols-outlined">
+					download
+				</span>
+				Download
+			</button>
+		</a>
 	</div>
 
 	<footer class="mt-12 w-full h-12 bg-slate-100 flex flex-row justify-start px-4 lg:px-8 items-center">

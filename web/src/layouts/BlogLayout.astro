@@ -13,7 +13,7 @@ function hasExactlyTwoSlashes(str: string) {
 }
 // now read each part of the section
 // read every document in the docs folder, and get the basename of the file
-let docsInSection = await Astro.glob(`../**/*.{md,mdx}`);
+let docsInSection = await Astro.glob(`../pages/docs/**/*.{md,mdx}`);
 let sections: string[] = []
 
 docsInSection.map((doc) => {
@@ -55,7 +55,7 @@ console.log(part)
 <Layout title={frontmatter.title}>
   <header class="flex flex-row justify-start items-center py-4 px-8 gap-4 border-b-2 border-slate-300 shadow-lg">
     <a href="/" class="appearance-none flex flex-row justify-start items-center gap-2 ">
-      <Image class="w-12 drop-shadow-xl" src={Favicon} alt="OpenGameInstaller Logo" />
+      <Image class="w-12" src={Favicon} alt="OpenGameInstaller Logo" />
       <h1 class="font-archivo font-bold hidden lg:block text-xl truncate">OpenGameInstaller Docs</h1>
     </a>
 

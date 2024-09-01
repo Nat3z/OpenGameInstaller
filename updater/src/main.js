@@ -141,6 +141,7 @@ async function createWindow() {
             if (!fs.existsSync(localCache)) {
               fs.mkdirSync(localCache);
             }
+            console.log('Unzipping to', localCache);
             await unzip(`./update.zip`, localCache);
             // copy the files to the update folder
             const files = fs.readdirSync(localCache);
@@ -283,7 +284,6 @@ const unzip = (zipPath, unzipToDir) => {
                 zipFile.on('entry', (entry) => {
                     try {
                         // Directories
-                        console.log(entry.fileName);
                         if (/(.*)\/(?:.*?)$/.test(entry.fileName)) {
                             const dirToMake = /(.*)\/(?:.*?)$/.exec(entry.fileName)[1];
                             // Create the directory then read the next entry.

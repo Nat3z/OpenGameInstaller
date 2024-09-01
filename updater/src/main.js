@@ -87,8 +87,24 @@ async function createWindow() {
     }
     let updating = release !== undefined;
     if (release) {
+      // check if a local cache of the update exists in temp
+      const localCache = path.join(app.getPath('temp'), 'ogi-' + release.tag_name.replace('v', '') + '-cache');
+      if (fs.existsSync(localCache)) {
+        const files = fs.readdirSync(localCache);
 
-      // check if the setup has a new update
+        mainWindow.webContents.send('text', 'Copying Cached Version...');
+        for (const file of files) {
+          fs.cpSync(path.join(localCache, file), path.join(__dirname, 'update', file), { force: true, recursive: true });
+        }
+        // update the version file
+        fs.writeFileSync(`./version.txt`, release.tag_name);
+        if (process.platform === 'linux') {
+          fs.chmodSync(`./update/OpenGameInstaller.AppImage`, '755');
+        }
+        mainWindow.webContents.send('text', 'Launching OpenGameInstaller');
+        launchApp(true);
+        return;
+      }
 
       // download the new version usinng axios stream
       if (process.platform === 'win32') {
@@ -121,7 +137,16 @@ async function createWindow() {
           }
           await new Promise(async (resolve, reject) => {
             mainWindow.webContents.send('text', 'Extracting Update');
-            await unzip(`./update.zip`, prefix);
+            // unzip files to the cache folder
+            if (!fs.existsSync(localCache)) {
+              fs.mkdirSync(localCache);
+            }
+            await unzip(`./update.zip`, localCache);
+            // copy the files to the update folder
+            const files = fs.readdirSync(localCache);
+            for (const file of files) {
+              fs.cpSync(path.join(localCache, file), path.join(prefix, file), { force: true, recursive: true });
+            }
             resolve();
           });
           // delete the zip file
@@ -129,7 +154,7 @@ async function createWindow() {
           // update the version file
           fs.writeFileSync(`./version.txt`, release.tag_name);
           // restart the app
-          console.log('App Ready.')
+          console.log('App Ready.');
 
           mainWindow.webContents.send('text', 'Launching OpenGameInstaller');
           launchApp(true);
@@ -164,7 +189,14 @@ async function createWindow() {
         response.data.on('end', async () => {
           mainWindow.webContents.send('text', 'Download Complete');
           fs.writeFileSync(`./version.txt`, release.tag_name);
-          console.log('App Ready.')
+          console.log('App Ready.');
+
+          // copy the file to the cache folder
+          const item = __dirname + "/update/OpenGameInstaller.AppImage";
+          if (!fs.existsSync(localCache)) {
+            fs.mkdirSync(localCache);
+          }
+          fs.copyFileSync(item, path.join(localCache, 'OpenGameInstaller.AppImage'));
           mainWindow.webContents.send('text', 'Launching OpenGameInstaller');
           // make the file executable
           fs.chmodSync(`./update/OpenGameInstaller.AppImage`, '755');

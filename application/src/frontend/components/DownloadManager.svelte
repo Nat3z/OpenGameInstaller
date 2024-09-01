@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { LibraryInfo } from "ogi-addon";
-  import { currentDownloads, type DownloadStatusAndInfo } from "../store";
+  import { createNotification, currentDownloads, type DownloadStatusAndInfo } from "../store";
   import { getDownloadPath, safeFetch } from "../utils";
 
   function isCustomEvent(event: Event): event is CustomEvent {
@@ -133,6 +133,24 @@
           return download;
         });
       });
+    }).catch((error) => {
+      console.error("Error setting up app: ", error);
+      createNotification({
+        id: Math.random().toString(36).substring(2, 9),
+        type: "error",
+        message: "The addon had crashed while setting up.",
+      });
+      currentDownloads.update((downloads) => {
+        return downloads.map((download) => {
+          if (download.id === downloadedItem?.id) {
+            return {
+              ...download,
+              status: 'error'
+            }
+          }
+          return download;
+        });
+      });
     });
   });
 
@@ -214,7 +232,25 @@
           return download;
         });
       });
-    })
+    }).catch((error) => {
+      console.error("Error setting up app: ", error);
+      createNotification({
+        id: Math.random().toString(36).substring(2, 9),
+        type: "error",
+        message: "The addon had crashed while setting up.",
+      });
+      currentDownloads.update((downloads) => {
+        return downloads.map((download) => {
+          if (download.id === downloadedItem?.id) {
+            return {
+              ...download,
+              status: 'error'
+            }
+          }
+          return download;
+        });
+      });
+    });
   });
 
   document.addEventListener('ddl:download-error', (event: Event) => {

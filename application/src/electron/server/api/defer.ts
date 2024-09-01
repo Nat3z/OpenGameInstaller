@@ -1,3 +1,4 @@
+import { clients } from "../addon-server.js";
 import { applicationAddonSecret } from "../constants.js";
 import { DeferrableTask } from "../DeferrableTask.js";
 import express from "express";
@@ -17,6 +18,14 @@ app.get('/:taskID', (req, res) => {
   }
 
   const task = DefferedTasks.get(req.params.taskID)!!;
+
+  // check if the addon is still running
+  const stillExists = clients.has(task.addonOwner);
+  if (!stillExists) {
+    res.status(410).send('Addon is no longer connected');
+    DefferedTasks.delete(req.params.taskID);
+    return;
+  }
   if (task.finished) {
     res.send(task.data);
     DefferedTasks.delete(req.params.taskID);

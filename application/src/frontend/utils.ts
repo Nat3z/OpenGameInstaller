@@ -128,6 +128,10 @@ export async function safeFetch(url: string, options: ConsumableRequest = { cons
             reject('Task not found when deferring.');
             clearInterval(deferInterval);
           }
+					if (taskResponse.status === 410) {
+						reject('Addon is no longer connected');
+						clearInterval(deferInterval);
+					}
           if (taskResponse.status === 200) {
             clearInterval(deferInterval);
             if (!options || !options.consume || options.consume === 'json') return resolve(await taskResponse.json());

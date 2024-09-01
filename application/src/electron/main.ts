@@ -18,7 +18,7 @@ import * as JsSearch from 'js-search'
 import { ConfigurationFile } from 'ogi-addon/build/config/ConfigurationBuilder.js';
 import { LibraryInfo } from 'ogi-addon';
 import { checkIfInstallerUpdateAvailable } from './updater.js';
-const VERSION = app.getVersion();
+export const VERSION = app.getVersion();
 
 export let __dirname = isDev() ? app.getAppPath() + "/../" : path.dirname(process.execPath);
 if (process.platform === 'linux') {
@@ -28,7 +28,7 @@ if (process.platform === 'linux') {
 console.log("Running in directory: " + __dirname);
 
 let qbitClient: QBittorrent | undefined = undefined;
-let torrentIntervals: NodeJS.Timeout[] = []
+let torrentIntervals: Timer[] = []
 // Keep a global reference of the window object, if you don't, the window will
 // be closed automatically when the JavaScript object is garbage collected.
 let mainWindow: BrowserWindow | null;

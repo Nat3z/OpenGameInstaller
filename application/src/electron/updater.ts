@@ -1,7 +1,7 @@
 import axios from "axios";
 import { app, BrowserWindow, net } from "electron";
 import { cpSync, createWriteStream, existsSync, mkdirSync, readFileSync, rmSync } from "original-fs";
-import { __dirname } from "./main.js";
+import { __dirname, VERSION } from "./main.js";
 import { basename, join } from 'path';
 import { setTimeout as setTimeoutPromise } from 'timers/promises';
 import { spawn } from 'child_process';
@@ -146,8 +146,12 @@ export function checkIfInstallerUpdateAvailable() {
 
             // now for each file in the update folder, copy it to a temporary folder
             const tempFolder = app.getPath('temp') + '/ogi-update-backup';
+            const tempFolderApp = app.getPath('temp') + '/ogi-' + VERSION + '-cache';
             if (!existsSync(tempFolder)) {
               mkdirSync(tempFolder);
+            }
+            if (!existsSync(tempFolderApp)) {
+              mkdirSync(tempFolderApp);
             }
 
             for (const file of filesToBackup) {

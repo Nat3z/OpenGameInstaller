@@ -11,9 +11,6 @@
   "scripts": {
     "release": "npm publish"
   },
-  "devDependencies": {
-    "@types/bun": "latest"
-  },
   "dependencies": {
     "@inquirer/prompts": "^5.3.8"
   }

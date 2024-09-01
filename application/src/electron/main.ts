@@ -28,7 +28,7 @@ if (process.platform === 'linux') {
 console.log("Running in directory: " + __dirname);
 
 let qbitClient: QBittorrent | undefined = undefined;
-let torrentIntervals: Timer[] = []
+let torrentIntervals: NodeJS.Timeout[] = []
 // Keep a global reference of the window object, if you don't, the window will
 // be closed automatically when the JavaScript object is garbage collected.
 let mainWindow: BrowserWindow | null;

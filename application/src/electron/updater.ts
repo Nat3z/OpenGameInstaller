@@ -1,7 +1,7 @@
 import axios from "axios";
 import { app, BrowserWindow, net } from "electron";
 import { cpSync, createWriteStream, existsSync, mkdirSync, readFileSync, rmSync } from "original-fs";
-import { __dirname, VERSION } from "./main.js";
+import { __dirname } from "./main.js";
 import { basename, join } from 'path';
 import { setTimeout as setTimeoutPromise } from 'timers/promises';
 import { spawn } from 'child_process';

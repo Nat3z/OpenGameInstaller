@@ -146,14 +146,9 @@ export function checkIfInstallerUpdateAvailable() {
 
             // now for each file in the update folder, copy it to a temporary folder
             const tempFolder = app.getPath('temp') + '/ogi-update-backup';
-            const tempFolderApp = app.getPath('temp') + '/ogi-' + VERSION + '-cache';
             if (!existsSync(tempFolder)) {
               mkdirSync(tempFolder);
             }
-            if (!existsSync(tempFolderApp)) {
-              mkdirSync(tempFolderApp);
-            }
-
             for (const file of filesToBackup) {
               const source = join(__dirname, file);
               const destination = join(tempFolder, file);

@@ -31,8 +31,11 @@ const templateDir = `${import.meta.dirname}/skeleton/${language}`;
 const files = await fs.readdir(templateDir);
 console.log('🏗️ \x1b[1m\x1b[34mCreating addon in', resolve(directory), 'using', language + "\x1b[0m");
 
-for (const file of files) {
+for (let file of files) {
   const contents = await fs.readFile(`${templateDir}/${file}`, 'utf-8');
+  if (file === '.pgitignore')
+    file = '.gitignore';
+
   await fs.writeFile(`${directory}/${file}`, contents
     .replace(/{addon-name}/g, addonName)
     .replace(/{author}/g, author)
@@ -44,7 +47,7 @@ for (const file of files) {
 process.chdir(directory);
 console.log('📦 \x1b[1m\x1b[34mInstalling dependencies...\x1b[0m')
 execSync('bun add ogi-addon@latest', { stdio: 'inherit' });
-if (language === 'ts') execSync('bun add --dev typescript', { stdio: 'inherit' });
+if (language === 'ts') execSync('bun add --dev typescript @types/node', { stdio: 'inherit' });
 console.log('✨ \x1b[1m\x1b[34mYour addon has been created!\x1b[0m');
 console.log('\x1b[1m\x1b[34mRead the README.md in your new addon for more information on how to get started.\x1b[0m');
 process.exit(0);

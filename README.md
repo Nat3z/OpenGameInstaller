@@ -6,6 +6,8 @@
   <a href="https://ogi.nat3z.com">website</a>
   •
   <a href="https://ogi.nat3z.com/docs/">documentation</a>
+  •
+  <a href="https://ogi.nat3z.com/community/">addons list</a>
 </p>
 
 # OpenGameInstaller

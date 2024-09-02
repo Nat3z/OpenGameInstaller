@@ -1,6 +1,6 @@
 {
   "name": "opengameinstaller-gui",
-  "version": "1.6.1.1",
+  "version": "1.6.2",
   "description": "The front-facing GUI for OpenGameInstaller and the addon-server.",
   "type": "module",
   "private": false,

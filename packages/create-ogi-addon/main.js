@@ -2,11 +2,12 @@
 import { input, select } from '@inquirer/prompts';
 import { resolve } from 'path';
 import fs from 'fs/promises';
+import { existsSync } from 'fs';
 import { exec, execSync } from 'child_process';
 const addonName = await input({ message: 'What is the name of the addon?', required: true, default: '' });
 const addonID = await input({ message: 'What is the ID of the addon?', required: true, default: addonName.replace(/\s/g, '-').toLowerCase() });
 const author = await input({ message: 'Who is the author?', required: true });
-const directory = await input({ message: 'Where should the addon be made?', required: true, default: './' + addonID, validate: async (dir) => await fs.exists(dir) ? 'Directory already exists' : true });
+const directory = await input({ message: 'Where should the addon be made?', required: true, default: './' + addonID });
 const language = await select({ message: 'What language should the addon be made in?', 
   default: 'ts',
   choices: [
@@ -15,7 +16,7 @@ const language = await select({ message: 'What language should the addon be made
       value: 'js',
     },
     { 
-      name: 'TypeScript',
+      name: 'TypeScript (Recommended)',
       value: 'ts',
     },
   ] 
@@ -26,7 +27,7 @@ if (directory !== './' && directory !== '.') {
 }
 
 // then, get the template files from skeleton/{ts | js} and write them to the directory
-const templateDir = `./skeleton/${language}`;
+const templateDir = `${import.meta.dirname}/skeleton/${language}`;
 const files = await fs.readdir(templateDir);
 console.log('🏗️ \x1b[1m\x1b[34mCreating addon in', resolve(directory), 'using', language + "\x1b[0m");
 

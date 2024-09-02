@@ -19,7 +19,7 @@ addon.on('configure', (config) =>
 To add options to your config, use the `config` builder. For example:
 
 ```typescript
-addon.on('configure', (config) => 
+addon.on('configure', (config) => config
   .addStringOption(option => option
     .setName('testOption')
     .setDisplayName('Test Option')
@@ -48,10 +48,10 @@ You can see how the config looks by restarting OpenGameInstaller.
 
 To get the values of your config, you can use the functions:
 
-`addon.config.getStringValue(key)`
+`addon.config.getStringValue`
 
-`addon.config.getNumberValue(key)`
+`addon.config.getNumberValue`
 
-`addon.config.getBooleanValue(key)`
+`addon.config.getBooleanValue`
 
 The `key` should be the same string you provided to `option.setName(string)` when making the option.

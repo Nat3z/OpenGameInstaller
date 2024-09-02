@@ -9,7 +9,7 @@ section: Your First Addon
 
 # CLI Tool
 
-The quickest way to create an OpenGameInstaller is to use `create-ogi-addon`!
+The quickest way to create an addon is to use `create-ogi-addon`!
 
 ```shell
 $ bun create ogi-addon

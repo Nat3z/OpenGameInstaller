@@ -13,5 +13,7 @@ export const GET: APIRoute = async () => {
       description: content.body
     }
   }); 
-  return new Response(JSON.stringify(addonDetail))
+  return new Response(JSON.stringify(addonDetail), {
+    headers: { 'content-type': 'application/json', 'cache-control': 's-maxage=7200, stale-while-revalidate=9000' }
+  })
 };

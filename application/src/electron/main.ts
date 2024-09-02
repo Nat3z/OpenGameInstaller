@@ -128,6 +128,8 @@ function createWindow() {
         autoHideMenuBar: true,
         show: false
     });
+    if (!isDev())
+        mainWindow.removeMenu();
 
     // This block of code is intended for development purpose only.
     // Delete this entire block of code when you are ready to package the application.

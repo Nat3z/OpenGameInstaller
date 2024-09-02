@@ -80,6 +80,29 @@ app.get('/:addonID/search-query', async (req, res) => {
   return res.status(202).json({ deferred: true, taskID: deferrableTask.id });
 });
 
+app.post('/:addonID/request-dl', async (req, res) => {
+  if (req.headers.authorization !== applicationAddonSecret) {
+    return res.status(401).send('Unauthorized');
+  }
+  const client = clients.get(req.params.addonID);
+  if (!client)
+    return res.status(404).send('Client not found');
+  if (!req.body || req.body.appID === undefined) {
+    return res.status(400).send('No appID provided');
+  }
+  if (!req.body || req.body.info === undefined) {
+    return res.status(400).send('No info provided');
+  }
+  const deferrableTask = new DeferrableTask(async () => {
+    const data = await client.sendEventMessage({ event: 'request-dl', args: { appID: req.body.appID, info: req.body.info } });
+    return data.args;
+  }, client.addonInfo.id);
+
+  deferrableTask.run();
+  DefferedTasks.set(deferrableTask.id, deferrableTask);
+  return res.status(202).json({ deferred: true, taskID: deferrableTask.id });
+});
+
 app.post('/:addonID/setup-app', async (req, res) => {
   if (req.headers.authorization !== applicationAddonSecret) {
     return res.status(401).send('Unauthorized');
@@ -137,4 +160,6 @@ app.get('/:addonID/game-details', async (req, res) => {
   DefferedTasks.set(deferrableTask.id, deferrableTask);
   return res.status(202).json({ deferred: true, taskID: deferrableTask.id });
 });
+
+
 export default app

@@ -173,6 +173,34 @@ export async function startDownload(result: SearchResultWithAddon, event: MouseE
 	}
 
 	switch (downloadType) {
+		case 'request': {
+			// now startTheDownload but this way
+			const randomID = Math.random().toString(36).substring(7);
+			currentDownloads.update((downloads) => {
+				return [...downloads, { 
+					id: randomID, 
+					status: 'requesting', 
+					downloadPath: getDownloadPath() + "/" + result.name, 
+					downloadSpeed: 0,
+					progress: 0,
+					usedRealDebrid: false,
+					...result 
+				}];
+			});
+			const response = await safeFetch(`http://localhost:7654/addons/${result.addonSource}/request-dl`, {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json'
+				},
+				body: JSON.stringify({ appID: result.appID, info: result }),
+				consume: 'json'
+			});
+			currentDownloads.update((downloads) => {
+				return downloads.filter((d) => d.id !== randomID);
+			});
+			startDownload(response, event);
+			break;
+		}
 		case 'real-debrid-magnet': {
 			if (!result.downloadURL) {
 				createNotification({

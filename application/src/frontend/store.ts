@@ -3,7 +3,7 @@ import { writable, type Writable } from 'svelte/store'
 
 export type DownloadStatusAndInfo = SearchResult & {
   id: string;
-  status: 'downloading' | 'paused' | 'completed' | 'error' | 'setup-complete' | 'rd-downloading' | 'seeding';
+  status: 'downloading' | 'paused' | 'completed' | 'error' | 'setup-complete' | 'rd-downloading' | 'seeding' | 'requesting';
   progress: number;
   usedRealDebrid: boolean;
   downloadPath: string;

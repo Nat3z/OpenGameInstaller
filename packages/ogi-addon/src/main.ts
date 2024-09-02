@@ -5,10 +5,10 @@ import { Configuration } from './config/Configuration';
 import EventResponse from './EventResponse';
 import { SearchResult } from './SearchEngine';
 
-export type OGIAddonEvent = 'connect' | 'disconnect' | 'configure' | 'authenticate' | 'search' | 'setup' | 'library-search' | 'game-details' | 'exit';
+export type OGIAddonEvent = 'connect' | 'disconnect' | 'configure' | 'authenticate' | 'search' | 'setup' | 'library-search' | 'game-details' | 'exit' | 'request-dl';
 export type OGIAddonClientSentEvent = 'response' | 'authenticate' | 'configure' | 'defer-update' | 'notification' | 'input-asked';
 
-export type OGIAddonServerSentEvent = 'authenticate' | 'configure' | 'config-update' | 'search' | 'setup' | 'response' | 'library-search' | 'game-details';
+export type OGIAddonServerSentEvent = 'authenticate' | 'configure' | 'config-update' | 'search' | 'setup' | 'response' | 'library-search' | 'game-details' | 'request-dl';
 export { ConfigurationBuilder, Configuration, EventResponse, SearchResult };
 const defaultPort = 7654;
 import pjson from '../package.json';
@@ -102,6 +102,7 @@ export interface EventListenerTypes {
   'library-search': (query: string, event: EventResponse<BasicLibraryInfo[]>) => void;
   'game-details': (appID: number, event: EventResponse<StoreData>) => void;
   exit: () => void;
+  'request-dl': (appID: number, info: SearchResult, event: EventResponse<SearchResult>) => void;
 }
 
 export interface StoreData {
@@ -340,8 +341,21 @@ class OGIAddonWSListener {
           const gameDetailsResult = await this.waitForEventToRespond(gameDetailsEvent);
           this.respondToMessage(message.id!!, gameDetailsResult.data);
           break
-      }
-    });
+        case 'request-dl':
+          let requestDLEvent = new EventResponse<SearchResult>((screen, name, description) => this.userInputAsked(screen, name, description, this.socket));
+          if (this.eventEmitter.listenerCount('request-dl') === 0) {
+            this.respondToMessage(message.id!!, { error: 'No event listener for request-dl' });
+            break;
+          }
+          this.eventEmitter.emit('request-dl', message.args.appID, message.args.info, requestDLEvent);
+          const requestDLResult = await this.waitForEventToRespond(requestDLEvent);
+          if (requestDLEvent.data === null || requestDLEvent.data?.downloadType === 'request') {
+            throw new Error('Request DL event did not return a valid result. Please ensure that the event does not resolve with another `request` download type.');
+          }
+          this.respondToMessage(message.id!!, requestDLResult.data);
+          break
+        }
+      });
   }
 
   private waitForEventToRespond<T>(event: EventResponse<T>): Promise<EventResponse<T>> {

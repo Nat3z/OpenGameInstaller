@@ -122,6 +122,8 @@
           <button class="bg-accent-light text-black p-2 rounded" on:click={() => window.electronAPI.fs.showFileLoc(download.downloadPath)}>Show File Location</button>
         {:else if download.status === 'rd-downloading'}
           <p class="text-yellow-500 font-mono">Waiting for Real-Debrid to download torrent...</p>
+        {:else if download.status === 'requesting'}
+          <p class="text-yellow-500 font-mono">Requesting download from addon...</p>
         {:else}
           <section class="flex flex-row gap-8 w-full justify-center items-center p-4">
             <section class="flex-col flex w-1/3 justify-center items-center">

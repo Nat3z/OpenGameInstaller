@@ -21,6 +21,18 @@ addon.on('connect', () => {
   addon.notify({ type: 'info', message: 'Connected', id: 'connect' });
 })
 
+addon.on('request-dl', (appID, info, event) => {
+  event.defer();
+
+  event.log(`Requesting download for ${appID} with info: ${JSON.stringify(info)}`);
+  setTimeout(() => {
+    event.resolve({
+      ...info,
+      downloadType: 'magnet',
+      downloadURL: 'magnet:?xt=urn:btih:dd8255ecdc7ca55fb0bbf81323d87062db1f6d1c&dn=Big+Buck+Bunny&tr=udp%3A%2F%2Fexplodie.org%3A6969&tr=udp%3A%2F%2Ftracker.coppersurfer.tk%3A6969&tr=udp%3A%2F%2Ftracker.empire-js.us%3A1337&tr=udp%3A%2F%2Ftracker.leechers-paradise.org%3A6969&tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337&tr=wss%3A%2F%2Ftracker.btorrent.xyz&tr=wss%3A%2F%2Ftracker.fastcast.nz&tr=wss%3A%2F%2Ftracker.openwebtorrent.com&ws=https%3A%2F%2Fwebtorrent.io%2Ftorrents%2F&xs=https%3A%2F%2Fwebtorrent.io%2Ftorrents%2Fbig-buck-bunny.torrent'
+    })
+  }, 5000);
+});
 addon.on('search', ({ text, type }, event) => {
   if (type === "internal" || type === "steamapp") {
     event.resolve([
@@ -34,6 +46,16 @@ addon.on('search', ({ text, type }, event) => {
         downloadType: 'magnet',
         filename: 'Big Buck Bunny.mp4',
         downloadURL: 'magnet:?xt=urn:btih:dd8255ecdc7ca55fb0bbf81323d87062db1f6d1c&dn=Big+Buck+Bunny&tr=udp%3A%2F%2Fexplodie.org%3A6969&tr=udp%3A%2F%2Ftracker.coppersurfer.tk%3A6969&tr=udp%3A%2F%2Ftracker.empire-js.us%3A1337&tr=udp%3A%2F%2Ftracker.leechers-paradise.org%3A6969&tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337&tr=wss%3A%2F%2Ftracker.btorrent.xyz&tr=wss%3A%2F%2Ftracker.fastcast.nz&tr=wss%3A%2F%2Ftracker.openwebtorrent.com&ws=https%3A%2F%2Fwebtorrent.io%2Ftorrents%2F&xs=https%3A%2F%2Fwebtorrent.io%2Ftorrents%2Fbig-buck-bunny.torrent'
+      },
+      {
+        name: "Direct Download Test 2",
+        description: addon.config.getStringValue('testOption') || 'No description',
+        coverURL: 'https://dummyimage.com/375x500/968d96/ffffff',
+        appID: parseInt(text),
+        storefront: 'steam',
+        downloadSize: 100,
+        downloadType: 'request',
+        filename: 'Big Buck Bunny',
       }
     ]);
     return;

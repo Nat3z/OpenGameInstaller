@@ -34,7 +34,7 @@ let torrentIntervals: NodeJS.Timeout[] = []
 let mainWindow: BrowserWindow | null;
 let realDebridClient = new RealDebrid({
     apiKey: 'UNSET'
-}); 
+});
 function isDev() {
     return !app.isPackaged;
 }
@@ -60,16 +60,16 @@ steamAppSearcher.indexStrategy = new JsSearch.ExactWordIndexStrategy();
 steamAppSearcher.addIndex('name');
 
 async function getSteamApps(): Promise<{ appid: string, name: string }[]> {
-  if (fs.existsSync('steam-apps.json')) {
-    const steamApps: { timeSinceUpdate: number, data: {appid: string, name: string}[] } = JSON.parse(fs.readFileSync('steam-apps.json', 'utf-8'));
-    if (Date.now() - steamApps.timeSinceUpdate < 86400000) { //24 hours
-      return steamApps.data;
+    if (fs.existsSync('steam-apps.json')) {
+        const steamApps: { timeSinceUpdate: number, data: { appid: string, name: string }[] } = JSON.parse(fs.readFileSync('steam-apps.json', 'utf-8'));
+        if (Date.now() - steamApps.timeSinceUpdate < 86400000) { //24 hours
+            return steamApps.data;
+        }
     }
-  }
-  const response = await axios.get('https://api.steampowered.com/ISteamApps/GetAppList/v0002/?key=STEAMKEY&format=json') 
-  const steamApps = response.data.applist.apps;
-  fs.writeFileSync('steam-apps.json', JSON.stringify({ timeSinceUpdate: Date.now(), data: steamApps }, null, 2));
-  return steamApps
+    const response = await axios.get('https://api.steampowered.com/ISteamApps/GetAppList/v0002/?key=STEAMKEY&format=json')
+    const steamApps = response.data.applist.apps;
+    fs.writeFileSync('steam-apps.json', JSON.stringify({ timeSinceUpdate: Date.now(), data: steamApps }, null, 2));
+    return steamApps
 }
 // lazy tasks
 new Promise<void>(async (resolve) => {
@@ -78,9 +78,9 @@ new Promise<void>(async (resolve) => {
     resolve();
 });
 interface Notification {
-  message: string;
-  id: string;
-  type: 'info' | 'error' | 'success' | 'warning';
+    message: string;
+    id: string;
+    type: 'info' | 'error' | 'success' | 'warning';
 }
 export function sendNotification(notification: Notification) {
     if (!mainWindow) {
@@ -109,7 +109,7 @@ export function sendAskForInput(id: string, config: ConfigurationFile, name: str
     currentScreens.set(id, undefined);
 }
 
-function createWindow() {    
+function createWindow() {
     // Create the browser window.
 
     mainWindow = new BrowserWindow({
@@ -139,7 +139,7 @@ function createWindow() {
     } else {
         mainWindow!!.loadURL("file://" + join(app.getAppPath(), 'public', 'index.html') + "?secret=" + applicationAddonSecret);
     }
-    
+
     // Uncomment the following line of code when app is ready to be packaged.
     // loadURL(mainWindow);
 
@@ -148,7 +148,7 @@ function createWindow() {
     // mainWindow.webContents.openDevTools();
 
     // Emitted when the window is closed.
-    mainWindow.on('closed', function () {
+    mainWindow.on('closed', function() {
         // Dereference the window object, usually you would store windows
         // in an array if your app supports multi windows, this is the time
         // when you should delete the corresponding element.
@@ -157,8 +157,8 @@ function createWindow() {
 
     // Emitted when the window is ready to be shown
     // This helps in showing the window gracefully.
-    fs.mkdir("./config/", (_) => {});
-    fs.mkdir("./config/option/", (_) => {});
+    fs.mkdir("./config/", (_) => { });
+    fs.mkdir("./config/option/", (_) => { });
     mainWindow.once('ready-to-show', () => {
 
         ipcMain.handle('app:close', () => {
@@ -201,7 +201,7 @@ function createWindow() {
             if (!fs.existsSync('./library/' + appid + '.json')) {
                 return;
             }
-            
+
             const appInfo: LibraryInfo = JSON.parse(fs.readFileSync('./library/' + appid + '.json', 'utf-8'));
             const args = appInfo.launchArguments ?? ''
             const spawnedItem = exec("\"" + appInfo.launchExecutable + "\" " + args, {
@@ -229,7 +229,7 @@ function createWindow() {
                     mainWindow?.webContents.send('game:exit', { id: appInfo.appID });
                     return
                 }
-                
+
                 mainWindow?.webContents.send('game:exit', { id: appInfo.appID });
             });
 
@@ -256,9 +256,9 @@ function createWindow() {
             return;
         });
 
-        
+
         ipcMain.handle('app:insert-app', async (_, data: LibraryInfo) => {
-            if (!fs.existsSync('./library')) 
+            if (!fs.existsSync('./library'))
                 fs.mkdirSync('./library');
 
             const appPath = `./library/${data.appID}.json`;
@@ -367,7 +367,7 @@ function createWindow() {
             const result = await dialog.showSaveDialog(options);
             return result.filePath;
         });
-        
+
         ipcMain.handle('fs:get-files-in-dir', async (_, arg) => {
             const files = fs.readdirSync(arg);
             return files;
@@ -414,7 +414,7 @@ function createWindow() {
                     }));
                 }
             }
-                
+
             return outputDir;
         });
 
@@ -452,7 +452,7 @@ function createWindow() {
             const unrestrictedLink = await realDebridClient.unrestrictLink(arg);
             return unrestrictedLink;
         });
-            
+
         ipcMain.handle('real-debrid:get-hosts', async () => {
             const hosts = await realDebridClient.getHosts();
             return hosts;
@@ -520,7 +520,7 @@ function createWindow() {
                     return null;
                 }
                 console.log("Downloaded torrent! Now adding to readDebrid")
-                
+
                 const data = await realDebridClient.addTorrent(torrentData as ReadStream);
                 console.log("Added torrent to real-debrid!")
                 return data
@@ -546,7 +546,7 @@ function createWindow() {
                         await refreshCached('qbittorrent');
                         qbitClient = new QBittorrent({
                             baseUrl: ((await getStoredValue('qbittorrent', 'qbitHost')) ?? 'http://127.0.0.1') + ":" + ((await getStoredValue('qbittorrent', 'qbitPort')) ?? '8080'),
-                            username: (await getStoredValue('qbittorrent', 'qbitUsername')) ?? 'admin', 
+                            username: (await getStoredValue('qbittorrent', 'qbitUsername')) ?? 'admin',
                             password: (await getStoredValue('qbittorrent', 'qbitPassword')) ?? ''
                         })
                         if (fs.existsSync(arg.path + '.torrent')) {
@@ -701,7 +701,7 @@ function createWindow() {
                             return null;
                         }
 
-                        addTorrent(torrentData, arg.path + '.torrent', 
+                        addTorrent(torrentData, arg.path + '.torrent',
                             (_, speed, progress, length, ratio) => {
                                 if (!mainWindow || !mainWindow.webContents) {
                                     console.error("Seems like the window is closed. Cannot send progress message to renderer.")
@@ -721,7 +721,7 @@ function createWindow() {
 
                         return downloadID;
 
-                        
+
                     } catch (except) {
                         console.error(except);
                         sendNotification({
@@ -733,8 +733,8 @@ function createWindow() {
                     }
                     break;
                 }
-            }      
-            return null;          
+            }
+            return null;
         });
 
         ipcMain.handle('torrent:download-magnet', async (_, arg: { link: string, path: string }) => {
@@ -747,7 +747,7 @@ function createWindow() {
                         await refreshCached('qbittorrent');
                         qbitClient = new QBittorrent({
                             baseUrl: ((await getStoredValue('qbittorrent', 'qbitHost')) ?? 'http://127.0.0.1') + ":" + ((await getStoredValue('qbittorrent', 'qbitPort')) ?? '8080'),
-                            username: (await getStoredValue('qbittorrent', 'qbitUsername')) ?? 'admin', 
+                            username: (await getStoredValue('qbittorrent', 'qbitUsername')) ?? 'admin',
                             password: (await getStoredValue('qbittorrent', 'qbitPassword')) ?? ''
                         })
 
@@ -772,7 +772,7 @@ function createWindow() {
                                 clearInterval(torrentInterval);
                                 return;
                             }
-                            
+
                             const torrent = (await qbitClient.getAllData()).torrents.find(torrent => torrent.savePath === arg.path.replaceAll("/", "\\"));
                             if (!torrent) {
                                 clearInterval(torrentInterval);
@@ -823,7 +823,7 @@ function createWindow() {
                             return null;
                         }
 
-                        addTorrent(arg.link, arg.path + '.torrent', 
+                        addTorrent(arg.link, arg.path + '.torrent',
                             (_, speed, progress, length, ratio) => {
                                 if (!mainWindow || !mainWindow.webContents) {
                                     console.error("Seems like the window is closed. Cannot send progress message to renderer.")
@@ -843,7 +843,7 @@ function createWindow() {
 
                         return downloadID;
 
-                        
+
                     } catch (except) {
                         console.error(except);
                         sendNotification({
@@ -855,8 +855,8 @@ function createWindow() {
                     }
                     break;
                 }
-            }      
-            return null;          
+            }
+            return null;
         });
         ipcMain.handle('ddl:download', async (_, args: { link: string, path: string }[]) => {
             const downloadID = Math.random().toString(36).substring(7);
@@ -889,7 +889,7 @@ function createWindow() {
                         fileStream.close();
                         reject()
                     });
-                    await new Promise<void>((resolve_dw, reject_dw) => 
+                    await new Promise<void>((resolve_dw, reject_dw) =>
                         axios({
                             method: 'get',
                             url: arg.link,
@@ -939,7 +939,7 @@ function createWindow() {
                 if (mainWindow && mainWindow.webContents)
                     mainWindow.webContents.send('ddl:download-complete', { id: downloadID });
                 resolve();
-                
+
             }).then(() => {
                 console.log('Download complete!!');
             }).catch((err) => {
@@ -1013,7 +1013,7 @@ function createWindow() {
                             console.log(stdout);
                             resolve();
                         });
-                   });
+                    });
                 }
 
                 const hasAddonBeenSetup = await setupAddon(addonPath);
@@ -1037,7 +1037,7 @@ function createWindow() {
         });
 
         ipcMain.handle('restart-addon-server', async (_) => {
-            restartAddonServer(); 
+            restartAddonServer();
         });
 
         ipcMain.handle('clean-addons', async (_) => {
@@ -1121,7 +1121,7 @@ function createWindow() {
                     }).catch(err => {
                         console.error(err);
                     }));
-                    
+
                 }
 
             }
@@ -1222,7 +1222,7 @@ function createWindow() {
             if (process.platform === 'linux') {
                 if (!fs.existsSync('./bin/steamtinkerlaunch/steamtinkerlaunch')) {
                     await new Promise<void>((resolve, reject) => {
-                    exec('git clone https://github.com/sonic2kk/steamtinkerlaunch ' + './bin/steamtinkerlaunch', (err, stdout, stderr) => {
+                        exec('git clone https://github.com/sonic2kk/steamtinkerlaunch ' + './bin/steamtinkerlaunch', (err, stdout, stderr) => {
                             if (err) {
                                 console.error(err);
                                 reject();
@@ -1257,7 +1257,7 @@ function createWindow() {
                                     });
                                     resolve();
                                 });
-                            }); 
+                            });
                         });
                     });
                 }
@@ -1288,7 +1288,7 @@ function createWindow() {
                                     type: 'info'
                                 });
                                 resolve();
-                            }); 
+                            });
                         });
                     });
                 }
@@ -1326,9 +1326,21 @@ function createWindow() {
                     }))
                 }
                 else if (process.platform === 'linux') {
-                        await new Promise<void>((resolve, reject) => {
-                            exec('curl -fsSL https://bun.sh/install | bash', (err, stdout, stderr) => {
-                                // then export to path
+                    await new Promise<void>((resolve, reject) => {
+                        exec('curl -fsSL https://bun.sh/install | bash', (err, stdout, stderr) => {
+                            // then export to path
+                            if (err) {
+                                console.error(err);
+                                reject();
+                                cleanlyDownloadedAll = false;
+                                return;
+                            }
+                            console.log(stdout);
+                            console.log(stderr);
+                            // get linux name 
+                            const linuxName = os.userInfo().username;
+
+                            exec('echo "export PATH=$PATH:/home/' + linuxName + '/.bun/bin" >> ~/.bashrc', (err, stdout, stderr) => {
                                 if (err) {
                                     console.error(err);
                                     reject();
@@ -1337,32 +1349,20 @@ function createWindow() {
                                 }
                                 console.log(stdout);
                                 console.log(stderr);
-                                // get linux name 
-                                const linuxName = os.userInfo().username;
-
-                                exec('echo "export PATH=$PATH:/home/' + linuxName + '/.bun/bin" >> ~/.bashrc', (err, stdout, stderr) => {
-                                    if (err) {
-                                        console.error(err);
-                                        reject();
-                                        cleanlyDownloadedAll = false;
-                                        return;
-                                    }
-                                    console.log(stdout);
-                                    console.log(stderr);
-                                    sendNotification({
-                                        message: 'Successfully installed bun and added to path.',
-                                        id: Math.random().toString(36).substring(7),
-                                        type: 'info'
-                                    });
-                                    resolve();
-                                    requireRestart = true;
-
+                                sendNotification({
+                                    message: 'Successfully installed bun and added to path.',
+                                    id: Math.random().toString(36).substring(7),
+                                    type: 'info'
                                 });
+                                resolve();
+                                requireRestart = true;
 
-                            })
+                            });
+
                         })
+                    })
                 }
-                
+
             }
             else {
                 await new Promise<void>((resolve, reject) => exec('bun upgrade', (err, stdout, stderr) => {
@@ -1382,7 +1382,7 @@ function createWindow() {
                 }))
             }
 
-            return [ cleanlyDownloadedAll, requireRestart ];
+            return [cleanlyDownloadedAll, requireRestart];
         });
 
         ipcMain.on('get-version', async (event) => {
@@ -1423,7 +1423,7 @@ function createWindow() {
                 }
 
                 new Promise<void>((resolve, reject) => {
-                    exec(`git pull`, { cwd: addonPath },  (err, stdout, _) => {
+                    exec(`git pull`, { cwd: addonPath }, (err, stdout, _) => {
                         if (err) {
                             sendNotification({
                                 message: `Failed to update addon ${addon}`,
@@ -1486,7 +1486,7 @@ function createWindow() {
             });
         });
 
-            
+
         mainWindow!!.show()
         // start the app with it being focused
         mainWindow!!.focus()
@@ -1507,7 +1507,7 @@ function createWindow() {
 
         convertLibrary();
 
-        app.on('browser-window-focus', function () {
+        app.on('browser-window-focus', function() {
             globalShortcut.register("CommandOrControl+R", () => {
                 console.log("CommandOrControl+R is pressed: Shortcut Disabled");
             });
@@ -1516,7 +1516,7 @@ function createWindow() {
             });
         });
 
-        app.on('browser-window-blur', function () {
+        app.on('browser-window-blur', function() {
             globalShortcut.unregister("CommandOrControl+R");
             globalShortcut.unregister("F5");
         });
@@ -1647,8 +1647,17 @@ app.on('ready', async () => {
     server.listen(port, () => {
         console.log(`Addon Server is running on http://localhost:${port}`);
         console.log(`Server is being executed by electron!`)
-    }); 
-    startAddons();
+    });
+
+    setTimeout(() => {
+        sendNotification({
+            message: 'Addons Starting...',
+            id: Math.random().toString(36).substring(7),
+            type: 'success'
+        });
+
+        startAddons();
+    }, 1500);
 
 });
 
@@ -1715,7 +1724,7 @@ function restartAddonServer() {
 }
 
 // Quit when all windows are closed.
-app.on('window-all-closed', async function () {
+app.on('window-all-closed', async function() {
     // On macOS it is common for applications and their menu bar
     // to stay active until the user quits explicitly with Cmd + Q
     if (process.platform !== 'darwin') app.quit()
@@ -1736,10 +1745,9 @@ app.on('window-all-closed', async function () {
     }
 });
 
-app.on('activate', function () {
+app.on('activate', function() {
     // On macOS it's common to re-create a window in the app when the
     // dock icon is clicked and there are no other windows open.
     if (mainWindow === null) createWindow()
 });
-// In this file you can include the rest of your app's specific main process
-// code. You can also put them in separate files and require them here.
+

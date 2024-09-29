@@ -1,10 +1,9 @@
-import { BrowserWindow, app, ipcMain, net, shell } from 'electron';
+import { BrowserWindow, app, dialog, net } from 'electron';
 import axios from 'axios';
 import fs from 'fs';
-import fsPromises from 'fs/promises';
 import path, { join } from 'path';
 import yauzl from 'yauzl';
-import { exec, spawn } from 'child_process';
+import { spawn } from 'child_process';
 let mainWindow;
 import pjson from '../package.json' assert { "type": "json" };
 
@@ -45,6 +44,18 @@ if (fs.existsSync(`./bleeding-edge.txt`)) {
 }
 
 async function createWindow() {
+  // check if port 7654 is open, if not, start the server
+  try {
+    const port_check = await fetch('http://localhost:7654');
+    if (port_check.ok) {
+      console.error('Port 7654 is already in use, meaning OpenGameInstaller is already running. Exiting.');
+      dialog.showErrorBox("OpenGameInstaller is already running", "OpenGameInstaller is already running. Please close the other instance before launching OpenGameInstaller again.");
+      app.exit(1);
+    }
+  } catch {
+    console.log("Port isn't in use! Launching....");
+  }
+
   mainWindow = new BrowserWindow({
     width: 300,
     height: 400,
@@ -66,6 +77,7 @@ async function createWindow() {
   });
   // check for updates
   const gitRepo = "Nat3z/OpenGameInstaller"
+
   // check the github releases 
   try {
     const response = await axios.get(`https://api.github.com/repos/${gitRepo}/releases`);
@@ -218,7 +230,7 @@ async function createWindow() {
     // check if the user is offline
     launchApp(net.isOnline());
   }
-  
+
 }
 
 /**
@@ -239,7 +251,7 @@ async function launchApp(online) {
       detached: true,
       stdio: 'ignore'
     });
-    spawned.unref(); 
+    spawned.unref();
     app.quit();
   }
   else if (process.platform === 'linux') {
@@ -254,86 +266,86 @@ async function launchApp(online) {
         stdio: 'ignore'
       });
       spawned.unref();
-      app.quit(); 
+      app.quit();
     }, 200);
-    
+
   }
 }
 app.on('ready', createWindow);
 // taken from https://stackoverflow.com/questions/63932027/how-to-unzip-to-a-folder-using-yauzl
 const unzip = (zipPath, unzipToDir) => {
-    return new Promise((resolve, reject) => {
-        try {
-            // Create folder if not exists
-            fs.mkdirSync(unzipToDir, { recursive: true });
+  return new Promise((resolve, reject) => {
+    try {
+      // Create folder if not exists
+      fs.mkdirSync(unzipToDir, { recursive: true });
 
-            // Same as example we open the zip.
-            yauzl.open(zipPath, { lazyEntries: true }, (err, zipFile) => {
-                if (err) {
-                    zipFile.close();
-                    reject(err);
-                    return;
-                }
+      // Same as example we open the zip.
+      yauzl.open(zipPath, { lazyEntries: true }, (err, zipFile) => {
+        if (err) {
+          zipFile.close();
+          reject(err);
+          return;
+        }
 
-                // This is the key. We start by reading the first entry.
-                zipFile.readEntry();
+        // This is the key. We start by reading the first entry.
+        zipFile.readEntry();
 
-                // Now for every entry, we will write a file or dir 
-                // to disk. Then call zipFile.readEntry() again to
-                // trigger the next cycle.
-                zipFile.on('entry', (entry) => {
-                    try {
-                        // Directories
-                        if (/(.*)\/(?:.*?)$/.test(entry.fileName)) {
-                            const dirToMake = /(.*)\/(?:.*?)$/.exec(entry.fileName)[1];
-                            // Create the directory then read the next entry.
-                            console.log('Creating directory:', dirToMake);
-                            fs.mkdirSync(path.join(unzipToDir, dirToMake), { recursive: true });
-                        }
-                        // check if entry is a directory
-                        if (/\/$/.test(entry.fileName)) {
-                            zipFile.readEntry();
-                            return;
-                        }
-                        // Files
-                        zipFile.openReadStream(entry, (readErr, readStream) => {
-                            if (readErr) {
-                                zipFile.close();
-                                reject(readErr);
-                                return;
-                            }
+        // Now for every entry, we will write a file or dir 
+        // to disk. Then call zipFile.readEntry() again to
+        // trigger the next cycle.
+        zipFile.on('entry', (entry) => {
+          try {
+            // Directories
+            if (/(.*)\/(?:.*?)$/.test(entry.fileName)) {
+              const dirToMake = /(.*)\/(?:.*?)$/.exec(entry.fileName)[1];
+              // Create the directory then read the next entry.
+              console.log('Creating directory:', dirToMake);
+              fs.mkdirSync(path.join(unzipToDir, dirToMake), { recursive: true });
+            }
+            // check if entry is a directory
+            if (/\/$/.test(entry.fileName)) {
+              zipFile.readEntry();
+              return;
+            }
+            // Files
+            zipFile.openReadStream(entry, (readErr, readStream) => {
+              if (readErr) {
+                zipFile.close();
+                reject(readErr);
+                return;
+              }
 
-                            const file = fs.createWriteStream(path.join(unzipToDir, entry.fileName));
-                            readStream.pipe(file);
-                            file.on('finish', () => {
-                                // Wait until the file is finished writing, then read the next entry.
-                                // @ts-ignore: Typing for close() is wrong.
-                                file.close(() => {
-                                    zipFile.readEntry();
-                                });
-
-                                file.on('error', (err) => {
-                                    zipFile.close();
-                                    reject(err);
-                                });
-                            });
-                      });
-                    } catch (e) {
-                      zipFile.close();
-                      reject(e);
-                    }
+              const file = fs.createWriteStream(path.join(unzipToDir, entry.fileName));
+              readStream.pipe(file);
+              file.on('finish', () => {
+                // Wait until the file is finished writing, then read the next entry.
+                // @ts-ignore: Typing for close() is wrong.
+                file.close(() => {
+                  zipFile.readEntry();
                 });
-                zipFile.on('end', (err) => {
-                    resolve();
+
+                file.on('error', (err) => {
+                  zipFile.close();
+                  reject(err);
                 });
-                zipFile.on('error', (err) => {
-                    zipFile.close();
-                    reject(err);
-                });
+              });
             });
-        }
-        catch (e) {
+          } catch (e) {
+            zipFile.close();
             reject(e);
-        }
-    });
+          }
+        });
+        zipFile.on('end', (err) => {
+          resolve();
+        });
+        zipFile.on('error', (err) => {
+          zipFile.close();
+          reject(err);
+        });
+      });
+    }
+    catch (e) {
+      reject(e);
+    }
+  });
 }

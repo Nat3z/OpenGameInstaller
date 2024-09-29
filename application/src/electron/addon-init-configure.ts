@@ -5,7 +5,7 @@ import z from 'zod';
 import exec from 'child_process';
 import { addonSecret } from './server/constants.js';
 
-export let processes: { 
+export let processes: {
   [key: string]: exec.ChildProcess
 } = {};
 

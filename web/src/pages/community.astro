@@ -29,7 +29,6 @@ addons = addons.sort((a, b) => a.frontmatter.name.localeCompare(b.frontmatter.na
               <h3 data-source class="p-1 px-2 rounded-lg border text-xs w-fit text-balance lg:text-sm lg:w-full bg-slate-200 truncate cursor-pointer transition-all">{addon.frontmatter.source}</h3>
             </div>
           </div>
-          
 
           <div set:html={addon.compiledContent()}>
           </div>
@@ -65,9 +64,9 @@ addons = addons.sort((a, b) => a.frontmatter.name.localeCompare(b.frontmatter.na
 <style>
   header {
     inset: 0;
-		width: 100%;
-		background-image: linear-gradient(to right, #80808012 1px, transparent 1px),
+    width: 100%;
+    background-image: linear-gradient(to right, #80808012 1px, transparent 1px),
     linear-gradient(to bottom, #80808012 1px, transparent 1px);
-		background-size: 24px 24px;
+    background-size: 24px 24px;
   }
 </style>

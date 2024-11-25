@@ -19,7 +19,7 @@ export interface ClientSentEventTypes {
   authenticate: any;
   configure: ConfigurationFile;
   'defer-update': {
-    logs: string[], 
+    logs: string[],
     progress: number
   };
   notification: Notification;
@@ -79,11 +79,11 @@ export interface EventListenerTypes {
    * @returns 
    */
   setup: (
-    data: { 
-      path: string, 
+    data: {
+      path: string,
       type: 'direct' | 'torrent' | 'magnet',
       name: string,
-      usedRealDebrid: boolean, 
+      usedRealDebrid: boolean,
       multiPartFiles?: {
         name: string,
         downloadURL: string
@@ -162,7 +162,7 @@ export default class OGIAddon {
     this.addonInfo = addonInfo;
     this.addonWSListener = new OGIAddonWSListener(this, this.eventEmitter);
   }
-  
+
   /**
    * Register an event listener for the addon. (See EventListenerTypes) 
    * @param event {OGIAddonEvent}
@@ -181,7 +181,7 @@ export default class OGIAddon {
    * @param notification {Notification}
    */
   public notify(notification: Notification) {
-    this.addonWSListener.send('notification', [ notification ]);
+    this.addonWSListener.send('notification', [notification]);
   }
 }
 
@@ -237,10 +237,10 @@ class OGIAddonWSListener {
       // send a configuration request
       let configBuilder = new ConfigurationBuilder();
       this.eventEmitter.emit('configure', configBuilder);
-     
+
       this.socket.send(JSON.stringify({
         event: 'configure',
-        args: configBuilder.build(false) 
+        args: configBuilder.build(false)
       }));
       this.addon.config = new Configuration(configBuilder.build(true));
     });
@@ -297,11 +297,11 @@ class OGIAddonWSListener {
           else {
             this.respondToMessage(message.id!!, { success: true });
           }
-          break 
+          break
         case 'search':
           let searchResultEvent = new EventResponse<SearchResult[]>((screen, name, description) => this.userInputAsked(screen, name, description, this.socket));
           this.eventEmitter.emit('search', message.args, searchResultEvent);
-          const searchResult = await this.waitForEventToRespond(searchResultEvent);         
+          const searchResult = await this.waitForEventToRespond(searchResultEvent);
           this.respondToMessage(message.id!!, searchResult.data);
           break
         case 'setup':
@@ -312,7 +312,7 @@ class OGIAddonWSListener {
               clearInterval(interval);
               return;
             }
-            this.send('defer-update', { 
+            this.send('defer-update', {
               logs: setupEvent.logs,
               deferID: message.args.deferID,
               progress: setupEvent.progress
@@ -354,8 +354,8 @@ class OGIAddonWSListener {
           }
           this.respondToMessage(message.id!!, requestDLResult.data);
           break
-        }
-      });
+      }
+    });
   }
 
   private waitForEventToRespond<T>(event: EventResponse<T>): Promise<EventResponse<T>> {
@@ -366,7 +366,7 @@ class OGIAddonWSListener {
           resolve(event);
           clearTimeout(timeout);
         }
-      }, 5);      
+      }, 5);
 
       const timeout = setTimeout(() => {
         if (event.deffered) {
@@ -426,5 +426,5 @@ class OGIAddonWSListener {
     this.socket.close();
   }
 
-  
+
 }

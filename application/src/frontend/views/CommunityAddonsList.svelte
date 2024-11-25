@@ -7,7 +7,7 @@
     description: string;
   }
   let communityList = new Promise<CommunityAddon[]>((resolve) => fetch('https://ogi.nat3z.com/api/community.json').then((response) => response.json()).then((data) => resolve(data)));
-  let currentAddons = JSON.parse(window.electronAPI.fs.read('config/option/general.json'));
+  let currentAddons = JSON.parse(window.electronAPI.fs.read('./config/option/general.json'));
 
   async function installAddon(addon: CommunityAddon, event: MouseEvent) {
     console.log(`Installing ${addon.name} by ${addon.author}`);
@@ -23,7 +23,7 @@
         addon.source
       ]
     };
-    window.electronAPI.fs.write('config/option/general.json', JSON.stringify(currentAddons, null, 2));
+    window.electronAPI.fs.write('./config/option/general.json', JSON.stringify(currentAddons, null, 2));
     const currentTarget = event.target as HTMLButtonElement;
     currentTarget.innerText = 'Installing...';
     currentTarget.disabled = true;
@@ -42,7 +42,7 @@
       currentAddons.addons = [];
     }
     currentAddons.addons = currentAddons.addons.filter((source: string) => source !== addon.source);
-    window.electronAPI.fs.write('config/option/general.json', JSON.stringify(currentAddons, null, 2));
+    window.electronAPI.fs.write('./config/option/general.json', JSON.stringify(currentAddons, null, 2));
     await window.electronAPI.restartAddonServer();
   }
 </script>

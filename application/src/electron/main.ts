@@ -1,40 +1,80 @@
 import { join } from 'path';
 import { server, port, clients } from "./server/addon-server.js"
 import { applicationAddonSecret } from './server/constants.js';
-import { app, BrowserWindow, dialog, globalShortcut, ipcMain, net, shell } from 'electron';
-import fs, { ReadStream } from 'fs';
-import { readFile } from 'fs/promises';
-import RealDebrid from 'real-debrid-js';
+import { app, BrowserWindow, globalShortcut, ipcMain, shell } from 'electron';
+import fs from 'fs';
 import { exec } from 'child_process';
 import { processes, setupAddon, startAddon } from './addon-init-configure.js';
 import { isSecurityCheckEnabled } from './server/AddonConnection.js';
 import os from 'os';
 import axios from 'axios';
-import { addTorrent, stopClient } from './webtorrent-connect.js';
+import { stopClient } from './webtorrent-connect.js';
 import path from 'path';
-import { QBittorrent } from '@ctrl/qbittorrent';
-import { getStoredValue, refreshCached } from './config-util.js';
 import * as JsSearch from 'js-search'
 import { ConfigurationFile } from 'ogi-addon/build/config/ConfigurationBuilder.js';
 import { LibraryInfo } from 'ogi-addon';
 import { checkIfInstallerUpdateAvailable } from './updater.js';
+import AppEventHandler from './handlers/app-handler.js';
+import FSEventHandler from './handlers/fs-handler.js';
+import RealdDebridHandler from './handlers/realdebrid-handler.js';
+import TorrentHandler from './handlers/torrent-handler.js';
+import DirectDownloadHandler from './handlers/direct-download.js';
+
 export const VERSION = app.getVersion();
 
-export let __dirname = isDev() ? app.getAppPath() + "/../" : path.dirname(process.execPath);
-if (process.platform === 'linux') {
+export let __dirname = isDev() ? app.getAppPath() + "/../development" : path.dirname(process.execPath);
+if (process.platform === 'linux' && !isDev()) {
     // it's most likely sandboxed, so just use ./
-    __dirname = './';
+    // check if the folder exists
+    // get the home directory
+    let home = os.homedir();
+    if (!fs.existsSync(join(home, '.local/share/OpenGameInstaller'))) {
+        fs.mkdirSync(join(home, '.local/share/OpenGameInstaller'), { recursive: true });
+    }
+    __dirname = join(home, '.local/share/OpenGameInstaller');
 }
+
+const OGI_DIRECTORY = process.env.OGI_DIRECTORY;
+if (OGI_DIRECTORY)
+    __dirname = OGI_DIRECTORY;
+
+// check if NixOS
+export const IS_NIXOS = fs.existsSync('/etc/nixos/');
+export let STEAMTINKERLAUNCH_PATH = join(__dirname, 'bin/steamtinkerlaunch/steamtinkerlaunch');
+async function fetch_STLPath() {
+    return new Promise<void>((resolve) => {
+        exec('which steamtinkerlaunch', (error, stdout, stderr) => {
+            if (error) {
+                console.error(`exec error: ${error}`);
+                return;
+            }
+            if (stderr) {
+                console.error(`stderr: ${stderr}`);
+                return;
+            }
+
+            // The path will be returned as a string in stdout.
+            const path = stdout.trim();  // Remove any extra newlines or spaces.
+            STEAMTINKERLAUNCH_PATH = path;
+            resolve();
+        });
+    });
+}
+console.log('NIXOS: ' + IS_NIXOS);
+if (IS_NIXOS) await fetch_STLPath();
+if (STEAMTINKERLAUNCH_PATH === '') {
+    STEAMTINKERLAUNCH_PATH = join(__dirname, 'bin/steamtinkerlaunch/steamtinkerlaunch');
+    console.error("STEAMTINKERLAUNCH_PATH is empty. Using default path to prevent issues.");
+}
+
+console.log('STEAMTINKERLAUNCH_PATH: ' + STEAMTINKERLAUNCH_PATH);
 console.log("Running in directory: " + __dirname);
 
-let qbitClient: QBittorrent | undefined = undefined;
-let torrentIntervals: NodeJS.Timeout[] = []
+export let torrentIntervals: NodeJS.Timeout[] = []
 // Keep a global reference of the window object, if you don't, the window will
 // be closed automatically when the JavaScript object is garbage collected.
 let mainWindow: BrowserWindow | null;
-let realDebridClient = new RealDebrid({
-    apiKey: 'UNSET'
-});
+
 function isDev() {
     return !app.isPackaged;
 }
@@ -55,20 +95,20 @@ if (fs.existsSync(join(app.getPath('temp'), 'ogi-update-backup')) && process.pla
     console.log('[backup] Backup restored successfully!');
 }
 let steamApps: { appid: string, name: string }[] = [];
-let steamAppSearcher = new JsSearch.Search('name');
+export let steamAppSearcher = new JsSearch.Search('name');
 steamAppSearcher.indexStrategy = new JsSearch.ExactWordIndexStrategy();
 steamAppSearcher.addIndex('name');
 
 async function getSteamApps(): Promise<{ appid: string, name: string }[]> {
-    if (fs.existsSync('steam-apps.json')) {
-        const steamApps: { timeSinceUpdate: number, data: { appid: string, name: string }[] } = JSON.parse(fs.readFileSync('steam-apps.json', 'utf-8'));
+    if (fs.existsSync(join(__dirname, 'steam-apps.json'))) {
+        const steamApps: { timeSinceUpdate: number, data: { appid: string, name: string }[] } = JSON.parse(fs.readFileSync(join(__dirname, 'steam-apps.json'), 'utf-8'));
         if (Date.now() - steamApps.timeSinceUpdate < 86400000) { //24 hours
             return steamApps.data;
         }
     }
     const response = await axios.get('https://api.steampowered.com/ISteamApps/GetAppList/v0002/?key=STEAMKEY&format=json')
     const steamApps = response.data.applist.apps;
-    fs.writeFileSync('steam-apps.json', JSON.stringify({ timeSinceUpdate: Date.now(), data: steamApps }, null, 2));
+    fs.writeFileSync(join(__dirname, 'steam-apps.json'), JSON.stringify({ timeSinceUpdate: Date.now(), data: steamApps }, null, 2));
     return steamApps
 }
 // lazy tasks
@@ -157,809 +197,20 @@ function createWindow() {
 
     // Emitted when the window is ready to be shown
     // This helps in showing the window gracefully.
-    fs.mkdir("./config/", (_) => { });
-    fs.mkdir("./config/option/", (_) => { });
+    fs.mkdir(join(__dirname, "config"), (_) => { });
+    fs.mkdir(join(__dirname, "config"), (_) => { });
     mainWindow.once('ready-to-show', () => {
-
-        ipcMain.handle('app:close', () => {
-            mainWindow?.close();
-        });
-        ipcMain.handle('app:minimize', () => {
-            mainWindow?.minimize();
-        });
-        ipcMain.handle('app:axios', async (_, options) => {
-            try {
-                const response = await axios(options);
-                return { data: response.data, status: response.status, success: response.status >= 200 && response.status < 300 };
-            } catch (err) {
-                return { data: err.response.data, status: err.response.status, success: false };
-            }
-        });
-
-        ipcMain.handle('app:get-os', () => {
-            return process.platform;
-        });
-        ipcMain.handle('app:search-id', async (_, query) => {
-            const results = steamAppSearcher.search(query);
-            return results;
-        });
-        ipcMain.handle('app:screen-input', async (_, data) => {
-            currentScreens.set(data.id, data.data)
-            return;
-        });
-
-        ipcMain.handle('app:is-online', async () => {
-            return net.isOnline();
-        });
-        ipcMain.handle('app:launch-game', async (_, appid) => {
-            if (!fs.existsSync('./library')) {
-                return;
-            }
-            if (!fs.existsSync('./internals')) {
-                fs.mkdirSync('./internals');
-            }
-            if (!fs.existsSync('./library/' + appid + '.json')) {
-                return;
-            }
-
-            const appInfo: LibraryInfo = JSON.parse(fs.readFileSync('./library/' + appid + '.json', 'utf-8'));
-            const args = appInfo.launchArguments ?? ''
-            const spawnedItem = exec("\"" + appInfo.launchExecutable + "\" " + args, {
-                cwd: appInfo.cwd
-            })
-            spawnedItem.on('error', (error) => {
-                console.error(error);
-                sendNotification({
-                    message: 'Failed to launch game',
-                    id: Math.random().toString(36).substring(7),
-                    type: 'error'
-                });
-                console.error('Failed to launch game');
-                mainWindow?.webContents.send('game:exit', { id: appInfo.appID });
-            });
-            spawnedItem.on('exit', (exit) => {
-                console.log('Game exited with code: ' + exit);
-                if (exit !== 0) {
-                    sendNotification({
-                        message: 'Game Crashed',
-                        id: Math.random().toString(36).substring(7),
-                        type: 'error'
-                    });
-
-                    mainWindow?.webContents.send('game:exit', { id: appInfo.appID });
-                    return
-                }
-
-                mainWindow?.webContents.send('game:exit', { id: appInfo.appID });
-            });
-
-            mainWindow?.webContents.send('game:launch', { id: appInfo.appID });
-        });
-
-        ipcMain.handle('app:remove-app', async (_, appid: number) => {
-            if (!fs.existsSync('./library')) {
-                return;
-            }
-            if (!fs.existsSync('./internals')) {
-                fs.mkdirSync('./internals');
-            }
-            if (!fs.existsSync('./library/' + appid + '.json')) {
-                return;
-            }
-            fs.unlinkSync('./library/' + appid + '.json');
-            const appsInternal = JSON.parse(fs.readFileSync('./internals/apps.json', 'utf-8'));
-            const index = appsInternal.indexOf(appid);
-            if (index > -1) {
-                appsInternal.splice(index, 1);
-            }
-            fs.writeFileSync('./internals/apps.json', JSON.stringify(appsInternal, null, 2));
-            return;
-        });
-
-
-        ipcMain.handle('app:insert-app', async (_, data: LibraryInfo) => {
-            if (!fs.existsSync('./library'))
-                fs.mkdirSync('./library');
-
-            const appPath = `./library/${data.appID}.json`;
-            fs.writeFileSync(appPath, JSON.stringify(data, null, 2));
-            if (!fs.existsSync('./internals')) {
-                fs.mkdirSync('./internals');
-            }
-            // write to the internal file
-            if (!fs.existsSync('./internals/apps.json')) {
-                fs.writeFileSync('./internals/apps.json', JSON.stringify([], null, 2));
-            }
-            const appsInternal = JSON.parse(fs.readFileSync('./internals/apps.json', 'utf-8'));
-            appsInternal.push(data.appID);
-            fs.writeFileSync('./internals/apps.json', JSON.stringify(appsInternal, null, 2));
-
-            if (process.platform === 'linux') {
-                // use steamtinkerlaunch to add the game to steam
-                exec(`./bin/steamtinkerlaunch/steamtinkerlaunch addnonsteamgame --appname="${data.name}" --exepath="${data.launchExecutable}" --startdir="${data.cwd}" --launchoptions=${data.launchArguments ?? ''} --compatibilitytool="proton_experimental" --use-steamgriddb`, {
-                    cwd: __dirname
-                }, (error, stdout, stderr) => {
-                    if (error) {
-                        console.error(error);
-                        sendNotification({
-                            message: 'Failed to add game to Steam',
-                            id: Math.random().toString(36).substring(7),
-                            type: 'error'
-                        });
-                        return;
-                    }
-                    console.log(stdout);
-                    console.log(stderr);
-                    sendNotification({
-                        message: 'Game added to Steam',
-                        id: Math.random().toString(36).substring(7),
-                        type: 'success'
-                    });
-                });
-            }
-            return;
-        });
-        ipcMain.handle('app:get-all-apps', async () => {
-            if (!fs.existsSync('./library')) {
-                return [];
-            }
-            const files = fs.readdirSync('./library');
-            const apps: LibraryInfo[] = [];
-            for (const file of files) {
-                const data = fs.readFileSync(`./library/${file}`, 'utf-8');
-                apps.push(JSON.parse(data));
-            }
-            return apps;
-        });
-
-        ipcMain.on('fs:read', (event, arg) => {
-            fs.readFile(arg, 'utf-8', (err, data) => {
-                if (err) {
-                    event.returnValue = err;
-                    console.error(err);
-                    return;
-                }
-                event.returnValue = data;
-            });
-        });
-        ipcMain.on('fs:exists', (event, arg) => {
-            fs.access(arg, (err) => {
-                if (err) {
-                    event.returnValue = false;
-                    return;
-                }
-                event.returnValue = true;
-            });
-        });
-        ipcMain.on('fs:write', (event, arg) => {
-            fs.writeFile(arg.path, arg.data, (err) => {
-                if (err) {
-                    event.returnValue = err;
-                    console.error(err);
-                    return;
-                }
-                event.returnValue = 'success';
-            });
-        });
-        ipcMain.on('fs:mkdir', (event, arg) => {
-            fs.mkdir(arg, { recursive: true }, (err) => {
-                if (err) {
-                    event.returnValue = err;
-                    console.error(err);
-                    return;
-                }
-                event.returnValue = 'success';
-            });
-        });
-        ipcMain.on('fs:show-file-loc', (event, path) => {
-            if (!fs.existsSync(path)) {
-                event.returnValue = false;
-                return;
-            }
-            shell.showItemInFolder(path);
-            event.returnValue = true;
-        });
-        ipcMain.handle('fs:dialog:show-open-dialog', async (_, options) => {
-            const result = await dialog.showOpenDialog(options);
-            return result.filePaths[0];
-        });
-        ipcMain.handle('fs:dialog:show-save-dialog', async (_, options) => {
-            const result = await dialog.showSaveDialog(options);
-            return result.filePath;
-        });
-
-        ipcMain.handle('fs:get-files-in-dir', async (_, arg) => {
-            const files = fs.readdirSync(arg);
-            return files;
-        });
-        ipcMain.handle('fs:extract-rar', async (_, arg) => {
-            const { rarFilePath, outputDir } = arg;
-
-            if (!fs.existsSync(rarFilePath)) {
-                throw new Error('RAR file does not exist');
-            }
-
-            if (!fs.existsSync(outputDir)) {
-                fs.mkdirSync(outputDir, { recursive: true });
-            }
-
-            // use 7zip to extract the rar file or unrar if on linux
-            if (process.platform === 'win32') {
-                let s7ZipPath = '"C:\\Program Files\\7-Zip\\7z.exe"';
-                await new Promise<void>((resolve, reject) => exec(`${s7ZipPath} x "${rarFilePath}" -o"${outputDir}"`, (err, stdout, stderr) => {
-                    if (err) {
-                        console.error(err);
-                        reject();
-                        throw new Error('Failed to extract RAR file');
-                    }
-                    console.log(stdout);
-                    console.log(stderr);
-                    resolve();
-                }));
-            }
-
-            if (process.platform === 'linux') {
-                if (rarFilePath.endsWith('.rar')) {
-                    await new Promise<void>((resolve) => exec(`unrar x "${rarFilePath}" "${outputDir}"`, (stdout, stderr) => {
-                        console.log(stdout);
-                        console.log(stderr);
-                        resolve();
-                    }));
-                }
-                else if (rarFilePath.endsWith('.zip')) {
-                    await new Promise<void>((resolve) => exec(`unzip "${rarFilePath}" -d "${outputDir}"`, (stdout, stderr) => {
-                        console.log(stdout);
-                        console.log(stderr);
-                        resolve();
-                    }));
-                }
-            }
-
-            return outputDir;
-        });
-
-        ipcMain.handle('real-debrid:set-key', async (_, arg) => {
-            realDebridClient = new RealDebrid({
-                apiKey: arg
-            });
-            return 'success';
-        });
-
-        ipcMain.handle('real-debrid:update-key', async () => {
-            if (!fs.existsSync('./config/option/realdebrid.json')) {
-                return false;
-            }
-            const rdInfo = fs.readFileSync('./config/option/realdebrid.json', 'utf-8');
-            const rdInfoJson = JSON.parse(rdInfo);
-            realDebridClient = new RealDebrid({
-                apiKey: rdInfoJson.debridApiKey
-            });
-            return true;
-        });
-
-        ipcMain.handle('real-debrid:add-magnet', async (_, arg) => {
-            const torrentAdded = await realDebridClient.addMagnet(arg.url, arg.host);
-            return torrentAdded;
-        });
-
-        // real-debrid binding
-        ipcMain.handle('real-debrid:get-user-info', async () => {
-            const userInfo = await realDebridClient.getUserInfo();
-            return userInfo;
-        });
-
-        ipcMain.handle('real-debrid:unrestrict-link', async (_, arg) => {
-            const unrestrictedLink = await realDebridClient.unrestrictLink(arg);
-            return unrestrictedLink;
-        });
-
-        ipcMain.handle('real-debrid:get-hosts', async () => {
-            const hosts = await realDebridClient.getHosts();
-            return hosts;
-        });
-
-        ipcMain.handle('real-debrid:get-torrent-info', async (_, arg) => {
-            const torrents = await realDebridClient.getTorrentInfo(arg);
-            return torrents;
-        });
-
-        ipcMain.handle('real-debrid:is-torrent-ready', async (_, arg) => {
-            const torrentReady = await realDebridClient.isTorrentReady(arg);
-            return torrentReady;
-        })
-
-        ipcMain.handle('real-debrid:select-torrent', async (_, arg) => {
-            const selected = await realDebridClient.selectTorrents(arg);
-            return selected;
-        })
-        ipcMain.handle('real-debrid:add-torrent', async (_, arg) => {
-            // arg.url is a link to the download, we need to get the file
-            // and send it to the real-debrid API
-            console.log(arg);
-            try {
-
-                const fileStream = fs.createWriteStream('./temp.torrent');
-                const downloadID = Math.random().toString(36).substring(7);
-                const torrentData = await new Promise<ReadStream>((resolve, reject) => {
-                    axios({
-                        method: 'get',
-                        url: arg.torrent,
-                        responseType: 'stream'
-                    }).then(response => {
-                        response.data.pipe(fileStream);
-
-                        fileStream.on('finish', () => {
-                            console.log('Download complete!!');
-                            fileStream.close();
-                            resolve(fs.createReadStream('./temp.torrent'));
-                        });
-
-                        fileStream.on('error', (err) => {
-                            console.error(err);
-                            fileStream.close();
-                            fs.unlinkSync(arg.path);
-                            reject();
-                        });
-                    });
-                }).catch(err => {
-                    if (!mainWindow || !mainWindow.webContents) {
-                        console.error("Seems like the window is closed. Cannot send error message to renderer.")
-                        return
-                    }
-                    console.error(err);
-                    mainWindow.webContents.send('ddl:download-error', { id: downloadID, error: err });
-                    fileStream.close();
-                    fs.unlinkSync(arg.path);
-                    sendNotification({
-                        message: 'Download failed for ' + arg.path,
-                        id: downloadID,
-                        type: 'error'
-                    });
-                });
-                if (!torrentData) {
-                    return null;
-                }
-                console.log("Downloaded torrent! Now adding to readDebrid")
-
-                const data = await realDebridClient.addTorrent(torrentData as ReadStream);
-                console.log("Added torrent to real-debrid!")
-                return data
-            } catch (except) {
-                console.error(except);
-                sendNotification({
-                    message: "Failed to add torrent to Real-Debrid",
-                    id: Math.random().toString(36).substring(7),
-                    type: 'error'
-                });
-                return null;
-            }
-
-        });
-
-        ipcMain.handle('torrent:download-torrent', async (_, arg: { link: string, path: string }) => {
-            await refreshCached('general');
-            const torrentClient: string = await getStoredValue('general', 'torrentClient') ?? 'webtorrent';
-
-            switch (torrentClient) {
-                case 'qbittorrent': {
-                    try {
-                        await refreshCached('qbittorrent');
-                        qbitClient = new QBittorrent({
-                            baseUrl: ((await getStoredValue('qbittorrent', 'qbitHost')) ?? 'http://127.0.0.1') + ":" + ((await getStoredValue('qbittorrent', 'qbitPort')) ?? '8080'),
-                            username: (await getStoredValue('qbittorrent', 'qbitUsername')) ?? 'admin',
-                            password: (await getStoredValue('qbittorrent', 'qbitPassword')) ?? ''
-                        })
-                        if (fs.existsSync(arg.path + '.torrent')) {
-                            sendNotification({
-                                message: 'File at path already exists. Please delete the file and try again.',
-                                id: Math.random().toString(36).substring(7),
-                                type: 'error'
-                            });
-                            if (mainWindow && mainWindow.webContents)
-                                mainWindow.webContents.send('ddl:download-error', { id: Math.random().toString(36).substring(7), error: 'File at path already exists. Please delete the file and try again.' });
-                            return null;
-                        }
-                        const downloadID = Math.random().toString(36).substring(7);
-                        const torrentData = await new Promise<Buffer>((resolve, reject) => {
-                            axios({
-                                method: 'get',
-                                url: arg.link,
-                                responseType: 'stream'
-                            }).then(response => {
-                                const fileStream = fs.createWriteStream('./temp.torrent');
-                                response.data.pipe(fileStream);
-
-                                fileStream.on('finish', async () => {
-                                    console.log('Download complete!!');
-                                    fileStream.close();
-                                    resolve(await readFile('./temp.torrent'));
-                                });
-
-                                fileStream.on('error', (err) => {
-                                    console.error(err);
-                                    fileStream.close();
-                                    fs.unlinkSync(arg.path);
-                                    reject();
-                                });
-                            });
-                        }).catch(err => {
-                            if (!mainWindow || !mainWindow.webContents) {
-                                console.error("Seems like the window is closed. Cannot send error message to renderer.")
-                                return
-                            }
-                            console.error(err);
-                            mainWindow.webContents.send('ddl:download-error', { id: downloadID, error: err });
-                            sendNotification({
-                                message: 'Download failed for ' + arg.path,
-                                id: downloadID,
-                                type: 'error'
-                            });
-                        });
-
-                        if (!torrentData) {
-                            return null;
-                        }
-                        await qbitClient.addTorrent(torrentData, {
-                            savepath: arg.path + '.torrent'
-                        })
-
-                        arg.path = arg.path + '.torrent';
-                        console.log("[torrent] Checking for torrent at path: " + arg.path)
-                        let alreadyNotified = false;
-                        const torrentInterval = setInterval(async () => {
-                            if (!qbitClient) {
-                                clearInterval(torrentInterval);
-                                return;
-                            }
-                            const torrent = (await qbitClient.getAllData()).torrents.find(torrent => torrent.savePath === arg.path.replaceAll("/", "\\"));
-                            if (!torrent) {
-                                clearInterval(torrentInterval);
-                                console.error('Torrent not found in qBitTorrent...');
-                                return;
-                            }
-
-                            const progress = torrent.progress;
-                            const downloadSpeed = torrent.downloadSpeed;
-                            const fileSize = torrent.totalSize;
-                            const ratio = torrent.totalUploaded / torrent.totalDownloaded;
-                            if (!mainWindow || !mainWindow.webContents) {
-                                console.error("Seems like the window is closed. Cannot send progress message to renderer.")
-                                return
-                            }
-                            mainWindow.webContents.send('torrent:download-progress', { id: downloadID, downloadSpeed, progress, fileSize, ratio });
-                            if (torrent.isCompleted && !alreadyNotified) {
-                                mainWindow.webContents.send('torrent:download-complete', { id: downloadID });
-                                alreadyNotified = true;
-                                console.log('Torrent download finished');
-                            }
-                        }, 250);
-                        torrentIntervals.push(torrentInterval);
-                        return downloadID;
-                    } catch (except) {
-                        console.error(except);
-                        sendNotification({
-                            message: "Failed to download torrent. Check if qBitTorrent is running.",
-                            id: Math.random().toString(36).substring(7),
-                            type: 'error'
-                        });
-                        return null;
-                    }
-                    break;
-                }
-                case 'webtorrent': {
-                    try {
-                        const fileStream = fs.createWriteStream('./temp.torrent');
-                        const downloadID = Math.random().toString(36).substring(7);
-                        const torrentData = await new Promise<Uint8Array>((resolve, reject) => {
-                            axios({
-                                method: 'get',
-                                url: arg.link,
-                                responseType: 'stream'
-                            }).then(response => {
-                                response.data.pipe(fileStream);
-
-                                fileStream.on('finish', () => {
-                                    console.log('Download complete!!');
-                                    fileStream.close();
-                                    resolve(fs.readFileSync('./temp.torrent'));
-                                });
-
-                                fileStream.on('error', (err) => {
-                                    console.error(err);
-                                    fileStream.close();
-                                    fs.unlinkSync(arg.path);
-                                    reject();
-                                });
-                            });
-                        }).catch(err => {
-                            if (!mainWindow || !mainWindow.webContents) {
-                                console.error("Seems like the window is closed. Cannot send error message to renderer.")
-                                return
-                            }
-                            console.error(err);
-                            mainWindow.webContents.send('ddl:download-error', { id: downloadID, error: err });
-                            fileStream.close();
-                            fs.unlinkSync(arg.path);
-                            sendNotification({
-                                message: 'Download failed for ' + arg.path,
-                                id: downloadID,
-                                type: 'error'
-                            });
-                        });
-                        if (!torrentData) {
-                            return null;
-                        }
-
-                        if (fs.existsSync(arg.path + '.torrent')) {
-                            sendNotification({
-                                message: 'File at path already exists. Please delete the file and try again.',
-                                id: downloadID,
-                                type: 'error'
-                            });
-                            if (mainWindow && mainWindow.webContents)
-                                mainWindow.webContents.send('ddl:download-error', { id: Math.random().toString(36).substring(7), error: 'File at path already exists. Please delete the file and try again.' });
-                            return null;
-                        }
-
-                        addTorrent(torrentData, arg.path + '.torrent',
-                            (_, speed, progress, length, ratio) => {
-                                if (!mainWindow || !mainWindow.webContents) {
-                                    console.error("Seems like the window is closed. Cannot send progress message to renderer.")
-                                    return
-                                }
-                                mainWindow.webContents.send('torrent:download-progress', { id: downloadID, downloadSpeed: speed, progress, fileSize: length, ratio });
-                            },
-                            () => {
-                                if (!mainWindow || !mainWindow.webContents) {
-                                    console.error("Seems like the window is closed. Cannot send progress message to renderer.")
-                                    return
-                                }
-                                mainWindow.webContents.send('torrent:download-complete', { id: downloadID });
-                                console.log('Torrent download finished');
-                            }
-                        );
-
-                        return downloadID;
-
-
-                    } catch (except) {
-                        console.error(except);
-                        sendNotification({
-                            message: "Failed to download torrent.",
-                            id: Math.random().toString(36).substring(7),
-                            type: 'error'
-                        });
-                        return null;
-                    }
-                    break;
-                }
-            }
-            return null;
-        });
-
-        ipcMain.handle('torrent:download-magnet', async (_, arg: { link: string, path: string }) => {
-            await refreshCached('general');
-            const torrentClient: string = await getStoredValue('general', 'torrentClient') ?? 'webtorrent';
-
-            switch (torrentClient) {
-                case 'qbittorrent': {
-                    try {
-                        await refreshCached('qbittorrent');
-                        qbitClient = new QBittorrent({
-                            baseUrl: ((await getStoredValue('qbittorrent', 'qbitHost')) ?? 'http://127.0.0.1') + ":" + ((await getStoredValue('qbittorrent', 'qbitPort')) ?? '8080'),
-                            username: (await getStoredValue('qbittorrent', 'qbitUsername')) ?? 'admin',
-                            password: (await getStoredValue('qbittorrent', 'qbitPassword')) ?? ''
-                        })
-
-                        if (fs.existsSync(arg.path + '.torrent')) {
-                            sendNotification({
-                                message: 'File at path already exists. Please delete the file and try again.',
-                                id: Math.random().toString(36).substring(7),
-                                type: 'error'
-                            });
-                            return null;
-                        }
-
-                        const downloadID = Math.random().toString(36).substring(7);
-                        await qbitClient.addMagnet(arg.link, {
-                            savepath: arg.path + '.torrent'
-                        })
-                        let alreadyNotified = false;
-                        arg.path = arg.path + '.torrent';
-                        console.log("[magnet] Checking for torrent at path: " + arg.path)
-                        const torrentInterval = setInterval(async () => {
-                            if (!qbitClient) {
-                                clearInterval(torrentInterval);
-                                return;
-                            }
-
-                            const torrent = (await qbitClient.getAllData()).torrents.find(torrent => torrent.savePath === arg.path.replaceAll("/", "\\"));
-                            if (!torrent) {
-                                clearInterval(torrentInterval);
-                                console.error('Torrent not found in qBitTorrent...');
-                                return;
-                            }
-
-                            const progress = torrent.progress;
-                            const downloadSpeed = torrent.downloadSpeed;
-                            const fileSize = torrent.totalSize;
-                            const ratio = torrent.totalUploaded / torrent.totalDownloaded;
-                            if (!mainWindow || !mainWindow.webContents) {
-                                console.error("Seems like the window is closed. Cannot send progress message to renderer.")
-                                return
-                            }
-                            mainWindow.webContents.send('torrent:download-progress', { id: downloadID, downloadSpeed, progress, fileSize, ratio });
-                            if (torrent.isCompleted && !alreadyNotified) {
-                                mainWindow.webContents.send('torrent:download-complete', { id: downloadID });
-                                alreadyNotified = true;
-                                console.log('Torrent download finished');
-                            }
-                        }, 250);
-                        torrentIntervals.push(torrentInterval);
-                        return downloadID;
-                    } catch (except) {
-                        console.error(except);
-                        sendNotification({
-                            message: "Failed to download torrent. Check if qBitTorrent is running.",
-                            id: Math.random().toString(36).substring(7),
-                            type: 'error'
-                        });
-                        return null;
-                    }
-                    break;
-                }
-                case 'webtorrent': {
-                    try {
-                        const downloadID = Math.random().toString(36).substring(7);
-
-                        if (fs.existsSync(arg.path + '.torrent')) {
-                            sendNotification({
-                                message: 'File at path already exists. Please delete the file and try again.',
-                                id: downloadID,
-                                type: 'error'
-                            });
-                            if (mainWindow && mainWindow.webContents)
-                                mainWindow.webContents.send('ddl:download-error', { id: Math.random().toString(36).substring(7), error: 'File at path already exists. Please delete the file and try again.' });
-                            return null;
-                        }
-
-                        addTorrent(arg.link, arg.path + '.torrent',
-                            (_, speed, progress, length, ratio) => {
-                                if (!mainWindow || !mainWindow.webContents) {
-                                    console.error("Seems like the window is closed. Cannot send progress message to renderer.")
-                                    return
-                                }
-                                mainWindow.webContents.send('torrent:download-progress', { id: downloadID, downloadSpeed: speed, progress, fileSize: length, ratio });
-                            },
-                            () => {
-                                if (!mainWindow || !mainWindow.webContents) {
-                                    console.error("Seems like the window is closed. Cannot send progress message to renderer.")
-                                    return
-                                }
-                                mainWindow.webContents.send('torrent:download-complete', { id: downloadID });
-                                console.log('Torrent download finished');
-                            }
-                        );
-
-                        return downloadID;
-
-
-                    } catch (except) {
-                        console.error(except);
-                        sendNotification({
-                            message: "Failed to download torrent.",
-                            id: Math.random().toString(36).substring(7),
-                            type: 'error'
-                        });
-                        return null;
-                    }
-                    break;
-                }
-            }
-            return null;
-        });
-        ipcMain.handle('ddl:download', async (_, args: { link: string, path: string }[]) => {
-            const downloadID = Math.random().toString(36).substring(7);
-            // arg is a link
-            // download the link
-            // get the name of the file
-            new Promise<void>(async (resolve, reject) => {
-                let parts = 0
-                for (const arg of args) {
-                    parts++
-                    if (fs.existsSync(arg.path)) {
-                        sendNotification({
-                            message: 'File at path already exists. Please delete the file and try again.',
-                            id: downloadID,
-                            type: 'error'
-                        });
-                        if (mainWindow && mainWindow.webContents)
-                            mainWindow.webContents.send('ddl:download-error', { id: downloadID, error: 'File at path already exists. Please delete the file and try again.' });
-                        return reject();
-                    }
-                    let fileStream = fs.createWriteStream(arg.path);
-
-                    // get file size first
-                    console.log("Starting download...")
-
-                    fileStream.on('error', (err) => {
-                        console.error(err);
-                        if (mainWindow && mainWindow.webContents)
-                            mainWindow.webContents.send('ddl:download-error', { id: downloadID, error: err });
-                        fileStream.close();
-                        reject()
-                    });
-                    await new Promise<void>((resolve_dw, reject_dw) =>
-                        axios({
-                            method: 'get',
-                            url: arg.link,
-                            responseType: 'stream'
-                        }).then(response => {
-                            let fileSize = response.headers['content-length']!!;
-                            const startTime = Date.now();
-                            response.data.pipe(fileStream);
-                            response.data.on('data', () => {
-                                const progress = fileStream.bytesWritten / fileSize;
-                                const elapsedTime = (Date.now() - startTime) / 1000; // in seconds
-                                const downloadSpeed = response.data.socket.bytesRead / elapsedTime;
-                                if (mainWindow && mainWindow.webContents)
-                                    mainWindow.webContents.send('ddl:download-progress', { id: downloadID, progress, downloadSpeed, fileSize, part: parts, totalParts: args.length });
-                                else
-                                    response.data.destroy()
-                            });
-
-                            response.data.on('end', () => {
-                                console.log("Download complete for part " + parts)
-                                fileStream.close();
-                                resolve_dw();
-                            });
-
-                            response.data.on('error', () => {
-                                if (mainWindow && mainWindow.webContents)
-                                    mainWindow.webContents.send('ddl:download-error', { id: downloadID, error: '' });
-                                fileStream.close();
-                                fs.unlinkSync(arg.path);
-                                reject_dw();
-                            });
-                        }).catch(err => {
-                            console.error(err);
-                            if (mainWindow && mainWindow.webContents)
-                                mainWindow.webContents.send('ddl:download-error', { id: downloadID, error: err });
-                            fileStream.close();
-                            fs.unlinkSync(arg.path);
-                            sendNotification({
-                                message: 'Download failed for ' + arg.path,
-                                id: downloadID,
-                                type: 'error'
-                            });
-                            reject_dw();
-                        })
-                    );
-                }
-                if (mainWindow && mainWindow.webContents)
-                    mainWindow.webContents.send('ddl:download-complete', { id: downloadID });
-                resolve();
-
-            }).then(() => {
-                console.log('Download complete!!');
-            }).catch((err) => {
-                console.log('Download failed');
-                sendNotification({
-                    message: 'Direct Download Failed',
-                    id: downloadID,
-                    type: 'error'
-                });
-                console.error(err);
-            });
-            // stream the download 
-            return downloadID;
-        });
+        AppEventHandler(mainWindow!!);
+        FSEventHandler();
+        RealdDebridHandler(mainWindow!!);
+        TorrentHandler(mainWindow!!);
+        DirectDownloadHandler(mainWindow!!);
 
         ipcMain.handle('install-addons', async (_, addons) => {
             // addons is an array of URLs to the addons to install. these should be valid git repositories
             // check if git is installed
-            if (!fs.existsSync('./addons/')) {
-                fs.mkdirSync('./addons/');
+            if (!fs.existsSync(join(__dirname, 'addons/'))) {
+                fs.mkdirSync(join(__dirname, 'addons/'));
             }
 
             // check if git is installed
@@ -984,7 +235,7 @@ function createWindow() {
             for (const addon of addons) {
                 const addonName = addon.split(/\/|\\/).pop()!!;
                 const isLocal = addon.startsWith('local:');
-                let addonPath = `./addons/${addonName}`;
+                let addonPath = join(__dirname, `addons/${addonName}`);
                 if (addon.startsWith('local:')) {
                     addonPath = addon.split('local:')[1];
                 }
@@ -1048,8 +299,8 @@ function createWindow() {
             }
 
             // delete all of the addons
-            fs.rmdirSync('./addons/', { recursive: true });
-            fs.mkdirSync('./addons/');
+            fs.rmdirSync(join(__dirname, 'addons/'), { recursive: true });
+            fs.mkdirSync(join(__dirname, 'addons/'));
 
             sendNotification({
                 message: 'Successfully cleaned addons.',
@@ -1082,7 +333,7 @@ function createWindow() {
                         url: sevenZipDownload,
                         responseType: 'stream'
                     }).then(response => {
-                        const fileStream = fs.createWriteStream('./7z-install.exe');
+                        const fileStream = fs.createWriteStream(join(__dirname, '7z-install.exe'));
                         response.data.pipe(fileStream);
                         fileStream.on('finish', async () => {
                             console.log('Downloaded 7zip');
@@ -1101,7 +352,7 @@ function createWindow() {
                                 }
                                 console.log(stdout);
                                 console.log(stderr);
-                                fs.unlinkSync('./7z-install.exe');
+                                fs.unlinkSync(join(__dirname, '7z-install.exe'));
                                 sendNotification({
                                     message: 'Successfully installed 7zip.',
                                     id: Math.random().toString(36).substring(7),
@@ -1115,7 +366,7 @@ function createWindow() {
                         fileStream.on('error', (err) => {
                             console.error(err);
                             fileStream.close();
-                            fs.unlinkSync('./7z-install.exe');
+                            fs.unlinkSync(join(__dirname, '7z-install.exe'));
                             cleanlyDownloadedAll = false;
                         });
                     }).catch(err => {
@@ -1149,7 +400,7 @@ function createWindow() {
                         url: gitDownload,
                         responseType: 'stream'
                     }).then(response => {
-                        const fileStream = fs.createWriteStream('./git-install.exe');
+                        const fileStream = fs.createWriteStream(join(__dirname, 'git-install.exe'));
                         response.data.pipe(fileStream);
                         fileStream.on('finish', async () => {
                             console.log('Downloaded git');
@@ -1189,7 +440,7 @@ function createWindow() {
                                 }
                                 console.log(stdout);
                                 console.log(stderr);
-                                fs.unlinkSync('./git-install.exe');
+                                fs.unlinkSync(join(__dirname, 'git-install.exe'));
                                 sendNotification({
                                     message: 'Successfully installed git.',
                                     id: Math.random().toString(36).substring(7),
@@ -1203,7 +454,7 @@ function createWindow() {
                         fileStream.on('error', (err) => {
                             console.error(err);
                             fileStream.close();
-                            fs.unlinkSync('./git-install.exe');
+                            fs.unlinkSync(join(__dirname, 'git-install.exe'));
                         });
                     }).catch(err => {
                         console.error(err);
@@ -1219,10 +470,10 @@ function createWindow() {
             }
 
             // check if steamtinkerlaunch is installed
-            if (process.platform === 'linux') {
-                if (!fs.existsSync('./bin/steamtinkerlaunch/steamtinkerlaunch')) {
+            if (process.platform === 'linux' && STEAMTINKERLAUNCH_PATH === join(__dirname, 'bin/steamtinkerlaunch/steamtinkerlaunch')) {
+                if (!fs.existsSync(join(__dirname, 'bin/steamtinkerlaunch/steamtinkerlaunch'))) {
                     await new Promise<void>((resolve, reject) => {
-                        exec('git clone https://github.com/sonic2kk/steamtinkerlaunch ' + './bin/steamtinkerlaunch', (err, stdout, stderr) => {
+                        exec('git clone https://github.com/sonic2kk/steamtinkerlaunch ' + join(__dirname, 'bin/steamtinkerlaunch'), (err, stdout, stderr) => {
                             if (err) {
                                 console.error(err);
                                 reject();
@@ -1232,7 +483,7 @@ function createWindow() {
                             console.log(stdout);
                             console.log(stderr);
                             // run chmod +x on the file
-                            exec('chmod +x ./bin/steamtinkerlaunch/steamtinkerlaunch', (err) => {
+                            exec('chmod +x ' + join(__dirname, 'bin/steamtinkerlaunch/steamtinkerlaunch'), (err) => {
                                 if (err) {
                                     console.error(err);
                                     reject();
@@ -1241,7 +492,7 @@ function createWindow() {
                                 }
 
                                 // now executing steamtinkerlaunch
-                                exec('./bin/steamtinkerlaunch/steamtinkerlaunch', (err, stdout, stderr) => {
+                                exec(join(__dirname, 'bin/steamtinkerlaunch/steamtinkerlaunch'), (err, stdout, stderr) => {
                                     if (err) {
                                         console.error(err);
                                         reject();
@@ -1263,7 +514,7 @@ function createWindow() {
                 }
                 else {
                     await new Promise<void>((resolve, reject) => {
-                        exec('git pull', { cwd: './bin/steamtinkerlaunch' }, (err, stdout, stderr) => {
+                        exec('git pull', { cwd: join(__dirname, 'bin/steamtinkerlaunch') }, (err, stdout, stderr) => {
                             if (err) {
                                 console.error(err);
                                 reject();
@@ -1273,7 +524,7 @@ function createWindow() {
                             console.log(stdout);
                             console.log(stderr);
                             // run chmod +x on the file
-                            exec('chmod +x ./bin/steamtinkerlaunch/steamtinkerlaunch', (err, stdout, stderr) => {
+                            exec('chmod +x ' + join(__dirname, 'bin/steamtinkerlaunch/steamtinkerlaunch'), (err, stdout, stderr) => {
                                 if (err) {
                                     console.error(err);
                                     reject();
@@ -1291,6 +542,16 @@ function createWindow() {
                             });
                         });
                     });
+                }
+            } else if (process.platform === 'linux') {
+                // check if steamtinkerlaunch is installed in that path
+                if (!fs.existsSync(STEAMTINKERLAUNCH_PATH)) {
+                    sendNotification({
+                        message: 'SteamTinkerLaunch is not installed. You are not on a supported OS. Please install it manually.',
+                        id: Math.random().toString(36).substring(7),
+                        type: 'error'
+                    });
+                    cleanlyDownloadedAll = false;
                 }
             }
 
@@ -1325,7 +586,7 @@ function createWindow() {
                         resolve();
                     }))
                 }
-                else if (process.platform === 'linux') {
+                else if (process.platform === 'linux' && !IS_NIXOS) {
                     await new Promise<void>((resolve, reject) => {
                         exec('curl -fsSL https://bun.sh/install | bash', (err, stdout, stderr) => {
                             // then export to path
@@ -1353,22 +614,28 @@ function createWindow() {
                                     message: 'Successfully installed bun and added to path.',
                                     id: Math.random().toString(36).substring(7),
                                     type: 'info'
-                                });
-                                resolve();
-                                requireRestart = true;
+                                }); resolve(); requireRestart = true;
 
                             });
 
                         })
                     })
                 }
-
+                else if (process.platform === 'linux' && IS_NIXOS) {
+                    sendNotification({
+                        message: 'Bun is not installed. You are not on a supported OS. Please install it manually.',
+                        id: Math.random().toString(36).substring(7),
+                        type: 'error'
+                    });
+                    cleanlyDownloadedAll = false;
+                }
             }
-            else {
-                await new Promise<void>((resolve, reject) => exec('bun upgrade', (err, stdout, stderr) => {
+            else if (!IS_NIXOS) {
+                await new Promise<void>((resolve) => exec('bun upgrade', (err, stdout, stderr) => {
                     if (err) {
                         console.error(err);
-                        reject();
+                        // reject();
+                        resolve();
                         return;
                     }
                     console.log(stdout);
@@ -1397,12 +664,12 @@ function createWindow() {
             }
 
             // pull all of the addons
-            if (!fs.existsSync('./addons/')) {
+            if (!fs.existsSync(join(__dirname, 'addons/'))) {
                 return;
             }
             let addonsUpdated = 0;
             let failed = false;
-            const generalConfig = JSON.parse(fs.readFileSync('./config/option/general.json', 'utf-8'));
+            const generalConfig = JSON.parse(fs.readFileSync(join(__dirname, 'config/option/general.json'), 'utf-8'));
             const addons = generalConfig.addons as string[];
 
             for (const addon of addons) {
@@ -1413,7 +680,7 @@ function createWindow() {
                 else {
                     addonPath = join(__dirname, 'addons', addon.split(/\/|\\/).pop()!!);
                 }
-                if (!fs.existsSync(addonPath + '/.git')) {
+                if (!fs.existsSync(join(addonPath, '.git'))) {
                     console.log(`Addon ${addon} is not a git repository`);
                     continue;
                 }
@@ -1545,7 +812,7 @@ function createWindow() {
 
 async function convertLibrary() {
     // read the library directory
-    const libraryPath = './library/';
+    const libraryPath = join(__dirname, 'library/');
     if (!fs.existsSync(libraryPath)) {
         return;
     }
@@ -1599,10 +866,10 @@ async function checkForGitUpdates(repoPath: string): Promise<boolean> {
 }
 
 function checkForAddonUpdates() {
-    if (!fs.existsSync('./addons/')) {
+    if (!fs.existsSync(join(__dirname, 'addons'))) {
         return;
     }
-    const generalConfig = JSON.parse(fs.readFileSync('./config/option/general.json', 'utf-8'));
+    const generalConfig = JSON.parse(fs.readFileSync(join(__dirname, 'config/option/general.json'), 'utf-8'));
     const addons = generalConfig.addons;
     for (const addon of addons) {
         let addonPath = '';
@@ -1663,11 +930,11 @@ app.on('ready', async () => {
 
 function startAddons() {
     // start all of the addons
-    if (!fs.existsSync('./config/option/general.json')) {
+    if (!fs.existsSync(join(__dirname, 'config/option/general.json'))) {
         return
     }
 
-    const generalConfig = JSON.parse(fs.readFileSync('./config/option/general.json', 'utf-8'));
+    const generalConfig = JSON.parse(fs.readFileSync(join(__dirname, 'config/option/general.json'), 'utf-8'));
     const addons = generalConfig.addons;
     for (const addon of addons) {
         let addonPath = '';

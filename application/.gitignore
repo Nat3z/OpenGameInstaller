@@ -31,3 +31,5 @@ steam-apps.json
 library/
 internals/
 downloads/
+bin/
+development/

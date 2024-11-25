@@ -1,15 +1,21 @@
 import axios from "axios";
 import { app, BrowserWindow, net } from "electron";
 import { cpSync, createWriteStream, existsSync, mkdirSync, readFileSync, rmSync } from "original-fs";
-import { __dirname } from "./main.js";
 import { basename, join } from 'path';
 import { setTimeout as setTimeoutPromise } from 'timers/promises';
 import { spawn } from 'child_process';
+import * as path from 'path';
+
 function isDev() {
   return !app.isPackaged;
 }
 
-const filesToBackup = [ 'config', 'addons', 'steam-apps.json', 'library', 'internals' ];
+const filesToBackup = ['config', 'addons', 'steam-apps.json', 'library', 'internals'];
+let __dirname = isDev() ? app.getAppPath() + "/../" : path.dirname(process.execPath);
+if (process.platform === 'linux') {
+  // it's most likely sandboxed, so just use ./
+  __dirname = './';
+}
 
 function correctParsingSize(size: number) {
   if (size < 1024) {
@@ -131,13 +137,13 @@ export function checkIfInstallerUpdateAvailable() {
           const directory = app.getPath('temp') + '\\ogi-setup.exe';
           const writer = createWriteStream(directory);
           response.data.pipe(writer);
-            const startTime = Date.now();
-            const fileSize = response.headers['content-length'];
-            response.data.on('data', () => {
-              const elapsedTime = (Date.now() - startTime) / 1000; // in seconds
-              const downloadSpeed = response.data.socket.bytesRead / elapsedTime;
-              mainWindow.webContents.send('text', 'Downloading Latest Setup', writer.bytesWritten, fileSize, correctParsingSize(downloadSpeed) + '/s');
-            });
+          const startTime = Date.now();
+          const fileSize = response.headers['content-length'];
+          response.data.on('data', () => {
+            const elapsedTime = (Date.now() - startTime) / 1000; // in seconds
+            const downloadSpeed = response.data.socket.bytesRead / elapsedTime;
+            mainWindow.webContents.send('text', 'Downloading Latest Setup', writer.bytesWritten, fileSize, correctParsingSize(downloadSpeed) + '/s');
+          });
           writer.on('finish', () => {
             mainWindow.webContents.send('text', 'Backing up Files')
             console.log(`[updater] Setup downloaded successfully.`);
@@ -165,11 +171,11 @@ export function checkIfInstallerUpdateAvailable() {
               spawn(directory, {
                 detached: true,
                 stdio: 'ignore'
-              }).unref(); 
+              }).unref();
               mainWindow.close();
-              process.exit(0); 
+              process.exit(0);
             }, 500);
-            
+
           });
         }
 
@@ -219,9 +225,9 @@ export function checkIfInstallerUpdateAvailable() {
               mainWindow.webContents.send('text', 'Shutting Down OpenGameInstaller', 'Please open OpenGameInstaller again');
               await setTimeoutPromise(3000);
               mainWindow.close();
-              process.exit(0); 
+              process.exit(0);
             }, 500);
-            
+
           });
         }
 
@@ -235,6 +241,6 @@ export function checkIfInstallerUpdateAvailable() {
       console.error("[updater] Error while checking for updates: ", ex);
       resolve();
     }
-  }) 
+  })
 
 }

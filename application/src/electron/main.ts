@@ -38,8 +38,22 @@ const OGI_DIRECTORY = process.env.OGI_DIRECTORY;
 if (OGI_DIRECTORY)
     __dirname = OGI_DIRECTORY;
 
-// check if NixOS
-export const IS_NIXOS = fs.existsSync('/etc/nixos/');
+// check if NixOS using command -v nixos-rebuild
+export const IS_NIXOS = await (() => {
+    return new Promise<boolean>((resolve) => {
+        exec('command -v nixos-rebuild', (error, stderr) => {
+            if (error) {
+                console.error(`exec error: ${error}`);
+                return;
+            }
+            if (stderr.includes("nixos-rebuild")) {
+                resolve(true);
+                return;
+            }
+            resolve(false);
+        });
+    });
+})();
 export let STEAMTINKERLAUNCH_PATH = join(__dirname, 'bin/steamtinkerlaunch/steamtinkerlaunch');
 async function fetch_STLPath() {
     return new Promise<void>((resolve) => {

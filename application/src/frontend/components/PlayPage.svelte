@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { LibraryInfo } from "ogi-addon";
-  import PlayIcon from "../icons/PlayIcon.svelte";
+  import PlayIcon from "../Icons/PlayIcon.svelte";
   import {
     currentStorePageOpened,
     currentStorePageOpenedSource,
@@ -9,7 +9,7 @@
     launchGameTrigger,
   } from "../store";
   import { onMount, onDestroy } from "svelte";
-  import SettingsFilled from "../icons/SettingsFilled.svelte";
+  import SettingsFilled from "../Icons/SettingsFilled.svelte";
   import GameConfiguration from "./GameConfiguration.svelte";
 
   interface Props {

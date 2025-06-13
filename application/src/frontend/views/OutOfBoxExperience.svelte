@@ -2,7 +2,7 @@
   import { preventDefault } from "svelte/legacy";
 
   import { onMount } from "svelte";
-  import WineIcon from "../icons/WineIcon.svelte";
+  import WineIcon from "../Icons/WineIcon.svelte";
 
   let stage = $state(0);
 

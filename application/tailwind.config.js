@@ -1,5 +1,5 @@
 /** @type {import('tailwindcss').Config} */
-module.exports = {
+export default {
   // add .svelte files to use tailwind
   content: ["./src/**/*.svelte"],
   theme: {

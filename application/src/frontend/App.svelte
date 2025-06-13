@@ -1,4 +1,4 @@
-<script lang="ts" type="module">
+<script lang="ts">
   import { onMount } from "svelte";
   import ConfigView from "./views/ConfigView.svelte";
   import GameInstallView from "./views/GameInstallView.svelte";
@@ -22,7 +22,7 @@
   } from "./store";
   import SteamStorePage from "./components/SteamStorePage.svelte";
   import InputScreenManager from "./components/InputScreenManager.svelte";
-  import PlayIcon from "./icons/PlayIcon.svelte";
+  import PlayIcon from "./Icons/PlayIcon.svelte";
   import LibraryView from "./views/LibraryView.svelte";
   import GameManager from "./components/GameManager.svelte";
   import CustomStorePage from "./components/CustomStorePage.svelte";

@@ -160,7 +160,7 @@
         </span>
       </div>
       <div class="tasks-actions">
-        <button class="btn btn-secondary" on:click={handleClearCompleted}>
+        <button class="btn btn-secondary" onclick={handleClearCompleted}>
           <svg
             class="w-4 h-4 mr-2"
             fill="none"
@@ -176,7 +176,7 @@
           </svg>
           Clear Completed
         </button>
-        <button class="btn btn-danger" on:click={handleClearAll}>
+        <button class="btn btn-danger" onclick={handleClearAll}>
           <svg
             class="w-4 h-4 mr-2"
             fill="none"
@@ -338,7 +338,7 @@
             <div class="task-actions">
               <button
                 class="btn btn-danger btn-sm"
-                on:click={() => handleCancelTask(task.id)}
+                onclick={() => handleCancelTask(task.id)}
               >
                 <svg
                   class="w-4 h-4 mr-2"

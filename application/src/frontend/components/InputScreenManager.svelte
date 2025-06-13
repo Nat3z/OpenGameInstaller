@@ -16,11 +16,11 @@
     return event instanceof CustomEvent;
   }
 
-  let screenRendering: ConfigurationFile | undefined = undefined 
+  let screenRendering: ConfigurationFile | undefined = $state(undefined) 
 
   let screenID: string | undefined;
-  let screenName: string | undefined = undefined;
-  let screenDescription: string | undefined = undefined;
+  let screenName: string | undefined = $state(undefined);
+  let screenDescription: string | undefined = $state(undefined);
   let listOfScreensQueued: Writable<{ config: ConfigurationFile, id: string, name: string, description: string }[]> = writable([]);
   document.addEventListener('input-asked', (e) => {
     if (!isCustomEvent(e)) return;
@@ -109,14 +109,14 @@
               {:else if screenRendering[key].inputType === "file" || screenRendering[key].inputType === "folder"}
                 <input type="text" data-input value={screenRendering[key].defaultValue ?? ''} id={key} />
                 {#if screenRendering[key].inputType === "folder"}
-                  <button class="bg-blue-500 text-white px-2 rounded" on:click={(ev) => browseForFolder(ev, 'folder')}>Browse</button>
+                  <button class="bg-blue-500 text-white px-2 rounded" onclick={(ev) => browseForFolder(ev, 'folder')}>Browse</button>
                 {:else}
-                  <button class="bg-blue-500 text-white px-2 rounded" on:click={(ev) => browseForFolder(ev, 'file')}>Browse</button>
+                  <button class="bg-blue-500 text-white px-2 rounded" onclick={(ev) => browseForFolder(ev, 'file')}>Browse</button>
                 {/if}
               {/if}
             {/if}
             {#if isNumberOption(screenRendering[key])}
-              <input data-input type={screenRendering[key].inputType} id={key} on:input={(event) => updateInputNum(event)} value={screenRendering[key].defaultValue ?? screenRendering[key].min} max={isNumberOption(screenRendering[key]) ? screenRendering[key].max : 0} min={isNumberOption(screenRendering[key]) ? screenRendering[key].min : 0} />
+              <input data-input type={screenRendering[key].inputType} id={key} oninput={(event) => updateInputNum(event)} value={screenRendering[key].defaultValue ?? screenRendering[key].min} max={isNumberOption(screenRendering[key]) ? screenRendering[key].max : 0} min={isNumberOption(screenRendering[key]) ? screenRendering[key].min : 0} />
               {#if screenRendering[key].inputType === "range"}
                 <p>{screenRendering[key].defaultValue ?? screenRendering[key].min}</p>
               {/if}
@@ -133,7 +133,7 @@
           <h2 class="block text-xs text-gray-300">{screenRendering[key].description}</h2>
         </div>
       {/each}
-      <button on:click={pushChanges} class="px-4 py-1 rounded w-fit bg-blue-300 mt-4">Submit</button>
+      <button onclick={pushChanges} class="px-4 py-1 rounded w-fit bg-blue-300 mt-4">Submit</button>
     </div>
 
   </article>

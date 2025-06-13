@@ -139,7 +139,7 @@
         </span>
       </div>
       <div class="downloads-actions">
-        <button class="btn btn-secondary" on:click={clearCompletedDownloads}>
+        <button class="btn btn-secondary" onclick={clearCompletedDownloads}>
           <svg
             class="w-4 h-4 mr-2"
             fill="none"
@@ -155,7 +155,7 @@
           </svg>
           Clear Completed
         </button>
-        <button class="btn btn-danger" on:click={clearAllDownloads}>
+        <button class="btn btn-danger" onclick={clearAllDownloads}>
           <svg
             class="w-4 h-4 mr-2"
             fill="none"
@@ -276,7 +276,7 @@
             {/if}
             <button
               class="btn btn-primary w-full"
-              on:click={() =>
+              onclick={() =>
                 window.electronAPI.fs.showFileLoc(download.downloadPath)}
             >
               <svg
@@ -394,7 +394,7 @@
             <div class="failed-setup-actions">
               <button
                 class="btn btn-primary btn-sm"
-                on:click={() => handleRetry(failedSetup)}
+                onclick={() => handleRetry(failedSetup)}
               >
                 <svg
                   class="w-4 h-4 mr-2"
@@ -413,7 +413,7 @@
               </button>
               <button
                 class="btn btn-danger btn-sm"
-                on:click={() => handleRemove(failedSetup.id)}
+                onclick={() => handleRemove(failedSetup.id)}
               >
                 <svg
                   class="w-4 h-4 mr-2"

@@ -12,8 +12,12 @@
   import SettingsFilled from "../icons/SettingsFilled.svelte";
   import GameConfiguration from "./GameConfiguration.svelte";
 
-  export let libraryInfo: LibraryInfo;
-  export let exitPlayPage: () => void;
+  interface Props {
+    libraryInfo: LibraryInfo;
+    exitPlayPage: () => void;
+  }
+
+  let { libraryInfo = $bindable(), exitPlayPage }: Props = $props();
   async function doesLinkExist(url: string | undefined) {
     if (!url) return false;
     const response = await window.electronAPI.app.axios({
@@ -26,7 +30,7 @@
     return response.status === 200;
   }
 
-  let playButton: HTMLButtonElement;
+  let playButton: HTMLButtonElement | undefined = $state(undefined);
   async function launchGame() {
     if ($gamesLaunched[libraryInfo.appID] === "launched") return;
     console.log("Launching game with appID: " + libraryInfo.appID);
@@ -35,6 +39,7 @@
       games[libraryInfo.appID] = "launched";
       return games;
     });
+    if (!playButton) return;
     playButton.disabled = true;
     playButton.querySelector("p")!!.textContent = "PLAYING";
     playButton.querySelector("svg")!!.style.display = "none";
@@ -90,7 +95,7 @@
     }
   });
   onMount(() => {});
-  let openedGameConfiguration = false;
+  let openedGameConfiguration = $state(false);
   function openGameConfiguration() {
     openedGameConfiguration = true;
   }
@@ -145,7 +150,7 @@
     <button
       bind:this={playButton}
       class="px-8 py-4 flex border-none rounded-lg justify-center bg-green-500 items-center flex-row gap-2 disabled:bg-yellow-500"
-      on:click={() => launchGameTrigger.set(libraryInfo.appID)}
+      onclick={() => launchGameTrigger.set(libraryInfo.appID)}
     >
       <PlayIcon fill="#86efac" />
       <p class="font-archivo font-semibold text-white">PLAY</p>
@@ -158,7 +163,7 @@
 
     <button
       class="px-4 ml-auto py-4 flex border-none rounded-lg justify-center bg-gray-500 items-center flex-row gap-2"
-      on:click={openGameConfiguration}
+      onclick={openGameConfiguration}
     >
       <SettingsFilled fill="#e8eaed" />
     </button>
@@ -168,7 +173,7 @@
   >
     <button
       class="hover:bg-slate-400 border-none rounded-lg p-4 py-2"
-      on:click={() => {
+      onclick={() => {
         currentStorePageOpened.set(libraryInfo.appID);
         currentStorePageOpenedSource.set(libraryInfo.addonsource);
         currentStorePageOpenedStorefront.set(libraryInfo.storefront);

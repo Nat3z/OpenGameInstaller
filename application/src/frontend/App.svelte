@@ -30,10 +30,10 @@
 
   // post config to server for each addon
 
-  let finishedOOBE = true;
-  let loading = true;
+  let finishedOOBE = $state(true);
+  let loading = $state(true);
 
-  let recentlyLaunchedApps: LibraryInfo[] = [];
+  let recentlyLaunchedApps: LibraryInfo[] = $state([]);
   onMount(() => {
     loading = true;
     setTimeout(() => {
@@ -104,7 +104,7 @@
         viewOpenedWhenChanged.set($selectedView);
     }
   });
-  let exitPlayPage: () => void;
+  let exitPlayPage: () => void = $state(() => {});
   function setView(view: Views) {
     iTriggeredIt = true;
 
@@ -173,42 +173,42 @@
       </div>
 
       <button
-        on:click={() => setView("gameInstall")}
+        onclick={() => setView("gameInstall")}
         data-selected-header={$selectedView === "gameInstall"}
       >
         <img src="./search.svg" alt="Search" />
         <label>Search</label>
       </button>
       <button
-        on:click={() => setView("library")}
+        onclick={() => setView("library")}
         data-selected-header={$selectedView === "library"}
       >
         <img src="./library.svg" alt="Library" />
         <label>Library</label>
       </button>
       <button
-        on:click={() => setView("downloader")}
+        onclick={() => setView("downloader")}
         data-selected-header={$selectedView === "downloader"}
       >
         <img src="./download.svg" alt="Downloads" />
         <label>Downloads</label>
       </button>
       <button
-        on:click={() => setView("config")}
+        onclick={() => setView("config")}
         data-selected-header={$selectedView === "config"}
       >
         <img src="./apps.svg" alt="addon" />
         Addons
       </button>
       <button
-        on:click={() => setView("tasks")}
+        onclick={() => setView("tasks")}
         data-selected-header={$selectedView === "tasks"}
       >
         <img src="./tasks.svg" alt="Tasks" />
         <label>Tasks</label>
       </button>
       <button
-        on:click={() => setView("clientoptions")}
+        onclick={() => setView("clientoptions")}
         data-selected-header={$selectedView === "clientoptions"}
       >
         <img src="./settings.svg" alt="Settings" />
@@ -224,7 +224,7 @@
                 <div
                   data-recently-item
                   class="flex flex-row justify-start items-center w-full gap-4 p-2 h-22 rounded hover:bg-gray-100 hover:cursor-pointer transition-colors"
-                  on:click={() => playGame(app.appID)}
+                  onclick={() => playGame(app.appID)}
                 >
                   <img
                     src={app.capsuleImage}

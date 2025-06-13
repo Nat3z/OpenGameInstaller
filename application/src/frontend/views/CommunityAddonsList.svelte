@@ -7,7 +7,7 @@
     description: string;
   }
   let communityList = new Promise<CommunityAddon[]>((resolve) => fetch('https://ogi.nat3z.com/api/community.json').then((response) => response.json()).then((data) => resolve(data)));
-  let currentAddons = JSON.parse(window.electronAPI.fs.read('./config/option/general.json'));
+  let currentAddons = $state(JSON.parse(window.electronAPI.fs.read('./config/option/general.json')));
 
   async function installAddon(addon: CommunityAddon, event: MouseEvent) {
     console.log(`Installing ${addon.name} by ${addon.author}`);
@@ -64,11 +64,11 @@
         <div class="flex flex-row gap-2">
           {#if currentAddons.addons.includes(addon.source)}
             <button disabled class="w-fit px-4 rounded-md bg-green-200 border-transparent">Installed</button>
-            <button on:click={() => deleteAddon(addon)} class="flex justify-center items-center w-fit px-1 rounded-md bg-red-200 border-transparent">
+            <button onclick={() => deleteAddon(addon)} class="flex justify-center items-center w-fit px-1 rounded-md bg-red-200 border-transparent">
               <svg xmlns="http://www.w3.org/2000/svg" height="18px" viewBox="0 -960 960 960" width="18px" fill="black"><path d="M280-120q-33 0-56.5-23.5T200-200v-520h-40v-80h200v-40h240v40h200v80h-40v520q0 33-23.5 56.5T680-120H280Zm400-600H280v520h400v-520ZM360-280h80v-360h-80v360Zm160 0h80v-360h-80v360ZM280-720v520-520Z"/></svg>
             </button>
           {:else}
-            <button on:click={(ev) => installAddon(addon, ev)} class="w-fit px-4 rounded-md bg-blue-200 border-transparent">Install</button>
+            <button onclick={(ev) => installAddon(addon, ev)} class="w-fit px-4 rounded-md bg-blue-200 border-transparent">Install</button>
           {/if}
         </div>
 

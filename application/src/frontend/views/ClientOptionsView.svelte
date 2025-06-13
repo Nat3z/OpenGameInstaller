@@ -125,7 +125,7 @@
     }
   ];
 
-  let selectedOption: OptionsCategory | null = null;
+  let selectedOption: OptionsCategory | null = $state(null);
   
   function selectOption(addon: OptionsCategory) {
     const selected = document.querySelector(".selected");
@@ -275,7 +275,7 @@
     </section>
     {#if options.length !== 0}
       {#each options as addon}
-        <section class="hover:bg-slate-100 hover:cursor-pointer" on:keypress={() => {}} on:click={() => selectOption(addon)} id={"cfg-" + addon.name}>
+        <section class="hover:bg-slate-100 hover:cursor-pointer" onkeypress={() => {}} onclick={() => selectOption(addon)} id={"cfg-" + addon.name}>
           <h2>{addon.name}</h2>
           <p>{addon.description}</p>
         </section>
@@ -297,33 +297,33 @@
             <label class="min-w-max" for={key}>{selectedOption.options[key].displayName}</label>
             {#if selectedOption.options[key].type === "string"}
               {#if selectedOption.options[key].choice}
-                <select id={key} on:change={updateConfig} value={getStoredOrDefaultValue(key)}>
+                <select id={key} onchange={updateConfig} value={getStoredOrDefaultValue(key)}>
                   {#each selectedOption.options[key].choice as choice}
                     <option value={choice}>{choice}</option>
                   {/each}
                 </select>
               {:else}
-                <input type="text" on:change={updateConfig} value={getStoredOrDefaultValue(key)} id={key} maxlength={selectedOption.options[key].maxTextLength} minlength={selectedOption.options[key].minTextLength} />
+                <input type="text" onchange={updateConfig} value={getStoredOrDefaultValue(key)} id={key} maxlength={selectedOption.options[key].maxTextLength} minlength={selectedOption.options[key].minTextLength} />
               {/if}
             {/if}
             {#if selectedOption.options[key].type === "file-folder"}
               <div class="flex-col items-center w-full gap-2">
-                <input type="text" on:change={updateConfig} value={getStoredOrDefaultValue(key)} id={key} maxlength={selectedOption.options[key].maxTextLength} minlength={selectedOption.options[key].minTextLength} />
-                <button class="bg-blue-500 text-white px-2 rounded" on:click={(ev) => browseForFolder(ev)}>Browse</button>
+                <input type="text" onchange={updateConfig} value={getStoredOrDefaultValue(key)} id={key} maxlength={selectedOption.options[key].maxTextLength} minlength={selectedOption.options[key].minTextLength} />
+                <button class="bg-blue-500 text-white px-2 rounded" onclick={(ev) => browseForFolder(ev)}>Browse</button>
               </div>
 
             {/if}
             {#if selectedOption.options[key].type === "textarea"}
-              <textarea class="w-full h-32 resize-none" id={key} on:change={updateConfig} value={getStoredOrDefaultValue(key).join('\n')}></textarea>
+              <textarea class="w-full h-32 resize-none" id={key} onchange={updateConfig} value={getStoredOrDefaultValue(key).join('\n')}></textarea>
             {/if}
             {#if selectedOption.options[key].type === "number"}
-              <input type="number" id={key} on:change={updateConfig} value={getStoredOrDefaultValue(key)} max={selectedOption.options[key].max} min={selectedOption.options[key].min} />
+              <input type="number" id={key} onchange={updateConfig} value={getStoredOrDefaultValue(key)} max={selectedOption.options[key].max} min={selectedOption.options[key].min} />
             {/if}
             {#if selectedOption.options[key].type === "boolean"}
               {#if getStoredOrDefaultValue(key)}
-                <input type="checkbox" id={key} on:change={updateConfig} checked />
+                <input type="checkbox" id={key} onchange={updateConfig} checked />
               {:else}
-                <input type="checkbox" id={key} on:change={updateConfig} />
+                <input type="checkbox" id={key} onchange={updateConfig} />
               {/if}
             {/if}
             <p data-error-message class="text-red-500"></p>
@@ -333,13 +333,13 @@
         {#if selectedOption.id === "general"}
           <div class="flex justify-center items-center flex-col gap-2">
             <div class="flex justify-center items-center flex-row gap-2">
-              <button class="bg-green-500 disabled:bg-slate-400 text-white p-2 rounded" on:click={() => installAddons()} data-disable>Install All</button>
-              <button class="bg-yellow-500 disabled:bg-slate-400 text-white p-2 rounded" on:click={() => updateAddons()} data-disable>Update</button>
-              <button class="bg-red-500 disabled:bg-slate-400 text-white p-2 rounded" on:click={() => cleanAddons()} data-disable>Clean All</button>
+              <button class="bg-green-500 disabled:bg-slate-400 text-white p-2 rounded" onclick={() => installAddons()} data-disable>Install All</button>
+              <button class="bg-yellow-500 disabled:bg-slate-400 text-white p-2 rounded" onclick={() => updateAddons()} data-disable>Update</button>
+              <button class="bg-red-500 disabled:bg-slate-400 text-white p-2 rounded" onclick={() => cleanAddons()} data-disable>Clean All</button>
             </div>
 
             <div class="flex justify-center items-center flex-row gap-2">
-              <button class="bg-red-500 disabled:bg-slate-400 text-white p-2 rounded" on:click={() => window.electronAPI.restartAddonServer()} data-disable>Restart Addon Server</button>
+              <button class="bg-red-500 disabled:bg-slate-400 text-white p-2 rounded" onclick={() => window.electronAPI.restartAddonServer()} data-disable>Restart Addon Server</button>
             </div>
           </div>
         {/if}

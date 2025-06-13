@@ -61,7 +61,6 @@ addon.on('search', ({ text, type }, event) => {
     if (type === "internal" || type === "steamapp") {
       console.log(text);
       const results = await addon.steamSearch(text, true);
-      console.log(results);
       event.resolve([
         {
           name: "Direct Download Test",

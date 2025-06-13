@@ -1,14 +1,21 @@
 <script lang="ts">
+  import { preventDefault } from "svelte/legacy";
+
   import { onMount } from "svelte";
-  import WineIcon from "../components/WineIcon.svelte";
+  import WineIcon from "../icons/WineIcon.svelte";
 
-  let stage = 0;
+  let stage = $state(0);
 
-  let selectedTorrenter: "qbittorrent" | "real-debrid" | "webtorrent" | "" = "";
-  let fulfilledRequirements = false;
+  let selectedTorrenter: "qbittorrent" | "real-debrid" | "webtorrent" | "" =
+    $state("");
+  let fulfilledRequirements = $state(false);
   let addons = "";
 
-  export let finishedSetup: () => void;
+  interface Props {
+    finishedSetup: () => void;
+  }
+
+  let { finishedSetup }: Props = $props();
 
   async function downloadTools(event: MouseEvent) {
     console.log("Downloading tools");
@@ -203,7 +210,7 @@
 
       <div class="animate-in-sub-content-slow">
         <button
-          on:click={() => (stage = 1)}
+          onclick={() => (stage = 1)}
           class="bg-accent hover:bg-accent-dark text-white font-open-sans font-bold py-2 px-4 rounded"
           >Get Started</button
         >
@@ -292,7 +299,7 @@
       </div>
 
       <button
-        on:click={downloadTools}
+        onclick={downloadTools}
         class="bg-accent hover:bg-accent-dark text-white disabled:text-white disabled:bg-yellow-300 font-open-sans font-semibold py-2 px-4 rounded"
         >Install</button
       >
@@ -306,7 +313,7 @@
         OpenGameInstaller requires a restart to continue the setup process.
       </h2>
       <button
-        on:click={() => window.electronAPI.app.close()}
+        onclick={() => window.electronAPI.app.close()}
         class="bg-accent hover:bg-accent-dark text-white font-open-sans font-semibold py-2 px-4 rounded"
         >Close</button
       >
@@ -321,19 +328,19 @@
       </h2>
       <div class="flex-row flex gap-4 justify-center items-center">
         <button
-          on:click={() => (selectedTorrenter = "qbittorrent")}
+          onclick={() => (selectedTorrenter = "qbittorrent")}
           class="flex justify-start p-2 pl-2 gap-4 items-center flex-row w-8/12 h-14 bg-slate-100 rounded-lg"
         >
           <img class="p-4 w-20 h-20" src="./qbittorrent.svg" />
         </button>
         <button
-          on:click={() => (selectedTorrenter = "real-debrid")}
+          onclick={() => (selectedTorrenter = "real-debrid")}
           class="flex justify-start p-2 pl-2 gap-4 items-center flex-row w-8/12 h-14 bg-slate-100 rounded-lg"
         >
           <img class="p-4 w-20 h-20" src="./rd-logo.png" />
         </button>
         <button
-          on:click={() => (selectedTorrenter = "webtorrent")}
+          onclick={() => (selectedTorrenter = "webtorrent")}
           class="flex justify-start p-2 pl-2 gap-4 items-center flex-row w-8/12 h-14 bg-slate-100 rounded-lg"
         >
           <img class="p-4 w-20 h-20" src="./WebTorrent_logo.png" />
@@ -341,14 +348,14 @@
       </div>
 
       <form
-        on:submit|preventDefault={submitTorrenter}
+        onsubmit={preventDefault(submitTorrenter)}
         class="flex flex-col items-center justify-start w-full"
       >
         {#if selectedTorrenter === "real-debrid"}
           <input
             data-rd-key
             type="text"
-            on:change={submitTorrenter}
+            onchange={submitTorrenter}
             placeholder="Real Debrid API Key"
             class="w-8/12 p-2 pl-2 bg-slate-100 rounded-lg"
           />
@@ -373,7 +380,7 @@
               <input
                 data-qb-ip
                 type="text"
-                on:change={submitTorrenter}
+                onchange={submitTorrenter}
                 placeholder="Host"
                 value="http://127.0.0.1"
                 class="w-72 p-2 pl-2 bg-slate-100 rounded-lg"
@@ -384,7 +391,7 @@
               <input
                 data-qb-port
                 type="text"
-                on:change={submitTorrenter}
+                onchange={submitTorrenter}
                 placeholder="Port"
                 value="8080"
                 class="w-24 p-2 pl-2 bg-slate-100 rounded-lg"
@@ -398,7 +405,7 @@
               <input
                 data-qb-username
                 type="text"
-                on:change={submitTorrenter}
+                onchange={submitTorrenter}
                 placeholder="Username"
                 value=""
                 class="w-24 p-2 pl-2 bg-slate-100 rounded-lg"
@@ -409,7 +416,7 @@
               <input
                 data-qb-pwd
                 type="password"
-                on:change={submitTorrenter}
+                onchange={submitTorrenter}
                 placeholder="Password"
                 value=""
                 class="w-72 p-2 pl-2 bg-slate-100 rounded-lg"
@@ -426,7 +433,7 @@
       </form>
       {#if fulfilledRequirements || selectedTorrenter === "webtorrent"}
         <button
-          on:click={() => (stage = 3)}
+          onclick={() => (stage = 3)}
           class="bg-accent animate-fade-in hover:bg-accent-dark text-white font-open-sans font-semibold py-2 px-4 rounded"
           >Continue</button
         >
@@ -445,14 +452,14 @@
       <div class="flex justify-center items-center flex-row gap-2 w-full">
         <input data-dwloc type="text" class="py-2 w-8/12 pl-2" />
         <button
-          on:click={updateDownloadLocation}
+          onclick={updateDownloadLocation}
           class="bg-accent hover:bg-accent-dark text-white font-open-sans font-semibold py-2 px-4 rounded"
           >Browse</button
         >
       </div>
 
       <button
-        on:click={sendDownloadLocation}
+        onclick={sendDownloadLocation}
         class="bg-accent hover:bg-accent-dark text-white font-open-sans font-semibold py-2 px-4 rounded"
         >Continue</button
       >
@@ -470,13 +477,13 @@
         each addon by new line.
       </h2>
       <textarea
-        on:change={updateAddons}
+        onchange={updateAddons}
         class="w-8/12 h-48 text-xs p-2 pl-2 bg-slate-100 rounded-lg resize-none"
         placeholder="Addons to download"
         value=""
-      />
+      ></textarea>
       <button
-        on:click={() => {
+        onclick={() => {
           finishSetup();
           stage = 5;
         }}
@@ -496,7 +503,7 @@
       </h2>
 
       <button
-        on:click={waitForSetup}
+        onclick={waitForSetup}
         class="bg-accent hover:bg-accent-dark text-white font-open-sans font-semibold py-2 px-4 rounded"
         >Finish</button
       >

@@ -12,5 +12,8 @@
     "application",
     "updater",
     "web"
-  ]
+  ],
+  "dependencies": {
+    "rollup-plugin-svelte": "^7.2.2"
+  }
 }

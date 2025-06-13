@@ -26,7 +26,7 @@
     <rdf:RDF>
       <cc:Work rdf:about="">
         <dc:format>image/svg+xml</dc:format>
-        <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
+        <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage"></dc:type>
       </cc:Work>
     </rdf:RDF>
   </metadata>
@@ -155,7 +155,7 @@
     inkscape:current-layer="svg2211"
     width="48px"
     height="48px"
-  />
+></sodipodi:namedview>
   <g
     id="g23930"
     transform="matrix(0.5709735,0,0,0.5588143,8.1495857,-0.1431587)"

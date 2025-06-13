@@ -19,7 +19,7 @@
   function isBooleanOption(option: ConfigurationOption): option is BooleanOption {
     return option.type === 'boolean';
   }
-  let addons: ConfigTemplateAndInfo[] = [];
+  let addons: ConfigTemplateAndInfo[] = $state([]);
   onMount(() => {
     safeFetch("http://localhost:7654/addons").then((data) => {
       addons = data;
@@ -28,7 +28,7 @@
   interface ConfigTemplateAndInfo extends OGIAddonConfiguration {
     configTemplate: ConfigurationFile
   }
-  let selectedAddon: ConfigTemplateAndInfo | null = null;
+  let selectedAddon: ConfigTemplateAndInfo | null = $state(null);
   
   function selectAddon(addon: ConfigTemplateAndInfo) {
     const selected = document.querySelector(".selected");
@@ -170,7 +170,7 @@
       element.parentElement!!.querySelector("p")!!.textContent = element.value;
     }
   }
-  let addonsWithUpdates: string[] = [];
+  let addonsWithUpdates: string[] = $state([]);
   const unsubscribe = addonUpdates.subscribe((update) => {
     addonsWithUpdates = update;
   });
@@ -190,8 +190,8 @@
 
 <div class="flex flex-col justify-start items-start w-full h-full">
   <div class="flex flex-row w-full h-12 border-b-2 border-gray-300">
-    <button data-selected={$view === 'my-addons'} on:click={() => $view = 'my-addons'} class="h-full w-full border-none bg-slate-100 font-archivo text-lg hover:bg-slate-200">My Addons</button>
-    <button data-selected={$view === 'community-addons'} on:click={() => $view = 'community-addons'} class="h-full w-full border-none bg-slate-100 font-archivo text-lg hover:bg-slate-200">Community Addons</button>
+    <button data-selected={$view === 'my-addons'} onclick={() => $view = 'my-addons'} class="h-full w-full border-none bg-slate-100 font-archivo text-lg hover:bg-slate-200">My Addons</button>
+    <button data-selected={$view === 'community-addons'} onclick={() => $view = 'community-addons'} class="h-full w-full border-none bg-slate-100 font-archivo text-lg hover:bg-slate-200">Community Addons</button>
   </div>
   {#if $view === 'my-addons'}
   <div class="config">
@@ -200,7 +200,7 @@
       </section>
       {#if addons.length !== 0}
         {#each addons as addon}
-          <section class="hover:bg-slate-100 hover:cursor-pointer" on:keypress={() => {}} on:click={() => selectAddon(addon)} id={"cfg-" + addon.id}>
+          <section class="hover:bg-slate-100 hover:cursor-pointer" onkeypress={() => {}} onclick={() => selectAddon(addon)} id={"cfg-" + addon.id}>
             <h2>{addon.name}</h2>
             <p>{addon.description}</p>
             {#if addonsWithUpdates.includes(addon.id)}
@@ -220,41 +220,41 @@
           </div>
           {#each Object.keys(selectedAddon.configTemplate) as key}
             <div class="flex flex-row gap-2 items-center relative">
-              <label for={key} on:mouseover={showDescription} on:focus={showDescription} on:mouseleave={hideDescription}>{selectedAddon.configTemplate[key].displayName}</label>
+              <label for={key} onmouseover={showDescription} onfocus={showDescription} onmouseleave={hideDescription}>{selectedAddon.configTemplate[key].displayName}</label>
               {#if isStringOption(selectedAddon.configTemplate[key])}
                 {#if selectedAddon.configTemplate[key].allowedValues.length !== 0}
-                  <select data-input id={key} on:change={updateConfig} value={getStoredOrDefaultValue(key)}>
+                  <select data-input id={key} onchange={updateConfig} value={getStoredOrDefaultValue(key)}>
                     {#each selectedAddon.configTemplate[key].allowedValues as value}
                       <option value={value}>{value}</option>
                     {/each}
                   </select>
                 {:else if selectedAddon.configTemplate[key].inputType === "text" || selectedAddon.configTemplate[key].inputType === "password"}
-                  <input data-input type={selectedAddon.configTemplate[key].inputType} on:change={updateConfig} value={getStoredOrDefaultValue(key)} id={key} maxlength={selectedAddon.configTemplate[key].maxTextLength} minlength={selectedAddon.configTemplate[key].minTextLength} />
+                  <input data-input type={selectedAddon.configTemplate[key].inputType} onchange={updateConfig} value={getStoredOrDefaultValue(key)} id={key} maxlength={selectedAddon.configTemplate[key].maxTextLength} minlength={selectedAddon.configTemplate[key].minTextLength} />
                 {:else if selectedAddon.configTemplate[key].inputType === "file" || selectedAddon.configTemplate[key].inputType === "folder"}
-                  <input type="text" data-input on:change={updateConfig} value={getStoredOrDefaultValue(key)} id={key} />
+                  <input type="text" data-input onchange={updateConfig} value={getStoredOrDefaultValue(key)} id={key} />
 
                   {#if selectedAddon.configTemplate[key].inputType === "folder"}
-                    <button class="bg-blue-500 text-white px-2 rounded" on:click={(ev) => browseForFolder(ev, 'folder')}>Browse</button>
+                    <button class="bg-blue-500 text-white px-2 rounded" onclick={(ev) => browseForFolder(ev, 'folder')}>Browse</button>
                   {:else if  selectedAddon.configTemplate[key].inputType === "file"}
-                    <button class="bg-blue-500 text-white px-2 rounded" on:click={(ev) => browseForFolder(ev, 'file')}>Browse</button>
+                    <button class="bg-blue-500 text-white px-2 rounded" onclick={(ev) => browseForFolder(ev, 'file')}>Browse</button>
                   {/if}
 
                 {/if}
               {/if}
               {#if isNumberOption(selectedAddon.configTemplate[key])}
-                <input data-input type={selectedAddon.configTemplate[key].inputType} id={key} on:input={(event) => updateInputNum(event)} on:change={updateConfig} value={getStoredOrDefaultValue(key)} max={isNumberOption(selectedAddon.configTemplate[key]) ? selectedAddon.configTemplate[key].max : 0} min={isNumberOption(selectedAddon.configTemplate[key]) ? selectedAddon.configTemplate[key].min : 0} />
+                <input data-input type={selectedAddon.configTemplate[key].inputType} id={key} oninput={(event) => updateInputNum(event)} onchange={updateConfig} value={getStoredOrDefaultValue(key)} max={isNumberOption(selectedAddon.configTemplate[key]) ? selectedAddon.configTemplate[key].max : 0} min={isNumberOption(selectedAddon.configTemplate[key]) ? selectedAddon.configTemplate[key].min : 0} />
                 {#if selectedAddon.configTemplate[key].inputType === "range"}
                   <p>{getStoredOrDefaultValue(key)}</p>
                 {/if}
               {/if}
               {#if isBooleanOption(selectedAddon.configTemplate[key])}
                 {#if getStoredOrDefaultValue(key)}
-                  <input data-input type="checkbox" id={key} on:change={updateConfig} class="top-[2px] relative" checked />
+                  <input data-input type="checkbox" id={key} onchange={updateConfig} class="top-[2px] relative" checked />
                 {:else}
-                  <input data-input type="checkbox" id={key} on:change={updateConfig} class="top-[2px] relative" />
+                  <input data-input type="checkbox" id={key} onchange={updateConfig} class="top-[2px] relative" />
                 {/if}
               {/if}
-              <p data-error-message class="text-red-500" data-context="" on:mouseenter={showContextHint} on:mouseleave={hideContextHint}>
+              <p data-error-message class="text-red-500" data-context="" onmouseenter={showContextHint} onmouseleave={hideContextHint}>
               </p>
 
               <div data-contextual style="display: none" class="absolute flex flex-row gap-2 justify-start items-center z-20 top-8 border border-gray-200 left-0 bg-slate-100 text-sm p-2 rounded-md shadow-lg w-full">

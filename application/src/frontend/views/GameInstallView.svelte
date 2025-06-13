@@ -7,9 +7,9 @@
 	interface ConfigTemplateAndInfo extends OGIAddonConfiguration {
     configTemplate: ConfigurationFile
   }
-	let addons: ConfigTemplateAndInfo[] = [];
+	let addons: ConfigTemplateAndInfo[] = $state([]);
 
-	let isOnline = true;
+	let isOnline = $state(true);
   onMount(() => {
     safeFetch("http://localhost:7654/addons").then((data) => {
       addons = data;
@@ -59,9 +59,9 @@
 	}
 
 	type SearchResult = BasicLibraryInfo & { addonsource: string };
-	let results: SearchResult[] = [];
+	let results: SearchResult[] = $state([]);
 
-	let loadingResults = false;
+	let loadingResults = $state(false);
 	async function search() {
 		try {
 			// fetch addons first
@@ -156,7 +156,7 @@
 </script>
 
 {#if isOnline}
-	<input id="search" on:change={search} type="text" placeholder="Search for Game" class="p-2 pl-2 bg-slate-100 rounded-lg w-2/3 mt-4"/>
+	<input id="search" onchange={search} type="text" placeholder="Search for Game" class="p-2 pl-2 bg-slate-100 rounded-lg w-2/3 mt-4"/>
 {:else}
 	<div class="flex flex-col gap-2 w-full justify-center items-center h-full">
 		<img src="./favicon.png" alt="content" class="w-32 h-32" />
@@ -172,7 +172,7 @@
 				<img src={result.capsuleImage} alt={result.name} class="rounded w-1/4 h-full object-cover"/>
 				<span class="h-full flex flex-col justify-start items-start">
 					<h1 class="font-archivo">{result.name}</h1>
-					<button class="mt-auto py-2 px-4 hover:underline rounded" on:click={() => goToListing(result.appID, result.addonsource)}>Go to Listing</button>
+					<button class="mt-auto py-2 px-4 hover:underline rounded" onclick={() => goToListing(result.appID, result.addonsource)}>Go to Listing</button>
 				</span>
 			</div>
 		{/each}

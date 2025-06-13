@@ -18,12 +18,16 @@
     viewOpenedWhenChanged,
   } from "../store";
   import type { SearchResult } from "ogi-addon";
-  export let appID: number;
+  interface Props {
+    appID: number;
+  }
 
-  let results: SearchResultWithAddon[] = [];
-  let gameData: GameData;
-  let loading = true;
-  let queryingSources = false;
+  let { appID }: Props = $props();
+
+  let results: SearchResultWithAddon[] = $state([]);
+  let gameData: GameData | undefined = $state();
+  let loading = $state(true);
+  let queryingSources = $state(false);
 
   let alreadyOwns = window.electronAPI.fs.exists(
     "./library/" + appID + ".json"
@@ -55,6 +59,10 @@
         queryingSources = false;
         return;
       }
+      if (addons.length === 0) {
+        queryingSources = false;
+        return;
+      }
       for (const addon of addons) {
         safeFetch(
           "http://localhost:7654/addons/" +
@@ -73,7 +81,7 @@
               return {
                 ...result,
                 coverURL: `https://steamcdn-a.akamaihd.net/steam/apps/${appID}/library_600x900_2x.jpg`,
-                name: gameData.name,
+                name: gameData!.name,
                 addonSource: addon.id,
               };
             }),
@@ -92,18 +100,19 @@
   });
 
   function playGame() {
+    if (!gameData) return;
     console.log("Playing game with ID: " + gameData.steam_appid);
     selectedView.set("library");
     viewOpenedWhenChanged.set("library");
     currentStorePageOpened.set(undefined);
     currentStorePageOpenedStorefront.set(undefined);
-    gameFocused.set(gameData.steam_appid);
+    gameFocused.set(gameData!.steam_appid);
     setTimeout(() => {
-      launchGameTrigger.set(gameData.steam_appid);
+      launchGameTrigger.set(gameData!.steam_appid);
     }, 5);
   }
 
-  let isOnline = true;
+  let isOnline = $state(true);
 </script>
 
 {#if gameData}
@@ -143,7 +152,7 @@
             <h2 class="text-2xl font-archivo font-medium">Installed</h2>
             <button
               class="px-4 py-2 bg-blue-300 rounded disabled:bg-yellow-300"
-              on:click={() => playGame()}>Play</button
+              onclick={() => playGame()}>Play</button
             >
           </div>
         {:else if results.length > 0}
@@ -154,7 +163,7 @@
                 <p>{result.addonSource}</p>
                 <button
                   class="px-4 py-2 bg-blue-300 rounded disabled:bg-yellow-300"
-                  on:click={(event) => startDownload(result, event)}
+                  onclick={(event) => startDownload(result, event)}
                   >Download</button
                 >
                 <nav

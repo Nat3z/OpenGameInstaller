@@ -4,7 +4,7 @@ import { ConfigurationBuilder, ConfigurationFile } from './config/ConfigurationB
 import { Configuration } from './config/Configuration';
 import EventResponse from './EventResponse';
 import { SearchResult } from './SearchEngine';
-import Fuse from 'fuse.js';
+import Fuse, { IFuseOptions } from 'fuse.js';
 
 export type OGIAddonEvent = 'connect' | 'disconnect' | 'configure' | 'authenticate' | 'search' | 'setup' | 'library-search' | 'game-details' | 'exit' | 'request-dl';
 export type OGIAddonClientSentEvent = 'response' | 'authenticate' | 'configure' | 'defer-update' | 'notification' | 'input-asked' | 'steam-search' | 'task-update';
@@ -256,20 +256,19 @@ export class CustomTask {
   }
 }
 /**
- * A search tool for the OGI Addon. This tool is used to search for items in the library. Powered by Fuse.js, bundled into OGI.
+ * A search tool wrapper over Fuse.js for the OGI Addon. This tool is used to search for items in the library.
  * @example
  * ```typescript
- * const searchTool = new SearchTool<LibraryInfo>([], ['name']);
+ * const searchTool = new SearchTool<LibraryInfo>([{ name: 'test', appID: 123 }, { name: 'test2', appID: 124 }], ['name']);
  * const results = searchTool.search('test', 10);
  * ```
  */
 export class SearchTool<T> {
   private fuse: Fuse<T>;
-  constructor(items: T[], keys: string[]) {
+  constructor(items: T[], keys: string[], options: Omit<IFuseOptions<T>, 'keys'> = { threshold: 0.3, includeScore: true }) {
     this.fuse = new Fuse(items, {
       keys,
-      threshold: 0.3,
-      includeScore: true
+      ...options
     });
   }
   public search(query: string, limit: number = 10): T[] {

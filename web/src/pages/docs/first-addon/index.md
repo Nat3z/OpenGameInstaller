@@ -36,7 +36,5 @@ It is additionally recommended that you create a .gitignore file to protect your
 node_modules/
 # required because crashes make a *-crash.log file and client uses an installation.log file to verify addon installs.
 *.log
-# add this because auto-update doesn't like it when lock files are committed.
-bun.lockb
 ```
 Follow the next guide to learn how to create an `addon.json` file, which is essential for OpenGameInstaller to get metadata about your addon.

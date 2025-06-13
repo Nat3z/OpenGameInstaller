@@ -80,8 +80,24 @@ export default function handler() {
   });
 
   ipcMain.handle('fs:get-files-in-dir', async (_, arg) => {
+    if (String(arg).startsWith('./')) {
+      arg = join(__dirname, arg);
+    }
     const files = fs.readdirSync(arg);
     return files;
+  });
+  
+  ipcMain.on('fs:delete', (event, arg) => {
+    if (String(arg).startsWith('./')) {
+      arg = join(__dirname, arg);
+    }
+    try {
+      fs.unlinkSync(arg);
+      event.returnValue = 'success';
+    } catch (err) {
+      event.returnValue = err;
+      console.error(err);
+    }
   });
   ipcMain.handle('fs:extract-rar', async (_, arg) => {
     const { rarFilePath, outputDir } = arg;

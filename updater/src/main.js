@@ -60,6 +60,7 @@ async function createWindow() {
     width: 300,
     height: 400,
     frame: false,
+    resizable: false,
     webPreferences: {
       preload: `${app.getAppPath()}/src/preload.mjs`,
       nodeIntegration: true,

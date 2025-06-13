@@ -33,6 +33,7 @@
     "url": "https://nat3z.com/"
   },
   "dependencies": {
+    "fuse.js": "^7.1.0",
     "ws": "^8.4.0",
     "zod": "^3.23.8"
   },

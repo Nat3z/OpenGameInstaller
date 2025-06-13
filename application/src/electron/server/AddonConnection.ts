@@ -1,22 +1,13 @@
 
 import wsLib from 'ws';
-import { OGIAddonConfiguration, WebsocketMessageClient, WebsocketMessageServer } from "ogi-addon";
+import { ClientSentEventTypes, OGIAddonConfiguration, WebsocketMessageClient, WebsocketMessageServer } from "ogi-addon";
 import { ConfigurationFile } from 'ogi-addon/src/config/ConfigurationBuilder';
 import { clients } from './addon-server.js';
 import { DefferedTasks } from './api/defer.js';
 import { addonSecret } from './constants.js';
-import { existsSync, readFileSync } from 'fs';
-import { currentScreens, sendAskForInput, sendNotification } from '../main.js';
-export let isSecurityCheckEnabled = true;
-if (existsSync('./config/option/developer.json')) {
-  const developerConfig = JSON.parse(readFileSync('./config/option/developer.json', 'utf-8'));
-  isSecurityCheckEnabled = developerConfig.disableSecretCheck !== true;
-  if (!isSecurityCheckEnabled) {
-    for (let i = 0; i < 10; i++) {
-      console.warn('WARNING Security check is disabled. THIS IS A MAJOR SECURITY RISK. PLEASE ENABLE DURING NORMAL USE.');
-    }
-  }
-}
+import { currentScreens, isSecurityCheckEnabled, sendAskForInput, sendNotification, steamAppSearcher } from '../main.js';
+import { DeferrableTask } from './DeferrableTask.js';
+
 export class AddonConnection {
   public addonInfo: OGIAddonConfiguration;
   public ws: wsLib.WebSocket;
@@ -52,6 +43,18 @@ export class AddonConnection {
               resolve(false)
               break;
             }
+
+            // if (this.addonInfo.version !== ogiAddonVERSION) {
+            //   sendNotification({
+            //     type: 'error',
+            //     message: 'Client attempted to authenticate with an addon version that is not compatible with the OGI Addon Server',
+            //     id: 'addon-version-mismatch'
+            //   });
+            //   console.error('Client attempted to authenticate with an addon version that is not compatible with the OGI Addon Server');
+            //   this.ws.close(1008, 'Client attempted to authenticate with an addon version that is not compatible with the OGI Addon Server');
+            //   resolve(false)
+            //   break;
+            // }
             if (clients.has(this.addonInfo.id)) {
               console.error('Client attempted to authenticate with an ID that is already in use');
               clients.delete(this.addonInfo.id);
@@ -136,6 +139,63 @@ export class AddonConnection {
               }
             }, 100);
             
+            break;
+          case 'steam-search':
+            if (!this.addonInfo) {
+              console.error('Client attempted to send steam-search before authentication');
+              this.ws.close(1008, 'Client attempted to send steam-search before authentication');
+              return;
+            }
+            if (!steamAppSearcher) {
+              console.error('Client attempted to send steam-search before steamAppSearcher is initialized');
+              this.ws.close(1008, 'Client attempted to send steam-search before steamAppSearcher is initialized');
+              return;
+            }
+            const { query, strict }: ClientSentEventTypes['steam-search'] = data.args;
+            // now run the search
+            let results = steamAppSearcher.search(query);
+            // if strict, filter out results that are not exact matches to the appid
+            if (strict) {
+              results = results.filter(result => result.item.appid === Number(query));
+            }
+            this.sendEventMessage({ event: 'response', args: results.map(result => result.item), id: data.id }, false);
+            break;
+          case 'task-update':
+            if (!this.addonInfo) {
+              console.error('Client attempted to send task-update before authentication');
+              this.ws.close(1008, 'Client attempted to send task-update before authentication');
+              return;
+            }
+            if (!data.args.id) {
+              console.error('Client attempted to send task-update without an ID');
+              this.ws.close(1008, 'Client attempted to send task-update without an ID');
+              return;
+            }
+            const taskUpdate = data.args as ClientSentEventTypes['task-update'];
+            let task = DefferedTasks.get(data.args.id);
+
+            if (!task) {
+              task = new DeferrableTask(async () => {
+                return null;
+              }, this.addonInfo.id)
+              DefferedTasks.set(data.args.id, task);
+              sendNotification({
+                type: 'info',
+                message: 'Task started by ' + this.addonInfo.name,
+                id: data.args.id
+              });
+            }
+            task.progress = taskUpdate.progress;
+            task.logs = taskUpdate.logs;
+            task.finished = taskUpdate.finished;
+            if (taskUpdate.finished) {
+              DefferedTasks.delete(data.args.id);
+              sendNotification({
+                type: 'success',
+                message: 'Task finished by ' + this.addonInfo.name,
+                id: data.args.id
+              });
+            }
             break;
         }
       });

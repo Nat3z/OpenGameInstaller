@@ -4,19 +4,26 @@ import { ConfigurationBuilder, ConfigurationFile } from './config/ConfigurationB
 import { Configuration } from './config/Configuration';
 import EventResponse from './EventResponse';
 import { SearchResult } from './SearchEngine';
+import Fuse from 'fuse.js';
 
 export type OGIAddonEvent = 'connect' | 'disconnect' | 'configure' | 'authenticate' | 'search' | 'setup' | 'library-search' | 'game-details' | 'exit' | 'request-dl';
-export type OGIAddonClientSentEvent = 'response' | 'authenticate' | 'configure' | 'defer-update' | 'notification' | 'input-asked';
+export type OGIAddonClientSentEvent = 'response' | 'authenticate' | 'configure' | 'defer-update' | 'notification' | 'input-asked' | 'steam-search' | 'task-update';
 
 export type OGIAddonServerSentEvent = 'authenticate' | 'configure' | 'config-update' | 'search' | 'setup' | 'response' | 'library-search' | 'game-details' | 'request-dl';
 export { ConfigurationBuilder, Configuration, EventResponse, SearchResult };
 const defaultPort = 7654;
 import pjson from '../package.json';
-export const version = pjson.version;
+export const VERSION = pjson.version;
 
 export interface ClientSentEventTypes {
   response: any;
-  authenticate: any;
+  authenticate: {
+    name: string;
+    id: string;
+    description: string;
+    version: string;
+    author: string;
+  };
   configure: ConfigurationFile;
   'defer-update': {
     logs: string[],
@@ -24,6 +31,16 @@ export interface ClientSentEventTypes {
   };
   notification: Notification;
   'input-asked': ConfigurationBuilder;
+  'steam-search': {
+    query: string;
+    strict: boolean;
+  };
+  'task-update': {
+    id: string;
+    progress: number;
+    logs: string[];
+    finished: boolean;
+  };
 }
 
 export type BasicLibraryInfo = {
@@ -183,8 +200,85 @@ export default class OGIAddon {
   public notify(notification: Notification) {
     this.addonWSListener.send('notification', [notification]);
   }
+
+  /**
+   * Search for items in the OGI Steam-Synced Library. Query can either be a Steam AppID or a Steam Game Name.
+   * @param query {string}
+   * @param event {EventResponse<BasicLibraryInfo[]>}
+   */
+  public async steamSearch(query: string, strict: boolean = false) {
+    const id = this.addonWSListener.send('steam-search', { query, strict });
+    return await this.addonWSListener.waitForResponseFromServer<Omit<BasicLibraryInfo, 'capsuleImage'>[]>(id);
+  }
+
+  /**
+   * Notify the OGI Addon Server that you are performing a background task. This can be used to help users understand what is happening in the background.
+   * @param id {string}
+   * @param progress {number}
+   * @param logs {string[]}
+   */
+  public async task() {
+    const id = Math.random().toString(36).substring(7);
+    const progress = 0;
+    const logs: string[] = [];
+    const task = new CustomTask(this.addonWSListener, id, progress, logs);
+    this.addonWSListener.send('task-update', { id, progress, logs, finished: false });
+    return task;
+  }
 }
 
+class CustomTask {
+  public readonly id: string;
+  public progress: number;
+  public logs: string[];
+  public finished: boolean = false;
+  public ws: OGIAddonWSListener;
+  constructor(ws: OGIAddonWSListener, id: string, progress: number, logs: string[]) {
+    this.id = id;
+    this.progress = progress;
+    this.logs = logs;
+    this.ws = ws;
+  }
+  public log(log: string) {
+    this.logs.push(log);
+    this.update();
+  }
+  public finish() {
+    this.finished = true;
+    this.update();
+  }
+  public setProgress(progress: number) {
+    this.progress = progress;
+    this.update();
+  }
+  public update() {
+    this.ws.send('task-update', { id: this.id, progress: this.progress, logs: this.logs, finished: this.finished });
+  }
+}
+/**
+ * A search tool for the OGI Addon. This tool is used to search for items in the library. Powered by Fuse.js, bundled into OGI.
+ * @example
+ * ```typescript
+ * const searchTool = new SearchTool<LibraryInfo>([], ['name']);
+ * const results = searchTool.search('test', 10);
+ * ```
+ */
+export class SearchTool<T> {
+  private fuse: Fuse<T>;
+  constructor(items: T[], keys: string[]) {
+    this.fuse = new Fuse(items, {
+      keys,
+      threshold: 0.3,
+      includeScore: true
+    });
+  }
+  public search(query: string, limit: number = 10): T[] {
+    return this.fuse.search(query).slice(0, limit).map(result => result.item);
+  }
+  public addItems(items: T[]) {
+    items.map(item => this.fuse.add(item));
+  }
+}
 /**
  * Library Info is the metadata for a library entry after setting up a game.
  */
@@ -220,28 +314,21 @@ class OGIAddonWSListener {
     this.socket = new ws('ws://localhost:' + defaultPort);
     this.socket.on('open', () => {
       console.log('Connected to OGI Addon Server');
-      console.log('OGI Addon Server Version:', version);
+      console.log('OGI Addon Server Version:', VERSION);
 
       // Authenticate with OGI Addon Server
-      this.socket.send(JSON.stringify({
-        event: 'authenticate',
-        args: {
-          ...this.addon.addonInfo,
-          secret: process.argv[process.argv.length - 1].split('=')[1],
-          ogiVersion: version
-        }
-      }));
+      this.send('authenticate', {
+        ...this.addon.addonInfo,
+        secret: process.argv[process.argv.length - 1].split('=')[1],
+        ogiVersion: VERSION
+      });
 
       this.eventEmitter.emit('connect');
 
       // send a configuration request
       let configBuilder = new ConfigurationBuilder();
       this.eventEmitter.emit('configure', configBuilder);
-
-      this.socket.send(JSON.stringify({
-        event: 'configure',
-        args: configBuilder.build(false)
-      }));
+      this.send('configure', configBuilder.build(false));
       this.addon.config = new Configuration(configBuilder.build(true));
     });
 
@@ -415,11 +502,15 @@ class OGIAddonWSListener {
     });
   }
 
-  public send(event: OGIAddonClientSentEvent, args: Parameters<ClientSentEventTypes[OGIAddonClientSentEvent]>) {
+  public send(event: OGIAddonClientSentEvent, args: ClientSentEventTypes[OGIAddonClientSentEvent]): string {
+    // generate a random id
+    const id = Math.random().toString(36).substring(7);
     this.socket.send(JSON.stringify({
       event,
-      args
+      args,
+      id
     }));
+    return id;
   }
 
   public close() {

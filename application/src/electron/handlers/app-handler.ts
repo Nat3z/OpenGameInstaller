@@ -26,8 +26,14 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
     return process.platform;
   });
   ipcMain.handle('app:search-id', async (_, query) => {
+    if (!steamAppSearcher) {
+      return [];
+    }
     const results = steamAppSearcher.search(query);
-    return results;
+    // max it to the first 10 results
+    let items = results.slice(0, 10).map(result => result.item);
+    console.log(items);
+    return items;
   });
   ipcMain.handle('app:screen-input', async (_, data) => {
     currentScreens.set(data.id, data.data)

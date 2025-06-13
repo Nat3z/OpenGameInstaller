@@ -1,6 +1,6 @@
 import type { OGIAddonConfiguration, SearchResult } from "ogi-addon";
 import type { ConfigurationFile } from "ogi-addon/config";
-import { createNotification, currentDownloads, notifications } from "./store";
+import { createNotification, currentDownloads, notifications, failedSetups, deferredTasks, type FailedSetup, type DeferredTask } from "./store";
 function getSecret() {
   const urlParams = new URLSearchParams(window.location.search);
   const addonSecret = urlParams.get('secret');
@@ -112,7 +112,8 @@ export async function safeFetch(url: string, options: ConsumableRequest = { cons
       }
     }).then(async (response) => {
       if (!response.ok) {
-        throw new Error(response.statusText);
+				reject(response.statusText);
+				return;
       }
       const clonedCheck = response.clone();
       // if the task is deferred, we should poll the task until it's done.
@@ -570,3 +571,224 @@ export type GameData = {
 		date: string;
 	};
 };
+
+// Failed setup management functions
+export async function loadFailedSetups() {
+  try {
+    if (!window.electronAPI.fs.exists('./failed-setups')) {
+      window.electronAPI.fs.mkdir('./failed-setups');
+      return;
+    }
+    
+    const files = await window.electronAPI.fs.getFilesInDir('./failed-setups');
+    const loadedSetups: FailedSetup[] = [];
+    
+    files.forEach((file: string) => {
+      if (file.endsWith('.json')) {
+        try {
+          const content = window.electronAPI.fs.read(`./failed-setups/${file}`);
+          const setupData = JSON.parse(content);
+          loadedSetups.push(setupData);
+        } catch (error) {
+          console.error('Error loading failed setup file:', file, error);
+        }
+      }
+    });
+    
+    failedSetups.set(loadedSetups);
+  } catch (error) {
+    console.error('Error loading failed setups:', error);
+  }
+}
+
+export function removeFailedSetup(setupId: string) {
+  try {
+    const filePath = `./failed-setups/${setupId}.json`;
+    if (window.electronAPI.fs.exists(filePath)) {
+      window.electronAPI.fs.delete(filePath);
+    }
+    
+    failedSetups.update((setups) => setups.filter(setup => setup.id !== setupId));
+  } catch (error) {
+    console.error('Error removing failed setup:', error);
+  }
+}
+
+export async function retryFailedSetup(failedSetup: FailedSetup) {
+  try {
+    console.log('Retrying setup for:', failedSetup.downloadInfo.name);
+    
+    const setupData = failedSetup.setupData;
+    const addonSource = failedSetup.downloadInfo.addonSource;
+    
+    // Create a temporary download entry to show progress
+    const tempId = Math.random().toString(36).substring(7);
+    currentDownloads.update((downloads) => {
+      return [...downloads, {
+        ...failedSetup.downloadInfo,
+        id: tempId,
+        status: 'completed' as const
+      }];
+    });
+    
+    // Attempt the setup again
+    safeFetch(`http://localhost:7654/addons/${addonSource}/setup-app`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(setupData),
+      onLogs: (log) => {
+        document.dispatchEvent(new CustomEvent('setup:log', {
+          detail: {
+            id: tempId,
+            log
+          }
+        }));
+      },
+      onProgress: (progress) => {
+        document.dispatchEvent(new CustomEvent('setup:progress', {
+          detail: {
+            id: tempId,
+            progress
+          }
+        }));
+      },
+      consume: "json"
+    }).then((result) => {
+      window.electronAPI.app.insertApp(result);
+      removeFailedSetup(failedSetup.id);
+			// Update the temporary download entry to show completion
+			currentDownloads.update((downloads) => {
+				return downloads.map((download) => {
+					if (download.id === tempId) {
+						return {
+							...download,
+							status: 'setup-complete' as const
+						};
+					}
+					return download;
+				});
+			});
+			createNotification({
+				id: Math.random().toString(36).substring(7),
+				type: 'success',
+				message: `Successfully set up ${failedSetup.downloadInfo.name}`
+			});
+    }).catch((error) => {
+      console.error('Error retrying setup:', error);
+			currentDownloads.update((downloads) => {
+				return downloads.filter((download) => download.id !== tempId);
+			});
+			createNotification({
+				id: Math.random().toString(36).substring(7),
+				type: 'error',
+				message: `Failed to retry setup for ${failedSetup.downloadInfo.name}`
+			});
+    });
+    
+    
+    
+  } catch (error) {
+    console.error('Error retrying setup:', error);
+    
+    // Update retry count and save back to file
+    const updatedSetup = {
+      ...failedSetup,
+      retryCount: failedSetup.retryCount + 1,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    };
+    
+    window.electronAPI.fs.write(`./failed-setups/${failedSetup.id}.json`, JSON.stringify(updatedSetup, null, 2));
+    
+    failedSetups.update((setups) => 
+      setups.map(setup => setup.id === failedSetup.id ? updatedSetup : setup)
+    );
+    
+    createNotification({
+      id: Math.random().toString(36).substring(7),
+      type: 'error',
+      message: `Failed to retry setup for ${failedSetup.downloadInfo.name}`
+    });
+  }
+}
+
+// Task management functions
+export async function loadDeferredTasks() {
+  try {
+    const response = await fetch('http://localhost:7654/defer', {
+      headers: {
+        'Authorization': getSecret()!!,
+        'Cache-Control': 'no-store'
+      }
+    });
+    
+    if (response.ok) {
+      const tasks = await response.json();
+      deferredTasks.set(tasks.map((task: any) => ({
+        id: task.id,
+        name: `Task ${task.id}`,
+        description: task.failureMessage || 'Background task',
+        addonOwner: task.addonOwner,
+        status: task.finished ? (task.failureMessage ? 'error' : 'completed') : 'running',
+        progress: task.progress || 0,
+        logs: task.logs || [],
+        timestamp: Date.now(),
+        duration: undefined,
+        error: task.failureMessage,
+        type: 'other'
+      })));
+    }
+  } catch (error) {
+    console.error('Error loading deferred tasks:', error);
+  }
+}
+
+export function startTaskPolling() {
+  const pollInterval = setInterval(async () => {
+    await loadDeferredTasks();
+  }, 1000);
+  
+  return pollInterval;
+}
+
+export function stopTaskPolling(intervalId: ReturnType<typeof setInterval>) {
+  clearInterval(intervalId);
+}
+
+export async function cancelTask(taskId: string) {
+  try {
+    const response = await fetch(`http://localhost:7654/defer/${taskId}/cancel`, {
+      method: 'POST',
+      headers: {
+        'Authorization': getSecret()!!
+      }
+    });
+    
+    if (response.ok) {
+      deferredTasks.update((tasks: DeferredTask[]) => 
+        tasks.map((task: DeferredTask) => 
+          task.id === taskId 
+            ? { ...task, status: 'cancelled' as const }
+            : task
+        )
+      );
+    }
+  } catch (error) {
+    console.error('Error cancelling task:', error);
+  }
+}
+
+export function clearCompletedTasks() {
+  deferredTasks.update((tasks: DeferredTask[]) => 
+    tasks.filter((task: DeferredTask) => 
+      task.status !== 'completed' && 
+      task.status !== 'error' && 
+      task.status !== 'cancelled'
+    )
+  );
+}
+
+export function clearAllTasks() {
+  deferredTasks.update(() => []);
+}

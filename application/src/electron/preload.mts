@@ -9,6 +9,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     write: (path: string, data: string) => ipcRenderer.sendSync('fs:write', { path, data }),
     mkdir: (path: string) => ipcRenderer.sendSync('fs:mkdir', path),
     exists: (path: string) => ipcRenderer.sendSync('fs:exists', path),
+    delete: (path: string) => ipcRenderer.sendSync('fs:delete', path),
     showFileLoc: (path: string) => ipcRenderer.sendSync('fs:show-file-loc', path),
     unrar: (data: { outputDir: string, rarFilePath: string }) => ipcRenderer.invoke('fs:extract-rar', data),
     getFilesInDir: (path: string) => ipcRenderer.invoke('fs:get-files-in-dir', path),

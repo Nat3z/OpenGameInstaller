@@ -6,6 +6,25 @@ import express from "express";
 const app = express.Router();
 export const DefferedTasks = new Map<string, DeferrableTask<any>>();
 
+// Get all deferred tasks
+app.get('/', (req, res) => {
+  if (req.headers.authorization !== applicationAddonSecret) {
+    res.status(401).send('Unauthorized');
+    return;
+  }
+
+  const tasks = Array.from(DefferedTasks.values()).map(task => ({
+    id: task.id,
+    addonOwner: task.addonOwner,
+    finished: task.finished,
+    progress: task.progress,
+    logs: task.logs,
+    failureMessage: task.failureMessage
+  }));
+
+  res.json(tasks);
+});
+
 app.get('/:taskID', (req, res) => {
   if (req.headers.authorization !== applicationAddonSecret) {
     res.status(401).send('Unauthorized');

@@ -21,6 +21,7 @@ wss.on('connection', async (ws) => {
     return;
 
   ws.on('close', () => {
+    console.log('Client disconnected', connection.addonInfo.id);
     clients.delete(connection.addonInfo.id);
   });
 

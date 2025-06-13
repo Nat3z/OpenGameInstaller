@@ -2,15 +2,14 @@ import { join } from 'path';
 import { server, port, clients } from "./server/addon-server.js"
 import { applicationAddonSecret } from './server/constants.js';
 import { app, BrowserWindow, globalShortcut, ipcMain, shell } from 'electron';
-import fs from 'fs';
+import fs, { existsSync, readFileSync } from 'fs';
 import { exec } from 'child_process';
 import { processes, setupAddon, startAddon } from './addon-init-configure.js';
-import { isSecurityCheckEnabled } from './server/AddonConnection.js';
 import os from 'os';
 import axios from 'axios';
 import { stopClient } from './webtorrent-connect.js';
 import path from 'path';
-import * as JsSearch from 'js-search'
+import Fuse from 'fuse.js'
 import { ConfigurationFile } from 'ogi-addon/build/config/ConfigurationBuilder.js';
 import { LibraryInfo } from 'ogi-addon';
 import { checkIfInstallerUpdateAvailable } from './updater.js';
@@ -38,22 +37,39 @@ const OGI_DIRECTORY = process.env.OGI_DIRECTORY;
 if (OGI_DIRECTORY)
     __dirname = OGI_DIRECTORY;
 
+export let isSecurityCheckEnabled = true;
+if (existsSync(join(__dirname, 'config/option/developer.json'))) {
+  const developerConfig = JSON.parse(readFileSync(join(__dirname, 'config/option/developer.json'), 'utf-8'));
+  isSecurityCheckEnabled = developerConfig.disableSecretCheck !== true;
+  if (!isSecurityCheckEnabled) {
+    for (let i = 0; i < 10; i++) {
+      console.warn('WARNING Security check is disabled. THIS IS A MAJOR SECURITY RISK. PLEASE ENABLE DURING NORMAL USE.');
+    }
+  }
+}
 // check if NixOS using command -v nixos-rebuild
 export const IS_NIXOS = await (() => {
     return new Promise<boolean>((resolve) => {
-        exec('command -v nixos-rebuild', (error, stderr) => {
+        try {
+            exec('command -v nixos-rebuild', (error, stderr) => {
             if (error) {
                 console.error(`exec error: ${error}`);
+                resolve(false);
                 return;
             }
             if (stderr.includes("nixos-rebuild")) {
                 resolve(true);
                 return;
             }
+                resolve(false);
+            });
+        } catch (error) {
+            console.error(`exec error: ${error}`);
             resolve(false);
-        });
+        }
     });
 })();
+console.log("continuing launch...")
 export let STEAMTINKERLAUNCH_PATH = join(__dirname, 'bin/steamtinkerlaunch/steamtinkerlaunch');
 async function fetch_STLPath() {
     return new Promise<void>((resolve) => {
@@ -108,14 +124,13 @@ if (fs.existsSync(join(app.getPath('temp'), 'ogi-update-backup')) && process.pla
     fs.rmdirSync(directory, { recursive: true });
     console.log('[backup] Backup restored successfully!');
 }
-let steamApps: { appid: string, name: string }[] = [];
-export let steamAppSearcher = new JsSearch.Search('name');
-steamAppSearcher.indexStrategy = new JsSearch.ExactWordIndexStrategy();
-steamAppSearcher.addIndex('name');
+let steamApps: { appid: number, name: string }[] = [];
 
-async function getSteamApps(): Promise<{ appid: string, name: string }[]> {
+export let steamAppSearcher: Fuse<{ appid: number, name: string }> | undefined;
+
+async function getSteamApps(): Promise<{ appid: number, name: string }[]> {
     if (fs.existsSync(join(__dirname, 'steam-apps.json'))) {
-        const steamApps: { timeSinceUpdate: number, data: { appid: string, name: string }[] } = JSON.parse(fs.readFileSync(join(__dirname, 'steam-apps.json'), 'utf-8'));
+        const steamApps: { timeSinceUpdate: number, data: { appid: number, name: string }[] } = JSON.parse(fs.readFileSync(join(__dirname, 'steam-apps.json'), 'utf-8'));
         if (Date.now() - steamApps.timeSinceUpdate < 86400000) { //24 hours
             return steamApps.data;
         }
@@ -128,7 +143,11 @@ async function getSteamApps(): Promise<{ appid: string, name: string }[]> {
 // lazy tasks
 new Promise<void>(async (resolve) => {
     steamApps = await getSteamApps();
-    steamAppSearcher.addDocuments(steamApps);
+    steamAppSearcher = new Fuse(steamApps, {
+        keys: ['name', 'appid'],
+        threshold: 0.3,
+        includeScore: true
+    });
     resolve();
 });
 interface Notification {
@@ -297,7 +316,7 @@ function createWindow() {
                     });
                 }
             }
-
+            restartAddonServer();
             return;
         });
 

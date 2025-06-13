@@ -15,6 +15,7 @@ interface Window {
       write: (path: string, data: string) => void,
       mkdir: (path: string) => void,
       exists: (path: string) => boolean,
+      delete: (path: string) => void,
       showFileLoc: (path: string) => void,
       unrar: (data: { outputDir: string, rarFilePath: string }) => Promise<string>,
       getFilesInDir: (path: string) => Promise<string[]>,

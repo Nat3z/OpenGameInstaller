@@ -227,7 +227,7 @@ export default class OGIAddon {
   }
 }
 
-class CustomTask {
+export class CustomTask {
   public readonly id: string;
   public progress: number;
   public logs: string[];

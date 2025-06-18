@@ -122,6 +122,39 @@
               })
             );
           },
+          onFailed: (error) => {
+            console.error("Error setting up app: ", error);
+            createNotification({
+              id: Math.random().toString(36).substring(2, 9),
+              type: "error",
+              message: "The addon had crashed while setting up.",
+            });
+            currentDownloads.update((downloads) => {
+              return downloads.map((download) => {
+                if (download.id === downloadedItem?.id) {
+                  return {
+                    ...download,
+                    status: "errored",
+                    error: error,
+                  };
+                }
+                return download;
+              });
+            });
+            saveFailedSetup({
+              downloadInfo: downloadedItem,
+              setupData: {
+                path: outputDir,
+                type: downloadedItem?.downloadType,
+                name: downloadedItem?.name,
+                usedRealDebrid: downloadedItem?.usedRealDebrid,
+                appID: downloadedItem?.appID,
+                storefront: downloadedItem?.storefront,
+              },
+              error: error,
+              timestamp: Date.now(),
+            });
+          },
           onProgress: (progress) => {
             document.dispatchEvent(
               new CustomEvent("setup:progress", {

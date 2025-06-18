@@ -6,6 +6,14 @@ import express from "express";
 const app = express.Router();
 export const DefferedTasks = new Map<string, DeferrableTask<any>>();
 
+export type ResponseDeferredTask = {
+  id: string;
+  addonOwner: string;
+  finished: boolean;
+  progress: number;
+  logs: string[];
+  failed: string | undefined;
+}
 // Get all deferred tasks
 app.get('/', (req, res) => {
   if (req.headers.authorization !== applicationAddonSecret) {
@@ -13,13 +21,15 @@ app.get('/', (req, res) => {
     return;
   }
 
-  const tasks = Array.from(DefferedTasks.values()).map(task => ({
+  const tasks: ResponseDeferredTask[] = Array.from(DefferedTasks.values()).map(task => ({
+    name: `Task ${task.id}`,
+    description: 'Background task',
     id: task.id,
     addonOwner: task.addonOwner,
     finished: task.finished,
     progress: task.progress,
     logs: task.logs,
-    failureMessage: task.failureMessage
+    failed: task.failed
   }));
 
   res.json(tasks);
@@ -45,13 +55,18 @@ app.get('/:taskID', (req, res) => {
     DefferedTasks.delete(req.params.taskID);
     return;
   }
+  if (task.failed) {
+    res.status(500).send({ error: task.failed });
+    DefferedTasks.delete(req.params.taskID);
+    return;
+  }
   if (task.finished) {
     res.send(task.data);
     DefferedTasks.delete(req.params.taskID);
   }
 
   else {
-    res.status(202).send({ progress: task.progress, logs: task.logs });
+    res.status(202).send({ progress: task.progress, logs: task.logs, failed: task.failed });
   }
 });
 

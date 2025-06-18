@@ -6,6 +6,7 @@ export default class EventResponse<T> {
   resolved: boolean = false;
   progress: number = 0;
   logs: string[] = [];
+  failed: string | undefined = undefined;
   onInputAsked?: (screen: ConfigurationBuilder, name: string, description: string) => Promise<{ [key: string]: boolean | string | number }>;
 
   constructor(onInputAsked?: (screen: ConfigurationBuilder, name: string, description: string) => Promise<{ [key: string]: boolean | string | number }>) {
@@ -13,8 +14,12 @@ export default class EventResponse<T> {
   }
   
 
-  public defer() {
+  public defer(promise?: () => Promise<void>) {
     this.deffered = true;
+    // include this to make it easier to use the defer method with async functions
+    if (promise) {
+      promise();
+    }
   }
 
   /**
@@ -31,6 +36,11 @@ export default class EventResponse<T> {
    */
   public complete() {
     this.resolved = true;
+  }
+
+  public fail(message: string) {
+    this.resolved = true;
+    this.failed = message;
   }
 
   /**

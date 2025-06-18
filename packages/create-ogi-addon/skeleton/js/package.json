@@ -3,5 +3,6 @@
   "module": "main.js",
   "type": "module",
   "dependencies": {
+    "ogi-addon": "latest"
   }
 }

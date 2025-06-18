@@ -40,6 +40,7 @@ export interface ClientSentEventTypes {
     progress: number;
     logs: string[];
     finished: boolean;
+    failed: string | undefined;
   };
 }
 
@@ -222,7 +223,7 @@ export default class OGIAddon {
     const progress = 0;
     const logs: string[] = [];
     const task = new CustomTask(this.addonWSListener, id, progress, logs);
-    this.addonWSListener.send('task-update', { id, progress, logs, finished: false });
+    this.addonWSListener.send('task-update', { id, progress, logs, finished: false, failed: undefined });
     return task;
   }
 }
@@ -233,6 +234,7 @@ export class CustomTask {
   public logs: string[];
   public finished: boolean = false;
   public ws: OGIAddonWSListener;
+  public failed: string | undefined = undefined;
   constructor(ws: OGIAddonWSListener, id: string, progress: number, logs: string[]) {
     this.id = id;
     this.progress = progress;
@@ -247,12 +249,16 @@ export class CustomTask {
     this.finished = true;
     this.update();
   }
+  public fail(message: string) {
+    this.failed = message;
+    this.update();
+  }
   public setProgress(progress: number) {
     this.progress = progress;
     this.update();
   }
   public update() {
-    this.ws.send('task-update', { id: this.id, progress: this.progress, logs: this.logs, finished: this.finished });
+    this.ws.send('task-update', { id: this.id, progress: this.progress, logs: this.logs, finished: this.finished, failed: this.failed });
   }
 }
 /**
@@ -401,8 +407,9 @@ class OGIAddonWSListener {
             this.send('defer-update', {
               logs: setupEvent.logs,
               deferID: message.args.deferID,
-              progress: setupEvent.progress
-            } as any);
+              progress: setupEvent.progress,
+              failed: setupEvent.failed
+            } as ClientSentEventTypes['defer-update']);
           }, 100);
           const setupResult = await this.waitForEventToRespond(setupEvent);
           this.respondToMessage(message.id!!, setupResult.data);
@@ -435,7 +442,11 @@ class OGIAddonWSListener {
           }
           this.eventEmitter.emit('request-dl', message.args.appID, message.args.info, requestDLEvent);
           const requestDLResult = await this.waitForEventToRespond(requestDLEvent);
-          if (requestDLEvent.data === null || requestDLEvent.data?.downloadType === 'request') {
+          if (requestDLEvent.failed) {
+            this.respondToMessage(message.id!!, { statusError: requestDLEvent.failed });
+            break;
+          }
+          if (requestDLEvent.data === undefined || requestDLEvent.data?.downloadType === 'request') {
             throw new Error('Request DL event did not return a valid result. Please ensure that the event does not resolve with another `request` download type.');
           }
           this.respondToMessage(message.id!!, requestDLResult.data);

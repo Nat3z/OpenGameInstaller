@@ -3,7 +3,7 @@
   "module": "./build/main.js",
   "type": "module",
   "main": "./build/main.cjs",
-  "version": "1.1.7",
+  "version": "1.2.0",
   "exports": {
     ".": {
       "import": {
@@ -40,7 +40,8 @@
   "scripts": {
     "auto-build": "tsc -w",
     "build": "tsup --config tsup.config.js",
-    "release": "bun run build && npm publish"
+    "release": "bun run build && npm publish",
+    "release-beta": "bun run build && npm publish --tag future"
   },
   "devDependencies": {
     "@types/node": "^20.14.12",

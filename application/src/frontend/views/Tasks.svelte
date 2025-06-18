@@ -5,7 +5,6 @@
     loadDeferredTasks,
     startTaskPolling,
     stopTaskPolling,
-    cancelTask,
     clearCompletedTasks,
     clearAllTasks,
   } from "../utils";
@@ -101,10 +100,6 @@
     }
   });
 
-  async function handleCancelTask(taskId: string) {
-    await cancelTask(taskId);
-  }
-
   function handleClearCompleted() {
     clearCompletedTasks();
   }
@@ -142,6 +137,21 @@
     if (progressBar) {
       progressBar.value = progress;
     }
+  });
+
+  document.addEventListener("task:failed", (event: Event) => {
+    if (!isCustomEvent(event)) return;
+    const taskID = event.detail.id;
+    const error = event.detail.error;
+
+    // Update the task status in the store
+    deferredTasks.update((tasks) =>
+      tasks.map((task) =>
+        task.id === taskID
+          ? { ...task, status: "error" as const, error: error }
+          : task
+      )
+    );
   });
 </script>
 
@@ -299,10 +309,10 @@
               </svg>
               Failed
             </div>
-            {#if task.error}
+            {#if task.error || task.failed}
               <div class="error-message">
                 <span class="error-label">Error:</span>
-                {task.error}
+                {task.error || task.failed || "Task failed"}
               </div>
             {/if}
           {:else if task.status === "cancelled"}
@@ -331,30 +341,6 @@
                   {/each}
                 </code>
               </div>
-            </div>
-          {/if}
-
-          {#if task.status === "running" || task.status === "pending"}
-            <div class="task-actions">
-              <button
-                class="btn btn-danger btn-sm"
-                onclick={() => handleCancelTask(task.id)}
-              >
-                <svg
-                  class="w-4 h-4 mr-2"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    stroke-width="2"
-                    d="M6 18L18 6M6 6l12 12"
-                  ></path>
-                </svg>
-                Cancel Task
-              </button>
             </div>
           {/if}
         </div>

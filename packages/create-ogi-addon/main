@@ -1,9 +1,10 @@
+#!/usr/bin/env node 
+
 // @ts-check
 import { input, select } from '@inquirer/prompts';
 import { resolve } from 'path';
 import fs from 'fs/promises';
-import { existsSync } from 'fs';
-import { exec, execSync } from 'child_process';
+import { execSync } from 'child_process';
 const addonName = await input({ message: 'What is the name of the addon?', required: true, default: '' });
 const addonID = await input({ message: 'What is the ID of the addon?', required: true, default: addonName.replace(/\s/g, '-').toLowerCase() });
 const author = await input({ message: 'Who is the author?', required: true });

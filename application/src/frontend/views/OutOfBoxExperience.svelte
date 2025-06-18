@@ -2,6 +2,7 @@
   import { preventDefault } from "svelte/legacy";
 
   import { onMount } from "svelte";
+  // @ts-ignore
   import WineIcon from "../Icons/WineIcon.svelte";
 
   let stage = $state(0);
@@ -10,11 +11,21 @@
     $state("");
   let fulfilledRequirements = $state(false);
   let addons = "";
+  let selectedAddons = $state<string[]>([]);
 
   interface Props {
     finishedSetup: () => void;
   }
 
+  type CommunityAddon = {
+    name: string;
+    author: string;
+    source: string;
+    img: string;
+    description: string;
+  };
+
+  let communityList: Promise<CommunityAddon[]> | null = null;
   let { finishedSetup }: Props = $props();
 
   async function downloadTools(event: MouseEvent) {
@@ -133,10 +144,14 @@
   }
   let completedSetup = false;
   async function finishSetup() {
-    const addonsSplitted = addons.split("\n").filter((addon) => addon !== "");
+    const customAddons = addons
+      .split("\n")
+      .filter((addon) => addon.trim() !== "");
+    const allAddons = [...new Set([...selectedAddons, ...customAddons])];
+
     let generalConfig = {
       fileDownloadLocation: downloadLocation,
-      addons: addonsSplitted,
+      addons: allAddons,
       torrentClient: selectedTorrenter,
     };
     window.electronAPI.fs.mkdir("./config/option/");
@@ -148,7 +163,7 @@
       "./config/option/installed.json",
       JSON.stringify({ installed: true })
     );
-    await window.electronAPI.installAddons(addonsSplitted);
+    await window.electronAPI.installAddons(allAddons);
     await window.electronAPI.restartAddonServer();
     completedSetup = true;
   }
@@ -171,6 +186,15 @@
     }, 200);
   }
 
+  function toggleAddon(addon: CommunityAddon) {
+    const index = selectedAddons.indexOf(addon.source);
+    if (index > -1) {
+      selectedAddons.splice(index, 1);
+    } else {
+      selectedAddons.push(addon.source);
+    }
+  }
+
   onMount(() => {
     if (window.electronAPI.fs.exists("./config/option/installed.json")) {
       const installed = JSON.parse(
@@ -187,6 +211,9 @@
         });
       }
     }
+    communityList = fetch("https://ogi.nat3z.com/api/community.json").then(
+      (response) => response.json()
+    );
   });
 </script>
 
@@ -473,13 +500,53 @@
         Kickstart OpenGameInstaller and download some addons!
       </h2>
       <h2 class="font-open-sans text-sm mb-4 -mt-2 w-8/12 text-center">
+        Select from our community addons, or add your own below.
+      </h2>
+      <div
+        class="w-8/12 h-48 overflow-y-auto border rounded-lg p-2 flex flex-col gap-2"
+      >
+        {#if communityList}
+          {#await communityList}
+            <p>Loading community addons...</p>
+          {:then list}
+            {#each list as addon}
+              <div
+                class="flex flex-row gap-4 items-center p-2 rounded-md hover:bg-slate-100"
+              >
+                <img
+                  src={addon.img}
+                  alt={addon.name}
+                  class="w-10 h-10 rounded-lg"
+                />
+                <div class="flex flex-col">
+                  <h3 class="font-bold">{addon.name}</h3>
+                  <p class="text-xs">{addon.description}</p>
+                </div>
+                <button
+                  onclick={() => toggleAddon(addon)}
+                  class="ml-auto px-4 py-2 rounded-md {selectedAddons.includes(
+                    addon.source
+                  )
+                    ? 'bg-green-500 hover:bg-green-600'
+                    : 'bg-accent hover:bg-accent-dark'} text-white"
+                >
+                  {selectedAddons.includes(addon.source)
+                    ? "Selected"
+                    : "Select"}
+                </button>
+              </div>
+            {/each}
+          {/await}
+        {/if}
+      </div>
+      <h2 class="font-open-sans text-sm mt-4 w-8/12 text-center">
         Insert the Github/Git Repo link of your addons to download them. Split
         each addon by new line.
       </h2>
       <textarea
         onchange={updateAddons}
-        class="w-8/12 h-48 text-xs p-2 pl-2 bg-slate-100 rounded-lg resize-none"
-        placeholder="Addons to download"
+        class="w-8/12 h-24 text-xs p-2 pl-2 bg-slate-100 rounded-lg resize-none"
+        placeholder="https://github.com/user/my-custom-addon"
         value=""
       ></textarea>
       <button

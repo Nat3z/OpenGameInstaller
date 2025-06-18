@@ -1,6 +1,7 @@
 import type { OGIAddonConfiguration, SearchResult } from "ogi-addon";
 import type { ConfigurationFile } from "ogi-addon/config";
 import { createNotification, currentDownloads, notifications, failedSetups, deferredTasks, type FailedSetup, type DeferredTask } from "./store";
+import type { ResponseDeferredTask } from "../electron/server/api/defer";
 function getSecret() {
   const urlParams = new URLSearchParams(window.location.search);
   const addonSecret = urlParams.get('secret');
@@ -11,6 +12,7 @@ interface ConsumableRequest extends RequestInit {
   consume?: 'json' | 'text';
   onProgress?: (progress: number) => void;
   onLogs?: (logs: string[]) => void;
+  onFailed?: (error: string) => void;
 }
 export interface ConfigTemplateAndInfo extends OGIAddonConfiguration {
   configTemplate: ConfigurationFile
@@ -102,7 +104,7 @@ export async function safeFetch(url: string, options: ConsumableRequest = { cons
     delete fetchOptions.consume;
     delete fetchOptions.onProgress;
     delete fetchOptions.onLogs;
-
+    delete fetchOptions.onFailed;
     fetch(url, {
       ...fetchOptions,
       headers: {
@@ -112,7 +114,6 @@ export async function safeFetch(url: string, options: ConsumableRequest = { cons
       }
     }).then(async (response) => {
       if (!response.ok) {
-				reject(response.statusText);
 				return;
       }
       const clonedCheck = response.clone();
@@ -133,6 +134,11 @@ export async function safeFetch(url: string, options: ConsumableRequest = { cons
 						reject('Addon is no longer connected');
 						clearInterval(deferInterval);
 					}
+					if (taskResponse.status === 500) {
+						if (options.onFailed) options.onFailed((await taskResponse.json()).error);
+						clearInterval(deferInterval);
+						reject('Task failed');
+					}
           if (taskResponse.status === 200) {
             clearInterval(deferInterval);
             if (!options || !options.consume || options.consume === 'json') return resolve(await taskResponse.json());
@@ -140,9 +146,10 @@ export async function safeFetch(url: string, options: ConsumableRequest = { cons
             else throw new Error('Invalid consume type');
           }
           if (taskResponse.status === 202) {
-            const taskData = await taskResponse.json();
+            const taskData: { progress: number, logs: string[], failed: string | undefined } = await taskResponse.json();
             if (options.onProgress) options.onProgress(taskData.progress);
             if (options.onLogs) options.onLogs(taskData.logs);
+            if (options.onFailed && taskData.failed) options.onFailed(taskData.failed);
           }
         }, 100);
       }
@@ -158,7 +165,7 @@ export async function safeFetch(url: string, options: ConsumableRequest = { cons
 export type SearchResultWithAddon = SearchResult & {
   addonSource: string
 }
-export async function startDownload(result: SearchResultWithAddon, event: MouseEvent) {
+export async function startDownload(result: SearchResultWithAddon, appID: number, event: MouseEvent) {
 	if (event === null) return;
 	if (event.target === null) return;
 	const htmlButton = event.target as HTMLButtonElement;
@@ -185,6 +192,8 @@ export async function startDownload(result: SearchResultWithAddon, event: MouseE
 					downloadSpeed: 0,
 					progress: 0,
 					usedRealDebrid: false,
+					appID,
+					downloadSize: 0,
 					...result 
 				}];
 			});
@@ -193,13 +202,29 @@ export async function startDownload(result: SearchResultWithAddon, event: MouseE
 				headers: {
 					'Content-Type': 'application/json'
 				},
-				body: JSON.stringify({ appID: result.appID, info: result }),
-				consume: 'json'
+				body: JSON.stringify({ appID: appID, info: result }),
+				consume: 'json',
+				onFailed: (error) => {
+					createNotification({
+						id: Math.random().toString(36).substring(7),
+						type: 'error',
+						message: error
+					});
+					currentDownloads.update((downloads) => {
+						return downloads.map((d) => {
+							if (d.id === randomID) {
+								d.status = 'errored';
+								d.error = error;
+							}
+							return d;
+						});
+					});
+				}
 			});
 			currentDownloads.update((downloads) => {
 				return downloads.filter((d) => d.id !== randomID);
 			});
-			startDownload(response, event);
+			startDownload(response, appID, event);
 			break;
 		}
 		case 'real-debrid-magnet': {
@@ -231,6 +256,8 @@ export async function startDownload(result: SearchResultWithAddon, event: MouseE
 					downloadSpeed: 0,
 					usedRealDebrid: true,
 					progress: 0,
+					appID,
+					downloadSize: 0,
 					...result 
 				}];
 			});
@@ -315,6 +342,8 @@ export async function startDownload(result: SearchResultWithAddon, event: MouseE
 					downloadSpeed: 0,
 					usedRealDebrid: true,
 					progress: 0,
+					appID,
+					downloadSize: 0,
 					...result 
 				}];
 			});
@@ -383,22 +412,22 @@ export async function startDownload(result: SearchResultWithAddon, event: MouseE
 					});
 				return;
 			}
-			const downloadID = await window.electronAPI.torrent.downloadTorrent(result.downloadURL, getDownloadPath() + "/" + (result.filename || result.downloadURL.split(/\\|\//).pop()));
-			if (downloadID === null) {
+			window.electronAPI.torrent.downloadTorrent(result.downloadURL, getDownloadPath() + "/" + (result.filename || result.downloadURL.split(/\\|\//).pop())).then((id) => {
 				htmlButton.textContent = "Download";
 				htmlButton.disabled = false;
-				return;
-			}
-			currentDownloads.update((downloads) => {
-				return [...downloads, { 
-					id: downloadID, 
-					status: 'downloading', 
-					downloadPath: getDownloadPath() + "/" + result.filename + ".torrent", 
-					downloadSpeed: 0,
-					progress: 0,
-					usedRealDebrid: false,
-					...result 
-				}];
+				currentDownloads.update((downloads) => {
+					return [...downloads, { 
+						id, 
+						status: 'downloading', 
+						downloadPath: getDownloadPath() + "/" + result.filename + ".torrent", 
+						downloadSpeed: 0,
+						progress: 0,
+						usedRealDebrid: false,
+						appID,
+						downloadSize: 0,
+						...result 
+					}];
+				});
 			});
 			break;
 		}
@@ -413,22 +442,22 @@ export async function startDownload(result: SearchResultWithAddon, event: MouseE
 				return;
 			}
 
-			const downloadID = await window.electronAPI.torrent.downloadMagnet(result.downloadURL!!, getDownloadPath() + "/" + result.filename!!);
-			if (downloadID === null) {
+			window.electronAPI.torrent.downloadMagnet(result.downloadURL, getDownloadPath() + "/" + result.filename).then((id) => {
 				htmlButton.textContent = "Download";
 				htmlButton.disabled = false;
-				return;
-			}
-			currentDownloads.update((downloads) => {
-				return [...downloads, { 
-					id: downloadID, 
-					status: 'downloading', 
-					downloadPath: getDownloadPath() + "/" + result.filename + ".torrent", 
-					downloadSpeed: 0,
-					progress: 0,
-					usedRealDebrid: false,
-					...result 
-				}];
+				currentDownloads.update((downloads) => {
+					return [...downloads, { 
+						id, 
+						status: 'downloading', 
+						downloadPath: getDownloadPath() + "/" + result.filename + ".torrent", 
+						downloadSpeed: 0,
+						progress: 0,
+						usedRealDebrid: false,
+						appID,
+						downloadSize: 0,
+						...result 
+					}];
+				});
 			});
 			break;
 		}
@@ -450,22 +479,22 @@ export async function startDownload(result: SearchResultWithAddon, event: MouseE
 				});
 			}
 
-			const downloadID = await window.electronAPI.ddl.download(collectedFiles);
-			if (downloadID === null) {
+			window.electronAPI.ddl.download(result.files ? result.files.map((file) => { return { link: file.downloadURL, path: getDownloadPath() + "/" + file.name } }) : [{ link: result.downloadURL!, path: getDownloadPath() + "/" + result.name }]).then((id) => {
 				htmlButton.textContent = "Download";
 				htmlButton.disabled = false;
-				return;
-			}
-			currentDownloads.update((downloads) => {
-				return [...downloads, { 
-					id: downloadID, 
-					status: 'downloading',
-					downloadPath: (result.files ? getDownloadPath() + "/" : getDownloadPath() + "/" + result.filename), 
-					downloadSpeed: 0,
-					usedRealDebrid: false,
-					progress: 0,
-					...result 
-				}];
+				currentDownloads.update((downloads) => {
+					return [...downloads, { 
+						id, 
+						status: 'downloading', 
+						downloadPath: getDownloadPath() + "/" + result.name, 
+						downloadSpeed: 0,
+						progress: 0,
+						usedRealDebrid: false,
+						appID,
+						downloadSize: 0,
+						...result 
+					}];
+				});
 			});
 			break;
 		}
@@ -724,18 +753,19 @@ export async function loadDeferredTasks() {
     });
     
     if (response.ok) {
-      const tasks = await response.json();
-      deferredTasks.set(tasks.map((task: any) => ({
+      const tasks = await response.json() as ResponseDeferredTask[];
+      deferredTasks.set(tasks.map((task: ResponseDeferredTask) => ({
         id: task.id,
         name: `Task ${task.id}`,
-        description: task.failureMessage || 'Background task',
+        description: 'Background task',
         addonOwner: task.addonOwner,
-        status: task.finished ? (task.failureMessage ? 'error' : 'completed') : 'running',
+        status: task.finished ? (task.failed ? 'error' : 'completed') : 'running',
         progress: task.progress || 0,
+				failed: task.failed,
         logs: task.logs || [],
         timestamp: Date.now(),
         duration: undefined,
-        error: task.failureMessage,
+        error: task.failed || undefined,
         type: 'other'
       })));
     }

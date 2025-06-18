@@ -100,6 +100,10 @@ export class AddonConnection {
             }
             deferredTask.logs = data.args.logs;
             deferredTask.progress = data.args.progress;
+            if (data.args.failed) {
+              deferredTask.failed = data.args.failed;
+              deferredTask.finished = true;
+            }
             break;
           case 'input-asked':
             if (!this.addonInfo) {
@@ -188,7 +192,20 @@ export class AddonConnection {
             task.progress = taskUpdate.progress;
             task.logs = taskUpdate.logs;
             task.finished = taskUpdate.finished;
-            if (taskUpdate.finished) {
+            task.failed = taskUpdate.failed;
+
+            if (taskUpdate.failed) {
+              task.finished = true;
+              sendNotification({
+                type: 'error',
+                message: 'Task failed by ' + this.addonInfo.name,
+                id: data.args.id
+              });
+              // Don't delete the task immediately for failed tasks so users can see the error
+              break;
+            }
+
+            if (taskUpdate.finished && !taskUpdate.failed) {
               DefferedTasks.delete(data.args.id);
               sendNotification({
                 type: 'success',
@@ -221,6 +238,10 @@ export class AddonConnection {
           this.ws.once('message', (messageRaw) => {
             const messageFromClient: WebsocketMessageClient = JSON.parse("" + messageRaw.toString())
             if (messageFromClient.event === "response" && messageFromClient.id === message.id) {
+              if (messageFromClient.args.statusError) {
+                reject(messageFromClient.args.statusError);
+                return;
+              }
               resolve(messageFromClient);
             }
             else {

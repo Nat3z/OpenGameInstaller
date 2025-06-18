@@ -2,14 +2,17 @@ import type { SearchResult } from 'ogi-addon'
 import { writable, type Writable } from 'svelte/store'
 
 export type DownloadStatusAndInfo = SearchResult & {
+  appID: number;
   id: string;
-  status: 'downloading' | 'paused' | 'completed' | 'error' | 'setup-complete' | 'rd-downloading' | 'seeding' | 'requesting';
+  status: 'downloading' | 'paused' | 'completed' | 'error' | 'setup-complete' | 'rd-downloading' | 'seeding' | 'requesting' | 'errored';
   progress: number;
+  error?: string;
   usedRealDebrid: boolean;
   downloadPath: string;
   downloadSpeed: number;
   downloadSize: number;
   addonSource: string;
+  coverURL?: string;
   ratio?: number;
   part?: number;
   totalParts?: number;
@@ -26,6 +29,7 @@ export type DeferredTask = {
   timestamp: number;
   duration?: number;
   error?: string;
+  failed?: string;
   type: 'setup' | 'download' | 'configure' | 'addon-install' | 'addon-update' | 'cleanup' | 'other';
 }
 

@@ -163,16 +163,16 @@
                 <p>{result.addonSource}</p>
                 <button
                   class="px-4 py-2 bg-blue-300 rounded disabled:bg-yellow-300"
-                  onclick={(event) => startDownload(result, event)}
+                  onclick={(event) => startDownload(result, appID, event)}
                   >Download</button
                 >
                 <nav
                   class="flex flex-row justify-center items-center gap-2 text-xs"
                 >
-                  {#if result.downloadType.includes("magnet")}
+                  {#if result.downloadType === "magnet"}
                     <img class="w-4 h-4" src="./magnet-icon.gif" alt="Magnet" />
                     <p>Magnet Link</p>
-                  {:else if result.downloadType.includes("torrent")}
+                  {:else if result.downloadType === "torrent"}
                     <img class="w-4 h-4" src="./torrent.png" alt="Torrent" />
                     <p>Torrent File</p>
                   {:else if result.downloadType === "direct"}

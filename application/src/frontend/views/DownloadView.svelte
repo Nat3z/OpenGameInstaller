@@ -114,6 +114,7 @@
         (download) =>
           download.status !== "setup-complete" &&
           download.status !== "error" &&
+          download.status !== "errored" &&
           download.status !== "seeding"
       );
     });
@@ -203,7 +204,11 @@
     {#each $currentDownloads as download}
       <div data-id={download.id} class="download-card">
         <div class="download-image">
-          <img src={download.coverURL} alt="Game cover" class="game-cover" />
+          <img
+            src={download.coverURL || "./favicon.png"}
+            alt="Game cover"
+            class="game-cover"
+          />
           <div class="status-indicator status-{download.status}"></div>
         </div>
 
@@ -260,6 +265,19 @@
                 ></path>
               </svg>
               Download Failed
+              <p class="text-sm text-gray-500">{download.error}</p>
+            </div>
+          {:else if download.status === "errored"}
+            <div class="status-badge errored">
+              <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                <path
+                  fill-rule="evenodd"
+                  d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z"
+                  clip-rule="evenodd"
+                ></path>
+              </svg>
+              Setup Failed
+              <p class="text-sm text-gray-500">{download.error}</p>
             </div>
           {:else if download.status === "setup-complete" || download.status === "seeding"}
             {#if download.status === "setup-complete"}
@@ -361,7 +379,10 @@
       {#each $failedSetups as failedSetup}
         <div class="failed-setup-card">
           <div class="failed-setup-image">
-            <img src={failedSetup.downloadInfo.coverURL} alt="Game cover" />
+            <img
+              src={failedSetup.downloadInfo.coverURL || "./favicon.png"}
+              alt="Game cover"
+            />
             <div class="error-indicator">
               <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
                 <path
@@ -520,6 +541,9 @@
   .status-requesting {
     @apply bg-indigo-500;
   }
+  .status-errored {
+    @apply bg-red-600;
+  }
 
   .download-content {
     @apply p-6 space-y-4;
@@ -552,6 +576,10 @@
 
   .status-badge.requesting {
     @apply bg-indigo-100 text-indigo-800;
+  }
+
+  .status-badge.errored {
+    @apply bg-red-100 text-red-800;
   }
 
   /* Metrics */

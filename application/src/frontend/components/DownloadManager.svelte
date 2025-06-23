@@ -96,22 +96,17 @@
       }
 
       safeFetch(
-        "http://localhost:7654/addons/" +
-          downloadedItem.addonSource +
-          "/setup-app",
+        "setupApp",
         {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            path: outputDir,
-            type: downloadedItem.downloadType,
-            name: downloadedItem.name,
-            usedRealDebrid: downloadedItem.usedRealDebrid,
-            appID: downloadedItem.appID,
-            storefront: downloadedItem.storefront,
-          }),
+          addonID: downloadedItem.addonSource,
+          path: outputDir,
+          type: downloadedItem.downloadType,
+          name: downloadedItem.name,
+          usedRealDebrid: downloadedItem.usedRealDebrid,
+          appID: downloadedItem.appID,
+          storefront: downloadedItem.storefront,
+        },
+        {
           onLogs: (log) => {
             document.dispatchEvent(
               new CustomEvent("setup:log", {
@@ -255,23 +250,18 @@
     }
 
     safeFetch(
-      "http://localhost:7654/addons/" +
-        downloadedItem.addonSource +
-        "/setup-app",
+      "setupApp",
       {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          path: downloadedItem.downloadPath,
-          type: downloadedItem.downloadType,
-          name: downloadedItem.name,
-          usedRealDebrid: downloadedItem.usedRealDebrid,
-          multiPartFiles: downloadedItem.files,
-          appID: downloadedItem.appID,
-          storefront: downloadedItem.storefront,
-        }),
+        addonID: downloadedItem.addonSource,
+        path: downloadedItem.downloadPath,
+        type: downloadedItem.downloadType,
+        name: downloadedItem.name,
+        usedRealDebrid: downloadedItem.usedRealDebrid,
+        multiPartFiles: downloadedItem.files,
+        appID: downloadedItem.appID,
+        storefront: downloadedItem.storefront,
+      },
+      {
         onLogs: (log) => {
           document.dispatchEvent(
             new CustomEvent("setup:log", {

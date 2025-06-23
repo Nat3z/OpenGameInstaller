@@ -33,19 +33,21 @@
   onMount(async () => {
     try {
       const response: StoreData = await safeFetch(
-        "http://localhost:7654/addons/" +
-          addonSource +
-          "/game-details?gameID=" +
-          appID,
+        "gameDetails",
+        {
+          addonID: addonSource,
+          gameID: String(appID),
+        },
         { consume: "json" }
       );
       loading = false;
       gameData = response;
       safeFetch(
-        "http://localhost:7654/addons/" +
-          addonSource +
-          "/search?gameID=" +
-          appID,
+        "search",
+        {
+          addonID: addonSource,
+          gameID: String(appID),
+        },
         { consume: "json" }
       ).then((data: SearchResult[]) => {
         results = [

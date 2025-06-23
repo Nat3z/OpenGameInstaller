@@ -68,6 +68,15 @@ interface Window {
       removeApp: (appid: number) => Promise<void>;
       getOS: () => Promise<string>;
       isOnline: () => Promise<boolean>;
+      request: (
+        method: string,
+        params: any
+      ) => Promise<{
+        taskID?: string;
+        data?: any;
+        status?: number;
+        error?: string;
+      }>;
     };
     updateAddons: () => Promise<void>;
     getVersion: () => string;

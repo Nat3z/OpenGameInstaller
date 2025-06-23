@@ -3,9 +3,10 @@ import cors from 'cors';
 const port = 7654;
 import http from 'http';
 import { WebSocketServer } from 'ws';
-import addonDataRoute from './api/addons.js';
-import deferRoute from './api/defer.js';
+import addonProcedures from './api/addons.js';
+import deferProcedures from './api/defer.js';
 import { AddonConnection } from './AddonConnection.js';
+import { AddonServer } from './serve.js';
 
 const app = express();
 const server = http.createServer(app);
@@ -39,11 +40,14 @@ app.use(
 );
 
 app.use(express.json());
-app.use('/addons', addonDataRoute);
-app.use('/defer', deferRoute);
 
 app.get('/', (_, res) => {
   res.send('Hello World!');
 });
 
-export { port, server, wss, clients };
+const addonServer = new AddonServer({
+  ...addonProcedures,
+  ...deferProcedures,
+});
+
+export { port, server, wss, clients, addonServer };

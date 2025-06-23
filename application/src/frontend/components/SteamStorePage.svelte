@@ -65,10 +65,11 @@
       }
       for (const addon of addons) {
         safeFetch(
-          "http://localhost:7654/addons/" +
-            addon.id +
-            "/search?steamappid=" +
-            appID,
+          "search",
+          {
+            addonID: addon.id,
+            steamappid: String(appID),
+          },
           { consume: "json" }
         ).then((data) => {
           sourcesQueries++;

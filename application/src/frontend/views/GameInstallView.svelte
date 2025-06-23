@@ -17,7 +17,7 @@
 
   let isOnline = $state(true);
   onMount(() => {
-    safeFetch("http://localhost:7654/addons").then((data) => {
+    safeFetch("getAllAddons", {}).then((data) => {
       addons = data;
     });
 
@@ -91,10 +91,11 @@
       Promise.all(
         addons.map(async (addon) => {
           const response: BasicLibraryInfo[] = await safeFetch(
-            "http://localhost:7654/addons/" +
-              addon.id +
-              "/search-query?query=" +
-              query,
+            "searchQuery",
+            {
+              addonID: addon.id,
+              query: query,
+            },
             { consume: "json" }
           );
           results = [

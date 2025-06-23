@@ -16,7 +16,7 @@ function getSecret() {
   return addonSecret;
 }
 
-interface ConsumableRequest extends RequestInit {
+interface ConsumableRequest {
   consume?: 'json' | 'text';
   onProgress?: (progress: number) => void;
   onLogs?: (logs: string[]) => void;
@@ -59,7 +59,7 @@ export function getConfigClientOption<T>(id: string): T | null {
 }
 export function fetchAddonsWithConfigure() {
   return new Promise<ConfigTemplateAndInfo[]>((resolve, _) => {
-    safeFetch('http://localhost:7654/addons').then(
+    safeFetch('getAllAddons', {}).then(
       async (addons: ConfigTemplateAndInfo[]) => {
         // now configure each addon
         for (const addon of addons) {
@@ -87,14 +87,16 @@ export function fetchAddonsWithConfigure() {
               addon.id,
               storedConfig
             );
-            safeFetch('http://localhost:7654/addons/' + addon.id + '/config', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
+            safeFetch(
+              'updateConfig',
+              {
+                addonID: addon.id,
+                config: storedConfig,
               },
-              body: JSON.stringify(storedConfig),
-              consume: 'text',
-            });
+              {
+                consume: 'text',
+              }
+            );
           } else {
             // if there is no stored config, we should store and send the default config
             let defaultConfig: Record<string, number | boolean | string> = {};
@@ -110,14 +112,16 @@ export function fetchAddonsWithConfigure() {
               JSON.stringify(defaultConfig, null, 2)
             );
             // then post
-            safeFetch('http://localhost:7654/addons/' + addon.id + '/config', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
+            safeFetch(
+              'updateConfig',
+              {
+                addonID: addon.id,
+                config: defaultConfig,
               },
-              body: JSON.stringify(defaultConfig),
-              consume: 'text',
-            });
+              {
+                consume: 'text',
+              }
+            );
           }
         }
         resolve(addons);
@@ -126,10 +130,11 @@ export function fetchAddonsWithConfigure() {
   });
 }
 export async function safeFetch(
-  url: string,
+  method: string,
+  params: any,
   options: ConsumableRequest = { consume: 'json' }
 ) {
-  console.log(url, options.body);
+  console.log(method, params);
   return new Promise<any>((resolve, reject) => {
     // remove the functions on the options object
     const fetchOptions = { ...options };
@@ -137,59 +142,54 @@ export async function safeFetch(
     delete fetchOptions.onProgress;
     delete fetchOptions.onLogs;
     delete fetchOptions.onFailed;
-    fetch(url, {
-      ...fetchOptions,
-      headers: {
-        ...fetchOptions.headers,
-        Authorization: getSecret()!!,
-        'Cache-Control': 'no-store',
-      },
-    }).then(async (response) => {
-      if (!response.ok) {
-        reject(response.statusText);
+    window.electronAPI.app.request(method, params).then((response) => {
+      if (response.error) {
+        reject(response.error);
         return;
       }
-      const clonedCheck = response.clone();
-      // if the task is deferred, we should poll the task until it's done.
-      if (response.status === 202) {
-        const taskID = (await clonedCheck.json()).taskID;
+      if (response.taskID) {
+        const taskID = response.taskID;
+        // if the task is deferred, we should poll the task until it's done.
         const deferInterval = setInterval(async () => {
-          const taskResponse = await fetch(
-            `http://localhost:7654/defer/${taskID}`,
-            {
-              headers: {
-                Authorization: getSecret()!!,
-              },
-            }
-          );
+          const taskResponse = await window.electronAPI.app.request('getTask', {
+            taskID,
+          });
           if (taskResponse.status === 404) {
             reject('Task not found when deferring.');
             clearInterval(deferInterval);
-          }
-          if (taskResponse.status === 410) {
+          } else if (taskResponse.status === 410) {
             reject('Addon is no longer connected');
             clearInterval(deferInterval);
-          }
-          if (taskResponse.status === 500) {
+          } else if (taskResponse.status === 500) {
             if (options.onFailed)
-              options.onFailed((await taskResponse.json()).error);
+              options.onFailed(taskResponse.error ?? 'Task failed');
             clearInterval(deferInterval);
             reject('Task failed');
           }
-          if (taskResponse.status === 200) {
+          if (
+            taskResponse.status === 200 &&
+            taskResponse.data &&
+            taskResponse.data.progress === undefined
+          ) {
+            // Task is completed
             clearInterval(deferInterval);
             if (!options || !options.consume || options.consume === 'json')
-              return resolve(await taskResponse.json());
+              return resolve(taskResponse.data);
             else if (options.consume === 'text')
-              return resolve(await taskResponse.text());
+              return resolve(taskResponse.data);
             else throw new Error('Invalid consume type');
           }
-          if (taskResponse.status === 202) {
+          if (
+            taskResponse.status === 200 &&
+            taskResponse.data &&
+            taskResponse.data.progress !== undefined
+          ) {
+            // Task is still running
             const taskData: {
               progress: number;
               logs: string[];
               failed: string | undefined;
-            } = await taskResponse.json();
+            } = taskResponse.data;
             if (options.onProgress) options.onProgress(taskData.progress);
             if (options.onLogs) options.onLogs(taskData.logs);
             if (options.onFailed && taskData.failed)
@@ -198,9 +198,8 @@ export async function safeFetch(
         }, 100);
       } else {
         if (!options || !options.consume || options.consume === 'json')
-          return resolve(await response.json());
-        else if (options.consume === 'text')
-          return resolve(await response.text());
+          return resolve(response.data);
+        else if (options.consume === 'text') return resolve(response.data);
         else throw new Error('Invalid consume type');
       }
     });
@@ -253,15 +252,15 @@ export async function startDownload(
       });
       console.log('Requesting download', result);
       const response: SearchResult = await safeFetch(
-        `http://localhost:7654/addons/${result.addonSource}/request-dl`,
+        'requestDownload',
         {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ appID: appID, info: result }),
+          addonID: result.addonSource,
+          appID: appID,
+          info: result,
+        },
+        {
           consume: 'json',
-          onFailed: (error) => {
+          onFailed: (error: string) => {
             createNotification({
               id: Math.random().toString(36).substring(7),
               type: 'error',
@@ -821,34 +820,36 @@ export async function retryFailedSetup(failedSetup: FailedSetup) {
     });
 
     // Attempt the setup again
-    safeFetch(`http://localhost:7654/addons/${addonSource}/setup-app`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
+    safeFetch(
+      'setupApp',
+      {
+        addonID: addonSource,
+        ...setupData,
       },
-      body: JSON.stringify(setupData),
-      onLogs: (log) => {
-        document.dispatchEvent(
-          new CustomEvent('setup:log', {
-            detail: {
-              id: tempId,
-              log,
-            },
-          })
-        );
-      },
-      onProgress: (progress) => {
-        document.dispatchEvent(
-          new CustomEvent('setup:progress', {
-            detail: {
-              id: tempId,
-              progress,
-            },
-          })
-        );
-      },
-      consume: 'json',
-    })
+      {
+        onLogs: (logs: string[]) => {
+          document.dispatchEvent(
+            new CustomEvent('setup:log', {
+              detail: {
+                id: tempId,
+                log: logs,
+              },
+            })
+          );
+        },
+        onProgress: (progress: number) => {
+          document.dispatchEvent(
+            new CustomEvent('setup:progress', {
+              detail: {
+                id: tempId,
+                progress,
+              },
+            })
+          );
+        },
+        consume: 'json',
+      }
+    )
       .then((result) => {
         window.electronAPI.app.insertApp(result);
         removeFailedSetup(failedSetup.id);
@@ -913,15 +914,10 @@ export async function retryFailedSetup(failedSetup: FailedSetup) {
 // Task management functions
 export async function loadDeferredTasks() {
   try {
-    const response = await fetch('http://localhost:7654/defer', {
-      headers: {
-        Authorization: getSecret()!!,
-        'Cache-Control': 'no-store',
-      },
-    });
+    const response = await window.electronAPI.app.request('getAllTasks', {});
 
-    if (response.ok) {
-      const tasks = (await response.json()) as ResponseDeferredTask[];
+    if (response.status === 200) {
+      const tasks = response.data as ResponseDeferredTask[];
       deferredTasks.set(
         tasks.map((task: ResponseDeferredTask) => ({
           id: task.id,
@@ -962,23 +958,14 @@ export function stopTaskPolling(intervalId: ReturnType<typeof setInterval>) {
 
 export async function cancelTask(taskId: string) {
   try {
-    const response = await fetch(
-      `http://localhost:7654/defer/${taskId}/cancel`,
-      {
-        method: 'POST',
-        headers: {
-          Authorization: getSecret()!!,
-        },
-      }
-    );
+    // Note: Cancel functionality is not implemented in the defer API
+    // Tasks cannot be cancelled once started
+    console.warn('Task cancellation is not supported');
 
-    if (response.ok) {
-      deferredTasks.update((tasks: DeferredTask[]) =>
-        tasks.map((task: DeferredTask) =>
-          task.id === taskId ? { ...task, status: 'cancelled' as const } : task
-        )
-      );
-    }
+    // Optionally remove the task from the local state
+    deferredTasks.update((tasks: DeferredTask[]) =>
+      tasks.filter((task: DeferredTask) => task.id !== taskId)
+    );
   } catch (error) {
     console.error('Error cancelling task:', error);
   }

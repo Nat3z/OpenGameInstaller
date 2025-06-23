@@ -29,7 +29,7 @@
   }
   let addons: ConfigTemplateAndInfo[] = $state([]);
   onMount(() => {
-    safeFetch("http://localhost:7654/addons").then((data) => {
+    safeFetch("getAllAddons", {}).then((data) => {
       addons = data;
     });
   });
@@ -88,13 +88,14 @@
         .parentElement!!.querySelector("[data-input]")!!
         .classList.remove("outline");
     });
-    safeFetch("http://localhost:7654/addons/" + selectedAddon.id + "/config", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
+    safeFetch(
+      "updateConfig",
+      {
+        addonID: selectedAddon.id,
+        config: config,
       },
-      body: JSON.stringify(config),
-    }).then((data) => {
+      {}
+    ).then((data) => {
       if (!data.success) {
         for (const key in data.errors) {
           const element = document.getElementById(key);
@@ -236,7 +237,7 @@
 
   let view: Writable<"my-addons" | "community-addons"> = writable("my-addons");
   const unsubscribe1 = view.subscribe(() => {
-    safeFetch("http://localhost:7654/addons").then((data) => {
+    safeFetch("getAllAddons", {}).then((data) => {
       addons = data;
     });
   });

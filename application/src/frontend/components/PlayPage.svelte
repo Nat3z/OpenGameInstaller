@@ -8,7 +8,7 @@
     gamesLaunched,
     launchGameTrigger,
   } from "../store";
-  import { onMount, onDestroy } from "svelte";
+  import { onDestroy } from "svelte";
   import SettingsFilled from "../Icons/SettingsFilled.svelte";
   import GameConfiguration from "./GameConfiguration.svelte";
 
@@ -94,7 +94,6 @@
       playButton.querySelector("svg")!!.style.display = "none";
     }
   });
-  onMount(() => {});
   let openedGameConfiguration = $state(false);
   function openGameConfiguration() {
     openedGameConfiguration = true;

@@ -5,6 +5,7 @@ description: A guide on how to make your first addon for OpenGameInstaller.
 part: 5
 section: Your First Addon
 ---
+
 Internal Store Pages are listings which contain information about a non-steam game. OpenGameInstaller automatically creates listings for games that are from Steam, but games which aren't in Steam must have an internal game store.
 
 # Adding a Search Function
@@ -18,9 +19,9 @@ addon.on('library-search', (text, event) => {
     {
       appID: 1, // the appID used when sent to your addon for information about the listing.
       capsuleImage: 'https://dummyimage.com/375x500/968d96/ffffff',
-      name: 'Test App'
-    }
-  ])
+      name: 'Test App',
+    },
+  ]);
 });
 ```
 

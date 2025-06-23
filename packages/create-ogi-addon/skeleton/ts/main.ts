@@ -1,4 +1,4 @@
-import OGIAddon from "ogi-addon";
+import OGIAddon from 'ogi-addon';
 
 const addon = new OGIAddon({
   name: '{addon-name}',
@@ -7,15 +7,13 @@ const addon = new OGIAddon({
 
   author: '{author}',
   description: 'Your addon description',
-  repository: 'Repository URL'
+  repository: 'Repository URL',
 });
 
-addon.on('configure', (config) => config)
+addon.on('configure', (config) => config);
 
-addon.on('connect', () => {
-});
+addon.on('connect', () => {});
 
 addon.on('disconnect', () => {
   process.exit(0);
 });
-

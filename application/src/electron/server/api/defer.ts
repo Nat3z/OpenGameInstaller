@@ -1,7 +1,7 @@
-import { clients } from "../addon-server.js";
-import { applicationAddonSecret } from "../constants.js";
-import { DeferrableTask } from "../DeferrableTask.js";
-import express from "express";
+import { clients } from '../addon-server.js';
+import { applicationAddonSecret } from '../constants.js';
+import { DeferrableTask } from '../DeferrableTask.js';
+import express from 'express';
 
 const app = express.Router();
 export const DefferedTasks = new Map<string, DeferrableTask<any>>();
@@ -13,7 +13,7 @@ export type ResponseDeferredTask = {
   progress: number;
   logs: string[];
   failed: string | undefined;
-}
+};
 // Get all deferred tasks
 app.get('/', (req, res) => {
   if (req.headers.authorization !== applicationAddonSecret) {
@@ -21,16 +21,18 @@ app.get('/', (req, res) => {
     return;
   }
 
-  const tasks: ResponseDeferredTask[] = Array.from(DefferedTasks.values()).map(task => ({
-    name: `Task ${task.id}`,
-    description: 'Background task',
-    id: task.id,
-    addonOwner: task.addonOwner,
-    finished: task.finished,
-    progress: task.progress,
-    logs: task.logs,
-    failed: task.failed
-  }));
+  const tasks: ResponseDeferredTask[] = Array.from(DefferedTasks.values()).map(
+    (task) => ({
+      name: `Task ${task.id}`,
+      description: 'Background task',
+      id: task.id,
+      addonOwner: task.addonOwner,
+      finished: task.finished,
+      progress: task.progress,
+      logs: task.logs,
+      failed: task.failed,
+    })
+  );
 
   res.json(tasks);
 });
@@ -63,11 +65,11 @@ app.get('/:taskID', (req, res) => {
   if (task.finished) {
     res.send(task.data);
     DefferedTasks.delete(req.params.taskID);
-  }
-
-  else {
-    res.status(202).send({ progress: task.progress, logs: task.logs, failed: task.failed });
+  } else {
+    res
+      .status(202)
+      .send({ progress: task.progress, logs: task.logs, failed: task.failed });
   }
 });
 
-export default app
+export default app;

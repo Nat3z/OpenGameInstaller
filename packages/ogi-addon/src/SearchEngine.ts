@@ -8,5 +8,4 @@ export type SearchResult = {
     name: string;
     downloadURL: string;
   }[];
-}
-
+};

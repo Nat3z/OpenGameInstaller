@@ -1,16 +1,16 @@
 /** @type {import('tailwindcss').Config} */
 export default {
   // add .svelte files to use tailwind
-  content: ["./src/**/*.svelte"],
+  content: ['./src/**/*.svelte'],
   theme: {
     extend: {
       colors: {
         accent: '#428a91',
         'accent-dark': '#2d626a',
-        'accent-light': '#aecdc7'
+        'accent-light': '#aecdc7',
       },
       fontFamily: {
-        'archivo': ['Archivo', 'sans-serif'],
+        archivo: ['Archivo', 'sans-serif'],
         'open-sans': ['Open Sans', 'sans-serif'],
       },
       animation: {
@@ -33,10 +33,9 @@ export default {
         inSubContent: {
           '0%': { transform: 'translateY(100%)' },
           '100%': { transform: 'translateY(0)' },
-        }
+        },
       },
     },
   },
   plugins: [],
-}
-
+};

@@ -1,10 +1,16 @@
-import axios from "axios";
-import { net, ipcMain } from "electron";
-import { currentScreens, sendNotification, steamAppSearcher, STEAMTINKERLAUNCH_PATH, __dirname } from "../main.js";
-import { join } from "path";
-import * as fs from "fs";
-import { exec } from "child_process";
-import { LibraryInfo } from "ogi-addon";
+import axios from 'axios';
+import { net, ipcMain } from 'electron';
+import {
+  currentScreens,
+  sendNotification,
+  steamAppSearcher,
+  STEAMTINKERLAUNCH_PATH,
+  __dirname,
+} from '../main.js';
+import { join } from 'path';
+import * as fs from 'fs';
+import { exec } from 'child_process';
+import { LibraryInfo } from 'ogi-addon';
 
 export default function handler(mainWindow: Electron.BrowserWindow) {
   ipcMain.handle('app:close', () => {
@@ -16,9 +22,17 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
   ipcMain.handle('app:axios', async (_, options) => {
     try {
       const response = await axios(options);
-      return { data: response.data, status: response.status, success: response.status >= 200 && response.status < 300 };
+      return {
+        data: response.data,
+        status: response.status,
+        success: response.status >= 200 && response.status < 300,
+      };
     } catch (err) {
-      return { data: err.response.data, status: err.response.status, success: false };
+      return {
+        data: err.response.data,
+        status: err.response.status,
+        success: false,
+      };
     }
   });
 
@@ -31,12 +45,12 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
     }
     const results = steamAppSearcher.search(query);
     // max it to the first 10 results
-    let items = results.slice(0, 10).map(result => result.item);
+    let items = results.slice(0, 10).map((result) => result.item);
     console.log(items);
     return items;
   });
   ipcMain.handle('app:screen-input', async (_, data) => {
-    currentScreens.set(data.id, data.data)
+    currentScreens.set(data.id, data.data);
     return;
   });
 
@@ -54,17 +68,19 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
       return;
     }
 
-    const appInfo: LibraryInfo = JSON.parse(fs.readFileSync(join(__dirname, 'library/' + appid + '.json'), 'utf-8'));
-    const args = appInfo.launchArguments ?? ''
-    const spawnedItem = exec("\"" + appInfo.launchExecutable + "\" " + args, {
-      cwd: appInfo.cwd
-    })
+    const appInfo: LibraryInfo = JSON.parse(
+      fs.readFileSync(join(__dirname, 'library/' + appid + '.json'), 'utf-8')
+    );
+    const args = appInfo.launchArguments ?? '';
+    const spawnedItem = exec('"' + appInfo.launchExecutable + '" ' + args, {
+      cwd: appInfo.cwd,
+    });
     spawnedItem.on('error', (error) => {
       console.error(error);
       sendNotification({
         message: 'Failed to launch game',
         id: Math.random().toString(36).substring(7),
-        type: 'error'
+        type: 'error',
       });
       console.error('Failed to launch game');
       mainWindow?.webContents.send('game:exit', { id: appInfo.appID });
@@ -75,11 +91,11 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
         sendNotification({
           message: 'Game Crashed',
           id: Math.random().toString(36).substring(7),
-          type: 'error'
+          type: 'error',
         });
 
         mainWindow?.webContents.send('game:exit', { id: appInfo.appID });
-        return
+        return;
       }
 
       mainWindow?.webContents.send('game:exit', { id: appInfo.appID });
@@ -99,15 +115,19 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
       return;
     }
     fs.unlinkSync(join(__dirname, 'library/' + appid + '.json'));
-    const appsInternal = JSON.parse(fs.readFileSync(join(__dirname, 'internals/apps.json'), 'utf-8'));
+    const appsInternal = JSON.parse(
+      fs.readFileSync(join(__dirname, 'internals/apps.json'), 'utf-8')
+    );
     const index = appsInternal.indexOf(appid);
     if (index > -1) {
       appsInternal.splice(index, 1);
     }
-    fs.writeFileSync(join(__dirname, 'internals/apps.json'), JSON.stringify(appsInternal, null, 2));
+    fs.writeFileSync(
+      join(__dirname, 'internals/apps.json'),
+      JSON.stringify(appsInternal, null, 2)
+    );
     return;
   });
-
 
   ipcMain.handle('app:insert-app', async (_, data: LibraryInfo) => {
     if (!fs.existsSync(join(__dirname, 'library')))
@@ -120,37 +140,48 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
     }
     // write to the internal file
     if (!fs.existsSync(join(__dirname, 'internals/apps.json'))) {
-      fs.writeFileSync(join(__dirname, 'internals/apps.json'), JSON.stringify([], null, 2));
+      fs.writeFileSync(
+        join(__dirname, 'internals/apps.json'),
+        JSON.stringify([], null, 2)
+      );
     }
-    const appsInternal = JSON.parse(fs.readFileSync(join(__dirname, 'internals/apps.json'), 'utf-8'));
+    const appsInternal = JSON.parse(
+      fs.readFileSync(join(__dirname, 'internals/apps.json'), 'utf-8')
+    );
     appsInternal.push(data.appID);
-    fs.writeFileSync(join(__dirname, 'internals/apps.json'), JSON.stringify(appsInternal, null, 2));
-
+    fs.writeFileSync(
+      join(__dirname, 'internals/apps.json'),
+      JSON.stringify(appsInternal, null, 2)
+    );
 
     if (process.platform === 'linux') {
       // make the launch executable use / instead of \
-      data.launchExecutable = data.launchExecutable.replaceAll("\\", "/");
+      data.launchExecutable = data.launchExecutable.replaceAll('\\', '/');
       // use steamtinkerlaunch to add the game to steam
-      exec(`${STEAMTINKERLAUNCH_PATH} addnonsteamgame --appname="${data.name}" --exepath="${data.launchExecutable}" --startdir="${data.cwd}" --launchoptions=${data.launchArguments ?? ''} --compatibilitytool="proton_experimental" --use-steamgriddb`, {
-        cwd: __dirname
-      }, (error, stdout, stderr) => {
-        if (error) {
-          console.error(error);
+      exec(
+        `${STEAMTINKERLAUNCH_PATH} addnonsteamgame --appname="${data.name}" --exepath="${data.launchExecutable}" --startdir="${data.cwd}" --launchoptions=${data.launchArguments ?? ''} --compatibilitytool="proton_experimental" --use-steamgriddb`,
+        {
+          cwd: __dirname,
+        },
+        (error, stdout, stderr) => {
+          if (error) {
+            console.error(error);
+            sendNotification({
+              message: 'Failed to add game to Steam',
+              id: Math.random().toString(36).substring(7),
+              type: 'error',
+            });
+            return;
+          }
+          console.log(stdout);
+          console.log(stderr);
           sendNotification({
-            message: 'Failed to add game to Steam',
+            message: 'Game added to Steam',
             id: Math.random().toString(36).substring(7),
-            type: 'error'
+            type: 'success',
           });
-          return;
         }
-        console.log(stdout);
-        console.log(stderr);
-        sendNotification({
-          message: 'Game added to Steam',
-          id: Math.random().toString(36).substring(7),
-          type: 'success'
-        });
-      });
+      );
     }
     return;
   });
@@ -166,6 +197,4 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
     }
     return apps;
   });
-
-
 }

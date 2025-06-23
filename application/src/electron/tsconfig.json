@@ -22,7 +22,7 @@
     "emitDecoratorMetadata": true,
     "experimentalDecorators": true,
     "esModuleInterop": true,
-    "isolatedModules": true,
+    "isolatedModules": true
   },
   "include": [".", "../typings"],
   "exclude": ["node_modules"]

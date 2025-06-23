@@ -1,11 +1,21 @@
-
 import wsLib from 'ws';
-import { ClientSentEventTypes, OGIAddonConfiguration, WebsocketMessageClient, WebsocketMessageServer } from "ogi-addon";
+import {
+  ClientSentEventTypes,
+  OGIAddonConfiguration,
+  WebsocketMessageClient,
+  WebsocketMessageServer,
+} from 'ogi-addon';
 import { ConfigurationFile } from 'ogi-addon/src/config/ConfigurationBuilder';
 import { clients } from './addon-server.js';
 import { DefferedTasks } from './api/defer.js';
 import { addonSecret } from './constants.js';
-import { currentScreens, isSecurityCheckEnabled, sendAskForInput, sendNotification, steamAppSearcher } from '../main.js';
+import {
+  currentScreens,
+  isSecurityCheckEnabled,
+  sendAskForInput,
+  sendNotification,
+  steamAppSearcher,
+} from '../main.js';
 import { DeferrableTask } from './DeferrableTask.js';
 
 export class AddonConnection {
@@ -19,11 +29,10 @@ export class AddonConnection {
 
   public async setupWebsocket(): Promise<boolean> {
     return new Promise((resolve, _) => {
-
       const authenticationTimeout = setTimeout(() => {
         this.ws.close(1008, 'Authentication timeout');
-        console.error("Client kicked due to authentication timeout")
-        resolve(false)
+        console.error('Client kicked due to authentication timeout');
+        resolve(false);
       }, 1000);
 
       this.ws.on('message', (message) => {
@@ -37,10 +46,18 @@ export class AddonConnection {
 
             // authentication
             this.addonInfo = data.args;
-            if (isSecurityCheckEnabled && (!data.args.secret || data.args.secret !== addonSecret)) {
-              console.error('Client attempted to authenticate with an invalid secret');
-              this.ws.close(1008, 'Client attempted to authenticate with an invalid secret');
-              resolve(false)
+            if (
+              isSecurityCheckEnabled &&
+              (!data.args.secret || data.args.secret !== addonSecret)
+            ) {
+              console.error(
+                'Client attempted to authenticate with an invalid secret'
+              );
+              this.ws.close(
+                1008,
+                'Client attempted to authenticate with an invalid secret'
+              );
+              resolve(false);
               break;
             }
 
@@ -56,46 +73,75 @@ export class AddonConnection {
             //   break;
             // }
             if (clients.has(this.addonInfo.id)) {
-              console.error('Client attempted to authenticate with an ID that is already in use');
+              console.error(
+                'Client attempted to authenticate with an ID that is already in use'
+              );
               clients.delete(this.addonInfo.id);
-              this.ws.close(1008, 'Client attempted to authenticate with an ID that is already in use');
-              resolve(false)
-              break
+              this.ws.close(
+                1008,
+                'Client attempted to authenticate with an ID that is already in use'
+              );
+              resolve(false);
+              break;
             }
             console.log('Client authenticated:', data.args.name);
             resolve(true);
             break;
           case 'configure':
             if (!this.addonInfo) {
-              console.error('Client attempted to send config before authentication');
-              this.ws.close(1008, 'Client attempted to send config before authentication');
+              console.error(
+                'Client attempted to send config before authentication'
+              );
+              this.ws.close(
+                1008,
+                'Client attempted to send config before authentication'
+              );
               return;
             }
             this.configTemplate = data.args;
             break;
           case 'defer-update':
             if (!this.addonInfo) {
-              console.error('Client attempted to send defer-update before authentication');
-              this.ws.close(1008, 'Client attempted to send defer-update before authentication');
+              console.error(
+                'Client attempted to send defer-update before authentication'
+              );
+              this.ws.close(
+                1008,
+                'Client attempted to send defer-update before authentication'
+              );
               return;
             }
-            if (!data.args)
-              return;
+            if (!data.args) return;
 
             if (!data.args.deferID) {
-              console.error('Client attempted to send defer-update without an ID');
-              this.ws.close(1008, 'Client attempted to send defer-update without an ID');
+              console.error(
+                'Client attempted to send defer-update without an ID'
+              );
+              this.ws.close(
+                1008,
+                'Client attempted to send defer-update without an ID'
+              );
               return;
             }
             const deferredTask = DefferedTasks.get(data.args.deferID);
             if (!deferredTask) {
-              console.error('Client attempted to send defer-update with an invalid ID');
-              this.ws.close(1008, 'Client attempted to send defer-update with an invalid ID');
+              console.error(
+                'Client attempted to send defer-update with an invalid ID'
+              );
+              this.ws.close(
+                1008,
+                'Client attempted to send defer-update with an invalid ID'
+              );
               return;
             }
             if (deferredTask.addonOwner !== this.addonInfo.id) {
-              console.error('Client attempted to send defer-update with an ID that does not belong to them');
-              this.ws.close(1008, 'Client attempted to send defer-update with an ID that does not belong to them');
+              console.error(
+                'Client attempted to send defer-update with an ID that does not belong to them'
+              );
+              this.ws.close(
+                1008,
+                'Client attempted to send defer-update with an ID that does not belong to them'
+              );
               return;
             }
             deferredTask.logs = data.args.logs;
@@ -107,29 +153,54 @@ export class AddonConnection {
             break;
           case 'input-asked':
             if (!this.addonInfo) {
-              console.error('Client attempted to send input-asked before authentication');
-              this.ws.close(1008, 'Client attempted to send input-asked before authentication');
+              console.error(
+                'Client attempted to send input-asked before authentication'
+              );
+              this.ws.close(
+                1008,
+                'Client attempted to send input-asked before authentication'
+              );
               return;
             }
-            if (!data.args)
-              return;
-            if (!data.args.config || !data.args.name || !data.args.description) {
-              console.error('Client attempted to send input-asked without a configuration');
-              this.ws.close(1008, 'Client attempted to send input-asked without a configuration');
+            if (!data.args) return;
+            if (
+              !data.args.config ||
+              !data.args.name ||
+              !data.args.description
+            ) {
+              console.error(
+                'Client attempted to send input-asked without a configuration'
+              );
+              this.ws.close(
+                1008,
+                'Client attempted to send input-asked without a configuration'
+              );
               return;
             }
 
             if (!data.id) {
-              console.error('Client attempted to send input-asked without an ID');
-              this.ws.close(1008, 'Client attempted to send input-asked without an ID');
+              console.error(
+                'Client attempted to send input-asked without an ID'
+              );
+              this.ws.close(
+                1008,
+                'Client attempted to send input-asked without an ID'
+              );
               return;
             }
-            const configurationAsked = data.args.config as ConfigurationFile | undefined;
+            const configurationAsked = data.args.config as
+              | ConfigurationFile
+              | undefined;
             const name = data.args.name as string;
             const description = data.args.description as string;
             if (!configurationAsked || !name || !description) {
-              console.error('Client attempted to send input-asked without a configuration');
-              this.ws.close(1008, 'Client attempted to send input-asked without a configuration');
+              console.error(
+                'Client attempted to send input-asked without a configuration'
+              );
+              this.ws.close(
+                1008,
+                'Client attempted to send input-asked without a configuration'
+              );
               return;
             }
             // now send the configuration to the client
@@ -139,40 +210,73 @@ export class AddonConnection {
               if (screenData) {
                 clearInterval(waitForClient);
                 currentScreens.delete(data.id!!);
-                this.sendEventMessage({ event: 'response', args: screenData, id: data.id!! }, false);
+                this.sendEventMessage(
+                  { event: 'response', args: screenData, id: data.id!! },
+                  false
+                );
               }
             }, 100);
-            
+
             break;
           case 'steam-search':
             if (!this.addonInfo) {
-              console.error('Client attempted to send steam-search before authentication');
-              this.ws.close(1008, 'Client attempted to send steam-search before authentication');
+              console.error(
+                'Client attempted to send steam-search before authentication'
+              );
+              this.ws.close(
+                1008,
+                'Client attempted to send steam-search before authentication'
+              );
               return;
             }
             if (!steamAppSearcher) {
-              console.error('Client attempted to send steam-search before steamAppSearcher is initialized');
-              this.ws.close(1008, 'Client attempted to send steam-search before steamAppSearcher is initialized');
+              console.error(
+                'Client attempted to send steam-search before steamAppSearcher is initialized'
+              );
+              this.ws.close(
+                1008,
+                'Client attempted to send steam-search before steamAppSearcher is initialized'
+              );
               return;
             }
-            const { query, strict }: ClientSentEventTypes['steam-search'] = data.args;
+            const { query, strict }: ClientSentEventTypes['steam-search'] =
+              data.args;
             // now run the search
             let results = steamAppSearcher.search(query);
             // if strict, filter out results that are not exact matches to the appid
             if (strict) {
-              results = results.filter(result => result.item.appid === Number(query));
+              results = results.filter(
+                (result) => result.item.appid === Number(query)
+              );
             }
-            this.sendEventMessage({ event: 'response', args: results.map(result => result.item), id: data.id }, false);
+            this.sendEventMessage(
+              {
+                event: 'response',
+                args: results.map((result) => result.item),
+                id: data.id,
+              },
+              false
+            );
             break;
           case 'task-update':
             if (!this.addonInfo) {
-              console.error('Client attempted to send task-update before authentication');
-              this.ws.close(1008, 'Client attempted to send task-update before authentication');
+              console.error(
+                'Client attempted to send task-update before authentication'
+              );
+              this.ws.close(
+                1008,
+                'Client attempted to send task-update before authentication'
+              );
               return;
             }
             if (!data.args.id) {
-              console.error('Client attempted to send task-update without an ID');
-              this.ws.close(1008, 'Client attempted to send task-update without an ID');
+              console.error(
+                'Client attempted to send task-update without an ID'
+              );
+              this.ws.close(
+                1008,
+                'Client attempted to send task-update without an ID'
+              );
               return;
             }
             const taskUpdate = data.args as ClientSentEventTypes['task-update'];
@@ -181,12 +285,12 @@ export class AddonConnection {
             if (!task) {
               task = new DeferrableTask(async () => {
                 return null;
-              }, this.addonInfo.id)
+              }, this.addonInfo.id);
               DefferedTasks.set(data.args.id, task);
               sendNotification({
                 type: 'info',
                 message: 'Task started by ' + this.addonInfo.name,
-                id: data.args.id
+                id: data.args.id,
               });
             }
             task.progress = taskUpdate.progress;
@@ -199,7 +303,7 @@ export class AddonConnection {
               sendNotification({
                 type: 'error',
                 message: 'Task failed by ' + this.addonInfo.name,
-                id: data.args.id
+                id: data.args.id,
               });
               // Don't delete the task immediately for failed tasks so users can see the error
               break;
@@ -210,16 +314,18 @@ export class AddonConnection {
               sendNotification({
                 type: 'success',
                 message: 'Task finished by ' + this.addonInfo.name,
-                id: data.args.id
+                id: data.args.id,
               });
             }
             break;
         }
       });
-
     });
   }
-  public sendEventMessage(message: WebsocketMessageServer, expectResponse: boolean = true): Promise<WebsocketMessageClient> {
+  public sendEventMessage(
+    message: WebsocketMessageServer,
+    expectResponse: boolean = true
+  ): Promise<WebsocketMessageClient> {
     if (expectResponse) {
       message.id = Math.random().toString(36).substring(7);
     }
@@ -236,22 +342,25 @@ export class AddonConnection {
             return;
           }
           this.ws.once('message', (messageRaw) => {
-            const messageFromClient: WebsocketMessageClient = JSON.parse("" + messageRaw.toString())
-            if (messageFromClient.event === "response" && messageFromClient.id === message.id) {
+            const messageFromClient: WebsocketMessageClient = JSON.parse(
+              '' + messageRaw.toString()
+            );
+            if (
+              messageFromClient.event === 'response' &&
+              messageFromClient.id === message.id
+            ) {
               if (messageFromClient.args.statusError) {
                 reject(messageFromClient.args.statusError);
                 return;
               }
               resolve(messageFromClient);
-            }
-            else {
+            } else {
               waitResponse();
             }
           });
-        }
+        };
         waitResponse();
-      }
-      else {
+      } else {
         resolve({ event: 'response', args: 'OK' });
       }
     });

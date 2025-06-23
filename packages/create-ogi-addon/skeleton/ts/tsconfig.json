@@ -24,9 +24,7 @@
     "noUnusedLocals": false,
     "noUnusedParameters": false,
     "noPropertyAccessFromIndexSignature": false,
-    "typeRoots": ["node_modules/@types"],
+    "typeRoots": ["node_modules/@types"]
   },
-  "files": [
-    "main.ts"
-  ]
+  "files": ["main.ts"]
 }

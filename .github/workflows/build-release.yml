@@ -1,39 +1,38 @@
 name: Build/release
 
-on: 
+on:
   push:
     branches:
       - main
-
 
 jobs:
   release:
     permissions:
       contents: write
     name: Create Github Release
-    if: startsWith(github.event.head_commit.message, '[major]') || startsWith(github.event.head_commit.message, '[hotfix]') 
+    if: startsWith(github.event.head_commit.message, '[major]') || startsWith(github.event.head_commit.message, '[hotfix]')
     runs-on: ubuntu-latest
     outputs:
       upload_url: ${{ steps.create_release.outputs.upload_url }}
     steps:
-    - name: Create Release
-      id: create_release
-      uses: actions/create-release@v1.0.0
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        tag_name: temp-tag
-        release_name: ${{ github.event.head_commit.message }}
-        draft: true
-        prerelease: false
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: temp-tag
+          release_name: ${{ github.event.head_commit.message }}
+          draft: true
+          prerelease: false
 
-    - name: Output Release URL File
-      run: echo "${{ steps.create_release.outputs.upload_url }}" > release_url.txt
-    - name: Save Release URL File for publish
-      uses: actions/upload-artifact@v4
-      with:
-        name: release_url
-        path: release_url.txt 
+      - name: Output Release URL File
+        run: echo "${{ steps.create_release.outputs.upload_url }}" > release_url.txt
+      - name: Save Release URL File for publish
+        uses: actions/upload-artifact@v4
+        with:
+          name: release_url
+          path: release_url.txt
 
   build:
     permissions:
@@ -54,13 +53,13 @@ jobs:
           bun-version: latest
       - name: Install Dependencies
         run: bun install && cp -r ./node_modules/electron ./application/node_modules/electron && mkdir -p ./updater/node_modules && cp -r ./node_modules/electron ./updater/node_modules/electron
-      
+
       - name: Build Release Client
         run: cd application && bun run preelectron-pack && bun run electron-pack
 
       - name: Build Release Updater
         run: cd updater && bun run electron-pack
-          
+
       - name: Zip for Windows Portable
         if: matrix.os == 'windows-latest'
         run: |
@@ -76,7 +75,7 @@ jobs:
           asset_path: application/dist/OpenGameInstaller-Portable.zip
           asset_name: OpenGameInstaller-Portable.zip
           asset_content_type: application/zip
-      
+
       - name: Upload Setup Windows
         if: matrix.os == 'windows-latest'
         uses: actions/upload-release-asset@v1
@@ -98,7 +97,7 @@ jobs:
           asset_path: updater/dist/OpenGameInstaller-Setup.AppImage
           asset_name: OpenGameInstaller-Setup.AppImage
           asset_content_type: application/octet-stream
-      
+
       - name: Upload Release Linux
         if: matrix.os == 'ubuntu-latest'
         uses: actions/upload-release-asset@v1
@@ -109,4 +108,3 @@ jobs:
           asset_path: application/dist/OpenGameInstaller-Portable.AppImage
           asset_name: OpenGameInstaller-linux-pt.AppImage
           asset_content_type: application/octet-stream
-        

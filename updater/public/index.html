@@ -1,21 +1,26 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>OpenGameInstaller Updater</title>
-</head>
-<body>
-  <div>
-    <main>
-      <img src="./favicon-256x256.png" alt="OpenGameInstaller Logo" width="128" height="128">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>OpenGameInstaller Updater</title>
+  </head>
+  <body>
+    <div>
+      <main>
+        <img
+          src="./favicon-256x256.png"
+          alt="OpenGameInstaller Logo"
+          width="128"
+          height="128"
+        />
 
-      <h1 style="width: 100%; text-align: center;">Checking for Updates</h1>
-      <progress value="10" max="100" style="display: none;"></progress>
-      <p style="display: none;">hello</p>
-    </main>
-  </div> 
-</body>
+        <h1 style="width: 100%; text-align: center">Checking for Updates</h1>
+        <progress value="10" max="100" style="display: none"></progress>
+        <p style="display: none">hello</p>
+      </main>
+    </div>
+  </body>
 </html>
 <script>
   document.addEventListener('text', (event) => {
@@ -27,20 +32,18 @@
       progressHTML.value = progress;
       progressHTML.max = max;
       progressHTML.style.display = 'block';
-    }
-    else {
+    } else {
       progressHTML.style.display = 'none';
     }
     if (subtext) {
       subTextHTML.textContent = subtext;
       subTextHTML.style.display = 'block';
-    }
-    else {
+    } else {
       subTextHTML.style.display = 'none';
       subTextHTML.textContent = '';
       subTextHTML.style.display = 'none';
     }
-  })
+  });
 </script>
 <style>
   body {
@@ -70,14 +73,14 @@
   }
 
   * {
-		-webkit-touch-callout: none; /* iOS Safari */
-			-webkit-user-select: none; /* Safari */
-			-khtml-user-select: none; /* Konqueror HTML */
-				-moz-user-select: none; /* Old versions of Firefox */
-					-ms-user-select: none; /* Internet Explorer/Edge */
-							user-select: none; /* Non-prefixed version, currently
+    -webkit-touch-callout: none; /* iOS Safari */
+    -webkit-user-select: none; /* Safari */
+    -khtml-user-select: none; /* Konqueror HTML */
+    -moz-user-select: none; /* Old versions of Firefox */
+    -ms-user-select: none; /* Internet Explorer/Edge */
+    user-select: none; /* Non-prefixed version, currently
 																		supported by Chrome, Edge, Opera and Firefox */
-	}
+  }
   @font-face {
     font-family: 'Archivo';
     src: url(./Archivo-VariableFont_wdth\,wght.ttf);
@@ -90,13 +93,12 @@
   }
 
   progress::-webkit-progress-bar {
-      border-radius: 0.5rem;
-      background-color: rgb(174, 205, 199);
+    border-radius: 0.5rem;
+    background-color: rgb(174, 205, 199);
   }
 
   progress::-webkit-progress-value {
-      border-radius: 0.5rem;
-      background-color: rgb(66, 138, 145);
+    border-radius: 0.5rem;
+    background-color: rgb(66, 138, 145);
   }
-
 </style>

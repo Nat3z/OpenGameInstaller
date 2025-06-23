@@ -11,29 +11,29 @@ Adding a config to your addon lets your users to adjust and configure it via the
 To add a config, add an event handler for the `configure` event.
 
 ```typescript
-addon.on('configure', (config) => 
-  config
-)
+addon.on('configure', (config) => config);
 ```
 
 To add options to your config, use the `config` builder. For example:
 
 ```typescript
-addon.on('configure', (config) => config
-  .addStringOption(option => option
-    .setName('testOption')
-    .setDisplayName('Test Option')
-    .setDescription('A test option')
-    .setDefaultValue('Test Value')
+addon.on('configure', (config) =>
+  config.addStringOption((option) =>
+    option
+      .setName('testOption')
+      .setDisplayName('Test Option')
+      .setDescription('A test option')
+      .setDefaultValue('Test Value')
   )
-)
+);
 ```
 
 There are multiple properties which you can define on each option, but the **3 required** options are:
+
 ```typescript
-option.setName(string)
-option.setDisplayName(string)
-option.setDescription(string)
+option.setName(string);
+option.setDisplayName(string);
+option.setDescription(string);
 ```
 
 `option.setName(string)` sets the key for your option in the generated JSON file. This is also used when referencing config values when getting them.

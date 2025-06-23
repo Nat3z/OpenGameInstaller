@@ -1,10 +1,19 @@
-import type { SearchResult } from 'ogi-addon'
-import { writable, type Writable } from 'svelte/store'
+import type { SearchResult } from 'ogi-addon';
+import { writable, type Writable } from 'svelte/store';
 
 export type DownloadStatusAndInfo = SearchResult & {
   appID: number;
   id: string;
-  status: 'downloading' | 'paused' | 'completed' | 'error' | 'setup-complete' | 'rd-downloading' | 'seeding' | 'requesting' | 'errored';
+  status:
+    | 'downloading'
+    | 'paused'
+    | 'completed'
+    | 'error'
+    | 'setup-complete'
+    | 'rd-downloading'
+    | 'seeding'
+    | 'requesting'
+    | 'errored';
   progress: number;
   error?: string;
   usedRealDebrid: boolean;
@@ -16,7 +25,7 @@ export type DownloadStatusAndInfo = SearchResult & {
   ratio?: number;
   part?: number;
   totalParts?: number;
-}
+};
 
 export type DeferredTask = {
   id: string;
@@ -30,8 +39,15 @@ export type DeferredTask = {
   duration?: number;
   error?: string;
   failed?: string;
-  type: 'setup' | 'download' | 'configure' | 'addon-install' | 'addon-update' | 'cleanup' | 'other';
-}
+  type:
+    | 'setup'
+    | 'download'
+    | 'configure'
+    | 'addon-install'
+    | 'addon-update'
+    | 'cleanup'
+    | 'other';
+};
 
 export type FailedSetup = {
   id: string;
@@ -48,28 +64,39 @@ export type FailedSetup = {
     storefront?: string;
   };
   error: string;
-}
+};
 
 export interface Notification {
   message: string;
   id: string;
   type: 'info' | 'error' | 'success' | 'warning';
 }
-export const currentDownloads: Writable<DownloadStatusAndInfo[]> = writable([])
-export const failedSetups: Writable<FailedSetup[]> = writable([])
-export const deferredTasks: Writable<DeferredTask[]> = writable([])
-export const notifications: Writable<Notification[]> = writable([])
-export const currentStorePageOpened: Writable<number | undefined> = writable()
-export const currentStorePageOpenedSource: Writable<string | undefined> = writable()
-export const currentStorePageOpenedStorefront: Writable<string | undefined> = writable()
+export const currentDownloads: Writable<DownloadStatusAndInfo[]> = writable([]);
+export const failedSetups: Writable<FailedSetup[]> = writable([]);
+export const deferredTasks: Writable<DeferredTask[]> = writable([]);
+export const notifications: Writable<Notification[]> = writable([]);
+export const currentStorePageOpened: Writable<number | undefined> = writable();
+export const currentStorePageOpenedSource: Writable<string | undefined> =
+  writable();
+export const currentStorePageOpenedStorefront: Writable<string | undefined> =
+  writable();
 export const gameFocused: Writable<number | undefined> = writable();
-export const launchGameTrigger: Writable<number | undefined> = writable(undefined)
-export const gamesLaunched: Writable<Record<string, 'launched' | 'error'>> = writable({})
-export type Views = "gameInstall" | "config" | "clientoptions" | "downloader" | "library" | "tasks";
-export const selectedView: Writable<Views> = writable("library");
+export const launchGameTrigger: Writable<number | undefined> =
+  writable(undefined);
+export const gamesLaunched: Writable<Record<string, 'launched' | 'error'>> =
+  writable({});
+export type Views =
+  | 'gameInstall'
+  | 'config'
+  | 'clientoptions'
+  | 'downloader'
+  | 'library'
+  | 'tasks';
+export const selectedView: Writable<Views> = writable('library');
 
-export const viewOpenedWhenChanged: Writable<Views | undefined>  = writable(undefined);
-export const addonUpdates: Writable<string[]> = writable([])
+export const viewOpenedWhenChanged: Writable<Views | undefined> =
+  writable(undefined);
+export const addonUpdates: Writable<string[]> = writable([]);
 export function createNotification(notification: Notification) {
-  notifications.update((n) => [...n, notification])
+  notifications.update((n) => [...n, notification]);
 }

@@ -1,7 +1,5 @@
-import { ipcMain } from "electron";
+import { ipcMain } from 'electron';
 
 export default function handler(mainWindow: Electron.BrowserWindow) {
-  ipcMain.handle('addon:request', async (event, request) => {
-    event.sender.send
-  });
+  ipcMain.handle('addon:request', async (event, request) => {});
 }

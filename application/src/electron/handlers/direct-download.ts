@@ -24,6 +24,8 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
             mainWindow.webContents.send('ddl:download-error', { id: downloadID, error: 'File at path already exists. Please delete the file and try again.' });
           return reject();
         }
+        // generate the path if it doesn't exist
+        fs.mkdirSync(arg.path.split('/').slice(0, -1).join('/'), { recursive: true });
         let fileStream = fs.createWriteStream(arg.path);
 
         // get file size first
@@ -36,6 +38,7 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
           fileStream.close();
           reject()
         });
+        console.log(arg.link)
         await new Promise<void>((resolve_dw, reject_dw) =>
           axios({
             method: 'get',
@@ -48,7 +51,8 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
             response.data.on('data', () => {
               const progress = fileStream.bytesWritten / fileSize;
               const elapsedTime = (Date.now() - startTime) / 1000; // in seconds
-              const downloadSpeed = response.data.socket.bytesRead / elapsedTime;
+              const bytesRead = response.data?.socket?.bytesRead ?? fileStream.bytesWritten;
+              const downloadSpeed = bytesRead / elapsedTime;
               if (mainWindow && mainWindow.webContents)
                 mainWindow.webContents.send('ddl:download-progress', { id: downloadID, progress, downloadSpeed, fileSize, part: parts, totalParts: args.length });
               else

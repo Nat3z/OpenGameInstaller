@@ -81,7 +81,7 @@
               return {
                 ...result,
                 coverURL: `https://steamcdn-a.akamaihd.net/steam/apps/${appID}/library_600x900_2x.jpg`,
-                name: gameData!.name,
+                name: result.name,
                 addonSource: addon.id,
               };
             }),

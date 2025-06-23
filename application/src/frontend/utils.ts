@@ -18,7 +18,7 @@ export interface ConfigTemplateAndInfo extends OGIAddonConfiguration {
   configTemplate: ConfigurationFile
 }
 
-export function getDownloadPath() {
+export function getDownloadPath(): string {
   if (!window.electronAPI.fs.exists('./config/option/general.json')) {
     if (!window.electronAPI.fs.exists('./downloads')) window.electronAPI.fs.mkdir('./downloads');
     createNotification({
@@ -114,6 +114,7 @@ export async function safeFetch(url: string, options: ConsumableRequest = { cons
       }
     }).then(async (response) => {
       if (!response.ok) {
+				reject(response.statusText);
 				return;
       }
       const clonedCheck = response.clone();
@@ -164,6 +165,7 @@ export async function safeFetch(url: string, options: ConsumableRequest = { cons
 
 export type SearchResultWithAddon = SearchResult & {
   addonSource: string
+  coverURL: string
 }
 export async function startDownload(result: SearchResultWithAddon, appID: number, event: MouseEvent) {
 	if (event === null) return;
@@ -197,7 +199,8 @@ export async function startDownload(result: SearchResultWithAddon, appID: number
 					...result 
 				}];
 			});
-			const response = await safeFetch(`http://localhost:7654/addons/${result.addonSource}/request-dl`, {
+			console.log("Requesting download", result);
+			const response: SearchResult = await safeFetch(`http://localhost:7654/addons/${result.addonSource}/request-dl`, {
 				method: 'POST',
 				headers: {
 					'Content-Type': 'application/json'
@@ -224,7 +227,8 @@ export async function startDownload(result: SearchResultWithAddon, appID: number
 			currentDownloads.update((downloads) => {
 				return downloads.filter((d) => d.id !== randomID);
 			});
-			startDownload(response, appID, event);
+			console.log(response)
+			startDownload({ ...response, coverURL: result.coverURL, addonSource: result.addonSource }, appID, event);
 			break;
 		}
 		case 'real-debrid-magnet': {
@@ -289,7 +293,7 @@ export async function startDownload(result: SearchResultWithAddon, appID: number
 				});
 				return;
 			}
-			const downloadID = await window.electronAPI.ddl.download([ { link: download.download, path: getDownloadPath() + "/" + download.filename } ]);
+			const downloadID = await window.electronAPI.ddl.download([ { link: download.download, path: getDownloadPath() + "/" + result.name + "/" + download.filename } ]);
 			if (downloadID === null) {
 				if (htmlButton) {
 					htmlButton.textContent = "Download";
@@ -311,7 +315,7 @@ export async function startDownload(result: SearchResultWithAddon, appID: number
 				matchingDownload.id = downloadID;
 				matchingDownload.usedRealDebrid = true;
 
-				matchingDownload.downloadPath = getDownloadPath() + "/" + download.filename;
+				matchingDownload.downloadPath = getDownloadPath() + "/" + result.name + "/";
 				downloads[downloads.indexOf(matchingDownload)] = matchingDownload;
 				return downloads;
 			});
@@ -375,7 +379,7 @@ export async function startDownload(result: SearchResultWithAddon, appID: number
 				return;
 			}
 
-			const downloadID = await window.electronAPI.ddl.download([ { link: download.download, path: getDownloadPath() + "/" + download.filename } ]);
+			const downloadID = await window.electronAPI.ddl.download([ { link: download.download, path: getDownloadPath() + "/" + result.name + "/" + download.filename } ]);
 			if (downloadID === null) {
 				if (htmlButton) {
 					htmlButton.textContent = "Download";
@@ -397,7 +401,7 @@ export async function startDownload(result: SearchResultWithAddon, appID: number
 				matchingDownload.id = downloadID;
 				matchingDownload.usedRealDebrid = true;
 
-				matchingDownload.downloadPath = getDownloadPath() + "/" + download.filename;
+				matchingDownload.downloadPath = getDownloadPath() + "/" + result.name + "/";
 				downloads[downloads.indexOf(matchingDownload)] = matchingDownload;
 				return downloads;
 			});
@@ -412,14 +416,14 @@ export async function startDownload(result: SearchResultWithAddon, appID: number
 					});
 				return;
 			}
-			window.electronAPI.torrent.downloadTorrent(result.downloadURL, getDownloadPath() + "/" + (result.filename || result.downloadURL.split(/\\|\//).pop())).then((id) => {
+			window.electronAPI.torrent.downloadTorrent(result.downloadURL, getDownloadPath() + "/" + result.name + "/" + (result.filename || result.downloadURL.split(/\\|\//).pop())).then((id) => {
 				htmlButton.textContent = "Download";
 				htmlButton.disabled = false;
 				currentDownloads.update((downloads) => {
 					return [...downloads, { 
 						id, 
 						status: 'downloading', 
-						downloadPath: getDownloadPath() + "/" + result.filename + ".torrent", 
+						downloadPath: getDownloadPath() + "/" + result.name + "/", 
 						downloadSpeed: 0,
 						progress: 0,
 						usedRealDebrid: false,
@@ -442,14 +446,14 @@ export async function startDownload(result: SearchResultWithAddon, appID: number
 				return;
 			}
 
-			window.electronAPI.torrent.downloadMagnet(result.downloadURL, getDownloadPath() + "/" + result.filename).then((id) => {
+			window.electronAPI.torrent.downloadMagnet(result.downloadURL, getDownloadPath() + "/" + result.name + "/" + (result.filename || result.downloadURL.split(/\\|\//).pop())).then((id) => {
 				htmlButton.textContent = "Download";
 				htmlButton.disabled = false;
 				currentDownloads.update((downloads) => {
 					return [...downloads, { 
 						id, 
 						status: 'downloading', 
-						downloadPath: getDownloadPath() + "/" + result.filename + ".torrent", 
+						downloadPath: getDownloadPath() + "/" + result.name + "/", 
 						downloadSpeed: 0,
 						progress: 0,
 						usedRealDebrid: false,
@@ -472,21 +476,21 @@ export async function startDownload(result: SearchResultWithAddon, appID: number
 				return;
 			}
 
-			let collectedFiles = [ { path: getDownloadPath() + "/" + result.filename!!, link: result.downloadURL!! } ];
+			let collectedFiles = [ { path: getDownloadPath() + "/" + result.name + "/" + (result.filename || result.downloadURL?.split(/\\|\//).pop()), link: result.downloadURL!! } ];
 			if (result.files) {
 				collectedFiles = result.files.map((file) => {
-					return { path: getDownloadPath() + "/" + file.name, link: file.downloadURL };
+					return { path: getDownloadPath() + "/" + result.name + "/" + file.name, link: file.downloadURL };
 				});
 			}
 
-			window.electronAPI.ddl.download(result.files ? result.files.map((file) => { return { link: file.downloadURL, path: getDownloadPath() + "/" + file.name } }) : [{ link: result.downloadURL!, path: getDownloadPath() + "/" + result.name }]).then((id) => {
+			window.electronAPI.ddl.download(collectedFiles).then((id) => {
 				htmlButton.textContent = "Download";
 				htmlButton.disabled = false;
 				currentDownloads.update((downloads) => {
 					return [...downloads, { 
 						id, 
 						status: 'downloading', 
-						downloadPath: getDownloadPath() + "/" + result.name, 
+						downloadPath: getDownloadPath() + "/" + result.name + "/", 
 						downloadSpeed: 0,
 						progress: 0,
 						usedRealDebrid: false,

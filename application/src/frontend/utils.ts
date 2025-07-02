@@ -9,12 +9,7 @@ import {
   type FailedSetup,
   type DeferredTask,
 } from './store';
-import type { ResponseDeferredTask } from '../electron/server/api/defer';
-function getSecret() {
-  const urlParams = new URLSearchParams(window.location.search);
-  const addonSecret = urlParams.get('secret');
-  return addonSecret;
-}
+import type { ResponseDeferredTask } from '../electron/server/api/defer.js';
 
 interface ConsumableRequest {
   consume?: 'json' | 'text';
@@ -156,40 +151,45 @@ export async function safeFetch(
           });
           if (taskResponse.status === 404) {
             reject('Task not found when deferring.');
+            if (options.onFailed)
+              options.onFailed('Task not found when deferring.');
             clearInterval(deferInterval);
           } else if (taskResponse.status === 410) {
             reject('Addon is no longer connected');
+            if (options.onFailed)
+              options.onFailed('Addon is no longer connected');
             clearInterval(deferInterval);
-          } else if (taskResponse.status === 500) {
+          } else if (taskResponse.status !== 200) {
             if (options.onFailed)
               options.onFailed(taskResponse.error ?? 'Task failed');
             clearInterval(deferInterval);
             reject('Task failed');
+            return;
           }
           if (
-            taskResponse.status === 200 &&
-            taskResponse.data &&
-            taskResponse.data.progress === undefined
+            taskResponse.data.data &&
+            taskResponse.data.data.progress === undefined
           ) {
             // Task is completed
             clearInterval(deferInterval);
             if (!options || !options.consume || options.consume === 'json')
-              return resolve(taskResponse.data);
+              return resolve(
+                JSON.parse(JSON.stringify(taskResponse.data.data))
+              );
             else if (options.consume === 'text')
-              return resolve(taskResponse.data);
+              return resolve(taskResponse.data.data);
             else throw new Error('Invalid consume type');
           }
           if (
-            taskResponse.status === 200 &&
-            taskResponse.data &&
-            taskResponse.data.progress !== undefined
+            taskResponse.data.data &&
+            taskResponse.data.data.progress !== undefined
           ) {
             // Task is still running
             const taskData: {
               progress: number;
               logs: string[];
               failed: string | undefined;
-            } = taskResponse.data;
+            } = taskResponse.data.data;
             if (options.onProgress) options.onProgress(taskData.progress);
             if (options.onLogs) options.onLogs(taskData.logs);
             if (options.onFailed && taskData.failed)
@@ -251,12 +251,17 @@ export async function startDownload(
         ];
       });
       console.log('Requesting download', result);
+      console.log('safeFetch', {
+        addonID: result.addonSource,
+        appID: appID,
+        info: result,
+      });
       const response: SearchResult = await safeFetch(
         'requestDownload',
         {
           addonID: result.addonSource,
           appID: appID,
-          info: result,
+          info: JSON.parse(JSON.stringify(result)),
         },
         {
           consume: 'json',

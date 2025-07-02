@@ -1,16 +1,13 @@
 import axios from 'axios';
 import { net, ipcMain } from 'electron';
-import {
-  currentScreens,
-  sendNotification,
-  steamAppSearcher,
-  STEAMTINKERLAUNCH_PATH,
-  __dirname,
-} from '../main.js';
+import { currentScreens, sendNotification } from '../main.js';
 import { join } from 'path';
 import * as fs from 'fs';
 import { exec } from 'child_process';
 import { LibraryInfo } from 'ogi-addon';
+import { steamAppSearcher } from '../startup.js';
+import { __dirname } from '../paths.js';
+import { STEAMTINKERLAUNCH_PATH } from '../startup.js';
 
 export default function handler(mainWindow: Electron.BrowserWindow) {
   ipcMain.handle('app:close', () => {

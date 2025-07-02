@@ -1,34 +1,35 @@
 import { z } from 'zod';
+import { DeferrableTask, DeferredTasks } from './DeferrableTask.js';
 
 export class ProcedureReturnType<tag = string> {
   public tag: tag;
-  constructor(tag: tag) {
+  public status: number;
+  constructor(tag: tag, status: number) {
     this.tag = tag;
+    this.status = status;
   }
 }
 
 export class ProcedureDeferTask extends ProcedureReturnType<'defer'> {
-  public taskID: string;
-  constructor(taskID: string) {
-    super('defer');
-    this.taskID = taskID;
+  public deferrableTask: DeferrableTask<any>;
+  constructor(status: number, deferrableTask: DeferrableTask<any>) {
+    super('defer', status);
+    this.deferrableTask = deferrableTask;
   }
 }
 
 export class ProcedureJSON<T> extends ProcedureReturnType<'json'> {
   public data: T;
-  constructor(data: T) {
-    super('json');
+  constructor(status: number, data: T) {
+    super('json', status);
     this.data = data;
   }
 }
 
 export class ProcedureError extends ProcedureReturnType<'error'> {
   public error: string;
-  public status: number;
   constructor(status: number, error: string) {
-    super('error');
-    this.status = status;
+    super('error', status);
     this.error = error;
   }
 }
@@ -43,10 +44,6 @@ type ValidProcedureReturnType =
   | ProcedureDeferTask
   | ProcedureJSON<any>
   | ProcedureError;
-
-export function procedure<TInput = unknown>() {
-  return new Procedure<TInput>();
-}
 
 export class Procedure<TInput = unknown> {
   private inputSchema?: z.ZodType<TInput>;
@@ -76,11 +73,15 @@ export class Procedure<TInput = unknown> {
   }
 }
 
+export const procedure = <TInput = unknown>() => {
+  return new Procedure<TInput>();
+};
+
 export class AddonServer {
   private procedures: Record<string, Procedure> = {};
 
-  public registerProcedure(name: string, procedure: Procedure) {
-    this.procedures[name] = procedure;
+  public registerProcedure(name: string, proc: Procedure) {
+    this.procedures[name] = proc;
   }
 
   constructor(procedures: Record<string, Procedure>) {
@@ -88,11 +89,11 @@ export class AddonServer {
   }
 
   public async handleRequest(request: ProcedureRequest) {
-    const procedure = this.procedures[request.method];
-    if (!procedure) {
+    const proc = this.procedures[request.method];
+    if (!proc) {
       return new ProcedureError(404, 'Procedure not found');
     }
-    const inputSchema = procedure.getInputSchema();
+    const inputSchema = proc.getInputSchema();
     if (!inputSchema) {
       return new ProcedureError(400, 'Procedure has no input schema');
     }
@@ -102,14 +103,18 @@ export class AddonServer {
       return new ProcedureError(400, 'Invalid input');
     }
 
-    const handler = procedure.getHandler();
+    const handler = proc.getHandler();
     if (!handler) {
       return new ProcedureError(500, 'Procedure has no handler');
     }
 
     const result = await handler(inputSafe.data);
     if (result.tag === 'defer') {
-      return new ProcedureDeferTask(result.taskID);
+      // add the task to the deferred tasks
+      console.log('adding task', result.deferrableTask.id);
+      DeferredTasks.addTask(result.deferrableTask);
+      result.deferrableTask.run();
+      return new ProcedureDeferTask(result.status, result.deferrableTask);
     } else if (result.tag === 'json') {
       return result;
     } else if (result.tag === 'error') {

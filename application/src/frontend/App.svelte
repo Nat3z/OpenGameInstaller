@@ -166,53 +166,44 @@
     class="flex items-center justify-center flex-row h-screen w-screen fixed left-0 top-0"
   >
     <nav
-      class="flex justify-start flex-col items-center h-full w-3/12 border-r-2"
+      class="flex justify-start flex-col items-center h-full w-3/12"
     >
       <div class="flex justify-start items-center flex-col p-2">
         <img src="./favicon.png" alt="logo" class="w-5/12 h-5/12" />
       </div>
 
       <button
-        onclick={() => setView("gameInstall")}
-        data-selected-header={$selectedView === "gameInstall"}
-      >
-        <img src="./search.svg" alt="Search" />
-        <label>Search</label>
-      </button>
-      <button
         onclick={() => setView("library")}
         data-selected-header={$selectedView === "library"}
+        aria-label="Library"
       >
-        <img src="./library.svg" alt="Library" />
-        <label>Library</label>
+        <svg class="fill-accent-dark w-8 h-8" viewBox="0 0 60 60" xmlns="http://www.w3.org/2000/svg" fill="none">
+          <path d="M39 15.87V3C39 1.35 37.65 0 36 0H24C22.35 0 21 1.35 21 3V15.87C21 16.26 21.15 16.65 21.45 16.92L28.95 24.42C29.55 25.02 30.48 25.02 31.08 24.42L38.58 16.92C38.85 16.65 39 16.29 39 15.87ZM15.87 21H3C1.35 21 0 22.35 0 24V36C0 37.65 1.35 39 3 39H15.87C16.26 39 16.65 38.85 16.92 38.55L24.42 31.05C25.02 30.45 25.02 29.52 24.42 28.92L16.92 21.42C16.65 21.15 16.29 21 15.87 21ZM21 44.13V57C21 58.65 22.35 60 24 60H36C37.65 60 39 58.65 39 57V44.13C39 43.74 38.85 43.35 38.55 43.08L31.05 35.58C30.45 34.98 29.52 34.98 28.92 35.58L21.42 43.08C21.15 43.35 21 43.71 21 44.13ZM43.05 21.45L35.55 28.95C34.95 29.55 34.95 30.48 35.55 31.08L43.05 38.58C43.32 38.85 43.71 39.03 44.1 39.03H57C58.65 39.03 60 37.68 60 36.03V24.03C60 22.38 58.65 21.03 57 21.03H44.13C43.71 21 43.35 21.15 43.05 21.45Z" fill="#2D626A"/>
+        </svg>
       </button>
       <button
         onclick={() => setView("downloader")}
         data-selected-header={$selectedView === "downloader"}
       >
         <img src="./download.svg" alt="Downloads" />
-        <label>Downloads</label>
       </button>
       <button
         onclick={() => setView("config")}
         data-selected-header={$selectedView === "config"}
       >
         <img src="./apps.svg" alt="addon" />
-        Addons
       </button>
       <button
         onclick={() => setView("tasks")}
         data-selected-header={$selectedView === "tasks"}
       >
         <img src="./tasks.svg" alt="Tasks" />
-        <label>Tasks</label>
       </button>
       <button
         onclick={() => setView("clientoptions")}
         data-selected-header={$selectedView === "clientoptions"}
       >
         <img src="./settings.svg" alt="Settings" />
-        <label>Settings</label>
       </button>
 
       <span class="flex flex-col justify-start items-center w-full p-4">
@@ -286,12 +277,6 @@
   @tailwind components;
   @tailwind utilities;
 
-  header button {
-    @apply rounded border border-gray-200 bg-slate-100 px-4 py-2 focus:border focus:bg-slate-200 focus:text-slate-900;
-  }
-  header button[data-selected-header="true"] {
-    @apply border bg-slate-200 text-slate-900 border-gray-300;
-  }
   * {
     -webkit-touch-callout: none; /* iOS Safari */
     -webkit-user-select: none; /* Safari */
@@ -328,17 +313,13 @@
   }
 
   nav button {
-    /* show the label once the button is hovered */
-    @apply w-full h-12 border-none bg-transparent flex flex-row items-center justify-start px-4 gap-1 hover:bg-slate-100;
+    @apply border-none rounded p-4 py-4 focus:bg-accent-lighter text-accent-dark;
   }
   nav button[data-selected-header="true"] {
-    @apply bg-slate-200;
+    @apply bg-accent-lighter;
   }
   nav button img {
     @apply w-6 h-6 pointer-events-none;
-  }
-  nav button label {
-    @apply pointer-events-none;
   }
 
   [data-recently-item]:hover p {

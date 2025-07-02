@@ -7,7 +7,10 @@ export default {
       colors: {
         accent: '#428a91',
         'accent-dark': '#2d626a',
-        'accent-light': '#aecdc7',
+        'accent-light': '#B0DFD5',
+        'accent-lighter': '#D4F0EA',
+        'accent-text-color': '#000000',
+        'background-color': '#F7FFFD',
       },
       fontFamily: {
         archivo: ['Archivo', 'sans-serif'],

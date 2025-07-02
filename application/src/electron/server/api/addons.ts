@@ -1,11 +1,10 @@
 import { z } from 'zod';
 import { clients } from '../addon-server.js';
 import { DeferrableTask } from '../DeferrableTask.js';
-import { DefferedTasks } from './defer.js';
 import sanitize from 'sanitize-html';
 import {
+  type Procedure,
   procedure,
-  Procedure,
   ProcedureError,
   ProcedureJSON,
   ProcedureDeferTask,
@@ -23,7 +22,7 @@ const procedures: Record<string, Procedure<any>> = {
           configTemplate: client.configTemplate,
         });
       }
-      return new ProcedureJSON(info);
+      return new ProcedureJSON(200, info);
     }),
 
   // Update addon config
@@ -44,9 +43,9 @@ const procedures: Record<string, Procedure<any>> = {
       });
 
       if (response.args.success) {
-        return new ProcedureJSON({ success: true });
+        return new ProcedureJSON(200, { success: true });
       } else {
-        return new ProcedureJSON({
+        return new ProcedureJSON(400, {
           success: false,
           errors: response.args.error,
         });
@@ -82,12 +81,11 @@ const procedures: Record<string, Procedure<any>> = {
                 : '',
           },
         });
+        console.log('searchComplete', event.args);
         return event.args;
       }, client.addonInfo.id);
 
-      deferrableTask.run();
-      DefferedTasks.set(deferrableTask.id, deferrableTask);
-      return new ProcedureDeferTask(deferrableTask.id);
+      return new ProcedureDeferTask(200, deferrableTask);
     }),
 
   // Search library with query
@@ -111,8 +109,7 @@ const procedures: Record<string, Procedure<any>> = {
       }, client.addonInfo.id);
 
       deferrableTask.run();
-      DefferedTasks.set(deferrableTask.id, deferrableTask);
-      return new ProcedureDeferTask(deferrableTask.id);
+      return new ProcedureDeferTask(200, deferrableTask);
     }),
 
   // Request download
@@ -137,8 +134,7 @@ const procedures: Record<string, Procedure<any>> = {
       }, client.addonInfo.id);
 
       deferrableTask.run();
-      DefferedTasks.set(deferrableTask.id, deferrableTask);
-      return new ProcedureDeferTask(deferrableTask.id);
+      return new ProcedureDeferTask(200, deferrableTask);
     }),
 
   // Setup app
@@ -177,8 +173,7 @@ const procedures: Record<string, Procedure<any>> = {
       }, client.addonInfo.id);
 
       deferrableTask.run();
-      DefferedTasks.set(deferrableTask.id, deferrableTask);
-      return new ProcedureDeferTask(deferrableTask.id);
+      return new ProcedureDeferTask(200, deferrableTask);
     }),
 
   // Get game details
@@ -204,8 +199,7 @@ const procedures: Record<string, Procedure<any>> = {
       }, client.addonInfo.id);
 
       deferrableTask.run();
-      DefferedTasks.set(deferrableTask.id, deferrableTask);
-      return new ProcedureDeferTask(deferrableTask.id);
+      return new ProcedureDeferTask(200, deferrableTask);
     }),
 };
 

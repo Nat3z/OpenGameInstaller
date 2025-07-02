@@ -1,12 +1,13 @@
 import axios from 'axios';
 import { ipcMain } from 'electron';
-import { sendNotification, torrentIntervals, __dirname } from '../main.js';
+import { sendNotification, torrentIntervals } from '../main.js';
 import { join } from 'path';
 import * as fs from 'fs';
 import { getStoredValue, refreshCached } from '../config-util.js';
 import { QBittorrent } from '@ctrl/qbittorrent';
 import { readFile } from 'fs/promises';
 import { addTorrent } from '../webtorrent-connect.js';
+import { __dirname } from '../paths.js';
 
 let qbitClient: QBittorrent | undefined = undefined;
 

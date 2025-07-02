@@ -7,16 +7,15 @@ import {
 } from 'ogi-addon';
 import { ConfigurationFile } from 'ogi-addon/src/config/ConfigurationBuilder';
 import { clients } from './addon-server.js';
-import { DefferedTasks } from './api/defer.js';
 import { addonSecret } from './constants.js';
 import {
   currentScreens,
   isSecurityCheckEnabled,
   sendAskForInput,
   sendNotification,
-  steamAppSearcher,
 } from '../main.js';
-import { DeferrableTask } from './DeferrableTask.js';
+import { DeferrableTask, DeferredTasks } from './DeferrableTask.js';
+import { steamAppSearcher } from '../startup.js';
 
 export class AddonConnection {
   public addonInfo: OGIAddonConfiguration;
@@ -123,7 +122,7 @@ export class AddonConnection {
               );
               return;
             }
-            const deferredTask = DefferedTasks.get(data.args.deferID);
+            const deferredTask = DeferredTasks.getTasks()[data.args.deferID];
             if (!deferredTask) {
               console.error(
                 'Client attempted to send defer-update with an invalid ID'
@@ -280,13 +279,13 @@ export class AddonConnection {
               return;
             }
             const taskUpdate = data.args as ClientSentEventTypes['task-update'];
-            let task = DefferedTasks.get(data.args.id);
+            let task = DeferredTasks.getTasks()[data.args.id];
 
             if (!task) {
               task = new DeferrableTask(async () => {
                 return null;
               }, this.addonInfo.id);
-              DefferedTasks.set(data.args.id, task);
+              DeferredTasks.getTasks()[data.args.id] = task;
               sendNotification({
                 type: 'info',
                 message: 'Task started by ' + this.addonInfo.name,
@@ -310,7 +309,7 @@ export class AddonConnection {
             }
 
             if (taskUpdate.finished && !taskUpdate.failed) {
-              DefferedTasks.delete(data.args.id);
+              DeferredTasks.removeTask(data.args.id);
               sendNotification({
                 type: 'success',
                 message: 'Task finished by ' + this.addonInfo.name,

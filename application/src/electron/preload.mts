@@ -70,6 +70,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
     removeApp: (appid: number) => ipcRenderer.invoke('app:remove-app', appid),
     getOS: () => ipcRenderer.invoke('app:get-os'),
     isOnline: () => ipcRenderer.invoke('app:is-online'),
+    request: (
+      method: string,
+      params: any
+    ): Promise<{
+      taskID?: string;
+      data?: any;
+      error?: string;
+      status?: number;
+    }> => ipcRenderer.invoke('addon:request', { method, params }),
   },
   getVersion: () => ipcRenderer.sendSync('get-version'),
   updateAddons: () => ipcRenderer.invoke('update-addons'),
@@ -77,15 +86,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('install-addons', addons),
   restartAddonServer: () => ipcRenderer.invoke('restart-addon-server'),
   cleanAddons: () => ipcRenderer.invoke('clean-addons'),
-  request: (
-    method: string,
-    params: any
-  ): Promise<{
-    taskID?: string;
-    data?: any;
-    error?: string;
-    status?: number;
-  }> => ipcRenderer.invoke('addon:request', { method, params }),
 });
 
 ipcRenderer.on('ddl:download-progress', (_, arg) => {

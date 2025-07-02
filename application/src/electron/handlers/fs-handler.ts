@@ -1,5 +1,5 @@
 import { dialog, ipcMain, shell } from 'electron';
-import { __dirname } from '../main.js';
+import { __dirname } from '../paths.js';
 import { join } from 'path';
 import * as fs from 'fs';
 import { exec } from 'child_process';

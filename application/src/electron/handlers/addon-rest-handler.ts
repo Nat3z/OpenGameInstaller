@@ -1,9 +1,8 @@
 import { ipcMain } from 'electron';
-import { z } from 'zod';
-import { addonServer } from '../server/addon-server';
-import { requestSchema } from '../server/serve';
+import { addonServer } from '../server/addon-server.js';
+import { requestSchema } from '../server/serve.js';
 
-export default function handler(mainWindow: Electron.BrowserWindow) {
+export default function handler() {
   ipcMain.handle('addon:request', async (_, request) => {
     const parsedRequestSafe = requestSchema.safeParse(request);
     if (!parsedRequestSafe.success) {
@@ -16,10 +15,12 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
     const response = await addonServer.handleRequest(parsedRequest);
     if (response.tag === 'defer') {
       return {
-        taskID: response.taskID,
+        status: response.status,
+        taskID: response.deferrableTask.id,
       };
     } else if (response.tag === 'json') {
       return {
+        status: response.status,
         data: response.data,
       };
     } else if (response.tag === 'error') {

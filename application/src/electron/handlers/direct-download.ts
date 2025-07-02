@@ -1,7 +1,8 @@
 import { ipcMain } from 'electron';
 import * as fs from 'fs';
-import { sendNotification, __dirname } from '../main.js';
+import { sendNotification } from '../main.js';
 import axios from 'axios';
+import { __dirname } from '../paths.js';
 
 export default function handler(mainWindow: Electron.BrowserWindow) {
   ipcMain.handle(

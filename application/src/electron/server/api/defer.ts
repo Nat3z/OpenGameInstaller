@@ -1,15 +1,12 @@
 import { z } from 'zod';
 import { clients } from '../addon-server.js';
-import { applicationAddonSecret } from '../constants.js';
-import { DeferrableTask } from '../DeferrableTask.js';
+import { DeferredTasks } from '../DeferrableTask.js';
 import {
+  type Procedure,
   procedure,
-  Procedure,
   ProcedureError,
   ProcedureJSON,
 } from '../serve.js';
-
-export const DefferedTasks = new Map<string, DeferrableTask<any>>();
 
 export type ResponseDeferredTask = {
   id: string;
@@ -25,8 +22,8 @@ const procedures: Record<string, Procedure<any>> = {
   getAllTasks: procedure()
     .input(z.object({}))
     .handler(async () => {
-      const tasks: ResponseDeferredTask[] = Array.from(
-        DefferedTasks.values()
+      const tasks: ResponseDeferredTask[] = Object.values(
+        DeferredTasks.getTasks()
       ).map((task) => ({
         name: `Task ${task.id}`,
         description: 'Background task',
@@ -38,7 +35,7 @@ const procedures: Record<string, Procedure<any>> = {
         failed: task.failed,
       }));
 
-      return new ProcedureJSON(tasks);
+      return new ProcedureJSON(200, tasks);
     }),
 
   // Get specific task by ID
@@ -49,29 +46,34 @@ const procedures: Record<string, Procedure<any>> = {
       })
     )
     .handler(async (input) => {
-      if (!DefferedTasks.has(input.taskID)) {
+      console.log('x', DeferredTasks.getTasks());
+      if (DeferredTasks.getTasks()[input.taskID] === undefined) {
+        console.log('task not found @' + input.taskID + '@', DeferredTasks);
         return new ProcedureError(404, 'Task not found');
       }
 
-      const task = DefferedTasks.get(input.taskID)!!;
+      const task = DeferredTasks.getTasks()[input.taskID]!!;
 
       // check if the addon is still running
       const stillExists = clients.has(task.addonOwner);
       if (!stillExists) {
-        DefferedTasks.delete(input.taskID);
+        DeferredTasks.removeTask(input.taskID);
         return new ProcedureError(410, 'Addon is no longer connected');
       }
 
       if (task.failed) {
-        DefferedTasks.delete(input.taskID);
+        DeferredTasks.removeTask(input.taskID);
         return new ProcedureError(500, task.failed);
       }
 
       if (task.finished) {
-        DefferedTasks.delete(input.taskID);
-        return new ProcedureJSON(task.data);
+        DeferredTasks.removeTask(input.taskID);
+        // Use the getSerializedData method to ensure data is properly serialized
+        return new ProcedureJSON(200, {
+          data: task.getSerializedData(),
+        });
       } else {
-        return new ProcedureJSON({
+        return new ProcedureJSON(200, {
           progress: task.progress,
           logs: task.logs,
           failed: task.failed,

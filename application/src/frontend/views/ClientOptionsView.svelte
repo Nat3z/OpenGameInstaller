@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { fly } from "svelte/transition";
   import { createNotification } from "../store";
 
   const fs = window.electronAPI.fs;
@@ -13,9 +14,10 @@
         defaultValue: string | number | boolean;
         choice?: string[];
         value: string | number | boolean;
-        type: "string" | "number" | "boolean" | "file-folder" | 'textarea';
+        type: "string" | "number" | "boolean" | "file-folder" | 'textarea' | 'password' | 'section-describer' | 'action';
         maxTextLength?: number;
         minTextLength?: number;
+        action?: () => void;
         max?: number;
         min?: number;
       };
@@ -62,7 +64,7 @@
           description: "Your Real Debrid API Key",
           defaultValue: "",
           value: "",
-          type: "string",
+          type: "password",
         },
       }
     },
@@ -99,21 +101,55 @@
           description: "The password of the qBittorrent server",
           defaultValue: "admin",
           value: "",
-          type: "string",
+          type: "password",
         },
       }
     },
     {
-      "name": "Developer",
-      "id": "developer",
-      "description": "Developer Settings",
+      name: "Developer",
+      id: "developer",
+      description: "Developer Settings",
       options: {
+        describer: {
+          displayName: "WARNING BEFORE YOU CHANGE",
+          description: "These settings are for developer use only. Modification of these may lead to undefined, unexpected, and dangerous behavior not intended to be used by the average user. Use at your own risk.",
+          defaultValue: "",
+          value: "",
+          type: "section-describer",
+        },
         disableSecretCheck: {
           displayName: "Disable Server Secret Check",
-          description: "Disables the secret check (WARNING - This is a security risk as anyone can connect to your server)",
+          description: "Disables the check preventing addons without authorization from connecting to the server. Dangerous as malicious addons could chain load another addon which could make unsandboxed changes to the system.",
           defaultValue: false,
           value: false,
           type: "boolean",
+        },
+        testModal: {
+          displayName: "Test Modal",
+          description: "Test Modal",
+          defaultValue: "",
+          value: "",
+          type: "action",
+          action: () => {
+            document.dispatchEvent(new Event("dbg:debug-modal-trigger"));
+          }
+        },
+        testOptionsModal: {
+          displayName: "Test Options Modal",
+          description: "Test Options Modal",
+          defaultValue: "",
+          value: "",
+          type: "action",
+          action: () => {
+            document.dispatchEvent(new Event("dbg:options-modal-trigger"));
+          }
+        },
+        describerEnd: {
+          displayName: "Restart to Apply Changes",
+          description: "",
+          defaultValue: "",
+          value: "",
+          type: "section-describer",
         }
       }
     },
@@ -126,6 +162,7 @@
   ];
 
   let selectedOption: OptionsCategory | null = $state(null);
+  let mainContent: HTMLElement;
   
   function selectOption(addon: OptionsCategory) {
     const selected = document.querySelector(".selected");
@@ -145,7 +182,7 @@
       if (!selectedOption) return;
       const element = document.getElementById(key) as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement;
       if (element && selectedOption!!.options[key]) {
-        if (selectedOption.options[key].type === "string" || selectedOption.options[key].type === "file-folder") {
+        if (selectedOption.options[key].type === "string" || selectedOption.options[key].type === "file-folder" || selectedOption.options[key].type === "password") {
           config[key] = element.value;
         }
         if (selectedOption.options[key].type === "textarea") {
@@ -266,145 +303,547 @@
     });
   }
 
-  
+  let showPassword: { [key: string]: boolean } = $state({});
+
+  $effect(() => {
+    if (mainContent && selectedOption) {
+      mainContent.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  });
 </script>
 
-<div class="config">
-  <div class="w-72 rounded h-full">
-    <section class="selected hidden">
-    </section>
-    {#if options.length !== 0}
-      {#each options as addon}
-        <section class="hover:bg-slate-100 hover:cursor-pointer" onkeypress={() => {}} onclick={() => selectOption(addon)} id={"cfg-" + addon.name}>
-          <h2>{addon.name}</h2>
-          <p>{addon.description}</p>
-        </section>
-      {/each}
-    {/if}
+<div class="config-container">
+  <!-- Sidebar -->
+  <div class="sidebar">
+    <nav class="sidebar-nav">
+      {#if options.length !== 0}
+        {#each options as option}
+          <button 
+            class="sidebar-item"
+            class:selected={selectedOption?.id === option.id}
+            onclick={() => selectOption(option)} 
+            id={"cfg-" + option.name}
+          >
+            <div class="sidebar-item-content">
+              <h3 class="sidebar-item-title">{option.name}</h3>
+              <p class="sidebar-item-description">{option.description}</p>
+            </div>
+          </button>
+        {/each}
+      {/if}
+    </nav>
   </div>
 
-  <article class="w-full h-full bg-slate-100 p-4 py-2 border-l-2 border-gray-200">
-    {#if selectedOption}
-      {#if selectedOption.id !== "about"}
-        <h2>{selectedOption.name}</h2>
-        <p>{selectedOption.description}</p>
-      {/if}
-      <div class={`options overflow-y-auto h-5/6 ${selectedOption.id === "about" && "!border-t-0"}`}>
-        <div class="hidden outline-red-500 outline-4">
-        </div>
-        {#each Object.keys(selectedOption.options) as key}
-          <div class={`flex ${selectedOption.options[key].type === "textarea" ? 'flex-col' : 'flex-row'} gap-2 items-center`}>
-            <label class="min-w-max" for={key}>{selectedOption.options[key].displayName}</label>
-            {#if selectedOption.options[key].type === "string"}
-              {#if selectedOption.options[key].choice}
-                <select id={key} onchange={updateConfig} value={getStoredOrDefaultValue(key)}>
-                  {#each selectedOption.options[key].choice as choice}
-                    <option value={choice}>{choice}</option>
-                  {/each}
-                </select>
-              {:else}
-                <input type="text" onchange={updateConfig} value={getStoredOrDefaultValue(key)} id={key} maxlength={selectedOption.options[key].maxTextLength} minlength={selectedOption.options[key].minTextLength} />
-              {/if}
-            {/if}
-            {#if selectedOption.options[key].type === "file-folder"}
-              <div class="flex-col items-center w-full gap-2">
-                <input type="text" onchange={updateConfig} value={getStoredOrDefaultValue(key)} id={key} maxlength={selectedOption.options[key].maxTextLength} minlength={selectedOption.options[key].minTextLength} />
-                <button class="bg-blue-500 text-white px-2 rounded" onclick={(ev) => browseForFolder(ev)}>Browse</button>
+  <!-- Main Content -->
+  <main
+    class="main-content overflow-x-hidden overflow-y-auto relative"
+    bind:this={mainContent}
+  >
+    {#key selectedOption?.id}
+      <div
+        class="absolute inset-0 w-full h-full"
+        in:fly={{ x: 300, duration: 300 }}
+        out:fly={{ x: -300, duration: 300 }}
+      >
+        {#if selectedOption}
+          {#if selectedOption.id === 'about'}
+            <div class="content-body about-content">
+              <!-- About Section -->
+              <div class="about-section">
+                <div class="about-icon">
+                  <img src="./favicon.png" alt="OpenGameInstaller" class="app-icon" />
+                </div>
+                <h1 class="about-title">OpenGameInstaller</h1>
+                <p class="about-subtitle">By Nat3z & the OGI Team</p>
+                <div class="about-links">
+                  <a href="https://github.com/Nat3z/OpenGameInstaller" target="_blank" class="about-link">
+                    GitHub
+                  </a>
+                  <span class="about-separator">•</span>
+                  <a href="https://github.com/Nat3z/OpenGameInstaller/blob/main/application/LICENSE" target="_blank" class="about-link">
+                    License
+                  </a>
+                </div>
+                <p class="about-version">v{window.electronAPI.getVersion()}</p>
+              </div>
+            </div>
+          {:else}
+            <div class="content-body">
+              <div class="options-grid">
+                {#each Object.keys(selectedOption.options) as key}
+                  {#if selectedOption.options[key].type === "section-describer"}
+                    <div class="option-item">
+                      <label class="option-label !mb-0 !text-2xl" for={key}>
+                        {selectedOption.options[key].displayName}
+                      </label>
+                      <p class="option-description !mb-0">{selectedOption.options[key].description}</p>
+                    </div>
+                  {:else if selectedOption.options[key].type === "boolean"}
+                    <div class="option-item">
+                      <label class="option-label" for={key}>
+                        {selectedOption.options[key].displayName}
+                      </label>
+                      {#if selectedOption.options[key].description}
+                        <p class="option-description">{selectedOption.options[key].description}</p>
+                      {/if}
+                      <div class="option-input">
+                        <label class="checkbox-container">
+                          <input 
+                            type="checkbox" 
+                            id={key}
+                            class="input-checkbox"
+                            onchange={updateConfig} 
+                            checked={getStoredOrDefaultValue(key)}
+                          />
+                          <span class="checkbox-checkmark"></span>
+                        </label>
+                      </div>
+                    </div>
+                  {:else if selectedOption.options[key].type === "password"}
+                    <div class="option-item">
+                      <label class="option-label" for={key}>
+                        {selectedOption.options[key].displayName}
+                      </label>
+                      {#if selectedOption.options[key].description}
+                        <p class="option-description">{selectedOption.options[key].description}</p>
+                      {/if}
+                      <div class="option-input">
+                        <div class="flex items-center relative">
+                          <input 
+                            type={showPassword?.[key] ? "text" : "password"}
+                            id={key}
+                            class="input-text !pr-14 relative z-1"
+                            onchange={updateConfig} 
+                            value={getStoredOrDefaultValue(key)} 
+                            maxlength={selectedOption.options[key].maxTextLength} 
+                            minlength={selectedOption.options[key].minTextLength} 
+                          />
+                          <div class="pointer-events-none absolute right-12 top-1 h-8 w-8 z-2 rounded-lg bg-gradient-to-r from-transparent to-white/80"></div>
+                          <button
+                            type="button"
+                            class="ml-2 px-2 py-1 text-sm absolute right-2 border-none rounded-lg bg-transparent outline-none text-accent-dark z-[3]"
+                            onclick={() => {
+                              if (!showPassword) showPassword = {};
+                              showPassword[key] = !showPassword[key];
+                              showPassword = { ...showPassword };
+                            }}
+                            tabindex="-1"
+                          >
+                            {#if showPassword?.[key]}
+                              <svg xmlns="http://www.w3.org/2000/svg" fill="currentColor" height="24" viewBox="0 0 24 24" width="24"><path d="M0 0h24v24H0V0zm0 0h24v24H0V0zm0 0h24v24H0V0zm0 0h24v24H0V0z" fill="none"/><path d="M12 6.5c2.76 0 5 2.24 5 5 0 .51-.1 1-.24 1.46l3.06 3.06c1.39-1.23 2.49-2.77 3.18-4.53C21.27 7.11 17 4 12 4c-1.27 0-2.49.2-3.64.57l2.17 2.17c.47-.14.96-.24 1.47-.24zM2.71 3.16c-.39.39-.39 1.02 0 1.41l1.97 1.97C3.06 7.83 1.77 9.53 1 11.5 2.73 15.89 7 19 12 19c1.52 0 2.97-.3 4.31-.82l2.72 2.72c.39.39 1.02.39 1.41 0 .39-.39.39-1.02 0-1.41L4.13 3.16c-.39-.39-1.03-.39-1.42 0zM12 16.5c-2.76 0-5-2.24-5-5 0-.77.18-1.5.49-2.14l1.57 1.57c-.03.18-.06.37-.06.57 0 1.66 1.34 3 3 3 .2 0 .38-.03.57-.07L14.14 16c-.65.32-1.37.5-2.14.5zm2.97-5.33c-.15-1.4-1.25-2.49-2.64-2.64l2.64 2.64z"/></svg>
+                            {:else}
+                              <svg xmlns="http://www.w3.org/2000/svg" fill="currentColor" height="24" viewBox="0 0 24 24" width="24"><path d="M0 0h24v24H0V0z" fill="none"/><path d="M12 4C7 4 2.73 7.11 1 11.5 2.73 15.89 7 19 12 19s9.27-3.11 11-7.5C21.27 7.11 17 4 12 4zm0 12.5c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg>
+                            {/if}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  {:else if selectedOption.options[key].type === "file-folder"}
+                    <div class="option-item">
+                      <label class="option-label" for={key}>
+                        {selectedOption.options[key].displayName}
+                      </label>
+                      {#if selectedOption.options[key].description}
+                        <p class="option-description">{selectedOption.options[key].description}</p>
+                      {/if}
+                      <div class="option-input">
+                        <div class="file-input-group">
+                          <input 
+                            type="text" 
+                            id={key}
+                            class="input-text"
+                            onchange={updateConfig} 
+                            value={getStoredOrDefaultValue(key)} 
+                            maxlength={selectedOption.options[key].maxTextLength} 
+                            minlength={selectedOption.options[key].minTextLength} 
+                          />
+                          <button 
+                            class="browse-button" 
+                            onclick={(ev) => browseForFolder(ev)}
+                          >
+                            Browse
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  {:else if selectedOption.options[key].type === "textarea"}
+                    <div class="option-item">
+                      <label class="option-label" for={key}>
+                        {selectedOption.options[key].displayName}
+                      </label>
+                      {#if selectedOption.options[key].description}
+                        <p class="option-description">{selectedOption.options[key].description}</p>
+                      {/if}
+                      <div class="option-input">
+                        <textarea 
+                          id={key}
+                          class="input-textarea"
+                          onchange={updateConfig} 
+                          value={getStoredOrDefaultValue(key).join('\n')}
+                          placeholder={key === "addons" ? "Enter addon URLs, one per line..." : ""}
+                        ></textarea>
+                      </div>
+                    </div>
+                  {:else if selectedOption.options[key].type === "number"}
+                    <div class="option-item">
+                      <label class="option-label" for={key}>
+                        {selectedOption.options[key].displayName}
+                      </label>
+                      {#if selectedOption.options[key].description}
+                        <p class="option-description">{selectedOption.options[key].description}</p>
+                      {/if}
+                      <div class="option-input">
+                        <input 
+                          type="number" 
+                          id={key}
+                          class="input-number"
+                          onchange={updateConfig} 
+                          value={getStoredOrDefaultValue(key)} 
+                          max={selectedOption.options[key].max} 
+                          min={selectedOption.options[key].min} 
+                        />
+                      </div>
+                    </div>
+                  {:else if selectedOption.options[key].type === "action"}
+                    <div class="option-item">
+                      <label class="option-label" for={key}>
+                        {selectedOption.options[key].displayName}
+                      </label>
+                      <div class="option-input">
+                        {#if selectedOption && selectedOption.options[key].action !== undefined}
+                        <button class="action-button bg-accent-light text-accent-dark hover:bg-accent-dark hover:text-accent-light" onclick={() => selectedOption!.options[key].action?.()}>
+                          {selectedOption.options[key].displayName}
+                        </button>
+                        {/if}
+                      </div>
+                    </div>
+                  {:else if selectedOption.options[key].choice}
+                    <div class="option-item">
+                      <label class="option-label" for={key}>
+                        {selectedOption.options[key].displayName}
+                      </label>
+                      {#if selectedOption.options[key].description}
+                        <p class="option-description">{selectedOption.options[key].description}</p>
+                      {/if}
+                      <div class="option-input">
+                        <select
+                          id={key}
+                          class="input-select"
+                          onchange={updateConfig}
+                          value={getStoredOrDefaultValue(key)}
+                        >
+                          {#each selectedOption.options[key].choice as choiceValue}
+                            <option value={choiceValue}>{choiceValue}</option>
+                          {/each}
+                        </select>
+                      </div>
+                    </div>
+                  {:else}
+                    <div class="option-item">
+                      <label class="option-label" for={key}>
+                        {selectedOption.options[key].displayName}
+                      </label>
+                      {#if selectedOption.options[key].description}
+                        <p class="option-description">{selectedOption.options[key].description}</p>
+                      {/if}
+                      <div class="option-input">
+                        <input 
+                          type="text"
+                          id={key}
+                          class="input-text"
+                          onchange={updateConfig} 
+                          value={getStoredOrDefaultValue(key)} 
+                          maxlength={selectedOption.options[key].maxTextLength} 
+                          minlength={selectedOption.options[key].minTextLength} 
+                        />
+                      </div>
+                    </div>
+                  {/if}
+                {/each}
               </div>
 
-            {/if}
-            {#if selectedOption.options[key].type === "textarea"}
-              <textarea class="w-full h-32 resize-none" id={key} onchange={updateConfig} value={getStoredOrDefaultValue(key).join('\n')}></textarea>
-            {/if}
-            {#if selectedOption.options[key].type === "number"}
-              <input type="number" id={key} onchange={updateConfig} value={getStoredOrDefaultValue(key)} max={selectedOption.options[key].max} min={selectedOption.options[key].min} />
-            {/if}
-            {#if selectedOption.options[key].type === "boolean"}
-              {#if getStoredOrDefaultValue(key)}
-                <input type="checkbox" id={key} onchange={updateConfig} checked />
-              {:else}
-                <input type="checkbox" id={key} onchange={updateConfig} />
+              {#if selectedOption.id === 'general'}
+                <div class="action-section">
+                  <h3 class="action-title">Addon Management</h3>
+                  <div class="action-buttons">
+                    <button 
+                      class="action-button primary" 
+                      onclick={() => installAddons()} 
+                      data-disable
+                    >
+                      Install All Addons
+                    </button>
+                    <button 
+                      class="action-button secondary" 
+                      onclick={() => updateAddons()} 
+                      data-disable
+                    >
+                      Update Addons
+                    </button>
+                    <button 
+                      class="action-button danger" 
+                      onclick={() => cleanAddons()} 
+                      data-disable
+                    >
+                      Clean All Addons
+                    </button>
+                  </div>
+                  <div class="action-buttons">
+                    <button 
+                      class="action-button warning" 
+                      onclick={() => window.electronAPI.restartAddonServer()} 
+                      data-disable
+                    >
+                      Restart Addon Server
+                    </button>
+                  </div>
+                </div>
               {/if}
-            {/if}
-            <p data-error-message class="text-red-500"></p>
-          </div>
-        {/each}
-
-        {#if selectedOption.id === "general"}
-          <div class="flex justify-center items-center flex-col gap-2">
-            <div class="flex justify-center items-center flex-row gap-2">
-              <button class="bg-green-500 disabled:bg-slate-400 text-white p-2 rounded" onclick={() => installAddons()} data-disable>Install All</button>
-              <button class="bg-yellow-500 disabled:bg-slate-400 text-white p-2 rounded" onclick={() => updateAddons()} data-disable>Update</button>
-              <button class="bg-red-500 disabled:bg-slate-400 text-white p-2 rounded" onclick={() => cleanAddons()} data-disable>Clean All</button>
             </div>
-
-            <div class="flex justify-center items-center flex-row gap-2">
-              <button class="bg-red-500 disabled:bg-slate-400 text-white p-2 rounded" onclick={() => window.electronAPI.restartAddonServer()} data-disable>Restart Addon Server</button>
+          {/if}
+        {:else}
+          <div class="no-selection">
+            <div class="no-selection-content">
+              <svg class="no-selection-icon" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+              </svg>
+              <h2 class="no-selection-title">Select a Setting Category</h2>
+              <p class="no-selection-description">Choose a category from the sidebar to configure your settings</p>
             </div>
-          </div>
-        {/if}
-
-        {#if selectedOption.id === 'about'}
-          <div class="flex-col flex justify-start items-center h-full">
-            <img src="./favicon.png" alt="Favicon" class="w-32 h-32" />
-            <h1 class="font-archivo font-semibold text-xl">OpenGameInstaller</h1>
-            <p class="font-normal">By Nat3z & the OGI Team</p>
-            <ul class="flex-row justify-center items-center list-disc">
-              <li class="inline">
-                <a href="https://github.com/Nat3z/OpenGameInstaller" target="_blank" class="text-blue-500">GitHub</a>
-              </li>
-              <li class="inline">
-                •
-                <a href="https://github.com/Nat3z/OpenGameInstaller/blob/main/application/LICENSE" target="_blank" class="text-blue-500">License</a>
-              </li>
-          </ul>
-            <p class="mt-auto absolute bottom-2">v{window.electronAPI.getVersion()}</p>
           </div>
         {/if}
       </div>
-    {/if}    
- 
-  </article>
+    {/key}
+  </main>
 </div>
 
 <style>
-  .selected {
-    @apply bg-slate-200;
-  }
-	.config {
-		@apply flex flex-row w-full h-full rounded justify-center items-start;
-	}
-  section {
-    @apply p-2;
-  }
-  section h2 {
-    @apply text-xl;
-  }
-  section p {
-    @apply text-sm text-gray-500; 
-  }  
-	.options {
-    @apply gap-2 flex flex-col w-full py-2 border-t-2 border-gray-200 mt-2 h-5/6 overflow-y-auto;
+  .config-container {
+    @apply flex h-full w-full;
   }
 
-	article h2 {
-		@apply text-xl;
-	}
-
-  input[type="text"], input[type="number"], textarea {
-    @apply px-1 pl-2 bg-white rounded-lg appearance-none;
+  /* Sidebar Styles */
+  .sidebar {
+    @apply w-80 flex flex-col;
   }
 
-  textarea {
-    @apply resize-none text-xs py-2;
+  .sidebar-title {
+    @apply text-2xl font-archivo font-bold text-gray-900;
   }
 
-  input[type=number]::-webkit-inner-spin-button, 
-  input[type=number]::-webkit-outer-spin-button { 
+  .sidebar-nav {
+    @apply flex-1 space-y-2;
+  }
+
+  .sidebar-item {
+    @apply w-full p-4 rounded-lg border-none bg-transparent hover:bg-accent-lighter transition-colors duration-200 text-left text-white;
+  }
+
+  .sidebar-item.selected {
+    @apply bg-accent-lighter;
+  }
+
+  .sidebar-item-content {
+    @apply space-y-1;
+  }
+
+  .sidebar-item-title {
+    @apply text-lg font-archivo font-semibold text-gray-900;
+  }
+
+  .sidebar-item-description {
+    @apply text-sm text-gray-600;
+  }
+
+  /* Main Content Styles */
+  .main-content {
+    @apply flex-1 flex flex-col;
+  }
+
+  .content-header {
+    @apply p-6 border-b;
+  }
+
+  .content-title {
+    @apply text-3xl font-archivo font-bold text-gray-900 mb-2;
+  }
+
+  .content-description {
+    @apply text-gray-600;
+  }
+
+  .content-body {
+    @apply flex-1 p-6 pt-0 overflow-y-auto;
+  }
+
+  .content-body.about-content {
+    @apply flex items-center justify-center;
+  }
+
+  /* About Section Styles */
+  .about-section {
+    @apply flex flex-col items-center text-center space-y-4 max-w-md;
+  }
+
+  .about-icon {
+    @apply mb-4;
+  }
+
+  .app-icon {
+    @apply w-48 h-48 rounded-lg;
+  }
+
+  .about-title {
+    @apply text-3xl font-archivo font-bold text-gray-900;
+  }
+
+  .about-subtitle {
+    @apply text-lg text-gray-600;
+  }
+
+  .about-links {
+    @apply flex items-center space-x-2;
+  }
+
+  .about-link {
+    @apply text-accent hover:text-accent-dark transition-colors;
+  }
+
+  .about-separator {
+    @apply text-gray-400;
+  }
+
+  .about-version {
+    @apply text-sm text-gray-500 mt-8;
+  }
+
+  /* Options Grid */
+  .options-grid {
+    @apply space-y-6;
+  }
+
+  .option-item {
+    @apply bg-white p-6 rounded-lg border border-gray-200 shadow-sm;
+  }
+
+  .option-label {
+    @apply block text-lg font-archivo font-semibold text-gray-900 mb-1;
+  }
+
+  .option-description {
+    @apply text-sm text-gray-600 mb-4;
+  }
+
+  .option-input {
+    @apply space-y-2;
+  }
+
+  /* Input Styles */
+  .input-text, .input-number, .input-select {
+    @apply w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-accent-light focus:border-accent transition-colors;
+  }
+
+  .input-textarea {
+    @apply w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-accent-light focus:border-accent transition-colors resize-none h-32;
+  }
+
+  .file-input-group {
+    @apply flex gap-2;
+  }
+
+  .file-input-group .input-text {
+    @apply flex-1;
+  }
+
+  .browse-button {
+    @apply px-4 py-2 bg-accent text-white rounded-lg hover:bg-accent-dark transition-colors border-none;
+  }
+
+  /* Checkbox Styles */
+  .checkbox-container {
+    @apply relative flex items-center cursor-pointer;
+  }
+
+  .input-checkbox {
+    @apply sr-only;
+  }
+
+  .checkbox-checkmark {
+    @apply w-5 h-5 bg-white border-2 border-gray-300 rounded flex items-center justify-center transition-colors;
+  }
+
+  .input-checkbox:checked + .checkbox-checkmark {
+    @apply bg-accent border-accent;
+  }
+
+  .input-checkbox:not(:checked) + .checkbox-checkmark::after {
+    content: '–';
+    @apply text-gray-400 text-sm font-archivo;
+  }
+
+  .input-checkbox:checked + .checkbox-checkmark::after {
+    content: '•';
+    @apply text-white text-sm font-archivo;
+  }
+
+  /* Action Section */
+  .action-section {
+    @apply mt-8 p-6 bg-white rounded-lg border border-gray-200;
+  }
+
+  .action-title {
+    @apply text-xl font-archivo font-semibold text-gray-900 mb-4;
+  }
+
+  .action-buttons {
+    @apply flex flex-wrap gap-3 mb-4;
+  }
+
+  .action-button {
+    @apply px-4 py-2 rounded-lg font-medium transition-colors border-none;
+  }
+
+  .action-button.primary {
+    @apply bg-green-500 text-white hover:bg-green-600 disabled:bg-gray-400;
+  }
+
+  .action-button.secondary {
+    @apply bg-blue-500 text-white hover:bg-blue-600 disabled:bg-gray-400;
+  }
+
+  .action-button.danger {
+    @apply bg-red-500 text-white hover:bg-red-600 disabled:bg-gray-400;
+  }
+
+  .action-button.warning {
+    @apply bg-yellow-500 text-white hover:bg-yellow-600 disabled:bg-gray-400;
+  }
+
+  /* No Selection State */
+  .no-selection {
+    @apply flex-1 flex items-center justify-center;
+  }
+
+  .no-selection-content {
+    @apply text-center space-y-4;
+  }
+
+  .no-selection-icon {
+    @apply w-16 h-16 text-gray-400 mx-auto;
+  }
+
+  .no-selection-title {
+    @apply text-2xl font-archivo font-semibold text-gray-900;
+  }
+
+  .no-selection-description {
+    @apply text-gray-600;
+  }
+
+  /* Remove webkit number input spinners */
+  .input-number::-webkit-inner-spin-button,
+  .input-number::-webkit-outer-spin-button {
     -webkit-appearance: none;
-    -moz-appearance: none;
-    appearance: none;
-    margin: 0; 
+    margin: 0;
   }
-
 </style>

@@ -8,7 +8,7 @@ export default {
         accent: '#428a91',
         'accent-dark': '#2d626a',
         'accent-light': '#B0DFD5',
-        'accent-lighter': '#D4F0EA',
+        'accent-lighter': '#e1f4f0',
         'accent-text-color': '#000000',
         'background-color': '#F7FFFD',
       },

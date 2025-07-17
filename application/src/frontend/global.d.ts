@@ -77,6 +77,9 @@ interface Window {
         status?: number;
         error?: string;
       }>;
+      getAddonPath: (addonID: string) => Promise<string>;
+      getAddonIcon: (addonID: string) => Promise<string>;
+      getLocalImage: (path: string) => Promise<string>;
     };
     updateAddons: () => Promise<void>;
     getVersion: () => string;

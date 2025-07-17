@@ -21,7 +21,7 @@ export class AddonConnection {
   public addonInfo: OGIAddonConfiguration;
   public ws: wsLib.WebSocket;
   public configTemplate: ConfigurationFile;
-
+  public filePath: string | undefined;
   constructor(ws: wsLib.WebSocket) {
     this.ws = ws;
   }

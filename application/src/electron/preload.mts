@@ -79,6 +79,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
       error?: string;
       status?: number;
     }> => ipcRenderer.invoke('addon:request', { method, params }),
+    getAddonPath: (addonID: string) =>
+      ipcRenderer.invoke('app:get-addon-path', addonID),
+    getAddonIcon: (addonID: string) =>
+      ipcRenderer.invoke('app:get-addon-icon', addonID),
+    getLocalImage: (path: string) =>
+      ipcRenderer.invoke('app:get-local-image', path),
   },
   getVersion: () => ipcRenderer.sendSync('get-version'),
   updateAddons: () => ipcRenderer.invoke('update-addons'),

@@ -4,6 +4,7 @@ import { sendNotification } from './main.js';
 import z from 'zod';
 import exec from 'child_process';
 import { addonSecret } from './server/constants.js';
+import { clients } from './server/addon-server.js';
 
 export let processes: {
   [key: string]: exec.ChildProcess;
@@ -126,6 +127,11 @@ export async function startAddon(addonPath: string) {
       addon.scripts.run + ' --addonSecret="' + addonSecret + '"',
       addonPath
     );
+
+    let client = clients.get(addonName!);
+    if (client) {
+      client.filePath = addonPath;
+    }
   } catch (e) {
     sendNotification({
       type: 'error',

@@ -194,4 +194,49 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
     }
     return apps;
   });
+  ipcMain.handle('app:get-addon-path', async (_, addonID: string) => {
+    return join(__dirname, 'addons', addonID);
+  });
+  ipcMain.handle('app:get-addon-icon', async (_, addonID: string) => {
+    const addonPath = join(__dirname, 'addons', addonID);
+    if (!fs.existsSync(addonPath)) {
+      return null;
+    }
+    if (!fs.existsSync(join(addonPath, 'addon.json'))) {
+      return null;
+    }
+    const addonData = fs.readFileSync(join(addonPath, 'addon.json'), 'utf-8');
+    const addonInfo = JSON.parse(addonData);
+    const iconPath = addonInfo.icon;
+    if (!iconPath) {
+      console.error('No icon path found for addon: ' + addonID);
+      return null;
+    }
+    return iconPath;
+  });
+  ipcMain.handle('app:get-local-image', async (_, path: string) => {
+    const fullPath = join(__dirname, path);
+    if (!fs.existsSync(fullPath)) {
+      return null;
+    }
+    const ext = path.split('.').pop()?.toLowerCase() || 'png';
+    const mimeType =
+      {
+        jpg: 'image/jpeg',
+        jpeg: 'image/jpeg',
+        png: 'image/png',
+        gif: 'image/gif',
+        webp: 'image/webp',
+        bmp: 'image/bmp',
+        svg: 'image/svg+xml',
+      }[ext] || 'image/png';
+    try {
+      const buffer = fs.readFileSync(fullPath);
+      const base64 = buffer.toString('base64');
+      return `data:${mimeType};base64,${base64}`;
+    } catch (err) {
+      console.error('Failed to read image file: ' + fullPath);
+      return null;
+    }
+  });
 }

@@ -9,6 +9,10 @@ import {
   ProcedureJSON,
   ProcedureDeferTask,
 } from '../serve.js';
+import * as fs from 'fs/promises';
+import { join } from 'path';
+import { restartAddonServer } from '../../handlers/addon-manager.js';
+import { __dirname } from '../../paths.js';
 
 const procedures: Record<string, Procedure<any>> = {
   // Get all addon info
@@ -200,6 +204,59 @@ const procedures: Record<string, Procedure<any>> = {
 
       deferrableTask.run();
       return new ProcedureDeferTask(200, deferrableTask);
+    }),
+
+  deleteAddon: procedure()
+    .input(z.object({ addonID: z.string() }))
+    .handler(async (input) => {
+      const client = clients.get(input.addonID);
+      if (!client) return new ProcedureError(404, 'Client not found');
+      if (!client.filePath) {
+        return new ProcedureError(
+          400,
+          'Addon was not spawned by OpenGameInstaller or is a "local:..." addon.'
+        );
+      }
+      // time to delete the addon
+      // remove the addon from the local storage
+      const generalConfig = JSON.parse(
+        await fs.readFile(
+          join(__dirname, 'config/option/general.json'),
+          'utf-8'
+        )
+      );
+      const addons = generalConfig.addons;
+
+      generalConfig.addons = addons.filter(
+        (addon: string) => addon !== client.filePath
+      );
+
+      await fs.writeFile(
+        join(__dirname, 'config/option/general.json'),
+        JSON.stringify(generalConfig, null, 2)
+      );
+
+      restartAddonServer();
+
+      try {
+        // remove the addon from the addons folder
+        await fs.rm(join(__dirname, 'addons', input.addonID), {
+          recursive: true,
+        });
+      } catch (e) {
+        console.error(e);
+      }
+
+      try {
+        // remove the addon from the config folder
+        await fs.rm(join(__dirname, 'config', input.addonID), {
+          recursive: true,
+        });
+      } catch (e) {
+        console.error(e);
+      }
+
+      return new ProcedureJSON(200, { success: true });
     }),
 };
 

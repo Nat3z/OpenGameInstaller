@@ -1,32 +1,18 @@
 <script lang="ts">
   import { onDestroy, onMount } from "svelte";
+  import { fly } from "svelte/transition";
   import { safeFetch } from "../utils";
   import type {
-    BooleanOption,
     ConfigurationFile,
-    ConfigurationOption,
-    NumberOption,
-    StringOption,
   } from "ogi-addon/config";
   import type { OGIAddonConfiguration } from "ogi-addon";
-  import { addonUpdates, notifications } from "../store";
+  import { addonUpdates } from "../store";
   import CommunityAddonsList from "./CommunityAddonsList.svelte";
+  import AddonPicture from "../components/AddonPicture.svelte";
+  import FocusedAddonView from "./FocusedAddonView.svelte";
   import { writable, type Writable } from "svelte/store";
-  const fs = window.electronAPI.fs;
 
-  function isStringOption(option: ConfigurationOption): option is StringOption {
-    return option.type === "string";
-  }
 
-  function isNumberOption(option: ConfigurationOption): option is NumberOption {
-    return option.type === "number";
-  }
-
-  function isBooleanOption(
-    option: ConfigurationOption
-  ): option is BooleanOption {
-    return option.type === "boolean";
-  }
   let addons: ConfigTemplateAndInfo[] = $state([]);
   onMount(() => {
     safeFetch("getAllAddons", {}).then((data) => {
@@ -36,195 +22,7 @@
   interface ConfigTemplateAndInfo extends OGIAddonConfiguration {
     configTemplate: ConfigurationFile;
   }
-  let selectedAddon: ConfigTemplateAndInfo | null = $state(null);
 
-  function selectAddon(addon: ConfigTemplateAndInfo) {
-    const selected = document.querySelector(".selected");
-    if (selected) {
-      selected.classList.remove("selected");
-    }
-    const element = document.getElementById("cfg-" + addon.id);
-    if (element) {
-      element.classList.add("selected");
-      selectedAddon = addon;
-    }
-    setTimeout(() => {
-      updateConfig();
-    }, 100);
-  }
-
-  function updateConfig() {
-    if (!selectedAddon) return;
-    let config: Record<string, string | number | boolean> = {};
-    Object.keys(selectedAddon.configTemplate).forEach((key) => {
-      if (!selectedAddon) return;
-      const element = document.getElementById(key) as
-        | HTMLInputElement
-        | HTMLSelectElement;
-      if (element) {
-        if (selectedAddon.configTemplate[key].type === "string") {
-          config[key] = element.value;
-        }
-        if (selectedAddon.configTemplate[key].type === "number") {
-          config[key] = parseInt(element.value);
-        }
-        if (
-          selectedAddon.configTemplate[key].type === "boolean" &&
-          element.type === "checkbox"
-        ) {
-          config[key] = element.checked;
-        }
-      }
-    });
-    document.querySelectorAll("[data-error-message]").forEach((element) => {
-      element.textContent = "";
-      element
-        .parentElement!!.querySelector("[data-input]")!!
-        .classList.remove("outline-red-500");
-      element
-        .parentElement!!.querySelector("[data-input]")!!
-        .classList.remove("outline-2");
-      element
-        .parentElement!!.querySelector("[data-input]")!!
-        .classList.remove("outline");
-    });
-    safeFetch(
-      "updateConfig",
-      {
-        addonID: selectedAddon.id,
-        config: config,
-      },
-      {}
-    ).then((data) => {
-      if (!data.success) {
-        for (const key in data.errors) {
-          const element = document.getElementById(key);
-          if (!element) return console.error("element not found");
-          element.classList.add("outline-red-500");
-          element.classList.add("outline-2");
-          element.classList.add("outline");
-          element.parentElement!!.querySelector("p")!!.innerHTML = `
-            <img src="./error.svg" alt="error" class="w-6 h-6" />
-          `;
-
-          element
-            .parentElement!!.querySelector("p")!!
-            .setAttribute("data-context", data.errors[key]);
-        }
-        notifications.update((update) => [
-          ...update,
-          {
-            id: Math.random().toString(36).substring(7),
-            type: "error",
-            message:
-              "Failed to validate configuration. Configuration will not be usable.",
-          },
-        ]);
-      }
-    });
-    // save this config to local storage
-    fs.write(
-      "./config/" + selectedAddon!!.id + ".json",
-      JSON.stringify(config)
-    );
-  }
-
-  function getStoredOrDefaultValue(key: string) {
-    if (!selectedAddon) return;
-    if (!fs.exists("./config/" + selectedAddon.id + ".json")) {
-      return selectedAddon.configTemplate[key].defaultValue;
-    } else {
-      const storedConfig = JSON.parse(
-        fs.read("./config/" + selectedAddon.id + ".json")
-      );
-      return (
-        storedConfig[key] || selectedAddon.configTemplate[key].defaultValue
-      );
-    }
-  }
-
-  function browseForFolder(event: MouseEvent, type: "file" | "folder") {
-    const dialog = window.electronAPI.fs.dialog;
-    const element = (event.target as HTMLElement).parentElement!!.querySelector(
-      "input"
-    ) as HTMLInputElement;
-    dialog
-      .showOpenDialog({
-        properties: type === "file" ? ["openDirectory"] : ["openFile"],
-      })
-      .then((path) => {
-        if (!path) return;
-        if (element) {
-          element.value = path;
-        }
-        updateConfig();
-      });
-  }
-
-  function showDescription(event: MouseEvent | FocusEvent) {
-    const element = event.target as HTMLElement;
-    const contextual = element.parentElement!!.querySelector(
-      "[data-description]"
-    )!! as HTMLDivElement;
-    contextual.style.display = "flex";
-    contextual.animate([{ opacity: 0 }, { opacity: 1 }], {
-      duration: 200,
-      fill: "forwards",
-    });
-  }
-
-  function hideDescription(event: MouseEvent) {
-    const element = event.target as HTMLElement;
-    const contextual = element.parentElement!!.querySelector(
-      "[data-description]"
-    )!! as HTMLDivElement;
-    contextual.style.display = "flex";
-    contextual.animate([{ opacity: 1 }, { opacity: 0 }], {
-      duration: 200,
-      fill: "forwards",
-    });
-    setTimeout(() => {
-      contextual.style.display = "none";
-    }, 200);
-  }
-  function showContextHint(event: MouseEvent) {
-    const element = event.target as HTMLElement;
-    const context = element.getAttribute("data-context");
-    if (!context) return;
-    const contextual = element.parentElement!!.querySelector(
-      "[data-contextual]"
-    )!! as HTMLDivElement;
-    contextual.style.display = "flex";
-
-    const hint = contextual.querySelector("p")!!;
-    hint.textContent = context;
-    contextual.animate([{ opacity: 0 }, { opacity: 1 }], {
-      duration: 200,
-      fill: "forwards",
-    });
-  }
-
-  function hideContextHint(event: MouseEvent) {
-    const element = event.target as HTMLElement;
-    const contextual = element.parentElement!!.querySelector(
-      "[data-contextual]"
-    )!! as HTMLDivElement;
-    contextual.style.display = "flex";
-    contextual.animate([{ opacity: 1 }, { opacity: 0 }], {
-      duration: 200,
-      fill: "forwards",
-    });
-    setTimeout(() => {
-      contextual.style.display = "none";
-    }, 200);
-  }
-
-  function updateInputNum(event: Event) {
-    const element = event.target as HTMLInputElement;
-    if (element.type === "range") {
-      element.parentElement!!.querySelector("p")!!.textContent = element.value;
-    }
-  }
   let addonsWithUpdates: string[] = $state([]);
   const unsubscribe = addonUpdates.subscribe((update) => {
     addonsWithUpdates = update;
@@ -236,230 +34,152 @@
   });
 
   let view: Writable<"my-addons" | "community-addons"> = writable("my-addons");
+  let focusedAddonId: string | null = $state(null);
+  
   const unsubscribe1 = view.subscribe(() => {
     safeFetch("getAllAddons", {}).then((data) => {
       addons = data;
     });
   });
+
+  function openAddonSettings(addonId: string) {
+    focusedAddonId = addonId;
+  }
+
+  function goBackToList() {
+    focusedAddonId = null;
+  }
 </script>
-
-<div class="flex flex-col justify-start items-start w-full h-full">
-  <div class="flex flex-row w-full h-12 border-b-2 border-gray-300">
-    <button
-      data-selected={$view === "my-addons"}
-      onclick={() => ($view = "my-addons")}
-      class="h-full w-full border-none bg-slate-100 font-archivo text-lg hover:bg-slate-200"
-      >My Addons</button
+<div class="flex flex-col overflow-y-auto justify-start overflow-x-hidden items-start w-full h-full relative">
+  {#if focusedAddonId}
+    <div 
+      in:fly={{ x: 300, duration: 300 }}
+      out:fly={{ x: -300, duration: 300 }}
+      class="absolute inset-0 w-full h-full z-10"
     >
-    <button
-      data-selected={$view === "community-addons"}
-      onclick={() => ($view = "community-addons")}
-      class="h-full w-full border-none bg-slate-100 font-archivo text-lg hover:bg-slate-200"
-      >Community Addons</button
-    >
-  </div>
-  {#if $view === "my-addons"}
-    <div class="config">
-      <div class="w-72 h-full gap-2 flex flex-col">
-        <section class="selected hidden"></section>
-        {#if addons.length !== 0}
-          {#each addons as addon}
-            <section
-              class="hover:bg-slate-100 hover:cursor-pointer"
-              onkeypress={() => {}}
-              onclick={() => selectAddon(addon)}
-              id={"cfg-" + addon.id}
-            >
-              <h2>{addon.name}</h2>
-              <p>{addon.description}</p>
-              {#if addonsWithUpdates.includes(addon.id)}
-                <p class="!text-yellow-500">Update available</p>
-              {/if}
-            </section>
-          {/each}
-        {/if}
-      </div>
-
-      <article
-        class="w-full h-full bg-slate-100 p-4 py-2 border-l-2 border-gray-200"
-      >
-        {#if selectedAddon}
-          <h2>{selectedAddon.name}</h2>
-          <p>{selectedAddon.description}</p>
-          <div class="options">
-            <div class="hidden outline-red-500 outline-4"></div>
-            {#each Object.keys(selectedAddon.configTemplate) as key}
-              <div class="flex flex-row gap-2 items-center relative">
-                <label
-                  for={key}
-                  onmouseover={showDescription}
-                  onfocus={showDescription}
-                  onmouseleave={hideDescription}
-                  >{selectedAddon.configTemplate[key].displayName}</label
-                >
-                {#if isStringOption(selectedAddon.configTemplate[key])}
-                  {#if selectedAddon.configTemplate[key].allowedValues.length !== 0}
-                    <select
-                      data-input
-                      id={key}
-                      onchange={updateConfig}
-                      value={getStoredOrDefaultValue(key)}
-                    >
-                      {#each selectedAddon.configTemplate[key].allowedValues as value}
-                        <option {value}>{value}</option>
-                      {/each}
-                    </select>
-                  {:else if selectedAddon.configTemplate[key].inputType === "text" || selectedAddon.configTemplate[key].inputType === "password"}
-                    <input
-                      data-input
-                      type={selectedAddon.configTemplate[key].inputType}
-                      onchange={updateConfig}
-                      value={getStoredOrDefaultValue(key)}
-                      id={key}
-                      maxlength={selectedAddon.configTemplate[key]
-                        .maxTextLength}
-                      minlength={selectedAddon.configTemplate[key]
-                        .minTextLength}
-                    />
-                  {:else if selectedAddon.configTemplate[key].inputType === "file" || selectedAddon.configTemplate[key].inputType === "folder"}
-                    <input
-                      type="text"
-                      data-input
-                      onchange={updateConfig}
-                      value={getStoredOrDefaultValue(key)}
-                      id={key}
-                    />
-
-                    {#if selectedAddon.configTemplate[key].inputType === "folder"}
-                      <button
-                        class="bg-blue-500 text-white px-2 rounded"
-                        onclick={(ev) => browseForFolder(ev, "folder")}
-                        >Browse</button
-                      >
-                    {:else if selectedAddon.configTemplate[key].inputType === "file"}
-                      <button
-                        class="bg-blue-500 text-white px-2 rounded"
-                        onclick={(ev) => browseForFolder(ev, "file")}
-                        >Browse</button
-                      >
-                    {/if}
-                  {/if}
-                {/if}
-                {#if isNumberOption(selectedAddon.configTemplate[key])}
-                  <input
-                    data-input
-                    type={selectedAddon.configTemplate[key].inputType}
-                    id={key}
-                    oninput={(event) => updateInputNum(event)}
-                    onchange={updateConfig}
-                    value={getStoredOrDefaultValue(key)}
-                    max={isNumberOption(selectedAddon.configTemplate[key])
-                      ? selectedAddon.configTemplate[key].max
-                      : 0}
-                    min={isNumberOption(selectedAddon.configTemplate[key])
-                      ? selectedAddon.configTemplate[key].min
-                      : 0}
-                  />
-                  {#if selectedAddon.configTemplate[key].inputType === "range"}
-                    <p>{getStoredOrDefaultValue(key)}</p>
-                  {/if}
-                {/if}
-                {#if isBooleanOption(selectedAddon.configTemplate[key])}
-                  {#if getStoredOrDefaultValue(key)}
-                    <input
-                      data-input
-                      type="checkbox"
-                      id={key}
-                      onchange={updateConfig}
-                      class="top-[2px] relative"
-                      checked
-                    />
-                  {:else}
-                    <input
-                      data-input
-                      type="checkbox"
-                      id={key}
-                      onchange={updateConfig}
-                      class="top-[2px] relative"
-                    />
-                  {/if}
-                {/if}
-                <p
-                  data-error-message
-                  class="text-red-500"
-                  data-context=""
-                  onmouseenter={showContextHint}
-                  onmouseleave={hideContextHint}
-                ></p>
-
-                <div
-                  data-contextual
-                  style="display: none"
-                  class="absolute flex flex-row gap-2 justify-start items-center z-20 top-8 border border-gray-200 left-0 bg-slate-100 text-sm p-2 rounded-md shadow-lg w-full"
-                >
-                  <img src="./error.svg" alt="error" class="w-4 h-4" />
-                  <p class=""></p>
-                </div>
-                <div
-                  data-description
-                  style="display: none"
-                  class="absolute flex flex-row gap-2 justify-start items-center z-20 top-8 border border-gray-200 left-0 bg-slate-100 text-sm p-2 rounded-md shadow-lg w-full"
-                >
-                  <img src="./info.svg" alt="error" class="w-4 h-4" />
-                  <p class="">
-                    {selectedAddon.configTemplate[key].description}
-                  </p>
-                </div>
-              </div>
-            {/each}
-          </div>
-        {/if}
-      </article>
+      <FocusedAddonView addonId={focusedAddonId} onBack={goBackToList} />
     </div>
-  {:else if $view === "community-addons"}
-    <div class="w-full h-full">
-      <CommunityAddonsList />
+  {/if}
+  
+  {#if !focusedAddonId}
+    <div 
+      in:fly={{ x: -300, duration: 300 }}
+      out:fly={{ x: 300, duration: 300 }}
+      class="absolute inset-0 w-full h-full z-10"
+    >
+      <div class="flex flex-row w-full h-12 gap-4 sticky top-0">
+        <button
+          data-selected={$view === "my-addons"}
+          onclick={() => ($view = "my-addons")}
+          class="h-full w-full border-none rounded-lg bg-accent-lighter data-[selected=true]:bg-accent-light shadow-md font-archivo text-lg hover:bg-accent-light transition-colors"
+          >My Addons</button
+        >
+        <button
+          data-selected={$view === "community-addons"}
+          onclick={() => ($view = "community-addons")}
+          class="h-full w-full border-none rounded-lg bg-accent-lighter shadow-md data-[selected=true]:bg-accent-light font-archivo text-lg hover:bg-accent-light transition-colors"
+          >Community Addons</button
+        >
+      </div>
+      {#if $view === "my-addons"}
+          <div class="config">
+            <div class="addon-list">
+              <section class="selected hidden"></section>
+              {#if addons.length !== 0}
+                {#each addons as addon}
+                  <!-- svelte-ignore a11y_no_static_element_interactions -->
+                  <section
+                    class="addon-card-large hover:cursor-pointer"
+                    onkeypress={() => {}}
+                    onclick={() => openAddonSettings(addon.id)}
+                    id={"cfg-" + addon.id}
+                  >
+                    <div class="addon-card-content">
+                      <div class="addon-icon-container">
+                        <AddonPicture addonId={addon.id} class="addon-icon rounded-lg" />
+                      </div>
+                      <div class="addon-info">
+                        <h2 class="addon-title">{addon.name}</h2>
+                        <p class="addon-description">{addon.description}</p>
+                        {#if addonsWithUpdates.includes(addon.id)}
+                          <p class="update-available">Update available</p>
+                        {/if}
+                      </div>
+                      
+                    </div>
+                    <div class="addon-settings">
+                      <button 
+                        class="settings-button outline-none border-none text-accent-dark" 
+                        aria-label="Open settings"
+                        onclick={() => openAddonSettings(addon.id)}
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" class="w-10 h-10" fill="currentColor" enable-background="new 0 0 24 24" height="24" viewBox="0 0 24 24" width="24"><rect fill="none" height="24" width="24"/><path d="M19.5,12c0-0.23-0.01-0.45-0.03-0.68l1.86-1.41c0.4-0.3,0.51-0.86,0.26-1.3l-1.87-3.23c-0.25-0.44-0.79-0.62-1.25-0.42 l-2.15,0.91c-0.37-0.26-0.76-0.49-1.17-0.68l-0.29-2.31C14.8,2.38,14.37,2,13.87,2h-3.73C9.63,2,9.2,2.38,9.14,2.88L8.85,5.19 c-0.41,0.19-0.8,0.42-1.17,0.68L5.53,4.96c-0.46-0.2-1-0.02-1.25,0.42L2.41,8.62c-0.25,0.44-0.14,0.99,0.26,1.3l1.86,1.41 C4.51,11.55,4.5,11.77,4.5,12s0.01,0.45,0.03,0.68l-1.86,1.41c-0.4,0.3-0.51,0.86-0.26,1.3l1.87,3.23c0.25,0.44,0.79,0.62,1.25,0.42 l2.15-0.91c0.37,0.26,0.76,0.49,1.17,0.68l0.29,2.31C9.2,21.62,9.63,22,10.13,22h3.73c0.5,0,0.93-0.38,0.99-0.88l0.29-2.31 c0.41-0.19,0.8-0.42,1.17-0.68l2.15,0.91c0.46,0.2,1,0.02,1.25-0.42l1.87-3.23c0.25-0.44,0.14-0.99-0.26-1.3l-1.86-1.41 C19.49,12.45,19.5,12.23,19.5,12z M12.04,15.5c-1.93,0-3.5-1.57-3.5-3.5s1.57-3.5,3.5-3.5s3.5,1.57,3.5,3.5S13.97,15.5,12.04,15.5z"/></svg>
+                      </button>
+                    </div>
+                  </section>
+                {/each}
+              {/if}
+            </div>
+          </div>
+      {:else if $view === "community-addons"}
+        <div class="w-full h-full">
+          <CommunityAddonsList />
+        </div>
+      {/if}
     </div>
   {/if}
 </div>
 
 <style>
-  [data-selected="true"] {
-    @apply bg-gray-300;
-  }
-  .selected {
-    @apply bg-slate-200;
-  }
   .config {
-    @apply flex flex-row w-full h-full rounded justify-center items-start;
+    @apply flex flex-col w-full h-full;
   }
-  section {
-    @apply p-2;
+  
+  .addon-list {
+    @apply flex flex-col w-full gap-4 py-6 px-0 overflow-y-auto;
+    max-height: calc(100vh - 200px);
   }
-  section h2 {
-    @apply text-xl;
+  
+  .addon-card-large {
+    @apply rounded-lg h-28 duration-200 flex flex-row items-center;
+    width: 100%;
   }
-  section p {
-    @apply text-sm text-gray-500;
+  
+  .addon-card-content {
+    @apply flex items-center justify-between h-full w-full bg-accent-lighter rounded-lg;
   }
-  .options {
-    @apply gap-2 flex flex-col w-full py-2 border-t-2 border-gray-200 mt-2 h-5/6 overflow-y-auto;
+  
+  .addon-icon-container {
+    @apply flex items-center justify-center;
+    width: 100px;
+    height: 100px;
+    flex-shrink: 0;
   }
-
-  article h2 {
-    @apply text-xl;
+ 
+  .addon-info {
+    @apply flex flex-col justify-center flex-1 ml-6;
   }
-
-  input[type="text"],
-  input[type="number"] {
-    @apply px-1 pl-2 bg-white rounded-lg appearance-none;
+  
+  .addon-title {
+    @apply text-2xl font-semibold text-gray-900 mb-2;
   }
-
-  input[type="number"]::-webkit-inner-spin-button,
-  input[type="number"]::-webkit-outer-spin-button {
-    -webkit-appearance: none;
-    -moz-appearance: none;
-    appearance: none;
-    margin: 0;
+  
+  .addon-description {
+    @apply text-lg text-gray-600 leading-relaxed;
+  }
+  
+  .update-available {
+    @apply text-yellow-600 text-sm font-medium mt-1;
+  }
+  
+  .addon-settings {
+    @apply flex items-center justify-center mr-4 ml-8;
+    width: 70px;
+    height: 70px;
+    flex-shrink: 0;
+  }
+  
+  .settings-button {
+    @apply w-full h-full flex items-center justify-center bg-transparent hover:bg-gray-100 rounded-2xl transition-colors duration-200;
   }
 </style>

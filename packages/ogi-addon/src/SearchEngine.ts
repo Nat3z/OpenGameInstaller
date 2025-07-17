@@ -8,4 +8,5 @@ export type SearchResult = {
     name: string;
     downloadURL: string;
   }[];
+  manifest?: Record<string, any>;
 };

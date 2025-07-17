@@ -1,5 +1,6 @@
 import type { SearchResult } from 'ogi-addon';
 import { writable, type Writable } from 'svelte/store';
+import type { BasicLibraryInfo } from 'ogi-addon';
 
 export type DownloadStatusAndInfo = SearchResult & {
   appID: number;
@@ -71,6 +72,10 @@ export interface Notification {
   id: string;
   type: 'info' | 'error' | 'success' | 'warning';
 }
+
+// Search-related types and state
+export type SearchResultWithSource = BasicLibraryInfo & { addonsource: string };
+
 export const currentDownloads: Writable<DownloadStatusAndInfo[]> = writable([]);
 export const failedSetups: Writable<FailedSetup[]> = writable([]);
 export const deferredTasks: Writable<DeferredTask[]> = writable([]);
@@ -86,17 +91,24 @@ export const launchGameTrigger: Writable<number | undefined> =
 export const gamesLaunched: Writable<Record<string, 'launched' | 'error'>> =
   writable({});
 export type Views =
-  | 'gameInstall'
   | 'config'
   | 'clientoptions'
   | 'downloader'
+  | 'discovery'
   | 'library'
   | 'tasks';
-export const selectedView: Writable<Views> = writable('library');
+export const selectedView: Writable<Views> = writable('config');
 
 export const viewOpenedWhenChanged: Writable<Views | undefined> =
   writable(undefined);
 export const addonUpdates: Writable<string[]> = writable([]);
+
+// Search state
+export const searchResults: Writable<SearchResultWithSource[]> = writable([]);
+export const searchQuery: Writable<string> = writable('');
+export const loadingResults: Writable<boolean> = writable(false);
+export const isOnline: Writable<boolean> = writable(true);
+
 export function createNotification(notification: Notification) {
   notifications.update((n) => [...n, notification]);
 }

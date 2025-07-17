@@ -1,13 +1,12 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import ConfigView from "./views/ConfigView.svelte";
-  import GameInstallView from "./views/GameInstallView.svelte";
   import ClientOptionsView from "./views/ClientOptionsView.svelte";
   import DownloadView from "./views/DownloadView.svelte";
   import DownloadManager from "./components/DownloadManager.svelte";
   import OOBE from "./views/OutOfBoxExperience.svelte";
 
-  import { fetchAddonsWithConfigure, getConfigClientOption } from "./utils";
+  import { fetchAddonsWithConfigure, getConfigClientOption, safeFetch, type GameData } from "./utils";
   import Notifications from "./components/Notifications.svelte";
   import {
     addonUpdates,
@@ -19,19 +18,33 @@
     selectedView,
     viewOpenedWhenChanged,
     type Views,
+    searchResults,
+    searchQuery,
+    loadingResults,
+    isOnline,
+    createNotification,
+    type SearchResultWithSource,
   } from "./store";
-  import SteamStorePage from "./components/SteamStorePage.svelte";
-  import InputScreenManager from "./components/InputScreenManager.svelte";
-  import PlayIcon from "./Icons/PlayIcon.svelte";
+  import StorePage from "./components/StorePage.svelte";
+  import ConfigurationModal from "./components/modal/ConfigurationModal.svelte";
   import LibraryView from "./views/LibraryView.svelte";
   import GameManager from "./components/GameManager.svelte";
-  import CustomStorePage from "./components/CustomStorePage.svelte";
   import Tasks from "./views/Tasks.svelte";
+  import type { BasicLibraryInfo, OGIAddonConfiguration } from "ogi-addon";
+  import type { ConfigurationFile } from "ogi-addon/config";
+  import Debug from "./components/Debug.svelte";
+
+  interface ConfigTemplateAndInfo extends OGIAddonConfiguration {
+    configTemplate: ConfigurationFile;
+  }
 
   // post config to server for each addon
 
   let finishedOOBE = $state(true);
   let loading = $state(true);
+  let addons: ConfigTemplateAndInfo[] = $state([]);
+  let showSearchResults = $state(false);
+  let searchTimeout: NodeJS.Timeout | null = null;
 
   let recentlyLaunchedApps: LibraryInfo[] = $state([]);
   onMount(() => {
@@ -48,8 +61,211 @@
 
       // get recently launched apps
       updateRecents();
+      
+      // Initialize search-related data
+      initializeSearch();
     }, 100);
   });
+
+  async function initializeSearch() {
+    try {
+      const addonData = await safeFetch("getAllAddons", {});
+      addons = addonData;
+      
+      const online = await window.electronAPI.app.isOnline();
+      isOnline.set(online);
+    } catch (error) {
+      console.error("Failed to initialize search:", error);
+    }
+  }
+
+  function extractSimpleName(input: string) {
+    // Regular expression to match the game name
+    const regex = /^(.+?)([:\-–])/;
+    const match = input.match(regex);
+    return match ? match[1].trim() : null;
+  }
+
+  async function getRealGame(titleId: string): Promise<string | undefined> {
+    // Add delay to prevent rate limiting
+    await new Promise(resolve => setTimeout(resolve, 200));
+    
+    const response = await window.electronAPI.app.axios({
+      method: "GET",
+      url: `https://store.steampowered.com/api/appdetails?appids=${titleId}`,
+    });
+    if (!response.data[titleId].success) {
+      return undefined;
+    }
+    if (response.data[titleId].data.type === "game") {
+      return titleId;
+    }
+
+    if (
+      response.data[titleId].data.type === "dlc" ||
+      response.data[titleId].data.type === "dlc_sub" ||
+      response.data[titleId].data.type === "music" ||
+      response.data[titleId].data.type === "video" ||
+      response.data[titleId].data.type === "episode"
+    ) {
+      if (!response.data[titleId].data.fullgame) {
+        return undefined;
+      }
+      return response.data[titleId].data.fullgame.appid;
+    }
+    if (response.data[titleId].data.type === "demo") {
+      return response.data[titleId].data.fullgame.appid;
+    }
+
+    return undefined;
+  }
+
+  async function matchSteamAppID(
+    title: string
+  ): Promise<{ appid: string; name: string }[] | undefined> {
+    const steamAppId = await window.electronAPI.app.searchFor(title);
+    if (steamAppId.length === 0) {
+      return undefined;
+    }
+    return steamAppId;
+  }
+
+  async function performSearch(query: string) {
+    if (!$isOnline || !query.trim()) {
+      showSearchResults = false;
+      return;
+    }
+
+    try {
+      loadingResults.set(true);
+      showSearchResults = true;
+      addons = await fetchAddonsWithConfigure();
+      let results: SearchResultWithSource[] = [];
+
+      // Search through addons first
+      await Promise.all(
+        addons.map(async (addon) => {
+          const response: BasicLibraryInfo[] = await safeFetch(
+            "searchQuery",
+            {
+              addonID: addon.id,
+              query: query,
+            },
+            { consume: "json" }
+          );
+          results = [
+            ...results,
+            ...response.map((result) => ({
+              appID: result.appID,
+              name: result.name,
+              capsuleImage: result.capsuleImage,
+              addonsource: addon.id,
+            })),
+          ];
+        })
+      );
+
+      // Search Steam with rate limiting
+      const possibleSteamApps = await matchSteamAppID(
+        extractSimpleName(query) ?? query
+      );
+      if (possibleSteamApps) {
+        let amountSearched = 0;
+        for (const possibleSteamApp of possibleSteamApps) {
+          amountSearched++;
+          
+          // Add delay to prevent rate limiting (500ms between requests)
+          if (amountSearched > 1) {
+            await new Promise(resolve => setTimeout(resolve, 500));
+          }
+          
+          const real = await getRealGame(possibleSteamApp.appid);
+          if (!real) {
+            continue;
+          }
+          
+          // Add another delay before the detailed API call
+          await new Promise(resolve => setTimeout(resolve, 300));
+          
+          const response = await window.electronAPI.app.axios({
+            method: "GET",
+            url: `https://store.steampowered.com/api/appdetails?appids=${real}`,
+          });
+          if (!response.data[real].success) {
+            console.error("Failed to fetch Steam store page");
+            continue;
+          }
+          const gameData: GameData = response.data[real].data;
+          // check if the appid is already in the results
+          if (results.find((result) => result.appID === gameData.steam_appid)) {
+            continue;
+          }
+          results = [
+            ...results,
+            {
+              appID: gameData.steam_appid,
+              name: gameData.name,
+              capsuleImage: gameData.header_image,
+              addonsource: "steam",
+            },
+          ];
+
+          if (amountSearched >= 10) {
+            break;
+          }
+        }
+      }
+
+      searchResults.set(results);
+      loadingResults.set(false);
+    } catch (ex) {
+      console.error(ex);
+      createNotification({
+        id: Math.random().toString(36).substring(7),
+        message: "Failed to fetch search results",
+        type: "error",
+      });
+      loadingResults.set(false);
+    }
+  }
+
+  function handleSearchInput(event: Event) {
+    const target = event.target as HTMLInputElement;
+    const query = target.value;
+    searchQuery.set(query);
+    
+    // Clear existing timeout
+    if (searchTimeout) {
+      clearTimeout(searchTimeout);
+    }
+    
+    if (query.trim()) {
+      // Debounce search by 500ms to prevent rapid API calls
+      searchTimeout = setTimeout(() => {
+        performSearch(query);
+      }, 500);
+    } else {
+      searchResults.set([]);
+      showSearchResults = false;
+    }
+  }
+
+  function goToListing(appID: number, addonSource: string) {
+    if (!$isOnline) return;
+    if (addonSource === "steam") {
+      currentStorePageOpened.set(appID);
+      viewOpenedWhenChanged.set($selectedView);
+      currentStorePageOpenedSource.set(addonSource);
+      currentStorePageOpenedStorefront.set("steam");
+      showSearchResults = false;
+      return;
+    }
+    currentStorePageOpened.set(appID);
+    currentStorePageOpenedSource.set(addonSource);
+    currentStorePageOpenedStorefront.set("internal");
+    viewOpenedWhenChanged.set($selectedView);
+    showSearchResults = false;
+  }
 
   function updateRecents() {
     let exists = window.electronAPI.fs.exists("./internals/apps.json");
@@ -107,6 +323,9 @@
   let exitPlayPage: () => void = $state(() => {});
   function setView(view: Views) {
     iTriggeredIt = true;
+    showSearchResults = false;
+    searchQuery.set("");
+    searchResults.set([]);
 
     if (isStoreOpen && $selectedView === view) {
       // If the store is open and the same tab is clicked again, close the store
@@ -154,6 +373,8 @@
       launchGameTrigger.set(gameID);
     }, 5);
   }
+
+  
 </script>
 
 <Notifications />
@@ -162,113 +383,248 @@
 {/if}
 
 {#if !loading}
-  <div
-    class="flex items-center justify-center flex-row h-screen w-screen fixed left-0 top-0"
-  >
-    <nav
-      class="flex justify-start flex-col items-center h-full w-3/12"
-    >
-      <div class="flex justify-start items-center flex-col p-2">
-        <img src="./favicon.png" alt="logo" class="w-5/12 h-5/12" />
+  <div class="flex flex-col h-screen w-screen fixed left-0 top-0">
+    <!-- Top Header -->
+    <header class="flex items-center justify-start w-full h-24 px-2 bg-background-color">
+      <!-- Left side - Avatar/Logo -->
+      <div class="flex items-center justify-center h-24 w-24">
+        <img src="./favicon.png" alt="avatar" class="avatar rounded-full object-cover mx-auto my-auto" />
       </div>
+      
+      <!-- Center - Search Bar -->
+      <div class="flex-1 max-w-2xl mx-8">
+        <div class="relative h-full">
+          <svg class="absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-accent-dark" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m21 21-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+          </svg>
+          <input 
+            type="text" 
+            placeholder={$isOnline ? "Search for games..." : "Search unavailable (offline)"}
+            disabled={!$isOnline}
+            class="w-full h-[var(--header-button-size)] pl-12 pr-4 text-lg bg-accent-lighter rounded-lg border-none focus:outline-none font-archivo placeholder-accent-dark disabled:opacity-50"
+            value={$searchQuery}
+            oninput={handleSearchInput}
+          />
+        </div>
+      </div>
+      
+      <!-- Right side - Action buttons -->
+      <div class="flex items-center gap-4 -left-2 relative">
+        <!-- Download button -->
+        <button class="header-button" aria-label="Downloads">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 50 50" fill="none" class="fill-accent-dark">
+            <g clip-path="url(#clip0_2_123)">
+              <path d="M34.5625 18.75H31.25V8.33333C31.25 7.1875 30.3125 6.25 29.1666 6.25H20.8333C19.6875 6.25 18.75 7.1875 18.75 8.33333V18.75H15.4375C13.5833 18.75 12.6458 21 13.9583 22.3125L23.5208 31.875C24.3333 32.6875 25.6458 32.6875 26.4583 31.875L36.0208 22.3125C37.3333 21 36.4166 18.75 34.5625 18.75ZM10.4166 39.5833C10.4166 40.7292 11.3541 41.6667 12.5 41.6667H37.5C38.6458 41.6667 39.5833 40.7292 39.5833 39.5833C39.5833 38.4375 38.6458 37.5 37.5 37.5H12.5C11.3541 37.5 10.4166 38.4375 10.4166 39.5833Z" fill="#2D626A"/>
+            </g>
+            <defs>
+              <clipPath id="clip0_2_123">
+                <rect width="50" height="50" fill="white"/>
+              </clipPath>
+            </defs>
+          </svg>
+        </button>
+        
+        <!-- Notification button -->
+        <button class="header-button" aria-label="Notifications">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 50 50" fill="none" class="fill-accent-dark">
+            <g clip-path="url(#clip0_22_1842)">
+              <path d="M25 45.8333C27.2917 45.8333 29.1667 43.9583 29.1667 41.6666H20.8333C20.8333 43.9583 22.6875 45.8333 25 45.8333ZM37.5 33.3333V22.9166C37.5 16.5208 34.0833 11.1666 28.125 9.74998V8.33331C28.125 6.60415 26.7292 5.20831 25 5.20831C23.2708 5.20831 21.875 6.60415 21.875 8.33331V9.74998C15.8958 11.1666 12.5 16.5 12.5 22.9166V33.3333L9.81249 36.0208C8.49999 37.3333 9.41665 39.5833 11.2708 39.5833H38.7083C40.5625 39.5833 41.5 37.3333 40.1875 36.0208L37.5 33.3333Z" fill="#2D626A"/>
+            </g>
+            <defs>
+              <clipPath id="clip0_22_1842">
+                <rect width="50" height="50" fill="white"/>
+              </clipPath>
+            </defs>
+          </svg>
+        </button>
+      </div>
+    </header>
 
-      <button
-        onclick={() => setView("library")}
-        data-selected-header={$selectedView === "library"}
-        aria-label="Library"
-      >
-        <svg class="fill-accent-dark w-8 h-8" viewBox="0 0 60 60" xmlns="http://www.w3.org/2000/svg" fill="none">
-          <path d="M39 15.87V3C39 1.35 37.65 0 36 0H24C22.35 0 21 1.35 21 3V15.87C21 16.26 21.15 16.65 21.45 16.92L28.95 24.42C29.55 25.02 30.48 25.02 31.08 24.42L38.58 16.92C38.85 16.65 39 16.29 39 15.87ZM15.87 21H3C1.35 21 0 22.35 0 24V36C0 37.65 1.35 39 3 39H15.87C16.26 39 16.65 38.85 16.92 38.55L24.42 31.05C25.02 30.45 25.02 29.52 24.42 28.92L16.92 21.42C16.65 21.15 16.29 21 15.87 21ZM21 44.13V57C21 58.65 22.35 60 24 60H36C37.65 60 39 58.65 39 57V44.13C39 43.74 38.85 43.35 38.55 43.08L31.05 35.58C30.45 34.98 29.52 34.98 28.92 35.58L21.42 43.08C21.15 43.35 21 43.71 21 44.13ZM43.05 21.45L35.55 28.95C34.95 29.55 34.95 30.48 35.55 31.08L43.05 38.58C43.32 38.85 43.71 39.03 44.1 39.03H57C58.65 39.03 60 37.68 60 36.03V24.03C60 22.38 58.65 21.03 57 21.03H44.13C43.71 21 43.35 21.15 43.05 21.45Z" fill="#2D626A"/>
-        </svg>
-      </button>
-      <button
-        onclick={() => setView("downloader")}
-        data-selected-header={$selectedView === "downloader"}
-      >
-        <img src="./download.svg" alt="Downloads" />
-      </button>
-      <button
-        onclick={() => setView("config")}
-        data-selected-header={$selectedView === "config"}
-      >
-        <img src="./apps.svg" alt="addon" />
-      </button>
-      <button
-        onclick={() => setView("tasks")}
-        data-selected-header={$selectedView === "tasks"}
-      >
-        <img src="./tasks.svg" alt="Tasks" />
-      </button>
-      <button
-        onclick={() => setView("clientoptions")}
-        data-selected-header={$selectedView === "clientoptions"}
-      >
-        <img src="./settings.svg" alt="Settings" />
-      </button>
+    <div class="flex flex-1 pl-4 overflow-hidden">
+      <!-- Left Sidebar -->
+      <nav class="flex flex-col items-center w-20 h-full bg-background-color py-4">
+        <!-- Navigation buttons -->
+        <div class="flex flex-col gap-4"> 
+          <button
+            onclick={() => setView("library")}
+            data-selected-header={$selectedView === "library"}
+            aria-label="Library"
+            class="nav-button"
+          >
+            <svg viewBox="0 0 60 60" xmlns="http://www.w3.org/2000/svg" fill="none">
+              <path d="M39 15.87V3C39 1.35 37.65 0 36 0H24C22.35 0 21 1.35 21 3V15.87C21 16.26 21.15 16.65 21.45 16.92L28.95 24.42C29.55 25.02 30.48 25.02 31.08 24.42L38.58 16.92C38.85 16.65 39 16.29 39 15.87ZM15.87 21H3C1.35 21 0 22.35 0 24V36C0 37.65 1.35 39 3 39H15.87C16.26 39 16.65 38.85 16.92 38.55L24.42 31.05C25.02 30.45 25.02 29.52 24.42 28.92L16.92 21.42C16.65 21.15 16.29 21 15.87 21ZM21 44.13V57C21 58.65 22.35 60 24 60H36C37.65 60 39 58.65 39 57V44.13C39 43.74 38.85 43.35 38.55 43.08L31.05 35.58C30.45 34.98 29.52 34.98 28.92 35.58L21.42 43.08C21.15 43.35 21 43.71 21 44.13ZM43.05 21.45L35.55 28.95C34.95 29.55 34.95 30.48 35.55 31.08L43.05 38.58C43.32 38.85 43.71 39.03 44.1 39.03H57C58.65 39.03 60 37.68 60 36.03V24.03C60 22.38 58.65 21.03 57 21.03H44.13C43.71 21 43.35 21.15 43.05 21.45Z" fill="currentColor"/>
+            </svg>
+          </button>
 
-      <span class="flex flex-col justify-start items-center w-full p-4">
+          <button
+            onclick={() => setView("discovery")}
+            data-selected-header={$selectedView === "discovery"}
+            aria-label="Discovery"
+            class="nav-button"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" fill="currentColor" height="24" viewBox="0 0 24 24" width="24"><path d="M0 0h24v24H0V0z" fill="none"/><path d="M12 10.9c-.61 0-1.1.49-1.1 1.1s.49 1.1 1.1 1.1c.61 0 1.1-.49 1.1-1.1s-.49-1.1-1.1-1.1zM12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm2.19 12.19L6 18l3.81-8.19L18 6l-3.81 8.19z"/></svg>
+          </button>
+
+          <button
+            onclick={() => setView("config")}
+            data-selected-header={$selectedView === "config"}
+            aria-label="Addon Settings"
+            class="nav-button"
+          >
+            <svg viewBox="0 0 60 60" xmlns="http://www.w3.org/2000/svg" fill="none">
+              <g clip-path="url(#clip0_2_52)">
+                <path d="M51.25 27.5H47.5V17.5C47.5 14.75 45.25 12.5 42.5 12.5H32.5V8.75C32.5 5.3 29.7 2.5 26.25 2.5C22.8 2.5 20 5.3 20 8.75V12.5H10C7.25 12.5 5.025 14.75 5.025 17.5V27H8.75C12.475 27 15.5 30.025 15.5 33.75C15.5 37.475 12.475 40.5 8.75 40.5H5V50C5 52.75 7.25 55 10 55H19.5V51.25C19.5 47.525 22.525 44.5 26.25 44.5C29.975 44.5 33 47.525 33 51.25V55H42.5C45.25 55 47.5 52.75 47.5 50V40H51.25C54.7 40 57.5 37.2 57.5 33.75C57.5 30.3 54.7 27.5 51.25 27.5Z" fill="currentColor"/>
+              </g>
+              <defs>
+                <clipPath id="clip0_2_52">
+                  <rect width="60" height="60" fill="white"/>
+                </clipPath>
+              </defs>
+            </svg>
+          </button>
+          
+          <button
+            onclick={() => setView("clientoptions")}
+            data-selected-header={$selectedView === "clientoptions"}
+            aria-label="Client Options"
+            class="nav-button"
+          >
+            <svg viewBox="0 0 60 60" xmlns="http://www.w3.org/2000/svg" fill="none">
+              <g clip-path="url(#clip0_2_25)">
+                <path d="M52.4974 30C52.4974 29.3101 52.4674 28.6502 52.4074 27.9602L57.9868 23.7307C59.1867 22.8308 59.5166 21.151 58.7667 19.8311L53.1573 10.1422C52.4074 8.82235 50.7876 8.28241 49.4078 8.88234L42.9585 11.612C41.8486 10.8321 40.6787 10.1422 39.4489 9.57227L38.579 2.64303C38.399 1.1432 37.1091 0.00332642 35.6093 0.00332642H24.4205C22.8907 0.00332642 21.6008 1.1432 21.4209 2.64303L20.551 9.57227C19.3211 10.1422 18.1512 10.8321 17.0414 11.612L10.5921 8.88234C9.21222 8.28241 7.5924 8.82235 6.84248 10.1422L1.2331 19.8611C0.483185 21.181 0.813148 22.8308 2.01302 23.7607L7.5924 27.9902C7.5324 28.6502 7.50241 29.3101 7.50241 30C7.50241 30.6899 7.5324 31.3499 7.5924 32.0398L2.01302 36.2693C0.813148 37.1692 0.483185 38.849 1.2331 40.1689L6.84248 49.8578C7.5924 51.1777 9.21222 51.7176 10.5921 51.1177L17.0414 48.388C18.1512 49.1679 19.3211 49.8578 20.551 50.4277L21.4209 57.357C21.6008 58.8568 22.8907 59.9967 24.3905 59.9967H35.5793C37.0791 59.9967 38.369 58.8568 38.549 57.357L39.4189 50.4277C40.6487 49.8578 41.8186 49.1679 42.9285 48.388L49.3778 51.1177C50.7576 51.7176 52.3774 51.1777 53.1273 49.8578L58.7367 40.1689C59.4866 38.849 59.1567 37.1992 57.9568 36.2693L52.3774 32.0398C52.4674 31.3499 52.4974 30.6899 52.4974 30ZM30.1199 40.4988C24.3305 40.4988 19.6211 35.7894 19.6211 30C19.6211 24.2106 24.3305 19.5012 30.1199 19.5012C35.9093 19.5012 40.6187 24.2106 40.6187 30C40.6187 35.7894 35.9093 40.4988 30.1199 40.4988Z" fill="currentColor"/>
+              </g>
+              <defs>
+                <clipPath id="clip0_2_25">
+                  <rect width="60" height="60" fill="white"/>
+                </clipPath>
+              </defs>
+            </svg>
+          </button>
+        </div>
+
+        <!-- Recently Played Section -->
         {#await window.electronAPI.app.getOS() then os}
-          {#if os === "win32"}
-            {#if recentlyLaunchedApps.length > 0}
-              <h1 class="text-left !font-archivo w-full">Recently Played</h1>
-              {#each recentlyLaunchedApps as app}
-                <div
-                  data-recently-item
-                  class="flex flex-row justify-start items-center w-full gap-4 p-2 h-22 rounded hover:bg-gray-100 hover:cursor-pointer transition-colors"
-                  onclick={() => playGame(app.appID)}
-                >
-                  <img
-                    src={app.capsuleImage}
-                    alt="capsule"
-                    class="w-12 h-22 rounded"
-                  />
-                  <div class="flex flex-col">
-                    <h1 class="font-open-sans text-sm">{app.name}</h1>
-                    <div class="flex flex-row gap-2">
-                      <PlayIcon width="12px" fill="#d1d5db" />
-
-                      <p class="font-archivo text-gray-300">Start</p>
-                    </div>
-                  </div>
-                </div>
-              {/each}
-            {/if}
+          {#if os === "win32" && recentlyLaunchedApps.length > 0}
+            <div class="mt-8 px-2 w-full">
+              <h3 class="text-xs font-archivo text-gray-500 mb-3 text-center">Recently Played</h3>
+              <div class="space-y-2">
+                {#each recentlyLaunchedApps.slice(0, 3) as app}
+                  <button
+                    class="w-full p-2 rounded-lg hover:bg-gray-100 transition-colors group"
+                    onclick={() => playGame(app.appID)}
+                    title={app.name}
+                  >
+                    <img
+                      src={app.capsuleImage}
+                      alt={app.name}
+                      class="w-12 h-12 rounded object-cover mx-auto"
+                    />
+                  </button>
+                {/each}
+              </div>
+            </div>
           {/if}
         {/await}
-      </span>
-    </nav>
-    <main
-      class="flex items-center flex-col gap-4 w-full h-full overflow-y-auto"
-    >
-      {#if $currentStorePageOpened}
-        {#if $currentStorePageOpenedStorefront === "steam"}
-          <SteamStorePage appID={$currentStorePageOpened} />
-        {:else if $currentStorePageOpenedSource && $currentStorePageOpenedStorefront === "internal"}
-          <CustomStorePage
-            appID={$currentStorePageOpened}
+      </nav>
+
+      <!-- Main Content Area -->
+      <main class="flex-1 overflow-y-auto left-10 top-4 max-w-[51.5rem] relative mb-10">
+        {#if showSearchResults}
+          <!-- Search Results View -->
+          <div class="search-results-container">
+            <div class="search-info mb-6">
+              <h2 class="text-2xl font-archivo font-bold mb-2">Search Results</h2>
+              <p class="text-gray-600">
+                Results for: <span class="font-semibold">"{$searchQuery}"</span>
+              </p>
+            </div>
+
+            {#if !$isOnline}
+              <div class="flex flex-col gap-4 w-full justify-center items-center h-96">
+                <img src="./favicon.png" alt="offline" class="w-32 h-32 opacity-50" />
+                <h3 class="text-xl text-gray-700">You're Offline</h3>
+                <p class="text-gray-500 text-center">
+                  Searching for games is unavailable when you're offline.
+                </p>
+              </div>
+            {:else}
+              <div class="search-results">
+                {#each $searchResults as result}
+                  <div class="search-result-item">
+                    <img
+                      src={result.capsuleImage}
+                      alt={result.name}
+                      class="result-image"
+                    />
+                    <div class="result-content">
+                      <h3 class="result-title">{result.name}</h3>
+                      <p class="result-source">Source: {result.addonsource}</p>
+                      <button
+                        class="result-button"
+                        onclick={() => goToListing(result.appID, result.addonsource)}
+                      >
+                        View Details
+                      </button>
+                    </div>
+                  </div>
+                {/each}
+
+                {#if $searchResults.length === 0 && !$loadingResults}
+                  <div class="no-results">
+                    <h3 class="text-xl text-gray-700 mb-2">No Results Found</h3>
+                    <p class="text-gray-500">Try searching for a different game</p>
+                  </div>
+                {/if}
+
+                {#if $loadingResults}
+                  {#if addons.length === 0}
+                    <div class="no-addons-message">
+                      <h3 class="text-xl font-bold mb-2">No Addons Installed</h3>
+                      <p class="text-gray-500">
+                        Addons are required to search and download games. Please install some addons first.
+                      </p>
+                    </div>
+                  {:else}
+                    <div class="loading-message">
+                      <div class="loading-spinner"></div>
+                      <p class="text-lg">Searching...</p>
+                    </div>
+                  {/if}
+                {/if}
+              </div>
+            {/if}
+            
+          </div>
+        {:else if $currentStorePageOpened}
+          <StorePage 
+            appID={$currentStorePageOpened} 
+            storefront={$currentStorePageOpenedStorefront || "steam"}
             addonSource={$currentStorePageOpenedSource}
           />
+        {:else if $selectedView === "config"}
+          <ConfigView />
+        {:else if $selectedView === "clientoptions"}
+          <ClientOptionsView />
+        {:else if $selectedView === "downloader"}
+          <DownloadView />
+        {:else if $selectedView === "library"}
+          <LibraryView bind:exitPlayPage />
+        {:else if $selectedView === "tasks"}
+          <Tasks />
+        {:else}
+          <LibraryView bind:exitPlayPage />
         {/if}
-      {:else if $selectedView === "config"}
-        <ConfigView />
-      {:else if $selectedView === "gameInstall"}
-        <GameInstallView />
-      {:else if $selectedView === "clientoptions"}
-        <ClientOptionsView />
-      {:else if $selectedView === "downloader"}
-        <DownloadView />
-      {:else if $selectedView === "library"}
-        <LibraryView bind:exitPlayPage />
-      {:else if $selectedView === "tasks"}
-        <Tasks />
-      {:else}
-        <p>Unknown view</p>
-      {/if}
-
-      <DownloadManager />
-    </main>
-    <InputScreenManager />
+        <!-- Bottom fade gradient overlay -->
+        <div
+          class="pointer-events-none absolute left-0 bottom-0 w-full h-2 bg-gradient-to-t from-background-color to-transparent"
+        ></div>
+      </main>
+    </div>
+    
+    <DownloadManager />
+    <ConfigurationModal />
     <GameManager />
+    <Debug />
   </div>
 {/if}
 
@@ -276,6 +632,19 @@
   @tailwind base;
   @tailwind components;
   @tailwind utilities;
+
+  :root {
+    /* Navigation button sizing */
+    --nav-button-size: 4rem;
+    --nav-button-svg-size: 3.5rem;
+    
+    /* Header button sizing */
+    --header-button-size: 3.5rem;
+    --header-button-svg-size: 2rem;
+    
+    /* Avatar sizing */
+    --avatar-size: 5rem;
+  }
 
   * {
     -webkit-touch-callout: none; /* iOS Safari */
@@ -285,6 +654,10 @@
     -ms-user-select: none; /* Internet Explorer/Edge */
     user-select: none; /* Non-prefixed version, currently
 																		supported by Chrome, Edge, Opera and Firefox */
+  }
+
+  body {
+    @apply bg-background-color;
   }
 
   ::-webkit-scrollbar {
@@ -312,20 +685,87 @@
     @apply font-open-sans;
   }
 
-  nav button {
-    @apply border-none rounded p-4 py-4 focus:bg-accent-lighter text-accent-dark;
+  .nav-button {
+    @apply p-3 rounded-lg border-none hover:bg-gray-100 text-accent-dark transition-colors duration-200 flex justify-center items-center;
+    width: var(--nav-button-size);
+    height: var(--nav-button-size);
   }
-  nav button[data-selected-header="true"] {
-    @apply bg-accent-lighter;
+  
+  .nav-button[data-selected-header="true"] {
+    @apply bg-accent-lighter text-accent-dark;
   }
-  nav button img {
-    @apply w-6 h-6 pointer-events-none;
+  
+  .nav-button svg {
+    width: var(--nav-button-svg-size);
+    height: var(--nav-button-svg-size);
   }
 
-  [data-recently-item]:hover p {
-    @apply text-green-300 transition-colors duration-300;
+  .header-button {
+    @apply rounded-lg bg-accent-lighter flex justify-center items-center border-none;
+    width: var(--header-button-size);
+    height: var(--header-button-size);
   }
-  [data-recently-item]:hover svg {
-    @apply fill-green-300 transition-colors duration-300;
+
+  .header-button svg {
+    width: var(--header-button-svg-size);
+    height: var(--header-button-svg-size);
+  }
+
+  .avatar {
+    width: var(--avatar-size);
+    height: var(--avatar-size);
+  }
+
+  /* Search Results Styles */
+  .search-results-container {
+    @apply p-6;
+  }
+
+  .search-info {
+    @apply mb-6;
+  }
+
+  .search-results {
+    @apply flex flex-col gap-4;
+  }
+
+  .search-result-item {
+    @apply flex gap-4 p-4 bg-white rounded-lg border border-gray-200 hover:shadow-md transition-shadow;
+  }
+
+  .result-image {
+    @apply w-24 h-24 rounded object-cover flex-shrink-0;
+  }
+
+  .result-content {
+    @apply flex-1 flex flex-col gap-2;
+  }
+
+  .result-title {
+    @apply text-lg font-archivo font-semibold text-gray-900;
+  }
+
+  .result-source {
+    @apply text-sm text-gray-500 capitalize;
+  }
+
+  .result-button {
+    @apply self-start px-4 py-2 bg-accent-dark text-white rounded-lg hover:bg-accent transition-colors;
+  }
+
+  .no-results {
+    @apply flex flex-col items-center justify-center py-12 text-center;
+  }
+
+  .no-addons-message {
+    @apply flex flex-col items-center justify-center py-12 text-center bg-gray-50 rounded-lg;
+  }
+
+  .loading-message {
+    @apply flex flex-col items-center justify-center py-12 text-center;
+  }
+
+  .loading-spinner {
+    @apply w-8 h-8 border-4 border-gray-300 border-t-accent-dark rounded-full animate-spin mb-4;
   }
 </style>

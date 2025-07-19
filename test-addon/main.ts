@@ -1,7 +1,7 @@
 import OGIAddon, { ConfigurationBuilder } from 'ogi-addon';
 
 const addon = new OGIAddon({
-  name: 'test-addon',
+  name: 'Test Addon',
   version: '1.0.0',
   id: 'test-addon',
 

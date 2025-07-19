@@ -1,5 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { fade, fly } from "svelte/transition";
+  import { quintOut } from "svelte/easing";
   import ConfigView from "./views/ConfigView.svelte";
   import ClientOptionsView from "./views/ClientOptionsView.svelte";
   import DownloadView from "./views/DownloadView.svelte";
@@ -13,8 +15,6 @@
     currentStorePageOpened,
     currentStorePageOpenedSource,
     currentStorePageOpenedStorefront,
-    gameFocused,
-    launchGameTrigger,
     selectedView,
     viewOpenedWhenChanged,
     type Views,
@@ -24,6 +24,7 @@
     isOnline,
     createNotification,
     type SearchResultWithSource,
+    fetchCommunityAddons,
   } from "./store";
   import StorePage from "./components/StorePage.svelte";
   import ConfigurationModal from "./components/modal/ConfigurationModal.svelte";
@@ -357,24 +358,8 @@
     }
     iTriggeredIt = false;
   }
-  launchGameTrigger.subscribe(() => {
-    setTimeout(() => {
-      updateRecents();
-    }, 200);
-  });
-  function playGame(gameID: number) {
-    console.log("Playing game with ID: " + gameID);
-    selectedView.set("library");
-    viewOpenedWhenChanged.set("library");
-    currentStorePageOpened.set(undefined);
-    currentStorePageOpenedStorefront.set(undefined);
-    gameFocused.set(gameID);
-    setTimeout(() => {
-      launchGameTrigger.set(gameID);
-    }, 5);
-  }
 
-  
+  fetchCommunityAddons();
 </script>
 
 <Notifications />
@@ -388,20 +373,20 @@
     <header class="flex items-center justify-start w-full h-24 px-2 bg-background-color">
       <!-- Left side - Avatar/Logo -->
       <div class="flex items-center justify-center h-24 w-24">
-        <img src="./favicon.png" alt="avatar" class="avatar rounded-full object-cover mx-auto my-auto" />
+        <img src="./favicon.png" alt="avatar" class="avatar rounded-full object-cover mx-auto my-auto transition-transform duration-300 hover:scale-110" />
       </div>
       
       <!-- Center - Search Bar -->
       <div class="flex-1 max-w-2xl mx-8">
         <div class="relative h-full">
-          <svg class="absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-accent-dark" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg class="absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-accent-dark transition-colors duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m21 21-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
           </svg>
           <input 
             type="text" 
             placeholder={$isOnline ? "Search for games..." : "Search unavailable (offline)"}
             disabled={!$isOnline}
-            class="w-full h-[var(--header-button-size)] pl-12 pr-4 text-lg bg-accent-lighter rounded-lg border-none focus:outline-none font-archivo placeholder-accent-dark disabled:opacity-50"
+            class="w-full h-[var(--header-button-size)] pl-12 pr-4 text-lg bg-accent-lighter rounded-lg border-none focus:outline-none font-archivo placeholder-accent-dark disabled:opacity-50 transition-all duration-300 ease-out focus:bg-white focus:shadow-md"
             value={$searchQuery}
             oninput={handleSearchInput}
           />
@@ -501,119 +486,112 @@
             </svg>
           </button>
         </div>
-
-        <!-- Recently Played Section -->
-        {#await window.electronAPI.app.getOS() then os}
-          {#if os === "win32" && recentlyLaunchedApps.length > 0}
-            <div class="mt-8 px-2 w-full">
-              <h3 class="text-xs font-archivo text-gray-500 mb-3 text-center">Recently Played</h3>
-              <div class="space-y-2">
-                {#each recentlyLaunchedApps.slice(0, 3) as app}
-                  <button
-                    class="w-full p-2 rounded-lg hover:bg-gray-100 transition-colors group"
-                    onclick={() => playGame(app.appID)}
-                    title={app.name}
-                  >
-                    <img
-                      src={app.capsuleImage}
-                      alt={app.name}
-                      class="w-12 h-12 rounded object-cover mx-auto"
-                    />
-                  </button>
-                {/each}
-              </div>
-            </div>
-          {/if}
-        {/await}
       </nav>
 
       <!-- Main Content Area -->
       <main class="flex-1 overflow-y-auto left-10 top-4 max-w-[51.5rem] relative mb-10">
-        {#if showSearchResults}
-          <!-- Search Results View -->
-          <div class="search-results-container">
-            <div class="search-info mb-6">
-              <h2 class="text-2xl font-archivo font-bold mb-2">Search Results</h2>
-              <p class="text-gray-600">
-                Results for: <span class="font-semibold">"{$searchQuery}"</span>
-              </p>
-            </div>
-
-            {#if !$isOnline}
-              <div class="flex flex-col gap-4 w-full justify-center items-center h-96">
-                <img src="./favicon.png" alt="offline" class="w-32 h-32 opacity-50" />
-                <h3 class="text-xl text-gray-700">You're Offline</h3>
-                <p class="text-gray-500 text-center">
-                  Searching for games is unavailable when you're offline.
+        <!-- Content Container with absolute positioning for animations -->
+        <div class="content-container overflow-x-hidden">
+          {#if showSearchResults}
+            <!-- Search Results View -->
+            <div class="content-view search-results-container" in:fly={{ y: 20, duration: 300, easing: quintOut }} out:fly={{ y: -20, duration: 200 }}>
+              <div class="search-info mb-6">
+                <h2 class="text-2xl font-archivo font-bold mb-2">Search Results</h2>
+                <p class="text-gray-600">
+                  Results for: <span class="font-semibold">"{$searchQuery}"</span>
                 </p>
               </div>
-            {:else}
-              <div class="search-results">
-                {#each $searchResults as result}
-                  <div class="search-result-item">
-                    <img
-                      src={result.capsuleImage}
-                      alt={result.name}
-                      class="result-image"
-                    />
-                    <div class="result-content">
-                      <h3 class="result-title">{result.name}</h3>
-                      <p class="result-source">Source: {result.addonsource}</p>
-                      <button
-                        class="result-button"
-                        onclick={() => goToListing(result.appID, result.addonsource)}
-                      >
-                        View Details
-                      </button>
-                    </div>
-                  </div>
-                {/each}
 
-                {#if $searchResults.length === 0 && !$loadingResults}
-                  <div class="no-results">
-                    <h3 class="text-xl text-gray-700 mb-2">No Results Found</h3>
-                    <p class="text-gray-500">Try searching for a different game</p>
-                  </div>
-                {/if}
-
-                {#if $loadingResults}
-                  {#if addons.length === 0}
-                    <div class="no-addons-message">
-                      <h3 class="text-xl font-bold mb-2">No Addons Installed</h3>
-                      <p class="text-gray-500">
-                        Addons are required to search and download games. Please install some addons first.
-                      </p>
+              {#if !$isOnline}
+                <div class="flex flex-col gap-4 w-full justify-center items-center h-96">
+                  <img src="./favicon.png" alt="offline" class="w-32 h-32 opacity-50" />
+                  <h3 class="text-xl text-gray-700">You're Offline</h3>
+                  <p class="text-gray-500 text-center">
+                    Searching for games is unavailable when you're offline.
+                  </p>
+                </div>
+              {:else}
+                <div class="search-results">
+                  {#each $searchResults as result, index}
+                    <div class="search-result-item" in:fly={{ y: 30, duration: 400, delay: 50 * index }}>
+                      <img
+                        src={result.capsuleImage}
+                        alt={result.name}
+                        class="result-image"
+                      />
+                      <div class="result-content">
+                        <h3 class="result-title">{result.name}</h3>
+                        <p class="result-source">Source: {result.addonsource}</p>
+                        <button
+                          class="result-button"
+                          onclick={() => goToListing(result.appID, result.addonsource)}
+                        >
+                          View Details
+                        </button>
+                      </div>
                     </div>
-                  {:else}
-                    <div class="loading-message">
-                      <div class="loading-spinner"></div>
-                      <p class="text-lg">Searching...</p>
+                  {/each}
+
+                  {#if $searchResults.length === 0 && !$loadingResults}
+                    <div class="no-results" in:fade={{ duration: 300 }}>
+                      <h3 class="text-xl text-gray-700 mb-2">No Results Found</h3>
+                      <p class="text-gray-500">Try searching for a different game</p>
                     </div>
                   {/if}
-                {/if}
-              </div>
-            {/if}
-            
-          </div>
-        {:else if $currentStorePageOpened}
-          <StorePage 
-            appID={$currentStorePageOpened} 
-            storefront={$currentStorePageOpenedStorefront || "steam"}
-            addonSource={$currentStorePageOpenedSource}
-          />
-        {:else if $selectedView === "config"}
-          <ConfigView />
-        {:else if $selectedView === "clientoptions"}
-          <ClientOptionsView />
-        {:else if $selectedView === "downloader"}
-          <DownloadView />
-        {:else if $selectedView === "library"}
-          <LibraryView bind:exitPlayPage />
-        {:else if $selectedView === "tasks"}
-          <Tasks />
-        {:else}
-          <LibraryView bind:exitPlayPage />
-        {/if}
+
+                  {#if $loadingResults}
+                    {#if addons.length === 0}
+                      <div class="no-addons-message" in:fade={{ duration: 300 }}>
+                        <h3 class="text-xl font-bold mb-2">No Addons Installed</h3>
+                        <p class="text-gray-500">
+                          Addons are required to search and download games. Please install some addons first.
+                        </p>
+                      </div>
+                    {:else}
+                      <div class="loading-message" in:fade={{ duration: 300 }}>
+                        <div class="loading-spinner"></div>
+                        <p class="text-lg">Searching...</p>
+                      </div>
+                    {/if}
+                  {/if}
+                </div>
+              {/if}
+              
+            </div>
+          {:else if $currentStorePageOpened}
+            <div class="content-view" in:fly={{ x: 100, duration: 400, easing: quintOut }} out:fly={{ x: -100, duration: 300 }}>
+              <StorePage 
+                appID={$currentStorePageOpened} 
+                storefront={$currentStorePageOpenedStorefront || "steam"}
+                addonSource={$currentStorePageOpenedSource}
+              />
+            </div>
+          {:else if $selectedView === "config"}
+            <div class="content-view" in:fly={{ x: 100, duration: 400, easing: quintOut }} out:fly={{ x: -100, duration: 300 }}>
+              <ConfigView />
+            </div>
+          {:else if $selectedView === "clientoptions"}
+            <div class="content-view" in:fly={{ x: 100, duration: 400, easing: quintOut }} out:fly={{ x: -100, duration: 300 }}>
+              <ClientOptionsView />
+            </div>
+          {:else if $selectedView === "downloader"}
+            <div class="content-view" in:fly={{ x: 100, duration: 400, easing: quintOut }} out:fly={{ x: -100, duration: 300 }}>
+              <DownloadView />
+            </div>
+          {:else if $selectedView === "library"}
+            <div class="content-view" in:fly={{ x: 100, duration: 400, easing: quintOut }} out:fly={{ x: -100, duration: 300 }}>
+              <LibraryView bind:exitPlayPage />
+            </div>
+          {:else if $selectedView === "tasks"}
+            <div class="content-view" in:fly={{ x: 100, duration: 400, easing: quintOut }} out:fly={{ x: -100, duration: 300 }}>
+              <Tasks />
+            </div>
+          {:else}
+            <div class="content-view" in:fly={{ x: 100, duration: 400, easing: quintOut }} out:fly={{ x: -100, duration: 300 }}>
+              <LibraryView bind:exitPlayPage />
+            </div>
+          {/if}
+        </div>
         <!-- Bottom fade gradient overlay -->
         <div
           class="pointer-events-none absolute left-0 bottom-0 w-full h-2 bg-gradient-to-t from-background-color to-transparent"
@@ -686,13 +664,19 @@
   }
 
   .nav-button {
-    @apply p-3 rounded-lg border-none hover:bg-gray-100 text-accent-dark transition-colors duration-200 flex justify-center items-center;
+    @apply p-3 rounded-lg border-none hover:bg-gray-100 text-accent-dark transition-all duration-300 ease-out flex justify-center items-center;
     width: var(--nav-button-size);
     height: var(--nav-button-size);
+    transform: scale(1);
+  }
+  
+  .nav-button:hover {
+    transform: scale(1.05);
   }
   
   .nav-button[data-selected-header="true"] {
     @apply bg-accent-lighter text-accent-dark;
+    transform: scale(1.1);
   }
   
   .nav-button svg {
@@ -701,9 +685,15 @@
   }
 
   .header-button {
-    @apply rounded-lg bg-accent-lighter flex justify-center items-center border-none;
+    @apply rounded-lg bg-accent-lighter flex justify-center items-center border-none transition-all duration-300 ease-out;
     width: var(--header-button-size);
     height: var(--header-button-size);
+    transform: scale(1);
+  }
+  
+  .header-button:hover {
+    @apply bg-accent-light;
+    transform: scale(1.05);
   }
 
   .header-button svg {
@@ -730,7 +720,13 @@
   }
 
   .search-result-item {
-    @apply flex gap-4 p-4 bg-white rounded-lg border border-gray-200 hover:shadow-md transition-shadow;
+    @apply flex gap-4 p-4 bg-white rounded-lg border border-gray-200 hover:shadow-md transition-all duration-300 ease-out;
+    transform: translateY(0);
+  }
+  
+  .search-result-item:hover {
+    transform: translateY(-2px);
+    @apply shadow-lg;
   }
 
   .result-image {
@@ -767,5 +763,14 @@
 
   .loading-spinner {
     @apply w-8 h-8 border-4 border-gray-300 border-t-accent-dark rounded-full animate-spin mb-4;
+  }
+
+  /* Content Animation Container */
+  .content-container {
+    @apply relative w-full h-full;
+  }
+
+  .content-view {
+    @apply absolute inset-0 w-full;
   }
 </style>

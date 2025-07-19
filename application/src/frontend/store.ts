@@ -126,3 +126,20 @@ export const priorityToNumber: Record<QueuedModal['priority'], number> = {
 } as const;
 
 export const modalQueue: Writable<QueuedModal[]> = writable([]);
+
+export type CommunityAddon = {
+  name: string;
+  author: string;
+  source: string;
+  img: string;
+  description: string;
+};
+export const communityAddonsLocal: Writable<CommunityAddon[]> = writable([]);
+
+export async function fetchCommunityAddons() {
+  fetch('https://ogi.nat3z.com/api/community.json').then((response) =>
+    response.json().then((data) => {
+      communityAddonsLocal.set(data);
+    })
+  );
+}

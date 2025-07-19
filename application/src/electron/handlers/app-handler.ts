@@ -8,6 +8,7 @@ import { LibraryInfo } from 'ogi-addon';
 import { steamAppSearcher } from '../startup.js';
 import { __dirname } from '../paths.js';
 import { STEAMTINKERLAUNCH_PATH } from '../startup.js';
+import { clients } from '../server/addon-server.js';
 
 export default function handler(mainWindow: Electron.BrowserWindow) {
   ipcMain.handle('app:close', () => {
@@ -68,8 +69,10 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
     const appInfo: LibraryInfo = JSON.parse(
       fs.readFileSync(join(__dirname, 'library/' + appid + '.json'), 'utf-8')
     );
-    const args = appInfo.launchArguments ?? '';
-    const spawnedItem = exec('"' + appInfo.launchExecutable + '" ' + args, {
+    let args = appInfo.launchArguments ?? '%command%';
+    // replace %command% with the launch executable
+    args = args.replace('%command%', appInfo.launchExecutable);
+    const spawnedItem = exec(args, {
       cwd: appInfo.cwd,
     });
     spawnedItem.on('error', (error) => {
@@ -195,19 +198,21 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
     return apps;
   });
   ipcMain.handle('app:get-addon-path', async (_, addonID: string) => {
-    return join(__dirname, 'addons', addonID);
+    let client = clients.get(addonID);
+    if (!client || !client.filePath) {
+      return null;
+    }
+    return client.filePath;
   });
   ipcMain.handle('app:get-addon-icon', async (_, addonID: string) => {
-    const addonPath = join(__dirname, 'addons', addonID);
-    if (!fs.existsSync(addonPath)) {
+    let client = clients.get(addonID);
+    if (!client || !client.filePath) {
       return null;
     }
-    if (!fs.existsSync(join(addonPath, 'addon.json'))) {
+    if (!fs.existsSync(join(client.filePath, 'icon.png'))) {
       return null;
     }
-    const addonData = fs.readFileSync(join(addonPath, 'addon.json'), 'utf-8');
-    const addonInfo = JSON.parse(addonData);
-    const iconPath = addonInfo.icon;
+    const iconPath = join(client.filePath, 'icon.png');
     if (!iconPath) {
       console.error('No icon path found for addon: ' + addonID);
       return null;
@@ -215,8 +220,7 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
     return iconPath;
   });
   ipcMain.handle('app:get-local-image', async (_, path: string) => {
-    const fullPath = join(__dirname, path);
-    if (!fs.existsSync(fullPath)) {
+    if (!fs.existsSync(path)) {
       return null;
     }
     const ext = path.split('.').pop()?.toLowerCase() || 'png';
@@ -231,11 +235,11 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
         svg: 'image/svg+xml',
       }[ext] || 'image/png';
     try {
-      const buffer = fs.readFileSync(fullPath);
+      const buffer = fs.readFileSync(path);
       const base64 = buffer.toString('base64');
       return `data:${mimeType};base64,${base64}`;
     } catch (err) {
-      console.error('Failed to read image file: ' + fullPath);
+      console.error('Failed to read image file: ' + path);
       return null;
     }
   });

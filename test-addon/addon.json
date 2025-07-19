@@ -1,5 +1,6 @@
 {
   "author": "OGI Addon Team!",
+  "icon": "icon.png",
   "scripts": {
     "preSetup": "echo 'preSetup script is running'",
     "setup": "echo 'setup script is running'",

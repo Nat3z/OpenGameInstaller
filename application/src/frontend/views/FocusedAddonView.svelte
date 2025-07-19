@@ -326,9 +326,9 @@
       <ButtonModal
         text="Stay"
         variant="secondary"
-        on:click={() => (backConfirmationModalOpen = false)}
+        onclick={() => (backConfirmationModalOpen = false)}
       />
-      <ButtonModal text="Go Back" variant="danger" on:click={onBack} />
+      <ButtonModal text="Go Back" variant="danger" onclick={onBack} />
     </div>
   </Modal>
 {/if}

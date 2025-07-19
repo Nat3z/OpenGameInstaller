@@ -6,9 +6,10 @@
 
   onMount(() => {
     console.log('Getting addon icon for: ' + addonId);
-    window.electronAPI.app.getAddonIcon(addonId).then((iconPath) => {
+    window.electronAPI.app.getAddonIcon(addonId).then(async (iconPath) => {
       if (iconPath) {
-        image = iconPath;
+        image = await window.electronAPI.app.getLocalImage(iconPath);
+        console.log('Image: ' + image);
       }
     });
   });

@@ -1,12 +1,12 @@
 <script lang="ts">
+  import { getContext } from "svelte";
+
   let { 
     class: className = "",
     position = "top-right",
-    onClose
   }: { 
     class?: string;
     position?: "top-right" | "top-left" | "bottom-right" | "bottom-left";
-    onClose: () => void;
   } = $props();
 
   const positionClasses = {
@@ -15,9 +15,11 @@
     "bottom-right": "absolute bottom-2 right-2",
     "bottom-left": "absolute bottom-2 left-2"
   };
-
+  const closeTool = getContext<() => void>('closeModal');
   function handleClose() {
-    onClose();
+    if (closeTool) {
+      closeTool();
+    }
   }
 </script>
 

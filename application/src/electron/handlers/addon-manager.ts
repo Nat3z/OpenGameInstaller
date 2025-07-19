@@ -16,13 +16,13 @@ export function startAddons() {
   const generalConfig = JSON.parse(
     fs.readFileSync(join(__dirname, 'config/option/general.json'), 'utf-8')
   );
-  const addons = generalConfig.addons;
+  const addons = generalConfig.addons as string[];
   for (const addon of addons) {
     let addonPath = '';
     if (addon.startsWith('local:')) {
       addonPath = addon.split('local:')[1];
     } else {
-      addonPath = join(__dirname, 'addons', addon.split(/\/|\\/).pop());
+      addonPath = join(__dirname, 'addons', addon.split(/\/|\\/).pop()!!);
     }
 
     if (!fs.existsSync(addonPath)) {
@@ -41,7 +41,7 @@ export function startAddons() {
     }
 
     console.log(`Starting addon ${addonPath}`);
-    startAddon(addonPath);
+    startAddon(addonPath, addon);
   }
 }
 

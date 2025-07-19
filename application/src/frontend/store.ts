@@ -112,3 +112,17 @@ export const isOnline: Writable<boolean> = writable(true);
 export function createNotification(notification: Notification) {
   notifications.update((n) => [...n, notification]);
 }
+
+export type QueuedModal = {
+  id: string;
+  preparedToOpen: boolean;
+  priority: 'ui' | 'addon-ask' | 'urgent';
+};
+
+export const priorityToNumber: Record<QueuedModal['priority'], number> = {
+  'addon-ask': 0,
+  ui: 1,
+  urgent: 2,
+} as const;
+
+export const modalQueue: Writable<QueuedModal[]> = writable([]);

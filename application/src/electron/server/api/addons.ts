@@ -112,7 +112,6 @@ const procedures: Record<string, Procedure<any>> = {
         return event.args;
       }, client.addonInfo.id);
 
-      deferrableTask.run();
       return new ProcedureDeferTask(200, deferrableTask);
     }),
 
@@ -137,7 +136,6 @@ const procedures: Record<string, Procedure<any>> = {
         return data.args;
       }, client.addonInfo.id);
 
-      deferrableTask.run();
       return new ProcedureDeferTask(200, deferrableTask);
     }),
 
@@ -158,7 +156,6 @@ const procedures: Record<string, Procedure<any>> = {
     .handler(async (input) => {
       const client = clients.get(input.addonID);
       if (!client) return new ProcedureError(404, 'Client not found');
-
       const deferrableTask = new DeferrableTask(async () => {
         const data = await client.sendEventMessage({
           event: 'setup',
@@ -176,7 +173,6 @@ const procedures: Record<string, Procedure<any>> = {
         return data.args;
       }, client.addonInfo.id);
 
-      deferrableTask.run();
       return new ProcedureDeferTask(200, deferrableTask);
     }),
 
@@ -202,7 +198,6 @@ const procedures: Record<string, Procedure<any>> = {
         return data.args;
       }, client.addonInfo.id);
 
-      deferrableTask.run();
       return new ProcedureDeferTask(200, deferrableTask);
     }),
 
@@ -211,7 +206,7 @@ const procedures: Record<string, Procedure<any>> = {
     .handler(async (input) => {
       const client = clients.get(input.addonID);
       if (!client) return new ProcedureError(404, 'Client not found');
-      if (!client.filePath) {
+      if (!client.addonLink || client.addonLink.startsWith('local:')) {
         return new ProcedureError(
           400,
           'Addon was not spawned by OpenGameInstaller or is a "local:..." addon.'
@@ -228,7 +223,7 @@ const procedures: Record<string, Procedure<any>> = {
       const addons = generalConfig.addons;
 
       generalConfig.addons = addons.filter(
-        (addon: string) => addon !== client.filePath
+        (addon: string) => addon !== client.addonLink
       );
 
       await fs.writeFile(
@@ -237,26 +232,34 @@ const procedures: Record<string, Procedure<any>> = {
       );
 
       restartAddonServer();
-
-      try {
-        // remove the addon from the addons folder
-        await fs.rm(join(__dirname, 'addons', input.addonID), {
+      // wait for the processes to be killed
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      let promises = await Promise.allSettled([
+        fs.rm(client.filePath!!, {
           recursive: true,
-        });
-      } catch (e) {
-        console.error(e);
+          force: true,
+        }),
+        fs.rm(join(__dirname, 'config', input.addonID), {
+          recursive: true,
+          force: true,
+        }),
+      ]);
+      if (promises[0].status === 'fulfilled') {
+        console.log('Addon removed from addons folder');
+      } else {
+        console.error('Failed to remove addon from addons folder');
+      }
+      if (promises[1].status === 'fulfilled') {
+        console.log('Addon removed from config folder');
+      } else {
+        console.error('Failed to remove addon from config folder');
       }
 
-      try {
-        // remove the addon from the config folder
-        await fs.rm(join(__dirname, 'config', input.addonID), {
-          recursive: true,
-        });
-      } catch (e) {
-        console.error(e);
+      if (promises[0].status === 'fulfilled') {
+        return new ProcedureJSON(200, { success: true });
+      } else {
+        return new ProcedureError(500, 'Failed to remove addon');
       }
-
-      return new ProcedureJSON(200, { success: true });
     }),
 };
 

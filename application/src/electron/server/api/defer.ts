@@ -46,7 +46,6 @@ const procedures: Record<string, Procedure<any>> = {
       })
     )
     .handler(async (input) => {
-      console.log('x', DeferredTasks.getTasks());
       if (DeferredTasks.getTasks()[input.taskID] === undefined) {
         console.log('task not found @' + input.taskID + '@', DeferredTasks);
         return new ProcedureError(404, 'Task not found');

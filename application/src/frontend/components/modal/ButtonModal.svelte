@@ -1,18 +1,16 @@
 <script lang="ts">
-  import { createEventDispatcher } from 'svelte';
-  
-  const dispatch = createEventDispatcher();
-  
   let { 
     text,
     variant = "primary",
     disabled = false,
-    class: className = ""
+    class: className = "",
+    onclick
   }: { 
     text: string;
     variant?: "primary" | "secondary" | "danger" | "success";
     disabled?: boolean;
     class?: string;
+    onclick?: () => void;
   } = $props();
 
   const variantClasses = {
@@ -24,7 +22,7 @@
 
   function handleClick() {
     if (!disabled) {
-      dispatch('click');
+      onclick?.();
     }
   }
 </script>

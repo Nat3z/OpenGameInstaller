@@ -22,6 +22,7 @@ export class AddonConnection {
   public ws: wsLib.WebSocket;
   public configTemplate: ConfigurationFile;
   public filePath: string | undefined;
+  public addonLink: string | undefined;
   constructor(ws: wsLib.WebSocket) {
     this.ws = ws;
   }
@@ -75,7 +76,6 @@ export class AddonConnection {
               console.error(
                 'Client attempted to authenticate with an ID that is already in use'
               );
-              clients.delete(this.addonInfo.id);
               this.ws.close(
                 1008,
                 'Client attempted to authenticate with an ID that is already in use'
@@ -122,11 +122,13 @@ export class AddonConnection {
               );
               return;
             }
+            console.log('task to defer:', data.args.deferID);
             const deferredTask = DeferredTasks.getTasks()[data.args.deferID];
             if (!deferredTask) {
               console.error(
                 'Client attempted to send defer-update with an invalid ID'
               );
+              // TODO: FOR NOW, JUST DROP THE MESSAGE. FIX LATER SO THAT IT DOESNT SEND AN ADD'L MESSAGE
               this.ws.close(
                 1008,
                 'Client attempted to send defer-update with an invalid ID'
@@ -202,7 +204,7 @@ export class AddonConnection {
               );
               return;
             }
-            // now send the configuration to the client
+
             sendAskForInput(data.id, configurationAsked, name, description);
             const waitForClient = setInterval(() => {
               const screenData = currentScreens.get(data.id!!);

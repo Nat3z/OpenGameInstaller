@@ -135,13 +135,13 @@
           }
         },
         testOptionsModal: {
-          displayName: "Test Options Modal",
-          description: "Test Options Modal",
+          displayName: "Test Priority Modal",
+          description: "Test Priority Modal",
           defaultValue: "",
           value: "",
           type: "action",
           action: () => {
-            document.dispatchEvent(new Event("dbg:options-modal-trigger"));
+            document.dispatchEvent(new Event("dbg:priority-test-trigger"));
           }
         },
         describerEnd: {

@@ -74,16 +74,20 @@
     listOfScreensQueued.update((screens) => screens.slice(1));
   });
 
-  function handleInputChange(event: CustomEvent) {
-    const { id, value, checked } = event.detail;
-    formData[id] = checked !== undefined ? checked : value;
+  function handleInputChange(id: string, value: string | number | boolean) {
+    formData[id] = value;
   }
 
   function handleSubmit() {
-    window.electronAPI.app.inputSend(screenID!!, formData);
+    window.electronAPI.app.inputSend(screenID!!, JSON.parse(JSON.stringify(formData)));
     console.log('Submitted data:', formData);
     closeModal();
   }
+
+  $effect(() => {
+    console.log('screenRendering', screenRendering);
+    console.log('isNull', screenRendering === undefined);
+  });
 
   function closeModal() {
     screenRendering = undefined;
@@ -170,46 +174,51 @@
   }
 </style>
 
-<Modal 
-  open={!!screenRendering}
-  onClose={closeModal}
-  size="medium"
->
-  {#if screenRendering && screenName && screenDescription}
-    <TitleModal title={screenName} />
-    <HeaderModal header={screenDescription} class="mb-4" onClose={closeModal} />
-    
-    {#each Object.keys(screenRendering) as key}
-      {#if isBooleanOption(screenRendering[key])}
-        <CheckboxModal
-          id={key}
-          label={screenRendering[key].displayName}
-          description={screenRendering[key].description}
-          checked={formData[key]}
-          on:change={handleInputChange}
-        />
-      {:else}
-        <InputModal
-          id={key}
-          label={screenRendering[key].displayName}
-          description={screenRendering[key].description}
-          type={getInputType(screenRendering[key])}
-          value={getInputValue(key, screenRendering[key])}
-          options={getInputOptions(screenRendering[key])}
-          min={isNumberOption(screenRendering[key]) ? screenRendering[key].min : undefined}
-          max={isNumberOption(screenRendering[key]) ? screenRendering[key].max : undefined}
-          maxLength={isStringOption(screenRendering[key]) ? screenRendering[key].maxTextLength : undefined}
-          minLength={isStringOption(screenRendering[key]) ? screenRendering[key].minTextLength : undefined}
-          on:change={handleInputChange}
+{#key screenRendering}
+  {#if screenRendering !== undefined}
+    <Modal 
+      open={screenRendering !== undefined}
+      priority="addon-ask"
+      size="medium"
+      boundsClose={false}
+    >
+      {#if screenRendering && screenName && screenDescription}
+        <TitleModal title={screenName} />
+        <HeaderModal header={screenDescription} class="mb-4" />
+        
+        {#each Object.keys(screenRendering) as key}
+          {#if isBooleanOption(screenRendering[key])}
+            <CheckboxModal
+              id={key}
+              label={screenRendering[key].displayName}
+              description={screenRendering[key].description}
+              checked={formData[key]}
+              onchange={handleInputChange}
+            />
+          {:else}
+            <InputModal
+              id={key}
+              label={screenRendering[key].displayName}
+              description={screenRendering[key].description}
+              type={getInputType(screenRendering[key])}
+              value={getInputValue(key, screenRendering[key])}
+              options={getInputOptions(screenRendering[key])}
+              min={isNumberOption(screenRendering[key]) ? screenRendering[key].min : undefined}
+              max={isNumberOption(screenRendering[key]) ? screenRendering[key].max : undefined}
+              maxLength={isStringOption(screenRendering[key]) ? screenRendering[key].maxTextLength : undefined}
+              minLength={isStringOption(screenRendering[key]) ? screenRendering[key].minTextLength : undefined}
+              onchange={handleInputChange}
+            />
+          {/if}
+        {/each}
+        
+        <ButtonModal
+          text="Submit"
+          variant="primary"
+          class="mt-4 w-fit"
+          onclick={handleSubmit}
         />
       {/if}
-    {/each}
-    
-    <ButtonModal
-      text="Submit"
-      variant="primary"
-      class="mt-4 w-fit"
-      on:click={handleSubmit}
-    />
+    </Modal> 
   {/if}
-</Modal> 
+{/key}

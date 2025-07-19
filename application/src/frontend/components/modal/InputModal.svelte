@@ -1,8 +1,5 @@
 <script lang="ts">
-  import { createEventDispatcher } from 'svelte';
   import TextModal from './TextModal.svelte';
-  
-  const dispatch = createEventDispatcher();
   
   let { 
     id,
@@ -16,7 +13,8 @@
     maxLength,
     minLength,
     disabled = false,
-    class: className = ""
+    class: className = "",
+    onchange
   }: { 
     id: string;
     label: string;
@@ -30,6 +28,7 @@
     minLength?: number;
     disabled?: boolean;
     class?: string;
+    onchange?: (id: string, value: string | number) => void;
   } = $props();
 
   let displayValue = $state(value);
@@ -43,7 +42,7 @@
       displayValue = target.value;
     }
     
-    dispatch('change', { id, value: displayValue });
+    onchange?.(id, displayValue);
   }
 
   function handleRangeInput(event: Event) {
@@ -64,7 +63,7 @@
     dialog.showOpenDialog({ properties: [ properties ] }).then((path: string | undefined) => {
       if (path) {
         displayValue = path;
-        dispatch('change', { id, value: path });
+        onchange?.(id, path);
       }
     });
   }

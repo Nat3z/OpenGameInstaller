@@ -108,7 +108,7 @@ Running post-setup script for ${addonName}...
   return true;
 }
 
-export async function startAddon(addonPath: string) {
+export async function startAddon(addonPath: string, addonLink: string) {
   const addonConfig = await readFile(join(addonPath, 'addon.json'), 'utf-8');
   const addonName = addonPath.split('/').pop();
   if (!addonConfig) {
@@ -127,12 +127,45 @@ export async function startAddon(addonPath: string) {
       addon.scripts.run + ' --addonSecret="' + addonSecret + '"',
       addonPath
     );
+    let attempts = 0;
+    await new Promise((resolve, reject) => {
+      const interval = setInterval(() => {
+        if (attempts > 10) {
+          clearInterval(interval);
+          reject(new Error('Addon not found'));
+          return;
+        }
 
+        if (clients.has(addonName!)) {
+          clearInterval(interval);
+          resolve(true);
+          return;
+        }
+        attempts++;
+      }, 500);
+    });
     let client = clients.get(addonName!);
     if (client) {
       client.filePath = addonPath;
+      client.addonLink = addonLink;
+      console.log(
+        'Registered addon identifier path for ' +
+          addonName +
+          ' to ' +
+          addonPath +
+          ' with link ' +
+          addonLink
+      );
     }
   } catch (e) {
+    console.error(e);
+
+    // write to the run-crash.log file
+    await writeFile(
+      join(addonPath, 'run-crash.log'),
+      stripAnsiCodes(e.message)
+    );
+
     sendNotification({
       type: 'error',
       message: 'Error running run script for ' + addonPath.split('/').pop(),

@@ -113,7 +113,7 @@ addon.on('search', ({ text, type }, event) => {
       const results = await addon.steamSearch(text, true);
       event.resolve([
         {
-          name: 'Direct Download Test',
+          name: 'Magnet Test',
           storefront: 'steam',
           downloadType: 'magnet',
           filename: 'Big Buck Bunny.mp4',
@@ -121,10 +121,17 @@ addon.on('search', ({ text, type }, event) => {
             'magnet:?xt=urn:btih:dd8255ecdc7ca55fb0bbf81323d87062db1f6d1c&dn=Big+Buck+Bunny&tr=udp%3A%2F%2Fexplodie.org%3A6969&tr=udp%3A%2F%2Ftracker.coppersurfer.tk%3A6969&tr=udp%3A%2F%2Ftracker.empire-js.us%3A1337&tr=udp%3A%2F%2Ftracker.leechers-paradise.org%3A6969&tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337&tr=wss%3A%2F%2Ftracker.btorrent.xyz&tr=wss%3A%2F%2Ftracker.fastcast.nz&tr=wss%3A%2F%2Ftracker.openwebtorrent.com&ws=https%3A%2F%2Fwebtorrent.io%2Ftorrents%2F&xs=https%3A%2F%2Fwebtorrent.io%2Ftorrents%2Fbig-buck-bunny.torrent',
         },
         {
-          name: 'Direct Download Test 2',
+          name: 'Direct Download Test',
           storefront: 'steam',
           downloadType: 'request',
           filename: 'Big Buck Bunny',
+        },
+        {
+          name: 'Smaller File',
+          storefront: 'steam',
+          filename: 'Smaller File.txt',
+          downloadType: 'direct',
+          downloadURL: 'https://ogi.nat3z.com/api/community.json',
         },
       ]);
       addon.notify({ type: 'info', message: 'Searching...', id: 'search' });

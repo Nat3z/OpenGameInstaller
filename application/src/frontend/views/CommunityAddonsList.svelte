@@ -1,4 +1,5 @@
 <script lang="ts">
+  import DeleteAddonWarningModal from "../components/built/DeleteAddonWarningModal.svelte";
   import ButtonModal from "../components/modal/ButtonModal.svelte";
   import CloseModal from "../components/modal/CloseModal.svelte";
   import HeaderModal from "../components/modal/HeaderModal.svelte";
@@ -17,9 +18,9 @@
   let currentAddons = $state(JSON.parse(window.electronAPI.fs.read('./config/option/general.json')));
   let showWarningModal = $state(false);
   let selectedAddon: CommunityAddon | null = $state(null);
-  let pendingEvent: MouseEvent | null = $state(null);
+  let deleteConfirmationModalAddon: CommunityAddon | null = $state(null);
 
-  async function installAddon(addon: CommunityAddon, event: MouseEvent) {
+  async function installAddon(addon: CommunityAddon) {
     console.log(`Installing ${addon.name} by ${addon.author}`);
 
     if (!currentAddons.addons) {
@@ -33,13 +34,11 @@
         addon.source
       ]
     };
+
+    console.log(currentAddons.addons);
     window.electronAPI.fs.write('./config/option/general.json', JSON.stringify(currentAddons, null, 2));
-    const currentTarget = event.target as HTMLButtonElement;
-    currentTarget.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor"><path d="M382-240 154-468l57-57 171 171 367-367 57 57-424 424Z"/></svg>';
-    currentTarget.disabled = true;
-    currentTarget.classList.remove('bg-accent-dark', 'hover:bg-accent-light');
-    currentTarget.classList.add('bg-green-600', 'cursor-not-allowed');
-    await window.electronAPI.installAddons(currentAddons.addons);
+    // remove proxy wrapping
+    await window.electronAPI.installAddons(JSON.parse(JSON.stringify(currentAddons.addons)));
     await window.electronAPI.restartAddonServer();
   }
 
@@ -54,25 +53,36 @@
     await window.electronAPI.restartAddonServer();
   }
 
-  function openWarningModal(addon: CommunityAddon, event: MouseEvent) {
+  async function deleteAddonWarning(addon: CommunityAddon) {
+    deleteConfirmationModalAddon = addon;
+  }
+
+  function openWarningModal(addon: CommunityAddon) {
     selectedAddon = addon;
-    pendingEvent = event;
     showWarningModal = true;
   }
 
   function closeWarningModal() {
     showWarningModal = false;
     selectedAddon = null;
-    pendingEvent = null;
   }
 
   async function proceedWithInstall() {
-    if (selectedAddon && pendingEvent) {
-      await installAddon(selectedAddon, pendingEvent);
+    if (selectedAddon) {
+      await installAddon(selectedAddon);
       closeWarningModal();
     }
   }
 </script>
+
+{#if deleteConfirmationModalAddon}
+  <DeleteAddonWarningModal
+    open={deleteConfirmationModalAddon !== null}
+    onClose={() => deleteConfirmationModalAddon = null} 
+    deleteAddonGO={() => deleteAddon(deleteConfirmationModalAddon!)}
+    addonName={deleteConfirmationModalAddon?.name || ""}
+  />
+{/if}
 
 <div class="community-addons">
   {#await communityList}
@@ -83,20 +93,22 @@
     <div class="addon-grid">
       {#if showWarningModal && selectedAddon}
         <Modal open={showWarningModal} size="medium" onClose={closeWarningModal}>
-          <CloseModal onClose={closeWarningModal} />
+          <CloseModal />
           <TitleModal title="Community Addon" />
           <HeaderModal header="You are about to download an addon from:" />
           <TextModal text={selectedAddon.source} variant="caption" class="mb-4 break-all" />
           <TextModal text="Warning: This is a community addon and is not officially authorized for use. Proceed at your own risk." variant="warning" class="mb-4 text-red-600" />
           <TextModal text="All content downloaded from this addon is the responsibility of the user." variant="warning" class="mb-6 text-red-600" />
           <div class="flex gap-4 justify-end mt-auto">
-            <ButtonModal text="Cancel" variant="secondary" on:click={closeWarningModal} />
-            <ButtonModal text="Proceed" variant="danger" on:click={proceedWithInstall} />
+            <ButtonModal text="Cancel" variant="secondary" onclick={closeWarningModal} />
+            <ButtonModal text="Proceed" variant="danger" onclick={proceedWithInstall} />
           </div>
         </Modal>
       {/if}
       {#each communityList as addon}
-        <div class="flex flex-row items-center justify-start">
+        <!-- svelte-ignore a11y_click_events_have_key_events -->
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <div class="flex flex-row items-center justify-start hover:cursor-pointer" onclick={() => currentAddons.addons && currentAddons.addons.includes(addon.source) ? deleteAddonWarning(addon) : openWarningModal(addon)}>
           <div class="addon-card">
             <div class="addon-content">
               <div class="addon-icon">
@@ -111,17 +123,16 @@
           <div class="addon-actions">
             {#if currentAddons.addons && currentAddons.addons.includes(addon.source)}
               <button 
-                onclick={() => deleteAddon(addon)} 
+                onclick={() => deleteAddonWarning(addon)}
+                id={`delete-addon-${addon.source}`}
                 class="action-button delete-button"
                 aria-label="Uninstall addon"
               >
-                <svg xmlns="http://www.w3.org/2000/svg" class="w-10 h-10 text-accent-dark" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor">
-                  <path d="m256-200-56-56 224-224-224-224 56-56 224 224 224-224 56 56-224 224 224 224-56 56-224-224-224 224Z"/>
-                </svg>
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-10 h-10 text-accent-dark" fill="currentColor" enable-background="new 0 0 24 24" height="24" viewBox="0 0 24 24" width="24"><g><path d="M0,0h24v24H0V0z" fill="none"/></g><g><path d="M6,19c0,1.1,0.9,2,2,2h8c1.1,0,2-0.9,2-2V7H6V19z M9.17,12.59c-0.39-0.39-0.39-1.02,0-1.41c0.39-0.39,1.02-0.39,1.41,0 L12,12.59l1.41-1.41c0.39-0.39,1.02-0.39,1.41,0s0.39,1.02,0,1.41L13.41,14l1.41,1.41c0.39,0.39,0.39,1.02,0,1.41 s-1.02,0.39-1.41,0L12,15.41l-1.41,1.41c-0.39,0.39-1.02,0.39-1.41,0c-0.39-0.39-0.39-1.02,0-1.41L10.59,14L9.17,12.59z M18,4h-2.5 l-0.71-0.71C14.61,3.11,14.35,3,14.09,3H9.91c-0.26,0-0.52,0.11-0.7,0.29L8.5,4H6C5.45,4,5,4.45,5,5s0.45,1,1,1h12 c0.55,0,1-0.45,1-1S18.55,4,18,4z"/></g></svg>
               </button>
             {:else}
               <button 
-                onclick={(ev) => openWarningModal(addon, ev)} 
+                onclick={() => openWarningModal(addon)} 
                 class="action-button install-button"
                 aria-label="Install addon"
               >

@@ -37,13 +37,50 @@
   let gameData: (GameData & { hero_image: string }) | StoreData | undefined = $state();
   let loading = $state(true);
   let queryingSources = $state(false);
-  let showInfoModal = $state(false);
   let selectedResult: SearchResultWithAddon | undefined = $state();
   let isOnline = $state(true);
 
   let alreadyOwns = window.electronAPI.fs.exists(
     "./library/" + appID + ".json"
   );
+
+  let normalizedGameData: {
+    hero_image: string;
+    name: string;
+    publishers: string[];
+    developers: string[];
+    release_date: string;
+    detailed_description: string;
+  } | undefined = $state();
+
+  $effect(() => {
+    if (!gameData) {
+      normalizedGameData = undefined;
+      return;
+    }
+
+    if (isSteamStore) {
+      const steamData = gameData as GameData & { hero_image: string };
+      normalizedGameData = {
+        hero_image: steamData.hero_image,
+        name: steamData.name,
+        publishers: steamData.publishers,
+        developers: steamData.developers,
+        release_date: steamData.release_date.date,
+        detailed_description: steamData.detailed_description,
+      };
+    } else {
+      const customData = gameData as StoreData;
+      normalizedGameData = {
+        hero_image: customData.headerImage,
+        name: customData.name,
+        publishers: customData.publishers,
+        developers: customData.developers,
+        release_date: customData.releaseDate,
+        detailed_description: customData.description,
+      };
+    }
+  });
 
   // Check if this is a Steam store page
   const isSteamStore = storefront === "steam";
@@ -75,18 +112,6 @@
 
   async function loadSteamStoreData() {
     // Add Steam as default source
-    results = [
-      {
-        addonSource: "Steam",
-        downloadType: "direct",
-        name: "Steam",
-        coverURL: "https://steamcdn-a.akamaihd.net/steam/apps/10/library_600x900_2x.jpg",
-        storefront: "steam",
-        manifest: {
-          name: "epic"
-        }
-      },
-    ];
 
     const response = await window.electronAPI.app.axios({
       method: "get",
@@ -211,17 +236,15 @@
   function showSourceInfo(result: SearchResultWithAddon) {
     console.log("Showing source info for: " + result.addonSource);
     selectedResult = result;
-    showInfoModal = true;
   }
 
   function closeInfoModal() {
-    showInfoModal = false;
     selectedResult = undefined;
   }
 
   // Debug reactive statement
   $effect(() => {
-    console.log("Modal state changed - showInfoModal:", showInfoModal, "selectedResult:", selectedResult);
+    console.log("Modal state changed - selectedResult:", selectedResult);
   });
 </script>
 
@@ -229,25 +252,25 @@
   <main class="flex flex-col w-full h-full">
     {#if loading}
       <p class="py-2 px-4">Loading...</p>
-    {:else if isSteamStore}
-      <!-- Steam Store Layout -->
+    {:else if normalizedGameData}
+      <!-- Unified Store Layout -->
       <!-- Hero Banner Section -->
       <div class="">
         <div class="relative w-full h-64 overflow-hidden rounded-lg">
           <img
-            src={(gameData as GameData & { hero_image: string }).hero_image}
-            alt={(gameData as GameData).name}
+            src={normalizedGameData.hero_image}
+            alt={normalizedGameData.name}
             class="w-full h-full object-cover rounded-lg"
           />
           <!-- Overlay with game info -->
           <div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-6 rounded-b-lg">
-            <h1 class="text-4xl font-archivo font-bold text-white mb-2">{(gameData as GameData).name}</h1>
+            <h1 class="text-4xl font-archivo font-bold text-white mb-2">{normalizedGameData.name}</h1>
             <div class="text-sm text-gray-200">
-              <span class="text-gray-300">Publisher:</span> {((gameData as GameData).publishers ?? []).join(", ")}
+              <span class="text-gray-300">Publisher:</span> {(normalizedGameData.publishers ?? []).join(", ")}
               <span class="mx-4"></span>
-              <span class="text-gray-300">Developer:</span> {((gameData as GameData).developers ?? []).join(", ")}
+              <span class="text-gray-300">Developer:</span> {(normalizedGameData.developers ?? []).join(", ")}
               <br />
-              <span class="text-gray-300">Release Date:</span> {(gameData as GameData).release_date.date}
+              <span class="text-gray-300">Release Date:</span> {normalizedGameData.release_date}
             </div>
           </div>
         </div>
@@ -263,7 +286,7 @@
           <!-- Detailed description -->
           <div class="pb-10 -mt-4">
             <article id="g-descript" class="prose max-w-none text-accent-dark pt-4">
-              {@html (gameData as GameData).detailed_description}
+              {@html normalizedGameData.detailed_description}
             </article>
           </div>
         </div>
@@ -299,6 +322,8 @@
                           <span>Torrent</span>
                         {:else if result.downloadType === "direct"}
                           <span>Direct</span>
+                        {:else if result.downloadType === "request"}
+                          <span>Request</span>
                         {/if}
                       </div>
                     </div>
@@ -343,81 +368,6 @@
           {/if}
         </div>
       </div>
-    {:else}
-      <!-- Custom Store Layout -->
-      <div class="flex w-full h-full bg-white">
-        <div class="flex justify-start flex-col p-4 gap-2 w-full overflow-y-auto h-full">
-          <div class="flex flex-col object-cover relative gap-2">
-            <div class="flex flex-col p-4 bg-slate-100 gap-2">
-              <img
-                src={(gameData as StoreData).headerImage}
-                alt={(gameData as StoreData).name}
-                class="relative w-full rounded object-cover z-0"
-              />
-              <h1 class="text-3xl font-archivo font-medium">{(gameData as StoreData).name}</h1>
-              <h2 class="text-sm">
-                <p class="text-gray-500 inline">Developer:</p>
-                {((gameData as StoreData).developers ?? []).join(", ")}
-                <span class="mx-2"></span>
-                <p class="text-gray-500 inline">Publisher:</p>
-                {((gameData as StoreData).publishers ?? []).join(", ")}
-                <span class="block"></span>
-                <p class="text-gray-500 inline">Release Date:</p>
-                {(gameData as StoreData).releaseDate}
-              </h2>
-              <p class="text-sm text-black">{(gameData as StoreData).basicDescription}</p>
-            </div>
-          </div>
-          <article id="g-descript-custom">{@html (gameData as StoreData).description}</article>
-        </div>
-        <div class="flex justify-start p-4 bg-slate-100 h-full w-3/6">
-          {#if alreadyOwns}
-            <div class="flex flex-col gap-2 w-full">
-              <h2 class="text-2xl font-archivo font-medium">Installed</h2>
-              <button
-                class="px-4 py-2 bg-blue-300 rounded disabled:bg-yellow-300"
-                onclick={() => playGame()}
-              >
-                Play
-              </button>
-            </div>
-          {:else if results.length > 0}
-            <div class="flex flex-col gap-2 w-full">
-              <h2 class="text-2xl font-archivo font-medium">Sources</h2>
-              {#each results as result}
-                <div class="flex flex-col gap-2 bg-slate-200 rounded p-4 w-full">
-                  <div class="flex flex-row gap-2 items-center">
-                    <AddonPicture addonId={result.addonSource} class="w-16 h-16 rounded-lg" />
-                    <p>{result.addonSource}</p>
-                  </div>
-                  <button
-                    class="px-4 py-2 bg-blue-300 rounded disabled:bg-yellow-300"
-                    onclick={(event) => startDownload(result, appID, event)}
-                  >
-                    Download
-                  </button>
-                  <nav class="flex flex-row justify-center items-center gap-2 text-xs">
-                    {#if result.downloadType === "magnet"}
-                      <img class="w-4 h-4" src="./magnet-icon.gif" alt="Magnet" />
-                      <p>Magnet Link</p>
-                    {:else if result.downloadType === "torrent"}
-                      <img class="w-4 h-4" src="./torrent.png" alt="Torrent" />
-                      <p>Torrent File</p>
-                    {:else if result.downloadType === "direct"}
-                      <p>Direct Download</p>
-                    {/if}
-                  </nav>
-                </div>
-              {/each}
-            </div>
-          {:else}
-            <div class="flex flex-col gap-2 w-full">
-              <h2 class="text-2xl font-archivo font-medium">Sources</h2>
-              <p class="font-open-sans">No Results</p>
-            </div>
-          {/if}
-        </div>
-      </div>
     {/if}
   </main>
 {:else if !isOnline && isSteamStore}
@@ -435,66 +385,68 @@
 {/if}
 
 <!-- Source Information Modal (for Steam store only) -->
-{#if isSteamStore}
-  <Modal 
-    open={showInfoModal}
-    size="medium"
-    onClose={closeInfoModal}
-  >
-    {#if selectedResult}
-      <TitleModal title="Source Information" />
-      <HeaderModal header={selectedResult.addonSource} onClose={closeInfoModal} />
+{#key selectedResult}
+  {#if selectedResult}
+    <Modal 
+      open={selectedResult !== undefined}
+      size="medium"
+      onClose={closeInfoModal}
+    >
+        <TitleModal title="Source Information" />
+        <HeaderModal header={selectedResult.addonSource} />
 
-      <SectionModal>
-        <div class="flex flex-col gap-4">
-          <div class="flex items-center gap-3">
-            <AddonPicture addonId={selectedResult.addonSource} class="w-16 h-16 rounded-lg" />
-            <div>
-              <h3 class="text-lg font-semibold">{selectedResult.addonSource}</h3>
-              <TextModal text="Addon Source" variant="description" />
-            </div>
-          </div>
-          
-          <div class="grid grid-cols-2 gap-4">
-            <div>
-              <TextModal text="Download Type" variant="caption" />
-              <div class="flex items-center gap-2 mt-1">
-                {#if selectedResult.downloadType === "magnet"}
-                  <img class="w-5 h-5" src="./magnet-icon.gif" alt="Magnet" />
-                  <span class="text-sm font-medium">Magnet Link</span>
-                {:else if selectedResult.downloadType === "torrent"}
-                  <img class="w-5 h-5" src="./torrent.png" alt="Torrent" />
-                  <span class="text-sm font-medium">Torrent File</span>
-                {:else if selectedResult.downloadType === "direct"}
-                  <span class="text-sm font-medium">Direct Download</span>
-                {/if}
+        <SectionModal>
+          <div class="flex flex-col gap-4">
+            <div class="flex items-center gap-3">
+              <AddonPicture addonId={selectedResult.addonSource} class="w-16 h-16 rounded-lg" />
+              <div>
+                <h3 class="text-lg font-semibold">{selectedResult.addonSource}</h3>
+                <TextModal text="Addon Source" variant="description" />
               </div>
             </div>
             
-            <div>
-              <TextModal text="Game Name" variant="caption" />
-              <TextModal text={selectedResult.name} variant="body" />
+            <div class="grid grid-cols-2 gap-4">
+              <div>
+                <TextModal text="Download Type" variant="caption" />
+                <div class="flex items-center gap-2">
+                  {#if selectedResult.downloadType === "magnet"}
+                    <img class="w-5 h-5" src="./magnet-icon.gif" alt="Magnet" />
+                    <span class="text-sm font-medium">Magnet Link</span>
+                  {:else if selectedResult.downloadType === "torrent"}
+                    <img class="w-5 h-5" src="./torrent.png" alt="Torrent" />
+                    <span class="text-sm font-medium">Torrent File</span>
+                  {:else if selectedResult.downloadType === "direct"}
+                    <span class="text-sm font-medium">Direct Download</span>
+                  {:else if selectedResult.downloadType === "request"}
+                    <span class="text-sm font-medium">Request</span>
+                  {/if}
+                </div>
+              </div>
+              
+              <div>
+                <TextModal text="Download Name" variant="caption" />
+                <TextModal text={selectedResult.name} variant="body" />
+              </div>
             </div>
-          </div>
-          
-          {#if selectedResult.storefront}
-            <div>
-              <TextModal text="Storefront" variant="caption" />
-              <TextModal text={selectedResult.storefront} variant="body" />
-            </div>
-          {/if}
+            
+            {#if selectedResult.storefront}
+              <div>
+                <TextModal text="Storefront" variant="caption" />
+                <TextModal text={selectedResult.storefront} variant="body" />
+              </div>
+            {/if}
 
-          {#if selectedResult.manifest}
-            <div>
-              <TextModal text="Manifest" variant="caption" />
-              <TextModal text={JSON.stringify(selectedResult.manifest, null, 2)} variant="body" />
-            </div>
-          {/if}
-        </div>
+            {#if selectedResult.manifest}
+              <div>
+                <TextModal text="Manifest" variant="caption" />
+                <TextModal text={JSON.stringify(selectedResult.manifest, null, 2)} variant="body" />
+              </div>
+            {/if}
+          </div>
       </SectionModal>
-    {/if}
-  </Modal>
-{/if}
+    </Modal>
+  {/if}
+{/key}
 
 <style global>
   #g-descript {

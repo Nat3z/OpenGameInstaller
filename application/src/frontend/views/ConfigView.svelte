@@ -57,7 +57,14 @@
       out:fly={{ x: -300, duration: 300 }}
       class="absolute inset-0 w-full h-full z-10"
     >
-      <FocusedAddonView addonId={focusedAddonId} onBack={goBackToList} />
+      <FocusedAddonView addonId={focusedAddonId} onBack={goBackToList} refreshAddon={() => {
+        console.log("Refreshing addon");
+        safeFetch("getAllAddons", {}).then((data) => {
+          addons = data;
+        }).catch((e) => {
+          console.error(e);
+        });
+      }} />
     </div>
   {/if}
   
@@ -71,13 +78,13 @@
         <button
           data-selected={$view === "my-addons"}
           onclick={() => ($view = "my-addons")}
-          class="h-full w-full border-none rounded-lg bg-accent-lighter data-[selected=true]:bg-accent-light shadow-md font-archivo text-lg hover:bg-accent-light transition-colors"
+          class="h-full w-full border-none text-accent-dark font-archivo rounded-lg bg-accent-lighter data-[selected=true]:bg-accent-light shadow-md text-lg hover:bg-accent-light transition-colors"
           >My Addons</button
         >
         <button
           data-selected={$view === "community-addons"}
           onclick={() => ($view = "community-addons")}
-          class="h-full w-full border-none rounded-lg bg-accent-lighter shadow-md data-[selected=true]:bg-accent-light font-archivo text-lg hover:bg-accent-light transition-colors"
+          class="h-full w-full border-none text-accent-dark rounded-lg bg-accent-lighter shadow-md data-[selected=true]:bg-accent-light font-archivo text-lg hover:bg-accent-light transition-colors"
           >Community Addons</button
         >
       </div>

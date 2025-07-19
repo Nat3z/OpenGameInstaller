@@ -1,20 +1,27 @@
 <script lang="ts">
-  import { type Snippet } from 'svelte';
-
+  import { onDestroy, onMount, setContext, type Snippet } from 'svelte';
+  import { modalQueue, priorityToNumber, type QueuedModal } from '../../store';
+  
   let { 
     open = false, 
     class: className = "",
     size = "medium",
     closeOnOverlayClick = true,
     children,
-    onClose
+    onClose,
+    modalId = Math.random().toString(36).substring(2, 15),
+    boundsClose = true,
+    priority = 'ui'
   }: { 
     open?: boolean;
     class?: string;
     size?: "small" | "medium" | "large" | "full";
     closeOnOverlayClick?: boolean;
+    priority?: QueuedModal['priority'];
     children: Snippet;
     onClose?: () => void;
+    boundsClose?: boolean;
+    modalId?: string;
   } = $props();
 
   const sizeClasses = {
@@ -25,7 +32,7 @@
   };
 
   function handleOverlayClick(event: MouseEvent) {
-    if (closeOnOverlayClick && event.target === event.currentTarget) {
+    if (closeOnOverlayClick && event.target === event.currentTarget && boundsClose) {
       onClose?.();
     }
   }
@@ -35,9 +42,67 @@
       onClose?.();
     }
   }
+
+  let modalShouldOpenQueued = $state(false);
+  let unsubscriber: (() => void) | null = null;
+
+  setContext('closeModal', () => {
+    onClose?.();
+    modalQueue.update(queue => queue.filter(modal => modal.id !== modalId));
+  });
+
+  setContext('boundsClose', boundsClose);
+
+  $effect(() => {
+    modalQueue.update(queue => queue.map(modal => ({ ...modal, preparedToOpen: open })));
+  })
+  onMount(() => {
+    console.log('mounted', modalId, priority);
+    // subscribe to the queue
+    const unsub = modalQueue.subscribe(queue => {
+      console.log('queue', queue);
+      const selfIdx = queue.findIndex(modal => modal.id === modalId);
+      if (selfIdx === -1) {
+        return;
+      }
+      if (selfIdx === 0) {
+        modalShouldOpenQueued = true;
+      }
+
+      modalShouldOpenQueued = (() => { 
+        for (const modal of queue) {
+          // if the modal is me, set the state to true
+          if (modal.id === modalId) {
+            console.log('rendering', modal.id);
+            return true;
+          }
+          // if the modal has a higher priority and is before me, break
+          if (priorityToNumber[modal.priority] >= priorityToNumber[priority] && modal.preparedToOpen) {
+            return false;
+          }
+          
+        } 
+        return false;
+      })();
+    });
+
+    // add myself to the queue
+    modalQueue.update(queue => [...queue, { id: modalId, priority, preparedToOpen: open }]);
+    unsubscriber = () => {
+      unsub();
+    }
+  });
+
+  onDestroy(() => {
+    console.log('destroyed', modalId);
+    if (unsubscriber) {
+      unsubscriber();
+    }
+    modalQueue.update(queue => queue.filter(modal => modal.id !== modalId));
+  });
 </script>
 
-{#if open}
+{#if open && modalShouldOpenQueued}
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div 
     class="w-full h-full fixed bg-slate-900/40 backdrop-blur-sm flex top-0 left-0 justify-center items-center z-40 transition-all duration-200"

@@ -1,15 +1,12 @@
 <script lang="ts">
-  import { createEventDispatcher } from 'svelte';
-  
-  const dispatch = createEventDispatcher();
-  
   let { 
     id,
     label,
     description = "",
     checked = false,
     disabled = false,
-    class: className = ""
+    class: className = "",
+    onchange
   }: { 
     id: string;
     label: string;
@@ -17,12 +14,13 @@
     checked?: boolean;
     disabled?: boolean;
     class?: string;
+    onchange?: (id: string, checked: boolean) => void;
   } = $props();
 
   function handleChange(event: Event) {
     const target = event.target as HTMLInputElement;
     checked = target.checked;
-    dispatch('change', { id, checked });
+    onchange?.(id, checked);
   }
 </script>
 

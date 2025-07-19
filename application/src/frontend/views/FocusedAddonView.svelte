@@ -16,10 +16,11 @@
   import TitleModal from "../components/modal/TitleModal.svelte";
   import TextModal from "../components/modal/TextModal.svelte";
   import ButtonModal from "../components/modal/ButtonModal.svelte";
+  import DeleteAddonWarningModal from "../components/built/DeleteAddonWarningModal.svelte";
   
   const fs = window.electronAPI.fs;
 
-  let { addonId, onBack }: { addonId: string; onBack: () => void } = $props();
+  let { addonId, onBack, refreshAddon }: { addonId: string; onBack: () => void; refreshAddon: () => void } = $props();
 
   function isStringOption(option: ConfigurationOption): option is StringOption {
     return option.type === "string";
@@ -250,8 +251,6 @@
 
   async function deleteAddonGO() {
     if (!selectedAddon) return;
-    const confirmed = window.confirm(`Are you sure you want to delete the addon '${selectedAddon.name}'? This action cannot be undone.`);
-    if (!confirmed) return;
     try {
       const result = await safeFetch("deleteAddon", { addonID: selectedAddon.id });
       if (result.success) {
@@ -263,6 +262,7 @@
             message: `Addon '${selectedAddon!.name}' deleted successfully.`,
           },
         ]);
+        refreshAddon();
         onBack();
       } else {
         notifications.update((update) => [
@@ -302,15 +302,12 @@
 </script>
 
 {#if deleteConfirmationModalOpen}
-  <Modal open={deleteConfirmationModalOpen} onClose={() => deleteConfirmationModalOpen = false}>
-    <TitleModal title="Delete Addon" />
-    <HeaderModal header="Are you sure you want to delete this addon?" />
-    <TextModal text="This action cannot be undone." variant="warning" class="mb-4 text-red-600" />
-    <div class="flex flex-row items-center gap-2">
-      <ButtonModal text="Cancel" variant="secondary" on:click={() => deleteConfirmationModalOpen = false} />
-      <ButtonModal text="Delete" variant="danger" on:click={deleteAddonGO} />
-    </div>
-  </Modal>
+  <DeleteAddonWarningModal 
+    open={deleteConfirmationModalOpen}
+    onClose={() => deleteConfirmationModalOpen = false}
+    deleteAddonGO={deleteAddonGO}
+    addonName={selectedAddon?.name || ""} 
+  />
 {/if}
 
 {#if backConfirmationModalOpen}

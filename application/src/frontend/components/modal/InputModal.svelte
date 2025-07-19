@@ -1,25 +1,32 @@
 <script lang="ts">
   import TextModal from './TextModal.svelte';
-  
-  let { 
+
+  let {
     id,
     label,
-    description = "",
-    type = "text",
-    value = "",
+    description = '',
+    type = 'text',
+    value = '',
     options = [],
     min,
     max,
     maxLength,
     minLength,
     disabled = false,
-    class: className = "",
-    onchange
-  }: { 
+    class: className = '',
+    onchange,
+  }: {
     id: string;
     label: string;
     description?: string;
-    type?: "text" | "password" | "number" | "range" | "select" | "file" | "folder";
+    type?:
+      | 'text'
+      | 'password'
+      | 'number'
+      | 'range'
+      | 'select'
+      | 'file'
+      | 'folder';
     value?: string | number;
     options?: string[];
     min?: number;
@@ -35,22 +42,22 @@
 
   function handleChange(event: Event) {
     const target = event.target as HTMLInputElement | HTMLSelectElement;
-    
-    if (type === "number" || type === "range") {
+
+    if (type === 'number' || type === 'range') {
       displayValue = Number(target.value);
     } else {
       displayValue = target.value;
     }
-    
+
     onchange?.(id, displayValue);
   }
 
   function handleRangeInput(event: Event) {
     const target = event.target as HTMLInputElement;
     displayValue = Number(target.value);
-    
+
     // Update the display paragraph for range inputs
-    const paragraph = target.parentElement?.querySelector("p");
+    const paragraph = target.parentElement?.querySelector('p');
     if (paragraph) {
       paragraph.textContent = target.value;
     }
@@ -59,13 +66,15 @@
   function browseForPath(browseType: 'file' | 'folder') {
     const dialog = window.electronAPI.fs.dialog;
     const properties = browseType === 'folder' ? 'openDirectory' : 'openFile';
-    
-    dialog.showOpenDialog({ properties: [ properties ] }).then((path: string | undefined) => {
-      if (path) {
-        displayValue = path;
-        onchange?.(id, path);
-      }
-    });
+
+    dialog
+      .showOpenDialog({ properties: [properties] })
+      .then((path: string | undefined) => {
+        if (path) {
+          displayValue = path;
+          onchange?.(id, path);
+        }
+      });
   }
 </script>
 
@@ -76,8 +85,8 @@
   {/if}
 
   <div class="option-input mt-2">
-    {#if type === "select" && options.length > 0}
-      <select 
+    {#if type === 'select' && options.length > 0}
+      <select
         {id}
         value={displayValue}
         onchange={handleChange}
@@ -89,10 +98,9 @@
           <option value={option}>{option}</option>
         {/each}
       </select>
-    
-    {:else if type === "text" || type === "password"}
-      <input 
-        type={type}
+    {:else if type === 'text' || type === 'password'}
+      <input
+        {type}
         {id}
         value={displayValue}
         onchange={handleChange}
@@ -102,9 +110,8 @@
         class="input-text"
         data-input
       />
-    
-    {:else if type === "number"}
-      <input 
+    {:else if type === 'number'}
+      <input
         type="number"
         {id}
         value={displayValue}
@@ -115,10 +122,9 @@
         class="input-number"
         data-input
       />
-    
-    {:else if type === "range"}
+    {:else if type === 'range'}
       <div class="flex items-center gap-4">
-        <input 
+        <input
           type="range"
           {id}
           value={displayValue}
@@ -132,10 +138,9 @@
         />
         <p class="font-mono text-sm">{displayValue}</p>
       </div>
-
-    {:else if type === "file" || type === "folder"}
+    {:else if type === 'file' || type === 'folder'}
       <div class="file-input-group">
-        <input 
+        <input
           type="text"
           {id}
           value={displayValue}
@@ -144,7 +149,7 @@
           class="input-text"
           data-input
         />
-        <button 
+        <button
           class="browse-button"
           onclick={() => browseForPath(type)}
           {disabled}
@@ -169,7 +174,9 @@
     @apply space-y-2;
   }
 
-  .input-text, .input-number, .input-select {
+  .input-text,
+  .input-number,
+  .input-select {
     @apply w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-accent-light focus:border-accent transition-colors;
   }
 
@@ -191,4 +198,4 @@
     -webkit-appearance: none;
     margin: 0;
   }
-</style> 
+</style>

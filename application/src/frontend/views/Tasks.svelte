@@ -1,13 +1,13 @@
 <script lang="ts">
-  import { onMount, onDestroy } from "svelte";
-  import { deferredTasks } from "../store";
+  import { onMount, onDestroy } from 'svelte';
+  import { deferredTasks } from '../store';
   import {
     loadDeferredTasks,
     startTaskPolling,
     stopTaskPolling,
     clearCompletedTasks,
     clearAllTasks,
-  } from "../utils";
+  } from '../utils';
 
   let pollInterval: ReturnType<typeof setInterval> | null = null;
 
@@ -16,7 +16,7 @@
   }
 
   function formatDuration(milliseconds?: number): string {
-    if (!milliseconds) return "0s";
+    if (!milliseconds) return '0s';
     const seconds = Math.floor(milliseconds / 1000);
     const minutes = Math.floor(seconds / 60);
     const hours = Math.floor(minutes / 60);
@@ -45,45 +45,45 @@
     } else if (diffMins > 0) {
       return `${diffMins}m ago`;
     } else {
-      return "Just now";
+      return 'Just now';
     }
   }
 
   function getTaskTypeIcon(type: string): string {
     switch (type) {
-      case "setup":
-        return "⚙️";
-      case "download":
-        return "📥";
-      case "configure":
-        return "🔧";
-      case "addon-install":
-        return "📦";
-      case "addon-update":
-        return "🔄";
-      case "cleanup":
-        return "🧹";
+      case 'setup':
+        return '⚙️';
+      case 'download':
+        return '📥';
+      case 'configure':
+        return '🔧';
+      case 'addon-install':
+        return '📦';
+      case 'addon-update':
+        return '🔄';
+      case 'cleanup':
+        return '🧹';
       default:
-        return "📝";
+        return '📝';
     }
   }
 
   function getTaskTypeColor(type: string): string {
     switch (type) {
-      case "setup":
-        return "bg-blue-100 text-blue-800";
-      case "download":
-        return "bg-green-100 text-green-800";
-      case "configure":
-        return "bg-yellow-100 text-yellow-800";
-      case "addon-install":
-        return "bg-purple-100 text-purple-800";
-      case "addon-update":
-        return "bg-indigo-100 text-indigo-800";
-      case "cleanup":
-        return "bg-orange-100 text-orange-800";
+      case 'setup':
+        return 'bg-blue-100 text-blue-800';
+      case 'download':
+        return 'bg-green-100 text-green-800';
+      case 'configure':
+        return 'bg-yellow-100 text-yellow-800';
+      case 'addon-install':
+        return 'bg-purple-100 text-purple-800';
+      case 'addon-update':
+        return 'bg-indigo-100 text-indigo-800';
+      case 'cleanup':
+        return 'bg-orange-100 text-orange-800';
       default:
-        return "bg-gray-100 text-gray-800";
+        return 'bg-gray-100 text-gray-800';
     }
   }
 
@@ -109,37 +109,37 @@
   }
 
   // Listen for task log updates
-  document.addEventListener("task:log", (event: Event) => {
+  document.addEventListener('task:log', (event: Event) => {
     if (!isCustomEvent(event)) return;
     const taskID = event.detail.id;
     const logs: string[] = event.detail.logs;
     const taskElement = document.querySelector(`[data-task-id="${taskID}"]`);
     if (taskElement === null) return;
-    const logContainer = taskElement.querySelector(".task-logs code");
+    const logContainer = taskElement.querySelector('.task-logs code');
     if (logContainer) {
-      logContainer.innerHTML = "";
+      logContainer.innerHTML = '';
       logs.forEach((line) => {
         const textNode = document.createTextNode(line);
         logContainer.appendChild(textNode);
-        logContainer.appendChild(document.createElement("br"));
+        logContainer.appendChild(document.createElement('br'));
       });
       logContainer.scrollTop = logContainer.scrollHeight;
     }
   });
 
-  document.addEventListener("task:progress", (event: Event) => {
+  document.addEventListener('task:progress', (event: Event) => {
     if (!isCustomEvent(event)) return;
     const taskID = event.detail.id;
     const progress = event.detail.progress;
     const taskElement = document.querySelector(`[data-task-id="${taskID}"]`);
     if (taskElement === null) return;
-    const progressBar = taskElement.querySelector("progress");
+    const progressBar = taskElement.querySelector('progress');
     if (progressBar) {
       progressBar.value = progress;
     }
   });
 
-  document.addEventListener("task:failed", (event: Event) => {
+  document.addEventListener('task:failed', (event: Event) => {
     if (!isCustomEvent(event)) return;
     const taskID = event.detail.id;
     const error = event.detail.error;
@@ -148,7 +148,7 @@
     deferredTasks.update((tasks) =>
       tasks.map((task) =>
         task.id === taskID
-          ? { ...task, status: "error" as const, error: error }
+          ? { ...task, status: 'error' as const, error: error }
           : task
       )
     );
@@ -236,7 +236,7 @@
             <span class="task-icon">{getTaskTypeIcon(task.type)}</span>
             <span class="task-type-badge {getTaskTypeColor(task.type)}">
               {task.type.charAt(0).toUpperCase() +
-                task.type.slice(1).replace("-", " ")}
+                task.type.slice(1).replace('-', ' ')}
             </span>
           </div>
           <div class="status-indicator status-{task.status}"></div>
@@ -254,7 +254,7 @@
             </div>
           </div>
 
-          {#if task.status === "running"}
+          {#if task.status === 'running'}
             <div class="status-badge running">
               <div class="spinner"></div>
               Running
@@ -271,7 +271,7 @@
               <progress class="task-progress" value={task.progress} max="100"
               ></progress>
             </div>
-          {:else if task.status === "pending"}
+          {:else if task.status === 'pending'}
             <div class="status-badge pending">
               <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
                 <path
@@ -282,7 +282,7 @@
               </svg>
               Waiting
             </div>
-          {:else if task.status === "completed"}
+          {:else if task.status === 'completed'}
             <div class="status-badge completed">
               <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
                 <path
@@ -298,7 +298,7 @@
                 >
               {/if}
             </div>
-          {:else if task.status === "error"}
+          {:else if task.status === 'error'}
             <div class="status-badge error">
               <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
                 <path
@@ -312,10 +312,10 @@
             {#if task.error || task.failed}
               <div class="error-message">
                 <span class="error-label">Error:</span>
-                {task.error || task.failed || "Task failed"}
+                {task.error || task.failed || 'Task failed'}
               </div>
             {/if}
-          {:else if task.status === "cancelled"}
+          {:else if task.status === 'cancelled'}
             <div class="status-badge cancelled">
               <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
                 <path

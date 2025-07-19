@@ -1,17 +1,17 @@
 <script lang="ts">
-  import type { LibraryInfo } from "ogi-addon";
-  import { onDestroy, onMount } from "svelte";
-  import PlayPage from "../components/PlayPage.svelte";
-  import { gameFocused } from "../store";
-  import { writable, type Writable } from "svelte/store";
-  
+  import type { LibraryInfo } from 'ogi-addon';
+  import { onDestroy, onMount } from 'svelte';
+  import PlayPage from '../components/PlayPage.svelte';
+  import { gameFocused } from '../store';
+  import { writable, type Writable } from 'svelte/store';
+
   let library: LibraryInfo[] = $state([]);
   let recentlyPlayed: LibraryInfo[] = $state([]);
   let allGamesAlphabetical: LibraryInfo[] = $state([]);
   let filteredGames: LibraryInfo[] = $state([]);
   let selectedApp: Writable<LibraryInfo | undefined> = writable(undefined);
   let loading = $state(true);
-  let searchQuery = $state("");
+  let searchQuery = $state('');
 
   let { exitPlayPage = $bindable() } = $props();
 
@@ -28,9 +28,9 @@
   async function reloadLibrary() {
     const apps = await window.electronAPI.app.getAllApps();
 
-    if (window.electronAPI.fs.exists("./internals/apps.json")) {
+    if (window.electronAPI.fs.exists('./internals/apps.json')) {
       const appsOrdered: number[] = JSON.parse(
-        window.electronAPI.fs.read("./internals/apps.json")
+        window.electronAPI.fs.read('./internals/apps.json')
       );
       let libraryWithUndefined = appsOrdered.map(
         (id) => apps.find((app) => app.appID === id) ?? undefined
@@ -46,7 +46,7 @@
       // see if other apps are not in the list, if so add them
       apps.forEach((app) => {
         if (!library.find((libApp) => libApp.appID === app.appID)) {
-          console.log("Adding app to library: " + app.name);
+          console.log('Adding app to library: ' + app.name);
           library.push(app);
         }
       });
@@ -56,25 +56,25 @@
 
     // Update recently played (first 4 games from the ordered list)
     updateRecentlyPlayed();
-    
+
     // Update all games alphabetical
     updateAllGamesAlphabetical();
-    
+
     // Update filtered games
     updateFilteredGames();
-    
+
     loading = false;
   }
 
   function updateRecentlyPlayed() {
-    if (window.electronAPI.fs.exists("./internals/apps.json")) {
+    if (window.electronAPI.fs.exists('./internals/apps.json')) {
       const appsOrdered: number[] = JSON.parse(
-        window.electronAPI.fs.read("./internals/apps.json")
+        window.electronAPI.fs.read('./internals/apps.json')
       );
-      
+
       recentlyPlayed = [];
       let itemsAdded = 0;
-      
+
       appsOrdered.forEach((appID) => {
         if (itemsAdded >= 4) return;
         const app = library.find((libApp) => libApp.appID === appID);
@@ -90,16 +90,16 @@
 
   function updateAllGamesAlphabetical() {
     // Sort all games alphabetically by name
-    allGamesAlphabetical = [...library].sort((a, b) => 
+    allGamesAlphabetical = [...library].sort((a, b) =>
       a.name.toLowerCase().localeCompare(b.name.toLowerCase())
     );
   }
 
   function updateFilteredGames() {
-    if (searchQuery.trim() === "") {
+    if (searchQuery.trim() === '') {
       filteredGames = allGamesAlphabetical;
     } else {
-      filteredGames = allGamesAlphabetical.filter(app =>
+      filteredGames = allGamesAlphabetical.filter((app) =>
         app.name.toLowerCase().includes(searchQuery.toLowerCase())
       );
     }
@@ -122,7 +122,7 @@
       }, 100);
     }
   });
-  
+
   onDestroy(() => {
     unsubscribe();
   });
@@ -142,19 +142,23 @@
   {#if $selectedApp}
     <PlayPage libraryInfo={$selectedApp} {exitPlayPage} />
   {/if}
-  
+
   {#await window.electronAPI.app.getOS()}
     <div class="flex justify-center items-center w-full h-full">
-      <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"></div>
+      <div
+        class="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"
+      ></div>
     </div>
   {:then os}
-    {#if os === "win32" || os === "darwin"}
+    {#if os === 'win32' || os === 'darwin'}
       <div class="flex flex-col w-full h-full overflow-y-auto gap-4 pb-8">
-          <!-- Recently Played Section -->
+        <!-- Recently Played Section -->
         {#if recentlyPlayed.length > 0}
           <div class="space-y-6">
             <div class="bg-accent-lighter px-4 py-2 rounded-lg">
-              <h2 class="text-xl font-semibold text-accent-dark">Recently Played</h2>
+              <h2 class="text-xl font-semibold text-accent-dark">
+                Recently Played
+              </h2>
             </div>
             {#each recentlyPlayed as app}
               <button
@@ -174,12 +178,26 @@
 
         <!-- All Games Section -->
         <div class="space-y-6">
-          <div class="bg-accent-lighter px-4 py-2 rounded-lg flex items-center justify-between">
+          <div
+            class="bg-accent-lighter px-4 py-2 rounded-lg flex items-center justify-between"
+          >
             <h2 class="text-xl font-semibold text-accent-dark">All Games</h2>
             <div class="relative">
-              <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <svg class="h-4 w-4 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+              <div
+                class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"
+              >
+                <svg
+                  class="h-4 w-4 text-accent"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                  ></path>
                 </svg>
               </div>
               <input
@@ -190,10 +208,16 @@
               />
             </div>
           </div>
-          
+
           {#if filteredGames.length === 0 && !loading}
-            <div class="flex flex-col gap-4 w-full justify-center items-center py-16">
-              <img src="./favicon.png" alt="content" class="w-24 h-24 opacity-50" />
+            <div
+              class="flex flex-col gap-4 w-full justify-center items-center py-16"
+            >
+              <img
+                src="./favicon.png"
+                alt="content"
+                class="w-24 h-24 opacity-50"
+              />
               <div class="text-center">
                 <h1 class="text-xl text-gray-600 mb-2">
                   {searchQuery ? 'No games found' : 'No games in library'}
@@ -228,15 +252,21 @@
 
         {#if loading}
           <div class="flex justify-center items-center py-16">
-            <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"></div>
+            <div
+              class="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"
+            ></div>
           </div>
         {/if}
       </div>
     {:else}
-      <div class="flex flex-col gap-4 w-full justify-center items-center h-full bg-background-color">
+      <div
+        class="flex flex-col gap-4 w-full justify-center items-center h-full bg-background-color"
+      >
         <img src="./favicon.png" alt="content" class="w-32 h-32 opacity-50" />
         <div class="text-center">
-          <h1 class="text-2xl font-semibold text-accent-dark mb-2">Library Unsupported</h1>
+          <h1 class="text-2xl font-semibold text-accent-dark mb-2">
+            Library Unsupported
+          </h1>
           <p class="text-accent max-w-md">
             We're sorry, but library is currently unsupported for {os}. Use
             Steam + Proton to launch games, we already configure it for you!
@@ -250,7 +280,9 @@
 <style>
   [data-library-item]:hover {
     transform: perspective(600px) rotateX(4deg) scale(1.03) translateY(-6px);
-    box-shadow: 0 16px 36px 0 rgba(0,0,0,0.20), 0 2px 8px 0 rgba(0,0,0,0.12);
+    box-shadow:
+      0 16px 36px 0 rgba(0, 0, 0, 0.2),
+      0 2px 8px 0 rgba(0, 0, 0, 0.12);
     z-index: 2;
   }
 </style>

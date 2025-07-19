@@ -1,50 +1,50 @@
 <script lang="ts">
-  import { onMount } from "svelte";
-  import { currentDownloads, failedSetups } from "../store";
+  import { onMount } from 'svelte';
+  import { currentDownloads, failedSetups } from '../store';
   import {
     loadFailedSetups,
     removeFailedSetup,
     retryFailedSetup,
-  } from "../utils";
+  } from '../utils';
   function isCustomEvent(event: Event): event is CustomEvent {
     return event instanceof CustomEvent;
   }
   function correctParsingSize(size: number) {
     if (size < 1024) {
-      return size + "B";
+      return size + 'B';
     } else if (size < 1024 * 1024) {
-      return (size / 1024).toFixed(2) + "KB";
+      return (size / 1024).toFixed(2) + 'KB';
     } else if (size < 1024 * 1024 * 1024) {
-      return (size / (1024 * 1024)).toFixed(2) + "MB";
+      return (size / (1024 * 1024)).toFixed(2) + 'MB';
     } else {
-      return (size / (1024 * 1024 * 1024)).toFixed(2) + "GB";
+      return (size / (1024 * 1024 * 1024)).toFixed(2) + 'GB';
     }
   }
 
-  document.addEventListener("setup:log", (event: Event) => {
+  document.addEventListener('setup:log', (event: Event) => {
     if (!isCustomEvent(event)) return;
     const downloadID = event.detail.id;
     const log: string[] = event.detail.log;
     const download = document.querySelector(`[data-id="${downloadID}"]`);
     if (download === null) return;
-    const code = download.querySelector("code")!!;
-    code.innerHTML = "";
+    const code = download.querySelector('code')!!;
+    code.innerHTML = '';
     // make each line a new line without using innerHTML
     log.forEach((line) => {
       const textNode = document.createTextNode(line);
       code.appendChild(textNode);
-      code.appendChild(document.createElement("br"));
+      code.appendChild(document.createElement('br'));
     });
     code.scrollTop = code.scrollHeight;
   });
 
-  document.addEventListener("setup:progress", (event: Event) => {
+  document.addEventListener('setup:progress', (event: Event) => {
     if (!isCustomEvent(event)) return;
     const downloadID = event.detail.id;
     const progress = event.detail.progress;
     const download = document.querySelector(`[data-id="${downloadID}"]`);
     if (download === null) return;
-    const progressBar = download.querySelector("progress")!!;
+    const progressBar = download.querySelector('progress')!!;
     progressBar.value = progress;
   });
 
@@ -90,7 +90,7 @@
     const fraction = toFraction(x);
     return (
       (fraction[0] < 1 ? fraction[0].toFixed(2) : fraction[0]) +
-      ":" +
+      ':' +
       (fraction[1] < 1 ? fraction[1].toFixed(2) : fraction[1])
     );
   }
@@ -112,10 +112,10 @@
     currentDownloads.update((downloads) => {
       return downloads.filter(
         (download) =>
-          download.status !== "setup-complete" &&
-          download.status !== "error" &&
-          download.status !== "errored" &&
-          download.status !== "seeding"
+          download.status !== 'setup-complete' &&
+          download.status !== 'error' &&
+          download.status !== 'errored' &&
+          download.status !== 'seeding'
       );
     });
   }
@@ -205,7 +205,7 @@
       <div data-id={download.id} class="download-card">
         <div class="download-image">
           <img
-            src={download.coverURL || "./favicon.png"}
+            src={download.coverURL || './favicon.png'}
             alt="Game cover"
             class="game-cover"
           />
@@ -213,7 +213,7 @@
         </div>
 
         <div class="download-content">
-          {#if download.status === "seeding" && download.ratio !== undefined}
+          {#if download.status === 'seeding' && download.ratio !== undefined}
             <div class="status-badge seeding">
               <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
                 <path
@@ -244,7 +244,7 @@
             </div>
           {/if}
 
-          {#if download.status === "completed"}
+          {#if download.status === 'completed'}
             <div class="status-badge setup">
               <div class="spinner"></div>
               Setting up with {download.addonSource}
@@ -255,7 +255,7 @@
                 <code class="log-content"></code>
               </div>
             </div>
-          {:else if download.status === "error"}
+          {:else if download.status === 'error'}
             <div class="status-badge error">
               <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
                 <path
@@ -267,7 +267,7 @@
               Download Failed
               <p class="text-sm text-gray-500">{download.error}</p>
             </div>
-          {:else if download.status === "errored"}
+          {:else if download.status === 'errored'}
             <div class="status-badge errored">
               <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
                 <path
@@ -279,8 +279,8 @@
               Setup Failed
               <p class="text-sm text-gray-500">{download.error}</p>
             </div>
-          {:else if download.status === "setup-complete" || download.status === "seeding"}
-            {#if download.status === "setup-complete"}
+          {:else if download.status === 'setup-complete' || download.status === 'seeding'}
+            {#if download.status === 'setup-complete'}
               <div class="status-badge complete">
                 <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
                   <path
@@ -312,12 +312,12 @@
               </svg>
               Open Game Folder
             </button>
-          {:else if download.status === "rd-downloading"}
+          {:else if download.status === 'rd-downloading'}
             <div class="status-badge downloading">
               <div class="spinner"></div>
               Real-Debrid Processing
             </div>
-          {:else if download.status === "requesting"}
+          {:else if download.status === 'requesting'}
             <div class="status-badge requesting">
               <div class="spinner"></div>
               Requesting Download
@@ -380,7 +380,7 @@
         <div class="failed-setup-card">
           <div class="failed-setup-image">
             <img
-              src={failedSetup.downloadInfo.coverURL || "./favicon.png"}
+              src={failedSetup.downloadInfo.coverURL || './favicon.png'}
               alt="Game cover"
             />
             <div class="error-indicator">
@@ -407,8 +407,8 @@
                 </span>
                 <span class="retry-count">
                   {failedSetup.retryCount} retr{failedSetup.retryCount !== 1
-                    ? "ies"
-                    : "y"}
+                    ? 'ies'
+                    : 'y'}
                 </span>
               </div>
             </div>

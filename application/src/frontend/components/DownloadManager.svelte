@@ -1,17 +1,17 @@
 <script lang="ts">
-  import type { LibraryInfo } from "ogi-addon";
+  import type { LibraryInfo } from 'ogi-addon';
   import {
     createNotification,
     currentDownloads,
     failedSetups,
     type DownloadStatusAndInfo,
-  } from "../store";
-  import { getDownloadPath, safeFetch } from "../utils";
+  } from '../store';
+  import { getDownloadPath, safeFetch } from '../utils';
 
   function isCustomEvent(event: Event): event is CustomEvent {
     return event instanceof CustomEvent;
   }
-  document.addEventListener("ddl:download-progress", (event: Event) => {
+  document.addEventListener('ddl:download-progress', (event: Event) => {
     if (!isCustomEvent(event)) return;
     const downloadID = event.detail.id;
     const progress = event.detail.progress;
@@ -38,7 +38,7 @@
     });
   });
 
-  document.addEventListener("torrent:download-progress", (event: Event) => {
+  document.addEventListener('torrent:download-progress', (event: Event) => {
     if (!isCustomEvent(event)) return;
     const downloadID = event.detail.id;
     const progress = event.detail.progress;
@@ -61,7 +61,7 @@
   });
 
   document.addEventListener(
-    "torrent:download-complete",
+    'torrent:download-complete',
     async (event: Event) => {
       if (!isCustomEvent(event)) return;
       const downloadID = event.detail.id;
@@ -72,7 +72,7 @@
             downloadedItem = download;
             return {
               ...download,
-              status: "completed",
+              status: 'completed',
             };
           }
           return download;
@@ -83,20 +83,20 @@
 
       // then, because it's a torrent, we need to get the directory within the download path
       let outputDir = downloadedItem.downloadPath;
-      if (outputDir.endsWith(".torrent")) {
+      if (outputDir.endsWith('.torrent')) {
         const filesInDir = await window.electronAPI.fs.getFilesInDir(outputDir);
         if (filesInDir.length === 1) {
-          outputDir = downloadedItem.downloadPath + "\\" + filesInDir[0] + "\\";
-          console.log("Newly calculated outputDir: ", outputDir);
+          outputDir = downloadedItem.downloadPath + '\\' + filesInDir[0] + '\\';
+          console.log('Newly calculated outputDir: ', outputDir);
         } else {
           console.error(
-            "Error: More than one file in the directory, cannot determine the output directory."
+            'Error: More than one file in the directory, cannot determine the output directory.'
           );
         }
       }
 
       safeFetch(
-        "setupApp",
+        'setupApp',
         {
           addonID: downloadedItem.addonSource,
           path: outputDir,
@@ -109,7 +109,7 @@
         {
           onLogs: (log) => {
             document.dispatchEvent(
-              new CustomEvent("setup:log", {
+              new CustomEvent('setup:log', {
                 detail: {
                   id: downloadedItem?.id,
                   log,
@@ -118,18 +118,18 @@
             );
           },
           onFailed: (error) => {
-            console.error("Error setting up app: ", error);
+            console.error('Error setting up app: ', error);
             createNotification({
               id: Math.random().toString(36).substring(2, 9),
-              type: "error",
-              message: "The addon had crashed while setting up.",
+              type: 'error',
+              message: 'The addon had crashed while setting up.',
             });
             currentDownloads.update((downloads) => {
               return downloads.map((download) => {
                 if (download.id === downloadedItem?.id) {
                   return {
                     ...download,
-                    status: "errored",
+                    status: 'errored',
                     error: error,
                   };
                 }
@@ -152,7 +152,7 @@
           },
           onProgress: (progress) => {
             document.dispatchEvent(
-              new CustomEvent("setup:progress", {
+              new CustomEvent('setup:progress', {
                 detail: {
                   id: downloadedItem?.id,
                   progress,
@@ -160,7 +160,7 @@
               })
             );
           },
-          consume: "json",
+          consume: 'json',
         }
       )
         .then((data: LibraryInfo) => {
@@ -171,7 +171,7 @@
               if (download.id === downloadedItem?.id) {
                 return {
                   ...download,
-                  status: "seeding",
+                  status: 'seeding',
                   downloadPath: downloadedItem.downloadPath,
                 };
               }
@@ -180,18 +180,18 @@
           });
         })
         .catch((error) => {
-          console.error("Error setting up app: ", error);
+          console.error('Error setting up app: ', error);
           createNotification({
             id: Math.random().toString(36).substring(2, 9),
-            type: "error",
-            message: "The addon had crashed while setting up.",
+            type: 'error',
+            message: 'The addon had crashed while setting up.',
           });
           currentDownloads.update((downloads) => {
             return downloads.map((download) => {
               if (download.id === downloadedItem?.id) {
                 return {
                   ...download,
-                  status: "error",
+                  status: 'error',
                 };
               }
               return download;
@@ -214,7 +214,7 @@
     }
   );
 
-  document.addEventListener("ddl:download-complete", async (event: Event) => {
+  document.addEventListener('ddl:download-complete', async (event: Event) => {
     if (!isCustomEvent(event)) return;
     const downloadID = event.detail.id;
     let downloadedItem: DownloadStatusAndInfo | undefined = undefined;
@@ -224,7 +224,7 @@
           downloadedItem = download;
           return {
             ...download,
-            status: "completed",
+            status: 'completed',
           };
         }
         return download;
@@ -235,22 +235,22 @@
 
     if (downloadedItem.usedRealDebrid && !downloadedItem.files) {
       document.dispatchEvent(
-        new CustomEvent("setup:log", {
+        new CustomEvent('setup:log', {
           detail: {
             id: downloadedItem?.id,
-            log: ["Extracting downloaded RAR file..."],
+            log: ['Extracting downloaded RAR file...'],
           },
         })
       );
       const outputDir = await window.electronAPI.fs.unrar({
-        outputDir: getDownloadPath() + "/" + downloadedItem.filename,
+        outputDir: getDownloadPath() + '/' + downloadedItem.filename,
         rarFilePath: downloadedItem.downloadPath,
       });
       downloadedItem.downloadPath = outputDir;
     }
 
     safeFetch(
-      "setupApp",
+      'setupApp',
       {
         addonID: downloadedItem.addonSource,
         path: downloadedItem.downloadPath,
@@ -264,7 +264,7 @@
       {
         onLogs: (log) => {
           document.dispatchEvent(
-            new CustomEvent("setup:log", {
+            new CustomEvent('setup:log', {
               detail: {
                 id: downloadedItem?.id,
                 log,
@@ -274,7 +274,7 @@
         },
         onProgress: (progress) => {
           document.dispatchEvent(
-            new CustomEvent("setup:progress", {
+            new CustomEvent('setup:progress', {
               detail: {
                 id: downloadedItem?.id,
                 progress,
@@ -282,7 +282,7 @@
             })
           );
         },
-        consume: "json",
+        consume: 'json',
       }
     )
       .then((data: LibraryInfo) => {
@@ -293,7 +293,7 @@
             if (download.id === downloadedItem?.id) {
               return {
                 ...download,
-                status: "setup-complete",
+                status: 'setup-complete',
                 downloadPath: downloadedItem.downloadPath,
               };
             }
@@ -302,18 +302,18 @@
         });
       })
       .catch((error) => {
-        console.error("Error setting up app: ", error);
+        console.error('Error setting up app: ', error);
         createNotification({
           id: Math.random().toString(36).substring(2, 9),
-          type: "error",
-          message: "The addon had crashed while setting up.",
+          type: 'error',
+          message: 'The addon had crashed while setting up.',
         });
         currentDownloads.update((downloads) => {
           return downloads.map((download) => {
             if (download.id === downloadedItem?.id) {
               return {
                 ...download,
-                status: "error",
+                status: 'error',
               };
             }
             return download;
@@ -330,13 +330,13 @@
             appID: downloadedItem?.appID,
             storefront: downloadedItem?.storefront,
           },
-          error: "Addon Failure",
+          error: 'Addon Failure',
           timestamp: Date.now(),
         });
       });
   });
 
-  document.addEventListener("ddl:download-error", (event: Event) => {
+  document.addEventListener('ddl:download-error', (event: Event) => {
     if (!isCustomEvent(event)) return;
     const downloadID = event.detail.id;
     currentDownloads.update((downloads) => {
@@ -344,7 +344,7 @@
         if (download.id === downloadID) {
           return {
             ...download,
-            status: "error",
+            status: 'error',
           };
         }
         return download;
@@ -354,8 +354,8 @@
 
   function saveFailedSetup(setupInfo: any) {
     try {
-      if (!window.electronAPI.fs.exists("./failed-setups")) {
-        window.electronAPI.fs.mkdir("./failed-setups");
+      if (!window.electronAPI.fs.exists('./failed-setups')) {
+        window.electronAPI.fs.mkdir('./failed-setups');
       }
 
       const failedSetupId = Math.random().toString(36).substring(7);
@@ -374,9 +374,9 @@
       failedSetups.update((setups) => {
         return [...setups, failedSetupData];
       });
-      console.log("Saved failed setup info:", failedSetupId);
+      console.log('Saved failed setup info:', failedSetupId);
     } catch (error) {
-      console.error("Failed to save setup info:", error);
+      console.error('Failed to save setup info:', error);
     }
   }
 </script>

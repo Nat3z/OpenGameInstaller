@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { LibraryInfo } from "ogi-addon";
+  import type { LibraryInfo } from 'ogi-addon';
   import {
     ConfigurationBuilder,
     type BooleanOption,
@@ -7,62 +7,64 @@
     type ConfigurationOption,
     type NumberOption,
     type StringOption,
-  } from "ogi-addon/config";
-  import { createNotification } from "../store";
-  import Modal from "./modal/Modal.svelte";
-  import TitleModal from "./modal/TitleModal.svelte";
-  import HeaderModal from "./modal/HeaderModal.svelte";
-  import SectionModal from "./modal/SectionModal.svelte";
-  import ButtonModal from "./modal/ButtonModal.svelte";
-  import InputModal from "./modal/InputModal.svelte";
-  import CheckboxModal from "./modal/CheckboxModal.svelte";
-  
+  } from 'ogi-addon/config';
+  import { createNotification } from '../store';
+  import Modal from './modal/Modal.svelte';
+  import TitleModal from './modal/TitleModal.svelte';
+  import HeaderModal from './modal/HeaderModal.svelte';
+  import SectionModal from './modal/SectionModal.svelte';
+  import ButtonModal from './modal/ButtonModal.svelte';
+  import InputModal from './modal/InputModal.svelte';
+  import CheckboxModal from './modal/CheckboxModal.svelte';
+
   interface Props {
     exitPlayPage: () => void;
     gameInfo: LibraryInfo;
     onFinish: (data: { [key: string]: any } | undefined) => void;
   }
-  
+
   let { exitPlayPage, gameInfo, onFinish }: Props = $props();
-  
+
   function isStringOption(option: ConfigurationOption): option is StringOption {
-    return option.type === "string";
+    return option.type === 'string';
   }
 
   function isNumberOption(option: ConfigurationOption): option is NumberOption {
-    return option.type === "number";
+    return option.type === 'number';
   }
 
   function isBooleanOption(
     option: ConfigurationOption
   ): option is BooleanOption {
-    return option.type === "boolean";
+    return option.type === 'boolean';
   }
 
   let screenRendering: ConfigurationFile = new ConfigurationBuilder()
     .addStringOption((option) =>
       option
-        .setDisplayName("Game Path")
-        .setName("cwd")
-        .setDescription("The path to the game executable")
-        .setInputType("folder")
-        .setDefaultValue(gameInfo.cwd ?? "C:\\Program Files\\Game")
+        .setDisplayName('Game Path')
+        .setName('cwd')
+        .setDescription('The path to the game executable')
+        .setInputType('folder')
+        .setDefaultValue(gameInfo.cwd ?? 'C:\\Program Files\\Game')
     )
     .addStringOption((option) =>
       option
-        .setDisplayName("Game Executable")
-        .setName("launchExecutable")
-        .setDescription("The game executable path")
-        .setInputType("file")
-        .setDefaultValue(gameInfo.launchExecutable ?? "game.exe")
+        .setDisplayName('Game Executable')
+        .setName('launchExecutable')
+        .setDescription('The game executable path')
+        .setInputType('file')
+        .setDefaultValue(gameInfo.launchExecutable ?? 'game.exe')
     )
     .addStringOption((option) =>
       option
-        .setDisplayName("Game Arguments")
-        .setName("launchArguments")
-        .setDescription("The arguments to pass to the game executable. %command% replaces with the game executable.")
-        .setInputType("text")
-        .setDefaultValue(gameInfo.launchArguments ?? "%command%")
+        .setDisplayName('Game Arguments')
+        .setName('launchArguments')
+        .setDescription(
+          'The arguments to pass to the game executable. %command% replaces with the game executable.'
+        )
+        .setInputType('text')
+        .setDefaultValue(gameInfo.launchArguments ?? '%command%')
     )
     .build(false);
 
@@ -70,7 +72,7 @@
 
   // Initialize form data with default values
   $effect(() => {
-    Object.keys(screenRendering).forEach(key => {
+    Object.keys(screenRendering).forEach((key) => {
       const option = screenRendering[key];
       if (isBooleanOption(option)) {
         formData[key] = option.defaultValue ?? false;
@@ -102,24 +104,27 @@
     await window.electronAPI.app.removeApp(gameInfo.appID);
     createNotification({
       id: Math.random().toString(36).substring(7),
-      message: "Game removed from library. (Not deleted from disk)",
-      type: "success",
+      message: 'Game removed from library. (Not deleted from disk)',
+      type: 'success',
     });
     exitPlayPage();
   }
 
-  function getInputType(option: ConfigurationOption): "text" | "password" | "number" | "range" | "select" | "file" | "folder" {
+  function getInputType(
+    option: ConfigurationOption
+  ): 'text' | 'password' | 'number' | 'range' | 'select' | 'file' | 'folder' {
     if (isStringOption(option)) {
-      if (option.allowedValues && option.allowedValues.length > 0) return "select";
-      if (option.inputType === "file") return "file";
-      if (option.inputType === "folder") return "folder";
-      if (option.inputType === "password") return "password";
-      return "text";
+      if (option.allowedValues && option.allowedValues.length > 0)
+        return 'select';
+      if (option.inputType === 'file') return 'file';
+      if (option.inputType === 'folder') return 'folder';
+      if (option.inputType === 'password') return 'password';
+      return 'text';
     }
     if (isNumberOption(option)) {
-      return option.inputType === "range" ? "range" : "number";
+      return option.inputType === 'range' ? 'range' : 'number';
     }
-    return "text";
+    return 'text';
   }
 
   function getInputValue(key: string, option: ConfigurationOption) {
@@ -136,11 +141,7 @@
   }
 </script>
 
-<Modal 
-  open={true}
-  size="large"
-  onClose={closeModal}
->
+<Modal open={true} size="large" onClose={closeModal}>
   <TitleModal title={gameInfo.name} />
   <HeaderModal header="Define the game configuration" />
 
@@ -170,21 +171,17 @@
 
   <SectionModal>
     <div class="flex gap-3">
-      <ButtonModal 
+      <ButtonModal
         text="Save Configuration"
         variant="primary"
         onclick={pushChanges}
       />
-      <ButtonModal 
+      <ButtonModal
         text="Remove Game"
         variant="danger"
         onclick={removeFromList}
       />
-      <ButtonModal 
-        text="Cancel"
-        variant="secondary"
-        onclick={closeModal}
-      />
+      <ButtonModal text="Cancel" variant="secondary" onclick={closeModal} />
     </div>
   </SectionModal>
 </Modal>

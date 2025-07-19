@@ -1,13 +1,13 @@
 <script lang="ts">
-  let { 
+  let {
     id,
     label,
-    description = "",
+    description = '',
     checked = false,
     disabled = false,
-    class: className = "",
-    onchange
-  }: { 
+    class: className = '',
+    onchange,
+  }: {
     id: string;
     label: string;
     description?: string;
@@ -25,9 +25,13 @@
 </script>
 
 <div class="flex flex-col items-start justify-center relative {className}">
-  <label class="flex flex-row gap-2 items-center relative" class:cursor-pointer={!disabled} class:cursor-not-allowed={disabled}>
-    <input 
-      type="checkbox" 
+  <label
+    class="flex flex-row gap-2 items-center relative"
+    class:cursor-pointer={!disabled}
+    class:cursor-not-allowed={disabled}
+  >
+    <input
+      type="checkbox"
       {id}
       {checked}
       {disabled}
@@ -36,7 +40,10 @@
       data-input
     />
     <span class="checkbox-checkmark"></span>
-    <span class="text-accent-dark font-medium select-none" class:text-gray-500={disabled}>{label}</span>
+    <span
+      class="text-accent-dark font-medium select-none"
+      class:text-gray-500={disabled}>{label}</span
+    >
   </label>
   {#if description}
     <p class="block text-xs text-gray-500 mt-1 pl-7">{description}</p>
@@ -69,4 +76,4 @@
   .input-checkbox:disabled + .checkbox-checkmark {
     @apply bg-gray-200 border-gray-300;
   }
-</style> 
+</style>

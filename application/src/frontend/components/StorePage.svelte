@@ -1,12 +1,12 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount } from 'svelte';
   import {
     fetchAddonsWithConfigure,
     safeFetch,
     startDownload,
     type GameData,
     type SearchResultWithAddon,
-  } from "../utils";
+  } from '../utils';
   import {
     createNotification,
     currentStorePageOpened,
@@ -16,14 +16,14 @@
     launchGameTrigger,
     selectedView,
     viewOpenedWhenChanged,
-  } from "../store";
-  import type { SearchResult, StoreData } from "ogi-addon";
-  import AddonPicture from "./AddonPicture.svelte";
-  import Modal from "./modal/Modal.svelte";
-  import TitleModal from "./modal/TitleModal.svelte";
-  import HeaderModal from "./modal/HeaderModal.svelte";
-  import SectionModal from "./modal/SectionModal.svelte";
-  import TextModal from "./modal/TextModal.svelte";
+  } from '../store';
+  import type { SearchResult, StoreData } from 'ogi-addon';
+  import AddonPicture from './AddonPicture.svelte';
+  import Modal from './modal/Modal.svelte';
+  import TitleModal from './modal/TitleModal.svelte';
+  import HeaderModal from './modal/HeaderModal.svelte';
+  import SectionModal from './modal/SectionModal.svelte';
+  import TextModal from './modal/TextModal.svelte';
 
   interface Props {
     appID: number;
@@ -34,24 +34,27 @@
   let { appID, storefront, addonSource }: Props = $props();
 
   let results: SearchResultWithAddon[] = $state([]);
-  let gameData: (GameData & { hero_image: string }) | StoreData | undefined = $state();
+  let gameData: (GameData & { hero_image: string }) | StoreData | undefined =
+    $state();
   let loading = $state(true);
   let queryingSources = $state(false);
   let selectedResult: SearchResultWithAddon | undefined = $state();
   let isOnline = $state(true);
 
   let alreadyOwns = window.electronAPI.fs.exists(
-    "./library/" + appID + ".json"
+    './library/' + appID + '.json'
   );
 
-  let normalizedGameData: {
-    hero_image: string;
-    name: string;
-    publishers: string[];
-    developers: string[];
-    release_date: string;
-    detailed_description: string;
-  } | undefined = $state();
+  let normalizedGameData:
+    | {
+        hero_image: string;
+        name: string;
+        publishers: string[];
+        developers: string[];
+        release_date: string;
+        detailed_description: string;
+      }
+    | undefined = $state();
 
   $effect(() => {
     if (!gameData) {
@@ -83,7 +86,7 @@
   });
 
   // Check if this is a Steam store page
-  const isSteamStore = storefront === "steam";
+  const isSteamStore = storefront === 'steam';
 
   onMount(async () => {
     isOnline = await window.electronAPI.app.isOnline();
@@ -100,7 +103,7 @@
       createNotification({
         id: Math.random().toString(36).substring(7),
         message: `Failed to fetch ${isSteamStore ? 'Steam' : 'Custom'} store page`,
-        type: "error",
+        type: 'error',
       });
       currentStorePageOpened.set(undefined);
       if (!isSteamStore) {
@@ -114,21 +117,21 @@
     // Add Steam as default source
 
     const response = await window.electronAPI.app.axios({
-      method: "get",
-      url: "https://store.steampowered.com/api/appdetails?appids=" + appID,
+      method: 'get',
+      url: 'https://store.steampowered.com/api/appdetails?appids=' + appID,
       headers: {
-        "Accept-Language": "en-US,en;q=0.5",
+        'Accept-Language': 'en-US,en;q=0.5',
       },
     });
 
     if (!response.data[appID].success) {
-      throw new Error("Failed to fetch Steam store page");
+      throw new Error('Failed to fetch Steam store page');
     }
 
     const responseData: GameData = response.data[appID].data;
     gameData = {
       ...responseData,
-      hero_image: `https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/${appID}/library_hero.jpg`
+      hero_image: `https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/${appID}/library_hero.jpg`,
     };
     loading = false;
 
@@ -145,12 +148,12 @@
 
       for (const addon of addons) {
         safeFetch(
-          "search",
+          'search',
           {
             addonID: addon.id,
             steamappid: String(appID),
           },
-          { consume: "json" }
+          { consume: 'json' }
         ).then((data) => {
           sourcesQueries++;
           if (sourcesQueries === addons.length) {
@@ -174,16 +177,16 @@
 
   async function loadCustomStoreData() {
     if (!addonSource) {
-      throw new Error("Addon source is required for custom store pages");
+      throw new Error('Addon source is required for custom store pages');
     }
 
     const response: StoreData = await safeFetch(
-      "gameDetails",
+      'gameDetails',
       {
         addonID: addonSource,
         gameID: String(appID),
       },
-      { consume: "json" }
+      { consume: 'json' }
     );
 
     gameData = response;
@@ -191,12 +194,12 @@
 
     // Fetch search results for custom store
     safeFetch(
-      "search",
+      'search',
       {
         addonID: addonSource,
         gameID: String(appID),
       },
-      { consume: "json" }
+      { consume: 'json' }
     ).then((data: SearchResult[]) => {
       results = [
         ...results,
@@ -214,14 +217,14 @@
 
   function playGame() {
     if (!gameData) return;
-    
-    const gameID = isSteamStore 
+
+    const gameID = isSteamStore
       ? (gameData as GameData & { hero_image: string }).steam_appid
       : (gameData as StoreData).appID;
-    
-    console.log("Playing game with ID: " + gameID);
-    selectedView.set("library");
-    viewOpenedWhenChanged.set("library");
+
+    console.log('Playing game with ID: ' + gameID);
+    selectedView.set('library');
+    viewOpenedWhenChanged.set('library');
     currentStorePageOpened.set(undefined);
     currentStorePageOpenedStorefront.set(undefined);
     if (!isSteamStore) {
@@ -234,7 +237,7 @@
   }
 
   function showSourceInfo(result: SearchResultWithAddon) {
-    console.log("Showing source info for: " + result.addonSource);
+    console.log('Showing source info for: ' + result.addonSource);
     selectedResult = result;
   }
 
@@ -244,7 +247,7 @@
 
   // Debug reactive statement
   $effect(() => {
-    console.log("Modal state changed - selectedResult:", selectedResult);
+    console.log('Modal state changed - selectedResult:', selectedResult);
   });
 </script>
 
@@ -263,14 +266,21 @@
             class="w-full h-full object-cover rounded-lg"
           />
           <!-- Overlay with game info -->
-          <div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-6 rounded-b-lg">
-            <h1 class="text-4xl font-archivo font-bold text-white mb-2">{normalizedGameData.name}</h1>
+          <div
+            class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-6 rounded-b-lg"
+          >
+            <h1 class="text-4xl font-archivo font-bold text-white mb-2">
+              {normalizedGameData.name}
+            </h1>
             <div class="text-sm text-gray-200">
-              <span class="text-gray-300">Publisher:</span> {(normalizedGameData.publishers ?? []).join(", ")}
+              <span class="text-gray-300">Publisher:</span>
+              {(normalizedGameData.publishers ?? []).join(', ')}
               <span class="mx-4"></span>
-              <span class="text-gray-300">Developer:</span> {(normalizedGameData.developers ?? []).join(", ")}
+              <span class="text-gray-300">Developer:</span>
+              {(normalizedGameData.developers ?? []).join(', ')}
               <br />
-              <span class="text-gray-300">Release Date:</span> {normalizedGameData.release_date}
+              <span class="text-gray-300">Release Date:</span>
+              {normalizedGameData.release_date}
             </div>
           </div>
         </div>
@@ -281,11 +291,16 @@
         <!-- Left side - Description -->
         <div class="mt-4 flex-1 overflow-y-auto relative">
           <!-- Fade gradient overlay at top -->
-          <div class="sticky top-0 h-4 bg-gradient-to-b from-white/80 to-transparent z-10 pointer-events-none"></div>
-          
+          <div
+            class="sticky top-0 h-4 bg-gradient-to-b from-white/80 to-transparent z-10 pointer-events-none"
+          ></div>
+
           <!-- Detailed description -->
           <div class="pb-10 -mt-4">
-            <article id="g-descript" class="prose max-w-none text-accent-dark pt-4">
+            <article
+              id="g-descript"
+              class="prose max-w-none text-accent-dark pt-4"
+            >
               {@html normalizedGameData.detailed_description}
             </article>
           </div>
@@ -310,19 +325,34 @@
                   <div class="bg-accent-lighter rounded-lg p-4 mb-4">
                     <div class="flex items-center justify-between mb-2">
                       <div class="flex flex-row gap-2 items-center">
-                        <AddonPicture addonId={result.addonSource} class="w-12 h-12 rounded-lg" />
-                        <span class="font-medium text-gray-800">{result.addonSource}</span>
+                        <AddonPicture
+                          addonId={result.addonSource}
+                          class="w-12 h-12 rounded-lg"
+                        />
+                        <span class="font-medium text-gray-800"
+                          >{result.addonSource}</span
+                        >
                       </div>
-                      <div class="flex items-center gap-1 text-xs text-gray-500">
-                        {#if result.downloadType === "magnet"}
-                          <img class="w-4 h-4" src="./magnet-icon.gif" alt="Magnet" />
+                      <div
+                        class="flex items-center gap-1 text-xs text-gray-500"
+                      >
+                        {#if result.downloadType === 'magnet'}
+                          <img
+                            class="w-4 h-4"
+                            src="./magnet-icon.gif"
+                            alt="Magnet"
+                          />
                           <span>Magnet</span>
-                        {:else if result.downloadType === "torrent"}
-                          <img class="w-4 h-4" src="./torrent.png" alt="Torrent" />
+                        {:else if result.downloadType === 'torrent'}
+                          <img
+                            class="w-4 h-4"
+                            src="./torrent.png"
+                            alt="Torrent"
+                          />
                           <span>Torrent</span>
-                        {:else if result.downloadType === "direct"}
+                        {:else if result.downloadType === 'direct'}
                           <span>Direct</span>
-                        {:else if result.downloadType === "request"}
+                        {:else if result.downloadType === 'request'}
                           <span>Request</span>
                         {/if}
                       </div>
@@ -340,13 +370,25 @@
                         aria-label="Source Information"
                         onclick={() => showSourceInfo(result)}
                       >
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" class="fill-accent-dark w-6 h-6">
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          viewBox="0 0 24 24"
+                          class="fill-accent-dark w-6 h-6"
+                        >
                           <g clip-path="url(#clip0_22_330)">
-                            <path d="M12 2C6.48 2 2 6.48 2 12C2 17.52 6.48 22 12 22C17.52 22 22 17.52 22 12C22 6.48 17.52 2 12 2ZM12 17C11.45 17 11 16.55 11 16V12C11 11.45 11.45 11 12 11C12.55 11 13 11.45 13 12V16C13 16.55 12.55 17 12 17ZM13 9H11V7H13V9Z" fill="#2D626A"/>
+                            <path
+                              d="M12 2C6.48 2 2 6.48 2 12C2 17.52 6.48 22 12 22C17.52 22 22 17.52 22 12C22 6.48 17.52 2 12 2ZM12 17C11.45 17 11 16.55 11 16V12C11 11.45 11.45 11 12 11C12.55 11 13 11.45 13 12V16C13 16.55 12.55 17 12 17ZM13 9H11V7H13V9Z"
+                              fill="#2D626A"
+                            />
                           </g>
                           <defs>
                             <clipPath id="clip0_22_330">
-                              <rect width="24" height="24" rx="12" fill="white"/>
+                              <rect
+                                width="24"
+                                height="24"
+                                rx="12"
+                                fill="white"
+                              />
                             </clipPath>
                           </defs>
                         </svg>
@@ -356,7 +398,9 @@
                 {/each}
               {:else if queryingSources}
                 <div class="text-center py-8">
-                  <div class="animate-spin w-8 h-8 border-2 border-teal-500 border-t-transparent rounded-full mx-auto mb-3"></div>
+                  <div
+                    class="animate-spin w-8 h-8 border-2 border-teal-500 border-t-transparent rounded-full mx-auto mb-3"
+                  ></div>
                   <p class="text-gray-600">Searching sources...</p>
                 </div>
               {:else}
@@ -387,62 +431,70 @@
 <!-- Source Information Modal (for Steam store only) -->
 {#key selectedResult}
   {#if selectedResult}
-    <Modal 
+    <Modal
       open={selectedResult !== undefined}
       size="medium"
       onClose={closeInfoModal}
     >
-        <TitleModal title="Source Information" />
-        <HeaderModal header={selectedResult.addonSource} />
+      <TitleModal title="Source Information" />
+      <HeaderModal header={selectedResult.addonSource} />
 
-        <SectionModal>
-          <div class="flex flex-col gap-4">
-            <div class="flex items-center gap-3">
-              <AddonPicture addonId={selectedResult.addonSource} class="w-16 h-16 rounded-lg" />
-              <div>
-                <h3 class="text-lg font-semibold">{selectedResult.addonSource}</h3>
-                <TextModal text="Addon Source" variant="description" />
-              </div>
+      <SectionModal>
+        <div class="flex flex-col gap-4">
+          <div class="flex items-center gap-3">
+            <AddonPicture
+              addonId={selectedResult.addonSource}
+              class="w-16 h-16 rounded-lg"
+            />
+            <div>
+              <h3 class="text-lg font-semibold">
+                {selectedResult.addonSource}
+              </h3>
+              <TextModal text="Addon Source" variant="description" />
             </div>
-            
-            <div class="grid grid-cols-2 gap-4">
-              <div>
-                <TextModal text="Download Type" variant="caption" />
-                <div class="flex items-center gap-2">
-                  {#if selectedResult.downloadType === "magnet"}
-                    <img class="w-5 h-5" src="./magnet-icon.gif" alt="Magnet" />
-                    <span class="text-sm font-medium">Magnet Link</span>
-                  {:else if selectedResult.downloadType === "torrent"}
-                    <img class="w-5 h-5" src="./torrent.png" alt="Torrent" />
-                    <span class="text-sm font-medium">Torrent File</span>
-                  {:else if selectedResult.downloadType === "direct"}
-                    <span class="text-sm font-medium">Direct Download</span>
-                  {:else if selectedResult.downloadType === "request"}
-                    <span class="text-sm font-medium">Request</span>
-                  {/if}
-                </div>
-              </div>
-              
-              <div>
-                <TextModal text="Download Name" variant="caption" />
-                <TextModal text={selectedResult.name} variant="body" />
-              </div>
-            </div>
-            
-            {#if selectedResult.storefront}
-              <div>
-                <TextModal text="Storefront" variant="caption" />
-                <TextModal text={selectedResult.storefront} variant="body" />
-              </div>
-            {/if}
-
-            {#if selectedResult.manifest}
-              <div>
-                <TextModal text="Manifest" variant="caption" />
-                <TextModal text={JSON.stringify(selectedResult.manifest, null, 2)} variant="body" />
-              </div>
-            {/if}
           </div>
+
+          <div class="grid grid-cols-2 gap-4">
+            <div>
+              <TextModal text="Download Type" variant="caption" />
+              <div class="flex items-center gap-2">
+                {#if selectedResult.downloadType === 'magnet'}
+                  <img class="w-5 h-5" src="./magnet-icon.gif" alt="Magnet" />
+                  <span class="text-sm font-medium">Magnet Link</span>
+                {:else if selectedResult.downloadType === 'torrent'}
+                  <img class="w-5 h-5" src="./torrent.png" alt="Torrent" />
+                  <span class="text-sm font-medium">Torrent File</span>
+                {:else if selectedResult.downloadType === 'direct'}
+                  <span class="text-sm font-medium">Direct Download</span>
+                {:else if selectedResult.downloadType === 'request'}
+                  <span class="text-sm font-medium">Request</span>
+                {/if}
+              </div>
+            </div>
+
+            <div>
+              <TextModal text="Download Name" variant="caption" />
+              <TextModal text={selectedResult.name} variant="body" />
+            </div>
+          </div>
+
+          {#if selectedResult.storefront}
+            <div>
+              <TextModal text="Storefront" variant="caption" />
+              <TextModal text={selectedResult.storefront} variant="body" />
+            </div>
+          {/if}
+
+          {#if selectedResult.manifest}
+            <div>
+              <TextModal text="Manifest" variant="caption" />
+              <TextModal
+                text={JSON.stringify(selectedResult.manifest, null, 2)}
+                variant="body"
+              />
+            </div>
+          {/if}
+        </div>
       </SectionModal>
     </Modal>
   {/if}
@@ -456,24 +508,25 @@
   #g-descript img {
     @apply w-full rounded-lg my-4;
   }
-  
+
   #g-descript p {
     @apply text-sm text-gray-700 mb-3 leading-relaxed;
   }
-  
+
   #g-descript h1 {
     @apply text-xl font-archivo font-semibold text-gray-800 mb-3;
   }
-  
+
   #g-descript h2 {
     @apply text-lg font-archivo font-medium text-gray-800 mb-2;
   }
-  
+
   #g-descript strong {
     @apply font-semibold text-gray-900;
   }
 
-  #g-descript ul, #g-descript ol {
+  #g-descript ul,
+  #g-descript ol {
     @apply mb-3 ml-4;
   }
 
@@ -488,28 +541,29 @@
   #g-descript-custom img {
     @apply w-full rounded-lg my-4;
   }
-  
+
   #g-descript-custom p {
     @apply text-sm text-gray-700 mb-3 leading-relaxed;
   }
-  
+
   #g-descript-custom h1 {
     @apply text-xl font-archivo font-semibold text-gray-800 mb-3;
   }
-  
+
   #g-descript-custom h2 {
     @apply text-lg font-archivo font-medium text-gray-800 mb-2;
   }
-  
+
   #g-descript-custom strong {
     @apply font-semibold text-gray-900;
   }
 
-  #g-descript-custom ul, #g-descript-custom ol {
+  #g-descript-custom ul,
+  #g-descript-custom ol {
     @apply mb-3 ml-4;
   }
 
   #g-descript-custom li {
     @apply text-sm text-gray-700 mb-1;
   }
-</style> 
+</style>

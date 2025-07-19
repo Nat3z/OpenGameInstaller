@@ -1,7 +1,8 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount } from 'svelte';
 
-  let { addonId, class: className }: { addonId: string, class?: string } = $props();
+  let { addonId, class: className }: { addonId: string; class?: string } =
+    $props();
   let image = $state<string | undefined>(undefined);
 
   onMount(() => {
@@ -14,11 +15,18 @@
     });
   });
 </script>
+
 <div class={className}>
   {#if image}
-    <img src={image} alt="Addon Icon" class="w-full h-full object-cover {className}" />
+    <img
+      src={image}
+      alt="Addon Icon"
+      class="w-full h-full object-cover {className}"
+    />
   {:else}
-    <div class="w-full h-full bg-accent-light p-4 flex items-center justify-center text-accent-dark uppercase text-2xl {className}">
+    <div
+      class="w-full h-full bg-accent-light p-4 flex items-center justify-center text-accent-dark uppercase text-2xl {className}"
+    >
       {addonId.slice(0, 2)}
     </div>
   {/if}

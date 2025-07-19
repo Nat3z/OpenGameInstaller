@@ -1,39 +1,44 @@
 <script lang="ts">
-  import { onMount } from "svelte";
-  import { safeFetch } from "../utils";
+  import { onMount } from 'svelte';
+  import { safeFetch } from '../utils';
   import type {
     BooleanOption,
     ConfigurationFile,
     ConfigurationOption,
     NumberOption,
     StringOption,
-  } from "ogi-addon/config";
-  import type { OGIAddonConfiguration } from "ogi-addon";
-  import { notifications } from "../store";
-  import AddonPicture from "../components/AddonPicture.svelte";
-  import Modal from "../components/modal/Modal.svelte";
-  import HeaderModal from "../components/modal/HeaderModal.svelte";
-  import TitleModal from "../components/modal/TitleModal.svelte";
-  import TextModal from "../components/modal/TextModal.svelte";
-  import ButtonModal from "../components/modal/ButtonModal.svelte";
-  import DeleteAddonWarningModal from "../components/built/DeleteAddonWarningModal.svelte";
-  
+  } from 'ogi-addon/config';
+  import type { OGIAddonConfiguration } from 'ogi-addon';
+  import { notifications } from '../store';
+  import AddonPicture from '../components/AddonPicture.svelte';
+  import Modal from '../components/modal/Modal.svelte';
+  import HeaderModal from '../components/modal/HeaderModal.svelte';
+  import TitleModal from '../components/modal/TitleModal.svelte';
+  import TextModal from '../components/modal/TextModal.svelte';
+  import ButtonModal from '../components/modal/ButtonModal.svelte';
+  import DeleteAddonWarningModal from '../components/built/DeleteAddonWarningModal.svelte';
+
   const fs = window.electronAPI.fs;
 
-  let { addonId, onBack, refreshAddon }: { addonId: string; onBack: () => void; refreshAddon: () => void } = $props();
+  let {
+    addonId,
+    onBack,
+    refreshAddon,
+  }: { addonId: string; onBack: () => void; refreshAddon: () => void } =
+    $props();
 
   function isStringOption(option: ConfigurationOption): option is StringOption {
-    return option.type === "string";
+    return option.type === 'string';
   }
 
   function isNumberOption(option: ConfigurationOption): option is NumberOption {
-    return option.type === "number";
+    return option.type === 'number';
   }
 
   function isBooleanOption(
     option: ConfigurationOption
   ): option is BooleanOption {
-    return option.type === "boolean";
+    return option.type === 'boolean';
   }
 
   interface ConfigTemplateAndInfo extends OGIAddonConfiguration {
@@ -45,7 +50,7 @@
   let backConfirmationModalOpen: boolean = $state(false);
 
   onMount(() => {
-    safeFetch("getAllAddons", {}).then((data) => {
+    safeFetch('getAllAddons', {}).then((data) => {
       const addon = data.find((a: ConfigTemplateAndInfo) => a.id === addonId);
       if (addon) {
         selectedAddon = addon;
@@ -65,35 +70,35 @@
         | HTMLInputElement
         | HTMLSelectElement;
       if (element) {
-        if (selectedAddon.configTemplate[key].type === "string") {
+        if (selectedAddon.configTemplate[key].type === 'string') {
           config[key] = element.value;
         }
-        if (selectedAddon.configTemplate[key].type === "number") {
+        if (selectedAddon.configTemplate[key].type === 'number') {
           config[key] = parseInt(element.value);
         }
         if (
-          selectedAddon.configTemplate[key].type === "boolean" &&
-          element.type === "checkbox"
+          selectedAddon.configTemplate[key].type === 'boolean' &&
+          element.type === 'checkbox'
         ) {
           config[key] = element.checked;
         }
       }
     });
-    document.querySelectorAll("[data-error-message]").forEach((element) => {
-      element.textContent = "";
-      element.setAttribute("data-context", "");
+    document.querySelectorAll('[data-error-message]').forEach((element) => {
+      element.textContent = '';
+      element.setAttribute('data-context', '');
       element
-        .parentElement!!.querySelector("[data-input]")!!
-        .classList.remove("outline-red-500");
+        .parentElement!!.querySelector('[data-input]')!!
+        .classList.remove('outline-red-500');
       element
-        .parentElement!!.querySelector("[data-input]")!!
-        .classList.remove("outline-2");
+        .parentElement!!.querySelector('[data-input]')!!
+        .classList.remove('outline-2');
       element
-        .parentElement!!.querySelector("[data-input]")!!
-        .classList.remove("outline");
+        .parentElement!!.querySelector('[data-input]')!!
+        .classList.remove('outline');
     });
     safeFetch(
-      "updateConfig",
+      'updateConfig',
       {
         addonID: selectedAddon.id,
         config: config,
@@ -103,43 +108,43 @@
       if (!data.success) {
         for (const key in data.errors) {
           const element = document.getElementById(key);
-          if (!element) return console.error("element not found");
-          element.classList.add("outline-red-500");
-          element.classList.add("outline-2");
-          element.classList.add("outline");
-          element.parentElement!!.querySelector("p")!!.innerHTML = `
+          if (!element) return console.error('element not found');
+          element.classList.add('outline-red-500');
+          element.classList.add('outline-2');
+          element.classList.add('outline');
+          element.parentElement!!.querySelector('p')!!.innerHTML = `
             <img src="./error.svg" alt="error" class="w-6 h-6" />
           `;
 
           element
-            .parentElement!!.querySelector("p")!!
-            .setAttribute("data-context", data.errors[key]);
+            .parentElement!!.querySelector('p')!!
+            .setAttribute('data-context', data.errors[key]);
         }
         notifications.update((update) => [
           ...update,
           {
             id: Math.random().toString(36).substring(7),
-            type: "error",
+            type: 'error',
             message:
-              "Failed to validate configuration. Configuration will not be usable.",
+              'Failed to validate configuration. Configuration will not be usable.',
           },
         ]);
       }
     });
     // save this config to local storage
     fs.write(
-      "./config/" + selectedAddon!!.id + ".json",
+      './config/' + selectedAddon!!.id + '.json',
       JSON.stringify(config)
     );
   }
 
   function getStoredOrDefaultValue(key: string) {
     if (!selectedAddon) return undefined;
-    if (!fs.exists("./config/" + selectedAddon.id + ".json")) {
+    if (!fs.exists('./config/' + selectedAddon.id + '.json')) {
       return selectedAddon.configTemplate[key].defaultValue;
     } else {
       const storedConfig = JSON.parse(
-        fs.read("./config/" + selectedAddon.id + ".json")
+        fs.read('./config/' + selectedAddon.id + '.json')
       );
       return storedConfig.hasOwnProperty(key)
         ? storedConfig[key]
@@ -147,14 +152,14 @@
     }
   }
 
-  function browseForFolder(event: MouseEvent, type: "file" | "folder") {
+  function browseForFolder(event: MouseEvent, type: 'file' | 'folder') {
     const dialog = window.electronAPI.fs.dialog;
     const element = (event.target as HTMLElement).parentElement!!.querySelector(
-      "input"
+      'input'
     ) as HTMLInputElement;
     dialog
       .showOpenDialog({
-        properties: type === "file" ? ["openDirectory"] : ["openFile"],
+        properties: type === 'file' ? ['openDirectory'] : ['openFile'],
       })
       .then((path) => {
         if (!path) return;
@@ -168,79 +173,93 @@
   function showDescription(event: MouseEvent | FocusEvent) {
     const element = event.target as HTMLElement;
     const contextual = element.parentElement!!.querySelector(
-      "[data-description]"
+      '[data-description]'
     )!! as HTMLDivElement;
-    contextual.style.display = "flex";
-    contextual.animate([
-      { opacity: 0, transform: "translateY(-8px) scale(0.95)" }, 
-      { opacity: 1, transform: "translateY(0) scale(1)" }
-    ], {
-      duration: 150,
-      easing: "cubic-bezier(0.16, 1, 0.3, 1)",
-      fill: "forwards",
-    });
+    contextual.style.display = 'flex';
+    contextual.animate(
+      [
+        { opacity: 0, transform: 'translateY(-8px) scale(0.95)' },
+        { opacity: 1, transform: 'translateY(0) scale(1)' },
+      ],
+      {
+        duration: 150,
+        easing: 'cubic-bezier(0.16, 1, 0.3, 1)',
+        fill: 'forwards',
+      }
+    );
   }
 
   function hideDescription(event: MouseEvent) {
     const element = event.target as HTMLElement;
     const contextual = element.parentElement!!.querySelector(
-      "[data-description]"
+      '[data-description]'
     )!! as HTMLDivElement;
-    contextual.animate([
-      { opacity: 1, transform: "translateY(0) scale(1)" }, 
-      { opacity: 0, transform: "translateY(-8px) scale(0.95)" }
-    ], {
-      duration: 150,
-      easing: "cubic-bezier(0.16, 1, 0.3, 1)",
-      fill: "forwards",
-    });
+    contextual.animate(
+      [
+        { opacity: 1, transform: 'translateY(0) scale(1)' },
+        { opacity: 0, transform: 'translateY(-8px) scale(0.95)' },
+      ],
+      {
+        duration: 150,
+        easing: 'cubic-bezier(0.16, 1, 0.3, 1)',
+        fill: 'forwards',
+      }
+    );
     setTimeout(() => {
-      contextual.style.display = "none";
+      contextual.style.display = 'none';
     }, 150);
   }
 
   function showContextHint(event: MouseEvent) {
     const element = event.target as HTMLElement;
-    const context = element.getAttribute("data-context");
+    const context = element.getAttribute('data-context');
     if (!context) return;
     const contextual = element.parentElement!!.querySelector(
-      "[data-contextual]"
+      '[data-contextual]'
     )!! as HTMLDivElement;
-    contextual.style.display = "flex";
+    contextual.style.display = 'flex';
 
-    const hint = contextual.querySelector("p")!!;
+    const hint = contextual.querySelector('p')!!;
     hint.textContent = context;
-    contextual.animate([
-      { opacity: 0, transform: "translateY(-8px) scale(0.95)" }, 
-      { opacity: 1, transform: "translateY(0) scale(1)" }
-    ], {
-      duration: 150,
-      easing: "cubic-bezier(0.16, 1, 0.3, 1)",
-      fill: "forwards",
-    });
+    contextual.animate(
+      [
+        { opacity: 0, transform: 'translateY(-8px) scale(0.95)' },
+        { opacity: 1, transform: 'translateY(0) scale(1)' },
+      ],
+      {
+        duration: 150,
+        easing: 'cubic-bezier(0.16, 1, 0.3, 1)',
+        fill: 'forwards',
+      }
+    );
   }
 
   function hideContextHint(event: MouseEvent) {
     const element = event.target as HTMLElement;
     const contextual = element.parentElement!!.querySelector(
-      "[data-contextual]"
+      '[data-contextual]'
     )!! as HTMLDivElement;
-    contextual.animate([
-      { opacity: 1, transform: "translateY(0) scale(1)" }, 
-      { opacity: 0, transform: "translateY(-8px) scale(0.95)" }
-    ], {
-      duration: 150,
-      easing: "cubic-bezier(0.16, 1, 0.3, 1)",
-      fill: "forwards",
-    });
+    contextual.animate(
+      [
+        { opacity: 1, transform: 'translateY(0) scale(1)' },
+        { opacity: 0, transform: 'translateY(-8px) scale(0.95)' },
+      ],
+      {
+        duration: 150,
+        easing: 'cubic-bezier(0.16, 1, 0.3, 1)',
+        fill: 'forwards',
+      }
+    );
     setTimeout(() => {
-      contextual.style.display = "none";
+      contextual.style.display = 'none';
     }, 150);
   }
 
   function updateInputNum(element: HTMLInputElement) {
-    if (element.type === "range") {
-      (element.parentElement!!.querySelector(".range-value") as HTMLInputElement)!!.value = element.value;
+    if (element.type === 'range') {
+      (element.parentElement!!.querySelector(
+        '.range-value'
+      ) as HTMLInputElement)!!.value = element.value;
     }
   }
 
@@ -252,13 +271,15 @@
   async function deleteAddonGO() {
     if (!selectedAddon) return;
     try {
-      const result = await safeFetch("deleteAddon", { addonID: selectedAddon.id });
+      const result = await safeFetch('deleteAddon', {
+        addonID: selectedAddon.id,
+      });
       if (result.success) {
         notifications.update((update) => [
           ...update,
           {
             id: Math.random().toString(36).substring(7),
-            type: "success",
+            type: 'success',
             message: `Addon '${selectedAddon!.name}' deleted successfully.`,
           },
         ]);
@@ -269,8 +290,10 @@
           ...update,
           {
             id: Math.random().toString(36).substring(7),
-            type: "error",
-            message: result.message || `Failed to delete addon '${selectedAddon!.name}'.`,
+            type: 'error',
+            message:
+              result.message ||
+              `Failed to delete addon '${selectedAddon!.name}'.`,
           },
         ]);
       }
@@ -279,7 +302,7 @@
         ...update,
         {
           id: Math.random().toString(36).substring(7),
-          type: "error",
+          type: 'error',
           message: `Error deleting addon: ${e}`,
         },
       ]);
@@ -287,8 +310,10 @@
   }
 
   function hasConfigErrors() {
-    return Array.from(document.querySelectorAll("[data-error-message]")).some(
-      (el) => el.getAttribute("data-context") && el.getAttribute("data-context") !== ""
+    return Array.from(document.querySelectorAll('[data-error-message]')).some(
+      (el) =>
+        el.getAttribute('data-context') &&
+        el.getAttribute('data-context') !== ''
     );
   }
 
@@ -302,11 +327,11 @@
 </script>
 
 {#if deleteConfirmationModalOpen}
-  <DeleteAddonWarningModal 
+  <DeleteAddonWarningModal
     open={deleteConfirmationModalOpen}
-    onClose={() => deleteConfirmationModalOpen = false}
-    deleteAddonGO={deleteAddonGO}
-    addonName={selectedAddon?.name || ""} 
+    onClose={() => (deleteConfirmationModalOpen = false)}
+    {deleteAddonGO}
+    addonName={selectedAddon?.name || ''}
   />
 {/if}
 
@@ -369,7 +394,19 @@
           title="Delete this addon"
           aria-label="Delete"
         >
-          <svg xmlns="http://www.w3.org/2000/svg" fill="currentColor" enable-background="new 0 0 24 24" height="24" viewBox="0 0 24 24" width="24"><g><path d="M0,0h24v24H0V0z" fill="none"/></g><g><path d="M6,19c0,1.1,0.9,2,2,2h8c1.1,0,2-0.9,2-2V7H6V19z M9.17,12.59c-0.39-0.39-0.39-1.02,0-1.41c0.39-0.39,1.02-0.39,1.41,0 L12,12.59l1.41-1.41c0.39-0.39,1.02-0.39,1.41,0s0.39,1.02,0,1.41L13.41,14l1.41,1.41c0.39,0.39,0.39,1.02,0,1.41 s-1.02,0.39-1.41,0L12,15.41l-1.41,1.41c-0.39,0.39-1.02,0.39-1.41,0c-0.39-0.39-0.39-1.02,0-1.41L10.59,14L9.17,12.59z M18,4h-2.5 l-0.71-0.71C14.61,3.11,14.35,3,14.09,3H9.91c-0.26,0-0.52,0.11-0.7,0.29L8.5,4H6C5.45,4,5,4.45,5,5s0.45,1,1,1h12 c0.55,0,1-0.45,1-1S18.55,4,18,4z"/></g></svg>
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            fill="currentColor"
+            enable-background="new 0 0 24 24"
+            height="24"
+            viewBox="0 0 24 24"
+            width="24"
+            ><g><path d="M0,0h24v24H0V0z" fill="none" /></g><g
+              ><path
+                d="M6,19c0,1.1,0.9,2,2,2h8c1.1,0,2-0.9,2-2V7H6V19z M9.17,12.59c-0.39-0.39-0.39-1.02,0-1.41c0.39-0.39,1.02-0.39,1.41,0 L12,12.59l1.41-1.41c0.39-0.39,1.02-0.39,1.41,0s0.39,1.02,0,1.41L13.41,14l1.41,1.41c0.39,0.39,0.39,1.02,0,1.41 s-1.02,0.39-1.41,0L12,15.41l-1.41,1.41c-0.39,0.39-1.02,0.39-1.41,0c-0.39-0.39-0.39-1.02,0-1.41L10.59,14L9.17,12.59z M18,4h-2.5 l-0.71-0.71C14.61,3.11,14.35,3,14.09,3H9.91c-0.26,0-0.52,0.11-0.7,0.29L8.5,4H6C5.45,4,5,4.45,5,5s0.45,1,1,1h12 c0.55,0,1-0.45,1-1S18.55,4,18,4z"
+              /></g
+            ></svg
+          >
         </button>
       {/if}
     </div>
@@ -380,7 +417,10 @@
     <div class="addon-header">
       <div class="addon-header-content">
         <div class="addon-icon-container">
-          <AddonPicture addonId={selectedAddon.id} class="addon-icon rounded-lg" />
+          <AddonPicture
+            addonId={selectedAddon.id}
+            class="addon-icon rounded-lg"
+          />
         </div>
         <div class="addon-info">
           <h1 class="addon-title">{selectedAddon.name}</h1>
@@ -416,20 +456,18 @@
                     <option {value}>{value}</option>
                   {/each}
                 </select>
-              {:else if selectedAddon.configTemplate[key].inputType === "text" || selectedAddon.configTemplate[key].inputType === "password"}
+              {:else if selectedAddon.configTemplate[key].inputType === 'text' || selectedAddon.configTemplate[key].inputType === 'password'}
                 <input
                   data-input
                   type={selectedAddon.configTemplate[key].inputType}
                   onchange={updateConfig}
                   value={getStoredOrDefaultValue(key)}
                   id={key}
-                  maxlength={selectedAddon.configTemplate[key]
-                    .maxTextLength}
-                  minlength={selectedAddon.configTemplate[key]
-                    .minTextLength}
+                  maxlength={selectedAddon.configTemplate[key].maxTextLength}
+                  minlength={selectedAddon.configTemplate[key].minTextLength}
                   class="config-input"
                 />
-              {:else if selectedAddon.configTemplate[key].inputType === "file" || selectedAddon.configTemplate[key].inputType === "folder"}
+              {:else if selectedAddon.configTemplate[key].inputType === 'file' || selectedAddon.configTemplate[key].inputType === 'folder'}
                 <div class="flex items-center gap-2">
                   <input
                     type="text"
@@ -439,16 +477,16 @@
                     id={key}
                     class="config-input"
                   />
-                  {#if selectedAddon.configTemplate[key].inputType === "folder"}
+                  {#if selectedAddon.configTemplate[key].inputType === 'folder'}
                     <button
                       class="browse-button"
-                      onclick={(ev) => browseForFolder(ev, "folder")}
+                      onclick={(ev) => browseForFolder(ev, 'folder')}
                       >Browse</button
                     >
-                  {:else if selectedAddon.configTemplate[key].inputType === "file"}
+                  {:else if selectedAddon.configTemplate[key].inputType === 'file'}
                     <button
                       class="browse-button"
-                      onclick={(ev) => browseForFolder(ev, "file")}
+                      onclick={(ev) => browseForFolder(ev, 'file')}
                       >Browse</button
                     >
                   {/if}
@@ -460,7 +498,8 @@
                 data-input
                 type={selectedAddon.configTemplate[key].inputType}
                 id={key}
-                oninput={(event) => updateInputNum(event.target as HTMLInputElement)}
+                oninput={(event) =>
+                  updateInputNum(event.target as HTMLInputElement)}
                 onchange={updateConfig}
                 value={getStoredOrDefaultValue(key)}
                 max={isNumberOption(selectedAddon.configTemplate[key])
@@ -471,16 +510,22 @@
                   : 0}
                 class="config-input"
               />
-              {#if selectedAddon.configTemplate[key].inputType === "range"}
+              {#if selectedAddon.configTemplate[key].inputType === 'range'}
                 <input
                   type="number"
                   class="range-value font-archivo w-16 ml-2 px-2 py-1 border border-gray-300 rounded-lg text-center"
                   value={getStoredOrDefaultValue(key)}
-                  min={isNumberOption(selectedAddon.configTemplate[key]) ? selectedAddon.configTemplate[key].min : 0}
-                  max={isNumberOption(selectedAddon.configTemplate[key]) ? selectedAddon.configTemplate[key].max : 0}
+                  min={isNumberOption(selectedAddon.configTemplate[key])
+                    ? selectedAddon.configTemplate[key].min
+                    : 0}
+                  max={isNumberOption(selectedAddon.configTemplate[key])
+                    ? selectedAddon.configTemplate[key].max
+                    : 0}
                   onchange={updateConfig}
                   oninput={(event) => {
-                    const element = document.getElementById(key) as HTMLInputElement;
+                    const element = document.getElementById(
+                      key
+                    ) as HTMLInputElement;
                     if (element && event.target instanceof HTMLInputElement) {
                       element.value = event.target.value;
                       updateInputNum(element);
@@ -515,7 +560,11 @@
               style="display: none"
               class="absolute flex flex-row gap-3 justify-start items-center z-30 top-12 left-0 bg-white border border-red-200 text-sm p-4 rounded-lg shadow-lg w-full"
             >
-              <img src="./error.svg" alt="error" class="w-4 h-4 mt-0.5 flex-shrink-0" />
+              <img
+                src="./error.svg"
+                alt="error"
+                class="w-4 h-4 mt-0.5 flex-shrink-0"
+              />
               <p class="text-red-700 leading-relaxed"></p>
             </div>
             <div
@@ -523,7 +572,17 @@
               style="display: none"
               class="absolute flex flex-row gap-3 justify-start items-center z-30 top-12 left-0 bg-white border border-blue-200 text-sm p-4 rounded-lg shadow-lg w-full"
             >
-              <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 mt-0.5 flex-shrink-0 text-blue-400" fill="currentColor" height="24" viewBox="0 0 24 24" width="24"><path d="M0 0h24v24H0V0z" fill="none"/><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 15c-.55 0-1-.45-1-1v-4c0-.55.45-1 1-1s1 .45 1 1v4c0 .55-.45 1-1 1zm1-8h-2V7h2v2z"/></svg>
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                class="w-4 h-4 mt-0.5 flex-shrink-0 text-blue-400"
+                fill="currentColor"
+                height="24"
+                viewBox="0 0 24 24"
+                width="24"
+                ><path d="M0 0h24v24H0V0z" fill="none" /><path
+                  d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 15c-.55 0-1-.45-1-1v-4c0-.55.45-1 1-1s1 .45 1 1v4c0 .55-.45 1-1 1zm1-8h-2V7h2v2z"
+                /></svg
+              >
               <p class="text-blue-400 leading-relaxed relative top-[0.1rem]">
                 {selectedAddon.configTemplate[key].description}
               </p>
@@ -632,8 +691,8 @@
     @apply text-gray-700 font-medium;
   }
 
-  input[type="number"]::-webkit-inner-spin-button,
-  input[type="number"]::-webkit-outer-spin-button {
+  input[type='number']::-webkit-inner-spin-button,
+  input[type='number']::-webkit-outer-spin-button {
     -webkit-appearance: none;
     -moz-appearance: none;
     appearance: none;

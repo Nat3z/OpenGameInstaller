@@ -1,7 +1,13 @@
 <script lang="ts">
-  import { type BooleanOption, type ConfigurationFile, type ConfigurationOption, type NumberOption, type StringOption } from "ogi-addon/config";
-  import { writable, type Writable } from "svelte/store";
-  
+  import {
+    type BooleanOption,
+    type ConfigurationFile,
+    type ConfigurationOption,
+    type NumberOption,
+    type StringOption,
+  } from 'ogi-addon/config';
+  import { writable, type Writable } from 'svelte/store';
+
   import Modal from './Modal.svelte';
   import TitleModal from './TitleModal.svelte';
   import HeaderModal from './HeaderModal.svelte';
@@ -18,7 +24,9 @@
     return option.type === 'number';
   }
 
-  function isBooleanOption(option: ConfigurationOption): option is BooleanOption {
+  function isBooleanOption(
+    option: ConfigurationOption
+  ): option is BooleanOption {
     return option.type === 'boolean';
   }
 
@@ -32,31 +40,50 @@
   let screenName: string | undefined = $state(undefined);
   let screenDescription: string | undefined = $state(undefined);
   let formData: { [key: string]: any } = $state({});
-  
-  let listOfScreensQueued: Writable<{ config: ConfigurationFile, id: string, name: string, description: string }[]> = writable([]);
+
+  let listOfScreensQueued: Writable<
+    {
+      config: ConfigurationFile;
+      id: string;
+      name: string;
+      description: string;
+    }[]
+  > = writable([]);
 
   // Event listener for input requests
   document.addEventListener('input-asked', (e) => {
     if (!isCustomEvent(e)) return;
     const { detail } = e;
-    const { config, id, name, description }: { config: ConfigurationFile, id: string, name: string, description: string } = detail;
-    listOfScreensQueued.update((screens) => screens.concat({ config, id, name, description }));
+    const {
+      config,
+      id,
+      name,
+      description,
+    }: {
+      config: ConfigurationFile;
+      id: string;
+      name: string;
+      description: string;
+    } = detail;
+    listOfScreensQueued.update((screens) =>
+      screens.concat({ config, id, name, description })
+    );
   });
 
   // Queue subscription to process screens
   listOfScreensQueued.subscribe((screens) => {
     if (screens.length === 0) return;
     if (screenRendering) return;
-    
+
     const screen = screens[0];
     screenRendering = screen.config;
     screenID = screen.id;
     screenName = screen.name;
     screenDescription = screen.description;
-    
+
     // Initialize form data with default values
     formData = {};
-    Object.keys(screen.config).forEach(key => {
+    Object.keys(screen.config).forEach((key) => {
       const option = screen.config[key];
       if (isBooleanOption(option)) {
         formData[key] = option.defaultValue ?? false;
@@ -70,7 +97,7 @@
         }
       }
     });
-    
+
     listOfScreensQueued.update((screens) => screens.slice(1));
   });
 
@@ -79,7 +106,10 @@
   }
 
   function handleSubmit() {
-    window.electronAPI.app.inputSend(screenID!!, JSON.parse(JSON.stringify(formData)));
+    window.electronAPI.app.inputSend(
+      screenID!!,
+      JSON.parse(JSON.stringify(formData))
+    );
     console.log('Submitted data:', formData);
     closeModal();
   }
@@ -105,10 +135,10 @@
         screenID = screen.id;
         screenName = screen.name;
         screenDescription = screen.description;
-        
+
         // Initialize form data for next screen
         formData = {};
-        Object.keys(screen.config).forEach(key => {
+        Object.keys(screen.config).forEach((key) => {
           const option = screen.config[key];
           if (isBooleanOption(option)) {
             formData[key] = option.defaultValue ?? false;
@@ -122,24 +152,27 @@
             }
           }
         });
-        
+
         return screens.slice(1);
       });
     }
   }
 
-  function getInputType(option: ConfigurationOption): "text" | "password" | "number" | "range" | "select" | "file" | "folder" {
+  function getInputType(
+    option: ConfigurationOption
+  ): 'text' | 'password' | 'number' | 'range' | 'select' | 'file' | 'folder' {
     if (isStringOption(option)) {
-      if (option.allowedValues && option.allowedValues.length > 0) return "select";
-      if (option.inputType === "file") return "file";
-      if (option.inputType === "folder") return "folder";
-      if (option.inputType === "password") return "password";
-      return "text";
+      if (option.allowedValues && option.allowedValues.length > 0)
+        return 'select';
+      if (option.inputType === 'file') return 'file';
+      if (option.inputType === 'folder') return 'folder';
+      if (option.inputType === 'password') return 'password';
+      return 'text';
     }
     if (isNumberOption(option)) {
-      return option.inputType === "range" ? "range" : "number";
+      return option.inputType === 'range' ? 'range' : 'number';
     }
-    return "text";
+    return 'text';
   }
 
   function getInputValue(key: string, option: ConfigurationOption) {
@@ -155,6 +188,63 @@
     return [];
   }
 </script>
+
+{#key screenRendering}
+  {#if screenRendering !== undefined}
+    <Modal
+      open={screenRendering !== undefined}
+      priority="addon-ask"
+      size="medium"
+      boundsClose={false}
+    >
+      {#if screenRendering && screenName && screenDescription}
+        <TitleModal title={screenName} />
+        <HeaderModal header={screenDescription} class="mb-4" />
+
+        {#each Object.keys(screenRendering) as key}
+          {#if isBooleanOption(screenRendering[key])}
+            <CheckboxModal
+              id={key}
+              label={screenRendering[key].displayName}
+              description={screenRendering[key].description}
+              checked={formData[key]}
+              onchange={handleInputChange}
+            />
+          {:else}
+            <InputModal
+              id={key}
+              label={screenRendering[key].displayName}
+              description={screenRendering[key].description}
+              type={getInputType(screenRendering[key])}
+              value={getInputValue(key, screenRendering[key])}
+              options={getInputOptions(screenRendering[key])}
+              min={isNumberOption(screenRendering[key])
+                ? screenRendering[key].min
+                : undefined}
+              max={isNumberOption(screenRendering[key])
+                ? screenRendering[key].max
+                : undefined}
+              maxLength={isStringOption(screenRendering[key])
+                ? screenRendering[key].maxTextLength
+                : undefined}
+              minLength={isStringOption(screenRendering[key])
+                ? screenRendering[key].minTextLength
+                : undefined}
+              onchange={handleInputChange}
+            />
+          {/if}
+        {/each}
+
+        <ButtonModal
+          text="Submit"
+          variant="primary"
+          class="mt-4 w-fit"
+          onclick={handleSubmit}
+        />
+      {/if}
+    </Modal>
+  {/if}
+{/key}
 
 <style>
   .config-label {
@@ -173,52 +263,3 @@
     @apply flex gap-3 mt-6;
   }
 </style>
-
-{#key screenRendering}
-  {#if screenRendering !== undefined}
-    <Modal 
-      open={screenRendering !== undefined}
-      priority="addon-ask"
-      size="medium"
-      boundsClose={false}
-    >
-      {#if screenRendering && screenName && screenDescription}
-        <TitleModal title={screenName} />
-        <HeaderModal header={screenDescription} class="mb-4" />
-        
-        {#each Object.keys(screenRendering) as key}
-          {#if isBooleanOption(screenRendering[key])}
-            <CheckboxModal
-              id={key}
-              label={screenRendering[key].displayName}
-              description={screenRendering[key].description}
-              checked={formData[key]}
-              onchange={handleInputChange}
-            />
-          {:else}
-            <InputModal
-              id={key}
-              label={screenRendering[key].displayName}
-              description={screenRendering[key].description}
-              type={getInputType(screenRendering[key])}
-              value={getInputValue(key, screenRendering[key])}
-              options={getInputOptions(screenRendering[key])}
-              min={isNumberOption(screenRendering[key]) ? screenRendering[key].min : undefined}
-              max={isNumberOption(screenRendering[key]) ? screenRendering[key].max : undefined}
-              maxLength={isStringOption(screenRendering[key]) ? screenRendering[key].maxTextLength : undefined}
-              minLength={isStringOption(screenRendering[key]) ? screenRendering[key].minTextLength : undefined}
-              onchange={handleInputChange}
-            />
-          {/if}
-        {/each}
-        
-        <ButtonModal
-          text="Submit"
-          variant="primary"
-          class="mt-4 w-fit"
-          onclick={handleSubmit}
-        />
-      {/if}
-    </Modal> 
-  {/if}
-{/key}

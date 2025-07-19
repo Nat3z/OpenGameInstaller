@@ -141,10 +141,10 @@ Provides styled buttons for modal actions.
   let open = false;
 </script>
 
-<Modal {open} on:close={() => open = false}>
+<Modal {open} on:close={() => (open = false)}>
   <TitleModal title="Confirmation" />
   <p>Are you sure you want to proceed?</p>
-  <ButtonModal text="Yes" on:click={() => open = false} />
+  <ButtonModal text="Yes" on:click={() => (open = false)} />
 </Modal>
 ```
 
@@ -168,7 +168,7 @@ Provides styled buttons for modal actions.
   }
 </script>
 
-<Modal {open} on:close={() => open = false}>
+<Modal {open} on:close={() => (open = false)}>
   <TitleModal title="Contact Form" />
 
   <SectionModal>

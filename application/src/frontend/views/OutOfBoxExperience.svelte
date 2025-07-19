@@ -1,16 +1,16 @@
 <script lang="ts">
-  import { preventDefault } from "svelte/legacy";
+  import { preventDefault } from 'svelte/legacy';
 
-  import { onMount } from "svelte";
+  import { onMount } from 'svelte';
   // @ts-ignore
-  import WineIcon from "../Icons/WineIcon.svelte";
+  import WineIcon from '../Icons/WineIcon.svelte';
 
   let stage = $state(0);
 
-  let selectedTorrenter: "qbittorrent" | "real-debrid" | "webtorrent" | "" =
-    $state("");
+  let selectedTorrenter: 'qbittorrent' | 'real-debrid' | 'webtorrent' | '' =
+    $state('');
   let fulfilledRequirements = $state(false);
-  let addons = "";
+  let addons = '';
   let selectedAddons = $state<string[]>([]);
 
   interface Props {
@@ -29,63 +29,63 @@
   let { finishedSetup }: Props = $props();
 
   async function downloadTools(event: MouseEvent) {
-    console.log("Downloading tools");
+    console.log('Downloading tools');
     const button = event.target as HTMLButtonElement;
     button.disabled = true;
-    button.textContent = "Downloading...";
+    button.textContent = 'Downloading...';
     const result = await window.electronAPI.oobe.downloadTools();
     if (!result[0]) {
       button.disabled = false;
-      button.textContent = "Install";
+      button.textContent = 'Install';
       return;
     }
 
     if (result[1]) {
       stage = 1.5;
       window.electronAPI.fs.write(
-        "./config/option/installed.json",
+        './config/option/installed.json',
         JSON.stringify({ restartRequired: true, installed: false })
       );
     } else stage = 2;
   }
 
   function submitTorrenter() {
-    if (selectedTorrenter === "real-debrid") {
-      console.log("Submitting RD API Key");
+    if (selectedTorrenter === 'real-debrid') {
+      console.log('Submitting RD API Key');
       // save a file with the api key
       const apiKey = document.querySelector(
-        "input[data-rd-key]"
+        'input[data-rd-key]'
       ) as HTMLInputElement;
-      window.electronAPI.fs.mkdir("./config/option/");
+      window.electronAPI.fs.mkdir('./config/option/');
       window.electronAPI.fs.write(
-        "./config/option/realdebrid.json",
+        './config/option/realdebrid.json',
         JSON.stringify({ debridApiKey: apiKey.value })
       );
 
       fulfilledRequirements = true;
-    } else if (selectedTorrenter === "qbittorrent") {
-      console.log("Submitting qBittorrent");
+    } else if (selectedTorrenter === 'qbittorrent') {
+      console.log('Submitting qBittorrent');
       const ip = document.querySelector(
-        "input[data-qb-ip]"
+        'input[data-qb-ip]'
       ) as HTMLInputElement;
       const port = document.querySelector(
-        "input[data-qb-port]"
+        'input[data-qb-port]'
       ) as HTMLInputElement;
       const username = document.querySelector(
-        "input[data-qb-username]"
+        'input[data-qb-username]'
       ) as HTMLInputElement;
       const password = document.querySelector(
-        "input[data-qb-pwd]"
+        'input[data-qb-pwd]'
       ) as HTMLInputElement;
 
       if (!ip.value || !port.value || !username.value || !password.value) {
-        console.error("Missing qBittorrent fields");
+        console.error('Missing qBittorrent fields');
         return;
       }
 
-      window.electronAPI.fs.mkdir("./config/option/");
+      window.electronAPI.fs.mkdir('./config/option/');
       window.electronAPI.fs.write(
-        "./config/option/qbittorrent.json",
+        './config/option/qbittorrent.json',
         JSON.stringify({
           qbitHost: ip.value,
           qbitPort: port.value,
@@ -98,15 +98,15 @@
     }
   }
 
-  let downloadLocation = "";
+  let downloadLocation = '';
 
   async function updateDownloadLocation() {
     window.electronAPI.fs.dialog
-      .showOpenDialog({ properties: ["openDirectory"] })
+      .showOpenDialog({ properties: ['openDirectory'] })
       .then((result) => {
         if (result) {
           const htmlElement = document.querySelector(
-            "input[data-dwloc]"
+            'input[data-dwloc]'
           )!! as HTMLInputElement;
           htmlElement.value = result;
           downloadLocation = result;
@@ -116,21 +116,21 @@
 
   function sendDownloadLocation(event: MouseEvent) {
     const htmlElement = document.querySelector(
-      "input[data-dwloc]"
+      'input[data-dwloc]'
     )!! as HTMLInputElement;
     downloadLocation = htmlElement.value;
     if (
-      downloadLocation === "" ||
+      downloadLocation === '' ||
       !window.electronAPI.fs.exists(downloadLocation)
     ) {
-      console.error("No download location selected");
+      console.error('No download location selected');
       const button = event.target as HTMLButtonElement;
-      button.textContent = "Invalid location";
-      button.style.backgroundColor = "#f55045";
+      button.textContent = 'Invalid location';
+      button.style.backgroundColor = '#f55045';
       button.disabled = true;
       setTimeout(() => {
-        button.textContent = "Continue";
-        button.style.backgroundColor = "";
+        button.textContent = 'Continue';
+        button.style.backgroundColor = '';
         button.disabled = false;
       }, 2000);
       return;
@@ -145,8 +145,8 @@
   let completedSetup = false;
   async function finishSetup() {
     const customAddons = addons
-      .split("\n")
-      .filter((addon) => addon.trim() !== "");
+      .split('\n')
+      .filter((addon) => addon.trim() !== '');
     const allAddons = [...new Set([...selectedAddons, ...customAddons])];
 
     let generalConfig = {
@@ -154,13 +154,13 @@
       addons: allAddons,
       torrentClient: selectedTorrenter,
     };
-    window.electronAPI.fs.mkdir("./config/option/");
+    window.electronAPI.fs.mkdir('./config/option/');
     window.electronAPI.fs.write(
-      "./config/option/general.json",
+      './config/option/general.json',
       JSON.stringify(generalConfig)
     );
     window.electronAPI.fs.write(
-      "./config/option/installed.json",
+      './config/option/installed.json',
       JSON.stringify({ installed: true })
     );
     await window.electronAPI.installAddons(allAddons);
@@ -173,10 +173,10 @@
     const waitFor = setInterval(() => {
       if (completedSetup) {
         document
-          .getElementById("oobe")
+          .getElementById('oobe')
           ?.animate([{ opacity: 1 }, { opacity: 0 }], {
             duration: 500,
-            fill: "forwards",
+            fill: 'forwards',
           });
         setTimeout(() => {
           finishedSetup();
@@ -196,22 +196,22 @@
   }
 
   onMount(() => {
-    if (window.electronAPI.fs.exists("./config/option/installed.json")) {
+    if (window.electronAPI.fs.exists('./config/option/installed.json')) {
       const installed = JSON.parse(
-        window.electronAPI.fs.read("./config/option/installed.json")
+        window.electronAPI.fs.read('./config/option/installed.json')
       );
       if (installed.restartRequired) {
         stage = 2;
         new Promise<void>(async (resolve) => {
           window.electronAPI.fs.write(
-            "./config/option/installed.json",
+            './config/option/installed.json',
             JSON.stringify({ restartRequired: false, installed: false })
           );
           resolve();
         });
       }
     }
-    communityList = fetch("https://ogi.nat3z.com/api/community.json").then(
+    communityList = fetch('https://ogi.nat3z.com/api/community.json').then(
       (response) => response.json()
     );
   });
@@ -254,7 +254,7 @@
       </h2>
       <div class="w-full justify center items-center flex flex-col gap-4 mb-6">
         {#await window.electronAPI.app.getOS() then result}
-          {#if result === "win32"}
+          {#if result === 'win32'}
             <div
               class="flex justify-start p-2 pl-2 gap-4 items-center flex-row w-8/12 h-14 bg-slate-100 rounded-lg"
             >
@@ -268,7 +268,7 @@
                 >
               </span>
             </div>
-          {:else if result === "linux"}
+          {:else if result === 'linux'}
             <div
               class="flex justify-start p-2 pl-2 gap-4 items-center flex-row w-8/12 h-14 bg-slate-100 rounded-lg"
             >
@@ -355,19 +355,19 @@
       </h2>
       <div class="flex-row flex gap-4 justify-center items-center">
         <button
-          onclick={() => (selectedTorrenter = "qbittorrent")}
+          onclick={() => (selectedTorrenter = 'qbittorrent')}
           class="flex justify-start p-2 pl-2 gap-4 items-center flex-row w-8/12 h-14 bg-slate-100 rounded-lg"
         >
           <img class="p-4 w-20 h-20" src="./qbittorrent.svg" />
         </button>
         <button
-          onclick={() => (selectedTorrenter = "real-debrid")}
+          onclick={() => (selectedTorrenter = 'real-debrid')}
           class="flex justify-start p-2 pl-2 gap-4 items-center flex-row w-8/12 h-14 bg-slate-100 rounded-lg"
         >
           <img class="p-4 w-20 h-20" src="./rd-logo.png" />
         </button>
         <button
-          onclick={() => (selectedTorrenter = "webtorrent")}
+          onclick={() => (selectedTorrenter = 'webtorrent')}
           class="flex justify-start p-2 pl-2 gap-4 items-center flex-row w-8/12 h-14 bg-slate-100 rounded-lg"
         >
           <img class="p-4 w-20 h-20" src="./WebTorrent_logo.png" />
@@ -378,7 +378,7 @@
         onsubmit={preventDefault(submitTorrenter)}
         class="flex flex-col items-center justify-start w-full"
       >
-        {#if selectedTorrenter === "real-debrid"}
+        {#if selectedTorrenter === 'real-debrid'}
           <input
             data-rd-key
             type="text"
@@ -393,7 +393,7 @@
               class="underline">Real Debrid API Key</a
             ></label
           >
-        {:else if selectedTorrenter === "qbittorrent"}
+        {:else if selectedTorrenter === 'qbittorrent'}
           <!-- TODO: WORK ON OUR OWN TUTORIAL -->
           <a
             href="https://lgallardo.com/2014/09/29/como-activar-la-interfaz-web-de-qbittorrent/"
@@ -451,14 +451,14 @@
               <label class="text-left text-sm text-gray-300">Password</label>
             </span>
           </div>
-        {:else if selectedTorrenter === "webtorrent"}
+        {:else if selectedTorrenter === 'webtorrent'}
           <p>
             WebTorrent is built into OpenGameInstaller. No configuration is
             required.
           </p>
         {/if}
       </form>
-      {#if fulfilledRequirements || selectedTorrenter === "webtorrent"}
+      {#if fulfilledRequirements || selectedTorrenter === 'webtorrent'}
         <button
           onclick={() => (stage = 3)}
           class="bg-accent animate-fade-in hover:bg-accent-dark text-white font-open-sans font-semibold py-2 px-4 rounded"
@@ -531,8 +531,8 @@
                     : 'bg-accent hover:bg-accent-dark'} text-white"
                 >
                   {selectedAddons.includes(addon.source)
-                    ? "Selected"
-                    : "Select"}
+                    ? 'Selected'
+                    : 'Select'}
                 </button>
               </div>
             {/each}

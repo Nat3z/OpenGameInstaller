@@ -90,7 +90,10 @@
 
   onMount(async () => {
     isOnline = await window.electronAPI.app.isOnline();
-    if (!isOnline && isSteamStore) return;
+    if (!isOnline && isSteamStore) {
+      loading = false;
+      return;
+    }
 
     try {
       if (isSteamStore) {
@@ -164,7 +167,7 @@
             ...data.map((result: SearchResult) => {
               return {
                 ...result,
-                coverURL: `https://steamcdn-a.akamaihd.net/steam/apps/${appID}/library_600x900_2x.jpg`,
+                coverURL: `https://steamcdn-a.akamaihd.net/steam/apps/${appID}/library_hero.jpg`,
                 name: result.name,
                 addonSource: addon.id,
               };
@@ -193,26 +196,38 @@
     loading = false;
 
     // Fetch search results for custom store
-    safeFetch(
-      'search',
-      {
-        addonID: addonSource,
-        gameID: String(appID),
-      },
-      { consume: 'json' }
-    ).then((data: SearchResult[]) => {
+    if (alreadyOwns) return;
+
+    let addons = await fetchAddonsWithConfigure();
+    queryingSources = true;
+
+    if (addons.length === 0) {
+      queryingSources = false;
+      return;
+    }
+
+    for (const addon of addons) {
+      let searchResults = await safeFetch(
+        'search',
+        {
+          addonID: addon.id,
+          gameID: String(appID),
+        },
+        { consume: 'json' }
+      );
       results = [
         ...results,
-        ...data.map((result: SearchResult) => {
+        ...searchResults.map((result: SearchResult) => {
           return {
             ...result,
             coverURL: (gameData as StoreData).coverImage,
             name: (gameData as StoreData).name!,
-            addonSource: addonSource!,
+            addonSource: addon.id,
           };
         }),
       ];
-    });
+    }
+    queryingSources = false;
   }
 
   function playGame() {

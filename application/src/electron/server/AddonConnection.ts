@@ -122,13 +122,11 @@ export class AddonConnection {
               );
               return;
             }
-            console.log('task to defer:', data.args.deferID);
             const deferredTask = DeferredTasks.getTasks()[data.args.deferID];
             if (!deferredTask) {
               console.error(
                 'Client attempted to send defer-update with an invalid ID'
               );
-              // TODO: FOR NOW, JUST DROP THE MESSAGE. FIX LATER SO THAT IT DOESNT SEND AN ADD'L MESSAGE
               this.ws.close(
                 1008,
                 'Client attempted to send defer-update with an invalid ID'

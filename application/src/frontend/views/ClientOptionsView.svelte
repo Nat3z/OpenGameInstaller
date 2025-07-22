@@ -133,6 +133,16 @@
           value: false,
           type: 'boolean',
         },
+        showEventsPerSec: {
+          displayName: 'Show Events Per Sec',
+          description: 'Show the number of events processed per second',
+          defaultValue: '',
+          value: '',
+          type: 'action',
+          action: () => {
+            document.dispatchEvent(new Event('dbg:events-proc-toggle'));
+          },
+        },
         testModal: {
           displayName: 'Test Modal',
           description: 'Test Modal',

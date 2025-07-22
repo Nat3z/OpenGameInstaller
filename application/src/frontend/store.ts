@@ -13,8 +13,7 @@ export type DownloadStatusAndInfo = SearchResult & {
     | 'setup-complete'
     | 'rd-downloading'
     | 'seeding'
-    | 'requesting'
-    | 'errored';
+    | 'requesting';
   progress: number;
   error?: string;
   usedRealDebrid: boolean;
@@ -26,6 +25,7 @@ export type DownloadStatusAndInfo = SearchResult & {
   ratio?: number;
   part?: number;
   totalParts?: number;
+  queuePosition?: number;
 };
 
 export type DeferredTask = {
@@ -97,7 +97,7 @@ export type Views =
   | 'discovery'
   | 'library'
   | 'tasks';
-export const selectedView: Writable<Views> = writable('config');
+export const selectedView: Writable<Views> = writable('downloader');
 
 export const viewOpenedWhenChanged: Writable<Views | undefined> =
   writable(undefined);
@@ -137,9 +137,16 @@ export type CommunityAddon = {
 export const communityAddonsLocal: Writable<CommunityAddon[]> = writable([]);
 
 export async function fetchCommunityAddons() {
-  fetch('https://ogi.nat3z.com/api/community.json').then((response) =>
-    response.json().then((data) => {
-      communityAddonsLocal.set(data);
+  window.electronAPI.app
+    .axios({
+      method: 'GET',
+      url: 'https://ogi.nat3z.com/api/community.json',
+      headers: {
+        'Content-Type': 'application/json',
+        'User-Agent': 'OpenGameInstaller Client/Rest1.0',
+      },
     })
-  );
+    .then((response) => {
+      communityAddonsLocal.set(response.data);
+    });
 }

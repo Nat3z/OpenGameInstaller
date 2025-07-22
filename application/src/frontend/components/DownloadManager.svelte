@@ -11,346 +11,272 @@
   function isCustomEvent(event: Event): event is CustomEvent {
     return event instanceof CustomEvent;
   }
-  document.addEventListener('ddl:download-progress', (event: Event) => {
-    if (!isCustomEvent(event)) return;
-    const downloadID = event.detail.id;
-    const progress = event.detail.progress;
-    let downloadSpeed = event.detail.downloadSpeed;
-    let fileSize = event.detail.fileSize;
 
-    if (!fileSize) {
-      fileSize = 0;
-    }
+  // -- Utility functions to reduce repetition --
+
+  function updateDownloadStatus(
+    downloadID: string,
+    updates: Partial<DownloadStatusAndInfo>
+  ) {
     currentDownloads.update((downloads) => {
       return downloads.map((download) => {
         if (download.id === downloadID) {
-          return {
-            ...download,
-            progress,
-            downloadSpeed,
-            downloadSize: fileSize,
-            totalParts: event.detail.totalParts,
-            part: event.detail.part,
-          };
+          return { ...download, ...updates };
         }
         return download;
       });
     });
-  });
+  }
 
-  document.addEventListener('torrent:download-progress', (event: Event) => {
-    if (!isCustomEvent(event)) return;
-    const downloadID = event.detail.id;
-    const progress = event.detail.progress;
-    const downloadSpeed = event.detail.downloadSpeed;
-    const fileSize = event.detail.fileSize;
+  function getDownloadItem(
+    downloadID: string
+  ): DownloadStatusAndInfo | undefined {
+    let foundItem: DownloadStatusAndInfo | undefined;
     currentDownloads.update((downloads) => {
       return downloads.map((download) => {
         if (download.id === downloadID) {
-          return {
-            ...download,
-            progress,
-            downloadSpeed,
-            downloadSize: fileSize,
-            ratio: event.detail.ratio,
-          };
-        }
-        return download;
-      });
-    });
-  });
-
-  document.addEventListener(
-    'torrent:download-complete',
-    async (event: Event) => {
-      if (!isCustomEvent(event)) return;
-      const downloadID = event.detail.id;
-      let downloadedItem: DownloadStatusAndInfo | undefined = undefined;
-      currentDownloads.update((downloads) => {
-        return downloads.map((download) => {
-          if (download.id === downloadID) {
-            downloadedItem = download;
-            return {
-              ...download,
-              status: 'completed',
-            };
-          }
+          foundItem = download;
           return download;
-        });
-      });
-      if (downloadedItem === undefined) return;
-      downloadedItem = downloadedItem as DownloadStatusAndInfo;
-
-      // then, because it's a torrent, we need to get the directory within the download path
-      let outputDir = downloadedItem.downloadPath;
-      if (outputDir.endsWith('.torrent')) {
-        const filesInDir = await window.electronAPI.fs.getFilesInDir(outputDir);
-        if (filesInDir.length === 1) {
-          outputDir = downloadedItem.downloadPath + '\\' + filesInDir[0] + '\\';
-          console.log('Newly calculated outputDir: ', outputDir);
-        } else {
-          console.error(
-            'Error: More than one file in the directory, cannot determine the output directory.'
-          );
         }
-      }
+        return download;
+      });
+    });
+    return foundItem;
+  }
 
-      safeFetch(
-        'setupApp',
-        {
-          addonID: downloadedItem.addonSource,
-          path: outputDir,
+  function dispatchSetupEvent(
+    eventType: 'log' | 'progress',
+    downloadID: string,
+    data: any
+  ) {
+    document.dispatchEvent(
+      new CustomEvent(`setup:${eventType}`, {
+        detail: {
+          id: downloadID,
+          [eventType === 'log' ? 'log' : 'progress']: data,
+        },
+      })
+    );
+  }
+
+  function handleSetupError(
+    error: any,
+    downloadedItem: DownloadStatusAndInfo,
+    setupData: any
+  ) {
+    console.error('Error setting up app: ', error);
+    createNotification({
+      id: Math.random().toString(36).substring(2, 9),
+      type: 'error',
+      message: 'The addon had crashed while setting up.',
+    });
+
+    updateDownloadStatus(downloadedItem.id, {
+      status: 'error',
+      error: error.message || error,
+    });
+
+    saveFailedSetup({
+      downloadInfo: downloadedItem,
+      setupData,
+      error: error.message || error,
+      timestamp: Date.now(),
+    });
+  }
+
+  function createSetupCallbacks(downloadedItem: DownloadStatusAndInfo) {
+    return {
+      onLogs: (log: any) => dispatchSetupEvent('log', downloadedItem.id, log),
+      onProgress: (progress: any) =>
+        dispatchSetupEvent('progress', downloadedItem.id, progress),
+      onFailed: (error: any) => {
+        const setupData = {
+          path: downloadedItem.downloadPath,
           type: downloadedItem.downloadType,
           name: downloadedItem.name,
           usedRealDebrid: downloadedItem.usedRealDebrid,
           appID: downloadedItem.appID,
           storefront: downloadedItem.storefront,
-        },
-        {
-          onLogs: (log) => {
-            document.dispatchEvent(
-              new CustomEvent('setup:log', {
-                detail: {
-                  id: downloadedItem?.id,
-                  log,
-                },
-              })
-            );
-          },
-          onFailed: (error) => {
-            console.error('Error setting up app: ', error);
-            createNotification({
-              id: Math.random().toString(36).substring(2, 9),
-              type: 'error',
-              message: 'The addon had crashed while setting up.',
-            });
-            currentDownloads.update((downloads) => {
-              return downloads.map((download) => {
-                if (download.id === downloadedItem?.id) {
-                  return {
-                    ...download,
-                    status: 'errored',
-                    error: error,
-                  };
-                }
-                return download;
-              });
-            });
-            saveFailedSetup({
-              downloadInfo: downloadedItem,
-              setupData: {
-                path: outputDir,
-                type: downloadedItem?.downloadType,
-                name: downloadedItem?.name,
-                usedRealDebrid: downloadedItem?.usedRealDebrid,
-                appID: downloadedItem?.appID,
-                storefront: downloadedItem?.storefront,
-              },
-              error: error,
-              timestamp: Date.now(),
-            });
-          },
-          onProgress: (progress) => {
-            document.dispatchEvent(
-              new CustomEvent('setup:progress', {
-                detail: {
-                  id: downloadedItem?.id,
-                  progress,
-                },
-              })
-            );
-          },
-          consume: 'json',
-        }
-      )
-        .then((data: LibraryInfo) => {
-          if (downloadedItem === undefined) return;
-          window.electronAPI.app.insertApp(data);
-          currentDownloads.update((downloads) => {
-            return downloads.map((download) => {
-              if (download.id === downloadedItem?.id) {
-                return {
-                  ...download,
-                  status: 'seeding',
-                  downloadPath: downloadedItem.downloadPath,
-                };
-              }
-              return download;
-            });
-          });
-        })
-        .catch((error) => {
-          console.error('Error setting up app: ', error);
-          createNotification({
-            id: Math.random().toString(36).substring(2, 9),
-            type: 'error',
-            message: 'The addon had crashed while setting up.',
-          });
-          currentDownloads.update((downloads) => {
-            return downloads.map((download) => {
-              if (download.id === downloadedItem?.id) {
-                return {
-                  ...download,
-                  status: 'error',
-                };
-              }
-              return download;
-            });
-          });
-          saveFailedSetup({
-            downloadInfo: downloadedItem,
-            setupData: {
-              path: outputDir,
-              type: downloadedItem?.downloadType,
-              name: downloadedItem?.name,
-              usedRealDebrid: downloadedItem?.usedRealDebrid,
-              appID: downloadedItem?.appID,
-              storefront: downloadedItem?.storefront,
-            },
-            error: error.message,
-            timestamp: Date.now(),
-          });
-        });
+        };
+        handleSetupError(error, downloadedItem, setupData);
+      },
+      consume: 'json' as const,
+    };
+  }
+
+  function createSetupPayload(
+    downloadedItem: DownloadStatusAndInfo,
+    path: string,
+    additionalData: any = {}
+  ) {
+    return {
+      addonID: downloadedItem.addonSource,
+      path,
+      type: downloadedItem.downloadType,
+      name: downloadedItem.name,
+      usedRealDebrid: downloadedItem.usedRealDebrid,
+      appID: downloadedItem.appID,
+      storefront: downloadedItem.storefront,
+      ...additionalData,
+    };
+  }
+
+  async function handleSetupSuccess(
+    data: LibraryInfo,
+    downloadedItem: DownloadStatusAndInfo,
+    finalStatus: 'seeding' | 'setup-complete'
+  ) {
+    if (downloadedItem === undefined) return;
+    window.electronAPI.app.insertApp(data);
+    updateDownloadStatus(downloadedItem.id, {
+      status: finalStatus,
+      downloadPath: downloadedItem.downloadPath,
+    });
+  }
+
+  async function processDownloadComplete(
+    downloadID: string,
+    isTorrent: boolean = false
+  ) {
+    const downloadedItem = getDownloadItem(downloadID);
+    if (!downloadedItem) return;
+
+    updateDownloadStatus(downloadID, { status: 'completed' });
+
+    let outputDir = downloadedItem.downloadPath;
+    let additionalData: any = {};
+
+    // Handle torrent-specific logic
+    if (isTorrent && outputDir.endsWith('.torrent')) {
+      const filesInDir = await window.electronAPI.fs.getFilesInDir(outputDir);
+      if (filesInDir.length === 1) {
+        outputDir = downloadedItem.downloadPath + '\\' + filesInDir[0] + '\\';
+        console.log('Newly calculated outputDir: ', outputDir);
+      } else {
+        console.error(
+          'Error: More than one file in the directory, cannot determine the output directory.'
+        );
+      }
+    }
+
+    // Handle RealDebrid extraction for DDL
+    if (!isTorrent && downloadedItem.usedRealDebrid && !downloadedItem.files) {
+      dispatchSetupEvent('log', downloadedItem.id, [
+        'Extracting downloaded RAR file...',
+      ]);
+      const extractedDir = await window.electronAPI.fs.unrar({
+        outputDir: getDownloadPath() + '/' + downloadedItem.filename,
+        rarFilePath: downloadedItem.downloadPath,
+      });
+      outputDir = extractedDir;
+      downloadedItem.downloadPath = extractedDir;
+    }
+
+    // Add multipart files data for DDL
+    if (!isTorrent) {
+      additionalData.multiPartFiles = downloadedItem.files;
+    }
+
+    const setupPayload = createSetupPayload(
+      downloadedItem,
+      outputDir,
+      additionalData
+    );
+    const callbacks = createSetupCallbacks(downloadedItem);
+
+    try {
+      const data: LibraryInfo = await safeFetch(
+        'setupApp',
+        setupPayload,
+        callbacks
+      );
+      const finalStatus = isTorrent ? 'seeding' : 'setup-complete';
+      await handleSetupSuccess(data, downloadedItem, finalStatus);
+    } catch (error) {
+      const setupData = {
+        path: outputDir,
+        type: downloadedItem.downloadType,
+        name: downloadedItem.name,
+        usedRealDebrid: downloadedItem.usedRealDebrid,
+        appID: downloadedItem.appID,
+        storefront: downloadedItem.storefront,
+        ...(additionalData.multiPartFiles && {
+          multiPartFiles: additionalData.multiPartFiles,
+        }),
+      };
+      handleSetupError(error, downloadedItem, setupData);
+    }
+  }
+
+  // -- Handles download progresses --
+  function handleDownloadProgress(event: Event) {
+    if (!isCustomEvent(event)) return;
+    const {
+      id: downloadID,
+      progress,
+      downloadSpeed,
+      fileSize,
+      queuePosition,
+    } = event.detail;
+    if (queuePosition > 1) {
+      console.log('Queue Position Update: ', downloadID, queuePosition);
+    }
+
+    updateDownloadStatus(downloadID, {
+      progress,
+      downloadSpeed,
+      downloadSize: fileSize,
+      queuePosition,
+    });
+  }
+
+  function handleDownloadCancelled(event: Event) {
+    if (!isCustomEvent(event)) return;
+    // remove the download from the queue
+    currentDownloads.update((downloads) => {
+      return downloads.filter((download) => download.id !== event.detail.id);
+    });
+  }
+
+  // -- Event listeners --
+
+  // -- Download Progress --
+  document.addEventListener('ddl:download-progress', handleDownloadProgress);
+  document.addEventListener(
+    'torrent:download-progress',
+    handleDownloadProgress
+  );
+
+  // -- Download Cancelled --
+  document.addEventListener('ddl:download-cancelled', handleDownloadCancelled);
+  document.addEventListener(
+    'torrent:download-cancelled',
+    handleDownloadCancelled
+  );
+
+  // -- Download Complete --
+
+  document.addEventListener(
+    'torrent:download-complete',
+    async (event: Event) => {
+      if (!isCustomEvent(event)) return;
+      await processDownloadComplete(event.detail.id, true);
     }
   );
 
   document.addEventListener('ddl:download-complete', async (event: Event) => {
     if (!isCustomEvent(event)) return;
-    const downloadID = event.detail.id;
-    let downloadedItem: DownloadStatusAndInfo | undefined = undefined;
-    currentDownloads.update((downloads) => {
-      return downloads.map((download) => {
-        if (download.id === downloadID) {
-          downloadedItem = download;
-          return {
-            ...download,
-            status: 'completed',
-          };
-        }
-        return download;
-      });
-    });
-    if (downloadedItem === undefined) return;
-    downloadedItem = downloadedItem as DownloadStatusAndInfo;
-
-    if (downloadedItem.usedRealDebrid && !downloadedItem.files) {
-      document.dispatchEvent(
-        new CustomEvent('setup:log', {
-          detail: {
-            id: downloadedItem?.id,
-            log: ['Extracting downloaded RAR file...'],
-          },
-        })
-      );
-      const outputDir = await window.electronAPI.fs.unrar({
-        outputDir: getDownloadPath() + '/' + downloadedItem.filename,
-        rarFilePath: downloadedItem.downloadPath,
-      });
-      downloadedItem.downloadPath = outputDir;
-    }
-
-    safeFetch(
-      'setupApp',
-      {
-        addonID: downloadedItem.addonSource,
-        path: downloadedItem.downloadPath,
-        type: downloadedItem.downloadType,
-        name: downloadedItem.name,
-        usedRealDebrid: downloadedItem.usedRealDebrid,
-        multiPartFiles: downloadedItem.files,
-        appID: downloadedItem.appID,
-        storefront: downloadedItem.storefront,
-      },
-      {
-        onLogs: (log) => {
-          document.dispatchEvent(
-            new CustomEvent('setup:log', {
-              detail: {
-                id: downloadedItem?.id,
-                log,
-              },
-            })
-          );
-        },
-        onProgress: (progress) => {
-          document.dispatchEvent(
-            new CustomEvent('setup:progress', {
-              detail: {
-                id: downloadedItem?.id,
-                progress,
-              },
-            })
-          );
-        },
-        consume: 'json',
-      }
-    )
-      .then((data: LibraryInfo) => {
-        if (downloadedItem === undefined) return;
-        window.electronAPI.app.insertApp(data);
-        currentDownloads.update((downloads) => {
-          return downloads.map((download) => {
-            if (download.id === downloadedItem?.id) {
-              return {
-                ...download,
-                status: 'setup-complete',
-                downloadPath: downloadedItem.downloadPath,
-              };
-            }
-            return download;
-          });
-        });
-      })
-      .catch((error) => {
-        console.error('Error setting up app: ', error);
-        createNotification({
-          id: Math.random().toString(36).substring(2, 9),
-          type: 'error',
-          message: 'The addon had crashed while setting up.',
-        });
-        currentDownloads.update((downloads) => {
-          return downloads.map((download) => {
-            if (download.id === downloadedItem?.id) {
-              return {
-                ...download,
-                status: 'error',
-              };
-            }
-            return download;
-          });
-        });
-        saveFailedSetup({
-          downloadInfo: downloadedItem,
-          setupData: {
-            path: downloadedItem?.downloadPath,
-            type: downloadedItem?.downloadType,
-            name: downloadedItem?.name,
-            usedRealDebrid: downloadedItem?.usedRealDebrid,
-            multiPartFiles: downloadedItem?.files,
-            appID: downloadedItem?.appID,
-            storefront: downloadedItem?.storefront,
-          },
-          error: 'Addon Failure',
-          timestamp: Date.now(),
-        });
-      });
+    await processDownloadComplete(event.detail.id, false);
   });
+
+  // -- Download Error --
 
   document.addEventListener('ddl:download-error', (event: Event) => {
     if (!isCustomEvent(event)) return;
-    const downloadID = event.detail.id;
-    currentDownloads.update((downloads) => {
-      return downloads.map((download) => {
-        if (download.id === downloadID) {
-          return {
-            ...download,
-            status: 'error',
-          };
-        }
-        return download;
-      });
-    });
+    updateDownloadStatus(event.detail.id, { status: 'error' });
   });
+
+  // -- Failed Setup --
 
   function saveFailedSetup(setupInfo: any) {
     try {

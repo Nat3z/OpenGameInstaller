@@ -17,6 +17,7 @@
     addonAsk1: false,
     addonAsk2: false,
   });
+  let showEventsPerSec = $state(false);
   const optionConfig: {
     config: ConfigurationFile;
     id: string;
@@ -46,10 +47,16 @@
     name: 'Test Options',
     description: 'This is a test options modal',
   };
+
+  let eventsPerSec = $state(0);
   onMount(() => {
     document.addEventListener(
       'dbg:debug-modal-trigger',
       () => (showDebugModal = true)
+    );
+    document.addEventListener(
+      'dbg:events-proc-toggle',
+      () => (showEventsPerSec = !showEventsPerSec)
     );
     document.addEventListener('dbg:options-modal-trigger', () => {
       document.dispatchEvent(
@@ -63,6 +70,11 @@
       priorityModals.urgent = true; // High priority modal
       priorityModals.addonAsk1 = true; // Low priority modal
       priorityModals.addonAsk2 = true; // Low priority modal
+    });
+    document.addEventListener('dbg:events-proc', (e: Event) => {
+      if (e instanceof CustomEvent && e.detail) {
+        eventsPerSec = e.detail.eventsPerSec;
+      }
     });
   });
 </script>
@@ -183,4 +195,12 @@
       onclick={() => (priorityModals.addonAsk2 = false)}
     />
   </Modal>
+{/if}
+
+{#if showEventsPerSec}
+  <div
+    class="fixed top-2 right-2 bg-black/25 text-white p-2 rounded-md pointer-events-none z-50"
+  >
+    Events/sec: {Math.round(eventsPerSec)}
+  </div>
 {/if}

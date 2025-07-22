@@ -23,7 +23,7 @@
     selectedView,
     viewOpenedWhenChanged,
     type Views,
-    searchResults,
+    searchResults as searchResultsStore,
     searchQuery,
     loadingResults,
     isOnline,
@@ -50,6 +50,7 @@
   let loading = $state(true);
   let addons: ConfigTemplateAndInfo[] = $state([]);
   let showSearchResults = $state(false);
+  let searchResults: SearchResultWithSource[] = $state([]);
   let searchTimeout: NodeJS.Timeout | null = null;
 
   let recentlyLaunchedApps: LibraryInfo[] = $state([]);
@@ -136,6 +137,10 @@
     return steamAppId;
   }
 
+  searchResultsStore.subscribe((value) => {
+    searchResults = value;
+  });
+
   async function performSearch(query: string) {
     if (!$isOnline || !query.trim()) {
       showSearchResults = false;
@@ -146,11 +151,11 @@
       loadingResults.set(true);
       showSearchResults = true;
       addons = await fetchAddonsWithConfigure();
-      let results: SearchResultWithSource[] = [];
+      searchResultsStore.set([]);
 
       // Search through addons first
-      await Promise.all(
-        addons.map(async (addon) => {
+      await Promise.all([
+        ...addons.map(async (addon) => {
           const response: BasicLibraryInfo[] = await safeFetch(
             'searchQuery',
             {
@@ -159,70 +164,76 @@
             },
             { consume: 'json' }
           );
-          results = [
-            ...results,
+          searchResultsStore.update((value) => [
+            ...value,
             ...response.map((result) => ({
               appID: result.appID,
               name: result.name,
               capsuleImage: result.capsuleImage,
               addonsource: addon.id,
             })),
-          ];
-        })
-      );
+          ]);
+        }),
+        new Promise(async (resolve) => {
+          // Search Steam with rate limiting
+          const possibleSteamApps = await matchSteamAppID(
+            extractSimpleName(query) ?? query
+          );
+          if (possibleSteamApps) {
+            let amountSearched = 0;
+            for (const possibleSteamApp of possibleSteamApps) {
+              amountSearched++;
 
-      // Search Steam with rate limiting
-      const possibleSteamApps = await matchSteamAppID(
-        extractSimpleName(query) ?? query
-      );
-      if (possibleSteamApps) {
-        let amountSearched = 0;
-        for (const possibleSteamApp of possibleSteamApps) {
-          amountSearched++;
+              // Add delay to prevent rate limiting (500ms between requests)
+              if (amountSearched > 1) {
+                await new Promise((resolve) => setTimeout(resolve, 500));
+              }
 
-          // Add delay to prevent rate limiting (500ms between requests)
-          if (amountSearched > 1) {
-            await new Promise((resolve) => setTimeout(resolve, 500));
+              const real = await getRealGame(possibleSteamApp.appid);
+              if (!real) {
+                continue;
+              }
+
+              // Add another delay before the detailed API call
+              await new Promise((resolve) => setTimeout(resolve, 300));
+
+              const response = await window.electronAPI.app.axios({
+                method: 'GET',
+                url: `https://store.steampowered.com/api/appdetails?appids=${real}`,
+              });
+              if (!response.data[real].success) {
+                console.error('Failed to fetch Steam store page');
+                continue;
+              }
+              const gameData: GameData = response.data[real].data;
+              // check if the appid is already in the results
+              if (
+                searchResults.find(
+                  (result) => result.appID === gameData.steam_appid
+                )
+              ) {
+                continue;
+              }
+
+              searchResultsStore.update((value) => [
+                ...value,
+                {
+                  appID: gameData.steam_appid,
+                  name: gameData.name,
+                  capsuleImage: gameData.header_image,
+                  addonsource: 'steam',
+                },
+              ]);
+
+              if (amountSearched >= 10) {
+                break;
+              }
+            }
           }
+          resolve(true);
+        }),
+      ]);
 
-          const real = await getRealGame(possibleSteamApp.appid);
-          if (!real) {
-            continue;
-          }
-
-          // Add another delay before the detailed API call
-          await new Promise((resolve) => setTimeout(resolve, 300));
-
-          const response = await window.electronAPI.app.axios({
-            method: 'GET',
-            url: `https://store.steampowered.com/api/appdetails?appids=${real}`,
-          });
-          if (!response.data[real].success) {
-            console.error('Failed to fetch Steam store page');
-            continue;
-          }
-          const gameData: GameData = response.data[real].data;
-          // check if the appid is already in the results
-          if (results.find((result) => result.appID === gameData.steam_appid)) {
-            continue;
-          }
-          results = [
-            ...results,
-            {
-              appID: gameData.steam_appid,
-              name: gameData.name,
-              capsuleImage: gameData.header_image,
-              addonsource: 'steam',
-            },
-          ];
-
-          if (amountSearched >= 10) {
-            break;
-          }
-        }
-      }
-
-      searchResults.set(results);
       loadingResults.set(false);
     } catch (ex) {
       console.error(ex);
@@ -251,7 +262,7 @@
         performSearch(query);
       }, 500);
     } else {
-      searchResults.set([]);
+      searchResultsStore.set([]);
       showSearchResults = false;
     }
   }
@@ -331,7 +342,7 @@
     iTriggeredIt = true;
     showSearchResults = false;
     searchQuery.set('');
-    searchResults.set([]);
+    searchResultsStore.set([]);
 
     if (isStoreOpen && $selectedView === view) {
       // If the store is open and the same tab is clicked again, close the store
@@ -419,7 +430,11 @@
       <!-- Right side - Action buttons -->
       <div class="flex items-center gap-4 -left-2 relative">
         <!-- Download button -->
-        <button class="header-button" aria-label="Downloads">
+        <button
+          class="header-button"
+          onclick={() => setView('downloader')}
+          aria-label="Downloads"
+        >
           <svg
             xmlns="http://www.w3.org/2000/svg"
             viewBox="0 0 50 50"
@@ -572,15 +587,26 @@
               in:fly={{ y: 20, duration: 300, easing: quintOut }}
               out:fly={{ y: -20, duration: 200 }}
             >
-              <div class="search-info mb-6">
-                <h2 class="text-2xl font-archivo font-bold mb-2">
-                  Search Results
-                </h2>
-                <p class="text-gray-600">
-                  Results for: <span class="font-semibold"
-                    >"{$searchQuery}"</span
+              <div class="search-info mb-6 flex flex-row gap-8 items-center">
+                {#if $loadingResults}
+                  <div
+                    class="relative"
+                    in:fade={{ duration: 300 }}
+                    out:fade={{ duration: 300 }}
                   >
-                </p>
+                    <div class="loading-spinner"></div>
+                  </div>
+                {/if}
+                <div class="flex flex-col gap-2">
+                  <h2 class="text-2xl font-archivo font-bold mb-2">
+                    Search Results
+                  </h2>
+                  <p class="text-gray-600">
+                    Results for: <span class="font-semibold"
+                      >"{$searchQuery}"</span
+                    >
+                  </p>
+                </div>
               </div>
 
               {#if !$isOnline}
@@ -598,8 +624,21 @@
                   </p>
                 </div>
               {:else}
+                {#if $loadingResults}
+                  {#if addons.length === 0}
+                    <div class="no-addons-message" in:fade={{ duration: 300 }}>
+                      <h3 class="text-xl font-bold mb-2">
+                        No Addons Installed
+                      </h3>
+                      <p class="text-gray-500">
+                        Addons are required to search and download games. Please
+                        install some addons first.
+                      </p>
+                    </div>
+                  {:else}{/if}
+                {/if}
                 <div class="search-results">
-                  {#each $searchResults as result, index}
+                  {#each searchResults as result, index}
                     <div
                       class="search-result-item"
                       in:fly={{ y: 30, duration: 400, delay: 50 * index }}
@@ -625,7 +664,7 @@
                     </div>
                   {/each}
 
-                  {#if $searchResults.length === 0 && !$loadingResults}
+                  {#if searchResults.length === 0 && !$loadingResults}
                     <div class="no-results" in:fade={{ duration: 300 }}>
                       <h3 class="text-xl text-gray-700 mb-2">
                         No Results Found
@@ -634,28 +673,6 @@
                         Try searching for a different game
                       </p>
                     </div>
-                  {/if}
-
-                  {#if $loadingResults}
-                    {#if addons.length === 0}
-                      <div
-                        class="no-addons-message"
-                        in:fade={{ duration: 300 }}
-                      >
-                        <h3 class="text-xl font-bold mb-2">
-                          No Addons Installed
-                        </h3>
-                        <p class="text-gray-500">
-                          Addons are required to search and download games.
-                          Please install some addons first.
-                        </p>
-                      </div>
-                    {:else}
-                      <div class="loading-message" in:fade={{ duration: 300 }}>
-                        <div class="loading-spinner"></div>
-                        <p class="text-lg">Searching...</p>
-                      </div>
-                    {/if}
                   {/if}
                 </div>
               {/if}
@@ -691,8 +708,8 @@
           {:else if $selectedView === 'downloader'}
             <div
               class="content-view"
-              in:fly={{ x: 100, duration: 400, easing: quintOut }}
-              out:fly={{ x: -100, duration: 300 }}
+              in:fly={{ y: -100, duration: 400, easing: quintOut }}
+              out:fly={{ y: 100, duration: 300 }}
             >
               <DownloadView />
             </div>
@@ -834,11 +851,6 @@
   .avatar {
     width: var(--avatar-size);
     height: var(--avatar-size);
-  }
-
-  /* Search Results Styles */
-  .search-results-container {
-    @apply p-6;
   }
 
   .search-info {

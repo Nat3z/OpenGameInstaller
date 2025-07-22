@@ -8,6 +8,7 @@ import {
   deferredTasks,
   type FailedSetup,
   type DeferredTask,
+  type DownloadStatusAndInfo,
 } from './store';
 import type { ResponseDeferredTask } from '../electron/server/api/defer.js';
 
@@ -167,6 +168,7 @@ export async function safeFetch(
             return;
           }
           if (
+            taskResponse.data &&
             taskResponse.data.data &&
             taskResponse.data.data.progress === undefined
           ) {
@@ -274,7 +276,7 @@ export async function startDownload(
             currentDownloads.update((downloads) => {
               return downloads.map((d) => {
                 if (d.id === randomID) {
-                  d.status = 'errored';
+                  d.status = 'error';
                   d.error = error;
                 }
                 return d;
@@ -373,12 +375,26 @@ export async function startDownload(
         });
         return;
       }
+
+      // Temporarily register an event listener to store any download updates so that we can match our download to the correct downloadID
+
+      let updatedState: { [id: string]: Partial<DownloadStatusAndInfo> } = {};
+      const updateState = (e: Event) => {
+        if (e instanceof CustomEvent) {
+          if (e.detail) {
+            updatedState[e.detail.id] =
+              e.detail as Partial<DownloadStatusAndInfo>;
+          }
+        }
+      };
+      document.addEventListener('ddl:download-progress', updateState);
       const downloadID = await window.electronAPI.ddl.download([
         {
           link: download.download,
           path: getDownloadPath() + '/' + result.name + '/' + download.filename,
         },
       ]);
+      document.removeEventListener('ddl:download-progress', updateState);
       if (downloadID === null) {
         if (htmlButton) {
           htmlButton.textContent = 'Download';
@@ -404,6 +420,11 @@ export async function startDownload(
 
         matchingDownload.downloadPath =
           getDownloadPath() + '/' + result.name + '/';
+
+        if (updatedState[downloadID]) {
+          matchingDownload.queuePosition =
+            updatedState[downloadID].queuePosition ?? 0;
+        }
         downloads[downloads.indexOf(matchingDownload)] = matchingDownload;
         return downloads;
       });

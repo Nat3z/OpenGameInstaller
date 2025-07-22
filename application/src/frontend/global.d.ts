@@ -49,6 +49,10 @@ interface Window {
     };
     ddl: {
       download: (files: { link: string; path: string }[]) => Promise<string>;
+      abortDownload: (downloadID: string) => Promise<void>;
+    };
+    queue: {
+      cancel: (downloadID: string) => Promise<void>;
     };
     oobe: {
       // [ boolean, boolean ] => [ cleanInstalled, shouldRestart ]

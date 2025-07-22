@@ -45,6 +45,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   ddl: {
     download: (downloads: { link: string; path: string }[]) =>
       ipcRenderer.invoke('ddl:download', downloads),
+    abortDownload: (downloadID: string) =>
+      ipcRenderer.invoke(`ddl:${downloadID}:abort`),
+  },
+  queue: {
+    cancel: (downloadID: string) =>
+      ipcRenderer.invoke(`queue:${downloadID}:cancel`),
   },
   torrent: {
     downloadTorrent: (torrent: string, path: string) =>
@@ -94,60 +100,105 @@ contextBridge.exposeInMainWorld('electronAPI', {
   cleanAddons: () => ipcRenderer.invoke('clean-addons'),
 });
 
+// === Debug: Events Processed/sec Counter ===
+let dbg_eventsProcessed = 0;
+let dbg_lastReportTime = Date.now();
+
+function dbg_countEvent() {
+  dbg_eventsProcessed++;
+}
+
+setInterval(() => {
+  const now = Date.now();
+  const elapsed = (now - dbg_lastReportTime) / 1000;
+  const eventsPerSec = dbg_eventsProcessed / elapsed;
+  document.dispatchEvent(
+    new CustomEvent('dbg:events-proc', { detail: { eventsPerSec } })
+  );
+  dbg_eventsProcessed = 0;
+  dbg_lastReportTime = now;
+}, 3000);
+
 ipcRenderer.on('ddl:download-progress', (_, arg) => {
+  dbg_countEvent();
   document.dispatchEvent(
     new CustomEvent('ddl:download-progress', { detail: arg })
   );
 });
 
 ipcRenderer.on('ddl:download-error', (_, arg) => {
+  dbg_countEvent();
   document.dispatchEvent(
     new CustomEvent('ddl:download-error', { detail: arg })
   );
 });
 ipcRenderer.on('ddl:download-complete', (_, arg) => {
+  dbg_countEvent();
   document.dispatchEvent(
     new CustomEvent('ddl:download-complete', { detail: arg })
   );
 });
 
+ipcRenderer.on('ddl:download-cancelled', (_, arg) => {
+  dbg_countEvent();
+  document.dispatchEvent(
+    new CustomEvent('ddl:download-cancelled', { detail: arg })
+  );
+});
+
 ipcRenderer.on('notification', (_, arg) => {
+  dbg_countEvent();
   document.dispatchEvent(new CustomEvent('new-notification', { detail: arg }));
 });
 
 ipcRenderer.on('torrent:download-progress', (_, arg) => {
+  dbg_countEvent();
   document.dispatchEvent(
     new CustomEvent('torrent:download-progress', { detail: arg })
   );
 });
 
 ipcRenderer.on('torrent:download-error', (_, arg) => {
+  dbg_countEvent();
   document.dispatchEvent(
     new CustomEvent('torrent:download-error', { detail: arg })
   );
 });
 
 ipcRenderer.on('torrent:download-complete', (_, arg) => {
+  dbg_countEvent();
   document.dispatchEvent(
     new CustomEvent('torrent:download-complete', { detail: arg })
   );
 });
 
+ipcRenderer.on('torrent:download-cancelled', (_, arg) => {
+  dbg_countEvent();
+  document.dispatchEvent(
+    new CustomEvent('torrent:download-cancelled', { detail: arg })
+  );
+});
+
 ipcRenderer.on('input-asked', (_, arg) => {
+  dbg_countEvent();
   document.dispatchEvent(new CustomEvent('input-asked', { detail: arg }));
 });
 
 ipcRenderer.on('game:launch-error', (_, arg) => {
+  dbg_countEvent();
   document.dispatchEvent(new CustomEvent('game:launched', { detail: arg }));
 });
 ipcRenderer.on('game:exit', (_, arg) => {
+  dbg_countEvent();
   document.dispatchEvent(new CustomEvent('game:exit', { detail: arg }));
 });
 ipcRenderer.on('addon:update-available', (_, arg) => {
+  dbg_countEvent();
   document.dispatchEvent(
     new CustomEvent('addon:update-available', { detail: arg })
   );
 });
 ipcRenderer.on('addon:updated', (_, arg) => {
+  dbg_countEvent();
   document.dispatchEvent(new CustomEvent('addon:updated', { detail: arg }));
 });

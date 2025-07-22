@@ -115,43 +115,41 @@
 
   {#if !focusedAddonId}
     <div
-      class="relative w-full h-12 bg-background-color z-10"
+      class="relative w-full h-16 bg-background-color z-10"
       out:fly={{ y: -100, duration: 400, easing: quintOut }}
       in:fly={{ y: -100, duration: 400, easing: quintOut }}
     >
-      <div class="absolute inset-0 flex flex-row gap-4">
+      <div class="absolute inset-0 flex flex-row gap-4 h-12 z-10">
         {#if $view === 'my-addons'}
-          <div class="flex justify-center items-center">
-            <button
-              class="bg-accent text-white px-6 relative py-3 rounded-lg font-archivo font-semibold hover:bg-accent-dark transition-colors border-none shadow-md flex items-center gap-2"
-              onclick={() => updateAddons()}
-              data-disable
-              aria-label="Update all addons"
-              in:fly={{ y: -100, duration: 400, easing: quintOut }}
+          <button
+            class="bg-accent-lighter z-10 text-accent-dark h-full px-6 relative py-3 rounded-lg font-archivo font-semibold hover:bg-accent-light transition-colors border-none shadow-md flex items-center gap-2"
+            onclick={() => updateAddons()}
+            data-disable
+            aria-label="Update all addons"
+            in:fly={{ y: -100, duration: 400, easing: quintOut }}
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              class="w-5 h-5"
+              fill="currentColor"
+              enable-background="new 0 0 24 24"
+              height="24"
+              viewBox="0 0 24 24"
+              width="24"
+              ><g><rect fill="none" height="24" width="24" /></g><g
+                ><g
+                  ><path
+                    d="M11,8.75v3.68c0,0.35,0.19,0.68,0.49,0.86l3.12,1.85c0.36,0.21,0.82,0.09,1.03-0.26c0.21-0.36,0.1-0.82-0.26-1.03 l-2.87-1.71v-3.4C12.5,8.34,12.16,8,11.75,8S11,8.34,11,8.75z M21,9.5V4.21c0-0.45-0.54-0.67-0.85-0.35l-1.78,1.78 c-1.81-1.81-4.39-2.85-7.21-2.6c-4.19,0.38-7.64,3.75-8.1,7.94C2.46,16.4,6.69,21,12,21c4.59,0,8.38-3.44,8.93-7.88 c0.07-0.6-0.4-1.12-1-1.12c-0.5,0-0.92,0.37-0.98,0.86c-0.43,3.49-3.44,6.19-7.05,6.14c-3.71-0.05-6.84-3.18-6.9-6.9 C4.94,8.2,8.11,5,12,5c1.93,0,3.68,0.79,4.95,2.05l-2.09,2.09C14.54,9.46,14.76,10,15.21,10h5.29C20.78,10,21,9.78,21,9.5z"
+                  /></g
+                ></g
+              ></svg
             >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                class="w-5 h-5"
-                fill="currentColor"
-                enable-background="new 0 0 24 24"
-                height="24"
-                viewBox="0 0 24 24"
-                width="24"
-                ><g><rect fill="none" height="24" width="24" /></g><g
-                  ><g
-                    ><path
-                      d="M11,8.75v3.68c0,0.35,0.19,0.68,0.49,0.86l3.12,1.85c0.36,0.21,0.82,0.09,1.03-0.26c0.21-0.36,0.1-0.82-0.26-1.03 l-2.87-1.71v-3.4C12.5,8.34,12.16,8,11.75,8S11,8.34,11,8.75z M21,9.5V4.21c0-0.45-0.54-0.67-0.85-0.35l-1.78,1.78 c-1.81-1.81-4.39-2.85-7.21-2.6c-4.19,0.38-7.64,3.75-8.1,7.94C2.46,16.4,6.69,21,12,21c4.59,0,8.38-3.44,8.93-7.88 c0.07-0.6-0.4-1.12-1-1.12c-0.5,0-0.92,0.37-0.98,0.86c-0.43,3.49-3.44,6.19-7.05,6.14c-3.71-0.05-6.84-3.18-6.9-6.9 C4.94,8.2,8.11,5,12,5c1.93,0,3.68,0.79,4.95,2.05l-2.09,2.09C14.54,9.46,14.76,10,15.21,10h5.29C20.78,10,21,9.78,21,9.5z"
-                    /></g
-                  ></g
-                ></svg
-              >
-              {#if addonsWithUpdates.length > 0}
-                <div
-                  class="absolute -bottom-1 -right-1 bg-yellow-500 rounded-full w-4 h-4 animate-pulse"
-                ></div>
-              {/if}
-            </button>
-          </div>
+            {#if addonsWithUpdates.length > 0}
+              <div
+                class="absolute -bottom-1 -right-1 bg-yellow-500 rounded-full w-4 h-4 animate-pulse"
+              ></div>
+            {/if}
+          </button>
         {/if}
         <button
           data-selected={$view === 'my-addons'}
@@ -168,7 +166,7 @@
         {#if $view === 'community-addons'}
           <div class="flex justify-center items-center">
             <button
-              class="bg-accent text-white px-6 py-3 rounded-lg font-archivo font-semibold hover:bg-accent-dark transition-colors border-none shadow-md flex items-center gap-2"
+              class="bg-accent-lighter h-full text-accent-dark px-6 py-3 rounded-lg font-archivo font-semibold hover:bg-accent-light transition-colors border-none shadow-md flex items-center gap-2"
               onclick={() => (communityAddonsInfo = true)}
               data-disable
               aria-label="Info About Community Addons"
@@ -191,12 +189,16 @@
     </div>
 
     <div
-      class="w-full h-full"
+      class="w-full h-full relative"
       in:fly={{ x: -100, duration: 400, easing: quintOut }}
       out:fly={{ x: 100, duration: 300 }}
     >
       {#if $view === 'my-addons'}
-        <div class="config">
+        <div
+          class="config absolute inset-0"
+          in:fly={{ x: -100, duration: 400, easing: quintOut }}
+          out:fly={{ x: 100, duration: 300 }}
+        >
           <div class="addon-list">
             {#if addons.length !== 0}
               {#each addons as addon}
@@ -250,7 +252,11 @@
           </div>
         </div>
       {:else if $view === 'community-addons'}
-        <div class="w-full h-full">
+        <div
+          class="w-full h-full absolute inset-0"
+          in:fly={{ x: 100, duration: 400, easing: quintOut }}
+          out:fly={{ x: -100, duration: 300 }}
+        >
           <CommunityAddonsList />
         </div>
       {/if}

@@ -71,6 +71,7 @@ export interface Notification {
   message: string;
   id: string;
   type: 'info' | 'error' | 'success' | 'warning';
+  timestamp?: number;
 }
 
 // Search-related types and state
@@ -80,6 +81,8 @@ export const currentDownloads: Writable<DownloadStatusAndInfo[]> = writable([]);
 export const failedSetups: Writable<FailedSetup[]> = writable([]);
 export const deferredTasks: Writable<DeferredTask[]> = writable([]);
 export const notifications: Writable<Notification[]> = writable([]);
+export const notificationHistory: Writable<Notification[]> = writable([]);
+export const showNotificationSideView: Writable<boolean> = writable(false);
 export const currentStorePageOpened: Writable<number | undefined> = writable();
 export const currentStorePageOpenedSource: Writable<string | undefined> =
   writable();
@@ -110,7 +113,13 @@ export const loadingResults: Writable<boolean> = writable(false);
 export const isOnline: Writable<boolean> = writable(true);
 
 export function createNotification(notification: Notification) {
-  notifications.update((n) => [...n, notification]);
+  const notificationWithTimestamp = {
+    ...notification,
+    timestamp: notification.timestamp || Date.now(),
+  };
+
+  notifications.update((n) => [...n, notificationWithTimestamp]);
+  notificationHistory.update((h) => [notificationWithTimestamp, ...h]);
 }
 
 export type QueuedModal = {

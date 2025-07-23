@@ -6,7 +6,7 @@
   import TextModal from './modal/TextModal.svelte';
   import SectionModal from './modal/SectionModal.svelte';
   import ButtonModal from './modal/ButtonModal.svelte';
-  import { createNotification } from '../store';
+  import { createNotification, notificationHistory } from '../store';
   import CheckboxModal from './modal/CheckboxModal.svelte';
   import type { ConfigurationFile } from 'ogi-addon/config';
   import HeaderModal from './modal/HeaderModal.svelte';
@@ -18,6 +18,7 @@
     addonAsk2: false,
   });
   let showEventsPerSec = $state(false);
+  let showNotificationSideView = $state(false);
   const optionConfig: {
     config: ConfigurationFile;
     id: string;
@@ -76,6 +77,10 @@
         eventsPerSec = e.detail.eventsPerSec;
       }
     });
+    document.addEventListener(
+      'dbg:notification-side-view-toggle',
+      () => (showNotificationSideView = !showNotificationSideView)
+    );
   });
 </script>
 
@@ -197,10 +202,15 @@
   </Modal>
 {/if}
 
-{#if showEventsPerSec}
+{#if showEventsPerSec || showNotificationSideView}
   <div
-    class="fixed top-2 right-2 bg-black/25 text-white p-2 rounded-md pointer-events-none z-50"
+    class="fixed bottom-2 left-2 bg-black/25 text-white p-2 rounded-md pointer-events-none z-50 flex flex-col gap-0"
   >
-    Events/sec: {Math.round(eventsPerSec)}
+    {#if showEventsPerSec}
+      <p class="text-white">Events/sec: {Math.round(eventsPerSec)}</p>
+    {/if}
+    {#if showNotificationSideView}
+      <p class="text-white">Notifications: {$notificationHistory.length}</p>
+    {/if}
   </div>
 {/if}

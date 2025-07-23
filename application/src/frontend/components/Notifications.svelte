@@ -1,5 +1,9 @@
 <script lang="ts">
-  import { notifications, type Notification } from '../store';
+  import {
+    notifications,
+    notificationHistory,
+    type Notification,
+  } from '../store';
   import { onMount } from 'svelte';
 
   let timers = new Map<
@@ -122,14 +126,16 @@
   document.addEventListener('new-notification', (event) => {
     // @ts-ignore
     if (!isCustomEvent(event)) return;
-    notifications.update((update) => [
-      ...update,
-      {
-        id: Math.random().toString(36).substring(7),
-        type: event.detail.type,
-        message: event.detail.message,
-      },
-    ]);
+    const notification = {
+      id: Math.random().toString(36).substring(7),
+      type: event.detail.type,
+      message: event.detail.message,
+      timestamp: Date.now(),
+    };
+
+    // Add to both stores to ensure it appears in both toast and side view
+    notifications.update((update) => [...update, notification]);
+    notificationHistory.update((history) => [notification, ...history]);
   });
 
   onMount(() => {
@@ -144,7 +150,7 @@
 </script>
 
 <div
-  class="fixed bottom-2 right-2 gap-3 w-5/6 flex justify-end items-end flex-col-reverse pointer-events-none z-50"
+  class="fixed bottom-2 right-2 gap-3 w-5/6 flex justify-end items-end flex-col-reverse pointer-events-none z-40"
 >
   {#each $notifications as notification (notification.id)}
     <!-- svelte-ignore a11y_no_static_element_interactions -->

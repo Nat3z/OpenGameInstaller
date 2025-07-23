@@ -17,9 +17,12 @@
   import ButtonModal from '../components/modal/ButtonModal.svelte';
   import HeaderModal from '../components/modal/HeaderModal.svelte';
   import SectionModal from '../components/modal/SectionModal.svelte';
+  import InputModal from '../components/modal/InputModal.svelte';
 
   let addons: ConfigTemplateAndInfo[] = $state([]);
   let communityAddonsInfo: boolean = $state(false);
+  let showAddonAddModal: boolean = $state(false);
+  let addonUrl: string = $state('');
   onMount(() => {
     safeFetch('getAllAddons', {}).then((data) => {
       addons = data;
@@ -85,6 +88,29 @@
       });
     }
   }
+
+  async function addAddon() {
+    console.log('Adding addon', addonUrl);
+    const generalConfig = window.electronAPI.fs.read(
+      './config/option/general.json'
+    );
+    const generalConfigJson = JSON.parse(generalConfig);
+    generalConfigJson.addons.push(addonUrl);
+    window.electronAPI.fs.write(
+      './config/option/general.json',
+      JSON.stringify(generalConfigJson)
+    );
+    showAddonAddModal = false;
+
+    createNotification({
+      id: Math.random().toString(36).substring(7),
+      message: 'Installing addon...',
+      type: 'info',
+    });
+    await window.electronAPI.installAddons([addonUrl]);
+    addonUrl = '';
+    await window.electronAPI.restartAddonServer();
+  }
 </script>
 
 <div
@@ -149,6 +175,24 @@
                 class="absolute -bottom-1 -right-1 bg-yellow-500 rounded-full w-4 h-4 animate-pulse"
               ></div>
             {/if}
+          </button>
+          <button
+            class="bg-accent-lighter z-10 text-accent-dark h-full px-6 relative py-3 rounded-lg font-archivo font-semibold hover:bg-accent-light transition-colors border-none shadow-md flex items-center gap-2"
+            in:fly={{ y: -100, duration: 400, easing: quintOut }}
+            aria-label="Add Addon"
+            onclick={() => (showAddonAddModal = true)}
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              height="24"
+              viewBox="0 0 24 24"
+              fill="currentColor"
+              class="w-5 h-5"
+              width="24"
+              ><path d="M0 0h24v24H0V0z" fill="none" /><path
+                d="M18 13h-5v5c0 .55-.45 1-1 1s-1-.45-1-1v-5H6c-.55 0-1-.45-1-1s.45-1 1-1h5V6c0-.55.45-1 1-1s1 .45 1 1v5h5c.55 0 1 .45 1 1s-.45 1-1 1z"
+              /></svg
+            >
           </button>
         {/if}
         <button
@@ -296,6 +340,40 @@
       class="mt-4"
       variant="primary"
     />
+  </Modal>
+{/if}
+
+{#if showAddonAddModal}
+  <Modal
+    size="medium"
+    open={showAddonAddModal}
+    onClose={() => (showAddonAddModal = false)}
+  >
+    <TitleModal title="Add Addon" />
+    <CloseModal />
+
+    <InputModal
+      id="addon-url"
+      label="Addon URL"
+      description="The URL of the addon to add."
+      type="text"
+      class="mb-8 mt-4"
+      onchange={(_, value) => {
+        addonUrl = value as string;
+      }}
+    />
+    <div class="flex flex-row gap-4">
+      <ButtonModal
+        text="Close"
+        onclick={() => (showAddonAddModal = false)}
+        variant="secondary"
+      />
+      <ButtonModal
+        text="Add Addon"
+        variant="primary"
+        onclick={() => addAddon()}
+      />
+    </div>
   </Modal>
 {/if}
 

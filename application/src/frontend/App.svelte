@@ -15,6 +15,7 @@
     type GameData,
   } from './utils';
   import Notifications from './components/Notifications.svelte';
+  import NotificationSideView from './components/NotificationSideView.svelte';
   import {
     addonUpdates,
     currentStorePageOpened,
@@ -30,6 +31,8 @@
     createNotification,
     type SearchResultWithSource,
     fetchCommunityAddons,
+    notifications,
+    showNotificationSideView,
   } from './store';
   import StorePage from './components/StorePage.svelte';
   import ConfigurationModal from './components/modal/ConfigurationModal.svelte';
@@ -54,7 +57,11 @@
   let searchTimeout: NodeJS.Timeout | null = null;
 
   let recentlyLaunchedApps: LibraryInfo[] = $state([]);
+
   onMount(() => {
+    // Initialize notification side view state
+    console.log('App mounted, initializing stores');
+    showNotificationSideView.set(false);
     loading = true;
     setTimeout(() => {
       fetchAddonsWithConfigure();
@@ -376,6 +383,12 @@
   }
 
   fetchCommunityAddons();
+
+  function toggleNotificationSideView() {
+    showNotificationSideView.update((v) => {
+      return !v;
+    });
+  }
 </script>
 
 <Notifications />
@@ -432,7 +445,9 @@
         <!-- Download button -->
         <button
           class="header-button"
-          onclick={() => setView('downloader')}
+          onclick={() => {
+            setView('downloader');
+          }}
           aria-label="Downloads"
         >
           <svg
@@ -456,7 +471,11 @@
         </button>
 
         <!-- Notification button -->
-        <button class="header-button" aria-label="Notifications">
+        <button
+          class="header-button relative"
+          aria-label="Notifications"
+          onclick={toggleNotificationSideView}
+        >
           <svg
             xmlns="http://www.w3.org/2000/svg"
             viewBox="0 0 50 50"
@@ -475,6 +494,13 @@
               </clipPath>
             </defs>
           </svg>
+          {#if $notifications.length > 0}
+            <div
+              class="absolute -bottom-1 -right-1 bg-accent-dark text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-bold"
+            >
+              {$notifications.length}
+            </div>
+          {/if}
         </button>
       </div>
     </header>
@@ -624,18 +650,24 @@
                   </p>
                 </div>
               {:else}
-                {#if $loadingResults}
-                  {#if addons.length === 0}
-                    <div class="no-addons-message" in:fade={{ duration: 300 }}>
-                      <h3 class="text-xl font-bold mb-2">
-                        No Addons Installed
-                      </h3>
-                      <p class="text-gray-500">
-                        Addons are required to search and download games. Please
-                        install some addons first.
-                      </p>
-                    </div>
-                  {:else}{/if}
+                {#if addons.length === 0}
+                  <div class="no-addons-message" in:fade={{ duration: 300 }}>
+                    <h3
+                      class="text-xl font-bold mb-2 text-accent-dark font-archivo"
+                    >
+                      No Addons Installed
+                    </h3>
+                    <p class="text-accent-dark font-archivo mx-8">
+                      You can still view store pages, but won't be able to
+                      download/install your games.
+                    </p>
+                    <button
+                      class="border-none bg-accent-light mt-4 hover:bg-accent-light/75 transition-colors text-accent-dark font-archivo font-semibold px-4 py-2 rounded-lg"
+                      onclick={() => setView('config')}
+                    >
+                      Get Addons
+                    </button>
+                  </div>
                 {/if}
                 <div class="search-results">
                   {#each searchResults as result, index}
@@ -750,6 +782,7 @@
     <ConfigurationModal />
     <GameManager />
     <Debug />
+    <NotificationSideView />
   </div>
 {/if}
 
@@ -896,7 +929,7 @@
   }
 
   .no-addons-message {
-    @apply flex flex-col items-center justify-center py-12 text-center bg-gray-50 rounded-lg;
+    @apply flex flex-col items-center justify-center py-12 text-center bg-accent-lighter rounded-lg mb-4;
   }
 
   .loading-message {

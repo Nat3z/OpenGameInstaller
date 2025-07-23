@@ -430,167 +430,169 @@
     </div>
 
     <!-- Configuration Options -->
-    <div class="config-section">
-      <div class="options">
-        <div class="hidden outline-red-500 outline-4"></div>
-        {#each Object.keys(selectedAddon.configTemplate) as key}
-          <div class="flex flex-row gap-2 items-center relative">
-            <label
-              for={key}
-              onmouseover={showDescription}
-              onfocus={showDescription}
-              onmouseleave={hideDescription}
-              class="config-label"
-              >{selectedAddon.configTemplate[key].displayName}</label
-            >
-            {#if isStringOption(selectedAddon.configTemplate[key])}
-              {#if selectedAddon.configTemplate[key].allowedValues.length !== 0}
-                <select
-                  data-input
-                  id={key}
-                  onchange={updateConfig}
-                  value={getStoredOrDefaultValue(key)}
-                  class="config-select"
-                >
-                  {#each selectedAddon.configTemplate[key].allowedValues as value}
-                    <option {value}>{value}</option>
-                  {/each}
-                </select>
-              {:else if selectedAddon.configTemplate[key].inputType === 'text' || selectedAddon.configTemplate[key].inputType === 'password'}
-                <input
-                  data-input
-                  type={selectedAddon.configTemplate[key].inputType}
-                  onchange={updateConfig}
-                  value={getStoredOrDefaultValue(key)}
-                  id={key}
-                  maxlength={selectedAddon.configTemplate[key].maxTextLength}
-                  minlength={selectedAddon.configTemplate[key].minTextLength}
-                  class="config-input"
-                />
-              {:else if selectedAddon.configTemplate[key].inputType === 'file' || selectedAddon.configTemplate[key].inputType === 'folder'}
-                <div class="flex items-center gap-2">
-                  <input
-                    type="text"
+    {#if Object.keys(selectedAddon.configTemplate).length > 0}
+      <div class="config-section">
+        <div class="options">
+          <div class="hidden outline-red-500 outline-4"></div>
+          {#each Object.keys(selectedAddon.configTemplate) as key}
+            <div class="flex flex-row gap-2 items-center relative">
+              <label
+                for={key}
+                onmouseover={showDescription}
+                onfocus={showDescription}
+                onmouseleave={hideDescription}
+                class="config-label"
+                >{selectedAddon.configTemplate[key].displayName}</label
+              >
+              {#if isStringOption(selectedAddon.configTemplate[key])}
+                {#if selectedAddon.configTemplate[key].allowedValues.length !== 0}
+                  <select
                     data-input
+                    id={key}
+                    onchange={updateConfig}
+                    value={getStoredOrDefaultValue(key)}
+                    class="config-select"
+                  >
+                    {#each selectedAddon.configTemplate[key].allowedValues as value}
+                      <option {value}>{value}</option>
+                    {/each}
+                  </select>
+                {:else if selectedAddon.configTemplate[key].inputType === 'text' || selectedAddon.configTemplate[key].inputType === 'password'}
+                  <input
+                    data-input
+                    type={selectedAddon.configTemplate[key].inputType}
                     onchange={updateConfig}
                     value={getStoredOrDefaultValue(key)}
                     id={key}
+                    maxlength={selectedAddon.configTemplate[key].maxTextLength}
+                    minlength={selectedAddon.configTemplate[key].minTextLength}
                     class="config-input"
                   />
-                  {#if selectedAddon.configTemplate[key].inputType === 'folder'}
-                    <button
-                      class="browse-button"
-                      onclick={(ev) => browseForFolder(ev, 'folder')}
-                      >Browse</button
-                    >
-                  {:else if selectedAddon.configTemplate[key].inputType === 'file'}
-                    <button
-                      class="browse-button"
-                      onclick={(ev) => browseForFolder(ev, 'file')}
-                      >Browse</button
-                    >
-                  {/if}
-                </div>
+                {:else if selectedAddon.configTemplate[key].inputType === 'file' || selectedAddon.configTemplate[key].inputType === 'folder'}
+                  <div class="flex items-center gap-2">
+                    <input
+                      type="text"
+                      data-input
+                      onchange={updateConfig}
+                      value={getStoredOrDefaultValue(key)}
+                      id={key}
+                      class="config-input"
+                    />
+                    {#if selectedAddon.configTemplate[key].inputType === 'folder'}
+                      <button
+                        class="browse-button"
+                        onclick={(ev) => browseForFolder(ev, 'folder')}
+                        >Browse</button
+                      >
+                    {:else if selectedAddon.configTemplate[key].inputType === 'file'}
+                      <button
+                        class="browse-button"
+                        onclick={(ev) => browseForFolder(ev, 'file')}
+                        >Browse</button
+                      >
+                    {/if}
+                  </div>
+                {/if}
               {/if}
-            {/if}
-            {#if isNumberOption(selectedAddon.configTemplate[key])}
-              <input
-                data-input
-                type={selectedAddon.configTemplate[key].inputType}
-                id={key}
-                oninput={(event) =>
-                  updateInputNum(event.target as HTMLInputElement)}
-                onchange={updateConfig}
-                value={getStoredOrDefaultValue(key)}
-                max={isNumberOption(selectedAddon.configTemplate[key])
-                  ? selectedAddon.configTemplate[key].max
-                  : 0}
-                min={isNumberOption(selectedAddon.configTemplate[key])
-                  ? selectedAddon.configTemplate[key].min
-                  : 0}
-                class="config-input"
-              />
-              {#if selectedAddon.configTemplate[key].inputType === 'range'}
+              {#if isNumberOption(selectedAddon.configTemplate[key])}
                 <input
-                  type="number"
-                  class="range-value font-archivo w-16 ml-2 px-2 py-1 border border-gray-300 rounded-lg text-center"
+                  data-input
+                  type={selectedAddon.configTemplate[key].inputType}
+                  id={key}
+                  oninput={(event) =>
+                    updateInputNum(event.target as HTMLInputElement)}
+                  onchange={updateConfig}
                   value={getStoredOrDefaultValue(key)}
-                  min={isNumberOption(selectedAddon.configTemplate[key])
-                    ? selectedAddon.configTemplate[key].min
-                    : 0}
                   max={isNumberOption(selectedAddon.configTemplate[key])
                     ? selectedAddon.configTemplate[key].max
                     : 0}
-                  onchange={updateConfig}
-                  oninput={(event) => {
-                    const element = document.getElementById(
-                      key
-                    ) as HTMLInputElement;
-                    if (element && event.target instanceof HTMLInputElement) {
-                      element.value = event.target.value;
-                      updateInputNum(element);
-                    }
-                  }}
+                  min={isNumberOption(selectedAddon.configTemplate[key])
+                    ? selectedAddon.configTemplate[key].min
+                    : 0}
+                  class="config-input"
                 />
+                {#if selectedAddon.configTemplate[key].inputType === 'range'}
+                  <input
+                    type="number"
+                    class="range-value font-archivo w-16 ml-2 px-2 py-1 border border-gray-300 rounded-lg text-center"
+                    value={getStoredOrDefaultValue(key)}
+                    min={isNumberOption(selectedAddon.configTemplate[key])
+                      ? selectedAddon.configTemplate[key].min
+                      : 0}
+                    max={isNumberOption(selectedAddon.configTemplate[key])
+                      ? selectedAddon.configTemplate[key].max
+                      : 0}
+                    onchange={updateConfig}
+                    oninput={(event) => {
+                      const element = document.getElementById(
+                        key
+                      ) as HTMLInputElement;
+                      if (element && event.target instanceof HTMLInputElement) {
+                        element.value = event.target.value;
+                        updateInputNum(element);
+                      }
+                    }}
+                  />
+                {/if}
               {/if}
-            {/if}
-            {#if isBooleanOption(selectedAddon.configTemplate[key])}
-              <label class="checkbox-container">
-                <input
-                  data-input
-                  type="checkbox"
-                  id={key}
-                  onchange={updateConfig}
-                  class="input-checkbox"
-                  checked={getStoredOrDefaultValue(key)}
-                />
-                <span class="checkbox-checkmark"></span>
-              </label>
-            {/if}
-            <p
-              data-error-message
-              class="text-red-500"
-              data-context=""
-              onmouseenter={showContextHint}
-              onmouseleave={hideContextHint}
-            ></p>
+              {#if isBooleanOption(selectedAddon.configTemplate[key])}
+                <label class="checkbox-container">
+                  <input
+                    data-input
+                    type="checkbox"
+                    id={key}
+                    onchange={updateConfig}
+                    class="input-checkbox"
+                    checked={getStoredOrDefaultValue(key)}
+                  />
+                  <span class="checkbox-checkmark"></span>
+                </label>
+              {/if}
+              <p
+                data-error-message
+                class="text-red-500"
+                data-context=""
+                onmouseenter={showContextHint}
+                onmouseleave={hideContextHint}
+              ></p>
 
-            <div
-              data-contextual
-              style="display: none"
-              class="absolute flex flex-row gap-3 justify-start items-center z-30 top-12 left-0 bg-white border border-red-200 text-sm p-4 rounded-lg shadow-lg w-full"
-            >
-              <img
-                src="./error.svg"
-                alt="error"
-                class="w-4 h-4 mt-0.5 flex-shrink-0"
-              />
-              <p class="text-red-700 leading-relaxed"></p>
-            </div>
-            <div
-              data-description
-              style="display: none"
-              class="absolute flex flex-row gap-3 justify-start items-center z-30 top-12 left-0 bg-white border border-blue-200 text-sm p-4 rounded-lg shadow-lg w-full"
-            >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                class="w-4 h-4 mt-0.5 flex-shrink-0 text-blue-400"
-                fill="currentColor"
-                height="24"
-                viewBox="0 0 24 24"
-                width="24"
-                ><path d="M0 0h24v24H0V0z" fill="none" /><path
-                  d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 15c-.55 0-1-.45-1-1v-4c0-.55.45-1 1-1s1 .45 1 1v4c0 .55-.45 1-1 1zm1-8h-2V7h2v2z"
-                /></svg
+              <div
+                data-contextual
+                style="display: none"
+                class="absolute flex flex-row gap-3 justify-start items-center z-30 top-12 left-0 bg-white border border-red-200 text-sm p-4 rounded-lg shadow-lg w-full"
               >
-              <p class="text-blue-400 leading-relaxed relative top-[0.1rem]">
-                {selectedAddon.configTemplate[key].description}
-              </p>
+                <img
+                  src="./error.svg"
+                  alt="error"
+                  class="w-4 h-4 mt-0.5 flex-shrink-0"
+                />
+                <p class="text-red-700 leading-relaxed"></p>
+              </div>
+              <div
+                data-description
+                style="display: none"
+                class="absolute flex flex-row gap-3 justify-start items-center z-30 top-12 left-0 bg-white border border-blue-200 text-sm p-4 rounded-lg shadow-lg w-full"
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  class="w-4 h-4 mt-0.5 flex-shrink-0 text-blue-400"
+                  fill="currentColor"
+                  height="24"
+                  viewBox="0 0 24 24"
+                  width="24"
+                  ><path d="M0 0h24v24H0V0z" fill="none" /><path
+                    d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 15c-.55 0-1-.45-1-1v-4c0-.55.45-1 1-1s1 .45 1 1v4c0 .55-.45 1-1 1zm1-8h-2V7h2v2z"
+                  /></svg
+                >
+                <p class="text-blue-400 leading-relaxed relative top-[0.1rem]">
+                  {selectedAddon.configTemplate[key].description}
+                </p>
+              </div>
             </div>
-          </div>
-        {/each}
+          {/each}
+        </div>
       </div>
-    </div>
+    {/if}
   {/if}
 </div>
 

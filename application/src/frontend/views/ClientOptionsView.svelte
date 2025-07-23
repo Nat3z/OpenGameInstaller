@@ -143,6 +143,18 @@
             document.dispatchEvent(new Event('dbg:events-proc-toggle'));
           },
         },
+        showNotificationSideView: {
+          displayName: 'Show Notification Side View',
+          description: 'Show the notification side view',
+          defaultValue: '',
+          value: '',
+          type: 'action',
+          action: () => {
+            document.dispatchEvent(
+              new Event('dbg:notification-side-view-toggle')
+            );
+          },
+        },
         testModal: {
           displayName: 'Test Modal',
           description: 'Test Modal',

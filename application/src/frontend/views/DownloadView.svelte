@@ -486,15 +486,32 @@
     </div>
   {/if}
 {:else}
-  <div
-    class="w-full h-48 rounded-lg border border-accent-light bg-accent-lighter shadow-sm"
-  >
+  <div class="w-full h-48">
     <div class="flex items-center justify-center h-full">
       <div class="text-center">
-        <h2 class="text-lg font-bold text-accent-dark">No Downloads</h2>
-        <p class="text-sm text-accent-dark/70">
-          Start a download to get started.
-        </p>
+        <div
+          class="flex flex-col items-center justify-center h-full text-center p-8"
+        >
+          <div
+            class="w-16 h-16 bg-accent-lighter rounded-full flex items-center justify-center mb-4"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              height="24"
+              viewBox="0 0 24 24"
+              width="24"
+              class="w-8 h-8 fill-accent-dark"
+              fill="currentColor"
+              ><path d="M0 0h24v24H0V0z" fill="none" /><path
+                d="M16.59 9H15V4c0-.55-.45-1-1-1h-4c-.55 0-1 .45-1 1v5H7.41c-.89 0-1.34 1.08-.71 1.71l4.59 4.59c.39.39 1.02.39 1.41 0l4.59-4.59c.63-.63.19-1.71-.7-1.71zM5 19c0 .55.45 1 1 1h12c.55 0 1-.45 1-1s-.45-1-1-1H6c-.55 0-1 .45-1 1z"
+              /></svg
+            >
+          </div>
+          <h3 class="text-lg font-archivo font-semibold text-gray-600 mb-2">
+            No Downloads
+          </h3>
+          <p class="text-gray-500 text-sm">You don't have any downloads yet.</p>
+        </div>
       </div>
     </div>
   </div>

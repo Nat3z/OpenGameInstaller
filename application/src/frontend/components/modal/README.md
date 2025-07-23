@@ -91,6 +91,7 @@ Handles various input types including text, number, select, file, and folder inp
 - `minLength: number` - Minimum text length (optional)
 - `disabled: boolean` - Whether input is disabled (default: false)
 - `class: string` - Additional CSS classes (optional)
+- `onchange: (event: Event) => void` - Event handler for input change (optional)
 
 **Events:**
 
@@ -108,6 +109,7 @@ Specialized component for boolean inputs.
 - `checked: boolean` - Checkbox state (default: false)
 - `disabled: boolean` - Whether checkbox is disabled (default: false)
 - `class: string` - Additional CSS classes (optional)
+- `onchange: (event: Event) => void` - Event handler for checkbox change (optional)
 
 **Events:**
 
@@ -123,6 +125,7 @@ Provides styled buttons for modal actions.
 - `variant: "primary" | "secondary" | "danger" | "success"` - Button style (default: "primary")
 - `disabled: boolean` - Whether button is disabled (default: false)
 - `class: string` - Additional CSS classes (optional)
+- `onclick: (event: Event) => void` - Event handler for button click (optional)
 
 **Events:**
 
@@ -141,10 +144,10 @@ Provides styled buttons for modal actions.
   let open = false;
 </script>
 
-<Modal {open} on:close={() => (open = false)}>
+<Modal {open} onclose={() => (open = false)}>
   <TitleModal title="Confirmation" />
   <p>Are you sure you want to proceed?</p>
-  <ButtonModal text="Yes" on:click={() => (open = false)} />
+  <ButtonModal text="Yes" onclick={() => (open = false)} />
 </Modal>
 ```
 
@@ -168,7 +171,7 @@ Provides styled buttons for modal actions.
   }
 </script>
 
-<Modal {open} on:close={() => (open = false)}>
+<Modal {open} onclose={() => (open = false)}>
   <TitleModal title="Contact Form" />
 
   <SectionModal>
@@ -176,7 +179,7 @@ Provides styled buttons for modal actions.
       id="name"
       label="Full Name"
       value={formData.name}
-      on:change={handleInputChange}
+      onchange={handleInputChange}
     />
 
     <InputModal
@@ -184,17 +187,17 @@ Provides styled buttons for modal actions.
       label="Email"
       type="text"
       value={formData.email}
-      on:change={handleInputChange}
+      onchange={handleInputChange}
     />
 
     <CheckboxModal
       id="subscribe"
       label="Subscribe to newsletter"
       checked={formData.subscribe}
-      on:change={handleInputChange}
+      onchange={handleInputChange}
     />
 
-    <ButtonModal text="Submit" on:click={() => console.log(formData)} />
+    <ButtonModal text="Submit" onclick={() => console.log(formData)} />
   </SectionModal>
 </Modal>
 ```

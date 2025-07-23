@@ -92,14 +92,12 @@
       </div>
 
       <div class="flex items-center gap-2">
-        {#if $notificationHistory.length > 0}
-          <button
-            class="px-3 py-2 text-sm text-accent-dark bg-accent-lighter border-none hover:bg-accent-dark/25 rounded-lg transition-colors duration-200"
-            onclick={clearAllNotifications}
-          >
-            Clear All
-          </button>
-        {/if}
+        <button
+          class="px-3 py-2 text-sm text-accent-dark bg-accent-lighter border-none hover:bg-accent-dark/25 rounded-lg transition-colors duration-200"
+          onclick={clearAllNotifications}
+        >
+          Clear All
+        </button>
         <button
           class="p-2 bg-accent-lighter rounded-lg transition-colors duration-200 border-none hover:bg-accent-dark/25"
           onclick={closeSideView}

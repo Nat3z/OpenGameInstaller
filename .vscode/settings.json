@@ -3,5 +3,11 @@
   "editor.formatOnSave": true,
   "prettier.configPath": ".prettierrc",
   "editor.defaultFormatter": "esbenp.prettier-vscode",
-  "prettier.prettierPath": "./node_modules/prettier"
+  "prettier.prettierPath": "./node_modules/prettier",
+  "cSpell.words": [
+    "addonsource",
+    "clientoptions",
+    "fullgame",
+    "Recents"
+  ]
 }

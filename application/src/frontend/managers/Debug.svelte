@@ -1,15 +1,15 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import Modal from './modal/Modal.svelte';
-  import CloseModal from './modal/CloseModal.svelte';
-  import TitleModal from './modal/TitleModal.svelte';
-  import TextModal from './modal/TextModal.svelte';
-  import SectionModal from './modal/SectionModal.svelte';
-  import ButtonModal from './modal/ButtonModal.svelte';
+  import Modal from '../components/modal/Modal.svelte';
+  import CloseModal from '../components/modal/CloseModal.svelte';
+  import TitleModal from '../components/modal/TitleModal.svelte';
+  import TextModal from '../components/modal/TextModal.svelte';
+  import SectionModal from '../components/modal/SectionModal.svelte';
+  import ButtonModal from '../components/modal/ButtonModal.svelte';
   import { createNotification, notificationHistory } from '../store';
-  import CheckboxModal from './modal/CheckboxModal.svelte';
+  import CheckboxModal from '../components/modal/CheckboxModal.svelte';
   import type { ConfigurationFile } from 'ogi-addon/config';
-  import HeaderModal from './modal/HeaderModal.svelte';
+  import HeaderModal from '../components/modal/HeaderModal.svelte';
 
   let showDebugModal = $state(false);
   let priorityModals = $state({
@@ -31,12 +31,12 @@
         name: 'test-options',
         displayName: 'Test Options',
         description: 'This is a test options modal',
-        defaultValue: 'fwofp',
+        defaultValue: '',
         type: 'string',
       },
       // @ts-expect-error - options is a valid property for a string option if a choice.
       t: {
-        name: 'test-optionx',
+        name: 'test-option-2',
         displayName: 'Test Options',
         description: 'This is a test options modal',
         // @ts-expect-error - options is a valid property for a string option if a choice.

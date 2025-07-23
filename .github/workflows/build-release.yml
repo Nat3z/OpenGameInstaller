@@ -10,7 +10,7 @@ jobs:
     permissions:
       contents: write
     name: Create Github Release
-    if: startsWith(github.event.head_commit.message, '[major]') || startsWith(github.event.head_commit.message, '[hotfix]')
+    if: startsWith(github.event.head_commit.message, 'major:') || startsWith(github.event.head_commit.message, 'hotfix:')
     runs-on: ubuntu-latest
     outputs:
       upload_url: ${{ steps.create_release.outputs.upload_url }}

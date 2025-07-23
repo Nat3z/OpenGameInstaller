@@ -5,7 +5,7 @@
   import ConfigView from './views/ConfigView.svelte';
   import ClientOptionsView from './views/ClientOptionsView.svelte';
   import DownloadView from './views/DownloadView.svelte';
-  import DownloadManager from './components/DownloadManager.svelte';
+  import DownloadManager from './managers/DownloadManager.svelte';
   import OOBE from './views/OutOfBoxExperience.svelte';
 
   import {
@@ -14,7 +14,7 @@
     safeFetch,
     type GameData,
   } from './utils';
-  import Notifications from './components/Notifications.svelte';
+  import Notifications from './managers/NotificationManager.svelte';
   import NotificationSideView from './components/NotificationSideView.svelte';
   import {
     addonUpdates,
@@ -37,11 +37,11 @@
   import StorePage from './components/StorePage.svelte';
   import ConfigurationModal from './components/modal/ConfigurationModal.svelte';
   import LibraryView from './views/LibraryView.svelte';
-  import GameManager from './components/GameManager.svelte';
+  import GameManager from './managers/GameManager.svelte';
   import Tasks from './views/Tasks.svelte';
   import type { BasicLibraryInfo, OGIAddonConfiguration } from 'ogi-addon';
   import type { ConfigurationFile } from 'ogi-addon/config';
-  import Debug from './components/Debug.svelte';
+  import Debug from './managers/Debug.svelte';
 
   interface ConfigTemplateAndInfo extends OGIAddonConfiguration {
     configTemplate: ConfigurationFile;
@@ -381,8 +381,9 @@
     }
     iTriggeredIt = false;
   }
-
-  fetchCommunityAddons();
+  setTimeout(() => {
+    fetchCommunityAddons();
+  }, 2000);
 
   function toggleNotificationSideView() {
     showNotificationSideView.update((v) => {
@@ -807,7 +808,6 @@
   * {
     -webkit-touch-callout: none; /* iOS Safari */
     -webkit-user-select: none; /* Safari */
-    -khtml-user-select: none; /* Konqueror HTML */
     -moz-user-select: none; /* Old versions of Firefox */
     -ms-user-select: none; /* Internet Explorer/Edge */
     user-select: none; /* Non-prefixed version, currently

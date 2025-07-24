@@ -64,7 +64,6 @@ interface Window {
       axios: (
         options: AxiosRequestConfig
       ) => Promise<{ status: number; success: boolean; data: any }>;
-      searchFor: (query: string) => Promise<{ appid: string; name: string }[]>;
       inputSend: (id: string, data: any) => Promise<void>;
       insertApp: (info: LibraryInfo) => Promise<void>;
       getAllApps: () => Promise<LibraryInfo[]>;

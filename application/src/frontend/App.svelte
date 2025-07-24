@@ -12,14 +12,12 @@
     fetchAddonsWithConfigure,
     getConfigClientOption,
     safeFetch,
-    type GameData,
   } from './utils';
   import Notifications from './managers/NotificationManager.svelte';
   import NotificationSideView from './components/NotificationSideView.svelte';
   import {
     addonUpdates,
     currentStorePageOpened,
-    currentStorePageOpenedSource,
     currentStorePageOpenedStorefront,
     selectedView,
     viewOpenedWhenChanged,
@@ -94,61 +92,6 @@
     }
   }
 
-  function extractSimpleName(input: string) {
-    // Regular expression to match the game name
-    const regex = /^(.+?)([:\-–])/;
-    const match = input.match(regex);
-    return match ? match[1].trim() : null;
-  }
-
-  async function getRealGame(titleId: string): Promise<string | undefined> {
-    // Add delay to prevent rate limiting
-    await new Promise((resolve) => setTimeout(resolve, 200));
-
-    const response = await window.electronAPI.app.axios({
-      method: 'GET',
-      url: `https://store.steampowered.com/api/appdetails?appids=${titleId}`,
-    });
-    if (!response.data[titleId].success) {
-      return undefined;
-    }
-    if (response.data[titleId].data.type === 'game') {
-      return titleId;
-    }
-
-    if (
-      response.data[titleId].data.type === 'dlc' ||
-      response.data[titleId].data.type === 'dlc_sub' ||
-      response.data[titleId].data.type === 'music' ||
-      response.data[titleId].data.type === 'video' ||
-      response.data[titleId].data.type === 'episode'
-    ) {
-      if (!response.data[titleId].data.fullgame) {
-        return undefined;
-      }
-      return response.data[titleId].data.fullgame.appid;
-    }
-    if (response.data[titleId].data.type === 'demo') {
-      return response.data[titleId].data.fullgame.appid;
-    }
-
-    return undefined;
-  }
-
-  async function matchSteamAppID(
-    title: string
-  ): Promise<{ appid: string; name: string }[] | undefined> {
-    const steamAppId = await window.electronAPI.app.searchFor(title);
-    if (steamAppId.length === 0) {
-      return undefined;
-    }
-    return steamAppId;
-  }
-
-  searchResultsStore.subscribe((value) => {
-    searchResults = value;
-  });
-
   async function performSearch(query: string) {
     if (!$isOnline || !query.trim()) {
       showSearchResults = false;
@@ -182,65 +125,6 @@
               addonsource: addon.id,
             })),
           ]);
-        }),
-        new Promise(async (resolve) => {
-          // Search Steam with rate limiting
-          const possibleSteamApps = await matchSteamAppID(
-            extractSimpleName(query) ?? query
-          );
-          if (possibleSteamApps) {
-            let amountSearched = 0;
-            for (const possibleSteamApp of possibleSteamApps) {
-              amountSearched++;
-
-              // Add delay to prevent rate limiting (500ms between requests)
-              if (amountSearched > 1) {
-                await new Promise((resolve) => setTimeout(resolve, 500));
-              }
-
-              const real = await getRealGame(possibleSteamApp.appid);
-              if (!real) {
-                continue;
-              }
-
-              // Add another delay before the detailed API call
-              await new Promise((resolve) => setTimeout(resolve, 300));
-
-              const response = await window.electronAPI.app.axios({
-                method: 'GET',
-                url: `https://store.steampowered.com/api/appdetails?appids=${real}`,
-              });
-              if (!response.data[real].success) {
-                console.error('Failed to fetch Steam store page');
-                continue;
-              }
-              const gameData: GameData = response.data[real].data;
-              // check if the appid is already in the results
-              if (
-                searchResults.find(
-                  (result) => result.appID === gameData.steam_appid
-                )
-              ) {
-                continue;
-              }
-
-              searchResultsStore.update((value) => [
-                ...value,
-                {
-                  appID: gameData.steam_appid,
-                  name: gameData.name,
-                  capsuleImage: gameData.header_image,
-                  addonsource: 'steam',
-                  storefront: 'steam',
-                },
-              ]);
-
-              if (amountSearched >= 10) {
-                break;
-              }
-            }
-          }
-          resolve(true);
         }),
       ]);
 
@@ -277,19 +161,17 @@
     }
   }
 
-  function goToListing(appID: number, addonSource: string) {
+  function goToListing(appID: number, storefront: string) {
     if (!$isOnline) return;
-    if (addonSource === 'steam') {
+    if (storefront === 'steam') {
       currentStorePageOpened.set(appID);
       viewOpenedWhenChanged.set($selectedView);
-      currentStorePageOpenedSource.set(addonSource);
       currentStorePageOpenedStorefront.set('steam');
       showSearchResults = false;
       return;
     }
     currentStorePageOpened.set(appID);
-    currentStorePageOpenedSource.set(addonSource);
-    currentStorePageOpenedStorefront.set('internal');
+    currentStorePageOpenedStorefront.set(storefront);
     viewOpenedWhenChanged.set($selectedView);
     showSearchResults = false;
   }
@@ -358,7 +240,6 @@
       // If the store is open and the same tab is clicked again, close the store
       isStoreOpen = false;
       currentStorePageOpened.set(undefined);
-      currentStorePageOpenedSource.set(undefined);
       heldPageOpened = undefined;
       viewOpenedWhenChanged.set(undefined);
       console.log('Removing store from view');
@@ -722,7 +603,6 @@
               <StorePage
                 appID={$currentStorePageOpened}
                 storefront={$currentStorePageOpenedStorefront || 'steam'}
-                addonSource={$currentStorePageOpenedSource}
               />
             </div>
           {:else if $selectedView === 'config'}

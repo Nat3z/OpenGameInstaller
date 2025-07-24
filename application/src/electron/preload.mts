@@ -66,7 +66,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     minimize: () => ipcRenderer.invoke('app:minimize'),
     axios: (options: AxiosRequestConfig) =>
       ipcRenderer.invoke('app:axios', options),
-    searchFor: (query: string) => ipcRenderer.invoke('app:search-id', query),
     inputSend: (id: string, data: any) =>
       ipcRenderer.invoke('app:screen-input', { id, data }),
     insertApp: (info: LibraryInfo) =>

@@ -17,13 +17,7 @@ function isDev() {
   return !app.isPackaged;
 }
 
-const filesToBackup = [
-  'config',
-  'addons',
-  'steam-apps.json',
-  'library',
-  'internals',
-];
+const filesToBackup = ['config', 'addons', 'library', 'internals'];
 let __dirname = isDev()
   ? app.getAppPath() + '/../'
   : path.dirname(process.execPath);

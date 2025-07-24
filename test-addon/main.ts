@@ -8,6 +8,7 @@ const addon = new OGIAddon({
   author: 'OGI Developers',
   description: 'A test addon',
   repository: 'Repository URL',
+  storefronts: ['steam', 'test-front'],
 });
 
 addon.on('configure', (config) =>
@@ -110,7 +111,6 @@ addon.on('search', ({ text, type }, event) => {
   new Promise(async (resolve) => {
     if (type === 'internal' || type === 'steamapp') {
       console.log(text);
-      const results = await addon.steamSearch(text, true);
       event.resolve([
         {
           name: 'Magnet Test',
@@ -190,59 +190,80 @@ addon.on('library-search', (text, event) => {
       appID: 1,
       capsuleImage: 'https://dummyimage.com/375x500/968d96/ffffff',
       name: 'Test App',
-      storefront: 'internal',
+      storefront: 'test-front',
     },
   ]);
 });
 
 addon.on('game-details', (appID, event) => {
-  event.resolve({
-    appID: appID,
-    basicDescription: 'The Coolest Test App',
-    capsuleImage: 'https://dummyimage.com/375x500/968d96/ffffff',
-    description: '<script>alert("hello world")</script><h1>hello world</h1>',
-    coverImage: 'https://dummyimage.com/375x500/968d96/ffffff',
-    name: 'Test App',
-    developers: ['OGI Developers'],
-    headerImage: 'https://dummyimage.com/500x350/968d96/ffffff',
-    publishers: ['OGI Developers'],
-    releaseDate: new Date().toISOString(),
-  });
+  if (appID === 1) {
+    event.resolve({
+      appID: appID,
+      basicDescription: 'The Coolest Test App',
+      capsuleImage: 'https://dummyimage.com/375x500/968d96/ffffff',
+      description: '<script>alert("hello world")</script><h1>hello world</h1>',
+      coverImage: 'https://dummyimage.com/375x500/968d96/ffffff',
+      name: 'Test App',
+      developers: ['OGI Developers'],
+      headerImage: 'https://dummyimage.com/500x350/968d96/ffffff',
+      publishers: ['OGI Developers'],
+      releaseDate: new Date().toISOString(),
+    });
+  } else {
+    event.resolve({
+      name: 'Test App 2',
+      publishers: ['OGI Developers'],
+      developers: ['OGI Developers'],
+      appID: appID,
+      releaseDate: new Date().toISOString(),
+      capsuleImage: 'https://dummyimage.com/375x500/968d96/ffffff',
+      coverImage: 'https://dummyimage.com/375x500/968d96/ffffff',
+      basicDescription: 'The Coolest Test App',
+      description:
+        '<script>alert("hello world")</script><h1>hello world 2</h1>',
+      headerImage: 'https://dummyimage.com/500x350/968d96/ffffff',
+    });
+  }
 });
 
-addon.on('catalog', (event) =>
-  event.resolve({
-    x: {
-      name: 'Test Catalog',
-      description: 'A test catalog',
-      listings: [
-        {
-          appID: 1,
-          name: 'Test App',
-          capsuleImage: 'https://dummyimage.com/375x500/968d96/ffffff',
-          storefront: 'internal',
-        },
-        {
-          appID: 945360,
-          name: 'Among Us',
-          capsuleImage:
-            'https://steamcdn-a.akamaihd.net/steam/apps/945360/library_600x900_2x.jpg',
-          storefront: 'steam',
-        },
-      ],
-    },
-    cat: {
-      name: 'Among Us',
-      description: 'The best Among Us',
-      listings: [
-        {
-          appID: 945360,
-          name: 'Among Us',
-          capsuleImage:
-            'https://steamcdn-a.akamaihd.net/steam/apps/945360/library_600x900_2x.jpg',
-          storefront: 'steam',
-        },
-      ],
-    },
-  })
-);
+addon.on('catalog', (event) => {
+  // for testing purposes, we will ask for gameDetails for the test app 1
+  event.defer();
+  new Promise(async (resolve) => {
+    const details = (await addon.getAppDetails(2, 'test-front'))!;
+    event.resolve({
+      x: {
+        name: 'Test Catalog',
+        description: 'A test catalog',
+        listings: [
+          {
+            appID: details.appID,
+            name: details.name,
+            capsuleImage: details.capsuleImage,
+            storefront: 'test-front',
+          },
+          {
+            appID: 945360,
+            name: 'Among Us',
+            capsuleImage:
+              'https://steamcdn-a.akamaihd.net/steam/apps/945360/library_600x900_2x.jpg',
+            storefront: 'steam',
+          },
+        ],
+      },
+      cat: {
+        name: 'Among Us',
+        description: 'The best Among Us',
+        listings: [
+          {
+            appID: 945360,
+            name: 'Among Us',
+            capsuleImage:
+              'https://steamcdn-a.akamaihd.net/steam/apps/945360/library_600x900_2x.jpg',
+            storefront: 'steam',
+          },
+        ],
+      },
+    });
+  });
+});

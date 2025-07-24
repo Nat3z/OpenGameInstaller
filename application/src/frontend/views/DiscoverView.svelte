@@ -5,7 +5,6 @@
   import type { ConfigurationFile } from 'ogi-addon/config';
   import {
     currentStorePageOpened,
-    currentStorePageOpenedSource,
     currentStorePageOpenedStorefront,
     viewOpenedWhenChanged,
     selectedView,
@@ -123,9 +122,8 @@
     }
   }
 
-  function openGameStorePage(game: BasicLibraryInfo, addonId: string) {
+  function openGameStorePage(game: BasicLibraryInfo) {
     currentStorePageOpened.set(game.appID);
-    currentStorePageOpenedSource.set(addonId);
     currentStorePageOpenedStorefront.set(game.storefront);
     viewOpenedWhenChanged.set($selectedView);
   }
@@ -250,8 +248,7 @@
                   {#each chunk as game}
                     <button
                       class="group relative border-none transition-all duration-200 shadow-md hover:shadow-lg rounded-lg overflow-hidden bg-white transform hover:scale-102 hover:-translate-y-0.5"
-                      onclick={() =>
-                        openGameStorePage(game, sectionItem.addonId)}
+                      onclick={() => openGameStorePage(game)}
                     >
                       <div class="relative">
                         <img

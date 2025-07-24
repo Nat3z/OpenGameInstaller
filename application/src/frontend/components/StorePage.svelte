@@ -10,7 +10,6 @@
   import {
     createNotification,
     currentStorePageOpened,
-    currentStorePageOpenedSource,
     currentStorePageOpenedStorefront,
     gameFocused,
     launchGameTrigger,
@@ -29,10 +28,9 @@
   interface Props {
     appID: number;
     storefront: string;
-    addonSource?: string;
   }
 
-  let { appID, storefront, addonSource }: Props = $props();
+  let { appID, storefront }: Props = $props();
 
   let results: SearchResultWithAddon[] = $state([]);
   let gameData: (GameData & { hero_image: string }) | StoreData | undefined =
@@ -110,9 +108,6 @@
         type: 'error',
       });
       currentStorePageOpened.set(undefined);
-      if (!isSteamStore) {
-        currentStorePageOpenedSource.set(undefined);
-      }
       currentStorePageOpenedStorefront.set(undefined);
     }
   });
@@ -181,15 +176,11 @@
   }
 
   async function loadCustomStoreData() {
-    if (!addonSource) {
-      throw new Error('Addon source is required for custom store pages');
-    }
-
-    const response: StoreData = await safeFetch(
+    const response: StoreData | undefined = await safeFetch(
       'gameDetails',
       {
-        addonID: addonSource,
         gameID: String(appID),
+        storefront,
       },
       { consume: 'json' }
     );
@@ -245,9 +236,6 @@
     viewOpenedWhenChanged.set('library');
     currentStorePageOpened.set(undefined);
     currentStorePageOpenedStorefront.set(undefined);
-    if (!isSteamStore) {
-      currentStorePageOpenedSource.set(undefined);
-    }
     gameFocused.set(gameID);
     setTimeout(() => {
       launchGameTrigger.set(gameID);
@@ -439,12 +427,20 @@
       </div>
     {/if}
   </main>
-{:else if !isOnline && isSteamStore}
+{:else if !isOnline}
   <div class="flex flex-col gap-2 w-full justify-center items-center h-full">
     <img src="./favicon.png" alt="content" class="w-32 h-32" />
     <h1 class="text-2xl text-black">You're Offline</h1>
     <h1 class="text-lg text-gray-500 text-center">
       Loading Game Stores is unsupported when you're offline.
+    </h1>
+  </div>
+{:else if gameData === undefined && !loading}
+  <div class="flex flex-col gap-2 w-full justify-center items-center h-full">
+    <img src="./favicon.png" alt="content" class="w-32 h-32" />
+    <h1 class="text-2xl text-black">Game not found</h1>
+    <h1 class="text-lg text-gray-500 text-center">
+      The game you're looking for is not available.
     </h1>
   </div>
 {:else}

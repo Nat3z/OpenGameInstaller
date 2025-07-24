@@ -15,7 +15,6 @@ import {
   sendNotification,
 } from '../main.js';
 import { DeferrableTask, DeferredTasks } from './DeferrableTask.js';
-import { steamAppSearcher } from '../startup.js';
 
 export class AddonConnection {
   public addonInfo: OGIAddonConfiguration;
@@ -35,7 +34,7 @@ export class AddonConnection {
         resolve(false);
       }, 1000);
 
-      this.ws.on('message', (message) => {
+      this.ws.on('message', async (message) => {
         const data: WebsocketMessageClient = JSON.parse(message.toString());
         switch (data.event) {
           case 'notification':
@@ -217,46 +216,6 @@ export class AddonConnection {
             }, 100);
 
             break;
-          case 'steam-search':
-            if (!this.addonInfo) {
-              console.error(
-                'Client attempted to send steam-search before authentication'
-              );
-              this.ws.close(
-                1008,
-                'Client attempted to send steam-search before authentication'
-              );
-              return;
-            }
-            if (!steamAppSearcher) {
-              console.error(
-                'Client attempted to send steam-search before steamAppSearcher is initialized'
-              );
-              this.ws.close(
-                1008,
-                'Client attempted to send steam-search before steamAppSearcher is initialized'
-              );
-              return;
-            }
-            const { query, strict }: ClientSentEventTypes['steam-search'] =
-              data.args;
-            // now run the search
-            let results = steamAppSearcher.search(query);
-            // if strict, filter out results that are not exact matches to the appid
-            if (strict) {
-              results = results.filter(
-                (result) => result.item.appid === Number(query)
-              );
-            }
-            this.sendEventMessage(
-              {
-                event: 'response',
-                args: results.map((result) => result.item),
-                id: data.id,
-              },
-              false
-            );
-            break;
           case 'task-update':
             if (!this.addonInfo) {
               console.error(
@@ -315,6 +274,77 @@ export class AddonConnection {
                 message: 'Task finished by ' + this.addonInfo.name,
                 id: data.args.id,
               });
+            }
+            break;
+          case 'get-app-details':
+            if (!this.addonInfo) {
+              console.error(
+                'Client attempted to send get-app-details before authentication'
+              );
+              this.ws.close(
+                1008,
+                'Client attempted to send get-app-details before authentication'
+              );
+              return;
+            }
+            const {
+              appID,
+              storefront,
+            }: ClientSentEventTypes['get-app-details'] = data.args;
+            // query all of the clients for the app details
+            const clientWithStorefront = Array.from(clients.values()).find(
+              (client) =>
+                client.addonInfo.storefronts.includes(storefront) &&
+                client.addonInfo.storeFrontServerCapable
+            );
+            const appDetails = await clientWithStorefront?.sendEventMessage(
+              {
+                event: 'game-details',
+                args: appID,
+              },
+              true
+            );
+            if (!appDetails) {
+              console.error('No app details found for client');
+              this.sendEventMessage(
+                {
+                  event: 'response',
+                  args: undefined,
+                  id: data.id,
+                },
+                false
+              );
+              return;
+            }
+            this.sendEventMessage(
+              {
+                event: 'response',
+                args: appDetails.args,
+                id: data.id,
+              },
+              false
+            );
+            console.log('Sent app details to client');
+            break;
+          case 'flag':
+            if (!this.addonInfo) {
+              console.error(
+                'Client attempted to send flag before authentication'
+              );
+              this.ws.close(
+                1008,
+                'Client attempted to send flag before authentication'
+              );
+              return;
+            }
+            if (data.args.flag === 'storeFrontServerCapable') {
+              console.log(
+                'Setting storeFrontServerCapable to',
+                data.args.value,
+                'for addon',
+                this.addonInfo.id
+              );
+              this.addonInfo.storeFrontServerCapable = data.args.value;
             }
             break;
         }

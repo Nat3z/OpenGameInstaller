@@ -5,7 +5,6 @@ import { join } from 'path';
 import * as fs from 'fs';
 import { exec } from 'child_process';
 import { LibraryInfo } from 'ogi-addon';
-import { steamAppSearcher } from '../startup.js';
 import { __dirname } from '../paths.js';
 import { STEAMTINKERLAUNCH_PATH } from '../startup.js';
 import { clients } from '../server/addon-server.js';
@@ -36,16 +35,6 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
 
   ipcMain.handle('app:get-os', () => {
     return process.platform;
-  });
-  ipcMain.handle('app:search-id', async (_, query) => {
-    if (!steamAppSearcher) {
-      return [];
-    }
-    const results = steamAppSearcher.search(query);
-    // max it to the first 10 results
-    let items = results.slice(0, 10).map((result) => result.item);
-    console.log(items);
-    return items;
   });
   ipcMain.handle('app:screen-input', async (_, data) => {
     currentScreens.set(data.id, data.data);

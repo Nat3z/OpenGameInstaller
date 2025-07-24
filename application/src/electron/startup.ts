@@ -66,43 +66,6 @@ if (STEAMTINKERLAUNCH_PATH === '') {
   );
 }
 
-export let steamApps: { appid: number; name: string }[] = [];
-
-export let steamAppSearcher: Fuse<{ appid: number; name: string }> | undefined;
-
-export async function getSteamApps() {
-  if (fs.existsSync(join(__dirname, 'steam-apps.json'))) {
-    const steamApps: {
-      timeSinceUpdate: number;
-      data: { appid: number; name: string }[];
-    } = JSON.parse(
-      fs.readFileSync(join(__dirname, 'steam-apps.json'), 'utf-8')
-    );
-    if (Date.now() - steamApps.timeSinceUpdate < 86400000) {
-      //24 hours
-      steamAppSearcher = new Fuse(steamApps.data, {
-        keys: ['name', 'appid'],
-        threshold: 0.3,
-        includeScore: true,
-      });
-      return;
-    }
-  }
-  const response = await axios.get(
-    'https://api.steampowered.com/ISteamApps/GetAppList/v0002/?key=STEAMKEY&format=json'
-  );
-  const steamApps = response.data.applist.apps;
-  fs.writeFileSync(
-    join(__dirname, 'steam-apps.json'),
-    JSON.stringify({ timeSinceUpdate: Date.now(), data: steamApps }, null, 2)
-  );
-  steamAppSearcher = new Fuse(steamApps, {
-    keys: ['name', 'appid'],
-    threshold: 0.3,
-    includeScore: true,
-  });
-}
-
 export function restoreBackup() {
   // restore the backup if it exists
   if (

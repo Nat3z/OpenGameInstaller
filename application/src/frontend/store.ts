@@ -85,8 +85,6 @@ export const notifications: Writable<Notification[]> = writable([]);
 export const notificationHistory: Writable<Notification[]> = writable([]);
 export const showNotificationSideView: Writable<boolean> = writable(false);
 export const currentStorePageOpened: Writable<number | undefined> = writable();
-export const currentStorePageOpenedSource: Writable<string | undefined> =
-  writable();
 export const currentStorePageOpenedStorefront: Writable<string | undefined> =
   writable();
 export const gameFocused: Writable<number | undefined> = writable();
@@ -108,7 +106,7 @@ export const viewOpenedWhenChanged: Writable<Views | undefined> =
 export const addonUpdates: Writable<string[]> = writable([]);
 
 // Search state
-export const searchResults: Writable<SearchResultWithSource[]> = writable([]);
+export const searchResults: Writable<BasicLibraryInfo[]> = writable([]);
 export const searchQuery: Writable<string> = writable('');
 export const loadingResults: Writable<boolean> = writable(false);
 export const isOnline: Writable<boolean> = writable(true);

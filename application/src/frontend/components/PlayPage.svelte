@@ -3,7 +3,6 @@
   import PlayIcon from '../Icons/PlayIcon.svelte';
   import {
     currentStorePageOpened,
-    currentStorePageOpenedSource,
     currentStorePageOpenedStorefront,
     gamesLaunched,
     launchGameTrigger,
@@ -196,7 +195,6 @@
       class="px-4 py-3 flex border-none rounded-lg justify-center bg-accent-light hover:bg-opacity-80 text-accent-dark items-center gap-2 transition-colors duration-200"
       onclick={() => {
         currentStorePageOpened.set(libraryInfo.appID);
-        currentStorePageOpenedSource.set(libraryInfo.addonsource);
         currentStorePageOpenedStorefront.set(libraryInfo.storefront);
       }}
     >

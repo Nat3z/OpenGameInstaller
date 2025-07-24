@@ -201,13 +201,21 @@ const procedures: Record<string, Procedure<any>> = {
   gameDetails: procedure()
     .input(
       z.object({
-        addonID: z.string(),
         gameID: z.string(),
+        storefront: z.string(),
       })
     )
     .handler(async (input) => {
-      const client = clients.get(input.addonID);
-      if (!client) return new ProcedureError(404, 'Client not found');
+      const client = Array.from(clients.values()).find(
+        (client) =>
+          client.addonInfo.storefronts.includes(input.storefront) &&
+          client.addonInfo.storeFrontServerCapable
+      );
+      if (!client)
+        return new ProcedureError(
+          404,
+          'Client not found to serve this storefront'
+        );
 
       const gameID = parseInt(input.gameID);
       const deferrableTask = new DeferrableTask(async () => {

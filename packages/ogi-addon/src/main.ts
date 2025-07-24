@@ -29,7 +29,8 @@ export type OGIAddonClientSentEvent =
   | 'defer-update'
   | 'notification'
   | 'input-asked'
-  | 'steam-search'
+  | 'get-app-details'
+  | 'flag'
   | 'task-update';
 
 export type OGIAddonServerSentEvent =
@@ -64,10 +65,6 @@ export interface ClientSentEventTypes {
   };
   notification: Notification;
   'input-asked': ConfigurationBuilder;
-  'steam-search': {
-    query: string;
-    strict: boolean;
-  };
   'task-update': {
     id: string;
     progress: number;
@@ -75,13 +72,21 @@ export interface ClientSentEventTypes {
     finished: boolean;
     failed: string | undefined;
   };
+  'get-app-details': {
+    appID: number;
+    storefront: string;
+  };
+  flag: {
+    flag: string;
+    value: boolean;
+  };
 }
 
 export type BasicLibraryInfo = {
   name: string;
   capsuleImage: string;
   appID: number;
-  storefront: 'steam' | 'internal';
+  storefront: string;
 };
 
 export interface EventListenerTypes {
@@ -144,7 +149,7 @@ export interface EventListenerTypes {
         downloadURL: string;
       }[];
       appID: number;
-      storefront: 'steam' | 'internal';
+      storefront: string;
     },
     event: EventResponse<
       Omit<
@@ -238,6 +243,11 @@ export interface WebsocketMessageServer {
   id?: string;
   args: any;
 }
+
+/**
+ * The configuration for the addon. This is used to identify the addon and provide information about it.
+ * Storefronts is an array of names of stores that the addon supports.
+ */
 export interface OGIAddonConfiguration {
   name: string;
   id: string;
@@ -246,6 +256,8 @@ export interface OGIAddonConfiguration {
 
   author: string;
   repository: string;
+  storefronts: string[];
+  storeFrontServerCapable: boolean;
 }
 
 /**
@@ -269,8 +281,10 @@ export default class OGIAddon {
   public addonInfo: OGIAddonConfiguration;
   public config: Configuration = new Configuration({});
 
-  constructor(addonInfo: OGIAddonConfiguration) {
-    this.addonInfo = addonInfo;
+  constructor(
+    addonInfo: Omit<OGIAddonConfiguration, 'storeFrontServerCapable'>
+  ) {
+    this.addonInfo = { storeFrontServerCapable: false, ...addonInfo };
     this.addonWSListener = new OGIAddonWSListener(this, this.eventEmitter);
   }
 
@@ -284,6 +298,13 @@ export default class OGIAddon {
     listener: EventListenerTypes[T]
   ) {
     this.eventEmitter.on(event, listener);
+    if (event === 'game-details') {
+      this.addonInfo.storeFrontServerCapable = true;
+      this.addonWSListener.send('flag', {
+        flag: 'storeFrontServerCapable',
+        value: this.addonInfo.storeFrontServerCapable,
+      });
+    }
   }
 
   public emit<T extends OGIAddonEvent>(
@@ -302,14 +323,18 @@ export default class OGIAddon {
   }
 
   /**
-   * Search for items in the OGI Steam-Synced Library. Query can either be a Steam AppID or a Steam Game Name.
-   * @param query {string}
-   * @param event {EventResponse<BasicLibraryInfo[]>}
+   * Get the app details for a given appID and storefront.
+   * @param appID {number}
+   * @param storefront {string}
+   * @returns {Promise<StoreData>}
    */
-  public async steamSearch(query: string, strict: boolean = false) {
-    const id = this.addonWSListener.send('steam-search', { query, strict });
+  public async getAppDetails(appID: number, storefront: string) {
+    const id = this.addonWSListener.send('get-app-details', {
+      appID,
+      storefront,
+    });
     return await this.addonWSListener.waitForResponseFromServer<
-      Omit<BasicLibraryInfo, 'capsuleImage'>[]
+      StoreData | undefined
     >(id);
   }
 
@@ -423,7 +448,7 @@ export interface LibraryInfo {
   launchExecutable: string;
   launchArguments?: string;
   capsuleImage: string;
-  storefront: 'steam' | 'internal';
+  storefront: string;
   addonsource: string;
   coverImage: string;
   titleImage?: string;
@@ -595,7 +620,7 @@ class OGIAddonWSListener {
           this.respondToMessage(message.id!!, librarySearchResult.data);
           break;
         case 'game-details':
-          let gameDetailsEvent = new EventResponse<StoreData>(
+          let gameDetailsEvent = new EventResponse<StoreData | undefined>(
             (screen, name, description) =>
               this.userInputAsked(screen, name, description, this.socket)
           );

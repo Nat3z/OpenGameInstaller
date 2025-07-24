@@ -42,6 +42,7 @@
   import type { BasicLibraryInfo, OGIAddonConfiguration } from 'ogi-addon';
   import type { ConfigurationFile } from 'ogi-addon/config';
   import Debug from './managers/Debug.svelte';
+  import DiscoverView from './views/DiscoverView.svelte';
 
   interface ConfigTemplateAndInfo extends OGIAddonConfiguration {
     configTemplate: ConfigurationFile;
@@ -177,6 +178,7 @@
               appID: result.appID,
               name: result.name,
               capsuleImage: result.capsuleImage,
+              storefront: result.storefront,
               addonsource: addon.id,
             })),
           ]);
@@ -229,6 +231,7 @@
                   name: gameData.name,
                   capsuleImage: gameData.header_image,
                   addonsource: 'steam',
+                  storefront: 'steam',
                 },
               ]);
 
@@ -761,6 +764,14 @@
               out:fly={{ x: -100, duration: 300 }}
             >
               <Tasks />
+            </div>
+          {:else if $selectedView === 'discovery'}
+            <div
+              class="content-view"
+              in:fly={{ x: 100, duration: 400, easing: quintOut }}
+              out:fly={{ x: -100, duration: 300 }}
+            >
+              <DiscoverView />
             </div>
           {:else}
             <div

@@ -81,6 +81,7 @@ export type BasicLibraryInfo = {
   name: string;
   capsuleImage: string;
   appID: number;
+  storefront: 'steam' | 'internal';
 };
 
 export interface EventListenerTypes {

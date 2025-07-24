@@ -190,6 +190,7 @@ addon.on('library-search', (text, event) => {
       appID: 1,
       capsuleImage: 'https://dummyimage.com/375x500/968d96/ffffff',
       name: 'Test App',
+      storefront: 'internal',
     },
   ]);
 });
@@ -208,3 +209,40 @@ addon.on('game-details', (appID, event) => {
     releaseDate: new Date().toISOString(),
   });
 });
+
+addon.on('catalog', (event) =>
+  event.resolve({
+    x: {
+      name: 'Test Catalog',
+      description: 'A test catalog',
+      listings: [
+        {
+          appID: 1,
+          name: 'Test App',
+          capsuleImage: 'https://dummyimage.com/375x500/968d96/ffffff',
+          storefront: 'internal',
+        },
+        {
+          appID: 945360,
+          name: 'Among Us',
+          capsuleImage:
+            'https://steamcdn-a.akamaihd.net/steam/apps/945360/library_600x900_2x.jpg',
+          storefront: 'steam',
+        },
+      ],
+    },
+    cat: {
+      name: 'Among Us',
+      description: 'The best Among Us',
+      listings: [
+        {
+          appID: 945360,
+          name: 'Among Us',
+          capsuleImage:
+            'https://steamcdn-a.akamaihd.net/steam/apps/945360/library_600x900_2x.jpg',
+          storefront: 'steam',
+        },
+      ],
+    },
+  })
+);

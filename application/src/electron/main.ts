@@ -23,6 +23,7 @@ import {
 } from './startup.js';
 import AddonManagerHandler, { startAddons } from './handlers/addon-manager.js';
 import OOBEHandler from './handlers/oobe-handler.js';
+import { execute as executeMigrations } from './migrations.js';
 
 export const VERSION = app.getVersion();
 
@@ -64,6 +65,9 @@ let mainWindow: BrowserWindow | null;
 
 // restore the backup if it exists
 restoreBackup();
+
+// run any migrations if necessary
+executeMigrations();
 interface Notification {
   message: string;
   id: string;

@@ -78,7 +78,7 @@ export interface ClientSentEventTypes {
   };
   flag: {
     flag: string;
-    value: boolean;
+    value: string | string[];
   };
 }
 
@@ -257,7 +257,6 @@ export interface OGIAddonConfiguration {
   author: string;
   repository: string;
   storefronts: string[];
-  storeFrontServerCapable: boolean;
 }
 
 /**
@@ -280,11 +279,11 @@ export default class OGIAddon {
   public addonWSListener: OGIAddonWSListener;
   public addonInfo: OGIAddonConfiguration;
   public config: Configuration = new Configuration({});
+  private eventsAvailable: OGIAddonEvent[] = [];
+  private registeredConnectEvent: boolean = false;
 
-  constructor(
-    addonInfo: Omit<OGIAddonConfiguration, 'storeFrontServerCapable'>
-  ) {
-    this.addonInfo = { storeFrontServerCapable: false, ...addonInfo };
+  constructor(addonInfo: OGIAddonConfiguration) {
+    this.addonInfo = addonInfo;
     this.addonWSListener = new OGIAddonWSListener(this, this.eventEmitter);
   }
 
@@ -298,12 +297,16 @@ export default class OGIAddon {
     listener: EventListenerTypes[T]
   ) {
     this.eventEmitter.on(event, listener);
-    if (event === 'game-details') {
-      this.addonInfo.storeFrontServerCapable = true;
-      this.addonWSListener.send('flag', {
-        flag: 'storeFrontServerCapable',
-        value: this.addonInfo.storeFrontServerCapable,
+    this.eventsAvailable.push(event);
+    // wait for the addon to be connected
+    if (!this.registeredConnectEvent) {
+      this.addonWSListener.eventEmitter.once('connect', () => {
+        this.addonWSListener.send('flag', {
+          flag: 'events-available',
+          value: this.eventsAvailable,
+        });
       });
+      this.registeredConnectEvent = true;
     }
   }
 

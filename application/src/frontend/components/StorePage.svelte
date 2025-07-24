@@ -86,30 +86,38 @@
       queryingSources = false;
       return;
     }
-
+    const searchPromises = [];
     for (const addon of addons) {
-      let searchResults = await safeFetch(
-        'search',
-        {
-          addonID: addon.id,
-          appID: appID,
-          storefront: storefront,
-        },
-        { consume: 'json' }
+      searchPromises.push(
+        safeFetch(
+          'search',
+          {
+            addonID: addon.id,
+            appID: appID,
+            storefront: storefront,
+          },
+          { consume: 'json' }
+        )
+          .then((searchResults) => {
+            results = [
+              ...results,
+              ...searchResults.map((result: SearchResult) => {
+                return {
+                  ...result,
+                  coverImage: (gameData as StoreData).coverImage,
+                  capsuleImage: (gameData as StoreData).capsuleImage,
+                  name: (gameData as StoreData).name!,
+                  addonSource: addon.id,
+                };
+              }),
+            ];
+          })
+          .catch((ex) => {
+            console.error(ex);
+          })
       );
-      results = [
-        ...results,
-        ...searchResults.map((result: SearchResult) => {
-          return {
-            ...result,
-            coverImage: (gameData as StoreData).coverImage,
-            capsuleImage: (gameData as StoreData).capsuleImage,
-            name: (gameData as StoreData).name!,
-            addonSource: addon.id,
-          };
-        }),
-      ];
     }
+    await Promise.allSettled(searchPromises);
     queryingSources = false;
   }
 

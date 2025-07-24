@@ -69,6 +69,9 @@ const procedures: Record<string, Procedure<any>> = {
     .handler(async (input) => {
       const client = clients.get(input.addonID);
       if (!client) return new ProcedureError(404, 'Client not found');
+      if (!client.eventsAvailable.includes('search')) {
+        return new ProcedureError(400, 'Client does not support search');
+      }
 
       const deferrableTask = new DeferrableTask(async () => {
         const event = await client.sendEventMessage({
@@ -97,6 +100,13 @@ const procedures: Record<string, Procedure<any>> = {
       const client = clients.get(input.addonID);
       if (!client) return new ProcedureError(404, 'Client not found');
 
+      if (!client.eventsAvailable.includes('library-search')) {
+        return new ProcedureError(
+          400,
+          'Client does not support library-search'
+        );
+      }
+
       const deferrableTask = new DeferrableTask(async () => {
         const event = await client.sendEventMessage({
           event: 'library-search',
@@ -121,6 +131,10 @@ const procedures: Record<string, Procedure<any>> = {
       const client = clients.get(input.addonID);
       if (!client) return new ProcedureError(404, 'Client not found');
 
+      if (!client.eventsAvailable.includes('request-dl')) {
+        return new ProcedureError(400, 'Client does not support request-dl');
+      }
+
       const deferrableTask = new DeferrableTask(async () => {
         const data = await client.sendEventMessage({
           event: 'request-dl',
@@ -142,6 +156,10 @@ const procedures: Record<string, Procedure<any>> = {
     .handler(async (input) => {
       const client = clients.get(input.addonID);
       if (!client) return new ProcedureError(404, 'Client not found');
+
+      if (!client.eventsAvailable.includes('catalog')) {
+        return new ProcedureError(400, 'Client does not support catalog');
+      }
 
       const deferrableTask = new DeferrableTask(async () => {
         const data = await client.sendEventMessage({
@@ -170,6 +188,11 @@ const procedures: Record<string, Procedure<any>> = {
     .handler(async (input) => {
       const client = clients.get(input.addonID);
       if (!client) return new ProcedureError(404, 'Client not found');
+
+      if (!client.eventsAvailable.includes('setup')) {
+        return new ProcedureError(400, 'Client does not support setup');
+      }
+
       const deferrableTask = new DeferrableTask(async () => {
         const data = await client.sendEventMessage({
           event: 'setup',
@@ -202,7 +225,7 @@ const procedures: Record<string, Procedure<any>> = {
       const clientsWithStorefront = Array.from(clients.values()).filter(
         (client) =>
           client.addonInfo.storefronts.includes(input.storefront) &&
-          client.addonInfo.storeFrontServerCapable
+          client.eventsAvailable.includes('game-details')
       );
       if (clientsWithStorefront.length === 0)
         return new ProcedureError(

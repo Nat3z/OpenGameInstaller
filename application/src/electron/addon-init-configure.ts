@@ -110,6 +110,8 @@ Running post-setup script for ${addonName}...
 
 export async function startAddon(addonPath: string, addonLink: string) {
   const addonConfig = await readFile(join(addonPath, 'addon.json'), 'utf-8');
+  // remove any trailing slashes
+  addonPath = addonPath.replace(/\/$/, '');
   const addonName = addonPath.split('/').pop();
   if (!addonConfig) {
     sendNotification({

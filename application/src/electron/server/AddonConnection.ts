@@ -2,6 +2,7 @@ import wsLib from 'ws';
 import {
   ClientSentEventTypes,
   OGIAddonConfiguration,
+  OGIAddonEvent,
   StoreData,
   WebsocketMessageClient,
   WebsocketMessageServer,
@@ -23,6 +24,7 @@ export class AddonConnection {
   public configTemplate: ConfigurationFile;
   public filePath: string | undefined;
   public addonLink: string | undefined;
+  public eventsAvailable: OGIAddonEvent[] = [];
   constructor(ws: wsLib.WebSocket) {
     this.ws = ws;
   }
@@ -296,7 +298,7 @@ export class AddonConnection {
             const clientsWithStorefront = Array.from(clients.values()).filter(
               (client) =>
                 client.addonInfo.storefronts.includes(storefront) &&
-                client.addonInfo.storeFrontServerCapable
+                this.eventsAvailable.includes('game-details')
             );
             // find a storefront that gives app details that isn't undefined
             let appDetails: StoreData | undefined;
@@ -346,14 +348,14 @@ export class AddonConnection {
               );
               return;
             }
-            if (data.args.flag === 'storeFrontServerCapable') {
+            if (data.args.flag === 'events-available') {
               console.log(
-                'Setting storeFrontServerCapable to',
+                'Setting events-available to',
                 data.args.value,
                 'for addon',
                 this.addonInfo.id
               );
-              this.addonInfo.storeFrontServerCapable = data.args.value;
+              this.eventsAvailable = data.args.value as OGIAddonEvent[];
             }
             break;
         }

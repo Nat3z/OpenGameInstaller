@@ -39,7 +39,9 @@
     await window.electronAPI.installAddons(
       JSON.parse(JSON.stringify(currentAddons.addons))
     );
-    await window.electronAPI.restartAddonServer();
+    setTimeout(async () => {
+      await window.electronAPI.restartAddonServer();
+    }, 2500);
   }
 
   async function deleteAddon(addon: CommunityAddon) {
@@ -74,8 +76,8 @@
 
   async function proceedWithInstall() {
     if (selectedAddon) {
-      await installAddon(selectedAddon);
       closeWarningModal();
+      await installAddon(selectedAddon);
     }
   }
   const unsub = communityAddonsLocal.subscribe((addons) => {

@@ -35,7 +35,6 @@
   import ConfigurationModal from './components/modal/ConfigurationModal.svelte';
   import LibraryView from './views/LibraryView.svelte';
   import GameManager from './managers/GameManager.svelte';
-  import Tasks from './views/Tasks.svelte';
   import type { BasicLibraryInfo, OGIAddonConfiguration } from 'ogi-addon';
   import type { ConfigurationFile } from 'ogi-addon/config';
   import Debug from './managers/Debug.svelte';
@@ -621,14 +620,6 @@
               out:fly={{ x: -100, duration: 300 }}
             >
               <LibraryView bind:exitPlayPage />
-            </div>
-          {:else if $selectedView === 'tasks'}
-            <div
-              class="content-view"
-              in:fly={{ x: 100, duration: 400, easing: quintOut }}
-              out:fly={{ x: -100, duration: 300 }}
-            >
-              <Tasks />
             </div>
           {:else if $selectedView === 'discovery'}
             <div

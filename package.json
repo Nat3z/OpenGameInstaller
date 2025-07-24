@@ -16,5 +16,8 @@
   "devDependencies": {
     "prettier": "^3.6.2",
     "prettier-plugin-svelte": "^3.4.0"
+  },
+  "overrides": {
+    "@types/minimatch": "5.1.2"
   }
 }

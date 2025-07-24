@@ -81,6 +81,7 @@ export type SearchResultWithSource = BasicLibraryInfo & { addonsource: string };
 export const currentDownloads: Writable<DownloadStatusAndInfo[]> = writable([]);
 export const failedSetups: Writable<FailedSetup[]> = writable([]);
 export const deferredTasks: Writable<DeferredTask[]> = writable([]);
+export const removedTasks: Writable<string[]> = writable([]);
 export const notifications: Writable<Notification[]> = writable([]);
 export const notificationHistory: Writable<Notification[]> = writable([]);
 export const showNotificationSideView: Writable<boolean> = writable(false);
@@ -97,8 +98,7 @@ export type Views =
   | 'clientoptions'
   | 'downloader'
   | 'discovery'
-  | 'library'
-  | 'tasks';
+  | 'library';
 export const selectedView: Writable<Views> = writable('downloader');
 
 export const viewOpenedWhenChanged: Writable<Views | undefined> =

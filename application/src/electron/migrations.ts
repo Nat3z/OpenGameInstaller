@@ -4,6 +4,8 @@ import { join } from 'path';
 import { __dirname } from './paths.js';
 import semver from 'semver';
 import { VERSION } from './main.js';
+import { setupAddon } from './addon-init-configure.js';
+import { exec } from 'child_process';
 
 let migrations: {
   [key: string]: {
@@ -36,6 +38,31 @@ let migrations: {
         join(__dirname, 'config/option/general.json'),
         JSON.stringify(generalConfigObj)
       );
+      // use git to install the addon
+      const addonPath = join(__dirname, 'addons/steam-integration');
+      await new Promise<void>((resolve, reject) => {
+        exec(
+          `git clone https://github.com/Nat3z/steam-integration ${addonPath}`,
+          (err, stdout, stderr) => {
+            if (err) {
+              console.error(err);
+              reject();
+              return;
+            }
+            console.log(stdout);
+            console.log(stderr);
+            setupAddon(addonPath).then((success) => {
+              if (!success) {
+                console.error('Failed to setup the addon');
+                reject();
+                return;
+              }
+              console.log('Addon installed successfully');
+              resolve();
+            });
+          }
+        );
+      });
     },
   },
 };

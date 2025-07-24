@@ -111,8 +111,7 @@ Running post-setup script for ${addonName}...
 export async function startAddon(addonPath: string, addonLink: string) {
   const addonConfig = await readFile(join(addonPath, 'addon.json'), 'utf-8');
   // remove any trailing slashes
-  addonPath = addonPath.replace(/\/$/, '');
-  const addonName = addonPath.split('/').pop();
+  const addonName = addonPath.replace(/\/$/, '').split(/\/|\\/).pop();
   if (!addonConfig) {
     sendNotification({
       type: 'error',
@@ -130,11 +129,16 @@ export async function startAddon(addonPath: string, addonLink: string) {
       addonPath
     );
     let attempts = 0;
-    await new Promise((resolve, reject) => {
+    const success = await new Promise<boolean>((resolve) => {
       const interval = setInterval(() => {
         if (attempts > 10) {
           clearInterval(interval);
-          reject(new Error('Addon not found'));
+          console.error(
+            'Addon ' +
+              addonName +
+              ' not found in clients. Cannot attach path nor link.'
+          );
+          resolve(false);
           return;
         }
 
@@ -146,6 +150,9 @@ export async function startAddon(addonPath: string, addonLink: string) {
         attempts++;
       }, 500);
     });
+    if (!success) {
+      return;
+    }
     let client = clients.get(addonName!);
     if (client) {
       client.filePath = addonPath;

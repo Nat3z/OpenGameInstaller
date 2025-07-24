@@ -9,6 +9,7 @@ import {
   type FailedSetup,
   type DeferredTask,
   type DownloadStatusAndInfo,
+  removedTasks,
 } from './store';
 import type { ResponseDeferredTask } from '../electron/server/api/defer.js';
 
@@ -682,106 +683,6 @@ export async function startDownload(
     }
   }
 }
-type GameRequirements = {
-  minimum: string;
-  recommended: string;
-};
-
-type PackageGroup = {
-  name: string;
-  title: string;
-  description: string;
-  selection_text: string;
-  save_text: string;
-  display_type: number;
-  is_recurring_subscription: string;
-  subs: {
-    packageid: number;
-    percent_savings_text: string;
-    percent_savings: number;
-    option_text: string;
-    option_description: string;
-    can_get_free_license: string;
-    is_free_license: boolean;
-    price_in_cents_with_discount: number;
-  }[];
-};
-
-type Category = {
-  id: number;
-  description: string;
-};
-
-type Genre = {
-  id: string;
-  description: string;
-};
-
-type Screenshot = {
-  id: number;
-  path_thumbnail: string;
-  path_full: string;
-};
-
-type PlatformSupport = {
-  windows: boolean;
-  mac: boolean;
-  linux: boolean;
-};
-
-type PriceOverview = {
-  currency: string;
-  initial: number;
-  final: number;
-  discount_percent: number;
-  initial_formatted: string;
-  final_formatted: string;
-};
-
-type Metacritic = {
-  score: number;
-  url: string;
-};
-
-export type GameData = {
-  type: string;
-  name: string;
-  steam_appid: number;
-  required_age: number;
-  is_free: boolean;
-  controller_support: string;
-  dlc: number[];
-  detailed_description: string;
-  about_the_game: string;
-  short_description: string;
-  supported_languages: string;
-  reviews: string;
-  header_image: string;
-  capsule_image: string;
-  capsule_imagev5: string;
-  website: string;
-  pc_requirements: GameRequirements;
-  mac_requirements: GameRequirements;
-  linux_requirements: GameRequirements[];
-  legal_notice: string;
-  developers: string[];
-  publishers: string[];
-  price_overview: PriceOverview;
-  packages: number[];
-  package_groups: PackageGroup[];
-  platforms: PlatformSupport;
-  metacritic: Metacritic;
-  categories: Category[];
-  recommendations: {
-    total: number;
-  };
-  genres: Genre[];
-  screenshots: Screenshot[];
-  release_date: {
-    coming_soon: boolean;
-    date: string;
-  };
-};
 
 // Failed setup management functions
 export async function loadFailedSetups() {
@@ -940,48 +841,40 @@ export async function retryFailedSetup(failedSetup: FailedSetup) {
 }
 
 // Task management functions
-export async function loadDeferredTasks() {
+export async function loadDeferredTasks(removedTasks: string[] = []) {
   try {
     const response = await window.electronAPI.app.request('getAllTasks', {});
 
     if (response.status === 200) {
       const tasks = response.data as ResponseDeferredTask[];
       deferredTasks.set(
-        tasks.map((task: ResponseDeferredTask) => ({
-          id: task.id,
-          name: `Task ${task.id}`,
-          description: 'Background task',
-          addonOwner: task.addonOwner,
-          status: task.finished
-            ? task.failed
-              ? 'error'
-              : 'completed'
-            : 'running',
-          progress: task.progress || 0,
-          failed: task.failed,
-          logs: task.logs || [],
-          timestamp: Date.now(),
-          duration: undefined,
-          error: task.failed || undefined,
-          type: 'other',
-        }))
+        tasks
+          .filter(
+            (task: ResponseDeferredTask) => !removedTasks.includes(task.id)
+          )
+          .map((task: ResponseDeferredTask) => ({
+            id: task.id,
+            name: `Task ${task.id}`,
+            description: 'Background task',
+            addonOwner: task.addonOwner,
+            status: task.finished
+              ? task.failed
+                ? 'error'
+                : 'completed'
+              : 'running',
+            progress: task.progress || 0,
+            failed: task.failed,
+            logs: task.logs || [],
+            timestamp: Date.now(),
+            duration: undefined,
+            error: task.failed || undefined,
+            type: 'other',
+          }))
       );
     }
   } catch (error) {
     console.error('Error loading deferred tasks:', error);
   }
-}
-
-export function startTaskPolling() {
-  const pollInterval = setInterval(async () => {
-    await loadDeferredTasks();
-  }, 1000);
-
-  return pollInterval;
-}
-
-export function stopTaskPolling(intervalId: ReturnType<typeof setInterval>) {
-  clearInterval(intervalId);
 }
 
 export async function cancelTask(taskId: string) {
@@ -1010,6 +903,7 @@ export function clearCompletedTasks() {
   );
 }
 
-export function clearAllTasks() {
+export function clearAllTasks(tasks: string[]) {
+  removedTasks.set(tasks);
   deferredTasks.update(() => []);
 }

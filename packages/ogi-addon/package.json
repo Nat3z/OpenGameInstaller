@@ -44,6 +44,7 @@
     "release-beta": "bun run build && npm publish --tag future"
   },
   "devDependencies": {
+    "@types/minimatch": "^6.0.0",
     "@types/node": "^20.14.12",
     "@types/ws": "^8.4.0",
     "prettier": "^3.6.0",

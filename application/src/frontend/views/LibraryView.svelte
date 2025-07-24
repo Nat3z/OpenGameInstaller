@@ -4,6 +4,7 @@
   import PlayPage from '../components/PlayPage.svelte';
   import { gameFocused } from '../store';
   import { writable, type Writable } from 'svelte/store';
+  import Image from '../components/Image.svelte';
 
   let library: LibraryInfo[] = $state([]);
   let recentlyPlayed: LibraryInfo[] = $state([]);
@@ -166,9 +167,10 @@
                 class="ml-4 flex-shrink-0 border-none transition-all shadow-lg hover:shadow-xl rounded-lg overflow-hidden bg-white"
                 onclick={() => ($selectedApp = app)}
               >
-                <img
+                <Image
                   src={app.capsuleImage}
                   alt={app.name}
+                  classifier={app.appID.toString() + '-capsule'}
                   class="w-48 h-72 object-cover"
                 />
               </button>
@@ -237,9 +239,10 @@
                       class="ml-4 border-none transition-all shadow-lg hover:shadow-xl rounded-lg overflow-hidden bg-white"
                       onclick={() => ($selectedApp = app)}
                     >
-                      <img
+                      <Image
                         src={app.capsuleImage}
                         alt={app.name}
+                        classifier={app.appID.toString() + '-capsule'}
                         class="w-36 h-54 object-cover"
                       />
                     </button>
@@ -283,6 +286,6 @@
     box-shadow:
       0 16px 36px 0 rgba(0, 0, 0, 0.2),
       0 2px 8px 0 rgba(0, 0, 0, 0.12);
-    z-index: 2;
+    z-index: 1;
   }
 </style>

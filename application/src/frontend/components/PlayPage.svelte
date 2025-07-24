@@ -11,6 +11,9 @@
   import { onDestroy } from 'svelte';
   import SettingsFilled from '../Icons/SettingsFilled.svelte';
   import GameConfiguration from './GameConfiguration.svelte';
+  import { fly } from 'svelte/transition';
+  import { quintOut } from 'svelte/easing';
+  import Image from './Image.svelte';
 
   interface Props {
     libraryInfo: LibraryInfo;
@@ -128,10 +131,12 @@
 
 <div
   class="flex flex-col top-0 left-0 absolute w-full h-full bg-white z-[2] animate-fade-in-pop-fast"
+  out:fly={{ x: 100, duration: 500, easing: quintOut }}
 >
   <!-- Hero Banner Section -->
   <div class="relative w-full h-64 overflow-hidden">
-    <img
+    <Image
+      classifier={libraryInfo.appID.toString() + '-cover'}
       src={libraryInfo.coverImage}
       alt={libraryInfo.name}
       class="w-full h-full object-cover rounded-lg"

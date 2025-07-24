@@ -24,6 +24,7 @@
   import HeaderModal from './modal/HeaderModal.svelte';
   import SectionModal from './modal/SectionModal.svelte';
   import TextModal from './modal/TextModal.svelte';
+  import { fade } from 'svelte/transition';
 
   interface Props {
     appID: number;
@@ -271,7 +272,14 @@
 {#if gameData}
   <main class="flex flex-col w-full h-full">
     {#if loading}
-      <p class="py-2 px-4">Loading...</p>
+      <div class="flex justify-center items-center w-full h-full">
+        <div class="loading-container">
+          <div class="loading-message" in:fade={{ duration: 300 }}>
+            <div class="loading-spinner"></div>
+            <p class="text-lg">Loading store page...</p>
+          </div>
+        </div>
+      </div>
     {:else if normalizedGameData}
       <!-- Unified Store Layout -->
       <!-- Hero Banner Section -->
@@ -441,7 +449,12 @@
   </div>
 {:else}
   <div class="flex justify-center items-center w-full h-full">
-    <p class="text-2xl">Loading...</p>
+    <div class="loading-container">
+      <div class="loading-message" in:fade={{ duration: 300 }}>
+        <div class="loading-spinner"></div>
+        <p class="text-lg">Loading store page...</p>
+      </div>
+    </div>
   </div>
 {/if}
 

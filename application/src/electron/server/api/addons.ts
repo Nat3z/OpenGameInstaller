@@ -13,6 +13,7 @@ import * as fs from 'fs/promises';
 import { join } from 'path';
 import { restartAddonServer } from '../../handlers/addon-manager.js';
 import { __dirname } from '../../paths.js';
+import { StoreData } from 'ogi-addon';
 
 const procedures: Record<string, Procedure<any>> = {
   // Get all addon info
@@ -61,15 +62,11 @@ const procedures: Record<string, Procedure<any>> = {
     .input(
       z.object({
         addonID: z.string(),
-        steamappid: z.string().optional(),
-        gameID: z.string().optional(),
+        appID: z.number(),
+        storefront: z.string(),
       })
     )
     .handler(async (input) => {
-      if (!input.steamappid && !input.gameID) {
-        return new ProcedureError(400, 'No query provided');
-      }
-
       const client = clients.get(input.addonID);
       if (!client) return new ProcedureError(404, 'Client not found');
 
@@ -77,12 +74,8 @@ const procedures: Record<string, Procedure<any>> = {
         const event = await client.sendEventMessage({
           event: 'search',
           args: {
-            text: input.gameID ?? input.steamappid,
-            type: input.gameID
-              ? 'internal'
-              : input.steamappid
-                ? 'steamapp'
-                : '',
+            appID: input.appID,
+            storefront: input.storefront,
           },
         });
         console.log('searchComplete', event.args);
@@ -206,12 +199,12 @@ const procedures: Record<string, Procedure<any>> = {
       })
     )
     .handler(async (input) => {
-      const client = Array.from(clients.values()).find(
+      const clientsWithStorefront = Array.from(clients.values()).filter(
         (client) =>
           client.addonInfo.storefronts.includes(input.storefront) &&
           client.addonInfo.storeFrontServerCapable
       );
-      if (!client)
+      if (clientsWithStorefront.length === 0)
         return new ProcedureError(
           404,
           'Client not found to serve this storefront'
@@ -219,13 +212,24 @@ const procedures: Record<string, Procedure<any>> = {
 
       const gameID = parseInt(input.gameID);
       const deferrableTask = new DeferrableTask(async () => {
-        const data = await client.sendEventMessage({
-          event: 'game-details',
-          args: gameID,
-        });
-        data.args.description = sanitize(data.args.description);
-        return data.args;
-      }, client.addonInfo.id);
+        // find a client that can serve this storefront
+        let appDetails: StoreData | undefined;
+        for (const client of clientsWithStorefront) {
+          const data = await client.sendEventMessage({
+            event: 'game-details',
+            args: gameID,
+          });
+          if (data.args) {
+            appDetails = data.args;
+            break;
+          }
+        }
+        if (!appDetails) {
+          return new ProcedureError(404, 'No app details found');
+        }
+        appDetails.description = sanitize(appDetails.description);
+        return appDetails;
+      }, '*');
 
       return new ProcedureDeferTask(200, deferrableTask);
     }),

@@ -129,7 +129,7 @@ export interface EventListenerTypes {
    * @returns
    */
   search: (
-    query: { type: 'steamapp' | 'internal'; text: string },
+    query: { storefront: string; appID: number },
     event: EventResponse<SearchResult[]>
   ) => void;
   /**

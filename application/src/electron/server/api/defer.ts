@@ -55,7 +55,8 @@ const procedures: Record<string, Procedure<any>> = {
 
       // check if the addon is still running
       const stillExists = clients.has(task.addonOwner);
-      if (!stillExists) {
+      // when the addon owner is *, we don't need to check if it's still connected as it's a global task spawned by the server
+      if (!stillExists && task.addonOwner !== '*') {
         DeferredTasks.removeTask(input.taskID);
         return new ProcedureError(410, 'Addon is no longer connected');
       }

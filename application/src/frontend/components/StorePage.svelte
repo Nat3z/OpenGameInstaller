@@ -4,7 +4,6 @@
     fetchAddonsWithConfigure,
     safeFetch,
     startDownload,
-    type GameData,
     type SearchResultWithAddon,
   } from '../utils';
   import {
@@ -33,8 +32,7 @@
   let { appID, storefront }: Props = $props();
 
   let results: SearchResultWithAddon[] = $state([]);
-  let gameData: (GameData & { hero_image: string }) | StoreData | undefined =
-    $state();
+  let gameData: StoreData | undefined = $state();
   let loading = $state(true);
   let queryingSources = $state(false);
   let selectedResult: SearchResultWithAddon | undefined = $state();
@@ -44,136 +42,26 @@
     './library/' + appID + '.json'
   );
 
-  let normalizedGameData:
-    | {
-        hero_image: string;
-        name: string;
-        publishers: string[];
-        developers: string[];
-        release_date: string;
-        detailed_description: string;
-      }
-    | undefined = $state();
-
-  $effect(() => {
-    if (!gameData) {
-      normalizedGameData = undefined;
-      return;
-    }
-
-    if (isSteamStore) {
-      const steamData = gameData as GameData & { hero_image: string };
-      normalizedGameData = {
-        hero_image: steamData.hero_image,
-        name: steamData.name,
-        publishers: steamData.publishers,
-        developers: steamData.developers,
-        release_date: steamData.release_date.date,
-        detailed_description: steamData.detailed_description,
-      };
-    } else {
-      const customData = gameData as StoreData;
-      normalizedGameData = {
-        hero_image: customData.headerImage,
-        name: customData.name,
-        publishers: customData.publishers,
-        developers: customData.developers,
-        release_date: customData.releaseDate,
-        detailed_description: customData.description,
-      };
-    }
-  });
-
-  // Check if this is a Steam store page
-  const isSteamStore = storefront === 'steam';
-
   onMount(async () => {
     isOnline = await window.electronAPI.app.isOnline();
-    if (!isOnline && isSteamStore) {
+    if (!isOnline) {
       loading = false;
       return;
     }
 
     try {
-      if (isSteamStore) {
-        await loadSteamStoreData();
-      } else {
-        await loadCustomStoreData();
-      }
+      await loadCustomStoreData();
     } catch (ex) {
       console.error(ex);
       createNotification({
         id: Math.random().toString(36).substring(7),
-        message: `Failed to fetch ${isSteamStore ? 'Steam' : 'Custom'} store page`,
+        message: `Failed to fetch store page`,
         type: 'error',
       });
       currentStorePageOpened.set(undefined);
       currentStorePageOpenedStorefront.set(undefined);
     }
   });
-
-  async function loadSteamStoreData() {
-    // Add Steam as default source
-
-    const response = await window.electronAPI.app.axios({
-      method: 'get',
-      url: 'https://store.steampowered.com/api/appdetails?appids=' + appID,
-      headers: {
-        'Accept-Language': 'en-US,en;q=0.5',
-      },
-    });
-
-    if (!response.data[appID].success) {
-      throw new Error('Failed to fetch Steam store page');
-    }
-
-    const responseData: GameData = response.data[appID].data;
-    gameData = {
-      ...responseData,
-      hero_image: `https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/${appID}/library_hero.jpg`,
-    };
-    loading = false;
-
-    // Fetch addon sources for Steam games
-    if (!alreadyOwns) {
-      let addons = await fetchAddonsWithConfigure();
-      queryingSources = true;
-      let sourcesQueries = 0;
-
-      if (addons.length === 0) {
-        queryingSources = false;
-        return;
-      }
-
-      for (const addon of addons) {
-        safeFetch(
-          'search',
-          {
-            addonID: addon.id,
-            steamappid: String(appID),
-          },
-          { consume: 'json' }
-        ).then((data) => {
-          sourcesQueries++;
-          if (sourcesQueries === addons.length) {
-            queryingSources = false;
-          }
-          results = [
-            ...results,
-            ...data.map((result: SearchResult) => {
-              return {
-                ...result,
-                coverImage: `https://steamcdn-a.akamaihd.net/steam/apps/${appID}/library_hero.jpg`,
-                capsuleImage: `https://steamcdn-a.akamaihd.net/steam/apps/${appID}/library_600x900_2x.jpg`,
-                name: result.name,
-                addonSource: addon.id,
-              };
-            }),
-          ];
-        });
-      }
-    }
-  }
 
   async function loadCustomStoreData() {
     const response: StoreData | undefined = await safeFetch(
@@ -204,7 +92,8 @@
         'search',
         {
           addonID: addon.id,
-          gameID: String(appID),
+          appID: appID,
+          storefront: storefront,
         },
         { consume: 'json' }
       );
@@ -227,9 +116,7 @@
   function playGame() {
     if (!gameData) return;
 
-    const gameID = isSteamStore
-      ? (gameData as GameData & { hero_image: string }).steam_appid
-      : (gameData as StoreData).appID;
+    const gameID = (gameData as StoreData).appID;
 
     console.log('Playing game with ID: ' + gameID);
     selectedView.set('library');
@@ -268,14 +155,14 @@
           </div>
         </div>
       </div>
-    {:else if normalizedGameData}
+    {:else if gameData}
       <!-- Unified Store Layout -->
       <!-- Hero Banner Section -->
       <div class="">
         <div class="relative w-full h-64 overflow-hidden rounded-lg">
           <img
-            src={normalizedGameData.hero_image}
-            alt={normalizedGameData.name}
+            src={gameData.headerImage}
+            alt={gameData.name}
             class="w-full h-full object-cover rounded-lg"
           />
           <!-- Overlay with game info -->
@@ -283,17 +170,17 @@
             class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-6 rounded-b-lg"
           >
             <h1 class="text-4xl font-archivo font-bold text-white mb-2">
-              {normalizedGameData.name}
+              {gameData.name}
             </h1>
             <div class="text-sm text-gray-200">
               <span class="text-gray-300">Publisher:</span>
-              {(normalizedGameData.publishers ?? []).join(', ')}
+              {(gameData.publishers ?? []).join(', ')}
               <span class="mx-4"></span>
               <span class="text-gray-300">Developer:</span>
-              {(normalizedGameData.developers ?? []).join(', ')}
+              {(gameData.developers ?? []).join(', ')}
               <br />
               <span class="text-gray-300">Release Date:</span>
-              {normalizedGameData.release_date}
+              {gameData.releaseDate}
             </div>
           </div>
         </div>
@@ -314,7 +201,7 @@
               id="g-descript"
               class="prose max-w-none text-accent-dark pt-4"
             >
-              {@html normalizedGameData.detailed_description}
+              {@html gameData.description}
             </article>
           </div>
         </div>
@@ -435,7 +322,7 @@
       Loading Game Stores is unsupported when you're offline.
     </h1>
   </div>
-{:else if gameData === undefined && !loading}
+{:else if !loading}
   <div class="flex flex-col gap-2 w-full justify-center items-center h-full">
     <img src="./favicon.png" alt="content" class="w-32 h-32" />
     <h1 class="text-2xl text-black">Game not found</h1>
@@ -454,7 +341,6 @@
   </div>
 {/if}
 
-<!-- Source Information Modal (for Steam store only) -->
 {#key selectedResult}
   {#if selectedResult}
     <Modal

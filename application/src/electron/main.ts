@@ -17,7 +17,6 @@ import { __dirname, isDev } from './paths.js';
 import {
   checkForAddonUpdates,
   convertLibrary,
-  getSteamApps,
   IS_NIXOS,
   restoreBackup,
   STEAMTINKERLAUNCH_PATH,
@@ -65,10 +64,6 @@ let mainWindow: BrowserWindow | null;
 
 // restore the backup if it exists
 restoreBackup();
-
-// lazy tasks
-getSteamApps();
-
 interface Notification {
   message: string;
   id: string;

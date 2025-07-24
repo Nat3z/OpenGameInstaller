@@ -2,10 +2,8 @@ import { exec } from 'child_process';
 import { __dirname } from './paths.js';
 import { join } from 'path';
 import fs from 'fs';
-import axios from 'axios';
 import { LibraryInfo } from 'ogi-addon';
 import { app } from 'electron';
-import Fuse from 'fuse.js';
 import { sendNotification } from './main.js';
 
 // check if NixOS using command -v nixos-rebuild

@@ -27,7 +27,6 @@
     loadingResults,
     isOnline,
     createNotification,
-    type SearchResultWithSource,
     fetchCommunityAddons,
     notifications,
     showNotificationSideView,
@@ -52,7 +51,6 @@
   let loading = $state(true);
   let addons: ConfigTemplateAndInfo[] = $state([]);
   let showSearchResults = $state(false);
-  let searchResults: SearchResultWithSource[] = $state([]);
   let searchTimeout: NodeJS.Timeout | null = null;
 
   let recentlyLaunchedApps: LibraryInfo[] = $state([]);
@@ -105,29 +103,23 @@
       searchResultsStore.set([]);
 
       // Search through addons first
-      await Promise.all([
-        ...addons.map(async (addon) => {
-          const response: BasicLibraryInfo[] = await safeFetch(
+      let promises: Promise<void>[] = [];
+      for (const addon of addons) {
+        promises.push(
+          safeFetch(
             'searchQuery',
             {
               addonID: addon.id,
               query: query,
             },
             { consume: 'json' }
-          );
-          searchResultsStore.update((value) => [
-            ...value,
-            ...response.map((result) => ({
-              appID: result.appID,
-              name: result.name,
-              capsuleImage: result.capsuleImage,
-              storefront: result.storefront,
-              addonsource: addon.id,
-            })),
-          ]);
-        }),
-      ]);
-
+          ).then((response: BasicLibraryInfo[]) => {
+            console.log(response);
+            searchResultsStore.update((value) => [...value, ...response]);
+          })
+        );
+      }
+      await Promise.all(promises);
       loadingResults.set(false);
     } catch (ex) {
       console.error(ex);
@@ -163,13 +155,6 @@
 
   function goToListing(appID: number, storefront: string) {
     if (!$isOnline) return;
-    if (storefront === 'steam') {
-      currentStorePageOpened.set(appID);
-      viewOpenedWhenChanged.set($selectedView);
-      currentStorePageOpenedStorefront.set('steam');
-      showSearchResults = false;
-      return;
-    }
     currentStorePageOpened.set(appID);
     currentStorePageOpenedStorefront.set(storefront);
     viewOpenedWhenChanged.set($selectedView);
@@ -555,7 +540,7 @@
                   </div>
                 {/if}
                 <div class="search-results">
-                  {#each searchResults as result, index}
+                  {#each $searchResultsStore as result, index}
                     <div
                       class="search-result-item"
                       in:fly={{ y: 30, duration: 400, delay: 50 * index }}
@@ -568,12 +553,12 @@
                       <div class="result-content">
                         <h3 class="result-title">{result.name}</h3>
                         <p class="result-source">
-                          Source: {result.addonsource}
+                          Storefront: {result.storefront}
                         </p>
                         <button
                           class="result-button"
                           onclick={() =>
-                            goToListing(result.appID, result.addonsource)}
+                            goToListing(result.appID, result.storefront)}
                         >
                           View Details
                         </button>
@@ -581,7 +566,7 @@
                     </div>
                   {/each}
 
-                  {#if searchResults.length === 0 && !$loadingResults}
+                  {#if $searchResultsStore.length === 0 && !$loadingResults}
                     <div class="no-results" in:fade={{ duration: 300 }}>
                       <h3 class="text-xl text-gray-700 mb-2">
                         No Results Found

@@ -8,7 +8,7 @@ const addon = new OGIAddon({
   author: 'OGI Developers',
   description: 'A test addon',
   repository: 'Repository URL',
-  storefronts: ['steam', 'test-front'],
+  storefronts: ['test-front'],
 });
 
 addon.on('configure', (config) =>
@@ -106,11 +106,11 @@ addon.on('exit', () => {
   process.exit(0);
 });
 
-addon.on('search', ({ text, type }, event) => {
+addon.on('search', ({ storefront, appID }, event) => {
   event.defer();
   new Promise(async (resolve) => {
-    if (type === 'internal' || type === 'steamapp') {
-      console.log(text);
+    if (storefront === 'steam') {
+      console.log(appID);
       event.resolve([
         {
           name: 'Magnet Test',
@@ -137,6 +137,7 @@ addon.on('search', ({ text, type }, event) => {
       addon.notify({ type: 'info', message: 'Searching...', id: 'search' });
     }
   });
+  event.resolve([]);
 });
 
 addon.on(

@@ -2,6 +2,7 @@ import wsLib from 'ws';
 import {
   ClientSentEventTypes,
   OGIAddonConfiguration,
+  StoreData,
   WebsocketMessageClient,
   WebsocketMessageServer,
 } from 'ogi-addon';
@@ -292,18 +293,26 @@ export class AddonConnection {
               storefront,
             }: ClientSentEventTypes['get-app-details'] = data.args;
             // query all of the clients for the app details
-            const clientWithStorefront = Array.from(clients.values()).find(
+            const clientsWithStorefront = Array.from(clients.values()).filter(
               (client) =>
                 client.addonInfo.storefronts.includes(storefront) &&
                 client.addonInfo.storeFrontServerCapable
             );
-            const appDetails = await clientWithStorefront?.sendEventMessage(
-              {
-                event: 'game-details',
-                args: appID,
-              },
-              true
-            );
+            // find a storefront that gives app details that isn't undefined
+            let appDetails: StoreData | undefined;
+            for (const client of clientsWithStorefront) {
+              const response = await client.sendEventMessage(
+                {
+                  event: 'game-details',
+                  args: appID,
+                },
+                true
+              );
+              if (response.args) {
+                appDetails = response.args;
+                break;
+              }
+            }
             if (!appDetails) {
               console.error('No app details found for client');
               this.sendEventMessage(
@@ -319,7 +328,7 @@ export class AddonConnection {
             this.sendEventMessage(
               {
                 event: 'response',
-                args: appDetails.args,
+                args: appDetails,
                 id: data.id,
               },
               false

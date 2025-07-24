@@ -334,7 +334,7 @@
     <div class="w-full flex flex-row gap-4 pl-1 mb-8">
       <div class="h-auto w-5/12 relative">
         <img
-          src={targetDownload.coverURL}
+          src={targetDownload.coverImage}
           alt="Game cover"
           class="rounded-lg object-cover bg-no-repeat w-full h-full min-w-0 shadow-lg"
         />
@@ -527,7 +527,7 @@
       >
         <div class="download-image">
           <img
-            src={download.coverURL || './favicon.png'}
+            src={download.coverImage || './favicon.png'}
             alt="Game cover"
             class="game-cover"
           />
@@ -693,7 +693,7 @@
           <div class="failed-setup-header">
             <div class="failed-setup-image">
               <img
-                src={failedSetup.downloadInfo.coverURL || './favicon.png'}
+                src={failedSetup.downloadInfo.coverImage || './favicon.png'}
                 alt="Game cover"
                 class="game-cover"
               />

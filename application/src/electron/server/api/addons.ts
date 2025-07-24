@@ -139,6 +139,27 @@ const procedures: Record<string, Procedure<any>> = {
       return new ProcedureDeferTask(200, deferrableTask);
     }),
 
+  // Get Catalogs
+  getCatalogs: procedure()
+    .input(
+      z.object({
+        addonID: z.string(),
+      })
+    )
+    .handler(async (input) => {
+      const client = clients.get(input.addonID);
+      if (!client) return new ProcedureError(404, 'Client not found');
+
+      const deferrableTask = new DeferrableTask(async () => {
+        const data = await client.sendEventMessage({
+          event: 'catalog',
+          args: {},
+        });
+        return data.args;
+      }, client.addonInfo.id);
+
+      return new ProcedureDeferTask(200, deferrableTask);
+    }),
   // Setup app
   setupApp: procedure()
     .input(

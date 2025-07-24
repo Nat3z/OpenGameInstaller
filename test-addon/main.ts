@@ -176,13 +176,7 @@ multiPartFiles: ${multiPartFiles}
         setTimeout(() => {
           event.resolve({
             cwd: path,
-            capsuleImage: 'https://dummyimage.com/375x500/968d96/ffffff',
-            coverImage: 'https://dummyimage.com/375x500/968d96/ffffff',
             launchExecutable: 'test.exe',
-            name: name,
-            appID: appID,
-            storefront: 'internal',
-            addonsource: 'test-addon',
             version: '1.0.0',
           });
         }, 5000);

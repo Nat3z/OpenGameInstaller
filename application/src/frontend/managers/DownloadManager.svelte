@@ -122,12 +122,28 @@
   }
 
   async function handleSetupSuccess(
-    data: LibraryInfo,
+    data: Omit<
+      LibraryInfo,
+      | 'capsuleImage'
+      | 'coverImage'
+      | 'name'
+      | 'appID'
+      | 'storefront'
+      | 'addonsource'
+    >,
     downloadedItem: DownloadStatusAndInfo,
     finalStatus: 'seeding' | 'setup-complete'
   ) {
     if (downloadedItem === undefined) return;
-    window.electronAPI.app.insertApp(data);
+    window.electronAPI.app.insertApp({
+      ...data,
+      capsuleImage: downloadedItem.capsuleImage,
+      coverImage: downloadedItem.coverImage,
+      name: downloadedItem.name,
+      appID: downloadedItem.appID,
+      storefront: downloadedItem.storefront,
+      addonsource: downloadedItem.addonSource,
+    });
     updateDownloadStatus(downloadedItem.id, {
       status: finalStatus,
       downloadPath: downloadedItem.downloadPath,

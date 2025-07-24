@@ -210,7 +210,8 @@ export async function safeFetch(
 
 export type SearchResultWithAddon = SearchResult & {
   addonSource: string;
-  coverURL: string;
+  capsuleImage: string;
+  coverImage: string;
 };
 export async function startDownload(
   result: SearchResultWithAddon,
@@ -292,8 +293,9 @@ export async function startDownload(
       startDownload(
         {
           ...response,
-          coverURL: result.coverURL,
           addonSource: result.addonSource,
+          capsuleImage: result.capsuleImage,
+          coverImage: result.coverImage,
         },
         appID,
         event

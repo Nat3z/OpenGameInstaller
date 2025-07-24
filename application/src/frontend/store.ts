@@ -21,7 +21,8 @@ export type DownloadStatusAndInfo = SearchResult & {
   downloadSpeed: number;
   downloadSize: number;
   addonSource: string;
-  coverURL?: string;
+  capsuleImage: string;
+  coverImage: string;
   ratio?: number;
   part?: number;
   totalParts?: number;

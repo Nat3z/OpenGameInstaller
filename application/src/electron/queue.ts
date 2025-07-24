@@ -30,11 +30,15 @@ export class Queue<T = any> {
               resolve('fulfilled');
               return;
             }
-
             update(pos);
           };
           this.queueListeners.set(id, listener);
-          listener(this.queue.length, false);
+          if (this.queue.length === 1) {
+            // automatically dequeue if there is only one item in the queue
+            this.dequeue();
+          } else {
+            listener(this.queue.length, false);
+          }
         }),
       cancelHandler: (cancel: (handle: () => void) => void) => {
         cancel(() => {
@@ -43,6 +47,7 @@ export class Queue<T = any> {
         });
       },
       finish: () => {
+        console.log('[Queue] Finishing download: ' + id);
         this.finish(id);
       },
     };
@@ -61,7 +66,10 @@ export class Queue<T = any> {
     const next = this.queue.shift();
     if (next) {
       this.processing.add(next.id);
+      // Notify listener that this item is now being processed (position 1)
+      this.queueListeners.get(next.id)?.(1, false);
       this.queueListeners.delete(next.id);
+      // Update positions for remaining items
       this.queue.forEach((q, index) => {
         this.queueListeners.get(q.id)?.(index + 1);
       });
@@ -76,7 +84,7 @@ export class Queue<T = any> {
    */
   finish(id: string) {
     this.processing.delete(id);
-    this.dequeue();
+    console.log('[Queue] Finished. Next in queue: ', this.dequeue());
   }
 
   /**

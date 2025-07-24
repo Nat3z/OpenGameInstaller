@@ -19,7 +19,9 @@ export type OGIAddonEvent =
   | 'library-search'
   | 'game-details'
   | 'exit'
-  | 'request-dl';
+  | 'request-dl'
+  | 'catalog';
+
 export type OGIAddonClientSentEvent =
   | 'response'
   | 'authenticate'
@@ -39,7 +41,8 @@ export type OGIAddonServerSentEvent =
   | 'response'
   | 'library-search'
   | 'game-details'
-  | 'request-dl';
+  | 'request-dl'
+  | 'catalog';
 export { ConfigurationBuilder, Configuration, EventResponse, SearchResult };
 const defaultPort = 7654;
 import pjson from '../package.json';
@@ -142,7 +145,17 @@ export interface EventListenerTypes {
       appID: number;
       storefront: 'steam' | 'internal';
     },
-    event: EventResponse<LibraryInfo>
+    event: EventResponse<
+      Omit<
+        LibraryInfo,
+        | 'capsuleImage'
+        | 'coverImage'
+        | 'name'
+        | 'appID'
+        | 'storefront'
+        | 'addonsource'
+      >
+    >
   ) => void;
 
   /**
@@ -155,12 +168,50 @@ export interface EventListenerTypes {
     query: string,
     event: EventResponse<BasicLibraryInfo[]>
   ) => void;
+
+  /**
+   * This event is emitted when the client requests for a game details to be fetched. Addon should resolve the event with the game details. This is used to generate a store page for the game.
+   * @param appID
+   * @param event
+   * @returns
+   */
   'game-details': (appID: number, event: EventResponse<StoreData>) => void;
+
+  /**
+   * This event is emitted when the client requests for the addon to exit. Use this to perform any cleanup tasks, ending with a `process.exit(0)`.
+   * @returns
+   */
   exit: () => void;
+
+  /**
+   * This event is emitted when the client requests for a download to be performed with the 'request' type. Addon should resolve the event with a SearchResult containing the actual download info.
+   * @param appID
+   * @param info
+   * @param event
+   * @returns
+   */
   'request-dl': (
     appID: number,
     info: SearchResult,
     event: EventResponse<SearchResult>
+  ) => void;
+
+  /**
+   * This event is emitted when the client requests for a catalog to be fetched. Addon should resolve the event with the catalog.
+   * @param event
+   * @returns
+   */
+  catalog: (
+    event: Omit<
+      EventResponse<{
+        [key: string]: {
+          name: string;
+          description: string;
+          listings: BasicLibraryInfo[];
+        };
+      }>,
+      'askForInput'
+    >
   ) => void;
 }
 
@@ -596,6 +647,18 @@ class OGIAddonWSListener {
             );
           }
           this.respondToMessage(message.id!!, requestDLResult.data);
+          break;
+        case 'catalog':
+          let catalogEvent = new EventResponse<{
+            [key: string]: {
+              name: string;
+              description: string;
+              listings: BasicLibraryInfo[];
+            };
+          }>();
+          this.eventEmitter.emit('catalog', catalogEvent);
+          const catalogResult = await this.waitForEventToRespond(catalogEvent);
+          this.respondToMessage(message.id!!, catalogResult.data);
           break;
       }
     });

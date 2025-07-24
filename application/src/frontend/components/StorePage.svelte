@@ -167,7 +167,8 @@
             ...data.map((result: SearchResult) => {
               return {
                 ...result,
-                coverURL: `https://steamcdn-a.akamaihd.net/steam/apps/${appID}/library_hero.jpg`,
+                coverImage: `https://steamcdn-a.akamaihd.net/steam/apps/${appID}/library_hero.jpg`,
+                capsuleImage: `https://steamcdn-a.akamaihd.net/steam/apps/${appID}/library_600x900_2x.jpg`,
                 name: result.name,
                 addonSource: addon.id,
               };
@@ -220,7 +221,8 @@
         ...searchResults.map((result: SearchResult) => {
           return {
             ...result,
-            coverURL: (gameData as StoreData).coverImage,
+            coverImage: (gameData as StoreData).coverImage,
+            capsuleImage: (gameData as StoreData).capsuleImage,
             name: (gameData as StoreData).name!,
             addonSource: addon.id,
           };

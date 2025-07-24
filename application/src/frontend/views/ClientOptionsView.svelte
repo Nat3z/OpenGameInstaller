@@ -175,6 +175,17 @@
             document.dispatchEvent(new Event('dbg:priority-test-trigger'));
           },
         },
+        triggerOOBE: {
+          displayName: 'Trigger OOBE',
+          description: 'Trigger the Out of Box Experience',
+          defaultValue: '',
+          value: '',
+          type: 'action',
+          action: () => {
+            window.electronAPI.fs.delete('./config/option/installed.json');
+            window.location.reload();
+          },
+        },
         describerEnd: {
           displayName: 'Restart to Apply Changes',
           description: '',

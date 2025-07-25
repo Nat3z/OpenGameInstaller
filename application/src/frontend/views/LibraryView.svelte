@@ -174,7 +174,7 @@
                       alt={app.name}
                       classifier={app.appID.toString() + '-capsule'}
                       onerror={(e) => {
-                        const fallback = '/favicon.png';
+                        const fallback = './favicon.png';
                         const img = e.currentTarget as HTMLImageElement;
                         if (img.src !== fallback) {
                           img.src = fallback;
@@ -273,7 +273,7 @@
                           alt={app.name}
                           classifier={app.appID.toString() + '-capsule'}
                           onerror={(e) => {
-                            const fallback = '/favicon.png';
+                            const fallback = './favicon.png';
                             const img = e.currentTarget as HTMLImageElement;
                             if (img.src !== fallback) {
                               img.src = fallback;

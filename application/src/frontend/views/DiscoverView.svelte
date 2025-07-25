@@ -322,7 +322,7 @@
                           class="w-32 h-48 object-cover"
                           loading="lazy"
                           onerror={(e) => {
-                            const fallback = '/favicon.png';
+                            const fallback = './favicon.png';
                             const img = e.currentTarget as HTMLImageElement;
                             if (img.src !== fallback) {
                               img.src = fallback;

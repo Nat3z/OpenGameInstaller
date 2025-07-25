@@ -100,7 +100,7 @@ export type Views =
   | 'downloader'
   | 'discovery'
   | 'library';
-export const selectedView: Writable<Views> = writable('downloader');
+export const selectedView: Writable<Views> = writable('library');
 
 export const viewOpenedWhenChanged: Writable<Views | undefined> =
   writable(undefined);

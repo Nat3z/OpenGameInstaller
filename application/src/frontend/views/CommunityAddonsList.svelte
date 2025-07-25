@@ -19,6 +19,7 @@
   let deleteConfirmationModalAddon: CommunityAddon | null = $state(null);
 
   async function installAddon(addon: CommunityAddon) {
+    console.log('installing', addon);
     console.log(`Installing ${addon.name} by ${addon.author}`);
 
     if (!currentAddons.addons) {
@@ -58,6 +59,8 @@
       JSON.stringify(currentAddons, null, 2)
     );
     await window.electronAPI.restartAddonServer();
+    // close the modal
+    deleteConfirmationModalAddon = null;
   }
 
   async function deleteAddonWarning(addon: CommunityAddon) {
@@ -74,10 +77,10 @@
     selectedAddon = null;
   }
 
-  async function proceedWithInstall() {
-    if (selectedAddon) {
+  async function proceedWithInstall(addon: CommunityAddon) {
+    if (addon) {
       closeWarningModal();
-      await installAddon(selectedAddon);
+      await installAddon(addon);
     }
   }
   const unsub = communityAddonsLocal.subscribe((addons) => {
@@ -140,7 +143,7 @@
             <ButtonModal
               text="Proceed"
               variant="danger"
-              onclick={proceedWithInstall}
+              onclick={() => proceedWithInstall(selectedAddon!)}
             />
           </div>
         </Modal>

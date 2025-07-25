@@ -9,7 +9,7 @@
   import CommunityAddonsList from './CommunityAddonsList.svelte';
   import AddonPicture from '../components/AddonPicture.svelte';
   import FocusedAddonView from './FocusedAddonView.svelte';
-  import { writable, type Writable } from 'svelte/store';
+  import { writable } from 'svelte/store';
   import Modal from '../components/modal/Modal.svelte';
   import TextModal from '../components/modal/TextModal.svelte';
   import TitleModal from '../components/modal/TitleModal.svelte';
@@ -23,33 +23,30 @@
   let communityAddonsInfo: boolean = $state(false);
   let showAddonAddModal: boolean = $state(false);
   let addonUrl: string = $state('');
+  let pollingInterval: any = null;
+  let view = writable<'my-addons' | 'community-addons'>('my-addons');
+
   onMount(() => {
+    // Initial fetch
     safeFetch('getAllAddons', {}).then((data) => {
       addons = data;
     });
+    // Start polling every 3 seconds
+    pollingInterval = setInterval(() => {
+      safeFetch('getAllAddons', {}).then((data) => {
+        addons = data;
+      });
+    }, 3000);
   });
   interface ConfigTemplateAndInfo extends OGIAddonConfiguration {
     configTemplate: ConfigurationFile;
   }
 
-  let addonsWithUpdates: string[] = $state([]);
-  const unsubscribe = addonUpdates.subscribe((update) => {
-    addonsWithUpdates = update;
-  });
-
   onDestroy(() => {
-    unsubscribe();
-    unsubscribe1();
+    if (pollingInterval) clearInterval(pollingInterval);
   });
 
-  let view: Writable<'my-addons' | 'community-addons'> = writable('my-addons');
   let focusedAddonId: string | null = $state(null);
-
-  const unsubscribe1 = view.subscribe(() => {
-    safeFetch('getAllAddons', {}).then((data) => {
-      addons = data;
-    });
-  });
 
   function openAddonSettings(addonId: string) {
     focusedAddonId = addonId;
@@ -72,10 +69,10 @@
         message: 'Addons updated successfully',
         type: 'success',
       });
-      // Refresh the addons list after update
-      safeFetch('getAllAddons', {}).then((data) => {
-        addons = data;
-      });
+      addonUpdates.set([]);
+      // restart the addon server
+      await window.electronAPI.restartAddonServer();
+      // No need to manually refresh addons, polling will handle it
     } catch (error) {
       createNotification({
         id: Math.random().toString(36).substring(7),
@@ -126,14 +123,7 @@
         addonId={focusedAddonId}
         onBack={goBackToList}
         refreshAddon={() => {
-          console.log('Refreshing addon');
-          safeFetch('getAllAddons', {})
-            .then((data) => {
-              addons = data;
-            })
-            .catch((e) => {
-              console.error(e);
-            });
+          /* no-op, polling handles refresh */
         }}
       />
     </div>
@@ -170,7 +160,7 @@
                 ></g
               ></svg
             >
-            {#if addonsWithUpdates.length > 0}
+            {#if $addonUpdates.length > 0}
               <div
                 class="absolute -bottom-1 -right-1 bg-yellow-500 rounded-full w-4 h-4 animate-pulse"
               ></div>
@@ -197,13 +187,13 @@
         {/if}
         <button
           data-selected={$view === 'my-addons'}
-          onclick={() => ($view = 'my-addons')}
+          onclick={() => view.set('my-addons')}
           class="h-full flex-1 border-none text-accent-dark font-archivo rounded-lg bg-accent-lighter data-[selected=true]:bg-accent-light shadow-md text-lg hover:bg-accent-light transition-colors"
           >My Addons</button
         >
         <button
           data-selected={$view === 'community-addons'}
-          onclick={() => ($view = 'community-addons')}
+          onclick={() => view.set('community-addons')}
           class="h-full flex-1 border-none text-accent-dark rounded-lg bg-accent-lighter shadow-md data-[selected=true]:bg-accent-light font-archivo text-lg hover:bg-accent-light transition-colors"
           >Community Addons</button
         >
@@ -259,7 +249,9 @@
                         addonId={addon.id}
                         class="addon-icon rounded-lg"
                       />
-                      {#if addonsWithUpdates.includes(addon.id)}
+                      {#if $addonUpdates
+                        .map((update) => update.toLowerCase())
+                        .includes(addon.repository.toLowerCase())}
                         <div
                           class="absolute -bottom-1 -right-1 bg-yellow-500 rounded-full w-4 h-4 animate-pulse"
                         ></div>
@@ -307,7 +299,6 @@
     </div>
   {/if}
 </div>
-
 {#if communityAddonsInfo}
   <Modal
     size="medium"

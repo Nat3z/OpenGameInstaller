@@ -240,7 +240,7 @@ const procedures: Record<string, Procedure<any>> = {
         for (const client of clientsWithStorefront) {
           const data = await client.sendEventMessage({
             event: 'game-details',
-            args: gameID,
+            args: { appID: gameID, storefront: input.storefront },
           });
           if (data.args) {
             appDetails = data.args;

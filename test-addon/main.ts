@@ -8,7 +8,7 @@ const addon = new OGIAddon({
   author: 'OGI Developers',
   description: 'A test addon',
   repository: 'Repository URL',
-  storefronts: ['test-front'],
+  storefronts: ['test-front', 'steam'],
 });
 
 addon.on('configure', (config) =>
@@ -114,7 +114,6 @@ addon.on('search', ({ storefront, appID }, event) => {
       event.resolve([
         {
           name: 'Magnet Test',
-          storefront: 'steam',
           downloadType: 'magnet',
           filename: 'Big Buck Bunny.mp4',
           downloadURL:
@@ -122,13 +121,11 @@ addon.on('search', ({ storefront, appID }, event) => {
         },
         {
           name: 'Direct Download Test',
-          storefront: 'steam',
           downloadType: 'request',
           filename: 'Big Buck Bunny',
         },
         {
           name: 'Smaller File',
-          storefront: 'steam',
           filename: 'Smaller File.txt',
           downloadType: 'direct',
           downloadURL: 'https://ogi.nat3z.com/api/community.json',
@@ -200,7 +197,7 @@ addon.on('library-search', (text, event) => {
   ]);
 });
 
-addon.on('game-details', (appID, event) => {
+addon.on('game-details', ({ appID, storefront }, event) => {
   if (appID === 1) {
     event.resolve({
       appID: appID,
@@ -214,28 +211,16 @@ addon.on('game-details', (appID, event) => {
       publishers: ['OGI Developers'],
       releaseDate: new Date().toISOString(),
     });
-  } else {
-    event.resolve({
-      name: 'Test App 2',
-      publishers: ['OGI Developers'],
-      developers: ['OGI Developers'],
-      appID: appID,
-      releaseDate: new Date().toISOString(),
-      capsuleImage: 'https://dummyimage.com/375x500/968d96/ffffff',
-      coverImage: 'https://dummyimage.com/375x500/968d96/ffffff',
-      basicDescription: 'The Coolest Test App',
-      description:
-        '<script>alert("hello world")</script><h1>hello world 2</h1>',
-      headerImage: 'https://dummyimage.com/500x350/968d96/ffffff',
-    });
+    return;
   }
+  event.resolve(undefined);
 });
 
 addon.on('catalog', (event) => {
   // for testing purposes, we will ask for gameDetails for the test app 1
   event.defer();
   new Promise(async (resolve) => {
-    const details = (await addon.getAppDetails(2, 'test-front'))!;
+    const details = (await addon.getAppDetails(1, 'test-front'))!;
     event.resolve({
       x: {
         name: 'Test Catalog',

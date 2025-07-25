@@ -306,7 +306,7 @@ export class AddonConnection {
               const response = await client.sendEventMessage(
                 {
                   event: 'game-details',
-                  args: appID,
+                  args: { appID, storefront },
                 },
                 true
               );
@@ -389,8 +389,17 @@ export class AddonConnection {
               messageFromClient.event === 'response' &&
               messageFromClient.id === message.id
             ) {
-              if (messageFromClient.args.statusError) {
-                reject(messageFromClient.args.statusError);
+              if (
+                !messageFromClient.args ||
+                messageFromClient.args.statusError
+              ) {
+                if (!messageFromClient.args)
+                  resolve({
+                    event: 'response',
+                    args: undefined,
+                    id: message.id,
+                  });
+                else reject(messageFromClient.args.statusError);
                 return;
               }
               resolve(messageFromClient);

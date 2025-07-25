@@ -88,6 +88,12 @@
     }
     const searchPromises = [];
     for (const addon of addons) {
+      if (
+        !addon.storefronts.includes(storefront) &&
+        !addon.storefronts.includes('*')
+      )
+        continue;
+
       searchPromises.push(
         safeFetch(
           'search',
@@ -108,6 +114,7 @@
                   capsuleImage: (gameData as StoreData).capsuleImage,
                   name: (gameData as StoreData).name!,
                   addonSource: addon.id,
+                  storefront: storefront,
                 };
               }),
             ];

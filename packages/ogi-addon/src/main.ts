@@ -160,6 +160,7 @@ export interface EventListenerTypes {
         | 'appID'
         | 'storefront'
         | 'addonsource'
+        | 'titleImage'
       >
     >
   ) => void;
@@ -181,7 +182,10 @@ export interface EventListenerTypes {
    * @param event
    * @returns
    */
-  'game-details': (appID: number, event: EventResponse<StoreData>) => void;
+  'game-details': (
+    details: { appID: number; storefront: string },
+    event: EventResponse<StoreData | undefined>
+  ) => void;
 
   /**
    * This event is emitted when the client requests for the addon to exit. Use this to perform any cleanup tasks, ending with a `process.exit(0)`.

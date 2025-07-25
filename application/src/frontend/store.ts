@@ -24,6 +24,7 @@ export type DownloadStatusAndInfo = SearchResult & {
   capsuleImage: string;
   coverImage: string;
   ratio?: number;
+  storefront: string;
   part?: number;
   totalParts?: number;
   queuePosition?: number;

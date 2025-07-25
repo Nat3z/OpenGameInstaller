@@ -13,6 +13,7 @@ In the root of your addon's folder, create a file called `addon.json` using the 
 ```ts
 {
   author: string,
+  icon: string,
   scripts: {
     preSetup: string,
     setup: string,

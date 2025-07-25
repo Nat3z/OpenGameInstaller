@@ -20,11 +20,11 @@ We need `event.defer` so we can tell the addon server that what we're doing will
 
 ## How do I use source searcher?
 
-The `search` event provides two properties, `text` and `type`.
+The `search` event provides two properties, `appID` and `storefront`.
 
-`text` is the gameID of the app which OpenGameInstaller wants the download link to.
+`appID` is the id of the app which OpenGameInstaller wants the download link to.
 
-`type` defines if it is searching for an application that is `internal` or from `steam`. (_You will learn this in the Internal Stores lesson_)
+`storefront` defines where the appID points to in accordance to a storefront. (_You will learn this in the Internal Stores lesson_)
 
 Your function should complete the query, then resolve the **SearchResult** with `event.resolve`
 
@@ -37,11 +37,6 @@ addon.on('search', ({ text, type }, event) => {
   event.resolve([
     {
       name: 'Direct Download Test',
-      description: 'No description',
-      coverURL: 'https://dummyimage.com/375x500/968d96/ffffff', // an image to show in the downloads section
-      appID: parseInt(text),
-      storefront: type, // where the appID points to (could be an addon name or steam)
-      downloadSize: 100,
       downloadType: 'magnet', // could be either direct, torrent, or magnet.
       filename: 'Big Buck Bunny.mp4',
       downloadURL:

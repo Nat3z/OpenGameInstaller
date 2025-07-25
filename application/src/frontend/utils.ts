@@ -213,6 +213,7 @@ export type SearchResultWithAddon = SearchResult & {
   addonSource: string;
   capsuleImage: string;
   coverImage: string;
+  storefront: string;
 };
 export async function startDownload(
   result: SearchResultWithAddon,
@@ -297,6 +298,7 @@ export async function startDownload(
           addonSource: result.addonSource,
           capsuleImage: result.capsuleImage,
           coverImage: result.coverImage,
+          storefront: result.storefront,
         },
         appID,
         event

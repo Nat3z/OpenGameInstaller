@@ -24,6 +24,6 @@
     "noUnusedLocals": false,
     "noUnusedParameters": false,
     "noPropertyAccessFromIndexSignature": false,
-    "typeRoots": ["node_modules/@types", "../typings"],
+    "typeRoots": ["node_modules/@types", "../typings"]
   }
 }

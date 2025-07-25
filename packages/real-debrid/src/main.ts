@@ -1,6 +1,6 @@
-import z from "zod"
-import axios from "axios";
-import { ReadStream } from "fs";
+import z from 'zod';
+import axios from 'axios';
+import { ReadStream } from 'fs';
 
 export interface RealDebridConfiguration {
   apiKey: string;
@@ -42,7 +42,19 @@ export const AddTorrentOrMagnetZod = z.object({
 });
 
 export const TorrentInfoZod = z.object({
-  status: z.enum(['magnet_error', 'magnet_conversion', 'waiting_files_selection', 'queued', 'downloading', 'downloaded', 'error', 'virus', 'compressing', 'uploading', 'dead']),
+  status: z.enum([
+    'magnet_error',
+    'magnet_conversion',
+    'waiting_files_selection',
+    'queued',
+    'downloading',
+    'downloaded',
+    'error',
+    'virus',
+    'compressing',
+    'uploading',
+    'dead',
+  ]),
   id: z.string(),
   filename: z.string(),
   hash: z.string(),
@@ -157,15 +169,18 @@ export default class RealDebrid {
     const formData = new URLSearchParams();
     formData.append('files', 'all');
     formData.append('check_cache', '1');
-    const response = await axios(`${REAL_DEBRID_API_URL}/torrents/selectFiles/` + id, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${this.configuration.apiKey}`,
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      data: formData,
-      validateStatus: () => true,
-    });
+    const response = await axios(
+      `${REAL_DEBRID_API_URL}/torrents/selectFiles/` + id,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${this.configuration.apiKey}`,
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        data: formData,
+        validateStatus: () => true,
+      }
+    );
     if (response.status === 200 || response.status === 204) {
       return true;
     }
@@ -182,12 +197,15 @@ export default class RealDebrid {
   }
 
   public async getHosts() {
-    const response = await axios.get(`${REAL_DEBRID_API_URL}/torrents/availableHosts`, {
-      headers: {
-        Authorization: `Bearer ${this.configuration.apiKey}`,
-      },
-      validateStatus: () => true,
-    });
+    const response = await axios.get(
+      `${REAL_DEBRID_API_URL}/torrents/availableHosts`,
+      {
+        headers: {
+          Authorization: `Bearer ${this.configuration.apiKey}`,
+        },
+        validateStatus: () => true,
+      }
+    );
     if (response.status !== 200) {
       throw new Error(`Failed to fetch hosts: ${response.statusText}`);
     }

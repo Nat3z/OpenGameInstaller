@@ -5,13 +5,15 @@ import path, { join } from 'path';
 import yauzl from 'yauzl';
 import { spawn } from 'child_process';
 let mainWindow;
-import pjson from '../package.json' assert { "type": "json" };
+import pjson from '../package.json' assert { type: 'json' };
 
 function isDev() {
   return !app.isPackaged;
 }
 
-let __dirname = isDev() ? app.getAppPath() + "/" : path.dirname(process.execPath);
+let __dirname = isDev()
+  ? app.getAppPath() + '/'
+  : path.dirname(process.execPath);
 if (process.platform === 'linux') {
   // it's most likely sandboxed, so just use ./
   __dirname = './';
@@ -25,13 +27,13 @@ process.noAsar = true;
 
 function correctParsingSize(size) {
   if (size < 1024) {
-    return size + "B";
+    return size + 'B';
   } else if (size < 1024 * 1024) {
-    return (size / 1024).toFixed(2) + "KB";
+    return (size / 1024).toFixed(2) + 'KB';
   } else if (size < 1024 * 1024 * 1024) {
-    return (size / (1024 * 1024)).toFixed(2) + "MB";
+    return (size / (1024 * 1024)).toFixed(2) + 'MB';
   } else {
-    return (size / (1024 * 1024 * 1024)).toFixed(2) + "GB";
+    return (size / (1024 * 1024 * 1024)).toFixed(2) + 'GB';
   }
 }
 let localVersion = '0.0.0';
@@ -48,8 +50,13 @@ async function createWindow() {
   try {
     const port_check = await fetch('http://localhost:7654');
     if (port_check.ok) {
-      console.error('Port 7654 is already in use, meaning OpenGameInstaller is already running. Exiting.');
-      dialog.showErrorBox("OpenGameInstaller is already running", "OpenGameInstaller is already running. Please close the other instance before launching OpenGameInstaller again.");
+      console.error(
+        'Port 7654 is already in use, meaning OpenGameInstaller is already running. Exiting.'
+      );
+      dialog.showErrorBox(
+        'OpenGameInstaller is already running',
+        'OpenGameInstaller is already running. Please close the other instance before launching OpenGameInstaller again.'
+      );
       app.exit(1);
     }
   } catch {
@@ -77,11 +84,13 @@ async function createWindow() {
     mainWindow.webContents.closeDevTools();
   });
   // check for updates
-  const gitRepo = "Nat3z/OpenGameInstaller"
+  const gitRepo = 'Nat3z/OpenGameInstaller';
 
-  // check the github releases 
+  // check the github releases
   try {
-    const response = await axios.get(`https://api.github.com/repos/${gitRepo}/releases`);
+    const response = await axios.get(
+      `https://api.github.com/repos/${gitRepo}/releases`
+    );
     mainWindow.webContents.send('text', 'Checking for Updates');
     // if the version is different, download the new version
     let release;
@@ -90,7 +99,11 @@ async function createWindow() {
       if (rel.tag_name === localVersion) {
         break;
       }
-      if (rel.prerelease && usingBleedingEdge && rel.tag_name !== localVersion) {
+      if (
+        rel.prerelease &&
+        usingBleedingEdge &&
+        rel.tag_name !== localVersion
+      ) {
         release = rel;
         break;
       } else if (!rel.prerelease && rel.tag_name !== localVersion) {
@@ -101,13 +114,20 @@ async function createWindow() {
     let updating = release !== undefined;
     if (release) {
       // check if a local cache of the update exists in temp
-      const localCache = path.join(app.getPath('temp'), 'ogi-' + release.tag_name.replace('v', '') + '-cache');
+      const localCache = path.join(
+        app.getPath('temp'),
+        'ogi-' + release.tag_name.replace('v', '') + '-cache'
+      );
       if (fs.existsSync(localCache)) {
         const files = fs.readdirSync(localCache);
 
         mainWindow.webContents.send('text', 'Copying Cached Version...');
         for (const file of files) {
-          fs.cpSync(path.join(localCache, file), path.join(__dirname, 'update', file), { force: true, recursive: true });
+          fs.cpSync(
+            path.join(localCache, file),
+            path.join(__dirname, 'update', file),
+            { force: true, recursive: true }
+          );
         }
         // update the version file
         fs.writeFileSync(`./version.txt`, release.tag_name);
@@ -123,10 +143,14 @@ async function createWindow() {
       if (process.platform === 'win32') {
         const writer = fs.createWriteStream(`./update.zip`);
         mainWindow.webContents.send('text', 'Downloading Update');
-        const assetWithPortable = release.assets.find((asset) => asset.name.toLowerCase().includes('portable') || asset.name.toLowerCase().includes('portrable'));
+        const assetWithPortable = release.assets.find(
+          (asset) =>
+            asset.name.toLowerCase().includes('portable') ||
+            asset.name.toLowerCase().includes('portrable')
+        );
         if (!assetWithPortable) {
           mainWindow.webContents.send('text', 'No Portable Version Found');
-          return
+          return;
         }
         const response = await axios({
           url: assetWithPortable.browser_download_url,
@@ -139,12 +163,18 @@ async function createWindow() {
         response.data.on('data', () => {
           const elapsedTime = (Date.now() - startTime) / 1000; // in seconds
           const downloadSpeed = response.data.socket.bytesRead / elapsedTime;
-          mainWindow.webContents.send('text', 'Downloading Update', writer.bytesWritten, fileSize, correctParsingSize(downloadSpeed) + '/s');
+          mainWindow.webContents.send(
+            'text',
+            'Downloading Update',
+            writer.bytesWritten,
+            fileSize,
+            correctParsingSize(downloadSpeed) + '/s'
+          );
         });
         response.data.on('end', async () => {
           mainWindow.webContents.send('text', 'Download Complete');
           // extract the zip file
-          const prefix = __dirname + "/update";
+          const prefix = __dirname + '/update';
           if (!fs.existsSync(prefix)) {
             fs.mkdirSync(prefix);
           }
@@ -159,7 +189,10 @@ async function createWindow() {
             // copy the files to the update folder
             const files = fs.readdirSync(localCache);
             for (const file of files) {
-              fs.cpSync(path.join(localCache, file), path.join(prefix, file), { force: true, recursive: true });
+              fs.cpSync(path.join(localCache, file), path.join(prefix, file), {
+                force: true,
+                recursive: true,
+              });
             }
             resolve();
           });
@@ -173,18 +206,21 @@ async function createWindow() {
           mainWindow.webContents.send('text', 'Launching OpenGameInstaller');
           launchApp(true);
         });
-      }
-      else if (process.platform === 'linux') {
+      } else if (process.platform === 'linux') {
         if (!fs.existsSync(`./update`)) {
           fs.mkdirSync(`./update`);
         }
-        const writer = fs.createWriteStream(`./update/OpenGameInstaller.AppImage`);
+        const writer = fs.createWriteStream(
+          `./update/OpenGameInstaller.AppImage`
+        );
         mainWindow.webContents.send('text', 'Downloading Update');
-        const assetWithPortable = release.assets.find((asset) => asset.name.toLowerCase().includes('linux-pt.appimage'));
+        const assetWithPortable = release.assets.find((asset) =>
+          asset.name.toLowerCase().includes('linux-pt.appimage')
+        );
 
         if (!assetWithPortable) {
           mainWindow.webContents.send('text', 'No Portable Version Found');
-          return
+          return;
         }
 
         const response = await axios({
@@ -198,7 +234,13 @@ async function createWindow() {
         response.data.on('data', () => {
           const elapsedTime = (Date.now() - startTime) / 1000; // in seconds
           const downloadSpeed = response.data.socket.bytesRead / elapsedTime;
-          mainWindow.webContents.send('text', 'Downloading Update', writer.bytesWritten, fileSize, correctParsingSize(downloadSpeed) + '/s');
+          mainWindow.webContents.send(
+            'text',
+            'Downloading Update',
+            writer.bytesWritten,
+            fileSize,
+            correctParsingSize(downloadSpeed) + '/s'
+          );
         });
         response.data.on('end', async () => {
           mainWindow.webContents.send('text', 'Download Complete');
@@ -206,11 +248,14 @@ async function createWindow() {
           console.log('App Ready.');
 
           // copy the file to the cache folder
-          const item = __dirname + "/update/OpenGameInstaller.AppImage";
+          const item = __dirname + '/update/OpenGameInstaller.AppImage';
           if (!fs.existsSync(localCache)) {
             fs.mkdirSync(localCache);
           }
-          fs.copyFileSync(item, path.join(localCache, 'OpenGameInstaller.AppImage'));
+          fs.copyFileSync(
+            item,
+            path.join(localCache, 'OpenGameInstaller.AppImage')
+          );
           mainWindow.webContents.send('text', 'Launching OpenGameInstaller');
           // make the file executable
           fs.chmodSync(`./update/OpenGameInstaller.AppImage`, '755');
@@ -218,58 +263,80 @@ async function createWindow() {
           launchApp(true);
         });
       }
-
     }
     if (!updating) {
-      mainWindow.webContents.send('text', 'Launching OpenGameInstaller', 'No Updates Found');
+      mainWindow.webContents.send(
+        'text',
+        'Launching OpenGameInstaller',
+        'No Updates Found'
+      );
       // check if the user is offline
       launchApp(net.isOnline());
     }
   } catch (e) {
     console.error(e);
-    mainWindow.webContents.send('text', 'Launching OpenGameInstaller', 'Failed to check for updates');
+    mainWindow.webContents.send(
+      'text',
+      'Launching OpenGameInstaller',
+      'Failed to check for updates'
+    );
     // check if the user is offline
     launchApp(net.isOnline());
   }
-
 }
 
 /**
- * 
- * @param {boolean} online 
+ *
+ * @param {boolean} online
  * @returns {Promise<void>}
  */
 async function launchApp(online) {
   console.log('Launching in ' + (online ? 'online' : 'offline') + ' mode');
   mainWindow.webContents.send('text', 'Launching OpenGameInstaller');
   if (process.platform === 'win32') {
-    if (!fs.existsSync(path.join(__dirname, 'update', 'OpenGameInstaller.exe'))) {
-      mainWindow.webContents.send('text', 'Installation not found', 'Launch Failed');
+    if (
+      !fs.existsSync(path.join(__dirname, 'update', 'OpenGameInstaller.exe'))
+    ) {
+      mainWindow.webContents.send(
+        'text',
+        'Installation not found',
+        'Launch Failed'
+      );
       return;
     }
     const spawned = spawn('./OpenGameInstaller.exe', ['--online=' + online], {
       cwd: path.join(__dirname, 'update'),
       detached: true,
-      stdio: 'ignore'
+      stdio: 'ignore',
     });
     spawned.unref();
     app.quit();
-  }
-  else if (process.platform === 'linux') {
-    if (!fs.existsSync(path.join(__dirname, 'update', 'OpenGameInstaller.AppImage'))) {
-      mainWindow.webContents.send('text', 'Installation not found', 'Launch Failed');
+  } else if (process.platform === 'linux') {
+    if (
+      !fs.existsSync(
+        path.join(__dirname, 'update', 'OpenGameInstaller.AppImage')
+      )
+    ) {
+      mainWindow.webContents.send(
+        'text',
+        'Installation not found',
+        'Launch Failed'
+      );
       return;
     }
     setTimeout(() => {
-      const spawned = spawn('./OpenGameInstaller.AppImage', ['online=' + online], {
-        cwd: path.join(__dirname, 'update'),
-        detached: true,
-        stdio: 'ignore'
-      });
+      const spawned = spawn(
+        './OpenGameInstaller.AppImage',
+        ['online=' + online],
+        {
+          cwd: path.join(__dirname, 'update'),
+          detached: true,
+          stdio: 'ignore',
+        }
+      );
       spawned.unref();
       app.quit();
     }, 200);
-
   }
 }
 app.on('ready', createWindow);
@@ -291,7 +358,7 @@ const unzip = (zipPath, unzipToDir) => {
         // This is the key. We start by reading the first entry.
         zipFile.readEntry();
 
-        // Now for every entry, we will write a file or dir 
+        // Now for every entry, we will write a file or dir
         // to disk. Then call zipFile.readEntry() again to
         // trigger the next cycle.
         zipFile.on('entry', (entry) => {
@@ -301,7 +368,9 @@ const unzip = (zipPath, unzipToDir) => {
               const dirToMake = /(.*)\/(?:.*?)$/.exec(entry.fileName)[1];
               // Create the directory then read the next entry.
               console.log('Creating directory:', dirToMake);
-              fs.mkdirSync(path.join(unzipToDir, dirToMake), { recursive: true });
+              fs.mkdirSync(path.join(unzipToDir, dirToMake), {
+                recursive: true,
+              });
             }
             // check if entry is a directory
             if (/\/$/.test(entry.fileName)) {
@@ -316,7 +385,9 @@ const unzip = (zipPath, unzipToDir) => {
                 return;
               }
 
-              const file = fs.createWriteStream(path.join(unzipToDir, entry.fileName));
+              const file = fs.createWriteStream(
+                path.join(unzipToDir, entry.fileName)
+              );
               readStream.pipe(file);
               file.on('finish', () => {
                 // Wait until the file is finished writing, then read the next entry.
@@ -344,9 +415,8 @@ const unzip = (zipPath, unzipToDir) => {
           reject(err);
         });
       });
-    }
-    catch (e) {
+    } catch (e) {
       reject(e);
     }
   });
-}
+};

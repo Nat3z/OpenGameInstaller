@@ -1,58 +1,85 @@
-import { clients } from "../addon-server.js";
-import { applicationAddonSecret } from "../constants.js";
-import { DeferrableTask } from "../DeferrableTask.js";
-import express from "express";
+import { z } from 'zod';
+import { clients } from '../addon-server.js';
+import { DeferredTasks } from '../DeferrableTask.js';
+import {
+  type Procedure,
+  procedure,
+  ProcedureError,
+  ProcedureJSON,
+} from '../serve.js';
 
-const app = express.Router();
-export const DefferedTasks = new Map<string, DeferrableTask<any>>();
+export type ResponseDeferredTask = {
+  id: string;
+  addonOwner: string;
+  finished: boolean;
+  progress: number;
+  logs: string[];
+  failed: string | undefined;
+};
 
-// Get all deferred tasks
-app.get('/', (req, res) => {
-  if (req.headers.authorization !== applicationAddonSecret) {
-    res.status(401).send('Unauthorized');
-    return;
-  }
+const procedures: Record<string, Procedure<any>> = {
+  // Get all deferred tasks
+  getAllTasks: procedure()
+    .input(z.object({}))
+    .handler(async () => {
+      const tasks: ResponseDeferredTask[] = Object.values(
+        DeferredTasks.getTasks()
+      ).map((task) => ({
+        name: `Task ${task.id}`,
+        description: 'Background task',
+        id: task.id,
+        addonOwner: task.addonOwner,
+        finished: task.finished,
+        progress: task.progress,
+        logs: task.logs,
+        failed: task.failed,
+      }));
 
-  const tasks = Array.from(DefferedTasks.values()).map(task => ({
-    id: task.id,
-    addonOwner: task.addonOwner,
-    finished: task.finished,
-    progress: task.progress,
-    logs: task.logs,
-    failureMessage: task.failureMessage
-  }));
+      return new ProcedureJSON(200, tasks);
+    }),
 
-  res.json(tasks);
-});
+  // Get specific task by ID
+  getTask: procedure()
+    .input(
+      z.object({
+        taskID: z.string(),
+      })
+    )
+    .handler(async (input) => {
+      if (DeferredTasks.getTasks()[input.taskID] === undefined) {
+        console.log('task not found @' + input.taskID + '@', DeferredTasks);
+        return new ProcedureError(404, 'Task not found');
+      }
 
-app.get('/:taskID', (req, res) => {
-  if (req.headers.authorization !== applicationAddonSecret) {
-    res.status(401).send('Unauthorized');
-    return;
-  }
+      const task = DeferredTasks.getTasks()[input.taskID]!!;
 
-  if (!DefferedTasks.has(req.params.taskID)) {
-    res.status(404).send('Task not found');
-    return;
-  }
+      // check if the addon is still running
+      const stillExists = clients.has(task.addonOwner);
+      // when the addon owner is *, we don't need to check if it's still connected as it's a global task spawned by the server
+      if (!stillExists && task.addonOwner !== '*') {
+        DeferredTasks.removeTask(input.taskID);
+        return new ProcedureError(410, 'Addon is no longer connected');
+      }
 
-  const task = DefferedTasks.get(req.params.taskID)!!;
+      if (task.failed) {
+        DeferredTasks.removeTask(input.taskID);
+        return new ProcedureError(500, task.failed);
+      }
 
-  // check if the addon is still running
-  const stillExists = clients.has(task.addonOwner);
-  if (!stillExists) {
-    res.status(410).send('Addon is no longer connected');
-    DefferedTasks.delete(req.params.taskID);
-    return;
-  }
-  if (task.finished) {
-    res.send(task.data);
-    DefferedTasks.delete(req.params.taskID);
-  }
+      if (task.finished) {
+        DeferredTasks.removeTask(input.taskID);
+        // Use the getSerializedData method to ensure data is properly serialized
+        return new ProcedureJSON(200, {
+          data: task.getSerializedData(),
+        });
+      } else {
+        return new ProcedureJSON(200, {
+          progress: task.progress,
+          logs: task.logs,
+          failed: task.failed,
+        });
+      }
+    }),
+};
 
-  else {
-    res.status(202).send({ progress: task.progress, logs: task.logs });
-  }
-});
-
-export default app
+export default procedures;

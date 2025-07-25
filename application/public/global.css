@@ -2,75 +2,79 @@
 @tailwind components;
 @tailwind utilities;
 
-html, body {
-	position: relative;
-	width: 100%;
-	height: 100%;
+html,
+body {
+  position: relative;
+  width: 100%;
+  height: 100%;
 }
 
 body {
-	color: #333;
-	margin: 0;
-	padding: 8px;
-	box-sizing: border-box;
-	font-family: 'Open Sans', sans-serif;
+  color: #333;
+  margin: 0;
+  padding: 8px;
+  box-sizing: border-box;
+  font-family: 'Open Sans', sans-serif;
 }
 
 a {
-	color: rgb(0,100,200);
-	text-decoration: none;
+  color: rgb(0, 100, 200);
+  text-decoration: none;
 }
 
 a:hover {
-	text-decoration: underline;
+  text-decoration: underline;
 }
 
 a:visited {
-	color: rgb(0,80,160);
+  color: rgb(0, 80, 160);
 }
 
 label {
-	display: block;
+  display: block;
 }
 
 div {
-	border-color: #ccc;
+  border-color: #ccc;
 }
 
-input, button, select, textarea {
-	font-family: inherit;
-	font-size: inherit;
-	-webkit-padding: 0.4em 0;
-	padding: 0.4em;
-	margin: 0 0 0.5em 0;
-	box-sizing: border-box;
-	border: 1px solid #ccc;
-	@apply p-2 pl-2 bg-slate-100 rounded-lg selection:outline selection:outline-accent-light;
+input,
+button,
+select,
+textarea {
+  font-family: inherit;
+  font-size: inherit;
+  -webkit-padding: 0.4em 0;
+  padding: 0.4em;
+  margin: 0 0 0.5em 0;
+  box-sizing: border-box;
+  border: 1px solid #ccc;
+  @apply p-2 pl-2 bg-slate-100 rounded-lg selection:outline selection:outline-accent-light;
 }
 
 button {
-	color: #333;
-	background-color: #f4f4f4;
-	outline: none;
-	@apply transition-all ease-in-out duration-200;
+  color: #333;
+  background-color: #f4f4f4;
+  outline: none;
+  @apply transition-all ease-in-out duration-200;
 }
 
 button:disabled {
 }
 
 button:not(:disabled):active {
-	background-color: #ddd;
+  background-color: #ddd;
 }
 
 button:focus {
-	border-color: #666;
+  border-color: #666;
 }
 
 @font-face {
-	font-family: 'Archivo';
-	src: url(./Archivo-VariableFont_wdth\,wght.ttf);
+  font-family: 'Archivo';
+  src: url(./Archivo-VariableFont_wdth\,wght.ttf);
 }
 @font-face {
-	font-family: 'Open Sans';
-	src: url(./OpenSans-VariableFont_wdth\,wght.ttf);
+  font-family: 'Open Sans';
+  src: url(./OpenSans-VariableFont_wdth\,wght.ttf);
 }

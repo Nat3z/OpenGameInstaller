@@ -24,6 +24,9 @@
       },
       "required": ["run"],
       "additionalProperties": false
+    },
+    "icon": {
+      "type": "string"
     }
   },
   "required": ["author", "scripts"],

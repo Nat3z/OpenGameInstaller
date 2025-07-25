@@ -1,24 +1,30 @@
-import z, { ZodError } from "zod"
+import z, { ZodError } from 'zod';
 
 export interface ConfigurationFile {
-  [key: string]: ConfigurationOption
+  [key: string]: ConfigurationOption;
 }
 
 const configValidation = z.object({
   name: z.string().min(1),
   displayName: z.string().min(1),
   description: z.string().min(1),
-})
+});
 
-export function isStringOption(option: ConfigurationOption): option is StringOption {
-    return option.type === 'string';
-  }
+export function isStringOption(
+  option: ConfigurationOption
+): option is StringOption {
+  return option.type === 'string';
+}
 
-export function isNumberOption(option: ConfigurationOption): option is NumberOption {
+export function isNumberOption(
+  option: ConfigurationOption
+): option is NumberOption {
   return option.type === 'number';
 }
 
-export function isBooleanOption(option: ConfigurationOption): option is BooleanOption {
+export function isBooleanOption(
+  option: ConfigurationOption
+): option is BooleanOption {
   return option.type === 'boolean';
 }
 
@@ -28,9 +34,11 @@ export class ConfigurationBuilder {
   /**
    * Add a number option to the configuration builder and return the builder for chaining. You must provide a name, display name, and description for the option.
    * @param option { (option: NumberOption) => NumberOption }
-   * @returns 
+   * @returns
    */
-  public addNumberOption(option: (option: NumberOption) => NumberOption): ConfigurationBuilder {
+  public addNumberOption(
+    option: (option: NumberOption) => NumberOption
+  ): ConfigurationBuilder {
     let newOption = new NumberOption();
     newOption = option(newOption);
     this.options.push(newOption);
@@ -40,7 +48,7 @@ export class ConfigurationBuilder {
   /**
    * Add a string option to the configuration builder and return the builder for chaining. You must provide a name, display name, and description for the option.
    * @param option { (option: StringOption) => StringOption }
-  */
+   */
   public addStringOption(option: (option: StringOption) => StringOption) {
     let newOption = new StringOption();
     newOption = option(newOption);
@@ -51,7 +59,7 @@ export class ConfigurationBuilder {
   /**
    * Add a boolean option to the configuration builder and return the builder for chaining. You must provide a name, display name, and description for the option.
    * @param option { (option: BooleanOption) => BooleanOption }
-  */
+   */
   public addBooleanOption(option: (option: BooleanOption) => BooleanOption) {
     let newOption = new BooleanOption();
     newOption = option(newOption);
@@ -61,18 +69,17 @@ export class ConfigurationBuilder {
 
   public build(includeFunctions: boolean): ConfigurationFile {
     let config: ConfigurationFile = {};
-    this.options.forEach(option => {
+    this.options.forEach((option) => {
       // remove all functions from the option object
       if (!includeFunctions) {
         option = JSON.parse(JSON.stringify(option));
-        const optionData = configValidation.safeParse(option)
+        const optionData = configValidation.safeParse(option);
         if (!optionData.success) {
-          throw new ZodError(optionData.error.errors)
+          throw new ZodError(optionData.error.errors);
         }
 
         config[option.name] = option;
-      }
-      else {
+      } else {
         config[option.name] = option;
       }
     });
@@ -80,14 +87,14 @@ export class ConfigurationBuilder {
   }
 }
 
-export type ConfigurationOptionType = 'string' | 'number' | 'boolean' | 'unset'
+export type ConfigurationOptionType = 'string' | 'number' | 'boolean' | 'unset';
 export class ConfigurationOption {
   public name: string = '';
   public defaultValue: unknown = '';
   public displayName: string = '';
   public description: string = '';
-  public type: ConfigurationOptionType = 'unset'
-  
+  public type: ConfigurationOptionType = 'unset';
+
   /**
    * Set the name of the option. **REQUIRED**
    * @param name {string} The name of the option. This is used to reference the option in the configuration file.
@@ -98,9 +105,9 @@ export class ConfigurationOption {
   }
 
   /**
-   * Set the display name of the option. This is used to show the user a human readable version of what the option is. **REQUIRED** 
-   * @param displayName {string} The display name of the option. 
-   * @returns 
+   * Set the display name of the option. This is used to show the user a human readable version of what the option is. **REQUIRED**
+   * @param displayName {string} The display name of the option.
+   * @returns
    */
   setDisplayName(displayName: string) {
     this.displayName = displayName;
@@ -109,8 +116,8 @@ export class ConfigurationOption {
 
   /**
    * Set the description of the option. This is to show the user a brief description of what this option does. **REQUIRED**
-   * @param description {string} The description of the option. 
-   * @returns 
+   * @param description {string} The description of the option.
+   * @returns
    */
   setDescription(description: string) {
     this.description = description;
@@ -121,9 +128,9 @@ export class ConfigurationOption {
    * Validation code for the option. This is called when the user provides input to the option. If the validation fails, the user will be prompted to provide input again.
    * @param input {unknown} The input to validate
    */
-  validate(input: unknown): [ boolean, string ] {
-    throw new Error('Validation code not implemented. Value: ' + input)
-  };
+  validate(input: unknown): [boolean, string] {
+    throw new Error('Validation code not implemented. Value: ' + input);
+  }
 }
 
 export class StringOption extends ConfigurationOption {
@@ -132,10 +139,10 @@ export class StringOption extends ConfigurationOption {
   public maxTextLength: number = Number.MAX_SAFE_INTEGER;
   public defaultValue: string = '';
   public inputType: 'text' | 'file' | 'password' | 'folder' = 'text';
-  public type: ConfigurationOptionType = 'string'
+  public type: ConfigurationOptionType = 'string';
 
   /**
-   * Set the allowed values for the string. If the array is empty, any value is allowed. When provided, the client will act like this option is a dropdown.  
+   * Set the allowed values for the string. If the array is empty, any value is allowed. When provided, the client will act like this option is a dropdown.
    * @param allowedValues {string[]} An array of allowed values for the string. If the array is empty, any value is allowed.
    */
   setAllowedValues(allowedValues: string[]): this {
@@ -153,8 +160,8 @@ export class StringOption extends ConfigurationOption {
   }
 
   /**
-   * Set the minimum text length for the string. If the user provides a string that is less than this value, the validation will fail. 
-   * @param minTextLength {number} The minimum text length for the string. 
+   * Set the minimum text length for the string. If the user provides a string that is less than this value, the validation will fail.
+   * @param minTextLength {number} The minimum text length for the string.
    */
   setMinTextLength(minTextLength: number): this {
     this.minTextLength = minTextLength;
@@ -162,7 +169,7 @@ export class StringOption extends ConfigurationOption {
   }
 
   /**
-   * Set the maximum text length for the string. If the user provides a string that is greater than this value, the validation will fail. 
+   * Set the maximum text length for the string. If the user provides a string that is greater than this value, the validation will fail.
    * @param maxTextLength {number} The maximum text length for the string.
    */
   setMaxTextLength(maxTextLength: number): this {
@@ -171,25 +178,40 @@ export class StringOption extends ConfigurationOption {
   }
 
   /**
-   * Set the input type for the string. This will change how the client renders the input. 
-   * @param inputType {'text' | 'file' | 'password' | 'folder'} The input type for the string. 
+   * Set the input type for the string. This will change how the client renders the input.
+   * @param inputType {'text' | 'file' | 'password' | 'folder'} The input type for the string.
    */
   setInputType(inputType: 'text' | 'file' | 'password' | 'folder'): this {
     this.inputType = inputType;
     return this;
   }
 
-  override validate(input: unknown): [ boolean, string ] {
+  override validate(input: unknown): [boolean, string] {
     if (typeof input !== 'string') {
-      return [ false, 'Input is not a string' ];
+      return [false, 'Input is not a string'];
     }
     if (this.allowedValues.length === 0 && input.length !== 0)
-      return [ true, '' ];
-    if (input.length < this.minTextLength || input.length > this.maxTextLength) {
-      return [ false, 'Input is not within the text length ' + this.minTextLength + ' and ' + this.maxTextLength + ' characters (currently ' + input.length + ' characters)' ];
+      return [true, ''];
+    if (
+      input.length < this.minTextLength ||
+      input.length > this.maxTextLength
+    ) {
+      return [
+        false,
+        'Input is not within the text length ' +
+          this.minTextLength +
+          ' and ' +
+          this.maxTextLength +
+          ' characters (currently ' +
+          input.length +
+          ' characters)',
+      ];
     }
 
-    return [ this.allowedValues.includes(input), 'Input is not an allowed value' ];
+    return [
+      this.allowedValues.includes(input),
+      'Input is not an allowed value',
+    ];
   }
 }
 
@@ -197,7 +219,7 @@ export class NumberOption extends ConfigurationOption {
   public min: number = 0;
   public max: number = Number.MAX_SAFE_INTEGER;
   public defaultValue: number = 0;
-  public type: ConfigurationOptionType = 'number'
+  public type: ConfigurationOptionType = 'number';
   public inputType: 'range' | 'number' = 'number';
 
   /**
@@ -210,8 +232,8 @@ export class NumberOption extends ConfigurationOption {
   }
 
   /**
-   * Set the input type for the number. This will change how the client renders the input. 
-   * @param type {'range' | 'number'} The input type for the number. 
+   * Set the input type for the number. This will change how the client renders the input.
+   * @param type {'range' | 'number'} The input type for the number.
    */
   setInputType(type: 'range' | 'number'): this {
     this.inputType = type;
@@ -224,7 +246,7 @@ export class NumberOption extends ConfigurationOption {
    */
   setMax(max: number): this {
     this.max = max;
-    return this
+    return this;
   }
 
   /**
@@ -236,20 +258,22 @@ export class NumberOption extends ConfigurationOption {
     return this;
   }
 
-  override validate(input: unknown): [ boolean, string ] {
+  override validate(input: unknown): [boolean, string] {
     if (isNaN(Number(input))) {
-      return [ false, 'Input is not a number' ];
+      return [false, 'Input is not a number'];
     }
     if (Number(input) < this.min || Number(input) > this.max) {
-      return [ false, 'Input is not within the range of ' + this.min + ' and ' + this.max ];
+      return [
+        false,
+        'Input is not within the range of ' + this.min + ' and ' + this.max,
+      ];
     }
-    return [ true, '' ];
+    return [true, ''];
   }
-
 }
 
 export class BooleanOption extends ConfigurationOption {
-  public type: ConfigurationOptionType = 'boolean'
+  public type: ConfigurationOptionType = 'boolean';
   public defaultValue: boolean = false;
 
   /**
@@ -261,11 +285,10 @@ export class BooleanOption extends ConfigurationOption {
     return this;
   }
 
-  override validate(input: unknown): [ boolean, string ] {
+  override validate(input: unknown): [boolean, string] {
     if (typeof input !== 'boolean') {
-      return [ false, 'Input is not a boolean' ];
+      return [false, 'Input is not a boolean'];
     }
-    return [ true, '' ];
+    return [true, ''];
   }
-
 }

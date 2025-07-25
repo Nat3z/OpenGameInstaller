@@ -1,7 +1,7 @@
 {
   "extends": "@tsconfig/svelte/tsconfig.json",
   "compilerOptions": {
-    "types": ["node", "svelte", "ogi-addon"],
+    "types": ["node", "svelte", "ogi-addon", "d3"],
     "sourceMap": true,
     "target": "ESNext",
     "stripInternal": true,

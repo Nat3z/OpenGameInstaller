@@ -1,18 +1,19 @@
-import axios from "axios";
-import { ipcMain } from "electron";
-import { sendNotification, __dirname } from "../main.js";
-import { join } from "path";
-import * as fs from "fs";
-import RealDebrid from "real-debrid-js";
-import { ReadStream } from "original-fs";
+import axios from 'axios';
+import { ipcMain } from 'electron';
+import { sendNotification } from '../main.js';
+import { join } from 'path';
+import * as fs from 'fs';
+import RealDebrid from 'real-debrid-js';
+import { ReadStream } from 'original-fs';
+import { __dirname } from '../paths.js';
 
 let realDebridClient = new RealDebrid({
-  apiKey: 'UNSET'
+  apiKey: 'UNSET',
 });
 export default function handler(mainWindow: Electron.BrowserWindow) {
   ipcMain.handle('real-debrid:set-key', async (_, arg) => {
     realDebridClient = new RealDebrid({
-      apiKey: arg
+      apiKey: arg,
     });
     return 'success';
   });
@@ -21,10 +22,13 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
     if (!fs.existsSync(join(__dirname, 'config/option/realdebrid.json'))) {
       return false;
     }
-    const rdInfo = fs.readFileSync(join(__dirname, 'config/option/realdebrid.json'), 'utf-8');
+    const rdInfo = fs.readFileSync(
+      join(__dirname, 'config/option/realdebrid.json'),
+      'utf-8'
+    );
     const rdInfoJson = JSON.parse(rdInfo);
     realDebridClient = new RealDebrid({
-      apiKey: rdInfoJson.debridApiKey
+      apiKey: rdInfoJson.debridApiKey,
     });
     return true;
   });
@@ -58,26 +62,25 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
   ipcMain.handle('real-debrid:is-torrent-ready', async (_, arg) => {
     const torrentReady = await realDebridClient.isTorrentReady(arg);
     return torrentReady;
-  })
+  });
 
   ipcMain.handle('real-debrid:select-torrent', async (_, arg) => {
     const selected = await realDebridClient.selectTorrents(arg);
     return selected;
-  })
+  });
   ipcMain.handle('real-debrid:add-torrent', async (_, arg) => {
     // arg.url is a link to the download, we need to get the file
     // and send it to the real-debrid API
     console.log(arg);
     try {
-
       const fileStream = fs.createWriteStream(join(__dirname, 'temp.torrent'));
       const downloadID = Math.random().toString(36).substring(7);
       const torrentData = await new Promise<ReadStream>((resolve, reject) => {
         axios({
           method: 'get',
           url: arg.torrent,
-          responseType: 'stream'
-        }).then(response => {
+          responseType: 'stream',
+        }).then((response) => {
           response.data.pipe(fileStream);
 
           fileStream.on('finish', () => {
@@ -93,38 +96,42 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
             reject();
           });
         });
-      }).catch(err => {
+      }).catch((err) => {
         if (!mainWindow || !mainWindow.webContents) {
-          console.error("Seems like the window is closed. Cannot send error message to renderer.")
-          return
+          console.error(
+            'Seems like the window is closed. Cannot send error message to renderer.'
+          );
+          return;
         }
         console.error(err);
-        mainWindow.webContents.send('ddl:download-error', { id: downloadID, error: err });
+        mainWindow.webContents.send('ddl:download-error', {
+          id: downloadID,
+          error: err,
+        });
         fileStream.close();
         fs.unlinkSync(arg.path);
         sendNotification({
           message: 'Download failed for ' + arg.path,
           id: downloadID,
-          type: 'error'
+          type: 'error',
         });
       });
       if (!torrentData) {
         return null;
       }
-      console.log("Downloaded torrent! Now adding to readDebrid")
+      console.log('Downloaded torrent! Now adding to readDebrid');
 
       const data = await realDebridClient.addTorrent(torrentData as ReadStream);
-      console.log("Added torrent to real-debrid!")
-      return data
+      console.log('Added torrent to real-debrid!');
+      return data;
     } catch (except) {
       console.error(except);
       sendNotification({
-        message: "Failed to add torrent to Real-Debrid",
+        message: 'Failed to add torrent to Real-Debrid',
         id: Math.random().toString(36).substring(7),
-        type: 'error'
+        type: 'error',
       });
       return null;
     }
-
   });
 }

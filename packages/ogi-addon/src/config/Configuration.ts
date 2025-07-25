@@ -1,4 +1,15 @@
-import { ConfigurationFile, ConfigurationBuilder, BooleanOption, ConfigurationOption, ConfigurationOptionType, NumberOption, StringOption, isBooleanOption, isNumberOption, isStringOption } from "./ConfigurationBuilder";
+import {
+  ConfigurationFile,
+  ConfigurationBuilder,
+  BooleanOption,
+  ConfigurationOption,
+  ConfigurationOptionType,
+  NumberOption,
+  StringOption,
+  isBooleanOption,
+  isNumberOption,
+  isStringOption,
+} from './ConfigurationBuilder';
 
 interface DefiniteConfig {
   [key: string]: string | number | boolean;
@@ -10,27 +21,43 @@ export class Configuration {
     this.storedConfigTemplate = configTemplate;
   }
 
-  updateConfig(config: DefiniteConfig, validate: boolean = true): [ boolean, { [key: string]: string } ] {
+  updateConfig(
+    config: DefiniteConfig,
+    validate: boolean = true
+  ): [boolean, { [key: string]: string }] {
     this.definiteConfig = config;
     if (validate) {
       const result = this.validateConfig();
       return result;
     }
-    return [ true, {} ];
+    return [true, {}];
   }
   // provides falsey or truthy value, and an error message if falsey
-  private validateConfig(): [ boolean, { [key: string]: string } ] {
+  private validateConfig(): [boolean, { [key: string]: string }] {
     const erroredKeys = new Map<string, string>();
     for (const key in this.storedConfigTemplate) {
-      if (this.definiteConfig[key] === null || this.definiteConfig[key] === undefined) {
-        console.warn('Option ' + key + ' is not defined. Using default value Value: ' + this.definiteConfig[key]);
-        this.definiteConfig[key] = this.storedConfigTemplate[key].defaultValue as string | number | boolean;
+      if (
+        this.definiteConfig[key] === null ||
+        this.definiteConfig[key] === undefined
+      ) {
+        console.warn(
+          'Option ' +
+            key +
+            ' is not defined. Using default value Value: ' +
+            this.definiteConfig[key]
+        );
+        this.definiteConfig[key] = this.storedConfigTemplate[key]
+          .defaultValue as string | number | boolean;
       }
-      if (this.storedConfigTemplate[key].type !== typeof this.definiteConfig[key]) {
+      if (
+        this.storedConfigTemplate[key].type !== typeof this.definiteConfig[key]
+      ) {
         throw new Error('Option ' + key + ' is not of the correct type');
       }
 
-      const result = this.storedConfigTemplate[key].validate(this.definiteConfig[key]);
+      const result = this.storedConfigTemplate[key].validate(
+        this.definiteConfig[key]
+      );
       if (!result[0]) {
         erroredKeys.set(key, result[1]);
       }
@@ -38,15 +65,17 @@ export class Configuration {
 
     for (const key in this.definiteConfig) {
       if (!this.storedConfigTemplate[key]) {
-        throw new Error('Option ' + key + ' is not defined in the configuration template');
+        throw new Error(
+          'Option ' + key + ' is not defined in the configuration template'
+        );
       }
     }
 
     if (erroredKeys.size > 0) {
-      return [ false, Object.fromEntries(erroredKeys) ];
+      return [false, Object.fromEntries(erroredKeys)];
     }
 
-    return [ true, Object.fromEntries(erroredKeys) ];
+    return [true, Object.fromEntries(erroredKeys)];
   }
 
   getStringValue(optionName: string): string {
@@ -80,4 +109,15 @@ export class Configuration {
   }
 }
 
-export { ConfigurationFile, ConfigurationBuilder, BooleanOption, ConfigurationOption, ConfigurationOptionType, NumberOption, StringOption, isBooleanOption, isNumberOption, isStringOption };
+export {
+  ConfigurationFile,
+  ConfigurationBuilder,
+  BooleanOption,
+  ConfigurationOption,
+  ConfigurationOptionType,
+  NumberOption,
+  StringOption,
+  isBooleanOption,
+  isNumberOption,
+  isStringOption,
+};

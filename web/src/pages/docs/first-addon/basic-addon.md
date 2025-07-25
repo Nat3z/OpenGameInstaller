@@ -15,8 +15,9 @@ const addon = new OGIAddon({
   description: 'Your Addon Description',
   version: '1.0.0',
   author: 'Your Name',
-  repository: 'Your git repo url'
-})
+  repository: 'Your git repo url',
+  storefronts: [ ... ], // an array of storefronts your addon supports
+});
 ```
 
 The `id` of your addon should **always** be unique, following this basic pattern: `your-addon-name` with hyphens in between each word of your addon.
@@ -24,7 +25,9 @@ The `id` of your addon should **always** be unique, following this basic pattern
 We recommend your addon's name to be short, around only **two words**.
 
 ## How to add your addon to OpenGameInstaller
-Adding your addon to our client is simple. Go to `Settings > General` and in the ***Addons*** field, input this:
+
+Adding your addon to our client is simple. Go to `Settings > General` and in the **_Addons_** field, input this:
+
 ```md
 local:[THE PATH TO YOUR ADDON'S WORKING DIRECTORY]
 ```

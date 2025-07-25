@@ -1,3 +1,14 @@
 {
-  "typescript.tsdk": "node_modules/typescript/lib"
+  "typescript.tsdk": "node_modules/typescript/lib",
+  "editor.formatOnSave": true,
+  "prettier.configPath": ".prettierrc",
+  "editor.defaultFormatter": "esbenp.prettier-vscode",
+  "prettier.prettierPath": "./node_modules/prettier",
+  "cSpell.words": [
+    "addonsource",
+    "clientoptions",
+    "Debrid",
+    "fullgame",
+    "Recents"
+  ]
 }

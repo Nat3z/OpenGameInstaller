@@ -1,165 +1,322 @@
-import express from "express";
-import { clients } from "../addon-server.js";
-import { applicationAddonSecret } from "../constants.js";
-import { DeferrableTask } from "../DeferrableTask.js";
-import { DefferedTasks } from "./defer.js";
-import sanitize from "sanitize-html";
+import { z } from 'zod';
+import { clients } from '../addon-server.js';
+import { DeferrableTask } from '../DeferrableTask.js';
+import sanitize from 'sanitize-html';
+import {
+  type Procedure,
+  procedure,
+  ProcedureError,
+  ProcedureJSON,
+  ProcedureDeferTask,
+} from '../serve.js';
+import * as fs from 'fs/promises';
+import { join } from 'path';
+import { restartAddonServer } from '../../handlers/addon-manager.js';
+import { __dirname } from '../../paths.js';
+import { StoreData } from 'ogi-addon';
 
-const app = express.Router();
+const procedures: Record<string, Procedure<any>> = {
+  // Get all addon info
+  getAllAddons: procedure()
+    .input(z.object({}))
+    .handler(async () => {
+      let info = [];
+      for (const client of clients.values()) {
+        info.push({
+          ...client.addonInfo,
+          configTemplate: client.configTemplate,
+        });
+      }
+      return new ProcedureJSON(200, info);
+    }),
 
-app.get('/', (req, res) => {
-  if (req.headers.authorization !== applicationAddonSecret) {
-    res.status(401).send('Unauthorized');
-    return;
-  }
-  let info = [];
-  for (const client of clients.values()) {
-    info.push({ ...client.addonInfo, configTemplate: client.configTemplate });
-  }
+  // Update addon config
+  updateConfig: procedure()
+    .input(
+      z.object({
+        addonID: z.string(),
+        config: z.unknown(),
+      })
+    )
+    .handler(async (input) => {
+      const client = clients.get(input.addonID);
+      if (!client) return new ProcedureError(404, 'Client not found');
 
-  res.json(info);
-});
+      const response = await client.sendEventMessage({
+        event: 'config-update',
+        args: input.config,
+      });
 
-app.post('/:addonID/config', async (req, res) => {
-  if (req.headers.authorization !== applicationAddonSecret) {
-    res.status(401).send('Unauthorized');
-    return;
-  }
-  const client = clients.get(req.params.addonID);
-  if (!client) {
-    res.status(404).send('Client not found');
-    return;
-  }
-  const response = await client.sendEventMessage({ event: 'config-update', args: req.body });
-  if (response.args.success)
-    res.json({ success: true });
-  else {
-    res.json({ success: false, errors: response.args.error })
-  }
-});
-// an expensive task.
-app.get('/:addonID/search', async (req, res) => {
-  if (req.headers.authorization !== applicationAddonSecret) {
-    return res.status(401).send('Unauthorized');
-  }
- 
-  if (!req.query.steamappid && !req.query.gameID) {
-    return res.status(400).send('No query provided');
-  } 
+      if (response.args.success) {
+        return new ProcedureJSON(200, { success: true });
+      } else {
+        return new ProcedureJSON(400, {
+          success: false,
+          errors: response.args.error,
+        });
+      }
+    }),
 
-  const client = clients.get(req.params.addonID);
-  if (!client)
-    return res.status(404).send('Client not found');
+  // Search for games
+  search: procedure()
+    .input(
+      z.object({
+        addonID: z.string(),
+        appID: z.number(),
+        storefront: z.string(),
+      })
+    )
+    .handler(async (input) => {
+      const client = clients.get(input.addonID);
+      if (!client) return new ProcedureError(404, 'Client not found');
+      if (!client.eventsAvailable.includes('search')) {
+        return new ProcedureError(400, 'Client does not support search');
+      }
 
+      const deferrableTask = new DeferrableTask(async () => {
+        const event = await client.sendEventMessage({
+          event: 'search',
+          args: {
+            appID: input.appID,
+            storefront: input.storefront,
+          },
+        });
+        console.log('searchComplete', event.args);
+        return event.args;
+      }, client.addonInfo.id);
 
-  const deferrableTask = new DeferrableTask(async () => {
-    const event = await client.sendEventMessage({ event: 'search', args: { text: req.query.gameID ?? req.query.steamappid, type: req.query.gameID ? 'internal' : req.query.steamappid ? 'steamapp' : '' } });
-    return event.args;
-  }, client.addonInfo.id);
-  deferrableTask.run();
-  DefferedTasks.set(deferrableTask.id, deferrableTask);
-  return res.status(202).json({ deferred: true, taskID: deferrableTask.id });
-});
-app.get('/:addonID/search-query', async (req, res) => {
-  if (req.headers.authorization !== applicationAddonSecret) {
-    return res.status(401).send('Unauthorized');
-  }
-  if (!req.body || req.query.query === undefined || typeof req.query.query !== 'string') {
-    return res.status(400).send('No query provided');
-  }
-  const client = clients.get(req.params.addonID);
-  if (!client)
-    return res.status(404).send('Client not found');
+      return new ProcedureDeferTask(200, deferrableTask);
+    }),
 
-  const deferrableTask = new DeferrableTask(async () => {
-    const event = await client.sendEventMessage({ event: 'library-search', args: req.query.query });
-    return event.args;
-  }, client.addonInfo.id);
-  deferrableTask.run();
-  DefferedTasks.set(deferrableTask.id, deferrableTask);
-  return res.status(202).json({ deferred: true, taskID: deferrableTask.id });
-});
+  // Search library with query
+  searchQuery: procedure()
+    .input(
+      z.object({
+        addonID: z.string(),
+        query: z.string(),
+      })
+    )
+    .handler(async (input) => {
+      const client = clients.get(input.addonID);
+      if (!client) return new ProcedureError(404, 'Client not found');
 
-app.post('/:addonID/request-dl', async (req, res) => {
-  if (req.headers.authorization !== applicationAddonSecret) {
-    return res.status(401).send('Unauthorized');
-  }
-  const client = clients.get(req.params.addonID);
-  if (!client)
-    return res.status(404).send('Client not found');
-  if (!req.body || req.body.appID === undefined) {
-    return res.status(400).send('No appID provided');
-  }
-  if (!req.body || req.body.info === undefined) {
-    return res.status(400).send('No info provided');
-  }
-  const deferrableTask = new DeferrableTask(async () => {
-    const data = await client.sendEventMessage({ event: 'request-dl', args: { appID: req.body.appID, info: req.body.info } });
-    return data.args;
-  }, client.addonInfo.id);
+      if (!client.eventsAvailable.includes('library-search')) {
+        return new ProcedureError(
+          400,
+          'Client does not support library-search'
+        );
+      }
 
-  deferrableTask.run();
-  DefferedTasks.set(deferrableTask.id, deferrableTask);
-  return res.status(202).json({ deferred: true, taskID: deferrableTask.id });
-});
+      const deferrableTask = new DeferrableTask(async () => {
+        const event = await client.sendEventMessage({
+          event: 'library-search',
+          args: input.query,
+        });
+        return event.args;
+      }, client.addonInfo.id);
 
-app.post('/:addonID/setup-app', async (req, res) => {
-  if (req.headers.authorization !== applicationAddonSecret) {
-    return res.status(401).send('Unauthorized');
-  }
-  const client = clients.get(req.params.addonID);
-  if (!client)
-    return res.status(404).send('Client not found');
-  if (!req.body || req.body.path === undefined || typeof req.body.path !== 'string') {
-    return res.status(400).send('No path provided');
-  }
-  if (!req.body || req.body.type === undefined || typeof req.body.type !== 'string') {
-    return res.status(400).send('No type provided');
-  }
-  if (!req.body || req.body.name === undefined || typeof req.body.name !== 'string') {
-    return res.status(400).send('No name provided');
-  }
-  if (req.body.appID === undefined) {
-    return res.status(400).send('No appID provided');
-  }
-  if (!req.body || req.body.usedRealDebrid === undefined || typeof req.body.usedRealDebrid !== 'boolean') {
-    return res.status(400).send('No usedRealDebrid provided');
-  }
-  if (!req.body || req.body.storefront === undefined || typeof req.body.storefront !== 'string') {
-    return res.status(400).send('No storefront provided');
-  }
+      return new ProcedureDeferTask(200, deferrableTask);
+    }),
 
-  const deferrableTask = new DeferrableTask(async () => {
-    const data = await client.sendEventMessage({ event: 'setup', args: { path: req.body.path, appID: req.body.appID, type: req.body.type, usedRealDebrid: req.body.usedRealDebrid, storefront: req.body.storefront, name: req.body.name, multiFiles: req.body.multiPartFiles, deferID: deferrableTask.id!! } });
-    return data.args;
-  }, client.addonInfo.id);
+  // Request download
+  requestDownload: procedure()
+    .input(
+      z.object({
+        addonID: z.string(),
+        appID: z.unknown(),
+        info: z.unknown(),
+      })
+    )
+    .handler(async (input) => {
+      const client = clients.get(input.addonID);
+      if (!client) return new ProcedureError(404, 'Client not found');
 
-  deferrableTask.run();
-  DefferedTasks.set(deferrableTask.id, deferrableTask);
-  return res.status(202).json({ deferred: true, taskID: deferrableTask.id });
-});
+      if (!client.eventsAvailable.includes('request-dl')) {
+        return new ProcedureError(400, 'Client does not support request-dl');
+      }
 
-app.get('/:addonID/game-details', async (req, res) => {
-  if (req.headers.authorization !== applicationAddonSecret) {
-    return res.status(401).send('Unauthorized');
-  }
-  const client = clients.get(req.params.addonID);
-  if (!client)
-    return res.status(404).send('Client not found');
-  if (!req.query || req.query.gameID === undefined) {
-    return res.status(400).send('No gameID provided');
-  }
-  const gameID = parseInt(req.query.gameID as string);
-  const deferrableTask = new DeferrableTask(async () => {
-    const data = await client.sendEventMessage({ event: 'game-details', args: gameID });
-    data.args.description = sanitize(data.args.description);
-    return data.args;
-  }, client.addonInfo.id);
+      const deferrableTask = new DeferrableTask(async () => {
+        const data = await client.sendEventMessage({
+          event: 'request-dl',
+          args: { appID: input.appID, info: input.info },
+        });
+        return data.args;
+      }, client.addonInfo.id);
 
-  deferrableTask.run();
-  DefferedTasks.set(deferrableTask.id, deferrableTask);
-  return res.status(202).json({ deferred: true, taskID: deferrableTask.id });
-});
+      return new ProcedureDeferTask(200, deferrableTask);
+    }),
 
+  // Get Catalogs
+  getCatalogs: procedure()
+    .input(
+      z.object({
+        addonID: z.string(),
+      })
+    )
+    .handler(async (input) => {
+      const client = clients.get(input.addonID);
+      if (!client) return new ProcedureError(404, 'Client not found');
 
-export default app
+      if (!client.eventsAvailable.includes('catalog')) {
+        return new ProcedureError(400, 'Client does not support catalog');
+      }
+
+      const deferrableTask = new DeferrableTask(async () => {
+        const data = await client.sendEventMessage({
+          event: 'catalog',
+          args: {},
+        });
+        return data.args;
+      }, client.addonInfo.id);
+
+      return new ProcedureDeferTask(200, deferrableTask);
+    }),
+  // Setup app
+  setupApp: procedure()
+    .input(
+      z.object({
+        addonID: z.string(),
+        path: z.string(),
+        type: z.string(),
+        name: z.string(),
+        appID: z.unknown(),
+        usedRealDebrid: z.boolean(),
+        storefront: z.string(),
+        multiPartFiles: z.unknown().optional(),
+      })
+    )
+    .handler(async (input) => {
+      const client = clients.get(input.addonID);
+      if (!client) return new ProcedureError(404, 'Client not found');
+
+      if (!client.eventsAvailable.includes('setup')) {
+        return new ProcedureError(400, 'Client does not support setup');
+      }
+
+      const deferrableTask = new DeferrableTask(async () => {
+        const data = await client.sendEventMessage({
+          event: 'setup',
+          args: {
+            path: input.path,
+            appID: input.appID,
+            type: input.type,
+            usedRealDebrid: input.usedRealDebrid,
+            storefront: input.storefront,
+            name: input.name,
+            multiFiles: input.multiPartFiles,
+            deferID: deferrableTask.id!!,
+          },
+        });
+        return data.args;
+      }, client.addonInfo.id);
+
+      return new ProcedureDeferTask(200, deferrableTask);
+    }),
+
+  // Get game details
+  gameDetails: procedure()
+    .input(
+      z.object({
+        gameID: z.string(),
+        storefront: z.string(),
+      })
+    )
+    .handler(async (input) => {
+      const clientsWithStorefront = Array.from(clients.values()).filter(
+        (client) =>
+          client.addonInfo.storefronts.includes(input.storefront) &&
+          client.eventsAvailable.includes('game-details')
+      );
+      if (clientsWithStorefront.length === 0)
+        return new ProcedureError(
+          404,
+          'Client not found to serve this storefront'
+        );
+
+      const gameID = parseInt(input.gameID);
+      const deferrableTask = new DeferrableTask(async () => {
+        // find a client that can serve this storefront
+        let appDetails: StoreData | undefined;
+        for (const client of clientsWithStorefront) {
+          const data = await client.sendEventMessage({
+            event: 'game-details',
+            args: { appID: gameID, storefront: input.storefront },
+          });
+          if (data.args) {
+            appDetails = data.args;
+            break;
+          }
+        }
+        if (!appDetails) {
+          return new ProcedureError(404, 'No app details found');
+        }
+        appDetails.description = sanitize(appDetails.description);
+        return appDetails;
+      }, '*');
+
+      return new ProcedureDeferTask(200, deferrableTask);
+    }),
+
+  deleteAddon: procedure()
+    .input(z.object({ addonID: z.string() }))
+    .handler(async (input) => {
+      const client = clients.get(input.addonID);
+      if (!client) return new ProcedureError(404, 'Client not found');
+      if (!client.addonLink || client.addonLink.startsWith('local:')) {
+        return new ProcedureError(
+          400,
+          'Addon was not spawned by OpenGameInstaller or is a "local:..." addon.'
+        );
+      }
+      // time to delete the addon
+      // remove the addon from the local storage
+      const generalConfig = JSON.parse(
+        await fs.readFile(
+          join(__dirname, 'config/option/general.json'),
+          'utf-8'
+        )
+      );
+      const addons = generalConfig.addons;
+
+      generalConfig.addons = addons.filter(
+        (addon: string) => addon !== client.addonLink
+      );
+
+      await fs.writeFile(
+        join(__dirname, 'config/option/general.json'),
+        JSON.stringify(generalConfig, null, 2)
+      );
+
+      restartAddonServer();
+      // wait for the processes to be killed
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      let promises = await Promise.allSettled([
+        fs.rm(client.filePath!!, {
+          recursive: true,
+          force: true,
+        }),
+        fs.rm(join(__dirname, 'config', input.addonID), {
+          recursive: true,
+          force: true,
+        }),
+      ]);
+      if (promises[0].status === 'fulfilled') {
+        console.log('Addon removed from addons folder');
+      } else {
+        console.error('Failed to remove addon from addons folder');
+      }
+      if (promises[1].status === 'fulfilled') {
+        console.log('Addon removed from config folder');
+      } else {
+        console.error('Failed to remove addon from config folder');
+      }
+
+      if (promises[0].status === 'fulfilled') {
+        return new ProcedureJSON(200, { success: true });
+      } else {
+        return new ProcedureError(500, 'Failed to remove addon');
+      }
+    }),
+};
+
+export default procedures;

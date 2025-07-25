@@ -1,9 +1,8 @@
-import { dialog, ipcMain, shell } from "electron";
-import { __dirname } from "../main.js";
-import { join } from "path";
-import * as fs from "fs";
-import { exec } from "child_process";
-
+import { dialog, ipcMain, shell } from 'electron';
+import { __dirname } from '../paths.js';
+import { join } from 'path';
+import * as fs from 'fs';
+import { exec } from 'child_process';
 
 export default function handler() {
   ipcMain.on('fs:read', (event, arg) => {
@@ -86,7 +85,7 @@ export default function handler() {
     const files = fs.readdirSync(arg);
     return files;
   });
-  
+
   ipcMain.on('fs:delete', (event, arg) => {
     if (String(arg).startsWith('./')) {
       arg = join(__dirname, arg);
@@ -113,37 +112,43 @@ export default function handler() {
     // use 7zip to extract the rar file or unrar if on linux
     if (process.platform === 'win32') {
       let s7ZipPath = '"C:\\Program Files\\7-Zip\\7z.exe"';
-      await new Promise<void>((resolve, reject) => exec(`${s7ZipPath} x "${rarFilePath}" -o"${outputDir}"`, (err, stdout, stderr) => {
-        if (err) {
-          console.error(err);
-          reject();
-          throw new Error('Failed to extract RAR file');
-        }
-        console.log(stdout);
-        console.log(stderr);
-        resolve();
-      }));
+      await new Promise<void>((resolve, reject) =>
+        exec(
+          `${s7ZipPath} x "${rarFilePath}" -o"${outputDir}"`,
+          (err, stdout, stderr) => {
+            if (err) {
+              console.error(err);
+              reject();
+              throw new Error('Failed to extract RAR file');
+            }
+            console.log(stdout);
+            console.log(stderr);
+            resolve();
+          }
+        )
+      );
     }
 
     if (process.platform === 'linux') {
       if (rarFilePath.endsWith('.rar')) {
-        await new Promise<void>((resolve) => exec(`unrar x "${rarFilePath}" "${outputDir}"`, (stdout, stderr) => {
-          console.log(stdout);
-          console.log(stderr);
-          resolve();
-        }));
-      }
-      else if (rarFilePath.endsWith('.zip')) {
-        await new Promise<void>((resolve) => exec(`unzip "${rarFilePath}" -d "${outputDir}"`, (stdout, stderr) => {
-          console.log(stdout);
-          console.log(stderr);
-          resolve();
-        }));
+        await new Promise<void>((resolve) =>
+          exec(`unrar x "${rarFilePath}" "${outputDir}"`, (stdout, stderr) => {
+            console.log(stdout);
+            console.log(stderr);
+            resolve();
+          })
+        );
+      } else if (rarFilePath.endsWith('.zip')) {
+        await new Promise<void>((resolve) =>
+          exec(`unzip "${rarFilePath}" -d "${outputDir}"`, (stdout, stderr) => {
+            console.log(stdout);
+            console.log(stderr);
+            resolve();
+          })
+        );
       }
     }
 
     return outputDir;
   });
-
 }
-

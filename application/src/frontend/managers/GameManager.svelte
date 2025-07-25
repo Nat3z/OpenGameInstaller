@@ -1,9 +1,9 @@
 <script lang="ts">
-  import { gamesLaunched } from "../store"; 
+  import { gamesLaunched } from '../store';
   document.addEventListener('game:launch', (event: Event) => {
     const appID = (event as CustomEvent).detail.id;
     gamesLaunched.update((games) => {
-      games[appID] = 'launched'
+      games[appID] = 'launched';
       return games;
     });
   });

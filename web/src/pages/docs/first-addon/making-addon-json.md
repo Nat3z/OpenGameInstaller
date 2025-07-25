@@ -35,6 +35,7 @@ Example:
 ```json
 {
   "author": "OpenGameInstaller Devs",
+  "icon": "icon.png",
   "scripts": {
     "preSetup": "bun install --frozen-lockfile",
     "setup": "bun run setup.ts",

@@ -16,6 +16,7 @@ const addon = new OGIAddon({
   version: '1.0.0',
   author: 'Your Name',
   repository: 'Your git repo url',
+  storefronts: [ ... ], // an array of storefronts your addon supports
 });
 ```
 

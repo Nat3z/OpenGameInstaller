@@ -24,9 +24,11 @@ The `search` event provides two properties, `appID` and `storefront`.
 
 `appID` is the id of the app which OpenGameInstaller wants the download link to.
 
-`storefront` defines where the appID points to in accordance to a storefront. (_You will learn this in the Internal Stores lesson_)
+`storefront` defines where the appID points to in accordance to a storefront. (_You will learn this in the Store Pages lesson_)
 
 Your function should complete the query, then resolve the **SearchResult** with `event.resolve`
+
+Keep in mind that the storefront must be one of the storefronts defined in your addon's config (`storefronts` in your Configuration), or else the server will not know that your addon supports that storefront.
 
 **Example:**
 
@@ -57,11 +59,6 @@ addon.on('search', ({ text, type }, event) => {
   event.resolve([
     {
       name: 'Direct Download Test',
-      description: 'No description',
-      coverURL: 'https://dummyimage.com/375x500/968d96/ffffff', // an image to show in the downloads section
-      appID: parseInt(text),
-      storefront: type, // where the appID points to (could be an addon name or steam)
-      downloadSize: 100,
       downloadType: 'direct', // could be either direct, torrent, or magnet.
       files: [
         {

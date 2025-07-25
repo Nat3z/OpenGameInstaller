@@ -78,7 +78,7 @@
   }
 </script>
 
-<div class="w-full {className}">
+<div class="w-full {className} mt-2">
   <TextModal text={label} variant="body" class="!text-xl font-bold" />
   {#if description}
     <TextModal text={description} variant="description" class="!text-base" />

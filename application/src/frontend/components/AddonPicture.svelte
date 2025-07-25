@@ -10,7 +10,6 @@
     window.electronAPI.app.getAddonIcon(addonId).then(async (iconPath) => {
       if (iconPath) {
         image = await window.electronAPI.app.getLocalImage(iconPath);
-        console.log('Image: ' + image);
       }
     });
   });

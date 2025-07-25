@@ -8,6 +8,7 @@ const addon = new OGIAddon({
   author: '{author}',
   description: 'Your addon description',
   repository: 'Repository URL',
+  storefronts: ['steam'],
 });
 
 addon.on('configure', (config) => config);

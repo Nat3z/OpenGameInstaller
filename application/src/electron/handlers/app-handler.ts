@@ -58,7 +58,7 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
     const appInfo: LibraryInfo = JSON.parse(
       fs.readFileSync(join(__dirname, 'library/' + appid + '.json'), 'utf-8')
     );
-    let args = appInfo.launchArguments ?? '%command%';
+    let args = appInfo.launchArguments || '%command%';
     // replace %command% with the launch executable
     args = args.replace('%command%', appInfo.launchExecutable);
     const spawnedItem = exec(args, {
@@ -198,12 +198,21 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
     if (!client || !client.filePath) {
       return null;
     }
-    if (!fs.existsSync(join(client.filePath, 'icon.png'))) {
+    // read the addon.json file to get the icon path
+    const addonJson = JSON.parse(
+      fs.readFileSync(join(client.filePath, 'addon.json'), 'utf-8')
+    );
+    if (!addonJson.icon) {
       return null;
     }
-    const iconPath = join(client.filePath, 'icon.png');
-    if (!iconPath) {
-      console.error('No icon path found for addon: ' + addonID);
+    const iconPath = join(client.filePath, addonJson.icon);
+    if (!fs.existsSync(iconPath)) {
+      console.error(
+        'No icon path found for addon (does not exist): ' +
+          addonID +
+          ' at path: ' +
+          iconPath
+      );
       return null;
     }
     return iconPath;
@@ -213,6 +222,7 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
       return null;
     }
     const ext = path.split('.').pop()?.toLowerCase() || 'png';
+
     const mimeType =
       {
         jpg: 'image/jpeg',

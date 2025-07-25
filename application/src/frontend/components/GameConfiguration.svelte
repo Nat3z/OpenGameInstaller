@@ -11,7 +11,6 @@
   import { createNotification } from '../store';
   import Modal from './modal/Modal.svelte';
   import TitleModal from './modal/TitleModal.svelte';
-  import HeaderModal from './modal/HeaderModal.svelte';
   import SectionModal from './modal/SectionModal.svelte';
   import ButtonModal from './modal/ButtonModal.svelte';
   import InputModal from './modal/InputModal.svelte';
@@ -60,9 +59,7 @@
       option
         .setDisplayName('Game Arguments')
         .setName('launchArguments')
-        .setDescription(
-          'The arguments to pass to the game executable. %command% replaces with the game executable.'
-        )
+        .setDescription('%command% replaces with the game executable.')
         .setInputType('text')
         .setDefaultValue(gameInfo.launchArguments ?? '%command%')
     )
@@ -143,7 +140,6 @@
 
 <Modal open={true} size="large" onClose={closeModal}>
   <TitleModal title={gameInfo.name} />
-  <HeaderModal header="Define the game configuration" />
 
   {#each Object.keys(screenRendering) as key}
     {#if isBooleanOption(screenRendering[key])}
@@ -169,8 +165,8 @@
     {/if}
   {/each}
 
-  <SectionModal>
-    <div class="flex gap-3">
+  <SectionModal class="mt-4">
+    <div class="flex gap-3 flex-row">
       <ButtonModal
         text="Save Configuration"
         variant="primary"

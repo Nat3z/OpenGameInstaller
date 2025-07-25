@@ -298,7 +298,7 @@ export class AddonConnection {
             const clientsWithStorefront = Array.from(clients.values()).filter(
               (client) =>
                 client.addonInfo.storefronts.includes(storefront) &&
-                this.eventsAvailable.includes('game-details')
+                client.eventsAvailable.includes('game-details')
             );
             // find a storefront that gives app details that isn't undefined
             let appDetails: StoreData | undefined;

@@ -118,7 +118,7 @@
           })
         );
       }
-      await Promise.all(promises);
+      await Promise.allSettled(promises);
       loadingResults.set(false);
     } catch (ex) {
       console.error(ex);

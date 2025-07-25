@@ -41,6 +41,8 @@
   let searchQuery = $state('');
   let allSections = $state<AllSections[]>([]);
   let filteredSections = $state<AllSections[]>([]);
+  let carouselIndices = $state<Record<string, number>>({}); // sectionId -> page index
+  let carouselDirections = $state<Record<string, number>>({}); // sectionId -> direction (-1 or 1)
 
   // Flatten all sections from all catalogs
   $effect(() => {
@@ -63,6 +65,18 @@
     updateFilteredSections();
   });
 
+  // Reset carousel indices when filteredSections change
+  $effect(() => {
+    const indices: Record<string, number> = {};
+    const directions: Record<string, number> = {};
+    filteredSections.forEach((section) => {
+      indices[section.sectionId] = 0;
+      directions[section.sectionId] = 0;
+    });
+    carouselIndices = indices;
+    carouselDirections = directions;
+  });
+
   function updateFilteredSections() {
     let filtered = allSections;
 
@@ -81,6 +95,28 @@
     }
 
     filteredSections = filtered;
+  }
+
+  function handleCarouselNav(
+    sectionId: string,
+    direction: number,
+    maxPage: number
+  ) {
+    carouselDirections = { ...carouselDirections, [sectionId]: direction };
+    // Animate, then update index
+    setTimeout(() => {
+      carouselIndices = {
+        ...carouselIndices,
+        [sectionId]: Math.max(
+          0,
+          Math.min((carouselIndices[sectionId] || 0) + direction, maxPage)
+        ),
+      };
+      // Reset direction after content changes
+      setTimeout(() => {
+        carouselDirections = { ...carouselDirections, [sectionId]: 0 };
+      }, 50);
+    }, 150);
   }
 
   async function loadCatalogs() {
@@ -126,14 +162,6 @@
     currentStorePageOpened.set(game.appID);
     currentStorePageOpenedStorefront.set(game.storefront);
     viewOpenedWhenChanged.set($selectedView);
-  }
-
-  function chunkArray<T>(array: T[], size: number): T[][] {
-    const chunks: T[][] = [];
-    for (let i = 0; i < array.length; i += size) {
-      chunks.push(array.slice(i, i + size));
-    }
-    return chunks;
   }
 
   onMount(() => {
@@ -240,15 +268,52 @@
             </p>
           </div>
 
-          <!-- Games Grid -->
+          <!-- Games Carousel -->
           {#if sectionItem.section.listings.length > 0}
-            <div class="space-y-3">
-              {#each chunkArray(sectionItem.section.listings, 8) as chunk}
-                <div class="flex gap-3 flex-wrap">
-                  {#each chunk as game}
+            <div class="relative flex items-center w-full">
+              <!-- Left Arrow -->
+              <button
+                class="absolute left-0 z-10 bg-accent-lighter hover:bg-accent-light text-accent-dark rounded-full w-8 h-8 flex items-center justify-center shadow transition-colors disabled:opacity-40 disabled:cursor-not-allowed border-none"
+                style="top: 50%; transform: translateY(-50%);"
+                onclick={() =>
+                  handleCarouselNav(
+                    sectionItem.sectionId,
+                    -1,
+                    Math.floor((sectionItem.section.listings.length - 1) / 5)
+                  )}
+                disabled={carouselIndices[sectionItem.sectionId] === 0}
+                aria-label="Previous games"
+              >
+                <svg
+                  class="w-5 h-5"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  viewBox="0 0 24 24"
+                  ><path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    d="M15 19l-7-7 7-7"
+                  /></svg
+                >
+              </button>
+
+              <!-- Carousel Items -->
+              <div
+                class="flex flex-row gap-3 w-full justify-center overflow-hidden px-10"
+                style="min-height: 200px;"
+              >
+                <div
+                  class="flex flex-row gap-3 w-full transition-transform duration-300 ease-in-out"
+                  style="transform: translateX({carouselDirections[
+                    sectionItem.sectionId
+                  ] * -20}px);"
+                >
+                  {#each sectionItem.section.listings.slice(carouselIndices[sectionItem.sectionId] * 5, carouselIndices[sectionItem.sectionId] * 5 + 5) as game (game.appID)}
                     <button
-                      class="group relative border-none transition-all duration-200 shadow-md hover:shadow-lg rounded-lg overflow-hidden bg-white transform hover:scale-102 hover:-translate-y-0.5"
+                      class="group w-32 h-48 relative border-none transition-all duration-200 shadow-md hover:shadow-lg rounded-lg overflow-hidden bg-white transform hover:scale-102 hover:-translate-y-0.5"
                       onclick={() => openGameStorePage(game)}
+                      aria-label={game.name}
                     >
                       <div class="relative">
                         <img
@@ -256,6 +321,14 @@
                           alt={game.name}
                           class="w-32 h-48 object-cover"
                           loading="lazy"
+                          onerror={(e) => {
+                            const fallback = '/favicon.png';
+                            const img = e.currentTarget as HTMLImageElement;
+                            if (img.src !== fallback) {
+                              img.src = fallback;
+                              img.style.opacity = '0.5';
+                            }
+                          }}
                         />
                         <!-- Overlay with game info -->
                         <div
@@ -271,7 +344,35 @@
                     </button>
                   {/each}
                 </div>
-              {/each}
+              </div>
+
+              <!-- Right Arrow -->
+              <button
+                class="absolute right-0 z-10 bg-accent-lighter hover:bg-accent-light text-accent-dark rounded-full w-8 h-8 flex items-center justify-center shadow transition-colors disabled:opacity-40 disabled:cursor-not-allowed border-none"
+                style="top: 50%; transform: translateY(-50%);"
+                onclick={() =>
+                  handleCarouselNav(
+                    sectionItem.sectionId,
+                    1,
+                    Math.floor((sectionItem.section.listings.length - 1) / 5)
+                  )}
+                disabled={carouselIndices[sectionItem.sectionId] >=
+                  Math.floor((sectionItem.section.listings.length - 1) / 5)}
+                aria-label="Next games"
+              >
+                <svg
+                  class="w-5 h-5"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  viewBox="0 0 24 24"
+                  ><path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    d="M9 5l7 7-7 7"
+                  /></svg
+                >
+              </button>
             </div>
           {:else}
             <div class="text-center py-6 text-gray-500">

@@ -244,6 +244,14 @@
                         alt={app.name}
                         classifier={app.appID.toString() + '-capsule'}
                         class="w-36 h-54 object-cover"
+                        onerror={(e) => {
+                          const fallback = '/favicon.png';
+                          const img = e.currentTarget as HTMLImageElement;
+                          if (img.src !== fallback) {
+                            img.src = fallback;
+                            img.style.opacity = '0.5';
+                          }
+                        }}
                       />
                     </button>
                   {/each}

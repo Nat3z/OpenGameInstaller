@@ -5,10 +5,17 @@
     src: string;
     alt: string;
     classifier: string;
+    onerror?: (e: Event) => void;
     class?: string;
   }
 
-  let { src, alt, classifier, class: className = '' }: Props = $props();
+  let {
+    src,
+    alt,
+    classifier,
+    onerror = () => {},
+    class: className = '',
+  }: Props = $props();
 
   let imageData: string | undefined = $state();
   let loading = $state(true);
@@ -77,5 +84,5 @@
     {error}
   </div>
 {:else}
-  <img src={imageData} {alt} class={className} />
+  <img src={imageData} {alt} class={className} {onerror} />
 {/if}

@@ -23,9 +23,10 @@ Go to the [latest release](https://github.com/Nat3z/OpenGameInstaller/releases/l
 # Screenshots
 
 <p float="left" align="center">
-  <img width="45%" height="45%" src="https://github.com/user-attachments/assets/802bc452-ea5b-43d7-a57a-6e778e5222cb" alt="Library View" />
-  <img width="45%" height="45%" src="https://github.com/user-attachments/assets/89f19909-67c9-43e0-91aa-a0729e3ccd18" alt="Store View" />
-  <img width="45%" height="45%" src="https://github.com/user-attachments/assets/9208b5aa-b7c8-48f1-83fa-9d817000b0cb" alt="About View" />
+  <img width="45%" height="45%" src="https://github.com/user-attachments/assets/ce39e775-d78b-494c-a936-68a0623dd533" alt="Library View" />
+  <img width="45%" height="45%" src="https://github.com/user-attachments/assets/baf3660e-5182-47ac-b013-f30f8deb21bf" alt="Store View" />
+  <img width="45%" height="45%" src="https://github.com/user-attachments/assets/21df7d7c-44df-42c4-9c9c-f404e74a271c" alt="Discover View" />
+  <img width="45%" height="45%" src="https://github.com/user-attachments/assets/90af26d1-bc24-43d7-a8bc-51117f06c0cb" alt="About View" />
 </p>
 
 # What is this repository?

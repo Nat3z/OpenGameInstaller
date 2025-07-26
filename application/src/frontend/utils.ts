@@ -571,24 +571,45 @@ export async function startDownload(
       break;
     }
     case 'torrent': {
-      if (!result.filename || !result.downloadURL) {
+      if (!result.downloadURL) {
         createNotification({
           id: Math.random().toString(36).substring(7),
           type: 'error',
-          message: 'Addon did not provide a filename for the torrent.',
+          message: 'Addon did not provide a torrent file.',
         });
         return;
       }
+
+      // Generate a safe filename fallback for torrent files
+      let filename = result.filename;
+      if (!filename) {
+        // Try to extract filename from URL or use a generic name
+        const urlParts = result.downloadURL.split(/[\/\\]/);
+        const lastPart = urlParts[urlParts.length - 1];
+        if (lastPart && lastPart.includes('.')) {
+          filename = lastPart;
+        } else {
+          // Use the result name or a generic fallback
+          filename = result.name || 'torrent_download';
+        }
+        // Sanitize filename to remove invalid characters and limit length
+        filename = filename.replace(/[<>:"/\\|?*]/g, '_').substring(0, 100);
+      }
+
+      const downloadPath =
+        getDownloadPath() + '/' + result.name + '/' + filename;
+
       window.electronAPI.torrent
-        .downloadTorrent(
-          result.downloadURL,
-          getDownloadPath() +
-            '/' +
-            result.name +
-            '/' +
-            (result.filename || result.downloadURL.split(/\\|\//).pop())
-        )
+        .downloadTorrent(result.downloadURL, downloadPath)
         .then((id) => {
+          if (id === null) {
+            createNotification({
+              id: Math.random().toString(36).substring(7),
+              type: 'error',
+              message: 'Failed to download torrent.',
+            });
+            return;
+          }
           htmlButton.textContent = 'Download';
           htmlButton.disabled = false;
           currentDownloads.update((downloads) => {
@@ -613,25 +634,44 @@ export async function startDownload(
     }
 
     case 'magnet': {
-      if (!result.filename || !result.downloadURL) {
+      if (!result.downloadURL) {
         createNotification({
           id: Math.random().toString(36).substring(7),
           type: 'error',
-          message: 'Addon did not provide a filename for the magnet link.',
+          message: 'Addon did not provide a magnet link.',
         });
         return;
       }
 
+      // Generate a safe filename fallback for magnet links
+      let filename = result.filename;
+      if (!filename) {
+        // For magnet links, extract name from the magnet URI or use a generic name
+        const magnetMatch = result.downloadURL.match(/dn=([^&]*)/);
+        if (magnetMatch) {
+          filename = decodeURIComponent(magnetMatch[1]);
+        } else {
+          // Use the result name or a generic fallback
+          filename = result.name || 'torrent_download';
+        }
+        // Sanitize filename to remove invalid characters and limit length
+        filename = filename.replace(/[<>:"/\\|?*]/g, '_').substring(0, 100);
+      }
+
+      const downloadPath =
+        getDownloadPath() + '/' + result.name + '/' + filename;
+
       window.electronAPI.torrent
-        .downloadMagnet(
-          result.downloadURL,
-          getDownloadPath() +
-            '/' +
-            result.name +
-            '/' +
-            (result.filename || result.downloadURL.split(/\\|\//).pop())
-        )
+        .downloadMagnet(result.downloadURL, downloadPath)
         .then((id) => {
+          if (id === null) {
+            createNotification({
+              id: Math.random().toString(36).substring(7),
+              type: 'error',
+              message: 'Failed to download torrent.',
+            });
+            return;
+          }
           htmlButton.textContent = 'Download';
           htmlButton.disabled = false;
           currentDownloads.update((downloads) => {
@@ -1281,12 +1321,32 @@ async function restartTorrentDownload(
     throw new Error('No torrent URL available for restart');
   }
 
-  const path =
-    getDownloadPath() +
-    '/' +
-    download.name +
-    '/' +
-    (download.filename || originalUrl.split(/\\|\//).pop() || 'download');
+  // Generate a safe filename fallback
+  let filename = download.filename;
+  if (!filename) {
+    if (download.downloadType === 'magnet') {
+      // For magnet links, extract name from the magnet URI or use a generic name
+      const magnetMatch = originalUrl.match(/dn=([^&]*)/);
+      if (magnetMatch) {
+        filename = decodeURIComponent(magnetMatch[1]);
+      } else {
+        filename = download.name || 'torrent_download';
+      }
+    } else {
+      // For torrent files, try to extract filename from URL
+      const urlParts = originalUrl.split(/[\/\\]/);
+      const lastPart = urlParts[urlParts.length - 1];
+      if (lastPart && lastPart.includes('.')) {
+        filename = lastPart;
+      } else {
+        filename = download.name || 'torrent_download';
+      }
+    }
+    // Sanitize filename to remove invalid characters and limit length
+    filename = filename.replace(/[<>:"/\\|?*]/g, '_').substring(0, 100);
+  }
+
+  const path = getDownloadPath() + '/' + download.name + '/' + filename;
 
   console.log('Restarting torrent download:', originalUrl, 'to path:', path);
 

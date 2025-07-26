@@ -61,6 +61,7 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
     let args = appInfo.launchArguments || '%command%';
     // replace %command% with the launch executable
     args = args.replace('%command%', appInfo.launchExecutable);
+    console.log('Launching game with args: ' + args, 'in cwd: ' + appInfo.cwd);
     const spawnedItem = exec(args, {
       cwd: appInfo.cwd,
     });

@@ -19,5 +19,8 @@
   },
   "overrides": {
     "@types/minimatch": "5.1.2"
-  }
+  },
+  "trustedDependencies": [
+    "node-datachannel"
+  ]
 }

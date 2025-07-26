@@ -5,23 +5,57 @@ import type { $Hosts } from 'real-debrid-js';
 
 contextBridge.exposeInMainWorld('electronAPI', {
   fs: {
-    read: (path: string) => ipcRenderer.sendSync('fs:read', path),
-    write: (path: string, data: string) =>
-      ipcRenderer.sendSync('fs:write', { path, data }),
-    mkdir: (path: string) => ipcRenderer.sendSync('fs:mkdir', path),
-    exists: (path: string) => ipcRenderer.sendSync('fs:exists', path),
-    delete: (path: string) => ipcRenderer.sendSync('fs:delete', path),
-    showFileLoc: (path: string) =>
-      ipcRenderer.sendSync('fs:show-file-loc', path),
-    unrar: (data: { outputDir: string; rarFilePath: string }) =>
-      ipcRenderer.invoke('fs:extract-rar', data),
-    getFilesInDir: (path: string) =>
-      ipcRenderer.invoke('fs:get-files-in-dir', path),
+    read: (path: string) => {
+      console.log('fs:read called with path:', path);
+      return ipcRenderer.sendSync('fs:read', path);
+    },
+    write: (path: string, data: string) => {
+      console.log(
+        'fs:write called with path:',
+        path,
+        'data length:',
+        data.length
+      );
+      return ipcRenderer.sendSync('fs:write', { path, data });
+    },
+    mkdir: (path: string) => {
+      console.log('fs:mkdir called with path:', path);
+      return ipcRenderer.sendSync('fs:mkdir', path);
+    },
+    exists: (path: string) => {
+      console.log('fs:exists called with path:', path);
+      return ipcRenderer.sendSync('fs:exists', path);
+    },
+    delete: (path: string) => {
+      console.log('fs:delete called with path:', path);
+      return ipcRenderer.sendSync('fs:delete', path);
+    },
+    showFileLoc: (path: string) => {
+      console.log('fs:showFileLoc called with path:', path);
+      return ipcRenderer.sendSync('fs:show-file-loc', path);
+    },
+    unrar: (data: { outputDir: string; rarFilePath: string }) => {
+      console.log(
+        'fs:unrar called with outputDir:',
+        data.outputDir,
+        'rarFilePath:',
+        data.rarFilePath
+      );
+      return ipcRenderer.invoke('fs:extract-rar', data);
+    },
+    getFilesInDir: (path: string) => {
+      console.log('fs:getFilesInDir called with path:', path);
+      return ipcRenderer.invoke('fs:get-files-in-dir', path);
+    },
     dialog: {
-      showOpenDialog: (options: Electron.OpenDialogOptions) =>
-        ipcRenderer.invoke('fs:dialog:show-open-dialog', options),
-      showSaveDialog: (options: Electron.SaveDialogOptions) =>
-        ipcRenderer.invoke('fs:dialog:show-save-dialog', options),
+      showOpenDialog: (options: Electron.OpenDialogOptions) => {
+        console.log('fs:dialog:showOpenDialog called with options:', options);
+        return ipcRenderer.invoke('fs:dialog:show-open-dialog', options);
+      },
+      showSaveDialog: (options: Electron.SaveDialogOptions) => {
+        console.log('fs:dialog:showSaveDialog called with options:', options);
+        return ipcRenderer.invoke('fs:dialog:show-save-dialog', options);
+      },
     },
   },
   realdebrid: {

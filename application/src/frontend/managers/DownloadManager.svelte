@@ -137,19 +137,24 @@
 
     let outputDir = downloadedItem.downloadPath;
     let additionalData: any = {};
+    console.log('Downloaded Item: ', downloadedItem);
 
     // Handle torrent-specific logic
-    if (isTorrent && outputDir.endsWith('.torrent')) {
-      const filesInDir = await window.electronAPI.fs.getFilesInDir(outputDir);
-      if (filesInDir.length === 1) {
-        outputDir = downloadedItem.downloadPath + '\\' + filesInDir[0] + '\\';
-        console.log('Newly calculated outputDir: ', outputDir);
-      } else {
-        console.error(
-          'Error: More than one file in the directory, cannot determine the output directory.'
-        );
+    if (isTorrent) {
+      let filesInDir = await window.electronAPI.fs.getFilesInDir(outputDir);
+      // keep going down the directory tree until we have something with more than one file/folder
+      while (filesInDir.length === 1) {
+        outputDir = outputDir + '/' + filesInDir[0];
+        filesInDir = await window.electronAPI.fs.getFilesInDir(outputDir);
       }
+      outputDir = outputDir + '/';
+      console.log('Newly calculated outputDir: ', outputDir);
     }
+    // write to the downloadItem
+    downloadedItem.downloadPath = outputDir;
+    updateDownloadStatus(downloadID, {
+      downloadPath: outputDir,
+    });
 
     // Handle RealDebrid extraction for DDL
     if (!isTorrent && downloadedItem.usedRealDebrid && !downloadedItem.files) {

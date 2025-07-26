@@ -1,6 +1,6 @@
 {
   "name": "opengameinstaller-gui",
-  "version": "2.0.1",
+  "version": "2.0.2",
   "description": "The front-facing GUI for OpenGameInstaller and the addon-server.",
   "type": "module",
   "private": false,
@@ -54,7 +54,7 @@
     "rollup-plugin-postcss": "^4.0.2",
     "sanitize-html": "^2.13.0",
     "semver": "^7.7.2",
-    "webtorrent": "1.9.7",
+    "webtorrent": "^2.6.10",
     "ws": "^8.18.0",
     "zod": "^3.23.8"
   },
@@ -69,6 +69,7 @@
     "@types/sanitize-html": "^2.11.0",
     "@types/sass": "^1.45.0",
     "@types/semver": "^7.7.0",
+    "@types/webtorrent": "^0.110.0",
     "@types/ws": "^8.5.11",
     "autoprefixer": "^10.4.19",
     "concurrently": "^7.5.0",

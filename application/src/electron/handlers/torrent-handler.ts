@@ -205,6 +205,40 @@ async function handleTorrentDownload({
           }
         }, 500);
         // --- End throttled setup ---
+        // Listen for pause event from frontend
+        let isPaused = false;
+        
+        ipcMain.handleOnce(`torrent:${downloadID}:pause`, () => {
+          if (!isPaused) {
+            isPaused = true;
+            console.log('Torrent download paused');
+            mainWindow.webContents.send('torrent:download-paused', {
+              id: downloadID,
+            });
+            sendNotification({
+              message: 'Torrent download paused',
+              id: downloadID,
+              type: 'info',
+            });
+          }
+        });
+
+        // Listen for resume event from frontend
+        ipcMain.handleOnce(`torrent:${downloadID}:resume`, () => {
+          if (isPaused) {
+            isPaused = false;
+            console.log('Torrent download resumed');
+            mainWindow.webContents.send('torrent:download-resumed', {
+              id: downloadID,
+            });
+            sendNotification({
+              message: 'Torrent download resumed',
+              id: downloadID,
+              type: 'info',
+            });
+          }
+        });
+
         const torrentInterval = setInterval(async () => {
           if (!qbitClient) {
             clearInterval(torrentInterval);
@@ -313,6 +347,40 @@ async function handleTorrentDownload({
             }
           }, 500);
           // --- End throttled setup ---
+
+          // Listen for pause event from frontend
+          let isPaused = false;
+          
+          ipcMain.handleOnce(`torrent:${downloadID}:pause`, () => {
+            if (!isPaused) {
+              isPaused = true;
+              console.log('WebTorrent download paused');
+              mainWindow.webContents.send('torrent:download-paused', {
+                id: downloadID,
+              });
+              sendNotification({
+                message: 'Torrent download paused',
+                id: downloadID,
+                type: 'info',
+              });
+            }
+          });
+
+          // Listen for resume event from frontend
+          ipcMain.handleOnce(`torrent:${downloadID}:resume`, () => {
+            if (isPaused) {
+              isPaused = false;
+              console.log('WebTorrent download resumed');
+              mainWindow.webContents.send('torrent:download-resumed', {
+                id: downloadID,
+              });
+              sendNotification({
+                message: 'Torrent download resumed',
+                id: downloadID,
+                type: 'info',
+              });
+            }
+          });
           addTorrent(
             torrentData,
             arg.path + '.torrent',
@@ -356,6 +424,40 @@ async function handleTorrentDownload({
             }
           }, 500);
           // --- End throttled setup ---
+
+          // Listen for pause event from frontend
+          let isPaused = false;
+          
+          ipcMain.handleOnce(`torrent:${downloadID}:pause`, () => {
+            if (!isPaused) {
+              isPaused = true;
+              console.log('WebTorrent magnet download paused');
+              mainWindow.webContents.send('torrent:download-paused', {
+                id: downloadID,
+              });
+              sendNotification({
+                message: 'Torrent download paused',
+                id: downloadID,
+                type: 'info',
+              });
+            }
+          });
+
+          // Listen for resume event from frontend
+          ipcMain.handleOnce(`torrent:${downloadID}:resume`, () => {
+            if (isPaused) {
+              isPaused = false;
+              console.log('WebTorrent magnet download resumed');
+              mainWindow.webContents.send('torrent:download-resumed', {
+                id: downloadID,
+              });
+              sendNotification({
+                message: 'Torrent download resumed',
+                id: downloadID,
+                type: 'info',
+              });
+            }
+          });
           addTorrent(
             arg.link,
             arg.path + '.torrent',

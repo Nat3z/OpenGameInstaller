@@ -47,6 +47,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('ddl:download', downloads),
     abortDownload: (downloadID: string) =>
       ipcRenderer.invoke(`ddl:${downloadID}:abort`),
+    pauseDownload: (downloadID: string) =>
+      ipcRenderer.invoke(`ddl:${downloadID}:pause`),
+    resumeDownload: (downloadID: string) =>
+      ipcRenderer.invoke(`ddl:${downloadID}:resume`),
   },
   queue: {
     cancel: (downloadID: string) =>
@@ -57,6 +61,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('torrent:download-torrent', { link: torrent, path }),
     downloadMagnet: (magnet: string, path: string) =>
       ipcRenderer.invoke('torrent:download-magnet', { link: magnet, path }),
+    pauseDownload: (downloadID: string) =>
+      ipcRenderer.invoke(`torrent:${downloadID}:pause`),
+    resumeDownload: (downloadID: string) =>
+      ipcRenderer.invoke(`torrent:${downloadID}:resume`),
   },
   oobe: {
     downloadTools: () => ipcRenderer.invoke('oobe:download-tools'),
@@ -145,6 +153,20 @@ ipcRenderer.on('ddl:download-cancelled', (_, arg) => {
   );
 });
 
+ipcRenderer.on('ddl:download-paused', (_, arg) => {
+  dbg_countEvent();
+  document.dispatchEvent(
+    new CustomEvent('ddl:download-paused', { detail: arg })
+  );
+});
+
+ipcRenderer.on('ddl:download-resumed', (_, arg) => {
+  dbg_countEvent();
+  document.dispatchEvent(
+    new CustomEvent('ddl:download-resumed', { detail: arg })
+  );
+});
+
 ipcRenderer.on('notification', (_, arg) => {
   dbg_countEvent();
   document.dispatchEvent(new CustomEvent('new-notification', { detail: arg }));
@@ -175,6 +197,20 @@ ipcRenderer.on('torrent:download-cancelled', (_, arg) => {
   dbg_countEvent();
   document.dispatchEvent(
     new CustomEvent('torrent:download-cancelled', { detail: arg })
+  );
+});
+
+ipcRenderer.on('torrent:download-paused', (_, arg) => {
+  dbg_countEvent();
+  document.dispatchEvent(
+    new CustomEvent('torrent:download-paused', { detail: arg })
+  );
+});
+
+ipcRenderer.on('torrent:download-resumed', (_, arg) => {
+  dbg_countEvent();
+  document.dispatchEvent(
+    new CustomEvent('torrent:download-resumed', { detail: arg })
   );
 });
 

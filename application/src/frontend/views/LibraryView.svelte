@@ -196,7 +196,7 @@
                         style="background: linear-gradient(to top, rgba(0,0,0,0.7), transparent);"
                       ></div>
                       <p
-                        class="text-white text-base py-4 text-center font-archivo"
+                        class="text-white text-base py-4 text-center font-archivo z-[1]"
                       >
                         {app.name}
                       </p>
@@ -295,7 +295,7 @@
                             style="background: linear-gradient(to top, rgba(0,0,0,0.7), transparent);"
                           ></div>
                           <p
-                            class="text-white text-base py-4 text-center font-archivo"
+                            class="text-white text-base py-4 text-center font-archivo z-[1]"
                           >
                             {app.name}
                           </p>

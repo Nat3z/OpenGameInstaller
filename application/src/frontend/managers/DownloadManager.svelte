@@ -5,44 +5,20 @@
     currentDownloads,
     failedSetups,
     type DownloadStatusAndInfo,
+    type FailedSetup,
   } from '../store';
-  import { getDownloadPath, safeFetch } from '../utils';
+  import {
+    getDownloadPath,
+    safeFetch,
+    updateDownloadStatus,
+    getDownloadItem,
+  } from '../utils';
 
   function isCustomEvent(event: Event): event is CustomEvent {
     return event instanceof CustomEvent;
   }
 
   // -- Utility functions to reduce repetition --
-
-  function updateDownloadStatus(
-    downloadID: string,
-    updates: Partial<DownloadStatusAndInfo>
-  ) {
-    currentDownloads.update((downloads) => {
-      return downloads.map((download) => {
-        if (download.id === downloadID) {
-          return { ...download, ...updates };
-        }
-        return download;
-      });
-    });
-  }
-
-  function getDownloadItem(
-    downloadID: string
-  ): DownloadStatusAndInfo | undefined {
-    let foundItem: DownloadStatusAndInfo | undefined;
-    currentDownloads.update((downloads) => {
-      return downloads.map((download) => {
-        if (download.id === downloadID) {
-          foundItem = download;
-          return download;
-        }
-        return download;
-      });
-    });
-    return foundItem;
-  }
 
   function dispatchSetupEvent(
     eventType: 'log' | 'progress',
@@ -80,7 +56,7 @@
       downloadInfo: downloadedItem,
       setupData,
       error: error.message || error,
-      timestamp: Date.now(),
+      should: 'call-addon',
     });
   }
 
@@ -180,12 +156,71 @@
       dispatchSetupEvent('log', downloadedItem.id, [
         'Extracting downloaded RAR file...',
       ]);
-      const extractedDir = await window.electronAPI.fs.unrar({
-        outputDir: getDownloadPath() + '/' + downloadedItem.filename,
-        rarFilePath: downloadedItem.downloadPath,
-      });
-      outputDir = extractedDir;
-      downloadedItem.downloadPath = extractedDir;
+
+      const attemptUnrar = async () => {
+        try {
+          console.log('Extracting RAR file: ', downloadedItem.downloadPath);
+          console.log(downloadedItem);
+          const extractedDir = await window.electronAPI.fs.unrar({
+            outputDir: getDownloadPath() + '/' + downloadedItem.filename,
+            rarFilePath:
+              downloadedItem.downloadPath?.replace(/(\/|\\)$/g, '') +
+              '/' +
+              downloadedItem.filename,
+          });
+          outputDir = extractedDir;
+          // delete the rar file
+          console.log(
+            'Deleting RAR file: ',
+            downloadedItem.downloadPath?.replace(/(\/|\\)$/g, '') +
+              '/' +
+              downloadedItem.filename
+          );
+          window.electronAPI.fs.delete(
+            downloadedItem.downloadPath?.replace(/(\/|\\)$/g, '') +
+              '/' +
+              downloadedItem.filename
+          );
+          console.log('RAR file deleted');
+          downloadedItem.downloadPath = extractedDir;
+          return true;
+        } catch (error) {
+          console.log('Failed to extract RAR file');
+          return false;
+        }
+      };
+
+      // try 3 times to extract the RAR file
+      let success = false;
+      for (let i = 0; i < 3; i++) {
+        success = await attemptUnrar();
+        if (success) break; // if successful, break the loop
+        await new Promise((resolve) => setTimeout(resolve, 1000)); // wait 1 second before retrying
+      }
+
+      if (!success) {
+        createNotification({
+          id: Math.random().toString(36).substring(2, 9),
+          type: 'error',
+          message: 'Failed to extract RAR file',
+        });
+
+        // add a failed setup
+        saveFailedSetup({
+          downloadInfo: downloadedItem,
+          setupData: {
+            path: downloadedItem.downloadPath,
+            type: downloadedItem.downloadType,
+            name: downloadedItem.name,
+            usedRealDebrid: downloadedItem.usedRealDebrid,
+            appID: downloadedItem.appID,
+            storefront: downloadedItem.storefront,
+          },
+          error: 'Failed to extract RAR file',
+          should: 'call-unrar',
+        });
+        return;
+      }
     }
 
     // Add multipart files data for DDL
@@ -209,18 +244,7 @@
       const finalStatus = isTorrent ? 'seeding' : 'setup-complete';
       await handleSetupSuccess(data, downloadedItem, finalStatus);
     } catch (error) {
-      const setupData = {
-        path: outputDir,
-        type: downloadedItem.downloadType,
-        name: downloadedItem.name,
-        usedRealDebrid: downloadedItem.usedRealDebrid,
-        appID: downloadedItem.appID,
-        storefront: downloadedItem.storefront,
-        ...(additionalData.multiPartFiles && {
-          multiPartFiles: additionalData.multiPartFiles,
-        }),
-      };
-      handleSetupError(error, downloadedItem, setupData);
+      // already handled in the catch block of safeFetch
     }
   }
 
@@ -292,16 +316,55 @@
     updateDownloadStatus(event.detail.id, { status: 'error' });
   });
 
+  // -- Download Paused/Resumed --
+  // Note: Pause/Resume status updates are now handled directly in utils.ts functions
+  // These events are kept for backward compatibility and additional logging
+  document.addEventListener('ddl:download-paused', (event: Event) => {
+    if (!isCustomEvent(event)) return;
+    console.log('Direct download paused:', event.detail.id);
+    // Status is already updated in pauseDownload function
+  });
+
+  document.addEventListener('ddl:download-resumed', (event: Event) => {
+    if (!isCustomEvent(event)) return;
+    console.log('Direct download resumed:', event.detail.id);
+    // Status is already updated in resumeDownload function
+  });
+
+  document.addEventListener('torrent:download-paused', (event: Event) => {
+    if (!isCustomEvent(event)) return;
+    console.log('Torrent download paused:', event.detail.id);
+    // Status is already updated in pauseDownload function
+  });
+
+  document.addEventListener('torrent:download-resumed', (event: Event) => {
+    if (!isCustomEvent(event)) return;
+    console.log('Torrent download resumed:', event.detail.id);
+    // Status is already updated in resumeDownload function
+  });
+
   // -- Failed Setup --
 
-  function saveFailedSetup(setupInfo: any) {
+  function saveFailedSetup(setupInfo: {
+    downloadInfo: DownloadStatusAndInfo;
+    setupData: {
+      path: string;
+      type: string;
+      name: string;
+      usedRealDebrid: boolean;
+      appID: number;
+      storefront: string;
+    };
+    error: string;
+    should: 'call-addon' | 'call-unrar';
+  }) {
     try {
       if (!window.electronAPI.fs.exists('./failed-setups')) {
         window.electronAPI.fs.mkdir('./failed-setups');
       }
 
       const failedSetupId = Math.random().toString(36).substring(7);
-      const failedSetupData = {
+      const failedSetupData: FailedSetup = {
         id: failedSetupId,
         timestamp: Date.now(),
         ...setupInfo,

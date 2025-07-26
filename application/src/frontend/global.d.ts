@@ -46,10 +46,14 @@ interface Window {
     torrent: {
       downloadTorrent: (torrent: string, path: string) => Promise<string>;
       downloadMagnet: (magnet: string, path: string) => Promise<string>;
+      pauseDownload: (downloadID: string) => Promise<void>;
+      resumeDownload: (downloadID: string) => Promise<void>;
     };
     ddl: {
       download: (files: { link: string; path: string }[]) => Promise<string>;
       abortDownload: (downloadID: string) => Promise<void>;
+      pauseDownload: (downloadID: string) => Promise<void>;
+      resumeDownload: (downloadID: string) => Promise<boolean>;
     };
     queue: {
       cancel: (downloadID: string) => Promise<void>;

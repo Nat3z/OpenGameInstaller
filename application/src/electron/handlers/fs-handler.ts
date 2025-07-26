@@ -110,7 +110,10 @@ export default function handler() {
     }
 
     // use 7zip to extract the rar file or unrar if on linux
+    console.log('Extracting RAR file: ', rarFilePath);
+    console.log('Output directory: ', outputDir);
     if (process.platform === 'win32') {
+      console.log('isWin32');
       let s7ZipPath = '"C:\\Program Files\\7-Zip\\7z.exe"';
       await new Promise<void>((resolve, reject) =>
         exec(
@@ -118,8 +121,8 @@ export default function handler() {
           (err, stdout, stderr) => {
             if (err) {
               console.error(err);
-              reject();
-              throw new Error('Failed to extract RAR file');
+              console.log(stderr);
+              reject(new Error('Failed to extract RAR file'));
             }
             console.log(stdout);
             console.log(stderr);
@@ -129,24 +132,23 @@ export default function handler() {
       );
     }
 
-    if (process.platform === 'linux') {
-      if (rarFilePath.endsWith('.rar')) {
-        await new Promise<void>((resolve) =>
-          exec(`unrar x "${rarFilePath}" "${outputDir}"`, (stdout, stderr) => {
+    if (process.platform === 'linux' || process.platform === 'darwin') {
+      console.log('isLinuxOrDarwin');
+      await new Promise<void>((resolve) =>
+        exec(
+          `unrar x "${rarFilePath}" "${outputDir}"`,
+          (error, stdout, stderr) => {
+            if (error) {
+              console.error(error);
+              console.log(stderr);
+              throw new Error('Failed to extract RAR file');
+            }
             console.log(stdout);
             console.log(stderr);
             resolve();
-          })
-        );
-      } else if (rarFilePath.endsWith('.zip')) {
-        await new Promise<void>((resolve) =>
-          exec(`unzip "${rarFilePath}" -d "${outputDir}"`, (stdout, stderr) => {
-            console.log(stdout);
-            console.log(stderr);
-            resolve();
-          })
-        );
-      }
+          }
+        )
+      );
     }
 
     return outputDir;

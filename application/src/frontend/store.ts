@@ -28,6 +28,10 @@ export type DownloadStatusAndInfo = SearchResult & {
   part?: number;
   totalParts?: number;
   queuePosition?: number;
+  // Additional properties for resume functionality
+  originalDownloadURL?: string;
+  originalFiles?: any[];
+  pausedAt?: number;
 };
 
 export type DeferredTask = {
@@ -59,14 +63,15 @@ export type FailedSetup = {
   downloadInfo: DownloadStatusAndInfo;
   setupData: {
     path: string;
-    type?: string;
-    name?: string;
-    usedRealDebrid?: boolean;
+    type: string;
+    name: string;
+    usedRealDebrid: boolean;
     multiPartFiles?: any;
-    appID?: number;
-    storefront?: string;
+    appID: number;
+    storefront: string;
   };
   error: string;
+  should: 'call-addon' | 'call-unrar';
 };
 
 export interface Notification {

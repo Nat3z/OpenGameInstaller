@@ -5,6 +5,9 @@
     loadFailedSetups,
     removeFailedSetup,
     retryFailedSetup,
+    pauseDownload,
+    resumeDownload,
+    cancelPausedDownload,
   } from '../utils';
   import * as d3 from 'd3';
 
@@ -88,7 +91,7 @@
     progressBar.value = progress;
   });
 
-  // Load failed setups when component mounts
+  // Load failed setups and paused downloads when component mounts
   onMount(() => {
     loadFailedSetups();
 
@@ -613,6 +616,15 @@
                 </svg>
                 Seeding
               </div>
+            {:else if download.status === 'paused'}
+              <div class="status-badge paused">
+                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                  <path
+                    d="M6 4a1 1 0 011 1v10a1 1 0 11-2 0V5a1 1 0 011-1zM14 4a1 1 0 011 1v10a1 1 0 11-2 0V5a1 1 0 011-1z"
+                  ></path>
+                </svg>
+                Paused
+              </div>
             {/if}
           </div>
 
@@ -641,16 +653,14 @@
             {:else if download.status === 'downloading' || (download.queuePosition && download.queuePosition > 1)}
               <!-- PAUSE BUTTON -->
               <button
-                class="text-accent-dark border-none p-4 rounded-lg bg-accent-light hover:bg-accent-dark/50 transition-colors data-[disabled]:opacity-50 data-[disabled]:cursor-not-allowed data-[disabled]:pointer-events-none"
-                aria-label="Abort Download"
-                onclick={(event) => {
+                class="text-accent-dark border-none p-4 rounded-lg bg-accent-light hover:bg-accent-dark/50 transition-colors"
+                aria-label="Pause Download"
+                onclick={async () => {
                   if (download.queuePosition && download.queuePosition > 1) {
                     window.electronAPI.queue.cancel(download.id);
                   } else {
-                    window.electronAPI.ddl.abortDownload(download.id);
+                    await pauseDownload(download.id);
                   }
-                  let target = event.target as HTMLElement;
-                  target.dataset.disabled = 'true';
                 }}
               >
                 <svg
@@ -659,6 +669,43 @@
                   height="24"
                   viewBox="0 0 24 24"
                   width="24"
+                  ><path d="M0 0h24v24H0V0z" fill="none" /><path
+                    d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"
+                  /></svg
+                >
+              </button>
+            {:else if download.status === 'paused'}
+              <!-- RESUME BUTTON -->
+              <button
+                class="text-green-600 border-none p-3 rounded-lg bg-green-100 hover:bg-green-200 transition-colors mr-2"
+                aria-label="Resume Download"
+                onclick={async () => {
+                  await resumeDownload(download.id);
+                }}
+              >
+                <svg
+                  fill="currentColor"
+                  xmlns="http://www.w3.org/2000/svg"
+                  height="20"
+                  viewBox="0 0 24 24"
+                  width="20"
+                  ><path d="M0 0h24v24H0V0z" fill="none" /><path
+                    d="M8 5v14l11-7z"
+                  /></svg
+                >
+              </button>
+              <!-- ABORT BUTTON -->
+              <button
+                class="text-red-600 border-none p-3 rounded-lg bg-red-100 hover:bg-red-200 transition-colors"
+                aria-label="Cancel Download"
+                onclick={() => cancelPausedDownload(download.id)}
+              >
+                <svg
+                  fill="currentColor"
+                  xmlns="http://www.w3.org/2000/svg"
+                  height="20"
+                  viewBox="0 0 24 24"
+                  width="20"
                   ><path d="M0 0h24v24H0V0z" fill="none" /><path
                     d="M18.3 5.71c-.39-.39-1.02-.39-1.41 0L12 10.59 7.11 5.7c-.39-.39-1.02-.39-1.41 0-.39.39-.39 1.02 0 1.41L10.59 12 5.7 16.89c-.39.39-.39 1.02 0 1.41.39.39 1.02.39 1.41 0L12 13.41l4.89 4.89c.39.39 1.02.39 1.41 0 .39-.39.39-1.02 0-1.41L13.41 12l4.89-4.89c.38-.38.38-1.02 0-1.4z"
                   /></svg
@@ -861,6 +908,9 @@
   .status-errored {
     @apply bg-red-600;
   }
+  .status-paused {
+    @apply bg-orange-500;
+  }
 
   .download-content {
     @apply flex-1 flex items-center justify-between gap-4;
@@ -937,6 +987,10 @@
 
   .status-badge.errored {
     @apply bg-red-100 text-red-800;
+  }
+
+  .status-badge.paused {
+    @apply bg-orange-100 text-orange-800;
   }
 
   /* Spinner Animation */

@@ -539,17 +539,29 @@ async function handleTorrentDownload({
           let lastFileSize = 0;
           let lastRatio = 0;
           let finished = false;
-          const progressInterval = setInterval(() => {
-            if (!finished) {
-              sendProgress(mainWindow, downloadID, {
-                downloadSpeed: lastDownloadSpeed,
-                progress: lastProgress,
-                fileSize: lastFileSize,
-                ratio: lastRatio,
-                queuePosition: 1,
-              });
+          let progressInterval: NodeJS.Timeout;
+
+          const startProgressReporting = () => {
+            progressInterval = setInterval(() => {
+              if (!finished && !isPaused) {
+                sendProgress(mainWindow, downloadID, {
+                  downloadSpeed: lastDownloadSpeed,
+                  progress: lastProgress,
+                  fileSize: lastFileSize,
+                  ratio: lastRatio,
+                  queuePosition: 1,
+                });
+              }
+            }, 500);
+          };
+
+          const stopProgressReporting = () => {
+            if (progressInterval) {
+              clearInterval(progressInterval);
             }
-          }, 500);
+          };
+
+          startProgressReporting();
           // --- End throttled setup ---
 
           // Listen for pause event from frontend
@@ -568,7 +580,7 @@ async function handleTorrentDownload({
             () => {
               console.log('Torrent download finished');
               finished = true;
-              clearInterval(progressInterval);
+              stopProgressReporting();
               // Send one last progress update at 100%
               sendProgress(mainWindow, downloadID, {
                 downloadSpeed: lastDownloadSpeed,
@@ -590,6 +602,7 @@ async function handleTorrentDownload({
             if (!isPaused) {
               isPaused = true;
               console.log('WebTorrent download paused');
+              stopProgressReporting();
               mainWindow.webContents.send('torrent:download-paused', {
                 id: downloadID,
               });
@@ -598,6 +611,7 @@ async function handleTorrentDownload({
                 id: downloadID,
                 type: 'info',
               });
+              // Use the true pause method from webtorrent-connect
               block.pause();
             }
           });
@@ -606,6 +620,7 @@ async function handleTorrentDownload({
             if (isPaused) {
               isPaused = false;
               console.log('WebTorrent download resumed');
+              startProgressReporting();
               mainWindow.webContents.send('torrent:download-resumed', {
                 id: downloadID,
               });
@@ -614,11 +629,13 @@ async function handleTorrentDownload({
                 id: downloadID,
                 type: 'info',
               });
+              // Use the true resume method from webtorrent-connect
               block.resume();
             }
           });
 
           ipcMain.handleOnce(`torrent:${downloadID}:abort`, () => {
+            stopProgressReporting();
             block.destroy();
           });
         } else {
@@ -628,17 +645,29 @@ async function handleTorrentDownload({
           let lastFileSize = 0;
           let lastRatio = 0;
           let finished = false;
-          const progressInterval = setInterval(() => {
-            if (!finished) {
-              sendProgress(mainWindow, downloadID, {
-                downloadSpeed: lastDownloadSpeed,
-                progress: lastProgress,
-                fileSize: lastFileSize,
-                ratio: lastRatio,
-                queuePosition: 1,
-              });
+          let progressInterval: NodeJS.Timeout;
+
+          const startProgressReporting = () => {
+            progressInterval = setInterval(() => {
+              if (!finished && !isPaused) {
+                sendProgress(mainWindow, downloadID, {
+                  downloadSpeed: lastDownloadSpeed,
+                  progress: lastProgress,
+                  fileSize: lastFileSize,
+                  ratio: lastRatio,
+                  queuePosition: 1,
+                });
+              }
+            }, 500);
+          };
+
+          const stopProgressReporting = () => {
+            if (progressInterval) {
+              clearInterval(progressInterval);
             }
-          }, 500);
+          };
+
+          startProgressReporting();
           // --- End throttled setup ---
 
           // Listen for pause event from frontend
@@ -655,7 +684,7 @@ async function handleTorrentDownload({
             async () => {
               console.log('Torrent download finished');
               finished = true;
-              clearInterval(progressInterval);
+              stopProgressReporting();
               // Send one last progress update at 100%
               sendProgress(mainWindow, downloadID, {
                 downloadSpeed: lastDownloadSpeed,
@@ -683,6 +712,7 @@ async function handleTorrentDownload({
             if (!isPaused) {
               isPaused = true;
               console.log('WebTorrent download paused');
+              stopProgressReporting();
               mainWindow.webContents.send('torrent:download-paused', {
                 id: downloadID,
               });
@@ -691,6 +721,7 @@ async function handleTorrentDownload({
                 id: downloadID,
                 type: 'info',
               });
+              // Use the true pause method from webtorrent-connect
               block.pause();
             }
           });
@@ -698,6 +729,7 @@ async function handleTorrentDownload({
             if (isPaused) {
               isPaused = false;
               console.log('WebTorrent download resumed');
+              startProgressReporting();
               mainWindow.webContents.send('torrent:download-resumed', {
                 id: downloadID,
               });
@@ -706,10 +738,12 @@ async function handleTorrentDownload({
                 id: downloadID,
                 type: 'info',
               });
+              // Use the true resume method from webtorrent-connect
               block.resume();
             }
           });
           ipcMain.handle(`torrent:${downloadID}:abort`, () => {
+            stopProgressReporting();
             block.destroy();
           });
         }

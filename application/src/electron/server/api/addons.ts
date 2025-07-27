@@ -203,7 +203,7 @@ const procedures: Record<string, Procedure<any>> = {
             usedRealDebrid: input.usedRealDebrid,
             storefront: input.storefront,
             name: input.name,
-            multiFiles: input.multiPartFiles,
+            multiPartFiles: input.multiPartFiles,
             deferID: deferrableTask.id!!,
           },
         });

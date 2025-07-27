@@ -93,6 +93,7 @@
       usedRealDebrid: downloadedItem.usedRealDebrid,
       appID: downloadedItem.appID,
       storefront: downloadedItem.storefront,
+      multiPartFiles: downloadedItem.files,
       ...additionalData,
     };
   }

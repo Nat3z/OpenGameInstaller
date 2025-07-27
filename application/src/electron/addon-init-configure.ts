@@ -189,10 +189,38 @@ async function executeScript(
   addonPath: string
 ): Promise<string> {
   return new Promise((resolve, reject) => {
+    let bunPath = '';
+    // if on windows, then use C:\Users\username\.bun\bin\bun.exe
+    // if on linux, then use ~/.bun/bin/bun
+    if (process.platform === 'win32') {
+      if (!process.env.USERPROFILE) {
+        sendNotification({
+          message: 'USERPROFILE is not set. Cannot run scripts.',
+          id: Math.random().toString(36).substring(7),
+          type: 'error',
+        });
+        return reject();
+      }
+      bunPath = join(process.env.USERPROFILE || '', '.bun', 'bin', 'bun.exe');
+    } else {
+      if (!process.env.HOME) {
+        sendNotification({
+          message: 'HOME is not set. Cannot run scripts.',
+          id: Math.random().toString(36).substring(7),
+          type: 'error',
+        });
+        return reject();
+      }
+      bunPath = join(process.env.HOME || '', '.bun', 'bin', 'bun');
+    }
     processes[addonPath] = exec.exec(
       script,
       {
         cwd: addonPath,
+        env: {
+          ...process.env,
+          PATH: (process.env.PATH || '') + ':' + bunPath,
+        },
       },
       (err, stdout, stderr) => {
         if (err) {

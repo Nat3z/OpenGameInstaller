@@ -357,11 +357,11 @@
       class="animate-fade-in-pop flex justify-center items-center h-full flex-col gap-6 p-10 w-full"
     >
       <h1 class="text-3xl font-archivo font-semibold text-gray-900 mt-2">
-        Restart App Required
+        Restart Required
       </h1>
       <h2 class="font-open-sans text-gray-600 text-center mb-6">
-        OpenGameInstaller requires a restart of the app to continue the setup
-        process.
+        OpenGameInstaller requires a restart of your device to continue the
+        setup process.
       </h2>
       <button
         onclick={() => window.electronAPI.app.close()}

@@ -214,13 +214,9 @@ async function executeScript(
       bunPath = join(process.env.HOME || '', '.bun', 'bin', 'bun');
     }
     processes[addonPath] = exec.exec(
-      script,
+      script.replace(/^bun/, bunPath),
       {
         cwd: addonPath,
-        env: {
-          ...process.env,
-          PATH: (process.env.PATH || '') + ':' + bunPath,
-        },
       },
       (err, stdout, stderr) => {
         if (err) {

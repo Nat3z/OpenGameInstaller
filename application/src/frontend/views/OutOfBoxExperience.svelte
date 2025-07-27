@@ -44,6 +44,8 @@
 
     if (result[1]) {
       stage = 1.5;
+      // write the directory first ./config/option
+      window.electronAPI.fs.mkdir('./config/option/');
       window.electronAPI.fs.write(
         './config/option/installed.json',
         JSON.stringify({ restartRequired: true, installed: false })
@@ -196,20 +198,19 @@
     }
   }
 
-  onMount(() => {
+  onMount(async () => {
     if (window.electronAPI.fs.exists('./config/option/installed.json')) {
       const installed = JSON.parse(
         window.electronAPI.fs.read('./config/option/installed.json')
       );
       if (installed.restartRequired) {
+        // Update the file first to clear the restart flag
+        window.electronAPI.fs.write(
+          './config/option/installed.json',
+          JSON.stringify({ restartRequired: false, installed: false })
+        );
+        // Then set the stage to continue to torrenting
         stage = 2;
-        new Promise<void>(async (resolve) => {
-          window.electronAPI.fs.write(
-            './config/option/installed.json',
-            JSON.stringify({ restartRequired: false, installed: false })
-          );
-          resolve();
-        });
       }
     }
     communityList = fetch('https://ogi.nat3z.com/api/community.json').then(
@@ -356,10 +357,11 @@
       class="animate-fade-in-pop flex justify-center items-center h-full flex-col gap-6 p-10 w-full"
     >
       <h1 class="text-3xl font-archivo font-semibold text-gray-900 mt-2">
-        Restart Required
+        Restart App Required
       </h1>
       <h2 class="font-open-sans text-gray-600 text-center mb-6">
-        OpenGameInstaller requires a restart to continue the setup process.
+        OpenGameInstaller requires a restart of the app to continue the setup
+        process.
       </h2>
       <button
         onclick={() => window.electronAPI.app.close()}

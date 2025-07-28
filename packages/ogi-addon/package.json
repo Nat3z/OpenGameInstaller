@@ -3,7 +3,7 @@
   "module": "./build/main.js",
   "type": "module",
   "main": "./build/main.cjs",
-  "version": "1.5.0",
+  "version": "1.5.1",
   "exports": {
     ".": {
       "import": {

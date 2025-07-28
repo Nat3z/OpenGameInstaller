@@ -44,6 +44,8 @@ interface DownloadContext {
   startTime: number;
   parts?: number;
   totalParts?: number;
+  headersAdditional: Record<string, string>;
+  taskFinisher: () => void;
 }
 
 // Store download states for resume functionality
@@ -140,60 +142,6 @@ function setupProgressTracking(context: DownloadContext): void {
   context.progressInterval = progressInterval;
 }
 
-// Helper function to setup download event handlers
-function setupDownloadEventHandlers(
-  context: DownloadContext,
-  finish: () => void,
-  resolve: () => void,
-  reject: () => void
-): void {
-  // Track progress on data chunks
-  context.response.data.on('data', (chunk: Buffer) => {
-    context.currentBytes += chunk.length;
-
-    // Update download state for pause/resume
-    downloadStates.set(context.downloadID, {
-      url: context.url,
-      filePath: context.filePath,
-      currentBytes: context.currentBytes,
-      totalSize: context.totalSize,
-      startByte: context.startByte,
-      isPaused: context.isPaused,
-      parts: context.parts,
-      totalParts: context.totalParts,
-    });
-  });
-
-  // Handle download completion
-  context.response.data.on('end', () => {
-    if (context.isPaused) {
-      console.log('Download was paused, ignoring end event');
-      return;
-    }
-
-    cleanupDownload(context);
-
-    // Send final progress update
-    sendProgressUpdate(context.mainWindow, {
-      id: context.downloadID,
-      progress: 1,
-      downloadSpeed: 0,
-      fileSize: context.totalSize,
-      part: context.parts,
-      totalParts: context.totalParts,
-      queuePosition: 1,
-    });
-
-    console.log(`Download complete for part ${context.parts || 1}`);
-    resolve();
-  });
-
-  // Handle download errors
-  context.response.data.on('error', (error) => {
-    handleDownloadError(context, error, finish, reject);
-  });
-}
-
 // Helper function to setup pause/resume handlers
 function setupPauseResumeHandlers(context: DownloadContext): void {
   // Remove existing handlers first to avoid conflicts
@@ -223,7 +171,9 @@ function setupPauseResumeHandlers(context: DownloadContext): void {
     return await handleResume(
       context.downloadID,
       context.mainWindow,
-      context.url
+      context.url,
+      context.headersAdditional,
+      context.taskFinisher
     );
   });
 }
@@ -271,143 +221,318 @@ async function executeDownload(
   mainWindow: Electron.BrowserWindow,
   url: string,
   filePath: string,
+  headersAdditional: Record<string, string>,
   parts?: number,
   totalParts?: number,
-  finish?: () => void
+  finish?: () => void,
+  hasRetriedForSmallFile: boolean = false
 ): Promise<void> {
   return new Promise<void>(async (resolve, reject) => {
-    const { startByte, existingSize } = getResumeInfo(filePath);
-    let fileStream = setupFileStream(filePath, startByte);
+    const executeDownloadAttempt = async (isRetry: boolean = false) => {
+      const { startByte, existingSize } = isRetry
+        ? { startByte: 0, existingSize: 0 }
+        : getResumeInfo(filePath);
+      let fileStream = setupFileStream(filePath, startByte);
 
-    console.log('Starting download...');
+      console.log(
+        isRetry ? 'Retrying download from beginning...' : 'Starting download...'
+      );
 
-    fileStream.on('error', (err) => {
-      console.error(err);
-      sendIpcMessage(mainWindow, 'ddl:download-error', {
-        id: downloadID,
-        error: err,
-      });
-      fileStream.close();
-      if (finish) finish();
-      reject();
-    });
-
-    console.log(url);
-
-    const headers: any = {};
-    if (startByte > 0) {
-      headers.Range = `bytes=${startByte}-`;
-      console.log(`Requesting resume from byte ${startByte}`);
-    }
-
-    try {
-      const response = await axios<Readable>({
-        method: 'get',
-        url: url,
-        responseType: 'stream',
-        headers,
-      });
-
-      // Setup abort handler - remove existing handler first to prevent conflicts
-      ipcMain.removeHandler(`ddl:${downloadID}:abort`);
-      ipcMain.handleOnce(`ddl:${downloadID}:abort`, () => {
-        response.data.destroy();
-        fileStream.close();
-        if (fs.existsSync(filePath)) {
-          fs.unlinkSync(filePath);
-        }
-        cleanupPauseResumeHandlers(downloadID);
-        console.log('Download aborted');
+      fileStream.on('error', (err) => {
+        console.error(err);
         sendIpcMessage(mainWindow, 'ddl:download-error', {
           id: downloadID,
-          error: 'Download aborted',
+          error: 'File stream error',
         });
-        sendNotification({
-          message: 'Download aborted',
-          id: downloadID,
-          type: 'error',
-        });
+        fileStream.close();
         if (finish) finish();
         reject();
       });
 
-      // Get file size and handle range request issues
-      let totalSize = getFileSizeFromResponse(response, startByte);
+      console.log(url);
 
-      // Handle case where server doesn't support range requests
-      let actualStartByte = existingSize;
-      let actualCurrentBytes = existingSize;
-      if (startByte > 0 && response.status !== 206) {
-        console.log(
-          'Server does not support range requests, restarting download'
-        );
-        fileStream.close();
-        if (fs.existsSync(filePath)) {
-          fs.unlinkSync(filePath);
-        }
-        fileStream = setupFileStream(filePath, 0);
-        totalSize = response.headers['content-length'];
-        // Reset byte counters since we're starting fresh
-        actualStartByte = 0;
-        actualCurrentBytes = 0;
-      }
-
-      // Create download context
-      const context: DownloadContext = {
-        downloadID,
-        mainWindow,
-        fileStream,
-        progressInterval: null as any, // Will be set by setupProgressTracking
-        response,
-        url: url,
-        filePath: filePath,
-        currentBytes: actualCurrentBytes,
-        totalSize,
-        startByte: actualStartByte,
-        isPaused: false,
-        finished: false,
-        startTime: Date.now(),
-        parts,
-        totalParts,
+      const headers: Record<string, string> = {
+        ...headersAdditional,
+        'User-Agent': 'OpenGameInstaller Downloader/1.0.0',
       };
-
-      // Setup progress tracking
-      setupProgressTracking(context);
-
-      // Setup pause/resume handlers
-      setupPauseResumeHandlers(context);
-
-      // Pipe response data to file
-      response.data.pipe(fileStream);
-
-      // Setup event handlers
-      setupDownloadEventHandlers(
-        context,
-        finish || (() => {}),
-        resolve,
-        reject
-      );
-    } catch (err) {
-      // Handle axios/network errors
-      console.error(err);
-      // Ensure abort handler is cleaned up on error
-      ipcMain.removeHandler(`ddl:${downloadID}:abort`);
-      cleanupPauseResumeHandlers(downloadID);
-      sendIpcMessage(mainWindow, 'ddl:download-error', {
-        id: downloadID,
-        error: err,
-      });
-      fileStream.close();
-      if (fs.existsSync(filePath)) {
-        fs.unlinkSync(filePath);
+      if (startByte > 0) {
+        headers.Range = `bytes=${startByte}-`;
+        console.log(`Requesting resume from byte ${startByte}`);
       }
-      sendNotification({
-        message: 'Download failed for ' + filePath,
-        id: downloadID,
-        type: 'error',
-      });
-      if (finish) finish();
-      reject();
+
+      try {
+        console.log('Starting download with headers:', headers);
+        const response = await axios<Readable>({
+          method: 'get',
+          url: url,
+          responseType: 'stream',
+          headers,
+        });
+
+        // Note: Global abort handler is registered at the queue level
+        // No need for a separate abort handler here since the global one handles all cases
+
+        // Get file size and handle range request issues
+        let totalSize = getFileSizeFromResponse(response, startByte);
+
+        // Handle case where server doesn't support range requests
+        let actualStartByte = existingSize;
+        let actualCurrentBytes = existingSize;
+        if (startByte > 0 && response.status !== 206) {
+          console.log(
+            'Server does not support range requests, restarting download'
+          );
+          fileStream.close();
+          if (fs.existsSync(filePath)) {
+            fs.unlinkSync(filePath);
+          }
+          fileStream = setupFileStream(filePath, 0);
+          totalSize = response.headers['content-length'];
+          // Reset byte counters since we're starting fresh
+          actualStartByte = 0;
+          actualCurrentBytes = 0;
+        }
+
+        // Create download context
+        const context: DownloadContext = {
+          downloadID,
+          mainWindow,
+          fileStream,
+          progressInterval: null as any, // Will be set by setupProgressTracking
+          response,
+          url: url,
+          filePath: filePath,
+          currentBytes: actualCurrentBytes,
+          totalSize,
+          startByte: actualStartByte,
+          isPaused: false,
+          finished: false,
+          startTime: Date.now(),
+          parts,
+          totalParts,
+          headersAdditional,
+          taskFinisher: finish || (() => {}),
+        };
+
+        // Setup progress tracking
+        setupProgressTracking(context);
+
+        // Setup pause/resume handlers
+        setupPauseResumeHandlers(context);
+
+        // Pipe response data to file
+        response.data.pipe(fileStream);
+
+        // Setup event handlers with retry logic
+        setupDownloadEventHandlersWithRetry(
+          context,
+          finish || (() => {}),
+          resolve,
+          reject,
+          startByte > 0 && !isRetry,
+          headersAdditional,
+          executeDownloadAttempt,
+          hasRetriedForSmallFile
+        );
+      } catch (err) {
+        // Handle axios/network errors with retry logic
+        console.error(err);
+
+        // If this was a resume attempt and not already a retry, try again from beginning
+        if (startByte > 0 && !isRetry) {
+          console.log('Resume attempt failed, retrying from beginning...');
+          // Clean up current attempt
+          ipcMain.removeHandler(`ddl:${downloadID}:abort`);
+          cleanupPauseResumeHandlers(downloadID);
+          fileStream.close();
+          if (fs.existsSync(filePath)) {
+            fs.unlinkSync(filePath);
+          }
+
+          // Retry from beginning
+          try {
+            await executeDownloadAttempt(true);
+            // Success - resolve will be called by the retry
+            return;
+          } catch (retryErr) {
+            // If retry also fails, give up
+            console.error('Retry also failed:', retryErr);
+            sendIpcMessage(mainWindow, 'ddl:download-error', {
+              id: downloadID,
+              error: 'Download failed after retry',
+            });
+            sendNotification({
+              message: 'Download failed for ' + filePath,
+              id: downloadID,
+              type: 'error',
+            });
+            if (finish) finish();
+            reject();
+            return;
+          }
+        } else {
+          // This was already a retry or not a resume attempt, give up
+          ipcMain.removeHandler(`ddl:${downloadID}:abort`);
+          cleanupPauseResumeHandlers(downloadID);
+          sendIpcMessage(mainWindow, 'ddl:download-error', {
+            id: downloadID,
+            error: 'File stream error',
+          });
+          fileStream.close();
+          if (fs.existsSync(filePath)) {
+            fs.unlinkSync(filePath);
+          }
+          sendNotification({
+            message: 'Download failed for ' + filePath,
+            id: downloadID,
+            type: 'error',
+          });
+          if (finish) finish();
+          reject();
+        }
+      }
+    };
+
+    // Start the download attempt
+    await executeDownloadAttempt();
+  });
+}
+
+// Helper function to setup download event handlers with retry capability
+function setupDownloadEventHandlersWithRetry(
+  context: DownloadContext,
+  finish: () => void,
+  resolve: () => void,
+  reject: () => void,
+  canRetry: boolean,
+  headersAdditional: Record<string, string>,
+  retryFunction: (isRetry: boolean) => Promise<void>,
+  hasRetriedForSmallFile: boolean
+): void {
+  // Track progress on data chunks
+  context.response.data.on('data', (chunk: Buffer) => {
+    context.currentBytes += chunk.length;
+
+    // Update download state for pause/resume
+    downloadStates.set(context.downloadID, {
+      url: context.url,
+      filePath: context.filePath,
+      currentBytes: context.currentBytes,
+      totalSize: context.totalSize,
+      startByte: context.startByte,
+      isPaused: context.isPaused,
+      parts: context.parts,
+      totalParts: context.totalParts,
+    });
+  });
+
+  // Handle download completion
+  context.response.data.on('end', async () => {
+    if (context.isPaused) {
+      console.log('Download was paused, ignoring end event');
+      return;
+    }
+
+    // Check if file size is under 1MB and retry if needed (only if we haven't already retried for this reason)
+    const fileSizeInMB = context.totalSize / (1024 * 1024);
+    if ((isNaN(fileSizeInMB) || fileSizeInMB < 1) && !hasRetriedForSmallFile) {
+      console.log(
+        `File size is ${fileSizeInMB.toFixed(2)}MB (under 1MB), retrying download...`
+      );
+
+      cleanupDownload(context);
+
+      // Clean up the small file
+      try {
+        if (fs.existsSync(context.filePath)) {
+          fs.unlinkSync(context.filePath);
+        }
+      } catch (unlinkError) {
+        console.error('Failed to unlink small file:', unlinkError);
+      }
+
+      try {
+        // Retry with the small file flag set to true to prevent infinite recursion
+        // Don't pass finish to the retry - let this level handle completion/errors
+        await executeDownload(
+          context.downloadID,
+          context.mainWindow,
+          context.url,
+          context.filePath,
+          headersAdditional,
+          context.parts,
+          context.totalParts,
+          undefined, // Don't pass finish to retry
+          true // hasRetriedForSmallFile = true
+        );
+        resolve(); // Resolve the original promise
+        return; // Exit early, retry completed successfully
+      } catch (retryError) {
+        console.error('Retry for small file failed:', retryError);
+        sendIpcMessage(context.mainWindow, 'ddl:download-error', {
+          id: context.downloadID,
+          error: 'Download failed after retry (file too small)',
+        });
+        finish();
+        reject();
+        return;
+      }
+    }
+
+    cleanupDownload(context);
+
+    // Send final progress update
+    sendProgressUpdate(context.mainWindow, {
+      id: context.downloadID,
+      progress: 1,
+      downloadSpeed: 0,
+      fileSize: context.totalSize,
+      part: context.parts,
+      totalParts: context.totalParts,
+      queuePosition: 1,
+    });
+
+    console.log(
+      `Download complete for part ${context.parts || 1} (${fileSizeInMB.toFixed(2)}MB)`
+    );
+    resolve();
+  });
+
+  // Handle download errors with retry logic
+  context.response.data.on('error', async (error) => {
+    if (context.isPaused) {
+      console.log('Download was paused, ignoring error event');
+      return;
+    }
+
+    // If this was a resume attempt, try retrying from beginning
+    if (canRetry) {
+      console.log('Resume download failed, retrying from beginning...');
+      cleanupDownload(context);
+
+      // Clean up the partial file
+      try {
+        if (fs.existsSync(context.filePath)) {
+          fs.unlinkSync(context.filePath);
+        }
+      } catch (unlinkError) {
+        console.error('Failed to unlink file:', unlinkError);
+      }
+
+      try {
+        await retryFunction(true);
+      } catch (retryError) {
+        console.error('Retry failed:', retryError);
+        sendIpcMessage(context.mainWindow, 'ddl:download-error', {
+          id: context.downloadID,
+          error: 'Download failed after retry',
+        });
+        finish();
+        reject();
+      }
+    } else {
+      // Handle as normal error
+      handleDownloadError(context, error, finish, reject);
     }
   });
 }
@@ -416,7 +541,9 @@ async function executeDownload(
 async function handleResume(
   downloadID: string,
   mainWindow: Electron.BrowserWindow,
-  currentUrl: string
+  currentUrl: string,
+  headersAdditional: Record<string, string>,
+  finish?: () => void
 ): Promise<boolean> {
   const state = downloadStates.get(downloadID);
   if (!state || !state.isPaused) {
@@ -442,8 +569,10 @@ async function handleResume(
       mainWindow,
       currentUrl,
       state.filePath,
+      headersAdditional,
       state.parts,
-      state.totalParts
+      state.totalParts,
+      finish
     );
     sendIpcMessage(mainWindow, 'ddl:download-complete', {
       id: downloadID,
@@ -464,7 +593,7 @@ function cleanupPauseResumeHandlers(downloadID: string) {
   // Remove handlers - removeHandler doesn't throw if handler doesn't exist
   ipcMain.removeHandler(`ddl:${downloadID}:pause`);
   ipcMain.removeHandler(`ddl:${downloadID}:resume`);
-  ipcMain.removeHandler(`ddl:${downloadID}:abort`);
+  // Note: Don't remove abort handler here since it's managed globally
   downloadStates.delete(downloadID);
   downloadContexts.delete(downloadID);
 }
@@ -534,7 +663,10 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
   ipcMain.handle(
     'ddl:download',
     // args: array of { link: string; path: string }
-    async (_, args: { link: string; path: string }[]) => {
+    async (
+      _,
+      args: { link: string; path: string; headers?: Record<string, string> }[]
+    ) => {
       // Generate a unique ID for this download batch
       const downloadID = Math.random().toString(36).substring(7);
       // Enqueue the download in the global DOWNLOAD_QUEUE
@@ -546,11 +678,53 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
       new Promise<void>(async (resolve, reject) => {
         console.log('New Download');
         console.log(`[${downloadID}] Initial position: ${initialPosition}`);
+
         cancelHandler((cancel) => {
           ipcMain.handleOnce(`queue:${downloadID}:cancel`, (_) => {
             cancel();
           });
         });
+        // Register global abort handler that works at any stage
+        ipcMain.handleOnce(`ddl:${downloadID}:abort`, () => {
+          console.log('Global abort handler triggered');
+
+          // If it's still in the queue, remove it
+          if (DOWNLOAD_QUEUE.remove(downloadID)) {
+            console.log('Removed from queue during abort');
+            sendIpcMessage(mainWindow, 'ddl:download-cancelled', {
+              id: downloadID,
+            });
+            finish();
+            reject();
+            return;
+          }
+
+          // If it's already running, look up the active context
+          const ctx = downloadContexts.get(downloadID);
+          if (ctx) {
+            console.log('Aborting active download context');
+            ctx.response?.data?.destroy();
+            ctx.fileStream?.close();
+            if (fs.existsSync(ctx.filePath)) {
+              fs.unlinkSync(ctx.filePath);
+            }
+            cleanupDownload(ctx);
+          }
+
+          // Always advance the queue
+          finish();
+          sendIpcMessage(mainWindow, 'ddl:download-error', {
+            id: downloadID,
+            error: 'Download aborted',
+          });
+          sendNotification({
+            message: 'Download aborted',
+            id: downloadID,
+            type: 'error',
+          });
+          reject();
+        });
+
         // Wait for our turn in the queue, reporting position to frontend
         const result = await wait((queuePosition) => {
           console.log(
@@ -568,30 +742,67 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
           sendIpcMessage(mainWindow, 'ddl:download-cancelled', {
             id: downloadID,
           });
+          finish(); // Must call finish() to allow queue to progress
+          // Clean up the global abort handler
+          ipcMain.removeHandler(`ddl:${downloadID}:abort`);
           reject();
           return;
         }
 
-        let parts = 0;
-        for (const arg of args) {
-          parts++;
-          await executeDownload(
-            downloadID,
-            mainWindow,
-            arg.link,
-            arg.path,
-            parts,
-            args.length,
-            finish
-          );
-        }
+        try {
+          let parts = 0;
+          const totalParts = args.length;
 
-        // Notify frontend of completion of all downloads in batch
-        sendIpcMessage(mainWindow, 'ddl:download-complete', {
-          id: downloadID,
-        });
-        finish();
-        resolve();
+          for (const arg of args) {
+            parts++;
+            console.log(`Starting part ${parts} of ${totalParts}`);
+
+            // Don't pass finish() to individual parts - we'll handle it at the end
+            // The global abort handler will call finish() if needed
+            await executeDownload(
+              downloadID,
+              mainWindow,
+              arg.link,
+              arg.path,
+              arg.headers || {},
+              parts,
+              totalParts,
+              undefined // Don't pass finish() here to avoid double-calling
+            );
+
+            console.log(`Completed part ${parts} of ${totalParts}`);
+          }
+
+          // All parts completed successfully
+          console.log(
+            `All ${totalParts} parts completed for download ${downloadID}`
+          );
+
+          // Notify frontend of completion of all downloads in batch
+          sendIpcMessage(mainWindow, 'ddl:download-complete', {
+            id: downloadID,
+          });
+          // send an ipc-message for progress
+          sendIpcMessage(mainWindow, 'ddl:download-progress', {
+            id: downloadID,
+            progress: 1,
+            downloadSpeed: 0,
+            fileSize: 0,
+            queuePosition: 1,
+          });
+
+          // Now call finish() since all parts are done
+          finish();
+          // Clean up the global abort handler
+          ipcMain.removeHandler(`ddl:${downloadID}:abort`);
+          resolve();
+        } catch (error) {
+          console.error('Error during multi-part download:', error);
+          finish();
+          // Clean up the global abort handler
+          ipcMain.removeHandler(`ddl:${downloadID}:abort`);
+          reject(error);
+        }
       })
         .then(() => {
           // Log successful completion
@@ -605,7 +816,7 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
             id: downloadID,
             type: 'error',
           });
-          finish();
+          // finish() is already called in the try-catch above, don't call it again
           console.error(err);
         });
       // Return the download ID to the frontend for tracking

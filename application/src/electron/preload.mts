@@ -77,8 +77,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('real-debrid:get-torrent-info', id),
   },
   ddl: {
-    download: (downloads: { link: string; path: string }[]) =>
-      ipcRenderer.invoke('ddl:download', downloads),
+    download: (
+      downloads: {
+        link: string;
+        path: string;
+        headers?: Record<string, string>;
+      }[]
+    ) => ipcRenderer.invoke('ddl:download', downloads),
     abortDownload: (downloadID: string) =>
       ipcRenderer.invoke(`ddl:${downloadID}:abort`),
     pauseDownload: (downloadID: string) =>

@@ -25,7 +25,8 @@ export class Queue<T = any> {
               resolve('cancelled');
               return;
             }
-            if (pos === 1) {
+            console.log('pos', pos, 'processing #', this.processing.size);
+            if (pos === 1 && this.processing.size === 0) {
               update(pos);
               resolve('fulfilled');
               return;
@@ -33,11 +34,12 @@ export class Queue<T = any> {
             update(pos);
           };
           this.queueListeners.set(id, listener);
-          if (this.queue.length === 1) {
+          if (this.queue.length === 1 && this.processing.size === 0) {
             // automatically dequeue if there is only one item in the queue
+            listener(this.queue.length, false);
             this.dequeue();
           } else {
-            listener(this.queue.length, false);
+            listener(this.queue.length + this.processing.size, false);
           }
         }),
       cancelHandler: (cancel: (handle: () => void) => void) => {
@@ -65,13 +67,13 @@ export class Queue<T = any> {
     }
     const next = this.queue.shift();
     if (next) {
-      this.processing.add(next.id);
       // Notify listener that this item is now being processed (position 1)
       this.queueListeners.get(next.id)?.(1, false);
+      this.processing.add(next.id);
       this.queueListeners.delete(next.id);
       // Update positions for remaining items
       this.queue.forEach((q, index) => {
-        this.queueListeners.get(q.id)?.(index + 1);
+        this.queueListeners.get(q.id)?.(index + 1 + this.processing.size);
       });
       return next;
     }
@@ -97,7 +99,7 @@ export class Queue<T = any> {
       this.queue.splice(idx, 1);
       this.queueListeners.delete(id);
       this.queue.forEach((q, index) => {
-        this.queueListeners.get(q.id)?.(index + 1);
+        this.queueListeners.get(q.id)?.(index + 1 + this.processing.size);
       });
       return true;
     }

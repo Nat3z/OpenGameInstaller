@@ -126,9 +126,17 @@ addon.on('search', ({ storefront, appID }, event) => {
         },
         {
           name: 'Smaller File',
-          filename: 'Smaller File.txt',
           downloadType: 'direct',
-          downloadURL: 'https://ogi.nat3z.com/api/community.json',
+          files: [
+            {
+              name: 'Smaller File.txt',
+              downloadURL: 'https://ogi.nat3z.com/api/community.json',
+              headers: {
+                'User-Agent': 'OpenGameInstaller Downloader/1.0.0',
+                'X-Hello': 'World',
+              },
+            },
+          ],
           manifest: {
             t: 'Smalelr File',
           },
@@ -155,7 +163,7 @@ name: ${name}
 usedRealDebrid: ${usedRealDebrid}
 multiPartFiles: ${multiPartFiles} 
   `);
-
+    console.log('oo hello!');
     const waitForInput = event
       .askForInput(
         'Please enter the code',

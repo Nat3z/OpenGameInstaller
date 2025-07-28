@@ -215,6 +215,25 @@ export type SearchResultWithAddon = SearchResult & {
   coverImage: string;
   storefront: string;
 };
+
+function listenUntilDownloadReady() {
+  let state: { [id: string]: Partial<DownloadStatusAndInfo> } = {};
+  const updateState = (e: Event) => {
+    if (e instanceof CustomEvent) {
+      if (e.detail) {
+        state[e.detail.id] = e.detail as Partial<DownloadStatusAndInfo>;
+      }
+    }
+  };
+  document.addEventListener('ddl:download-progress', updateState);
+
+  return {
+    flush: () => {
+      document.removeEventListener('ddl:download-progress', updateState);
+      return state;
+    },
+  };
+}
 export async function startDownload(
   result: SearchResultWithAddon,
   appID: number,
@@ -237,13 +256,13 @@ export async function startDownload(
 
   switch (downloadType) {
     case 'request': {
-      // now startTheDownload but this way
-      const randomID = Math.random().toString(36).substring(7);
+      // Create a local ID for tracking, similar to real-debrid cases
+      const localID = Math.floor(Math.random() * 1000000);
       currentDownloads.update((downloads) => {
         return [
           ...downloads,
           {
-            id: randomID,
+            id: '' + localID,
             status: 'requesting',
             downloadPath: getDownloadPath() + '/' + result.name,
             downloadSpeed: 0,
@@ -255,12 +274,8 @@ export async function startDownload(
           },
         ];
       });
+
       console.log('Requesting download', result);
-      console.log('safeFetch', {
-        addonID: result.addonSource,
-        appID: appID,
-        info: result,
-      });
       const response: SearchResult = await safeFetch(
         'requestDownload',
         {
@@ -277,33 +292,40 @@ export async function startDownload(
               message: error,
             });
             currentDownloads.update((downloads) => {
-              return downloads.map((d) => {
-                if (d.id === randomID) {
-                  d.status = 'error';
-                  d.error = error;
-                }
-                return d;
-              });
+              const matchingDownload = downloads.find(
+                (d) => d.id === localID + ''
+              )!!;
+              matchingDownload.status = 'error';
+              matchingDownload.error = error;
+              downloads[downloads.indexOf(matchingDownload)] = matchingDownload;
+              return downloads;
             });
           },
         }
       );
+
+      console.log('Request response:', response);
+
+      // Merge response with original context
+      const updatedResult = {
+        ...response,
+        addonSource: result.addonSource,
+        capsuleImage: result.capsuleImage,
+        coverImage: result.coverImage,
+        storefront: result.storefront,
+      };
+
+      // Remove the temporary requesting download
       currentDownloads.update((downloads) => {
-        return downloads.filter((d) => d.id !== randomID);
+        return downloads.filter((d) => d.id !== localID + '');
       });
-      console.log(response);
-      startDownload(
-        {
-          ...response,
-          addonSource: result.addonSource,
-          capsuleImage: result.capsuleImage,
-          coverImage: result.coverImage,
-          storefront: result.storefront,
-        },
-        appID,
-        event
-      );
-      break;
+
+      // Reset button state before recursive call
+      htmlButton.textContent = 'Downloading...';
+      htmlButton.disabled = true;
+
+      // Recursively call startDownload with the resolved result
+      return await startDownload(updatedResult, appID, event);
     }
     case 'real-debrid-magnet': {
       if (!result.downloadURL) {
@@ -382,24 +404,15 @@ export async function startDownload(
       }
 
       // Temporarily register an event listener to store any download updates so that we can match our download to the correct downloadID
+      const { flush } = listenUntilDownloadReady();
 
-      let updatedState: { [id: string]: Partial<DownloadStatusAndInfo> } = {};
-      const updateState = (e: Event) => {
-        if (e instanceof CustomEvent) {
-          if (e.detail) {
-            updatedState[e.detail.id] =
-              e.detail as Partial<DownloadStatusAndInfo>;
-          }
-        }
-      };
-      document.addEventListener('ddl:download-progress', updateState);
       const downloadID = await window.electronAPI.ddl.download([
         {
           link: download.download,
           path: getDownloadPath() + '/' + result.name + '/' + result.filename,
         },
       ]);
-      document.removeEventListener('ddl:download-progress', updateState);
+      const updatedState = flush();
       if (downloadID === null) {
         if (htmlButton) {
           htmlButton.textContent = 'Download';
@@ -426,9 +439,12 @@ export async function startDownload(
         matchingDownload.downloadPath =
           getDownloadPath() + '/' + result.name + '/';
 
-        if (updatedState[downloadID]) {
+        if (
+          updatedState[downloadID] &&
+          updatedState[downloadID].queuePosition
+        ) {
           matchingDownload.queuePosition =
-            updatedState[downloadID].queuePosition ?? 0;
+            updatedState[downloadID].queuePosition;
         }
         matchingDownload.downloadURL = download.download;
         matchingDownload.originalDownloadURL = result.downloadURL; // Store original magnet URL
@@ -516,23 +532,14 @@ export async function startDownload(
 
       // Temporarily register an event listener to store any download updates so that we can match our download to the correct downloadID
 
-      let updatedState: { [id: string]: Partial<DownloadStatusAndInfo> } = {};
-      const updateState = (e: Event) => {
-        if (e instanceof CustomEvent) {
-          if (e.detail) {
-            updatedState[e.detail.id] =
-              e.detail as Partial<DownloadStatusAndInfo>;
-          }
-        }
-      };
-      document.addEventListener('ddl:download-progress', updateState);
+      const { flush } = listenUntilDownloadReady();
       const downloadID = await window.electronAPI.ddl.download([
         {
           link: download.download,
           path: getDownloadPath() + '/' + result.name + '/' + result.filename,
         },
       ]);
-      document.removeEventListener('ddl:download-progress', updateState);
+      const updatedState = flush();
       if (downloadID === null) {
         if (htmlButton) {
           htmlButton.textContent = 'Download';
@@ -561,7 +568,7 @@ export async function startDownload(
 
         if (updatedState[downloadID]) {
           matchingDownload.queuePosition =
-            updatedState[downloadID].queuePosition ?? 0;
+            updatedState[downloadID].queuePosition ?? 999;
         }
         matchingDownload.downloadURL = download.download;
         matchingDownload.originalDownloadURL = result.downloadURL; // Store original torrent URL
@@ -610,8 +617,8 @@ export async function startDownload(
             });
             return;
           }
-          htmlButton.textContent = 'Download';
-          htmlButton.disabled = false;
+          htmlButton.textContent = 'Downloading...';
+          htmlButton.disabled = true;
           currentDownloads.update((downloads) => {
             return [
               ...downloads,
@@ -672,8 +679,8 @@ export async function startDownload(
             });
             return;
           }
-          htmlButton.textContent = 'Download';
-          htmlButton.disabled = false;
+          htmlButton.textContent = 'Downloading...';
+          htmlButton.disabled = true;
           currentDownloads.update((downloads) => {
             return [
               ...downloads,
@@ -684,6 +691,7 @@ export async function startDownload(
                 downloadSpeed: 0,
                 progress: 0,
                 usedRealDebrid: false,
+                queuePosition: 999,
                 appID,
                 downloadSize: 0,
                 originalDownloadURL: result.downloadURL, // Store original URL for resume
@@ -721,13 +729,19 @@ export async function startDownload(
           return {
             path: getDownloadPath() + '/' + result.name + '/' + file.name,
             link: file.downloadURL,
+            // remove proxy
+            headers: JSON.parse(JSON.stringify(file.headers || {})),
           };
         });
       }
 
+      const { flush } = listenUntilDownloadReady();
+
       window.electronAPI.ddl.download(collectedFiles).then((id) => {
-        htmlButton.textContent = 'Download';
-        htmlButton.disabled = false;
+        htmlButton.textContent = 'Downloading...';
+        htmlButton.disabled = true;
+        const updatedState = flush();
+        console.log('updatedState', updatedState);
         currentDownloads.update((downloads) => {
           return [
             ...downloads,
@@ -741,6 +755,7 @@ export async function startDownload(
               appID,
               downloadSize: 0,
               originalDownloadURL: result.downloadURL, // Store original URL for resume
+              queuePosition: updatedState[id]?.queuePosition ?? 999,
               files: result.files, // Store files info for multi-part downloads
               ...result,
             },
@@ -1289,13 +1304,18 @@ async function restartDirectDownload(
     throw new Error('No download URL available for restart');
   }
 
-  let files: { link: string; path: string }[] = [];
+  let files: {
+    link: string;
+    path: string;
+    headers?: Record<string, string>;
+  }[] = [];
 
   if (download.files && download.files.length > 0) {
     // Multi-part download
     files = download.files.map((file: any) => ({
       link: file.downloadURL,
       path: getDownloadPath() + '/' + download.name + '/' + file.name,
+      headers: file.headers,
     }));
   } else {
     // Single file download
@@ -1373,6 +1393,9 @@ export function cancelPausedDownload(downloadId: string) {
     currentDownloads.update((downloads) => {
       return downloads.filter((d) => d.id !== downloadId);
     });
+
+    // send to the ipc to cancel the download
+    window.electronAPI.ddl.abortDownload(downloadId);
 
     createNotification({
       id: Math.random().toString(36).substring(2, 9),

@@ -186,10 +186,15 @@ const procedures: Record<string, Procedure<any>> = {
       })
     )
     .handler(async (input) => {
+      console.log('setupApp', input);
       const client = clients.get(input.addonID);
-      if (!client) return new ProcedureError(404, 'Client not found');
+      if (!client) {
+        console.error('Client not found');
+        return new ProcedureError(404, 'Client not found');
+      }
 
       if (!client.eventsAvailable.includes('setup')) {
+        console.error('Client does not support setup');
         return new ProcedureError(400, 'Client does not support setup');
       }
 

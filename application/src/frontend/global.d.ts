@@ -50,7 +50,13 @@ interface Window {
       resumeDownload: (downloadID: string) => Promise<void>;
     };
     ddl: {
-      download: (files: { link: string; path: string }[]) => Promise<string>;
+      download: (
+        files: {
+          link: string;
+          path: string;
+          headers?: Record<string, string>;
+        }[]
+      ) => Promise<string>;
       abortDownload: (downloadID: string) => Promise<void>;
       pauseDownload: (downloadID: string) => Promise<void>;
       resumeDownload: (downloadID: string) => Promise<boolean>;

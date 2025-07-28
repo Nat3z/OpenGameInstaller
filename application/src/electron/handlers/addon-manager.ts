@@ -6,6 +6,7 @@ import { processes, setupAddon, startAddon } from '../addon-init-configure.js';
 import { __dirname } from '../paths.js';
 import { server, clients, port } from '../server/addon-server.js';
 import { sendNotification } from '../main.js';
+import axios from 'axios';
 
 export function startAddons() {
   // start all of the addons
@@ -174,6 +175,22 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
   });
 
   ipcMain.handle('update-addons', async (_) => {
+    // check if wifi is available
+    const isWifiAvailable = await new Promise<boolean>((resolve, _) => {
+      const req = axios.get('https://www.google.com');
+      req
+        .then(() => {
+          resolve(true);
+        })
+        .catch(() => {
+          resolve(false);
+        });
+    });
+    if (!isWifiAvailable) {
+      console.error('No internet connection. Not updating addons.');
+      return;
+    }
+
     // stop all of the addons
     for (const process of Object.keys(processes)) {
       console.log(`Killing process ${process}`);

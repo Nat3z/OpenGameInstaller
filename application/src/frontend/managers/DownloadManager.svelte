@@ -74,6 +74,7 @@
           appID: downloadedItem.appID,
           storefront: downloadedItem.storefront,
         };
+        console.log('error', error);
         handleSetupError(error, downloadedItem, setupData);
       },
       consume: 'json' as const,
@@ -231,7 +232,9 @@
 
     // Add multipart files data for DDL
     if (!isTorrent) {
-      additionalData.multiPartFiles = downloadedItem.files;
+      additionalData.multiPartFiles = JSON.parse(
+        JSON.stringify(downloadedItem.files)
+      );
     }
 
     const setupPayload = createSetupPayload(
@@ -251,6 +254,7 @@
       await handleSetupSuccess(data, downloadedItem, finalStatus);
     } catch (error) {
       // already handled in the catch block of safeFetch
+      console.error('Error setting up app: ', error);
     }
   }
 

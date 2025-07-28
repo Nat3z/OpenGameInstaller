@@ -6,6 +6,7 @@ export type SearchResult = {
   files?: {
     name: string;
     downloadURL: string;
+    headers?: Record<string, string>;
   }[];
   manifest?: Record<string, any>;
 };

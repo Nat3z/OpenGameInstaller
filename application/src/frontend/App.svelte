@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { fade, fly } from 'svelte/transition';
   import { quintOut } from 'svelte/easing';
+  import { derived } from 'svelte/store';
   import ConfigView from './views/ConfigView.svelte';
   import ClientOptionsView from './views/ClientOptionsView.svelte';
   import DownloadView from './views/DownloadView.svelte';
@@ -30,6 +31,7 @@
     fetchCommunityAddons,
     notifications,
     showNotificationSideView,
+    currentDownloads,
   } from './store';
   import StorePage from './components/StorePage.svelte';
   import ConfigurationModal from './components/modal/ConfigurationModal.svelte';
@@ -53,6 +55,18 @@
   let searchTimeout: NodeJS.Timeout | null = null;
 
   let recentlyLaunchedApps: LibraryInfo[] = $state([]);
+
+  // Count active downloads (status 'downloading')
+  const activeDownloadsCount = derived(
+    currentDownloads,
+    ($downloads) =>
+      $downloads.filter(
+        (download) =>
+          download.status === 'downloading' ||
+          download.status === 'rd-downloading' ||
+          download.status === 'paused'
+      ).length
+  );
 
   onMount(() => {
     // Initialize notification side view state
@@ -251,6 +265,10 @@
   }
   setTimeout(() => {
     fetchCommunityAddons();
+    // automatically update addons
+    if ($isOnline && $addonUpdates.length > 0) {
+      window.electronAPI.updateAddons();
+    }
   }, 2000);
 
   function toggleNotificationSideView() {
@@ -313,7 +331,7 @@
       <div class="flex items-center gap-4 -left-2 relative">
         <!-- Download button -->
         <button
-          class="header-button"
+          class="header-button relative"
           onclick={() => {
             setView('downloader');
           }}
@@ -337,6 +355,13 @@
               </clipPath>
             </defs>
           </svg>
+          {#if $activeDownloadsCount > 0}
+            <div
+              class="absolute -bottom-1 -right-1 bg-accent-dark text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-bold"
+            >
+              {$activeDownloadsCount}
+            </div>
+          {/if}
         </button>
 
         <!-- Notification button -->

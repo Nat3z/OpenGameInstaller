@@ -91,6 +91,16 @@ export const removedTasks: Writable<string[]> = writable([]);
 export const notifications: Writable<Notification[]> = writable([]);
 export const notificationHistory: Writable<Notification[]> = writable([]);
 export const showNotificationSideView: Writable<boolean> = writable(false);
+
+// Setup logs for individual downloads
+export type SetupLog = {
+  downloadId: string;
+  logs: string[];
+  progress: number;
+  isActive: boolean;
+};
+
+export const setupLogs: Writable<Record<string, SetupLog>> = writable({});
 export const currentStorePageOpened: Writable<number | undefined> = writable();
 export const currentStorePageOpenedStorefront: Writable<string | undefined> =
   writable();

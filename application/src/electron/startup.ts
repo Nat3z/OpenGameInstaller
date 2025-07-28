@@ -1,10 +1,12 @@
 import { exec } from 'child_process';
 import { __dirname } from './paths.js';
 import { join } from 'path';
-import fs from 'fs';
+import * as fs from 'fs';
+import * as fsPromises from 'fs/promises';
 import { LibraryInfo } from 'ogi-addon';
 import { app } from 'electron';
 import { sendNotification } from './main.js';
+import semver from 'semver';
 
 // check if NixOS using command -v nixos-rebuild
 export const IS_NIXOS = await (() => {
@@ -180,4 +182,41 @@ export function checkForAddonUpdates(mainWindow: any) {
       resolve();
     });
   }
+}
+
+export function removeCachedAppUpdates() {
+  // find cached updates in the temp folder of this system
+  new Promise<void>(async (resolve, _) => {
+    const tempFolder = app.getPath('temp');
+    const cachedUpdates = (await fsPromises.readdir(tempFolder)).filter(
+      (file) => file.startsWith('ogi-')
+    );
+
+    // count how many cached updates there are, then sort from oldest to newest based on ogi-{version}-cache using semver
+    const sortedUpdates = cachedUpdates.sort((a, b) => {
+      const aVersion = a.split('-')[1];
+      const bVersion = b.split('-')[1];
+      return semver.compare(aVersion, bVersion);
+    });
+
+    // remove all but the latest of 3 cached updates
+    for (const update of sortedUpdates.slice(3)) {
+      await fsPromises.rmdir(join(tempFolder, update), { recursive: true });
+    }
+
+    // remove all cached updates that are older than 30 days
+    for (const update of sortedUpdates) {
+      const updateDate = new Date(update.split('-')[1]);
+      const diffTime = Math.abs(Date.now() - updateDate.getTime());
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      if (diffDays > 30) {
+        await fsPromises.rmdir(join(tempFolder, update), { recursive: true });
+      }
+    }
+
+    console.log('[chore] Removed cached app updates');
+    resolve();
+  }).catch((error) => {
+    console.error('[chore] Failed to remove cached app updates', error);
+  });
 }

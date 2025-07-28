@@ -67,6 +67,7 @@ interface Window {
     oobe: {
       // [ boolean, boolean ] => [ cleanInstalled, shouldRestart ]
       downloadTools: () => Promise<[boolean, boolean]>;
+      setSteamGridDBKey: (key: string) => Promise<boolean>;
     };
     app: {
       close: () => Promise<void>;

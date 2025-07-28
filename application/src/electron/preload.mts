@@ -107,6 +107,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   oobe: {
     downloadTools: () => ipcRenderer.invoke('oobe:download-tools'),
+    setSteamGridDBKey: (key: string) =>
+      ipcRenderer.invoke('oobe:set-steamgriddb-key', key),
   },
   app: {
     close: () => ipcRenderer.invoke('app:close'),
@@ -276,3 +278,17 @@ ipcRenderer.on('addon:updated', (_, arg) => {
   dbg_countEvent();
   document.dispatchEvent(new CustomEvent('addon:updated', { detail: arg }));
 });
+
+ipcRenderer.on('addon-connected', (_, arg) => {
+  dbg_countEvent();
+  document.dispatchEvent(new CustomEvent('addon-connected', { detail: arg }));
+});
+
+ipcRenderer.on('migration:event', (_, arg) => {
+  dbg_countEvent();
+  document.dispatchEvent(
+    new CustomEvent(`migration:event:${arg}`, { detail: arg })
+  );
+});
+
+ipcRenderer.send('client-ready-for-events');

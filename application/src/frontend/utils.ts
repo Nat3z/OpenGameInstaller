@@ -10,6 +10,7 @@ import {
   type DeferredTask,
   type DownloadStatusAndInfo,
   removedTasks,
+  setupLogs,
 } from './store';
 import type { ResponseDeferredTask } from '../electron/server/api/defer.js';
 
@@ -162,10 +163,11 @@ export async function safeFetch(
               options.onFailed('Addon is no longer connected');
             clearInterval(deferInterval);
           } else if (taskResponse.status !== 200) {
+            console.log('Task failed', taskResponse);
             if (options.onFailed)
               options.onFailed(taskResponse.error ?? 'Task failed');
             clearInterval(deferInterval);
-            reject('Task failed');
+            reject(taskResponse.error ?? 'Task failed');
             return;
           }
           if (
@@ -857,7 +859,10 @@ export async function retryFailedSetup(failedSetup: FailedSetup) {
         getDownloadPath() + '/' + failedSetup.downloadInfo.name
       );
       const extractedDir = await window.electronAPI.fs.unrar({
-        outputDir: getDownloadPath() + '/' + failedSetup.downloadInfo.name,
+        outputDir:
+          failedSetup.downloadInfo.downloadPath.replace(/(\/|\\)$/g, '') +
+          '/' +
+          failedSetup.downloadInfo.name,
         rarFilePath:
           failedSetup.downloadInfo.downloadPath.replace(/(\/|\\)$/g, '') +
           '/' +
@@ -872,6 +877,18 @@ export async function retryFailedSetup(failedSetup: FailedSetup) {
       failedSetup.setupData.path = extractedDir;
       failedSetup.should = 'call-addon';
     }
+
+    // now add to setup logs
+    setupLogs.update((logs) => ({
+      ...logs,
+      [tempId]: {
+        downloadId: tempId,
+        logs: [],
+        progress: 0,
+        isActive: true,
+      },
+    }));
+
     // Attempt the setup again
     safeFetch(
       'setupApp',
@@ -1046,7 +1063,22 @@ export function updateDownloadStatus(
   currentDownloads.update((downloads) => {
     return downloads.map((download) => {
       if (download.id === downloadID) {
-        return { ...download, ...updates };
+        const updatedDownload = { ...download, ...updates };
+
+        // Initialize setup logs when status changes to 'completed' (setup phase)
+        if (updates.status === 'completed' && download.status !== 'completed') {
+          setupLogs.update((logs) => ({
+            ...logs,
+            [downloadID]: {
+              downloadId: downloadID,
+              logs: [],
+              progress: 0,
+              isActive: true,
+            },
+          }));
+        }
+
+        return updatedDownload;
       }
       return download;
     });

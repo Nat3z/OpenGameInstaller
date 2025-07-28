@@ -7,7 +7,7 @@ import addonProcedures from './api/addons.js';
 import deferProcedures from './api/defer.js';
 import { AddonConnection } from './AddonConnection.js';
 import { AddonServer } from './serve.js';
-
+import { sendIPCMessage } from '../main.js';
 const app = express();
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
@@ -25,6 +25,7 @@ wss.on('connection', async (ws) => {
   });
 
   clients.set(connection.addonInfo.id, connection);
+  await sendIPCMessage('addon-connected', connection.addonInfo.id);
 });
 
 app.all('*', (_, res, next) => {

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
-  import { currentDownloads, failedSetups } from '../store';
+  import { currentDownloads, failedSetups, setupLogs } from '../store';
   import {
     loadFailedSetups,
     removeFailedSetup,
@@ -10,6 +10,7 @@
     cancelPausedDownload,
   } from '../utils';
   import * as d3 from 'd3';
+  import SetupPrompt from '../components/SetupPrompt.svelte';
 
   let chartContainer: HTMLDivElement | null = $state(null);
   let speedData: { time: Date; speed: number; downloadId: string }[] = $state(
@@ -528,209 +529,220 @@
         class="download-card"
         class:queue-item={download.queuePosition && download.queuePosition > 1}
       >
-        <div class="download-image">
-          <img
-            src={download.coverImage || './favicon.png'}
-            alt="Game cover"
-            class="game-cover"
-          />
-          <div class="status-indicator status-{download.status}"></div>
-        </div>
+        <div class="flex flex-row gap-4 w-full">
+          <div class="download-image">
+            <img
+              src={download.coverImage || './favicon.png'}
+              alt="Game cover"
+              class="game-cover"
+            />
+            <div class="status-indicator status-{download.status}"></div>
+          </div>
 
-        <div class="download-content">
-          <div class="download-info">
-            <h3 class="download-title">{download.name}</h3>
-            {#if download.queuePosition && download.queuePosition > 1}
-              <div class="status-badge queued">
-                <div class="spinner"></div>
-                Queued {download.queuePosition}
-              </div>
-            {:else if download.status === 'downloading'}
-              {@const stats =
-                download === targetDownload ? getDownloadStatistics() : null}
-              <div class="progress-section">
-                <div class="progress-bar">
-                  <div
-                    class="progress-fill"
-                    style:width="{download.progress * 100}%"
-                  ></div>
+          <div class="download-content">
+            <div class="download-info">
+              <h3 class="download-title">{download.name}</h3>
+              {#if download.queuePosition && download.queuePosition > 1}
+                <div class="status-badge queued">
+                  <div class="spinner"></div>
+                  Queued {download.queuePosition}
                 </div>
-                <div class="progress-stats">
-                  <span class="progress-percentage"
-                    >{Math.floor(download.progress * 100)}%</span
+              {:else if download.status === 'downloading'}
+                {@const stats =
+                  download === targetDownload ? getDownloadStatistics() : null}
+                <div class="progress-section">
+                  <div class="progress-bar">
+                    <div
+                      class="progress-fill"
+                      style:width="{download.progress * 100}%"
+                    ></div>
+                  </div>
+                  <div class="progress-stats">
+                    <span class="progress-percentage"
+                      >{Math.floor(download.progress * 100)}%</span
+                    >
+                    {#if stats}
+                      <span class="progress-eta">
+                        ETA: {formatETA(stats.eta)}
+                      </span>
+                    {:else if download.queuePosition && download.queuePosition > 1}
+                      <span class="progress-eta queue-text"> Queued </span>
+                    {/if}
+                  </div>
+                </div>
+              {:else if download.status === 'completed'}
+                <div class="status-badge setup">
+                  <div class="spinner"></div>
+                  Setting up with {download.addonSource}
+                </div>
+              {:else if download.status === 'setup-complete'}
+                <div class="status-badge complete">
+                  <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                    <path
+                      fill-rule="evenodd"
+                      d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+                      clip-rule="evenodd"
+                    ></path>
+                  </svg>
+                  Setup Complete
+                </div>
+              {:else if download.status === 'error'}
+                <div class="status-badge error">
+                  <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                    <path
+                      fill-rule="evenodd"
+                      d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z"
+                      clip-rule="evenodd"
+                    ></path>
+                  </svg>
+                  {download.status === 'error'
+                    ? 'Download Failed'
+                    : 'Setup Failed'}
+                </div>
+              {:else if download.status === 'rd-downloading'}
+                <div class="status-badge downloading">
+                  <div class="spinner"></div>
+                  Real-Debrid Processing
+                </div>
+              {:else if download.status === 'requesting'}
+                <div class="status-badge requesting">
+                  <div class="spinner"></div>
+                  Requesting Download
+                </div>
+              {:else if download.status === 'seeding'}
+                <div class="status-badge seeding">
+                  <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                    <path
+                      d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"
+                    ></path>
+                  </svg>
+                  Seeding
+                </div>
+              {:else if download.status === 'paused'}
+                <div class="status-badge paused">
+                  <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                    <path
+                      d="M6 4a1 1 0 011 1v10a1 1 0 11-2 0V5a1 1 0 011-1zM14 4a1 1 0 011 1v10a1 1 0 11-2 0V5a1 1 0 011-1z"
+                    ></path>
+                  </svg>
+                  Paused
+                </div>
+              {/if}
+            </div>
+
+            <div class="download-actions">
+              {#if download.status === 'setup-complete'}
+                <button
+                  class="btn btn-primary btn-sm"
+                  onclick={() =>
+                    window.electronAPI.fs.showFileLoc(download.downloadPath)}
+                >
+                  <svg
+                    class="w-4 h-4 mr-2"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
                   >
-                  {#if stats}
-                    <span class="progress-eta">
-                      ETA: {formatETA(stats.eta)}
-                    </span>
-                  {:else if download.queuePosition && download.queuePosition > 1}
-                    <span class="progress-eta queue-text"> Queued </span>
-                  {/if}
-                </div>
-              </div>
-            {:else if download.status === 'completed'}
-              <div class="status-badge setup">
-                <div class="spinner"></div>
-                Setting up with {download.addonSource}
-              </div>
-            {:else if download.status === 'setup-complete'}
-              <div class="status-badge complete">
-                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                  <path
-                    fill-rule="evenodd"
-                    d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
-                    clip-rule="evenodd"
-                  ></path>
-                </svg>
-                Setup Complete
-              </div>
-            {:else if download.status === 'error'}
-              <div class="status-badge error">
-                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                  <path
-                    fill-rule="evenodd"
-                    d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z"
-                    clip-rule="evenodd"
-                  ></path>
-                </svg>
-                {download.status === 'error'
-                  ? 'Download Failed'
-                  : 'Setup Failed'}
-              </div>
-            {:else if download.status === 'rd-downloading'}
-              <div class="status-badge downloading">
-                <div class="spinner"></div>
-                Real-Debrid Processing
-              </div>
-            {:else if download.status === 'requesting'}
-              <div class="status-badge requesting">
-                <div class="spinner"></div>
-                Requesting Download
-              </div>
-            {:else if download.status === 'seeding'}
-              <div class="status-badge seeding">
-                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                  <path
-                    d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"
-                  ></path>
-                </svg>
-                Seeding
-              </div>
-            {:else if download.status === 'paused'}
-              <div class="status-badge paused">
-                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                  <path
-                    d="M6 4a1 1 0 011 1v10a1 1 0 11-2 0V5a1 1 0 011-1zM14 4a1 1 0 011 1v10a1 1 0 11-2 0V5a1 1 0 011-1z"
-                  ></path>
-                </svg>
-                Paused
-              </div>
-            {/if}
-          </div>
-
-          <div class="download-actions">
-            {#if download.status === 'setup-complete'}
-              <button
-                class="btn btn-primary btn-sm"
-                onclick={() =>
-                  window.electronAPI.fs.showFileLoc(download.downloadPath)}
-              >
-                <svg
-                  class="w-4 h-4 mr-2"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2H5a2 2 0 00-2-2v0"
+                    ></path>
+                  </svg>
+                  Open
+                </button>
+              {:else if download.queuePosition && download.queuePosition > 1}
+                <button
+                  class="text-accent-dark border-none p-4 rounded-lg bg-accent-light hover:bg-accent-dark/50 transition-colors"
+                  onclick={() => window.electronAPI.queue.cancel(download.id)}
+                  aria-label="Cancel Download"
                 >
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    stroke-width="2"
-                    d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2H5a2 2 0 00-2-2v0"
-                  ></path>
-                </svg>
-                Open
-              </button>
-            {:else if download.queuePosition && download.queuePosition > 1}
-              <button
-                class="text-accent-dark border-none p-4 rounded-lg bg-accent-light hover:bg-accent-dark/50 transition-colors"
-                onclick={() => window.electronAPI.queue.cancel(download.id)}
-                aria-label="Cancel Download"
-              >
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  height="24"
-                  viewBox="0 0 24 24"
-                  width="24"
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    height="24"
+                    viewBox="0 0 24 24"
+                    width="24"
+                  >
+                    <path
+                      d="M8 6h8c1.1 0 2 .9 2 2v8c0 1.1-.9 2-2 2H8c-1.1 0-2-.9-2-2V8c0-1.1.9-2 2-2z"
+                    />
+                  </svg>
+                </button>
+              {:else if download.status === 'downloading'}
+                <!-- PAUSE BUTTON -->
+                <button
+                  class="text-accent-dark border-none p-4 rounded-lg bg-accent-light hover:bg-accent-dark/50 transition-colors"
+                  aria-label="Pause Download"
+                  onclick={async () => {
+                    if (download.queuePosition && download.queuePosition > 1) {
+                      window.electronAPI.queue.cancel(download.id);
+                    } else {
+                      await pauseDownload(download.id);
+                    }
+                  }}
                 >
-                  <path
-                    d="M8 6h8c1.1 0 2 .9 2 2v8c0 1.1-.9 2-2 2H8c-1.1 0-2-.9-2-2V8c0-1.1.9-2 2-2z"
-                  />
-                </svg>
-              </button>
-            {:else if download.status === 'downloading'}
-              <!-- PAUSE BUTTON -->
-              <button
-                class="text-accent-dark border-none p-4 rounded-lg bg-accent-light hover:bg-accent-dark/50 transition-colors"
-                aria-label="Pause Download"
-                onclick={async () => {
-                  if (download.queuePosition && download.queuePosition > 1) {
-                    window.electronAPI.queue.cancel(download.id);
-                  } else {
-                    await pauseDownload(download.id);
-                  }
-                }}
-              >
-                <svg
-                  fill="currentColor"
-                  xmlns="http://www.w3.org/2000/svg"
-                  height="24"
-                  viewBox="0 0 24 24"
-                  width="24"
-                  ><path d="M0 0h24v24H0V0z" fill="none" /><path
-                    d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"
-                  /></svg
+                  <svg
+                    fill="currentColor"
+                    xmlns="http://www.w3.org/2000/svg"
+                    height="24"
+                    viewBox="0 0 24 24"
+                    width="24"
+                    ><path d="M0 0h24v24H0V0z" fill="none" /><path
+                      d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"
+                    /></svg
+                  >
+                </button>
+              {:else if download.status === 'paused'}
+                <!-- RESUME BUTTON -->
+                <button
+                  class="text-green-600 border-none p-3 rounded-lg bg-green-100 hover:bg-green-200 transition-colors mr-2"
+                  aria-label="Resume Download"
+                  onclick={async () => {
+                    await resumeDownload(download.id);
+                  }}
                 >
-              </button>
-            {:else if download.status === 'paused'}
-              <!-- RESUME BUTTON -->
-              <button
-                class="text-green-600 border-none p-3 rounded-lg bg-green-100 hover:bg-green-200 transition-colors mr-2"
-                aria-label="Resume Download"
-                onclick={async () => {
-                  await resumeDownload(download.id);
-                }}
-              >
-                <svg
-                  fill="currentColor"
-                  xmlns="http://www.w3.org/2000/svg"
-                  height="20"
-                  viewBox="0 0 24 24"
-                  width="20"
-                  ><path d="M0 0h24v24H0V0z" fill="none" /><path
-                    d="M8 5v14l11-7z"
-                  /></svg
+                  <svg
+                    fill="currentColor"
+                    xmlns="http://www.w3.org/2000/svg"
+                    height="20"
+                    viewBox="0 0 24 24"
+                    width="20"
+                    ><path d="M0 0h24v24H0V0z" fill="none" /><path
+                      d="M8 5v14l11-7z"
+                    /></svg
+                  >
+                </button>
+                <!-- ABORT BUTTON -->
+                <button
+                  class="text-red-600 border-none p-3 rounded-lg bg-red-100 hover:bg-red-200 transition-colors"
+                  aria-label="Cancel Download"
+                  onclick={() => cancelPausedDownload(download.id)}
                 >
-              </button>
-              <!-- ABORT BUTTON -->
-              <button
-                class="text-red-600 border-none p-3 rounded-lg bg-red-100 hover:bg-red-200 transition-colors"
-                aria-label="Cancel Download"
-                onclick={() => cancelPausedDownload(download.id)}
-              >
-                <svg
-                  fill="currentColor"
-                  xmlns="http://www.w3.org/2000/svg"
-                  height="20"
-                  viewBox="0 0 24 24"
-                  width="20"
-                  ><path d="M0 0h24v24H0V0z" fill="none" /><path
-                    d="M18.3 5.71c-.39-.39-1.02-.39-1.41 0L12 10.59 7.11 5.7c-.39-.39-1.02-.39-1.41 0-.39.39-.39 1.02 0 1.41L10.59 12 5.7 16.89c-.39.39-.39 1.02 0 1.41.39.39 1.02.39 1.41 0L12 13.41l4.89 4.89c.39.39 1.02.39 1.41 0 .39-.39.39-1.02 0-1.41L13.41 12l4.89-4.89c.38-.38.38-1.02 0-1.4z"
-                  /></svg
-                >
-              </button>
-            {/if}
+                  <svg
+                    fill="currentColor"
+                    xmlns="http://www.w3.org/2000/svg"
+                    height="20"
+                    viewBox="0 0 24 24"
+                    width="20"
+                    ><path d="M0 0h24v24H0V0z" fill="none" /><path
+                      d="M18.3 5.71c-.39-.39-1.02-.39-1.41 0L12 10.59 7.11 5.7c-.39-.39-1.02-.39-1.41 0-.39.39-.39 1.02 0 1.41L10.59 12 5.7 16.89c-.39.39-.39 1.02 0 1.41.39.39 1.02.39 1.41 0L12 13.41l4.89 4.89c.39.39 1.02.39 1.41 0 .39-.39.39-1.02 0-1.41L13.41 12l4.89-4.89c.38-.38.38-1.02 0-1.4z"
+                    /></svg
+                  >
+                </button>
+              {/if}
+            </div>
           </div>
         </div>
+        {#if download.status === 'completed' && $setupLogs[download.id]?.isActive}
+          <div class="mt-3 w-full">
+            <SetupPrompt
+              setupLog={$setupLogs[download.id]}
+              downloadName={download.name}
+              addonSource={download.addonSource}
+            />
+          </div>
+        {/if}
       </div>
     {/each}
   </div>
@@ -886,7 +898,7 @@
   }
 
   .download-card {
-    @apply bg-accent-lighter rounded-lg shadow-sm hover:shadow-md transition-all duration-200 overflow-hidden flex items-center p-4 gap-4;
+    @apply bg-accent-lighter rounded-lg shadow-sm hover:shadow-md transition-all duration-200 overflow-hidden flex flex-col items-center p-4 gap-4;
   }
 
   .download-image {

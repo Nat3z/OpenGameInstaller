@@ -1,6 +1,13 @@
 <script lang="ts">
   import { fly } from 'svelte/transition';
   import { createNotification } from '../store';
+  import Modal from '../components/modal/Modal.svelte';
+  import TitleModal from '../components/modal/TitleModal.svelte';
+  import InputModal from '../components/modal/InputModal.svelte';
+  import ButtonModal from '../components/modal/ButtonModal.svelte';
+  import { onMount } from 'svelte';
+  import TextModal from '../components/modal/TextModal.svelte';
+  import SectionModal from '../components/modal/SectionModal.svelte';
 
   const fs = window.electronAPI.fs;
   interface OptionsCategory {
@@ -51,6 +58,20 @@
           value: '',
           choice: ['webtorrent', 'qbittorrent', 'real-debrid'],
           type: 'string',
+        },
+        reconfigureSteamGridDb: {
+          displayName: 'Change SteamGridDB API Key',
+          description: 'Reconfigure your SteamGridDB API Key',
+          defaultValue: '',
+          value: '',
+          type: 'action',
+          action: () => {
+            document.dispatchEvent(
+              new CustomEvent('steamgriddb-launch', {
+                detail: '',
+              })
+            );
+          },
         },
         addons: {
           displayName: 'Addons',
@@ -360,14 +381,82 @@
   }
 
   let showPassword: { [key: string]: boolean } = $state({});
+  let doSteamGridDBReconfigure: boolean = $state(false);
 
   $effect(() => {
     if (mainContent && selectedOption) {
       mainContent.scrollTo({ top: 0, behavior: 'smooth' });
     }
   });
+
+  let reasonForSteamGridLaunch: string = $state('');
+  onMount(() => {
+    function steamgriddbLaunch(event: Event) {
+      doSteamGridDBReconfigure = true;
+      reasonForSteamGridLaunch = (event as CustomEvent).detail || '';
+    }
+    document.addEventListener('steamgriddb-launch', steamgriddbLaunch);
+
+    return () => {
+      document.removeEventListener('steamgriddb-launch', steamgriddbLaunch);
+    };
+  });
 </script>
 
+{#if doSteamGridDBReconfigure}
+  <Modal
+    open={doSteamGridDBReconfigure}
+    boundsClose={true}
+    onClose={() => (doSteamGridDBReconfigure = false)}
+  >
+    <TitleModal title="SteamGridDB API Key" />
+
+    {#if reasonForSteamGridLaunch}
+      <SectionModal>
+        <TextModal
+          text="Why are we asking for your API Key?"
+          variant="caption"
+        />
+        <TextModal
+          text={reasonForSteamGridLaunch}
+          class="!-mt-2"
+          variant="body"
+        />
+      </SectionModal>
+    {/if}
+    <a
+      href="https://steamgriddb.com/profile/preferences/api"
+      target="_blank"
+      class="text-accent-dark hover:text-accent-light underline mt-4"
+    >
+      Get your API Key here
+    </a>
+    <InputModal
+      id="steamgriddb-api-key"
+      label="SteamGridDB API Key"
+      description="Enter your SteamGridDB API Key below."
+      value=""
+    />
+    <div class="flex flex-row gap-2 mt-4">
+      <ButtonModal
+        variant="primary"
+        text="Save"
+        onclick={() => {
+          window.electronAPI.oobe.setSteamGridDBKey(
+            (document.getElementById('steamgriddb-api-key') as HTMLInputElement)
+              .value
+          );
+          doSteamGridDBReconfigure = false;
+        }}
+      />
+      <ButtonModal
+        variant="secondary"
+        text="Cancel"
+        onclick={() => (doSteamGridDBReconfigure = false)}
+      />
+    </div>
+  </Modal>
+{/if}
 <div class="config-container">
   <!-- Sidebar -->
   <div class="sidebar">

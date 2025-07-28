@@ -241,11 +241,13 @@ export interface WebsocketMessageClient {
   event: OGIAddonClientSentEvent;
   id?: string;
   args: any;
+  statusError?: string;
 }
 export interface WebsocketMessageServer {
   event: OGIAddonServerSentEvent;
   id?: string;
   args: any;
+  statusError?: string;
 }
 
 /**
@@ -557,12 +559,16 @@ class OGIAddonWSListener {
         case 'config-update':
           const result = this.addon.config.updateConfig(message.args);
           if (!result[0]) {
-            this.respondToMessage(message.id!!, {
-              success: false,
-              error: result[1],
-            });
+            this.respondToMessage(
+              message.id!!,
+              {
+                success: false,
+                error: result[1],
+              },
+              undefined
+            );
           } else {
-            this.respondToMessage(message.id!!, { success: true });
+            this.respondToMessage(message.id!!, { success: true }, undefined);
           }
           break;
         case 'search':
@@ -573,7 +579,11 @@ class OGIAddonWSListener {
           this.eventEmitter.emit('search', message.args, searchResultEvent);
           const searchResult =
             await this.waitForEventToRespond(searchResultEvent);
-          this.respondToMessage(message.id!!, searchResult.data);
+          this.respondToMessage(
+            message.id!!,
+            searchResult.data,
+            searchResultEvent
+          );
           break;
         case 'setup':
           let setupEvent = new EventResponse<LibraryInfo>(
@@ -606,7 +616,7 @@ class OGIAddonWSListener {
             } as ClientSentEventTypes['defer-update']);
           }, 100);
           const setupResult = await this.waitForEventToRespond(setupEvent);
-          this.respondToMessage(message.id!!, setupResult.data);
+          this.respondToMessage(message.id!!, setupResult.data, setupEvent);
           break;
         case 'library-search':
           let librarySearchEvent = new EventResponse<BasicLibraryInfo[]>(
@@ -614,7 +624,7 @@ class OGIAddonWSListener {
               this.userInputAsked(screen, name, description, this.socket)
           );
           if (this.eventEmitter.listenerCount('game-details') === 0) {
-            this.respondToMessage(message.id!!, []);
+            this.respondToMessage(message.id!!, [], librarySearchEvent);
             break;
           }
           this.eventEmitter.emit(
@@ -624,7 +634,11 @@ class OGIAddonWSListener {
           );
           const librarySearchResult =
             await this.waitForEventToRespond(librarySearchEvent);
-          this.respondToMessage(message.id!!, librarySearchResult.data);
+          this.respondToMessage(
+            message.id!!,
+            librarySearchResult.data,
+            librarySearchEvent
+          );
           break;
         case 'game-details':
           let gameDetailsEvent = new EventResponse<StoreData | undefined>(
@@ -632,9 +646,13 @@ class OGIAddonWSListener {
               this.userInputAsked(screen, name, description, this.socket)
           );
           if (this.eventEmitter.listenerCount('game-details') === 0) {
-            this.respondToMessage(message.id!!, {
-              error: 'No event listener for game-details',
-            });
+            this.respondToMessage(
+              message.id!!,
+              {
+                error: 'No event listener for game-details',
+              },
+              gameDetailsEvent
+            );
             break;
           }
           this.eventEmitter.emit(
@@ -644,7 +662,11 @@ class OGIAddonWSListener {
           );
           const gameDetailsResult =
             await this.waitForEventToRespond(gameDetailsEvent);
-          this.respondToMessage(message.id!!, gameDetailsResult.data);
+          this.respondToMessage(
+            message.id!!,
+            gameDetailsResult.data,
+            gameDetailsEvent
+          );
           break;
         case 'request-dl':
           let requestDLEvent = new EventResponse<SearchResult>(
@@ -652,9 +674,13 @@ class OGIAddonWSListener {
               this.userInputAsked(screen, name, description, this.socket)
           );
           if (this.eventEmitter.listenerCount('request-dl') === 0) {
-            this.respondToMessage(message.id!!, {
-              error: 'No event listener for request-dl',
-            });
+            this.respondToMessage(
+              message.id!!,
+              {
+                error: 'No event listener for request-dl',
+              },
+              requestDLEvent
+            );
             break;
           }
           this.eventEmitter.emit(
@@ -666,9 +692,7 @@ class OGIAddonWSListener {
           const requestDLResult =
             await this.waitForEventToRespond(requestDLEvent);
           if (requestDLEvent.failed) {
-            this.respondToMessage(message.id!!, {
-              statusError: requestDLEvent.failed,
-            });
+            this.respondToMessage(message.id!!, undefined, requestDLEvent);
             break;
           }
           if (
@@ -679,7 +703,11 @@ class OGIAddonWSListener {
               'Request DL event did not return a valid result. Please ensure that the event does not resolve with another `request` download type.'
             );
           }
-          this.respondToMessage(message.id!!, requestDLResult.data);
+          this.respondToMessage(
+            message.id!!,
+            requestDLResult.data,
+            requestDLEvent
+          );
           break;
         case 'catalog':
           let catalogEvent = new EventResponse<{
@@ -691,7 +719,7 @@ class OGIAddonWSListener {
           }>();
           this.eventEmitter.emit('catalog', catalogEvent);
           const catalogResult = await this.waitForEventToRespond(catalogEvent);
-          this.respondToMessage(message.id!!, catalogResult.data);
+          this.respondToMessage(message.id!!, catalogResult.data, catalogEvent);
           break;
       }
     });
@@ -725,12 +753,17 @@ class OGIAddonWSListener {
     });
   }
 
-  public respondToMessage(messageID: string, response: any) {
+  public respondToMessage(
+    messageID: string,
+    response: any,
+    originalEvent: EventResponse<any> | undefined
+  ) {
     this.socket.send(
       JSON.stringify({
         event: 'response',
         id: messageID,
         args: response,
+        statusError: originalEvent ? originalEvent.failed : undefined,
       })
     );
     console.log('dispatched response to ' + messageID);

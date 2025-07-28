@@ -4,6 +4,7 @@
   import { onMount } from 'svelte';
   // @ts-ignore
   import WineIcon from '../Icons/WineIcon.svelte';
+  import { createNotification } from '../store';
 
   let stage = $state(0);
 
@@ -172,7 +173,7 @@
   }
 
   function waitForSetup() {
-    stage = 6;
+    stage = 7;
     const waitFor = setInterval(() => {
       if (completedSetup) {
         document
@@ -434,11 +435,11 @@
         {:else if selectedTorrenter === 'qbittorrent'}
           <!-- TODO: WORK ON OUR OWN TUTORIAL -->
           <a
-            href="https://lgallardo.com/2014/09/29/como-activar-la-interfaz-web-de-qbittorrent/"
+            href="https://ogi.nat3z.com/docs/for-users/qb-setup"
             class="font-open-sans mb-4 text-sm underline text-accent hover:text-accent-dark"
             target="_blank"
             >Enable qBittorrent's WebUI so OpenGameInstaller can interact with
-            the client.</a
+            the client. Click here for a guide on how to enable it.</a
           >
           <div
             class="justify-center items-center flex flex-row gap-4 mb-4 w-full"
@@ -605,15 +606,86 @@
         value=""
       ></textarea>
       <button
-        onclick={() => {
-          finishSetup();
-          stage = 5;
+        onclick={async () => {
+          // check if the user is on windows or linux
+          const os = await window.electronAPI.app.getOS();
+          if (os === 'win32') {
+            finishSetup();
+            stage = 6;
+          } else {
+            // go to steamgriddb
+            stage = 5;
+          }
         }}
         class="bg-accent hover:bg-accent-dark text-white font-open-sans font-semibold py-3 px-6 rounded-lg transition-colors duration-200"
         >Continue</button
       >
     </div>
-  {:else if stage === 5}
+  {:else if stage === 5 && window}
+    <div
+      class="animate-fade-in-pop flex justify-center items-center h-full flex-col gap-6 p-10 w-full max-w-2xl"
+    >
+      <h1 class="text-3xl font-archivo font-semibold text-gray-900 mt-2">
+        SteamGridDB
+      </h1>
+      <h2 class="font-open-sans text-gray-600 text-center mb-6">
+        To automate downloading images for the games you install on Steam, we
+        need to use SteamGridDB.
+      </h2>
+      <h2 class="font-open-sans text-gray-600 text-center mb-6">
+        <a
+          href="https://www.steamgriddb.com/profile/preferences/api"
+          target="_blank"
+          class="underline text-accent hover:text-accent-dark"
+          >Insert your SteamGridDB API Key below. If you don't have one, you can
+          get one by going here</a
+        >.
+      </h2>
+      <div class="flex justify-center items-center flex-row gap-4 w-full">
+        <input
+          data-sgdb-key
+          type="text"
+          class="flex-1 p-3 bg-white border border-accent-light rounded-lg focus:outline-none focus:ring-2 focus:ring-accent"
+          placeholder="SteamGridDB API Key"
+        />
+      </div>
+      <div
+        class="flex justify-center items-center flex-row gap-4 w-full max-w-2xl"
+      >
+        <button
+          onclick={async () => {
+            const result = await window.electronAPI.oobe.setSteamGridDBKey(
+              (
+                document.querySelector('[data-sgdb-key]') as HTMLInputElement
+              ).value.trim()
+            );
+
+            if (!result) {
+              createNotification({
+                message: 'Failed to set SteamGridDB API Key',
+                id: Math.random().toString(36).substring(7),
+                type: 'error',
+              });
+              return;
+            }
+
+            finishSetup();
+            stage = 6;
+          }}
+          class="bg-accent hover:bg-accent-dark text-white font-open-sans font-semibold py-3 px-6 rounded-lg transition-colors duration-200"
+          >Set Key and Continue</button
+        >
+        <button
+          onclick={() => {
+            finishSetup();
+            stage = 6;
+          }}
+          class="border-accent border-2 text-accent hover:border-accent-dark font-open-sans font-semibold py-3 px-6 rounded-lg transition-colors duration-200"
+          >Skip</button
+        >
+      </div>
+    </div>
+  {:else if stage === 6}
     <div
       class="animate-fade-in-pop flex justify-center items-center h-full flex-col gap-6 p-10 w-full"
     >
@@ -632,7 +704,7 @@
         >Finish</button
       >
     </div>
-  {:else if stage === 6}
+  {:else if stage === 7}
     <div
       class="animate-fade-in-pop flex justify-center items-center h-full flex-col gap-6 p-10 w-full"
     >

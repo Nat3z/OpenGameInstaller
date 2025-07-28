@@ -18,6 +18,7 @@ import {
   checkForAddonUpdates,
   convertLibrary,
   IS_NIXOS,
+  removeCachedAppUpdates,
   restoreBackup,
   STEAMTINKERLAUNCH_PATH,
 } from './startup.js';
@@ -68,6 +69,10 @@ restoreBackup();
 
 // run any migrations if necessary
 executeMigrations();
+
+// remove cached app updates
+removeCachedAppUpdates();
+
 interface Notification {
   message: string;
   id: string;
@@ -85,6 +90,23 @@ export function sendNotification(notification: Notification) {
     return;
   }
   mainWindow.webContents.send('notification', notification);
+}
+
+let isReadyForEvents = false;
+
+let readyForEventWaiters: (() => void)[] = [];
+
+export async function sendIPCMessage(channel: string, ...args: any[]) {
+  if (!isReadyForEvents) {
+    // wait for main window to be ready
+    // wait for the main window to be ready with a callback
+    await new Promise<void>((resolve) => {
+      console.log('waiting for events');
+      readyForEventWaiters.push(resolve);
+    });
+    console.log('events ready');
+  }
+  mainWindow?.webContents.send(channel, ...args);
 }
 
 export let currentScreens = new Map<
@@ -121,7 +143,8 @@ function createWindow() {
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: true,
-      devTools: isDev(),
+      // always allow devtools
+      devTools: true,
       preload: isDev()
         ? join(app.getAppPath(), 'preload.mjs')
         : join(app.getAppPath(), 'build/preload.mjs'),
@@ -137,6 +160,15 @@ function createWindow() {
 
   // This block of code is intended for development purpose only.
   // Delete this entire block of code when you are ready to package the application.
+
+  ipcMain.on('client-ready-for-events', async () => {
+    isReadyForEvents = true;
+    for (const waiter of readyForEventWaiters) {
+      waiter();
+    }
+    readyForEventWaiters = [];
+  });
+
   if (isDev()) {
     mainWindow!!.loadURL(
       'http://localhost:8080/?secret=' + applicationAddonSecret

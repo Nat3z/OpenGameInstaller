@@ -4,15 +4,11 @@
     createNotification,
     currentDownloads,
     failedSetups,
+    setupLogs,
     type DownloadStatusAndInfo,
     type FailedSetup,
   } from '../store';
-  import {
-    getDownloadPath,
-    safeFetch,
-    updateDownloadStatus,
-    getDownloadItem,
-  } from '../utils';
+  import { safeFetch, updateDownloadStatus, getDownloadItem } from '../utils';
 
   function isCustomEvent(event: Event): event is CustomEvent {
     return event instanceof CustomEvent;
@@ -33,6 +29,29 @@
         },
       })
     );
+
+    // Update setup logs store
+    setupLogs.update((logs) => {
+      const currentLog = logs[downloadID] || {
+        downloadId: downloadID,
+        logs: [],
+        progress: 0,
+        isActive: true,
+      };
+
+      if (eventType === 'log') {
+        // data is an array of log lines
+        const newLogs = Array.isArray(data) ? data : [data];
+        currentLog.logs = [...currentLog.logs, ...newLogs];
+      } else if (eventType === 'progress') {
+        currentLog.progress = data;
+      }
+
+      return {
+        ...logs,
+        [downloadID]: currentLog,
+      };
+    });
   }
 
   function handleSetupError(
@@ -50,6 +69,14 @@
     updateDownloadStatus(downloadedItem.id, {
       status: 'error',
       error: error.message || error,
+    });
+
+    // Mark setup log as inactive
+    setupLogs.update((logs) => {
+      if (logs[downloadedItem.id]) {
+        logs[downloadedItem.id].isActive = false;
+      }
+      return logs;
     });
 
     saveFailedSetup({
@@ -126,6 +153,14 @@
       status: finalStatus,
       downloadPath: downloadedItem.downloadPath,
     });
+
+    // Mark setup log as inactive
+    setupLogs.update((logs) => {
+      if (logs[downloadedItem.id]) {
+        logs[downloadedItem.id].isActive = false;
+      }
+      return logs;
+    });
   }
 
   async function processDownloadComplete(
@@ -169,7 +204,10 @@
           console.log('Extracting RAR file: ', downloadedItem.downloadPath);
           console.log(downloadedItem);
           const extractedDir = await window.electronAPI.fs.unrar({
-            outputDir: getDownloadPath() + '/' + downloadedItem.filename,
+            outputDir:
+              downloadedItem.downloadPath.replace(/(\/|\\)$/g, '') +
+              '/' +
+              downloadedItem.name,
             rarFilePath:
               downloadedItem.downloadPath?.replace(/(\/|\\)$/g, '') +
               '/' +
@@ -231,7 +269,7 @@
     }
 
     // Add multipart files data for DDL
-    if (!isTorrent) {
+    if (!isTorrent && downloadedItem.files) {
       additionalData.multiPartFiles = JSON.parse(
         JSON.stringify(downloadedItem.files)
       );

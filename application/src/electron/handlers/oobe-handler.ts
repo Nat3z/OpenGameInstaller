@@ -411,4 +411,29 @@ export default function OOBEHandler() {
 
     return [cleanlyDownloadedAll, requireRestart];
   });
+
+  ipcMain.handle('oobe:set-steamgriddb-key', async (_, key: string) => {
+    // send to steamtinkerlaunch the new key using STEAMTINKERLAUNCH_PATH
+    try {
+      await new Promise<void>((resolve, reject) =>
+        exec(
+          STEAMTINKERLAUNCH_PATH + ' set SGDBAPIKEY global ' + key,
+          (err, stdout, stderr) => {
+            if (err) {
+              console.error(err);
+              reject();
+              return;
+            }
+            console.log(stdout);
+            console.log(stderr);
+            resolve();
+          }
+        )
+      );
+      return true;
+    } catch (err) {
+      console.error(err);
+      return false;
+    }
+  });
 }

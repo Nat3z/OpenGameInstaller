@@ -91,6 +91,10 @@
     }, 100);
   });
 
+  document.addEventListener('addon-connected', () => {
+    fetchAddonsWithConfigure();
+  });
+
   async function initializeSearch() {
     try {
       const addonData = await safeFetch('getAllAddons', {});
@@ -276,6 +280,22 @@
       return !v;
     });
   }
+
+  // for migration:
+  document.addEventListener('migration:event:steamgriddb-launch', () => {
+    console.log('steamgriddb-launch');
+    // open client options
+    setView('clientoptions');
+    // then open the steamgriddb modal
+    setTimeout(() => {
+      document.dispatchEvent(
+        new CustomEvent('steamgriddb-launch', {
+          detail:
+            'Automatic SteamGridDB artwork downloads require a SteamGridDB API Key. We forgot to ask for it when you initially installed the app, and you will need to configure it now to take advantage of this feature.',
+        })
+      );
+    }, 200);
+  });
 </script>
 
 <Notifications />

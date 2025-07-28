@@ -89,7 +89,8 @@
 
   function createSetupCallbacks(downloadedItem: DownloadStatusAndInfo) {
     return {
-      onLogs: (log: any) => dispatchSetupEvent('log', downloadedItem.id, log),
+      onLogs: (log: string[]) =>
+        dispatchSetupEvent('log', downloadedItem.id, log),
       onProgress: (progress: any) =>
         dispatchSetupEvent('progress', downloadedItem.id, progress),
       onFailed: (error: any) => {

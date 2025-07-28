@@ -185,22 +185,21 @@ export async function safeFetch(
               return resolve(taskResponse.data.data);
             else throw new Error('Invalid consume type');
           }
-          if (
-            taskResponse.data.data &&
-            taskResponse.data.data.progress !== undefined
-          ) {
+          if (taskResponse.data) {
             // Task is still running
             const taskData: {
               progress: number;
               logs: string[];
               failed: string | undefined;
-            } = taskResponse.data.data;
-            if (options.onProgress) options.onProgress(taskData.progress);
-            if (options.onLogs) options.onLogs(taskData.logs);
+            } = taskResponse.data;
+            if (options.onProgress && taskData.progress !== undefined)
+              options.onProgress(taskData.progress);
+            if (options.onLogs && taskData.logs !== undefined)
+              options.onLogs(taskData.logs);
             if (options.onFailed && taskData.failed)
               options.onFailed(taskData.failed);
           }
-        }, 100);
+        }, 50);
       } else {
         if (!options || !options.consume || options.consume === 'json')
           return resolve(response.data);

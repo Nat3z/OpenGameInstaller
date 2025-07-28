@@ -68,13 +68,18 @@
   document.addEventListener('setup:log', (event: Event) => {
     if (!isCustomEvent(event)) return;
     const downloadID = event.detail.id;
-    const log: string[] = event.detail.log;
+    const logs: string[] = event.detail.log;
     // Update the $setupLogs state for the given downloadID
-    setupLogs.update((logs) => ({
-      ...logs,
+    setupLogs.update((otherLogs) => ({
+      ...otherLogs,
       [downloadID]: {
-        ...(logs[downloadID] || { logs: [] }),
-        logs: [...(logs[downloadID]?.logs || []), ...log],
+        ...(otherLogs[downloadID] || {
+          logs: [],
+          progress: 0,
+          isActive: true,
+          downloadId: downloadID,
+        }),
+        logs: [...logs],
       },
     }));
   });
@@ -83,10 +88,18 @@
     if (!isCustomEvent(event)) return;
     const downloadID = event.detail.id;
     const progress = event.detail.progress;
-    const download = document.querySelector(`[data-id="${downloadID}"]`);
-    if (download === null) return;
-    const progressBar = download.querySelector('progress')!!;
-    progressBar.value = progress;
+    setupLogs.update((otherLogs) => ({
+      ...otherLogs,
+      [downloadID]: {
+        ...(otherLogs[downloadID] || {
+          logs: [],
+          progress: 0,
+          isActive: true,
+          downloadId: downloadID,
+        }),
+        progress,
+      },
+    }));
   });
 
   // Load failed setups and paused downloads when component mounts

@@ -104,6 +104,8 @@ export async function sendIPCMessage(channel: string, ...args: any[]) {
       console.log('waiting for events');
       readyForEventWaiters.push(resolve);
     });
+    // wait for 500ms before checking again
+    await new Promise((resolve) => setTimeout(resolve, 500));
     console.log('events ready');
   }
   mainWindow?.webContents.send(channel, ...args);

@@ -429,7 +429,7 @@
       target="_blank"
       class="text-accent-dark hover:text-accent-light underline mt-4"
     >
-      Get your API Key here
+      Get your API Key here (https://steamgriddb.com/profile/preferences/api)
     </a>
     <InputModal
       id="steamgriddb-api-key"

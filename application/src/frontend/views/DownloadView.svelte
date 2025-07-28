@@ -69,17 +69,14 @@
     if (!isCustomEvent(event)) return;
     const downloadID = event.detail.id;
     const log: string[] = event.detail.log;
-    const download = document.querySelector(`[data-id="${downloadID}"]`);
-    if (download === null) return;
-    const code = download.querySelector('code')!!;
-    code.innerHTML = '';
-    // make each line a new line without using innerHTML
-    log.forEach((line) => {
-      const textNode = document.createTextNode(line);
-      code.appendChild(textNode);
-      code.appendChild(document.createElement('br'));
-    });
-    code.scrollTop = code.scrollHeight;
+    // Update the $setupLogs state for the given downloadID
+    setupLogs.update((logs) => ({
+      ...logs,
+      [downloadID]: {
+        ...(logs[downloadID] || { logs: [] }),
+        logs: [...(logs[downloadID]?.logs || []), ...log],
+      },
+    }));
   });
 
   document.addEventListener('setup:progress', (event: Event) => {

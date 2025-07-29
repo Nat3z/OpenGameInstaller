@@ -27,7 +27,7 @@ function stripAnsiCodes(input: string): string {
 }
 export async function setupAddon(addonPath: string): Promise<boolean> {
   const addonConfig = await readFile(join(addonPath, 'addon.json'), 'utf-8');
-  const addonName = addonPath.split(/\/|\\/).pop();
+  const addonName = addonPath.split(/\/|\\/).pop() ?? 'unknown-addon';
   if (!addonConfig) {
     sendNotification({
       type: 'error',
@@ -55,7 +55,8 @@ Running pre-setup script for ${addonName}...
       setupLogs += await executeScript(
         'pre-setup',
         addon.scripts.preSetup,
-        addonPath
+        addonPath,
+        addonName
       );
     } catch (e) {
       sendNotification({
@@ -73,7 +74,7 @@ Running pre-setup script for ${addonName}...
 Running setup script for ${addonName}...
 > ${addon.scripts.setup}
       `;
-      await executeScript('setup', addon.scripts.setup, addonPath);
+      await executeScript('setup', addon.scripts.setup, addonPath, addonName);
     } catch (e) {
       sendNotification({
         type: 'error',
@@ -90,7 +91,12 @@ Running setup script for ${addonName}...
 Running post-setup script for ${addonName}...
 > ${addon.scripts.postSetup}
       `;
-      await executeScript('post-setup', addon.scripts.postSetup, addonPath);
+      await executeScript(
+        'post-setup',
+        addon.scripts.postSetup,
+        addonPath,
+        addonName
+      );
     } catch (e) {
       sendNotification({
         type: 'error',
@@ -111,7 +117,8 @@ Running post-setup script for ${addonName}...
 export async function startAddon(addonPath: string, addonLink: string) {
   const addonConfig = await readFile(join(addonPath, 'addon.json'), 'utf-8');
   // remove any trailing slashes
-  const addonName = addonPath.replace(/\/$/, '').split(/\/|\\/).pop();
+  const addonName =
+    addonPath.replace(/\/$/, '').split(/\/|\\/).pop() ?? 'unknown-addon';
   if (!addonConfig) {
     sendNotification({
       type: 'error',
@@ -126,7 +133,8 @@ export async function startAddon(addonPath: string, addonLink: string) {
     executeScript(
       'run',
       addon.scripts.run + ' --addonSecret="' + addonSecret + '"',
-      addonPath
+      addonPath,
+      addonName
     );
     let attempts = 0;
     const success = await new Promise<boolean>((resolve) => {
@@ -186,7 +194,8 @@ export async function startAddon(addonPath: string, addonLink: string) {
 async function executeScript(
   scriptName: string,
   script: string,
-  addonPath: string
+  addonPath: string,
+  addonName: string
 ): Promise<string> {
   return new Promise((resolve, reject) => {
     let bunPath = '';
@@ -213,23 +222,45 @@ async function executeScript(
       }
       bunPath = join(process.env.HOME || '', '.bun', 'bin', 'bun');
     }
-    processes[addonPath] = exec.exec(
-      script.replace(/^bun/, bunPath),
-      {
-        cwd: addonPath,
-      },
-      (err, stdout, stderr) => {
-        if (err) {
-          // write the error to a log file
-          writeFile(
-            join(addonPath, scriptName + '-crash.log'),
-            stripAnsiCodes(stderr)
-          );
-          reject(err);
-          return;
-        }
-        resolve(stdout);
+    // Properly use spawn (no callback, returns ChildProcess)
+    const [cmd, ...args] = script.replace(/^bun/, bunPath).split(' ');
+    const child = exec.spawn(cmd, args, {
+      cwd: addonPath,
+      shell: process.platform === 'win32', // for Windows compatibility
+    });
+
+    let stdout = '';
+    let stderr = '';
+
+    processes[addonPath] = child;
+
+    child.stdout?.on('data', (data: Buffer) => {
+      console.log('[' + addonName + '@' + scriptName + '] ' + data.toString());
+      stdout += data.toString();
+    });
+
+    child.stderr?.on('data', (data: Buffer) => {
+      console.error(
+        '[' + addonName + '@' + scriptName + '] ' + data.toString()
+      );
+      stderr += data.toString();
+    });
+
+    child.on('close', (code: number) => {
+      if (code !== 0) {
+        // write the error to a log file
+        console.error(
+          '[' + addonName + '@' + scriptName + '] Exited with error: ' + code
+        );
+        reject(new Error(code.toString()));
+        return;
       }
-    );
+      resolve(stdout);
+    });
+
+    child.on('error', (err: Error) => {
+      console.error(err);
+      reject(err);
+    });
   });
 }

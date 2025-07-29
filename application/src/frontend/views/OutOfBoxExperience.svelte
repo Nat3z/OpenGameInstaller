@@ -15,6 +15,7 @@
   let selectedAddons = $state<string[]>([
     'https://github.com/Nat3z/steam-integration',
   ]);
+  let isSettingKey = $state(false);
 
   interface Props {
     finishedSetup: () => void;
@@ -621,7 +622,7 @@
         >Continue</button
       >
     </div>
-  {:else if stage === 5 && window}
+  {:else if stage === 5}
     <div
       class="animate-fade-in-pop flex justify-center items-center h-full flex-col gap-6 p-10 w-full max-w-2xl"
     >
@@ -638,7 +639,8 @@
           target="_blank"
           class="underline text-accent hover:text-accent-dark"
           >Insert your SteamGridDB API Key below. If you don't have one, you can
-          get one by going here</a
+          get one by going here
+          (https://www.steamgriddb.com/profile/preferences/api)</a
         >.
       </h2>
       <div class="flex justify-center items-center flex-row gap-4 w-full">
@@ -654,6 +656,8 @@
       >
         <button
           onclick={async () => {
+            isSettingKey = true;
+            await new Promise((resolve) => setTimeout(resolve, 1000));
             const result = await window.electronAPI.oobe.setSteamGridDBKey(
               (
                 document.querySelector('[data-sgdb-key]') as HTMLInputElement
@@ -666,15 +670,26 @@
                 id: Math.random().toString(36).substring(7),
                 type: 'error',
               });
+              isSettingKey = false;
               return;
             }
 
             finishSetup();
             stage = 6;
+            isSettingKey = false;
           }}
-          class="bg-accent hover:bg-accent-dark text-white font-open-sans font-semibold py-3 px-6 rounded-lg transition-colors duration-200"
-          >Set Key and Continue</button
+          class="bg-accent hover:bg-accent-dark text-white font-open-sans font-semibold py-3 px-6 rounded-lg transition-colors duration-200 flex items-center justify-center"
+          disabled={isSettingKey}
         >
+          {#if isSettingKey}
+            <div
+              class="animate-spin mr-2 h-5 w-5 border-2 border-accent border-t-transparent rounded-full"
+            ></div>
+            Setting Key...
+          {:else}
+            Set Key and Continue
+          {/if}
+        </button>
         <button
           onclick={() => {
             finishSetup();

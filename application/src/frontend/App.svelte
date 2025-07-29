@@ -296,6 +296,12 @@
       );
     }, 200);
   });
+  document.addEventListener('migration:event:install-steam-addon', async () => {
+    // go install steam-integration addon
+    await window.electronAPI.installAddons([
+      'https://github.com/Nat3z/steam-integration',
+    ]);
+  });
 </script>
 
 <Notifications />

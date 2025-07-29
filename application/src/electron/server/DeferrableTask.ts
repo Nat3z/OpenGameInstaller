@@ -33,7 +33,7 @@ export class DeferrableTask<T> {
       this.finished = true;
       // Serialize the data to ensure it can be sent over IPC
       this.data = safeSerialize(result);
-      console.log('task finished', this.id, this.data);
+      console.log('task finished', this.id);
     } catch (error) {
       this.failed = error;
       this.data = null;

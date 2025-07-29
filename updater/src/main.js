@@ -304,10 +304,27 @@ async function launchApp(online) {
       );
       return;
     }
+    // OpenGameInstaller.exe logs will be written to latest.log in the update directory
+    // if there's already a latest.log, move it to the logs/ fodler with the date and time in the name
+    if (!fs.existsSync(path.join(__dirname, 'update', 'logs'))) {
+      fs.mkdirSync(path.join(__dirname, 'update', 'logs'));
+    }
+    if (fs.existsSync(path.join(__dirname, 'update', 'latest.log'))) {
+      const date = new Date().toISOString().replace(/[:.]/g, '-');
+      fs.renameSync(
+        path.join(__dirname, 'update', 'latest.log'),
+        path.join(__dirname, 'update', 'logs', date + '.log')
+      );
+    }
+
+    const logStream = fs.openSync(
+      path.join(__dirname, 'update', 'latest.log'),
+      'a'
+    );
     const spawned = spawn('./OpenGameInstaller.exe', ['--online=' + online], {
       cwd: path.join(__dirname, 'update'),
       detached: true,
-      stdio: 'ignore',
+      stdio: ['ignore', logStream, logStream],
     });
     spawned.unref();
     app.quit();
@@ -325,13 +342,29 @@ async function launchApp(online) {
       return;
     }
     setTimeout(() => {
+      // OpenGameInstaller.AppImage logs will be written to latest.log in the update directory
+      // if there's already a latest.log, move it to the logs/ fodler with the date and time in the name
+      if (!fs.existsSync(path.join(__dirname, 'update', 'logs'))) {
+        fs.mkdirSync(path.join(__dirname, 'update', 'logs'));
+      }
+      if (fs.existsSync(path.join(__dirname, 'update', 'latest.log'))) {
+        const date = new Date().toISOString().replace(/[:.]/g, '-');
+        fs.renameSync(
+          path.join(__dirname, 'update', 'latest.log'),
+          path.join(__dirname, 'update', 'logs', date + '.log')
+        );
+      }
+      const logStream = fs.openSync(
+        path.join(__dirname, 'update', 'latest.log'),
+        'a'
+      );
       const spawned = spawn(
         './OpenGameInstaller.AppImage',
         ['online=' + online],
         {
           cwd: path.join(__dirname, 'update'),
           detached: true,
-          stdio: 'ignore',
+          stdio: ['ignore', logStream, logStream],
         }
       );
       spawned.unref();

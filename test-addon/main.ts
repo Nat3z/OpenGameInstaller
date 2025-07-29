@@ -109,46 +109,41 @@ addon.on('exit', () => {
 addon.on('search', ({ storefront, appID }, event) => {
   event.defer();
   new Promise(async (resolve) => {
-    if (storefront === 'steam') {
-      console.log(appID);
-      event.resolve([
-        {
-          name: 'Magnet Test',
-          downloadType: 'magnet',
-          filename: 'Big Buck Bunny',
-          downloadURL:
-            'magnet:?xt=urn:btih:dd8255ecdc7ca55fb0bbf81323d87062db1f6d1c&dn=Big+Buck+Bunny&tr=udp%3A%2F%2Fexplodie.org%3A6969&tr=udp%3A%2F%2Ftracker.coppersurfer.tk%3A6969&tr=udp%3A%2F%2Ftracker.empire-js.us%3A1337&tr=udp%3A%2F%2Ftracker.leechers-paradise.org%3A6969&tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337&tr=wss%3A%2F%2Ftracker.btorrent.xyz&tr=wss%3A%2F%2Ftracker.fastcast.nz&tr=wss%3A%2F%2Ftracker.openwebtorrent.com&ws=https%3A%2F%2Fwebtorrent.io%2Ftorrents%2F&xs=https%3A%2F%2Fwebtorrent.io%2Ftorrents%2Fbig-buck-bunny.torrent',
-        },
-        {
-          name: 'Direct Download Test',
-          downloadType: 'request',
-          filename: 'Big Buck Bunny',
-        },
-        {
-          name: 'Smaller File',
-          downloadType: 'direct',
-          files: [
-            {
-              name: 'Smaller File.txt',
-              downloadURL: 'https://ogi.nat3z.com/api/community.json',
-              headers: {
-                'User-Agent': 'OpenGameInstaller Downloader/1.0.0',
-                'X-Hello': 'World',
-              },
+    console.log(appID);
+    event.resolve([
+      {
+        name: 'Magnet Test',
+        downloadType: 'magnet',
+        filename: 'Big Buck Bunny',
+        downloadURL:
+          'magnet:?xt=urn:btih:dd8255ecdc7ca55fb0bbf81323d87062db1f6d1c&dn=Big+Buck+Bunny&tr=udp%3A%2F%2Fexplodie.org%3A6969&tr=udp%3A%2F%2Ftracker.coppersurfer.tk%3A6969&tr=udp%3A%2F%2Ftracker.empire-js.us%3A1337&tr=udp%3A%2F%2Ftracker.leechers-paradise.org%3A6969&tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337&tr=wss%3A%2F%2Ftracker.btorrent.xyz&tr=wss%3A%2F%2Ftracker.fastcast.nz&tr=wss%3A%2F%2Ftracker.openwebtorrent.com&ws=https%3A%2F%2Fwebtorrent.io%2Ftorrents%2F&xs=https%3A%2F%2Fwebtorrent.io%2Ftorrents%2Fbig-buck-bunny.torrent',
+      },
+      {
+        name: 'Direct Download Test',
+        downloadType: 'request',
+        filename: 'Big Buck Bunny',
+      },
+      {
+        name: 'Smaller File',
+        downloadType: 'direct',
+        files: [
+          {
+            name: 'Smaller File.txt',
+            downloadURL: 'https://ogi.nat3z.com/api/community.json',
+            headers: {
+              'User-Agent': 'OpenGameInstaller Downloader/1.0.0',
+              'X-Hello': 'World',
             },
-          ],
-          manifest: {
-            t: 'Smalelr File',
           },
+        ],
+        manifest: {
+          t: 'Smalelr File',
         },
-      ]);
-      addon.notify({ type: 'info', message: 'Searching...', id: 'search' });
-    } else {
-      event.resolve([]);
-    }
+      },
+    ]);
+    addon.notify({ type: 'info', message: 'Searching...', id: 'search' });
   });
 });
-
 addon.on(
   'setup',
   (
@@ -199,7 +194,7 @@ addon.on('library-search', (text, event) => {
     {
       appID: 1,
       capsuleImage: 'https://dummyimage.com/375x500/968d96/ffffff',
-      name: 'Test App',
+      name: 'Test: App',
       storefront: 'test-front',
     },
   ]);
@@ -213,7 +208,7 @@ addon.on('game-details', ({ appID, storefront }, event) => {
       capsuleImage: 'https://dummyimage.com/375x500/968d96/ffffff',
       description: '<script>alert("hello world")</script><h1>hello world</h1>',
       coverImage: 'https://dummyimage.com/375x500/968d96/ffffff',
-      name: 'Test App',
+      name: 'Test: App',
       developers: ['OGI Developers'],
       headerImage: 'https://dummyimage.com/500x350/968d96/ffffff',
       publishers: ['OGI Developers'],

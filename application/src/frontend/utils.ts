@@ -254,7 +254,8 @@ export async function startDownload(
       downloadType = 'real-debrid-' + downloadType;
     }
   }
-
+  // replace the name's speceial characters (like amparsand, :, or any character windows doesn't support, with a dash)
+  result.name = result.name.replace(/[\\/:*?"<>|]/g, '-');
   switch (downloadType) {
     case 'request': {
       // Create a local ID for tracking, similar to real-debrid cases
@@ -263,6 +264,8 @@ export async function startDownload(
         return [
           ...downloads,
           {
+            ...result,
+            // changed to avoid special characters in the path and make it work with windows on wine
             id: '' + localID,
             status: 'requesting',
             downloadPath: getDownloadPath() + '/' + result.name,
@@ -271,7 +274,6 @@ export async function startDownload(
             usedRealDebrid: false,
             appID,
             downloadSize: 0,
-            ...result,
           },
         ];
       });
@@ -624,16 +626,16 @@ export async function startDownload(
             return [
               ...downloads,
               {
+                ...result,
                 id,
                 status: 'downloading',
-                downloadPath: getDownloadPath() + '/' + result.name + '/',
+                downloadPath: getDownloadPath() + '/' + name + '/',
                 downloadSpeed: 0,
                 progress: 0,
                 usedRealDebrid: false,
                 appID,
                 downloadSize: 0,
                 originalDownloadURL: result.downloadURL, // Store original URL for resume
-                ...result,
               },
             ];
           });

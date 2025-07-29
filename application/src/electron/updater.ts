@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { app, BrowserWindow, net } from 'electron';
 import {
+  chmodSync,
   cpSync,
   createWriteStream,
   existsSync,
@@ -275,6 +276,9 @@ export function checkIfInstallerUpdateAvailable() {
               console.log(
                 `[updater] Copied setup to OpenGameInstaller-Setup.AppImage`
               );
+
+              // set item +x permissions
+              chmodSync('../OpenGameInstaller-Setup.AppImage', 0o755);
               mainWindow.webContents.send(
                 'text',
                 'Shutting Down OpenGameInstaller',

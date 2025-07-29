@@ -115,7 +115,7 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
         continue;
       }
 
-      if (!isLocal) {
+      if (!isLocal && !fs.existsSync(join(addonPath, 'addon.json'))) {
         await new Promise<void>((resolve, reject) => {
           exec(`git clone ${addon} ${addonPath}`, (err, stdout, _) => {
             if (err) {

@@ -54,11 +54,51 @@ let migrations: {
       await sendIPCMessage('migration:event', 'steamgriddb-launch');
     },
   },
+  'install-steam-addon-repair': {
+    from: '2.0.0',
+    to: '2.0.8',
+    description:
+      'checks if the steam-addon was installed without an installation.log file and if so, repairs it.',
+    platform: 'all',
+    run: async () => {
+      const generalConfig = await fs.readFile(
+        join(__dirname, 'config/option/general.json'),
+        'utf-8'
+      );
+      const generalConfigObj = JSON.parse(generalConfig);
+      const addons = generalConfigObj.addons;
+      const hasSteamAddon =
+        addons.find((addon: string) =>
+          addon.includes('Nat3z/steam-integration')
+        ) !== undefined;
+      if (!hasSteamAddon) {
+        console.log(
+          'user does not have steam-integration in config. no need to repair.'
+        );
+        return;
+      }
+
+      // check if installation.log exists in the addon path
+      const addonPath = join(
+        __dirname,
+        'addons',
+        'steam-integration',
+        'installation.log'
+      );
+      if (fsSync.existsSync(addonPath)) {
+        console.log('already installed, no need to repair.');
+        return;
+      }
+
+      console.log('repairing steam-integration through installation...');
+      await sendIPCMessage('migration:event', 'install-steam-addon');
+    },
+  },
 };
 export async function execute() {
   // check if the thing is even installed, if not, don't run any migrations because it was just installed
   if (!fsSync.existsSync(join(__dirname, 'config/option/installed.json'))) {
-    // no need to run migrations
+    // no need to run migrations, the person hasn't even launched anything.
     await fs.writeFile(
       join(__dirname, 'config/option/lastVersion.txt'),
       VERSION
@@ -72,6 +112,7 @@ export async function execute() {
       'utf-8'
     );
   }
+  console.log('[migration] local version:', lastVersion);
   // enroll into certain migrations
   for (const migration of Object.keys(migrations)) {
     if (

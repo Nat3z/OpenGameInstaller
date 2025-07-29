@@ -196,6 +196,12 @@ export function removeCachedAppUpdates() {
     const sortedUpdates = cachedUpdates.sort((a, b) => {
       const aVersion = a.split('-')[1];
       const bVersion = b.split('-')[1];
+      if (aVersion.includes('update')) {
+        return 1;
+      }
+      if (bVersion.includes('update')) {
+        return -1;
+      }
       return semver.compare(aVersion, bVersion);
     });
 

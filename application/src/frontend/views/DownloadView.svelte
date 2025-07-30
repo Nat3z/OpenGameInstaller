@@ -65,7 +65,7 @@
     }
   }
 
-  document.addEventListener('setup:log', (event: Event) => {
+  function setupLog(event: Event) {
     if (!isCustomEvent(event)) return;
     const downloadID = event.detail.id;
     const logs: string[] = event.detail.log;
@@ -82,9 +82,9 @@
         logs: [...logs],
       },
     }));
-  });
+  }
 
-  document.addEventListener('setup:progress', (event: Event) => {
+  function setupProgress(event: Event) {
     if (!isCustomEvent(event)) return;
     const downloadID = event.detail.id;
     const progress = event.detail.progress;
@@ -100,67 +100,18 @@
         progress,
       },
     }));
-  });
+  }
 
   // Load failed setups and paused downloads when component mounts
   onMount(() => {
     loadFailedSetups();
+    document.addEventListener('setup:log', setupLog);
+    document.addEventListener('setup:progress', setupProgress);
 
-    // Uncomment the lines below to test queue position functionality
-    // currentDownloads.update((downloads) => [
-    //   ...downloads,
-    //   {
-    //     addonSource: 'dummy',
-    //     appID: 1,
-    //     coverURL:
-    //       'https://shared.steamstatic.com/store_item_assets/steam/apps/945360/library_hero_2x.jpg?t=1746224638',
-    //     downloadPath: 'dummy',
-    //     downloadSpeed: 2500000,
-    //     downloadSize: 5000000000,
-    //     downloadType: 'direct',
-    //     id: 'dummy-1',
-    //     name: 'Active Download Game',
-    //     storefront: 'internal',
-    //     status: 'downloading',
-    //     progress: 0.3,
-    //     usedRealDebrid: false,
-    //     queuePosition: 1,
-    //   },
-    //   {
-    //     addonSource: 'dummy',
-    //     appID: 2,
-    //     coverURL:
-    //       'https://shared.steamstatic.com/store_item_assets/steam/apps/730/library_hero_2x.jpg?t=1746224638',
-    //     downloadPath: 'dummy',
-    //     downloadSpeed: 0,
-    //     downloadSize: 3000000000,
-    //     downloadType: 'direct',
-    //     id: 'dummy-2',
-    //     name: 'Queued Game #2',
-    //     storefront: 'internal',
-    //     status: 'downloading',
-    //     progress: 0,
-    //     usedRealDebrid: false,
-    //     queuePosition: 2,
-    //   },
-    //   {
-    //     addonSource: 'dummy',
-    //     appID: 3,
-    //     coverURL:
-    //       'https://shared.steamstatic.com/store_item_assets/steam/apps/440/library_hero_2x.jpg?t=1746224638',
-    //     downloadPath: 'dummy',
-    //     downloadSpeed: 0,
-    //     downloadSize: 8000000000,
-    //     downloadType: 'direct',
-    //     id: 'dummy-3',
-    //     name: 'Queued Game #3',
-    //     storefront: 'internal',
-    //     status: 'downloading',
-    //     progress: 0,
-    //     usedRealDebrid: false,
-    //     queuePosition: 3,
-    //   },
-    // ]);
+    return () => {
+      document.removeEventListener('setup:log', setupLog);
+      document.removeEventListener('setup:progress', setupProgress);
+    };
   });
 
   async function handleRetry(failedSetup: any) {

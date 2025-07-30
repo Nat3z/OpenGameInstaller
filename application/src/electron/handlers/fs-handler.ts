@@ -2,7 +2,7 @@ import { dialog, ipcMain, shell } from 'electron';
 import { __dirname } from '../paths.js';
 import { join } from 'path';
 import * as fs from 'fs';
-import { exec } from 'child_process';
+import { exec, spawn } from 'child_process';
 
 export default function handler() {
   ipcMain.on('fs:read', (event, arg) => {
@@ -134,21 +134,30 @@ export default function handler() {
 
     if (process.platform === 'linux' || process.platform === 'darwin') {
       console.log('isLinuxOrDarwin');
-      await new Promise<void>((resolve) =>
-        exec(
-          `unrar x "${rarFilePath}" "${outputDir}"`,
-          (error, stdout, stderr) => {
-            if (error) {
-              console.error(error);
-              console.log(stderr);
-              throw new Error('Failed to extract RAR file');
-            }
-            console.log(stdout);
-            console.log(stderr);
-            resolve();
+      await new Promise<void>((resolve) => {
+        const unrarProcess = spawn('unrar', [
+          'x',
+          '-y',
+          rarFilePath,
+          outputDir,
+        ]);
+
+        unrarProcess.stdout.on('data', (data) => {
+          console.log(`[unrar stdout]: ${data}`);
+        });
+
+        unrarProcess.stderr.on('data', (data) => {
+          console.error(`[unrar stderr]: ${data}`);
+        });
+
+        unrarProcess.on('close', (code) => {
+          if (code !== 0) {
+            console.error(`unrar process exited with code ${code}`);
           }
-        )
-      );
+          resolve();
+        });
+      });
+      console.log('done');
     }
 
     return outputDir;

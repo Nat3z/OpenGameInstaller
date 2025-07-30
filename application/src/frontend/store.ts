@@ -70,6 +70,7 @@ export type FailedSetup = {
     multiPartFiles?: any;
     appID: number;
     storefront: string;
+    manifest?: Record<string, unknown>;
   };
   error: string;
   should: 'call-addon' | 'call-unrar';

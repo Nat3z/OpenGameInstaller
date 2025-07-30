@@ -1,6 +1,6 @@
 export type SearchResult = {
   name: string;
-  downloadType: 'torrent' | 'direct' | 'magnet' | 'request';
+  downloadType: 'torrent' | 'direct' | 'magnet' | 'request' | 'task';
   filename?: string;
   downloadURL?: string;
   files?: {

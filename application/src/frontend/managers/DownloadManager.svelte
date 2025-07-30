@@ -21,6 +21,7 @@
     downloadID: string,
     data: any
   ) {
+    console.log('dispatching setup event', eventType, downloadID, data);
     document.dispatchEvent(
       new CustomEvent(`setup:${eventType}`, {
         detail: {
@@ -123,6 +124,7 @@
       appID: downloadedItem.appID,
       storefront: downloadedItem.storefront,
       multiPartFiles: downloadedItem.files,
+      manifest: downloadedItem.manifest,
       ...additionalData,
     };
   }
@@ -181,7 +183,7 @@
     isTorrent: boolean = false
   ) {
     const downloadedItem = getDownloadItem(downloadID);
-    if (!downloadedItem) return;
+    if (!downloadedItem || downloadedItem.status === 'completed') return;
 
     updateDownloadStatus(downloadID, { status: 'completed' });
 
@@ -273,6 +275,7 @@
             usedRealDebrid: downloadedItem.usedRealDebrid,
             appID: downloadedItem.appID,
             storefront: downloadedItem.storefront,
+            manifest: downloadedItem.manifest,
           },
           error: 'Failed to extract RAR file',
           should: 'call-unrar',
@@ -415,6 +418,7 @@
       usedRealDebrid: boolean;
       appID: number;
       storefront: string;
+      manifest?: Record<string, unknown>;
     };
     error: string;
     should: 'call-addon' | 'call-unrar';

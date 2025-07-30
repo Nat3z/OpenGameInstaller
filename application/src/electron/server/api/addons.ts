@@ -183,6 +183,7 @@ const procedures: Record<string, Procedure<any>> = {
         usedRealDebrid: z.boolean(),
         storefront: z.string(),
         multiPartFiles: z.unknown().optional(),
+        manifest: z.unknown().optional(),
       })
     )
     .handler(async (input) => {
@@ -210,6 +211,7 @@ const procedures: Record<string, Procedure<any>> = {
             name: input.name,
             multiPartFiles: input.multiPartFiles,
             deferID: deferrableTask.id!!,
+            manifest: input.manifest,
           },
         });
         return data.args;

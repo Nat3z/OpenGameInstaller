@@ -147,7 +147,16 @@ addon.on('search', ({ storefront, appID }, event) => {
 addon.on(
   'setup',
   (
-    { path, type, name, usedRealDebrid, appID, storefront, multiPartFiles },
+    {
+      path,
+      type,
+      name,
+      usedRealDebrid,
+      appID,
+      storefront,
+      multiPartFiles,
+      manifest,
+    },
     event
   ) => {
     event.defer();
@@ -157,6 +166,7 @@ type: ${type}
 name: ${name}
 usedRealDebrid: ${usedRealDebrid}
 multiPartFiles: ${multiPartFiles} 
+manifest: ${manifest}
   `);
     console.log('oo hello!');
     const waitForInput = event

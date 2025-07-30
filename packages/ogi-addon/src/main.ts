@@ -165,6 +165,7 @@ export interface EventListenerTypes {
       }[];
       appID: number;
       storefront: string;
+      manifest?: Record<string, unknown>;
     },
     event: EventResponse<SetupEventResponse>
   ) => void;

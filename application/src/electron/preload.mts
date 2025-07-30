@@ -296,4 +296,11 @@ ipcRenderer.on('migration:event', (_, arg) => {
   );
 });
 
+ipcRenderer.on('app:open-steam-compatdata', (_, arg) => {
+  dbg_countEvent();
+  document.dispatchEvent(
+    new CustomEvent('app:open-steam-compatdata', { detail: arg })
+  );
+});
+
 ipcRenderer.send('client-ready-for-events');

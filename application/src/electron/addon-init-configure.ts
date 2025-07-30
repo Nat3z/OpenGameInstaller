@@ -132,7 +132,7 @@ export async function startAddon(addonPath: string, addonLink: string) {
   try {
     executeScript(
       'run',
-      addon.scripts.run + ' --addonSecret="' + addonSecret + '"',
+      addon.scripts.run + ' --addonSecret=' + addonSecret,
       addonPath,
       addonName
     );
@@ -224,6 +224,8 @@ async function executeScript(
     }
     // Properly use spawn (no callback, returns ChildProcess)
     const [cmd, ...args] = script.replace(/^bun/, bunPath).split(' ');
+    console.log('cmd', cmd);
+    console.log('args', args);
     const child = exec.spawn(cmd, args, {
       cwd: addonPath,
       shell: process.platform === 'win32', // for Windows compatibility

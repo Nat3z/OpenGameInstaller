@@ -1,6 +1,6 @@
 import axios from 'axios';
 import { net, ipcMain } from 'electron';
-import { currentScreens, sendNotification } from '../main.js';
+import { currentScreens, sendIPCMessage, sendNotification } from '../main.js';
 import { join } from 'path';
 import * as fs from 'fs';
 import { exec, spawn } from 'child_process';
@@ -197,6 +197,15 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
 
         if (data.redistributables) {
           // get the compatdata path firstly
+          // tell the user that we need them to launch the game on steam to generate the compatdata path
+          sendNotification({
+            message:
+              'Please launch the game on Steam to generate the compatdata path',
+            id: Math.random().toString(36).substring(7),
+            type: 'info',
+          });
+          // the boolean is if it should be open
+          sendIPCMessage('app:open-steam-compatdata', true);
           const compatdataPath = await new Promise<string | null>((resolve) =>
             exec(
               `${STEAMTINKERLAUNCH_PATH} getcompatdata "${data.name}" | tail -n 1`,

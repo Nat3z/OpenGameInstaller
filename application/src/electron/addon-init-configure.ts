@@ -222,10 +222,24 @@ async function executeScript(
       }
       bunPath = join(process.env.HOME || '', '.bun', 'bin', 'bun');
     }
-    // Properly use spawn (no callback, returns ChildProcess)
-    const [cmd, ...args] = script.replace(/^bun/, bunPath).split(' ');
+
+    // Replace only the first occurrence of 'bun' with the bunPath, preserving arguments with spaces
+    let scriptParts = script.trim().split(' ');
+    if (scriptParts[0] === 'bun') {
+      scriptParts[0] = bunPath;
+    } else if (
+      scriptParts[0].endsWith('bun') ||
+      scriptParts[0].endsWith('bun.exe')
+    ) {
+      // handle cases like './bun' or 'bun.exe'
+      scriptParts[0] = bunPath;
+    }
+    const cmd = scriptParts[0];
+    const args = scriptParts.slice(1);
+
     console.log('cmd', cmd);
     console.log('args', args);
+
     const child = exec.spawn(cmd, args, {
       cwd: addonPath,
       shell: process.platform === 'win32', // for Windows compatibility

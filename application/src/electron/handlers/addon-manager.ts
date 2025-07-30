@@ -117,7 +117,7 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
 
       if (!isLocal && !fs.existsSync(join(addonPath, 'addon.json'))) {
         await new Promise<void>((resolve, reject) => {
-          exec(`git clone ${addon} ${addonPath}`, (err, stdout, _) => {
+          exec(`git clone ${addon} "${addonPath}"`, (err, stdout, _) => {
             if (err) {
               sendNotification({
                 message: `Failed to install addon ${addonName}`,

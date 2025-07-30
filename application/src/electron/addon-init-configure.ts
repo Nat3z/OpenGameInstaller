@@ -252,7 +252,7 @@ async function executeScript(
         console.error(
           '[' + addonName + '@' + scriptName + '] Exited with error: ' + code
         );
-        reject(new Error(code.toString()));
+        reject(new Error('Addon ' + addonName + ' exited with error: ' + code));
         return;
       }
       resolve(stdout);

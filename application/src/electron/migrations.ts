@@ -56,7 +56,7 @@ let migrations: {
   },
   'install-steam-addon-repair': {
     from: '2.0.0',
-    to: '2.0.8',
+    to: '2.1.0',
     description:
       'checks if the steam-addon was installed without an installation.log file and if so, repairs it.',
     platform: 'all',
@@ -105,6 +105,7 @@ export async function execute() {
     );
     return;
   }
+
   let lastVersion: string = '0.0.0';
   if (fsSync.existsSync(join(__dirname, 'config/option/lastVersion.txt'))) {
     lastVersion = await fs.readFile(

@@ -389,7 +389,6 @@ export class AddonConnection {
               messageFromClient.event === 'response' &&
               messageFromClient.id === message.id
             ) {
-              console.log('Received response from client', messageFromClient);
               if (!messageFromClient.args || messageFromClient.statusError) {
                 if (!messageFromClient.args && !messageFromClient.statusError)
                   resolve({

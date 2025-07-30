@@ -599,6 +599,12 @@
                         src={result.capsuleImage}
                         alt={result.name}
                         class="result-image"
+                        onerror={(ev) => {
+                          result.capsuleImage = './favicon.png';
+                          (ev.target as HTMLImageElement).src = './favicon.png';
+                          (ev.target as HTMLImageElement).style.opacity = '0.5';
+                          console.log('error loading image', result.name);
+                        }}
                       />
                       <div class="result-content">
                         <h3 class="result-title">{result.name}</h3>

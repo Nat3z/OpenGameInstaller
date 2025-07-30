@@ -502,7 +502,7 @@ export default function OOBEHandler() {
         });
         if (!wineInstalled) {
           // install wine through flatpak
-          const result = await new Promise<boolean>((resolve, reject) =>
+          const result = await new Promise<boolean>((resolve) =>
             spawnAndHook(
               {
                 stdout: (data) => {
@@ -514,7 +514,7 @@ export default function OOBEHandler() {
                 onClose: (code) => {
                   sendOOBELog('wine process exited with code ' + code);
                   if (code !== 0) {
-                    reject(false);
+                    resolve(false);
                     return;
                   }
                   resolve(true);
@@ -530,7 +530,7 @@ export default function OOBEHandler() {
                 '--system',
                 '-y',
                 'flathub',
-                'org.winehq.Wine/x86_64/stable-24.0',
+                'org.winehq.Wine/x86_64/stable-24.08',
               ]
             )
           );

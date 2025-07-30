@@ -193,6 +193,8 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
           return 'setup-redistributables-failed';
         }
 
+        // if there are redistributables, we need to install them
+
         if (data.redistributables) {
           // get the compatdata path firstly
           const compatdataPath = await new Promise<string | null>((resolve) =>

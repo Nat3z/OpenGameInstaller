@@ -213,6 +213,11 @@ ipcRenderer.on('notification', (_, arg) => {
   document.dispatchEvent(new CustomEvent('new-notification', { detail: arg }));
 });
 
+ipcRenderer.on('oobe:log', (_, arg) => {
+  dbg_countEvent();
+  document.dispatchEvent(new CustomEvent('oobe:log', { detail: arg }));
+});
+
 ipcRenderer.on('torrent:download-progress', (_, arg) => {
   dbg_countEvent();
   document.dispatchEvent(

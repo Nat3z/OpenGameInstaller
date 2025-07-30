@@ -68,42 +68,43 @@ async function checkFileExists(
     finish();
     return true;
   }
+  // we don't need this because most of the time torrent clients just resume the download
 
-  try {
-    console.log(`[torrent-handler] Checking if file exists: ${fullPath}`);
-    if (fs.existsSync(fullPath)) {
-      console.log(`[torrent-handler] File already exists: ${fullPath}`);
-      sendNotification({
-        message:
-          'File at path already exists. Please delete the file and try again.',
-        id: downloadID,
-        type: 'error',
-      });
-      if (mainWindow && mainWindow.webContents)
-        mainWindow.webContents.send('ddl:download-error', {
-          id: Math.random().toString(36).substring(7),
-          error:
-            'File at path already exists. Please delete the file and try again.',
-        });
-      finish();
-      return true;
-    }
-  } catch (error) {
-    // Handle any filesystem errors gracefully
-    console.error(`[torrent-handler] checkFileExists error:`, error);
-    sendNotification({
-      message: `Error checking file path: ${error.message}`,
-      id: downloadID,
-      type: 'error',
-    });
-    if (mainWindow && mainWindow.webContents)
-      mainWindow.webContents.send('ddl:download-error', {
-        id: downloadID,
-        error: `Filesystem error: ${error.message}`,
-      });
-    finish();
-    return true;
-  }
+  // try {
+  //   console.log(`[torrent-handler] Checking if file exists: ${fullPath}`);
+  //   if (fs.existsSync(fullPath)) {
+  //     console.log(`[torrent-handler] File already exists: ${fullPath}`);
+  //     sendNotification({
+  //       message:
+  //         'File at path already exists. Please delete the file and try again.',
+  //       id: downloadID,
+  //       type: 'error',
+  //     });
+  //     if (mainWindow && mainWindow.webContents)
+  //       mainWindow.webContents.send('ddl:download-error', {
+  //         id: Math.random().toString(36).substring(7),
+  //         error:
+  //           'File at path already exists. Please delete the file and try again.',
+  //       });
+  //     finish();
+  //     return true;
+  //   }
+  // } catch (error) {
+  //   // Handle any filesystem errors gracefully
+  //   console.error(`[torrent-handler] checkFileExists error:`, error);
+  //   sendNotification({
+  //     message: `Error checking file path: ${error.message}`,
+  //     id: downloadID,
+  //     type: 'error',
+  //   });
+  //   if (mainWindow && mainWindow.webContents)
+  //     mainWindow.webContents.send('ddl:download-error', {
+  //       id: downloadID,
+  //       error: `Filesystem error: ${error.message}`,
+  //     });
+  //   finish();
+  //   return true;
+  // }
 
   console.log(
     `[torrent-handler] File does not exist, proceeding with download`

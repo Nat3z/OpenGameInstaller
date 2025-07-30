@@ -585,6 +585,11 @@
                   <div class="spinner"></div>
                   Setting up with {download.addonSource}
                 </div>
+              {:else if download.status === 'redistr-downloading'}
+                <div class="status-badge redistr-downloading">
+                  <div class="spinner"></div>
+                  Downloading Redistributables
+                </div>
               {:else if download.status === 'setup-complete'}
                 <div class="status-badge complete">
                   <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
@@ -998,6 +1003,10 @@
 
   .status-badge.seeding {
     @apply bg-purple-100 text-purple-800;
+  }
+
+  .status-badge.redistr-downloading {
+    @apply bg-orange-100 text-orange-800;
   }
 
   .status-badge.setup {

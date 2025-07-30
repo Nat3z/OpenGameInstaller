@@ -13,6 +13,7 @@ export type DownloadStatusAndInfo = SearchResult & {
     | 'setup-complete'
     | 'rd-downloading'
     | 'seeding'
+    | 'redistr-downloading'
     | 'requesting';
   progress: number;
   error?: string;
@@ -101,6 +102,18 @@ export type SetupLog = {
 };
 
 export const setupLogs: Writable<Record<string, SetupLog>> = writable({});
+
+// OOBE logs for the out-of-box experience
+export type OOBELog = {
+  logs: string[];
+  isActive: boolean;
+};
+
+export const oobeLog: Writable<OOBELog> = writable({
+  logs: [],
+  isActive: false,
+});
+
 export const currentStorePageOpened: Writable<number | undefined> = writable();
 export const currentStorePageOpenedStorefront: Writable<string | undefined> =
   writable();

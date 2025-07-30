@@ -1,10 +1,11 @@
 <script lang="ts">
   import { preventDefault } from 'svelte/legacy';
+  import { fade } from 'svelte/transition';
 
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   // @ts-ignore
   import WineIcon from '../Icons/WineIcon.svelte';
-  import { createNotification } from '../store';
+  import { createNotification, oobeLog } from '../store';
 
   let stage = $state(0);
 
@@ -16,6 +17,19 @@
     'https://github.com/Nat3z/steam-integration',
   ]);
   let isSettingKey = $state(false);
+  let logContainer: HTMLDivElement | null = $state(null);
+  let previousLogLength = $state(0);
+
+  // Auto-scroll when new logs are added
+  $effect(() => {
+    if (logContainer && $oobeLog.logs.length > previousLogLength) {
+      logContainer.scrollTo({
+        top: logContainer.scrollHeight,
+        behavior: 'smooth',
+      });
+      previousLogLength = $oobeLog.logs.length;
+    }
+  });
 
   interface Props {
     finishedSetup: () => void;
@@ -32,15 +46,21 @@
   let communityList: Promise<CommunityAddon[]> | null = $state(null);
   let { finishedSetup }: Props = $props();
 
-  async function downloadTools(event: MouseEvent) {
+  async function downloadTools() {
     console.log('Downloading tools');
-    const button = event.target as HTMLButtonElement;
-    button.disabled = true;
-    button.textContent = 'Downloading...';
+    // Activate OOBE logging
+    oobeLog.update((currentLog) => ({
+      ...currentLog,
+      isActive: true,
+      logs: [],
+    }));
+
     const result = await window.electronAPI.oobe.downloadTools();
     if (!result[0]) {
-      button.disabled = false;
-      button.textContent = 'Install';
+      oobeLog.update((currentLog) => ({
+        ...currentLog,
+        isActive: false,
+      }));
       return;
     }
 
@@ -200,7 +220,25 @@
     }
   }
 
+  // Event listener for OOBE logs
+  function handleOOBELog(event: Event) {
+    if (!(event instanceof CustomEvent)) return;
+    const logContent = event.detail;
+
+    oobeLog.update((currentLog) => ({
+      ...currentLog,
+      logs: [...currentLog.logs, logContent],
+      isActive: true,
+    }));
+  }
+
   onMount(async () => {
+    // Set up OOBE log listener
+    document.addEventListener('oobe:log', handleOOBELog);
+
+    // Initialize previous log length
+    previousLogLength = $oobeLog.logs.length;
+
     if (window.electronAPI.fs.exists('./config/option/installed.json')) {
       const installed = JSON.parse(
         window.electronAPI.fs.read('./config/option/installed.json')
@@ -218,6 +256,11 @@
     communityList = fetch('https://ogi.nat3z.com/api/community.json').then(
       (response) => response.json()
     );
+  });
+
+  onDestroy(() => {
+    // Clean up event listener
+    document.removeEventListener('oobe:log', handleOOBELog);
   });
 </script>
 
@@ -263,96 +306,130 @@
         These tools are required for launching and running OpenGameInstaller
         services.
       </h2>
-      <div class="w-full justify center items-center flex flex-col gap-4 mb-6">
-        {#await window.electronAPI.app.getOS() then result}
-          {#if result === 'win32'}
-            <div
-              class="flex justify-start p-4 gap-4 items-center flex-row w-full max-w-2xl h-20 bg-accent-lighter rounded-lg"
-            >
-              <div class="flex justify-center items-center w-16">
-                <h4
-                  class="font-archivo font-extrabold text-accent-dark text-xl"
-                >
-                  7z
-                </h4>
-              </div>
-              <span class="flex flex-col justify-start items-start">
-                <span class="font-open-sans font-semibold text-gray-900"
-                  >7zip</span
-                >
-                <span class="font-open-sans text-sm text-gray-600"
-                  >Required for unzipping .rar file extensions</span
-                >
-              </span>
-            </div>
-          {:else if result === 'linux'}
-            <div
-              class="flex justify-start p-4 gap-4 items-center flex-row w-full max-w-2xl h-20 bg-accent-lighter rounded-lg"
-            >
-              <div class="flex justify-center items-center w-16">
-                <h4
-                  class="font-archivo font-extrabold text-accent-dark text-lg"
-                >
-                  stl
-                </h4>
-              </div>
-              <span class="flex flex-col justify-start items-start">
-                <span class="font-open-sans font-semibold text-gray-900"
-                  >Steamtinkerlaunch</span
-                >
-                <span class="font-open-sans text-sm text-gray-600"
-                  >Required for adding games to Steam</span
-                >
-              </span>
-            </div>
-            <div
-              class="flex justify-start p-4 gap-4 items-center flex-row w-full max-w-2xl h-20 bg-accent-lighter rounded-lg"
-            >
-              <div class="p-2 w-16 h-16 flex justify-center items-center">
-                <WineIcon />
-              </div>
-              <span class="flex flex-col justify-start items-start">
-                <span class="font-open-sans font-semibold text-gray-900"
-                  >Wine</span
-                >
-                <span class="font-open-sans text-sm text-gray-600"
-                  >Required for launching games/installer. <strong
-                    class="text-red-600">MUST BE INSTALLED BY YOURSELF</strong
-                  ></span
-                >
-              </span>
-            </div>
-          {/if}
-        {/await}
+      {#if !$oobeLog.isActive}
         <div
-          class="flex justify-start p-4 gap-4 items-center flex-row w-full max-w-2xl h-20 bg-accent-lighter rounded-lg"
+          class="w-full justify center items-center flex flex-col gap-4 mb-6"
         >
-          <img class="w-12 h-12" src="./bun.svg" alt="Bun" />
-          <span class="flex flex-col justify-start items-start">
-            <span class="font-open-sans font-semibold text-gray-900">Bun</span>
-            <span class="font-open-sans text-sm text-gray-600"
-              >Required for executing addons</span
-            >
-          </span>
+          {#await window.electronAPI.app.getOS() then result}
+            {#if result === 'win32'}
+              <div
+                class="flex justify-start p-4 gap-4 items-center flex-row w-full max-w-2xl h-20 bg-accent-lighter rounded-lg"
+              >
+                <div class="flex justify-center items-center w-16">
+                  <h4
+                    class="font-archivo font-extrabold text-accent-dark text-xl"
+                  >
+                    7z
+                  </h4>
+                </div>
+                <span class="flex flex-col justify-start items-start">
+                  <span class="font-open-sans font-semibold text-gray-900"
+                    >7zip</span
+                  >
+                  <span class="font-open-sans text-sm text-gray-600"
+                    >Required for unzipping .rar file extensions</span
+                  >
+                </span>
+              </div>
+            {:else if result === 'linux'}
+              <div
+                class="flex justify-start p-4 gap-4 items-center flex-row w-full max-w-2xl h-20 bg-accent-lighter rounded-lg"
+              >
+                <div class="flex justify-center items-center w-16">
+                  <h4
+                    class="font-archivo font-extrabold text-accent-dark text-lg"
+                  >
+                    stl
+                  </h4>
+                </div>
+                <span class="flex flex-col justify-start items-start">
+                  <span class="font-open-sans font-semibold text-gray-900"
+                    >Steamtinkerlaunch</span
+                  >
+                  <span class="font-open-sans text-sm text-gray-600"
+                    >Required for adding games to Steam</span
+                  >
+                </span>
+              </div>
+              <div
+                class="flex justify-start p-4 gap-4 items-center flex-row w-full max-w-2xl h-20 bg-accent-lighter rounded-lg"
+              >
+                <div class="p-2 w-16 h-16 flex justify-center items-center">
+                  <WineIcon />
+                </div>
+                <span class="flex flex-col justify-start items-start">
+                  <span class="font-open-sans font-semibold text-gray-900"
+                    >Wine</span
+                  >
+                  <span class="font-open-sans text-sm text-gray-600"
+                    >Required for launching games/installer.</span
+                  >
+                </span>
+              </div>
+            {/if}
+          {/await}
+          <div
+            class="flex justify-start p-4 gap-4 items-center flex-row w-full max-w-2xl h-20 bg-accent-lighter rounded-lg"
+          >
+            <img class="w-12 h-12" src="./bun.svg" alt="Bun" />
+            <span class="flex flex-col justify-start items-start">
+              <span class="font-open-sans font-semibold text-gray-900">Bun</span
+              >
+              <span class="font-open-sans text-sm text-gray-600"
+                >Required for executing addons</span
+              >
+            </span>
+          </div>
+          <div
+            class="flex justify-start p-4 gap-4 items-center flex-row w-full max-w-2xl h-20 bg-accent-lighter rounded-lg"
+          >
+            <img class="w-12 h-12" src="./git.svg" alt="Git" />
+            <span class="flex flex-col justify-start items-start">
+              <span class="font-open-sans font-semibold text-gray-900">Git</span
+              >
+              <span class="font-open-sans text-sm text-gray-600"
+                >Required for downloading addons</span
+              >
+            </span>
+          </div>
         </div>
-        <div
-          class="flex justify-start p-4 gap-4 items-center flex-row w-full max-w-2xl h-20 bg-accent-lighter rounded-lg"
+        <button
+          onclick={downloadTools}
+          class="bg-accent hover:bg-accent-dark text-white disabled:text-white disabled:bg-yellow-500 font-open-sans font-semibold py-3 px-6 rounded-lg transition-colors duration-200"
+          >Install</button
         >
-          <img class="w-12 h-12" src="./git.svg" alt="Git" />
-          <span class="flex flex-col justify-start items-start">
-            <span class="font-open-sans font-semibold text-gray-900">Git</span>
-            <span class="font-open-sans text-sm text-gray-600"
-              >Required for downloading addons</span
-            >
-          </span>
-        </div>
-      </div>
+      {/if}
 
-      <button
-        onclick={downloadTools}
-        class="bg-accent hover:bg-accent-dark text-white disabled:text-white disabled:bg-yellow-500 font-open-sans font-semibold py-3 px-6 rounded-lg transition-colors duration-200"
-        >Install</button
-      >
+      <!-- OOBE Terminal Log Display -->
+      {#if $oobeLog.isActive && $oobeLog.logs.length > 0}
+        <div class="oobe-terminal w-full max-w-3xl mt-6 h-64">
+          <div class="terminal-header">
+            <div class="flex items-center gap-2">
+              <span class="text-xs text-gray-400 font-mono"
+                >Installation Console</span
+              >
+            </div>
+          </div>
+
+          <div bind:this={logContainer} class="terminal-content">
+            {#each $oobeLog.logs as log, index}
+              <div
+                class="terminal-line"
+                in:fade={{ duration: 150, delay: index * 20 }}
+              >
+                <span class="text-green-400 font-mono text-sm leading-relaxed">
+                  {log}
+                </span>
+              </div>
+            {/each}
+            <div class="terminal-cursor">
+              <span class="text-green-400 font-mono text-sm animate-pulse"
+                >▋</span
+              >
+            </div>
+          </div>
+        </div>
+      {/if}
     </div>
   {:else if stage === 1.5}
     <div
@@ -744,5 +821,46 @@
   ::-webkit-progress-value {
     transition: width 1s;
     @apply rounded-lg bg-accent;
+  }
+
+  .oobe-terminal {
+    @apply bg-gray-900 rounded-lg overflow-hidden border border-gray-700;
+  }
+
+  .terminal-header {
+    @apply bg-gray-800 px-4 py-2 border-b border-gray-700;
+  }
+
+  .terminal-content {
+    @apply p-4 max-h-48 overflow-y-auto;
+    scrollbar-width: thin;
+    scrollbar-color: theme('colors.accent') theme('colors.gray.800');
+  }
+
+  .terminal-content::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .terminal-content::-webkit-scrollbar-track {
+    background: theme('colors.gray.800');
+  }
+
+  .terminal-content::-webkit-scrollbar-thumb {
+    background: theme('colors.accent');
+    border-radius: 3px;
+  }
+
+  .terminal-content::-webkit-scrollbar-thumb:hover {
+    background: theme('colors.accent-dark');
+  }
+
+  .terminal-line {
+    @apply mb-1;
+    word-wrap: break-word;
+    white-space: pre-wrap;
+  }
+
+  .terminal-cursor {
+    @apply mt-2;
   }
 </style>

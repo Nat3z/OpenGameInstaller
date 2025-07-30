@@ -3,7 +3,7 @@ import { net, ipcMain } from 'electron';
 import { currentScreens, sendNotification } from '../main.js';
 import { join } from 'path';
 import * as fs from 'fs';
-import { exec } from 'child_process';
+import { exec, spawn } from 'child_process';
 import { LibraryInfo } from 'ogi-addon';
 import { __dirname } from '../paths.js';
 import { STEAMTINKERLAUNCH_PATH } from '../startup.js';
@@ -119,62 +119,168 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
     return;
   });
 
-  ipcMain.handle('app:insert-app', async (_, data: LibraryInfo) => {
-    if (!fs.existsSync(join(__dirname, 'library')))
-      fs.mkdirSync(join(__dirname, 'library'));
+  ipcMain.handle(
+    'app:insert-app',
+    async (
+      _,
+      data: LibraryInfo & {
+        redistributables?: { name: string; path: string }[];
+      }
+    ): Promise<
+      | 'setup-failed'
+      | 'setup-success'
+      | 'setup-redistributables-failed'
+      | 'setup-redistributables-success'
+    > => {
+      if (!fs.existsSync(join(__dirname, 'library')))
+        fs.mkdirSync(join(__dirname, 'library'));
 
-    const appPath = join(__dirname, `library/${data.appID}.json`);
-    fs.writeFileSync(appPath, JSON.stringify(data, null, 2));
-    if (!fs.existsSync(join(__dirname, 'internals'))) {
-      fs.mkdirSync(join(__dirname, 'internals'));
-    }
-    // write to the internal file
-    if (!fs.existsSync(join(__dirname, 'internals/apps.json'))) {
+      const appPath = join(__dirname, `library/${data.appID}.json`);
+      fs.writeFileSync(appPath, JSON.stringify(data, null, 2));
+      if (!fs.existsSync(join(__dirname, 'internals'))) {
+        fs.mkdirSync(join(__dirname, 'internals'));
+      }
+      // write to the internal file
+      if (!fs.existsSync(join(__dirname, 'internals/apps.json'))) {
+        fs.writeFileSync(
+          join(__dirname, 'internals/apps.json'),
+          JSON.stringify([], null, 2)
+        );
+      }
+      const appsInternal = JSON.parse(
+        fs.readFileSync(join(__dirname, 'internals/apps.json'), 'utf-8')
+      );
+
+      appsInternal.push(data.appID);
       fs.writeFileSync(
         join(__dirname, 'internals/apps.json'),
-        JSON.stringify([], null, 2)
+        JSON.stringify(appsInternal, null, 2)
       );
-    }
-    const appsInternal = JSON.parse(
-      fs.readFileSync(join(__dirname, 'internals/apps.json'), 'utf-8')
-    );
-    appsInternal.push(data.appID);
-    fs.writeFileSync(
-      join(__dirname, 'internals/apps.json'),
-      JSON.stringify(appsInternal, null, 2)
-    );
 
-    if (process.platform === 'linux') {
-      // make the launch executable use / instead of \
-      data.launchExecutable = data.launchExecutable.replaceAll('\\', '/');
-      // use steamtinkerlaunch to add the game to steam
-      exec(
-        `${STEAMTINKERLAUNCH_PATH} addnonsteamgame --appname="${data.name}" --exepath="${data.launchExecutable}" --startdir="${data.cwd}" --launchoptions=${data.launchArguments ?? ''} --compatibilitytool="proton_experimental" --use-steamgriddb`,
-        {
-          cwd: __dirname,
-        },
-        (error, stdout, stderr) => {
-          if (error) {
-            console.error(error);
-            sendNotification({
-              message: 'Failed to add game to Steam',
-              id: Math.random().toString(36).substring(7),
-              type: 'error',
-            });
-            return;
+      if (process.platform === 'linux') {
+        // make the launch executable use / instead of \
+        data.launchExecutable = data.launchExecutable.replaceAll('\\', '/');
+        // use steamtinkerlaunch to add the game to steam
+        const result = await new Promise<boolean>((resolve) =>
+          exec(
+            `${STEAMTINKERLAUNCH_PATH} addnonsteamgame --appname="${data.name}" --exepath="${data.launchExecutable}" --startdir="${data.cwd}" --launchoptions=${data.launchArguments ?? ''} --compatibilitytool="proton_experimental" --use-steamgriddb`,
+            {
+              cwd: __dirname,
+            },
+            (error, stdout, stderr) => {
+              if (error) {
+                console.error(error);
+                sendNotification({
+                  message: 'Failed to add game to Steam',
+                  id: Math.random().toString(36).substring(7),
+                  type: 'error',
+                });
+                resolve(false);
+                return;
+              }
+              console.log(stdout);
+              console.log(stderr);
+              sendNotification({
+                message: 'Game added to Steam',
+                id: Math.random().toString(36).substring(7),
+                type: 'success',
+              });
+              resolve(true);
+            }
+          )
+        );
+        if (!result) {
+          return 'setup-redistributables-failed';
+        }
+
+        if (data.redistributables) {
+          // get the compatdata path firstly
+          const compatdataPath = await new Promise<string | null>((resolve) =>
+            exec(
+              `${STEAMTINKERLAUNCH_PATH} getcompatdata "${data.name}" | tail -n 1`,
+              (error, stdout, stderr) => {
+                if (error) {
+                  console.error(error);
+                  resolve(null);
+                  return;
+                }
+                // check if the stdout contains "no" and if so resolve null
+                if (
+                  stdout.includes('no compatdata ') ||
+                  stderr.includes('no compatdata ')
+                ) {
+                  resolve(null);
+                  return;
+                }
+                const compatdata = stdout.split(' -> ')[1]?.trim();
+                resolve(compatdata);
+              }
+            )
+          );
+
+          if (!compatdataPath) {
+            return 'setup-redistributables-failed';
           }
-          console.log(stdout);
-          console.log(stderr);
+
+          for (const redistributable of data.redistributables) {
+            try {
+              sendNotification({
+                message: `Installing ${redistributable.name} for ${data.name}`,
+                id: Math.random().toString(36).substring(7),
+                type: 'info',
+              });
+              await new Promise<void>((resolve) => {
+                const command = 'flatpak';
+                const args = [
+                  'run',
+                  `--env=WINEPREFIX=${compatdataPath}`,
+                  '--command=winetricks',
+                  'org.winehq.Wine',
+                  join(redistributable.path),
+                ];
+                const child = spawn(command, args);
+
+                child.stdout.on('data', (data) => {
+                  console.log(`[winetricks stdout]: ${data}`);
+                });
+
+                child.stderr.on('data', (data) => {
+                  console.log(`[winetricks stderr]: ${data}`);
+                });
+
+                child.on('close', (code) => {
+                  console.log(`[winetricks] process exited with code ${code}`);
+                  resolve();
+                });
+
+                child.on('error', (error) => {
+                  console.error(
+                    `[winetricks] failed to start process: ${error}`
+                  );
+                  resolve();
+                });
+              });
+            } catch (error) {
+              console.error(
+                `[winetricks] failed to install ${redistributable.name} for ${data.name}: ${error}`
+              );
+              sendNotification({
+                message: `Failed to install ${redistributable.name} for ${data.name}`,
+                id: Math.random().toString(36).substring(7),
+                type: 'error',
+              });
+            }
+          }
           sendNotification({
-            message: 'Game added to Steam',
+            message: `Installed redistributables for ${data.name}`,
             id: Math.random().toString(36).substring(7),
             type: 'success',
           });
         }
-      );
+      }
+      return 'setup-success';
     }
-    return;
-  });
+  );
   ipcMain.handle('app:get-all-apps', async () => {
     if (!fs.existsSync(join(__dirname, 'library'))) {
       return [];

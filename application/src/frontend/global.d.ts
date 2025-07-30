@@ -76,7 +76,16 @@ interface Window {
         options: AxiosRequestConfig
       ) => Promise<{ status: number; success: boolean; data: any }>;
       inputSend: (id: string, data: any) => Promise<void>;
-      insertApp: (info: LibraryInfo) => Promise<void>;
+      insertApp: (
+        info: LibraryInfo & {
+          redistributables?: { name: string; path: string }[];
+        }
+      ) => Promise<
+        | 'setup-failed'
+        | 'setup-success'
+        | 'setup-redistributables-failed'
+        | 'setup-redistributables-success'
+      >;
       getAllApps: () => Promise<LibraryInfo[]>;
       launchGame: (appid: string) => Promise<void>;
       removeApp: (appid: number) => Promise<void>;

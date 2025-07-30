@@ -89,6 +89,21 @@ export type BasicLibraryInfo = {
   storefront: string;
 };
 
+export type SetupEventResponse = Omit<
+  LibraryInfo,
+  | 'capsuleImage'
+  | 'coverImage'
+  | 'name'
+  | 'appID'
+  | 'storefront'
+  | 'addonsource'
+  | 'titleImage'
+> & {
+  redistributables?: {
+    name: string;
+    path: string;
+  }[];
+};
 export interface EventListenerTypes {
   /**
    * This event is emitted when the addon connects to the OGI Addon Server. Addon does not need to resolve anything.
@@ -151,18 +166,7 @@ export interface EventListenerTypes {
       appID: number;
       storefront: string;
     },
-    event: EventResponse<
-      Omit<
-        LibraryInfo,
-        | 'capsuleImage'
-        | 'coverImage'
-        | 'name'
-        | 'appID'
-        | 'storefront'
-        | 'addonsource'
-        | 'titleImage'
-      >
-    >
+    event: EventResponse<SetupEventResponse>
   ) => void;
 
   /**
@@ -586,23 +590,11 @@ class OGIAddonWSListener {
           );
           break;
         case 'setup':
-          let setupEvent = new EventResponse<LibraryInfo>(
+          let setupEvent = new EventResponse<SetupEventResponse>(
             (screen, name, description) =>
               this.userInputAsked(screen, name, description, this.socket)
           );
-          this.eventEmitter.emit(
-            'setup',
-            {
-              path: message.args.path,
-              appID: message.args.appID,
-              storefront: message.args.storefront,
-              type: message.args.type,
-              name: message.args.name,
-              usedRealDebrid: message.args.usedRealDebrid,
-              multiPartFiles: message.args.multiPartFiles,
-            },
-            setupEvent
-          );
+          this.eventEmitter.emit('setup', message.args, setupEvent);
           const interval = setInterval(() => {
             if (setupEvent.resolved) {
               clearInterval(interval);

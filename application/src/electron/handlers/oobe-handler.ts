@@ -4,9 +4,71 @@ import { __dirname } from '../paths.js';
 import fs from 'fs';
 import { join } from 'path';
 import axios from 'axios';
-import { sendNotification } from '../main.js';
+import { sendNotification, sendIPCMessage } from '../main.js';
 import { IS_NIXOS, STEAMTINKERLAUNCH_PATH } from '../startup.js';
 import os from 'os';
+import { spawn } from 'child_process';
+
+function sendOOBELog(content: string) {
+  sendIPCMessage('oobe:log', content);
+  console.log('[oobe]' + content);
+}
+
+function spawnAndHook(
+  options: {
+    stdout?: (data: string) => void;
+    stderr?: (data: string) => void;
+    onClose?: (code: number) => void;
+    onError?: (err: Error) => void;
+    cwd?: string;
+  },
+  command: Parameters<typeof spawn>[0],
+  args: Parameters<typeof spawn>[1]
+) {
+  const spawnOptions = options.cwd ? { cwd: options.cwd } : {};
+  sendOOBELog('running: ' + command + ' ' + args.join(' '));
+  const childProcess = spawn(command, args, spawnOptions);
+  let stdout = '';
+  let stderr = '';
+
+  if (childProcess.stdout) {
+    childProcess.stdout.on('data', (data: Buffer) => {
+      const dataStr = data.toString();
+      stdout += dataStr;
+      if (options.stdout) {
+        options.stdout(dataStr);
+      }
+    });
+  }
+
+  if (childProcess.stderr) {
+    childProcess.stderr.on('data', (data: Buffer) => {
+      const dataStr = data.toString();
+      stderr += dataStr;
+      if (options.stderr) {
+        options.stderr(dataStr);
+      }
+    });
+  }
+
+  if (options.onClose) {
+    childProcess.on('close', (code: number) => {
+      options.onClose?.(code);
+    });
+  }
+
+  if (options.onError) {
+    childProcess.on('error', (err: Error) => {
+      options.onError?.(err);
+    });
+  }
+
+  return {
+    process: childProcess,
+    stdout,
+    stderr,
+  };
+}
 
 export default function OOBEHandler() {
   const sevenZipDownload = 'https://7-zip.org/a/7z2407-x64.exe';
@@ -23,7 +85,7 @@ export default function OOBEHandler() {
           if (err) {
             resolve(false);
           }
-          console.log(stdout);
+          sendOOBELog(stdout);
           resolve(true);
         });
       });
@@ -40,13 +102,13 @@ export default function OOBEHandler() {
               );
               response.data.pipe(fileStream);
               fileStream.on('finish', async () => {
-                console.log('Downloaded 7zip');
+                sendOOBELog('Downloaded 7zip');
                 fileStream.close();
                 exec(
                   '7z-install.exe /S /D="C:\\Program Files\\7-Zip"',
                   (err, stdout, stderr) => {
                     if (err) {
-                      console.error(err);
+                      sendOOBELog(`Error: ${err}`);
                       sendNotification({
                         message:
                           'Failed to install 7zip. Please allow the installer to run as administrator.',
@@ -57,8 +119,8 @@ export default function OOBEHandler() {
                       reject();
                       return;
                     }
-                    console.log(stdout);
-                    console.log(stderr);
+                    sendOOBELog(stdout);
+                    sendOOBELog(stderr);
                     fs.unlinkSync(join(__dirname, '7z-install.exe'));
                     sendNotification({
                       message: 'Successfully installed 7zip.',
@@ -72,14 +134,14 @@ export default function OOBEHandler() {
               });
 
               fileStream.on('error', (err) => {
-                console.error(err);
+                sendOOBELog(`Error: ${err}`);
                 fileStream.close();
                 fs.unlinkSync(join(__dirname, '7z-install.exe'));
                 cleanlyDownloadedAll = false;
               });
             })
             .catch((err) => {
-              console.error(err);
+              sendOOBELog(`Error: ${err}`);
             })
         );
       }
@@ -91,7 +153,7 @@ export default function OOBEHandler() {
         if (err) {
           resolve(false);
         }
-        console.log(stdout);
+        sendOOBELog(stdout);
         resolve(true);
       });
     });
@@ -116,7 +178,7 @@ export default function OOBEHandler() {
               );
               response.data.pipe(fileStream);
               fileStream.on('finish', async () => {
-                console.log('Downloaded git');
+                sendOOBELog('Downloaded git');
                 fileStream.close();
 
                 fs.writeFileSync(
@@ -151,13 +213,13 @@ export default function OOBEHandler() {
                   'git-install.exe /VERYSILENT /NORESTART /NOCANCEL /LOADINF=git_options.ini',
                   (err, stdout, stderr) => {
                     if (err) {
-                      console.error(err);
+                      sendOOBELog(`Error: ${err}`);
                       reject();
                       cleanlyDownloadedAll = false;
                       return;
                     }
-                    console.log(stdout);
-                    console.log(stderr);
+                    sendOOBELog(stdout);
+                    sendOOBELog(stderr);
                     fs.unlinkSync(join(__dirname, 'git-install.exe'));
                     sendNotification({
                       message: 'Successfully installed git.',
@@ -171,13 +233,13 @@ export default function OOBEHandler() {
               });
 
               fileStream.on('error', (err) => {
-                console.error(err);
+                sendOOBELog(`Error: ${err}`);
                 fileStream.close();
                 fs.unlinkSync(join(__dirname, 'git-install.exe'));
               });
             })
             .catch((err) => {
-              console.error(err);
+              sendOOBELog(`Error: ${err}`);
             })
         );
       } else {
@@ -206,20 +268,20 @@ export default function OOBEHandler() {
               join(__dirname, 'bin/steamtinkerlaunch'),
             (err, stdout, stderr) => {
               if (err) {
-                console.error(err);
+                sendOOBELog(`Error: ${err}`);
                 reject();
                 cleanlyDownloadedAll = false;
                 return;
               }
-              console.log(stdout);
-              console.log(stderr);
+              sendOOBELog(stdout);
+              sendOOBELog(stderr);
               // run chmod +x on the file
               exec(
                 'chmod +x ' +
                   join(__dirname, 'bin/steamtinkerlaunch/steamtinkerlaunch'),
                 (err) => {
                   if (err) {
-                    console.error(err);
+                    sendOOBELog(`Error: ${err}`);
                     reject();
                     cleanlyDownloadedAll = false;
                     return;
@@ -230,13 +292,13 @@ export default function OOBEHandler() {
                     join(__dirname, 'bin/steamtinkerlaunch/steamtinkerlaunch'),
                     (err, stdout, stderr) => {
                       if (err) {
-                        console.error(err);
+                        sendOOBELog(`Error: ${err}`);
                         reject();
                         cleanlyDownloadedAll = false;
                         return;
                       }
-                      console.log(stdout);
-                      console.log(stderr);
+                      sendOOBELog(stdout);
+                      sendOOBELog(stderr);
                       sendNotification({
                         message: 'Successfully installed steamtinkerlaunch.',
                         id: Math.random().toString(36).substring(7),
@@ -257,26 +319,26 @@ export default function OOBEHandler() {
             { cwd: join(__dirname, 'bin/steamtinkerlaunch') },
             (err, stdout, stderr) => {
               if (err) {
-                console.error(err);
+                sendOOBELog(`Error: ${err}`);
                 reject();
                 cleanlyDownloadedAll = false;
                 return;
               }
-              console.log(stdout);
-              console.log(stderr);
+              sendOOBELog(stdout);
+              sendOOBELog(stderr);
               // run chmod +x on the file
               exec(
                 'chmod +x ' +
                   join(__dirname, 'bin/steamtinkerlaunch/steamtinkerlaunch'),
                 (err, stdout, stderr) => {
                   if (err) {
-                    console.error(err);
+                    sendOOBELog(`Error: ${err}`);
                     reject();
                     cleanlyDownloadedAll = false;
                     return;
                   }
-                  console.log(stdout);
-                  console.log(stderr);
+                  sendOOBELog(stdout);
+                  sendOOBELog(stderr);
                   sendNotification({
                     message: 'Successfully updated steamtinkerlaunch.',
                     id: Math.random().toString(36).substring(7),
@@ -308,7 +370,7 @@ export default function OOBEHandler() {
         if (err) {
           resolve(false);
         }
-        console.log(stdout);
+        sendOOBELog(stdout);
         resolve(true);
       });
     });
@@ -320,13 +382,13 @@ export default function OOBEHandler() {
             'powershell -c "irm bun.sh/install.ps1 | iex"',
             (err, stdout, stderr) => {
               if (err) {
-                console.error(err);
+                sendOOBELog(`Error: ${err}`);
                 reject();
                 cleanlyDownloadedAll = false;
                 return;
               }
-              console.log(stdout);
-              console.log(stderr);
+              sendOOBELog(stdout);
+              sendOOBELog(stderr);
               sendNotification({
                 message: 'Successfully installed bun.',
                 id: Math.random().toString(36).substring(7),
@@ -344,13 +406,13 @@ export default function OOBEHandler() {
             (err, stdout, stderr) => {
               // then export to path
               if (err) {
-                console.error(err);
+                sendOOBELog(`Error: ${err}`);
                 reject();
                 cleanlyDownloadedAll = false;
                 return;
               }
-              console.log(stdout);
-              console.log(stderr);
+              sendOOBELog(stdout);
+              sendOOBELog(stderr);
               // get linux name
               const linuxName = os.userInfo().username;
 
@@ -360,13 +422,13 @@ export default function OOBEHandler() {
                   '/.bun/bin" >> ~/.bashrc',
                 (err, stdout, stderr) => {
                   if (err) {
-                    console.error(err);
+                    sendOOBELog(`Error: ${err}`);
                     reject();
                     cleanlyDownloadedAll = false;
                     return;
                   }
-                  console.log(stdout);
-                  console.log(stderr);
+                  sendOOBELog(stdout);
+                  sendOOBELog(stderr);
                   sendNotification({
                     message: 'Successfully installed bun and added to path.',
                     id: Math.random().toString(36).substring(7),
@@ -392,13 +454,13 @@ export default function OOBEHandler() {
       await new Promise<void>((resolve) =>
         exec('bun upgrade', (err, stdout, stderr) => {
           if (err) {
-            console.error(err);
+            sendOOBELog(`Error: ${err}`);
             // reject();
             resolve();
             return;
           }
-          console.log(stdout);
-          console.log(stderr);
+          sendOOBELog(stdout);
+          sendOOBELog(stderr);
           sendNotification({
             message: 'Successfully upgraded bun.',
             id: Math.random().toString(36).substring(7),
@@ -409,6 +471,105 @@ export default function OOBEHandler() {
       );
     }
 
+    // if on linux, check if flatpak is installed and wine is installed
+    if (process.platform === 'linux') {
+      const flatpakInstalled = await new Promise<boolean>((resolve, _) => {
+        exec('flatpak --version', (err, stdout, _) => {
+          if (err) {
+            resolve(false);
+          }
+          sendOOBELog(stdout);
+          resolve(true);
+        });
+      });
+      if (!flatpakInstalled) {
+        sendNotification({
+          message:
+            'Flatpak is not installed. Please install Wine through Flatpak for redistributables to work.',
+          id: Math.random().toString(36).substring(7),
+          type: 'error',
+        });
+        cleanlyDownloadedAll = false;
+      } else {
+        const wineInstalled = await new Promise<boolean>((resolve, _) => {
+          exec('flatpak run org.winehq.Wine --help', (err, stdout, _) => {
+            if (err) {
+              resolve(false);
+            }
+            sendOOBELog(stdout);
+            resolve(true);
+          });
+        });
+        if (!wineInstalled) {
+          // install wine through flatpak
+          const result = await new Promise<boolean>((resolve, reject) =>
+            spawnAndHook(
+              {
+                stdout: (data) => {
+                  sendOOBELog(data);
+                },
+                stderr: (data) => {
+                  sendOOBELog(data);
+                },
+                onClose: (code) => {
+                  sendOOBELog('wine process exited with code ' + code);
+                  if (code !== 0) {
+                    reject(false);
+                    return;
+                  }
+                  resolve(true);
+                },
+                onError: (err) => {
+                  sendOOBELog(`Error: ${err}`);
+                },
+                cwd: __dirname,
+              },
+              'flatpak',
+              [
+                'install',
+                '--system',
+                '-y',
+                'flathub',
+                'org.winehq.Wine/x86_64/stable-24.0',
+              ]
+            )
+          );
+          if (!result) {
+            sendNotification({
+              message: 'Failed to install wine through flatpak.',
+              id: Math.random().toString(36).substring(7),
+              type: 'error',
+            });
+            cleanlyDownloadedAll = false;
+          } else {
+            // run flatpak run org.winehq.Wine --help to see if it works
+            const wineInstalled = await new Promise<boolean>((resolve, _) => {
+              exec('flatpak run org.winehq.Wine --help', (err, stdout, _) => {
+                if (err) {
+                  resolve(false);
+                }
+                sendOOBELog(stdout);
+                resolve(true);
+              });
+            });
+            if (!wineInstalled) {
+              sendNotification({
+                message: 'Failed to install wine through flatpak.',
+                id: Math.random().toString(36).substring(7),
+                type: 'error',
+              });
+              cleanlyDownloadedAll = false;
+            } else {
+              sendNotification({
+                message: 'Successfully installed wine through flatpak.',
+                id: Math.random().toString(36).substring(7),
+                type: 'info',
+              });
+            }
+          }
+        }
+      }
+    }
     return [cleanlyDownloadedAll, requireRestart];
   });
 
@@ -420,19 +581,19 @@ export default function OOBEHandler() {
           STEAMTINKERLAUNCH_PATH + ' set SGDBAPIKEY global ' + key,
           (err, stdout, stderr) => {
             if (err) {
-              console.error(err);
+              sendOOBELog(`Error: ${err}`);
               reject();
               return;
             }
-            console.log(stdout);
-            console.log(stderr);
+            sendOOBELog(stdout);
+            sendOOBELog(stderr);
             resolve();
           }
         )
       );
       return true;
     } catch (err) {
-      console.error(err);
+      sendOOBELog(`Error: ${err}`);
       return false;
     }
   });

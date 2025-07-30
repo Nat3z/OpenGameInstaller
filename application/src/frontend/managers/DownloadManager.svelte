@@ -1,5 +1,4 @@
 <script lang="ts">
-  import type { LibraryInfo } from 'ogi-addon';
   import {
     createNotification,
     currentDownloads,
@@ -9,6 +8,7 @@
     type FailedSetup,
   } from '../store';
   import { safeFetch, updateDownloadStatus, getDownloadItem } from '../utils';
+  import type { SetupEventResponse } from 'ogi-addon';
 
   function isCustomEvent(event: Event): event is CustomEvent {
     return event instanceof CustomEvent;
@@ -128,32 +128,17 @@
   }
 
   async function handleSetupSuccess(
-    data: Omit<
-      LibraryInfo,
-      | 'capsuleImage'
-      | 'coverImage'
-      | 'name'
-      | 'appID'
-      | 'storefront'
-      | 'addonsource'
-    >,
+    data: SetupEventResponse,
     downloadedItem: DownloadStatusAndInfo,
     finalStatus: 'seeding' | 'setup-complete'
   ) {
     if (downloadedItem === undefined) return;
-    window.electronAPI.app.insertApp({
-      ...data,
-      capsuleImage: downloadedItem.capsuleImage,
-      coverImage: downloadedItem.coverImage,
-      name: downloadedItem.name,
-      appID: downloadedItem.appID,
-      storefront: downloadedItem.storefront,
-      addonsource: downloadedItem.addonSource,
-    });
-    updateDownloadStatus(downloadedItem.id, {
-      status: finalStatus,
-      downloadPath: downloadedItem.downloadPath,
-    });
+    if (data.redistributables && data.redistributables.length > 0) {
+      // write to the downloadItem
+      updateDownloadStatus(downloadedItem.id, {
+        status: 'redistr-downloading',
+      });
+    }
 
     // Mark setup log as inactive
     setupLogs.update((logs) => {
@@ -161,6 +146,33 @@
         logs[downloadedItem.id].isActive = false;
       }
       return logs;
+    });
+
+    const result = await window.electronAPI.app.insertApp({
+      ...data,
+      capsuleImage: downloadedItem.capsuleImage,
+      coverImage: downloadedItem.coverImage,
+      name: downloadedItem.name,
+      appID: downloadedItem.appID,
+      storefront: downloadedItem.storefront,
+      addonsource: downloadedItem.addonSource,
+      redistributables: data.redistributables,
+    });
+
+    if (
+      result === 'setup-failed' ||
+      result === 'setup-redistributables-failed'
+    ) {
+      updateDownloadStatus(downloadedItem.id, {
+        status: 'error',
+        error: result,
+      });
+      return;
+    }
+
+    updateDownloadStatus(downloadedItem.id, {
+      status: finalStatus,
+      downloadPath: downloadedItem.downloadPath,
     });
   }
 
@@ -284,7 +296,7 @@
     const callbacks = createSetupCallbacks(downloadedItem);
 
     try {
-      const data: LibraryInfo = await safeFetch(
+      const data: SetupEventResponse = await safeFetch(
         'setupApp',
         setupPayload,
         callbacks

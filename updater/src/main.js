@@ -121,22 +121,52 @@ async function createWindow() {
       if (fs.existsSync(localCache)) {
         const files = fs.readdirSync(localCache);
 
-        mainWindow.webContents.send('text', 'Copying Cached Version...');
-        for (const file of files) {
-          fs.cpSync(
-            path.join(localCache, file),
-            path.join(__dirname, 'update', file),
-            { force: true, recursive: true }
-          );
+        // Check if the expected executable exists in the cache
+        const expectedExecutable =
+          process.platform === 'win32'
+            ? 'OpenGameInstaller.exe'
+            : 'OpenGameInstaller.AppImage';
+        const executablePath = path.join(localCache, expectedExecutable);
+
+        if (!fs.existsSync(executablePath)) {
+          console.log('Executable not found in cache, redownloading...');
+          // Remove the incomplete cache and proceed with download
+          fs.rmSync(localCache, { recursive: true, force: true });
+        } else {
+          mainWindow.webContents.send('text', 'Copying Cached Version...');
+          for (const file of files) {
+            const sourcePath = path.join(localCache, file);
+            const destPath = path.join(__dirname, 'update', file);
+
+            // On Windows, if the destination file exists and is locked, try to rename it first
+            if (process.platform === 'win32' && fs.existsSync(destPath)) {
+              try {
+                const backupPath = destPath + '.backup';
+                if (fs.existsSync(backupPath)) {
+                  fs.unlinkSync(backupPath);
+                }
+                fs.renameSync(destPath, backupPath);
+              } catch (renameErr) {
+                console.log(
+                  'Could not backup existing file during cache copy:',
+                  renameErr.message
+                );
+                // Continue anyway, cpSync might still work
+              }
+            }
+
+            fs.cpSync(sourcePath, destPath, { force: true, recursive: true });
+          }
+          // update the version file
+          fs.writeFileSync(`./version.txt`, release.tag_name);
+          if (process.platform === 'linux') {
+            fs.chmodSync(`./update/OpenGameInstaller.AppImage`, '755');
+          }
+
+          mainWindow.webContents.send('text', 'Launching OpenGameInstaller');
+          launchApp(true);
+          return;
         }
-        // update the version file
-        fs.writeFileSync(`./version.txt`, release.tag_name);
-        if (process.platform === 'linux') {
-          fs.chmodSync(`./update/OpenGameInstaller.AppImage`, '755');
-        }
-        mainWindow.webContents.send('text', 'Launching OpenGameInstaller');
-        launchApp(true);
-        return;
       }
 
       // download the new version usinng axios stream
@@ -176,35 +206,95 @@ async function createWindow() {
           // extract the zip file
           const prefix = __dirname + '/update';
           if (!fs.existsSync(prefix)) {
-            fs.mkdirSync(prefix);
+            fs.mkdirSync(prefix, { recursive: true });
           }
-          await new Promise(async (resolve, reject) => {
-            mainWindow.webContents.send('text', 'Extracting Update');
-            // unzip files to the cache folder
-            if (!fs.existsSync(localCache)) {
-              fs.mkdirSync(localCache);
-            }
-            console.log('Unzipping to', localCache);
-            await unzip(`./update.zip`, localCache);
-            // copy the files to the update folder
-            const files = fs.readdirSync(localCache);
-            for (const file of files) {
-              fs.cpSync(path.join(localCache, file), path.join(prefix, file), {
-                force: true,
-                recursive: true,
-              });
-            }
-            resolve();
-          });
-          // delete the zip file
-          fs.unlinkSync(`./update.zip`);
-          // update the version file
-          fs.writeFileSync(`./version.txt`, release.tag_name);
-          // restart the app
-          console.log('App Ready.');
 
-          mainWindow.webContents.send('text', 'Launching OpenGameInstaller');
-          launchApp(true);
+          try {
+            await new Promise(async (resolve, reject) => {
+              mainWindow.webContents.send('text', 'Extracting Update');
+              // unzip files to the cache folder
+              if (!fs.existsSync(localCache)) {
+                fs.mkdirSync(localCache, { recursive: true });
+              }
+              console.log('Unzipping to', localCache);
+
+              try {
+                await unzip(`./update.zip`, localCache);
+
+                // Wait a bit to ensure all files are fully written
+                await new Promise((resolve) => setTimeout(resolve, 1000));
+
+                mainWindow.webContents.send('text', 'Copying Update Files');
+
+                // copy the files to the update folder with better error handling
+                const files = fs.readdirSync(localCache);
+                for (const file of files) {
+                  const sourcePath = path.join(localCache, file);
+                  const destPath = path.join(prefix, file);
+
+                  // On Windows, if the destination file exists and is locked, try to rename it first
+                  if (process.platform === 'win32' && fs.existsSync(destPath)) {
+                    try {
+                      const backupPath = destPath + '.backup';
+                      if (fs.existsSync(backupPath)) {
+                        fs.unlinkSync(backupPath);
+                      }
+                      fs.renameSync(destPath, backupPath);
+                    } catch (renameErr) {
+                      console.log(
+                        'Could not backup existing file:',
+                        renameErr.message
+                      );
+                      // Continue anyway, cpSync might still work
+                    }
+                  }
+
+                  try {
+                    fs.cpSync(sourcePath, destPath, {
+                      force: true,
+                      recursive: true,
+                    });
+                  } catch (copyErr) {
+                    console.error(
+                      'Failed to copy file:',
+                      file,
+                      copyErr.message
+                    );
+                    reject(copyErr);
+                    return;
+                  }
+                }
+                resolve();
+              } catch (unzipErr) {
+                console.error('Unzip failed:', unzipErr);
+                reject(unzipErr);
+              }
+            });
+
+            // delete the zip file
+            fs.unlinkSync(`./update.zip`);
+            // update the version file
+            fs.writeFileSync(`./version.txt`, release.tag_name);
+            // restart the app
+            console.log('App Ready.');
+
+            mainWindow.webContents.send('text', 'Launching OpenGameInstaller');
+            // Add a small delay before launching to ensure all file operations are complete
+            setTimeout(() => {
+              launchApp(true);
+            }, 500);
+          } catch (updateErr) {
+            console.error('Update failed:', updateErr);
+            mainWindow.webContents.send(
+              'text',
+              'Update Failed',
+              updateErr.message
+            );
+            // Try to launch the existing version
+            setTimeout(() => {
+              launchApp(true);
+            }, 2000);
+          }
         });
       } else if (process.platform === 'linux') {
         if (!fs.existsSync(`./update`)) {
@@ -376,17 +466,23 @@ app.on('ready', createWindow);
 // taken from https://stackoverflow.com/questions/63932027/how-to-unzip-to-a-folder-using-yauzl
 const unzip = (zipPath, unzipToDir) => {
   return new Promise((resolve, reject) => {
+    let zipFile = null;
+    let filesProcessed = 0;
+    let totalFiles = 0;
+
     try {
       // Create folder if not exists
       fs.mkdirSync(unzipToDir, { recursive: true });
 
       // Same as example we open the zip.
-      yauzl.open(zipPath, { lazyEntries: true }, (err, zipFile) => {
+      yauzl.open(zipPath, { lazyEntries: true }, (err, zip) => {
         if (err) {
-          zipFile.close();
           reject(err);
           return;
         }
+
+        zipFile = zip;
+        totalFiles = zipFile.entryCount;
 
         // This is the key. We start by reading the first entry.
         zipFile.readEntry();
@@ -396,20 +492,28 @@ const unzip = (zipPath, unzipToDir) => {
         // trigger the next cycle.
         zipFile.on('entry', (entry) => {
           try {
-            // Directories
-            if (/(.*)\/(?:.*?)$/.test(entry.fileName)) {
-              const dirToMake = /(.*)\/(?:.*?)$/.exec(entry.fileName)[1];
-              // Create the directory then read the next entry.
-              console.log('Creating directory:', dirToMake);
-              fs.mkdirSync(path.join(unzipToDir, dirToMake), {
-                recursive: true,
-              });
+            // Normalize path separators for Windows
+            const normalizedFileName = entry.fileName.replace(/\//g, path.sep);
+            const fullPath = path.join(unzipToDir, normalizedFileName);
+
+            // Ensure the directory exists
+            const dir = path.dirname(fullPath);
+            if (!fs.existsSync(dir)) {
+              fs.mkdirSync(dir, { recursive: true });
             }
+
             // check if entry is a directory
             if (/\/$/.test(entry.fileName)) {
+              filesProcessed++;
+              if (filesProcessed >= totalFiles) {
+                zipFile.close();
+                resolve();
+                return;
+              }
               zipFile.readEntry();
               return;
             }
+
             // Files
             zipFile.openReadStream(entry, (readErr, readStream) => {
               if (readErr) {
@@ -418,21 +522,37 @@ const unzip = (zipPath, unzipToDir) => {
                 return;
               }
 
-              const file = fs.createWriteStream(
-                path.join(unzipToDir, entry.fileName)
-              );
+              const file = fs.createWriteStream(fullPath);
               readStream.pipe(file);
+
               file.on('finish', () => {
                 // Wait until the file is finished writing, then read the next entry.
-                // @ts-ignore: Typing for close() is wrong.
-                file.close(() => {
+                file.close((closeErr) => {
+                  if (closeErr) {
+                    zipFile.close();
+                    reject(closeErr);
+                    return;
+                  }
+
+                  filesProcessed++;
+                  if (filesProcessed >= totalFiles) {
+                    zipFile.close();
+                    resolve();
+                    return;
+                  }
                   zipFile.readEntry();
                 });
+              });
 
-                file.on('error', (err) => {
-                  zipFile.close();
-                  reject(err);
-                });
+              file.on('error', (fileErr) => {
+                zipFile.close();
+                reject(fileErr);
+              });
+
+              readStream.on('error', (streamErr) => {
+                file.destroy();
+                zipFile.close();
+                reject(streamErr);
               });
             });
           } catch (e) {
@@ -440,15 +560,25 @@ const unzip = (zipPath, unzipToDir) => {
             reject(e);
           }
         });
-        zipFile.on('end', (err) => {
+
+        zipFile.on('end', () => {
+          if (zipFile) {
+            zipFile.close();
+          }
           resolve();
         });
-        zipFile.on('error', (err) => {
-          zipFile.close();
-          reject(err);
+
+        zipFile.on('error', (zipErr) => {
+          if (zipFile) {
+            zipFile.close();
+          }
+          reject(zipErr);
         });
       });
     } catch (e) {
+      if (zipFile) {
+        zipFile.close();
+      }
       reject(e);
     }
   });

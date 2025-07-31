@@ -13,7 +13,6 @@ import {
   setupLogs,
 } from './store';
 import type { ResponseDeferredTask } from '../electron/server/api/defer.js';
-import { sendNotification } from '../electron/main';
 
 interface ConsumableRequest {
   consume?: 'json' | 'text';
@@ -271,7 +270,7 @@ export async function runTask(
             failed: undefined,
           },
         ]);
-        sendNotification({
+        createNotification({
           id: Math.random().toString(36).substring(7),
           type: 'info',
           message:

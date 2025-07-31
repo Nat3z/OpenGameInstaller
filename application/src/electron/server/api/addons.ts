@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { clients } from '../addon-server.js';
 import { DeferrableTask } from '../DeferrableTask.js';
-import * as sanitize from 'sanitize-html';
+import sanitize from 'sanitize-html';
 import {
   type Procedure,
   procedure,
@@ -257,7 +257,7 @@ const procedures: Record<string, Procedure<any>> = {
         if (!appDetails) {
           return new ProcedureError(404, 'No app details found');
         }
-        appDetails.description = sanitize.default(appDetails.description);
+        appDetails.description = sanitize(appDetails.description);
         return appDetails;
       }, '*');
 

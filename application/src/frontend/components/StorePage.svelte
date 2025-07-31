@@ -133,7 +133,7 @@
     loading = false;
 
     // Fetch search results for custom store
-    if (alreadyOwns) return;
+    // if (alreadyOwns) return;
 
     let addons = await fetchAddonsWithConfigure();
     queryingSources = true;
@@ -304,18 +304,6 @@
 
         <!-- Right sidebar -->
         <div class="w-80 flex flex-col pt-4">
-          <!-- Sources Section -->
-          {#if alreadyOwns}
-            <div class="p-6 bg-accent-lighter rounded-lg">
-              <button
-                class="w-full bg-green-500 hover:bg-green-600 text-white font-medium py-3 px-4 rounded-lg transition-colors duration-200"
-                onclick={() => playGame()}
-              >
-                Play Game
-              </button>
-            </div>
-          {/if}
-
           <!-- Active Download Progress -->
           {#if activeDownload && !alreadyOwns}
             <div class="p-6 bg-accent-lighter rounded-lg mb-4">
@@ -386,6 +374,17 @@
             </div>
           {/if}
           <div class="flex-1 overflow-y-auto">
+            <!-- Sources Section -->
+            {#if alreadyOwns}
+              <div class="p-6 bg-accent-lighter rounded-lg mb-4">
+                <button
+                  class="w-full border-none bg-accent-light hover:bg-opacity-80 text-accent-dark font-medium py-3 px-4 rounded-lg transition-colors duration-200"
+                  onclick={() => playGame()}
+                >
+                  Play Game
+                </button>
+              </div>
+            {/if}
             {#if results.length > 0}
               {#each results.filter((result) => !alreadyOwns || result.downloadType === 'task') as result}
                 <div class="bg-accent-lighter rounded-lg p-4 mb-4">
@@ -396,7 +395,9 @@
                         class="w-12 h-12 rounded-lg"
                       />
                       <span class="font-medium text-gray-800"
-                        >{result.addonSource}</span
+                        >{result.downloadType === 'task'
+                          ? result.name
+                          : result.addonSource}</span
                       >
                     </div>
                     <div class="flex items-center gap-1 text-xs text-gray-500">
@@ -550,6 +551,8 @@
                   <span class="text-sm font-medium">Direct Download</span>
                 {:else if selectedResult.downloadType === 'request'}
                   <span class="text-sm font-medium">Request</span>
+                {:else if selectedResult.downloadType === 'task'}
+                  <span class="text-sm font-medium">Task</span>
                 {/if}
               </div>
             </div>

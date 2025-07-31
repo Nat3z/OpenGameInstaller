@@ -106,8 +106,10 @@ addon.on('exit', () => {
   process.exit(0);
 });
 
-addon.on('task-run', ({ manifest }, event) => {
+addon.on('task-run', ({ manifest, name, downloadPath }, event) => {
   event.defer();
+  event.log(`Running task ${name} with manifest ${JSON.stringify(manifest)}`);
+  event.log(`Download path: ${downloadPath}`);
   new Promise(async (resolve) => {
     // keep incrementing the progress every 1 second
     const interval = setInterval(() => {

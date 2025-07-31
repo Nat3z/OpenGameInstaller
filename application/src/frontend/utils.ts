@@ -247,7 +247,7 @@ export async function runTask(
     'runTask',
     {
       addonID: result.addonSource,
-      manifest: result.manifest,
+      manifest: JSON.parse(JSON.stringify(result.manifest)),
       downloadPath: originalFilePath,
       name: result.name,
     },

@@ -147,7 +147,7 @@ function createWindow() {
       nodeIntegration: true,
       contextIsolation: true,
       // always allow devtools
-      devTools: ogiDebug === 'true',
+      devTools: ogiDebug === 'true' || isDev(),
       preload: isDev()
         ? join(app.getAppPath(), 'preload.mjs')
         : join(app.getAppPath(), 'build/preload.mjs'),

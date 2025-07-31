@@ -19,6 +19,8 @@
   let currentTab: 'notifications' | 'tasks' = $state('notifications');
   let pollInterval: ReturnType<typeof setInterval> | null = null;
   let scrollContainer: HTMLDivElement | null = $state(null);
+  let logContainers: Map<string, HTMLDivElement> = $state(new Map());
+  let previousLogLengths: Map<string, number> = new Map();
 
   function startTaskPolling() {
     const pollInterval = setInterval(async () => {
@@ -49,6 +51,23 @@
     if (scrollContainer) {
       scrollContainer.scrollTo({ top: 0, behavior: 'smooth' });
     }
+  });
+
+  // Auto-scroll logs when new log entries are added
+  $effect(() => {
+    $deferredTasks.forEach((task) => {
+      if (task.logs && task.logs.length > 0) {
+        const container = logContainers.get(task.id);
+        const previousLength = previousLogLengths.get(task.id) || 0;
+
+        if (container && task.logs.length > previousLength) {
+          // New logs were added, scroll to bottom
+          container.scrollTop = container.scrollHeight;
+        }
+
+        previousLogLengths.set(task.id, task.logs.length);
+      }
+    });
   });
 
   function formatTimestamp(timestamp: number): string {
@@ -125,6 +144,16 @@
     ) {
       closeSideView();
     }
+  }
+
+  function registerLogContainer(element: HTMLDivElement, taskId: string) {
+    logContainers.set(taskId, element);
+
+    return {
+      destroy() {
+        logContainers.delete(taskId);
+      },
+    };
   }
 </script>
 
@@ -503,6 +532,7 @@
                           </summary>
                           <div
                             class="mt-1 p-2 bg-gray-900 rounded text-xs text-green-400 font-mono max-h-20 overflow-y-auto"
+                            use:registerLogContainer={task.id}
                           >
                             {#each task.logs as log}
                               {log}<br />
@@ -521,13 +551,3 @@
     </div>
   </div>
 {/if}
-
-<style>
-  .notification-history-item {
-    transition: all 0.2s ease;
-  }
-
-  .notification-history-item:hover {
-    transform: translateY(-1px);
-  }
-</style>

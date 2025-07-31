@@ -324,6 +324,39 @@ const procedures: Record<string, Procedure<any>> = {
         return new ProcedureError(500, 'Failed to remove addon');
       }
     }),
+
+  runTask: procedure()
+    .input(
+      z.object({
+        addonID: z.string(),
+        manifest: z.unknown(),
+        downloadPath: z.string().optional(),
+        name: z.string().optional(),
+      })
+    )
+    .handler(async (input) => {
+      const client = clients.get(input.addonID);
+      if (!client) return new ProcedureError(404, 'Client not found');
+
+      if (!client.eventsAvailable.includes('task-run')) {
+        return new ProcedureError(400, 'Client does not support task-run');
+      }
+
+      const deferrableTask = new DeferrableTask(async () => {
+        const data = await client.sendEventMessage({
+          event: 'task-run',
+          args: {
+            manifest: input.manifest,
+            downloadPath: input.downloadPath,
+            name: input.name,
+            deferID: deferrableTask.id!!,
+          },
+        });
+        return data.args;
+      }, client.addonInfo.id);
+
+      return new ProcedureDeferTask(200, deferrableTask);
+    }),
 };
 
 export default procedures;

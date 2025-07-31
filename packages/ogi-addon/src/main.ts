@@ -19,6 +19,7 @@ export type OGIAddonEvent =
   | 'library-search'
   | 'game-details'
   | 'exit'
+  | 'task-run'
   | 'request-dl'
   | 'catalog';
 
@@ -41,6 +42,7 @@ export type OGIAddonServerSentEvent =
   | 'setup'
   | 'response'
   | 'library-search'
+  | 'task-run'
   | 'game-details'
   | 'request-dl'
   | 'catalog';
@@ -179,6 +181,21 @@ export interface EventListenerTypes {
   'library-search': (
     query: string,
     event: EventResponse<BasicLibraryInfo[]>
+  ) => void;
+
+  /**
+   * This event is emitted when the client requests for a task to be run. Addon should resolve the event with the task.
+   * @param task
+   * @param event
+   * @returns
+   */
+  'task-run': (
+    task: {
+      manifest: Record<string, unknown>;
+      downloadPath: string;
+      name: string;
+    },
+    event: EventResponse<void>
   ) => void;
 
   /**
@@ -590,7 +607,7 @@ class OGIAddonWSListener {
             searchResultEvent
           );
           break;
-        case 'setup':
+        case 'setup': {
           let setupEvent = new EventResponse<SetupEventResponse>(
             (screen, name, description) =>
               this.userInputAsked(screen, name, description, this.socket)
@@ -611,6 +628,7 @@ class OGIAddonWSListener {
           const setupResult = await this.waitForEventToRespond(setupEvent);
           this.respondToMessage(message.id!!, setupResult.data, setupEvent);
           break;
+        }
         case 'library-search':
           let librarySearchEvent = new EventResponse<BasicLibraryInfo[]>(
             (screen, name, description) =>
@@ -714,6 +732,28 @@ class OGIAddonWSListener {
           const catalogResult = await this.waitForEventToRespond(catalogEvent);
           this.respondToMessage(message.id!!, catalogResult.data, catalogEvent);
           break;
+        case 'task-run': {
+          let taskRunEvent = new EventResponse<void>(
+            (screen, name, description) =>
+              this.userInputAsked(screen, name, description, this.socket)
+          );
+          this.eventEmitter.emit('task-run', message.args, taskRunEvent);
+          const interval = setInterval(() => {
+            if (taskRunEvent.resolved) {
+              clearInterval(interval);
+              return;
+            }
+            this.send('defer-update', {
+              logs: taskRunEvent.logs,
+              deferID: message.args.deferID,
+              progress: taskRunEvent.progress,
+              failed: taskRunEvent.failed,
+            } as ClientSentEventTypes['defer-update']);
+          }, 100);
+          const taskRunResult = await this.waitForEventToRespond(taskRunEvent);
+          this.respondToMessage(message.id!!, taskRunResult.data, taskRunEvent);
+          break;
+        }
       }
     });
   }

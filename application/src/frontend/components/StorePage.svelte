@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import {
     fetchAddonsWithConfigure,
+    runTask,
     safeFetch,
     startDownload,
     type SearchResultWithAddon,
@@ -37,6 +38,23 @@
   let queryingSources = $state(false);
   let selectedResult: SearchResultWithAddon | undefined = $state();
   let isOnline = $state(true);
+  let originalFilePath = $derived.by(() => {
+    try {
+      if (alreadyOwns) {
+        const libraryEntryUnSerialized = window.electronAPI.fs.read(
+          './library/' + appID + '.json'
+        );
+        if (libraryEntryUnSerialized) {
+          const libraryEntry = JSON.parse(libraryEntryUnSerialized);
+          return libraryEntry.cwd;
+        }
+      }
+      return undefined;
+    } catch (ex) {
+      console.error(ex);
+      return undefined;
+    }
+  });
 
   let alreadyOwns = window.electronAPI.fs.exists(
     './library/' + appID + '.json'
@@ -112,7 +130,10 @@
                   ...result,
                   coverImage: (gameData as StoreData).coverImage,
                   capsuleImage: (gameData as StoreData).capsuleImage,
-                  name: (gameData as StoreData).name!,
+                  name:
+                    result.downloadType === 'task'
+                      ? result.name
+                      : (gameData as StoreData).name!,
                   addonSource: addon.id,
                   storefront: storefront,
                 };
@@ -276,7 +297,13 @@
                     <button
                       class="w-full text-lg border-none bg-accent-light hover:bg-opacity-80 text-accent-dark font-medium py-3 px-4 rounded-lg flex items-center justify-center gap-2 transition-colors duration-200"
                       disabled={results.length === 0 && !queryingSources}
-                      onclick={(event) => startDownload(result, appID, event)}
+                      onclick={(event) =>
+                        result.downloadType === 'task'
+                          ? runTask(
+                              result,
+                              alreadyOwns ? originalFilePath : undefined
+                            )
+                          : startDownload(result, appID, event)}
                     >
                       {result.downloadType === 'task' ? 'Run Task' : 'Download'}
                     </button>

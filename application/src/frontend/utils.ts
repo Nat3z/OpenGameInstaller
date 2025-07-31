@@ -13,12 +13,14 @@ import {
   setupLogs,
 } from './store';
 import type { ResponseDeferredTask } from '../electron/server/api/defer.js';
+import { sendNotification } from '../electron/main';
 
 interface ConsumableRequest {
   consume?: 'json' | 'text';
   onProgress?: (progress: number) => void;
   onLogs?: (logs: string[]) => void;
   onFailed?: (error: string) => void;
+  onTaskStarted?: (taskID: string) => void;
 }
 export interface ConfigTemplateAndInfo extends OGIAddonConfiguration {
   configTemplate: ConfigurationFile;
@@ -147,6 +149,7 @@ export async function safeFetch(
       }
       if (response.taskID) {
         const taskID = response.taskID;
+        if (options.onTaskStarted) options.onTaskStarted(taskID);
         // if the task is deferred, we should poll the task until it's done.
         const deferInterval = setInterval(async () => {
           const taskResponse = await window.electronAPI.app.request('getTask', {
@@ -234,6 +237,76 @@ function listenUntilDownloadReady() {
       return state;
     },
   };
+}
+
+export async function runTask(
+  result: SearchResultWithAddon,
+  originalFilePath: string
+) {
+  let taskID: string;
+  const response = await safeFetch(
+    'runTask',
+    {
+      addonID: result.addonSource,
+      manifest: result.manifest,
+      downloadPath: originalFilePath,
+      name: result.name,
+    },
+    {
+      consume: 'json',
+      onTaskStarted: (taskID: string) => {
+        taskID = taskID;
+        deferredTasks.update((tasks) => [
+          ...tasks,
+          {
+            id: taskID,
+            name: `Task: ${result.name}`,
+            description: 'Running task',
+            addonOwner: result.addonSource,
+            status: 'running',
+            progress: 0,
+            logs: [],
+            timestamp: Date.now(),
+            type: 'other',
+            failed: undefined,
+          },
+        ]);
+        sendNotification({
+          id: Math.random().toString(36).substring(7),
+          type: 'info',
+          message:
+            'Task started. You can view the progress the Notifications tab.',
+        });
+      },
+      onLogs: (logs: string[]) => {
+        if (!taskID) return;
+        deferredTasks.update((tasks) =>
+          tasks.map((t) => (t.id === taskID ? { ...t, logs } : t))
+        );
+      },
+      onProgress: (progress: number) => {
+        if (!taskID) return;
+        deferredTasks.update((tasks) =>
+          tasks.map((t) => (t.id === taskID ? { ...t, progress } : t))
+        );
+      },
+      onFailed: (error: string) => {
+        if (!taskID) return;
+        deferredTasks.update((tasks) =>
+          tasks.map((t) => (t.id === taskID ? { ...t, failed: error } : t))
+        );
+        createNotification({
+          id: Math.random().toString(36).substring(7),
+          type: 'error',
+          message: error,
+        });
+      },
+    }
+  );
+
+  deferredTasks.update((tasks) => tasks.filter((t) => t.id !== taskID));
+
+  return response;
 }
 export async function startDownload(
   result: SearchResultWithAddon,

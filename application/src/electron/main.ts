@@ -159,6 +159,10 @@ function createWindow() {
     autoHideMenuBar: true,
     show: false,
   });
+  if (ogiDebug === 'true') {
+    // open devtools
+    mainWindow.webContents.openDevTools();
+  }
   if (!isDev() && ogiDebug !== 'true') mainWindow.removeMenu();
 
   // This block of code is intended for development purpose only.

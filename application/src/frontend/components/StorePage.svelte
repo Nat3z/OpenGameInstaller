@@ -15,6 +15,7 @@
     launchGameTrigger,
     selectedView,
     viewOpenedWhenChanged,
+    currentDownloads,
   } from '../store';
   import type { SearchResult, StoreData } from 'ogi-addon';
   import AddonPicture from './AddonPicture.svelte';
@@ -59,6 +60,43 @@
   let alreadyOwns = window.electronAPI.fs.exists(
     './library/' + appID + '.json'
   );
+
+  // Check for active downloads for this game
+  let activeDownload = $derived(
+    $currentDownloads.find(
+      (download) =>
+        download.appID === appID &&
+        (download.status === 'downloading' ||
+          download.status === 'rd-downloading' ||
+          download.status === 'requesting' ||
+          download.status === 'paused' ||
+          download.status === 'completed')
+    )
+  );
+
+  // Helper function to format download speed
+  function formatSpeed(speed: number): string {
+    if (speed < 1024) {
+      return speed.toFixed(0) + ' B/s';
+    } else if (speed < 1024 * 1024) {
+      return (speed / 1024).toFixed(2) + ' KB/s';
+    } else {
+      return (speed / (1024 * 1024)).toFixed(2) + ' MB/s';
+    }
+  }
+
+  // Helper function to format file size
+  function formatSize(size: number): string {
+    if (size < 1024) {
+      return size + ' B';
+    } else if (size < 1024 * 1024) {
+      return (size / 1024).toFixed(2) + ' KB';
+    } else if (size < 1024 * 1024 * 1024) {
+      return (size / (1024 * 1024)).toFixed(2) + ' MB';
+    } else {
+      return (size / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
+    }
+  }
 
   onMount(async () => {
     isOnline = await window.electronAPI.app.isOnline();
@@ -170,6 +208,28 @@
     selectedResult = result;
   }
 
+  function handleDownloadClick(
+    result: SearchResultWithAddon,
+    event: MouseEvent
+  ) {
+    // Check if there's already an active download for this game
+    if (activeDownload) {
+      createNotification({
+        id: Math.random().toString(36).substring(7),
+        message: `Download already in progress for ${gameData?.name}`,
+        type: 'warning',
+      });
+      return;
+    }
+
+    // Proceed with download
+    if (result.downloadType === 'task') {
+      runTask(result, alreadyOwns ? originalFilePath : undefined);
+    } else {
+      startDownload(result, appID, event);
+    }
+  }
+
   function closeInfoModal() {
     selectedResult = undefined;
   }
@@ -255,6 +315,76 @@
               </button>
             </div>
           {/if}
+
+          <!-- Active Download Progress -->
+          {#if activeDownload && !alreadyOwns}
+            <div class="p-6 bg-accent-lighter rounded-lg mb-4">
+              <div class="flex items-center justify-between mb-3">
+                <h3 class="font-medium text-accent-dark">Downloading</h3>
+                <span class="text-sm text-gray-600">
+                  {activeDownload.status === 'downloading' ||
+                  activeDownload.status === 'rd-downloading'
+                    ? Math.round(activeDownload.progress || 0) + '%'
+                    : activeDownload.status === 'completed'
+                      ? 'Setting up...'
+                      : activeDownload.status === 'paused'
+                        ? 'Paused'
+                        : activeDownload.status === 'requesting'
+                          ? 'Requesting...'
+                          : activeDownload.status}
+                </span>
+              </div>
+
+              <!-- Progress Bar -->
+              <div class="w-full bg-gray-200 rounded-full h-2 mb-3">
+                <div
+                  class="bg-accent h-2 rounded-full transition-all duration-300 ease-out"
+                  style="width: {activeDownload.status === 'completed'
+                    ? 100
+                    : Math.max(0, activeDownload.progress || 0)}%"
+                ></div>
+              </div>
+
+              <!-- Download Stats -->
+              {#if activeDownload.status === 'downloading' || activeDownload.status === 'rd-downloading'}
+                <div class="flex justify-between text-xs text-gray-600">
+                  <span>
+                    {#if activeDownload.downloadSpeed > 0}
+                      {formatSpeed(activeDownload.downloadSpeed)}
+                    {:else}
+                      Connecting...
+                    {/if}
+                  </span>
+                  <span>
+                    {#if activeDownload.downloadSize > 0}
+                      {formatSize(activeDownload.downloadSize)}
+                    {:else}
+                      Size unknown
+                    {/if}
+                  </span>
+                </div>
+
+                {#if activeDownload.queuePosition && activeDownload.queuePosition > 1}
+                  <div class="text-xs text-gray-500 mt-1">
+                    Queue position: {activeDownload.queuePosition}
+                  </div>
+                {/if}
+              {/if}
+
+              <!-- Source Info -->
+              <div
+                class="flex items-center gap-2 mt-3 pt-3 border-t border-gray-200"
+              >
+                <AddonPicture
+                  addonId={activeDownload.addonSource}
+                  class="w-6 h-6 rounded"
+                />
+                <span class="text-sm text-gray-700"
+                  >{activeDownload.addonSource}</span
+                >
+              </div>
+            </div>
+          {/if}
           <div class="flex-1 overflow-y-auto">
             {#if results.length > 0}
               {#each results.filter((result) => !alreadyOwns || result.downloadType === 'task') as result}
@@ -295,17 +425,19 @@
                   </div>
                   <div class="flex flex-row gap-2">
                     <button
-                      class="w-full text-lg border-none bg-accent-light hover:bg-opacity-80 text-accent-dark font-medium py-3 px-4 rounded-lg flex items-center justify-center gap-2 transition-colors duration-200"
-                      disabled={results.length === 0 && !queryingSources}
-                      onclick={(event) =>
-                        result.downloadType === 'task'
-                          ? runTask(
-                              result,
-                              alreadyOwns ? originalFilePath : undefined
-                            )
-                          : startDownload(result, appID, event)}
+                      class="w-full text-lg border-none {activeDownload &&
+                      !alreadyOwns
+                        ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                        : 'bg-accent-light hover:bg-opacity-80 text-accent-dark'} font-medium py-3 px-4 rounded-lg flex items-center justify-center gap-2 transition-colors duration-200"
+                      disabled={(results.length === 0 && !queryingSources) ||
+                        (activeDownload && !alreadyOwns)}
+                      onclick={(event) => handleDownloadClick(result, event)}
                     >
-                      {result.downloadType === 'task' ? 'Run Task' : 'Download'}
+                      {activeDownload && !alreadyOwns
+                        ? 'Download in Progress'
+                        : result.downloadType === 'task'
+                          ? 'Run Task'
+                          : 'Download'}
                     </button>
                     <button
                       class="text-lg border-none w-16 bg-accent-light hover:bg-opacity-80 text-accent-dark font-medium py-3 rounded-lg flex items-center justify-center gap-2 transition-colors duration-200"

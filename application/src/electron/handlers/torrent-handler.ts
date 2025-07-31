@@ -673,6 +673,13 @@ async function handleTorrentDownload({
     }
   }
   console.error('No torrent client found');
+  sendNotification({
+    message:
+      "No torrent client found. Go to General Settings and select a torrent client (even if it's selected, choose another one and click back again)",
+    id: Math.random().toString(36).substring(7),
+    type: 'error',
+  });
+  finish();
   return null;
 }
 

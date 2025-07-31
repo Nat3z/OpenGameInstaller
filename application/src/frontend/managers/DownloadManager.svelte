@@ -30,29 +30,6 @@
         },
       })
     );
-
-    // Update setup logs store
-    setupLogs.update((logs) => {
-      const currentLog = logs[downloadID] || {
-        downloadId: downloadID,
-        logs: [],
-        progress: 0,
-        isActive: true,
-      };
-
-      if (eventType === 'log') {
-        // data is an array of log lines
-        const newLogs = Array.isArray(data) ? data : [data];
-        currentLog.logs = [...currentLog.logs, ...newLogs];
-      } else if (eventType === 'progress') {
-        currentLog.progress = data;
-      }
-
-      return {
-        ...logs,
-        [downloadID]: currentLog,
-      };
-    });
   }
 
   function handleSetupError(

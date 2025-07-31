@@ -68,8 +68,12 @@
   function setupLog(event: Event) {
     if (!isCustomEvent(event)) return;
     const downloadID = event.detail.id;
-    const logs: string[] = event.detail.log;
+    let logs: string[] = event.detail.log;
     // Update the $setupLogs state for the given downloadID
+    // if the logs are above 100, remove the first 50
+    if (logs.length > 100) {
+      logs = logs.slice(50);
+    }
     setupLogs.update((otherLogs) => ({
       ...otherLogs,
       [downloadID]: {

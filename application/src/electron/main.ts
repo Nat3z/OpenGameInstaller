@@ -261,7 +261,8 @@ function createWindow() {
 
     // disable devtools
     mainWindow!!.webContents.on('devtools-opened', () => {
-      if (!isDev()) mainWindow!!.webContents.closeDevTools();
+      if (!isDev() && process.env.OGI_DEBUG !== 'true')
+        mainWindow!!.webContents.closeDevTools();
     });
 
     app.on('web-contents-created', (_, contents) => {

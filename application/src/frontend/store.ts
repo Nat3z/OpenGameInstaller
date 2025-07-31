@@ -67,7 +67,11 @@ export type FailedSetup = {
     type: string;
     name: string;
     usedRealDebrid: boolean;
-    multiPartFiles?: any;
+    multiPartFiles?: {
+      name: string;
+      downloadURL: string;
+      headers?: Record<string, string>;
+    }[];
     appID: number;
     storefront: string;
     manifest?: Record<string, unknown>;

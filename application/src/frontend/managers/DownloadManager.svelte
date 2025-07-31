@@ -251,6 +251,7 @@
             name: downloadedItem.name,
             usedRealDebrid: downloadedItem.usedRealDebrid,
             appID: downloadedItem.appID,
+            multiPartFiles: downloadedItem.files || [],
             storefront: downloadedItem.storefront,
             manifest: downloadedItem.manifest,
           },
@@ -394,6 +395,11 @@
       name: string;
       usedRealDebrid: boolean;
       appID: number;
+      multiPartFiles?: {
+        name: string;
+        downloadURL: string;
+        headers?: Record<string, string>;
+      }[];
       storefront: string;
       manifest?: Record<string, unknown>;
     };

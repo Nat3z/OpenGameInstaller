@@ -4,7 +4,7 @@ import {
   type DownloadStatusAndInfo,
 } from '../../store';
 import { getDownloadItem, updateDownloadStatus } from './lifecycle';
-import { restartDownload } from './restart';
+import { restartDownload } from '../downloads/restart';
 
 interface PausedDownloadState {
   id: string;

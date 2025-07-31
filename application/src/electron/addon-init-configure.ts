@@ -223,26 +223,16 @@ async function executeScript(
       bunPath = join(process.env.HOME || '', '.bun', 'bin', 'bun');
     }
 
-    // Replace only the first occurrence of 'bun' with the bunPath, preserving arguments with spaces
-    let scriptParts = script.trim().split(' ');
-    if (scriptParts[0] === 'bun') {
-      scriptParts[0] = bunPath;
-    } else if (
-      scriptParts[0].endsWith('bun') ||
-      scriptParts[0].endsWith('bun.exe')
-    ) {
-      // handle cases like './bun' or 'bun.exe'
-      scriptParts[0] = bunPath;
-    }
-    const cmd = scriptParts[0];
-    const args = scriptParts.slice(1);
+    let finalScript = script.trim();
+    // handles bun, ./bun, .\\bun, bun.exe and replaces it with the full path to bun
+    // using quotes to handle spaces in the path
+    finalScript = finalScript.replace(
+      /^(\.?[\\/]?bun(?:.exe)?)\b/,
+      `"${bunPath}"`
+    );
 
-    console.log('cmd', cmd);
-    console.log('args', args);
-
-    const child = exec.spawn(cmd, args, {
+    const child = exec.exec(finalScript, {
       cwd: addonPath,
-      shell: process.platform === 'win32', // for Windows compatibility
     });
 
     let stdout = '';
@@ -268,7 +258,11 @@ async function executeScript(
         console.error(
           '[' + addonName + '@' + scriptName + '] Exited with error: ' + code
         );
-        reject(new Error('Addon ' + addonName + ' exited with error: ' + code));
+        reject(
+          new Error(
+            'Addon ' + addonName + ' exited with error: ' + code + '\n' + stderr
+          )
+        );
         return;
       }
       resolve(stdout);

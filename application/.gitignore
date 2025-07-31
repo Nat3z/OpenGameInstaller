@@ -24,12 +24,5 @@ private
 
 # Desktop Services Store on macOS
 .DS_Store
-config
 temp.torrent
-addons/
-steam-apps.json
-library/
-internals/
-downloads/
-bin/
 development/

@@ -93,6 +93,7 @@ async function downloadTorrentFile(
       id: downloadID,
       type: 'error',
     });
+    console.error(err);
     finish();
     return null;
   });
@@ -185,6 +186,7 @@ async function handleTorrentDownload({
         id: downloadID,
       });
     }
+    console.error('Download cancelled');
     return null;
   }
 
@@ -204,7 +206,10 @@ async function handleTorrentDownload({
             downloadID,
             finish
           );
-          if (!torrentData) return null;
+          if (!torrentData) {
+            console.error('No torrent data returned');
+            return null;
+          }
           await qbitClient.addTorrent(torrentData, {
             savepath: arg.path + '.torrent',
           });
@@ -393,6 +398,7 @@ async function handleTorrentDownload({
           type: 'error',
         });
         finish();
+        console.error(except);
         return null;
       }
     }
@@ -432,9 +438,13 @@ async function handleTorrentDownload({
               id: downloadID,
               type: 'error',
             });
+            console.error(err);
             return null;
           });
-          if (!torrentData) return null;
+          if (!torrentData) {
+            console.error('No torrent data returned');
+            return null;
+          }
           // --- Throttled progress reporting setup for webtorrent ---
           let lastProgress = 0;
           let lastDownloadSpeed = 0;
@@ -662,6 +672,7 @@ async function handleTorrentDownload({
       }
     }
   }
+  console.error('No torrent client found');
   return null;
 }
 

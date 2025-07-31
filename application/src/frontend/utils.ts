@@ -618,6 +618,7 @@ export async function startDownload(
               type: 'error',
               message: 'Failed to download torrent.',
             });
+            console.error('No download ID returned');
             return;
           }
           htmlButton.textContent = 'Downloading...';
@@ -680,6 +681,7 @@ export async function startDownload(
               type: 'error',
               message: 'Failed to download torrent.',
             });
+            console.error('No download ID returned');
             return;
           }
           htmlButton.textContent = 'Downloading...';

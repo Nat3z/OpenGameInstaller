@@ -138,7 +138,8 @@ export function sendAskForInput(
 
 function createWindow() {
   // Create the browser window.
-
+  // check if the environment variable OGI_DEBUG is set, and if so, allow devtools
+  const ogiDebug = process.env.OGI_DEBUG ?? 'false';
   mainWindow = new BrowserWindow({
     width: 1000,
     height: 700,
@@ -146,7 +147,7 @@ function createWindow() {
       nodeIntegration: true,
       contextIsolation: true,
       // always allow devtools
-      devTools: true,
+      devTools: ogiDebug === 'true',
       preload: isDev()
         ? join(app.getAppPath(), 'preload.mjs')
         : join(app.getAppPath(), 'build/preload.mjs'),
@@ -158,7 +159,7 @@ function createWindow() {
     autoHideMenuBar: true,
     show: false,
   });
-  if (!isDev()) mainWindow.removeMenu();
+  if (!isDev() && ogiDebug !== 'true') mainWindow.removeMenu();
 
   // This block of code is intended for development purpose only.
   // Delete this entire block of code when you are ready to package the application.

@@ -43,6 +43,12 @@ interface Window {
       getTorrentInfo: (id: string) => Promise<$TorrentInfo>;
       updateKey: () => Promise<boolean>;
     };
+    torbox: {
+      updateKey: () => Promise<boolean>;
+      setKey: (key: string) => Promise<boolean>;
+      addTorrent: (torrentURL: string) => Promise<boolean>;
+      addMagnet: (magnetURL: string) => Promise<boolean>;
+    };
     torrent: {
       downloadTorrent: (torrent: string, path: string) => Promise<string>;
       downloadMagnet: (magnet: string, path: string) => Promise<string>;

@@ -35,6 +35,7 @@
         action?: () => void;
         max?: number;
         min?: number;
+        condition?: () => Promise<boolean>;
       };
     };
   }
@@ -56,15 +57,17 @@
           description: 'What will do the torrenting for you',
           defaultValue: 'webtorrent',
           value: '',
-          choice: ['webtorrent', 'qbittorrent', 'real-debrid'],
+          choice: ['webtorrent', 'qbittorrent', 'real-debrid', 'torbox'],
           type: 'string',
         },
-        reconfigureSteamGridDb: {
+        reconfigurSteamGridDb: {
           displayName: 'Change SteamGridDB API Key',
           description: 'Reconfigure your SteamGridDB API Key',
           defaultValue: '',
           value: '',
           type: 'action',
+          condition: async () =>
+            (await window.electronAPI.app.getOS()) === 'linux',
           action: () => {
             document.dispatchEvent(
               new CustomEvent('steamgriddb-launch', {
@@ -83,13 +86,20 @@
       },
     },
     {
-      name: 'Real Debrid',
+      name: 'Torrent Clients',
       id: 'realdebrid',
-      description: 'Configure Real Debrid',
+      description: 'Configure Torrent Clients',
       options: {
         debridApiKey: {
           displayName: 'Real Debrid API Key',
           description: 'Your Real Debrid API Key',
+          defaultValue: '',
+          value: '',
+          type: 'password',
+        },
+        torboxApiKey: {
+          displayName: 'TorBox API Key',
+          description: 'Your TorBox API Key',
           defaultValue: '',
           value: '',
           type: 'password',
@@ -390,6 +400,8 @@
       id: 'webtorrent',
       name: 'WebTorrent',
       icon: './WebTorrent_logo.png',
+      iconWidth: 24,
+      iconHeight: 24,
       description:
         'Built-in torrent client with no external dependencies. Works out of the box, but lacks security features like VPNs and proxies.',
     },
@@ -397,13 +409,26 @@
       id: 'qbittorrent',
       name: 'qBittorrent',
       icon: './qbittorrent.svg',
+      iconWidth: 24,
+      iconHeight: 24,
       description:
         'Connect to your existing qBittorrent instance. Tried and tested with security features, but requires setup and configuration.',
+    },
+    {
+      id: 'torbox',
+      name: 'TorBox',
+      icon: './torbox.svg',
+      iconWidth: 24,
+      iconHeight: 24,
+      description:
+        'Community-driven and friendly seedbox. Requires subscription.',
     },
     {
       id: 'real-debrid',
       name: 'Real-Debrid',
       icon: './rd-logo.png',
+      iconWidth: 24,
+      iconHeight: 24,
       description:
         'Premium service for faster downloads and cached torrents. Requires subscription.',
     },
@@ -595,356 +620,380 @@
             <div class="content-body">
               <div class="options-grid">
                 {#each Object.keys(selectedOption.options) as key}
-                  {#if selectedOption.options[key].type === 'section-describer'}
-                    <div class="option-item">
-                      <label class="option-label !mb-0 !text-2xl" for={key}>
-                        {selectedOption.options[key].displayName}
-                      </label>
-                      <p class="option-description !mb-0">
-                        {selectedOption.options[key].description}
-                      </p>
-                    </div>
-                  {:else if selectedOption.options[key].type === 'boolean'}
-                    <div class="option-item">
-                      <label class="option-label" for={key}>
-                        {selectedOption.options[key].displayName}
-                      </label>
-                      {#if selectedOption.options[key].description}
-                        <p class="option-description">
-                          {selectedOption.options[key].description}
-                        </p>
-                      {/if}
-                      <div class="option-input">
-                        <label class="checkbox-container">
-                          <input
-                            type="checkbox"
-                            id={key}
-                            class="input-checkbox"
-                            onchange={updateConfig}
-                            checked={getStoredOrDefaultValue(key)}
-                          />
-                          <span class="checkbox-checkmark"></span>
-                        </label>
-                      </div>
-                    </div>
-                  {:else if selectedOption.options[key].type === 'password'}
-                    <div class="option-item">
-                      <label class="option-label" for={key}>
-                        {selectedOption.options[key].displayName}
-                      </label>
-                      {#if selectedOption.options[key].description}
-                        <p class="option-description">
-                          {selectedOption.options[key].description}
-                        </p>
-                      {/if}
-                      <div class="option-input">
-                        <div class="flex items-center relative">
-                          <input
-                            type={showPassword?.[key] ? 'text' : 'password'}
-                            id={key}
-                            class="input-text !pr-14 relative z-1"
-                            onchange={updateConfig}
-                            value={getStoredOrDefaultValue(key)}
-                            maxlength={selectedOption.options[key]
-                              .maxTextLength}
-                            minlength={selectedOption.options[key]
-                              .minTextLength}
-                          />
-                          <div
-                            class="pointer-events-none absolute right-12 top-1 h-8 w-8 z-2 rounded-lg bg-gradient-to-r from-transparent to-white/80"
-                          ></div>
-                          <button
-                            type="button"
-                            class="ml-2 px-2 py-1 text-sm absolute right-2 border-none rounded-lg bg-transparent outline-none text-accent-dark z-[3]"
-                            onclick={() => {
-                              if (!showPassword) showPassword = {};
-                              showPassword[key] = !showPassword[key];
-                              showPassword = { ...showPassword };
-                            }}
-                            tabindex="-1"
-                          >
-                            {#if showPassword?.[key]}
-                              <svg
-                                xmlns="http://www.w3.org/2000/svg"
-                                fill="currentColor"
-                                height="24"
-                                viewBox="0 0 24 24"
-                                width="24"
-                                ><path
-                                  d="M0 0h24v24H0V0zm0 0h24v24H0V0zm0 0h24v24H0V0zm0 0h24v24H0V0z"
-                                  fill="none"
-                                /><path
-                                  d="M12 6.5c2.76 0 5 2.24 5 5 0 .51-.1 1-.24 1.46l3.06 3.06c1.39-1.23 2.49-2.77 3.18-4.53C21.27 7.11 17 4 12 4c-1.27 0-2.49.2-3.64.57l2.17 2.17c.47-.14.96-.24 1.47-.24zM2.71 3.16c-.39.39-.39 1.02 0 1.41l1.97 1.97C3.06 7.83 1.77 9.53 1 11.5 2.73 15.89 7 19 12 19c1.52 0 2.97-.3 4.31-.82l2.72 2.72c.39.39 1.02.39 1.41 0 .39-.39.39-1.02 0-1.41L4.13 3.16c-.39-.39-1.03-.39-1.42 0zM12 16.5c-2.76 0-5-2.24-5-5 0-.77.18-1.5.49-2.14l1.57 1.57c-.03.18-.06.37-.06.57 0 1.66 1.34 3 3 3 .2 0 .38-.03.57-.07L14.14 16c-.65.32-1.37.5-2.14.5zm2.97-5.33c-.15-1.4-1.25-2.49-2.64-2.64l2.64 2.64z"
-                                /></svg
-                              >
-                            {:else}
-                              <svg
-                                xmlns="http://www.w3.org/2000/svg"
-                                fill="currentColor"
-                                height="24"
-                                viewBox="0 0 24 24"
-                                width="24"
-                                ><path d="M0 0h24v24H0V0z" fill="none" /><path
-                                  d="M12 4C7 4 2.73 7.11 1 11.5 2.73 15.89 7 19 12 19s9.27-3.11 11-7.5C21.27 7.11 17 4 12 4zm0 12.5c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"
-                                /></svg
-                              >
-                            {/if}
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  {:else if selectedOption.options[key].type === 'file-folder'}
-                    <div class="option-item">
-                      <label class="option-label" for={key}>
-                        {selectedOption.options[key].displayName}
-                      </label>
-                      {#if selectedOption.options[key].description}
-                        <p class="option-description">
-                          {selectedOption.options[key].description}
-                        </p>
-                      {/if}
-                      <div class="option-input">
-                        <div class="file-input-group">
-                          <input
-                            type="text"
-                            id={key}
-                            class="input-text"
-                            onchange={updateConfig}
-                            value={getStoredOrDefaultValue(key)}
-                            maxlength={selectedOption.options[key]
-                              .maxTextLength}
-                            minlength={selectedOption.options[key]
-                              .minTextLength}
-                          />
-                          <button
-                            class="browse-button"
-                            onclick={(ev) => browseForFolder(ev)}
-                          >
-                            Browse
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  {:else if selectedOption.options[key].type === 'textarea'}
-                    <div class="option-item">
-                      <label class="option-label" for={key}>
-                        {selectedOption.options[key].displayName}
-                      </label>
-                      {#if selectedOption.options[key].description}
-                        <p class="option-description">
-                          {selectedOption.options[key].description}
-                        </p>
-                      {/if}
-                      <div class="option-input">
-                        <textarea
-                          id={key}
-                          class="input-textarea"
-                          onchange={updateConfig}
-                          value={getStoredOrDefaultValue(key).join('\n')}
-                          placeholder={key === 'addons'
-                            ? 'Enter addon URLs, one per line...'
-                            : ''}
-                        ></textarea>
-                      </div>
-                    </div>
-                  {:else if selectedOption.options[key].type === 'number'}
-                    <div class="option-item">
-                      <label class="option-label" for={key}>
-                        {selectedOption.options[key].displayName}
-                      </label>
-                      {#if selectedOption.options[key].description}
-                        <p class="option-description">
-                          {selectedOption.options[key].description}
-                        </p>
-                      {/if}
-                      <div class="option-input">
-                        <input
-                          type="number"
-                          id={key}
-                          class="input-number"
-                          onchange={updateConfig}
-                          value={getStoredOrDefaultValue(key)}
-                          max={selectedOption.options[key].max}
-                          min={selectedOption.options[key].min}
-                        />
-                      </div>
-                    </div>
-                  {:else if selectedOption.options[key].type === 'action'}
-                    <div class="option-item">
-                      <label class="option-label" for={key}>
-                        {selectedOption.options[key].displayName}
-                      </label>
-                      <div class="option-input">
-                        {#if selectedOption && selectedOption.options[key].action !== undefined}
-                          <button
-                            class="action-button bg-accent-light text-accent-dark hover:bg-accent-dark hover:text-accent-light"
-                            onclick={() =>
-                              selectedOption!.options[key].action?.()}
-                          >
+                  {#await selectedOption.options[key].condition ? selectedOption.options[key].condition() : new Promise( (resolve) => resolve(true) ) then condition}
+                    {#if condition}
+                      {#if selectedOption.options[key].type === 'section-describer'}
+                        <div class="option-item">
+                          <label class="option-label !mb-0 !text-2xl" for={key}>
                             {selectedOption.options[key].displayName}
-                          </button>
-                        {/if}
-                      </div>
-                    </div>
-                  {:else if selectedOption.options[key].choice}
-                    <div class="option-item">
-                      <label class="option-label" for={key}>
-                        {selectedOption.options[key].displayName}
-                      </label>
-                      {#if selectedOption.options[key].description}
-                        <p class="option-description">
-                          {selectedOption.options[key].description}
-                        </p>
-                      {/if}
-                      <div class="option-input">
-                        {#if key === 'torrentClient'}
-                          <!-- Custom Torrent Client Dropdown -->
-                          <div class="relative">
-                            <!-- Hidden select for form submission -->
-                            <select
+                          </label>
+                          <p class="option-description !mb-0">
+                            {selectedOption.options[key].description}
+                          </p>
+                        </div>
+                      {:else if selectedOption.options[key].type === 'boolean'}
+                        <div class="option-item">
+                          <label class="option-label" for={key}>
+                            {selectedOption.options[key].displayName}
+                          </label>
+                          {#if selectedOption.options[key].description}
+                            <p class="option-description">
+                              {selectedOption.options[key].description}
+                            </p>
+                          {/if}
+                          <div class="option-input">
+                            <label class="checkbox-container">
+                              <input
+                                type="checkbox"
+                                id={key}
+                                class="input-checkbox"
+                                onchange={updateConfig}
+                                checked={getStoredOrDefaultValue(key)}
+                              />
+                              <span class="checkbox-checkmark"></span>
+                            </label>
+                          </div>
+                        </div>
+                      {:else if selectedOption.options[key].type === 'password'}
+                        <div class="option-item">
+                          <label class="option-label" for={key}>
+                            {selectedOption.options[key].displayName}
+                          </label>
+                          {#if selectedOption.options[key].description}
+                            <p class="option-description">
+                              {selectedOption.options[key].description}
+                            </p>
+                          {/if}
+                          <div class="option-input">
+                            <div class="flex items-center relative">
+                              <input
+                                type={showPassword?.[key] ? 'text' : 'password'}
+                                id={key}
+                                class="input-text !pr-14 relative z-1"
+                                onchange={updateConfig}
+                                value={getStoredOrDefaultValue(key)}
+                                maxlength={selectedOption.options[key]
+                                  .maxTextLength}
+                                minlength={selectedOption.options[key]
+                                  .minTextLength}
+                              />
+                              <div
+                                class="pointer-events-none absolute right-12 top-1 h-8 w-8 z-2 rounded-lg bg-gradient-to-r from-transparent to-white/80"
+                              ></div>
+                              <button
+                                type="button"
+                                class="ml-2 px-2 py-1 text-sm absolute right-2 border-none rounded-lg bg-transparent outline-none text-accent-dark z-[3]"
+                                onclick={() => {
+                                  if (!showPassword) showPassword = {};
+                                  showPassword[key] = !showPassword[key];
+                                  showPassword = { ...showPassword };
+                                }}
+                                tabindex="-1"
+                              >
+                                {#if showPassword?.[key]}
+                                  <svg
+                                    xmlns="http://www.w3.org/2000/svg"
+                                    fill="currentColor"
+                                    height="24"
+                                    viewBox="0 0 24 24"
+                                    width="24"
+                                    ><path
+                                      d="M0 0h24v24H0V0zm0 0h24v24H0V0zm0 0h24v24H0V0zm0 0h24v24H0V0z"
+                                      fill="none"
+                                    /><path
+                                      d="M12 6.5c2.76 0 5 2.24 5 5 0 .51-.1 1-.24 1.46l3.06 3.06c1.39-1.23 2.49-2.77 3.18-4.53C21.27 7.11 17 4 12 4c-1.27 0-2.49.2-3.64.57l2.17 2.17c.47-.14.96-.24 1.47-.24zM2.71 3.16c-.39.39-.39 1.02 0 1.41l1.97 1.97C3.06 7.83 1.77 9.53 1 11.5 2.73 15.89 7 19 12 19c1.52 0 2.97-.3 4.31-.82l2.72 2.72c.39.39 1.02.39 1.41 0 .39-.39.39-1.02 0-1.41L4.13 3.16c-.39-.39-1.03-.39-1.42 0zM12 16.5c-2.76 0-5-2.24-5-5 0-.77.18-1.5.49-2.14l1.57 1.57c-.03.18-.06.37-.06.57 0 1.66 1.34 3 3 3 .2 0 .38-.03.57-.07L14.14 16c-.65.32-1.37.5-2.14.5zm2.97-5.33c-.15-1.4-1.25-2.49-2.64-2.64l2.64 2.64z"
+                                    /></svg
+                                  >
+                                {:else}
+                                  <svg
+                                    xmlns="http://www.w3.org/2000/svg"
+                                    fill="currentColor"
+                                    height="24"
+                                    viewBox="0 0 24 24"
+                                    width="24"
+                                    ><path
+                                      d="M0 0h24v24H0V0z"
+                                      fill="none"
+                                    /><path
+                                      d="M12 4C7 4 2.73 7.11 1 11.5 2.73 15.89 7 19 12 19s9.27-3.11 11-7.5C21.27 7.11 17 4 12 4zm0 12.5c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"
+                                    /></svg
+                                  >
+                                {/if}
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      {:else if selectedOption.options[key].type === 'file-folder'}
+                        <div class="option-item">
+                          <label class="option-label" for={key}>
+                            {selectedOption.options[key].displayName}
+                          </label>
+                          {#if selectedOption.options[key].description}
+                            <p class="option-description">
+                              {selectedOption.options[key].description}
+                            </p>
+                          {/if}
+                          <div class="option-input">
+                            <div class="file-input-group">
+                              <input
+                                type="text"
+                                id={key}
+                                class="input-text"
+                                onchange={updateConfig}
+                                value={getStoredOrDefaultValue(key)}
+                                maxlength={selectedOption.options[key]
+                                  .maxTextLength}
+                                minlength={selectedOption.options[key]
+                                  .minTextLength}
+                              />
+                              <button
+                                class="browse-button"
+                                onclick={(ev) => browseForFolder(ev)}
+                              >
+                                Browse
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      {:else if selectedOption.options[key].type === 'textarea'}
+                        <div class="option-item">
+                          <label class="option-label" for={key}>
+                            {selectedOption.options[key].displayName}
+                          </label>
+                          {#if selectedOption.options[key].description}
+                            <p class="option-description">
+                              {selectedOption.options[key].description}
+                            </p>
+                          {/if}
+                          <div class="option-input">
+                            <textarea
                               id={key}
-                              class="hidden"
+                              class="input-textarea"
+                              onchange={updateConfig}
+                              value={getStoredOrDefaultValue(key).join('\n')}
+                              placeholder={key === 'addons'
+                                ? 'Enter addon URLs, one per line...'
+                                : ''}
+                            ></textarea>
+                          </div>
+                        </div>
+                      {:else if selectedOption.options[key].type === 'number'}
+                        <div class="option-item">
+                          <label class="option-label" for={key}>
+                            {selectedOption.options[key].displayName}
+                          </label>
+                          {#if selectedOption.options[key].description}
+                            <p class="option-description">
+                              {selectedOption.options[key].description}
+                            </p>
+                          {/if}
+                          <div class="option-input">
+                            <input
+                              type="number"
+                              id={key}
+                              class="input-number"
                               onchange={updateConfig}
                               value={getStoredOrDefaultValue(key)}
-                            >
-                              {#each selectedOption.options[key].choice as choiceValue}
-                                <option value={choiceValue}
-                                  >{choiceValue}</option
-                                >
-                              {/each}
-                            </select>
-
-                            <!-- Custom dropdown button -->
-                            <button
-                              type="button"
-                              class="torrent-client-button"
-                              onclick={() =>
-                                (showTorrentClientDropdown =
-                                  !showTorrentClientDropdown)}
-                              onkeydown={(e) => {
-                                if (e.key === 'Enter' || e.key === ' ') {
-                                  e.preventDefault();
-                                  showTorrentClientDropdown =
-                                    !showTorrentClientDropdown;
-                                }
-                              }}
-                            >
-                              {#key currentTorrentClient.id}
-                                <div
-                                  class="flex items-center gap-3"
-                                  in:fly={{ x: 10, duration: 200 }}
-                                >
-                                  <img
-                                    src={currentTorrentClient.icon}
-                                    alt={currentTorrentClient.name}
-                                    class="w-6 h-6 object-contain"
-                                  />
-                                  <span class="font-medium">
-                                    {currentTorrentClient.name}
-                                  </span>
-                                </div>
-                              {/key}
-                              <svg
-                                class="w-5 h-5 transition-transform duration-200"
-                                class:rotate-180={showTorrentClientDropdown}
-                                fill="none"
-                                stroke="currentColor"
-                                viewBox="0 0 24 24"
+                              max={selectedOption.options[key].max}
+                              min={selectedOption.options[key].min}
+                            />
+                          </div>
+                        </div>
+                      {:else if selectedOption.options[key].type === 'action'}
+                        <div class="option-item">
+                          <label class="option-label" for={key}>
+                            {selectedOption.options[key].displayName}
+                          </label>
+                          <div class="option-input">
+                            {#if selectedOption && selectedOption.options[key].action !== undefined}
+                              <button
+                                class="action-button bg-accent-light text-accent-dark hover:bg-accent-dark hover:text-accent-light"
+                                onclick={() =>
+                                  selectedOption!.options[key].action?.()}
                               >
-                                <path
-                                  stroke-linecap="round"
-                                  stroke-linejoin="round"
-                                  stroke-width="2"
-                                  d="M19 9l-7 7-7-7"
-                                />
-                              </svg>
-                            </button>
-
-                            <!-- Custom dropdown menu -->
-                            {#if showTorrentClientDropdown}
-                              <div
-                                class="torrent-client-dropdown w-full overflow-x-hidden"
-                                in:fly={{ y: -10, duration: 200 }}
-                                out:fly={{ y: -10, duration: 150 }}
-                              >
-                                {#each torrentClients as client, index (client.id)}
-                                  <button
-                                    type="button"
-                                    class="torrent-client-option"
-                                    class:selected={currentTorrentClient.id ===
-                                      client.id}
-                                    onclick={() =>
-                                      selectTorrentClient(client.id)}
-                                    onkeydown={(e) => {
-                                      if (e.key === 'Enter' || e.key === ' ') {
-                                        e.preventDefault();
-                                        selectTorrentClient(client.id);
-                                      }
-                                    }}
-                                    title={client.description}
-                                    in:fly={{
-                                      x: -20,
-                                      duration: 200,
-                                      delay: index * 50,
-                                    }}
-                                    out:fly={{ x: -20, duration: 150 }}
-                                  >
-                                    <img
-                                      src={client.icon}
-                                      alt={client.name}
-                                      class="w-8 h-8 object-contain"
-                                    />
-                                    <div class="flex-1 text-left">
-                                      <div class="font-medium text-gray-900">
-                                        {client.name}
-                                      </div>
-                                      <div class="text-sm text-gray-600 mt-1">
-                                        {client.description}
-                                      </div>
-                                    </div>
-                                  </button>
-                                {/each}
-                              </div>
+                                {selectedOption.options[key].displayName}
+                              </button>
                             {/if}
                           </div>
-                        {:else}
-                          <!-- Regular select for other options -->
-                          <select
-                            id={key}
-                            class="input-select"
-                            onchange={updateConfig}
-                            value={getStoredOrDefaultValue(key)}
-                          >
-                            {#each selectedOption.options[key].choice as choiceValue}
-                              <option value={choiceValue}>{choiceValue}</option>
-                            {/each}
-                          </select>
-                        {/if}
-                      </div>
-                    </div>
-                  {:else}
-                    <div class="option-item">
-                      <label class="option-label" for={key}>
-                        {selectedOption.options[key].displayName}
-                      </label>
-                      {#if selectedOption.options[key].description}
-                        <p class="option-description">
-                          {selectedOption.options[key].description}
-                        </p>
+                        </div>
+                      {:else if selectedOption.options[key].choice}
+                        <div class="option-item">
+                          <label class="option-label" for={key}>
+                            {selectedOption.options[key].displayName}
+                          </label>
+                          {#if selectedOption.options[key].description}
+                            <p class="option-description">
+                              {selectedOption.options[key].description}
+                            </p>
+                          {/if}
+                          <div class="option-input">
+                            {#if key === 'torrentClient'}
+                              <!-- Custom Torrent Client Dropdown -->
+                              <div class="relative">
+                                <!-- Hidden select for form submission -->
+                                <select
+                                  id={key}
+                                  class="hidden"
+                                  onchange={updateConfig}
+                                  value={getStoredOrDefaultValue(key)}
+                                >
+                                  {#each selectedOption.options[key].choice as choiceValue}
+                                    <option value={choiceValue}
+                                      >{choiceValue}</option
+                                    >
+                                  {/each}
+                                </select>
+
+                                <!-- Custom dropdown button -->
+                                <button
+                                  type="button"
+                                  class="torrent-client-button"
+                                  onclick={() =>
+                                    (showTorrentClientDropdown =
+                                      !showTorrentClientDropdown)}
+                                  onkeydown={(e) => {
+                                    if (e.key === 'Enter' || e.key === ' ') {
+                                      e.preventDefault();
+                                      showTorrentClientDropdown =
+                                        !showTorrentClientDropdown;
+                                    }
+                                  }}
+                                >
+                                  {#key currentTorrentClient.id}
+                                    <div
+                                      class="flex items-center gap-3"
+                                      in:fly={{ x: 10, duration: 200 }}
+                                    >
+                                      <img
+                                        src={currentTorrentClient.icon}
+                                        alt={currentTorrentClient.name}
+                                        class="w-6 h-6 object-contain"
+                                      />
+                                      <span class="font-medium">
+                                        {currentTorrentClient.name}
+                                      </span>
+                                    </div>
+                                  {/key}
+                                  <svg
+                                    class="w-5 h-5 transition-transform duration-200"
+                                    class:rotate-180={showTorrentClientDropdown}
+                                    fill="none"
+                                    stroke="currentColor"
+                                    viewBox="0 0 24 24"
+                                  >
+                                    <path
+                                      stroke-linecap="round"
+                                      stroke-linejoin="round"
+                                      stroke-width="2"
+                                      d="M19 9l-7 7-7-7"
+                                    />
+                                  </svg>
+                                </button>
+
+                                <!-- Custom dropdown menu -->
+                                {#if showTorrentClientDropdown}
+                                  <div
+                                    class="torrent-client-dropdown w-full overflow-x-hidden"
+                                    in:fly={{ y: -10, duration: 200 }}
+                                    out:fly={{ y: -10, duration: 150 }}
+                                  >
+                                    {#each torrentClients as client, index (client.id)}
+                                      <button
+                                        type="button"
+                                        class="torrent-client-option"
+                                        class:selected={currentTorrentClient.id ===
+                                          client.id}
+                                        onclick={() =>
+                                          selectTorrentClient(client.id)}
+                                        onkeydown={(e) => {
+                                          if (
+                                            e.key === 'Enter' ||
+                                            e.key === ' '
+                                          ) {
+                                            e.preventDefault();
+                                            selectTorrentClient(client.id);
+                                          }
+                                        }}
+                                        title={client.description}
+                                        in:fly={{
+                                          x: -20,
+                                          duration: 200,
+                                          delay: index * 50,
+                                        }}
+                                        out:fly={{ x: -20, duration: 150 }}
+                                      >
+                                        <div
+                                          class="flex gap-3 w-full justify-start items-start"
+                                        >
+                                          <img
+                                            src={client.icon}
+                                            alt={client.name}
+                                            width={client.iconWidth}
+                                            height={client.iconHeight}
+                                            class="object-contain"
+                                          />
+                                          <div
+                                            class="font-medium text-gray-900"
+                                          >
+                                            {client.name}
+                                          </div>
+                                        </div>
+                                        <div class="flex-1 text-left">
+                                          <div
+                                            class="text-sm text-gray-600 mt-1"
+                                          >
+                                            {client.description}
+                                          </div>
+                                        </div>
+                                      </button>
+                                    {/each}
+                                  </div>
+                                {/if}
+                              </div>
+                            {:else}
+                              <!-- Regular select for other options -->
+                              <select
+                                id={key}
+                                class="input-select"
+                                onchange={updateConfig}
+                                value={getStoredOrDefaultValue(key)}
+                              >
+                                {#each selectedOption.options[key].choice as choiceValue}
+                                  <option value={choiceValue}
+                                    >{choiceValue}</option
+                                  >
+                                {/each}
+                              </select>
+                            {/if}
+                          </div>
+                        </div>
+                      {:else}
+                        <div class="option-item">
+                          <label class="option-label" for={key}>
+                            {selectedOption.options[key].displayName}
+                          </label>
+                          {#if selectedOption.options[key].description}
+                            <p class="option-description">
+                              {selectedOption.options[key].description}
+                            </p>
+                          {/if}
+                          <div class="option-input">
+                            <input
+                              type="text"
+                              id={key}
+                              class="input-text"
+                              onchange={updateConfig}
+                              value={getStoredOrDefaultValue(key)}
+                              maxlength={selectedOption.options[key]
+                                .maxTextLength}
+                              minlength={selectedOption.options[key]
+                                .minTextLength}
+                            />
+                          </div>
+                        </div>
                       {/if}
-                      <div class="option-input">
-                        <input
-                          type="text"
-                          id={key}
-                          class="input-text"
-                          onchange={updateConfig}
-                          value={getStoredOrDefaultValue(key)}
-                          maxlength={selectedOption.options[key].maxTextLength}
-                          minlength={selectedOption.options[key].minTextLength}
-                        />
-                      </div>
-                    </div>
-                  {/if}
+                    {/if}
+                  {/await}
                 {/each}
               </div>
 
@@ -1255,8 +1304,45 @@
       0 8px 10px -6px rgba(0, 0, 0, 0.1);
   }
 
+  /* Custom scrollbar styling for the dropdown - always visible */
+  .torrent-client-dropdown::-webkit-scrollbar {
+    width: 8px;
+    -webkit-appearance: none;
+  }
+
+  .torrent-client-dropdown::-webkit-scrollbar:horizontal {
+    height: 8px;
+  }
+
+  .torrent-client-dropdown::-webkit-scrollbar-track {
+    @apply bg-gray-100 rounded-r-lg;
+    -webkit-box-shadow: inset 0 0 1px rgba(0, 0, 0, 0.1);
+  }
+
+  .torrent-client-dropdown::-webkit-scrollbar-thumb {
+    @apply bg-accent rounded-full;
+    transition: background-color 0.2s ease;
+    -webkit-box-shadow: inset 0 0 1px rgba(0, 0, 0, 0.2);
+    min-height: 20px;
+  }
+
+  .torrent-client-dropdown::-webkit-scrollbar-thumb:hover {
+    @apply bg-accent-dark;
+  }
+
+  .torrent-client-dropdown::-webkit-scrollbar-corner {
+    @apply bg-gray-100;
+  }
+
+  /* Firefox scrollbar styling - always visible */
+  .torrent-client-dropdown {
+    scrollbar-width: thin;
+    scrollbar-color: #428a91 #f3f4f6;
+    scrollbar-gutter: stable;
+  }
+
   .torrent-client-option {
-    @apply w-full p-4 flex items-start gap-3 hover:bg-accent-lighter transition-all duration-200 border-none text-left;
+    @apply w-full p-4 flex flex-col items-start gap-3 hover:bg-accent-lighter transition-all duration-200 border-none text-left;
   }
 
   .torrent-client-option:first-child {

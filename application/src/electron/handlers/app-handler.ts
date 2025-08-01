@@ -17,7 +17,7 @@ const grantAccessToPath = (path: string, rootPassword: string) =>
     try {
       const child = spawn(
         'sudo',
-        ['flatpak', 'override', 'org.winehq.Wine', '--filesystem', path],
+        ['-S', 'flatpak', 'override', 'org.winehq.Wine', '--filesystem=', path],
         {
           stdio: 'inherit',
         }
@@ -199,38 +199,6 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
         if (!fs.existsSync(protonPath)) {
           fs.mkdirSync(protonPath, { recursive: true });
         }
-        // use steamtinkerlaunch to add the game to steam
-        const result = await new Promise<boolean>((resolve) =>
-          exec(
-            `${STEAMTINKERLAUNCH_PATH} addnonsteamgame --appname="${data.name}" --exepath="${data.launchExecutable}" --startdir="${data.cwd}" --launchoptions="STEAM_COMPAT_DATA_PATH=${protonPath} ${data.launchArguments ?? ''}" --compatibilitytool="proton_experimental" --use-steamgriddb`,
-            {
-              cwd: __dirname,
-            },
-            (error, stdout, stderr) => {
-              if (error) {
-                console.error(error);
-                sendNotification({
-                  message: 'Failed to add game to Steam',
-                  id: Math.random().toString(36).substring(7),
-                  type: 'error',
-                });
-                resolve(false);
-                return;
-              }
-              console.log(stdout);
-              console.log(stderr);
-              sendNotification({
-                message: 'Game added to Steam',
-                id: Math.random().toString(36).substring(7),
-                type: 'success',
-              });
-              resolve(true);
-            }
-          )
-        );
-        if (!result) {
-          return 'setup-redistributables-failed';
-        }
 
         // if there are redistributables, we need to install them
 
@@ -280,9 +248,9 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
                 const command = 'flatpak';
                 const args = [
                   'run',
-                  `--env=WINEPREFIX=${protonPath}`,
+                  `--env="WINEPREFIX=${protonPath}"`,
                   'org.winehq.Wine',
-                  `"${join(redistributable.path)}"`,
+                  join(redistributable.path),
                 ];
                 const child = spawn(command, args);
 
@@ -330,6 +298,39 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
             id: Math.random().toString(36).substring(7),
             type: 'success',
           });
+        }
+
+        // use steamtinkerlaunch to add the game to steam
+        const result = await new Promise<boolean>((resolve) =>
+          exec(
+            `${STEAMTINKERLAUNCH_PATH} addnonsteamgame --appname="${data.name}" --exepath="${data.launchExecutable}" --startdir="${data.cwd}" --launchoptions="STEAM_COMPAT_DATA_PATH=${protonPath} ${data.launchArguments ?? ''}" --compatibilitytool="proton_experimental" --use-steamgriddb`,
+            {
+              cwd: __dirname,
+            },
+            (error, stdout, stderr) => {
+              if (error) {
+                console.error(error);
+                sendNotification({
+                  message: 'Failed to add game to Steam',
+                  id: Math.random().toString(36).substring(7),
+                  type: 'error',
+                });
+                resolve(false);
+                return;
+              }
+              console.log(stdout);
+              console.log(stderr);
+              sendNotification({
+                message: 'Game added to Steam',
+                id: Math.random().toString(36).substring(7),
+                type: 'success',
+              });
+              resolve(true);
+            }
+          )
+        );
+        if (!result) {
+          return 'setup-redistributables-failed';
         }
       } else if (process.platform === 'win32') {
         // if there are redistributables, we need to install them

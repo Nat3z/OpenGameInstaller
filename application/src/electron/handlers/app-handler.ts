@@ -253,6 +253,7 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
               });
 
               await grantAccessToPath(redistributable.path, rootPassword);
+              console.log('Running destributable: ' + redistributable.path);
               await new Promise<void>((resolve) => {
                 const command = 'flatpak';
                 const args = [

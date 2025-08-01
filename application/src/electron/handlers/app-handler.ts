@@ -8,9 +8,12 @@ import { LibraryInfo } from 'ogi-addon';
 import { __dirname } from '../paths.js';
 import { STEAMTINKERLAUNCH_PATH } from '../startup.js';
 import { clients } from '../server/addon-server.js';
+import { dirname } from 'path';
 
 const grantAccessToPath = (path: string, rootPassword: string) =>
   new Promise<void>((resolve, reject) => {
+    // Get the folder from the file path
+    path = fs.lstatSync(path).isDirectory() ? path : dirname(path);
     try {
       const child = spawn(
         'sudo',

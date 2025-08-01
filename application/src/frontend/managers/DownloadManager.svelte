@@ -8,7 +8,7 @@
     type FailedSetup,
   } from '../store';
   import { safeFetch, updateDownloadStatus, getDownloadItem } from '../utils';
-  import type { SetupEventResponse } from 'ogi-addon';
+  import type { EventListenerTypes, SetupEventResponse } from 'ogi-addon';
 
   function isCustomEvent(event: Event): event is CustomEvent {
     return event instanceof CustomEvent;
@@ -34,7 +34,7 @@
   function handleSetupError(
     error: any,
     downloadedItem: DownloadStatusAndInfo,
-    setupData: any
+    setupData: Parameters<EventListenerTypes['setup']>[0]
   ) {
     console.error('Error setting up app: ', error);
     createNotification({
@@ -71,13 +71,15 @@
       onProgress: (progress: any) =>
         dispatchSetupEvent('progress', downloadedItem.id, progress),
       onFailed: (error: any) => {
-        const setupData = {
+        const setupData: Parameters<EventListenerTypes['setup']>[0] = {
           path: downloadedItem.downloadPath,
-          type: downloadedItem.downloadType,
+          type: downloadedItem.downloadType as 'direct' | 'torrent' | 'magnet',
           name: downloadedItem.name,
           usedRealDebrid: downloadedItem.usedRealDebrid,
           appID: downloadedItem.appID,
           storefront: downloadedItem.storefront,
+          multiPartFiles: downloadedItem.files,
+          manifest: downloadedItem.manifest,
         };
         console.log('error', error);
         handleSetupError(error, downloadedItem, setupData);
@@ -246,7 +248,10 @@
           downloadInfo: downloadedItem,
           setupData: {
             path: downloadedItem.downloadPath,
-            type: downloadedItem.downloadType,
+            type: downloadedItem.downloadType as
+              | 'direct'
+              | 'torrent'
+              | 'magnet',
             name: downloadedItem.name,
             usedRealDebrid: downloadedItem.usedRealDebrid,
             appID: downloadedItem.appID,
@@ -388,20 +393,7 @@
 
   function saveFailedSetup(setupInfo: {
     downloadInfo: DownloadStatusAndInfo;
-    setupData: {
-      path: string;
-      type: string;
-      name: string;
-      usedRealDebrid: boolean;
-      appID: number;
-      multiPartFiles?: {
-        name: string;
-        downloadURL: string;
-        headers?: Record<string, string>;
-      }[];
-      storefront: string;
-      manifest?: Record<string, unknown>;
-    };
+    setupData: Parameters<EventListenerTypes['setup']>[0];
     error: string;
     should: 'call-addon' | 'call-unrar';
   }) {

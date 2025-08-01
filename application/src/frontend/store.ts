@@ -1,4 +1,4 @@
-import type { SearchResult } from 'ogi-addon';
+import type { EventListenerTypes, SearchResult } from 'ogi-addon';
 import { writable, type Writable } from 'svelte/store';
 import type { BasicLibraryInfo } from 'ogi-addon';
 
@@ -62,20 +62,7 @@ export type FailedSetup = {
   timestamp: number;
   retryCount: number;
   downloadInfo: DownloadStatusAndInfo;
-  setupData: {
-    path: string;
-    type: string;
-    name: string;
-    usedRealDebrid: boolean;
-    multiPartFiles: {
-      name: string;
-      downloadURL: string;
-      headers?: Record<string, string>;
-    }[];
-    appID: number;
-    storefront: string;
-    manifest?: Record<string, unknown>;
-  };
+  setupData: Parameters<EventListenerTypes['setup']>[0];
   error: string;
   should: 'call-addon' | 'call-unrar';
 };

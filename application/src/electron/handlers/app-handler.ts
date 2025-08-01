@@ -17,11 +17,22 @@ const grantAccessToPath = (path: string, rootPassword: string) =>
     try {
       const child = spawn(
         'sudo',
-        ['-S', 'flatpak', 'override', 'org.winehq.Wine', '--filesystem=', path],
+        [
+          '-S',
+          'flatpak',
+          'override',
+          'org.winehq.Wine',
+          '--filesystem=' + path,
+        ],
         {
-          stdio: 'inherit',
+          stdio: ['pipe', 'inherit', 'inherit'],
         }
       );
+
+      // Write password to stdin immediately after spawning
+      child.stdin?.write(rootPassword + '\n');
+      child.stdin?.end();
+
       child.on('close', (code) => {
         console.log(`[flatpak] process exited with code ${code}`);
         resolve();
@@ -30,8 +41,6 @@ const grantAccessToPath = (path: string, rootPassword: string) =>
         console.error(error);
         reject(error);
       });
-      child.stdin?.write(rootPassword + '\n');
-      child.stdin?.end();
     } catch (error) {
       console.error(error);
       sendNotification({
@@ -250,16 +259,10 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
                   'run',
                   `--env="WINEPREFIX=${protonPath}"`,
                   'org.winehq.Wine',
-                  join(redistributable.path),
+                  redistributable.path,
                 ];
-                const child = spawn(command, args);
-
-                child.stdout.on('data', (data) => {
-                  console.log(`[redistributable stdout]: ${data}`);
-                });
-
-                child.stderr.on('data', (data) => {
-                  console.log(`[redistributable stderr]: ${data}`);
+                const child = spawn(command, args, {
+                  stdio: 'inherit',
                 });
 
                 child.on('close', (code) => {

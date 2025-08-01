@@ -139,6 +139,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('app:get-addon-icon', addonID),
     getLocalImage: (path: string) =>
       ipcRenderer.invoke('app:get-local-image', path),
+    grantRootPassword: (password: string) =>
+      ipcRenderer.invoke('app:root-password-granted', password),
   },
   getVersion: () => ipcRenderer.sendSync('get-version'),
   updateAddons: () => ipcRenderer.invoke('update-addons'),
@@ -300,6 +302,13 @@ ipcRenderer.on('app:open-steam-compatdata', (_, arg) => {
   dbg_countEvent();
   document.dispatchEvent(
     new CustomEvent('app:open-steam-compatdata', { detail: arg })
+  );
+});
+
+ipcRenderer.on('app:ask-root-password', (_, arg) => {
+  dbg_countEvent();
+  document.dispatchEvent(
+    new CustomEvent('app:ask-root-password', { detail: arg })
   );
 });
 

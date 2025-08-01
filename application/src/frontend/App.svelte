@@ -41,6 +41,7 @@
   import type { ConfigurationFile } from 'ogi-addon/config';
   import Debug from './managers/Debug.svelte';
   import DiscoverView from './views/DiscoverView.svelte';
+  import RootPasswordGranter from './managers/RootPasswordGranter.svelte';
 
   interface ConfigTemplateAndInfo extends OGIAddonConfiguration {
     configTemplate: ConfigurationFile;
@@ -281,6 +282,8 @@
     });
   }
 
+  document.addEventListener('app:ask-root-password', () => {});
+
   // for migration:
   document.addEventListener('migration:event:steamgriddb-launch', () => {
     console.log('steamgriddb-launch');
@@ -304,6 +307,7 @@
   });
 </script>
 
+<RootPasswordGranter />
 <Notifications />
 {#if !finishedOOBE}
   <OOBE finishedSetup={() => (finishedOOBE = true)} />

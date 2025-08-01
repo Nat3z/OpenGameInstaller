@@ -3,12 +3,42 @@ import { net, ipcMain } from 'electron';
 import { currentScreens, sendIPCMessage, sendNotification } from '../main.js';
 import { join } from 'path';
 import * as fs from 'fs';
-import { exec, spawn } from 'child_process';
+import { exec, execSync, spawn, spawnSync } from 'child_process';
 import { LibraryInfo } from 'ogi-addon';
 import { __dirname } from '../paths.js';
 import { STEAMTINKERLAUNCH_PATH } from '../startup.js';
 import { clients } from '../server/addon-server.js';
 
+const grantAccessToPath = (path: string, rootPassword: string) =>
+  new Promise<void>((resolve, reject) => {
+    try {
+      const child = spawn(
+        'flatpak',
+        ['override', 'org.winehq.Wine', '--filesystem', path],
+        {
+          stdio: 'inherit',
+        }
+      );
+      child.on('close', (code) => {
+        console.log(`[flatpak] process exited with code ${code}`);
+        resolve();
+      });
+      child.on('error', (error) => {
+        console.error(error);
+        reject(error);
+      });
+      child.stdin?.write(rootPassword + '\n');
+      child.stdin?.end();
+    } catch (error) {
+      console.error(error);
+      sendNotification({
+        message: 'Failed to allow flatpak to access the proton path',
+        id: Math.random().toString(36).substring(7),
+        type: 'error',
+      });
+      reject(error);
+    }
+  });
 export default function handler(mainWindow: Electron.BrowserWindow) {
   ipcMain.handle('app:close', () => {
     mainWindow?.close();
@@ -160,10 +190,16 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
       if (process.platform === 'linux') {
         // make the launch executable use / instead of \
         data.launchExecutable = data.launchExecutable.replaceAll('\\', '/');
+        const homeDir = process.env.HOME || process.env.USERPROFILE;
+        const protonPath = `${homeDir}/.ogi-wine-prefixes/${data.appID}`;
+        // if the proton path does not exist, create it
+        if (!fs.existsSync(protonPath)) {
+          fs.mkdirSync(protonPath, { recursive: true });
+        }
         // use steamtinkerlaunch to add the game to steam
         const result = await new Promise<boolean>((resolve) =>
           exec(
-            `${STEAMTINKERLAUNCH_PATH} addnonsteamgame --appname="${data.name}" --exepath="${data.launchExecutable}" --startdir="${data.cwd}" --launchoptions=${data.launchArguments ?? ''} --compatibilitytool="proton_experimental" --use-steamgriddb`,
+            `${STEAMTINKERLAUNCH_PATH} addnonsteamgame --appname="${data.name}" --exepath="${data.launchExecutable}" --startdir="${data.cwd}" --launchoptions="STEAM_COMPAT_DATA_PATH=${protonPath} ${data.launchArguments ?? ''}" --compatibilitytool="proton_experimental" --use-steamgriddb`,
             {
               cwd: __dirname,
             },
@@ -196,42 +232,33 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
         // if there are redistributables, we need to install them
 
         if (data.redistributables) {
-          // get the compatdata path firstly
-          // tell the user that we need them to launch the game on steam to generate the compatdata path
-          sendNotification({
-            message:
-              'Please launch the game on Steam to generate the compatdata path',
-            id: Math.random().toString(36).substring(7),
-            type: 'info',
-          });
-          // the boolean is if it should be open
-          sendIPCMessage('app:open-steam-compatdata', true);
-          const compatdataPath = await new Promise<string | null>((resolve) =>
-            exec(
-              `${STEAMTINKERLAUNCH_PATH} getcompatdata "${data.name}" | tail -n 1`,
-              (error, stdout, stderr) => {
-                if (error) {
-                  console.error(error);
-                  resolve(null);
-                  return;
-                }
-                // check if the stdout contains "no" and if so resolve null
-                if (
-                  stdout.includes('no compatdata ') ||
-                  stderr.includes('no compatdata ')
-                ) {
-                  resolve(null);
-                  return;
-                }
-                const compatdata = stdout.split(' -> ')[1]?.trim();
-                resolve(compatdata);
+          let rootPassword = '';
+          // firstly, allow the flatpak to access the proton path
+          sendIPCMessage('app:ask-root-password', true);
+          const rootPasswordGranter = new Promise<void>((resolve) => {
+            ipcMain.once('app:root-password-granted', async (_, password) => {
+              // allow the flatpak to access the proton path
+              try {
+                execSync(`echo -e "${password}\n" | sudo -S -k true`, {
+                  stdio: 'ignore',
+                });
+                await grantAccessToPath(protonPath, password);
+                rootPassword = password;
+                resolve();
+              } catch (error) {
+                console.error(error);
+                sendNotification({
+                  message: 'Failed to allow flatpak to access the proton path.',
+                  id: Math.random().toString(36).substring(7),
+                  type: 'error',
+                });
+                sendIPCMessage('app:ask-root-password', true);
+                await rootPasswordGranter;
+                resolve();
               }
-            )
-          );
-
-          if (!compatdataPath) {
-            return 'setup-redistributables-failed';
-          }
+            });
+          });
+          await rootPasswordGranter;
 
           for (const redistributable of data.redistributables) {
             try {
@@ -240,40 +267,49 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
                 id: Math.random().toString(36).substring(7),
                 type: 'info',
               });
+
+              await grantAccessToPath(redistributable.path, rootPassword);
               await new Promise<void>((resolve) => {
                 const command = 'flatpak';
                 const args = [
                   'run',
-                  `--env=WINEPREFIX=${compatdataPath}`,
-                  '--command=winetricks',
+                  `--env=WINEPREFIX=${protonPath}`,
                   'org.winehq.Wine',
-                  join(redistributable.path),
+                  `"${join(redistributable.path)}"`,
                 ];
                 const child = spawn(command, args);
 
                 child.stdout.on('data', (data) => {
-                  console.log(`[winetricks stdout]: ${data}`);
+                  console.log(`[redistributable stdout]: ${data}`);
                 });
 
                 child.stderr.on('data', (data) => {
-                  console.log(`[winetricks stderr]: ${data}`);
+                  console.log(`[redistributable stderr]: ${data}`);
                 });
 
                 child.on('close', (code) => {
-                  console.log(`[winetricks] process exited with code ${code}`);
+                  console.log(
+                    `[redistributable] process exited with code ${code}`
+                  );
                   resolve();
                 });
 
                 child.on('error', (error) => {
                   console.error(
-                    `[winetricks] failed to start process: ${error}`
+                    `[redistributable] failed to start process: ${error}`
                   );
                   resolve();
                 });
               });
+
+              sendNotification({
+                message: `Installed ${redistributable.name} for ${data.name}`,
+                id: Math.random().toString(36).substring(7),
+                type: 'success',
+              });
             } catch (error) {
               console.error(
-                `[winetricks] failed to install ${redistributable.name} for ${data.name}: ${error}`
+                `[redistributable] failed to install ${redistributable.name} for ${data.name}: ${error}`
               );
               sendNotification({
                 message: `Failed to install ${redistributable.name} for ${data.name}`,
@@ -287,6 +323,27 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
             id: Math.random().toString(36).substring(7),
             type: 'success',
           });
+        }
+      } else if (process.platform === 'win32') {
+        // if there are redistributables, we need to install them
+        if (data.redistributables) {
+          for (const redistributable of data.redistributables) {
+            try {
+              spawnSync(redistributable.path, {
+                stdio: 'inherit',
+                shell: true,
+              });
+              sendNotification({
+                message: `Installed ${redistributable.name} for ${data.name}`,
+                id: Math.random().toString(36).substring(7),
+                type: 'success',
+              });
+            } catch (error) {
+              console.error(
+                `[redistributable] failed to install ${redistributable.name} for ${data.name}: ${error}`
+              );
+            }
+          }
         }
       }
       return 'setup-success';

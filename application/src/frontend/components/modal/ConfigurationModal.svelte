@@ -248,21 +248,3 @@
     </Modal>
   {/if}
 {/key}
-
-<style>
-  .config-label {
-    @apply block text-sm font-archivo font-semibold text-gray-900 mb-1;
-  }
-  .config-description {
-    @apply text-xs text-gray-500 mb-2;
-  }
-  .config-field {
-    @apply w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-accent-light focus:border-accent transition-colors font-open-sans text-base bg-white mb-4;
-  }
-  .config-section {
-    @apply p-4 bg-accent-lighter rounded-lg mb-4;
-  }
-  .config-actions {
-    @apply flex gap-3 mt-6;
-  }
-</style>

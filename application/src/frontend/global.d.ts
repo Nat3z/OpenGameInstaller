@@ -109,6 +109,7 @@ interface Window {
       getAddonPath: (addonID: string) => Promise<string>;
       getAddonIcon: (addonID: string) => Promise<string>;
       getLocalImage: (path: string) => Promise<string>;
+      grantRootPassword: (password: string) => Promise<void>;
     };
     updateAddons: () => Promise<void>;
     getVersion: () => string;

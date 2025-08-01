@@ -52,6 +52,58 @@ const grantAccessToPath = (path: string, rootPassword: string) =>
     }
   });
 
+const getSilentInstallFlags = (
+  filePath: string,
+  fileName: string
+): string[] => {
+  const lowerFileName = fileName.toLowerCase();
+  const lowerFilePath = filePath.toLowerCase();
+
+  // Microsoft Visual C++ Redistributables
+  if (
+    lowerFileName.includes('vcredist') ||
+    lowerFileName.includes('vc_redist')
+  ) {
+    return ['/S', '/v/qn']; // /S for silent, /v/qn for very quiet
+  }
+
+  // DirectX redistributables
+  if (
+    lowerFileName.includes('directx') ||
+    lowerFileName.includes('dxwebsetup')
+  ) {
+    return ['/S'];
+  }
+
+  // .NET Framework redistributables
+  if (lowerFileName.includes('dotnet') || lowerFileName.includes('netfx')) {
+    return ['/S', '/v/qn'];
+  }
+
+  // MSI installers
+  if (lowerFileName.endsWith('.msi')) {
+    return ['/S', '/qn']; // /qn = quiet no UI
+  }
+
+  // NSIS installers
+  if (lowerFilePath.includes('nsis') || lowerFileName.includes('setup')) {
+    return ['/S'];
+  }
+
+  // Inno Setup installers
+  if (lowerFileName.includes('inno')) {
+    return ['/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART'];
+  }
+
+  // InstallShield installers
+  if (lowerFileName.includes('installshield')) {
+    return ['/S', '/v/qn'];
+  }
+
+  // Default fallback - try multiple common flags
+  return ['/S'];
+};
+
 const installRedistributablesWithSystemWine = async (
   redistributables: { name: string; path: string }[],
   winePrefix: string,
@@ -65,19 +117,38 @@ const installRedistributablesWithSystemWine = async (
         type: 'info',
       });
 
-      console.log(`[redistributable] Installing ${redistributable.name} with system wine`);
-      
+      console.log(
+        `[redistributable] Installing ${redistributable.name} with system wine`
+      );
+
       const success = await new Promise<boolean>((resolve) => {
-        const redistributablePath = redistributable.path.trim().replace(/\n$/g, '');
+        const redistributablePath = redistributable.path
+          .trim()
+          .replace(/\n$/g, '');
         const redistributableDir = dirname(redistributablePath);
-        
-        const child = spawn('wine', [redistributablePath], {
+
+        // Get appropriate silent installation flags
+        const redistributableFilename =
+          redistributablePath.split('/').pop() || redistributablePath;
+        const silentFlags = getSilentInstallFlags(
+          redistributablePath,
+          redistributableFilename
+        );
+        const args = [redistributablePath, ...silentFlags];
+
+        console.log(
+          `[redistributable] Using silent flags: ${silentFlags.join(' ')} for ${redistributableFilename}`
+        );
+
+        const child = spawn('wine', args, {
           stdio: ['ignore', 'pipe', 'pipe'],
           cwd: redistributableDir,
           env: {
             ...process.env,
             WINEPREFIX: winePrefix,
             WINEDEBUG: '-all', // Reduce wine debug output
+            DISPLAY: ':0', // Ensure we have a display for wine
+            WINEDLLOVERRIDES: 'mscoree,mshtml=', // Disable .NET and HTML rendering for faster installs
           },
         });
 
@@ -97,11 +168,15 @@ const installRedistributablesWithSystemWine = async (
         });
 
         child.on('close', (code) => {
-          console.log(`[redistributable] system wine process exited with code ${code}`);
+          console.log(
+            `[redistributable] system wine process exited with code ${code}`
+          );
           if (code === 0) {
             resolve(true);
           } else {
-            console.error(`[redistributable] Installation failed with exit code ${code}`);
+            console.error(
+              `[redistributable] Installation failed with exit code ${code}`
+            );
             console.error(`[redistributable] stdout: ${stdout}`);
             console.error(`[redistributable] stderr: ${stderr}`);
             resolve(false);
@@ -109,16 +184,26 @@ const installRedistributablesWithSystemWine = async (
         });
 
         child.on('error', (error) => {
-          console.error(`[redistributable] failed to start system wine process: ${error}`);
+          console.error(
+            `[redistributable] failed to start system wine process: ${error}`
+          );
           resolve(false);
         });
 
-        // Set a timeout for the installation (10 minutes)
-        setTimeout(() => {
-          console.error(`[redistributable] System wine installation timed out after 10 minutes`);
-          child.kill('SIGTERM');
-          resolve(false);
-        }, 10 * 60 * 1000);
+        // Set a timeout for the installation (5 minutes for silent installs)
+        setTimeout(
+          () => {
+            console.error(
+              `[redistributable] System wine installation timed out after 5 minutes`
+            );
+            child.kill('SIGTERM');
+            setTimeout(() => {
+              child.kill('SIGKILL'); // Force kill if SIGTERM doesn't work
+            }, 5000);
+            resolve(false);
+          },
+          5 * 60 * 1000
+        );
       });
 
       if (success) {
@@ -135,7 +220,9 @@ const installRedistributablesWithSystemWine = async (
         });
       }
     } catch (error) {
-      console.error(`[redistributable] Error installing ${redistributable.name}: ${error}`);
+      console.error(
+        `[redistributable] Error installing ${redistributable.name}: ${error}`
+      );
       sendNotification({
         message: `Failed to install ${redistributable.name} for ${gameName}`,
         id: Math.random().toString(36).substring(7),
@@ -313,161 +400,210 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
 
           if (!wineAvailable) {
             // Try alternative wine installation methods
-            const alternativeWineAvailable = await new Promise<boolean>((resolve) => {
-              exec('wine --version', (err) => {
-                if (!err) {
-                  console.log('[redistributable] Found system wine installation');
-                  resolve(true);
-                } else {
-                  // Check for wine in common paths
-                  exec('which wine', (err2) => {
-                    resolve(!err2);
-                  });
-                }
-              });
-            });
+            const alternativeWineAvailable = await new Promise<boolean>(
+              (resolve) => {
+                exec('wine --version', (err) => {
+                  if (!err) {
+                    console.log(
+                      '[redistributable] Found system wine installation'
+                    );
+                    resolve(true);
+                  } else {
+                    // Check for wine in common paths
+                    exec('which wine', (err2) => {
+                      resolve(!err2);
+                    });
+                  }
+                });
+              }
+            );
 
             if (alternativeWineAvailable) {
               console.log('[redistributable] Using system wine installation');
-              await installRedistributablesWithSystemWine(data.redistributables, protonPath, data.name);
+              await installRedistributablesWithSystemWine(
+                data.redistributables,
+                protonPath,
+                data.name
+              );
             } else {
               sendNotification({
-                message: 'Wine is not available. Redistributables will be skipped. Please install Wine via Flatpak or your system package manager.',
+                message:
+                  'Wine is not available. Redistributables will be skipped. Please install Wine via Flatpak or your system package manager.',
                 id: Math.random().toString(36).substring(7),
                 type: 'warning',
               });
-              console.warn('[redistributable] Wine not available, skipping redistributables');
+              console.warn(
+                '[redistributable] Wine not available, skipping redistributables'
+              );
             }
           } else {
-          let rootPassword = '';
-          // firstly, allow the flatpak to access the proton path
-          const rootPasswordGranter = () =>
-            new Promise<void>((resolve) => {
-              sendIPCMessage('app:ask-root-password', true);
-              ipcMain.handleOnce(
-                'app:root-password-granted',
-                async (_, password) => {
-                  // allow the flatpak to access the proton path
-                  try {
-                    execSync(`echo -e "${password}\n" | sudo -S -k true`, {
-                      stdio: 'ignore',
-                    });
-                    await grantAccessToPath(protonPath, password);
-                    rootPassword = password;
-                    resolve();
-                  } catch (error) {
-                    console.error(error);
-                    sendNotification({
-                      message:
-                        'Failed to allow flatpak to access the proton path.',
-                      id: Math.random().toString(36).substring(7),
-                      type: 'error',
-                    });
-                    await rootPasswordGranter();
-                    resolve();
+            let rootPassword = '';
+            // firstly, allow the flatpak to access the proton path
+            const rootPasswordGranter = () =>
+              new Promise<void>((resolve) => {
+                sendIPCMessage('app:ask-root-password', true);
+                ipcMain.handleOnce(
+                  'app:root-password-granted',
+                  async (_, password) => {
+                    // allow the flatpak to access the proton path
+                    try {
+                      execSync(`echo -e "${password}\n" | sudo -S -k true`, {
+                        stdio: 'ignore',
+                      });
+                      await grantAccessToPath(protonPath, password);
+                      rootPassword = password;
+                      resolve();
+                    } catch (error) {
+                      console.error(error);
+                      sendNotification({
+                        message:
+                          'Failed to allow flatpak to access the proton path.',
+                        id: Math.random().toString(36).substring(7),
+                        type: 'error',
+                      });
+                      await rootPasswordGranter();
+                      resolve();
+                    }
                   }
-                }
-              );
-            });
-          await rootPasswordGranter();
-
-          for (const redistributable of data.redistributables) {
-            try {
-              sendNotification({
-                message: `Installing ${redistributable.name} for ${data.name}`,
-                id: Math.random().toString(36).substring(7),
-                type: 'info',
+                );
               });
+            await rootPasswordGranter();
 
-              await grantAccessToPath(redistributable.path, rootPassword);
-              console.log('Running redistributable: ' + redistributable.path);
-              
-              const success = await new Promise<boolean>((resolve) => {
-                const redistributablePath = redistributable.path.trim().replace(/\n$/g, '');
-                const redistributableDir = dirname(redistributablePath);
-                const redistributableFilename = redistributablePath.split('/').pop() || redistributablePath;
-                
-                const command = 'flatpak';
-                const args = [
-                  `--env=WINEPREFIX=${protonPath}`,
-                  'run',
-                  'org.winehq.Wine',
-                  redistributableFilename,
-                ];
-                
-                console.log(`[redistributable] Executing: ${command} ${args.join(' ')}`);
-                console.log(`[redistributable] Working directory: ${redistributableDir}`);
-                
-                const child = spawn(command, args, {
-                  stdio: ['ignore', 'pipe', 'pipe'],
-                  cwd: redistributableDir,
+            for (const redistributable of data.redistributables) {
+              try {
+                sendNotification({
+                  message: `Installing ${redistributable.name} for ${data.name}`,
+                  id: Math.random().toString(36).substring(7),
+                  type: 'info',
                 });
 
-                let stdout = '';
-                let stderr = '';
+                await grantAccessToPath(redistributable.path, rootPassword);
+                console.log('Running redistributable: ' + redistributable.path);
 
-                child.stdout?.on('data', (data) => {
-                  const output = data.toString();
-                  stdout += output;
-                  console.log(`[redistributable:stdout] ${output.trim()}`);
-                });
+                const success = await new Promise<boolean>((resolve) => {
+                  const redistributablePath = redistributable.path
+                    .trim()
+                    .replace(/\n$/g, '');
+                  const redistributableDir = dirname(redistributablePath);
+                  const redistributableFilename =
+                    redistributablePath.split('/').pop() || redistributablePath;
 
-                child.stderr?.on('data', (data) => {
-                  const output = data.toString();
-                  stderr += output;
-                  console.log(`[redistributable:stderr] ${output.trim()}`);
-                });
+                  // Get appropriate silent installation flags
+                  const silentFlags = getSilentInstallFlags(
+                    redistributablePath,
+                    redistributableFilename
+                  );
+                  const redistributableArgs = [
+                    redistributableFilename,
+                    ...silentFlags,
+                  ];
 
-                child.on('close', (code) => {
-                  console.log(`[redistributable] process exited with code ${code}`);
-                  if (code === 0) {
-                    resolve(true);
-                  } else {
-                    console.error(`[redistributable] Installation failed with exit code ${code}`);
-                    console.error(`[redistributable] stdout: ${stdout}`);
-                    console.error(`[redistributable] stderr: ${stderr}`);
+                  console.log(
+                    `[redistributable] Using silent flags: ${silentFlags.join(' ')} for ${redistributableFilename}`
+                  );
+
+                  const command = 'flatpak';
+                  const args = [
+                    `--env=WINEPREFIX=${protonPath}`,
+                    `--env=DISPLAY=:0`, // Ensure display for wine
+                    `--env=WINEDEBUG=-all`, // Reduce wine debug output
+                    `--env=WINEDLLOVERRIDES=mscoree,mshtml=`, // Disable .NET and HTML rendering
+                    'run',
+                    'org.winehq.Wine',
+                    ...redistributableArgs,
+                  ];
+
+                  console.log(
+                    `[redistributable] Executing: ${command} ${args.join(' ')}`
+                  );
+                  console.log(
+                    `[redistributable] Working directory: ${redistributableDir}`
+                  );
+
+                  const child = spawn(command, args, {
+                    stdio: ['ignore', 'pipe', 'pipe'],
+                    cwd: redistributableDir,
+                  });
+
+                  let stdout = '';
+                  let stderr = '';
+
+                  child.stdout?.on('data', (data) => {
+                    const output = data.toString();
+                    stdout += output;
+                    console.log(`[redistributable:stdout] ${output.trim()}`);
+                  });
+
+                  child.stderr?.on('data', (data) => {
+                    const output = data.toString();
+                    stderr += output;
+                    console.log(`[redistributable:stderr] ${output.trim()}`);
+                  });
+
+                  child.on('close', (code) => {
+                    console.log(
+                      `[redistributable] process exited with code ${code}`
+                    );
+                    if (code === 0) {
+                      resolve(true);
+                    } else {
+                      console.error(
+                        `[redistributable] Installation failed with exit code ${code}`
+                      );
+                      console.error(`[redistributable] stdout: ${stdout}`);
+                      console.error(`[redistributable] stderr: ${stderr}`);
+                      resolve(false);
+                    }
+                  });
+
+                  child.on('error', (error) => {
+                    console.error(
+                      `[redistributable] failed to start process: ${error}`
+                    );
                     resolve(false);
-                  }
+                  });
+
+                  // Set a timeout for the installation (5 minutes for silent installs)
+                  setTimeout(
+                    () => {
+                      console.error(
+                        `[redistributable] Flatpak wine installation timed out after 5 minutes`
+                      );
+                      child.kill('SIGTERM');
+                      setTimeout(() => {
+                        child.kill('SIGKILL'); // Force kill if SIGTERM doesn't work
+                      }, 5000);
+                      resolve(false);
+                    },
+                    5 * 60 * 1000
+                  );
                 });
 
-                child.on('error', (error) => {
-                  console.error(`[redistributable] failed to start process: ${error}`);
-                  resolve(false);
+                if (!success) {
+                  throw new Error(`Failed to install ${redistributable.name}`);
+                }
+
+                sendNotification({
+                  message: `Installed ${redistributable.name} for ${data.name}`,
+                  id: Math.random().toString(36).substring(7),
+                  type: 'success',
                 });
-
-                // Set a timeout for the installation (10 minutes)
-                setTimeout(() => {
-                  console.error(`[redistributable] Installation timed out after 10 minutes`);
-                  child.kill('SIGTERM');
-                  resolve(false);
-                }, 10 * 60 * 1000);
-              });
-
-              if (!success) {
-                throw new Error(`Failed to install ${redistributable.name}`);
+              } catch (error) {
+                console.error(
+                  `[redistributable] failed to install ${redistributable.name} for ${data.name}: ${error}`
+                );
+                sendNotification({
+                  message: `Failed to install ${redistributable.name} for ${data.name}`,
+                  id: Math.random().toString(36).substring(7),
+                  type: 'error',
+                });
               }
-
-              sendNotification({
-                message: `Installed ${redistributable.name} for ${data.name}`,
-                id: Math.random().toString(36).substring(7),
-                type: 'success',
-              });
-            } catch (error) {
-              console.error(
-                `[redistributable] failed to install ${redistributable.name} for ${data.name}: ${error}`
-              );
-              sendNotification({
-                message: `Failed to install ${redistributable.name} for ${data.name}`,
-                id: Math.random().toString(36).substring(7),
-                type: 'error',
-              });
             }
-          }
-          sendNotification({
-            message: `Installed redistributables for ${data.name}`,
-            id: Math.random().toString(36).substring(7),
-            type: 'success',
-          });
+            sendNotification({
+              message: `Installed redistributables for ${data.name}`,
+              id: Math.random().toString(36).substring(7),
+              type: 'success',
+            });
           }
         }
 

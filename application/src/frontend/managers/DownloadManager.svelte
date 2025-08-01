@@ -21,7 +21,6 @@
     downloadID: string,
     data: any
   ) {
-    console.log('dispatching setup event', eventType, downloadID, data);
     document.dispatchEvent(
       new CustomEvent(`setup:${eventType}`, {
         detail: {

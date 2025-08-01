@@ -182,7 +182,15 @@ const procedures: Record<string, Procedure<any>> = {
         appID: z.unknown(),
         usedRealDebrid: z.boolean(),
         storefront: z.string(),
-        multiPartFiles: z.unknown().optional(),
+        multiPartFiles: z
+          .array(
+            z.object({
+              name: z.string(),
+              downloadURL: z.string(),
+              headers: z.record(z.string(), z.string()).optional(),
+            })
+          )
+          .optional(),
         manifest: z.unknown().optional(),
       })
     )

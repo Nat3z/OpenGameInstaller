@@ -30,6 +30,7 @@ export async function loadFailedSetups() {
       }
     });
 
+    console.log('loadedSetups', loadedSetups);
     failedSetups.set(loadedSetups);
   } catch (error) {
     console.error('Error loading failed setups:', error);
@@ -73,6 +74,7 @@ export async function retryFailedSetup(failedSetup: FailedSetup) {
     console.log('Retrying setup for:', failedSetup.downloadInfo.name);
 
     const setupData = failedSetup.setupData;
+    console.log('setupData', setupData);
     const addonSource = failedSetup.downloadInfo.addonSource;
 
     // Create a temporary download entry to show progress

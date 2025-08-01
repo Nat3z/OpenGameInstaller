@@ -1,6 +1,11 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
-  import { currentDownloads, failedSetups, setupLogs } from '../store';
+  import {
+    currentDownloads,
+    failedSetups,
+    setupLogs,
+    type FailedSetup,
+  } from '../store';
   import {
     loadFailedSetups,
     removeFailedSetup,
@@ -118,7 +123,7 @@
     };
   });
 
-  async function handleRetry(failedSetup: any) {
+  async function handleRetry(failedSetup: FailedSetup) {
     await retryFailedSetup(failedSetup);
   }
 

@@ -17,6 +17,7 @@
   import TextModal from '../components/modal/TextModal.svelte';
   import ButtonModal from '../components/modal/ButtonModal.svelte';
   import DeleteAddonWarningModal from '../components/built/DeleteAddonWarningModal.svelte';
+  import CustomDropdown from '../components/CustomDropdown.svelte';
 
   const fs = window.electronAPI.fs;
 
@@ -48,12 +49,23 @@
   let selectedAddon: ConfigTemplateAndInfo | null = $state(null);
   let deleteConfirmationModalOpen: boolean = $state(false);
   let backConfirmationModalOpen: boolean = $state(false);
+  let selectedValues: Record<string, string> = $state({});
 
   onMount(() => {
     safeFetch('getAllAddons', {}).then((data) => {
       const addon = data.find((a: ConfigTemplateAndInfo) => a.id === addonId);
       if (addon) {
         selectedAddon = addon;
+        if (selectedAddon) {
+          Object.keys(selectedAddon.configTemplate).forEach((key) => {
+            if (
+              isStringOption(selectedAddon!.configTemplate[key]) &&
+              selectedAddon!.configTemplate[key].allowedValues.length > 0
+            ) {
+              selectedValues[key] = getStoredOrDefaultValue(key);
+            }
+          });
+        }
         setTimeout(() => {
           updateConfig();
         }, 100);
@@ -65,38 +77,40 @@
     if (!selectedAddon) return;
     let config: Record<string, string | number | boolean> = {};
     Object.keys(selectedAddon.configTemplate).forEach((key) => {
-      if (!selectedAddon) return;
+      const option = selectedAddon!.configTemplate[key];
       const element = document.getElementById(key) as
         | HTMLInputElement
         | HTMLSelectElement;
+
       if (element) {
-        if (selectedAddon.configTemplate[key].type === 'string') {
-          config[key] = element.value;
-        }
-        if (selectedAddon.configTemplate[key].type === 'number') {
+        if (isStringOption(option)) {
+          if (option.allowedValues.length > 0) {
+            config[key] = selectedValues[key];
+          } else {
+            config[key] = element.value;
+          }
+        } else if (isNumberOption(option)) {
           config[key] = parseInt(element.value);
-        }
-        if (
-          selectedAddon.configTemplate[key].type === 'boolean' &&
-          element.type === 'checkbox'
-        ) {
+        } else if (isBooleanOption(option) && element.type === 'checkbox') {
           config[key] = element.checked;
         }
       }
     });
+
     document.querySelectorAll('[data-error-message]').forEach((element) => {
       element.textContent = '';
       element.setAttribute('data-context', '');
-      element
-        .parentElement!!.querySelector('[data-input]')!!
-        .classList.remove('outline-red-500');
-      element
-        .parentElement!!.querySelector('[data-input]')!!
-        .classList.remove('outline-2');
-      element
-        .parentElement!!.querySelector('[data-input]')!!
-        .classList.remove('outline');
+      const inputElement =
+        element.parentElement!!.querySelector('[data-input]');
+      if (inputElement) {
+        inputElement.classList.remove(
+          'outline-red-500',
+          'outline-2',
+          'outline'
+        );
+      }
     });
+
     safeFetch(
       'updateConfig',
       {
@@ -109,16 +123,27 @@
         for (const key in data.errors) {
           const element = document.getElementById(key);
           if (!element) return console.error('element not found');
-          element.classList.add('outline-red-500');
-          element.classList.add('outline-2');
-          element.classList.add('outline');
-          element.parentElement!!.querySelector('p')!!.innerHTML = `
-            <img src="./error.svg" alt="error" class="w-6 h-6" />
-          `;
+          const inputElement = element.matches('[data-input]')
+            ? element
+            : element
+                .closest('[data-input-parent]')
+                ?.querySelector('[data-input]');
 
-          element
-            .parentElement!!.querySelector('p')!!
-            .setAttribute('data-context', data.errors[key]);
+          if (inputElement) {
+            inputElement.classList.add(
+              'outline-red-500',
+              'outline-2',
+              'outline'
+            );
+          }
+
+          const errorMessageElement = element.parentElement!!.querySelector(
+            '[data-error-message]'
+          );
+          if (errorMessageElement) {
+            errorMessageElement.innerHTML = `<img src="./error.svg" alt="error" class="w-6 h-6" />`;
+            errorMessageElement.setAttribute('data-context', data.errors[key]);
+          }
         }
         notifications.update((update) => [
           ...update,
@@ -131,14 +156,10 @@
         ]);
       }
     });
-    // save this config to local storage
-    fs.write(
-      './config/' + selectedAddon!!.id + '.json',
-      JSON.stringify(config)
-    );
+    fs.write('./config/' + selectedAddon.id + '.json', JSON.stringify(config));
   }
 
-  function getStoredOrDefaultValue(key: string) {
+  function getStoredOrDefaultValue(key: string): any {
     if (!selectedAddon) return undefined;
     if (!fs.exists('./config/' + selectedAddon.id + '.json')) {
       return selectedAddon.configTemplate[key].defaultValue;
@@ -159,14 +180,15 @@
     ) as HTMLInputElement;
     dialog
       .showOpenDialog({
-        properties: type === 'file' ? ['openDirectory'] : ['openFile'],
+        properties: type === 'file' ? ['openFile'] : ['openDirectory'],
       })
-      .then((path) => {
-        if (!path) return;
-        if (element) {
-          element.value = path;
+      .then((result) => {
+        if (result && result.length > 0) {
+          if (element) {
+            element.value = result[0];
+          }
+          updateConfig();
         }
-        updateConfig();
       });
   }
 
@@ -263,7 +285,6 @@
     }
   }
 
-  // Add this function for deleting the addon
   async function deleteAddon() {
     deleteConfirmationModalOpen = true;
   }
@@ -323,6 +344,11 @@
     } else {
       onBack();
     }
+  }
+
+  function handleDropdownChange(key: string, detail: { selectedId: string }) {
+    selectedValues[key] = detail.selectedId;
+    updateConfig();
   }
 </script>
 
@@ -419,7 +445,7 @@
         <div class="addon-icon-container">
           <AddonPicture
             addonId={selectedAddon.id}
-            class="addon-icon rounded-lg"
+            class="rounded-lg object-cover w-[48px] h-[48px]"
           />
         </div>
         <div class="addon-info">
@@ -435,7 +461,10 @@
         <div class="options">
           <div class="hidden outline-red-500 outline-4"></div>
           {#each Object.keys(selectedAddon.configTemplate) as key}
-            <div class="flex flex-row gap-2 items-center relative">
+            <div
+              class="flex flex-row gap-2 items-center relative"
+              data-input-parent
+            >
               <label
                 for={key}
                 onmouseover={showDescription}
@@ -445,30 +474,31 @@
                 >{selectedAddon.configTemplate[key].displayName}</label
               >
               {#if isStringOption(selectedAddon.configTemplate[key])}
-                {#if selectedAddon.configTemplate[key].allowedValues.length !== 0}
-                  <select
-                    data-input
-                    id={key}
-                    onchange={updateConfig}
-                    value={getStoredOrDefaultValue(key)}
-                    class="config-select"
-                  >
-                    {#each selectedAddon.configTemplate[key].allowedValues as value}
-                      <option {value}>{value}</option>
-                    {/each}
-                  </select>
-                {:else if selectedAddon.configTemplate[key].inputType === 'text' || selectedAddon.configTemplate[key].inputType === 'password'}
+                {@const option = selectedAddon.configTemplate[key]}
+                {#if option.allowedValues.length > 0}
+                  <div class="config-input-container">
+                    <CustomDropdown
+                      id={key}
+                      options={option.allowedValues.map((v) => ({
+                        id: v,
+                        name: v,
+                      }))}
+                      selectedId={selectedValues[key]}
+                      onchange={(e) => handleDropdownChange(key, e)}
+                    />
+                  </div>
+                {:else if option.inputType === 'text' || option.inputType === 'password'}
                   <input
                     data-input
-                    type={selectedAddon.configTemplate[key].inputType}
+                    type={option.inputType}
                     onchange={updateConfig}
                     value={getStoredOrDefaultValue(key)}
                     id={key}
-                    maxlength={selectedAddon.configTemplate[key].maxTextLength}
-                    minlength={selectedAddon.configTemplate[key].minTextLength}
+                    maxlength={option.maxTextLength}
+                    minlength={option.minTextLength}
                     class="config-input"
                   />
-                {:else if selectedAddon.configTemplate[key].inputType === 'file' || selectedAddon.configTemplate[key].inputType === 'folder'}
+                {:else if option.inputType === 'file' || option.inputType === 'folder'}
                   <div class="flex items-center gap-2">
                     <input
                       type="text"
@@ -478,13 +508,13 @@
                       id={key}
                       class="config-input"
                     />
-                    {#if selectedAddon.configTemplate[key].inputType === 'folder'}
+                    {#if option.inputType === 'folder'}
                       <button
                         class="browse-button"
                         onclick={(ev) => browseForFolder(ev, 'folder')}
                         >Browse</button
                       >
-                    {:else if selectedAddon.configTemplate[key].inputType === 'file'}
+                    {:else if option.inputType === 'file'}
                       <button
                         class="browse-button"
                         onclick={(ev) => browseForFolder(ev, 'file')}
@@ -495,33 +525,26 @@
                 {/if}
               {/if}
               {#if isNumberOption(selectedAddon.configTemplate[key])}
+                {@const option = selectedAddon.configTemplate[key]}
                 <input
                   data-input
-                  type={selectedAddon.configTemplate[key].inputType}
+                  type={option.inputType}
                   id={key}
                   oninput={(event) =>
                     updateInputNum(event.target as HTMLInputElement)}
                   onchange={updateConfig}
                   value={getStoredOrDefaultValue(key)}
-                  max={isNumberOption(selectedAddon.configTemplate[key])
-                    ? selectedAddon.configTemplate[key].max
-                    : 0}
-                  min={isNumberOption(selectedAddon.configTemplate[key])
-                    ? selectedAddon.configTemplate[key].min
-                    : 0}
+                  max={option.max}
+                  min={option.min}
                   class="config-input"
                 />
-                {#if selectedAddon.configTemplate[key].inputType === 'range'}
+                {#if option.inputType === 'range'}
                   <input
                     type="number"
                     class="range-value font-archivo w-16 ml-2 px-2 py-1 border border-gray-300 rounded-lg text-center"
                     value={getStoredOrDefaultValue(key)}
-                    min={isNumberOption(selectedAddon.configTemplate[key])
-                      ? selectedAddon.configTemplate[key].min
-                      : 0}
-                    max={isNumberOption(selectedAddon.configTemplate[key])
-                      ? selectedAddon.configTemplate[key].max
-                      : 0}
+                    min={option.min}
+                    max={option.max}
                     onchange={updateConfig}
                     oninput={(event) => {
                       const element = document.getElementById(
@@ -615,12 +638,6 @@
     flex-shrink: 0;
   }
 
-  .addon-icon {
-    @apply rounded-lg object-cover;
-    width: 48px;
-    height: 48px;
-  }
-
   .addon-info {
     @apply flex flex-col justify-center flex-1 ml-4;
   }
@@ -644,10 +661,6 @@
     padding: 1rem 1.25rem;
   }
 
-  .config-title {
-    @apply text-2xl font-semibold text-gray-900 mb-6 font-archivo;
-  }
-
   .options {
     @apply gap-4 flex flex-col w-full rounded-lg;
   }
@@ -660,8 +673,8 @@
     @apply px-3 py-2 bg-white rounded-lg border border-gray-300 text-base min-w-64 ml-auto;
   }
 
-  .config-select {
-    @apply px-3 py-2 bg-white rounded-lg border border-gray-300 text-base min-w-64 ml-auto;
+  .config-input-container {
+    @apply min-w-64 ml-auto;
   }
 
   .checkbox-container {

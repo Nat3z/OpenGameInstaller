@@ -8,6 +8,7 @@
   import { onMount } from 'svelte';
   import TextModal from '../components/modal/TextModal.svelte';
   import SectionModal from '../components/modal/SectionModal.svelte';
+  import CustomDropdown from '../components/CustomDropdown.svelte';
 
   const fs = window.electronAPI.fs;
   interface OptionsCategory {
@@ -263,7 +264,11 @@
           selectedOption.options[key].type === 'file-folder' ||
           selectedOption.options[key].type === 'password'
         ) {
-          config[key] = element.value;
+          if (key === 'torrentClient') {
+            config[key] = selectedTorrentClientId;
+          } else {
+            config[key] = element.value;
+          }
         }
         if (selectedOption.options[key].type === 'textarea') {
           if (key === 'addons') {
@@ -340,11 +345,12 @@
       'input'
     ) as HTMLInputElement;
     dialog.showOpenDialog({ properties: ['openDirectory'] }).then((path) => {
-      if (!path) return;
-      if (element) {
-        element.value = path;
+      if (path && path.length > 0) {
+        if (element) {
+          element.value = path[0];
+        }
+        updateConfig();
       }
-      updateConfig();
     });
   }
 
@@ -392,7 +398,6 @@
 
   let showPassword: { [key: string]: boolean } = $state({});
   let doSteamGridDBReconfigure: boolean = $state(false);
-  let showTorrentClientDropdown: boolean = $state(false);
   let selectedTorrentClientId: string = $state('webtorrent'); // Track selection reactively
 
   const torrentClients = [
@@ -434,24 +439,10 @@
     },
   ];
 
-  function selectTorrentClient(clientId: string) {
-    if (!selectedOption) return;
-    const element = document.getElementById(
-      'torrentClient'
-    ) as HTMLSelectElement;
-    if (element) {
-      element.value = clientId;
-      updateConfig();
-    }
-    selectedTorrentClientId = clientId; // Update reactive state
-    showTorrentClientDropdown = false;
+  function handleTorrentClientChange(detail: { selectedId: string }) {
+    selectedTorrentClientId = detail.selectedId;
+    updateConfig();
   }
-
-  // Reactive current client for immediate UI updates
-  let currentTorrentClient = $derived(
-    torrentClients.find((client) => client.id === selectedTorrentClientId) ||
-      torrentClients[0]
-  );
 
   $effect(() => {
     if (mainContent && selectedOption) {
@@ -477,20 +468,8 @@
     }
     document.addEventListener('steamgriddb-launch', steamgriddbLaunch);
 
-    function handleClickOutside(event: MouseEvent) {
-      const target = event.target as HTMLElement;
-      if (
-        !target.closest('.torrent-client-button') &&
-        !target.closest('.torrent-client-dropdown')
-      ) {
-        showTorrentClientDropdown = false;
-      }
-    }
-    document.addEventListener('click', handleClickOutside);
-
     return () => {
       document.removeEventListener('steamgriddb-launch', steamgriddbLaunch);
-      document.removeEventListener('click', handleClickOutside);
     };
   });
 </script>
@@ -828,128 +807,12 @@
                           {/if}
                           <div class="option-input">
                             {#if key === 'torrentClient'}
-                              <!-- Custom Torrent Client Dropdown -->
-                              <div class="relative">
-                                <!-- Hidden select for form submission -->
-                                <select
-                                  id={key}
-                                  class="hidden"
-                                  onchange={updateConfig}
-                                  value={getStoredOrDefaultValue(key)}
-                                >
-                                  {#each selectedOption.options[key].choice as choiceValue}
-                                    <option value={choiceValue}
-                                      >{choiceValue}</option
-                                    >
-                                  {/each}
-                                </select>
-
-                                <!-- Custom dropdown button -->
-                                <button
-                                  type="button"
-                                  class="torrent-client-button"
-                                  onclick={() =>
-                                    (showTorrentClientDropdown =
-                                      !showTorrentClientDropdown)}
-                                  onkeydown={(e) => {
-                                    if (e.key === 'Enter' || e.key === ' ') {
-                                      e.preventDefault();
-                                      showTorrentClientDropdown =
-                                        !showTorrentClientDropdown;
-                                    }
-                                  }}
-                                >
-                                  {#key currentTorrentClient.id}
-                                    <div
-                                      class="flex items-center gap-3"
-                                      in:fly={{ x: 10, duration: 200 }}
-                                    >
-                                      <img
-                                        src={currentTorrentClient.icon}
-                                        alt={currentTorrentClient.name}
-                                        class="w-6 h-6 object-contain"
-                                      />
-                                      <span class="font-medium">
-                                        {currentTorrentClient.name}
-                                      </span>
-                                    </div>
-                                  {/key}
-                                  <svg
-                                    class="w-5 h-5 transition-transform duration-200"
-                                    class:rotate-180={showTorrentClientDropdown}
-                                    fill="none"
-                                    stroke="currentColor"
-                                    viewBox="0 0 24 24"
-                                  >
-                                    <path
-                                      stroke-linecap="round"
-                                      stroke-linejoin="round"
-                                      stroke-width="2"
-                                      d="M19 9l-7 7-7-7"
-                                    />
-                                  </svg>
-                                </button>
-
-                                <!-- Custom dropdown menu -->
-                                {#if showTorrentClientDropdown}
-                                  <div
-                                    class="torrent-client-dropdown w-full overflow-x-hidden"
-                                    in:fly={{ y: -10, duration: 200 }}
-                                    out:fly={{ y: -10, duration: 150 }}
-                                  >
-                                    {#each torrentClients as client, index (client.id)}
-                                      <button
-                                        type="button"
-                                        class="torrent-client-option"
-                                        class:selected={currentTorrentClient.id ===
-                                          client.id}
-                                        onclick={() =>
-                                          selectTorrentClient(client.id)}
-                                        onkeydown={(e) => {
-                                          if (
-                                            e.key === 'Enter' ||
-                                            e.key === ' '
-                                          ) {
-                                            e.preventDefault();
-                                            selectTorrentClient(client.id);
-                                          }
-                                        }}
-                                        title={client.description}
-                                        in:fly={{
-                                          x: -20,
-                                          duration: 200,
-                                          delay: index * 50,
-                                        }}
-                                        out:fly={{ x: -20, duration: 150 }}
-                                      >
-                                        <div
-                                          class="flex gap-3 w-full justify-start items-start"
-                                        >
-                                          <img
-                                            src={client.icon}
-                                            alt={client.name}
-                                            width={client.iconWidth}
-                                            height={client.iconHeight}
-                                            class="object-contain"
-                                          />
-                                          <div
-                                            class="font-medium text-gray-900"
-                                          >
-                                            {client.name}
-                                          </div>
-                                        </div>
-                                        <div class="flex-1 text-left">
-                                          <div
-                                            class="text-sm text-gray-600 mt-1"
-                                          >
-                                            {client.description}
-                                          </div>
-                                        </div>
-                                      </button>
-                                    {/each}
-                                  </div>
-                                {/if}
-                              </div>
+                              <CustomDropdown
+                                id={key}
+                                options={torrentClients}
+                                selectedId={selectedTorrentClientId}
+                                onchange={handleTorrentClientChange}
+                              />
                             {:else}
                               <!-- Regular select for other options -->
                               <select
@@ -1070,10 +933,6 @@
     @apply w-80 flex flex-col;
   }
 
-  .sidebar-title {
-    @apply text-2xl font-archivo font-bold text-gray-900;
-  }
-
   .sidebar-nav {
     @apply flex-1 space-y-2;
   }
@@ -1101,18 +960,6 @@
   /* Main Content Styles */
   .main-content {
     @apply flex-1 flex flex-col;
-  }
-
-  .content-header {
-    @apply p-6 border-b;
-  }
-
-  .content-title {
-    @apply text-3xl font-archivo font-bold text-gray-900 mb-2;
-  }
-
-  .content-description {
-    @apply text-gray-600;
   }
 
   .content-body {
@@ -1185,7 +1032,7 @@
   .input-text,
   .input-number,
   .input-select {
-    @apply w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-accent-light focus:border-accent transition-colors;
+    @apply w-full px-4 py-2 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-accent-light focus:border-accent transition-colors text-accent-text-color;
   }
 
   .input-textarea {
@@ -1290,79 +1137,5 @@
   .input-number::-webkit-outer-spin-button {
     -webkit-appearance: none;
     margin: 0;
-  }
-
-  /* Custom Torrent Client Dropdown Styles */
-  .torrent-client-button {
-    @apply w-full px-4 py-3 bg-white border border-gray-300 rounded-lg flex items-center justify-between hover:border-accent focus:ring-2 focus:ring-accent-light focus:border-accent transition-colors;
-  }
-
-  .torrent-client-dropdown {
-    @apply absolute top-full left-0 right-0 mt-1 bg-white border border-gray-300 rounded-lg shadow-lg z-10 max-h-80 overflow-y-auto;
-    box-shadow:
-      0 10px 25px -5px rgba(0, 0, 0, 0.1),
-      0 8px 10px -6px rgba(0, 0, 0, 0.1);
-  }
-
-  /* Custom scrollbar styling for the dropdown - always visible */
-  .torrent-client-dropdown::-webkit-scrollbar {
-    width: 8px;
-    -webkit-appearance: none;
-  }
-
-  .torrent-client-dropdown::-webkit-scrollbar:horizontal {
-    height: 8px;
-  }
-
-  .torrent-client-dropdown::-webkit-scrollbar-track {
-    @apply bg-gray-100 rounded-r-lg;
-    -webkit-box-shadow: inset 0 0 1px rgba(0, 0, 0, 0.1);
-  }
-
-  .torrent-client-dropdown::-webkit-scrollbar-thumb {
-    @apply bg-accent rounded-full;
-    transition: background-color 0.2s ease;
-    -webkit-box-shadow: inset 0 0 1px rgba(0, 0, 0, 0.2);
-    min-height: 20px;
-  }
-
-  .torrent-client-dropdown::-webkit-scrollbar-thumb:hover {
-    @apply bg-accent-dark;
-  }
-
-  .torrent-client-dropdown::-webkit-scrollbar-corner {
-    @apply bg-gray-100;
-  }
-
-  /* Firefox scrollbar styling - always visible */
-  .torrent-client-dropdown {
-    scrollbar-width: thin;
-    scrollbar-color: #428a91 #f3f4f6;
-    scrollbar-gutter: stable;
-  }
-
-  .torrent-client-option {
-    @apply w-full p-4 flex flex-col items-start gap-3 hover:bg-accent-lighter transition-all duration-200 border-none text-left;
-  }
-
-  .torrent-client-option:first-child {
-    @apply rounded-t-lg;
-  }
-
-  .torrent-client-option:last-child {
-    @apply rounded-b-lg;
-  }
-
-  .torrent-client-option:hover {
-    @apply bg-accent-lighter;
-    transform: translateX(4px) scale(1.02);
-  }
-
-  .torrent-client-option.selected {
-    @apply bg-accent-light;
-  }
-
-  .torrent-client-option.selected:hover {
-    @apply bg-accent-light;
   }
 </style>

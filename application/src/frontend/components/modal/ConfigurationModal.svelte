@@ -68,6 +68,7 @@
     listOfScreensQueued.update((screens) =>
       screens.concat({ config, id, name, description })
     );
+    console.log('listOfScreensQueued', $listOfScreensQueued);
   });
 
   // Queue subscription to process screens
@@ -181,9 +182,11 @@
     return value;
   }
 
-  function getInputOptions(option: ConfigurationOption): string[] {
+  function getInputOptions(
+    option: ConfigurationOption
+  ): { id: string; name: string }[] {
     if (isStringOption(option)) {
-      return option.allowedValues;
+      return option.allowedValues.map((value) => ({ id: value, name: value }));
     }
     return [];
   }

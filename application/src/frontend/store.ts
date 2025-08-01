@@ -67,7 +67,7 @@ export type FailedSetup = {
     type: string;
     name: string;
     usedRealDebrid: boolean;
-    multiPartFiles?: {
+    multiPartFiles: {
       name: string;
       downloadURL: string;
       headers?: Record<string, string>;

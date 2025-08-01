@@ -1,5 +1,6 @@
 <script lang="ts">
   import TextModal from './TextModal.svelte';
+  import CustomDropdown from '../CustomDropdown.svelte';
 
   let {
     id,
@@ -28,7 +29,7 @@
       | 'file'
       | 'folder';
     value?: string | number;
-    options?: string[];
+    options?: { id: string; name: string; description?: string }[];
     min?: number;
     max?: number;
     maxLength?: number;
@@ -39,24 +40,30 @@
   } = $props();
 
   let displayValue = $state(value);
+  let selectedId = $state(typeof value === 'string' ? value : '');
 
   function handleChange(event: Event) {
-    const target = event.target as HTMLInputElement | HTMLSelectElement;
-
+    const target = event.target as HTMLInputElement;
     if (type === 'number' || type === 'range') {
       displayValue = Number(target.value);
     } else {
       displayValue = target.value;
     }
+    if (onchange) {
+      onchange(id, displayValue);
+    }
+  }
 
-    onchange?.(id, displayValue);
+  function handleDropdownChange(detail: { selectedId: string }) {
+    selectedId = detail.selectedId;
+    if (onchange) {
+      onchange(id, selectedId);
+    }
   }
 
   function handleRangeInput(event: Event) {
     const target = event.target as HTMLInputElement;
     displayValue = Number(target.value);
-
-    // Update the display paragraph for range inputs
     const paragraph = target.parentElement?.querySelector('p');
     if (paragraph) {
       paragraph.textContent = target.value;
@@ -65,16 +72,17 @@
 
   function browseForPath(browseType: 'file' | 'folder') {
     const dialog = window.electronAPI.fs.dialog;
-    const properties = browseType === 'folder' ? 'openDirectory' : 'openFile';
-
-    dialog
-      .showOpenDialog({ properties: [properties] })
-      .then((path: string | undefined) => {
-        if (path) {
-          displayValue = path;
-          onchange?.(id, path);
+    const properties: ('openDirectory' | 'openFile')[] =
+      browseType === 'folder' ? ['openDirectory'] : ['openFile'];
+    dialog.showOpenDialog({ properties }).then((result) => {
+      if (result && result.length > 0) {
+        const path = result[0];
+        displayValue = path;
+        if (onchange) {
+          onchange(id, path);
         }
-      });
+      }
+    });
   }
 </script>
 
@@ -86,18 +94,12 @@
 
   <div class="option-input mt-2">
     {#if type === 'select' && options.length > 0}
-      <select
+      <CustomDropdown
         {id}
-        value={displayValue}
-        onchange={handleChange}
-        {disabled}
-        data-input
-        class="input-select"
-      >
-        {#each options as option}
-          <option value={option}>{option}</option>
-        {/each}
-      </select>
+        {options}
+        {selectedId}
+        onchange={handleDropdownChange}
+      />
     {:else if type === 'text' || type === 'password'}
       <input
         {type}
@@ -175,9 +177,8 @@
   }
 
   .input-text,
-  .input-number,
-  .input-select {
-    @apply w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-accent-light focus:border-accent transition-colors;
+  .input-number {
+    @apply w-full px-4 py-2 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-accent-light focus:border-accent transition-colors text-accent-text-color;
   }
 
   .file-input-group {
@@ -195,7 +196,6 @@
   /* Remove webkit number input spinners */
   .input-number::-webkit-inner-spin-button,
   .input-number::-webkit-outer-spin-button {
-    -webkit-appearance: none;
-    margin: 0;
+    @apply appearance-none m-0;
   }
 </style>

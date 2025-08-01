@@ -324,12 +324,12 @@
               </div>
 
               <!-- Progress Bar -->
-              <div class="w-full bg-gray-200 rounded-full h-2 mb-3">
+              <div class="w-full bg-accent-light rounded-full h-2 mb-3">
                 <div
                   class="bg-accent h-2 rounded-full transition-all duration-300 ease-out"
                   style="width: {activeDownload.status === 'completed'
                     ? 100
-                    : Math.max(0, activeDownload.progress || 0)}%"
+                    : activeDownload.progress * 100 + '%'}"
                 ></div>
               </div>
 
@@ -372,115 +372,125 @@
                 >
               </div>
             </div>
-          {/if}
-          <div class="flex-1 overflow-y-auto">
-            <!-- Sources Section -->
-            {#if alreadyOwns}
-              <div class="p-6 bg-accent-lighter rounded-lg mb-4">
-                <button
-                  class="w-full border-none bg-accent-light hover:bg-opacity-80 text-accent-dark font-medium py-3 px-4 rounded-lg transition-colors duration-200"
-                  onclick={() => playGame()}
-                >
-                  Play Game
-                </button>
-              </div>
-            {/if}
-            {#if results.length > 0}
-              {#each results.filter((result) => !alreadyOwns || result.downloadType === 'task') as result}
-                <div class="bg-accent-lighter rounded-lg p-4 mb-4">
-                  <div class="flex items-center justify-between mb-2">
-                    <div class="flex flex-row gap-2 items-center">
-                      <AddonPicture
-                        addonId={result.addonSource}
-                        class="w-12 h-12 rounded-lg"
-                      />
-                      <span class="font-medium text-gray-800"
-                        >{result.downloadType === 'task'
-                          ? result.name
-                          : result.addonSource}</span
-                      >
-                    </div>
-                    <div class="flex items-center gap-1 text-xs text-gray-500">
-                      {#if result.downloadType === 'magnet'}
-                        <img
-                          class="w-4 h-4"
-                          src="./magnet-icon.gif"
-                          alt="Magnet"
-                        />
-                        <span>Magnet</span>
-                      {:else if result.downloadType === 'torrent'}
-                        <img
-                          class="w-4 h-4"
-                          src="./torrent.png"
-                          alt="Torrent"
-                        />
-                        <span>Torrent</span>
-                      {:else if result.downloadType === 'direct'}
-                        <span>Direct</span>
-                      {:else if result.downloadType === 'request'}
-                        <span>Request</span>
-                      {:else if result.downloadType === 'task'}
-                        <span>Task</span>
-                      {/if}
-                    </div>
-                  </div>
-                  <div class="flex flex-row gap-2">
-                    <button
-                      class="w-full text-lg border-none {activeDownload &&
-                      !alreadyOwns
-                        ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                        : 'bg-accent-light hover:bg-opacity-80 text-accent-dark'} font-medium py-3 px-4 rounded-lg flex items-center justify-center gap-2 transition-colors duration-200"
-                      disabled={(results.length === 0 && !queryingSources) ||
-                        (activeDownload && !alreadyOwns)}
-                      onclick={(event) => handleDownloadClick(result, event)}
-                    >
-                      {activeDownload && !alreadyOwns
-                        ? 'Download in Progress'
-                        : result.downloadType === 'task'
-                          ? 'Run Task'
-                          : 'Download'}
-                    </button>
-                    <button
-                      class="text-lg border-none w-16 bg-accent-light hover:bg-opacity-80 text-accent-dark font-medium py-3 rounded-lg flex items-center justify-center gap-2 transition-colors duration-200"
-                      aria-label="Source Information"
-                      onclick={() => showSourceInfo(result)}
-                    >
-                      <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        viewBox="0 0 24 24"
-                        class="fill-accent-dark w-6 h-6"
-                      >
-                        <g clip-path="url(#clip0_22_330)">
-                          <path
-                            d="M12 2C6.48 2 2 6.48 2 12C2 17.52 6.48 22 12 22C17.52 22 22 17.52 22 12C22 6.48 17.52 2 12 2ZM12 17C11.45 17 11 16.55 11 16V12C11 11.45 11.45 11 12 11C12.55 11 13 11.45 13 12V16C13 16.55 12.55 17 12 17ZM13 9H11V7H13V9Z"
-                            fill="#2D626A"
-                          />
-                        </g>
-                        <defs>
-                          <clipPath id="clip0_22_330">
-                            <rect width="24" height="24" rx="12" fill="white" />
-                          </clipPath>
-                        </defs>
-                      </svg>
-                    </button>
-                  </div>
+          {:else}
+            <div class="flex-1 overflow-y-auto">
+              <!-- Sources Section -->
+              {#if alreadyOwns}
+                <div class="p-6 bg-accent-lighter rounded-lg mb-4">
+                  <button
+                    class="w-full border-none bg-accent-light hover:bg-opacity-80 text-accent-dark font-medium py-3 px-4 rounded-lg transition-colors duration-200"
+                    onclick={() => playGame()}
+                  >
+                    Play Game
+                  </button>
                 </div>
-              {/each}
-            {:else if queryingSources}
-              <div class="text-center py-8">
-                <div
-                  class="animate-spin w-8 h-8 border-2 border-teal-500 border-t-transparent rounded-full mx-auto mb-3"
-                ></div>
-                <p class="text-gray-600">Searching sources...</p>
-              </div>
-            {:else}
-              <div class="text-center py-8">
-                <p class="text-gray-600">
-                  {alreadyOwns ? 'No tasks available' : 'No sources available'}
-                </p>
-              </div>
-            {/if}
-          </div>
+              {/if}
+              {#if results.length > 0}
+                {#each results.filter((result) => !alreadyOwns || result.downloadType === 'task') as result}
+                  <div class="bg-accent-lighter rounded-lg p-4 mb-4">
+                    <div class="flex items-center justify-between mb-2">
+                      <div class="flex flex-row gap-2 items-center">
+                        <AddonPicture
+                          addonId={result.addonSource}
+                          class="w-12 h-12 rounded-lg"
+                        />
+                        <span class="font-medium text-gray-800"
+                          >{result.downloadType === 'task'
+                            ? result.name
+                            : result.addonSource}</span
+                        >
+                      </div>
+                      <div
+                        class="flex items-center gap-1 text-xs text-gray-500"
+                      >
+                        {#if result.downloadType === 'magnet'}
+                          <img
+                            class="w-4 h-4"
+                            src="./magnet-icon.gif"
+                            alt="Magnet"
+                          />
+                          <span>Magnet</span>
+                        {:else if result.downloadType === 'torrent'}
+                          <img
+                            class="w-4 h-4"
+                            src="./torrent.png"
+                            alt="Torrent"
+                          />
+                          <span>Torrent</span>
+                        {:else if result.downloadType === 'direct'}
+                          <span>Direct</span>
+                        {:else if result.downloadType === 'request'}
+                          <span>Request</span>
+                        {:else if result.downloadType === 'task'}
+                          <span>Task</span>
+                        {/if}
+                      </div>
+                    </div>
+                    <div class="flex flex-row gap-2">
+                      <button
+                        class="w-full text-lg border-none {activeDownload &&
+                        !alreadyOwns
+                          ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                          : 'bg-accent-light hover:bg-opacity-80 text-accent-dark'} font-medium py-3 px-4 rounded-lg flex items-center justify-center gap-2 transition-colors duration-200"
+                        disabled={(results.length === 0 && !queryingSources) ||
+                          (activeDownload && !alreadyOwns)}
+                        onclick={(event) => handleDownloadClick(result, event)}
+                      >
+                        {activeDownload && !alreadyOwns
+                          ? 'Download in Progress'
+                          : result.downloadType === 'task'
+                            ? 'Run Task'
+                            : 'Download'}
+                      </button>
+                      <button
+                        class="text-lg border-none w-16 bg-accent-light hover:bg-opacity-80 text-accent-dark font-medium py-3 rounded-lg flex items-center justify-center gap-2 transition-colors duration-200"
+                        aria-label="Source Information"
+                        onclick={() => showSourceInfo(result)}
+                      >
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          viewBox="0 0 24 24"
+                          class="fill-accent-dark w-6 h-6"
+                        >
+                          <g clip-path="url(#clip0_22_330)">
+                            <path
+                              d="M12 2C6.48 2 2 6.48 2 12C2 17.52 6.48 22 12 22C17.52 22 22 17.52 22 12C22 6.48 17.52 2 12 2ZM12 17C11.45 17 11 16.55 11 16V12C11 11.45 11.45 11 12 11C12.55 11 13 11.45 13 12V16C13 16.55 12.55 17 12 17ZM13 9H11V7H13V9Z"
+                              fill="#2D626A"
+                            />
+                          </g>
+                          <defs>
+                            <clipPath id="clip0_22_330">
+                              <rect
+                                width="24"
+                                height="24"
+                                rx="12"
+                                fill="white"
+                              />
+                            </clipPath>
+                          </defs>
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                {/each}
+              {:else if queryingSources}
+                <div class="text-center py-8">
+                  <div
+                    class="animate-spin w-8 h-8 border-2 border-teal-500 border-t-transparent rounded-full mx-auto mb-3"
+                  ></div>
+                  <p class="text-gray-600">Searching sources...</p>
+                </div>
+              {:else}
+                <div class="text-center py-8">
+                  <p class="text-gray-600">
+                    {alreadyOwns
+                      ? 'No tasks available'
+                      : 'No sources available'}
+                  </p>
+                </div>
+              {/if}
+            </div>
+          {/if}
         </div>
       </div>
     {/if}

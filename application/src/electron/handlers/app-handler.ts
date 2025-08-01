@@ -13,8 +13,8 @@ const grantAccessToPath = (path: string, rootPassword: string) =>
   new Promise<void>((resolve, reject) => {
     try {
       const child = spawn(
-        'flatpak',
-        ['override', 'org.winehq.Wine', '--filesystem', path],
+        'sudo',
+        ['flatpak', 'override', 'org.winehq.Wine', '--filesystem', path],
         {
           stdio: 'inherit',
         }

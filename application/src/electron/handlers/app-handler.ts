@@ -237,7 +237,6 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
           const rootPasswordGranter = () =>
             new Promise<void>((resolve) => {
               sendIPCMessage('app:ask-root-password', true);
-              console.log('registered root password asker');
               ipcMain.handleOnce(
                 'app:root-password-granted',
                 async (_, password) => {

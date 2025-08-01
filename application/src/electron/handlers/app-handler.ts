@@ -8,7 +8,7 @@ import { LibraryInfo } from 'ogi-addon';
 import { __dirname } from '../paths.js';
 import { STEAMTINKERLAUNCH_PATH } from '../startup.js';
 import { clients } from '../server/addon-server.js';
-import { dirname, relative } from 'path';
+import { dirname } from 'path';
 
 const grantAccessToPath = (path: string, rootPassword: string) =>
   new Promise<void>((resolve, reject) => {
@@ -51,6 +51,99 @@ const grantAccessToPath = (path: string, rootPassword: string) =>
       reject(error);
     }
   });
+
+const installRedistributablesWithSystemWine = async (
+  redistributables: { name: string; path: string }[],
+  winePrefix: string,
+  gameName: string
+) => {
+  for (const redistributable of redistributables) {
+    try {
+      sendNotification({
+        message: `Installing ${redistributable.name} for ${gameName} (using system Wine)`,
+        id: Math.random().toString(36).substring(7),
+        type: 'info',
+      });
+
+      console.log(`[redistributable] Installing ${redistributable.name} with system wine`);
+      
+      const success = await new Promise<boolean>((resolve) => {
+        const redistributablePath = redistributable.path.trim().replace(/\n$/g, '');
+        const redistributableDir = dirname(redistributablePath);
+        
+        const child = spawn('wine', [redistributablePath], {
+          stdio: ['ignore', 'pipe', 'pipe'],
+          cwd: redistributableDir,
+          env: {
+            ...process.env,
+            WINEPREFIX: winePrefix,
+            WINEDEBUG: '-all', // Reduce wine debug output
+          },
+        });
+
+        let stdout = '';
+        let stderr = '';
+
+        child.stdout?.on('data', (data) => {
+          const output = data.toString();
+          stdout += output;
+          console.log(`[redistributable:stdout] ${output.trim()}`);
+        });
+
+        child.stderr?.on('data', (data) => {
+          const output = data.toString();
+          stderr += output;
+          console.log(`[redistributable:stderr] ${output.trim()}`);
+        });
+
+        child.on('close', (code) => {
+          console.log(`[redistributable] system wine process exited with code ${code}`);
+          if (code === 0) {
+            resolve(true);
+          } else {
+            console.error(`[redistributable] Installation failed with exit code ${code}`);
+            console.error(`[redistributable] stdout: ${stdout}`);
+            console.error(`[redistributable] stderr: ${stderr}`);
+            resolve(false);
+          }
+        });
+
+        child.on('error', (error) => {
+          console.error(`[redistributable] failed to start system wine process: ${error}`);
+          resolve(false);
+        });
+
+        // Set a timeout for the installation (10 minutes)
+        setTimeout(() => {
+          console.error(`[redistributable] System wine installation timed out after 10 minutes`);
+          child.kill('SIGTERM');
+          resolve(false);
+        }, 10 * 60 * 1000);
+      });
+
+      if (success) {
+        sendNotification({
+          message: `Installed ${redistributable.name} for ${gameName}`,
+          id: Math.random().toString(36).substring(7),
+          type: 'success',
+        });
+      } else {
+        sendNotification({
+          message: `Failed to install ${redistributable.name} for ${gameName}`,
+          id: Math.random().toString(36).substring(7),
+          type: 'error',
+        });
+      }
+    } catch (error) {
+      console.error(`[redistributable] Error installing ${redistributable.name}: ${error}`);
+      sendNotification({
+        message: `Failed to install ${redistributable.name} for ${gameName}`,
+        id: Math.random().toString(36).substring(7),
+        type: 'error',
+      });
+    }
+  }
+};
 export default function handler(mainWindow: Electron.BrowserWindow) {
   ipcMain.handle('app:close', () => {
     mainWindow?.close();
@@ -210,8 +303,42 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
         }
 
         // if there are redistributables, we need to install them
-
         if (data.redistributables) {
+          // First check if wine is available via flatpak
+          const wineAvailable = await new Promise<boolean>((resolve) => {
+            exec('flatpak run org.winehq.Wine --help', (err) => {
+              resolve(!err);
+            });
+          });
+
+          if (!wineAvailable) {
+            // Try alternative wine installation methods
+            const alternativeWineAvailable = await new Promise<boolean>((resolve) => {
+              exec('wine --version', (err) => {
+                if (!err) {
+                  console.log('[redistributable] Found system wine installation');
+                  resolve(true);
+                } else {
+                  // Check for wine in common paths
+                  exec('which wine', (err2) => {
+                    resolve(!err2);
+                  });
+                }
+              });
+            });
+
+            if (alternativeWineAvailable) {
+              console.log('[redistributable] Using system wine installation');
+              await installRedistributablesWithSystemWine(data.redistributables, protonPath, data.name);
+            } else {
+              sendNotification({
+                message: 'Wine is not available. Redistributables will be skipped. Please install Wine via Flatpak or your system package manager.',
+                id: Math.random().toString(36).substring(7),
+                type: 'warning',
+              });
+              console.warn('[redistributable] Wine not available, skipping redistributables');
+            }
+          } else {
           let rootPassword = '';
           // firstly, allow the flatpak to access the proton path
           const rootPasswordGranter = () =>
@@ -253,37 +380,72 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
               });
 
               await grantAccessToPath(redistributable.path, rootPassword);
-              console.log('Running destributable: ' + redistributable.path);
-              await new Promise<void>((resolve) => {
+              console.log('Running redistributable: ' + redistributable.path);
+              
+              const success = await new Promise<boolean>((resolve) => {
+                const redistributablePath = redistributable.path.trim().replace(/\n$/g, '');
+                const redistributableDir = dirname(redistributablePath);
+                const redistributableFilename = redistributablePath.split('/').pop() || redistributablePath;
+                
                 const command = 'flatpak';
                 const args = [
-                  `--env="WINEPREFIX=${protonPath}"`,
+                  `--env=WINEPREFIX=${protonPath}`,
                   'run',
                   'org.winehq.Wine',
-                  relative(
-                    redistributable.path.trim().replace(/\n$/g, ''),
-                    dirname(redistributable.path)
-                  ),
+                  redistributableFilename,
                 ];
+                
+                console.log(`[redistributable] Executing: ${command} ${args.join(' ')}`);
+                console.log(`[redistributable] Working directory: ${redistributableDir}`);
+                
                 const child = spawn(command, args, {
-                  stdio: 'inherit',
-                  cwd: dirname(redistributable.path),
+                  stdio: ['ignore', 'pipe', 'pipe'],
+                  cwd: redistributableDir,
+                });
+
+                let stdout = '';
+                let stderr = '';
+
+                child.stdout?.on('data', (data) => {
+                  const output = data.toString();
+                  stdout += output;
+                  console.log(`[redistributable:stdout] ${output.trim()}`);
+                });
+
+                child.stderr?.on('data', (data) => {
+                  const output = data.toString();
+                  stderr += output;
+                  console.log(`[redistributable:stderr] ${output.trim()}`);
                 });
 
                 child.on('close', (code) => {
-                  console.log(
-                    `[redistributable] process exited with code ${code}`
-                  );
-                  resolve();
+                  console.log(`[redistributable] process exited with code ${code}`);
+                  if (code === 0) {
+                    resolve(true);
+                  } else {
+                    console.error(`[redistributable] Installation failed with exit code ${code}`);
+                    console.error(`[redistributable] stdout: ${stdout}`);
+                    console.error(`[redistributable] stderr: ${stderr}`);
+                    resolve(false);
+                  }
                 });
 
                 child.on('error', (error) => {
-                  console.error(
-                    `[redistributable] failed to start process: ${error}`
-                  );
-                  resolve();
+                  console.error(`[redistributable] failed to start process: ${error}`);
+                  resolve(false);
                 });
+
+                // Set a timeout for the installation (10 minutes)
+                setTimeout(() => {
+                  console.error(`[redistributable] Installation timed out after 10 minutes`);
+                  child.kill('SIGTERM');
+                  resolve(false);
+                }, 10 * 60 * 1000);
               });
+
+              if (!success) {
+                throw new Error(`Failed to install ${redistributable.name}`);
+              }
 
               sendNotification({
                 message: `Installed ${redistributable.name} for ${data.name}`,
@@ -306,6 +468,7 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
             id: Math.random().toString(36).substring(7),
             type: 'success',
           });
+          }
         }
 
         // use steamtinkerlaunch to add the game to steam

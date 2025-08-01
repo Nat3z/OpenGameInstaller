@@ -383,7 +383,7 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
         // make the launch executable use / instead of \
         data.launchExecutable = data.launchExecutable.replaceAll('\\', '/');
         const homeDir = process.env.HOME || process.env.USERPROFILE;
-        const protonPath = `${homeDir}/.ogi-wine-prefixes/${data.appID}`;
+        const protonPath = `${homeDir}/.ogi-wine-prefixes/${data.appID}/pfx`;
         // if the proton path does not exist, create it
         if (!fs.existsSync(protonPath)) {
           fs.mkdirSync(protonPath, { recursive: true });
@@ -610,7 +610,7 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
         // use steamtinkerlaunch to add the game to steam
         const result = await new Promise<boolean>((resolve) =>
           exec(
-            `${STEAMTINKERLAUNCH_PATH} addnonsteamgame --appname="${data.name}" --exepath="${data.launchExecutable}" --startdir="${data.cwd}" --launchoptions="STEAM_COMPAT_DATA_PATH=${protonPath} ${data.launchArguments ?? ''}" --compatibilitytool="proton_experimental" --use-steamgriddb`,
+            `${STEAMTINKERLAUNCH_PATH} addnonsteamgame --appname="${data.name}" --exepath="${data.launchExecutable}" --startdir="${data.cwd}" --launchoptions="STEAM_COMPAT_DATA_PATH=${protonPath.split('/pfx')[0]} ${data.launchArguments ?? ''}" --compatibilitytool="proton_experimental" --use-steamgriddb`,
             {
               cwd: __dirname,
             },

@@ -8,7 +8,7 @@ import { LibraryInfo } from 'ogi-addon';
 import { __dirname } from '../paths.js';
 import { STEAMTINKERLAUNCH_PATH } from '../startup.js';
 import { clients } from '../server/addon-server.js';
-import { dirname } from 'path';
+import { dirname, relative } from 'path';
 
 const grantAccessToPath = (path: string, rootPassword: string) =>
   new Promise<void>((resolve, reject) => {
@@ -257,13 +257,17 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
               await new Promise<void>((resolve) => {
                 const command = 'flatpak';
                 const args = [
-                  'run',
                   `--env="WINEPREFIX=${protonPath}"`,
+                  'run',
                   'org.winehq.Wine',
-                  redistributable.path,
+                  relative(
+                    redistributable.path.trim().replace(/\n$/g, ''),
+                    dirname(redistributable.path)
+                  ),
                 ];
                 const child = spawn(command, args, {
                   stdio: 'inherit',
+                  cwd: dirname(redistributable.path),
                 });
 
                 child.on('close', (code) => {

@@ -238,27 +238,30 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
             new Promise<void>((resolve) => {
               sendIPCMessage('app:ask-root-password', true);
               console.log('registered root password asker');
-              ipcMain.once('app:root-password-granted', async (_, password) => {
-                // allow the flatpak to access the proton path
-                try {
-                  execSync(`echo -e "${password}\n" | sudo -S -k true`, {
-                    stdio: 'ignore',
-                  });
-                  await grantAccessToPath(protonPath, password);
-                  rootPassword = password;
-                  resolve();
-                } catch (error) {
-                  console.error(error);
-                  sendNotification({
-                    message:
-                      'Failed to allow flatpak to access the proton path.',
-                    id: Math.random().toString(36).substring(7),
-                    type: 'error',
-                  });
-                  await rootPasswordGranter();
-                  resolve();
+              ipcMain.handleOnce(
+                'app:root-password-granted',
+                async (_, password) => {
+                  // allow the flatpak to access the proton path
+                  try {
+                    execSync(`echo -e "${password}\n" | sudo -S -k true`, {
+                      stdio: 'ignore',
+                    });
+                    await grantAccessToPath(protonPath, password);
+                    rootPassword = password;
+                    resolve();
+                  } catch (error) {
+                    console.error(error);
+                    sendNotification({
+                      message:
+                        'Failed to allow flatpak to access the proton path.',
+                      id: Math.random().toString(36).substring(7),
+                      type: 'error',
+                    });
+                    await rootPasswordGranter();
+                    resolve();
+                  }
                 }
-              });
+              );
             });
           await rootPasswordGranter();
 

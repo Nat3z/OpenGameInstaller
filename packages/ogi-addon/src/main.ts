@@ -516,7 +516,12 @@ class OGIAddonWSListener {
         ogiVersion: VERSION,
       });
 
-      this.eventEmitter.emit('connect');
+      this.eventEmitter.emit(
+        'connect',
+        new EventResponse<void>((screen, name, description) => {
+          return this.userInputAsked(screen, name, description, this.socket);
+        })
+      );
 
       // send a configuration request
       let configBuilder = new ConfigurationBuilder();

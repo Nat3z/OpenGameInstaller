@@ -85,6 +85,9 @@ export class Queue<T = any> {
    * @param id The id to remove from processing.
    */
   finish(id: string) {
+    if (!this.processing.has(id)) {
+      return;
+    }
     this.processing.delete(id);
     console.log('[Queue] Finished. Next in queue: ', this.dequeue());
   }

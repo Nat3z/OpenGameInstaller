@@ -188,6 +188,7 @@ async function handleTorrentDownload({
       });
     }
     console.error('Download cancelled');
+    finish();
     return null;
   }
 
@@ -209,6 +210,7 @@ async function handleTorrentDownload({
           );
           if (!torrentData) {
             console.error('No torrent data returned');
+            finish();
             return null;
           }
           await qbitClient.addTorrent(torrentData, {
@@ -444,6 +446,7 @@ async function handleTorrentDownload({
           });
           if (!torrentData) {
             console.error('No torrent data returned');
+            finish();
             return null;
           }
           // --- Throttled progress reporting setup for webtorrent ---

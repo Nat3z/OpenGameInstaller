@@ -79,8 +79,6 @@ function cleanupDownload(context: DownloadContext): void {
   clearInterval(context.progressInterval);
   context.fileStream.close();
   cleanupPauseResumeHandlers(context.downloadID);
-  // Also cleanup abort handler
-  ipcMain.removeHandler(`ddl:${context.downloadID}:abort`);
 }
 
 // Helper function to handle download errors
@@ -168,13 +166,74 @@ function setupPauseResumeHandlers(context: DownloadContext): void {
   // Register resume handler
   ipcMain.handle(`ddl:${context.downloadID}:resume`, async () => {
     console.log('Resume event received');
-    return await handleResume(
+    const resumeSuccess = await handleResume(
       context.downloadID,
       context.mainWindow,
       context.url,
       context.headersAdditional,
       context.taskFinisher
     );
+
+    if (!resumeSuccess) {
+      console.log('Resume failed, restarting download from beginning...');
+
+      // Send notification about resume failure and restart
+      sendNotification({
+        message: 'Resume failed, restarting download',
+        id: context.downloadID,
+        type: 'warning',
+      });
+
+      // Get the current context to access file path and other details
+      const currentContext = downloadContexts.get(context.downloadID);
+      if (currentContext) {
+        // Clean up current download state
+        cleanupDownload(currentContext);
+      }
+
+      // Clean up the partial file
+      try {
+        const state = downloadStates.get(context.downloadID);
+        if (state && fs.existsSync(state.filePath)) {
+          fs.unlinkSync(state.filePath);
+        }
+      } catch (unlinkError) {
+        console.error('Failed to unlink file during restart:', unlinkError);
+      }
+
+      // Restart the download from the beginning
+      try {
+        const state = downloadStates.get(context.downloadID);
+        if (state) {
+          await executeDownload(
+            context.downloadID,
+            context.mainWindow,
+            state.url,
+            state.filePath,
+            context.headersAdditional,
+            state.parts,
+            state.totalParts,
+            context.taskFinisher
+          );
+        }
+      } catch (restartError) {
+        console.error(
+          'Failed to restart download after resume failure:',
+          restartError
+        );
+        sendIpcMessage(context.mainWindow, 'ddl:download-error', {
+          id: context.downloadID,
+          error: 'Download failed after resume restart',
+        });
+        sendNotification({
+          message: 'Download failed after resume restart',
+          id: context.downloadID,
+          type: 'error',
+        });
+      }
+    }
+
+    return resumeSuccess;
   });
 }
 
@@ -574,9 +633,6 @@ async function handleResume(
       state.totalParts,
       finish
     );
-    sendIpcMessage(mainWindow, 'ddl:download-complete', {
-      id: downloadID,
-    });
 
     console.log('Download resumed successfully');
 

@@ -69,7 +69,6 @@ const procedures: Record<string, Procedure<any>> = {
       if (task.finished) {
         DeferredTasks.removeTask(input.taskID);
         // Use the getSerializedData method to ensure data is properly serialized
-        console.log('Served serialized data', task.getSerializedData());
         return new ProcedureJSON(200, {
           data: task.getSerializedData(),
           resolved: true,

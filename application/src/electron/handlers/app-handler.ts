@@ -482,6 +482,7 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
 
                 const success = await new Promise<boolean>((resolve) => {
                   if (redistributable.path === 'winetricks') {
+                    console.log('spawning winetricks redistributable');
                     // spawn winetricks with the proton path to install the name
                     const child = spawn('flatpak', [
                       '--command=winetricks',

@@ -577,7 +577,9 @@
               {:else if download.status === 'rd-downloading'}
                 <div class="status-badge downloading">
                   <div class="spinner"></div>
-                  Real-Debrid Processing
+                  {download.usedDebridService === 'realdebrid'
+                    ? 'Real-Debrid Processing'
+                    : 'Torbox Processing'}
                 </div>
               {:else if download.status === 'requesting'}
                 <div class="status-badge requesting">

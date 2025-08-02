@@ -118,6 +118,24 @@ export async function retryFailedSetup(failedSetup: FailedSetup) {
       failedSetup.should = 'call-addon';
     }
 
+    if (failedSetup.should === 'call-unzip') {
+      console.log(
+        'Extracting ZIP file: ',
+        failedSetup.downloadInfo.downloadPath,
+        'to',
+        failedSetup.downloadInfo.downloadPath
+      );
+      const extractedDir = await window.electronAPI.fs.unzip({
+        zipFilePath: failedSetup.downloadInfo.downloadPath,
+        outputDir: failedSetup.downloadInfo.downloadPath,
+      });
+      setupData.path = extractedDir;
+      console.log('ZIP file extracted successfully');
+      failedSetup.downloadInfo.downloadPath = extractedDir;
+      failedSetup.setupData.path = extractedDir;
+      failedSetup.should = 'call-addon';
+    }
+
     // now add to setup logs
     setupLogs.update((logs) => ({
       ...logs,

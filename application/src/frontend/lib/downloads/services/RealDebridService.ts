@@ -50,7 +50,7 @@ export class RealDebridService extends BaseService {
           status: 'rd-downloading',
           downloadPath: getDownloadPath() + '/' + result.name,
           downloadSpeed: 0,
-          usedRealDebrid: true,
+          usedDebridService: 'realdebrid',
           progress: 0,
           appID,
           downloadSize: 0,
@@ -136,7 +136,7 @@ export class RealDebridService extends BaseService {
       currentDownloads.update((downloads) => {
         const matchingDownload = downloads.find((d) => d.id === localID + '')!!;
         matchingDownload.status = 'error';
-        matchingDownload.usedRealDebrid = true;
+        matchingDownload.usedDebridService = 'realdebrid';
         matchingDownload.appID = appID;
         downloads[downloads.indexOf(matchingDownload)] = matchingDownload;
         return downloads;
@@ -148,7 +148,7 @@ export class RealDebridService extends BaseService {
       const matchingDownload = downloads.find((d) => d.id === localID + '')!!;
       matchingDownload.status = 'downloading';
       matchingDownload.id = downloadID;
-      matchingDownload.usedRealDebrid = true;
+      matchingDownload.usedDebridService = 'realdebrid';
 
       matchingDownload.downloadPath =
         getDownloadPath() + '/' + result.name + '/';
@@ -233,7 +233,7 @@ export class RealDebridService extends BaseService {
       currentDownloads.update((downloads) => {
         const matchingDownload = downloads.find((d) => d.id === localID + '')!!;
         matchingDownload.status = 'error';
-        matchingDownload.usedRealDebrid = true;
+        matchingDownload.usedDebridService = 'realdebrid';
         matchingDownload.appID = appID;
         downloads[downloads.indexOf(matchingDownload)] = matchingDownload;
         return downloads;
@@ -245,7 +245,7 @@ export class RealDebridService extends BaseService {
       const matchingDownload = downloads.find((d) => d.id === localID + '')!!;
       matchingDownload.status = 'downloading';
       matchingDownload.id = downloadID;
-      matchingDownload.usedRealDebrid = true;
+      matchingDownload.usedDebridService = 'realdebrid';
 
       matchingDownload.downloadPath =
         getDownloadPath() + '/' + result.name + '/';

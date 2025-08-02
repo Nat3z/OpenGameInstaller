@@ -17,7 +17,7 @@ export type DownloadStatusAndInfo = SearchResult & {
     | 'requesting';
   progress: number;
   error?: string;
-  usedRealDebrid: boolean;
+  usedDebridService?: 'realdebrid' | 'torbox' | 'none';
   downloadPath: string;
   downloadSpeed: number;
   downloadSize: number;
@@ -64,7 +64,7 @@ export type FailedSetup = {
   downloadInfo: DownloadStatusAndInfo;
   setupData: Parameters<EventListenerTypes['setup']>[0];
   error: string;
-  should: 'call-addon' | 'call-unrar';
+  should: 'call-addon' | 'call-unrar' | 'call-unzip';
 };
 
 export interface Notification {
@@ -176,6 +176,6 @@ export async function fetchCommunityAddons() {
       },
     })
     .then((response) => {
-      communityAddonsLocal.set(response.data);
+      communityAddonsLocal.set(response.data as CommunityAddon[]);
     });
 }

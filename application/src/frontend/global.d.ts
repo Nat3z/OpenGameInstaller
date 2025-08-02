@@ -21,6 +21,10 @@ interface Window {
         outputDir: string;
         rarFilePath: string;
       }) => Promise<string>;
+      unzip: (data: {
+        zipFilePath: string;
+        outputDir: string;
+      }) => Promise<string>;
       getFilesInDir: (path: string) => Promise<string[]>;
       dialog: {
         showOpenDialog: (
@@ -78,9 +82,9 @@ interface Window {
     app: {
       close: () => Promise<void>;
       minimize: () => Promise<void>;
-      axios: (
+      axios: <T>(
         options: AxiosRequestConfig
-      ) => Promise<{ status: number; success: boolean; data: any }>;
+      ) => Promise<{ status: number; success: boolean; data: T }>;
       inputSend: (id: string, data: any) => Promise<void>;
       insertApp: (
         info: LibraryInfo & {
@@ -116,5 +120,6 @@ interface Window {
     installAddons: (addons: string[]) => Promise<void>;
     restartAddonServer: () => Promise<void>;
     cleanAddons: () => Promise<void>;
+    downloadTorrentInto: (link: string) => Promise<Uint8Array>;
   };
 }

@@ -119,7 +119,7 @@ export async function restartDownload(
     let newActualDownloadId: string;
 
     // Restart based on download type
-    if (download.downloadType === 'direct' || download.usedRealDebrid) {
+    if (download.downloadType === 'direct' || download.usedDebridService) {
       newActualDownloadId = await restartDirectDownload(download);
     } else if (
       download.downloadType === 'torrent' ||

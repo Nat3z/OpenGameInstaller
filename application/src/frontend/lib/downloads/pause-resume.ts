@@ -38,7 +38,7 @@ export async function pauseDownload(downloadId: string): Promise<boolean> {
     updateDownloadStatus(downloadId, { status: 'paused' });
 
     let pauseResult = false;
-    if (download.downloadType === 'direct' || download.usedRealDebrid) {
+    if (download.downloadType === 'direct' || download.usedDebridService) {
       try {
         await window.electronAPI.ddl.pauseDownload(downloadId);
         pauseResult = true;
@@ -103,7 +103,7 @@ export async function resumeDownload(downloadId: string): Promise<boolean> {
     updateDownloadStatus(downloadId, { status: 'downloading' });
 
     let resumeResult = false;
-    if (download.downloadType === 'direct' || download.usedRealDebrid) {
+    if (download.downloadType === 'direct' || download.usedDebridService) {
       try {
         await window.electronAPI.ddl.resumeDownload(downloadId);
         resumeResult = true;

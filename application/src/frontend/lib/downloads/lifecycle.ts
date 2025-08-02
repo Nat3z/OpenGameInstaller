@@ -17,8 +17,8 @@ export async function startDownload(
   const htmlButton = event.target as HTMLButtonElement;
   htmlButton.textContent = 'Downloading...';
   htmlButton.disabled = true;
-  let downloadType = result.downloadType;
-  if (downloadType === 'torrent' || downloadType === 'magnet') {
+  let downloadHandler = result.downloadType;
+  if (downloadHandler === 'torrent' || downloadHandler === 'magnet') {
     const generalOptions = getConfigClientOption('general') as any;
     const torrentClient:
       | 'webtorrent'
@@ -27,23 +27,23 @@ export async function startDownload(
       | 'torbox' =
       (generalOptions ? generalOptions.torrentClient : null) ?? 'webtorrent';
     if (torrentClient === 'real-debrid') {
-      downloadType = 'real-debrid-' + downloadType;
+      downloadHandler = 'real-debrid-' + downloadHandler;
     } else if (torrentClient === 'torbox') {
-      downloadType = 'torbox-' + downloadType;
+      downloadHandler = 'torbox-' + downloadHandler;
     }
   }
   // replace the name's speceial characters (like amparsand, :, or any character windows doesn't support, with a dash)
   result.name = result.name.replace(/[\\/:*?"<>|]/g, '-');
 
   // Service-based architecture: find and delegate to the appropriate service
-  const svc = ALL_SERVICES.find((s) => s.types.includes(downloadType));
+  const svc = ALL_SERVICES.find((s) => s.types.includes(downloadHandler));
   if (svc) {
     await svc.startDownload(result, appID, event);
     return;
   }
 
   // If no service is found for this download type, log an error
-  console.error(`No service found for download type: ${downloadType}`);
+  console.error(`No service found for download type: ${downloadHandler}`);
 }
 
 export function updateDownloadStatus(

@@ -148,6 +148,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('install-addons', addons),
   restartAddonServer: () => ipcRenderer.invoke('restart-addon-server'),
   cleanAddons: () => ipcRenderer.invoke('clean-addons'),
+  downloadTorrentInto: (link: string) =>
+    ipcRenderer.invoke('download-torrent-into', link),
 });
 
 // === Debug: Events Processed/sec Counter ===

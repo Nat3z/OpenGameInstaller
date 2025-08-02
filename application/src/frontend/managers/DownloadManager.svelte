@@ -75,7 +75,7 @@
           path: downloadedItem.downloadPath,
           type: downloadedItem.downloadType as 'direct' | 'torrent' | 'magnet',
           name: downloadedItem.name,
-          usedRealDebrid: downloadedItem.usedRealDebrid,
+          usedRealDebrid: downloadedItem.usedDebridService !== undefined,
           appID: downloadedItem.appID,
           storefront: downloadedItem.storefront,
           multiPartFiles: downloadedItem.files,
@@ -98,7 +98,7 @@
       path,
       type: downloadedItem.downloadType,
       name: downloadedItem.name,
-      usedRealDebrid: downloadedItem.usedRealDebrid,
+      usedRealDebrid: downloadedItem.usedDebridService !== undefined,
       appID: downloadedItem.appID,
       storefront: downloadedItem.storefront,
       multiPartFiles: downloadedItem.files,
@@ -156,6 +156,41 @@
     });
   }
 
+  // -- Failed Setup --
+
+  function saveFailedSetup(setupInfo: {
+    downloadInfo: DownloadStatusAndInfo;
+    setupData: Parameters<EventListenerTypes['setup']>[0];
+    error: string;
+    should: 'call-addon' | 'call-unrar' | 'call-unzip';
+  }) {
+    try {
+      if (!window.electronAPI.fs.exists('./failed-setups')) {
+        window.electronAPI.fs.mkdir('./failed-setups');
+      }
+
+      const failedSetupId = Math.random().toString(36).substring(7);
+      const failedSetupData: FailedSetup = {
+        id: failedSetupId,
+        timestamp: Date.now(),
+        ...setupInfo,
+        retryCount: 0,
+      };
+
+      window.electronAPI.fs.write(
+        `./failed-setups/${failedSetupId}.json`,
+        JSON.stringify(failedSetupData, null, 2)
+      );
+
+      failedSetups.update((setups) => {
+        return [...setups, failedSetupData];
+      });
+      console.log('Saved failed setup info:', failedSetupId);
+    } catch (error) {
+      console.error('Failed to save setup info:', error);
+    }
+  }
+
   async function processDownloadComplete(
     downloadID: string,
     isTorrent: boolean = false
@@ -187,7 +222,11 @@
     });
 
     // Handle RealDebrid extraction for DDL
-    if (!isTorrent && downloadedItem.usedRealDebrid && !downloadedItem.files) {
+    if (
+      !isTorrent &&
+      downloadedItem.usedDebridService === 'realdebrid' &&
+      !downloadedItem.files
+    ) {
       dispatchSetupEvent('log', downloadedItem.id, [
         'Extracting downloaded RAR file...',
       ]);
@@ -253,7 +292,7 @@
               | 'torrent'
               | 'magnet',
             name: downloadedItem.name,
-            usedRealDebrid: downloadedItem.usedRealDebrid,
+            usedRealDebrid: downloadedItem.usedDebridService !== undefined,
             appID: downloadedItem.appID,
             multiPartFiles: downloadedItem.files || [],
             storefront: downloadedItem.storefront,
@@ -261,6 +300,68 @@
           },
           error: 'Failed to extract RAR file',
           should: 'call-unrar',
+        });
+        return;
+      }
+    }
+
+    // handle torbox zip extraction
+    if (downloadedItem.usedDebridService === 'torbox' && !downloadedItem.files) {
+      dispatchSetupEvent('log', downloadedItem.id, [
+        'Extracting downloaded ZIP file...',
+      ]);
+
+      const attemptUnzip = async () => {
+        try {
+          console.log('Extracting ZIP file: ', downloadedItem.downloadPath);
+          console.log(downloadedItem);
+          const extractedDir = await window.electronAPI.fs.unzip({
+            zipFilePath: downloadedItem.downloadPath,
+            outputDir: downloadedItem.downloadPath,
+          });
+          outputDir = extractedDir;
+          console.log('ZIP file extracted successfully');
+          downloadedItem.downloadPath = extractedDir;
+          return true;
+        } catch (error) {
+          console.log('Failed to extract ZIP file');
+          return false;
+        }
+      };
+
+      // try 3 times to extract the ZIP file
+      let success = false;
+      for (let i = 0; i < 3; i++) {
+        success = await attemptUnzip();
+        if (success) break; // if successful, break the loop
+        await new Promise((resolve) => setTimeout(resolve, 1000)); // wait 1 second before retrying
+      }
+
+      if (!success) {
+        createNotification({
+          id: Math.random().toString(36).substring(2, 9),
+          type: 'error',
+          message: 'Failed to extract ZIP file',
+        });
+
+        // add a failed setup
+        saveFailedSetup({
+          downloadInfo: downloadedItem,
+          setupData: {
+            path: downloadedItem.downloadPath,
+            type: downloadedItem.downloadType as
+              | 'direct'
+              | 'torrent'
+              | 'magnet',
+            name: downloadedItem.name,
+            usedRealDebrid: downloadedItem.usedDebridService !== undefined,
+            appID: downloadedItem.appID,
+            multiPartFiles: downloadedItem.files || [],
+            storefront: downloadedItem.storefront,
+            manifest: downloadedItem.manifest,
+          },
+          error: 'Failed to extract ZIP file',
+          should: 'call-unzip',
         });
         return;
       }
@@ -388,39 +489,4 @@
     console.log('Torrent download resumed:', event.detail.id);
     // Status is already updated in resumeDownload function
   });
-
-  // -- Failed Setup --
-
-  function saveFailedSetup(setupInfo: {
-    downloadInfo: DownloadStatusAndInfo;
-    setupData: Parameters<EventListenerTypes['setup']>[0];
-    error: string;
-    should: 'call-addon' | 'call-unrar';
-  }) {
-    try {
-      if (!window.electronAPI.fs.exists('./failed-setups')) {
-        window.electronAPI.fs.mkdir('./failed-setups');
-      }
-
-      const failedSetupId = Math.random().toString(36).substring(7);
-      const failedSetupData: FailedSetup = {
-        id: failedSetupId,
-        timestamp: Date.now(),
-        ...setupInfo,
-        retryCount: 0,
-      };
-
-      window.electronAPI.fs.write(
-        `./failed-setups/${failedSetupId}.json`,
-        JSON.stringify(failedSetupData, null, 2)
-      );
-
-      failedSetups.update((setups) => {
-        return [...setups, failedSetupData];
-      });
-      console.log('Saved failed setup info:', failedSetupId);
-    } catch (error) {
-      console.error('Failed to save setup info:', error);
-    }
-  }
 </script>

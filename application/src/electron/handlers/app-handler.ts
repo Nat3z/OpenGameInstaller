@@ -239,6 +239,18 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
     mainWindow?.minimize();
   });
   ipcMain.handle('app:axios', async (_, options) => {
+    if (
+      options.data &&
+      options.headers &&
+      options.headers['Content-Type'] === 'multipart/form-data'
+    ) {
+      const formData = new FormData();
+      for (const [key, value] of Object.entries(options.data)) {
+        formData.append(key, value as string);
+      }
+      options.data = formData;
+    }
+    console.log('app:axios', options);
     try {
       const response = await axios(options);
       return {

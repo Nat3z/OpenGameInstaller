@@ -48,7 +48,7 @@
         return;
       }
       // Fetch as arraybuffer
-      const response = await window.electronAPI.app.axios({
+      const response = await window.electronAPI.app.axios<ArrayBuffer>({
         method: 'get',
         url: src,
         responseType: 'arraybuffer',

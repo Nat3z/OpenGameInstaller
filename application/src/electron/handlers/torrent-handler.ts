@@ -731,4 +731,27 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
       });
     }
   );
+
+  ipcMain.handle('download-torrent-into', async (_, link: string) => {
+    // download the torrent into temp.torrent
+    const fileStream = fs.createWriteStream(join(__dirname, 'temp.torrent'));
+    const torrentData = await new Promise<Uint8Array>((resolve, reject) => {
+      axios({
+        method: 'get',
+        url: link,
+        responseType: 'stream',
+      }).then((response) => {
+        response.data.pipe(fileStream);
+        fileStream.on('finish', () => {
+          fileStream.close();
+          resolve(fs.readFileSync(join(__dirname, 'temp.torrent')));
+        });
+      });
+      fileStream.on('error', (err) => {
+        fileStream.close();
+        reject(err);
+      });
+    });
+    return torrentData;
+  });
 }

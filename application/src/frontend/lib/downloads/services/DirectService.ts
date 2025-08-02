@@ -66,7 +66,6 @@ export class DirectService extends BaseService {
             downloadPath: getDownloadPath() + '/' + result.name + '/',
             downloadSpeed: 0,
             progress: 0,
-            usedRealDebrid: false,
             appID,
             downloadSize: 0,
             originalDownloadURL: result.downloadURL, // Store original URL for resume

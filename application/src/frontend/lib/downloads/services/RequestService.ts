@@ -35,7 +35,6 @@ export class RequestService extends BaseService {
           downloadPath: getDownloadPath() + '/' + result.name,
           downloadSpeed: 0,
           progress: 0,
-          usedRealDebrid: false,
           appID,
           downloadSize: 0,
         },

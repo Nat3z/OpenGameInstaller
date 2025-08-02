@@ -82,7 +82,6 @@ export class TorrentService extends BaseService {
                 downloadPath: getDownloadPath() + '/' + result.name + '/',
                 downloadSpeed: 0,
                 progress: 0,
-                usedRealDebrid: false,
                 appID,
                 downloadSize: 0,
                 originalDownloadURL: result.downloadURL, // Store original URL for resume
@@ -114,7 +113,6 @@ export class TorrentService extends BaseService {
                 downloadPath: getDownloadPath() + '/' + result.name + '/',
                 downloadSpeed: 0,
                 progress: 0,
-                usedRealDebrid: false,
                 queuePosition: 999,
                 appID,
                 downloadSize: 0,

@@ -216,7 +216,8 @@ manifest: ${manifest}
         setTimeout(() => {
           event.resolve({
             cwd: path,
-            launchExecutable: 'test.exe',
+            launchExecutable: 'Big Buck Bunny.mp4',
+            launchArguments: 'open %command%',
             version: '1.0.0',
           });
         }, 5000);

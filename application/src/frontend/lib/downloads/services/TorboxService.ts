@@ -75,22 +75,31 @@ export class TorboxService extends BaseService {
     const addTorrentForm = new FormData();
 
     // -- STEP 1: CREATE THE TORRENT ON TORBOX --
+
+    let torrentHash = '';
+
     if (result.downloadType === 'torrent') {
       const torrentData = await window.electronAPI.downloadTorrentInto(
         result.downloadURL!
       );
       // with the torrent data, use in new FormData as a file
       addTorrentForm.append('file', new Blob([torrentData]));
+      torrentHash = await window.electronAPI.getTorrentHash(torrentData);
     } else if (result.downloadType === 'magnet') {
       addTorrentForm.append('magnet', result.downloadURL!);
+      torrentHash = await window.electronAPI.getTorrentHash(
+        result.downloadURL!
+      );
     }
+
+    console.log('torrentHash: ', torrentHash);
 
     // seed to auto (the preference of the user)
     addTorrentForm.append('seed', '1');
     // alow the torrent output downloaded to be a zip file
     addTorrentForm.append('allow_zip', 'true');
     // instant in the queue
-    addTorrentForm.append('as_queued', 'true');
+    addTorrentForm.append('as_queued', 'false');
 
     // Debug FormData contents
     console.log('addTorrentForm entries:');
@@ -162,9 +171,6 @@ export class TorboxService extends BaseService {
     console.log('response: ', response);
 
     // -- STEP 2: GET THE TORRENT ID --
-    const { hash } = response.data.data as {
-      hash: string;
-    };
 
     // check if there is a queued id or a torrent id
     const queued_id = (response.data.data as { queued_id?: number }).queued_id;
@@ -221,7 +227,7 @@ export class TorboxService extends BaseService {
     const torrentGrabber = await new Promise<TorboxTorrent | undefined>(
       (resolve) => {
         const startTime = Date.now();
-        const timeoutMs = 60 * 1000; // 60 seconds
+        const timeoutMs = 650 * 1000; // 650 seconds
         const interval = setInterval(async () => {
           // Check for timeout
           if (Date.now() - startTime > timeoutMs) {
@@ -249,7 +255,7 @@ export class TorboxService extends BaseService {
           console.log('torrentInfo.data.data: ', torrentInfo.data.data);
 
           const torrent = torrentInfo.data.data.find(
-            (torrent) => torrent.hash === hash
+            (torrent) => torrent.hash === torrentHash
           );
 
           if (!torrent) {
@@ -274,7 +280,7 @@ export class TorboxService extends BaseService {
       url.searchParams.set('token', torboxApiKey);
       url.searchParams.set('torrent_id', torrent_id!.toString());
       url.searchParams.set('zip_link', 'true');
-      url.searchParams.set('redirect', 'false');
+      url.searchParams.set('redirect', 'true');
 
       // generate the whole url
       const downloadUrl = url.toString();
@@ -284,7 +290,13 @@ export class TorboxService extends BaseService {
       const downloadID = await window.electronAPI.ddl.download([
         {
           link: downloadUrl,
-          path: getDownloadPath() + '/' + result.name + '/' + result.filename,
+          path:
+            getDownloadPath() +
+            '/' +
+            result.name +
+            '/' +
+            result.filename +
+            '.zip',
         },
       ]);
       const updatedState = flush();
@@ -300,6 +312,7 @@ export class TorboxService extends BaseService {
         return;
       }
 
+      console.log('updatedState: ', updatedState);
       currentDownloads.update((downloads) => {
         const matchingDownload = downloads.find((d) => d.id === tempId + '')!!;
         matchingDownload.status = 'downloading';
@@ -307,7 +320,12 @@ export class TorboxService extends BaseService {
         matchingDownload.usedDebridService = 'torbox';
 
         matchingDownload.downloadPath =
-          getDownloadPath() + '/' + result.name + '/';
+          getDownloadPath() +
+          '/' +
+          result.name +
+          '/' +
+          result.filename +
+          '.zip';
 
         if (
           updatedState[downloadID] &&
@@ -318,7 +336,11 @@ export class TorboxService extends BaseService {
         }
         matchingDownload.downloadURL = downloadUrl;
         matchingDownload.originalDownloadURL = result.downloadURL;
-        downloads[downloads.indexOf(matchingDownload)] = matchingDownload;
+        downloads.splice(
+          downloads.indexOf(matchingDownload),
+          1,
+          matchingDownload
+        );
         return downloads;
       });
     }

@@ -306,35 +306,80 @@
     }
 
     // handle torbox zip extraction
-    if (downloadedItem.usedDebridService === 'torbox' && !downloadedItem.files) {
+    if (
+      downloadedItem.usedDebridService === 'torbox' &&
+      !downloadedItem.files
+    ) {
       dispatchSetupEvent('log', downloadedItem.id, [
         'Extracting downloaded ZIP file...',
       ]);
 
       const attemptUnzip = async () => {
-        try {
-          console.log('Extracting ZIP file: ', downloadedItem.downloadPath);
-          console.log(downloadedItem);
-          const extractedDir = await window.electronAPI.fs.unzip({
-            zipFilePath: downloadedItem.downloadPath,
-            outputDir: downloadedItem.downloadPath,
-          });
-          outputDir = extractedDir;
-          console.log('ZIP file extracted successfully');
-          downloadedItem.downloadPath = extractedDir;
-          return true;
-        } catch (error) {
-          console.log('Failed to extract ZIP file');
-          return false;
+        console.log('Extracting ZIP file: ', downloadedItem.downloadPath);
+        console.log(downloadedItem);
+        outputDir = await window.electronAPI.fs.unzip({
+          zipFilePath: downloadedItem.downloadPath,
+          outputDir: downloadedItem.downloadPath.replace(/\.zip$/g, ''),
+        });
+        console.log('ZIP file extracted successfully');
+        // go depeer until it's not just folders
+        let filesInDir = await window.electronAPI.fs.getFilesInDir(outputDir);
+        // Prevent going deeper than 10 directory levels to avoid infinite loops
+        console.log('filesInDir: ', filesInDir);
+        if (filesInDir.length === 1) {
+          let depth = 0;
+          while (filesInDir.length === 1 && depth < 10) {
+            const nextPath = outputDir + '/' + filesInDir[0];
+            let stat;
+            try {
+              stat = window.electronAPI.fs.stat(nextPath);
+            } catch (e) {
+              console.error('Failed to stat path:', nextPath, e);
+              break;
+            }
+            if (!stat.isDirectory) break;
+            console.log('going deeper to', nextPath);
+            outputDir = nextPath;
+            filesInDir = await window.electronAPI.fs.getFilesInDir(outputDir);
+            depth++;
+          }
         }
+
+        outputDir = outputDir + '/';
+        downloadedItem.downloadPath = outputDir;
+        console.log('Newly calculated outputDir: ', outputDir);
+        return true;
       };
 
       // try 3 times to extract the ZIP file
       let success = false;
       for (let i = 0; i < 3; i++) {
-        success = await attemptUnzip();
-        if (success) break; // if successful, break the loop
-        await new Promise((resolve) => setTimeout(resolve, 1000)); // wait 1 second before retrying
+        try {
+          success = await attemptUnzip();
+          if (success) break; // if successful, break the loop
+          await new Promise((resolve) => setTimeout(resolve, 1000)); // wait 1 second before retrying
+        } catch (error) {
+          console.log('Failed to extract ZIP file');
+          console.error('Failed to process ZIP file: ', error);
+          saveFailedSetup({
+            downloadInfo: downloadedItem,
+            setupData: {
+              path: downloadedItem.downloadPath,
+              type: downloadedItem.downloadType as
+                | 'direct'
+                | 'torrent'
+                | 'magnet',
+              name: downloadedItem.name,
+              usedRealDebrid: downloadedItem.usedDebridService !== undefined,
+              appID: downloadedItem.appID,
+              multiPartFiles: downloadedItem.files || [],
+              storefront: downloadedItem.storefront,
+              manifest: downloadedItem.manifest,
+            },
+            error: 'Failed to process ZIP file',
+            should: 'call-unzip',
+          });
+        }
       }
 
       if (!success) {
@@ -343,27 +388,15 @@
           type: 'error',
           message: 'Failed to extract ZIP file',
         });
+        throw new Error('Failed to extract ZIP file');
+      }
 
-        // add a failed setup
-        saveFailedSetup({
-          downloadInfo: downloadedItem,
-          setupData: {
-            path: downloadedItem.downloadPath,
-            type: downloadedItem.downloadType as
-              | 'direct'
-              | 'torrent'
-              | 'magnet',
-            name: downloadedItem.name,
-            usedRealDebrid: downloadedItem.usedDebridService !== undefined,
-            appID: downloadedItem.appID,
-            multiPartFiles: downloadedItem.files || [],
-            storefront: downloadedItem.storefront,
-            manifest: downloadedItem.manifest,
-          },
-          error: 'Failed to extract ZIP file',
-          should: 'call-unzip',
-        });
-        return;
+      // delete the zip file
+      try {
+        window.electronAPI.fs.delete(downloadedItem.downloadPath);
+        console.log('ZIP file deleted');
+      } catch (error) {
+        console.error('Failed to delete ZIP file: ', error);
       }
     }
 

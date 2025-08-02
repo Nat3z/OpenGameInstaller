@@ -26,6 +26,15 @@ interface Window {
         outputDir: string;
       }) => Promise<string>;
       getFilesInDir: (path: string) => Promise<string[]>;
+      stat: (path: string) => {
+        isDirectory: boolean;
+        isFile: boolean;
+        isSymbolicLink: boolean;
+        isBlockDevice: boolean;
+        isCharacterDevice: boolean;
+        isFIFO: boolean;
+        isSocket: boolean;
+      };
       dialog: {
         showOpenDialog: (
           options: Electron.OpenDialogOptions
@@ -121,5 +130,6 @@ interface Window {
     restartAddonServer: () => Promise<void>;
     cleanAddons: () => Promise<void>;
     downloadTorrentInto: (link: string) => Promise<Uint8Array>;
+    getTorrentHash: (torrent: string | Buffer | Uint8Array) => Promise<string>;
   };
 }

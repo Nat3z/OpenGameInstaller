@@ -335,7 +335,7 @@
 
               <!-- Download Stats -->
               {#if activeDownload.status === 'downloading' || activeDownload.status === 'rd-downloading'}
-                <div class="flex justify-between text-xs text-gray-600">
+                <div class="flex justify-between text-xs text-accent-dark">
                   <span>
                     {#if activeDownload.downloadSpeed > 0}
                       {formatSpeed(activeDownload.downloadSpeed)}
@@ -360,9 +360,7 @@
               {/if}
 
               <!-- Source Info -->
-              <div
-                class="flex items-center gap-2 mt-3 pt-3 border-t border-gray-200"
-              >
+              <div class="flex items-center gap-2 mt-3 pt-3">
                 <AddonPicture
                   addonId={activeDownload.addonSource}
                   class="w-6 h-6 rounded"

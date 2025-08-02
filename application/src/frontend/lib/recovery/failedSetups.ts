@@ -119,20 +119,77 @@ export async function retryFailedSetup(failedSetup: FailedSetup) {
     }
 
     if (failedSetup.should === 'call-unzip') {
-      console.log(
-        'Extracting ZIP file: ',
-        failedSetup.downloadInfo.downloadPath,
-        'to',
-        failedSetup.downloadInfo.downloadPath
-      );
-      const extractedDir = await window.electronAPI.fs.unzip({
-        zipFilePath: failedSetup.downloadInfo.downloadPath,
-        outputDir: failedSetup.downloadInfo.downloadPath,
-      });
-      setupData.path = extractedDir;
-      console.log('ZIP file extracted successfully');
-      failedSetup.downloadInfo.downloadPath = extractedDir;
-      failedSetup.setupData.path = extractedDir;
+      const attemptUnzip = async () => {
+        console.log(
+          'Extracting ZIP file: ',
+          failedSetup.downloadInfo.downloadPath
+        );
+        console.log(failedSetup.downloadInfo);
+        let outputDir = await window.electronAPI.fs.unzip({
+          zipFilePath: failedSetup.downloadInfo.downloadPath,
+          outputDir: failedSetup.downloadInfo.downloadPath.replace(
+            /\.zip$/g,
+            ''
+          ),
+        });
+        console.log('ZIP file extracted successfully');
+        // go deeper until it's not just folders
+        let filesInDir = await window.electronAPI.fs.getFilesInDir(outputDir);
+        // Prevent going deeper than 10 directory levels to avoid infinite loops
+        console.log('filesInDir: ', filesInDir);
+        if (filesInDir.length === 1) {
+          let depth = 0;
+          while (filesInDir.length === 1 && depth < 10) {
+            const nextPath = outputDir + '/' + filesInDir[0];
+            let stat;
+            try {
+              stat = window.electronAPI.fs.stat(nextPath);
+            } catch (e) {
+              console.error('Failed to stat path:', nextPath, e);
+              break;
+            }
+            if (!stat.isDirectory) break;
+            console.log('going deeper to', nextPath);
+            outputDir = nextPath;
+            filesInDir = await window.electronAPI.fs.getFilesInDir(outputDir);
+            depth++;
+          }
+        }
+
+        outputDir = outputDir + '/';
+        failedSetup.downloadInfo.downloadPath = outputDir;
+        console.log('Newly calculated outputDir: ', outputDir);
+        return true;
+      };
+
+      // try 3 times to extract the ZIP file
+      let success = false;
+      for (let i = 0; i < 3; i++) {
+        try {
+          success = await attemptUnzip();
+          if (success) break; // if successful, break the loop
+          await new Promise((resolve) => setTimeout(resolve, 1000)); // wait 1 second before retrying
+        } catch (error) {
+          console.log('Failed to extract ZIP file');
+          console.error('Failed to process ZIP file: ', error);
+          throw error;
+        }
+      }
+
+      if (!success) {
+        throw new Error('Failed to extract ZIP file after 3 attempts');
+      }
+
+      // delete the zip file
+      try {
+        window.electronAPI.fs.delete(failedSetup.downloadInfo.downloadPath);
+        console.log('ZIP file deleted');
+      } catch (error) {
+        console.error('Failed to delete ZIP file: ', error);
+      }
+
+      setupData.path = failedSetup.downloadInfo.downloadPath;
+      failedSetup.setupData.path = failedSetup.downloadInfo.downloadPath;
       failedSetup.should = 'call-addon';
     }
 

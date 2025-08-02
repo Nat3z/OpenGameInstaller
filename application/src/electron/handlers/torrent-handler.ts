@@ -9,6 +9,7 @@ import { readFile } from 'fs/promises';
 import { torrent } from '../webtorrent-connect.js';
 import { __dirname } from '../paths.js';
 import { DOWNLOAD_QUEUE } from '../queue.js';
+import ParseTorrent from 'parse-torrent';
 
 let qbitClient: QBittorrent | undefined = undefined;
 
@@ -754,4 +755,13 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
     });
     return torrentData;
   });
+  ipcMain.handle(
+    'torrent:get-hash',
+    async (_, item: string | Buffer | Uint8Array) => {
+      // ParseTorrent is not typed correctly. This is a Promise.
+      const parsed = await ParseTorrent(item);
+      console.log('parsed: ', parsed);
+      return parsed.infoHash;
+    }
+  );
 }

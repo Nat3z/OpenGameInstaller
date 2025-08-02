@@ -163,70 +163,91 @@ export default function handler() {
     return outputDir;
   });
 
-  ipcMain.handle('fs:unzip', async (_, arg) => {
-    const { zipFilePath, outputDir } = arg;
+  ipcMain.on('fs:stat', async (event, arg: { path: string }) => {
+    let stat = fs.statSync(arg.path);
+    event.returnValue = {
+      isDirectory: stat.isDirectory(),
+      isFile: stat.isFile(),
+      isSymbolicLink: stat.isSymbolicLink(),
+      isBlockDevice: stat.isBlockDevice(),
+      isCharacterDevice: stat.isCharacterDevice(),
+      isFIFO: stat.isFIFO(),
+      isSocket: stat.isSocket(),
+    };
+  });
 
-    if (!fs.existsSync(zipFilePath)) {
-      throw new Error('ZIP file does not exist');
-    }
+  ipcMain.handle(
+    'fs:extract-zip',
+    async (_, arg: { zipFilePath: string; outputDir: string }) => {
+      const { zipFilePath, outputDir } = arg;
 
-    if (!fs.existsSync(outputDir)) {
-      fs.mkdirSync(outputDir, { recursive: true });
-    }
+      if (!fs.existsSync(zipFilePath)) {
+        throw new Error('ZIP file does not exist');
+      }
 
-    // use 7zip to extract the zip file or unzip if on linux/mac
-    console.log('Extracting ZIP file: ', zipFilePath);
-    console.log('Output directory: ', outputDir);
-    
-    if (process.platform === 'win32') {
-      console.log('isWin32');
-      let s7ZipPath = '"C:\\Program Files\\7-Zip\\7z.exe"';
-      await new Promise<void>((resolve, reject) =>
-        exec(
-          `${s7ZipPath} x "${zipFilePath}" -o"${outputDir}"`,
-          (err, stdout, stderr) => {
-            if (err) {
-              console.error(err);
+      if (!fs.existsSync(outputDir)) {
+        fs.mkdirSync(outputDir, { recursive: true });
+      }
+
+      // use 7zip to extract the zip file or unzip if on linux/mac
+      console.log('Extracting ZIP file: ', zipFilePath);
+      console.log('Output directory: ', outputDir);
+
+      if (process.platform === 'win32') {
+        console.log('isWin32');
+        let s7ZipPath = '"C:\\Program Files\\7-Zip\\7z.exe"';
+        await new Promise<void>((resolve, reject) =>
+          exec(
+            `${s7ZipPath} x "${zipFilePath}" -o"${outputDir}"`,
+            (err, stdout, stderr) => {
+              if (err) {
+                console.error(err);
+                console.log(stderr);
+                reject(new Error('Failed to extract ZIP file'));
+              }
+              console.log(stdout);
               console.log(stderr);
+              resolve();
+            }
+          )
+        );
+      }
+
+      if (process.platform === 'linux' || process.platform === 'darwin') {
+        console.log('isLinuxOrDarwin');
+        await new Promise<void>((resolve, reject) => {
+          // create the output directory if it doesn't exist
+          if (!fs.existsSync(outputDir)) {
+            fs.mkdirSync(outputDir, { recursive: true });
+          }
+
+          const unzipProcess = spawn('unzip', [
+            '-o', // overwrite files without prompting
+            zipFilePath,
+            '-d', // specify output directory
+            outputDir,
+          ]);
+
+          unzipProcess.stdout.on('data', (data) => {
+            console.log(`[unzip stdout]: ${data}`);
+          });
+
+          unzipProcess.stderr.on('data', (data) => {
+            console.error(`[unzip stderr]: ${data}`);
+          });
+
+          unzipProcess.on('close', (code) => {
+            if (code !== 0) {
+              console.error(`unzip process exited with code ${code}`);
               reject(new Error('Failed to extract ZIP file'));
             }
-            console.log(stdout);
-            console.log(stderr);
             resolve();
-          }
-        )
-      );
+          });
+        });
+        console.log('done');
+      }
+
+      return outputDir;
     }
-
-    if (process.platform === 'linux' || process.platform === 'darwin') {
-      console.log('isLinuxOrDarwin');
-      await new Promise<void>((resolve, reject) => {
-        const unzipProcess = spawn('unzip', [
-          '-o', // overwrite files without prompting
-          zipFilePath,
-          '-d', // specify output directory
-          outputDir,
-        ]);
-
-        unzipProcess.stdout.on('data', (data) => {
-          console.log(`[unzip stdout]: ${data}`);
-        });
-
-        unzipProcess.stderr.on('data', (data) => {
-          console.error(`[unzip stderr]: ${data}`);
-        });
-
-        unzipProcess.on('close', (code) => {
-          if (code !== 0) {
-            console.error(`unzip process exited with code ${code}`);
-            reject(new Error('Failed to extract ZIP file'));
-          }
-          resolve();
-        });
-      });
-      console.log('done');
-    }
-
-    return outputDir;
-  });
+  );
 }

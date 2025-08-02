@@ -43,9 +43,22 @@ contextBridge.exposeInMainWorld('electronAPI', {
       );
       return ipcRenderer.invoke('fs:extract-rar', data);
     },
+    unzip: (data: { zipFilePath: string; outputDir: string }) => {
+      console.log(
+        'fs:unzip called with zipFilePath:',
+        data.zipFilePath,
+        'outputDir:',
+        data.outputDir
+      );
+      return ipcRenderer.invoke('fs:extract-zip', data);
+    },
     getFilesInDir: (path: string) => {
       console.log('fs:getFilesInDir called with path:', path);
       return ipcRenderer.invoke('fs:get-files-in-dir', path);
+    },
+    stat: (path: string) => {
+      console.log('fs:stat called with path:', path);
+      return ipcRenderer.sendSync('fs:stat', { path });
     },
     dialog: {
       showOpenDialog: (options: Electron.OpenDialogOptions) => {
@@ -150,6 +163,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   cleanAddons: () => ipcRenderer.invoke('clean-addons'),
   downloadTorrentInto: (link: string) =>
     ipcRenderer.invoke('download-torrent-into', link),
+  getTorrentHash: (torrent: string | Buffer | Uint8Array) =>
+    ipcRenderer.invoke('torrent:get-hash', torrent),
 });
 
 // === Debug: Events Processed/sec Counter ===

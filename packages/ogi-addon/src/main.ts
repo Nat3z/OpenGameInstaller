@@ -146,7 +146,7 @@ export interface EventListenerTypes {
    * @returns
    */
   search: (
-    query: { storefront: string; appID: number },
+    query: { storefront: string; appID: number; for: 'game' | 'task' | 'all' },
     event: EventResponse<SearchResult[]>
   ) => void;
   /**

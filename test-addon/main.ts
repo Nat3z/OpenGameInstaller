@@ -141,8 +141,11 @@ addon.on('task-run', ({ manifest, name, downloadPath }, event) => {
   });
 });
 
-addon.on('search', ({ storefront, appID }, event) => {
+addon.on('search', ({ storefront, appID, for: searchFor }, event) => {
   event.defer();
+  if (searchFor === 'game') {
+    addon.notify({ type: 'info', message: 'Searching...', id: 'search' });
+  }
   new Promise(async (resolve) => {
     console.log(appID);
     event.resolve([
@@ -183,7 +186,6 @@ addon.on('search', ({ storefront, appID }, event) => {
         },
       },
     ]);
-    addon.notify({ type: 'info', message: 'Searching...', id: 'search' });
   });
 });
 addon.on(

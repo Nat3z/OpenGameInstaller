@@ -57,20 +57,14 @@
     }
   });
 
-  let alreadyOwns = window.electronAPI.fs.exists(
-    './library/' + appID + '.json'
+  let alreadyOwns = $state(
+    window.electronAPI.fs.exists('./library/' + appID + '.json')
   );
 
   // Check for active downloads for this game
   let activeDownload = $derived(
     $currentDownloads.find(
-      (download) =>
-        download.appID === appID &&
-        (download.status === 'downloading' ||
-          download.status === 'rd-downloading' ||
-          download.status === 'requesting' ||
-          download.status === 'paused' ||
-          download.status === 'completed')
+      (download) => download.appID === appID && download.status !== 'error'
     )
   );
 
@@ -120,6 +114,7 @@
   });
 
   async function loadCustomStoreData() {
+    results = [];
     const response: StoreData | undefined = await safeFetch(
       'gameDetails',
       {
@@ -157,6 +152,7 @@
             addonID: addon.id,
             appID: appID,
             storefront: storefront,
+            for: alreadyOwns ? 'task' : 'game',
           },
           { consume: 'json' }
         )
@@ -233,6 +229,31 @@
   function closeInfoModal() {
     selectedResult = undefined;
   }
+
+  // Watch for download completion and refresh store data
+  $effect(() => {
+    if (
+      activeDownload &&
+      (activeDownload.status === 'seeding' ||
+        activeDownload.status === 'setup-complete') &&
+      !alreadyOwns
+    ) {
+      console.log('Download completed, refreshing store data...');
+      // Refresh the alreadyOwns status
+      alreadyOwns = window.electronAPI.fs.exists(
+        './library/' + appID + '.json'
+      );
+      // Reload store data to reflect the new ownership status
+      loadCustomStoreData();
+
+      // Notify user that the game is now available
+      createNotification({
+        id: Math.random().toString(36).substring(7),
+        message: `${gameData?.name || 'Game'} is now ready to play!`,
+        type: 'success',
+      });
+    }
+  });
 
   // Debug reactive statement
   $effect(() => {
@@ -313,7 +334,8 @@
                   {activeDownload.status === 'downloading' ||
                   activeDownload.status === 'rd-downloading'
                     ? Math.round(activeDownload.progress * 100) + '%'
-                    : activeDownload.status === 'completed'
+                    : activeDownload.status === 'completed' ||
+                        activeDownload.status === 'redistr-downloading'
                       ? 'Setting up...'
                       : activeDownload.status === 'paused'
                         ? 'Paused'

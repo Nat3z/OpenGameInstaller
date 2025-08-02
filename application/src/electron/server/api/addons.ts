@@ -64,6 +64,7 @@ const procedures: Record<string, Procedure<any>> = {
         addonID: z.string(),
         appID: z.number(),
         storefront: z.string(),
+        for: z.enum(['game', 'task', 'all']),
       })
     )
     .handler(async (input) => {
@@ -79,6 +80,7 @@ const procedures: Record<string, Procedure<any>> = {
           args: {
             appID: input.appID,
             storefront: input.storefront,
+            for: input.for,
           },
         });
         console.log('searchComplete', event.args);

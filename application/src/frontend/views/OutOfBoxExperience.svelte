@@ -9,8 +9,12 @@
 
   let stage = $state(0);
 
-  let selectedTorrenter: 'qbittorrent' | 'real-debrid' | 'webtorrent' | '' =
-    $state('');
+  let selectedTorrenter:
+    | 'qbittorrent'
+    | 'real-debrid'
+    | 'webtorrent'
+    | 'torbox'
+    | '' = $state('webtorrent');
   let fulfilledRequirements = $state(false);
   let addons = '';
   let selectedAddons = $state<string[]>([
@@ -28,6 +32,14 @@
         behavior: 'smooth',
       });
       previousLogLength = $oobeLog.logs.length;
+    }
+  });
+
+  $effect(() => {
+    if (selectedTorrenter === 'webtorrent') {
+      fulfilledRequirements = true;
+    } else {
+      fulfilledRequirements = false;
     }
   });
 
@@ -85,7 +97,7 @@
       window.electronAPI.fs.mkdir('./config/option/');
       window.electronAPI.fs.write(
         './config/option/realdebrid.json',
-        JSON.stringify({ debridApiKey: apiKey.value })
+        JSON.stringify({ debridApiKey: apiKey.value, torboxApiKey: '' })
       );
 
       fulfilledRequirements = true;
@@ -120,6 +132,18 @@
         })
       );
 
+      fulfilledRequirements = true;
+    } else if (selectedTorrenter === 'torbox') {
+      console.log('Submitting TorBox API Key');
+      // save a file with the api key
+      const apiKey = document.querySelector(
+        'input[data-torbox-key]'
+      ) as HTMLInputElement;
+      window.electronAPI.fs.mkdir('./config/option/');
+      window.electronAPI.fs.write(
+        './config/option/realdebrid.json',
+        JSON.stringify({ torboxApiKey: apiKey.value, debridApiKey: '' })
+      );
       fulfilledRequirements = true;
     }
   }
@@ -461,13 +485,13 @@
       <!-- svelte-ignore a11y_consider_explicit_label -->
       <div class="flex-row flex gap-6 justify-center items-center">
         <button
-          onclick={() => (selectedTorrenter = 'qbittorrent')}
+          onclick={() => (selectedTorrenter = 'webtorrent')}
           class="flex justify-center p-4 items-center w-24 h-24 bg-accent-lighter hover:bg-accent-light rounded-lg border-2 transition-colors duration-200 {selectedTorrenter ===
-          'qbittorrent'
+          'webtorrent'
             ? 'border-accent'
             : 'border-accent-light'}"
         >
-          <img class="w-16 h-16" src="./qbittorrent.svg" alt="qBittorrent" />
+          <img class="w-16 h-16" src="./WebTorrent_logo.png" alt="WebTorrent" />
         </button>
         <button
           onclick={() => (selectedTorrenter = 'real-debrid')}
@@ -479,13 +503,22 @@
           <img class="w-16 h-16" src="./rd-logo.png" alt="Real Debrid" />
         </button>
         <button
-          onclick={() => (selectedTorrenter = 'webtorrent')}
+          onclick={() => (selectedTorrenter = 'torbox')}
           class="flex justify-center p-4 items-center w-24 h-24 bg-accent-lighter hover:bg-accent-light rounded-lg border-2 transition-colors duration-200 {selectedTorrenter ===
-          'webtorrent'
+          'torbox'
             ? 'border-accent'
             : 'border-accent-light'}"
         >
-          <img class="w-16 h-16" src="./WebTorrent_logo.png" alt="WebTorrent" />
+          <img class="w-16 h-16" src="./torbox.svg" alt="Torbox" />
+        </button>
+        <button
+          onclick={() => (selectedTorrenter = 'qbittorrent')}
+          class="flex justify-center p-4 items-center w-24 h-24 bg-accent-lighter hover:bg-accent-light rounded-lg border-2 transition-colors duration-200 {selectedTorrenter ===
+          'qbittorrent'
+            ? 'border-accent'
+            : 'border-accent-light'}"
+        >
+          <img class="w-16 h-16" src="./qbittorrent.svg" alt="qBittorrent" />
         </button>
       </div>
 
@@ -514,11 +547,15 @@
           <!-- TODO: WORK ON OUR OWN TUTORIAL -->
           <a
             href="https://ogi.nat3z.com/docs/for-users/qb-setup"
-            class="font-open-sans mb-4 text-sm underline text-accent hover:text-accent-dark"
+            class="font-open-sans mb-4 text-center text-sm underline text-accent hover:text-accent-dark"
             target="_blank"
-            >Enable qBittorrent's WebUI so OpenGameInstaller can interact with
-            the client. Click here for a guide on how to enable it.</a
           >
+            <p>
+              Enable qBittorrent's WebUI so OpenGameInstaller can interact with
+              the client.
+            </p>
+            <p>Click here for a guide on how to enable it.</p>
+          </a>
           <div
             class="justify-center items-center flex flex-row gap-4 mb-4 w-full"
           >
@@ -577,6 +614,39 @@
             WebTorrent is built into OpenGameInstaller. No configuration is
             required.
           </p>
+          <div
+            class="flex justify-center mt-4 items-center flex-col border-red-500 border-2 rounded-lg p-4 bg-red-500/25"
+          >
+            <p class="text-black text-center">
+              Security features like VPN binding are <span class="underline"
+                >NOT SUPPORTED</span
+              > for WebTorrent.
+            </p>
+            <p class="text-black text-center">
+              Please use qBittorrent/a debrid service if you rely on these
+              features.
+            </p>
+            <p class="text-black text-center font-bold">
+              VPNs are still supported.
+            </p>
+          </div>
+        {:else if selectedTorrenter === 'torbox'}
+          <input
+            data-torbox-key
+            type="text"
+            onchange={submitTorrenter}
+            placeholder="TorBox API Key"
+            class="w-full p-3 bg-white border border-accent-light rounded-lg focus:outline-none focus:ring-2 focus:ring-accent"
+          />
+          <!-- svelte-ignore a11y_label_has_associated_control -->
+          <label class="text-sm text-gray-500 mt-2"
+            >Insert your <a
+              href="https://torbox.app/settings"
+              target="_blank"
+              class="underline text-accent hover:text-accent-dark"
+              >TorBox API Key</a
+            >.
+          </label>
         {/if}
       </form>
       {#if fulfilledRequirements || selectedTorrenter === 'webtorrent'}

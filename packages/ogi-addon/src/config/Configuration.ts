@@ -44,7 +44,7 @@ export class Configuration {
           'Option ' +
             key +
             ' is not defined. Using default value Value: ' +
-            this.definiteConfig[key]
+            this.storedConfigTemplate[key].defaultValue
         );
         this.definiteConfig[key] = this.storedConfigTemplate[key]
           .defaultValue as string | number | boolean;
@@ -64,9 +64,13 @@ export class Configuration {
     }
 
     for (const key in this.definiteConfig) {
-      if (!this.storedConfigTemplate[key]) {
-        throw new Error(
-          'Option ' + key + ' is not defined in the configuration template'
+      if (this.storedConfigTemplate[key] === undefined) {
+        // remove the key from the definite config
+        delete this.definiteConfig[key];
+        console.warn(
+          'Option ' +
+            key +
+            ' is not defined in the configuration template. Removing from config.'
         );
       }
     }

@@ -33,6 +33,7 @@ export async function safeFetch(
           });
           if (taskResponse.status === 404) {
             reject('Task not found when deferring.');
+            console.log('Task failed');
             if (options.onFailed)
               options.onFailed('Task not found when deferring.');
             clearInterval(deferInterval);
@@ -50,13 +51,17 @@ export async function safeFetch(
             return;
           }
           if (
-            taskResponse.data &&
-            taskResponse.data.data &&
-            taskResponse.data.data.progress === undefined
+            taskResponse.data.resolved ||
+            (taskResponse.data && taskResponse.data.data !== undefined)
           ) {
-            // Task is completed
             clearInterval(deferInterval);
-            if (!options || !options.consume || options.consume === 'json')
+            if (taskResponse.data.data === undefined) {
+              return resolve(undefined);
+            }
+            if (
+              (!options || !options.consume || options.consume === 'json') &&
+              taskResponse.data.data
+            )
               return resolve(
                 JSON.parse(JSON.stringify(taskResponse.data.data))
               );

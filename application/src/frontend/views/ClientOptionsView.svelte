@@ -426,7 +426,7 @@
       iconWidth: 24,
       iconHeight: 24,
       description:
-        'Community-driven and friendly seedbox. Requires subscription.',
+        'Community-driven and high-speed seedbox with cached torrents. Requires subscription.',
     },
     {
       id: 'real-debrid',

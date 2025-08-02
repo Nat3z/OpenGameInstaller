@@ -75,6 +75,11 @@ export async function runTask(
   );
 
   deferredTasks.update((tasks) => tasks.filter((t) => t.id !== taskID));
+  createNotification({
+    id: Math.random().toString(36).substring(7),
+    type: 'success',
+    message: 'Task completed',
+  });
 
   return response;
 }

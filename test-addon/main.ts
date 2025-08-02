@@ -112,9 +112,26 @@ addon.on('task-run', ({ manifest, name, downloadPath }, event) => {
   event.log(`Download path: ${downloadPath}`);
   new Promise(async (resolve) => {
     // keep incrementing the progress every 1 second
+    const input = await event.askForInput(
+      'Please enter the code',
+      'code',
+      new ConfigurationBuilder().addNumberOption((option) =>
+        option
+          .setDisplayName('Code')
+          .setName('code')
+          .setDescription('Enter the code')
+          .setMin(1)
+          .setMax(100)
+      )
+    );
+    if (input.code === 100) {
+      event.fail('Code is 100');
+      return;
+    }
     const interval = setInterval(() => {
       if (event.progress >= 100) {
         clearInterval(interval);
+        console.log('Task completed');
         event.resolve();
         return;
       }

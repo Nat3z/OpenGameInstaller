@@ -516,18 +516,47 @@ class OGIAddonWSListener {
         ogiVersion: VERSION,
       });
 
-      this.eventEmitter.emit(
-        'connect',
-        new EventResponse<void>((screen, name, description) => {
-          return this.userInputAsked(screen, name, description, this.socket);
-        })
-      );
-
       // send a configuration request
       let configBuilder = new ConfigurationBuilder();
       this.eventEmitter.emit('configure', configBuilder);
       this.send('configure', configBuilder.build(false));
       this.addon.config = new Configuration(configBuilder.build(true));
+
+      // wait for the config-update to be received then send connect
+      const configListener = (event: ws.MessageEvent) => {
+        if (event === undefined) return;
+        // event can be a Buffer, string, ArrayBuffer, or Buffer[]
+        let data: string;
+        if (typeof event === 'string') {
+          data = event;
+        } else if (event instanceof Buffer) {
+          data = event.toString();
+        } else if (event && typeof (event as any).data === 'string') {
+          data = (event as any).data;
+        } else if (event && (event as any).data instanceof Buffer) {
+          data = (event as any).data.toString();
+        } else {
+          // fallback for other types
+          data = event.toString();
+        }
+        const message: WebsocketMessageServer = JSON.parse(data);
+        if (message.event === 'config-update') {
+          console.log('Config update received');
+          this.socket.off('message', configListener);
+          this.eventEmitter.emit(
+            'connect',
+            new EventResponse<void>((screen, name, description) => {
+              return this.userInputAsked(
+                screen,
+                name,
+                description,
+                this.socket
+              );
+            })
+          );
+        }
+      };
+      this.socket.on('message', configListener);
     });
 
     this.socket.on('error', (error) => {

@@ -312,7 +312,7 @@
                 <span class="text-sm text-gray-600">
                   {activeDownload.status === 'downloading' ||
                   activeDownload.status === 'rd-downloading'
-                    ? Math.round(activeDownload.progress || 0) + '%'
+                    ? Math.round(activeDownload.progress * 100) + '%'
                     : activeDownload.status === 'completed'
                       ? 'Setting up...'
                       : activeDownload.status === 'paused'

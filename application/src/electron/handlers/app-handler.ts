@@ -481,6 +481,40 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
                 console.log('Running redistributable: ' + redistributable.path);
 
                 const success = await new Promise<boolean>((resolve) => {
+                  if (redistributable.path === 'winetricks') {
+                    // spawn winetricks with the proton path to install the name
+                    const child = spawn('flatpak', [
+                      '--command=winetricks',
+                      `--env="WINEPREFIX=${protonPath}"`,
+                      `--env=DISPLAY=:0`, // Ensure display for wine
+                      `--env=WINEDEBUG=-all`, // Reduce wine debug output
+                      `--env=WINEDLLOVERRIDES=mscoree,mshtml=`, // Disable .NET and HTML rendering
+                      'run',
+                      'org.winehq.Wine',
+                      `${redistributable.name}`,
+                    ]);
+                    child.on('close', (code) => {
+                      if (code === 0) {
+                        resolve(true);
+                      } else {
+                        resolve(false);
+                      }
+                    });
+                    child.on('error', (error) => {
+                      console.error(error);
+                      resolve(false);
+                    });
+                    child.stdout?.on('data', (data) => {
+                      const output = data.toString();
+                      console.log(`[redistributable:stdout] ${output.trim()}`);
+                    });
+                    child.stderr?.on('data', (data) => {
+                      const output = data.toString();
+                      console.log(`[redistributable:stderr] ${output.trim()}`);
+                    });
+                    return;
+                  }
+
                   const redistributablePath = redistributable.path
                     .trim()
                     .replace(/\n$/g, '');

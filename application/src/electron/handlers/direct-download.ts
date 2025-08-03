@@ -8,15 +8,23 @@ import { DOWNLOAD_QUEUE } from '../queue.js';
 import { Readable } from 'stream';
 
 // Types for better type safety
-interface DownloadState {
-  url: string;
-  filePath: string;
-  currentBytes: number;
-  totalSize: number;
-  startByte: number;
+// Unified interface for all downloads (single-part and multi-part)
+interface MultiPartDownloadState {
+  downloadID: string;
+  mainWindow: Electron.BrowserWindow;
+  args: { link: string; path: string; headers?: Record<string, string> }[];
+  currentPart: number;
+  totalParts: number;
+  headersAdditional: Record<string, string>;
+  taskFinisher: () => void;
   isPaused: boolean;
-  parts?: number;
-  totalParts?: number;
+  completedParts: Set<number>;
+  // Additional fields for individual part tracking
+  currentBytes?: number;
+  totalSize?: number;
+  startByte?: number;
+  currentFilePath?: string;
+  currentUrl?: string;
 }
 
 interface ProgressData {
@@ -49,8 +57,8 @@ interface DownloadContext {
   taskFinisher: () => void;
 }
 
-// Store download states for resume functionality
-const downloadStates: Map<string, DownloadState> = new Map();
+// Store download states for resume functionality (unified for single and multi-part)
+const downloadStates: Map<string, MultiPartDownloadState> = new Map();
 
 // Store download contexts for pause/resume functionality
 const downloadContexts: Map<string, DownloadContext> = new Map();
@@ -144,7 +152,10 @@ function setupProgressTracking(context: DownloadContext): void {
 // Helper function to setup pause/resume handlers
 function setupPauseResumeHandlers(context: DownloadContext): void {
   // Remove existing handlers first to avoid conflicts
-  cleanupPauseResumeHandlers(context.downloadID);
+  ipcMain.removeHandler(`ddl:${context.downloadID}:pause`);
+  ipcMain.removeHandler(`ddl:${context.downloadID}:resume`);
+  // Note: Don't remove abort handler here since it's managed globally
+  // Note: Don't delete download state here since it should persist throughout the download
 
   // Store the context for this download
   console.log('Stored context for downloadID:', context.downloadID);
@@ -167,74 +178,40 @@ function setupPauseResumeHandlers(context: DownloadContext): void {
   // Register resume handler
   ipcMain.handle(`ddl:${context.downloadID}:resume`, async () => {
     console.log('Resume event received');
-    const resumeSuccess = await handleResume(
-      context.downloadID,
-      context.mainWindow,
-      context.url,
-      context.headersAdditional,
-      context.taskFinisher
-    );
 
-    if (!resumeSuccess) {
-      console.log('Resume failed, restarting download from beginning...');
+    // Get the unified download state
+    const downloadState = downloadStates.get(context.downloadID);
+    if (downloadState && downloadState.isPaused) {
+      // Handle unified download resume (works for both single and multi-part)
+      console.log('Resuming download from part', downloadState.currentPart);
+      const resumeSuccess = await handleUnifiedResume(downloadState);
 
-      // Send notification about resume failure and restart
-      sendNotification({
-        message: 'Resume failed, restarting download',
-        id: context.downloadID,
-        type: 'warning',
-      });
-
-      // Get the current context to access file path and other details
-      const currentContext = downloadContexts.get(context.downloadID);
-      if (currentContext) {
-        // Clean up current download state
-        cleanupDownload(currentContext);
-      }
-
-      // Clean up the partial file
-      try {
-        const state = downloadStates.get(context.downloadID);
-        if (state && fs.existsSync(state.filePath)) {
-          fs.unlinkSync(state.filePath);
-        }
-      } catch (unlinkError) {
-        console.error('Failed to unlink file during restart:', unlinkError);
-      }
-
-      // Restart the download from the beginning
-      try {
-        const state = downloadStates.get(context.downloadID);
-        if (state) {
-          await executeDownload(
-            context.downloadID,
-            context.mainWindow,
-            state.url,
-            state.filePath,
-            context.headersAdditional,
-            state.parts,
-            state.totalParts,
-            context.taskFinisher
-          );
-        }
-      } catch (restartError) {
-        console.error(
-          'Failed to restart download after resume failure:',
-          restartError
-        );
+      if (!resumeSuccess) {
+        console.log('Resume failed');
         sendIpcMessage(context.mainWindow, 'ddl:download-error', {
           id: context.downloadID,
-          error: 'Download failed after resume restart',
-        });
-        sendNotification({
-          message: 'Download failed after resume restart',
-          id: context.downloadID,
-          type: 'error',
+          error: 'Failed to resume download',
         });
       }
-    }
 
-    return resumeSuccess;
+      return resumeSuccess;
+    } else {
+      console.log('No paused download state found for', context.downloadID);
+      console.log(
+        'Available download states:',
+        Array.from(downloadStates.keys())
+      );
+      console.log('Download state exists:', !!downloadState);
+      if (downloadState) {
+        console.log('Download state isPaused:', downloadState.isPaused);
+      }
+
+      sendIpcMessage(context.mainWindow, 'ddl:download-error', {
+        id: context.downloadID,
+        error: 'No paused download found to resume',
+      });
+      return false;
+    }
   });
 }
 
@@ -242,17 +219,47 @@ function setupPauseResumeHandlers(context: DownloadContext): void {
 function handlePause(context: DownloadContext): boolean {
   console.log('Pausing system...');
   if (!context.isPaused) {
-    // Store download state for resume
-    downloadStates.set(context.downloadID, {
-      url: context.url,
-      filePath: context.filePath,
-      currentBytes: context.currentBytes,
-      totalSize: context.totalSize,
-      startByte: context.startByte,
-      isPaused: true,
-      parts: context.parts,
-      totalParts: context.totalParts,
-    });
+    // Get the unified download state
+    const downloadState = downloadStates.get(context.downloadID);
+    console.log(
+      'Download state found:',
+      !!downloadState,
+      'for ID:',
+      context.downloadID
+    );
+    console.log(
+      'Available download states:',
+      Array.from(downloadStates.keys())
+    );
+
+    if (downloadState) {
+      // Update the unified download state with current part information
+      downloadState.isPaused = true;
+      downloadState.currentPart = context.parts || 1;
+      downloadState.currentBytes = context.currentBytes;
+      downloadState.totalSize = context.totalSize;
+      downloadState.startByte = context.startByte;
+      downloadState.currentFilePath = context.filePath;
+      downloadState.currentUrl = context.url;
+      downloadStates.set(context.downloadID, downloadState);
+      console.log('Updated download state:', downloadState);
+    } else {
+      console.error('No download state found for ID:', context.downloadID);
+      console.log(
+        'Available download states:',
+        Array.from(downloadStates.keys())
+      );
+
+      // This should never happen if the unified system is working correctly
+      // The download state should be created when the download starts
+      console.error(
+        'CRITICAL: Download state missing - this indicates a bug in the unified system'
+      );
+
+      // Don't create a fallback state as it would be incomplete
+      // Instead, just pause the current context and let the user restart the download
+      console.log('Pausing without state - download will need to be restarted');
+    }
 
     // Properly pause by destroying the stream and stopping progress
     context.response.data.destroy();
@@ -473,17 +480,15 @@ function setupDownloadEventHandlersWithRetry(
   context.response.data.on('data', (chunk: Buffer) => {
     context.currentBytes += chunk.length;
 
-    // Update download state for pause/resume
-    downloadStates.set(context.downloadID, {
-      url: context.url,
-      filePath: context.filePath,
-      currentBytes: context.currentBytes,
-      totalSize: context.totalSize,
-      startByte: context.startByte,
-      isPaused: context.isPaused,
-      parts: context.parts,
-      totalParts: context.totalParts,
-    });
+    // Update the unified download state with current progress
+    const downloadState = downloadStates.get(context.downloadID);
+    if (downloadState) {
+      downloadState.currentBytes = context.currentBytes;
+      downloadState.totalSize = context.totalSize;
+      downloadState.startByte = context.startByte;
+      downloadState.currentFilePath = context.filePath;
+      downloadState.currentUrl = context.url;
+    }
   });
 
   // Handle download completion
@@ -597,55 +602,138 @@ function setupDownloadEventHandlersWithRetry(
   });
 }
 
-// Helper function to handle resume functionality
-async function handleResume(
-  downloadID: string,
-  mainWindow: Electron.BrowserWindow,
-  currentUrl: string,
-  headersAdditional: Record<string, string>,
-  finish?: () => void
+// Helper function to handle unified resume functionality (works for both single and multi-part)
+async function handleUnifiedResume(
+  downloadState: MultiPartDownloadState
 ): Promise<boolean> {
-  const state = downloadStates.get(downloadID);
-  if (!state || !state.isPaused) {
-    console.log('No paused download state found for', downloadID);
-    return false;
-  }
-
   try {
-    console.log(
-      `Resuming download from ${state.currentBytes}/${state.totalSize} bytes`
-    );
+    console.log('Resuming download from part', downloadState.currentPart);
 
-    // Update state to not paused
-    state.isPaused = false;
-    downloadStates.set(downloadID, state);
+    // Mark as not paused
+    downloadState.isPaused = false;
 
-    // Use the same executeDownload function to ensure consistent setup
-    sendIpcMessage(mainWindow, 'ddl:download-resumed', {
-      id: downloadID,
+    // Send resume notification immediately
+    sendIpcMessage(downloadState.mainWindow, 'ddl:download-resumed', {
+      id: downloadState.downloadID,
     });
-    await executeDownload(
-      downloadID,
-      mainWindow,
-      currentUrl,
-      state.filePath,
-      headersAdditional,
-      state.parts,
-      state.totalParts,
-      finish
-    );
 
-    console.log('Download resumed successfully');
+    // Start the download from the current part
+    // Don't await it - let it run asynchronously
+    executeUnifiedDownload(downloadState)
+      .then(() => {
+        // Handle successful completion
+        console.log('Download resumed and completed successfully');
 
+        // Send completion notification for resumed downloads
+        sendIpcMessage(downloadState.mainWindow, 'ddl:download-complete', {
+          id: downloadState.downloadID,
+        });
+
+        // Send final progress update
+        sendProgressUpdate(downloadState.mainWindow, {
+          id: downloadState.downloadID,
+          progress: 1,
+          downloadSpeed: 0,
+          fileSize: downloadState.totalSize || 0,
+          part: downloadState.totalParts,
+          totalParts: downloadState.totalParts,
+          queuePosition: 1,
+        });
+
+        // Clean up the download state since it's completed
+        downloadStates.delete(downloadState.downloadID);
+        downloadContexts.delete(downloadState.downloadID);
+        console.log(
+          'Deleted download state on completion for ID:',
+          downloadState.downloadID
+        );
+
+        // Call finish function if provided to advance the queue
+        if (downloadState.taskFinisher) {
+          downloadState.taskFinisher();
+        }
+      })
+      .catch((error) => {
+        console.error('Resumed download failed:', error);
+        sendIpcMessage(downloadState.mainWindow, 'ddl:download-error', {
+          id: downloadState.downloadID,
+          error: 'Resumed download failed',
+        });
+        sendNotification({
+          message: 'Resumed download failed',
+          id: downloadState.downloadID,
+          type: 'error',
+        });
+
+        // Clean up the download state on error
+        downloadStates.delete(downloadState.downloadID);
+        downloadContexts.delete(downloadState.downloadID);
+        console.log(
+          'Deleted download state on error for ID:',
+          downloadState.downloadID
+        );
+
+        // Call finish function if provided to advance the queue even on error
+        if (downloadState.taskFinisher) {
+          downloadState.taskFinisher();
+        }
+      });
+
+    // Return true immediately to indicate resume operation started successfully
     return true;
   } catch (error) {
-    console.error('Failed to resume download:', error);
-    downloadStates.delete(downloadID);
+    console.error('Failed to start resume download:', error);
+    downloadStates.delete(downloadState.downloadID);
+    downloadContexts.delete(downloadState.downloadID);
+    console.log(
+      'Deleted download state on resume failure for ID:',
+      downloadState.downloadID
+    );
     return false;
   }
 }
 
+// Helper function to execute unified download from current part
+async function executeUnifiedDownload(
+  downloadState: MultiPartDownloadState
+): Promise<void> {
+  const { downloadID, mainWindow, args, currentPart, totalParts } =
+    downloadState;
+
+  console.log(`Executing download from part ${currentPart} to ${totalParts}`);
+
+  // Start from the current part and continue through all remaining parts
+  for (let part = currentPart || 1; part <= totalParts; part++) {
+    const arg = args[part - 1];
+    console.log(`Starting part ${part} of ${totalParts}`);
+
+    // Update current part in state
+    downloadState.currentPart = part;
+
+    // Execute this part
+    await executeDownload(
+      downloadID,
+      mainWindow,
+      arg.link,
+      arg.path,
+      arg.headers || {},
+      part,
+      totalParts,
+      undefined // Don't pass finish() here to avoid double-calling
+    );
+
+    console.log(`Completed part ${part} of ${totalParts}`);
+
+    // Mark this part as completed
+    downloadState.completedParts.add(part);
+  }
+
+  console.log(`All ${totalParts} parts completed for download ${downloadID}`);
+}
+
 // Helper function to cleanup pause/resume handlers
+// Note: This function should only be called when the download is actually finished, failed, or aborted
+// Not when setting up handlers for new parts
 function cleanupPauseResumeHandlers(downloadID: string) {
   // Remove handlers - removeHandler doesn't throw if handler doesn't exist
   ipcMain.removeHandler(`ddl:${downloadID}:pause`);
@@ -653,6 +741,10 @@ function cleanupPauseResumeHandlers(downloadID: string) {
   // Note: Don't remove abort handler here since it's managed globally
   downloadStates.delete(downloadID);
   downloadContexts.delete(downloadID);
+  console.log(
+    'Cleaned up pause/resume handlers and states for ID:',
+    downloadID
+  );
 }
 
 // Helper function to setup file stream with error handling
@@ -726,11 +818,39 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
     ) => {
       // Generate a unique ID for this download batch
       const downloadID = Math.random().toString(36).substring(7);
+
+      // Store unified download state for pause/resume functionality (works for both single and multi-part)
+      downloadStates.set(downloadID, {
+        downloadID,
+        mainWindow,
+        args,
+        currentPart: 0,
+        totalParts: args.length,
+        headersAdditional: {},
+        taskFinisher: () => {},
+        isPaused: false,
+        completedParts: new Set(),
+      });
+      console.log(
+        'Created download state for ID:',
+        downloadID,
+        'with',
+        args.length,
+        'parts'
+      );
+
       // Enqueue the download in the global DOWNLOAD_QUEUE
       const { initialPosition, wait, finish, cancelHandler } =
         DOWNLOAD_QUEUE.enqueue(downloadID, {
           type: 'direct',
         });
+
+      // Update download state with the actual taskFinisher
+      const downloadState = downloadStates.get(downloadID);
+      if (downloadState) {
+        downloadState.taskFinisher = finish;
+      }
+
       // Begin download process for each file in args
       new Promise<void>(async (resolve, reject) => {
         console.log('New Download');
@@ -767,6 +887,10 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
             }
             cleanupDownload(ctx);
           }
+
+          // Clean up multi-part download state if it exists
+          downloadStates.delete(downloadID);
+          console.log('Deleted download state for ID:', downloadID);
 
           // Always advance the queue
           finish();
@@ -814,6 +938,19 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
             parts++;
             console.log(`Starting part ${parts} of ${totalParts}`);
 
+            // Update download state with current part
+            const downloadState = downloadStates.get(downloadID);
+            if (downloadState) {
+              downloadState.currentPart = parts;
+              console.log(
+                `Updated download state: part ${parts}/${downloadState.totalParts} for ID: ${downloadID}`
+              );
+            } else {
+              console.error(
+                `CRITICAL: No download state found for part ${parts} of download ${downloadID}`
+              );
+            }
+
             // Don't pass finish() to individual parts - we'll handle it at the end
             // The global abort handler will call finish() if needed
             await executeDownload(
@@ -828,6 +965,11 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
             );
 
             console.log(`Completed part ${parts} of ${totalParts}`);
+
+            // Mark this part as completed in download state
+            if (downloadState) {
+              downloadState.completedParts.add(parts);
+            }
           }
 
           // All parts completed successfully

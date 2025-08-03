@@ -34,21 +34,33 @@ contextBridge.exposeInMainWorld('electronAPI', {
       console.log('fs:showFileLoc called with path:', path);
       return ipcRenderer.sendSync('fs:show-file-loc', path);
     },
-    unrar: (data: { outputDir: string; rarFilePath: string }) => {
+    unrar: (data: {
+      outputDir: string;
+      rarFilePath: string;
+      downloadId?: string;
+    }) => {
       console.log(
         'fs:unrar called with outputDir:',
         data.outputDir,
         'rarFilePath:',
-        data.rarFilePath
+        data.rarFilePath,
+        'downloadId:',
+        data.downloadId
       );
       return ipcRenderer.invoke('fs:extract-rar', data);
     },
-    unzip: (data: { zipFilePath: string; outputDir: string }) => {
+    unzip: (data: {
+      zipFilePath: string;
+      outputDir: string;
+      downloadId?: string;
+    }) => {
       console.log(
         'fs:unzip called with zipFilePath:',
         data.zipFilePath,
         'outputDir:',
-        data.outputDir
+        data.outputDir,
+        'downloadId:',
+        data.downloadId
       );
       return ipcRenderer.invoke('fs:extract-zip', data);
     },

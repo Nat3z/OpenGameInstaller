@@ -227,6 +227,17 @@
       downloadedItem.usedDebridService === 'realdebrid' &&
       !downloadedItem.files
     ) {
+      // Initialize setup logs for this download
+      setupLogs.update((logs) => ({
+        ...logs,
+        [downloadedItem.id]: {
+          downloadId: downloadedItem.id,
+          logs: [],
+          progress: 0,
+          isActive: true,
+        },
+      }));
+
       dispatchSetupEvent('log', downloadedItem.id, [
         'Extracting downloaded RAR file...',
       ]);
@@ -244,6 +255,7 @@
               downloadedItem.downloadPath?.replace(/(\/|\\)$/g, '') +
               '/' +
               downloadedItem.filename,
+            downloadId: downloadedItem.id,
           });
           outputDir = extractedDir;
           // delete the rar file
@@ -310,6 +322,17 @@
       downloadedItem.usedDebridService === 'torbox' &&
       !downloadedItem.files
     ) {
+      // Initialize setup logs for this download
+      setupLogs.update((logs) => ({
+        ...logs,
+        [downloadedItem.id]: {
+          downloadId: downloadedItem.id,
+          logs: [],
+          progress: 0,
+          isActive: true,
+        },
+      }));
+
       dispatchSetupEvent('log', downloadedItem.id, [
         'Extracting downloaded ZIP file...',
       ]);
@@ -320,6 +343,7 @@
         outputDir = await window.electronAPI.fs.unzip({
           zipFilePath: downloadedItem.downloadPath,
           outputDir: downloadedItem.downloadPath.replace(/\.zip$/g, ''),
+          downloadId: downloadedItem.id,
         });
         console.log('ZIP file extracted successfully');
         // go depeer until it's not just folders
@@ -459,6 +483,33 @@
   }
 
   // -- Event listeners --
+
+  // -- Setup Logs from Backend --
+  document.addEventListener('setup:log', (event: Event) => {
+    if (!isCustomEvent(event)) return;
+    const { id: downloadID, log } = event.detail;
+    console.log('Setup log from backend:', downloadID, log);
+
+    // Update the setup logs for the given downloadID
+    setupLogs.update((logs) => {
+      if (logs[downloadID]) {
+        const currentLogs = logs[downloadID].logs;
+        const newLogs = [...currentLogs, ...log];
+        // Keep only the last 100 logs to prevent memory issues
+        if (newLogs.length > 100) {
+          newLogs.splice(0, newLogs.length - 100);
+        }
+        return {
+          ...logs,
+          [downloadID]: {
+            ...logs[downloadID],
+            logs: newLogs,
+          },
+        };
+      }
+      return logs;
+    });
+  });
 
   // -- Download Progress --
   document.addEventListener('ddl:download-progress', handleDownloadProgress);

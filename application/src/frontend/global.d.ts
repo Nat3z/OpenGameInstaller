@@ -20,10 +20,12 @@ interface Window {
       unrar: (data: {
         outputDir: string;
         rarFilePath: string;
+        downloadId?: string;
       }) => Promise<string>;
       unzip: (data: {
         zipFilePath: string;
         outputDir: string;
+        downloadId?: string;
       }) => Promise<string>;
       getFilesInDir: (path: string) => Promise<string[]>;
       stat: (path: string) => {

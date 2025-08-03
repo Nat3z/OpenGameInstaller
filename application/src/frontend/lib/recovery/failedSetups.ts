@@ -107,6 +107,7 @@ export async function retryFailedSetup(failedSetup: FailedSetup) {
           failedSetup.downloadInfo.downloadPath.replace(/(\/|\\)$/g, '') +
           '/' +
           failedSetup.downloadInfo.filename,
+        downloadId: tempId,
       });
       setupData.path = extractedDir;
       // delete the rar file
@@ -131,6 +132,7 @@ export async function retryFailedSetup(failedSetup: FailedSetup) {
             /\.zip$/g,
             ''
           ),
+          downloadId: tempId,
         });
         console.log('ZIP file extracted successfully');
         // go deeper until it's not just folders

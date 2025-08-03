@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import { sendNotification } from '../main.js';
 import axios, { AxiosResponse } from 'axios';
 import { __dirname } from '../paths.js';
+import { dirname } from 'path';
 import { DOWNLOAD_QUEUE } from '../queue.js';
 import { Readable } from 'stream';
 
@@ -657,7 +658,7 @@ function cleanupPauseResumeHandlers(downloadID: string) {
 // Helper function to setup file stream with error handling
 function setupFileStream(filePath: string, startByte: number): fs.WriteStream {
   // Ensure directory exists
-  fs.mkdirSync(filePath.split('/').slice(0, -1).join('/'), {
+  fs.mkdirSync(dirname(filePath), {
     recursive: true,
   });
 

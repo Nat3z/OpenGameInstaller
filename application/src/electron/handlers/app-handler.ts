@@ -8,7 +8,7 @@ import { LibraryInfo } from 'ogi-addon';
 import { __dirname } from '../paths.js';
 import { STEAMTINKERLAUNCH_PATH } from '../startup.js';
 import { clients } from '../server/addon-server.js';
-import { dirname } from 'path';
+import { dirname, basename } from 'path';
 
 const grantAccessToPath = (path: string, rootPassword: string) =>
   new Promise<void>((resolve, reject) => {
@@ -128,8 +128,7 @@ const installRedistributablesWithSystemWine = async (
         const redistributableDir = dirname(redistributablePath);
 
         // Get appropriate silent installation flags
-        const redistributableFilename =
-          redistributablePath.split('/').pop() || redistributablePath;
+        const redistributableFilename = basename(redistributablePath);
         const silentFlags = getSilentInstallFlags(
           redistributablePath,
           redistributableFilename
@@ -533,8 +532,7 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
                     .trim()
                     .replace(/\n$/g, '');
                   const redistributableDir = dirname(redistributablePath);
-                  const redistributableFilename =
-                    redistributablePath.split('/').pop() || redistributablePath;
+                  const redistributableFilename = basename(redistributablePath);
 
                   // Get appropriate silent installation flags
                   const silentFlags = getSilentInstallFlags(

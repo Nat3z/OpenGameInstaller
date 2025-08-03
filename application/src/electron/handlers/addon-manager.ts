@@ -220,8 +220,9 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
         continue;
       }
       // get rid of the installation log
-      if (fs.existsSync(addonPath + '/installation.log')) {
-        fs.unlinkSync(addonPath + '/installation.log');
+      const installationLog = join(addonPath, 'installation.log');
+      if (fs.existsSync(installationLog)) {
+        fs.unlinkSync(installationLog);
       }
 
       new Promise<void>((resolve, reject) => {

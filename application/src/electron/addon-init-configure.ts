@@ -32,7 +32,7 @@ export async function setupAddon(addonPath: string): Promise<boolean> {
     sendNotification({
       type: 'error',
       message:
-        'Addon configuration not found for ' + addonPath.split('/').pop(),
+        'Addon configuration not found for ' + addonPath.split(/[/\\]/).pop(),
       id: Math.random().toString(36).substring(7),
     });
     return false;
@@ -185,7 +185,7 @@ export async function startAddon(addonPath: string, addonLink: string) {
 
     sendNotification({
       type: 'error',
-      message: 'Error running run script for ' + addonPath.split('/').pop(),
+      message: 'Error running run script for ' + addonPath.split(/[/\\]/).pop(),
       id: Math.random().toString(36).substring(7),
     });
   }

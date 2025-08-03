@@ -71,7 +71,7 @@ export default function handler() {
   });
   ipcMain.handle('fs:dialog:show-open-dialog', async (_, options) => {
     const result = await dialog.showOpenDialog(options);
-    return result.filePaths[0];
+    return result.filePaths;
   });
   ipcMain.handle('fs:dialog:show-save-dialog', async (_, options) => {
     const result = await dialog.showSaveDialog(options);

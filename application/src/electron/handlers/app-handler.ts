@@ -496,13 +496,13 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
                     console.log('spawning winetricks redistributable');
                     // spawn winetricks with the proton path to install the name
                     const child = spawn('flatpak', [
-                      '--command=winetricks',
                       `--env="WINEPREFIX=${protonPath}"`,
                       `--env=DISPLAY=:0`, // Ensure display for wine
                       `--env=WINEDEBUG=-all`, // Reduce wine debug output
                       `--env=WINEDLLOVERRIDES=mscoree,mshtml=`, // Disable .NET and HTML rendering
                       'run',
                       'org.winehq.Wine',
+                      '--command=winetricks',
                       `${redistributable.name}`,
                       `--force`,
                     ]);

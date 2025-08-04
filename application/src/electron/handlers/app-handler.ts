@@ -484,9 +484,9 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
             const wineboot = new Promise<void>((resolve) => {
               const wineboot = spawn('flatpak', [
                 `--env="WINEPREFIX=${protonPath}"`,
+                '--command=wineboot',
                 'run',
                 'org.winehq.Wine',
-                '--command=wineboot',
               ]);
               wineboot.on('close', (code) => {
                 if (code === 0) {
@@ -530,9 +530,9 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
                       `--env=DISPLAY=:0`, // Ensure display for wine
                       `--env=WINEDEBUG=-all`, // Reduce wine debug output
                       `--env=WINEDLLOVERRIDES=mscoree,mshtml=`, // Disable .NET and HTML rendering
+                      '--command=winetricks',
                       'run',
                       'org.winehq.Wine',
-                      '--command=winetricks',
                       `${redistributable.name}`,
                       `--force`,
                     ]);

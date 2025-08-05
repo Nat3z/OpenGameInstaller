@@ -545,7 +545,7 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
 
                   const command = 'flatpak';
                   const args = [
-                    `--env="WINEPREFIX=${protonPath}"`,
+                    `--env=WINEPREFIX=${protonPath}`,
                     `--env=DISPLAY=:0`, // Ensure display for wine
                     `--env=WINEDEBUG=-all`, // Reduce wine debug output
                     `--env=WINEDLLOVERRIDES=mscoree,mshtml=`, // Disable .NET and HTML rendering

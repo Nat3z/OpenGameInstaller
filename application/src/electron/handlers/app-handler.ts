@@ -359,6 +359,47 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
         }
 
         // if there are redistributables, we need to install them
+        // firstly run wineboot to update the wine prefix
+        const wineboot = new Promise<void>((resolve) => {
+          const wineboot = spawn(
+            'flatpak',
+            [
+              `--env=WINEPREFIX=${protonPath}`,
+              '--filesystem=host',
+              `--env=DISPLAY=:0`, // Ensure display for wine UI
+              `--env=WINEDEBUG=-all`, // Reduce wine debug output
+              `--env=WINEDLLOVERRIDES=mscoree,mshtml=`, // Disable .NET and HTML rendering
+              '--command=wineboot',
+              'run',
+              'org.winehq.Wine',
+            ],
+            {
+              stdio: ['inherit', 'pipe', 'pipe'],
+              cwd: __dirname,
+            }
+          );
+          wineboot.on('close', (code) => {
+            if (code === 0) {
+              resolve();
+            } else {
+              resolve();
+            }
+          });
+          wineboot.on('error', (error) => {
+            console.error(error);
+            resolve();
+          });
+          wineboot.stdout?.on('data', (data) => {
+            console.log(`[wineboot:stdout] ${data.toString()}`);
+          });
+          wineboot.stderr?.on('data', (data) => {
+            console.log(`[wineboot:stderr] ${data.toString()}`);
+          });
+        });
+
+        // activate wineboot
+        await wineboot;
+
         if (data.redistributables) {
           // First check if wine is available via flatpak
           const wineAvailable = await new Promise<boolean>((resolve) => {
@@ -406,47 +447,6 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
               );
             }
           } else {
-            // firstly run wineboot to update the wine prefix
-            const wineboot = new Promise<void>((resolve) => {
-              const wineboot = spawn(
-                'flatpak',
-                [
-                  `--env=WINEPREFIX=${protonPath}`,
-                  '--filesystem=host',
-                  `--env=DISPLAY=:0`, // Ensure display for wine UI
-                  `--env=WINEDEBUG=-all`, // Reduce wine debug output
-                  `--env=WINEDLLOVERRIDES=mscoree,mshtml=`, // Disable .NET and HTML rendering
-                  '--command=wineboot',
-                  'run',
-                  'org.winehq.Wine',
-                ],
-                {
-                  stdio: ['inherit', 'pipe', 'pipe'],
-                  cwd: __dirname,
-                }
-              );
-              wineboot.on('close', (code) => {
-                if (code === 0) {
-                  resolve();
-                } else {
-                  resolve();
-                }
-              });
-              wineboot.on('error', (error) => {
-                console.error(error);
-                resolve();
-              });
-              wineboot.stdout?.on('data', (data) => {
-                console.log(`[wineboot:stdout] ${data.toString()}`);
-              });
-              wineboot.stderr?.on('data', (data) => {
-                console.log(`[wineboot:stderr] ${data.toString()}`);
-              });
-            });
-
-            // activate wineboot
-            await wineboot;
-
             for (const redistributable of data.redistributables) {
               try {
                 sendNotification({

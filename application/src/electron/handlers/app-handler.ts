@@ -687,114 +687,39 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
           return 'setup-redistributables-failed';
         }
 
-        // Run winecfg at the end of dependency installation
+        // Run winecfg at the end of dependency installation (non-blocking)
         if (useWinePrefix) {
-          try {
-            sendNotification({
-              message: `Running winecfg for ${data.name}`,
-              id: Math.random().toString(36).substring(7),
-              type: 'info',
-            });
+          sendNotification({
+            message: `Starting winecfg for ${data.name}`,
+            id: Math.random().toString(36).substring(7),
+            type: 'info',
+          });
 
-            console.log('[winecfg] Starting winecfg configuration');
+          console.log('[winecfg] Starting winecfg configuration in background');
 
-            const child = spawn(
-              'flatpak',
-              [
-                `--env=WINEPREFIX=${protonPath}`,
-                `--env=DISPLAY=:0`,
-                `--env=WINEDEBUG=-all`,
-                `--env=WINEDLLOVERRIDES=mscoree,mshtml=`,
-                '--filesystem=host',
-                '--command=winecfg',
-                'run',
-                'org.winehq.Wine',
-              ],
-              {
-                stdio: ['inherit', 'pipe', 'pipe'],
-                cwd: __dirname,
-              }
-            );
-
-            let stdout = '';
-            let stderr = '';
-
-            child.stdout?.on('data', (data) => {
-              const output = data.toString();
-              stdout += output;
-              console.log(`[winecfg:stdout] ${output.trim()}`);
-            });
-
-            child.stderr?.on('data', (data) => {
-              const output = data.toString();
-              stderr += output;
-              console.log(`[winecfg:stderr] ${output.trim()}`);
-            });
-
-            const success = await new Promise<boolean>((resolve) => {
-              child.on('close', (code) => {
-                console.log(`[winecfg] process exited with code ${code}`);
-                if (code === 0) {
-                  console.log('[winecfg] Configuration completed successfully');
-                  resolve(true);
-                } else {
-                  console.error(
-                    `[winecfg] Configuration failed with exit code ${code}`
-                  );
-                  console.error(`[winecfg] stdout: ${stdout}`);
-                  console.error(`[winecfg] stderr: ${stderr}`);
-                  resolve(false);
-                }
-              });
-
-              child.on('error', (error) => {
-                console.error('[winecfg] Process error:', error);
-                console.error(`[winecfg] stdout: ${stdout}`);
-                console.error(`[winecfg] stderr: ${stderr}`);
-                resolve(false);
-              });
-
-              // Set a timeout for winecfg (5 minutes)
-              setTimeout(
-                () => {
-                  if (child.pid) {
-                    child.kill('SIGTERM');
-                    setTimeout(() => {
-                      child.kill('SIGKILL');
-                    }, 5000);
-                  }
-                  console.error(
-                    '[winecfg] Configuration timed out after 5 minutes'
-                  );
-                  resolve(false);
-                },
-                5 * 60 * 1000
-              );
-            });
-
-            if (success) {
-              sendNotification({
-                message: `Wine configuration completed for ${data.name}`,
-                id: Math.random().toString(36).substring(7),
-                type: 'success',
-              });
-            } else {
-              sendNotification({
-                message: `Wine configuration failed for ${data.name}`,
-                id: Math.random().toString(36).substring(7),
-                type: 'warning',
-              });
+          const child = spawn(
+            'flatpak',
+            [
+              `--env=WINEPREFIX=${protonPath}`,
+              `--env=DISPLAY=:0`,
+              `--env=WINEDEBUG=-all`,
+              `--env=WINEDLLOVERRIDES=mscoree,mshtml=`,
+              '--filesystem=host',
+              '--command=winecfg',
+              'run',
+              'org.winehq.Wine',
+            ],
+            {
+              stdio: 'ignore',
+              cwd: __dirname,
+              detached: true,
             }
-          } catch (error) {
-            console.error(
-              `[winecfg] failed to run winecfg for ${data.name}: ${error}`
-            );
-            sendNotification({
-              message: `Wine configuration failed for ${data.name}`,
-              id: Math.random().toString(36).substring(7),
-              type: 'warning',
-            });
-          }
+          );
+
+          // Don't wait for winecfg to complete - let it run in background
+          child.unref();
+
+          console.log('[winecfg] winecfg started in background');
         }
       } else if (process.platform === 'win32') {
         // if there are redistributables, we need to install them

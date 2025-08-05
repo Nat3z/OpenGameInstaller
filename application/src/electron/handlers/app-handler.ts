@@ -531,6 +531,7 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
                         `--env=DISPLAY=:0`, // Ensure display for wine
                         `--env=WINEDEBUG=-all`, // Reduce wine debug output
                         `--env=WINEDLLOVERRIDES=mscoree,mshtml=`, // Disable .NET and HTML rendering
+                        '--filesystem=host',
                         '--command=winetricks',
                         'run',
                         'org.winehq.Wine',
@@ -593,6 +594,7 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
                     `--env=DISPLAY=:0`, // Ensure display for wine
                     `--env=WINEDEBUG=-all`, // Reduce wine debug output
                     `--env=WINEDLLOVERRIDES=mscoree,mshtml=`, // Disable .NET and HTML rendering
+                    '--filesystem=host',
                     'run',
                     'org.winehq.Wine',
                     ...redistributableArgs,

@@ -29,7 +29,12 @@ do we provide tools to help with breaking copyright laws. We at OpenGameInstalle
 responsible for content downloaded on our platform and we do not take any logs of games downloaded
 or addons downloaded on our platform.
 
+## Important Directories/Files to Know
 
-
-
-
+|----------------------|------------------------|-------------|
+| Directory/File Linux | Directory/File Windows | Description |
+|----------------------|------------------------|-------------|
+| `~/.local/share/OpenGameInstaller/` | `%localappdata%\Programs\ogi-updater\update` | The main directory for stored content, including addons, configs, game data, etc.
+| `~/.local/share/OpenGameInstaller/addons/` | `%localappdata%\Programs\ogi-updater\update\addons` | The directory where addons are stored. |
+| Next to where you have the -Setup.AppImage file `/update` | `%localappdata%\Programs\ogi-updater\update` | The directory where the updater stores log files, the program itself, and misc. files for version tracking. |
+Next to where you have the -Setup.AppImage file `/update/latest.log` | `%localappdata%\Programs\ogi-updater\update\latest.log` | The latest log file for OGI. We usually ask for this file when requesting support. |

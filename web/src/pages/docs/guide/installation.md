@@ -14,7 +14,6 @@ If you don't want any of these features, or prefer OGI's
 executable being somewhere else, download the latest release on [GitHub](https://github.com/Nat3z/OpenGameInstaller/releases/latest)
 with the file ending in -pt.AppImage or -Portable.AppImage.
 
-> [!WARNING]
 > If you decide to use just the Portable version of OpenGameInstaller without the Setup.AppImage/.exe, we
 > sadly will not be able to provide support, as logs are created by -Setup.AppImage/.exe.
 
@@ -78,7 +77,3 @@ $ ./steamtinkerlaunch
 ```
 
 If you get notifications, steamtinkerlaunch installed successfully.
-
-
-
-

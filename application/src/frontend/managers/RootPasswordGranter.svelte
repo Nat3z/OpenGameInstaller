@@ -26,6 +26,7 @@
     <ButtonModal
       text="Grant Root Password"
       variant="primary"
+      class="mt-4"
       onclick={() => {
         window.electronAPI.app.grantRootPassword(
           (document.getElementById('root-password') as HTMLInputElement)

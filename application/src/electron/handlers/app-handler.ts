@@ -518,10 +518,9 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
                   type: 'info',
                 });
 
-                await grantAccessToPath(redistributable.path, rootPassword);
                 console.log('Running redistributable: ' + redistributable.path);
 
-                const success = await new Promise<boolean>((resolve) => {
+                const success = await new Promise<boolean>(async (resolve) => {
                   if (redistributable.path === 'winetricks') {
                     console.log('spawning winetricks redistributable');
                     // spawn winetricks with the proton path to install the name
@@ -557,6 +556,7 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
                     });
                     return;
                   }
+                  await grantAccessToPath(redistributable.path, rootPassword);
 
                   const redistributablePath = redistributable.path
                     .trim()
@@ -639,19 +639,22 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
                     resolve(false);
                   });
 
-                  // Set a timeout for the installation (5 minutes for silent installs)
+                  // Set a timeout for the installation (10 minutes for silent installs)
                   setTimeout(
                     () => {
+                      // check if the process is still running
+                      if (child.pid) {
+                        child.kill('SIGTERM');
+                        setTimeout(() => {
+                          child.kill('SIGKILL'); // Force kill if SIGTERM doesn't work
+                        }, 5000);
+                      }
                       console.error(
-                        `[redistributable] Flatpak wine installation timed out after 5 minutes`
+                        `[redistributable] Flatpak wine installation timed out after 10 minutes`
                       );
-                      child.kill('SIGTERM');
-                      setTimeout(() => {
-                        child.kill('SIGKILL'); // Force kill if SIGTERM doesn't work
-                      }, 5000);
                       resolve(false);
                     },
-                    5 * 60 * 1000
+                    10 * 60 * 1000
                   );
                 });
 

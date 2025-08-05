@@ -525,11 +525,14 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
                   if (redistributable.path === 'winetricks') {
                     console.log('spawning winetricks redistributable');
                     // spawn winetricks with the proton path to install the name
+                    // For winetricks to show the installation UI, we need to ensure DISPLAY is set and not use --unattended or -q.
+                    // Also, do not quote the env var assignment for flatpak (should be --env=VAR=VAL, not --env="VAR=VAL")
+                    // Note: If interactive mode fails, consider adding --unattended as a fallback
                     const child = spawn(
                       'flatpak',
                       [
-                        `--env="WINEPREFIX=${protonPath}"`,
-                        `--env=DISPLAY=:0`, // Ensure display for wine
+                        `--env=WINEPREFIX=${protonPath}`,
+                        `--env=DISPLAY=:0`, // Ensure display for wine UI
                         `--env=WINEDEBUG=-all`, // Reduce wine debug output
                         `--env=WINEDLLOVERRIDES=mscoree,mshtml=`, // Disable .NET and HTML rendering
                         '--filesystem=host',
@@ -538,32 +541,49 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
                         'org.winehq.Wine',
                         `${redistributable.name}`,
                         '--force',
-                        '--unattended', // Run winetricks silently
-                        '-q', // Quiet mode
+                        // Do NOT use '--unattended' or '-q' so the UI is shown
                       ],
                       {
-                        stdio: ['ignore', 'pipe', 'pipe'],
+                        stdio: ['inherit', 'pipe', 'pipe'], // Changed from 'ignore' to 'inherit' to allow interactive input
                         cwd: __dirname,
                       }
                     );
+                    let stdout = '';
+                    let stderr = '';
+
                     child.on('close', (code) => {
+                      console.log(
+                        `[winetricks] process exited with code ${code}`
+                      );
                       if (code === 0) {
+                        console.log(
+                          '[winetricks] Installation completed successfully'
+                        );
                         resolve(true);
                       } else {
+                        console.error(
+                          `[winetricks] Installation failed with exit code ${code}`
+                        );
+                        console.error(`[winetricks] stdout: ${stdout}`);
+                        console.error(`[winetricks] stderr: ${stderr}`);
                         resolve(false);
                       }
                     });
                     child.on('error', (error) => {
-                      console.error(error);
+                      console.error('[winetricks] Process error:', error);
+                      console.error(`[winetricks] stdout: ${stdout}`);
+                      console.error(`[winetricks] stderr: ${stderr}`);
                       resolve(false);
                     });
                     child.stdout?.on('data', (data) => {
                       const output = data.toString();
-                      console.log(`[redistributable:stdout] ${output.trim()}`);
+                      stdout += output;
+                      console.log(`[winetricks:stdout] ${output.trim()}`);
                     });
                     child.stderr?.on('data', (data) => {
                       const output = data.toString();
-                      console.log(`[redistributable:stderr] ${output.trim()}`);
+                      stderr += output;
+                      console.log(`[winetricks:stderr] ${output.trim()}`);
                     });
                     return;
                   }

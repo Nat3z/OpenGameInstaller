@@ -480,6 +480,44 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
               });
             await rootPasswordGranter();
 
+            // firstly run wineboot to update the wine prefix
+            const wineboot = new Promise<void>((resolve) => {
+              const wineboot = spawn(
+                'flatpak',
+                [
+                  `--env="WINEPREFIX=${protonPath}"`,
+                  '--filesystem=host',
+                  '--command=wineboot',
+                  'run',
+                  'org.winehq.Wine',
+                ],
+                {
+                  stdio: ['inherit', 'pipe', 'pipe'],
+                  cwd: __dirname,
+                }
+              );
+              wineboot.on('close', (code) => {
+                if (code === 0) {
+                  resolve();
+                } else {
+                  resolve();
+                }
+              });
+              wineboot.on('error', (error) => {
+                console.error(error);
+                resolve();
+              });
+              wineboot.stdout?.on('data', (data) => {
+                console.log(`[wineboot:stdout] ${data.toString()}`);
+              });
+              wineboot.stderr?.on('data', (data) => {
+                console.log(`[wineboot:stderr] ${data.toString()}`);
+              });
+            });
+
+            // activate wineboot
+            await wineboot;
+
             for (const redistributable of data.redistributables) {
               try {
                 sendNotification({

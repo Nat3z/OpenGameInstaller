@@ -524,19 +524,26 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
                   if (redistributable.path === 'winetricks') {
                     console.log('spawning winetricks redistributable');
                     // spawn winetricks with the proton path to install the name
-                    const child = spawn('flatpak', [
-                      `--env="WINEPREFIX=${protonPath}"`,
-                      `--env=DISPLAY=:0`, // Ensure display for wine
-                      `--env=WINEDEBUG=-all`, // Reduce wine debug output
-                      `--env=WINEDLLOVERRIDES=mscoree,mshtml=`, // Disable .NET and HTML rendering
-                      '--command=winetricks',
-                      'run',
-                      'org.winehq.Wine',
-                      `${redistributable.name}`,
-                      '--force',
-                      '--unattended', // Run winetricks silently
-                      '-q', // Quiet mode
-                    ]);
+                    const child = spawn(
+                      'flatpak',
+                      [
+                        `--env="WINEPREFIX=${protonPath}"`,
+                        `--env=DISPLAY=:0`, // Ensure display for wine
+                        `--env=WINEDEBUG=-all`, // Reduce wine debug output
+                        `--env=WINEDLLOVERRIDES=mscoree,mshtml=`, // Disable .NET and HTML rendering
+                        '--command=winetricks',
+                        'run',
+                        'org.winehq.Wine',
+                        `${redistributable.name}`,
+                        '--force',
+                        '--unattended', // Run winetricks silently
+                        '-q', // Quiet mode
+                      ],
+                      {
+                        stdio: ['ignore', 'pipe', 'pipe'],
+                        cwd: __dirname,
+                      }
+                    );
                     child.on('close', (code) => {
                       if (code === 0) {
                         resolve(true);

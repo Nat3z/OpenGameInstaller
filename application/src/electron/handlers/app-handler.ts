@@ -533,7 +533,9 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
                       'run',
                       'org.winehq.Wine',
                       `${redistributable.name}`,
-                      `--force`,
+                      '--force',
+                      '--unattended', // Run winetricks silently
+                      '-q', // Quiet mode
                     ]);
                     child.on('close', (code) => {
                       if (code === 0) {

@@ -218,7 +218,7 @@
 
   .custom-dropdown-option:hover {
     @apply bg-accent-lighter;
-    transform: translateX(4px) scale(1.02);
+    transform: scale(1.02);
   }
 
   .custom-dropdown-option.selected {

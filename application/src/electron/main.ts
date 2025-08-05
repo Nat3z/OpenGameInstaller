@@ -79,17 +79,7 @@ interface Notification {
   type: 'info' | 'error' | 'success' | 'warning';
 }
 export function sendNotification(notification: Notification) {
-  if (!mainWindow) {
-    console.error('Main window is not ready yet. Cannot send notification.');
-    return;
-  }
-  if (!mainWindow.webContents) {
-    console.error(
-      'Main window web contents is not ready yet. Cannot send notification.'
-    );
-    return;
-  }
-  mainWindow.webContents.send('notification', notification);
+  sendIPCMessage('notification', notification);
 }
 
 let isReadyForEvents = false;

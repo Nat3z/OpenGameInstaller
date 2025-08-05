@@ -353,55 +353,57 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
         data.launchExecutable = data.launchExecutable.replaceAll('\\', '/');
         const homeDir = process.env.HOME || process.env.USERPROFILE;
         const protonPath = `${homeDir}/.ogi-wine-prefixes/${data.appID}/pfx`;
-        // if the proton path does not exist, create it
-        if (!fs.existsSync(protonPath)) {
-          fs.mkdirSync(protonPath, { recursive: true });
-        }
 
-        // if there are redistributables, we need to install them
-        // firstly run wineboot to update the wine prefix
-        const wineboot = new Promise<void>((resolve) => {
-          const wineboot = spawn(
-            'flatpak',
-            [
-              `--env=WINEPREFIX=${protonPath}`,
-              '--filesystem=host',
-              `--env=DISPLAY=:0`, // Ensure display for wine UI
-              `--env=WINEDEBUG=-all`, // Reduce wine debug output
-              `--env=WINEDLLOVERRIDES=mscoree,mshtml=`, // Disable .NET and HTML rendering
-              '--command=wineboot',
-              'run',
-              'org.winehq.Wine',
-            ],
-            {
-              stdio: ['inherit', 'pipe', 'pipe'],
-              cwd: __dirname,
-            }
-          );
-          wineboot.on('close', (code) => {
-            if (code === 0) {
-              resolve();
-            } else {
-              resolve();
-            }
-          });
-          wineboot.on('error', (error) => {
-            console.error(error);
-            resolve();
-          });
-          wineboot.stdout?.on('data', (data) => {
-            console.log(`[wineboot:stdout] ${data.toString()}`);
-          });
-          wineboot.stderr?.on('data', (data) => {
-            console.log(`[wineboot:stderr] ${data.toString()}`);
-          });
-        });
-
-        // activate wineboot
-        await wineboot;
+        let useWinePrefix = false;
 
         if (data.redistributables) {
-          // First check if wine is available via flatpak
+          useWinePrefix = true;
+
+          // if the proton path does not exist, create it
+          if (!fs.existsSync(protonPath)) {
+            fs.mkdirSync(protonPath, { recursive: true });
+          }
+
+          // if there are redistributables, we need to install them
+          // firstly run wineboot to update the wine prefix
+          const wineboot = new Promise<void>((resolve) => {
+            const wineboot = spawn(
+              'flatpak',
+              [
+                `--env=WINEPREFIX=${protonPath}`,
+                '--filesystem=host',
+                `--env=DISPLAY=:0`, // Ensure display for wine UI
+                `--env=WINEDEBUG=-all`, // Reduce wine debug output
+                `--env=WINEDLLOVERRIDES=mscoree,mshtml=`, // Disable .NET and HTML rendering
+                '--command=wineboot',
+                'run',
+                'org.winehq.Wine',
+              ],
+              {
+                stdio: ['inherit', 'pipe', 'pipe'],
+                cwd: __dirname,
+              }
+            );
+            wineboot.on('close', (code) => {
+              if (code === 0) {
+                resolve();
+              } else {
+                resolve();
+              }
+            });
+            wineboot.on('error', (error) => {
+              console.error(error);
+              resolve();
+            });
+            wineboot.stdout?.on('data', (data) => {
+              console.log(`[wineboot:stdout] ${data.toString()}`);
+            });
+            wineboot.stderr?.on('data', (data) => {
+              console.log(`[wineboot:stderr] ${data.toString()}`);
+            });
+          });
+          await wineboot;
+          // check if wine is available via flatpak
           const wineAvailable = await new Promise<boolean>((resolve) => {
             exec('flatpak run org.winehq.Wine --help', (err) => {
               resolve(!err);
@@ -655,7 +657,7 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
         // use steamtinkerlaunch to add the game to steam
         const result = await new Promise<boolean>((resolve) =>
           exec(
-            `${STEAMTINKERLAUNCH_PATH} addnonsteamgame --appname="${data.name}" --exepath="${data.launchExecutable}" --startdir="${data.cwd}" --launchoptions="STEAM_COMPAT_DATA_PATH=${protonPath.split('/pfx')[0]} ${data.launchArguments ?? ''}" --compatibilitytool="proton_experimental" --use-steamgriddb`,
+            `${STEAMTINKERLAUNCH_PATH} addnonsteamgame --appname="${data.name}" --exepath="${data.launchExecutable}" --startdir="${data.cwd}" --launchoptions="${useWinePrefix ? `STEAM_COMPAT_DATA_PATH=${protonPath.split('/pfx')[0]}` : ''} ${data.launchArguments ?? ''}" --compatibilitytool="proton_experimental" --use-steamgriddb`,
             {
               cwd: __dirname,
             },

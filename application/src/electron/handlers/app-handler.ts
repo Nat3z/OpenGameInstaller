@@ -462,8 +462,6 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
                     console.log('spawning winetricks redistributable');
                     // spawn winetricks with the proton path to install the name
                     // For winetricks to show the installation UI, we need to ensure DISPLAY is set and not use --unattended or -q.
-                    // Also, do not quote the env var assignment for flatpak (should be --env=VAR=VAL, not --env="VAR=VAL")
-                    // Note: If interactive mode fails, consider adding --unattended as a fallback
                     const child = spawn(
                       'flatpak',
                       [

@@ -484,6 +484,7 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
             const wineboot = new Promise<void>((resolve) => {
               const wineboot = spawn('flatpak', [
                 `--env="WINEPREFIX=${protonPath}"`,
+                '--filesystem=host',
                 '--command=wineboot',
                 'run',
                 'org.winehq.Wine',

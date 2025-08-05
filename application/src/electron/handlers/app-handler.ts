@@ -413,6 +413,9 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
                 [
                   `--env="WINEPREFIX=${protonPath}"`,
                   '--filesystem=host',
+                  `--env=DISPLAY=:0`, // Ensure display for wine UI
+                  `--env=WINEDEBUG=-all`, // Reduce wine debug output
+                  `--env=WINEDLLOVERRIDES=mscoree,mshtml=`, // Disable .NET and HTML rendering
                   '--command=wineboot',
                   'run',
                   'org.winehq.Wine',

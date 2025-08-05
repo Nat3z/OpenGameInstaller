@@ -10,48 +10,6 @@ import { STEAMTINKERLAUNCH_PATH } from '../startup.js';
 import { clients } from '../server/addon-server.js';
 import { dirname, basename } from 'path';
 
-const grantAccessToPath = (path: string, rootPassword: string) =>
-  new Promise<void>((resolve, reject) => {
-    // Get the folder from the file path
-    path = fs.lstatSync(path).isDirectory() ? path : dirname(path);
-    try {
-      const child = spawn(
-        'sudo',
-        [
-          '-S',
-          'flatpak',
-          'override',
-          'org.winehq.Wine',
-          '--filesystem=' + path,
-        ],
-        {
-          stdio: ['pipe', 'inherit', 'inherit'],
-        }
-      );
-
-      // Write password to stdin immediately after spawning
-      child.stdin?.write(rootPassword + '\n');
-      child.stdin?.end();
-
-      child.on('close', (code) => {
-        console.log(`[flatpak] process exited with code ${code}`);
-        resolve();
-      });
-      child.on('error', (error) => {
-        console.error(error);
-        reject(error);
-      });
-    } catch (error) {
-      console.error(error);
-      sendNotification({
-        message: 'Failed to allow flatpak to access the proton path',
-        id: Math.random().toString(36).substring(7),
-        type: 'error',
-      });
-      reject(error);
-    }
-  });
-
 const getSilentInstallFlags = (
   filePath: string,
   fileName: string
@@ -461,7 +419,7 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
                       execSync(`echo -e "${password}\n" | sudo -S -k true`, {
                         stdio: 'ignore',
                       });
-                      await grantAccessToPath(protonPath, password);
+                      // await grantAccessToPath(protonPath, password);
                       rootPassword = password;
                       resolve();
                     } catch (error) {
@@ -594,7 +552,6 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
                     });
                     return;
                   }
-                  await grantAccessToPath(redistributable.path, rootPassword);
 
                   const redistributablePath = redistributable.path
                     .trim()

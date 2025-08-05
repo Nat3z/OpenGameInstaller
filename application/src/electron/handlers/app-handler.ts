@@ -477,7 +477,8 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
                         'org.winehq.Wine',
                         `${redistributable.name}`,
                         '--force',
-                        // Do NOT use '--unattended' or '-q' so the UI is shown
+                        '--unattended',
+                        '-q',
                       ],
                       {
                         stdio: ['inherit', 'pipe', 'pipe'], // Changed from 'ignore' to 'inherit' to allow interactive input

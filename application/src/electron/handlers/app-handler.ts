@@ -1,9 +1,9 @@
 import axios from 'axios';
 import { net, ipcMain } from 'electron';
-import { currentScreens, sendIPCMessage, sendNotification } from '../main.js';
+import { currentScreens, sendNotification } from '../main.js';
 import { join } from 'path';
 import * as fs from 'fs';
-import { exec, execSync, spawn, spawnSync } from 'child_process';
+import { exec, spawn, spawnSync } from 'child_process';
 import { LibraryInfo } from 'ogi-addon';
 import { __dirname } from '../paths.js';
 import { STEAMTINKERLAUNCH_PATH } from '../startup.js';
@@ -406,38 +406,6 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
               );
             }
           } else {
-            let rootPassword = '';
-            // firstly, allow the flatpak to access the proton path
-            const rootPasswordGranter = () =>
-              new Promise<void>((resolve) => {
-                sendIPCMessage('app:ask-root-password', true);
-                ipcMain.handleOnce(
-                  'app:root-password-granted',
-                  async (_, password) => {
-                    // allow the flatpak to access the proton path
-                    try {
-                      execSync(`echo -e "${password}\n" | sudo -S -k true`, {
-                        stdio: 'ignore',
-                      });
-                      // await grantAccessToPath(protonPath, password);
-                      rootPassword = password;
-                      resolve();
-                    } catch (error) {
-                      console.error(error);
-                      sendNotification({
-                        message:
-                          'Failed to allow flatpak to access the proton path.',
-                        id: Math.random().toString(36).substring(7),
-                        type: 'error',
-                      });
-                      await rootPasswordGranter();
-                      resolve();
-                    }
-                  }
-                );
-              });
-            await rootPasswordGranter();
-
             // firstly run wineboot to update the wine prefix
             const wineboot = new Promise<void>((resolve) => {
               const wineboot = spawn(

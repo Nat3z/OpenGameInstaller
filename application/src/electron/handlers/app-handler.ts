@@ -35,6 +35,10 @@ const getSilentInstallFlags = (
 
   // .NET Framework redistributables
   if (lowerFileName.includes('dotnet') || lowerFileName.includes('netfx')) {
+    // Special case for .NET Framework Repair Tool
+    if (lowerFileName.includes('netfxrepairtool')) {
+      return ['/p']; // Use /p flag for repair tool as requested
+    }
     return ['/S', '/v/qn'];
   }
 
@@ -460,7 +464,133 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
                 console.log('Running redistributable: ' + redistributable.path);
 
                 const success = await new Promise<boolean>(async (resolve) => {
-                  if (redistributable.path === 'winetricks') {
+                  if (
+                    redistributable.path === 'microsoft' &&
+                    redistributable.name === 'dotnet-repair'
+                  ) {
+                    console.log('spawning microsoft dotnet-repair tool');
+                    // Download and run the .NET Framework Repair Tool with wine
+                    const netfxRepairToolUrl =
+                      'https://download.microsoft.com/download/2/b/d/2bde5459-2225-48b8-830c-ae19caf038f1/NetFxRepairTool.exe';
+                    const toolPath = join(
+                      __dirname,
+                      'bin',
+                      'NetFxRepairTool.exe'
+                    );
+                    // create the directory if it doesn't exist
+                    if (!fs.existsSync(join(__dirname, 'bin'))) {
+                      fs.mkdirSync(join(__dirname, 'bin'));
+                    }
+
+                    try {
+                      // Download the tool if it doesn't exist
+                      if (!fs.existsSync(toolPath)) {
+                        console.log(
+                          '[dotnet-repair] Downloading .NET Framework Repair Tool...'
+                        );
+                        const response = await axios({
+                          method: 'get',
+                          url: netfxRepairToolUrl,
+                          responseType: 'stream',
+                        });
+
+                        const fileStream = fs.createWriteStream(toolPath);
+                        response.data.pipe(fileStream);
+
+                        await new Promise<void>(
+                          (downloadResolve, downloadReject) => {
+                            fileStream.on('finish', () => {
+                              fileStream.close();
+                              console.log('[dotnet-repair] Download completed');
+                              downloadResolve();
+                            });
+                            fileStream.on('error', (err) => {
+                              console.error(
+                                '[dotnet-repair] Download error:',
+                                err
+                              );
+                              fileStream.close();
+                              try {
+                                fs.unlinkSync(toolPath);
+                              } catch (unlinkErr) {
+                                console.error(
+                                  '[dotnet-repair] Failed to cleanup file:',
+                                  unlinkErr
+                                );
+                              }
+                              downloadReject(err);
+                            });
+                          }
+                        );
+                      }
+
+                      // Run the tool with wine and /p flag
+                      console.log(
+                        '[dotnet-repair] Running .NET Framework Repair Tool with wine'
+                      );
+                      const child = spawn(
+                        'flatpak',
+                        [
+                          `--env=WINEPREFIX=${protonPath}`,
+                          `--env=DISPLAY=:0`, // Ensure display for wine UI
+                          `--env=WINEDEBUG=-all`, // Reduce wine debug output
+                          `--env=WINEDLLOVERRIDES=mscoree,mshtml=`, // Disable .NET and HTML rendering
+                          '--filesystem=host',
+                          'run',
+                          'org.winehq.Wine',
+                          'NetFxRepairTool.exe',
+                          '/p',
+                        ],
+                        {
+                          stdio: ['inherit', 'pipe', 'pipe'],
+                          cwd: __dirname,
+                        }
+                      );
+
+                      let stdout = '';
+                      let stderr = '';
+
+                      child.on('close', (code) => {
+                        console.log(
+                          `[dotnet-repair] process exited with code ${code}`
+                        );
+                        if (code === 0) {
+                          console.log(
+                            '[dotnet-repair] .NET Framework repair completed successfully'
+                          );
+                          resolve(true);
+                        } else {
+                          console.error(
+                            `[dotnet-repair] .NET Framework repair failed with exit code ${code}`
+                          );
+                          console.error(`[dotnet-repair] stdout: ${stdout}`);
+                          console.error(`[dotnet-repair] stderr: ${stderr}`);
+                          resolve(false);
+                        }
+                      });
+                      child.on('error', (error) => {
+                        console.error('[dotnet-repair] Process error:', error);
+                        console.error(`[dotnet-repair] stdout: ${stdout}`);
+                        console.error(`[dotnet-repair] stderr: ${stderr}`);
+                        resolve(false);
+                      });
+                      child.stdout?.on('data', (data) => {
+                        const output = data.toString();
+                        stdout += output;
+                        console.log(`[dotnet-repair:stdout] ${output.trim()}`);
+                      });
+                      child.stderr?.on('data', (data) => {
+                        const output = data.toString();
+                        stderr += output;
+                        console.log(`[dotnet-repair:stderr] ${output.trim()}`);
+                      });
+                      return;
+                    } catch (error) {
+                      console.error('[dotnet-repair] Error:', error);
+                      resolve(false);
+                      return;
+                    }
+                  } else if (redistributable.path === 'winetricks') {
                     console.log('spawning winetricks redistributable');
                     // spawn winetricks with the proton path to install the name
                     // For winetricks to show the installation UI, we need to ensure DISPLAY is set and not use --unattended or -q.

@@ -538,7 +538,7 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
                           '--filesystem=host',
                           'run',
                           'org.winehq.Wine',
-                          'NetFxRepairTool.exe',
+                          'bin/NetFxRepairTool.exe',
                           '/p',
                         ],
                         {

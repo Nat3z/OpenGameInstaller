@@ -360,7 +360,7 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
 
         let useWinePrefix = false;
 
-        if (data.redistributables) {
+        if (data.redistributables && data.redistributables.length > 0) {
           useWinePrefix = true;
 
           // if the proton path does not exist, create it
@@ -853,7 +853,7 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
         }
       } else if (process.platform === 'win32') {
         // if there are redistributables, we need to install them
-        if (data.redistributables) {
+        if (data.redistributables && data.redistributables.length > 0) {
           for (const redistributable of data.redistributables) {
             try {
               spawnSync(redistributable.path, {

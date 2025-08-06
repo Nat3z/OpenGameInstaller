@@ -352,6 +352,7 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
         JSON.stringify(appsInternal, null, 2)
       );
 
+      // linux case
       if (process.platform === 'linux') {
         // make the launch executable use / instead of \
         data.launchExecutable = data.launchExecutable.replaceAll('\\', '/');

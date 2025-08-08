@@ -101,8 +101,8 @@
       usedRealDebrid: downloadedItem.usedDebridService !== undefined,
       appID: downloadedItem.appID,
       storefront: downloadedItem.storefront,
-      multiPartFiles: JSON.parse(JSON.stringify(downloadedItem.files)),
-      manifest: JSON.parse(JSON.stringify(downloadedItem.manifest)),
+      multiPartFiles: JSON.parse(JSON.stringify(downloadedItem.files || [])),
+      manifest: JSON.parse(JSON.stringify(downloadedItem.manifest || {})),
       ...additionalData,
     };
   }

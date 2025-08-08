@@ -101,8 +101,8 @@
       usedRealDebrid: downloadedItem.usedDebridService !== undefined,
       appID: downloadedItem.appID,
       storefront: downloadedItem.storefront,
-      multiPartFiles: downloadedItem.files,
-      manifest: downloadedItem.manifest,
+      multiPartFiles: JSON.parse(JSON.stringify(downloadedItem.files)),
+      manifest: JSON.parse(JSON.stringify(downloadedItem.manifest)),
       ...additionalData,
     };
   }
@@ -340,11 +340,16 @@
       const attemptUnzip = async () => {
         console.log('Extracting ZIP file: ', downloadedItem.downloadPath);
         console.log(downloadedItem);
-        outputDir = await window.electronAPI.fs.unzip({
+        let queriedOutput = await window.electronAPI.fs.unzip({
           zipFilePath: downloadedItem.downloadPath,
           outputDir: downloadedItem.downloadPath.replace(/\.zip$/g, ''),
           downloadId: downloadedItem.id,
         });
+
+        if (!queriedOutput) {
+          return false;
+        }
+        outputDir = queriedOutput;
         console.log('ZIP file extracted successfully');
         // go depeer until it's not just folders
         let filesInDir = await window.electronAPI.fs.getFilesInDir(outputDir);
@@ -385,6 +390,13 @@
         } catch (error) {
           console.log('Failed to extract ZIP file');
           console.error('Failed to process ZIP file: ', error);
+
+          // cancel the current download
+          updateDownloadStatus(downloadedItem.id, {
+            status: 'error',
+            error: 'Failed to process ZIP file',
+          });
+
           saveFailedSetup({
             downloadInfo: downloadedItem,
             setupData: {

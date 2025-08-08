@@ -26,7 +26,7 @@ interface Window {
         zipFilePath: string;
         outputDir: string;
         downloadId?: string;
-      }) => Promise<string>;
+      }) => Promise<string | null>;
       getFilesInDir: (path: string) => Promise<string[]>;
       stat: (path: string) => {
         isDirectory: boolean;

@@ -126,7 +126,7 @@ export async function retryFailedSetup(failedSetup: FailedSetup) {
           failedSetup.downloadInfo.downloadPath
         );
         console.log(failedSetup.downloadInfo);
-        let outputDir = await window.electronAPI.fs.unzip({
+        let queriedOutput = await window.electronAPI.fs.unzip({
           zipFilePath: failedSetup.downloadInfo.downloadPath,
           outputDir: failedSetup.downloadInfo.downloadPath.replace(
             /\.zip$/g,
@@ -134,6 +134,10 @@ export async function retryFailedSetup(failedSetup: FailedSetup) {
           ),
           downloadId: tempId,
         });
+        if (!queriedOutput) {
+          return false;
+        }
+        let outputDir = queriedOutput;
         console.log('ZIP file extracted successfully');
         // go deeper until it's not just folders
         let filesInDir = await window.electronAPI.fs.getFilesInDir(outputDir);

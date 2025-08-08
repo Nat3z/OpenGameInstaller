@@ -337,12 +337,15 @@
         'Extracting downloaded ZIP file...',
       ]);
 
+      // Preserve the original ZIP file path before we mutate downloadPath
+      const originalZipFilePath = downloadedItem.downloadPath;
+
       const attemptUnzip = async () => {
-        console.log('Extracting ZIP file: ', downloadedItem.downloadPath);
+        console.log('Extracting ZIP file: ', originalZipFilePath);
         console.log(downloadedItem);
         let queriedOutput = await window.electronAPI.fs.unzip({
-          zipFilePath: downloadedItem.downloadPath,
-          outputDir: downloadedItem.downloadPath.replace(/\.zip$/g, ''),
+          zipFilePath: originalZipFilePath,
+          outputDir: originalZipFilePath.replace(/\.zip$/g, ''),
           downloadId: downloadedItem.id,
         });
 
@@ -429,7 +432,7 @@
 
       // delete the zip file
       try {
-        window.electronAPI.fs.delete(downloadedItem.downloadPath);
+        window.electronAPI.fs.delete(originalZipFilePath);
         console.log('ZIP file deleted');
       } catch (error) {
         console.error('Failed to delete ZIP file: ', error);

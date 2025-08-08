@@ -120,22 +120,18 @@ export async function retryFailedSetup(failedSetup: FailedSetup) {
     }
 
     if (failedSetup.should === 'call-unzip') {
-      const attemptUnzip = async () => {
-        console.log(
-          'Extracting ZIP file: ',
-          failedSetup.downloadInfo.downloadPath
-        );
+      // Preserve the original ZIP file path before attempting extraction
+      const originalZipFilePath = failedSetup.downloadInfo.downloadPath;
+      const attemptUnzip: () => Promise<string | undefined> = async () => {
+        console.log('Extracting ZIP file: ', originalZipFilePath);
         console.log(failedSetup.downloadInfo);
         let queriedOutput = await window.electronAPI.fs.unzip({
-          zipFilePath: failedSetup.downloadInfo.downloadPath,
-          outputDir: failedSetup.downloadInfo.downloadPath.replace(
-            /\.zip$/g,
-            ''
-          ),
+          zipFilePath: originalZipFilePath,
+          outputDir: originalZipFilePath.replace(/\.zip$/g, ''),
           downloadId: tempId,
         });
         if (!queriedOutput) {
-          return false;
+          return undefined;
         }
         let outputDir = queriedOutput;
         console.log('ZIP file extracted successfully');
@@ -163,17 +159,15 @@ export async function retryFailedSetup(failedSetup: FailedSetup) {
         }
 
         outputDir = outputDir + '/';
-        failedSetup.downloadInfo.downloadPath = outputDir;
         console.log('Newly calculated outputDir: ', outputDir);
-        return true;
+        return outputDir;
       };
 
       // try 3 times to extract the ZIP file
-      let success = false;
+      let outputDir: string | undefined;
       for (let i = 0; i < 3; i++) {
         try {
-          success = await attemptUnzip();
-          if (success) break; // if successful, break the loop
+          outputDir = await attemptUnzip();
           await new Promise((resolve) => setTimeout(resolve, 1000)); // wait 1 second before retrying
         } catch (error) {
           console.log('Failed to extract ZIP file');
@@ -182,18 +176,23 @@ export async function retryFailedSetup(failedSetup: FailedSetup) {
         }
       }
 
-      if (!success) {
+      if (!outputDir) {
         throw new Error('Failed to extract ZIP file after 3 attempts');
       }
 
       // delete the zip file
       try {
-        window.electronAPI.fs.delete(failedSetup.downloadInfo.downloadPath);
+        window.electronAPI.fs.delete(originalZipFilePath);
         console.log('ZIP file deleted');
       } catch (error) {
         console.error('Failed to delete ZIP file: ', error);
       }
 
+      if (!outputDir) {
+        throw new Error('Failed to extract ZIP file after 3 attempts');
+      }
+
+      failedSetup.downloadInfo.downloadPath = outputDir;
       setupData.path = failedSetup.downloadInfo.downloadPath;
       failedSetup.setupData.path = failedSetup.downloadInfo.downloadPath;
       failedSetup.should = 'call-addon';

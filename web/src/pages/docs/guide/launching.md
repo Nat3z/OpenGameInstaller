@@ -2,7 +2,7 @@
 layout: ../../../layouts/BlogLayout.astro
 title: Launching Games
 description: How to launch games in OpenGameInstaller
-part: 3
+part: 4
 section: User's Guide
 ---
 
@@ -19,3 +19,5 @@ If you are on Windows, make sure that the game is installed in the correct direc
 ### My game is crashing
 
 Check if all dependencies are installed correctly. If you are on Linux, make sure that the game is compatible with Proton and that you have the correct version of Proton selected in the game's properties on Steam and that the Wine Prefix created has the Common Redistributables installed (ex. vcredist, dotnet, etc.). If you are on Windows, ensure that all required libraries and frameworks are installed locally.
+
+If you are still having issues on Linux, try to adjust the game's settings on Steam by clicking on the settings cog in the game launch page and changing the launch arguments to not have a `STEAM_COMPAT_DATA_PATH` (delete the line that starts with `STEAM_COMPAT_DATA_PATH=....`).

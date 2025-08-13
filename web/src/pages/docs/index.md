@@ -14,3 +14,5 @@ The Documentation provided here will help developers with making their first add
 <br></br>
 
 Start developing by going to [Your First Addon](/docs/first-addon) and read the guide that shows the entire process of making an OpenGameInstaller addon!
+
+Are you a user? Check out the [User's Guide](/docs/guide) to learn how to use OpenGameInstaller!

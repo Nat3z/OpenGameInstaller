@@ -1,58 +1,59 @@
 ---
 import { Image } from "astro:assets";
 import Layout from "../layouts/Layout.astro";
-import Favicon from "../../public/favicon.png";
+import Header from "../components/Header.astro";
 let addons = await Astro.glob(`../../community/*.{md,mdx}`);
 addons = addons.filter((addon) => addon.frontmatter.name !== 'YOUR ADDON NAME');
 addons = addons.sort((a, b) => a.frontmatter.name.localeCompare(b.frontmatter.name));
 ---
 
 <Layout title="Community Addons">
-  <header class="flex flex-row justify-start items-center py-4 px-8 gap-4 border-b-2 border-slate-300">
-    <a href="/" class="appearance-none flex flex-row justify-start items-center gap-2 ">
-      <Image class="w-12" src={Favicon} alt="OpenGameInstaller Logo" />
-      <h1 class="font-archivo font-bold hidden lg:block text-xl truncate">OpenGameInstaller</h1>
-    </a>
+  <Header context="site" />
+  <main class="mt-8">
+    <div class="mx-auto max-w-7xl w-full px-4 lg:px-8 flex flex-col gap-6 items-center">
+      <div class="w-full text-center flex flex-col gap-2">
+        <h1 class="text-3xl lg:text-5xl font-archivo font-bold text-slate-800">Community Addons</h1>
+        <p class="text-slate-600 lg:text-lg">Community addons are not affiliated with OpenGameInstaller. This is a community listing and anyone can add to this list.</p>
+        <a href="/docs/for-users/community" class="text-accent-dark underline underline-offset-2 hover:text-accent transition-colors">Learn how to add your addon to this list</a>
+      </div>
 
-  </header>
-  <main class="flex flex-col mt-8 gap-4 items-center justify-center">
-    <h1 class="text-4xl font-bold">Community Addons</h1>
-    <h2 class="text-center text-base p-4 -mt-4 lg:-mt-0 lg:p-0 lg:text-lg">Community addons are not affiliated with OpenGameInstaller. This is a community listing and anyone can add to this list.</h2>
-    <a href="/docs/for-users/community" class="text-blue-500 -mt-6 lg:-mt-2 hover:underline">Learn how to add your addon to this list</a>
-    <div class="flex flex-col gap-4 w-full lg:w-3/4 justify-center px-4 lg:px-0 items-center">
-      {addons.map((addon) => (
-        <div class="flex flex-col gap-2 border rounded-lg p-8 w-full lg:w-3/4">
-          <div class="flex flex-row gap-4 items-center relative">
-            <img src={addon.frontmatter.img} alt={addon.frontmatter.name} class="w-16 h-16 rounded-lg" />
-            <div class="flex flex-col relative">
-              <h2 class="text-2xl font-bold">{addon.frontmatter.name}</h2>
-              <h3 data-source class="p-1 px-2 rounded-lg border text-xs w-fit text-balance lg:text-sm lg:w-full bg-slate-200 truncate cursor-pointer transition-all">{addon.frontmatter.source}</h3>
+      <div class="w-full max-w-xl flex items-center gap-2">
+        <input id="addon-search" type="search" placeholder="Search addons by name, author, or description" class="w-full px-4 py-2 rounded-lg ring-1 ring-accent-light focus:ring-accent outline-none bg-white/80" />
+      </div>
+
+      <div id="addons-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 w-full">
+        {addons.map((addon) => (
+          <div class="flex flex-col gap-3 rounded-xl p-4 bg-white/80 ring-1 ring-accent-light shadow-sm hover:shadow-md transition" data-name={addon.frontmatter.name} data-author={addon.frontmatter.author}>
+            <div class="flex items-center gap-3">
+              <img src={addon.frontmatter.img} alt={addon.frontmatter.name} class="w-14 h-14 rounded-lg object-cover" />
+              <div class="flex flex-col">
+                <h2 class="text-xl font-bold text-slate-800">{addon.frontmatter.name}</h2>
+                <p class="text-slate-500 text-sm">by {addon.frontmatter.author}</p>
+              </div>
             </div>
+            <div class="flex items-center gap-2">
+              <button type="button" class="text-xs px-2 py-1 rounded-md ring-1 ring-accent-light bg-accent-lighter text-slate-700 hover:bg-accent-light transition" data-source>{addon.frontmatter.source}</button>
+              <a href={addon.frontmatter.source} target="_blank" rel="noreferrer" class="text-xs px-2 py-1 rounded-md ring-1 ring-accent-light hover:bg-accent-lighter transition text-slate-700">Open</a>
+            </div>
+            <div class="prose prose-slate max-w-none" set:html={addon.compiledContent()}></div>
           </div>
-
-          <div set:html={addon.compiledContent()}>
-          </div>
-        </div>
-      ))}
+        ))}
+      </div>
     </div>
   </main>
 
 </Layout>
 <script>
   function copyToClipboard(text: string, target: HTMLElement) {
-    var dummy = document.createElement("textarea");
+    const dummy = document.createElement("textarea");
     document.body.appendChild(dummy);
     dummy.value = text;
     dummy.select();
     document.execCommand("copy");
     document.body.removeChild(dummy);
 
-    target.innerHTML += `
-      <img src="/check-icon.svg" class="w-4 h-4 inline ml-1" /> 
-    `
-    setTimeout(() => {
-      target.innerHTML = text
-    }, 2000);
+    target.insertAdjacentHTML('beforeend', ` <img src="/check-icon.svg" class="w-4 h-4 inline ml-1" />`);
+    setTimeout(() => { target.textContent = text; }, 1500);
   }
 
   document.addEventListener("click", (e) => {
@@ -60,13 +61,20 @@ addons = addons.sort((a, b) => a.frontmatter.name.localeCompare(b.frontmatter.na
       copyToClipboard(e.target.textContent!!, e.target);
     }
   });
-</script>
-<style>
-  header {
-    inset: 0;
-    width: 100%;
-    background-image: linear-gradient(to right, #80808012 1px, transparent 1px),
-    linear-gradient(to bottom, #80808012 1px, transparent 1px);
-    background-size: 24px 24px;
+
+  const search = document.getElementById('addon-search') as HTMLInputElement | null;
+  const grid = document.getElementById('addons-grid');
+  if (search && grid) {
+    search.addEventListener('input', () => {
+      const q = search.value.trim().toLowerCase();
+      const items = Array.from(grid.children) as HTMLElement[];
+      for (const item of items) {
+        const name = (item.getAttribute('data-name') || '').toLowerCase();
+        const author = (item.getAttribute('data-author') || '').toLowerCase();
+        const text = item.textContent?.toLowerCase() || '';
+        const show = !q || name.includes(q) || author.includes(q) || text.includes(q);
+        item.style.display = show ? '' : 'none';
+      }
+    });
   }
-</style>
+</script>

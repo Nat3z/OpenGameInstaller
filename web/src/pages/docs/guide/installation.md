@@ -31,7 +31,7 @@ Before downloading any of these programs, make sure you have a **root password**
 you have one or are confused, open your terminal (Konsole on Steam Deck), and run the following command to create one.
 
 ```sh
-$ passwd
+passwd
 ```
 
 > [!INFO]
@@ -61,7 +61,7 @@ or issues on the [Bun GitHub repository](https://github.com/oven-sh/bun) instead
 Wine must be installed through the Flatpak package to work. If issues arise from downloading the Flatpak through OGI, run
 
 ```sh
-$ flatpak install --system flathub org.winehq.Wine
+flatpak install --system flathub org.winehq.Wine
 ```
 
 ### Installing SteamTinkerLaunch (LINUX ONLY)
@@ -70,10 +70,10 @@ To install steamtinkerlaunch, go to the folder `~/.local/share/OpenGameInstaller
 Then, in the `bin` folder, run
 
 ```sh
-$ git clone https://github.com/sonic2kk/steamtinkerlaunch
-$ cd steamtinkerlaunch
-$ chmod +x ./steamtinkerlaunch
-$ ./steamtinkerlaunch
+git clone https://github.com/sonic2kk/steamtinkerlaunch
+cd steamtinkerlaunch
+chmod +x ./steamtinkerlaunch
+./steamtinkerlaunch
 ```
 
 If you get notifications, steamtinkerlaunch installed successfully.

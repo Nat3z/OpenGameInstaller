@@ -3,7 +3,7 @@ layout: ../../../layouts/BlogLayout.astro
 title: Welcome to OpenGameInstaller!
 description: A guide on how to make your first addon for OpenGameInstaller.
 part: 0
-priority: 2
+priority: 1
 section: User's Guide
 ---
 
@@ -31,10 +31,9 @@ or addons downloaded on our platform.
 
 ## Important Directories/Files to Know
 
-|----------------------|------------------------|-------------|
-| Directory/File Linux | Directory/File Windows | Description |
-|----------------------|------------------------|-------------|
-| `~/.local/share/OpenGameInstaller/` | `%localappdata%\Programs\ogi-updater\update` | The main directory for stored content, including addons, configs, game data, etc.
-| `~/.local/share/OpenGameInstaller/addons/` | `%localappdata%\Programs\ogi-updater\update\addons` | The directory where addons are stored. |
-| Next to where you have the -Setup.AppImage file `/update` | `%localappdata%\Programs\ogi-updater\update` | The directory where the updater stores log files, the program itself, and misc. files for version tracking. |
-Next to where you have the -Setup.AppImage file `/update/latest.log` | `%localappdata%\Programs\ogi-updater\update\latest.log` | The latest log file for OGI. We usually ask for this file when requesting support. |
+| Directory/File Linux                                                 | Directory/File Windows                                | Description                                                                                                 |
+| -------------------------------------------------------------------- | ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| ~/.local/share/OpenGameInstaller/                                    | %localappdata%\Programs\ogi-updater\update            | The main directory for stored content, including addons, configs, game data, etc.                           |
+| ~/.local/share/OpenGameInstaller/addons/                             | %localappdata%\Programs\ogi-updater\update\addons     | The directory where addons are stored.                                                                      |
+| Next to where you have the -Setup.AppImage file `/update`            | %localappdata%\Programs\ogi-updater\update            | The directory where the updater stores log files, the program itself, and misc. files for version tracking. |
+| Next to where you have the -Setup.AppImage file `/update/latest.log` | %localappdata%\Programs\ogi-updater\update\latest.log | The latest log file for OGI. We usually ask for this file when requesting support.                          |

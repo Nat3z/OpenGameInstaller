@@ -2,7 +2,7 @@
 layout: ../../../layouts/BlogLayout.astro
 title: Downloading Content
 description: Downloading Content on OpenGameInstaller
-part: 4
+part: 3
 section: User's Guide
 ---
 
@@ -19,3 +19,33 @@ Once you have a proper catalog and source search addon installed, you can search
 ### Note on Downloading
 
 When you click on the "Download" button, OGI will immediately start trying to download the game to your download location. If you have concerns about torrenting, refer to the download type at the top right of the source before you download.
+
+## Torrenting
+
+### TorBox
+
+To use TorBox as a torrenting client, you need to set your TorBox API key in the settings. Make sure it's selected as the client in `Settings > General`. Afterwards, go to `Settings > Torrent Clients` and [set the API key to your TorBox key found on this link.](https://torbox.app/settings)
+
+> [!INFO]
+> Requires a TorBox account and active subscription. [Get a subscription with my link here](https://torbox.app/subscription?referral=e5b6cae9-f8b7-4f6a-823f-9db2b89cd37a).
+
+### Real-Debrid
+
+To use Real-Debrid as a torrenting client, you need to set your Real-Debrid API key in the settings. Make sure it's selected as the client in `Settings > General`. Afterwards, go to `Settings > Torrent Clients` and [set the API key to your Real-Debrid key found on this link.](https://real-debrid.com/apitoken)
+
+> [!INFO]
+> Requires a Real-Debrid account and active subscription. [Get a subscription with my link here](http://real-debrid.com/?id=11485717).
+
+### qBittorrent
+
+To use qBittorrent as a torrenting client, please refer to our [qBittorrent WebUI guide](/docs/for-users/qb-setup) to learn how to set up a WebUI. After that, go to `Settings > General` and select `qBittorrent` as the torrent client, then go to `Settings > qBittorrent` and adjust the settings to match what you set in qBittorrent.
+
+> [!INFO]
+> qBittorrent must be installed and open when you have OpenGameInstaller open in order for this to work as a torrenting client.
+
+### WebTorrent
+
+WebTorrent is built into OGI. To use it, go to `Settings > General` and select `WebTorrent` as the torrent client.
+
+> [!WARNING]
+> This client misses some features that other clients have (such as VPN binding), so we recommend to use this client when you want a seamless experience without needing extra setup.

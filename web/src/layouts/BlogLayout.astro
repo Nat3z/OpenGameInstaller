@@ -1,9 +1,7 @@
 ---
 import Layout from "./Layout.astro";
+import Header from "../components/Header.astro";
 const { frontmatter } = Astro.props;
-import { Image } from 'astro:assets';
-import GitHubLogo from '../../public/github-mark.svg';
-import Favicon from '../../public/favicon.png';
 const sectionName = frontmatter.section;
 const part: number = frontmatter.part;
 
@@ -53,58 +51,51 @@ console.log(part)
 ---
 
 <Layout title={frontmatter.title}>
-  <header class="flex flex-row justify-start items-center py-4 px-8 gap-4 border-b-2 border-slate-300 shadow-lg">
-    <a href="/" class="appearance-none flex flex-row justify-start items-center gap-2 ">
-      <Image class="w-12" src={Favicon} alt="OpenGameInstaller Logo" />
-      <h1 class="font-archivo font-bold hidden lg:block text-xl truncate">OpenGameInstaller Docs</h1>
-    </a>
-
-    <a href="https://github.com/Nat3z/OpenGameInstaller" class="ml-auto hidden lg:flex flex-row justify-center items-center gap-2 font-archivo hover:bg-slate-300 p-4 py-2 rounded-lg transition-colors text-slate-500">
-      <h1 class="font-archivo font-bold text-lg">GitHub</h1>
-    </a>
-
-  </header>
+  <Header context="docs" />
 
   <main class="flex flex-col-reverse lg:flex-row justify-start items-start">
-    <div class="h-full bg-slate-100 w-full lg:w-3/12 py-8 px-4 flex flex-col pl-8 gap-1">
+    <div class="h-full w-full lg:w-3/12 py-8 px-4 flex flex-col pl-8 gap-1">
       {sections.map((section) => 
-        <>
-          <a href={`${docsConnectedToSections.get(section)?.find((val) => val.frontmatter.part === 0)?.url}`} class={`flex flex-row justify-start items-center hover:bg-slate-200 transition-colors rounded-lg px-4 py-2 ${section === sectionName && 'bg-slate-300'}`}>
+        <div>
+          <a href={`${docsConnectedToSections.get(section)?.find((val) => val.frontmatter.part === 0)?.url}`} class={`flex flex-row justify-start items-center hover:bg-accent-lighter transition-colors rounded-lg px-4 py-2 ${section === sectionName && 'bg-accent-lighter'}`}>
             {section}
-            {docsConnectedToSections.get(section)!!.length > 1 && <>
+            {docsConnectedToSections.get(section)!!.length > 1 && (
               <svg class={`${section === sectionName ? '' : 'rotate-180'} ml-auto fill-slate-700`} xmlns="http://www.w3.org/2000/svg" height="18px" viewBox="0 -960 960 960" width="28px" ><path d="M480-528 296-344l-56-56 240-240 240 240-56 56-184-184Z"/></svg>
-            </>}
+            )}
           </a>
 
-          {section === sectionName && <>
-            <div class="flex flex-col pl-4 border-l-2 border-l-slate-300 gap-1">
+          {section === sectionName && (
+            <div class="flex flex-col pl-4 border-l-2 border-l-accent-light gap-1">
               {docsConnectedToSections.get(section)!!.map((doc) => (
                 doc.frontmatter.part !== 0 && 
-                  <a href={doc.url} class={`px-4 py-2 hover:bg-slate-200 transition-colors rounded-lg ${selectedSection.frontmatter.title === doc.frontmatter.title && 'bg-slate-300'}`}>
+                  <a href={doc.url} class={`px-4 py-2 hover:bg-accent-lighter transition-colors rounded-lg ${selectedSection.frontmatter.title === doc.frontmatter.title && 'bg-accent-lighter'}`}>
                     {doc.frontmatter.title}
                   </a>
               ))}
               </div>
-            </>
+            )
           }
           
-        </>
+        </div>
       )}
     </div>
-    <div class="min-h-screen w-full lg:w-9/12 p-8 lg:p-12 bg-slate-200">
+    <div class="min-h-screen w-full lg:w-9/12 p-4 lg:p-8">
       {(frontmatter.showTopBar || frontmatter.showTopBar === undefined) && (
-        <div class="flex flex-col justify-start items-start border-b-2 border-slate-300 pb-4 w-full mb-4 gap-2">
-          <h1 class="font-archivo font-bold text-3xl lg:text-5xl w-fit">{frontmatter.title}</h1>
+        <div class="flex flex-col justify-start items-start border-b border-accent-light pb-4 w-full mb-4 gap-2">
+          <h1 class="font-archivo font-bold text-3xl lg:text-5xl w-fit text-slate-800">{frontmatter.title}</h1>
         </div>
       )}
 
-      <article class="lg:p-2">
+      <article class="lg:p-6 p-4 bg-white/80 backdrop-blur rounded-xl shadow-sm ring-1 ring-accent-light/40">
         <slot />
       </article>
 
-      <div class="flex flex-col lg:flex-row justify-start items-center mt-8 gap-4">
+      <div class="flex flex-col lg:flex-row justify-start items-stretch mt-8 gap-4 w-full">
         {previousSection && (
-          <a href={previousSection.url} class="border-slate-300 hover:border-slate-400 border-2 w-72 h-24 rounded-lg py-8 px-4 flex flex-row justify-start items-center gap-4 ">
+          <a
+            href={previousSection.url}
+            class="ring-1 ring-accent-light hover:ring-accent rounded-lg flex flex-row justify-start items-center gap-4 bg-white/70 hover:bg-white transition w-full max-w-full lg:w-96 h-20 lg:h-24 py-4 lg:py-8 px-3 lg:px-4"
+          >
             <span class="material-symbols-outlined">arrow_back</span>
             <div class="flex flex-col mr-auto">
               <p class="text-slate-400">Previous</p>
@@ -113,7 +104,10 @@ console.log(part)
           </a>
         )}
         {nextSection && (
-          <a href={nextSection.url} class="border-slate-300 hover:border-slate-400 border-2 w-72 h-24 rounded-lg py-8 px-4 flex flex-row justify-end items-center gap-4 ">
+          <a
+            href={nextSection.url}
+            class="ring-1 ring-accent-light hover:ring-accent rounded-lg flex flex-row justify-end items-center gap-4 bg-white/70 hover:bg-white transition w-full max-w-full lg:w-96 h-20 lg:h-24 py-4 lg:py-8 px-3 lg:px-4"
+          >
             <div class="flex flex-col mr-auto">
               <p class="text-slate-400">Next</p>
               <h1 class="text-lg">{nextSection.frontmatter.title}</h1>
@@ -128,46 +122,48 @@ console.log(part)
 
 <style>
   article {
-    h1 {
-      @apply text-2xl lg:text-4xl font-semibold border-b-2 border-slate-300 pb-2 pr-8 my-2;
-    }
-    h2 {
-      @apply text-xl lg:text-3xl font-semibold border-b-2 border-slate-300 pb-2 pr-8 my-2;
-    }
-    h3 {
-      @apply text-2xl font-semibold;
-    }
-    p {
-      @apply text-lg font-normal;
-    }
-    ul {
-      @apply list-disc list-inside;
-    }
-    ol {
-      @apply list-decimal list-inside;
-    }
-    code {
-      @apply text-slate-800 rounded-md bg-slate-300 p-1;
-    }
-    pre {
-      @apply text-slate-800 p-4 rounded-md;
-    }
+    h1 { @apply text-2xl lg:text-4xl font-semibold border-b border-accent-light pb-2 pr-8 my-2 text-slate-800; }
+    h2 { @apply text-xl lg:text-3xl font-semibold border-b border-accent-light pb-2 pr-8 my-2 text-slate-800; }
+    h3 { @apply text-2xl font-semibold text-slate-800; }
+    p { @apply text-lg font-normal text-slate-700; }
+    ul { @apply list-disc list-inside marker:text-accent; }
+    ol { @apply list-decimal list-inside marker:text-accent; }
+    code { @apply text-slate-800 rounded-md bg-accent-lighter px-1 py-0.5; }
+    pre { @apply text-slate-800 p-4 rounded-xl bg-accent-lighter ring-1 ring-accent-light; }
     pre code {
       @apply !bg-transparent !p-0;
     }
-    a {
-      @apply text-blue-500 underline;
-    }
+    a { @apply text-accent-dark underline underline-offset-2 hover:text-accent transition-colors; }
 
-    table {
-      @apply w-full border-collapse;
+    table { @apply w-full border-collapse rounded-lg overflow-hidden ring-1 ring-accent-light; }
+    th, td { @apply border border-accent-light p-2; }
+    th { @apply bg-accent-lighter; }
+    blockquote.callout {
+      @apply border-l-4 rounded-md p-4 my-4 bg-slate-100 border-slate-300;
+      &::before {
+        content: attr(data-callout);
+        text-transform: uppercase;
+        @apply block mb-2 text-sm font-semibold text-slate-600;
+      }
     }
-    th, td {
-      @apply border border-slate-300 p-2;
+    blockquote.callout[data-callout="info"],
+    blockquote.callout[data-callout="note"],
+    blockquote.callout[data-callout="tip"],
+    blockquote.callout[data-callout="caution"],
+    blockquote.callout[data-callout="warning"],
+    blockquote.callout[data-callout="important"],
+    blockquote.callout[data-callout="success"],
+    blockquote.callout[data-callout="error"] {
+      @apply bg-slate-100;
     }
-    th {
-      @apply bg-slate-300;
-    }
+    blockquote.callout[data-callout="info"] { @apply border-accent; }
+    blockquote.callout[data-callout="note"] { @apply border-accent; }
+    blockquote.callout[data-callout="tip"] { @apply border-accent; }
+    blockquote.callout[data-callout="caution"] { @apply border-orange-400; }
+    blockquote.callout[data-callout="warning"] { @apply border-yellow-400; }
+    blockquote.callout[data-callout="important"] { @apply border-accent-dark; }
+    blockquote.callout[data-callout="success"] { @apply border-green-500; }
+    blockquote.callout[data-callout="error"] { @apply border-red-500; }
     @apply flex flex-col gap-2;
     
   }

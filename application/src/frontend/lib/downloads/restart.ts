@@ -17,9 +17,6 @@ async function restartDirectDownload(
   const effectiveUrl = download.usedDebridService
     ? download.downloadURL || download.originalDownloadURL
     : download.originalDownloadURL || download.downloadURL;
-  if (!effectiveUrl) {
-    throw new Error('No download URL available for restart');
-  }
 
   let files: {
     link: string;
@@ -34,7 +31,7 @@ async function restartDirectDownload(
       path: getDownloadPath() + '/' + download.name + '/' + file.name,
       headers: file.headers,
     }));
-  } else {
+  } else if (effectiveUrl) {
     // Single file download
     const filename =
       download.filename || effectiveUrl.split(/\\|/).pop() || 'download';
@@ -44,6 +41,8 @@ async function restartDirectDownload(
         path: getDownloadPath() + '/' + download.name + '/' + filename,
       },
     ];
+  } else {
+    throw new Error('No download URL available for restart');
   }
 
   console.log('Restarting direct download with files:', files);

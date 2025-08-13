@@ -1,6 +1,7 @@
 ---
 import { Image } from 'astro:assets';
 import Layout from '../layouts/Layout.astro';
+import Header from '../components/Header.astro';
 import Favicon from '../../public/favicon.png';
 import LibraryPage from '../../public/librarypage.png';
 import StorePage from '../../public/storepage.png';
@@ -9,23 +10,24 @@ import CodeSnippet from '../../public/code-snippet.png';
 ---
 
 <Layout title="OpenGameInstaller">
+	<Header context="site" />
 	<h1 id="head"></h1>
-	<main class="animate-fade-in flex justify-center items-center min-h-[40rem] w-screen lg:min-h-screen flex-col gap-2 p-0 m-0">
+	<main class="animate-fade-in flex justify-center items-center min-h-[40rem] lg:-mt-20 w-full lg:min-h-screen flex-col gap-2 p-0 m-0">
 		<Image class="w-64 drop-shadow-xl" src={Favicon} alt="OpenGameInstaller Logo" />
 		<h1 class="font-archivo font-bold text-3xl lg:text-5xl text-transparent bg-clip-text bg-gradient-to-b from-accent to-accent-dark text-center">OpenGameInstaller</h1>	
 		<h2 class="font-open-sans font-semibold">The Next-Generation Game Manager</h2>
-		<div class="mt-4 flex flex-col lg:flex-row justify-center items-center gap-4 animate-fade-in-pop">
-			<a href="appearance-none" data-download class="w-48">
+		<div class="mt-4 flex flex-col lg:flex-row justify-center items-center gap-4 animate-fade-in-pop w-full">
+			<a href="#" data-download aria-label="Download OpenGameInstaller" class="appearance-none">
 				<button class="bg-accent-dark rounded-lg px-6 py-4 w-full font-open-sans text-white flex justify-center items-center gap-2 font-semibold transition-all hover:bg-accent">
-					<span class="material-symbols-outlined">
+					<span class="material-symbols-outlined" data-download-icon>
 						download
 					</span>
-					Download
+					<span data-download-text>Download</span>
 				</button>
 			</a>
 
-			<a class="appearance-none" href="./docs/" class:list="w-48">
-				<button class="bg-slate-200 rounded-lg px-6 py-4 font-open-sans text-black flex justify-center items-center gap-2 font-semibold hover:bg-slate-300 transition-all">
+			<a class="appearance-none w-48" href="/docs/">
+				<button class="rounded-lg px-6 py-4 w-full font-open-sans flex justify-center items-center gap-2 font-semibold transition-all bg-white text-slate-700 ring-1 ring-accent-light hover:bg-accent-lighter">
 					<span class="material-symbols-outlined">
 						article
 					</span>
@@ -33,8 +35,12 @@ import CodeSnippet from '../../public/code-snippet.png';
 				</button>
 			</a>
 		</div>
+		<p data-download-help class="mt-2 text-sm text-slate-500 hidden mb-2">
+			Your OS isn't supported yet.
+			<a href="https://github.com/Nat3z/OpenGameInstaller/releases/latest" class="underline text-accent-dark hover:text-accent">View releases</a>
+		</p>
 		<a href="/community" class="appearance-none">
-			<button class="bg-transparent rounded-lg px-6 py-4 font-open-sans text-black flex justify-center items-center gap-2 font-semibold hover:bg-slate-200 transition-colors">
+			<button class="rounded-lg px-6 py-4 font-open-sans flex justify-center items-center gap-2 font-semibold transition-colors bg-white text-slate-700 ring-1 ring-accent-light hover:bg-accent-lighter">
 				<span class="material-symbols-outlined">
 					list
 				</span>
@@ -42,9 +48,9 @@ import CodeSnippet from '../../public/code-snippet.png';
 			</button>
 		</a>
 	</main>
-	<div class="w-full min-h-[40rem] lg:min-h-screen bg-slate-200 rounded-t-[4rem] -mt-12 p-8 lg:p-24 flex justify-center items-center flex-col animate-fade-in">
-		<div class="flex justify-center items-center flex-col lg:flex-row gap-8">
-			<Image class="sm:min-w-64 w-full lg:min-w-[50%] shadow-lg rounded-lg object-cover hover:scale-105 transition-all hover:shadow-2xl" src={LibraryPage} alt="OpenGameInstaller Library" />
+	<div class="w-full min-h-[40rem] lg:min-h-screen bg-accent-lighter rounded-t-[4rem] lg:-mt-12 p-8 lg:p-24 flex justify-center items-center flex-col animate-fade-in">
+		<div class="flex justify-center items-center flex-col lg:flex-row gap-8 max-w-7xl w-full px-4 lg:px-8">
+				<Image class="sm:min-w-64 w-full lg:min-w-[50%] shadow-lg rounded-lg object-cover hover:scale-105 transition-all hover:shadow-2xl" src={LibraryPage} alt="OpenGameInstaller Library" />
 			<div class="flex flex-col justify-center items-start lg:pl-6 gap-4 h-full">
 				<h1 class="font-archivo font-semibold text-2xl text-center w-full lg:text-left lg:text-5xl text-accent-dark">Your Library, All in One Spot</h1>
 				<p class="lg:pr-8 text-lg lg:text-2xl text-center lg:text-left font-open-sans font-medium">No matter how many games you have from different sources, we organize them all and help you manage them.</p>
@@ -52,19 +58,19 @@ import CodeSnippet from '../../public/code-snippet.png';
 		</div>
 	</div>
 
-	<div class="w-full min-h-[40rem] lg:min-h-screen bg-slate-100 rounded-t-[4rem] -mt-12 p-8 lg:p-24 flex justify-center items-center flex-col animate-fade-in">
-		<div class="flex justify-center items-center flex-col-reverse lg:flex-row gap-8">
+		<div class="w-full min-h-[40rem] lg:min-h-screen bg-background-color rounded-t-[4rem] -mt-12 p-8 lg:p-24 flex justify-center items-center flex-col animate-fade-in">
+		<div class="flex justify-center items-center flex-col-reverse lg:flex-row gap-8 max-w-7xl w-full px-4 lg:px-8">
 			<div class="flex flex-col justify-center items-start lg:pr-6 gap-4 h-full">
 				<h1 class="font-archivo font-semibold text-2xl text-center w-full lg:text-left lg:text-5xl text-accent-dark">Discover Hundreds of Games</h1>
-				<p class="lg:pr-8 text-lg lg:text-2xl font-open-sans font-medium text-center lg:text-left">Search Steam's entire game catalog plus your addons' catologs and pick and download your favorite games!</p>
+				<p class="lg:pr-8 text-lg lg:text-2xl font-open-sans font-medium text-center lg:text-left">Search Steam's entire game catalog plus your addons' catalogs and pick and download your favorite games!</p>
 			</div>
-			<Image class="min-w-64 w-full lg:min-w-[50%] shadow-lg rounded-lg object-cover hover:scale-105 transition-all hover:shadow-2xl" src={StorePage} alt="OpenGameInstaller Store Page" />
+				<Image class="sm:min-w-64 w-full lg:min-w-[50%] shadow-lg rounded-lg object-cover hover:scale-105 transition-all hover:shadow-2xl" src={StorePage} alt="OpenGameInstaller Store Page" />
 		</div>
 	</div>
 
-	<div class="w-full min-h-[40rem] lg:min-h-screen bg-slate-200 rounded-t-[4rem] -mt-12 p-8 lg:p-24 flex justify-center items-center flex-col animate-fade-in">
-		<div class="flex justify-center items-center flex-col lg:flex-row gap-8">
-			<Image class="min-w-64 w-full lg:min-w-[50%] shadow-lg rounded-lg object-cover hover:scale-105 transition-all hover:shadow-2xl" src={CodeSnippet} alt="OpenGameInstaller Code Snippet in Typescript" />
+		<div class="w-full min-h-[40rem] lg:min-h-screen bg-accent-lighter rounded-t-[4rem] -mt-12 p-8 lg:p-24 flex justify-center items-center flex-col animate-fade-in">
+		<div class="flex justify-center items-center flex-col lg:flex-row gap-8 max-w-7xl w-full px-4 lg:px-8">
+				<Image class="sm:min-w-64 w-full lg:min-w-[50%] shadow-lg rounded-lg object-cover hover:scale-105 transition-all hover:shadow-2xl" src={CodeSnippet} alt="OpenGameInstaller Code Snippet in Typescript" />
 			<div class="flex flex-col justify-center items-start lg:pl-6 gap-4 h-full">
 				<h1 class="font-archivo font-semibold text-2xl text-center w-full lg:text-left lg:text-5xl text-accent-dark">Built with Developers First</h1>
 				<p class="lg:pr-8 text-lg lg:text-2xl font-open-sans font-medium text-center lg:text-left">Our client is built with developers first. The client is built with addons in mind, giving you as a developer everything you need to succeed.</p>
@@ -72,12 +78,12 @@ import CodeSnippet from '../../public/code-snippet.png';
 		</div>
 	</div>
 
-	<div class="w-full p-4 lg:p-0 min-h-3/4 lg:min-h-screen bg-slate-100 rounded-t-[4rem] -mt-12 flex justify-center items-center flex-col animate-fade-in mb-4">
-		<div class="flex justify-center items-center flex-col gap-8 w-full">
-			<h1 class="font-archivo font-semibold text-5xl text-accent-dark text-center mt-24 lg:mt-0">Compatible on Steam Deck & Windows PCs</h1>
+		<div class="w-full p-4 lg:p-0 min-h-3/4 lg:min-h-screen bg-background-color rounded-t-[4rem] -mt-12 flex justify-center items-center flex-col animate-fade-in mb-4">
+		<div class="flex justify-center items-center flex-col gap-8 w-full max-w-7xl px-4 lg:px-8">
+				<h1 class="font-archivo font-semibold text-3xl lg:text-5xl text-accent-dark text-center mt-24 lg:mt-0">Compatible on Steam Deck & Windows PCs</h1>
 			<p class="font-open-sans text-sm text-center lg:text-xl font-semibold">Compatible on Gaben's gift to planet Earth and Windows PCs*</p>
 			<Image class="w-full lg:w-5/12 rounded-lg object-cover transition-all" src={DeckImage} alt="Steam Deck Image" />
-			<p class="text-gray-500 font-open-sans text-sm text-center">*Only Windows PCs that are 64 bit, x86 architecuture. Windows 10/11 only.</p>
+			<p class="text-gray-500 font-open-sans text-sm text-center">*Only Windows PCs that are 64 bit, x86 architecture. Windows 10/11 only.</p>
 		</div>
 		
 		
@@ -95,41 +101,60 @@ import CodeSnippet from '../../public/code-snippet.png';
 		</a>
 	</div>
 
-	<footer class="mt-12 w-full h-12 bg-slate-100 flex flex-row justify-start px-4 lg:px-8 items-center">
-		<p class="font-open-sans text-gray-500 text-sm">© 2024 Nat3z, with love by the OGI Team.</p>
+	<footer class="mt-12 w-full h-12 bg-background-color flex flex-row justify-start px-4 lg:px-8 items-center">
+		<p class="font-open-sans text-gray-500 text-sm">© 2025 Nat3z, with love by the OGI Team.</p>
 	</footer>
 </Layout>
 
-<script type="module">
-	let resolvedHREF = '';
+<script type="module" is:inline>
+	const setDownloadLink = (href, label) => {
+		const a = document.querySelector('[data-download]');
+		if (!a) return;
+		if (href === 'error') {
+			a.setAttribute('href', 'error');
+			a.setAttribute('aria-disabled', 'true');
+			a.querySelector('[data-download-icon]')?.classList.add('text-white');
+		} else {
+			a.setAttribute('href', href);
+		}
+		const labelSpan = a.querySelector('[data-download-text]');
+		if (labelSpan) labelSpan.textContent = label;
+		const help = document.querySelector('[data-download-help]');
+		if (help) help.classList.toggle('hidden', href !== 'error');
+	};
+
 	fetch('https://api.github.com/repos/Nat3z/OpenGameInstaller/releases/latest')
 		.then((res) => res.json())
 		.then((data) => {
-			// get the user agent
 			const userAgent = navigator.userAgent;
-			// check if the user agent is a windows machine
+			const assets = Array.isArray(data?.assets) ? data.assets : [];
+			const latestReleasePage = data?.html_url || 'https://github.com/Nat3z/OpenGameInstaller/releases/latest';
+
 			if (userAgent.includes('Windows')) {
-				// get the windows download link
-				resolvedHREF = data.assets.find((asset) => asset.name.includes('-Setup.exe')).browser_download_url;
-				document.querySelector('[data-download]')?.setAttribute('href', resolvedHREF);
-			} else if (userAgent.includes('Linux')) {
-				// get the linux download link
-				resolvedHREF = data.assets.find((asset) => asset.name.includes('-Setup.AppImage')).browser_download_url;
-				document.querySelector('[data-download]')?.setAttribute('href', resolvedHREF);
+				const winAsset = assets.find((asset) => asset?.name?.includes('-Setup.exe'));
+				if (winAsset?.browser_download_url) return setDownloadLink(winAsset.browser_download_url, 'Download for Windows');
+				return setDownloadLink(latestReleasePage, 'View Releases');
 			}
-			else {
-				document.querySelector('[data-download]')?.setAttribute('href', 'error');
-				document.querySelector('[data-download]').innerHTML = 'Not Supported';
+
+			if (userAgent.includes('Linux')) {
+				const linuxAsset = assets.find((asset) => asset?.name?.includes('-Setup.AppImage'));
+				if (linuxAsset?.browser_download_url) return setDownloadLink(linuxAsset.browser_download_url, 'Download for Linux');
+				return setDownloadLink(latestReleasePage, 'View Releases');
 			}
+
+			setDownloadLink('error', 'Not Supported');
 		})
-		.catch((err) => {
-			console.error(err);
+		.catch(() => {
+			setDownloadLink('error', 'Not Supported');
 		});
 </script>
 
 <style>
 	[href="error"] {
-		@apply pointer-events-none cursor-not-allowed bg-slate-400 rounded-lg px-6 py-4 font-open-sans text-white flex justify-center items-center gap-2 font-semibold transition-all;
+		@apply pointer-events-none;
+	}
+	[href="error"] button {
+		@apply cursor-not-allowed bg-slate-400 text-white ring-1 ring-slate-300;
 	}
 	main {
 		inset: 0;

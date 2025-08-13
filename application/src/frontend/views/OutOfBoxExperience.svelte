@@ -876,7 +876,7 @@
       </h1>
       <h2 class="font-open-sans text-gray-600 text-center mb-6 max-w-md">
         OpenGameInstaller is setting up your addons. Please hold while we do
-        this, it shouldn't take too long!
+        this. Do not close this app, it is regular for this to take a while.
       </h2>
     </div>
   {:else}

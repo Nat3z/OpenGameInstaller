@@ -11,13 +11,13 @@ const { title } = Astro.props;
 	<head>
 		<meta charset="UTF-8" />
 		<meta name="description" content="Astro description" />
-		<meta name="viewport" content="width=device-width" />
+		<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 		<link rel="icon" type="image/svg+xml" href="/favicon.png" />
 		<meta name="generator" content={Astro.generator} />
 		<title>{title}</title>
 		<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" />
 	</head>
-	<body class="w-screen h-screen scroll-smooth">
+	<body class="min-h-screen w-full scroll-smooth overflow-x-hidden">
 		<slot />
 	</body>
 </html>
@@ -31,7 +31,11 @@ const { title } = Astro.props;
 		src: url(/OpenSans-VariableFont_wdth\,wght.ttf);
 	}
 	body {
-		@apply bg-slate-100 w-screen h-screen;
+		@apply bg-background-color min-h-screen w-full text-slate-700 overflow-x-hidden;
+		padding-left: env(safe-area-inset-left);
+		padding-right: env(safe-area-inset-right);
+		padding-top: env(safe-area-inset-top);
+		padding-bottom: env(safe-area-inset-bottom);
 	}	
 	.material-symbols-outlined {
 		font-variation-settings:
@@ -40,5 +44,23 @@ const { title } = Astro.props;
 		'GRAD' 0,
 		'opsz' 24
 	}
+
+	/* Global callout styles so callouts render nicely anywhere */
+	blockquote.callout {
+		@apply border-l-4 rounded-md p-4 my-4 bg-accent-lighter border-accent-light;
+	}
+	blockquote.callout::before {
+		content: attr(data-callout);
+		text-transform: uppercase;
+		@apply block mb-2 text-sm font-semibold text-slate-600;
+	}
+	blockquote.callout[data-callout="info"] { @apply border-accent; }
+	blockquote.callout[data-callout="note"] { @apply border-accent; }
+	blockquote.callout[data-callout="tip"] { @apply border-accent; }
+	blockquote.callout[data-callout="caution"] { @apply border-orange-400; }
+	blockquote.callout[data-callout="warning"] { @apply border-yellow-400; }
+	blockquote.callout[data-callout="important"] { @apply border-accent-dark; }
+	blockquote.callout[data-callout="success"] { @apply border-green-500; }
+	blockquote.callout[data-callout="error"] { @apply border-red-500; }
 
 </style>

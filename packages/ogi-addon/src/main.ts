@@ -49,6 +49,8 @@ export type OGIAddonServerSentEvent =
 export { ConfigurationBuilder, Configuration, EventResponse, SearchResult };
 const defaultPort = 7654;
 import pjson from '../package.json';
+import { exec, spawn } from 'node:child_process';
+import fs from 'node:fs';
 export const VERSION = pjson.version;
 
 export interface ClientSentEventTypes {
@@ -388,6 +390,123 @@ export default class OGIAddon {
       failed: undefined,
     });
     return task;
+  }
+
+  /**
+   * Extract a file using 7-Zip on Windows, unzip on Linux/Mac.
+   * @param path {string}
+   * @param outputPath {string}
+   * @param type {'unrar' | 'unzip'}
+   * @returns {Promise<void>}
+   */
+  public async extractFile(
+    path: string,
+    outputPath: string,
+    type: 'unrar' | 'unzip'
+  ) {
+    return new Promise<void>((resolve, reject) => {
+      // Ensure outputPath exists
+      if (!fs.existsSync(outputPath)) {
+        fs.mkdirSync(outputPath, { recursive: true });
+      }
+
+      if (type === 'unzip') {
+        // Prefer 7-Zip on Windows, unzip on Linux/Mac
+        if (process.platform === 'win32') {
+          // 7-Zip path (default install location)
+          const s7ZipPath = '"C:\\Program Files\\7-Zip\\7z.exe"';
+          exec(
+            `${s7ZipPath} x "${path}" -o"${outputPath}"`,
+            (err: any, stdout: any, stderr: any) => {
+              if (err) {
+                console.error(err);
+                console.log(stderr);
+                reject(new Error('Failed to extract ZIP file'));
+                return;
+              }
+              console.log(stdout);
+              console.log(stderr);
+              resolve();
+            }
+          );
+        } else {
+          // Use unzip on Linux/Mac
+          const unzipProcess = spawn(
+            'unzip',
+            [
+              '-o', // overwrite files without prompting
+              path,
+              '-d', // specify output directory
+              outputPath,
+            ],
+            {
+              env: {
+                ...process.env,
+                UNZIP_DISABLE_ZIPBOMB_DETECTION: 'TRUE',
+              },
+            }
+          );
+
+          unzipProcess.stdout.on('data', (data: Buffer) => {
+            console.log(`[unzip stdout]: ${data}`);
+          });
+
+          unzipProcess.stderr.on('data', (data: Buffer) => {
+            console.error(`[unzip stderr]: ${data}`);
+          });
+
+          unzipProcess.on('close', (code: number) => {
+            if (code !== 0) {
+              console.error(`unzip process exited with code ${code}`);
+              reject(new Error('Failed to extract ZIP file'));
+              return;
+            }
+            resolve();
+          });
+        }
+      } else if (type === 'unrar') {
+        if (process.platform === 'win32') {
+          // 7-Zip path (default install location)
+          const s7ZipPath = '"C:\\Program Files\\7-Zip\\7z.exe"';
+          exec(
+            `${s7ZipPath} x "${path}" -o"${outputPath}"`,
+            (err: any, stdout: any, stderr: any) => {
+              if (err) {
+                console.error(err);
+                console.log(stderr);
+                reject(new Error('Failed to extract RAR file'));
+                return;
+              }
+              console.log(stdout);
+              console.log(stderr);
+              resolve();
+            }
+          );
+        } else {
+          // Use unrar on Linux/Mac
+          const unrarProcess = spawn('unrar', ['x', '-y', path, outputPath]);
+
+          unrarProcess.stdout.on('data', (data: Buffer) => {
+            console.log(`[unrar stdout]: ${data}`);
+          });
+
+          unrarProcess.stderr.on('data', (data: Buffer) => {
+            console.error(`[unrar stderr]: ${data}`);
+          });
+
+          unrarProcess.on('close', (code: number) => {
+            if (code !== 0) {
+              console.error(`unrar process exited with code ${code}`);
+              reject(new Error('Failed to extract RAR file'));
+              return;
+            }
+            resolve();
+          });
+        }
+      } else {
+        reject(new Error('Unknown extraction type'));
+      }
+    });
   }
 }
 

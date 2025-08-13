@@ -4,9 +4,15 @@ import {
   failedSetups,
   setupLogs,
   type FailedSetup,
+  type DownloadStatusAndInfo,
 } from '../../store';
-import { getDownloadPath } from '../core/fs';
-import { safeFetch } from '../core/ipc';
+// safeFetch not used here; setup is executed via runSetupApp
+import type { EventListenerTypes } from 'ogi-addon';
+import {
+  unrarAndReturnOutputDir,
+  unzipAndReturnOutputDir,
+} from '../setup/extraction';
+import { runSetupApp } from '../setup/setup';
 
 export async function loadFailedSetups() {
   try {
@@ -52,6 +58,39 @@ export function removeFailedSetup(setupId: string) {
   }
 }
 
+export function saveFailedSetup(setupInfo: {
+  downloadInfo: DownloadStatusAndInfo;
+  setupData: Parameters<EventListenerTypes['setup']>[0];
+  error: string;
+  should: 'call-addon' | 'call-unrar' | 'call-unzip';
+}) {
+  try {
+    if (!window.electronAPI.fs.exists('./failed-setups')) {
+      window.electronAPI.fs.mkdir('./failed-setups');
+    }
+
+    const failedSetupId = Math.random().toString(36).substring(7);
+    const failedSetupData: FailedSetup = {
+      id: failedSetupId,
+      timestamp: Date.now(),
+      ...setupInfo,
+      retryCount: 0,
+    };
+
+    window.electronAPI.fs.write(
+      `./failed-setups/${failedSetupId}.json`,
+      JSON.stringify(failedSetupData, null, 2)
+    );
+
+    failedSetups.update((setups) => {
+      return [...setups, failedSetupData];
+    });
+    console.log('Saved failed setup info:', failedSetupId);
+  } catch (error) {
+    console.error('Failed to save setup info:', error);
+  }
+}
+
 export async function retryFailedSetup(failedSetup: FailedSetup) {
   const updateRetry = (newSetup: FailedSetup, error: string) => {
     const updatedSetup = {
@@ -75,7 +114,7 @@ export async function retryFailedSetup(failedSetup: FailedSetup) {
 
     const setupData = failedSetup.setupData;
     console.log('setupData', setupData);
-    const addonSource = failedSetup.downloadInfo.addonSource;
+    // const addonSource = failedSetup.downloadInfo.addonSource;
 
     // Create a temporary download entry to show progress
     const tempId = Math.random().toString(36).substring(7);
@@ -90,102 +129,47 @@ export async function retryFailedSetup(failedSetup: FailedSetup) {
       ];
     });
     if (failedSetup.should === 'call-unrar') {
-      console.log(
-        'Unrarring RAR file: ',
+      const rarFilePath =
         failedSetup.downloadInfo.downloadPath.replace(/(\/|\\)$/g, '') +
-          '/' +
-          failedSetup.downloadInfo.filename,
-        'to',
-        getDownloadPath() + '/' + failedSetup.downloadInfo.name
-      );
-      const extractedDir = await window.electronAPI.fs.unrar({
-        outputDir:
-          failedSetup.downloadInfo.downloadPath.replace(/(\/|\\)$/g, '') +
-          '/' +
-          failedSetup.downloadInfo.name,
-        rarFilePath:
-          failedSetup.downloadInfo.downloadPath.replace(/(\/|\\)$/g, '') +
-          '/' +
-          failedSetup.downloadInfo.filename,
+        '/' +
+        failedSetup.downloadInfo.filename;
+      const outputBase =
+        failedSetup.downloadInfo.downloadPath.replace(/(\/|\\)$/g, '') +
+        '/' +
+        failedSetup.downloadInfo.name;
+      const extractedDir = await unrarAndReturnOutputDir({
+        rarFilePath,
+        outputBaseDir: outputBase,
         downloadId: tempId,
       });
       setupData.path = extractedDir;
-      // delete the rar file
-      console.log('Deleting RAR file: ', failedSetup.downloadInfo.downloadPath);
-      window.electronAPI.fs.delete(failedSetup.downloadInfo.downloadPath);
-      console.log('RAR file deleted');
       failedSetup.downloadInfo.downloadPath = extractedDir;
       failedSetup.setupData.path = extractedDir;
       failedSetup.should = 'call-addon';
     }
 
     if (failedSetup.should === 'call-unzip') {
-      // Preserve the original ZIP file path before attempting extraction
       const originalZipFilePath = failedSetup.downloadInfo.downloadPath;
       const attemptUnzip: () => Promise<string | undefined> = async () => {
-        console.log('Extracting ZIP file: ', originalZipFilePath);
-        console.log(failedSetup.downloadInfo);
-        let queriedOutput = await window.electronAPI.fs.unzip({
+        const output = await unzipAndReturnOutputDir({
           zipFilePath: originalZipFilePath,
-          outputDir: originalZipFilePath.replace(/\.zip$/g, ''),
+          outputDirBase: originalZipFilePath.replace(/\.zip$/g, ''),
           downloadId: tempId,
         });
-        if (!queriedOutput) {
-          return undefined;
-        }
-        let outputDir = queriedOutput;
-        console.log('ZIP file extracted successfully');
-        // go deeper until it's not just folders
-        let filesInDir = await window.electronAPI.fs.getFilesInDir(outputDir);
-        // Prevent going deeper than 10 directory levels to avoid infinite loops
-        console.log('filesInDir: ', filesInDir);
-        if (filesInDir.length === 1) {
-          let depth = 0;
-          while (filesInDir.length === 1 && depth < 10) {
-            const nextPath = outputDir + '/' + filesInDir[0];
-            let stat;
-            try {
-              stat = window.electronAPI.fs.stat(nextPath);
-            } catch (e) {
-              console.error('Failed to stat path:', nextPath, e);
-              break;
-            }
-            if (!stat.isDirectory) break;
-            console.log('going deeper to', nextPath);
-            outputDir = nextPath;
-            filesInDir = await window.electronAPI.fs.getFilesInDir(outputDir);
-            depth++;
-          }
-        }
-
-        outputDir = outputDir + '/';
-        console.log('Newly calculated outputDir: ', outputDir);
-        return outputDir;
+        if (!output) return undefined;
+        return output;
       };
 
-      // try 3 times to extract the ZIP file
       let outputDir: string | undefined;
       for (let i = 0; i < 3; i++) {
         try {
           outputDir = await attemptUnzip();
-          await new Promise((resolve) => setTimeout(resolve, 1000)); // wait 1 second before retrying
+          await new Promise((resolve) => setTimeout(resolve, 1000));
         } catch (error) {
           console.log('Failed to extract ZIP file');
           console.error('Failed to process ZIP file: ', error);
           throw error;
         }
-      }
-
-      if (!outputDir) {
-        throw new Error('Failed to extract ZIP file after 3 attempts');
-      }
-
-      // delete the zip file
-      try {
-        window.electronAPI.fs.delete(originalZipFilePath);
-        console.log('ZIP file deleted');
-      } catch (error) {
-        console.error('Failed to delete ZIP file: ', error);
       }
 
       if (!outputDir) {
@@ -209,91 +193,34 @@ export async function retryFailedSetup(failedSetup: FailedSetup) {
       },
     }));
 
-    // Attempt the setup again
-    safeFetch(
-      'setupApp',
-      {
-        addonID: addonSource,
-        ...setupData,
-      },
-      {
-        onLogs: (logs: string[]) => {
-          document.dispatchEvent(
-            new CustomEvent('setup:log', {
-              detail: {
-                id: tempId,
-                log: logs,
-              },
-            })
-          );
+    try {
+      await runSetupApp(
+        {
+          ...failedSetup.downloadInfo,
+          id: tempId,
         },
-        onProgress: (progress: number) => {
-          document.dispatchEvent(
-            new CustomEvent('setup:progress', {
-              detail: {
-                id: tempId,
-                progress,
-              },
-            })
-          );
-        },
-        consume: 'json',
-      }
-    )
-      .then(
-        (
-          result: Omit<
-            LibraryInfo,
-            | 'capsuleImage'
-            | 'coverImage'
-            | 'name'
-            | 'appID'
-            | 'storefront'
-            | 'addonsource'
-          >
-        ) => {
-          window.electronAPI.app.insertApp({
-            ...result,
-            capsuleImage: failedSetup.downloadInfo.capsuleImage,
-            coverImage: failedSetup.downloadInfo.coverImage,
-            name: failedSetup.downloadInfo.name,
-            appID: failedSetup.downloadInfo.appID,
-            storefront: failedSetup.downloadInfo.storefront,
-            addonsource: failedSetup.downloadInfo.addonSource,
-          });
-          removeFailedSetup(failedSetup.id);
-          // Update the temporary download entry to show completion
-          currentDownloads.update((downloads) => {
-            return downloads.map((download) => {
-              if (download.id === tempId) {
-                return {
-                  ...download,
-                  status: 'setup-complete' as const,
-                };
-              }
-              return download;
-            });
-          });
-          createNotification({
-            id: Math.random().toString(36).substring(7),
-            type: 'success',
-            message: `Successfully set up ${failedSetup.downloadInfo.name}`,
-          });
-        }
-      )
-      .catch((error) => {
-        console.error('Error retrying setup:', error);
-        currentDownloads.update((downloads) => {
-          return downloads.filter((download) => download.id !== tempId);
-        });
-        createNotification({
-          id: Math.random().toString(36).substring(7),
-          type: 'error',
-          message: `Failed to retry setup for ${failedSetup.downloadInfo.name}`,
-        });
-
-        updateRetry(failedSetup, error);
+        setupData.path,
+        failedSetup.downloadInfo.downloadType === 'torrent' ||
+          failedSetup.downloadInfo.downloadType === 'magnet'
+      );
+      removeFailedSetup(failedSetup.id);
+      createNotification({
+        id: Math.random().toString(36).substring(7),
+        type: 'success',
+        message: `Successfully set up ${failedSetup.downloadInfo.name}`,
       });
+    } catch (error) {
+      console.error('Error retrying setup:', error);
+      currentDownloads.update((downloads) => {
+        return downloads.filter((download) => download.id !== tempId);
+      });
+      createNotification({
+        id: Math.random().toString(36).substring(7),
+        type: 'error',
+        message: `Failed to retry setup for ${failedSetup.downloadInfo.name}`,
+      });
+      updateRetry(failedSetup, error as string);
+    }
   } catch (error: unknown) {
     console.error('Error retrying setup:', error);
 

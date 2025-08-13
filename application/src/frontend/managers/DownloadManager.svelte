@@ -1,14 +1,13 @@
 <script lang="ts">
+  import { createNotification, currentDownloads, setupLogs } from '../store';
+  import { updateDownloadStatus, getDownloadItem } from '../utils';
+  // no direct use of EventListenerTypes in this module anymore
   import {
-    createNotification,
-    currentDownloads,
-    failedSetups,
-    setupLogs,
-    type DownloadStatusAndInfo,
-    type FailedSetup,
-  } from '../store';
-  import { safeFetch, updateDownloadStatus, getDownloadItem } from '../utils';
-  import type { EventListenerTypes, SetupEventResponse } from 'ogi-addon';
+    unrarAndReturnOutputDir,
+    unzipAndReturnOutputDir,
+  } from '../lib/setup/extraction';
+  import { saveFailedSetup } from '../lib/recovery/failedSetups';
+  import { runSetupApp } from '../lib/setup/setup';
 
   function isCustomEvent(event: Event): event is CustomEvent {
     return event instanceof CustomEvent;
@@ -31,165 +30,15 @@
     );
   }
 
-  function handleSetupError(
-    error: any,
-    downloadedItem: DownloadStatusAndInfo,
-    setupData: Parameters<EventListenerTypes['setup']>[0]
-  ) {
-    console.error('Error setting up app: ', error);
-    createNotification({
-      id: Math.random().toString(36).substring(2, 9),
-      type: 'error',
-      message: 'The addon had crashed while setting up.',
-    });
+  // setup flow helpers are shared in lib/setup/setup.ts
 
-    updateDownloadStatus(downloadedItem.id, {
-      status: 'error',
-      error: error.message || error,
-    });
+  // callbacks now come from lib/setup/setup.ts
 
-    // Mark setup log as inactive
-    setupLogs.update((logs) => {
-      if (logs[downloadedItem.id]) {
-        logs[downloadedItem.id].isActive = false;
-      }
-      return logs;
-    });
+  // payload creation now shared
 
-    saveFailedSetup({
-      downloadInfo: downloadedItem,
-      setupData,
-      error: error.message || error,
-      should: 'call-addon',
-    });
-  }
+  // success handling now shared in runSetupApp
 
-  function createSetupCallbacks(downloadedItem: DownloadStatusAndInfo) {
-    return {
-      onLogs: (log: string[]) =>
-        dispatchSetupEvent('log', downloadedItem.id, log),
-      onProgress: (progress: any) =>
-        dispatchSetupEvent('progress', downloadedItem.id, progress),
-      onFailed: (error: any) => {
-        const setupData: Parameters<EventListenerTypes['setup']>[0] = {
-          path: downloadedItem.downloadPath,
-          type: downloadedItem.downloadType as 'direct' | 'torrent' | 'magnet',
-          name: downloadedItem.name,
-          usedRealDebrid: downloadedItem.usedDebridService !== undefined,
-          appID: downloadedItem.appID,
-          storefront: downloadedItem.storefront,
-          multiPartFiles: downloadedItem.files,
-          manifest: downloadedItem.manifest,
-        };
-        console.log('error', error);
-        handleSetupError(error, downloadedItem, setupData);
-      },
-      consume: 'json' as const,
-    };
-  }
-
-  function createSetupPayload(
-    downloadedItem: DownloadStatusAndInfo,
-    path: string,
-    additionalData: any = {}
-  ) {
-    return {
-      addonID: downloadedItem.addonSource,
-      path,
-      type: downloadedItem.downloadType,
-      name: downloadedItem.name,
-      usedRealDebrid: downloadedItem.usedDebridService !== undefined,
-      appID: downloadedItem.appID,
-      storefront: downloadedItem.storefront,
-      multiPartFiles: JSON.parse(JSON.stringify(downloadedItem.files || [])),
-      manifest: JSON.parse(JSON.stringify(downloadedItem.manifest || {})),
-      ...additionalData,
-    };
-  }
-
-  async function handleSetupSuccess(
-    data: SetupEventResponse,
-    downloadedItem: DownloadStatusAndInfo,
-    finalStatus: 'seeding' | 'setup-complete'
-  ) {
-    if (downloadedItem === undefined) return;
-    if (data.redistributables && data.redistributables.length > 0) {
-      // write to the downloadItem
-      updateDownloadStatus(downloadedItem.id, {
-        status: 'redistr-downloading',
-      });
-    }
-
-    // Mark setup log as inactive
-    setupLogs.update((logs) => {
-      if (logs[downloadedItem.id]) {
-        logs[downloadedItem.id].isActive = false;
-      }
-      return logs;
-    });
-
-    const result = await window.electronAPI.app.insertApp({
-      ...data,
-      capsuleImage: downloadedItem.capsuleImage,
-      coverImage: downloadedItem.coverImage,
-      name: downloadedItem.name,
-      appID: downloadedItem.appID,
-      storefront: downloadedItem.storefront,
-      addonsource: downloadedItem.addonSource,
-      redistributables: data.redistributables,
-    });
-
-    if (
-      result === 'setup-failed' ||
-      result === 'setup-redistributables-failed'
-    ) {
-      updateDownloadStatus(downloadedItem.id, {
-        status: 'error',
-        error: result,
-      });
-      return;
-    }
-
-    updateDownloadStatus(downloadedItem.id, {
-      status: finalStatus,
-      downloadPath: downloadedItem.downloadPath,
-    });
-  }
-
-  // -- Failed Setup --
-
-  function saveFailedSetup(setupInfo: {
-    downloadInfo: DownloadStatusAndInfo;
-    setupData: Parameters<EventListenerTypes['setup']>[0];
-    error: string;
-    should: 'call-addon' | 'call-unrar' | 'call-unzip';
-  }) {
-    try {
-      if (!window.electronAPI.fs.exists('./failed-setups')) {
-        window.electronAPI.fs.mkdir('./failed-setups');
-      }
-
-      const failedSetupId = Math.random().toString(36).substring(7);
-      const failedSetupData: FailedSetup = {
-        id: failedSetupId,
-        timestamp: Date.now(),
-        ...setupInfo,
-        retryCount: 0,
-      };
-
-      window.electronAPI.fs.write(
-        `./failed-setups/${failedSetupId}.json`,
-        JSON.stringify(failedSetupData, null, 2)
-      );
-
-      failedSetups.update((setups) => {
-        return [...setups, failedSetupData];
-      });
-      console.log('Saved failed setup info:', failedSetupId);
-    } catch (error) {
-      console.error('Failed to save setup info:', error);
-    }
-  }
+  // saveFailedSetup moved to shared module
 
   async function processDownloadComplete(
     downloadID: string,
@@ -244,33 +93,20 @@
 
       const attemptUnrar = async () => {
         try {
-          console.log('Extracting RAR file: ', downloadedItem.downloadPath);
-          console.log(downloadedItem);
-          const extractedDir = await window.electronAPI.fs.unrar({
-            outputDir:
-              downloadedItem.downloadPath.replace(/(\/|\\)$/g, '') +
-              '/' +
-              downloadedItem.name,
-            rarFilePath:
-              downloadedItem.downloadPath?.replace(/(\/|\\)$/g, '') +
-              '/' +
-              downloadedItem.filename,
+          const rarFilePath =
+            downloadedItem.downloadPath.replace(/(\/|\\)$/g, '') +
+            '/' +
+            downloadedItem.filename;
+          const outputBase =
+            downloadedItem.downloadPath.replace(/(\/|\\)$/g, '') +
+            '/' +
+            downloadedItem.name;
+          const extractedDir = await unrarAndReturnOutputDir({
+            rarFilePath,
+            outputBaseDir: outputBase,
             downloadId: downloadedItem.id,
           });
           outputDir = extractedDir;
-          // delete the rar file
-          console.log(
-            'Deleting RAR file: ',
-            downloadedItem.downloadPath?.replace(/(\/|\\)$/g, '') +
-              '/' +
-              downloadedItem.filename
-          );
-          window.electronAPI.fs.delete(
-            downloadedItem.downloadPath?.replace(/(\/|\\)$/g, '') +
-              '/' +
-              downloadedItem.filename
-          );
-          console.log('RAR file deleted');
           downloadedItem.downloadPath = extractedDir;
           return true;
         } catch (error) {
@@ -341,46 +177,21 @@
       const originalZipFilePath = downloadedItem.downloadPath;
 
       const attemptUnzip = async () => {
-        console.log('Extracting ZIP file: ', originalZipFilePath);
-        console.log(downloadedItem);
-        let queriedOutput = await window.electronAPI.fs.unzip({
-          zipFilePath: originalZipFilePath,
-          outputDir: originalZipFilePath.replace(/\.zip$/g, ''),
-          downloadId: downloadedItem.id,
-        });
-
-        if (!queriedOutput) {
+        try {
+          const output = await unzipAndReturnOutputDir({
+            zipFilePath: originalZipFilePath,
+            outputDirBase: originalZipFilePath.replace(/\.zip$/g, ''),
+            downloadId: downloadedItem.id,
+          });
+          if (!output) return false;
+          outputDir = output;
+          downloadedItem.downloadPath = outputDir;
+          console.log('Newly calculated outputDir: ', outputDir);
+          return true;
+        } catch (error) {
+          console.error('Failed to process ZIP file: ', error);
           return false;
         }
-        outputDir = queriedOutput;
-        console.log('ZIP file extracted successfully');
-        // go depeer until it's not just folders
-        let filesInDir = await window.electronAPI.fs.getFilesInDir(outputDir);
-        // Prevent going deeper than 10 directory levels to avoid infinite loops
-        console.log('filesInDir: ', filesInDir);
-        if (filesInDir.length === 1) {
-          let depth = 0;
-          while (filesInDir.length === 1 && depth < 10) {
-            const nextPath = outputDir + '/' + filesInDir[0];
-            let stat;
-            try {
-              stat = window.electronAPI.fs.stat(nextPath);
-            } catch (e) {
-              console.error('Failed to stat path:', nextPath, e);
-              break;
-            }
-            if (!stat.isDirectory) break;
-            console.log('going deeper to', nextPath);
-            outputDir = nextPath;
-            filesInDir = await window.electronAPI.fs.getFilesInDir(outputDir);
-            depth++;
-          }
-        }
-
-        outputDir = outputDir + '/';
-        downloadedItem.downloadPath = outputDir;
-        console.log('Newly calculated outputDir: ', outputDir);
-        return true;
       };
 
       // try 3 times to extract the ZIP file
@@ -430,13 +241,7 @@
         throw new Error('Failed to extract ZIP file');
       }
 
-      // delete the zip file
-      try {
-        window.electronAPI.fs.delete(originalZipFilePath);
-        console.log('ZIP file deleted');
-      } catch (error) {
-        console.error('Failed to delete ZIP file: ', error);
-      }
+      // deletion handled in unzip helper
     }
 
     // Add multipart files data for DDL
@@ -446,23 +251,9 @@
       );
     }
 
-    const setupPayload = createSetupPayload(
-      downloadedItem,
-      outputDir,
-      additionalData
-    );
-    const callbacks = createSetupCallbacks(downloadedItem);
-
     try {
-      const data: SetupEventResponse = await safeFetch(
-        'setupApp',
-        setupPayload,
-        callbacks
-      );
-      const finalStatus = isTorrent ? 'seeding' : 'setup-complete';
-      await handleSetupSuccess(data, downloadedItem, finalStatus);
+      await runSetupApp(downloadedItem, outputDir, isTorrent, additionalData);
     } catch (error) {
-      // already handled in the catch block of safeFetch
       console.error('Error setting up app: ', error);
     }
   }

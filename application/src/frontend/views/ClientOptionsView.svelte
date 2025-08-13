@@ -355,10 +355,7 @@
   }
 
   async function installAddons() {
-    const buttonsToDisable = document.querySelectorAll('[data-disable]');
-    buttonsToDisable.forEach((button) => {
-      button.setAttribute('disabled', 'true');
-    });
+    isInstallingAddons = true;
     const addons = getStoredOrDefaultValue('addons') as string[];
     if (!addons || addons.length === 0) {
       createNotification({
@@ -366,39 +363,40 @@
         message: 'No addons to install',
         type: 'error',
       });
+      isInstallingAddons = false;
       return;
     }
     await window.electronAPI.installAddons(addons);
-    buttonsToDisable.forEach((button) => {
-      button.removeAttribute('disabled');
-    });
+    isInstallingAddons = false;
   }
 
   async function cleanAddons() {
-    const buttonsToDisable = document.querySelectorAll('[data-disable]');
-    buttonsToDisable.forEach((button) => {
-      button.setAttribute('disabled', 'true');
-    });
+    isCleaningAddons = true;
     await window.electronAPI.cleanAddons();
-    buttonsToDisable.forEach((button) => {
-      button.removeAttribute('disabled');
-    });
+    isCleaningAddons = false;
   }
 
   async function updateAddons() {
-    const buttonsToDisable = document.querySelectorAll('[data-disable]');
-    buttonsToDisable.forEach((button) => {
-      button.setAttribute('disabled', 'true');
-    });
+    isUpdatingAddons = true;
     await window.electronAPI.updateAddons();
-    buttonsToDisable.forEach((button) => {
-      button.removeAttribute('disabled');
-    });
+    isUpdatingAddons = false;
+  }
+
+  async function restartAddonServer() {
+    isRestartingServer = true;
+    await window.electronAPI.restartAddonServer();
+    isRestartingServer = false;
   }
 
   let showPassword: { [key: string]: boolean } = $state({});
   let doSteamGridDBReconfigure: boolean = $state(false);
   let selectedTorrentClientId: string = $state('webtorrent'); // Track selection reactively
+
+  // Loading states for addon management buttons
+  let isInstallingAddons = $state(false);
+  let isUpdatingAddons = $state(false);
+  let isCleaningAddons = $state(false);
+  let isRestartingServer = $state(false);
 
   const torrentClients = [
     {
@@ -865,34 +863,62 @@
                   <h3 class="action-title">Addon Management</h3>
                   <div class="action-buttons">
                     <button
-                      class="action-button primary"
+                      class="action-button primary flex items-center justify-center"
                       onclick={() => installAddons()}
-                      data-disable
+                      disabled={isInstallingAddons}
                     >
-                      Install All Addons
+                      {#if isInstallingAddons}
+                        <div
+                          class="animate-spin mr-2 h-5 w-5 border-2 border-white border-t-transparent rounded-full"
+                        ></div>
+                        Installing...
+                      {:else}
+                        Install All Addons
+                      {/if}
                     </button>
                     <button
-                      class="action-button secondary"
+                      class="action-button secondary flex items-center justify-center"
                       onclick={() => updateAddons()}
-                      data-disable
+                      disabled={isUpdatingAddons}
                     >
-                      Update Addons
+                      {#if isUpdatingAddons}
+                        <div
+                          class="animate-spin mr-2 h-5 w-5 border-2 border-white border-t-transparent rounded-full"
+                        ></div>
+                        Updating...
+                      {:else}
+                        Update Addons
+                      {/if}
                     </button>
                     <button
-                      class="action-button danger"
+                      class="action-button danger flex items-center justify-center"
                       onclick={() => cleanAddons()}
-                      data-disable
+                      disabled={isCleaningAddons}
                     >
-                      Clean All Addons
+                      {#if isCleaningAddons}
+                        <div
+                          class="animate-spin mr-2 h-5 w-5 border-2 border-white border-t-transparent rounded-full"
+                        ></div>
+                        Cleaning...
+                      {:else}
+                        Clean All Addons
+                      {/if}
                     </button>
                   </div>
                   <div class="action-buttons">
                     <button
-                      class="action-button warning"
-                      onclick={() => window.electronAPI.restartAddonServer()}
-                      data-disable
+                      class="action-button warning flex items-center justify-center"
+                      onclick={() => restartAddonServer()}
+                      disabled={isRestartingServer}
                     >
-                      Restart Addon Server
+                      {#if isRestartingServer}
+                        <div
+                          class="animate-spin mr-2 h-5 w-5 border-2 border-white border-t-transparent rounded-full"
+                        ></div>
+                        Restarting...
+                      {:else}
+                        Restart Addon Server
+                      {/if}
                     </button>
                   </div>
                 </div>

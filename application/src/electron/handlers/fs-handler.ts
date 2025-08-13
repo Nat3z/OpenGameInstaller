@@ -244,54 +244,134 @@ export default function handler() {
       _,
       arg: { zipFilePath: string; outputDir: string; downloadId?: string }
     ) => {
-      const { zipFilePath, outputDir, downloadId } = arg;
+      try {
+        const { zipFilePath, outputDir, downloadId } = arg;
 
-      if (!fs.existsSync(zipFilePath)) {
-        throw new Error('ZIP file does not exist');
-      }
+        if (!fs.existsSync(zipFilePath)) {
+          throw new Error('ZIP file does not exist');
+        }
 
-      if (!fs.existsSync(outputDir)) {
-        fs.mkdirSync(outputDir, { recursive: true });
-      }
+        if (!fs.existsSync(outputDir)) {
+          fs.mkdirSync(outputDir, { recursive: true });
+        }
 
-      // use 7zip to extract the zip file or unzip if on linux/mac
-      console.log('Extracting ZIP file: ', zipFilePath);
-      console.log('Output directory: ', outputDir);
+        // use 7zip to extract the zip file or unzip if on linux/mac
+        console.log('Extracting ZIP file: ', zipFilePath);
+        console.log('Output directory: ', outputDir);
 
-      // Send initial log to frontend if downloadId is provided
-      if (downloadId) {
-        sendIPCMessage('setup:log', {
-          id: downloadId,
-          log: ['Starting ZIP extraction...'],
-        });
-      }
-
-      if (process.platform === 'win32') {
-        console.log('isWin32');
+        // Send initial log to frontend if downloadId is provided
         if (downloadId) {
           sendIPCMessage('setup:log', {
             id: downloadId,
-            log: ['Using 7-Zip to extract files...'],
+            log: ['Starting ZIP extraction...'],
           });
         }
-        let s7ZipPath = '"C:\\Program Files\\7-Zip\\7z.exe"';
-        await new Promise<void>((resolve, reject) =>
-          exec(
-            `${s7ZipPath} x "${zipFilePath}" -o"${outputDir}"`,
-            (err, stdout, stderr) => {
-              if (err) {
-                console.error(err);
+
+        if (process.platform === 'win32') {
+          console.log('isWin32');
+          if (downloadId) {
+            sendIPCMessage('setup:log', {
+              id: downloadId,
+              log: ['Using 7-Zip to extract files...'],
+            });
+          }
+          let s7ZipPath = '"C:\\Program Files\\7-Zip\\7z.exe"';
+          await new Promise<void>((resolve, reject) =>
+            exec(
+              `${s7ZipPath} x "${zipFilePath}" -o"${outputDir}"`,
+              (err, stdout, stderr) => {
+                if (err) {
+                  console.error(err);
+                  console.log(stderr);
+                  if (downloadId) {
+                    sendIPCMessage('setup:log', {
+                      id: downloadId,
+                      log: [`Extraction failed: ${err.message}`],
+                    });
+                  }
+                  reject(new Error('Failed to extract ZIP file'));
+                }
+                console.log(stdout);
                 console.log(stderr);
                 if (downloadId) {
                   sendIPCMessage('setup:log', {
                     id: downloadId,
-                    log: [`Extraction failed: ${err.message}`],
+                    log: ['ZIP extraction completed successfully'],
+                  });
+                }
+                resolve();
+              }
+            )
+          );
+        }
+
+        if (process.platform === 'linux' || process.platform === 'darwin') {
+          console.log('isLinuxOrDarwin');
+          if (downloadId) {
+            sendIPCMessage('setup:log', {
+              id: downloadId,
+              log: ['Using unzip to extract files...'],
+            });
+          }
+          await new Promise<void>((resolve, reject) => {
+            // create the output directory if it doesn't exist
+            if (!fs.existsSync(outputDir)) {
+              fs.mkdirSync(outputDir, { recursive: true });
+            }
+
+            const unzipProcess = spawn(
+              'unzip',
+              [
+                '-o', // overwrite files without prompting
+                zipFilePath,
+                '-d', // specify output directory
+                outputDir,
+              ],
+              {
+                env: {
+                  ...process.env,
+                  UNZIP_DISABLE_ZIPBOMB_DETECTION: 'TRUE',
+                },
+              }
+            );
+
+            unzipProcess.stdout.on('data', (data) => {
+              console.log(`[unzip stdout]: ${data}`);
+              if (downloadId) {
+                const logMessage = data.toString().trim();
+                if (logMessage) {
+                  sendIPCMessage('setup:log', {
+                    id: downloadId,
+                    log: [logMessage],
+                  });
+                }
+              }
+            });
+
+            unzipProcess.stderr.on('data', (data) => {
+              console.error(`[unzip stderr]: ${data}`);
+              if (downloadId) {
+                const logMessage = data.toString().trim();
+                if (logMessage) {
+                  sendIPCMessage('setup:log', {
+                    id: downloadId,
+                    log: [logMessage],
+                  });
+                }
+              }
+            });
+
+            unzipProcess.on('close', (code) => {
+              if (code !== 0) {
+                console.error(`unzip process exited with code ${code}`);
+                if (downloadId) {
+                  sendIPCMessage('setup:log', {
+                    id: downloadId,
+                    log: [`Unzip process failed with exit code ${code}`],
                   });
                 }
                 reject(new Error('Failed to extract ZIP file'));
               }
-              console.log(stdout);
-              console.log(stderr);
               if (downloadId) {
                 sendIPCMessage('setup:log', {
                   id: downloadId,
@@ -299,82 +379,16 @@ export default function handler() {
                 });
               }
               resolve();
-            }
-          )
-        );
-      }
-
-      if (process.platform === 'linux' || process.platform === 'darwin') {
-        console.log('isLinuxOrDarwin');
-        if (downloadId) {
-          sendIPCMessage('setup:log', {
-            id: downloadId,
-            log: ['Using unzip to extract files...'],
+            });
           });
+          console.log('done');
         }
-        await new Promise<void>((resolve, reject) => {
-          // create the output directory if it doesn't exist
-          if (!fs.existsSync(outputDir)) {
-            fs.mkdirSync(outputDir, { recursive: true });
-          }
 
-          const unzipProcess = spawn('unzip', [
-            '-o', // overwrite files without prompting
-            zipFilePath,
-            '-d', // specify output directory
-            outputDir,
-          ]);
-
-          unzipProcess.stdout.on('data', (data) => {
-            console.log(`[unzip stdout]: ${data}`);
-            if (downloadId) {
-              const logMessage = data.toString().trim();
-              if (logMessage) {
-                sendIPCMessage('setup:log', {
-                  id: downloadId,
-                  log: [logMessage],
-                });
-              }
-            }
-          });
-
-          unzipProcess.stderr.on('data', (data) => {
-            console.error(`[unzip stderr]: ${data}`);
-            if (downloadId) {
-              const logMessage = data.toString().trim();
-              if (logMessage) {
-                sendIPCMessage('setup:log', {
-                  id: downloadId,
-                  log: [logMessage],
-                });
-              }
-            }
-          });
-
-          unzipProcess.on('close', (code) => {
-            if (code !== 0) {
-              console.error(`unzip process exited with code ${code}`);
-              if (downloadId) {
-                sendIPCMessage('setup:log', {
-                  id: downloadId,
-                  log: [`Unzip process failed with exit code ${code}`],
-                });
-              }
-              reject(new Error('Failed to extract ZIP file'));
-            }
-            if (downloadId) {
-              sendIPCMessage('setup:log', {
-                id: downloadId,
-                log: ['ZIP extraction completed successfully'],
-              });
-            }
-            resolve();
-          });
-        });
-        console.log('done');
+        return outputDir;
+      } catch (err) {
+        console.error(err);
+        return null;
       }
-
-      return outputDir;
     }
   );
 }

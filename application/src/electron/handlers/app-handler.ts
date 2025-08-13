@@ -1,56 +1,14 @@
 import axios from 'axios';
 import { net, ipcMain } from 'electron';
-import { currentScreens, sendIPCMessage, sendNotification } from '../main.js';
+import { currentScreens, sendNotification } from '../main.js';
 import { join } from 'path';
 import * as fs from 'fs';
-import { exec, execSync, spawn, spawnSync } from 'child_process';
+import { exec, spawn, spawnSync } from 'child_process';
 import { LibraryInfo } from 'ogi-addon';
 import { __dirname } from '../paths.js';
 import { STEAMTINKERLAUNCH_PATH } from '../startup.js';
 import { clients } from '../server/addon-server.js';
 import { dirname, basename } from 'path';
-
-const grantAccessToPath = (path: string, rootPassword: string) =>
-  new Promise<void>((resolve, reject) => {
-    // Get the folder from the file path
-    path = fs.lstatSync(path).isDirectory() ? path : dirname(path);
-    try {
-      const child = spawn(
-        'sudo',
-        [
-          '-S',
-          'flatpak',
-          'override',
-          'org.winehq.Wine',
-          '--filesystem=' + path,
-        ],
-        {
-          stdio: ['pipe', 'inherit', 'inherit'],
-        }
-      );
-
-      // Write password to stdin immediately after spawning
-      child.stdin?.write(rootPassword + '\n');
-      child.stdin?.end();
-
-      child.on('close', (code) => {
-        console.log(`[flatpak] process exited with code ${code}`);
-        resolve();
-      });
-      child.on('error', (error) => {
-        console.error(error);
-        reject(error);
-      });
-    } catch (error) {
-      console.error(error);
-      sendNotification({
-        message: 'Failed to allow flatpak to access the proton path',
-        id: Math.random().toString(36).substring(7),
-        type: 'error',
-      });
-      reject(error);
-    }
-  });
 
 const getSilentInstallFlags = (
   filePath: string,
@@ -77,6 +35,10 @@ const getSilentInstallFlags = (
 
   // .NET Framework redistributables
   if (lowerFileName.includes('dotnet') || lowerFileName.includes('netfx')) {
+    // Special case for .NET Framework Repair Tool
+    if (lowerFileName.includes('netfxrepairtool')) {
+      return ['/p']; // Use /p flag for repair tool as requested
+    }
     return ['/S', '/v/qn'];
   }
 
@@ -390,19 +352,63 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
         JSON.stringify(appsInternal, null, 2)
       );
 
+      // linux case
       if (process.platform === 'linux') {
         // make the launch executable use / instead of \
         data.launchExecutable = data.launchExecutable.replaceAll('\\', '/');
         const homeDir = process.env.HOME || process.env.USERPROFILE;
         const protonPath = `${homeDir}/.ogi-wine-prefixes/${data.appID}/pfx`;
-        // if the proton path does not exist, create it
-        if (!fs.existsSync(protonPath)) {
-          fs.mkdirSync(protonPath, { recursive: true });
-        }
 
-        // if there are redistributables, we need to install them
-        if (data.redistributables) {
-          // First check if wine is available via flatpak
+        let useWinePrefix = false;
+
+        if (data.redistributables && data.redistributables.length > 0) {
+          useWinePrefix = true;
+
+          // if the proton path does not exist, create it
+          if (!fs.existsSync(protonPath)) {
+            fs.mkdirSync(protonPath, { recursive: true });
+          }
+
+          // if there are redistributables, we need to install them
+          // firstly run wineboot to update the wine prefix
+          const wineboot = new Promise<void>((resolve) => {
+            const wineboot = spawn(
+              'flatpak',
+              [
+                `--env=WINEPREFIX=${protonPath}`,
+                '--filesystem=host',
+                `--env=DISPLAY=:0`, // Ensure display for wine UI
+                `--env=WINEDEBUG=-all`, // Reduce wine debug output
+                `--env=WINEDLLOVERRIDES=mscoree,mshtml=`, // Disable .NET and HTML rendering
+                '--command=wineboot',
+                'run',
+                'org.winehq.Wine',
+              ],
+              {
+                stdio: ['inherit', 'pipe', 'pipe'],
+                cwd: __dirname,
+              }
+            );
+            wineboot.on('close', (code) => {
+              if (code === 0) {
+                resolve();
+              } else {
+                resolve();
+              }
+            });
+            wineboot.on('error', (error) => {
+              console.error(error);
+              resolve();
+            });
+            wineboot.stdout?.on('data', (data) => {
+              console.log(`[wineboot:stdout] ${data.toString()}`);
+            });
+            wineboot.stderr?.on('data', (data) => {
+              console.log(`[wineboot:stderr] ${data.toString()}`);
+            });
+          });
+          await wineboot;
+          // check if wine is available via flatpak
           const wineAvailable = await new Promise<boolean>((resolve) => {
             exec('flatpak run org.winehq.Wine --help', (err) => {
               resolve(!err);
@@ -448,68 +454,6 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
               );
             }
           } else {
-            let rootPassword = '';
-            // firstly, allow the flatpak to access the proton path
-            const rootPasswordGranter = () =>
-              new Promise<void>((resolve) => {
-                sendIPCMessage('app:ask-root-password', true);
-                ipcMain.handleOnce(
-                  'app:root-password-granted',
-                  async (_, password) => {
-                    // allow the flatpak to access the proton path
-                    try {
-                      execSync(`echo -e "${password}\n" | sudo -S -k true`, {
-                        stdio: 'ignore',
-                      });
-                      await grantAccessToPath(protonPath, password);
-                      rootPassword = password;
-                      resolve();
-                    } catch (error) {
-                      console.error(error);
-                      sendNotification({
-                        message:
-                          'Failed to allow flatpak to access the proton path.',
-                        id: Math.random().toString(36).substring(7),
-                        type: 'error',
-                      });
-                      await rootPasswordGranter();
-                      resolve();
-                    }
-                  }
-                );
-              });
-            await rootPasswordGranter();
-
-            // firstly run wineboot to update the wine prefix
-            const wineboot = new Promise<void>((resolve) => {
-              const wineboot = spawn('flatpak', [
-                `--env="WINEPREFIX=${protonPath}"`,
-                'run',
-                'org.winehq.Wine',
-                '--command=wineboot',
-              ]);
-              wineboot.on('close', (code) => {
-                if (code === 0) {
-                  resolve();
-                } else {
-                  resolve();
-                }
-              });
-              wineboot.on('error', (error) => {
-                console.error(error);
-                resolve();
-              });
-              wineboot.stdout?.on('data', (data) => {
-                console.log(`[wineboot:stdout] ${data.toString()}`);
-              });
-              wineboot.stderr?.on('data', (data) => {
-                console.log(`[wineboot:stderr] ${data.toString()}`);
-              });
-            });
-
-            // activate wineboot
-            await wineboot;
-
             for (const redistributable of data.redistributables) {
               try {
                 sendNotification({
@@ -518,42 +462,196 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
                   type: 'info',
                 });
 
-                await grantAccessToPath(redistributable.path, rootPassword);
                 console.log('Running redistributable: ' + redistributable.path);
 
-                const success = await new Promise<boolean>((resolve) => {
-                  if (redistributable.path === 'winetricks') {
+                const success = await new Promise<boolean>(async (resolve) => {
+                  if (
+                    redistributable.path === 'microsoft' &&
+                    redistributable.name === 'dotnet-repair'
+                  ) {
+                    console.log('spawning microsoft dotnet-repair tool');
+                    // Download and run the .NET Framework Repair Tool with wine
+                    const netfxRepairToolUrl =
+                      'https://download.microsoft.com/download/2/b/d/2bde5459-2225-48b8-830c-ae19caf038f1/NetFxRepairTool.exe';
+                    const toolPath = join(
+                      __dirname,
+                      'bin',
+                      'NetFxRepairTool.exe'
+                    );
+                    // create the directory if it doesn't exist
+                    if (!fs.existsSync(join(__dirname, 'bin'))) {
+                      fs.mkdirSync(join(__dirname, 'bin'));
+                    }
+
+                    try {
+                      // Download the tool if it doesn't exist
+                      if (!fs.existsSync(toolPath)) {
+                        console.log(
+                          '[dotnet-repair] Downloading .NET Framework Repair Tool...'
+                        );
+                        const response = await axios({
+                          method: 'get',
+                          url: netfxRepairToolUrl,
+                          responseType: 'stream',
+                        });
+
+                        const fileStream = fs.createWriteStream(toolPath);
+                        response.data.pipe(fileStream);
+
+                        await new Promise<void>(
+                          (downloadResolve, downloadReject) => {
+                            fileStream.on('finish', () => {
+                              fileStream.close();
+                              console.log('[dotnet-repair] Download completed');
+                              downloadResolve();
+                            });
+                            fileStream.on('error', (err) => {
+                              console.error(
+                                '[dotnet-repair] Download error:',
+                                err
+                              );
+                              fileStream.close();
+                              try {
+                                fs.unlinkSync(toolPath);
+                              } catch (unlinkErr) {
+                                console.error(
+                                  '[dotnet-repair] Failed to cleanup file:',
+                                  unlinkErr
+                                );
+                              }
+                              downloadReject(err);
+                            });
+                          }
+                        );
+                      }
+
+                      // Run the tool with wine and /p flag
+                      console.log(
+                        '[dotnet-repair] Running .NET Framework Repair Tool with wine'
+                      );
+                      const child = spawn(
+                        'flatpak',
+                        [
+                          `--env=WINEPREFIX=${protonPath}`,
+                          `--env=DISPLAY=:0`, // Ensure display for wine UI
+                          `--env=WINEDEBUG=-all`, // Reduce wine debug output
+                          `--env=WINEDLLOVERRIDES=mscoree,mshtml=`, // Disable .NET and HTML rendering
+                          '--filesystem=host',
+                          'run',
+                          'org.winehq.Wine',
+                          'bin/NetFxRepairTool.exe',
+                          '/p',
+                        ],
+                        {
+                          stdio: ['inherit', 'pipe', 'pipe'],
+                          cwd: __dirname,
+                        }
+                      );
+
+                      let stdout = '';
+                      let stderr = '';
+
+                      child.on('close', (code) => {
+                        console.log(
+                          `[dotnet-repair] process exited with code ${code}`
+                        );
+                        if (code === 0) {
+                          console.log(
+                            '[dotnet-repair] .NET Framework repair completed successfully'
+                          );
+                          resolve(true);
+                        } else {
+                          console.error(
+                            `[dotnet-repair] .NET Framework repair failed with exit code ${code}`
+                          );
+                          console.error(`[dotnet-repair] stdout: ${stdout}`);
+                          console.error(`[dotnet-repair] stderr: ${stderr}`);
+                          resolve(false);
+                        }
+                      });
+                      child.on('error', (error) => {
+                        console.error('[dotnet-repair] Process error:', error);
+                        console.error(`[dotnet-repair] stdout: ${stdout}`);
+                        console.error(`[dotnet-repair] stderr: ${stderr}`);
+                        resolve(false);
+                      });
+                      child.stdout?.on('data', (data) => {
+                        const output = data.toString();
+                        stdout += output;
+                        console.log(`[dotnet-repair:stdout] ${output.trim()}`);
+                      });
+                      child.stderr?.on('data', (data) => {
+                        const output = data.toString();
+                        stderr += output;
+                        console.log(`[dotnet-repair:stderr] ${output.trim()}`);
+                      });
+                      return;
+                    } catch (error) {
+                      console.error('[dotnet-repair] Error:', error);
+                      resolve(false);
+                      return;
+                    }
+                  } else if (redistributable.path === 'winetricks') {
                     console.log('spawning winetricks redistributable');
                     // spawn winetricks with the proton path to install the name
-                    const child = spawn('flatpak', [
-                      `--env="WINEPREFIX=${protonPath}"`,
-                      `--env=DISPLAY=:0`, // Ensure display for wine
-                      `--env=WINEDEBUG=-all`, // Reduce wine debug output
-                      `--env=WINEDLLOVERRIDES=mscoree,mshtml=`, // Disable .NET and HTML rendering
-                      'run',
-                      'org.winehq.Wine',
-                      '--command=winetricks',
-                      `${redistributable.name}`,
-                      `--force`,
-                    ]);
+                    // For winetricks to show the installation UI, we need to ensure DISPLAY is set and not use --unattended or -q.
+                    const child = spawn(
+                      'flatpak',
+                      [
+                        `--env=WINEPREFIX=${protonPath}`,
+                        `--env=DISPLAY=:0`, // Ensure display for wine UI
+                        `--env=WINEDEBUG=-all`, // Reduce wine debug output
+                        `--env=WINEDLLOVERRIDES=mscoree,mshtml=`, // Disable .NET and HTML rendering
+                        '--filesystem=host',
+                        '--command=winetricks',
+                        'run',
+                        'org.winehq.Wine',
+                        `${redistributable.name}`,
+                        '--force',
+                        '--unattended',
+                        '-q',
+                      ],
+                      {
+                        stdio: ['inherit', 'pipe', 'pipe'], // Changed from 'ignore' to 'inherit' to allow interactive input
+                        cwd: __dirname,
+                      }
+                    );
+                    let stdout = '';
+                    let stderr = '';
+
                     child.on('close', (code) => {
+                      console.log(
+                        `[winetricks] process exited with code ${code}`
+                      );
                       if (code === 0) {
+                        console.log(
+                          '[winetricks] Installation completed successfully'
+                        );
                         resolve(true);
                       } else {
+                        console.error(
+                          `[winetricks] Installation failed with exit code ${code}`
+                        );
+                        console.error(`[winetricks] stdout: ${stdout}`);
+                        console.error(`[winetricks] stderr: ${stderr}`);
                         resolve(false);
                       }
                     });
                     child.on('error', (error) => {
-                      console.error(error);
+                      console.error('[winetricks] Process error:', error);
+                      console.error(`[winetricks] stdout: ${stdout}`);
+                      console.error(`[winetricks] stderr: ${stderr}`);
                       resolve(false);
                     });
                     child.stdout?.on('data', (data) => {
                       const output = data.toString();
-                      console.log(`[redistributable:stdout] ${output.trim()}`);
+                      stdout += output;
+                      console.log(`[winetricks:stdout] ${output.trim()}`);
                     });
                     child.stderr?.on('data', (data) => {
                       const output = data.toString();
-                      console.log(`[redistributable:stderr] ${output.trim()}`);
+                      stderr += output;
+                      console.log(`[winetricks:stderr] ${output.trim()}`);
                     });
                     return;
                   }
@@ -584,6 +682,7 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
                     `--env=DISPLAY=:0`, // Ensure display for wine
                     `--env=WINEDEBUG=-all`, // Reduce wine debug output
                     `--env=WINEDLLOVERRIDES=mscoree,mshtml=`, // Disable .NET and HTML rendering
+                    '--filesystem=host',
                     'run',
                     'org.winehq.Wine',
                     ...redistributableArgs,
@@ -639,19 +738,22 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
                     resolve(false);
                   });
 
-                  // Set a timeout for the installation (5 minutes for silent installs)
+                  // Set a timeout for the installation (10 minutes for silent installs)
                   setTimeout(
                     () => {
+                      // check if the process is still running
+                      if (child.pid) {
+                        child.kill('SIGTERM');
+                        setTimeout(() => {
+                          child.kill('SIGKILL'); // Force kill if SIGTERM doesn't work
+                        }, 5000);
+                      }
                       console.error(
-                        `[redistributable] Flatpak wine installation timed out after 5 minutes`
+                        `[redistributable] Flatpak wine installation timed out after 10 minutes`
                       );
-                      child.kill('SIGTERM');
-                      setTimeout(() => {
-                        child.kill('SIGKILL'); // Force kill if SIGTERM doesn't work
-                      }, 5000);
                       resolve(false);
                     },
-                    5 * 60 * 1000
+                    10 * 60 * 1000
                   );
                 });
 
@@ -686,7 +788,7 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
         // use steamtinkerlaunch to add the game to steam
         const result = await new Promise<boolean>((resolve) =>
           exec(
-            `${STEAMTINKERLAUNCH_PATH} addnonsteamgame --appname="${data.name}" --exepath="${data.launchExecutable}" --startdir="${data.cwd}" --launchoptions="STEAM_COMPAT_DATA_PATH=${protonPath.split('/pfx')[0]} ${data.launchArguments ?? ''}" --compatibilitytool="proton_experimental" --use-steamgriddb`,
+            `${STEAMTINKERLAUNCH_PATH} addnonsteamgame --appname="${data.name}" --exepath="${data.launchExecutable}" --startdir="${data.cwd}" --launchoptions="${useWinePrefix ? `STEAM_COMPAT_DATA_PATH=${protonPath.split('/pfx')[0]}` : ''} ${data.launchArguments ?? ''}" --compatibilitytool="proton_experimental" --use-steamgriddb`,
             {
               cwd: __dirname,
             },
@@ -715,9 +817,44 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
         if (!result) {
           return 'setup-redistributables-failed';
         }
+
+        // Run winecfg at the end of dependency installation (non-blocking)
+        if (useWinePrefix) {
+          sendNotification({
+            message: `Starting winecfg for ${data.name}`,
+            id: Math.random().toString(36).substring(7),
+            type: 'info',
+          });
+
+          console.log('[winecfg] Starting winecfg configuration in background');
+
+          const child = spawn(
+            'flatpak',
+            [
+              `--env=WINEPREFIX=${protonPath}`,
+              `--env=DISPLAY=:0`,
+              `--env=WINEDEBUG=-all`,
+              `--env=WINEDLLOVERRIDES=mscoree,mshtml=`,
+              '--filesystem=host',
+              '--command=winecfg',
+              'run',
+              'org.winehq.Wine',
+            ],
+            {
+              stdio: 'ignore',
+              cwd: __dirname,
+              detached: true,
+            }
+          );
+
+          // Don't wait for winecfg to complete - let it run in background
+          child.unref();
+
+          console.log('[winecfg] winecfg started in background');
+        }
       } else if (process.platform === 'win32') {
         // if there are redistributables, we need to install them
-        if (data.redistributables) {
+        if (data.redistributables && data.redistributables.length > 0) {
           for (const redistributable of data.redistributables) {
             try {
               spawnSync(redistributable.path, {
@@ -737,6 +874,7 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
           }
         }
       }
+
       return 'setup-success';
     }
   );

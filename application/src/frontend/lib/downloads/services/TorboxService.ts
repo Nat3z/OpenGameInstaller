@@ -1,5 +1,9 @@
 import { createNotification, currentDownloads } from '../../../store';
-import { getDownloadPath, listenUntilDownloadReady } from '../../../utils';
+import {
+  getDownloadPath,
+  listenUntilDownloadReady,
+  updateDownloadStatus,
+} from '../../../utils';
 import { getConfigClientOption } from '../../config/client';
 import type { SearchResultWithAddon } from '../../tasks/runner';
 import { BaseService } from './BaseService';
@@ -313,35 +317,20 @@ export class TorboxService extends BaseService {
       }
 
       console.log('updatedState: ', updatedState);
-      currentDownloads.update((downloads) => {
-        const matchingDownload = downloads.find((d) => d.id === tempId + '')!!;
-        matchingDownload.status = 'downloading';
-        matchingDownload.id = downloadID;
-        matchingDownload.usedDebridService = 'torbox';
-
-        matchingDownload.downloadPath =
+      updateDownloadStatus(tempId + '', {
+        id: downloadID,
+        status: 'downloading',
+        usedDebridService: 'torbox',
+        downloadPath:
           getDownloadPath() +
           '/' +
           result.name +
           '/' +
           result.filename +
-          '.zip';
-
-        if (
-          updatedState[downloadID] &&
-          updatedState[downloadID].queuePosition
-        ) {
-          matchingDownload.queuePosition =
-            updatedState[downloadID].queuePosition;
-        }
-        matchingDownload.downloadURL = downloadUrl;
-        matchingDownload.originalDownloadURL = result.downloadURL;
-        downloads.splice(
-          downloads.indexOf(matchingDownload),
-          1,
-          matchingDownload
-        );
-        return downloads;
+          '.zip',
+        queuePosition: updatedState[downloadID]?.queuePosition,
+        downloadURL: downloadUrl,
+        originalDownloadURL: result.downloadURL,
       });
     }
   }

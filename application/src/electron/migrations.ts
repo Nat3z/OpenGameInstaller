@@ -3,8 +3,10 @@ import * as fsSync from 'fs';
 import { join } from 'path';
 import { __dirname } from './paths.js';
 import semver from 'semver';
-import { VERSION } from './main.js';
+import { sendNotification, VERSION } from './main.js';
 import { sendIPCMessage } from './main.js';
+import { exec } from 'child_process';
+import { spawn } from 'child_process';
 
 let migrations: {
   [key: string]: {
@@ -92,6 +94,135 @@ let migrations: {
 
       console.log('repairing steam-integration through installation...');
       await sendIPCMessage('migration:event', 'install-steam-addon');
+    },
+  },
+  'install-flatpak-wine': {
+    from: '2.1.2',
+    to: '2.2.0',
+    description:
+      'Installs flatpak wine if not already installed on Linux systems.',
+    platform: 'linux',
+    run: async () => {
+      // Check if flatpak is installed
+      const flatpakInstalled = await new Promise<boolean>((resolve) => {
+        exec('flatpak --version', (err, stdout) => {
+          if (err) {
+            console.log('[migration] flatpak not installed');
+            resolve(false);
+          } else {
+            console.log('[migration] flatpak version:', stdout.trim());
+            resolve(true);
+          }
+        });
+      });
+
+      if (!flatpakInstalled) {
+        console.log(
+          '[migration] flatpak not available, skipping wine installation'
+        );
+        return;
+      }
+
+      // Check if wine is already installed
+      const wineInstalled = await new Promise<boolean>((resolve) => {
+        exec('flatpak run org.winehq.Wine --help', (err) => {
+          if (err) {
+            console.log('[migration] wine not installed via flatpak');
+            resolve(false);
+          } else {
+            console.log('[migration] wine already installed via flatpak');
+            resolve(true);
+          }
+        });
+      });
+
+      if (wineInstalled) {
+        console.log('[migration] wine already installed, skipping');
+        return;
+      }
+
+      // Install wine through flatpak
+      console.log('[migration] installing wine via flatpak...');
+      const result = await new Promise<boolean>((resolve) => {
+        sendNotification({
+          message: 'Installing wine via flatpak...',
+          id: Math.random().toString(36).substring(7),
+          type: 'info',
+        });
+        const childProcess = spawn(
+          'flatpak',
+          [
+            'install',
+            '--system',
+            '-y',
+            'flathub',
+            'org.winehq.Wine/x86_64/stable-24.08',
+          ],
+          { cwd: __dirname }
+        );
+
+        let stdout = '';
+        let stderr = '';
+
+        if (childProcess.stdout) {
+          childProcess.stdout.on('data', (data: Buffer) => {
+            const dataStr = data.toString();
+            stdout += dataStr;
+            console.log('[migration] wine install stdout:', dataStr);
+          });
+        }
+
+        if (childProcess.stderr) {
+          childProcess.stderr.on('data', (data: Buffer) => {
+            const dataStr = data.toString();
+            stderr += dataStr;
+            console.log('[migration] wine install stderr:', dataStr);
+          });
+        }
+
+        childProcess.on('close', (code: number) => {
+          console.log(
+            '[migration] wine install process exited with code:',
+            code
+          );
+          if (code !== 0) {
+            console.log('[migration] wine installation failed');
+            resolve(false);
+            return;
+          }
+          console.log('[migration] wine installation successful');
+          resolve(true);
+        });
+
+        childProcess.on('error', (err: Error) => {
+          console.log('[migration] wine install error:', err);
+          resolve(false);
+        });
+      });
+
+      if (!result) {
+        console.log('[migration] failed to install wine through flatpak');
+        return;
+      }
+
+      // Verify wine installation
+      const wineVerification = await new Promise<boolean>((resolve) => {
+        exec('flatpak run org.winehq.Wine --help', (err) => {
+          if (err) {
+            console.log('[migration] wine verification failed');
+            resolve(false);
+          } else {
+            console.log('[migration] wine verification successful');
+            resolve(true);
+          }
+        });
+      });
+
+      if (!wineVerification) {
+        console.log('[migration] wine installation verification failed');
+      } else {
+        console.log('[migration] wine installation completed successfully');
+      }
     },
   },
 };

@@ -2,6 +2,7 @@ import { BaseService } from './BaseService';
 import type { SearchResultWithAddon } from '../../tasks/runner';
 import { createNotification, currentDownloads } from '../../../store';
 import { getDownloadPath } from '../../core/fs';
+import { updateDownloadStatus } from '../../../utils';
 import { listenUntilDownloadReady } from '../events';
 import type { $Hosts } from 'real-debrid-js';
 
@@ -144,22 +145,14 @@ export class RealDebridService extends BaseService {
 
       return;
     }
-    currentDownloads.update((downloads) => {
-      const matchingDownload = downloads.find((d) => d.id === localID + '')!!;
-      matchingDownload.status = 'downloading';
-      matchingDownload.id = downloadID;
-      matchingDownload.usedDebridService = 'realdebrid';
-
-      matchingDownload.downloadPath =
-        getDownloadPath() + '/' + result.name + '/';
-
-      if (updatedState[downloadID] && updatedState[downloadID].queuePosition) {
-        matchingDownload.queuePosition = updatedState[downloadID].queuePosition;
-      }
-      matchingDownload.downloadURL = download.download;
-      matchingDownload.originalDownloadURL = result.downloadURL; // Store original magnet URL
-      downloads[downloads.indexOf(matchingDownload)] = matchingDownload;
-      return downloads;
+    updateDownloadStatus(localID + '', {
+      id: downloadID,
+      status: 'downloading',
+      usedDebridService: 'realdebrid',
+      downloadPath: getDownloadPath() + '/' + result.name + '/',
+      queuePosition: updatedState[downloadID]?.queuePosition ?? undefined,
+      downloadURL: download.download,
+      originalDownloadURL: result.downloadURL,
     });
   }
 
@@ -241,23 +234,14 @@ export class RealDebridService extends BaseService {
 
       return;
     }
-    currentDownloads.update((downloads) => {
-      const matchingDownload = downloads.find((d) => d.id === localID + '')!!;
-      matchingDownload.status = 'downloading';
-      matchingDownload.id = downloadID;
-      matchingDownload.usedDebridService = 'realdebrid';
-
-      matchingDownload.downloadPath =
-        getDownloadPath() + '/' + result.name + '/';
-
-      if (updatedState[downloadID]) {
-        matchingDownload.queuePosition =
-          updatedState[downloadID].queuePosition ?? 999;
-      }
-      matchingDownload.downloadURL = download.download;
-      matchingDownload.originalDownloadURL = result.downloadURL; // Store original torrent URL
-      downloads[downloads.indexOf(matchingDownload)] = matchingDownload;
-      return downloads;
+    updateDownloadStatus(localID + '', {
+      id: downloadID,
+      status: 'downloading',
+      usedDebridService: 'realdebrid',
+      downloadPath: getDownloadPath() + '/' + result.name + '/',
+      queuePosition: updatedState[downloadID]?.queuePosition ?? 999,
+      downloadURL: download.download,
+      originalDownloadURL: result.downloadURL,
     });
   }
 }

@@ -19,6 +19,7 @@
   });
   let showEventsPerSec = $state(false);
   let showNotificationSideView = $state(false);
+  let showInsertAppModal = $state(false);
   const optionConfig: {
     config: ConfigurationFile;
     id: string;
@@ -81,6 +82,9 @@
       'dbg:notification-side-view-toggle',
       () => (showNotificationSideView = !showNotificationSideView)
     );
+    document.addEventListener('dbg:insert-app-modal-trigger', () => {
+      showInsertAppModal = true;
+    });
   });
 </script>
 
@@ -112,6 +116,14 @@
       }}
     />
 
+    <ButtonModal
+      text="Test Insert App with Dependencies"
+      variant="secondary"
+      onclick={() => {
+        showInsertAppModal = true;
+      }}
+    />
+
     <CheckboxModal
       id="test-checkbox"
       label="Test Checkbox"
@@ -120,6 +132,121 @@
       onchange={(id, checked) => {
         console.log('checkbox changed', id, checked);
       }}
+    />
+  </Modal>
+{/if}
+
+{#if showInsertAppModal}
+  <Modal
+    priority="urgent"
+    open={showInsertAppModal}
+    onClose={() => (showInsertAppModal = false)}
+  >
+    <CloseModal />
+    <TitleModal title="Debug: Insert App with Dependencies" />
+    <SectionModal>
+      <TextModal
+        text="This will simulate inserting an app with redistributables (dependencies)"
+        variant="description"
+      />
+      <TextModal
+        text="The app will be added to your library with mock data"
+        variant="caption"
+      />
+    </SectionModal>
+
+    <ButtonModal
+      text="Insert Test App with Dependencies"
+      variant="primary"
+      onclick={async () => {
+        try {
+          const mockAppData = {
+            name: 'Test Game with Dependencies',
+            version: '1.0.0',
+            cwd: '/path/to/game',
+            appID: 12345,
+            launchExecutable: 'game.exe',
+            launchArguments: '--debug',
+            capsuleImage:
+              'https://via.placeholder.com/600x900/428a91/ffffff?text=Test+Game',
+            coverImage:
+              'https://via.placeholder.com/920x430/428a91/ffffff?text=Cover+Image',
+            titleImage:
+              'https://via.placeholder.com/920x430/2d626a/ffffff?text=Title+Image',
+            storefront: 'steam',
+            addonsource: 'test-addon',
+            redistributables: [
+              {
+                name: 'dotnet48',
+                path: 'winetricks',
+              },
+            ],
+          };
+
+          const result = await window.electronAPI.app.insertApp(mockAppData);
+
+          createNotification({
+            id: Math.random().toString(36).substring(2, 9),
+            type: result.includes('success') ? 'success' : 'error',
+            message: `App insertion result: ${result}`,
+          });
+
+          showInsertAppModal = false;
+        } catch (error) {
+          console.error('Error inserting test app:', error);
+          createNotification({
+            id: Math.random().toString(36).substring(2, 9),
+            type: 'error',
+            message: `Failed to insert test app: ${error instanceof Error ? error.message : String(error)}`,
+          });
+        }
+      }}
+    />
+
+    <ButtonModal
+      text="Insert Test App without Dependencies"
+      variant="secondary"
+      onclick={async () => {
+        try {
+          const mockAppData = {
+            name: 'Test Game (No Dependencies)',
+            version: '1.0.0',
+            cwd: '/path/to/game',
+            appID: 67890,
+            launchExecutable: 'game.exe',
+            launchArguments: '',
+            capsuleImage:
+              'https://via.placeholder.com/600x900/B0DFD5/ffffff?text=Simple+Game',
+            coverImage:
+              'https://via.placeholder.com/920x430/B0DFD5/ffffff?text=Simple+Cover',
+            storefront: 'steam',
+            addonsource: 'test-addon',
+          };
+
+          const result = await window.electronAPI.app.insertApp(mockAppData);
+
+          createNotification({
+            id: Math.random().toString(36).substring(2, 9),
+            type: result.includes('success') ? 'success' : 'error',
+            message: `App insertion result: ${result}`,
+          });
+
+          showInsertAppModal = false;
+        } catch (error) {
+          console.error('Error inserting test app:', error);
+          createNotification({
+            id: Math.random().toString(36).substring(2, 9),
+            type: 'error',
+            message: `Failed to insert test app: ${error instanceof Error ? error.message : String(error)}`,
+          });
+        }
+      }}
+    />
+
+    <ButtonModal
+      text="Cancel"
+      variant="secondary"
+      onclick={() => (showInsertAppModal = false)}
     />
   </Modal>
 {/if}

@@ -42,6 +42,7 @@
   import Debug from './managers/Debug.svelte';
   import DiscoverView from './views/DiscoverView.svelte';
   import RootPasswordGranter from './managers/RootPasswordGranter.svelte';
+  import { initDownloadPersistence } from './utils';
 
   interface ConfigTemplateAndInfo extends OGIAddonConfiguration {
     configTemplate: ConfigurationFile;
@@ -89,7 +90,8 @@
 
       // Initialize search-related data
       initializeSearch();
-    }, 100);
+      initDownloadPersistence();
+    }, 200);
   });
 
   document.addEventListener('addon-connected', () => {

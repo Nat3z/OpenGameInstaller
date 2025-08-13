@@ -13,8 +13,11 @@ interface PausedDownloadState {
 async function restartDirectDownload(
   download: DownloadStatusAndInfo
 ): Promise<string> {
-  const originalUrl = download.originalDownloadURL || download.downloadURL;
-  if (!originalUrl) {
+  // Prefer the latest resolved URL for Debrid services. Fall back otherwise.
+  const effectiveUrl = download.usedDebridService
+    ? download.downloadURL || download.originalDownloadURL
+    : download.originalDownloadURL || download.downloadURL;
+  if (!effectiveUrl) {
     throw new Error('No download URL available for restart');
   }
 
@@ -34,10 +37,10 @@ async function restartDirectDownload(
   } else {
     // Single file download
     const filename =
-      download.filename || originalUrl.split(/\\|/).pop() || 'download';
+      download.filename || effectiveUrl.split(/\\|/).pop() || 'download';
     files = [
       {
-        link: originalUrl,
+        link: effectiveUrl,
         path: getDownloadPath() + '/' + download.name + '/' + filename,
       },
     ];
@@ -50,8 +53,11 @@ async function restartDirectDownload(
 async function restartTorrentDownload(
   download: DownloadStatusAndInfo
 ): Promise<string> {
-  const originalUrl = download.originalDownloadURL || download.downloadURL;
-  if (!originalUrl) {
+  // For torrent/magnet restarts, prefer the latest link if Debrid provided a new one.
+  const effectiveUrl = download.usedDebridService
+    ? download.downloadURL || download.originalDownloadURL
+    : download.originalDownloadURL || download.downloadURL;
+  if (!effectiveUrl) {
     throw new Error('No torrent URL available for restart');
   }
 
@@ -60,7 +66,7 @@ async function restartTorrentDownload(
   if (!filename) {
     if (download.downloadType === 'magnet') {
       // For magnet links, extract name from the magnet URI or use a generic name
-      const magnetMatch = originalUrl.match(/dn=([^&]*)/);
+      const magnetMatch = effectiveUrl.match(/dn=([^&]*)/);
       if (magnetMatch) {
         filename = decodeURIComponent(magnetMatch[1]);
       } else {
@@ -68,7 +74,7 @@ async function restartTorrentDownload(
       }
     } else {
       // For torrent files, try to extract filename from URL
-      const urlParts = originalUrl.split(/[\\/]/);
+      const urlParts = effectiveUrl.split(/[\\/]/);
       const lastPart = urlParts[urlParts.length - 1];
       if (lastPart && lastPart.includes('.')) {
         filename = lastPart;
@@ -82,12 +88,12 @@ async function restartTorrentDownload(
 
   const path = getDownloadPath() + '/' + download.name + '/' + filename;
 
-  console.log('Restarting torrent download:', originalUrl, 'to path:', path);
+  console.log('Restarting torrent download:', effectiveUrl, 'to path:', path);
 
   if (download.downloadType === 'torrent') {
-    return await window.electronAPI.torrent.downloadTorrent(originalUrl, path);
+    return await window.electronAPI.torrent.downloadTorrent(effectiveUrl, path);
   } else if (download.downloadType === 'magnet') {
-    return await window.electronAPI.torrent.downloadMagnet(originalUrl, path);
+    return await window.electronAPI.torrent.downloadMagnet(effectiveUrl, path);
   } else {
     throw new Error(
       `Unsupported torrent download type: ${download.downloadType}`

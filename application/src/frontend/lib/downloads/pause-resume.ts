@@ -5,6 +5,7 @@ import {
 } from '../../store';
 import { getDownloadItem, updateDownloadStatus } from './lifecycle';
 import { restartDownload } from '../downloads/restart';
+import { deletePersistedDownload } from '../downloads/persistence';
 
 interface PausedDownloadState {
   id: string;
@@ -86,10 +87,23 @@ export async function resumeDownload(downloadId: string): Promise<boolean> {
   try {
     console.log('Attempting to resume download:', downloadId);
 
-    const pausedState = pausedDownloadStates.get(downloadId);
+    let pausedState = pausedDownloadStates.get(downloadId);
     if (!pausedState) {
-      console.log('No paused download state found for', downloadId);
-      return false;
+      // Fallback: reconstruct paused state from current store (e.g., after app restart)
+      const fallback = getDownloadItem(downloadId);
+      if (!fallback) {
+        console.log('No paused download state found for', downloadId);
+        return false;
+      }
+      pausedState = {
+        id: downloadId,
+        downloadInfo: { ...fallback },
+        pausedAt: Date.now(),
+        originalDownloadURL:
+          fallback.originalDownloadURL || fallback.downloadURL,
+        files: fallback.files,
+      };
+      pausedDownloadStates.set(downloadId, pausedState);
     }
 
     const download = pausedState.downloadInfo;
@@ -132,6 +146,8 @@ export async function resumeDownload(downloadId: string): Promise<boolean> {
         type: 'info',
         message: `Resumed download: ${download.name}`,
       });
+      // ensure only the current ID persists
+      deletePersistedDownload(downloadId);
       return true;
     } else {
       console.log('In-place resume failed, attempting restart...');
@@ -159,7 +175,22 @@ export async function resumeDownload(downloadId: string): Promise<boolean> {
 export function cancelPausedDownload(downloadId: string) {
   try {
     const pausedState = pausedDownloadStates.get(downloadId);
-    if (!pausedState) return;
+    if (!pausedState) {
+      // Handle persisted paused downloads after app restart (no in-memory state)
+      const item = getDownloadItem(downloadId);
+      deletePersistedDownload(downloadId);
+      currentDownloads.update((downloads) => {
+        return downloads.filter((d) => d.id !== downloadId);
+      });
+      if (item) {
+        createNotification({
+          id: Math.random().toString(36).substring(2, 9),
+          type: 'info',
+          message: `Cancelled download: ${item.name}`,
+        });
+      }
+      return;
+    }
 
     pausedDownloadStates.delete(downloadId);
 
@@ -168,6 +199,7 @@ export function cancelPausedDownload(downloadId: string) {
     });
 
     window.electronAPI.ddl.abortDownload(downloadId);
+    deletePersistedDownload(downloadId);
 
     createNotification({
       id: Math.random().toString(36).substring(2, 9),

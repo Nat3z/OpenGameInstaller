@@ -33,7 +33,6 @@ jobs:
         with:
           name: release_url
           path: release_url.txt
-
   build:
     permissions:
       contents: write

@@ -88,6 +88,7 @@ export async function resumeDownload(downloadId: string): Promise<boolean> {
     console.log('Attempting to resume download:', downloadId);
 
     let pausedState = pausedDownloadStates.get(downloadId);
+    const wasReconstructed = !pausedState;
     if (!pausedState) {
       // Fallback: reconstruct paused state from current store (e.g., after app restart)
       const fallback = getDownloadItem(downloadId);
@@ -115,6 +116,15 @@ export async function resumeDownload(downloadId: string): Promise<boolean> {
     );
 
     updateDownloadStatus(downloadId, { status: 'downloading' });
+
+    // If this paused state was reconstructed after app restart, the backend has no handlers.
+    // Skip in-place resume and restart the download directly.
+    if (wasReconstructed) {
+      console.log(
+        'Reconstructed paused state with no backend context; restarting download instead of resuming.'
+      );
+      return await restartDownload(pausedState, pausedDownloadStates);
+    }
 
     let resumeResult = false;
     if (download.downloadType === 'direct' || download.usedDebridService) {

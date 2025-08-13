@@ -211,7 +211,7 @@ function createWindow() {
     ipcMain.on('get-version', async (event) => {
       event.returnValue = VERSION;
     });
-
+    console.log('showing window');
     mainWindow!!.show();
     // start the app with it being focused
     mainWindow!!.focus();

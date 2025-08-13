@@ -223,11 +223,22 @@
     // Group data by download ID
     const groupedData = Array.from(d3.group(speedData, (d) => d.downloadId));
 
-    // Color scale using project accent colors
+    // Order IDs with the active/target download first for consistent dark coloring
+    const idsOrdered = groupedData.map((d) => d[0]);
+    if (targetDownload) {
+      const idx = idsOrdered.indexOf(targetDownload.id);
+      if (idx > 0) {
+        idsOrdered.splice(idx, 1);
+        idsOrdered.unshift(targetDownload.id);
+      }
+    }
+
+    // Color scale using darker accent colors only (avoid very light tones for readability)
+    const accentPalette = ['#2d626a', '#428a91', '#2d626a', '#428a91'];
     const colorScale = d3
       .scaleOrdinal()
-      .domain(groupedData.map((d) => d[0]))
-      .range(['#428a91', '#2d626a', '#B0DFD5', '#e1f4f0']);
+      .domain(idsOrdered)
+      .range(accentPalette.slice(0, idsOrdered.length));
 
     // Add grid lines
     g.selectAll('.grid-line-y')
@@ -254,24 +265,6 @@
           .attr('d', line);
       }
     });
-
-    // Add dots for current values
-    const currentSpeeds = speedData.filter((d) => {
-      const timeDiff = Date.now() - d.time.getTime();
-      return timeDiff < 10000; // Last 10 seconds
-    });
-
-    g.selectAll('.dot')
-      .data(currentSpeeds)
-      .enter()
-      .append('circle')
-      .attr('class', 'dot')
-      .attr('cx', (d) => xScale(d.time))
-      .attr('cy', (d) => yScale(d.speed))
-      .attr('r', 4)
-      .attr('fill', (d) => colorScale(d.downloadId) as string)
-      .attr('stroke', '#fff')
-      .attr('stroke-width', 2);
   }
 
   let sub_currentDownloads = currentDownloads.subscribe((downloads) => {

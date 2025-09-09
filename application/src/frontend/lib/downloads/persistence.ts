@@ -74,6 +74,8 @@ export async function loadPersistedDownloads(): Promise<
 > {
   try {
     ensureDir();
+    // Do not pre-assign queue positions on restore. All items will be paused
+    // and queue positions are resolved when a resume occurs.
     const files: string[] =
       (await window.electronAPI.fs.getFilesInDir(PERSIST_DIR)) || [];
     const restored: DownloadStatusAndInfo[] = [];
@@ -87,15 +89,16 @@ export async function loadPersistedDownloads(): Promise<
         if (!isPersistableStatus(info.status)) continue;
         // If this was a Debrid job but we never captured a resolved link, skip restoring it
         if (
-          (info as any).usedDebridService &&
-          (!info.downloadURL ||
-            info.downloadURL === (info as any).originalDownloadURL)
+          info.usedDebridService &&
+          (!info.downloadURL || info.downloadURL === info.originalDownloadURL)
         ) {
           // No resolved URL persisted; restoring this could fail on resume. Drop it.
           continue;
         }
         // After app restart, there is no live backend process bound to the ID; mark as paused for safety
         info.status = 'paused';
+        // Drop any stale queue position; it will be resolved on resume
+        info.queuePosition = undefined;
         restored.push(info);
       } catch (e) {
         console.error('Failed to parse persisted download:', file, e);

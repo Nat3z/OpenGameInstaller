@@ -17,6 +17,57 @@ interface PausedDownloadState {
 
 const pausedDownloadStates: Map<string, PausedDownloadState> = new Map();
 
+// Track which resume operations have already triggered bulk queueing to avoid duplicates
+const queuedAfterResume: Set<string> = new Set();
+
+async function enqueueRemainingPausedDownloads(
+  resumedId: string,
+  pausedStates: Map<string, PausedDownloadState>
+) {
+  if (queuedAfterResume.has(resumedId)) return;
+  queuedAfterResume.add(resumedId);
+
+  // Build an ordered list of other paused items to enqueue behind the active one
+  let downloadsSnapshot: DownloadStatusAndInfo[] = [] as any;
+  currentDownloads.subscribe((d) => (downloadsSnapshot = d))();
+  const toQueue = downloadsSnapshot.filter(
+    (d) => d.id !== resumedId && d.status === 'paused'
+  );
+
+  // Enqueue sequentially to preserve order
+  for (const item of toQueue) {
+    try {
+      // Skip if we lack the data needed to restart
+      const effectiveUrl = (item as any).usedDebridService
+        ? item.downloadURL || item.originalDownloadURL
+        : item.originalDownloadURL || item.downloadURL;
+      const hasFiles =
+        Array.isArray((item as any).files) && (item as any).files.length > 0;
+      if (!effectiveUrl && !hasFiles) {
+        continue;
+      }
+
+      // Construct a paused state for restart
+      const state: PausedDownloadState = {
+        id: item.id,
+        downloadInfo: { ...item },
+        pausedAt: Date.now(),
+        originalDownloadURL: item.originalDownloadURL || item.downloadURL,
+        files: (item as any).files,
+      };
+      pausedStates.set(item.id, state);
+      // Restart to join the Electron queue; this will mark as 'downloading' and assign queue positions
+      await restartDownload(state, pausedStates);
+    } catch (e) {
+      console.error(
+        'Failed to enqueue paused download after resume:',
+        item.id,
+        e
+      );
+    }
+  }
+}
+
 export async function pauseDownload(downloadId: string): Promise<boolean> {
   try {
     const download = getDownloadItem(downloadId);
@@ -123,7 +174,12 @@ export async function resumeDownload(downloadId: string): Promise<boolean> {
       console.log(
         'Reconstructed paused state with no backend context; restarting download instead of resuming.'
       );
-      return await restartDownload(pausedState, pausedDownloadStates);
+      const ok = await restartDownload(pausedState, pausedDownloadStates);
+      if (ok) {
+        // Once one is set to downloading from persisted state, enqueue others in calculated order
+        await enqueueRemainingPausedDownloads(downloadId, pausedDownloadStates);
+      }
+      return ok;
     }
 
     let resumeResult = false;
@@ -158,10 +214,16 @@ export async function resumeDownload(downloadId: string): Promise<boolean> {
       });
       // ensure only the current ID persists
       deletePersistedDownload(downloadId);
+      // Enqueue others only when resuming a reconstructed paused state
+      // (No-op here for native resumes)
       return true;
     } else {
       console.log('In-place resume failed, attempting restart...');
-      return await restartDownload(pausedState, pausedDownloadStates);
+      const ok = await restartDownload(pausedState, pausedDownloadStates);
+      if (ok) {
+        await enqueueRemainingPausedDownloads(downloadId, pausedDownloadStates);
+      }
+      return ok;
     }
   } catch (error) {
     console.error('Error resuming download:', error);

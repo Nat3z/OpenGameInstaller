@@ -490,7 +490,9 @@
       <div
         data-id={download.id}
         class="download-card"
-        class:queue-item={download.queuePosition && download.queuePosition > 1}
+        class:queue-item={download.status === 'downloading' &&
+          download.queuePosition &&
+          download.queuePosition > 1}
       >
         <div class="flex flex-row gap-4 w-full">
           <div class="download-image">
@@ -505,7 +507,7 @@
           <div class="download-content">
             <div class="download-info">
               <h3 class="download-title">{download.name}</h3>
-              {#if download.queuePosition && download.queuePosition > 1}
+              {#if download.status === 'downloading' && download.queuePosition && download.queuePosition > 1}
                 <div class="status-badge queued">
                   <div class="spinner"></div>
                   Queued {download.queuePosition}
@@ -622,7 +624,7 @@
                   </svg>
                   Open
                 </button>
-              {:else if download.queuePosition && download.queuePosition > 1}
+              {:else if download.status === 'downloading' && download.queuePosition && download.queuePosition > 1}
                 <button
                   class="text-accent-dark border-none p-4 rounded-lg bg-accent-light hover:bg-accent-dark/50 transition-colors"
                   onclick={() => window.electronAPI.queue.cancel(download.id)}

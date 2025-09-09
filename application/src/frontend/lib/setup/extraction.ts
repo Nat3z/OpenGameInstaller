@@ -60,7 +60,7 @@ export async function unzipAndReturnOutputDir(params: {
 }): Promise<string | undefined> {
   const { zipFilePath, outputDirBase, downloadId } = params;
   console.log('Extracting ZIP file:', zipFilePath);
-  let queriedOutput: string | undefined = await window.electronAPI.fs.unzip({
+  let queriedOutput: string | null = await window.electronAPI.fs.unzip({
     zipFilePath,
     outputDir: outputDirBase,
     downloadId,

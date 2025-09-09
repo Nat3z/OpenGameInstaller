@@ -192,6 +192,8 @@ async function handleTorrentDownload({
     return null;
   }
 
+  console.log('Starting torrent download');
+
   switch (torrentClient) {
     case 'qbittorrent': {
       try {
@@ -658,10 +660,13 @@ async function handleTorrentDownload({
               block.resume();
             }
           });
+
           ipcMain.handle(`torrent:${downloadID}:abort`, () => {
             stopProgressReporting();
             block.destroy();
           });
+
+          console.log('-- Started Download --');
         }
         return downloadID;
       } catch (except) {

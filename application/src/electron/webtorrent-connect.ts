@@ -20,6 +20,7 @@ export function torrent(torrentId: string | Buffer, path: string) {
         destroy: () => void;
       }>((resolve, _) =>
         client.add(torrentId, { path }, async (torrent) => {
+          console.log('Added torrent to download system');
           // Torrents can contain many files. Download the first one.
           // get size of all files in torrent
           let length = 0;

@@ -228,6 +228,7 @@ export class TorboxService extends BaseService {
     });
 
     // wait for the torrent to be on the dashboard
+    console.log('torrentHash: ', torrentHash);
     const torrentGrabber = await new Promise<TorboxTorrent | undefined>(
       (resolve) => {
         const startTime = Date.now();

@@ -517,15 +517,23 @@
                   download === targetDownload ? getDownloadStatistics() : null}
                 <div class="progress-section">
                   <div class="progress-bar">
-                    <div
-                      class="progress-fill"
-                      style:width="{download.progress * 100}%"
-                    ></div>
+                    {#if isNaN(download.progress) || isNaN(download.progress * 100)}
+                      <div class="progress-fill animate-pulse bg-accent"></div>
+                    {:else}
+                      <div
+                        class="progress-fill"
+                        style:width="{download.progress * 100}%"
+                      ></div>
+                    {/if}
                   </div>
                   <div class="progress-stats">
-                    <span class="progress-percentage"
-                      >{Math.floor(download.progress * 100)}%</span
-                    >
+                    <span class="progress-percentage">
+                      {#if isNaN(download.progress) || isNaN(download.progress * 100)}
+                        Processing
+                      {:else}
+                        {Math.floor(download.progress * 100)}%
+                      {/if}
+                    </span>
                     {#if stats}
                       <span class="progress-eta">
                         ETA: {formatETA(stats.eta)}

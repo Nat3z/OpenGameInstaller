@@ -589,6 +589,14 @@
                   >
                     License
                   </a>
+                  <span class="about-separator">•</span>
+                  <a
+                    href="https://ogi.nat3z.com/docs/"
+                    target="_blank"
+                    class="about-link"
+                  >
+                    Documentation
+                  </a>
                 </div>
                 <p class="about-version">v{window.electronAPI.getVersion()}</p>
               </div>

@@ -261,22 +261,22 @@ export class AddonConnection {
 
             if (taskUpdate.failed) {
               task.finished = true;
-              sendNotification({
-                type: 'error',
-                message: 'Task failed by ' + this.addonInfo.name,
-                id: data.args.id,
-              });
+              // sendNotification({
+              //   type: 'error',
+              //   message: 'Task failed by ' + this.addonInfo.name,
+              //   id: data.args.id,
+              // });
               // Don't delete the task immediately for failed tasks so users can see the error
               break;
             }
 
             if (taskUpdate.finished && !taskUpdate.failed) {
               DeferredTasks.removeTask(data.args.id);
-              sendNotification({
-                type: 'success',
-                message: 'Task finished by ' + this.addonInfo.name,
-                id: data.args.id,
-              });
+              // sendNotification({
+              //   type: 'success',
+              //   message: 'Task finished by ' + this.addonInfo.name,
+              //   id: data.args.id,
+              // });
             }
             break;
           case 'get-app-details':

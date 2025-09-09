@@ -9,11 +9,7 @@
     type Notification,
     removedTasks,
   } from '../store';
-  import {
-    loadDeferredTasks,
-    clearCompletedTasks,
-    clearAllTasks,
-  } from '../utils';
+  import { loadDeferredTasks, clearAllTasks } from '../utils';
 
   let sideViewElement: HTMLElement | null = $state(null);
   let currentTab: 'notifications' | 'tasks' = $state('notifications');
@@ -129,7 +125,21 @@
   }
 
   function handleClearCompletedTasks() {
-    clearCompletedTasks();
+    clearAllTasks(
+      $deferredTasks
+        .map((task) => {
+          if (
+            task.status === 'completed' ||
+            task.status === 'error' ||
+            task.status === 'cancelled'
+          ) {
+            return task.id;
+          } else {
+            return undefined;
+          }
+        })
+        .filter((task) => task !== undefined)
+    );
   }
 
   function handleClearAllTasks() {

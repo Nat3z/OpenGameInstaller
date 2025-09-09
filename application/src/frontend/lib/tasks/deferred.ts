@@ -64,6 +64,12 @@ export function clearCompletedTasks() {
 }
 
 export function clearAllTasks(tasks: string[]) {
-  removedTasks.set(tasks);
-  deferredTasks.update(() => []);
+  removedTasks.update((removedTasks: string[]) =>
+    [...removedTasks, ...tasks].filter(
+      (task, index, self) => self.indexOf(task) === index
+    )
+  );
+  deferredTasks.update((deferredTasks: DeferredTask[]) =>
+    deferredTasks.filter((task: DeferredTask) => !tasks.includes(task.id))
+  );
 }

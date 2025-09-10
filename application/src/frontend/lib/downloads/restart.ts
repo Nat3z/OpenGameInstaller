@@ -26,7 +26,7 @@ async function restartDirectDownload(
 
   if (download.files && download.files.length > 0) {
     // Multi-part download
-    files = download.files.map((file: any) => ({
+    files = download.files.map((file) => ({
       link: file.downloadURL,
       path: getDownloadPath() + '/' + download.name + '/' + file.name,
       headers: file.headers,
@@ -63,7 +63,8 @@ async function restartDirectDownload(
       const chosenFilename =
         (urlFilename && /\.[A-Za-z0-9]{1,8}$/.test(urlFilename)
           ? urlFilename
-          : undefined) || (filenameHasExt ? download.filename : undefined) ||
+          : undefined) ||
+        (filenameHasExt ? download.filename : undefined) ||
         download.filename ||
         urlFilename ||
         'download';

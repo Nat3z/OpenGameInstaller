@@ -166,7 +166,7 @@ function setupPauseResumeHandlers(context: DownloadContext): void {
     console.log('Pause event received');
     const currentContext = downloadContexts.get(context.downloadID);
     if (currentContext) {
-      console.log('Current context:', currentContext);
+      // console.log('Current context:', currentContext);
       handlePause(currentContext);
       return true;
     } else {

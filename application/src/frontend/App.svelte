@@ -75,7 +75,7 @@
     console.log('App mounted, initializing stores');
     showNotificationSideView.set(false);
     loading = true;
-    setTimeout(() => {
+    setTimeout(async () => {
       fetchAddonsWithConfigure();
       const installedOption = getConfigClientOption('installed') as {
         installed: boolean;
@@ -83,6 +83,10 @@
       if (!installedOption || !installedOption.installed) {
         finishedOOBE = false;
       }
+      const os = await window.electronAPI.app.getOS();
+      setTimeout(() => {
+        selectedView.set(os === 'win32' ? 'library' : 'discovery');
+      }, 200);
       loading = false;
 
       // get recently launched apps

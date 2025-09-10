@@ -238,6 +238,10 @@
           type: 'error',
           message: 'Failed to extract ZIP file',
         });
+        updateDownloadStatus(downloadedItem.id, {
+          status: 'error',
+          error: 'Failed to extract ZIP file',
+        });
         throw new Error('Failed to extract ZIP file');
       }
 

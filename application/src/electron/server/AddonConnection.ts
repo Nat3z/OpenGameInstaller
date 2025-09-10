@@ -248,11 +248,11 @@ export class AddonConnection {
                 return null;
               }, this.addonInfo.id);
               DeferredTasks.getTasks()[data.args.id] = task;
-              sendNotification({
-                type: 'info',
-                message: 'Task started by ' + this.addonInfo.name,
-                id: data.args.id,
-              });
+              // sendNotification({
+              //   type: 'info',
+              //   message: 'Task started by ' + this.addonInfo.name,
+              //   id: data.args.id,
+              // });
             }
             task.progress = taskUpdate.progress;
             task.logs = taskUpdate.logs;

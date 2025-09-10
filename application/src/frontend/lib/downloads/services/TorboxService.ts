@@ -295,13 +295,7 @@ export class TorboxService extends BaseService {
       const downloadID = await window.electronAPI.ddl.download([
         {
           link: downloadUrl,
-          path:
-            getDownloadPath() +
-            '/' +
-            result.name +
-            '/' +
-            result.filename +
-            '.zip',
+          path: getDownloadPath() + '/' + result.name + '/' + result.filename,
         },
       ]);
       const updatedState = flush();
@@ -323,12 +317,7 @@ export class TorboxService extends BaseService {
         status: 'downloading',
         usedDebridService: 'torbox',
         downloadPath:
-          getDownloadPath() +
-          '/' +
-          result.name +
-          '/' +
-          result.filename +
-          '.zip',
+          getDownloadPath() + '/' + result.name + '/' + result.filename,
         queuePosition: updatedState[downloadID]?.queuePosition,
         downloadURL: downloadUrl,
         originalDownloadURL: result.downloadURL,

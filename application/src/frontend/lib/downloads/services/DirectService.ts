@@ -28,14 +28,26 @@ export class DirectService extends BaseService {
       return;
     }
 
+    const deriveFilenameFromUrl = (url?: string): string | undefined => {
+      if (!url) return undefined;
+      try {
+        const u = new URL(url);
+        const last = u.pathname.split('/').pop();
+        return last && last.length > 0 ? decodeURIComponent(last) : undefined;
+      } catch (e) {
+        const parts = url.split(/[\\\/]/);
+        return parts.length > 0 ? parts[parts.length - 1] : undefined;
+      }
+    };
+
+    const singleFilename =
+      result.filename ||
+      deriveFilenameFromUrl(result.downloadURL) ||
+      'download';
+
     let collectedFiles = [
       {
-        path:
-          getDownloadPath() +
-          '/' +
-          result.name +
-          '/' +
-          (result.filename || result.downloadURL?.split(/\\|/).pop()),
+        path: getDownloadPath() + '/' + result.name + '/' + singleFilename,
         link: result.downloadURL!!,
       },
     ];
@@ -71,6 +83,8 @@ export class DirectService extends BaseService {
             originalDownloadURL: result.downloadURL, // Store original URL for resume
             queuePosition: updatedState[id]?.queuePosition ?? 999,
             files: result.files, // Store files info for multi-part downloads
+            // Ensure filename is persisted for consistent restarts
+            filename: result.filename || singleFilename,
             ...result,
           },
         ];

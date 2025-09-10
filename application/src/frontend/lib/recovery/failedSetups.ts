@@ -149,11 +149,16 @@ export async function retryFailedSetup(failedSetup: FailedSetup) {
     }
 
     if (failedSetup.should === 'call-unzip') {
-      const originalZipFilePath = failedSetup.downloadInfo.downloadPath;
+      // Build the absolute path to the ZIP file using the directory + filename
+      const originalZipFilePath =
+        failedSetup.downloadInfo.downloadPath.replace(/(\/|\\)$/g, '') +
+        '/' +
+        failedSetup.downloadInfo.filename;
+      const outputBase = originalZipFilePath.replace(/\.zip$/g, '');
       const attemptUnzip: () => Promise<string | undefined> = async () => {
         const output = await unzipAndReturnOutputDir({
           zipFilePath: originalZipFilePath,
-          outputDirBase: originalZipFilePath.replace(/\.zip$/g, ''),
+          outputDirBase: outputBase,
           downloadId: tempId,
         });
         if (!output) return undefined;

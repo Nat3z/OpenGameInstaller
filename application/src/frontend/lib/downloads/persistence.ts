@@ -173,13 +173,10 @@ export async function initDownloadPersistence() {
                   pausedAt: Date.now(),
                   originalDownloadURL:
                     item.originalDownloadURL || item.downloadURL,
-                  files: (item as any).files,
+                  files: item.files,
                 };
                 localPausedMap.set(item.id, state);
-                const ok = await restartDownload(
-                  state as any,
-                  localPausedMap as any
-                );
+                const ok = await restartDownload(state, localPausedMap);
                 if (ok) restoredIds.delete(item.id);
               } catch (err) {
                 console.error(

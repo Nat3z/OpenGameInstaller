@@ -219,6 +219,8 @@ function setupPauseResumeHandlers(context: DownloadContext): void {
 function handlePause(context: DownloadContext): boolean {
   console.log('Pausing system...');
   if (!context.isPaused) {
+    // Mark context as paused early to avoid race conditions with end/error handlers
+    context.isPaused = true;
     // Get the unified download state
     const downloadState = downloadStates.get(context.downloadID);
     console.log(
@@ -321,6 +323,8 @@ async function executeDownload(
       const headers: Record<string, string> = {
         ...headersAdditional,
         'User-Agent': 'OpenGameInstaller Downloader/1.0.0',
+        // Ensure raw bytes for range requests (avoid on-the-fly compression)
+        'Accept-Encoding': 'identity',
       };
       if (startByte > 0) {
         headers.Range = `bytes=${startByte}-`;
@@ -342,7 +346,7 @@ async function executeDownload(
         // Get file size and handle range request issues
         let totalSize = getFileSizeFromResponse(response, startByte);
 
-        // Handle case where server doesn't support range requests
+        // Handle case where server doesn't support or mis-honors range requests
         let actualStartByte = existingSize;
         let actualCurrentBytes = existingSize;
         if (startByte > 0 && response.status !== 206) {
@@ -358,6 +362,56 @@ async function executeDownload(
           // Reset byte counters since we're starting fresh
           actualStartByte = 0;
           actualCurrentBytes = 0;
+        } else if (startByte > 0 && response.status === 206) {
+          // Validate that the server's Content-Range start matches our file size
+          const cr = response.headers['content-range'] as string | undefined;
+          let serverRangeStart: number | null = null;
+          if (cr) {
+            const m = cr.match(/bytes\s+(\d+)-(\d+)\/(\d+)/);
+            if (m) {
+              serverRangeStart = parseInt(m[1], 10);
+            }
+          }
+
+          if (serverRangeStart === null) {
+            console.log(
+              'No Content-Range start provided with 206; restarting from beginning to avoid corruption'
+            );
+            response.data.destroy();
+            fileStream.close();
+            if (fs.existsSync(filePath)) {
+              fs.unlinkSync(filePath);
+            }
+            await executeDownloadAttempt(true);
+            return;
+          }
+
+          if (serverRangeStart !== existingSize) {
+            if (serverRangeStart < existingSize) {
+              console.log(
+                `Server range starts earlier (${serverRangeStart}) than local size (${existingSize}); rewinding write position to avoid duplication`
+              );
+              // Reopen stream positioned at the server's start to overwrite overlap safely
+              fileStream.close();
+              fileStream = fs.createWriteStream(filePath, {
+                flags: 'r+',
+                start: serverRangeStart,
+              });
+              actualStartByte = serverRangeStart;
+              actualCurrentBytes = serverRangeStart;
+            } else {
+              console.log(
+                `Server range starts beyond local size (${serverRangeStart} > ${existingSize}); restarting from beginning`
+              );
+              response.data.destroy();
+              fileStream.close();
+              if (fs.existsSync(filePath)) {
+                fs.unlinkSync(filePath);
+              }
+              await executeDownloadAttempt(true);
+              return;
+            }
+          }
         }
 
         // Create download context
@@ -754,7 +808,11 @@ function setupFileStream(filePath: string, startByte: number): fs.WriteStream {
     recursive: true,
   });
 
-  return fs.createWriteStream(filePath, startByte > 0 ? { flags: 'a' } : {});
+  // When resuming, write from the exact byte offset rather than forcing append
+  if (startByte > 0) {
+    return fs.createWriteStream(filePath, { flags: 'r+', start: startByte });
+  }
+  return fs.createWriteStream(filePath);
 }
 
 // Helper function to determine file size from response

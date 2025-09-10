@@ -33,12 +33,47 @@ async function restartDirectDownload(
     }));
   } else if (effectiveUrl) {
     // Single file download
-    const filename =
-      download.filename || effectiveUrl.split(/\\|/).pop() || 'download';
+    const deriveFilenameFromUrl = (url?: string): string | undefined => {
+      if (!url) return undefined;
+      try {
+        const u = new URL(url);
+        const last = u.pathname.split('/').pop();
+        return last && last.length > 0 ? decodeURIComponent(last) : undefined;
+      } catch (e) {
+        const parts = url.split(/[\\\/]/);
+        return parts.length > 0 ? parts[parts.length - 1] : undefined;
+      }
+    };
+    const urlFilename = deriveFilenameFromUrl(effectiveUrl);
+
+    // If downloadPath is a full file path (not just a directory), prefer it to maintain exact continuity
+    const isFilePath =
+      typeof download.downloadPath === 'string' &&
+      !download.downloadPath.endsWith('/') &&
+      !download.downloadPath.endsWith('\\');
+
+    let targetPath: string;
+    if (isFilePath) {
+      targetPath = download.downloadPath;
+    } else {
+      // Choose a filename that preserves the extension from the URL if present
+      // If download.filename lacks an extension but the URL has one, use the URL-based name
+      const filenameHasExt =
+        !!download.filename && /\.[A-Za-z0-9]{1,8}$/.test(download.filename);
+      const chosenFilename =
+        (urlFilename && /\.[A-Za-z0-9]{1,8}$/.test(urlFilename)
+          ? urlFilename
+          : undefined) || (filenameHasExt ? download.filename : undefined) ||
+        download.filename ||
+        urlFilename ||
+        'download';
+      targetPath =
+        getDownloadPath() + '/' + download.name + '/' + chosenFilename;
+    }
     files = [
       {
         link: effectiveUrl,
-        path: getDownloadPath() + '/' + download.name + '/' + filename,
+        path: targetPath,
       },
     ];
   } else {

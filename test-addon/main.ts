@@ -8,7 +8,7 @@ const addon = new OGIAddon({
   author: 'OGI Developers',
   description: 'A test addon',
   repository: 'Repository URL',
-  storefronts: ['test-front', 'steam'],
+  storefronts: ['test-front'],
 });
 
 addon.on('configure', (config) =>
@@ -245,11 +245,18 @@ manifest: ${manifest}
 );
 
 addon.on('library-search', (text, event) => {
+  if (text === 'test app') {
+    addon.notify({ type: 'info', message: 'Searching...', id: 'search' });
+    event.defer(async () => {
+      event.resolve([(await addon.searchGame('among us', 'steam'))[0]]);
+    });
+    return;
+  }
   event.resolve([
     {
       appID: 1,
       capsuleImage: 'https://dummyimage.com/375x500/968d96/ffffff',
-      name: 'Test: App',
+      name: text,
       storefront: 'test-front',
     },
   ]);

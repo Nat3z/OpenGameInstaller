@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { LibraryInfo } from 'ogi-addon';
+  import type { LibraryInfo, SearchResult } from 'ogi-addon';
   import PlayIcon from '../Icons/PlayIcon.svelte';
   import {
     currentStorePageOpened,
@@ -7,12 +7,14 @@
     gamesLaunched,
     launchGameTrigger,
   } from '../store';
-  import { onDestroy } from 'svelte';
+  import { onDestroy, onMount } from 'svelte';
   import SettingsFilled from '../Icons/SettingsFilled.svelte';
   import GameConfiguration from './GameConfiguration.svelte';
   import { fly } from 'svelte/transition';
   import { quintOut } from 'svelte/easing';
   import Image from './Image.svelte';
+  import { fetchAddonsWithConfigure, runTask, safeFetch } from '../utils';
+  import AddonPicture from './AddonPicture.svelte';
 
   interface Props {
     libraryInfo: LibraryInfo;
@@ -122,6 +124,67 @@
     unsubscribe();
     unsubscribe2();
   });
+
+  let searchingAddons: { [key: string]: SearchResult[] | undefined } = $state(
+    {}
+  );
+  let settledAddons = $derived.by(() => {
+    return (
+      Object.values(searchingAddons).filter((task) => task !== undefined)
+        .length === Object.keys(searchingAddons).length
+    );
+  });
+
+  $effect(() => {
+    console.log('searchingAddons', searchingAddons);
+    console.log('settledAddons', settledAddons);
+  });
+
+  onMount(async () => {
+    const addons = await fetchAddonsWithConfigure();
+    const addonsWithStorefront = addons.filter((addon) =>
+      addon.storefronts.includes(libraryInfo.storefront)
+    );
+    if (addonsWithStorefront.length === 0) return;
+    for (const addon of addonsWithStorefront) {
+      searchingAddons[addon.id] = undefined;
+      safeFetch(
+        'search',
+        {
+          addonID: addon.id,
+          appID: libraryInfo.appID,
+          storefront: libraryInfo.storefront,
+          for: 'task',
+        },
+        { consume: 'json' }
+      )
+        .then((tasks) => {
+          console.log('tasks', tasks);
+          searchingAddons[addon.id] = tasks;
+        })
+        .catch((ex) => {
+          console.error(ex);
+          searchingAddons[addon.id] = [];
+        });
+    }
+    await Promise.allSettled(
+      Object.values(searchingAddons).map((task) => task)
+    );
+  });
+
+  function handleRunTask(task: SearchResult) {
+    console.log('Running task: ' + task.name);
+    runTask(
+      {
+        ...task,
+        addonSource: libraryInfo.addonsource,
+        coverImage: libraryInfo.coverImage,
+        storefront: libraryInfo.storefront,
+        capsuleImage: libraryInfo.capsuleImage,
+      },
+      libraryInfo.cwd
+    );
+  }
 </script>
 
 {#if openedGameConfiguration}
@@ -129,7 +192,7 @@
 {/if}
 
 <div
-  class="flex flex-col top-0 left-0 absolute w-full h-full bg-white z-[2] animate-fade-in-pop-fast"
+  class="flex flex-col top-0 left-0 overflow-y-auto absolute w-full h-full bg-white z-[2] animate-fade-in-pop-fast"
   out:fly={{ x: 100, duration: 500, easing: quintOut }}
 >
   <!-- Hero Banner Section -->
@@ -211,34 +274,41 @@
     </button>
   </div>
 
-  <!-- Game Configuration Info -->
-  <div class="flex-1 p-6">
-    <div class="bg-accent-lighter rounded-lg p-4">
-      <h3 class="text-lg font-semibold text-accent-dark mb-3">
-        Game Configuration
-      </h3>
-      <div class="space-y-2 text-sm">
-        <div class="flex justify-between">
-          <span class="text-gray-600">Working Directory:</span>
-          <span class="font-mono text-gray-800"
-            >{libraryInfo.cwd || 'Not set'}</span
+  <!-- Addon Task Grid -->
+  <div class="grid grid-cols-3 gap-4 mt-6">
+    {#if settledAddons}
+      {#each Object.keys(searchingAddons) as addonID, index}
+        {#each searchingAddons[addonID]!!.filter((task) => task.downloadType === 'task') as task, taskIndex}
+          <div
+            class="bg-accent-lighter rounded-lg p-4 flex flex-col gap-2"
+            in:fly={{ y: 30, duration: 400, delay: 50 * (index + taskIndex) }}
           >
-        </div>
-        <div class="flex justify-between">
-          <span class="text-gray-600">Executable:</span>
-          <span class="font-mono text-gray-800"
-            >{libraryInfo.launchExecutable || 'Not set'}</span
-          >
-        </div>
-        {#if libraryInfo.launchArguments}
-          <div class="flex justify-between">
-            <span class="text-gray-600">Arguments:</span>
-            <span class="font-mono text-gray-800"
-              >{libraryInfo.launchArguments}</span
+            <div class="flex flex-row gap-2 items-center mb-2">
+              <AddonPicture addonId={addonID} class="w-12 h-12 rounded-lg" />
+              <h3 class="text-lg font-semibold text-accent-dark">
+                {task.name}
+              </h3>
+            </div>
+
+            <button
+              class="px-4 py-2 bg-accent-light rounded-lg border-none text-accent-dark hover:bg-opacity-80 transition-colors duration-200"
+              onclick={() => handleRunTask(task)}>Run Task</button
             >
           </div>
-        {/if}
-      </div>
-    </div>
+        {/each}
+      {/each}
+    {:else}
+      {#each Array(3) as _}
+        <div
+          class="bg-accent-lighter rounded-lg p-4 flex flex-col gap-2 animate-pulse"
+        >
+          <div class="flex flex-row gap-2 items-center mb-2">
+            <div class="w-12 h-12 bg-accent-light rounded-lg"></div>
+            <div class="h-6 bg-accent-light rounded w-32"></div>
+          </div>
+          <div class="h-10 bg-accent-light rounded-lg"></div>
+        </div>
+      {/each}
+    {/if}
   </div>
 </div>

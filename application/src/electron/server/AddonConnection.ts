@@ -40,10 +40,11 @@ export class AddonConnection {
       this.ws.on('message', async (message) => {
         const data: WebsocketMessageClient = JSON.parse(message.toString());
         switch (data.event) {
-          case 'notification':
+          case 'notification': {
             sendNotification(data.args[0]);
             break;
-          case 'authenticate':
+          }
+          case 'authenticate': {
             clearTimeout(authenticationTimeout);
 
             // authentication
@@ -88,7 +89,8 @@ export class AddonConnection {
             console.log('Client authenticated:', data.args.name);
             resolve(true);
             break;
-          case 'configure':
+          }
+          case 'configure': {
             if (!this.addonInfo) {
               console.error(
                 'Client attempted to send config before authentication'
@@ -101,7 +103,8 @@ export class AddonConnection {
             }
             this.configTemplate = data.args;
             break;
-          case 'defer-update':
+          }
+          case 'defer-update': {
             if (!this.addonInfo) {
               console.error(
                 'Client attempted to send defer-update before authentication'
@@ -152,7 +155,8 @@ export class AddonConnection {
               deferredTask.finished = true;
             }
             break;
-          case 'input-asked':
+          }
+          case 'input-asked': {
             if (!this.addonInfo) {
               console.error(
                 'Client attempted to send input-asked before authentication'
@@ -219,7 +223,8 @@ export class AddonConnection {
             }, 100);
 
             break;
-          case 'task-update':
+          }
+          case 'task-update': {
             if (!this.addonInfo) {
               console.error(
                 'Client attempted to send task-update before authentication'
@@ -279,7 +284,8 @@ export class AddonConnection {
               // });
             }
             break;
-          case 'get-app-details':
+          }
+          case 'get-app-details': {
             if (!this.addonInfo) {
               console.error(
                 'Client attempted to send get-app-details before authentication'
@@ -337,7 +343,44 @@ export class AddonConnection {
             );
             console.log('Sent app details to client');
             break;
-          case 'flag':
+          }
+          case 'search-app-name': {
+            if (!this.addonInfo) {
+              console.error(
+                'Client attempted to send search-app-name before authentication'
+              );
+              this.ws.close(
+                1008,
+                'Client attempted to send search-app-name before authentication'
+              );
+              return;
+            }
+            const {
+              query,
+              storefront,
+            }: ClientSentEventTypes['search-app-name'] = data.args;
+            const clientsWithStorefront = Array.from(clients.values()).filter(
+              (client) =>
+                client.addonInfo.storefronts.includes(storefront) &&
+                client.eventsAvailable.includes('library-search')
+            );
+            const searchResult: StoreData[] = [];
+            for (const client of clientsWithStorefront) {
+              const response = await client.sendEventMessage(
+                { event: 'library-search', args: query },
+                true
+              );
+              if (response.args) {
+                searchResult.push(...response.args);
+              }
+            }
+            this.sendEventMessage(
+              { event: 'response', args: searchResult, id: data.id },
+              false
+            );
+            break;
+          }
+          case 'flag': {
             if (!this.addonInfo) {
               console.error(
                 'Client attempted to send flag before authentication'
@@ -358,6 +401,7 @@ export class AddonConnection {
               this.eventsAvailable = data.args.value as OGIAddonEvent[];
             }
             break;
+          }
         }
       });
     });

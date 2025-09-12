@@ -128,7 +128,16 @@ export const viewOpenedWhenChanged: Writable<Views | undefined> =
 export const addonUpdates: Writable<string[]> = writable([]);
 
 // Search state
+export type SearchResultsByAddon = {
+  addonId: string;
+  addonName: string;
+  results: BasicLibraryInfo[];
+};
+
 export const searchResults: Writable<BasicLibraryInfo[]> = writable([]);
+export const searchResultsByAddon: Writable<SearchResultsByAddon[]> = writable(
+  []
+);
 export const searchQuery: Writable<string> = writable('');
 export const loadingResults: Writable<boolean> = writable(false);
 export const isOnline: Writable<boolean> = writable(true);

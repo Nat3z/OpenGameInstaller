@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { fade, fly } from 'svelte/transition';
+  import { fade, fly, slide } from 'svelte/transition';
   import { quintOut } from 'svelte/easing';
   import { derived } from 'svelte/store';
   import ConfigView from './views/ConfigView.svelte';
@@ -24,6 +24,7 @@
     viewOpenedWhenChanged,
     type Views,
     searchResults as searchResultsStore,
+    searchResultsByAddon,
     searchQuery,
     loadingResults,
     isOnline,
@@ -55,6 +56,9 @@
   let addons: ConfigTemplateAndInfo[] = $state([]);
   let showSearchResults = $state(false);
   let searchTimeout: NodeJS.Timeout | null = null;
+  let collapsedAddons: Set<string> = $state(new Set());
+  let loadingAddons: Set<string> = $state(new Set());
+  let emptyAddons: Set<string> = $state(new Set());
 
   let recentlyLaunchedApps: LibraryInfo[] = $state([]);
 
@@ -121,8 +125,13 @@
       showSearchResults = true;
       addons = await fetchAddonsWithConfigure();
       searchResultsStore.set([]);
+      searchResultsByAddon.set([]);
 
-      // Search through addons first
+      // Reset loading states
+      loadingAddons = new Set(addons.map((addon) => addon.id));
+      emptyAddons = new Set();
+
+      // Search through addons and organize results by addon
       let promises: Promise<void>[] = [];
       for (const addon of addons) {
         promises.push(
@@ -133,14 +142,56 @@
               query: query,
             },
             { consume: 'json' }
-          ).then((response: BasicLibraryInfo[]) => {
-            console.log(response);
-            searchResultsStore.update((value) => [...value, ...response]);
-          })
+          )
+            .then((response: BasicLibraryInfo[]) => {
+              console.log(response);
+
+              // Add to flat results (for backward compatibility)
+              searchResultsStore.update((value) => [...value, ...response]);
+
+              // Add to organized results by addon
+              if (response.length > 0) {
+                // Remove from loading set immediately for addons with results
+                loadingAddons.delete(addon.id);
+                loadingAddons = new Set(loadingAddons);
+
+                searchResultsByAddon.update((value) => [
+                  ...value,
+                  {
+                    addonId: addon.id,
+                    addonName: addon.name,
+                    results: response,
+                  },
+                ]);
+              } else {
+                // For empty results, add to empty set and animate out after delay
+                emptyAddons.add(addon.id);
+                emptyAddons = new Set(emptyAddons);
+
+                setTimeout(() => {
+                  loadingAddons.delete(addon.id);
+                  loadingAddons = new Set(loadingAddons);
+
+                  // Clean up empty addon after another delay
+                  setTimeout(() => {
+                    emptyAddons.delete(addon.id);
+                    emptyAddons = new Set(emptyAddons);
+                  }, 300);
+                }, 1000);
+              }
+            })
+            .catch((error) => {
+              // Remove from loading set even on error
+              loadingAddons.delete(addon.id);
+              loadingAddons = new Set(loadingAddons);
+              console.error(`Error searching addon ${addon.name}:`, error);
+            })
         );
       }
       await Promise.allSettled(promises);
       loadingResults.set(false);
+      // Ensure all addons are removed from loading state
+      loadingAddons = new Set();
     } catch (ex) {
       console.error(ex);
       createNotification({
@@ -149,6 +200,8 @@
         type: 'error',
       });
       loadingResults.set(false);
+      loadingAddons = new Set();
+      emptyAddons = new Set();
     }
   }
 
@@ -179,6 +232,16 @@
     currentStorePageOpenedStorefront.set(storefront);
     viewOpenedWhenChanged.set($selectedView);
     showSearchResults = false;
+  }
+
+  function toggleAddonCollapse(addonId: string) {
+    if (collapsedAddons.has(addonId)) {
+      collapsedAddons.delete(addonId);
+    } else {
+      collapsedAddons.add(addonId);
+    }
+    // Trigger reactivity
+    collapsedAddons = new Set(collapsedAddons);
   }
 
   function updateRecents() {
@@ -596,39 +659,138 @@
                   </div>
                 {/if}
                 <div class="search-results">
-                  {#each $searchResultsStore as result, index}
-                    <div
-                      class="search-result-item"
-                      in:fly={{ y: 30, duration: 400, delay: 50 * index }}
-                    >
-                      <img
-                        src={result.capsuleImage}
-                        alt={result.name}
-                        class="result-image"
-                        onerror={(ev) => {
-                          result.capsuleImage = './favicon.png';
-                          (ev.target as HTMLImageElement).src = './favicon.png';
-                          (ev.target as HTMLImageElement).style.opacity = '0.5';
-                          console.log('error loading image', result.name);
-                        }}
-                      />
-                      <div class="result-content">
-                        <h3 class="result-title">{result.name}</h3>
-                        <p class="result-source">
-                          Storefront: {result.storefront}
-                        </p>
-                        <button
-                          class="result-button"
-                          onclick={() =>
-                            goToListing(result.appID, result.storefront)}
-                        >
-                          View Details
-                        </button>
+                  <!-- Loading indicators for addons still searching -->
+                  {#each Array.from(loadingAddons) as addonId, index}
+                    {@const addon = addons.find((a) => a.id === addonId)}
+                    {@const isEmpty = emptyAddons.has(addonId)}
+                    {#if addon}
+                      <div
+                        class="addon-section loading"
+                        class:empty={isEmpty}
+                        in:fly={{ y: 30, duration: 400, delay: 50 * index }}
+                        out:fade={{ duration: 300 }}
+                      >
+                        <div class="addon-header-loading">
+                          <div class="addon-header-content">
+                            <h3 class="addon-name">{addon.name}</h3>
+                            {#if isEmpty}
+                              <span class="loading-text">No results found</span>
+                            {:else}
+                              <span class="loading-text">Searching...</span>
+                            {/if}
+                          </div>
+                          {#if !isEmpty}
+                            <div class="addon-loading-spinner"></div>
+                          {:else}
+                            <svg
+                              class="empty-icon"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                            >
+                              <circle cx="12" cy="12" r="10" />
+                              <path d="M16 16s-1.5-2-4-2-4 2-4 2" />
+                              <line x1="9" y1="9" x2="9.01" y2="9" />
+                              <line x1="15" y1="9" x2="15.01" y2="9" />
+                            </svg>
+                          {/if}
+                        </div>
                       </div>
+                    {/if}
+                  {/each}
+
+                  <!-- Actual search results -->
+                  {#each $searchResultsByAddon as addonGroup, groupIndex}
+                    <div
+                      class="addon-section"
+                      in:fly={{ y: 30, duration: 400, delay: 100 * groupIndex }}
+                    >
+                      <button
+                        class="addon-header"
+                        onclick={() => toggleAddonCollapse(addonGroup.addonId)}
+                      >
+                        <div class="addon-header-content">
+                          <h3 class="addon-name">{addonGroup.addonName}</h3>
+                          <span class="result-count"
+                            >{addonGroup.results.length} result{addonGroup
+                              .results.length === 1
+                              ? ''
+                              : 's'}</span
+                          >
+                        </div>
+                        <svg
+                          class="collapse-icon"
+                          class:collapsed={collapsedAddons.has(
+                            addonGroup.addonId
+                          )}
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                        >
+                          <path
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            stroke-width="2"
+                            d="M19 9l-7 7-7-7"
+                          />
+                        </svg>
+                      </button>
+
+                      {#if !collapsedAddons.has(addonGroup.addonId)}
+                        <div
+                          class="addon-results"
+                          transition:slide={{ duration: 300 }}
+                        >
+                          {#each addonGroup.results as result, index}
+                            <div
+                              class="search-result-item"
+                              in:fly={{
+                                y: 20,
+                                duration: 300,
+                                delay: 50 * index,
+                              }}
+                            >
+                              <img
+                                src={result.capsuleImage}
+                                alt={result.name}
+                                class="result-image"
+                                onerror={(ev) => {
+                                  result.capsuleImage = './favicon.png';
+                                  (ev.target as HTMLImageElement).src =
+                                    './favicon.png';
+                                  (
+                                    ev.target as HTMLImageElement
+                                  ).style.opacity = '0.5';
+                                  console.log(
+                                    'error loading image',
+                                    result.name
+                                  );
+                                }}
+                              />
+                              <div class="result-content">
+                                <h4 class="result-title">{result.name}</h4>
+                                <p class="result-source">
+                                  Storefront: {result.storefront}
+                                </p>
+                                <button
+                                  class="result-button"
+                                  onclick={() =>
+                                    goToListing(
+                                      result.appID,
+                                      result.storefront
+                                    )}
+                                >
+                                  View Details
+                                </button>
+                              </div>
+                            </div>
+                          {/each}
+                        </div>
+                      {/if}
                     </div>
                   {/each}
 
-                  {#if $searchResultsStore.length === 0 && !$loadingResults}
+                  {#if $searchResultsByAddon.length === 0 && !$loadingResults}
                     <div class="no-results" in:fade={{ duration: 300 }}>
                       <h3 class="text-xl text-gray-700 mb-2">
                         No Results Found
@@ -822,6 +984,62 @@
 
   .search-results {
     @apply flex flex-col gap-4;
+  }
+
+  .addon-section {
+    @apply mb-4;
+  }
+
+  .addon-header {
+    @apply w-full flex items-center justify-between py-3 px-0 bg-transparent border-none cursor-pointer hover:bg-gray-50 rounded-lg transition-colors duration-200;
+  }
+
+  .addon-header-content {
+    @apply flex items-center gap-4;
+  }
+
+  .addon-name {
+    @apply text-lg font-semibold text-gray-800 font-archivo px-2;
+  }
+
+  .result-count {
+    @apply text-sm text-gray-600 font-medium;
+  }
+
+  .collapse-icon {
+    @apply w-5 h-5 text-gray-600 transition-transform duration-200 mx-2;
+  }
+
+  .collapse-icon.collapsed {
+    transform: rotate(-90deg);
+  }
+
+  .addon-results {
+    @apply flex flex-col gap-3 mt-2;
+  }
+
+  .addon-section.loading {
+    @apply opacity-75;
+  }
+
+  .addon-section.loading.empty {
+    @apply opacity-50;
+  }
+
+  .addon-header-loading {
+    @apply w-full flex items-center justify-between py-3 px-2 bg-transparent;
+  }
+
+  .loading-text {
+    @apply text-sm text-gray-500 font-medium italic;
+  }
+
+  .addon-loading-spinner {
+    @apply w-5 h-5 border-2 border-gray-300 border-t-accent rounded-full animate-spin;
+  }
+
+  .empty-icon {
+    @apply w-5 h-5 text-gray-400;
   }
 
   .search-result-item {

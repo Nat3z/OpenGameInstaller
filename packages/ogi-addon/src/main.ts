@@ -31,6 +31,7 @@ export type OGIAddonClientSentEvent =
   | 'notification'
   | 'input-asked'
   | 'get-app-details'
+  | 'search-app-name'
   | 'flag'
   | 'task-update';
 
@@ -78,6 +79,10 @@ export interface ClientSentEventTypes {
   };
   'get-app-details': {
     appID: number;
+    storefront: string;
+  };
+  'search-app-name': {
+    query: string;
     storefront: string;
   };
   flag: {
@@ -368,6 +373,16 @@ export default class OGIAddon {
     });
     return await this.addonWSListener.waitForResponseFromServer<
       StoreData | undefined
+    >(id);
+  }
+
+  public async searchGame(query: string, storefront: string) {
+    const id = this.addonWSListener.send('search-app-name', {
+      query,
+      storefront,
+    });
+    return await this.addonWSListener.waitForResponseFromServer<
+      BasicLibraryInfo[]
     >(id);
   }
 

@@ -116,10 +116,10 @@ export type SetupEventResponse = Omit<
 export interface EventListenerTypes {
   /**
    * This event is emitted when the addon connects to the OGI Addon Server. Addon does not need to resolve anything.
-   * @param socket
+   * @param event
    * @returns
    */
-  connect: (socket: ws) => void;
+  connect: (event: EventResponse<void>) => void;
 
   /**
    * This event is emitted when the client requests for the addon to disconnect. Addon does not need to resolve this event, but we recommend `process.exit(0)` so the addon can exit gracefully instead of by force by the addon server.

@@ -6,6 +6,8 @@ import { __dirname } from '../paths.js';
 import { dirname } from 'path';
 import { DOWNLOAD_QUEUE } from '../queue.js';
 import { Readable } from 'stream';
+import * as http from 'http';
+import * as https from 'https';
 
 // Types for better type safety
 // Unified interface for all downloads (single-part and multi-part)
@@ -55,6 +57,8 @@ interface DownloadContext {
   totalParts?: number;
   headersAdditional: Record<string, string>;
   taskFinisher: () => void;
+  // Number of times we've attempted to resume this specific part
+  resumeRetryCount?: number;
 }
 
 // Store download states for resume functionality (unified for single and multi-part)
@@ -83,11 +87,19 @@ function sendProgressUpdate(
 }
 
 // Helper function to cleanup download resources
-function cleanupDownload(context: DownloadContext): void {
+function cleanupDownload(
+  context: DownloadContext,
+  // If undefined, auto-detect based on whether this is the last part
+  finalCleanup?: boolean
+): void {
   context.finished = true;
   clearInterval(context.progressInterval);
   context.fileStream.close();
-  cleanupPauseResumeHandlers(context.downloadID);
+  const isFinalPart =
+    finalCleanup !== undefined
+      ? finalCleanup
+      : !context.totalParts || context.parts === context.totalParts;
+  cleanupPauseResumeHandlers(context.downloadID, isFinalPart);
 }
 
 // Helper function to handle download errors
@@ -102,7 +114,8 @@ function handleDownloadError(
     return;
   }
 
-  cleanupDownload(context);
+  // This is a terminal error for this batch - perform final cleanup
+  cleanupDownload(context, true);
   sendIpcMessage(context.mainWindow, 'ddl:download-error', {
     id: context.downloadID,
     error: error.message || 'Download error',
@@ -125,15 +138,18 @@ function handleDownloadError(
 function setupProgressTracking(context: DownloadContext): void {
   const progressInterval = setInterval(() => {
     if (context.mainWindow?.webContents && !context.finished) {
+      const totalBytes = Number.isFinite(context.totalSize)
+        ? context.totalSize
+        : 0;
       const progressData: ProgressData = {
         id: context.downloadID,
-        progress: context.currentBytes / context.totalSize,
+        progress: totalBytes > 0 ? context.currentBytes / totalBytes : 0,
         downloadSpeed:
           context.currentBytes > context.startByte
             ? (context.currentBytes - context.startByte) /
               ((Date.now() - context.startTime) / 1000)
             : 0,
-        fileSize: context.totalSize,
+        fileSize: totalBytes,
         queuePosition: 1,
       };
 
@@ -285,6 +301,10 @@ function handlePause(context: DownloadContext): boolean {
 }
 
 // Helper function to execute a download with full setup
+// Reusable keep-alive agents for stability
+const keepAliveHttpAgent = new http.Agent({ keepAlive: true });
+const keepAliveHttpsAgent = new https.Agent({ keepAlive: true });
+
 async function executeDownload(
   downloadID: string,
   mainWindow: Electron.BrowserWindow,
@@ -338,6 +358,10 @@ async function executeDownload(
           url: url,
           responseType: 'stream',
           headers,
+          // Improve network resilience
+          httpAgent: keepAliveHttpAgent,
+          httpsAgent: keepAliveHttpsAgent,
+          maxRedirects: 5,
         });
 
         // Note: Global abort handler is registered at the queue level
@@ -358,7 +382,8 @@ async function executeDownload(
             fs.unlinkSync(filePath);
           }
           fileStream = setupFileStream(filePath, 0);
-          totalSize = response.headers['content-length'];
+          const cl = response.headers['content-length'];
+          totalSize = cl ? parseInt(cl as any, 10) : NaN;
           // Reset byte counters since we're starting fresh
           actualStartByte = 0;
           actualCurrentBytes = 0;
@@ -433,6 +458,7 @@ async function executeDownload(
           totalParts,
           headersAdditional,
           taskFinisher: finish || (() => {}),
+          resumeRetryCount: 0,
         };
 
         // Setup progress tracking
@@ -500,6 +526,7 @@ async function executeDownload(
             error: 'File stream error',
           });
           fileStream.close();
+          console.error('file stream error', err);
           if (fs.existsSync(filePath)) {
             fs.unlinkSync(filePath);
           }
@@ -509,7 +536,7 @@ async function executeDownload(
             type: 'error',
           });
           if (finish) finish();
-          reject();
+          reject(err);
         }
       }
     };
@@ -552,14 +579,16 @@ function setupDownloadEventHandlersWithRetry(
       return;
     }
 
-    // Check if file size is under 1MB and retry if needed (only if we haven't already retried for this reason)
-    const fileSizeInMB = context.totalSize / (1024 * 1024);
-    if ((isNaN(fileSizeInMB) || fileSizeInMB < 1) && !hasRetriedForSmallFile) {
+    // Use actually downloaded bytes to detect bogus tiny files
+    const downloadedBytes = context.currentBytes;
+    const downloadedMB = downloadedBytes / (1024 * 1024);
+    if (downloadedBytes < 1 * 1024 * 1024 && !hasRetriedForSmallFile) {
       console.log(
-        `File size is ${fileSizeInMB.toFixed(2)}MB (under 1MB), retrying download...`
+        `Downloaded size is ${downloadedMB.toFixed(2)}MB (under 1MB), retrying download...`
       );
 
-      cleanupDownload(context);
+      // Cleanup but keep state so we can retry this part
+      cleanupDownload(context, false);
 
       // Clean up the small file
       try {
@@ -605,14 +634,16 @@ function setupDownloadEventHandlersWithRetry(
       id: context.downloadID,
       progress: 1,
       downloadSpeed: 0,
-      fileSize: context.totalSize,
+      fileSize: Number.isFinite(context.totalSize)
+        ? context.totalSize
+        : downloadedBytes,
       part: context.parts,
       totalParts: context.totalParts,
       queuePosition: 1,
     });
 
     console.log(
-      `Download complete for part ${context.parts || 1} (${fileSizeInMB.toFixed(2)}MB)`
+      `Download complete for part ${context.parts || 1} (${downloadedMB.toFixed(2)}MB)`
     );
     resolve();
   });
@@ -627,7 +658,7 @@ function setupDownloadEventHandlersWithRetry(
     // If this was a resume attempt, try retrying from beginning
     if (canRetry) {
       console.log('Resume download failed, retrying from beginning...');
-      cleanupDownload(context);
+      cleanupDownload(context, false);
 
       // Clean up the partial file
       try {
@@ -650,7 +681,27 @@ function setupDownloadEventHandlersWithRetry(
         reject();
       }
     } else {
-      // Handle as normal error
+      // Attempt limited auto-resume using Range from the bytes already written
+      const MAX_RESUME_RETRIES = 3;
+      context.resumeRetryCount = (context.resumeRetryCount || 0) + 1;
+      if (context.resumeRetryCount <= MAX_RESUME_RETRIES) {
+        console.log(
+          `Stream error encountered. Attempting auto-resume #${context.resumeRetryCount}...`
+        );
+        // Cleanup but keep partial file for resume
+        cleanupDownload(context, false);
+        // Small backoff before retry
+        await new Promise((r) => setTimeout(r, 1500));
+        try {
+          await retryFunction(false); // This will use getResumeInfo(filePath)
+          return;
+        } catch (resumeErr) {
+          console.error('Auto-resume attempt failed:', resumeErr);
+          // Will fall through to terminal failure below
+        }
+      }
+
+      // Handle as terminal error
       handleDownloadError(context, error, finish, reject);
     }
   });
@@ -788,15 +839,23 @@ async function executeUnifiedDownload(
 // Helper function to cleanup pause/resume handlers
 // Note: This function should only be called when the download is actually finished, failed, or aborted
 // Not when setting up handlers for new parts
-function cleanupPauseResumeHandlers(downloadID: string) {
+function cleanupPauseResumeHandlers(
+  downloadID: string,
+  finalCleanup: boolean = true
+) {
   // Remove handlers - removeHandler doesn't throw if handler doesn't exist
   ipcMain.removeHandler(`ddl:${downloadID}:pause`);
   ipcMain.removeHandler(`ddl:${downloadID}:resume`);
   // Note: Don't remove abort handler here since it's managed globally
-  downloadStates.delete(downloadID);
+  // Always clear the current context to avoid stale references
   downloadContexts.delete(downloadID);
+  if (finalCleanup) {
+    downloadStates.delete(downloadID);
+  }
   console.log(
-    'Cleaned up pause/resume handlers and states for ID:',
+    'Cleaned up pause/resume handlers',
+    finalCleanup ? 'and states' : '(context only)',
+    'for ID:',
     downloadID
   );
 }
@@ -820,8 +879,9 @@ function getFileSizeFromResponse(
   response: AxiosResponse<Readable>,
   startByte: number
 ): number {
-  let fileSize = response.headers['content-length'];
-  let totalSize = fileSize;
+  const cl = response.headers['content-length'];
+  let contentLength = cl ? parseInt(cl as any, 10) : NaN;
+  let totalSize = contentLength;
 
   // Handle partial content response
   if (response.status === 206 && response.headers['content-range']) {
@@ -830,15 +890,15 @@ function getFileSizeFromResponse(
     if (match) {
       totalSize = parseInt(match[1], 10);
       console.log(
-        `Partial content response, total size: ${totalSize}, content length: ${fileSize}`
+        `Partial content response, total size: ${totalSize}, content length: ${contentLength}`
       );
     }
   } else if (startByte > 0) {
     // Server doesn't support range requests, we need to restart from beginning
     console.log('Server does not support range requests, restarting download');
-    totalSize = fileSize;
+    totalSize = contentLength;
   } else {
-    totalSize = fileSize;
+    totalSize = contentLength;
   }
 
   return totalSize;

@@ -309,7 +309,7 @@
           <div
             class="absolute top-2 left-2 bg-accent text-white text-xs font-bold px-2 py-1 rounded-full shadow-lg"
           >
-            Queue #{targetDownload.queuePosition}
+            Queued #{targetDownload.queuePosition}
           </div>
         {/if}
       </div>

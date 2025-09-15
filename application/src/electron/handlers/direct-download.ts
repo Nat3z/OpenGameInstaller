@@ -93,11 +93,20 @@ function cleanupDownload(
   // If undefined, auto-detect based on whether this is the last part
   finalCleanup?: boolean
 ): void {
-  context.finished = true;
+  // Stop progress tracking first to prevent race conditions
   clearInterval(context.progressInterval);
-  if (!context.fileStream.closed) {
-    context.fileStream.destroy();
+  context.finished = true;
+
+  if (!context.fileStream.closed && !context.fileStream.destroyed) {
+    // If the stream is still writable, end it gracefully instead of destroying
+    if (context.fileStream.writable) {
+      context.fileStream.end();
+    } else {
+      // Only destroy if it's not writable and not already closed
+      context.fileStream.destroy();
+    }
   }
+
   const isFinalPart =
     finalCleanup !== undefined
       ? finalCleanup
@@ -136,7 +145,13 @@ function handleDownloadError(
 // Helper function to setup progress tracking
 function setupProgressTracking(context: DownloadContext): void {
   const progressInterval = setInterval(() => {
-    if (context.mainWindow?.webContents && !context.finished) {
+    // Check if context is finished, paused, or stream is closed to prevent race conditions
+    if (
+      context.mainWindow?.webContents &&
+      !context.finished &&
+      !context.isPaused &&
+      !context.fileStream.closed
+    ) {
       const totalBytes = Number.isFinite(context.totalSize)
         ? context.totalSize
         : 0;
@@ -278,10 +293,10 @@ function handlePause(context: DownloadContext): boolean {
       console.log('Pausing without state - download will need to be restarted');
     }
 
-    // Properly pause by destroying the stream and stopping progress
+    // Properly pause by stopping progress first, then destroying streams
+    clearInterval(context.progressInterval);
     context.response.data.destroy();
     context.fileStream.end();
-    clearInterval(context.progressInterval);
 
     console.log(
       `Download paused at ${context.currentBytes}/${context.totalSize} bytes`
@@ -650,8 +665,9 @@ function setupDownloadEventHandlersWithRetry(
     }
   });
 
-  // Handle download completion
-  context.response.data.on('end', async () => {
+  // Handle download completion - use fileStream 'finish' instead of response 'end'
+  // This ensures the file has been completely written before cleanup
+  context.fileStream.on('finish', async () => {
     if (context.isPaused) {
       console.log('Download was paused, ignoring end event');
       return;
@@ -703,7 +719,13 @@ function setupDownloadEventHandlersWithRetry(
       }
     }
 
-    cleanupDownload(context);
+    // Stream is already finished, so just clean up progress tracking and handlers
+    // Don't call cleanupDownload as it might interfere with the already-finished stream
+    clearInterval(context.progressInterval);
+    context.finished = true;
+    const isFinalPart =
+      !context.totalParts || context.parts === context.totalParts;
+    cleanupPauseResumeHandlers(context.downloadID, isFinalPart);
 
     // Send final progress update
     sendProgressUpdate(context.mainWindow, {
@@ -722,6 +744,29 @@ function setupDownloadEventHandlersWithRetry(
       `Download complete for part ${context.parts || 1} (${downloadedMB.toFixed(2)}MB)`
     );
     resolve();
+  });
+
+  // Safety handler for response end - in case fileStream doesn't finish properly
+  context.response.data.on('end', () => {
+    if (!context.finished && !context.isPaused) {
+      console.log(
+        'Response ended but fileStream did not finish - this may indicate an issue'
+      );
+      // Give the fileStream a moment to finish, then clean up if needed
+      setTimeout(() => {
+        if (!context.finished && !context.isPaused) {
+          console.log(
+            'FileStream did not finish after response end - forcing cleanup'
+          );
+          clearInterval(context.progressInterval);
+          context.finished = true;
+          const isFinalPart =
+            !context.totalParts || context.parts === context.totalParts;
+          cleanupPauseResumeHandlers(context.downloadID, isFinalPart);
+          resolve();
+        }
+      }, 100);
+    }
   });
 
   // Handle download errors with retry logic

@@ -1,5 +1,6 @@
 import { ipcMain } from 'electron';
 import * as fs from 'fs';
+import { rm as rmAsync } from 'fs/promises';
 import { sendNotification } from '../main.js';
 import axios, { AxiosResponse } from 'axios';
 import { __dirname } from '../paths.js';
@@ -94,7 +95,9 @@ function cleanupDownload(
 ): void {
   context.finished = true;
   clearInterval(context.progressInterval);
-  context.fileStream.close();
+  if (!context.fileStream.closed) {
+    context.fileStream.destroy();
+  }
   const isFinalPart =
     finalCleanup !== undefined
       ? finalCleanup
@@ -121,14 +124,10 @@ function handleDownloadError(
     error: error.message || 'Download error',
   });
 
-  // Clean up file if it exists
-  try {
-    if (fs.existsSync(context.filePath)) {
-      fs.unlinkSync(context.filePath);
-    }
-  } catch (unlinkError) {
+  // Clean up file asynchronously to avoid blocking
+  rmAsync(context.filePath, { force: true }).catch((unlinkError) => {
     console.error('Failed to unlink file:', unlinkError);
-  }
+  });
 
   finish();
   reject();
@@ -333,7 +332,7 @@ async function executeDownload(
           id: downloadID,
           error: 'File stream error',
         });
-        fileStream.close();
+        fileStream.destroy();
         if (finish) finish();
         reject();
       });
@@ -377,10 +376,10 @@ async function executeDownload(
           console.log(
             'Server does not support range requests, restarting download'
           );
-          fileStream.close();
-          if (fs.existsSync(filePath)) {
-            fs.unlinkSync(filePath);
-          }
+          fileStream.destroy();
+          rmAsync(filePath, { force: true }).catch((e) =>
+            console.error('Failed to unlink file:', e)
+          );
           fileStream = setupFileStream(filePath, 0);
           const cl = response.headers['content-length'];
           totalSize = cl ? parseInt(cl as any, 10) : NaN;
@@ -403,10 +402,10 @@ async function executeDownload(
               'No Content-Range start provided with 206; restarting from beginning to avoid corruption'
             );
             response.data.destroy();
-            fileStream.close();
-            if (fs.existsSync(filePath)) {
-              fs.unlinkSync(filePath);
-            }
+            fileStream.destroy();
+            rmAsync(filePath, { force: true }).catch((e) =>
+              console.error('Failed to unlink file:', e)
+            );
             await executeDownloadAttempt(true);
             return;
           }
@@ -429,10 +428,10 @@ async function executeDownload(
                 `Server range starts beyond local size (${serverRangeStart} > ${existingSize}); restarting from beginning`
               );
               response.data.destroy();
-              fileStream.close();
-              if (fs.existsSync(filePath)) {
-                fs.unlinkSync(filePath);
-              }
+              fileStream.destroy();
+              rmAsync(filePath, { force: true }).catch((e) =>
+                console.error('Failed to unlink file:', e)
+              );
               await executeDownloadAttempt(true);
               return;
             }
@@ -491,10 +490,10 @@ async function executeDownload(
           // Clean up current attempt
           ipcMain.removeHandler(`ddl:${downloadID}:abort`);
           cleanupPauseResumeHandlers(downloadID);
-          fileStream.close();
-          if (fs.existsSync(filePath)) {
-            fs.unlinkSync(filePath);
-          }
+          fileStream.destroy();
+          rmAsync(filePath, { force: true }).catch((e) =>
+            console.error('Failed to unlink file:', e)
+          );
 
           // Retry from beginning
           try {
@@ -525,11 +524,11 @@ async function executeDownload(
             id: downloadID,
             error: 'File stream error',
           });
-          fileStream.close();
+          fileStream.destroy();
           console.error('file stream error', err);
-          if (fs.existsSync(filePath)) {
-            fs.unlinkSync(filePath);
-          }
+          rmAsync(filePath, { force: true }).catch((e) =>
+            console.error('Failed to unlink file:', e)
+          );
           sendNotification({
             message: 'Download failed for ' + filePath,
             id: downloadID,
@@ -590,14 +589,10 @@ function setupDownloadEventHandlersWithRetry(
       // Cleanup but keep state so we can retry this part
       cleanupDownload(context, false);
 
-      // Clean up the small file
-      try {
-        if (fs.existsSync(context.filePath)) {
-          fs.unlinkSync(context.filePath);
-        }
-      } catch (unlinkError) {
+      // Clean up the small file asynchronously
+      rmAsync(context.filePath, { force: true }).catch((unlinkError) => {
         console.error('Failed to unlink small file:', unlinkError);
-      }
+      });
 
       try {
         // Retry with the small file flag set to true to prevent infinite recursion
@@ -650,6 +645,7 @@ function setupDownloadEventHandlersWithRetry(
 
   // Handle download errors with retry logic
   context.response.data.on('error', async (error) => {
+    console.error('Download error:', error);
     if (context.isPaused) {
       console.log('Download was paused, ignoring error event');
       return;
@@ -660,14 +656,10 @@ function setupDownloadEventHandlersWithRetry(
       console.log('Resume download failed, retrying from beginning...');
       cleanupDownload(context, false);
 
-      // Clean up the partial file
-      try {
-        if (fs.existsSync(context.filePath)) {
-          fs.unlinkSync(context.filePath);
-        }
-      } catch (unlinkError) {
+      // Clean up the partial file asynchronously
+      rmAsync(context.filePath, { force: true }).catch((unlinkError) => {
         console.error('Failed to unlink file:', unlinkError);
-      }
+      });
 
       try {
         await retryFunction(true);
@@ -682,7 +674,7 @@ function setupDownloadEventHandlersWithRetry(
       }
     } else {
       // Attempt limited auto-resume using Range from the bytes already written
-      const MAX_RESUME_RETRIES = 3;
+      const MAX_RESUME_RETRIES = 10;
       context.resumeRetryCount = (context.resumeRetryCount || 0) + 1;
       if (context.resumeRetryCount <= MAX_RESUME_RETRIES) {
         console.log(
@@ -999,10 +991,12 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
           if (ctx) {
             console.log('Aborting active download context');
             ctx.response?.data?.destroy();
-            ctx.fileStream?.close();
-            if (fs.existsSync(ctx.filePath)) {
-              fs.unlinkSync(ctx.filePath);
-            }
+            try {
+              ctx.fileStream?.destroy();
+            } catch {}
+            rmAsync(ctx.filePath, { force: true }).catch((e) =>
+              console.error('Failed to unlink file:', e)
+            );
             cleanupDownload(ctx);
           }
 

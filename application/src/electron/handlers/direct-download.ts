@@ -10,8 +10,6 @@ import { Readable } from 'stream';
 import * as http from 'http';
 import * as https from 'https';
 
-// Types for better type safety
-// Unified interface for all downloads (single-part and multi-part)
 interface MultiPartDownloadState {
   downloadID: string;
   mainWindow: Electron.BrowserWindow;
@@ -60,6 +58,8 @@ interface DownloadContext {
   taskFinisher: () => void;
   // Number of times we've attempted to resume this specific part
   resumeRetryCount?: number;
+  // Number of times we've retried due to range request failures
+  rangeRetryCount?: number;
 }
 
 // Store download states for resume functionality (unified for single and multi-part)
@@ -304,6 +304,63 @@ function handlePause(context: DownloadContext): boolean {
 const keepAliveHttpAgent = new http.Agent({ keepAlive: true });
 const keepAliveHttpsAgent = new https.Agent({ keepAlive: true });
 
+// Helper function for DRY retry logic
+async function handleDownloadRetry(
+  downloadID: string,
+  mainWindow: Electron.BrowserWindow,
+  url: string,
+  filePath: string,
+  headersAdditional: Record<string, string>,
+  parts: number | undefined,
+  totalParts: number | undefined,
+  finish: (() => void) | undefined,
+  hasRetriedForSmallFile: boolean,
+  currentRetryCount: number,
+  maxRetries: number,
+  retryType: 'range' | 'network',
+  preserveFile: boolean = false
+): Promise<void> {
+  const nextRetryCount = currentRetryCount + 1;
+  console.log(`${retryType} retry attempt ${nextRetryCount}/${maxRetries}`);
+
+  if (nextRetryCount <= maxRetries) {
+    console.log(
+      `Retrying ${retryType} request${preserveFile ? ' without deleting file' : ''}...`
+    );
+
+    // Wait with exponential backoff
+    await new Promise((resolve) => setTimeout(resolve, 1000 * nextRetryCount));
+
+    // Recursive retry
+    await executeDownload(
+      downloadID,
+      mainWindow,
+      url,
+      filePath,
+      headersAdditional,
+      parts,
+      totalParts,
+      finish,
+      hasRetriedForSmallFile,
+      retryType === 'range' ? nextRetryCount : 0,
+      retryType === 'network' ? nextRetryCount : 0
+    );
+  } else {
+    console.log(`Max ${retryType} retries exceeded, failing download`);
+    sendIpcMessage(mainWindow, 'ddl:download-error', {
+      id: downloadID,
+      error: `Download failed after ${maxRetries} ${retryType} retries`,
+    });
+    sendNotification({
+      message: `Download failed for ${filePath}`,
+      id: downloadID,
+      type: 'error',
+    });
+    if (finish) finish();
+    throw new Error(`Max ${retryType} retries exceeded`);
+  }
+}
+
 async function executeDownload(
   downloadID: string,
   mainWindow: Electron.BrowserWindow,
@@ -313,7 +370,9 @@ async function executeDownload(
   parts?: number,
   totalParts?: number,
   finish?: () => void,
-  hasRetriedForSmallFile: boolean = false
+  hasRetriedForSmallFile: boolean = false,
+  rangeRetryCount: number = 0,
+  networkRetryCount: number = 0
 ): Promise<void> {
   return new Promise<void>(async (resolve, reject) => {
     const executeDownloadAttempt = async (isRetry: boolean = false) => {
@@ -363,9 +422,6 @@ async function executeDownload(
           maxRedirects: 5,
         });
 
-        // Note: Global abort handler is registered at the queue level
-        // No need for a separate abort handler here since the global one handles all cases
-
         // Get file size and handle range request issues
         let totalSize = getFileSizeFromResponse(response, startByte);
 
@@ -373,19 +429,60 @@ async function executeDownload(
         let actualStartByte = existingSize;
         let actualCurrentBytes = existingSize;
         if (startByte > 0 && response.status !== 206) {
-          console.log(
-            'Server does not support range requests, restarting download'
-          );
+          console.log('Server does not support range requests');
+          response.data.destroy();
           fileStream.destroy();
-          rmAsync(filePath, { force: true }).catch((e) =>
-            console.error('Failed to unlink file:', e)
-          );
-          fileStream = setupFileStream(filePath, 0);
-          const cl = response.headers['content-length'];
-          totalSize = cl ? parseInt(cl as any, 10) : NaN;
-          // Reset byte counters since we're starting fresh
-          actualStartByte = 0;
-          actualCurrentBytes = 0;
+
+          if (rangeRetryCount < 3) {
+            // Try preserving the file for the first 3 attempts
+            try {
+              await handleDownloadRetry(
+                downloadID,
+                mainWindow,
+                url,
+                filePath,
+                headersAdditional,
+                parts,
+                totalParts,
+                finish,
+                hasRetriedForSmallFile,
+                rangeRetryCount,
+                3,
+                'range',
+                true // preserve file
+              );
+              resolve();
+              return;
+            } catch (retryError) {
+              // If all range retries failed, delete file and restart
+              console.log(
+                'All range retries failed, deleting file and restarting'
+              );
+              rmAsync(filePath, { force: true }).catch((e) =>
+                console.error('Failed to unlink file:', e)
+              );
+              fileStream = setupFileStream(filePath, 0);
+              const cl = response.headers['content-length'];
+              totalSize = cl ? parseInt(cl as any, 10) : NaN;
+              // Reset byte counters since we're starting fresh
+              actualStartByte = 0;
+              actualCurrentBytes = 0;
+            }
+          } else {
+            // Already exceeded range retries, delete file and restart
+            console.log(
+              'Range retries already exceeded, deleting file and restarting'
+            );
+            rmAsync(filePath, { force: true }).catch((e) =>
+              console.error('Failed to unlink file:', e)
+            );
+            fileStream = setupFileStream(filePath, 0);
+            const cl = response.headers['content-length'];
+            totalSize = cl ? parseInt(cl as any, 10) : NaN;
+            // Reset byte counters since we're starting fresh
+            actualStartByte = 0;
+            actualCurrentBytes = 0;
+          }
         } else if (startByte > 0 && response.status === 206) {
           // Validate that the server's Content-Range start matches our file size
           const cr = response.headers['content-range'] as string | undefined;
@@ -458,6 +555,7 @@ async function executeDownload(
           headersAdditional,
           taskFinisher: finish || (() => {}),
           resumeRetryCount: 0,
+          rangeRetryCount: rangeRetryCount,
         };
 
         // Setup progress tracking
@@ -484,58 +582,39 @@ async function executeDownload(
         // Handle axios/network errors with retry logic
         console.error(err);
 
-        // If this was a resume attempt and not already a retry, try again from beginning
-        if (startByte > 0 && !isRetry) {
-          console.log('Resume attempt failed, retrying from beginning...');
-          // Clean up current attempt
-          ipcMain.removeHandler(`ddl:${downloadID}:abort`);
-          cleanupPauseResumeHandlers(downloadID);
-          fileStream.destroy();
-          rmAsync(filePath, { force: true }).catch((e) =>
-            console.error('Failed to unlink file:', e)
-          );
+        // Network error retry logic with up to 10 attempts
+        console.log('Network/axios error occurred');
+        // Clean up current attempt
+        ipcMain.removeHandler(`ddl:${downloadID}:abort`);
+        cleanupPauseResumeHandlers(downloadID);
+        fileStream.destroy();
 
-          // Retry from beginning
-          try {
-            await executeDownloadAttempt(true);
-            // Success - resolve will be called by the retry
-            return;
-          } catch (retryErr) {
-            // If retry also fails, give up
-            console.error('Retry also failed:', retryErr);
-            sendIpcMessage(mainWindow, 'ddl:download-error', {
-              id: downloadID,
-              error: 'Download failed after retry',
-            });
-            sendNotification({
-              message: 'Download failed for ' + filePath,
-              id: downloadID,
-              type: 'error',
-            });
-            if (finish) finish();
-            reject();
-            return;
-          }
-        } else {
-          // This was already a retry or not a resume attempt, give up
-          ipcMain.removeHandler(`ddl:${downloadID}:abort`);
-          cleanupPauseResumeHandlers(downloadID);
-          sendIpcMessage(mainWindow, 'ddl:download-error', {
-            id: downloadID,
-            error: 'File stream error',
-          });
-          fileStream.destroy();
-          console.error('file stream error', err);
+        try {
+          await handleDownloadRetry(
+            downloadID,
+            mainWindow,
+            url,
+            filePath,
+            headersAdditional,
+            parts,
+            totalParts,
+            finish,
+            hasRetriedForSmallFile,
+            networkRetryCount,
+            10, // Max 10 network retries
+            'network',
+            false // don't preserve file for network errors
+          );
+          resolve();
+          return;
+        } catch (retryError) {
+          // All network retries failed
+          console.error('All network retries failed:', retryError);
           rmAsync(filePath, { force: true }).catch((e) =>
             console.error('Failed to unlink file:', e)
           );
-          sendNotification({
-            message: 'Download failed for ' + filePath,
-            id: downloadID,
-            type: 'error',
-          });
-          if (finish) finish();
-          reject(err);
+          reject();
+          return;
         }
       }
     };
@@ -606,7 +685,9 @@ function setupDownloadEventHandlersWithRetry(
           context.parts,
           context.totalParts,
           undefined, // Don't pass finish to retry
-          true // hasRetriedForSmallFile = true
+          true, // hasRetriedForSmallFile = true
+          context.rangeRetryCount || 0, // preserve range retry count
+          0 // reset network retry count for small file retry
         );
         resolve(); // Resolve the original promise
         return; // Exit early, retry completed successfully
@@ -816,7 +897,10 @@ async function executeUnifiedDownload(
       arg.headers || {},
       part,
       totalParts,
-      undefined // Don't pass finish() here to avoid double-calling
+      undefined, // Don't pass finish() here to avoid double-calling
+      false, // hasRetriedForSmallFile
+      0, // rangeRetryCount - start fresh for each part
+      0 // networkRetryCount - start fresh for each part
     );
 
     console.log(`Completed part ${part} of ${totalParts}`);
@@ -1073,7 +1157,10 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
               arg.headers || {},
               parts,
               totalParts,
-              undefined // Don't pass finish() here to avoid double-calling
+              undefined, // Don't pass finish() here to avoid double-calling
+              false, // hasRetriedForSmallFile
+              0, // rangeRetryCount
+              0 // networkRetryCount
             );
 
             console.log(`Completed part ${parts} of ${totalParts}`);

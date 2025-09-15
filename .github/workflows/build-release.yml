@@ -7,6 +7,9 @@ on:
     tags:
       - v*
 
+permissions:
+  contents: write
+
 jobs:
   release:
     permissions:
@@ -25,59 +28,77 @@ jobs:
       startsWith(github.event.head_commit.message, 'feat(')
     runs-on: ubuntu-latest
     outputs:
-      upload_url: ${{ steps.create_release.outputs.upload_url }}
+      release_id: ${{ steps.create_release.outputs.id }}
     steps:
+      - name: Check out Git repository
+        uses: actions/checkout@v4
+
       - name: Extract commit message body
         id: commit_body
         run: |
-          COMMIT_MESSAGE='${{ github.event.head_commit.message }}'
-          # Extract everything after the first newline
-          COMMIT_BODY=$(echo "$COMMIT_MESSAGE" | tail -n +2)
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            # For tags, get the tag annotation message
+            TAG_MESSAGE=$(git tag -l --format='%(contents)' "${{ github.ref_name }}")
+            if [[ -n "$TAG_MESSAGE" ]]; then
+              COMMIT_BODY="$TAG_MESSAGE"
+            else
+              # Fallback to commit message if tag has no annotation
+              COMMIT_MESSAGE='${{ github.event.head_commit.message }}'
+              COMMIT_BODY=$(echo "$COMMIT_MESSAGE" | tail -n +2)
+            fi
+          else
+            # For regular commits, use commit message
+            COMMIT_MESSAGE='${{ github.event.head_commit.message }}'
+            # Extract everything after the first newline
+            COMMIT_BODY=$(echo "$COMMIT_MESSAGE" | tail -n +2)
+          fi
           echo "body<<EOF" >> $GITHUB_OUTPUT
           echo "$COMMIT_BODY" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
       - name: Create Release
         id: create_release
-        uses: actions/create-release@v1
+        uses: softprops/action-gh-release@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || format('dev-{0}', github.sha) }}
-          release_name: ${{ github.ref_name }} - Tagline here!
+          name: ${{ github.ref_name }} - Tagline here!
           draft: true
           body: |
             ${{
               startsWith(github.ref, 'refs/tags/v')
                 && format(
                   '# Release {0}
+            {1}
+            **Full Changelog:** https://github.com/Nat3z/OpenGameInstaller/commits/{0}
+            # How To Install
 
-                  {1}
+            For the simplest installation, download the OpenGameInstaller-Setup.exe file and run it.
 
-                  # How To Install
-                  For the simplest installation, download the OpenGameInstaller-Setup.exe file and run it. **If you''re on Steam Deck, download the OpenGameInstaller-Setup.AppImage file.** It includes an auto-updater to keep OpenGameInstaller up-to-date.
+            **If you''re on Steam Deck, download the OpenGameInstaller-Setup.AppImage file.**
 
-                  **Full Changelog:** https://github.com/Nat3z/OpenGameInstaller/compare/{2}...{3}
+            It includes an auto-updater to keep OpenGameInstaller up-to-date.
 
-                  ### Release Details
-                  Setup Version: 1.3.1
-                  Application Version: {0}',
+            ### Release Details
+
+            Setup Version: {2}
+            Application Version: {0}',
                   github.ref_name,
                   steps.commit_body.outputs.body,
-                  github.event.before,
-                  github.ref_name
+                  '1.3.1'
                 )
               || steps.commit_body.outputs.body
             }}
           prerelease: false
 
-      - name: Output Release URL File
-        run: echo "${{ steps.create_release.outputs.upload_url }}" > release_url.txt
-      - name: Save Release URL File for publish
+      - name: Output Release ID
+        run: echo "${{ steps.create_release.outputs.id }}" > release_id.txt
+      - name: Save Release ID for publish
         uses: actions/upload-artifact@v4
         with:
-          name: release_url
-          path: release_url.txt
+          name: release_id
+          path: release_id.txt
   build:
     permissions:
       contents: write
@@ -109,46 +130,24 @@ jobs:
         run: |
           Compress-Archive -Path application/dist/win-unpacked/* -Destination application/dist/OpenGameInstaller-Portable.zip
 
-      - name: Upload Release Portable Windows
+      - name: Upload Windows Assets
         if: matrix.os == 'windows-latest'
-        uses: actions/upload-release-asset@v1
+        uses: softprops/action-gh-release@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          upload_url: ${{ needs.release.outputs.upload_url }}
-          asset_path: application/dist/OpenGameInstaller-Portable.zip
-          asset_name: OpenGameInstaller-Portable.zip
-          asset_content_type: application/zip
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || format('dev-{0}', github.sha) }}
+          files: |
+            application/dist/OpenGameInstaller-Portable.zip
+            updater/dist/OpenGameInstaller-Setup.exe
 
-      - name: Upload Setup Windows
-        if: matrix.os == 'windows-latest'
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ needs.release.outputs.upload_url }}
-          asset_path: updater/dist/OpenGameInstaller-Setup.exe
-          asset_name: OpenGameInstaller-Setup.exe
-          asset_content_type: application/octet-stream
-
-      - name: Upload Setup Linux
+      - name: Upload Linux Assets
         if: matrix.os == 'ubuntu-latest'
-        uses: actions/upload-release-asset@v1
+        uses: softprops/action-gh-release@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          upload_url: ${{ needs.release.outputs.upload_url }}
-          asset_path: updater/dist/OpenGameInstaller-Setup.AppImage
-          asset_name: OpenGameInstaller-Setup.AppImage
-          asset_content_type: application/octet-stream
-
-      - name: Upload Release Linux
-        if: matrix.os == 'ubuntu-latest'
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ needs.release.outputs.upload_url }}
-          asset_path: application/dist/OpenGameInstaller-Portable.AppImage
-          asset_name: OpenGameInstaller-linux-pt.AppImage
-          asset_content_type: application/octet-stream
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || format('dev-{0}', github.sha) }}
+          files: |
+            updater/dist/OpenGameInstaller-Setup.AppImage
+            application/dist/OpenGameInstaller-linux-pt.AppImage

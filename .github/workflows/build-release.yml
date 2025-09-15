@@ -13,6 +13,7 @@ jobs:
       contents: write
     name: Create Github Release
     if: >
+      startsWith(github.ref, 'refs/tags/v') ||
       startsWith(github.event.head_commit.message, 'major(') ||
       startsWith(github.event.head_commit.message, 'hotfix(') ||
       startsWith(github.event.head_commit.message, 'chore(') ||

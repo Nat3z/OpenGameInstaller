@@ -63,14 +63,13 @@ jobs:
                   # How To Install
                   For the simplest installation, download the OpenGameInstaller-Setup.exe file and run it. **If you''re on Steam Deck, download the OpenGameInstaller-Setup.AppImage file.** It includes an auto-updater to keep OpenGameInstaller up-to-date.
 
-                  **Full Changelog:** https://github.com/Nat3z/OpenGameInstaller/compare/{2}...{3}
+                  **Full Changelog:** https://github.com/Nat3z/OpenGameInstaller/commits/{0}
 
                   ### Release Details
                   Setup Version: 1.3.1
                   Application Version: {0}',
                   github.ref_name,
                   steps.commit_body.outputs.body,
-                  github.event.before,
                   github.ref_name
                 )
               || steps.commit_body.outputs.body

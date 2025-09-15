@@ -28,7 +28,7 @@ jobs:
       startsWith(github.event.head_commit.message, 'feat(')
     runs-on: ubuntu-latest
     outputs:
-      upload_url: ${{ steps.create_release.outputs.upload_url }}
+      release_id: ${{ steps.create_release.outputs.id }}
     steps:
       - name: Check out Git repository
         uses: actions/checkout@v4
@@ -45,12 +45,12 @@ jobs:
 
       - name: Create Release
         id: create_release
-        uses: actions/create-release@v1
+        uses: softprops/action-gh-release@v2
         env:
-          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || format('dev-{0}', github.sha) }}
-          release_name: ${{ github.ref_name }} - Tagline here!
+          name: ${{ github.ref_name }} - Tagline here!
           draft: true
           body: |
             ${{
@@ -76,13 +76,13 @@ jobs:
             }}
           prerelease: false
 
-      - name: Output Release URL File
-        run: echo "${{ steps.create_release.outputs.upload_url }}" > release_url.txt
-      - name: Save Release URL File for publish
+      - name: Output Release ID
+        run: echo "${{ steps.create_release.outputs.id }}" > release_id.txt
+      - name: Save Release ID for publish
         uses: actions/upload-artifact@v4
         with:
-          name: release_url
-          path: release_url.txt
+          name: release_id
+          path: release_id.txt
   build:
     permissions:
       contents: write
@@ -114,46 +114,24 @@ jobs:
         run: |
           Compress-Archive -Path application/dist/win-unpacked/* -Destination application/dist/OpenGameInstaller-Portable.zip
 
-      - name: Upload Release Portable Windows
+      - name: Upload Windows Assets
         if: matrix.os == 'windows-latest'
-        uses: actions/upload-release-asset@v1
+        uses: softprops/action-gh-release@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          upload_url: ${{ needs.release.outputs.upload_url }}
-          asset_path: application/dist/OpenGameInstaller-Portable.zip
-          asset_name: OpenGameInstaller-Portable.zip
-          asset_content_type: application/zip
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || format('dev-{0}', github.sha) }}
+          files: |
+            application/dist/OpenGameInstaller-Portable.zip
+            updater/dist/OpenGameInstaller-Setup.exe
 
-      - name: Upload Setup Windows
-        if: matrix.os == 'windows-latest'
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ needs.release.outputs.upload_url }}
-          asset_path: updater/dist/OpenGameInstaller-Setup.exe
-          asset_name: OpenGameInstaller-Setup.exe
-          asset_content_type: application/octet-stream
-
-      - name: Upload Setup Linux
+      - name: Upload Linux Assets
         if: matrix.os == 'ubuntu-latest'
-        uses: actions/upload-release-asset@v1
+        uses: softprops/action-gh-release@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          upload_url: ${{ needs.release.outputs.upload_url }}
-          asset_path: updater/dist/OpenGameInstaller-Setup.AppImage
-          asset_name: OpenGameInstaller-Setup.AppImage
-          asset_content_type: application/octet-stream
-
-      - name: Upload Release Linux
-        if: matrix.os == 'ubuntu-latest'
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ needs.release.outputs.upload_url }}
-          asset_path: application/dist/OpenGameInstaller-Portable.AppImage
-          asset_name: OpenGameInstaller-linux-pt.AppImage
-          asset_content_type: application/octet-stream
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || format('dev-{0}', github.sha) }}
+          files: |
+            updater/dist/OpenGameInstaller-Setup.AppImage
+            application/dist/OpenGameInstaller-Portable.AppImage

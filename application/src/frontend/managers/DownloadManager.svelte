@@ -271,6 +271,8 @@
       downloadSpeed,
       fileSize,
       queuePosition,
+      part,
+      totalParts,
     } = event.detail;
     if (queuePosition > 1) {
       console.log('Queue Position Update: ', downloadID, queuePosition);
@@ -281,6 +283,8 @@
       downloadSpeed,
       downloadSize: fileSize,
       queuePosition,
+      part,
+      totalParts,
     });
   }
 

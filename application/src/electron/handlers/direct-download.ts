@@ -79,6 +79,37 @@ function sendIpcMessage(
   }
 }
 
+// Helper function to clean up all files associated with a multi-part download
+async function cleanupAllDownloadFiles(downloadID: string): Promise<void> {
+  const downloadState = downloadStates.get(downloadID);
+  if (!downloadState) {
+    console.log('No download state found for cleanup of ID:', downloadID);
+    return;
+  }
+
+  console.log(
+    `Cleaning up all files for download ${downloadID} (${downloadState.args.length} parts)`
+  );
+
+  // Clean up all files in the download batch
+  const cleanupPromises = downloadState.args.map(async (arg, index) => {
+    try {
+      await rmAsync(arg.path, { force: true });
+      console.log(
+        `Cleaned up file ${index + 1}/${downloadState.args.length}: ${arg.path}`
+      );
+    } catch (error) {
+      console.error(`Failed to cleanup file ${arg.path}:`, error);
+    }
+  });
+
+  // Wait for all cleanup operations to complete
+  await Promise.all(cleanupPromises);
+  console.log(
+    `Completed cleanup of all ${downloadState.args.length} files for download ${downloadID}`
+  );
+}
+
 // Helper function to send progress updates
 function sendProgressUpdate(
   mainWindow: Electron.BrowserWindow,
@@ -616,7 +647,7 @@ async function executeDownload(
             finish,
             hasRetriedForSmallFile,
             networkRetryCount,
-            10, // Max 10 network retries
+            5, // Max 5 network retries
             'network',
             false // don't preserve file for network errors
           );
@@ -876,8 +907,12 @@ async function handleUnifiedResume(
           downloadState.taskFinisher();
         }
       })
-      .catch((error) => {
+      .catch(async (error) => {
         console.error('Resumed download failed:', error);
+
+        // Clean up all files when resumed download fails
+        await cleanupAllDownloadFiles(downloadState.downloadID);
+
         sendIpcMessage(downloadState.mainWindow, 'ddl:download-error', {
           id: downloadState.downloadID,
           error: 'Resumed download failed',
@@ -923,11 +958,12 @@ async function executeUnifiedDownload(
   const { downloadID, mainWindow, args, currentPart, totalParts } =
     downloadState;
 
-  console.log(`Executing download from part ${currentPart} to ${totalParts}`);
+  const startingPart = currentPart || 1;
+  console.log(`Executing download from part ${startingPart} to ${totalParts}`);
 
   // Start from the current part and continue through all remaining parts
-  for (let part = currentPart || 1; part <= totalParts; part++) {
-    const arg = args[part - 1];
+  for (let part = startingPart; part <= totalParts; part++) {
+    const arg = args[part - 1]; // Convert to 0-based index
     console.log(`Starting part ${part} of ${totalParts}`);
 
     // Update current part in state
@@ -1053,29 +1089,39 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
     // args: array of { link: string; path: string }
     async (
       _,
-      args: { link: string; path: string; headers?: Record<string, string> }[]
+      args: { link: string; path: string; headers?: Record<string, string> }[],
+      part?: number
     ) => {
       // Generate a unique ID for this download batch
       const downloadID = Math.random().toString(36).substring(7);
 
-      // Store unified download state for pause/resume functionality (works for both single and multi-part)
+      // If resuming from a specific part, mark all previous parts as completed
+      const completedParts = new Set<number>();
+      const startingPart = part || 1;
+
+      // Mark all parts before the starting part as completed
+      for (let i = 1; i < startingPart; i++) {
+        completedParts.add(i);
+      }
+
       downloadStates.set(downloadID, {
         downloadID,
         mainWindow,
         args,
-        currentPart: 0,
+        currentPart: startingPart,
         totalParts: args.length,
         headersAdditional: {},
         taskFinisher: () => {},
         isPaused: false,
-        completedParts: new Set(),
+        completedParts,
       });
       console.log(
         'Created download state for ID:',
         downloadID,
         'with',
         args.length,
-        'parts'
+        'parts, starting from part',
+        startingPart
       );
 
       // Enqueue the download in the global DOWNLOAD_QUEUE
@@ -1101,12 +1147,14 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
           });
         });
         // Register global abort handler that works at any stage
-        ipcMain.handleOnce(`ddl:${downloadID}:abort`, () => {
+        ipcMain.handleOnce(`ddl:${downloadID}:abort`, async () => {
           console.log('Global abort handler triggered');
 
           // If it's still in the queue, remove it
           if (DOWNLOAD_QUEUE.remove(downloadID)) {
             console.log('Removed from queue during abort');
+            // Clean up all files even if still in queue (in case of partial downloads)
+            await cleanupAllDownloadFiles(downloadID);
             sendIpcMessage(mainWindow, 'ddl:download-cancelled', {
               id: downloadID,
             });
@@ -1115,7 +1163,7 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
             return;
           }
 
-          // If it's already running, look up the active context
+          // If it's already running, look up the active context and stop it
           const ctx = downloadContexts.get(downloadID);
           if (ctx) {
             console.log('Aborting active download context');
@@ -1123,13 +1171,13 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
             try {
               ctx.fileStream?.destroy();
             } catch {}
-            rmAsync(ctx.filePath, { force: true }).catch((e) =>
-              console.error('Failed to unlink file:', e)
-            );
             cleanupDownload(ctx);
           }
 
-          // Clean up multi-part download state if it exists
+          // Clean up ALL files associated with this multi-part download
+          await cleanupAllDownloadFiles(downloadID);
+
+          // Clean up multi-part download state
           downloadStates.delete(downloadID);
           console.log('Deleted download state for ID:', downloadID);
 
@@ -1150,17 +1198,23 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
         // Wait for our turn in the queue, reporting position to frontend
         const result = await wait((queuePosition) => {
           console.log(
-            `[${downloadID}] Updated Queue position: ${queuePosition}`
+            `[${downloadID}] Updated Queue position: ${queuePosition}${
+              startingPart > 1 ? ` (resuming from part ${startingPart})` : ''
+            }`
           );
           sendIpcMessage(mainWindow, 'ddl:download-progress', {
             id: downloadID,
             queuePosition,
+            part: downloadState?.currentPart,
+            totalParts: args.length,
           });
         });
 
         ipcMain.removeHandler(`queue:${downloadID}:cancel`);
 
         if (result === 'cancelled') {
+          // Clean up all files for cancelled downloads
+          await cleanupAllDownloadFiles(downloadID);
           sendIpcMessage(mainWindow, 'ddl:download-cancelled', {
             id: downloadID,
           });
@@ -1172,20 +1226,26 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
         }
 
         try {
-          let parts = 0;
           const totalParts = args.length;
+          const downloadState = downloadStates.get(downloadID);
+          const startingPart = downloadState?.currentPart || 1;
 
-          for (const arg of args) {
-            parts++;
+          // Start from the specified part (for resume functionality)
+          for (let parts = startingPart; parts <= totalParts; parts++) {
+            const arg = args[parts - 1]; // Convert to 0-based index
             console.log(`Starting part ${parts} of ${totalParts}`);
 
             // Update download state with current part
-            const downloadState = downloadStates.get(downloadID);
             if (downloadState) {
               downloadState.currentPart = parts;
               console.log(
                 `Updated download state: part ${parts}/${downloadState.totalParts} for ID: ${downloadID}`
               );
+              sendIpcMessage(mainWindow, 'ddl:download-progress', {
+                id: downloadID,
+                part: parts,
+                totalParts: totalParts,
+              });
             } else {
               console.error(
                 `CRITICAL: No download state found for part ${parts} of download ${downloadID}`
@@ -1213,6 +1273,11 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
             // Mark this part as completed in download state
             if (downloadState) {
               downloadState.completedParts.add(parts);
+              sendIpcMessage(mainWindow, 'ddl:download-progress', {
+                id: downloadID,
+                part: parts,
+                totalParts: totalParts,
+              });
             }
           }
 
@@ -1232,6 +1297,8 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
             downloadSpeed: 0,
             fileSize: 0,
             queuePosition: 1,
+            part: totalParts,
+            totalParts: totalParts,
           });
 
           // Now call finish() since all parts are done
@@ -1241,6 +1308,8 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
           resolve();
         } catch (error) {
           console.error('Error during multi-part download:', error);
+          // Clean up all files when download fails
+          await cleanupAllDownloadFiles(downloadID);
           finish();
           // Clean up the global abort handler
           ipcMain.removeHandler(`ddl:${downloadID}:abort`);

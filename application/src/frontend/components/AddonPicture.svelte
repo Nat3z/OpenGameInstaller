@@ -24,7 +24,8 @@
     />
   {:else}
     <div
-      class="w-full h-full bg-accent-light p-4 flex items-center justify-center text-accent-dark uppercase text-2xl {className}"
+      class="{className} bg-accent-light flex items-center rounded-lg justify-center text-accent-dark uppercase"
+      style="font-size: max(1.4vw, 1.4vh, 1.4em, 1.4rem); font-weight: 400;"
     >
       {addonId.slice(0, 2)}
     </div>

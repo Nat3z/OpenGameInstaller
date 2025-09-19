@@ -5,7 +5,10 @@ import {
 } from '../../store';
 import { getDownloadItem, updateDownloadStatus } from './lifecycle';
 import { restartDownload } from '../downloads/restart';
-import { deletePersistedDownload } from '../downloads/persistence';
+import {
+  deleteDownloadedItems,
+  deletePersistedDownload,
+} from '../downloads/persistence';
 
 interface PausedDownloadState {
   id: string;
@@ -250,6 +253,7 @@ export function cancelPausedDownload(downloadId: string) {
     if (!pausedState) {
       // Handle persisted paused downloads after app restart (no in-memory state)
       const item = getDownloadItem(downloadId);
+      deleteDownloadedItems(downloadId);
       deletePersistedDownload(downloadId);
       currentDownloads.update((downloads) => {
         return downloads.filter((d) => d.id !== downloadId);
@@ -271,6 +275,7 @@ export function cancelPausedDownload(downloadId: string) {
     });
 
     window.electronAPI.ddl.abortDownload(downloadId);
+    deleteDownloadedItems(downloadId);
     deletePersistedDownload(downloadId);
 
     createNotification({

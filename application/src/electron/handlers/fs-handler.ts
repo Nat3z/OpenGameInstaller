@@ -4,6 +4,7 @@ import { join } from 'path';
 import * as fs from 'fs';
 import { exec, spawn } from 'child_process';
 import { sendIPCMessage } from '../main.js';
+import * as fsAsync from 'fs/promises';
 
 export default function handler() {
   ipcMain.on('fs:read', (event, arg) => {
@@ -87,16 +88,30 @@ export default function handler() {
     return files;
   });
 
-  ipcMain.on('fs:delete', (event, arg) => {
+  ipcMain.handle('fs:delete', async (_, arg) => {
     if (String(arg).startsWith('./')) {
       arg = join(__dirname, arg);
     }
     try {
-      fs.unlinkSync(arg);
+      if (String(arg).startsWith('./')) {
+        arg = join(__dirname, arg);
+      }
+      await fsAsync.rm(arg);
+      return 'success';
+    } catch (err) {
+      return err;
+    }
+  });
+  ipcMain.on('fs:delete:sync', async (event, arg) => {
+    try {
+      if (String(arg).startsWith('./')) {
+        arg = join(__dirname, arg);
+      }
+      await fsAsync.rm(arg);
       event.returnValue = 'success';
     } catch (err) {
-      event.returnValue = err;
       console.error(err);
+      event.returnValue = err;
     }
   });
   ipcMain.handle('fs:extract-rar', async (_, arg) => {

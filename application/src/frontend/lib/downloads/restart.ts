@@ -82,7 +82,9 @@ async function restartDirectDownload(
   }
 
   console.log('Restarting direct download with files:', files);
-  return await window.electronAPI.ddl.download(files);
+  console.log('Download part:', download.part);
+  console.log('Download total parts:', download.totalParts);
+  return await window.electronAPI.ddl.download(files, download.part);
 }
 
 async function restartTorrentDownload(

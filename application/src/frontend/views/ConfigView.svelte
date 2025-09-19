@@ -247,7 +247,7 @@
                     <div class="addon-icon-container relative">
                       <AddonPicture
                         addonId={addon.id}
-                        class="addon-icon rounded-lg"
+                        class="w-16 h-16 rounded-lg"
                       />
                       {#if $addonUpdates
                         .map((update) => update.toLowerCase())

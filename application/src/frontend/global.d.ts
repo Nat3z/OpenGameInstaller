@@ -16,6 +16,7 @@ interface Window {
       mkdir: (path: string) => void;
       exists: (path: string) => boolean;
       delete: (path: string) => void;
+      deleteAsync: (path: string) => Promise<void>;
       showFileLoc: (path: string) => void;
       unrar: (data: {
         outputDir: string;
@@ -76,7 +77,8 @@ interface Window {
           link: string;
           path: string;
           headers?: Record<string, string>;
-        }[]
+        }[],
+        part?: number
       ) => Promise<string>;
       abortDownload: (downloadID: string) => Promise<void>;
       pauseDownload: (downloadID: string) => Promise<void>;

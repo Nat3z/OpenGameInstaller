@@ -39,9 +39,9 @@
   let queryingSources = $state(false);
   let selectedResult: SearchResultWithAddon | undefined = $state();
   let isOnline = $state(true);
-  let collapsedAddons: Set<string> = $state(new Set());
   let loadingAddons: Set<string> = $state(new Set());
   let emptyAddons: Set<string> = $state(new Set());
+  let collapsedAddons: Set<string> = $state(new Set());
   let originalFilePath = $derived.by(() => {
     try {
       if (alreadyOwns) {
@@ -536,23 +536,24 @@
                   )}
                   {#if filteredResults.length > 0}
                     <div
-                      class="border border-accent-light rounded-lg mb-4"
+                      class="mb-4"
                       in:fly={{ y: 30, duration: 400, delay: 100 * groupIndex }}
                     >
+                      <!-- Addon Section Header -->
                       <button
-                        class="w-full flex items-center justify-between p-4 bg-transparent border-none cursor-pointer hover:bg-accent-light/50 rounded-lg transition-colors duration-200"
+                        class="w-full flex items-center justify-between p-3 bg-accent-lighter hover:bg-accent-light/80 border-none cursor-pointer rounded-lg transition-colors duration-200 mb-2"
                         onclick={() => toggleAddonCollapse(addonGroup.addonId)}
                       >
                         <div class="flex items-center gap-3">
                           <AddonPicture
                             addonId={addonGroup.addonId}
-                            class="w-12 h-12 rounded-lg"
+                            class="w-10 h-10 rounded-lg"
                           />
                           <div class="text-left">
-                            <h3 class="font-medium text-gray-800">
+                            <h3 class="font-medium text-gray-800 text-sm">
                               {addonGroup.addonName}
                             </h3>
-                            <span class="text-sm text-gray-600"
+                            <span class="text-xs text-gray-600"
                               >{filteredResults.length} result{filteredResults.length ===
                               1
                                 ? ''
@@ -561,7 +562,7 @@
                           </div>
                         </div>
                         <svg
-                          class="w-5 h-5 text-gray-600 transition-transform duration-200"
+                          class="w-4 h-4 text-gray-600 transition-transform duration-200"
                           class:rotate-180={!collapsedAddons.has(
                             addonGroup.addonId
                           )}
@@ -578,11 +579,9 @@
                         </svg>
                       </button>
 
+                      <!-- Results with left padding -->
                       {#if !collapsedAddons.has(addonGroup.addonId)}
-                        <div
-                          class="px-4 pt-2 pb-4"
-                          transition:slide={{ duration: 300 }}
-                        >
+                        <div class="pl-4" transition:slide={{ duration: 300 }}>
                           {#each filteredResults as result, index}
                             <div
                               class="bg-accent-lighter rounded-lg p-3 mb-3 last:mb-0"

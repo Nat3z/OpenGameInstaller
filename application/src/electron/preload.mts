@@ -28,7 +28,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     },
     delete: (path: string) => {
       console.log('fs:delete called with path:', path);
-      return ipcRenderer.sendSync('fs:delete', path);
+      return ipcRenderer.sendSync('fs:delete:sync', path);
+    },
+    deleteAsync: (path: string) => {
+      console.log('fs:delete called with path:', path);
+      return ipcRenderer.invoke('fs:delete', path);
     },
     showFileLoc: (path: string) => {
       console.log('fs:showFileLoc called with path:', path);
@@ -107,8 +111,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
         link: string;
         path: string;
         headers?: Record<string, string>;
-      }[]
-    ) => ipcRenderer.invoke('ddl:download', downloads),
+      }[],
+      part?: number
+    ) =>
+      ipcRenderer.invoke(
+        'ddl:download',
+        downloads,
+        part === undefined ? 1 : part
+      ),
     abortDownload: (downloadID: string) =>
       ipcRenderer.invoke(`ddl:${downloadID}:abort`),
     pauseDownload: (downloadID: string) =>

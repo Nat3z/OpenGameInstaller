@@ -185,6 +185,24 @@ addon.on('search', ({ storefront, appID, for: searchFor }, event) => {
           t: 'Smalelr File',
         },
       },
+      {
+        name: 'Multi-Part Test',
+        downloadType: 'direct',
+        files: [
+          {
+            name: '100MB File',
+            downloadURL: 'https://ash-speed.hetzner.com/100MB.bin',
+          },
+          {
+            name: '1GB File',
+            downloadURL: 'https://ash-speed.hetzner.com/1GB.bin',
+          },
+          {
+            name: '10GB File',
+            downloadURL: 'https://ash-speed.hetzner.com/10GB.bin',
+          },
+        ],
+      },
     ]);
   });
 });

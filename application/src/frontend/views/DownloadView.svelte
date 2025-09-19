@@ -533,6 +533,11 @@
                       {:else}
                         {Math.floor(download.progress * 100)}%
                       {/if}
+                      {#if download.part && download.totalParts && download.totalParts > 1}
+                        <span class="text-accent-dark/70 ml-1">
+                          (Part {download.part}/{download.totalParts})
+                        </span>
+                      {/if}
                     </span>
                     {#if stats}
                       <span class="progress-eta">

@@ -63,7 +63,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || format('dev-{0}', github.sha) }}
-          name: ${{ github.ref_name }} - Tagline here!
+          name: ${{ startsWith(github.ref, 'refs/tags/v') && format('{0} - Tagline here!', github.ref_name) || github.event.head_commit.message }}
           draft: true
           body: |
             ${{

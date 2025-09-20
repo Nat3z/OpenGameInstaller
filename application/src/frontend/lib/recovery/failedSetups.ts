@@ -22,20 +22,33 @@ export async function loadFailedSetups() {
     }
 
     const files = await window.electronAPI.fs.getFilesInDir('./failed-setups');
-    const loadedSetups: FailedSetup[] = [];
+    const byDownloadId = new Map<string, FailedSetup>();
 
     files.forEach((file: string) => {
       if (file.endsWith('.json')) {
         try {
           const content = window.electronAPI.fs.read(`./failed-setups/${file}`);
-          const setupData = JSON.parse(content);
-          loadedSetups.push(setupData);
+          const setupData: FailedSetup = JSON.parse(content);
+          const key =
+            (setupData &&
+              setupData.downloadInfo &&
+              setupData.downloadInfo.id) ||
+            setupData.id;
+          if (!key) return;
+          const existing = byDownloadId.get(key);
+          if (
+            !existing ||
+            (setupData.timestamp ?? 0) > (existing.timestamp ?? 0)
+          ) {
+            byDownloadId.set(key, setupData);
+          }
         } catch (error) {
           console.error('Error loading failed setup file:', file, error);
         }
       }
     });
 
+    const loadedSetups = Array.from(byDownloadId.values());
     console.log('loadedSetups', loadedSetups);
     failedSetups.set(loadedSetups);
   } catch (error) {
@@ -69,7 +82,8 @@ export function saveFailedSetup(setupInfo: {
       window.electronAPI.fs.mkdir('./failed-setups');
     }
 
-    const failedSetupId = Math.random().toString(36).substring(7);
+    // Use a stable id keyed to the original download to avoid duplicates
+    const failedSetupId = setupInfo.downloadInfo.id;
     const failedSetupData: FailedSetup = {
       id: failedSetupId,
       timestamp: Date.now(),
@@ -83,6 +97,14 @@ export function saveFailedSetup(setupInfo: {
     );
 
     failedSetups.update((setups) => {
+      const index = setups.findIndex(
+        (s) => (s.downloadInfo && s.downloadInfo.id) === failedSetupId
+      );
+      if (index !== -1) {
+        const updated = setups.slice();
+        updated[index] = failedSetupData;
+        return updated;
+      }
       return [...setups, failedSetupData];
     });
     console.log('Saved failed setup info:', failedSetupId);
@@ -95,22 +117,32 @@ export async function retryFailedSetup(failedSetup: FailedSetup) {
   const updateRetry = (newSetup: FailedSetup, error: string) => {
     const updatedSetup = {
       ...newSetup,
-      retryCount: newSetup.retryCount + 1,
+      id: failedSetup.id,
+      retryCount: failedSetup.retryCount + 1,
       error: error as string,
     };
+    console.log('newSetup', newSetup);
+    console.log('failedSetup', failedSetup);
 
     window.electronAPI.fs.write(
-      `./failed-setups/${newSetup.id}.json`,
+      `./failed-setups/${failedSetup.id}.json`,
       JSON.stringify(updatedSetup, null, 2)
     );
 
     failedSetups.update((setups) =>
-      setups.map((setup) => (setup.id === newSetup.id ? updatedSetup : setup))
+      setups.map((setup) =>
+        setup.id === failedSetup.id ? updatedSetup : setup
+      )
     );
   };
 
   try {
     console.log('Retrying setup for:', failedSetup.downloadInfo.name);
+    // delete the failed setup file
+    window.electronAPI.fs.delete(`./failed-setups/${failedSetup.id}.json`);
+    failedSetups.update((setups) =>
+      setups.filter((setup) => setup.id !== failedSetup.id)
+    );
 
     const setupData = failedSetup.setupData;
     console.log('setupData', setupData);
@@ -224,10 +256,10 @@ export async function retryFailedSetup(failedSetup: FailedSetup) {
         type: 'error',
         message: `Failed to retry setup for ${failedSetup.downloadInfo.name}`,
       });
-      updateRetry(failedSetup, error as string);
+      // updateRetry(failedSetup, error as string);
     }
   } catch (error: unknown) {
-    console.error('Error retrying setup:', error);
+    console.error('Unknown error retrying setup:', error);
 
     createNotification({
       id: Math.random().toString(36).substring(7),

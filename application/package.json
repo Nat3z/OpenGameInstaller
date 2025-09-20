@@ -22,7 +22,7 @@
         "AppImage"
       ],
       "category": "Development",
-      "artifactName": "${productName}-Portable.${ext}"
+      "artifactName": "${productName}-linux-pt.${ext}"
     },
     "mac": {}
   },

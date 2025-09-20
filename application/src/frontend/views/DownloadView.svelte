@@ -770,11 +770,11 @@
                 <span class="error-time">
                   {new Date(failedSetup.timestamp).toLocaleDateString()}
                 </span>
-                <span class="retry-count">
+                <!-- <span class="retry-count">
                   {failedSetup.retryCount} retr{failedSetup.retryCount !== 1
                     ? 'ies'
                     : 'y'}
-                </span>
+                </span> -->
               </div>
             </div>
           </div>

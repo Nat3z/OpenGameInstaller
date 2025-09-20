@@ -204,31 +204,6 @@
         } catch (error) {
           console.log('Failed to extract ZIP file');
           console.error('Failed to process ZIP file: ', error);
-
-          // cancel the current download
-          updateDownloadStatus(downloadedItem.id, {
-            status: 'error',
-            error: 'Failed to process ZIP file',
-          });
-
-          saveFailedSetup({
-            downloadInfo: downloadedItem,
-            setupData: {
-              path: downloadedItem.downloadPath,
-              type: downloadedItem.downloadType as
-                | 'direct'
-                | 'torrent'
-                | 'magnet',
-              name: downloadedItem.name,
-              usedRealDebrid: downloadedItem.usedDebridService !== undefined,
-              appID: downloadedItem.appID,
-              multiPartFiles: downloadedItem.files || [],
-              storefront: downloadedItem.storefront,
-              manifest: downloadedItem.manifest,
-            },
-            error: 'Failed to process ZIP file',
-            should: 'call-unzip',
-          });
         }
       }
 
@@ -241,6 +216,24 @@
         updateDownloadStatus(downloadedItem.id, {
           status: 'error',
           error: 'Failed to extract ZIP file',
+        });
+        saveFailedSetup({
+          downloadInfo: downloadedItem,
+          setupData: {
+            path: downloadedItem.downloadPath,
+            type: downloadedItem.downloadType as
+              | 'direct'
+              | 'torrent'
+              | 'magnet',
+            name: downloadedItem.name,
+            usedRealDebrid: downloadedItem.usedDebridService !== undefined,
+            appID: downloadedItem.appID,
+            multiPartFiles: downloadedItem.files || [],
+            storefront: downloadedItem.storefront,
+            manifest: downloadedItem.manifest,
+          },
+          error: 'Failed to process ZIP file',
+          should: 'call-unzip',
         });
         throw new Error('Failed to extract ZIP file');
       }

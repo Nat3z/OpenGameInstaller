@@ -802,10 +802,6 @@ class OGIAddonWSListener {
             (screen, name, description) =>
               this.userInputAsked(screen, name, description, this.socket)
           );
-          if (this.eventEmitter.listenerCount('game-details') === 0) {
-            this.respondToMessage(message.id!!, [], librarySearchEvent);
-            break;
-          }
           this.eventEmitter.emit(
             'library-search',
             message.args,

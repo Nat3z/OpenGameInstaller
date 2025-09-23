@@ -144,7 +144,7 @@
             { consume: 'json' }
           )
             .then((response: BasicLibraryInfo[]) => {
-              console.log(response);
+              console.log(addon.id, response);
 
               // Add to flat results (for backward compatibility)
               searchResultsStore.update((value) => [...value, ...response]);

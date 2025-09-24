@@ -114,18 +114,39 @@
     }
   }
 
+  let activeQuery: string | null = $state(null);
+  let currentSearchController: AbortController | null = null;
+
   async function performSearch(query: string) {
     if (!$isOnline || !query.trim()) {
       showSearchResults = false;
       return;
     }
 
+    // Cancel any ongoing search
+    if (currentSearchController) {
+      currentSearchController.abort();
+    }
+
+    // Create new abort controller for this search
+    currentSearchController = new AbortController();
+    const signal = currentSearchController.signal;
+
     try {
+      activeQuery = query;
+
+      // Clear previous results and loading states immediately
+      searchResultsStore.set([]);
+      searchResultsByAddon.set([]);
+      loadingAddons = new Set();
+      emptyAddons = new Set();
+
       loadingResults.set(true);
       showSearchResults = true;
       addons = await fetchAddonsWithConfigure();
-      searchResultsStore.set([]);
-      searchResultsByAddon.set([]);
+
+      // Check if search was cancelled after fetching addons
+      if (signal.aborted || query !== activeQuery) return;
 
       // Reset loading states
       loadingAddons = new Set(addons.map((addon) => addon.id));
@@ -144,6 +165,9 @@
             { consume: 'json' }
           )
             .then((response: BasicLibraryInfo[]) => {
+              // Check if search was cancelled
+              if (signal.aborted || query !== activeQuery) return;
+
               console.log(addon.id, response);
 
               // Add to flat results (for backward compatibility)
@@ -169,11 +193,15 @@
                 emptyAddons = new Set(emptyAddons);
 
                 setTimeout(() => {
+                  // Check again if search was cancelled before updating UI
+                  if (signal.aborted || query !== activeQuery) return;
+
                   loadingAddons.delete(addon.id);
                   loadingAddons = new Set(loadingAddons);
 
                   // Clean up empty addon after another delay
                   setTimeout(() => {
+                    if (signal.aborted || query !== activeQuery) return;
                     emptyAddons.delete(addon.id);
                     emptyAddons = new Set(emptyAddons);
                   }, 300);
@@ -181,6 +209,9 @@
               }
             })
             .catch((error) => {
+              // Don't handle errors if the request was aborted (cancelled)
+              if (signal.aborted || query !== activeQuery) return;
+
               // Remove from loading set even on error
               loadingAddons.delete(addon.id);
               loadingAddons = new Set(loadingAddons);
@@ -188,11 +219,22 @@
             })
         );
       }
+
+      // Check if search was cancelled before awaiting promises
+      if (signal.aborted || query !== activeQuery) return;
+
       await Promise.allSettled(promises);
+
+      // Final check before updating loading state
+      if (signal.aborted || query !== activeQuery) return;
+
       loadingResults.set(false);
       // Ensure all addons are removed from loading state
       loadingAddons = new Set();
     } catch (ex) {
+      // Don't handle errors if the request was aborted (cancelled)
+      if (signal.aborted || query !== activeQuery) return;
+
       console.error(ex);
       createNotification({
         id: Math.random().toString(36).substring(7),
@@ -210,6 +252,12 @@
     const query = target.value;
     searchQuery.set(query);
 
+    // Cancel any ongoing search when input changes
+    if (currentSearchController) {
+      currentSearchController.abort();
+      currentSearchController = null;
+    }
+
     // Clear existing timeout
     if (searchTimeout) {
       clearTimeout(searchTimeout);
@@ -221,8 +269,14 @@
         performSearch(query);
       }, 500);
     } else {
+      // Clear all search-related state immediately when input is empty
       searchResultsStore.set([]);
+      searchResultsByAddon.set([]);
+      loadingAddons = new Set();
+      emptyAddons = new Set();
+      loadingResults.set(false);
       showSearchResults = false;
+      activeQuery = null;
     }
   }
 
@@ -349,6 +403,13 @@
 
   document.addEventListener('app:ask-root-password', () => {});
 
+  // Handle back navigation from StorePage
+  document.addEventListener('store:show-search-results', () => {
+    if ($searchQuery && $searchQuery.trim() && $searchResultsStore.length > 0) {
+      showSearchResults = true;
+    }
+  });
+
   // for migration:
   document.addEventListener('migration:event:steamgriddb-launch', () => {
     console.log('steamgriddb-launch');
@@ -394,8 +455,39 @@
       </div>
 
       <!-- Center - Search Bar -->
-      <div class="flex-1 max-w-2xl mx-8">
-        <div class="relative h-full">
+      <div class="flex flex-row items-center flex-auto max-w-2xl mx-8 gap-2">
+        {#if $currentStorePageOpened}
+          <button
+            class="header-button"
+            onclick={() => {
+              currentStorePageOpened.set(undefined);
+              currentStorePageOpenedStorefront.set(undefined);
+              if (
+                $searchQuery &&
+                $searchQuery.trim() &&
+                $searchResultsStore.length > 0
+              ) {
+                showSearchResults = true;
+                // Clear the view tracking since we're showing search results
+                viewOpenedWhenChanged.set(undefined);
+              }
+            }}
+            aria-label="Back to search results"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              height="24"
+              viewBox="0 0 24 24"
+              fill="currentColor"
+              class="fill-accent-dark"
+              width="24"
+              ><path d="M0 0h24v24H0V0z" fill="none" opacity=".87" /><path
+                d="M16.62 2.99c-.49-.49-1.28-.49-1.77 0L6.54 11.3c-.39.39-.39 1.02 0 1.41l8.31 8.31c.49.49 1.28.49 1.77 0s.49-1.28 0-1.77L9.38 12l7.25-7.25c.48-.48.48-1.28-.01-1.76z"
+              /></svg
+            >
+          </button>
+        {/if}
+        <div class="relative flex-1">
           <svg
             class="absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-accent-dark transition-colors duration-300"
             fill="none"

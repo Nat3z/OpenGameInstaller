@@ -267,7 +267,30 @@ const procedures: Record<string, Procedure<any>> = {
         if (!appDetails) {
           return new ProcedureError(404, 'No app details found');
         }
-        appDetails.description = sanitize(appDetails.description);
+        appDetails.description = sanitize(appDetails.description, {
+          allowedTags: [
+            'p',
+            'br',
+            'strong',
+            'em',
+            'u',
+            'h1',
+            'h2',
+            'h3',
+            'h4',
+            'h5',
+            'h6',
+            'ul',
+            'ol',
+            'li',
+            'a',
+            'img',
+          ],
+          allowedAttributes: {
+            a: ['href', 'target'],
+            img: ['src', 'alt', 'width', 'height', 'class'],
+          },
+        });
         return appDetails;
       }, '*');
 

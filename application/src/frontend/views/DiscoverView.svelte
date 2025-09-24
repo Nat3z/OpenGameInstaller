@@ -216,9 +216,7 @@
 
   {#if loading}
     <div class="flex justify-center items-center py-16">
-      <div
-        class="animate-spin rounded-full h-12 w-12 border-b-2 border-accent"
-      ></div>
+      <div class="loading-spinner"></div>
     </div>
   {:else if filteredSections.length === 0}
     <div class="flex flex-col gap-4 w-full justify-center items-center py-16">

@@ -52,8 +52,8 @@ jobs:
               TAG_MESSAGE=$(git tag -l --format='%(contents)' "${{ github.ref_name }}" | sed '/^$/d' | sed '/-----BEGIN PGP SIGNATURE-----/,$d')
               echo "ANNOTATED TAG_MESSAGE FOUND: $TAG_MESSAGE"
               if [[ -n "$TAG_MESSAGE" && "$TAG_MESSAGE" != "" ]]; then
-                COMMIT_BODY="$TAG_MESSAGE"
                 # get the tagline of the update from the tag message's first line
+                COMMIT_BODY=$(echo "$TAG_MESSAGE" | tail -n +2)
                 TAGLINE=$(echo "$TAG_MESSAGE" | head -n 1)
                 echo "TAGLINE: $TAGLINE"
               else

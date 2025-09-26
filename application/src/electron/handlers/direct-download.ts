@@ -53,6 +53,7 @@ interface DownloadContext {
   finished: boolean;
   startTime: number;
   parts?: number;
+  errored?: boolean;
   totalParts?: number;
   headersAdditional: Record<string, string>;
   taskFinisher: () => void;
@@ -60,6 +61,8 @@ interface DownloadContext {
   resumeRetryCount?: number;
   // Number of times we've retried due to range request failures
   rangeRetryCount?: number;
+  // Flag to indicate if this context is in an error/cleanup state
+  isInErrorState?: boolean;
 }
 
 // Store download states for resume functionality (unified for single and multi-part)
@@ -122,15 +125,25 @@ function sendProgressUpdate(
 function cleanupDownload(
   context: DownloadContext,
   // If undefined, auto-detect based on whether this is the last part
-  finalCleanup?: boolean
+  finalCleanup?: boolean,
+  // Flag to indicate this is an error cleanup (prevents finish event from resolving)
+  isErrorCleanup?: boolean
 ): void {
   // Stop progress tracking first to prevent race conditions
   clearInterval(context.progressInterval);
   context.finished = true;
 
+  // Mark as error state if this is an error cleanup
+  if (isErrorCleanup) {
+    context.isInErrorState = true;
+  }
+
   if (!context.fileStream.closed && !context.fileStream.destroyed) {
-    // If the stream is still writable, end it gracefully instead of destroying
-    if (context.fileStream.writable) {
+    // If this is an error cleanup, destroy the stream to prevent finish event
+    // Otherwise, end gracefully for normal cleanup
+    if (isErrorCleanup) {
+      context.fileStream.destroy();
+    } else if (context.fileStream.writable) {
       context.fileStream.end();
     } else {
       // Only destroy if it's not writable and not already closed
@@ -157,8 +170,8 @@ function handleDownloadError(
     return;
   }
 
-  // This is a terminal error for this batch - perform final cleanup
-  cleanupDownload(context, true);
+  // This is a terminal error for this batch - perform final cleanup with error flag
+  cleanupDownload(context, true, true);
   sendIpcMessage(context.mainWindow, 'ddl:download-error', {
     id: context.downloadID,
     error: error.message || 'Download error',
@@ -602,6 +615,7 @@ async function executeDownload(
           taskFinisher: finish || (() => {}),
           resumeRetryCount: 0,
           rangeRetryCount: rangeRetryCount,
+          errored: false,
         };
 
         // Setup progress tracking
@@ -700,7 +714,13 @@ function setupDownloadEventHandlersWithRetry(
   // This ensures the file has been completely written before cleanup
   context.fileStream.on('finish', async () => {
     if (context.isPaused) {
-      console.log('Download was paused, ignoring end event');
+      console.log('Download was paused, ignoring finish event');
+      return;
+    }
+
+    // Check if this context is in an error state - if so, don't process as completion
+    if (context.isInErrorState) {
+      console.log('Download context is in error state, ignoring finish event');
       return;
     }
 
@@ -712,8 +732,8 @@ function setupDownloadEventHandlersWithRetry(
         `Downloaded size is ${downloadedMB.toFixed(2)}MB (under 1MB), retrying download...`
       );
 
-      // Cleanup but keep state so we can retry this part
-      cleanupDownload(context, false);
+      // Cleanup but keep state so we can retry this part, with error flag to prevent finish event
+      cleanupDownload(context, false, true);
 
       // Clean up the small file asynchronously
       rmAsync(context.filePath, { force: true }).catch((unlinkError) => {
@@ -803,6 +823,7 @@ function setupDownloadEventHandlersWithRetry(
   // Handle download errors with retry logic
   context.response.data.on('error', async (error) => {
     console.error('Download error:', error);
+
     if (context.isPaused) {
       console.log('Download was paused, ignoring error event');
       return;
@@ -811,7 +832,7 @@ function setupDownloadEventHandlersWithRetry(
     // If this was a resume attempt, try retrying from beginning
     if (canRetry) {
       console.log('Resume download failed, retrying from beginning...');
-      cleanupDownload(context, false);
+      cleanupDownload(context, false, true);
 
       // Clean up the partial file asynchronously
       rmAsync(context.filePath, { force: true }).catch((unlinkError) => {
@@ -837,8 +858,8 @@ function setupDownloadEventHandlersWithRetry(
         console.log(
           `Stream error encountered. Attempting auto-resume #${context.resumeRetryCount}...`
         );
-        // Cleanup but keep partial file for resume
-        cleanupDownload(context, false);
+        // Cleanup but keep partial file for resume, with error flag to prevent finish event
+        cleanupDownload(context, false, true);
         // Small backoff before retry
         await new Promise((r) => setTimeout(r, 1500));
         try {

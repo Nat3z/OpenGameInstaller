@@ -53,16 +53,25 @@ jobs:
               echo "ANNOTATED TAG_MESSAGE FOUND: $TAG_MESSAGE"
               if [[ -n "$TAG_MESSAGE" && "$TAG_MESSAGE" != "" ]]; then
                 COMMIT_BODY="$TAG_MESSAGE"
+                # get the tagline of the update from the tag message's first line
+                TAGLINE=$(echo "$TAG_MESSAGE" | head -n 1)
+                echo "TAGLINE: $TAGLINE"
               else
                 # Even annotated tags might have empty messages, fallback to commit
                 COMMIT_MESSAGE=$(git log -1 --pretty=format:"%B" "${{ github.ref_name }}")
                 COMMIT_BODY=$(echo "$COMMIT_MESSAGE" | tail -n +2)
+                # get the tagline of the update from the commit message's first line
+                TAGLINE=$(echo "$COMMIT_MESSAGE" | head -n 1)
+                echo "TAGLINE: $TAGLINE"
               fi
             else
               # Lightweight tag - use the commit message it points to
               echo "LIGHTWEIGHT TAG - using commit message"
               COMMIT_MESSAGE=$(git log -1 --pretty=format:"%B" "${{ github.ref_name }}")
               COMMIT_BODY=$(echo "$COMMIT_MESSAGE" | tail -n +2)
+              # get the tagline of the update from the commit message's first line
+              TAGLINE=$(echo "$COMMIT_MESSAGE" | head -n 1)
+              echo "TAGLINE: $TAGLINE"
             fi
           else
             # For regular commits, use commit message
@@ -81,7 +90,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || format('dev-{0}', github.sha) }}
-          name: ${{ startsWith(github.ref, 'refs/tags/v') && format('{0} - Tagline here!', github.ref_name) || github.event.head_commit.message }}
+          name: ${{ startsWith(github.ref, 'refs/tags/v') && format('{0} - {1}', github.ref_name, steps.commit_body.outputs.tagline) || github.event.head_commit.message }}
           draft: true
           body: |
             ${{

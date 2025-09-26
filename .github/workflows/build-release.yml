@@ -78,10 +78,14 @@ jobs:
             COMMIT_MESSAGE='${{ github.event.head_commit.message }}'
             # Extract everything after the first newline
             COMMIT_BODY=$(echo "$COMMIT_MESSAGE" | tail -n +2)
+            # get the tagline of the update from the commit message's first line
+            TAGLINE=$(echo "$COMMIT_MESSAGE" | head -n 1)
+            echo "TAGLINE: $TAGLINE"
           fi
           echo "body<<EOF" >> $GITHUB_OUTPUT
           echo "$COMMIT_BODY" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
+          echo "tagline=$TAGLINE" >> $GITHUB_OUTPUT
 
       - name: Create Release
         id: create_release

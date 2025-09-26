@@ -36,14 +36,18 @@ jobs:
       - name: Extract commit message body
         id: commit_body
         run: |
+          echo "GITHUB_REF: ${{ github.ref }}"
+          echo "GITHUB_REF_NAME: ${{ github.ref_name }}"
+          echo "GITHUB_EVENT_HEAD_COMMIT_MESSAGE: ${{ github.event.head_commit.message }}"
           if [[ "${{ github.ref }}" == refs/tags/* ]]; then
             # For tags, get the tag annotation message
-            TAG_MESSAGE=$(git tag -l --format='%(contents)' "${{ github.ref_name }}")
-            if [[ -n "$TAG_MESSAGE" ]]; then
+            TAG_MESSAGE=$(git tag -l --format='%(contents)' "${{ github.ref_name }}" | sed '/^$/d' | sed '/-----BEGIN PGP SIGNATURE-----/,$d')
+            echo "TAG_MESSAGE FOUND: $TAG_MESSAGE"
+            if [[ -n "$TAG_MESSAGE" && "$TAG_MESSAGE" != "" ]]; then
               COMMIT_BODY="$TAG_MESSAGE"
             else
-              # Fallback to commit message if tag has no annotation
-              COMMIT_MESSAGE='${{ github.event.head_commit.message }}'
+              # Fallback to commit message from the commit the tag points to
+              COMMIT_MESSAGE=$(git log -1 --pretty=format:"%B" "${{ github.ref_name }}")
               COMMIT_BODY=$(echo "$COMMIT_MESSAGE" | tail -n +2)
             fi
           else

@@ -48,7 +48,7 @@ jobs:
             
             if [[ "$TAG_TYPE" == "tag" ]]; then
               # Annotated tag - get the tag message
-              TAG_MESSAGE=$(git tag -l --format='%(contents)' "${{ github.ref_name }}" | sed '/^$/d' | sed '/-----BEGIN PGP SIGNATURE-----/,$d')
+              TAG_MESSAGE=$(git tag -l --format='%(contents:body)' "${{ github.ref_name }}" | sed '/^$/d' | sed '/-----BEGIN PGP SIGNATURE-----/,$d')
               echo "ANNOTATED TAG_MESSAGE FOUND: $TAG_MESSAGE"
               if [[ -n "$TAG_MESSAGE" && "$TAG_MESSAGE" != "" ]]; then
                 COMMIT_BODY="$TAG_MESSAGE"

@@ -88,6 +88,8 @@ class Download {
       return;
     }
 
+    ipcMain.removeHandler(`queue:${this.id}:cancel`);
+
     console.log('[direct] Starting download...');
 
     this.run();

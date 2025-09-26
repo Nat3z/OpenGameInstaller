@@ -11,7 +11,7 @@ import AppEventHandler from './handlers/app-handler.js';
 import FSEventHandler from './handlers/fs-handler.js';
 import RealdDebridHandler from './handlers/realdebrid-handler.js';
 import TorrentHandler from './handlers/torrent-handler.js';
-import DirectDownloadHandler from './handlers/direct-download.js';
+import DirectDownloadHandler from './handlers/ddl-handler.js';
 import AddonRestHandler from './handlers/addon-rest-handler.js';
 import { __dirname, isDev } from './paths.js';
 import {

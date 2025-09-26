@@ -1,774 +1,466 @@
 import axios from 'axios';
-import { ipcMain } from 'electron';
-import { sendNotification, torrentIntervals } from '../main.js';
+import { ipcMain, BrowserWindow } from 'electron';
+import { sendNotification } from '../main.js';
 import { join } from 'path';
 import * as fs from 'fs';
+import { rm as rmAsync, readFile } from 'fs/promises';
 import { getStoredValue, refreshCached } from '../config-util.js';
 import { QBittorrent } from '@ctrl/qbittorrent';
-import { readFile } from 'fs/promises';
-import { torrent } from '../webtorrent-connect.js';
+import { torrent as wtConnect } from '../webtorrent-connect.js';
 import { __dirname } from '../paths.js';
 import { DOWNLOAD_QUEUE } from '../queue.js';
 import ParseTorrent from 'parse-torrent';
 
 let qbitClient: QBittorrent | undefined = undefined;
 
-// Store torrent hashes for each download ID to enable pause/resume/abort functionality
-const torrentHashes = new Map<string, string>();
+type TorrentDownloadStatus =
+  | 'queued'
+  | 'downloading'
+  | 'paused'
+  | 'completed'
+  | 'failed'
+  | 'cancelled'
+  | 'seeding';
 
-function sendProgress(
-  mainWindow: Electron.BrowserWindow,
-  id: string,
-  data: any
-) {
-  if (mainWindow && mainWindow.webContents) {
-    mainWindow.webContents.send('torrent:download-progress', { id, ...data });
+interface TorrentJob {
+  link: string;
+  path: string;
+  type: 'torrent' | 'magnet';
+}
+
+const downloads = new Map<string, TorrentDownload>();
+
+class TorrentDownload {
+  public id: string;
+  private _status: TorrentDownloadStatus = 'queued';
+
+  public get status(): TorrentDownloadStatus {
+    return this._status;
   }
-}
 
-function sendComplete(mainWindow: Electron.BrowserWindow, id: string) {
-  if (mainWindow && mainWindow.webContents) {
-    mainWindow.webContents.send('torrent:download-complete', { id });
+  public set status(newStatus: TorrentDownloadStatus) {
+    this._status = newStatus;
   }
-}
 
-function sendError(
-  mainWindow: Electron.BrowserWindow,
-  id: string,
-  error: any,
-  finish: () => void
-) {
-  if (mainWindow && mainWindow.webContents) {
-    mainWindow.webContents.send('ddl:download-error', { id, error });
+  private mainWindow: BrowserWindow;
+  private job: TorrentJob;
+  private taskFinisher: () => void = () => {};
+  private torrentClientType: 'webtorrent' | 'qbittorrent' | 'unselected' =
+    'unselected';
+
+  // WebTorrent specific
+  private wtInstance?: ReturnType<typeof wtConnect>;
+  private wtBlock?: {
+    pause: () => void;
+    resume: () => void;
+    destroy: () => void;
+  };
+
+  // qBittorrent specific
+  private qbitTorrentHash?: string;
+  private qbitCheckInterval?: NodeJS.Timeout;
+  private qbitProgressInterval?: NodeJS.Timeout;
+
+  private progressInterval?: NodeJS.Timeout;
+
+  private totalSize: number = 0;
+  private downloadSpeed: number = 0;
+  private progress: number = 0;
+  private ratio: number = 0;
+
+  constructor(mainWindow: BrowserWindow, job: TorrentJob) {
+    this.id = Math.random().toString(36).substring(7);
+    this.mainWindow = mainWindow;
+    this.job = job;
+
+    downloads.set(this.id, this);
   }
-  finish();
-}
 
-async function setupQbitClient() {
-  await refreshCached('qbittorrent');
-  return new QBittorrent({
-    baseUrl:
-      ((await getStoredValue('qbittorrent', 'qbitHost')) ??
-        'http://127.0.0.1') +
-      ':' +
-      ((await getStoredValue('qbittorrent', 'qbitPort')) ?? '8080'),
-    username: (await getStoredValue('qbittorrent', 'qbitUsername')) ?? 'admin',
-    password: (await getStoredValue('qbittorrent', 'qbitPassword')) ?? '',
-  });
-}
+  public async start() {
+    const { wait, finish, cancelHandler } = DOWNLOAD_QUEUE.enqueue(this.id, {
+      type: 'torrent',
+    });
+    this.taskFinisher = finish;
 
-async function downloadTorrentFile(
-  link: string,
-  tempPath: string,
-  argPath: string,
-  mainWindow: Electron.BrowserWindow,
-  downloadID: string,
-  finish: () => void
-) {
-  return await new Promise<Buffer>((resolve, reject) => {
-    axios({ method: 'get', url: link, responseType: 'stream' }).then(
-      (response) => {
-        const fileStream = fs.createWriteStream(tempPath);
-        response.data.pipe(fileStream);
-        fileStream.on('finish', async () => {
-          fileStream.close();
-          resolve(await readFile(tempPath));
-        });
-        fileStream.on('error', (err) => {
-          fileStream.close();
-          fs.unlinkSync(argPath);
-          reject(err);
-        });
-      }
-    );
-  }).catch((err) => {
-    if (!mainWindow || !mainWindow.webContents) {
+    cancelHandler((cancel) => {
+      ipcMain.handleOnce(`queue:${this.id}:cancel`, (_) => {
+        cancel();
+        this.cancel();
+      });
+    });
+
+    const result = await wait((queuePosition) => {
+      this.sendProgress({ queuePosition });
+    });
+
+    ipcMain.removeHandler(`queue:${this.id}:cancel`);
+
+    if (result === 'cancelled') {
       return;
     }
-    mainWindow.webContents.send('ddl:download-error', {
-      id: downloadID,
-      error: err,
-    });
-    sendNotification({
-      message: 'Download failed for ' + argPath,
-      id: downloadID,
-      type: 'error',
-    });
-    console.error(err);
-    finish();
-    return null;
-  });
-}
 
-async function handleTorrentDownload({
-  type,
-  arg,
-  mainWindow,
-  downloadID,
-  wait,
-  finish,
-  cancelHandler,
-}: {
-  type: 'torrent' | 'magnet';
-  arg: { link: string; path: string };
-  mainWindow: Electron.BrowserWindow;
-  downloadID: string;
-  wait: (cb: (newPos: number) => void) => Promise<'cancelled' | 'fulfilled'>;
-  finish: () => void;
-  cancelHandler: (cancel: (handle: () => void) => void) => void;
-}) {
-  // Debug logging to track paths
-  console.log(`[torrent-handler] Processing ${type} download:`, {
-    downloadID,
-    link: arg.link.substring(0, 100) + (arg.link.length > 100 ? '...' : ''),
-    path: arg.path,
-    pathLength: arg.path.length,
-  });
+    console.log('[torrent] Starting download...');
+    this.run();
+  }
 
-  // Validate path length to prevent ENAMETOOLONG errors
-  const maxPathLength = process.platform === 'win32' ? 260 : 4096;
-  if (arg.path.length > maxPathLength) {
-    console.error(
-      `[torrent-handler] Path too long: ${arg.path.length} characters`
+  private async run() {
+    this.status = 'downloading';
+    try {
+      await refreshCached('general');
+      this.torrentClientType =
+        ((await getStoredValue('general', 'torrentClient')) as
+          | 'webtorrent'
+          | 'qbittorrent') ?? 'webtorrent';
+
+      if (this.torrentClientType === 'webtorrent') {
+        await this.runWebTorrent();
+      } else if (this.torrentClientType === 'qbittorrent') {
+        await this.runQbittorrent();
+      } else {
+        throw new Error('No torrent client configured');
+      }
+    } catch (error) {
+      this.fail(error as Error);
+    }
+  }
+
+  private async runWebTorrent() {
+    let torrentId: string | Buffer = this.job.link;
+    if (this.job.type === 'torrent') {
+      torrentId = await this.downloadTorrentFile(this.job.link);
+    }
+
+    this.wtInstance = wtConnect(torrentId, this.job.path + '.torrent');
+
+    this.startProgressTracker();
+
+    this.wtBlock = await this.wtInstance.start(
+      (
+        _: any,
+        speed: number,
+        progress: number,
+        length: number,
+        ratio: number
+      ) => {
+        this.downloadSpeed = speed;
+        this.progress = progress;
+        this.totalSize = length;
+        this.ratio = ratio;
+      },
+      () => {
+        this.status = 'seeding';
+        this.progress = 1;
+        this.sendProgress({});
+        this.sendIpc('torrent:download-complete', { id: this.id });
+        sendNotification({
+          message: 'Download completed, now seeding.',
+          id: this.id,
+          type: 'success',
+        });
+        this.wtInstance?.seed();
+        // Don't call task finisher until seeding is stopped (e.g., by cancellation)
+      }
     );
+  }
+
+  private async runQbittorrent() {
+    qbitClient = await this.setupQbitClient();
+
+    if (this.job.type === 'torrent') {
+      const torrentData = await this.downloadTorrentFile(this.job.link);
+      await qbitClient.addTorrent(torrentData, {
+        savepath: this.job.path,
+      });
+    } else {
+      await qbitClient.addMagnet(this.job.link, {
+        savepath: this.job.path,
+      });
+    }
+
+    this.startQbitProgressTracker();
+  }
+
+  private async setupQbitClient() {
+    await refreshCached('qbittorrent');
+    return new QBittorrent({
+      baseUrl:
+        ((await getStoredValue('qbittorrent', 'qbitHost')) ??
+          'http://127.0.0.1') +
+        ':' +
+        ((await getStoredValue('qbittorrent', 'qbitPort')) ?? '8080'),
+      username:
+        (await getStoredValue('qbittorrent', 'qbitUsername')) ?? 'admin',
+      password: (await getStoredValue('qbittorrent', 'qbitPassword')) ?? '',
+    });
+  }
+
+  private async downloadTorrentFile(link: string): Promise<Buffer> {
+    const tempPath = join(__dirname, `temp-${this.id}.torrent`);
+    const response = await axios({
+      method: 'get',
+      url: link,
+      responseType: 'stream',
+    });
+
+    const fileStream = fs.createWriteStream(tempPath);
+    response.data.pipe(fileStream);
+
+    return new Promise((resolve, reject) => {
+      fileStream.on('finish', async () => {
+        fileStream.close();
+        const buffer = await readFile(tempPath);
+        await rmAsync(tempPath, { force: true });
+        resolve(buffer);
+      });
+      fileStream.on('error', (err) => {
+        fileStream.close();
+        rmAsync(tempPath, { force: true });
+        reject(err);
+      });
+    });
+  }
+
+  public pause() {
+    if (this.status !== 'downloading') return;
+    this.status = 'paused';
+
+    if (this.torrentClientType === 'webtorrent') {
+      this.wtBlock?.pause();
+    } else if (
+      this.torrentClientType === 'qbittorrent' &&
+      this.qbitTorrentHash
+    ) {
+      qbitClient?.pauseTorrent(this.qbitTorrentHash);
+    }
+
+    this.sendIpc('torrent:download-paused', { id: this.id });
     sendNotification({
-      message: `Download path is too long (${arg.path.length} characters). Maximum allowed is ${maxPathLength}.`,
-      id: downloadID,
+      message: 'Download paused',
+      id: this.id,
+      type: 'info',
+    });
+  }
+
+  public resume() {
+    if (this.status !== 'paused') return;
+    this.status = 'downloading';
+
+    if (this.torrentClientType === 'webtorrent') {
+      this.wtBlock?.resume();
+    } else if (
+      this.torrentClientType === 'qbittorrent' &&
+      this.qbitTorrentHash
+    ) {
+      qbitClient?.resumeTorrent(this.qbitTorrentHash);
+    }
+
+    this.sendIpc('torrent:download-resumed', { id: this.id });
+    sendNotification({
+      message: 'Download resumed',
+      id: this.id,
+      type: 'info',
+    });
+  }
+
+  public cancel() {
+    if (this.status === 'cancelled' || this.status === 'completed') return;
+    this.status = 'cancelled';
+
+    if (this.torrentClientType === 'webtorrent') {
+      this.wtBlock?.destroy();
+    } else if (
+      this.torrentClientType === 'qbittorrent' &&
+      this.qbitTorrentHash
+    ) {
+      qbitClient?.removeTorrent(this.qbitTorrentHash, true);
+    }
+
+    this.cleanup();
+
+    this.sendIpc('torrent:download-cancelled', { id: this.id });
+    console.log('[torrent] Download Cancelled', this.id);
+    this.taskFinisher();
+    downloads.delete(this.id);
+  }
+
+  private complete() {
+    this.status = 'completed';
+    this.sendProgress({ progress: 1, downloadSpeed: 0 });
+    this.sendIpc('torrent:download-complete', { id: this.id });
+    sendNotification({
+      message: 'Download completed',
+      id: this.id,
+      type: 'success',
+    });
+    this.cleanup();
+    this.taskFinisher();
+    downloads.delete(this.id);
+  }
+
+  private fail(error: Error) {
+    this.status = 'failed';
+    this.sendIpc('torrent:download-error', {
+      id: this.id,
+      error: error.message,
+    });
+    sendNotification({
+      message: 'Download failed',
+      id: this.id,
       type: 'error',
     });
-    if (mainWindow && mainWindow.webContents) {
-      mainWindow.webContents.send('ddl:download-error', {
-        id: downloadID,
-        error: `Path too long: ${arg.path.length} characters`,
-      });
-    }
-    finish();
-    return null;
+    console.error(`[torrent] Download ${this.id} failed:`, error);
+    this.cleanup();
+    this.taskFinisher();
+    downloads.delete(this.id);
   }
 
-  // Validate that the path doesn't contain the magnet/torrent URL
-  if (type === 'magnet' && arg.path.includes('magnet:')) {
-    console.error(
-      `[torrent-handler] Invalid path contains magnet link: ${arg.path.substring(0, 100)}...`
-    );
-    sendNotification({
-      message:
-        'Invalid download path detected. The path contains a magnet link instead of a file path.',
-      id: downloadID,
-      type: 'error',
-    });
-    if (mainWindow && mainWindow.webContents) {
-      mainWindow.webContents.send('ddl:download-error', {
-        id: downloadID,
-        error: 'Invalid path: contains magnet link',
-      });
-    }
-    finish();
-    return null;
+  private startProgressTracker() {
+    this.progressInterval = setInterval(() => {
+      if (this.status === 'downloading' || this.status === 'seeding') {
+        this.sendProgress({});
+      }
+    }, 500);
   }
 
-  await refreshCached('general');
-  const torrentClient: string =
-    (await getStoredValue('general', 'torrentClient')) ?? 'webtorrent';
-  cancelHandler((cancel) => {
-    ipcMain.handleOnce(`queue:${downloadID}:cancel`, (_) => {
-      cancel();
-    });
-  });
-  const result = await wait((newPos) => {
-    sendProgress(mainWindow, downloadID, { queuePosition: newPos });
-  });
+  private startQbitProgressTracker() {
+    this.qbitCheckInterval = setInterval(async () => {
+      if (!qbitClient) return;
 
-  ipcMain.removeHandler(`queue:${downloadID}:cancel`);
-
-  if (result === 'cancelled') {
-    if (mainWindow && mainWindow.webContents) {
-      mainWindow.webContents.send('torrent:download-cancelled', {
-        id: downloadID,
-      });
-    }
-    console.error('Download cancelled');
-    finish();
-    return null;
-  }
-
-  console.log('Starting torrent download');
-
-  switch (torrentClient) {
-    case 'qbittorrent': {
       try {
-        qbitClient = await setupQbitClient();
+        const torrents = (await qbitClient.getAllData()).torrents;
+        let torrent;
 
-        let torrentHash: string | undefined;
-
-        if (type === 'torrent') {
-          const torrentData = await downloadTorrentFile(
-            arg.link,
-            join(__dirname, 'temp.torrent'),
-            arg.path,
-            mainWindow,
-            downloadID,
-            finish
+        if (!this.qbitTorrentHash) {
+          torrent = torrents.find(
+            (t) =>
+              t.savePath === this.job.path.replaceAll('/', '\\') ||
+              t.savePath === this.job.path
           );
-          if (!torrentData) {
-            console.error('No torrent data returned');
-            finish();
-            return null;
-          }
-          await qbitClient.addTorrent(torrentData, {
-            savepath: arg.path + '.torrent',
-          });
-          // The QBittorrent library doesn't return the hash directly, so we'll need to find it
-          // by monitoring the torrent list for new additions
-        } else {
-          await qbitClient.addMagnet(arg.link, {
-            savepath: arg.path + '.torrent',
-          });
-          // Similar issue with magnet links
-        }
-
-        let alreadyNotified = false;
-        arg.path = arg.path + '.torrent';
-
-        // --- Throttled progress reporting setup for qbittorrent ---
-        let lastProgress = 0;
-        let lastDownloadSpeed = 0;
-        let lastFileSize = 0;
-        let lastRatio = 0;
-        let finished = false;
-        const progressInterval = setInterval(() => {
-          if (!finished) {
-            sendProgress(mainWindow, downloadID, {
-              downloadSpeed: lastDownloadSpeed,
-              progress: lastProgress,
-              fileSize: lastFileSize,
-              ratio: lastRatio,
-              queuePosition: 1,
-            });
-          }
-        }, 500);
-        // --- End throttled setup ---
-
-        // Listen for pause event from frontend
-        let isPaused = false;
-
-        const pauseHandler = async () => {
-          if (!isPaused && torrentHash) {
-            isPaused = true;
-            console.log('QBittorrent download paused:', torrentHash);
-            try {
-              await qbitClient?.pauseTorrent(torrentHash);
-              mainWindow.webContents.send('torrent:download-paused', {
-                id: downloadID,
-              });
-              sendNotification({
-                message: 'Torrent download paused',
-                id: downloadID,
-                type: 'info',
-              });
-            } catch (error) {
-              console.error('Failed to pause torrent:', error);
-            }
-          }
-        };
-
-        const resumeHandler = async () => {
-          if (isPaused && torrentHash) {
-            isPaused = false;
-            console.log('QBittorrent download resumed:', torrentHash);
-            try {
-              await qbitClient?.resumeTorrent(torrentHash);
-              mainWindow.webContents.send('torrent:download-resumed', {
-                id: downloadID,
-              });
-              sendNotification({
-                message: 'Torrent download resumed',
-                id: downloadID,
-                type: 'info',
-              });
-            } catch (error) {
-              console.error('Failed to resume torrent:', error);
-            }
-          }
-        };
-
-        const abortHandler = async () => {
-          if (torrentHash) {
-            console.log('QBittorrent download aborted:', torrentHash);
-            try {
-              await qbitClient?.removeTorrent(torrentHash, true);
-              torrentHashes.delete(downloadID);
-              clearInterval(torrentInterval);
-              clearInterval(progressInterval);
-              mainWindow.webContents.send('torrent:download-cancelled', {
-                id: downloadID,
-              });
-              sendNotification({
-                message: 'Torrent download aborted',
-                id: downloadID,
-                type: 'info',
-              });
-              finish();
-            } catch (error) {
-              console.error('Failed to abort torrent:', error);
-            }
-          }
-        };
-
-        // Remove any existing handlers first
-        ipcMain.removeHandler(`torrent:${downloadID}:pause`);
-        ipcMain.removeHandler(`torrent:${downloadID}:resume`);
-        ipcMain.removeHandler(`torrent:${downloadID}:abort`);
-
-        ipcMain.handle(`torrent:${downloadID}:pause`, pauseHandler);
-        ipcMain.handle(`torrent:${downloadID}:resume`, resumeHandler);
-        ipcMain.handle(`torrent:${downloadID}:abort`, abortHandler);
-
-        const torrentInterval = setInterval(async () => {
-          if (!qbitClient) {
-            clearInterval(torrentInterval);
-            clearInterval(progressInterval);
-            finish();
-            return;
-          }
-
-          // Find the torrent by save path if we don't have the hash yet
-          const torrents = (await qbitClient.getAllData()).torrents;
-          let torrent;
-
-          if (!torrentHash) {
-            // Try to find the torrent by save path
-            torrent = torrents.find(
-              (t) =>
-                t.savePath === arg.path.replaceAll('/', '\\') ||
-                t.savePath === arg.path
+          if (torrent) {
+            this.qbitTorrentHash = torrent.id;
+            console.log(
+              `[torrent-handler] Found torrent hash: ${this.qbitTorrentHash}`
             );
-            if (torrent) {
-              torrentHash = torrent.id;
-              torrentHashes.set(downloadID, torrentHash);
-              console.log(
-                `[torrent-handler] Found torrent hash: ${torrentHash}`
-              );
-            }
-          } else {
-            // Find torrent by hash
-            torrent = torrents.find((t) => t.id === torrentHash);
           }
-
-          if (!torrent) {
-            // If we still can't find the torrent after some time, give up
-            clearInterval(torrentInterval);
-            clearInterval(progressInterval);
-            finish();
-            return;
-          }
-
-          // Just update the last* vars, don't send directly
-          lastDownloadSpeed = torrent.downloadSpeed;
-          lastProgress = torrent.progress;
-          lastFileSize = torrent.totalSize;
-          lastRatio = torrent.totalUploaded / torrent.totalDownloaded;
-
-          if (torrent.isCompleted && !alreadyNotified) {
-            finished = true;
-            clearInterval(torrentInterval);
-            clearInterval(progressInterval);
-            // Send one last progress update at 100%
-            sendProgress(mainWindow, downloadID, {
-              downloadSpeed: lastDownloadSpeed,
-              progress: 1,
-              fileSize: lastFileSize,
-              ratio: lastRatio,
-              queuePosition: 1,
-            });
-            sendComplete(mainWindow, downloadID);
-            alreadyNotified = true;
-
-            // Clean up handlers and hash tracking
-            ipcMain.removeHandler(`torrent:${downloadID}:pause`);
-            ipcMain.removeHandler(`torrent:${downloadID}:resume`);
-            ipcMain.removeHandler(`torrent:${downloadID}:abort`);
-            torrentHashes.delete(downloadID);
-
-            finish();
-          }
-        }, 250);
-        torrentIntervals.push(torrentInterval);
-        return downloadID;
-      } catch (except) {
-        sendNotification({
-          message:
-            'Failed to download torrent. Check if qBitTorrent is running.',
-          id: Math.random().toString(36).substring(7),
-          type: 'error',
-        });
-        finish();
-        console.error(except);
-        return null;
-      }
-    }
-    case 'webtorrent': {
-      try {
-        // if (await checkFileExists(arg.path, downloadID, mainWindow, finish))
-        //   return null;
-        if (type === 'torrent') {
-          const fileStream = fs.createWriteStream(
-            join(__dirname, 'temp.torrent')
-          );
-          const torrentData = await new Promise<Uint8Array>(
-            (resolve, reject) => {
-              axios({
-                method: 'get',
-                url: arg.link,
-                responseType: 'stream',
-              }).then((response) => {
-                response.data.pipe(fileStream);
-                fileStream.on('finish', () => {
-                  fileStream.close();
-                  resolve(fs.readFileSync(join(__dirname, 'temp.torrent')));
-                });
-                fileStream.on('error', (err) => {
-                  fileStream.close();
-                  fs.unlinkSync(arg.path);
-                  reject(err);
-                });
-              });
-            }
-          ).catch((err) => {
-            sendError(mainWindow, downloadID, err, finish);
-            fileStream.close();
-            fs.unlinkSync(arg.path);
-            sendNotification({
-              message: 'Download failed for ' + arg.path,
-              id: downloadID,
-              type: 'error',
-            });
-            console.error(err);
-            return null;
-          });
-          if (!torrentData) {
-            console.error('No torrent data returned');
-            finish();
-            return null;
-          }
-          // --- Throttled progress reporting setup for webtorrent ---
-          let lastProgress = 0;
-          let lastDownloadSpeed = 0;
-          let lastFileSize = 0;
-          let lastRatio = 0;
-          let finished = false;
-          let progressInterval: NodeJS.Timeout;
-
-          const startProgressReporting = () => {
-            progressInterval = setInterval(() => {
-              if (!finished && !isPaused) {
-                sendProgress(mainWindow, downloadID, {
-                  downloadSpeed: lastDownloadSpeed,
-                  progress: lastProgress,
-                  fileSize: lastFileSize,
-                  ratio: lastRatio,
-                  queuePosition: 1,
-                });
-              }
-            }, 500);
-          };
-
-          const stopProgressReporting = () => {
-            if (progressInterval) {
-              clearInterval(progressInterval);
-            }
-          };
-
-          startProgressReporting();
-          // --- End throttled setup ---
-
-          // Listen for pause event from frontend
-          let isPaused = false;
-
-          // turn torrentData into a buffer
-          const torrentBuffer = Buffer.from(torrentData);
-          const session = torrent(torrentBuffer, arg.path + '.torrent');
-          const block = await session.start(
-            (_, speed, progress, length, ratio) => {
-              lastDownloadSpeed = speed;
-              lastProgress = progress;
-              lastFileSize = length;
-              lastRatio = ratio;
-            },
-            () => {
-              console.log('Torrent download finished');
-              finished = true;
-              stopProgressReporting();
-              // Send one last progress update at 100%
-              sendProgress(mainWindow, downloadID, {
-                downloadSpeed: lastDownloadSpeed,
-                progress: 1,
-                fileSize: lastFileSize,
-                ratio: lastRatio,
-                queuePosition: 1,
-              });
-              sendComplete(mainWindow, downloadID);
-              // seed the torrent
-              session.seed();
-              ipcMain.removeHandler(`torrent:${downloadID}:pause`);
-              ipcMain.removeHandler(`torrent:${downloadID}:resume`);
-              ipcMain.removeHandler(`torrent:${downloadID}:abort`);
-              finish();
-            }
-          );
-          ipcMain.handle(`torrent:${downloadID}:pause`, () => {
-            if (!isPaused) {
-              isPaused = true;
-              console.log('WebTorrent download paused');
-              stopProgressReporting();
-              mainWindow.webContents.send('torrent:download-paused', {
-                id: downloadID,
-              });
-              sendNotification({
-                message: 'Torrent download paused',
-                id: downloadID,
-                type: 'info',
-              });
-              // Use the true pause method from webtorrent-connect
-              block.pause();
-            }
-          });
-
-          ipcMain.handle(`torrent:${downloadID}:resume`, () => {
-            if (isPaused) {
-              isPaused = false;
-              console.log('WebTorrent download resumed');
-              startProgressReporting();
-              mainWindow.webContents.send('torrent:download-resumed', {
-                id: downloadID,
-              });
-              sendNotification({
-                message: 'Torrent download resumed',
-                id: downloadID,
-                type: 'info',
-              });
-              // Use the true resume method from webtorrent-connect
-              block.resume();
-            }
-          });
-
-          ipcMain.handleOnce(`torrent:${downloadID}:abort`, () => {
-            stopProgressReporting();
-            block.destroy();
-          });
         } else {
-          // --- Throttled progress reporting setup for webtorrent magnet ---
-          let lastProgress = 0;
-          let lastDownloadSpeed = 0;
-          let lastFileSize = 0;
-          let lastRatio = 0;
-          let finished = false;
-          let progressInterval: NodeJS.Timeout;
-
-          const startProgressReporting = () => {
-            progressInterval = setInterval(() => {
-              if (!finished && !isPaused) {
-                sendProgress(mainWindow, downloadID, {
-                  downloadSpeed: lastDownloadSpeed,
-                  progress: lastProgress,
-                  fileSize: lastFileSize,
-                  ratio: lastRatio,
-                  queuePosition: 1,
-                });
-              }
-            }, 500);
-          };
-
-          const stopProgressReporting = () => {
-            if (progressInterval) {
-              clearInterval(progressInterval);
-            }
-          };
-
-          startProgressReporting();
-          // --- End throttled setup ---
-
-          // Listen for pause event from frontend
-          let isPaused = false;
-
-          const session = torrent(arg.link, arg.path + '.torrent');
-          const block = await session.start(
-            (_, speed, progress, length, ratio) => {
-              lastDownloadSpeed = speed;
-              lastProgress = progress;
-              lastFileSize = length;
-              lastRatio = ratio;
-            },
-            async () => {
-              console.log('Torrent download finished');
-              finished = true;
-              stopProgressReporting();
-              // Send one last progress update at 100%
-              sendProgress(mainWindow, downloadID, {
-                downloadSpeed: lastDownloadSpeed,
-                progress: 1,
-                fileSize: lastFileSize,
-                ratio: lastRatio,
-              });
-              sendComplete(mainWindow, downloadID);
-              // seed the torrent
-              session.seed();
-
-              // remove handlers
-              ipcMain.removeHandler(`torrent:${downloadID}:pause`);
-              ipcMain.removeHandler(`torrent:${downloadID}:resume`);
-              ipcMain.removeHandler(`torrent:${downloadID}:abort`);
-              finish();
-            }
-          );
-
-          // Update handlers to work with the block
-          ipcMain.removeHandler(`torrent:${downloadID}:pause`);
-          ipcMain.removeHandler(`torrent:${downloadID}:resume`);
-
-          ipcMain.handle(`torrent:${downloadID}:pause`, () => {
-            if (!isPaused) {
-              isPaused = true;
-              console.log('WebTorrent download paused');
-              stopProgressReporting();
-              mainWindow.webContents.send('torrent:download-paused', {
-                id: downloadID,
-              });
-              sendNotification({
-                message: 'Torrent download paused',
-                id: downloadID,
-                type: 'info',
-              });
-              // Use the true pause method from webtorrent-connect
-              block.pause();
-            }
-          });
-          ipcMain.handle(`torrent:${downloadID}:resume`, () => {
-            if (isPaused) {
-              isPaused = false;
-              console.log('WebTorrent download resumed');
-              startProgressReporting();
-              mainWindow.webContents.send('torrent:download-resumed', {
-                id: downloadID,
-              });
-              sendNotification({
-                message: 'Torrent download resumed',
-                id: downloadID,
-                type: 'info',
-              });
-              // Use the true resume method from webtorrent-connect
-              block.resume();
-            }
-          });
-
-          ipcMain.handle(`torrent:${downloadID}:abort`, () => {
-            stopProgressReporting();
-            block.destroy();
-          });
-
-          console.log('-- Started Download --');
+          torrent = torrents.find((t) => t.id === this.qbitTorrentHash);
         }
-        return downloadID;
-      } catch (except) {
-        sendNotification({
-          message: 'Failed to download torrent.',
-          id: Math.random().toString(36).substring(7),
-          type: 'error',
-        });
-        console.error(except);
-        finish();
-        return null;
+
+        if (torrent) {
+          this.downloadSpeed = torrent.downloadSpeed;
+          this.progress = torrent.progress;
+          this.totalSize = torrent.totalSize;
+          this.ratio = torrent.totalUploaded / torrent.totalDownloaded;
+
+          if (torrent.isCompleted) {
+            this.complete();
+          }
+        }
+      } catch (error) {
+        console.error('[torrent] Error getting qBitTorrent data:', error);
+        this.fail(error as Error);
       }
+    }, 1000);
+
+    this.qbitProgressInterval = setInterval(() => {
+      if (this.status === 'downloading') {
+        this.sendProgress({});
+      }
+    }, 500);
+  }
+
+  private sendProgress(data: {
+    progress?: number;
+    downloadSpeed?: number;
+    queuePosition?: number;
+    ratio?: number;
+  }) {
+    this.sendIpc('torrent:download-progress', {
+      id: this.id,
+      progress: data.progress ?? this.progress,
+      downloadSpeed: data.downloadSpeed ?? this.downloadSpeed,
+      fileSize: this.totalSize,
+      ratio: data.ratio ?? this.ratio,
+      status: this.status,
+      queuePosition: data.queuePosition,
+    });
+  }
+
+  private cleanup() {
+    if (this.progressInterval) clearInterval(this.progressInterval);
+    if (this.qbitCheckInterval) clearInterval(this.qbitCheckInterval);
+    if (this.qbitProgressInterval) clearInterval(this.qbitProgressInterval);
+  }
+
+  private sendIpc(channel: string, data: any) {
+    if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+      this.mainWindow.webContents.send(channel, data);
     }
   }
-  console.error('No torrent client found');
-  sendNotification({
-    message:
-      "No torrent client found. Go to General Settings and select a torrent client (even if it's selected, choose another one and click back again)",
-    id: Math.random().toString(36).substring(7),
-    type: 'error',
-  });
-  finish();
-  return null;
 }
 
-// --- Main Handler ---
-export default function handler(mainWindow: Electron.BrowserWindow) {
+export default function handler(mainWindow: BrowserWindow) {
+  const startDownload = async (job: TorrentJob) => {
+    const download = new TorrentDownload(mainWindow, job);
+    download.start();
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    return download.id;
+  };
+
   ipcMain.handle(
     'torrent:download-torrent',
-    async (_, arg: { link: string; path: string }) => {
-      const downloadID = Math.random().toString(36).substring(7);
-      const { wait, finish, cancelHandler } = DOWNLOAD_QUEUE.enqueue(
-        downloadID,
-        {
-          type: 'torrent',
-        }
-      );
-
-      // -- handle this asynchronously --
-      handleTorrentDownload({
-        type: 'torrent',
-        arg,
-        mainWindow,
-        downloadID,
-        wait,
-        finish,
-        cancelHandler,
-      });
-      return downloadID;
+    (_, arg: { link: string; path: string }) => {
+      return startDownload({ ...arg, type: 'torrent' });
     }
   );
 
   ipcMain.handle(
     'torrent:download-magnet',
-    async (_, arg: { link: string; path: string }) => {
-      const downloadID = Math.random().toString(36).substring(7);
-      const { wait, finish, cancelHandler } = DOWNLOAD_QUEUE.enqueue(
-        downloadID,
-        {
-          type: 'torrent',
-        }
-      );
-      return handleTorrentDownload({
-        type: 'magnet',
-        arg,
-        mainWindow,
-        downloadID,
-        wait,
-        finish,
-        cancelHandler,
-      });
+    (_, arg: { link: string; path: string }) => {
+      return startDownload({ ...arg, type: 'magnet' });
     }
   );
 
+  ipcMain.handle('torrent:pause', (_, id: string) => {
+    downloads.get(id)?.pause();
+  });
+
+  ipcMain.handle('torrent:resume', (_, id: string) => {
+    downloads.get(id)?.resume();
+  });
+
+  ipcMain.handle('torrent:abort', (_, id: string) => {
+    downloads.get(id)?.cancel();
+  });
+
   ipcMain.handle('download-torrent-into', async (_, link: string) => {
-    // download the torrent into temp.torrent
-    const fileStream = fs.createWriteStream(join(__dirname, 'temp.torrent'));
-    const torrentData = await new Promise<Uint8Array>((resolve, reject) => {
-      axios({
-        method: 'get',
-        url: link,
-        responseType: 'stream',
-      }).then((response) => {
-        response.data.pipe(fileStream);
-        fileStream.on('finish', () => {
-          fileStream.close();
-          resolve(fs.readFileSync(join(__dirname, 'temp.torrent')));
-        });
+    const tempPath = join(__dirname, 'temp.torrent');
+    const fileStream = fs.createWriteStream(tempPath);
+    const response = await axios({
+      method: 'get',
+      url: link,
+      responseType: 'stream',
+    });
+    response.data.pipe(fileStream);
+    return new Promise<Buffer>((resolve, reject) => {
+      fileStream.on('finish', async () => {
+        fileStream.close();
+        const buffer = await readFile(tempPath);
+        await rmAsync(tempPath, { force: true });
+        resolve(buffer);
       });
       fileStream.on('error', (err) => {
         fileStream.close();
+        rmAsync(tempPath, { force: true });
         reject(err);
       });
     });
-    return torrentData;
   });
+
   ipcMain.handle(
     'torrent:get-hash',
     async (_, item: string | Buffer | Uint8Array) => {
-      // ParseTorrent is not typed correctly. This is a Promise.
-      const parsed = await ParseTorrent(item);
-      console.log('parsed: ', parsed);
+      const parsed = await (ParseTorrent as any)(item);
       return parsed.infoHash;
     }
   );

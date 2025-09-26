@@ -41,6 +41,7 @@ jobs:
           echo "GITHUB_REF: ${{ github.ref }}"
           echo "GITHUB_REF_NAME: ${{ github.ref_name }}"
           echo "GITHUB_EVENT_HEAD_COMMIT_MESSAGE: ${{ github.event.head_commit.message }}"
+          git fetch --depth=1 origin +refs/tags/*:refs/tags/*
           if [[ "${{ github.ref }}" == refs/tags/* ]]; then
             # For tags, first check if it's an annotated tag
             TAG_TYPE=$(git cat-file -t "${{ github.ref_name }}")

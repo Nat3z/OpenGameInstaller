@@ -79,6 +79,7 @@ export class RequestService extends BaseService {
       capsuleImage: result.capsuleImage,
       coverImage: result.coverImage,
       storefront: result.storefront,
+      status: 'downloading',
       name: result.name,
     };
 

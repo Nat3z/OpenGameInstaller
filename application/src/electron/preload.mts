@@ -111,8 +111,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
         link: string;
         path: string;
         headers?: Record<string, string>;
-      }[]
-    ) => ipcRenderer.invoke('ddl:download', downloads),
+      }[],
+      part?: number
+    ) => ipcRenderer.invoke('ddl:download', downloads, part),
     abortDownload: (downloadID: string) =>
       ipcRenderer.invoke('ddl:abort', downloadID),
     pauseDownload: (downloadID: string) =>

@@ -219,10 +219,10 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
         status: response.status,
         success: response.status >= 200 && response.status < 300,
       };
-    } catch (err) {
+    } catch (err: any) {
       return {
-        data: err.response.data,
-        status: err.response.status,
+        data: err?.response?.data ?? err?.message ?? err,
+        status: err?.response?.status ?? 500,
         success: false,
       };
     }

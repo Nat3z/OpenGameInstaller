@@ -75,7 +75,9 @@ function saveRecord(download: DownloadStatusAndInfo) {
 function removeRecord(id: string) {
   try {
     const path = recordPath(id);
-    window.electronAPI.fs.delete(path);
+    if (window.electronAPI.fs.exists(path)) {
+      window.electronAPI.fs.delete(path);
+    }
   } catch (e) {
     console.error('Failed to remove persisted download:', id, e);
   }
@@ -196,13 +198,12 @@ export async function initDownloadPersistence() {
           if (lastSnapshot[d.id] !== serialized) {
             saveRecord(d);
           }
-        } else {
-          removeRecord(d.id);
         }
       });
       // Remove records for downloads that no longer exist in the store
       Object.keys(lastSnapshot).forEach((prevId) => {
         if (!(prevId in nextSnapshot)) {
+          console.log('[persistence] Removing record for download:', prevId);
           removeRecord(prevId);
         }
       });

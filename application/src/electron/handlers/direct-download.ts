@@ -2,7 +2,7 @@ import { ipcMain, BrowserWindow } from 'electron';
 import * as fs from 'fs';
 import { rm as rmAsync } from 'fs/promises';
 import { sendNotification } from '../main.js';
-import axios, { AxiosResponse } from 'axios';
+import axios, { AxiosError, AxiosResponse } from 'axios';
 import { dirname } from 'path';
 import { DOWNLOAD_QUEUE } from '../queue.js';
 import { Readable } from 'stream';
@@ -62,7 +62,7 @@ class Download {
     this.mainWindow = mainWindow;
     this.jobs = jobs;
     this.totalParts = jobs.length;
-    this.currentPart = startPart || 0;
+    this.currentPart = startPart || 1;
 
     downloads.set(this.id, this);
   }
@@ -76,6 +76,7 @@ class Download {
     cancelHandler((cancel) => {
       ipcMain.handleOnce(`queue:${this.id}:cancel`, (_) => {
         cancel();
+        this.cancel();
       });
     });
 
@@ -178,15 +179,14 @@ class Download {
   }
 
   private async downloadPart(job: DownloadJob, retries = 5) {
-    if (this.status !== 'downloading') throw new Error('Download not active');
-
     let lastError: Error | undefined;
 
     for (let i = 0; i < retries; i++) {
+      if (this.status !== 'downloading') throw new Error('Download not active');
       try {
-        console.log('[direct] Attempting to download part', i);
+        console.log('[direct] Attempting to download part', this.currentPart);
         await this._executeDownloadPart(job);
-        console.log('[direct] Download Completed of Part', i);
+        console.log('[direct] Download Completed of Part', this.currentPart);
         return;
       } catch (error) {
         lastError = error as Error;
@@ -293,8 +293,33 @@ class Download {
           this.currentBytes += chunk.length;
         });
       } catch (error) {
+        if (!(error instanceof AxiosError)) {
+          this.cleanupPart();
+          reject(error);
+          return;
+        }
+        if (error.response?.status === 416) {
+          console.log('[direct] Range not satisfiable, restarting download');
+          this.startByte = 0;
+          this.currentBytes = 0;
+          if (this.fileStream) {
+            this.fileStream.close();
+          }
+          await rmAsync(job.path, { force: true });
+          // restart
+          console.log('[direct] Restarting download (Range not satisfiable)');
+          this._executeDownloadPart(job).then(resolve).catch(reject);
+          return;
+        } else if (error.response?.status === 404) {
+          console.log('[direct] File not found. Killing download');
+          this.cancel();
+          this.cleanupAllFiles().then(() => {
+            reject(error);
+          });
+          this.cleanupPart();
+          return;
+        }
         this.cleanupPart();
-        console.log('[direct] Error', error);
         reject(error);
       }
     });

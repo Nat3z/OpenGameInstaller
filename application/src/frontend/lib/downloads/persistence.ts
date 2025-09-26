@@ -75,9 +75,9 @@ function saveRecord(download: DownloadStatusAndInfo) {
 function removeRecord(id: string) {
   try {
     const path = recordPath(id);
-    if (window.electronAPI.fs.exists(path)) {
-      window.electronAPI.fs.delete(path);
-    }
+    // if (window.electronAPI.fs.exists(path)) {
+    window.electronAPI.fs.delete(path);
+    // }
   } catch (e) {
     console.error('Failed to remove persisted download:', id, e);
   }
@@ -216,6 +216,7 @@ export async function initDownloadPersistence() {
 
 export async function deleteDownloadedItems(id: string) {
   const record = recordPath(id);
+  if (!window.electronAPI.fs.exists(record)) return;
   const content = window.electronAPI.fs.read(record);
   const parsed = JSON.parse(content) as PersistedRecord;
   const downloadInfo = parsed.downloadInfo;

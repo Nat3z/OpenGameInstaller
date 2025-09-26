@@ -295,7 +295,6 @@
   document.addEventListener('setup:log', (event: Event) => {
     if (!isCustomEvent(event)) return;
     const { id: downloadID, log } = event.detail;
-    console.log('Setup log from backend:', downloadID, log);
 
     // Update the setup logs for the given downloadID
     setupLogs.update((logs) => {

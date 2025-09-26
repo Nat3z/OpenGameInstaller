@@ -509,7 +509,9 @@
               {#if download.status === 'downloading' && download.queuePosition && download.queuePosition > 1}
                 <div class="status-badge queued">
                   <div class="spinner"></div>
-                  Queued {download.queuePosition}
+                  Queued {download.queuePosition === 999
+                    ? '-'
+                    : download.queuePosition}
                 </div>
               {:else if download.status === 'downloading'}
                 {@const stats =
@@ -586,7 +588,7 @@
                   <div class="spinner"></div>
                   {download.usedDebridService === 'realdebrid'
                     ? 'Real-Debrid Processing'
-                    : 'Torbox Processing'}
+                    : 'TorBox Processing'}
                 </div>
               {:else if download.status === 'requesting'}
                 <div class="status-badge requesting">

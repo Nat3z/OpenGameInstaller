@@ -308,27 +308,32 @@
   }
 
   // Watch for download completion and refresh store data
+  let matchedDownload = $state(false);
   $effect(() => {
     if (
       activeDownload &&
       (activeDownload.status === 'seeding' ||
         activeDownload.status === 'setup-complete') &&
-      !alreadyOwns
+      !alreadyOwns &&
+      !matchedDownload
     ) {
       console.log('Download completed, refreshing store data...');
       // Refresh the alreadyOwns status
       alreadyOwns = window.electronAPI.fs.exists(
         './library/' + appID + '.json'
       );
+      matchedDownload = true;
       // Reload store data to reflect the new ownership status
       loadCustomStoreData();
 
-      // Notify user that the game is now available
-      createNotification({
-        id: Math.random().toString(36).substring(7),
-        message: `${gameData?.name || 'Game'} is now ready to play!`,
-        type: 'success',
-      });
+      if (alreadyOwns) {
+        // Notify user that the game is now available
+        createNotification({
+          id: Math.random().toString(36).substring(7),
+          message: `${gameData?.name || 'Game'} is now ready to play!`,
+          type: 'success',
+        });
+      }
     }
   });
 
@@ -453,7 +458,9 @@
 
                 {#if activeDownload.queuePosition && activeDownload.queuePosition > 1}
                   <div class="text-xs text-gray-500 mt-1">
-                    Queue position: {activeDownload.queuePosition}
+                    Queue position: {activeDownload.queuePosition === 999
+                      ? '-'
+                      : activeDownload.queuePosition}
                   </div>
                 {/if}
               {/if}

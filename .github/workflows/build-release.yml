@@ -32,6 +32,8 @@ jobs:
     steps:
       - name: Check out Git repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Fetch full history to access tag annotations
 
       - name: Extract commit message body
         id: commit_body
@@ -40,13 +42,24 @@ jobs:
           echo "GITHUB_REF_NAME: ${{ github.ref_name }}"
           echo "GITHUB_EVENT_HEAD_COMMIT_MESSAGE: ${{ github.event.head_commit.message }}"
           if [[ "${{ github.ref }}" == refs/tags/* ]]; then
-            # For tags, get the tag annotation message
-            TAG_MESSAGE=$(git tag -l --format='%(contents)' "${{ github.ref_name }}" | sed '/^$/d' | sed '/-----BEGIN PGP SIGNATURE-----/,$d')
-            echo "TAG_MESSAGE FOUND: $TAG_MESSAGE"
-            if [[ -n "$TAG_MESSAGE" && "$TAG_MESSAGE" != "" ]]; then
-              COMMIT_BODY="$TAG_MESSAGE"
+            # For tags, first check if it's an annotated tag
+            TAG_TYPE=$(git cat-file -t "${{ github.ref_name }}")
+            echo "TAG_TYPE: $TAG_TYPE"
+            
+            if [[ "$TAG_TYPE" == "tag" ]]; then
+              # Annotated tag - get the tag message
+              TAG_MESSAGE=$(git tag -l --format='%(contents)' "${{ github.ref_name }}" | sed '/^$/d' | sed '/-----BEGIN PGP SIGNATURE-----/,$d')
+              echo "ANNOTATED TAG_MESSAGE FOUND: $TAG_MESSAGE"
+              if [[ -n "$TAG_MESSAGE" && "$TAG_MESSAGE" != "" ]]; then
+                COMMIT_BODY="$TAG_MESSAGE"
+              else
+                # Even annotated tags might have empty messages, fallback to commit
+                COMMIT_MESSAGE=$(git log -1 --pretty=format:"%B" "${{ github.ref_name }}")
+                COMMIT_BODY=$(echo "$COMMIT_MESSAGE" | tail -n +2)
+              fi
             else
-              # Fallback to commit message from the commit the tag points to
+              # Lightweight tag - use the commit message it points to
+              echo "LIGHTWEIGHT TAG - using commit message"
               COMMIT_MESSAGE=$(git log -1 --pretty=format:"%B" "${{ github.ref_name }}")
               COMMIT_BODY=$(echo "$COMMIT_MESSAGE" | tail -n +2)
             fi
@@ -112,6 +125,8 @@ jobs:
     steps:
       - name: Check out Git repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Fetch full history for consistency
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2

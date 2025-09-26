@@ -274,7 +274,6 @@
   });
 
   let sub_sortedDownloads = currentDownloads.subscribe((downloads) => {
-    console.log('Updated sortedDownloads: ', downloads);
     sortedDownloads = downloads
       .slice()
       .sort((a, b) => (a.queuePosition || 999) - (b.queuePosition || 999));

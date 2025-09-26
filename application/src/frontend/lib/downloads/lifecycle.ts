@@ -5,7 +5,6 @@ import {
 } from '../../store';
 import { getConfigClientOption } from '../config/client';
 import { ALL_SERVICES } from './services';
-import { deletePersistedDownload } from './persistence';
 import type { SearchResultWithAddon } from '../tasks/runner';
 
 export async function startDownload(
@@ -55,15 +54,6 @@ export function updateDownloadStatus(
     return downloads.map((download) => {
       if (download.id === downloadID) {
         const updatedDownload = { ...download, ...updates };
-
-        // If the download ID changes, remove the old persisted file to avoid duplicates
-        if (updates.id && updates.id !== download.id) {
-          try {
-            deletePersistedDownload(download.id);
-          } catch (e) {
-            console.error('Failed to cleanup persisted record for old ID:', download.id, e);
-          }
-        }
 
         // Initialize setup logs when status changes to 'completed' (setup phase)
         if (updates.status === 'completed' && download.status !== 'completed') {

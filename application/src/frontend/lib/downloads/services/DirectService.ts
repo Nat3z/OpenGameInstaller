@@ -68,7 +68,6 @@ export class DirectService extends BaseService {
       htmlButton.textContent = 'Downloading...';
       htmlButton.disabled = true;
       const updatedState = flush();
-      console.log('updatedState', updatedState);
       currentDownloads.update((downloads) => {
         return [
           ...downloads,
@@ -89,6 +88,7 @@ export class DirectService extends BaseService {
           },
         ];
       });
+      console.log('updatedState', updatedState);
     });
   }
 }

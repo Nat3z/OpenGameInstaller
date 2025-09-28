@@ -239,6 +239,11 @@ function createWindow() {
       });
     });
 
+    mainWindow!!.webContents.setWindowOpenHandler((details) => {
+      shell.openExternal(details.url);
+      return { action: 'deny' };
+    });
+
     app.on('browser-window-blur', function () {
       globalShortcut.unregister('CommandOrControl+R');
       globalShortcut.unregister('F5');
@@ -254,52 +259,13 @@ function createWindow() {
       contents.on('will-navigate', (event, navigationUrl) => {
         const parsedUrl = new URL(navigationUrl);
 
-        // Allow navigation to localhost dev server and local files
         if (
           parsedUrl.origin !== 'http://localhost:8080' &&
           parsedUrl.origin !== 'file://'
         ) {
           event.preventDefault();
-
-          // Log the blocked navigation attempt
-          console.log(`Blocked navigation to external URL: ${navigationUrl}`);
-
-          // Send notification to user about blocked navigation
-          sendNotification({
-            message: 'Navigation to external sites is blocked for security',
-            id: Math.random().toString(36).substring(7),
-            type: 'warning',
-          });
-
-          // Redirect back to main page
-          const mainUrl = isDev()
-            ? `http://localhost:8080/?secret=${applicationAddonSecret}`
-            : `file://${join(app.getAppPath(), 'public', 'index.html')}?secret=${applicationAddonSecret}`;
-
-          // Small delay to ensure the navigation is fully prevented before redirecting
-          setTimeout(() => {
-            if (contents && !contents.isDestroyed()) {
-              contents.loadURL(mainUrl);
-            }
-          }, 100);
+          throw new Error('Navigating to that address is not allowed.');
         }
-      });
-
-      // Also handle new window attempts
-      contents.setWindowOpenHandler((details) => {
-        const parsedUrl = new URL(details.url);
-
-        // If it's an external URL, open in system browser
-        if (
-          parsedUrl.origin !== 'http://localhost:8080' &&
-          parsedUrl.origin !== 'file://'
-        ) {
-          shell.openExternal(details.url);
-          console.log(`Opened external URL in system browser: ${details.url}`);
-        }
-
-        // Always deny creating new windows within the app
-        return { action: 'deny' };
       });
     });
   });

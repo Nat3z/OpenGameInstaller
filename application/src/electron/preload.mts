@@ -131,9 +131,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     downloadMagnet: (magnet: string, path: string) =>
       ipcRenderer.invoke('torrent:download-magnet', { link: magnet, path }),
     pauseDownload: (downloadID: string) =>
-      ipcRenderer.invoke(`torrent:${downloadID}:pause`),
+      ipcRenderer.invoke(`torrent:pause`, downloadID),
     resumeDownload: (downloadID: string) =>
-      ipcRenderer.invoke(`torrent:${downloadID}:resume`),
+      ipcRenderer.invoke(`torrent:resume`, downloadID),
   },
   oobe: {
     downloadTools: () => ipcRenderer.invoke('oobe:download-tools'),

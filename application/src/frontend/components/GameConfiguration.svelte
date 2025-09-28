@@ -8,7 +8,7 @@
     type NumberOption,
     type StringOption,
   } from 'ogi-addon/config';
-  import { createNotification } from '../store';
+  import { createNotification, currentDownloads } from '../store';
   import Modal from './modal/Modal.svelte';
   import TitleModal from './modal/TitleModal.svelte';
   import SectionModal from './modal/SectionModal.svelte';
@@ -104,6 +104,10 @@
       message: 'Game removed from library. (Not deleted from disk)',
       type: 'success',
     });
+    // remove the download from the downloads list
+    currentDownloads.update((downloads) =>
+      downloads.filter((download) => download.appID !== gameInfo.appID)
+    );
     exitPlayPage();
   }
 
@@ -158,7 +162,10 @@
         description={screenRendering[key].description}
         type={getInputType(screenRendering[key])}
         value={getInputValue(key, screenRendering[key])}
-        options={getInputOptions(screenRendering[key])}
+        options={getInputOptions(screenRendering[key]).map((value) => ({
+          id: value,
+          name: value,
+        }))}
         class="mb-4"
         onchange={handleInputChange}
       />

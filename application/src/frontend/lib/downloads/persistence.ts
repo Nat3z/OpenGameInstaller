@@ -39,12 +39,7 @@ function ensureDir() {
 function isPersistableStatus(
   status: string | undefined
 ): status is PersistableStatus {
-  return (
-    status === 'downloading' ||
-    status === 'paused' ||
-    status === 'requesting' ||
-    status === 'seeding'
-  );
+  return status === 'downloading' || status === 'paused';
 }
 
 function recordPath(id: string) {

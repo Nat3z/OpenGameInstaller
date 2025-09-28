@@ -42,7 +42,7 @@
   let loadingAddons: Set<string> = $state(new Set());
   let emptyAddons: Set<string> = $state(new Set());
   let collapsedAddons: Set<string> = $state(new Set());
-  let originalFilePath = $derived.by(() => {
+  let originalFilePath: string | undefined = $derived.by(() => {
     try {
       if (alreadyOwns) {
         const libraryEntryUnSerialized = window.electronAPI.fs.read(
@@ -60,9 +60,35 @@
     }
   });
 
-  let alreadyOwns = $state(
-    window.electronAPI.fs.exists('./library/' + appID + '.json')
-  );
+  let originalExecutable: string | undefined = $derived.by(() => {
+    try {
+      if (alreadyOwns) {
+        const libraryEntryUnSerialized = window.electronAPI.fs.read(
+          './library/' + appID + '.json'
+        );
+        if (libraryEntryUnSerialized) {
+          const libraryEntry = JSON.parse(libraryEntryUnSerialized);
+          return libraryEntry.launchExecutable;
+        }
+      }
+      return undefined;
+    } catch (ex) {
+      console.error(ex);
+      return undefined;
+    }
+  });
+
+  let alreadyOwns = $state(false);
+
+  let platform = $state('');
+  let isWin32Only: boolean = $derived.by(() => {
+    return (
+      platform !== 'win32' &&
+      alreadyOwns &&
+      typeof originalExecutable === 'string' &&
+      originalExecutable.toLowerCase().endsWith('.exe')
+    );
+  });
 
   // Check for active downloads for this game
   let activeDownload = $derived(
@@ -96,6 +122,9 @@
   }
 
   onMount(async () => {
+    // Get platform information
+    platform = await window.electronAPI.app.getOS();
+
     isOnline = await window.electronAPI.app.isOnline();
     if (!isOnline) {
       loading = false;
@@ -146,6 +175,15 @@
 
   async function loadCustomStoreData() {
     results = [];
+    alreadyOwns = window.electronAPI.fs.exists('./library/' + appID + '.json');
+    originalExecutable = window.electronAPI.fs.read(
+      './library/' + appID + '.json'
+    );
+    if (alreadyOwns && originalExecutable) {
+      originalExecutable = JSON.parse(originalExecutable).launchExecutable;
+    } else {
+      originalExecutable = undefined;
+    }
     const response: StoreData | undefined = await safeFetch(
       'gameDetails',
       {
@@ -280,7 +318,7 @@
 
     // Proceed with download
     if (result.downloadType === 'task') {
-      runTask(result, alreadyOwns ? originalFilePath : undefined);
+      runTask(result, alreadyOwns ? originalFilePath || '' : '');
     } else {
       startDownload(
         {
@@ -295,6 +333,32 @@
 
   function closeInfoModal() {
     selectedResult = undefined;
+  }
+
+  async function removeGame() {
+    if (!gameData) return;
+
+    try {
+      await window.electronAPI.app.removeApp(appID);
+      createNotification({
+        id: Math.random().toString(36).substring(7),
+        message: `${gameData.name} removed from library. (Not deleted from disk)`,
+        type: 'success',
+      });
+      // reload the store page
+      // remove the download from the downloads list
+      currentDownloads.update((downloads) =>
+        downloads.filter((download) => download.appID !== appID)
+      );
+      loadCustomStoreData();
+    } catch (ex) {
+      console.error('Failed to remove game:', ex);
+      createNotification({
+        id: Math.random().toString(36).substring(7),
+        message: `Failed to remove ${gameData.name} from library`,
+        type: 'error',
+      });
+    }
   }
 
   function toggleAddonCollapse(addonId: string) {
@@ -482,11 +546,27 @@
               {#if alreadyOwns}
                 <div class="p-6 bg-accent-lighter rounded-lg mb-4">
                   <button
-                    class="w-full border-none bg-accent-light hover:bg-opacity-80 text-accent-dark font-medium py-3 px-4 rounded-lg transition-colors duration-200"
-                    onclick={() => playGame()}
+                    class="w-full border-none {!isWin32Only
+                      ? 'bg-accent-light hover:bg-opacity-80 text-accent-dark'
+                      : 'bg-gray-300 text-gray-500 cursor-not-allowed'} font-medium py-3 px-4 rounded-lg transition-colors duration-200 {isWin32Only
+                      ? 'mb-3'
+                      : ''}"
+                    class:disabled={isWin32Only}
+                    disabled={isWin32Only}
+                    title={isWin32Only ? '' : 'Use Steam to Launch Your Games'}
+                    onclick={() => !isWin32Only && playGame()}
                   >
                     Play Game
                   </button>
+
+                  {#if isWin32Only}
+                    <button
+                      class="w-full border-none bg-red-100 hover:bg-red-200 text-red-700 font-medium py-3 px-4 rounded-lg transition-colors duration-200"
+                      onclick={() => removeGame()}
+                    >
+                      Remove from Library
+                    </button>
+                  {/if}
                 </div>
               {/if}
               <!-- Loading indicators for addons still searching -->

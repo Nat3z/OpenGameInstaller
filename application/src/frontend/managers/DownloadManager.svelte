@@ -266,6 +266,7 @@
       queuePosition,
       part,
       totalParts,
+      ratio,
     } = event.detail;
     if (queuePosition > 1) {
       console.log('Queue Position Update: ', downloadID, queuePosition);
@@ -278,6 +279,7 @@
       queuePosition,
       part,
       totalParts,
+      ratio,
     });
   }
 

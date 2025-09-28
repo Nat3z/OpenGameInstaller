@@ -148,17 +148,20 @@ class TorrentDownload {
         this.ratio = ratio;
       },
       () => {
-        this.status = 'seeding';
-        this.progress = 1;
-        this.sendProgress({});
-        this.sendIpc('torrent:download-complete', { id: this.id });
-        sendNotification({
-          message: 'Download completed, now seeding.',
-          id: this.id,
-          type: 'success',
-        });
-        this.wtInstance?.seed();
-        // Don't call task finisher until seeding is stopped (e.g., by cancellation)
+        setTimeout(() => {
+          this.status = 'seeding';
+          this.progress = 1;
+          this.sendProgress({ progress: 1, downloadSpeed: 0, ratio: 0 });
+          this.sendIpc('torrent:download-complete', { id: this.id });
+          sendNotification({
+            message: 'Download completed, now seeding.',
+            id: this.id,
+            type: 'success',
+          });
+          this.taskFinisher();
+          this.wtInstance?.seed();
+          // Don't call task finisher until seeding is stopped (e.g., by cancellation)
+        }, 1000);
       }
     );
   }
@@ -317,7 +320,12 @@ class TorrentDownload {
   private startProgressTracker() {
     this.progressInterval = setInterval(() => {
       if (this.status === 'downloading' || this.status === 'seeding') {
-        this.sendProgress({});
+        this.sendProgress({
+          progress: this.progress,
+          downloadSpeed: this.downloadSpeed,
+          ratio: this.ratio,
+          queuePosition: 1,
+        });
       }
     }, 500);
   }
@@ -364,7 +372,11 @@ class TorrentDownload {
 
     this.qbitProgressInterval = setInterval(() => {
       if (this.status === 'downloading') {
-        this.sendProgress({});
+        this.sendProgress({
+          progress: this.progress,
+          downloadSpeed: this.downloadSpeed,
+          ratio: this.ratio,
+        });
       }
     }, 500);
   }

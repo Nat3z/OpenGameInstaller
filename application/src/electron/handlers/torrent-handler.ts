@@ -171,7 +171,9 @@ class TorrentDownload {
 
     if (this.job.type === 'torrent') {
       const torrentData = await this.downloadTorrentFile(this.job.link);
-      await qbitClient.addTorrent(torrentData, {
+      // turn torrent data into a Uint8Array<ArrayBuffer>
+      const torrentDataUint8Array = new Uint8Array(torrentData);
+      await qbitClient.addTorrent(torrentDataUint8Array, {
         savepath: this.job.path,
       });
     } else {
@@ -341,7 +343,7 @@ class TorrentDownload {
         if (!this.qbitTorrentHash) {
           torrent = torrents.find(
             (t) =>
-              t.savePath === this.job.path.replaceAll('/', '\\') ||
+              t.savePath === this.job.path.replace(/\//g, '\\') ||
               t.savePath === this.job.path
           );
           if (torrent) {

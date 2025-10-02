@@ -355,7 +355,7 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
       // linux case
       if (process.platform === 'linux') {
         // make the launch executable use / instead of \
-        data.launchExecutable = data.launchExecutable.replaceAll('\\', '/');
+        data.launchExecutable = data.launchExecutable.replace(/\\/g, '/');
         const homeDir = process.env.HOME || process.env.USERPROFILE;
         const protonPath = `${homeDir}/.ogi-wine-prefixes/${data.appID}/pfx`;
 

@@ -353,7 +353,7 @@ addon.on('catalog', (event) => {
 
 // Bun Serve Test
 Bun.serve({
-  port: 3000,
+  port: 10572,
   fetch: async (req) => {
     const filePath = './test.txt';
     try {

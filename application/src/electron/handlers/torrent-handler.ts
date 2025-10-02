@@ -233,7 +233,7 @@ class TorrentDownload {
       this.torrentClientType === 'qbittorrent' &&
       this.qbitTorrentHash
     ) {
-      qbitClient?.pauseTorrent(this.qbitTorrentHash);
+      qbitClient?.stopTorrent(this.qbitTorrentHash);
     }
 
     this.sendIpc('torrent:download-paused', { id: this.id });
@@ -254,7 +254,7 @@ class TorrentDownload {
       this.torrentClientType === 'qbittorrent' &&
       this.qbitTorrentHash
     ) {
-      qbitClient?.resumeTorrent(this.qbitTorrentHash);
+      qbitClient?.startTorrent(this.qbitTorrentHash);
     }
 
     this.sendIpc('torrent:download-resumed', { id: this.id });

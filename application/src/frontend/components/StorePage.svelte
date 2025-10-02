@@ -576,7 +576,6 @@
                   class="bg-accent-lighter rounded-lg p-4 mb-4 opacity-75"
                   class:opacity-50={isEmpty}
                   in:fly={{ y: 30, duration: 400, delay: 50 * index }}
-                  out:fade={{ duration: 300 }}
                 >
                   <div class="flex items-center justify-between">
                     <div class="flex items-center gap-3">

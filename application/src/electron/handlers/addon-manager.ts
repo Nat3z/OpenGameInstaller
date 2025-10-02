@@ -219,50 +219,73 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
         console.log(`Addon ${addon} is not a git repository`);
         continue;
       }
-      // get rid of the installation log
-      const installationLog = join(addonPath, 'installation.log');
-      if (fs.existsSync(installationLog)) {
-        fs.unlinkSync(installationLog);
-      }
 
       new Promise<void>((resolve, reject) => {
-        exec(`git pull`, { cwd: addonPath }, (err, stdout, _) => {
-          if (err) {
-            sendNotification({
-              message: `Failed to update addon ${addon}`,
-              id: Math.random().toString(36).substring(7),
-              type: 'error',
-            });
-            console.error(err);
-            failed = true;
-            reject();
-            return;
-          }
-          console.log(stdout);
-          sendNotification({
-            message: `Addon ${addon} updated successfully.`,
-            id: Math.random().toString(36).substring(7),
-            type: 'info',
-          });
-
-          mainWindow!!.webContents.send('addon:updated', addon);
-          // setup the addon
-          setupAddon(addonPath).then((success) => {
-            if (!success) {
+        exec(
+          `git pull`,
+          { cwd: addonPath, env: { ...process.env, LANG: 'en_US.UTF-8' } },
+          (err, stdout, _) => {
+            if (err) {
               sendNotification({
-                message: `An error occurred when setting up ${addon}`,
+                message: `Failed to update addon ${addon}`,
                 id: Math.random().toString(36).substring(7),
                 type: 'error',
               });
+              console.error(err);
               failed = true;
               reject();
               return;
             }
-            addonsUpdated++;
-            console.log(`Addon ${addon} updated successfully.`);
-            resolve();
-          });
-        });
+            console.log(stdout);
+
+            // Check if already up to date
+            if (
+              stdout.includes('Already up to date.') ||
+              stdout.includes('Already up-to-date.')
+            ) {
+              sendNotification({
+                message: `Addon ${addon} is already up to date.`,
+                id: Math.random().toString(36).substring(7),
+                type: 'info',
+              });
+              mainWindow!!.webContents.send('addon:updated', addon);
+              // No need to run setupAddon if nothing changed
+              addonsUpdated++;
+              resolve();
+              return;
+            }
+
+            // get rid of the installation log because not up-to-date
+            const installationLog = join(addonPath, 'installation.log');
+            if (fs.existsSync(installationLog)) {
+              fs.unlinkSync(installationLog);
+            }
+
+            sendNotification({
+              message: `Addon ${addon} updated successfully.`,
+              id: Math.random().toString(36).substring(7),
+              type: 'info',
+            });
+
+            mainWindow!!.webContents.send('addon:updated', addon);
+            // setup the addon
+            setupAddon(addonPath).then((success) => {
+              if (!success) {
+                sendNotification({
+                  message: `An error occurred when setting up ${addon}`,
+                  id: Math.random().toString(36).substring(7),
+                  type: 'error',
+                });
+                failed = true;
+                reject();
+                return;
+              }
+              addonsUpdated++;
+              console.log(`Addon ${addon} updated successfully.`);
+              resolve();
+            });
+          }
+        );
       });
     }
 

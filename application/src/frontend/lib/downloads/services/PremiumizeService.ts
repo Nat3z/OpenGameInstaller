@@ -288,6 +288,8 @@ export class PremiumizeService extends BaseService {
       downloadID,
       tempId,
       directDownloadUrl,
+      getDownloadPath() + '/' + result.name + '/' + result.filename + '.zip',
+      'premiumize',
       updatedState,
       result
     );

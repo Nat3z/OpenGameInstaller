@@ -55,14 +55,16 @@ export abstract class BaseService {
     downloadId: string,
     tempid: string,
     downloadUrl: string,
+    downloadPath: string,
+    usedDebridService: string,
     flushed: { [key: string]: Partial<DownloadStatusAndInfo> },
     result: SearchResultWithAddon
   ) {
     updateDownloadStatus(tempid, {
       id: downloadId,
       status: 'downloading',
-      usedDebridService: flushed[tempid]?.usedDebridService,
-      downloadPath: getDownloadPath() + '/' + result.name,
+      usedDebridService: usedDebridService as any,
+      downloadPath: downloadPath,
       queuePosition: flushed[tempid]?.queuePosition,
       downloadURL: downloadUrl,
       originalDownloadURL: result.downloadURL,

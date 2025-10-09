@@ -132,6 +132,8 @@ export class RealDebridService extends BaseService {
       downloadID,
       tempId,
       download.download,
+      getDownloadPath() + '/' + result.name + '/' + result.filename,
+      'realdebrid',
       updatedState,
       result
     );
@@ -219,6 +221,8 @@ export class RealDebridService extends BaseService {
       downloadID,
       tempId,
       download.download,
+      getDownloadPath() + '/' + result.name + '/' + result.filename,
+      'realdebrid',
       updatedState,
       result
     );

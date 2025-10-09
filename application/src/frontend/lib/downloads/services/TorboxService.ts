@@ -305,6 +305,8 @@ export class TorboxService extends BaseService {
         downloadID,
         tempId,
         downloadUrl,
+        getDownloadPath() + '/' + result.name + '/' + result.filename + '.zip',
+        'torbox',
         updatedState,
         result
       );

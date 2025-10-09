@@ -93,14 +93,15 @@
 
       const attemptUnrar = async () => {
         try {
-          const rarFilePath =
-            downloadedItem.downloadPath.replace(/(\/|\\)$/g, '') +
-            '/' +
-            downloadedItem.filename;
-          const outputBase =
-            downloadedItem.downloadPath.replace(/(\/|\\)$/g, '') +
-            '/' +
-            downloadedItem.name;
+          const rarFilePath = downloadedItem.downloadPath.replace(
+            /(\/|\\)$/g,
+            ''
+          );
+          const outputBase = downloadedItem.downloadPath
+            .replace(/(\/|\\)$/g, '')
+            .split('/')
+            .slice(0, -1)
+            .join('/');
           const extractedDir = await unrarAndReturnOutputDir({
             rarFilePath,
             outputBaseDir: outputBase,

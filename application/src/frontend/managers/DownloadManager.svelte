@@ -155,7 +155,8 @@
 
     // handle torbox zip extraction
     if (
-      downloadedItem.usedDebridService === 'torbox' &&
+      (downloadedItem.usedDebridService === 'torbox' ||
+        downloadedItem.usedDebridService === 'premiumize') &&
       !downloadedItem.files
     ) {
       // Initialize setup logs for this download

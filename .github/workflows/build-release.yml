@@ -46,7 +46,7 @@ jobs:
             # For tags, first check if it's an annotated tag
             TAG_TYPE=$(git cat-file -t "${{ github.ref_name }}")
             echo "TAG_TYPE: $TAG_TYPE"
-            
+
             if [[ "$TAG_TYPE" == "tag" ]]; then
               # Annotated tag - get the tag message
               TAG_MESSAGE=$(git tag -l --format='%(contents)' "${{ github.ref_name }}" | sed '/^$/d' | sed '/-----BEGIN PGP SIGNATURE-----/,$d')
@@ -87,6 +87,13 @@ jobs:
           echo "EOF" >> $GITHUB_OUTPUT
           echo "tagline=$TAGLINE" >> $GITHUB_OUTPUT
 
+      - name: Get updater version
+        id: updater_version
+        run: |
+          UPDATER_VERSION=$(grep -o '"version": *"[^"]*"' updater/package.json | grep -o '[0-9.]*')
+          echo "version=$UPDATER_VERSION" >> $GITHUB_OUTPUT
+          echo "Updater version: $UPDATER_VERSION"
+
       - name: Create Release
         id: create_release
         uses: softprops/action-gh-release@v2
@@ -114,7 +121,7 @@ jobs:
             Application Version: {0}',
                   github.ref_name,
                   steps.commit_body.outputs.body,
-                  '1.3.1'
+                  steps.updater_version.outputs.version
                 )
               || steps.commit_body.outputs.body
             }}

@@ -2,7 +2,6 @@ import { BaseService } from './BaseService';
 import type { SearchResultWithAddon } from '../../tasks/runner';
 import { createNotification, currentDownloads } from '../../../store';
 import { getDownloadPath } from '../../core/fs';
-import { updateDownloadStatus } from '../../../utils';
 import { listenUntilDownloadReady } from '../events';
 import type { $Hosts } from 'real-debrid-js';
 
@@ -42,41 +41,25 @@ export class RealDebridService extends BaseService {
 
     // get the first host
     const hosts = await window.electronAPI.realdebrid.getHosts();
-    const localID = Math.floor(Math.random() * 1000000);
-    currentDownloads.update((downloads) => {
-      return [
-        ...downloads,
-        {
-          id: '' + localID,
-          status: 'rd-downloading',
-          downloadPath: getDownloadPath() + '/' + result.name,
-          downloadSpeed: 0,
-          usedDebridService: 'realdebrid',
-          progress: 0,
-          appID,
-          downloadSize: 0,
-          ...result,
-        },
-      ];
-    });
+    const tempId = this.queueRequestDownload(result, appID, 'realdebrid');
 
     if (result.downloadType === 'magnet') {
       await this.handleMagnetDownload(
         result,
         appID,
-        localID,
+        tempId,
         hosts[0],
         htmlButton
       );
     } else if (result.downloadType === 'torrent') {
-      await this.handleTorrentDownload(result, appID, localID, htmlButton);
+      await this.handleTorrentDownload(result, appID, tempId, htmlButton);
     }
   }
 
   private async handleMagnetDownload(
     result: SearchResultWithAddon,
     appID: number,
-    localID: number,
+    tempId: string,
     host: $Hosts,
     htmlButton: HTMLButtonElement
   ): Promise<void> {
@@ -135,7 +118,7 @@ export class RealDebridService extends BaseService {
         htmlButton.disabled = false;
       }
       currentDownloads.update((downloads) => {
-        const matchingDownload = downloads.find((d) => d.id === localID + '')!!;
+        const matchingDownload = downloads.find((d) => d.id === tempId)!!;
         matchingDownload.status = 'error';
         matchingDownload.usedDebridService = 'realdebrid';
         matchingDownload.appID = appID;
@@ -145,21 +128,19 @@ export class RealDebridService extends BaseService {
 
       return;
     }
-    updateDownloadStatus(localID + '', {
-      id: downloadID,
-      status: 'downloading',
-      usedDebridService: 'realdebrid',
-      downloadPath: getDownloadPath() + '/' + result.name + '/',
-      queuePosition: updatedState[downloadID]?.queuePosition ?? undefined,
-      downloadURL: download.download,
-      originalDownloadURL: result.downloadURL,
-    });
+    this.updateDownloadRequested(
+      downloadID,
+      tempId,
+      download.download,
+      updatedState,
+      result
+    );
   }
 
   private async handleTorrentDownload(
     result: SearchResultWithAddon,
     appID: number,
-    localID: number,
+    tempId: string,
     htmlButton: HTMLButtonElement
   ): Promise<void> {
     if (!result.name || !result.downloadURL) {
@@ -224,7 +205,7 @@ export class RealDebridService extends BaseService {
         htmlButton.disabled = false;
       }
       currentDownloads.update((downloads) => {
-        const matchingDownload = downloads.find((d) => d.id === localID + '')!!;
+        const matchingDownload = downloads.find((d) => d.id === tempId)!!;
         matchingDownload.status = 'error';
         matchingDownload.usedDebridService = 'realdebrid';
         matchingDownload.appID = appID;
@@ -234,14 +215,12 @@ export class RealDebridService extends BaseService {
 
       return;
     }
-    updateDownloadStatus(localID + '', {
-      id: downloadID,
-      status: 'downloading',
-      usedDebridService: 'realdebrid',
-      downloadPath: getDownloadPath() + '/' + result.name + '/',
-      queuePosition: updatedState[downloadID]?.queuePosition ?? 999,
-      downloadURL: download.download,
-      originalDownloadURL: result.downloadURL,
-    });
+    this.updateDownloadRequested(
+      downloadID,
+      tempId,
+      download.download,
+      updatedState,
+      result
+    );
   }
 }

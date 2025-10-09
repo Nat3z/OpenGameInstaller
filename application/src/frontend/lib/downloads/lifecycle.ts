@@ -24,12 +24,15 @@ export async function startDownload(
       | 'webtorrent'
       | 'qbittorrent'
       | 'real-debrid'
-      | 'torbox' =
+      | 'torbox'
+      | 'premiumize' =
       (generalOptions ? generalOptions.torrentClient : null) ?? 'webtorrent';
     if (torrentClient === 'real-debrid') {
       downloadHandler = 'real-debrid-' + downloadHandler;
     } else if (torrentClient === 'torbox') {
       downloadHandler = 'torbox-' + downloadHandler;
+    } else if (torrentClient === 'premiumize') {
+      downloadHandler = 'premiumize-' + downloadHandler;
     }
   }
   // replace the name's speceial characters (like amparsand, :, or any character windows doesn't support, with a dash)

@@ -17,7 +17,7 @@ export type DownloadStatusAndInfo = SearchResult & {
     | 'requesting';
   progress: number;
   error?: string;
-  usedDebridService?: 'realdebrid' | 'torbox' | 'none';
+  usedDebridService?: 'realdebrid' | 'torbox' | 'premiumize' | 'none';
   downloadPath: string;
   downloadSpeed: number;
   downloadSize: number;

@@ -1,3 +1,5 @@
+import { currentDownloads, type DownloadStatusAndInfo } from '../../../store';
+import { getDownloadPath, updateDownloadStatus } from '../../../utils';
 import type { SearchResultWithAddon } from '../../tasks/runner';
 
 /**
@@ -21,4 +23,49 @@ export abstract class BaseService {
     appID: number,
     event: MouseEvent
   ): Promise<void>;
+
+  queueRequestDownload(
+    result: SearchResultWithAddon,
+    appID: number,
+    usedDebridService: string
+  ) {
+    const tempId = Math.random().toString(36).substring(2, 15);
+    currentDownloads.update((downloads) => {
+      return [
+        ...downloads,
+        {
+          id: '' + tempId,
+          downloadSize: 0,
+          status: 'rd-downloading',
+          appID: appID,
+          progress: 0,
+          // im lazy to type this every single time. so this will do.
+          usedDebridService: usedDebridService as any,
+          downloadPath: getDownloadPath() + '/' + result.name,
+          downloadSpeed: 0,
+          ...result,
+        },
+      ];
+    });
+
+    return tempId;
+  }
+
+  updateDownloadRequested(
+    downloadId: string,
+    tempid: string,
+    downloadUrl: string,
+    flushed: { [key: string]: Partial<DownloadStatusAndInfo> },
+    result: SearchResultWithAddon
+  ) {
+    updateDownloadStatus(tempid, {
+      id: downloadId,
+      status: 'downloading',
+      usedDebridService: flushed[tempid]?.usedDebridService,
+      downloadPath: getDownloadPath() + '/' + result.name,
+      queuePosition: flushed[tempid]?.queuePosition,
+      downloadURL: downloadUrl,
+      originalDownloadURL: result.downloadURL,
+    });
+  }
 }

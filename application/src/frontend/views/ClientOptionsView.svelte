@@ -58,7 +58,13 @@
           description: 'What will do the torrenting for you',
           defaultValue: 'webtorrent',
           value: '',
-          choice: ['webtorrent', 'qbittorrent', 'real-debrid', 'torbox'],
+          choice: [
+            'webtorrent',
+            'qbittorrent',
+            'real-debrid',
+            'torbox',
+            'premiumize',
+          ],
           type: 'string',
         },
         reconfigurSteamGridDb: {
@@ -101,6 +107,13 @@
         torboxApiKey: {
           displayName: 'TorBox API Key',
           description: 'Your TorBox API Key',
+          defaultValue: '',
+          value: '',
+          type: 'password',
+        },
+        premiumizeApiKey: {
+          displayName: 'Premiumize API Key',
+          description: 'Your Premiumize API Key',
           defaultValue: '',
           value: '',
           type: 'password',
@@ -434,6 +447,15 @@
       iconHeight: 24,
       description:
         'Premium service for faster downloads and cached torrents. Requires subscription.',
+    },
+    {
+      id: 'premiumize',
+      name: 'Premiumize',
+      icon: './premiumize.svg',
+      iconWidth: 24,
+      iconHeight: 24,
+      description:
+        'Premium seedbox with cached torrents. Requires subscription.',
     },
   ];
 

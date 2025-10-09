@@ -588,7 +588,11 @@
                   <div class="spinner"></div>
                   {download.usedDebridService === 'realdebrid'
                     ? 'Real-Debrid Processing'
-                    : 'TorBox Processing'}
+                    : download.usedDebridService === 'torbox'
+                      ? 'TorBox Processing'
+                      : download.usedDebridService === 'premiumize'
+                        ? 'Premiumize Processing'
+                        : 'Processing with ' + download.usedDebridService}
                 </div>
               {:else if download.status === 'requesting'}
                 <div class="status-badge requesting">

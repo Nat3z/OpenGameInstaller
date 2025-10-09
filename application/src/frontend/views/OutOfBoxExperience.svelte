@@ -14,6 +14,7 @@
     | 'real-debrid'
     | 'webtorrent'
     | 'torbox'
+    | 'premiumize'
     | '' = $state('webtorrent');
   let fulfilledRequirements = $state(false);
   let addons = '';
@@ -143,6 +144,18 @@
       window.electronAPI.fs.write(
         './config/option/realdebrid.json',
         JSON.stringify({ torboxApiKey: apiKey.value, debridApiKey: '' })
+      );
+      fulfilledRequirements = true;
+    } else if (selectedTorrenter === 'premiumize') {
+      console.log('Submitting Premiumize API Key');
+      // save a file with the api key
+      const apiKey = document.querySelector(
+        'input[data-premiumize-key]'
+      ) as HTMLInputElement;
+      window.electronAPI.fs.mkdir('./config/option/');
+      window.electronAPI.fs.write(
+        './config/option/realdebrid.json',
+        JSON.stringify({ premiumizeApiKey: apiKey.value, debridApiKey: '' })
       );
       fulfilledRequirements = true;
     }
@@ -512,6 +525,15 @@
           <img class="w-16 h-16" src="./torbox.svg" alt="Torbox" />
         </button>
         <button
+          onclick={() => (selectedTorrenter = 'premiumize')}
+          class="flex justify-center p-4 items-center w-24 h-24 bg-accent-lighter hover:bg-accent-light rounded-lg border-2 transition-colors duration-200 {selectedTorrenter ===
+          'premiumize'
+            ? 'border-accent'
+            : 'border-accent-light'}"
+        >
+          <img class="w-16 h-16" src="./premiumize.svg" alt="Premiumize" />
+        </button>
+        <button
           onclick={() => (selectedTorrenter = 'qbittorrent')}
           class="flex justify-center p-4 items-center w-24 h-24 bg-accent-lighter hover:bg-accent-light rounded-lg border-2 transition-colors duration-200 {selectedTorrenter ===
           'qbittorrent'
@@ -647,6 +669,23 @@
               >TorBox API Key</a
             >.
           </label>
+        {:else if selectedTorrenter === 'premiumize'}
+          <input
+            data-premiumize-key
+            type="text"
+            onchange={submitTorrenter}
+            placeholder="Premiumize API Key"
+            class="w-full p-3 bg-white border border-accent-light rounded-lg focus:outline-none focus:ring-2 focus:ring-accent"
+          />
+          <!-- svelte-ignore a11y_label_has_associated_control -->
+          <label class="text-sm text-gray-500 mt-2"
+            >Insert your <a
+              href="https://www.premiumize.me/account"
+              target="_blank"
+              class="underline text-accent hover:text-accent-dark"
+              >Premiumize API Key</a
+            ></label
+          >
         {/if}
       </form>
       {#if fulfilledRequirements || selectedTorrenter === 'webtorrent'}

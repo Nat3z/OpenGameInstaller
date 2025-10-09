@@ -203,7 +203,8 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
     if (
       options.data &&
       options.headers &&
-      options.headers['Content-Type'] === 'multipart/form-data'
+      (options.headers['Content-Type'] === 'multipart/form-data' ||
+        options.headers['Content-Type'] === 'application/x-www-form-urlencoded')
     ) {
       const formData = new FormData();
       for (const [key, value] of Object.entries(options.data)) {

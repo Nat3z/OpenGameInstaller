@@ -1,9 +1,5 @@
 import { createNotification, currentDownloads } from '../../../store';
-import {
-  getDownloadPath,
-  listenUntilDownloadReady,
-  updateDownloadStatus,
-} from '../../../utils';
+import { getDownloadPath, listenUntilDownloadReady } from '../../../utils';
 import { getConfigClientOption } from '../../config/client';
 import type { SearchResultWithAddon } from '../../tasks/runner';
 import { BaseService } from './BaseService';
@@ -87,7 +83,10 @@ export class TorboxService extends BaseService {
         result.downloadURL!
       );
       // with the torrent data, use in new FormData as a file
-      addTorrentForm.append('file', new Blob([torrentData]));
+      addTorrentForm.append(
+        'file',
+        new Blob([torrentData.buffer as ArrayBuffer])
+      );
       torrentHash = await window.electronAPI.getTorrentHash(torrentData);
     } else if (result.downloadType === 'magnet') {
       addTorrentForm.append('magnet', result.downloadURL!);
@@ -209,23 +208,7 @@ export class TorboxService extends BaseService {
 
     // -- STEP 3: WAIT FOR THE TORRENT TO BE READY  --
     // insert into the downloadItems array the temp id
-    const tempId = Math.random().toString(36).substring(2, 15);
-    currentDownloads.update((downloads) => {
-      return [
-        ...downloads,
-        {
-          id: '' + tempId,
-          downloadSize: 0,
-          status: 'rd-downloading',
-          appID: appID,
-          progress: 0,
-          usedDebridService: 'torbox',
-          downloadPath: getDownloadPath() + '/' + result.name,
-          downloadSpeed: 0,
-          ...result,
-        },
-      ];
-    });
+    const tempId = this.queueRequestDownload(result, appID, 'torbox');
 
     // wait for the torrent to be on the dashboard
     console.log('torrentHash: ', torrentHash);
@@ -318,21 +301,13 @@ export class TorboxService extends BaseService {
       }
 
       console.log('updatedState: ', updatedState);
-      updateDownloadStatus(tempId + '', {
-        id: downloadID,
-        status: 'downloading',
-        usedDebridService: 'torbox',
-        downloadPath:
-          getDownloadPath() +
-          '/' +
-          result.name +
-          '/' +
-          result.filename +
-          '.zip',
-        queuePosition: updatedState[downloadID]?.queuePosition,
-        downloadURL: downloadUrl,
-        originalDownloadURL: result.downloadURL,
-      });
+      this.updateDownloadRequested(
+        downloadID,
+        tempId,
+        downloadUrl,
+        updatedState,
+        result
+      );
     }
   }
 }

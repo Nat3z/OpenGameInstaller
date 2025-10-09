@@ -1,11 +1,12 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
-
   let { addonId, class: className }: { addonId: string; class?: string } =
     $props();
   let image = $state<string | undefined>(undefined);
 
-  onMount(() => {
+  $effect(() => {
+    // Reset image when addonId changes
+    image = undefined;
+
     console.log('Getting addon icon for: ' + addonId);
     window.electronAPI.app.getAddonIcon(addonId).then(async (iconPath) => {
       if (iconPath) {

@@ -570,7 +570,7 @@
                 </div>
               {/if}
               <!-- Loading indicators for addons still searching -->
-              {#each Array.from(loadingAddons) as addonId, index}
+              {#each Array.from(loadingAddons) as addonId, index (addonId)}
                 {@const isEmpty = emptyAddons.has(addonId)}
                 <div
                   class="bg-accent-lighter rounded-lg p-4 mb-4 opacity-75"
@@ -616,7 +616,7 @@
 
               <!-- Actual results grouped by addon -->
               {#if resultsByAddon.length > 0}
-                {#each resultsByAddon.filter( (group) => group.results.some((result) => !alreadyOwns || result.downloadType === 'task') ) as addonGroup, groupIndex}
+                {#each resultsByAddon.filter( (group) => group.results.some((result) => !alreadyOwns || result.downloadType === 'task') ) as addonGroup, groupIndex (addonGroup.addonId)}
                   {@const filteredResults = addonGroup.results.filter(
                     (result) => !alreadyOwns || result.downloadType === 'task'
                   )}

@@ -24,6 +24,5 @@
     "esModuleInterop": true,
     "isolatedModules": true
   },
-  "include": [".", "../typings"],
-  "exclude": ["node_modules"]
+  "include": [".", "../typings"]
 }

@@ -22,6 +22,5 @@
     "isolatedModules": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["."],
-  "exclude": ["node_modules/*", "__sapper__/*", "public/*"]
+  "include": ["."]
 }

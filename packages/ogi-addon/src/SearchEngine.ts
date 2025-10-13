@@ -7,12 +7,12 @@ export type SearchResult = BaseRequiredFields &
   (
     | {
         downloadType: 'torrent' | 'magnet';
-        filename?: string;
-        downloadURL?: string;
+        filename: string;
+        downloadURL: string;
       }
     | {
         downloadType: 'direct';
-        files?: {
+        files: {
           name: string;
           downloadURL: string;
           headers?: Record<string, string>;

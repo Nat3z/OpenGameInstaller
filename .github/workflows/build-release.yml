@@ -26,7 +26,11 @@ jobs:
       startsWith(github.event.head_commit.message, 'hotfix:') ||
       startsWith(github.event.head_commit.message, 'chore:') ||
       startsWith(github.event.head_commit.message, 'feat:') ||
-      startsWith(github.event.head_commit.message, 'feat(')
+      startsWith(github.event.head_commit.message, 'feat(') ||
+      startsWith(github.event.head_commit.message, 'fix:') ||
+      startsWith(github.event.head_commit.message, 'fix(') ||
+      github.event_name == 'workflow_dispatch'
+
     runs-on: ubuntu-latest
     outputs:
       release_id: ${{ steps.create_release.outputs.id }}

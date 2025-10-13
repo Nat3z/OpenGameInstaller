@@ -1,6 +1,6 @@
 {
   "name": "opengameinstaller-gui",
-  "version": "2.4.1",
+  "version": "2.4.2",
   "description": "The front-facing GUI for OpenGameInstaller and the addon-server.",
   "type": "module",
   "private": false,
@@ -46,6 +46,7 @@
     "@types/express": "^4.17.21",
     "axios": "^1.7.2",
     "cors": "^2.8.5",
+    "create-torrent": "^6.1.0",
     "d3": "^7.9.0",
     "express": "^4.19.2",
     "fuse.js": "^7.1.0",

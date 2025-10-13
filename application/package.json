@@ -28,7 +28,7 @@
   },
   "scripts": {
     "build": "rollup -c --bundleConfigAsCjs",
-    "build:ogiaddon": "cd ../packages/ogi-addon/ && tsup && cd ../real-debrid/ && tsup",
+    "build:ogiaddon": "cd ../packages/ogi-addon/ && bun x tsup && cd ../real-debrid/ && bun x tsup",
     "dev": "bun run build:ogiaddon && rollup -c -w --bundleConfigAsCjs",
     "start": "sirv public --no-clear",
     "electron": "wait-on http://localhost:8080 && tsc --p tsconfig.electron.json && electron ./build/main.js",

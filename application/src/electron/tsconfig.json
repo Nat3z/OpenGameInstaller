@@ -2,6 +2,7 @@
   "compileOnSave": true,
   "compilerOptions": {
     "outDir": "../../build",
+    "typeRoots": ["node_modules/@types"],
     "target": "ESNext",
     "allowJs": true,
     "module": "ESNext",
@@ -22,7 +23,8 @@
     "emitDecoratorMetadata": true,
     "experimentalDecorators": true,
     "esModuleInterop": true,
-    "isolatedModules": true
+    "isolatedModules": true,
+    "skipLibCheck": true
   },
   "include": [".", "../typings"]
 }

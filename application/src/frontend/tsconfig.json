@@ -2,6 +2,7 @@
   "extends": "@tsconfig/svelte/tsconfig.json",
   "compilerOptions": {
     "types": ["node", "svelte", "ogi-addon", "d3"],
+    "typeRoots": ["node_modules/@types"],
     "sourceMap": true,
     "target": "ESNext",
     "stripInternal": true,
@@ -20,7 +21,8 @@
     "experimentalDecorators": true,
     "esModuleInterop": true,
     "isolatedModules": true,
-    "forceConsistentCasingInFileNames": true
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true
   },
   "include": ["."]
 }

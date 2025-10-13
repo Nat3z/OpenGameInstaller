@@ -36,6 +36,7 @@
     "electron-dev": "concurrently \"bun run dev\" \"bun run electron\"",
     "preelectron-pack": "bun run build:ogiaddon && bun x tsc --p tsconfig.electron.json && bun run build",
     "electron-pack": "electron-builder",
+    "electron-pack:linux": "electron-builder -l",
     "check": "svelte-check --tsconfig ./tsconfig.svelte.json",
     "rebuild": "npm rebuild"
   },

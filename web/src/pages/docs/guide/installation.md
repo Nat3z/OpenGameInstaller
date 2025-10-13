@@ -36,12 +36,12 @@ passwd
 
 > [!INFO]
 > OGI automatically downloads all of these tools necessary on first launch. If you are having issues with downloading the tools through the
-> app, we recommend to follow the manual guides below.
+> app, we recommend following the manual guides below.
 
 ### Installing Git
 
 If your device does not have Git pre-installed (ex. Windows) and OGI failed to automatically download
-it, you must download it through [git-scm.com](https://git-scm.com/). Afterwards, a restsrt of your computer
+it, you must download it through [git-scm.com](https://git-scm.com/). Afterwards, a restart of your computer
 is required.
 
 ### Installing Bun
@@ -51,7 +51,7 @@ to access your home folder and you have a stable internet connection. Downloadin
 also is a solution to this problem.
 
 To download Bun manually, open a powershell window (if on Windows) or a terminal (Konsole if on Steam Deck) and run the command found
-found at the top on [bun.sh](https://bun.sh).
+at the top on [bun.sh](https://bun.sh).
 
 If there are any issues with installing Bun through this script, please don't go to us for support. Resort to GitHub discussions
 or issues on the [Bun GitHub repository](https://github.com/oven-sh/bun) instead.

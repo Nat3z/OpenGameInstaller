@@ -23,7 +23,3 @@ Make sure you have a catalog addon installed. When you downloaded OpenGameInstal
 ### My search isn't giving any results
 
 Make sure that you are searching through the search bar that's persistent between view changes, it's the one at the very top next to the OGI logo, the downloads, and notifications buttons. Additionally, make sure your search query is precise, with no missing letters, typos, or acronyms. If you are still having issues, make sure that a source search addon is installed.
-
-### My game isn't launching
-
-If you are playing on Linux, games are automatically setup and configured to work on Steam with Proton. The built-in library feature is currently not supported for Linux. If you don't see the game on Steam, make sure that you either entered into Game Mode or fully restarted the Steam client.

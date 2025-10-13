@@ -6,7 +6,7 @@ part: 3
 section: Your First Addon
 ---
 
-Adding a config to your addon lets your users to adjust and configure it via the built-in configuration manager.
+Adding a config to your addon lets your users adjust and configure it via the built-in configuration manager.
 
 To add a config, add an event handler for the `configure` event.
 

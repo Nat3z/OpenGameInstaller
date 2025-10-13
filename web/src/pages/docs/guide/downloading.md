@@ -29,6 +29,13 @@ To use TorBox as a torrenting client, you need to set your TorBox API key in the
 > [!INFO]
 > Requires a TorBox account and active subscription. [Get a subscription with my link here](https://torbox.app/subscription?referral=e5b6cae9-f8b7-4f6a-823f-9db2b89cd37a).
 
+### Premiumize
+
+To use Premiumize as a torrenting client, you need to set your Premiumize API key in the settings. Make sure it's selected as the client in `Settings > General`. Afterwards, go to `Settings > Torrent Clients` and [set the API key to your Premiumize key found on this link.](https://premiumize.me/account)
+
+> [!INFO]
+> Requires a Premiumize account and active subscription. [Get a subscription with my link here](https://premiumize.me/account).
+
 ### Real-Debrid
 
 To use Real-Debrid as a torrenting client, you need to set your Real-Debrid API key in the settings. Make sure it's selected as the client in `Settings > General`. Afterwards, go to `Settings > Torrent Clients` and [set the API key to your Real-Debrid key found on this link.](https://real-debrid.com/apitoken)
@@ -49,3 +56,17 @@ WebTorrent is built into OGI. To use it, go to `Settings > General` and select `
 
 > [!WARNING]
 > This client misses some features that other clients have (such as VPN binding), so we recommend to use this client when you want a seamless experience without needing extra setup.
+
+## Choosing a Torrent Client
+
+When choosing a torrent client, you should consider some factors:
+
+1. What are the DMCA laws in your country?
+1. Do you want privacy when torrenting?
+1. Are you willing to pay for a premium service?
+
+Simply put, if you are in a country with strict DMCA laws or you want privacy when torrenting, we recommend
+to use a premium cloud downloading service. Great options include Real-Debrid, Premiumize, and TorBox.
+If you aren't interested in cloud downloading but still want privacy, we recommend to pay for an external VPN
+and use qBittorrent (with proper VPN binding). Otherwise, if you just want a seamless experience with OpenGameInstaller,
+we recommend to use WebTorrent as it is built into the app and requires no setup.

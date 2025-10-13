@@ -6,12 +6,11 @@
     "dev": "cd application && bun run electron-dev"
   },
   "workspaces": [
-    "packages/ogi-addon",
-    "packages/real-debrid",
-    "packages/create-ogi-addon",
+    "packages/*",
     "application",
     "updater",
-    "web"
+    "web",
+    "test-addon"
   ],
   "devDependencies": {
     "prettier": "^3.6.2",

@@ -1,18 +1,18 @@
 ---
 layout: ../../../layouts/BlogLayout.astro
-title: Creating an Store Page
+title: Creating a Store Page
 description: A guide on how to create a store page for your addon.
 part: 5
 section: Your First Addon
 ---
 
-Store pages are listings with contain information about a game. OpenGameInstaller uses the information provided by the `game-details` event to create the store page.
+Store pages are listings which contain information about a game. OpenGameInstaller uses the information provided by the `game-details` event to create the store page.
 
 # Storefronts
 
 Storefronts are used to identify the source of a game. For example, if you want to create a store page for a game, you need to assign that game to a specific "storefront" like `steam`, `epic`, `origin`, etc. Keep in mind that the storefront can be any name you want, as OpenGameInstaller does not have any built-in storefronts or concept of a real/fake storefront where you can buy from.
 
-When creating a store front, you must add it to the `storefronts` property in your addon's `addon.json` file.
+When creating a store front, you must add it to the `storefronts` property in your addon's `OGIAddon` class.
 
 ```typescript
 const addon = new OGIAddon({

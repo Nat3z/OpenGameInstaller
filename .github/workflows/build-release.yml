@@ -159,7 +159,7 @@ jobs:
         with:
           bun-version: 1.2.23
       - name: Install Dependencies
-        run: bun install --
+        run: bun install
 
       - name: Build Release Client
         run: cd application && bun run preelectron-pack && bun run electron-pack

@@ -99,6 +99,7 @@ export async function loadPersistedDownloads(): Promise<
         // If this was a Debrid job but we never captured a resolved link, skip restoring it
         if (
           info.usedDebridService &&
+          (info.downloadType === 'torrent' || info.downloadType === 'magnet') &&
           (!info.downloadURL || info.downloadURL === info.originalDownloadURL)
         ) {
           // No resolved URL persisted; restoring this could fail on resume. Drop it.
@@ -167,8 +168,13 @@ export async function initDownloadPersistence() {
                   downloadInfo: { ...item },
                   pausedAt: Date.now(),
                   originalDownloadURL:
-                    item.originalDownloadURL || item.downloadURL,
-                  files: item.files,
+                    item.originalDownloadURL ||
+                    (item.downloadType === 'torrent' ||
+                    item.downloadType === 'magnet'
+                      ? item.downloadURL
+                      : undefined),
+                  files:
+                    item.downloadType === 'direct' ? item.files : undefined,
                 };
                 localPausedMap.set(item.id, state);
                 const ok = await restartDownload(state, localPausedMap);

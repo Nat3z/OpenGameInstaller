@@ -17,6 +17,9 @@ export class TorrentService extends BaseService {
   ): Promise<void> {
     if (event === null) return;
     if (event.target === null) return;
+    if (result.downloadType !== 'magnet' && result.downloadType !== 'torrent')
+      return;
+
     const htmlButton = event.target as HTMLButtonElement;
 
     if (!result.downloadURL) {

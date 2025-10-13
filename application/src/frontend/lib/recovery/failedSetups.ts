@@ -161,10 +161,20 @@ export async function retryFailedSetup(failedSetup: FailedSetup) {
       ];
     });
     if (failedSetup.should === 'call-unrar') {
+      const filename =
+        failedSetup.downloadInfo.downloadType === 'torrent' ||
+        failedSetup.downloadInfo.downloadType === 'magnet'
+          ? failedSetup.downloadInfo.filename
+          : undefined;
+      if (!filename) {
+        throw new Error(
+          'Cannot extract RAR: filename not available for this download type'
+        );
+      }
       const rarFilePath =
         failedSetup.downloadInfo.downloadPath.replace(/(\/|\\)$/g, '') +
         '/' +
-        failedSetup.downloadInfo.filename;
+        filename;
       const outputBase =
         failedSetup.downloadInfo.downloadPath.replace(/(\/|\\)$/g, '') +
         '/' +
@@ -182,10 +192,20 @@ export async function retryFailedSetup(failedSetup: FailedSetup) {
 
     if (failedSetup.should === 'call-unzip') {
       // Build the absolute path to the ZIP file using the directory + filename
+      const filename =
+        failedSetup.downloadInfo.downloadType === 'torrent' ||
+        failedSetup.downloadInfo.downloadType === 'magnet'
+          ? failedSetup.downloadInfo.filename
+          : undefined;
+      if (!filename) {
+        throw new Error(
+          'Cannot extract ZIP: filename not available for this download type'
+        );
+      }
       const originalZipFilePath =
         failedSetup.downloadInfo.downloadPath.replace(/(\/|\\)$/g, '') +
         '/' +
-        failedSetup.downloadInfo.filename;
+        filename;
       const outputBase = originalZipFilePath.replace(/\.zip$/g, '');
       const attemptUnzip: () => Promise<string | undefined> = async () => {
         const output = await unzipAndReturnOutputDir({

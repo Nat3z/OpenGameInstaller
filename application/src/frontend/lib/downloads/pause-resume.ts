@@ -41,11 +41,17 @@ async function enqueueRemainingPausedDownloads(
   for (const item of toQueue) {
     try {
       // Skip if we lack the data needed to restart
+      const itemDownloadURL =
+        item.downloadType === 'torrent' || item.downloadType === 'magnet'
+          ? item.downloadURL
+          : undefined;
       const effectiveUrl = (item as any).usedDebridService
-        ? item.downloadURL || item.originalDownloadURL
-        : item.originalDownloadURL || item.downloadURL;
+        ? itemDownloadURL || item.originalDownloadURL
+        : item.originalDownloadURL || itemDownloadURL;
       const hasFiles =
-        Array.isArray((item as any).files) && (item as any).files.length > 0;
+        item.downloadType === 'direct' &&
+        Array.isArray(item.files) &&
+        item.files.length > 0;
       if (!effectiveUrl && !hasFiles) {
         continue;
       }
@@ -55,8 +61,8 @@ async function enqueueRemainingPausedDownloads(
         id: item.id,
         downloadInfo: { ...item },
         pausedAt: Date.now(),
-        originalDownloadURL: item.originalDownloadURL || item.downloadURL,
-        files: (item as any).files,
+        originalDownloadURL: item.originalDownloadURL || itemDownloadURL,
+        files: item.downloadType === 'direct' ? item.files : undefined,
       };
       pausedStates.set(item.id, state);
       // Restart to join the Electron queue; this will mark as 'downloading' and assign queue positions
@@ -85,8 +91,13 @@ export async function pauseDownload(downloadId: string): Promise<boolean> {
       id: downloadId,
       downloadInfo: { ...download },
       pausedAt: Date.now(),
-      originalDownloadURL: download.originalDownloadURL || download.downloadURL,
-      files: download.files,
+      originalDownloadURL:
+        download.originalDownloadURL ||
+        (download.downloadType === 'torrent' ||
+        download.downloadType === 'magnet'
+          ? download.downloadURL
+          : undefined),
+      files: download.downloadType === 'direct' ? download.files : undefined,
     };
 
     pausedDownloadStates.set(downloadId, pausedState);
@@ -155,8 +166,12 @@ export async function resumeDownload(downloadId: string): Promise<boolean> {
         downloadInfo: { ...fallback },
         pausedAt: Date.now(),
         originalDownloadURL:
-          fallback.originalDownloadURL || fallback.downloadURL,
-        files: fallback.files,
+          fallback.originalDownloadURL ||
+          (fallback.downloadType === 'torrent' ||
+          fallback.downloadType === 'magnet'
+            ? fallback.downloadURL
+            : undefined),
+        files: fallback.downloadType === 'direct' ? fallback.files : undefined,
       };
       pausedDownloadStates.set(downloadId, pausedState);
     }

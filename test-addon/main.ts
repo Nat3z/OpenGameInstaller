@@ -166,7 +166,10 @@ addon.on('search', ({ storefront, appID, for: searchFor }, event) => {
       {
         name: 'Direct Download Test',
         downloadType: 'request',
-        filename: 'Big Buck Bunny',
+      },
+      {
+        name: 'Empty Test',
+        downloadType: 'empty',
       },
       {
         name: 'Smaller File',

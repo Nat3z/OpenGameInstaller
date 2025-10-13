@@ -14,9 +14,13 @@ async function restartDirectDownload(
   download: DownloadStatusAndInfo
 ): Promise<string> {
   // Prefer the latest resolved URL for Debrid services. Fall back otherwise.
+  const downloadURL =
+    download.downloadType === 'torrent' || download.downloadType === 'magnet'
+      ? download.downloadURL
+      : undefined;
   const effectiveUrl = download.usedDebridService
-    ? download.downloadURL || download.originalDownloadURL
-    : download.originalDownloadURL || download.downloadURL;
+    ? downloadURL || download.originalDownloadURL
+    : download.originalDownloadURL || downloadURL;
 
   let files: {
     link: string;
@@ -24,13 +28,21 @@ async function restartDirectDownload(
     headers?: Record<string, string>;
   }[] = [];
 
-  if (download.files && download.files.length > 0) {
+  const downloadFiles =
+    download.downloadType === 'direct' ? download.files : undefined;
+  if (downloadFiles && downloadFiles.length > 0) {
     // Multi-part download
-    files = download.files.map((file) => ({
-      link: file.downloadURL,
-      path: getDownloadPath() + '/' + download.name + '/' + file.name,
-      headers: file.headers,
-    }));
+    files = downloadFiles.map(
+      (file: {
+        name: string;
+        downloadURL: string;
+        headers?: Record<string, string>;
+      }) => ({
+        link: file.downloadURL,
+        path: getDownloadPath() + '/' + download.name + '/' + file.name,
+        headers: file.headers,
+      })
+    );
   } else if (effectiveUrl) {
     // Single file download
     const deriveFilenameFromUrl = (url?: string): string | undefined => {
@@ -58,14 +70,19 @@ async function restartDirectDownload(
     } else {
       // Choose a filename that preserves the extension from the URL if present
       // If download.filename lacks an extension but the URL has one, use the URL-based name
+      const downloadFilename =
+        download.downloadType === 'torrent' ||
+        download.downloadType === 'magnet'
+          ? download.filename
+          : undefined;
       const filenameHasExt =
-        !!download.filename && /\.[A-Za-z0-9]{1,8}$/.test(download.filename);
+        !!downloadFilename && /\.[A-Za-z0-9]{1,8}$/.test(downloadFilename);
       const chosenFilename =
         (urlFilename && /\.[A-Za-z0-9]{1,8}$/.test(urlFilename)
           ? urlFilename
           : undefined) ||
-        (filenameHasExt ? download.filename : undefined) ||
-        download.filename ||
+        (filenameHasExt ? downloadFilename : undefined) ||
+        downloadFilename ||
         urlFilename ||
         'download';
       targetPath =
@@ -91,15 +108,22 @@ async function restartTorrentDownload(
   download: DownloadStatusAndInfo
 ): Promise<string> {
   // For torrent/magnet restarts, prefer the latest link if Debrid provided a new one.
+  const downloadURL =
+    download.downloadType === 'torrent' || download.downloadType === 'magnet'
+      ? download.downloadURL
+      : undefined;
   const effectiveUrl = download.usedDebridService
-    ? download.downloadURL || download.originalDownloadURL
-    : download.originalDownloadURL || download.downloadURL;
+    ? downloadURL || download.originalDownloadURL
+    : download.originalDownloadURL || downloadURL;
   if (!effectiveUrl) {
     throw new Error('No torrent URL available for restart');
   }
 
   // Generate a safe filename fallback
-  let filename = download.filename;
+  let filename =
+    download.downloadType === 'torrent' || download.downloadType === 'magnet'
+      ? download.filename
+      : undefined;
   if (!filename) {
     if (download.downloadType === 'magnet') {
       // For magnet links, extract name from the magnet URI or use a generic name

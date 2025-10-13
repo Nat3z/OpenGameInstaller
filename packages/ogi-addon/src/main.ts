@@ -165,7 +165,7 @@ export interface EventListenerTypes {
   setup: (
     data: {
       path: string;
-      type: 'direct' | 'torrent' | 'magnet';
+      type: 'direct' | 'torrent' | 'magnet' | 'empty';
       name: string;
       usedRealDebrid: boolean;
       multiPartFiles?: {

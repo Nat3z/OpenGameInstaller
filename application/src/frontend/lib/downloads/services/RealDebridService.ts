@@ -16,6 +16,9 @@ export class RealDebridService extends BaseService {
     appID: number,
     event: MouseEvent
   ): Promise<void> {
+    if (result.downloadType !== 'magnet' && result.downloadType !== 'torrent')
+      return;
+
     if (event === null) return;
     if (event.target === null) return;
     const htmlButton = event.target as HTMLButtonElement;
@@ -63,6 +66,8 @@ export class RealDebridService extends BaseService {
     host: $Hosts,
     htmlButton: HTMLButtonElement
   ): Promise<void> {
+    if (result.downloadType !== 'magnet') return;
+
     // add magnet link
     const magnetLink = await window.electronAPI.realdebrid.addMagnet(
       result.downloadURL!,
@@ -145,6 +150,8 @@ export class RealDebridService extends BaseService {
     tempId: string,
     htmlButton: HTMLButtonElement
   ): Promise<void> {
+    if (result.downloadType !== 'torrent') return;
+
     if (!result.name || !result.downloadURL) {
       createNotification({
         id: Math.random().toString(36).substring(7),

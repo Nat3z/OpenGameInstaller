@@ -4,6 +4,7 @@ import { TorrentService } from './TorrentService';
 import { RealDebridService } from './RealDebridService';
 import { TorboxService } from './TorboxService';
 import { PremiumizeService } from './PremiumizeService';
+import { EmptyService } from './EmptyService';
 
 export { BaseService } from './BaseService';
 export { RequestService } from './RequestService';
@@ -12,6 +13,7 @@ export { TorrentService } from './TorrentService';
 export { RealDebridService } from './RealDebridService';
 export { TorboxService } from './TorboxService';
 export { PremiumizeService } from './PremiumizeService';
+export { EmptyService } from './EmptyService';
 
 /**
  * Array of all available service instances. You can iterate over this list to find the
@@ -24,4 +26,5 @@ export const ALL_SERVICES = [
   new RealDebridService(),
   new TorboxService(),
   new PremiumizeService(),
+  new EmptyService(),
 ];

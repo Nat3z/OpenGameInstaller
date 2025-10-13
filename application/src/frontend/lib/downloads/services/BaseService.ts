@@ -67,7 +67,10 @@ export abstract class BaseService {
       downloadPath: downloadPath,
       queuePosition: flushed[tempid]?.queuePosition,
       downloadURL: downloadUrl,
-      originalDownloadURL: result.downloadURL,
+      ...((result.downloadType === 'torrent' ||
+        result.downloadType === 'magnet') && {
+        originalDownloadURL: result.downloadURL,
+      }),
     });
   }
 }

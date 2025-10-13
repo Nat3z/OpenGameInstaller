@@ -15,52 +15,28 @@ export class DirectService extends BaseService {
     appID: number,
     event: MouseEvent
   ): Promise<void> {
+    if (result.downloadType !== 'direct') return;
     if (event === null) return;
     if (event.target === null) return;
     const htmlButton = event.target as HTMLButtonElement;
 
-    if (!result.filename && !result.files) {
+    if (!result.files || result.files.length === 0) {
       createNotification({
         id: Math.random().toString(36).substring(7),
         type: 'error',
-        message: 'Addon did not provide a filename for the direct download.',
+        message: 'Addon did not provide files for the direct download.',
       });
       return;
     }
 
-    const deriveFilenameFromUrl = (url?: string): string | undefined => {
-      if (!url) return undefined;
-      try {
-        const u = new URL(url);
-        const last = u.pathname.split('/').pop();
-        return last && last.length > 0 ? decodeURIComponent(last) : undefined;
-      } catch (e) {
-        const parts = url.split(/[\\\/]/);
-        return parts.length > 0 ? parts[parts.length - 1] : undefined;
-      }
-    };
-
-    const singleFilename =
-      result.filename ||
-      deriveFilenameFromUrl(result.downloadURL) ||
-      'download';
-
-    let collectedFiles = [
-      {
-        path: getDownloadPath() + '/' + result.name + '/' + singleFilename,
-        link: result.downloadURL!!,
-      },
-    ];
-    if (result.files) {
-      collectedFiles = result.files.map((file) => {
-        return {
-          path: getDownloadPath() + '/' + result.name + '/' + file.name,
-          link: file.downloadURL,
-          // remove proxy
-          headers: JSON.parse(JSON.stringify(file.headers || {})),
-        };
-      });
-    }
+    const collectedFiles = result.files.map((file) => {
+      return {
+        path: getDownloadPath() + '/' + result.name + '/' + file.name,
+        link: file.downloadURL,
+        // remove proxy
+        headers: JSON.parse(JSON.stringify(file.headers || {})),
+      };
+    });
 
     const { flush } = listenUntilDownloadReady();
 
@@ -79,11 +55,7 @@ export class DirectService extends BaseService {
             progress: 0,
             appID,
             downloadSize: 0,
-            originalDownloadURL: result.downloadURL, // Store original URL for resume
             queuePosition: updatedState[id]?.queuePosition ?? 999,
-            files: result.files, // Store files info for multi-part downloads
-            // Ensure filename is persisted for consistent restarts
-            filename: result.filename || singleFilename,
             ...result,
           },
         ];

@@ -60,6 +60,9 @@ export class TorboxService extends BaseService {
     event: MouseEvent
   ): Promise<void> {
     if (event === null) return;
+    if (result.downloadType !== 'magnet' && result.downloadType !== 'torrent')
+      return;
+
     const optionHandled = getConfigClientOption<{ torboxApiKey?: string }>(
       'realdebrid'
     );
@@ -283,7 +286,7 @@ export class TorboxService extends BaseService {
             '/' +
             result.name +
             '/' +
-            result.filename +
+            result.filename! +
             '.zip',
         },
       ]);

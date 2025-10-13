@@ -75,6 +75,9 @@ export class PremiumizeService extends BaseService {
     appID: number,
     _event: MouseEvent
   ): Promise<void> {
+    if (result.downloadType !== 'magnet' && result.downloadType !== 'torrent')
+      return;
+
     console.log('PremiumizeService startDownload', result);
     const optionHandled = getConfigClientOption<{ premiumizeApiKey?: string }>(
       'realdebrid'

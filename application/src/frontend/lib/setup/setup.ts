@@ -36,7 +36,13 @@ export function createSetupPayload(
     usedRealDebrid: downloadedItem.usedDebridService !== undefined,
     appID: downloadedItem.appID,
     storefront: downloadedItem.storefront,
-    multiPartFiles: JSON.parse(JSON.stringify(downloadedItem.files || [])),
+    multiPartFiles: JSON.parse(
+      JSON.stringify(
+        downloadedItem.downloadType === 'direct'
+          ? downloadedItem.files || []
+          : []
+      )
+    ),
     manifest: JSON.parse(JSON.stringify(downloadedItem.manifest || {})),
     ...additionalData,
   };
@@ -73,7 +79,10 @@ export function handleSetupError(
     usedRealDebrid: downloadedItem.usedDebridService !== undefined,
     appID: downloadedItem.appID,
     storefront: downloadedItem.storefront,
-    multiPartFiles: downloadedItem.files,
+    multiPartFiles:
+      downloadedItem.downloadType === 'direct'
+        ? downloadedItem.files
+        : undefined,
     manifest: downloadedItem.manifest,
   };
 

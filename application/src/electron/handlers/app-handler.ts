@@ -10,6 +10,19 @@ import { STEAMTINKERLAUNCH_PATH } from '../startup.js';
 import { clients } from '../server/addon-server.js';
 import { dirname, basename } from 'path';
 
+/**
+ * Escapes a string for safe use in shell commands by escaping special characters
+ */
+const escapeShellArg = (arg: string): string => {
+  // Replace any backslashes first (to avoid double-escaping)
+  // Then escape double quotes, dollar signs, backticks, and backslashes
+  return arg
+    .replace(/\\/g, '\\\\')
+    .replace(/"/g, '\\"')
+    .replace(/\$/g, '\\$')
+    .replace(/`/g, '\\`');
+};
+
 const getSilentInstallFlags = (
   filePath: string,
   fileName: string
@@ -256,7 +269,10 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
     );
     let args = appInfo.launchArguments || '%command%';
     // replace %command% with the launch executable
-    args = args.replace('%command%', `"${appInfo.launchExecutable}"`);
+    args = args.replace(
+      '%command%',
+      `"${escapeShellArg(appInfo.launchExecutable)}"`
+    );
     console.log('Launching game with args: ' + args, 'in cwd: ' + appInfo.cwd);
     const spawnedItem = exec(args, {
       cwd: appInfo.cwd,
@@ -789,7 +805,7 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
         // use steamtinkerlaunch to add the game to steam
         const result = await new Promise<boolean>((resolve) =>
           exec(
-            `${STEAMTINKERLAUNCH_PATH} addnonsteamgame --appname="${data.name}" --exepath="${data.launchExecutable}" --startdir="${data.cwd}" --launchoptions="${useWinePrefix ? `STEAM_COMPAT_DATA_PATH=${protonPath.split('/pfx')[0]}` : ''} ${data.launchArguments ?? ''}" --compatibilitytool="proton_experimental" --use-steamgriddb`,
+            `${STEAMTINKERLAUNCH_PATH} addnonsteamgame --appname="${escapeShellArg(data.name)}" --exepath="${escapeShellArg(data.launchExecutable)}" --startdir="${escapeShellArg(data.cwd)}" --launchoptions="${escapeShellArg((useWinePrefix ? `STEAM_COMPAT_DATA_PATH=${protonPath.split('/pfx')[0]} ` : '') + (data.launchArguments ?? ''))}" --compatibilitytool="proton_experimental" --use-steamgriddb`,
             {
               cwd: __dirname,
             },

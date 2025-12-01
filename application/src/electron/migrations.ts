@@ -156,7 +156,7 @@ let migrations: {
             '--system',
             '-y',
             'flathub',
-            'org.winehq.Wine/x86_64/stable-24.08',
+            'org.winehq.Wine/x86_64/stable-25.08',
           ],
           { cwd: __dirname }
         );

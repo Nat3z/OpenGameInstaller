@@ -142,12 +142,22 @@ jobs:
         with:
           name: windows-assets
           path: assets
+          merge-multiple: true
 
       - name: Download Linux Assets
         uses: actions/download-artifact@v4
         with:
           name: linux-assets
           path: assets
+          merge-multiple: true
+
+      - name: Flatten assets structure
+        run: |
+          mkdir -p assets-flat
+          find assets -type f -name "*.zip" -exec cp {} assets-flat/ \;
+          find assets -type f -name "*.exe" -exec cp {} assets-flat/ \;
+          find assets -type f -name "*.AppImage" -exec cp {} assets-flat/ \;
+          ls -la assets-flat/
 
       - name: Create Release and Upload Assets
         uses: softprops/action-gh-release@v2
@@ -172,7 +182,7 @@ jobs:
           draft: false
           prerelease: true
           files: |
-            assets/OpenGameInstaller-Portable.zip
-            assets/OpenGameInstaller-Setup.exe
-            assets/OpenGameInstaller-Setup.AppImage
-            assets/OpenGameInstaller-linux-pt.AppImage
+            assets-flat/OpenGameInstaller-Portable.zip
+            assets-flat/OpenGameInstaller-Setup.exe
+            assets-flat/OpenGameInstaller-Setup.AppImage
+            assets-flat/OpenGameInstaller-linux-pt.AppImage

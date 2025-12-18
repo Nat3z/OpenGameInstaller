@@ -1,7 +1,7 @@
 import * as fs from 'fs/promises';
 import * as fsSync from 'fs';
 import { join } from 'path';
-import { __dirname } from './paths.js';
+import { __dirname } from './manager/manager.paths.js';
 import semver from 'semver';
 import { sendNotification, VERSION } from './main.js';
 import { sendIPCMessage } from './main.js';

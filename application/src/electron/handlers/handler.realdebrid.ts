@@ -5,7 +5,7 @@ import { join } from 'path';
 import * as fs from 'fs';
 import RealDebrid from 'real-debrid-js';
 import { ReadStream } from 'original-fs';
-import { __dirname } from '../paths.js';
+import { __dirname } from '../manager/manager.paths.js';
 
 let realDebridClient = new RealDebrid({
   apiKey: 'UNSET',

@@ -3,17 +3,17 @@ import { server, port } from './server/addon-server.js';
 import { applicationAddonSecret } from './server/constants.js';
 import { app, BrowserWindow, globalShortcut, ipcMain, shell } from 'electron';
 import fs, { existsSync, readFileSync } from 'fs';
-import { processes } from './addon-init-configure.js';
-import { stopClient } from './webtorrent-connect.js';
+import { processes } from './manager/manager.addon.js';
+import { stopClient } from './manager/manager.webtorrent.js';
 import { ConfigurationFile } from 'ogi-addon/build/config/ConfigurationBuilder.js';
 import { checkIfInstallerUpdateAvailable } from './updater.js';
-import AppEventHandler from './handlers/app-handler.js';
-import FSEventHandler from './handlers/fs-handler.js';
-import RealdDebridHandler from './handlers/realdebrid-handler.js';
-import TorrentHandler from './handlers/torrent-handler.js';
-import DirectDownloadHandler from './handlers/ddl-handler.js';
-import AddonRestHandler from './handlers/addon-rest-handler.js';
-import { __dirname, isDev } from './paths.js';
+import AppEventHandler from './handlers/handler.app.js';
+import FSEventHandler from './handlers/handler.fs.js';
+import RealdDebridHandler from './handlers/handler.realdebrid.js';
+import TorrentHandler from './handlers/handler.torrent.js';
+import DirectDownloadHandler from './handlers/handler.ddl.js';
+import AddonRestHandler from './handlers/handler.rest.js';
+import { __dirname, isDev } from './manager/manager.paths.js';
 import {
   checkForAddonUpdates,
   convertLibrary,
@@ -22,8 +22,8 @@ import {
   restoreBackup,
   STEAMTINKERLAUNCH_PATH,
 } from './startup.js';
-import AddonManagerHandler, { startAddons } from './handlers/addon-manager.js';
-import OOBEHandler from './handlers/oobe-handler.js';
+import AddonManagerHandler, { startAddons } from './handlers/handler.addon.js';
+import OOBEHandler from './handlers/handler.oobe.js';
 import { execute as executeMigrations } from './migrations.js';
 
 export const VERSION = app.getVersion();

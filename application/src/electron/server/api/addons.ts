@@ -11,8 +11,8 @@ import {
 } from '../serve.js';
 import * as fs from 'fs/promises';
 import { join } from 'path';
-import { restartAddonServer } from '../../handlers/addon-manager.js';
-import { __dirname } from '../../paths.js';
+import { restartAddonServer } from '../../handlers/handler.addon.js';
+import { __dirname } from '../../manager/manager.paths.js';
 import { StoreData } from 'ogi-addon';
 
 const procedures: Record<string, Procedure<any>> = {

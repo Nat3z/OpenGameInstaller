@@ -1,5 +1,5 @@
 import { exec } from 'child_process';
-import { __dirname } from './paths.js';
+import { __dirname } from './manager/manager.paths.js';
 import { join } from 'path';
 import * as fs from 'fs';
 import * as fsPromises from 'fs/promises';

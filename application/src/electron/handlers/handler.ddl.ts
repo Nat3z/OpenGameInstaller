@@ -4,7 +4,7 @@ import { rm as rmAsync } from 'fs/promises';
 import { sendNotification } from '../main.js';
 import axios, { AxiosError, AxiosResponse } from 'axios';
 import { dirname } from 'path';
-import { DOWNLOAD_QUEUE } from '../queue.js';
+import { DOWNLOAD_QUEUE } from '../manager/manager.queue.js';
 import { Readable } from 'stream';
 import * as http from 'http';
 import * as https from 'https';

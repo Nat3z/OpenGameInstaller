@@ -1,6 +1,6 @@
 import { ipcMain } from 'electron';
 import { exec } from 'child_process';
-import { __dirname } from '../paths.js';
+import { __dirname } from '../manager/manager.paths.js';
 import fs from 'fs';
 import { join } from 'path';
 import axios from 'axios';

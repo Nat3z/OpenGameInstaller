@@ -5,7 +5,7 @@ import { join } from 'path';
 import * as fs from 'fs';
 import { exec, spawn, spawnSync } from 'child_process';
 import { LibraryInfo } from 'ogi-addon';
-import { __dirname } from '../paths.js';
+import { __dirname } from '../manager/manager.paths.js';
 import { STEAMTINKERLAUNCH_PATH } from '../startup.js';
 import { clients } from '../server/addon-server.js';
 import { dirname, basename } from 'path';

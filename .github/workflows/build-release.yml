@@ -12,10 +12,10 @@ permissions:
   contents: write
 
 jobs:
-  release:
+  build:
     permissions:
       contents: write
-    name: Create Github Release
+    runs-on: ${{ matrix.os }}
     if: >
       startsWith(github.ref, 'refs/tags/v') ||
       startsWith(github.event.head_commit.message, 'major(') ||
@@ -31,119 +31,6 @@ jobs:
       startsWith(github.event.head_commit.message, 'fix(') ||
       github.event_name == 'workflow_dispatch'
 
-    runs-on: ubuntu-latest
-    outputs:
-      release_id: ${{ steps.create_release.outputs.id }}
-    steps:
-      - name: Check out Git repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0 # Fetch full history to access tag annotations
-
-      - name: Extract commit message body
-        id: commit_body
-        run: |
-          echo "GITHUB_REF: ${{ github.ref }}"
-          echo "GITHUB_REF_NAME: ${{ github.ref_name }}"
-          echo "GITHUB_EVENT_HEAD_COMMIT_MESSAGE: ${{ github.event.head_commit.message }}"
-          git fetch --depth=1 origin +refs/tags/*:refs/tags/*
-          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
-            # For tags, first check if it's an annotated tag
-            TAG_TYPE=$(git cat-file -t "${{ github.ref_name }}")
-            echo "TAG_TYPE: $TAG_TYPE"
-
-            if [[ "$TAG_TYPE" == "tag" ]]; then
-              # Annotated tag - get the tag message
-              TAG_MESSAGE=$(git tag -l --format='%(contents)' "${{ github.ref_name }}" | sed '/^$/d' | sed '/-----BEGIN PGP SIGNATURE-----/,$d')
-              echo "ANNOTATED TAG_MESSAGE FOUND: $TAG_MESSAGE"
-              if [[ -n "$TAG_MESSAGE" && "$TAG_MESSAGE" != "" ]]; then
-                # get the tagline of the update from the tag message's first line
-                COMMIT_BODY=$(echo "$TAG_MESSAGE" | tail -n +2)
-                TAGLINE=$(echo "$TAG_MESSAGE" | head -n 1)
-                echo "TAGLINE: $TAGLINE"
-              else
-                # Even annotated tags might have empty messages, fallback to commit
-                COMMIT_MESSAGE=$(git log -1 --pretty=format:"%B" "${{ github.ref_name }}")
-                COMMIT_BODY=$(echo "$COMMIT_MESSAGE" | tail -n +2)
-                # get the tagline of the update from the commit message's first line
-                TAGLINE=$(echo "$COMMIT_MESSAGE" | head -n 1)
-                echo "TAGLINE: $TAGLINE"
-              fi
-            else
-              # Lightweight tag - use the commit message it points to
-              echo "LIGHTWEIGHT TAG - using commit message"
-              COMMIT_MESSAGE=$(git log -1 --pretty=format:"%B" "${{ github.ref_name }}")
-              COMMIT_BODY=$(echo "$COMMIT_MESSAGE" | tail -n +2)
-              # get the tagline of the update from the commit message's first line
-              TAGLINE=$(echo "$COMMIT_MESSAGE" | head -n 1)
-              echo "TAGLINE: $TAGLINE"
-            fi
-          else
-            # For regular commits, use commit message
-            COMMIT_MESSAGE='${{ github.event.head_commit.message }}'
-            # Extract everything after the first newline
-            COMMIT_BODY=$(echo "$COMMIT_MESSAGE" | tail -n +2)
-            # get the tagline of the update from the commit message's first line
-            TAGLINE=$(echo "$COMMIT_MESSAGE" | head -n 1)
-            echo "TAGLINE: $TAGLINE"
-          fi
-          echo "body<<EOF" >> $GITHUB_OUTPUT
-          echo "$COMMIT_BODY" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-          echo "tagline=$TAGLINE" >> $GITHUB_OUTPUT
-
-      - name: Get updater version
-        id: updater_version
-        run: |
-          UPDATER_VERSION=$(grep -o '"version": *"[^"]*"' updater/package.json | grep -o '[0-9.]*')
-          echo "version=$UPDATER_VERSION" >> $GITHUB_OUTPUT
-          echo "Updater version: $UPDATER_VERSION"
-
-      - name: Create Release
-        id: create_release
-        uses: softprops/action-gh-release@v2.5.0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || format('dev-{0}', github.sha) }}
-          name: ${{ startsWith(github.ref, 'refs/tags/v') && format('{0} - {1}', github.ref_name, steps.commit_body.outputs.tagline) || github.event.head_commit.message }}
-          draft: true
-          body: |
-            ${{
-              startsWith(github.ref, 'refs/tags/v')
-                && format(
-                  '# Release {0}
-            {1}
-
-            **Full Changelog:** https://github.com/Nat3z/OpenGameInstaller/commits/{0}
-            # How To Install
-
-            For the simplest installation, download the OpenGameInstaller-Setup.exe file and run it. **If you''re on Steam Deck, download the OpenGameInstaller-Setup.AppImage file.** It includes an auto-updater to keep OpenGameInstaller up-to-date.
-
-            ### Release Details
-
-            Setup Version: {2}
-            Application Version: {0}',
-                  github.ref_name,
-                  steps.commit_body.outputs.body,
-                  steps.updater_version.outputs.version
-                )
-              || steps.commit_body.outputs.body
-            }}
-          prerelease: false
-
-      - name: Output Release ID
-        run: echo "${{ steps.create_release.outputs.id }}" > release_id.txt
-      - name: Save Release ID for publish
-        uses: actions/upload-artifact@v4
-        with:
-          name: release_id
-          path: release_id.txt
-  build:
-    permissions:
-      contents: write
-    runs-on: ${{ matrix.os }}
-    needs: [release]
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest]
@@ -189,12 +76,67 @@ jobs:
           path: |
             updater/dist/OpenGameInstaller-Setup.AppImage
             application/dist/OpenGameInstaller-linux-pt.AppImage
-  upload:
+  release:
     permissions:
       contents: write
+    name: Create Github Release
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     needs: [build]
     steps:
+      - name: Check out Git repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Fetch full history to access tag annotations
+
+      - name: Extract commit message body
+        id: commit_body
+        run: |
+          echo "GITHUB_REF: ${{ github.ref }}"
+          echo "GITHUB_REF_NAME: ${{ github.ref_name }}"
+          git fetch --depth=1 origin +refs/tags/*:refs/tags/*
+          # For tags, first check if it's an annotated tag
+          TAG_TYPE=$(git cat-file -t "${{ github.ref_name }}")
+          echo "TAG_TYPE: $TAG_TYPE"
+
+          if [[ "$TAG_TYPE" == "tag" ]]; then
+            # Annotated tag - get the tag message
+            TAG_MESSAGE=$(git tag -l --format='%(contents)' "${{ github.ref_name }}" | sed '/^$/d' | sed '/-----BEGIN PGP SIGNATURE-----/,$d')
+            echo "ANNOTATED TAG_MESSAGE FOUND: $TAG_MESSAGE"
+            if [[ -n "$TAG_MESSAGE" && "$TAG_MESSAGE" != "" ]]; then
+              # get the tagline of the update from the tag message's first line
+              COMMIT_BODY=$(echo "$TAG_MESSAGE" | tail -n +2)
+              TAGLINE=$(echo "$TAG_MESSAGE" | head -n 1)
+              echo "TAGLINE: $TAGLINE"
+            else
+              # Even annotated tags might have empty messages, fallback to commit
+              COMMIT_MESSAGE=$(git log -1 --pretty=format:"%B" "${{ github.ref_name }}")
+              COMMIT_BODY=$(echo "$COMMIT_MESSAGE" | tail -n +2)
+              # get the tagline of the update from the commit message's first line
+              TAGLINE=$(echo "$COMMIT_MESSAGE" | head -n 1)
+              echo "TAGLINE: $TAGLINE"
+            fi
+          else
+            # Lightweight tag - use the commit message it points to
+            echo "LIGHTWEIGHT TAG - using commit message"
+            COMMIT_MESSAGE=$(git log -1 --pretty=format:"%B" "${{ github.ref_name }}")
+            COMMIT_BODY=$(echo "$COMMIT_MESSAGE" | tail -n +2)
+            # get the tagline of the update from the commit message's first line
+            TAGLINE=$(echo "$COMMIT_MESSAGE" | head -n 1)
+            echo "TAGLINE: $TAGLINE"
+          fi
+          echo "body<<EOF" >> $GITHUB_OUTPUT
+          echo "$COMMIT_BODY" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          echo "tagline=$TAGLINE" >> $GITHUB_OUTPUT
+
+      - name: Get updater version
+        id: updater_version
+        run: |
+          UPDATER_VERSION=$(grep -o '"version": *"[^"]*"' updater/package.json | grep -o '[0-9.]*')
+          echo "version=$UPDATER_VERSION" >> $GITHUB_OUTPUT
+          echo "Updater version: $UPDATER_VERSION"
+
       - name: Download Windows Assets
         uses: actions/download-artifact@v4
         with:
@@ -207,13 +149,28 @@ jobs:
           name: linux-assets
           path: assets
 
-      - name: Upload All Assets to Release
+      - name: Create Release and Upload Assets
         uses: softprops/action-gh-release@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || format('dev-{0}', github.sha) }}
-          draft: true
+          tag_name: ${{ github.ref_name }}
+          name: ${{ format('{0} - {1}', github.ref_name, steps.commit_body.outputs.tagline) }}
+          body: |
+            # Release ${{ github.ref_name }}
+            ${{ steps.commit_body.outputs.body }}
+
+            **Full Changelog:** https://github.com/Nat3z/OpenGameInstaller/commits/${{ github.ref_name }}
+            # How To Install
+
+            For the simplest installation, download the OpenGameInstaller-Setup.exe file and run it. **If you're on Steam Deck, download the OpenGameInstaller-Setup.AppImage file.** It includes an auto-updater to keep OpenGameInstaller up-to-date.
+
+            ### Release Details
+
+            Setup Version: ${{ steps.updater_version.outputs.version }}
+            Application Version: ${{ github.ref_name }}
+          draft: false
+          prerelease: true
           files: |
             assets/OpenGameInstaller-Portable.zip
             assets/OpenGameInstaller-Setup.exe

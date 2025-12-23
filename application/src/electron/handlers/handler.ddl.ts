@@ -36,6 +36,21 @@ interface ParallelDownloadInfo {
   supportsRange: boolean;
 }
 
+interface PartState {
+  index: number;
+  job: DownloadJob;
+  status: 'pending' | 'downloading' | 'completed' | 'failed';
+  downloadedBytes: number;
+  totalBytes: number;
+  abortController: AbortController;
+  fileStream?: fs.WriteStream;
+  response?: AxiosResponse<Readable>;
+  // For chunk-based parallel within this part
+  useChunks: boolean;
+  chunks: ChunkState[];
+  chunkJobPath: string;
+}
+
 type DownloadStatus =
   | 'queued'
   | 'downloading'
@@ -74,11 +89,17 @@ class Download {
   private startByte: number = 0;
   private startTime: number = 0;
 
-  // Parallel download state
+  // Parallel download state (for single-file chunk parallelization)
   private useParallel: boolean = false;
   private chunks: ChunkState[] = [];
   private parallelTotalSize: number = 0;
   private currentJobPath: string = ''; // Track current job path for chunk file cleanup
+
+  // Multi-part parallel download state
+  private useParallelParts: boolean = false;
+  private parts: PartState[] = [];
+  private multiPartTotalBytes: number = 0;
+  private multiPartStartTime: number = 0;
 
   constructor(
     mainWindow: BrowserWindow,
@@ -125,12 +146,16 @@ class Download {
   private async run() {
     this.status = 'downloading';
     try {
-      for (let i = this.currentPart; i <= this.totalParts; i++) {
-        this.currentPart = i;
-        const job = this.jobs[i - 1];
-        console.log('[direct] Downloading part', i);
+      if (this.totalParts > 1) {
+        // Multi-part download - use parallel parts
+        await this.runParallelParts();
+      } else {
+        // Single part download - use existing logic (with optional chunk parallelization)
+        this.currentPart = 1;
+        const job = this.jobs[0];
+        console.log('[direct] Downloading single part');
         await this.downloadPart(job);
-        console.log('[direct] Completed downloading part', i);
+        console.log('[direct] Completed downloading single part');
       }
       console.log('[direct] Completed downloading all parts');
       this.complete();
@@ -141,13 +166,624 @@ class Download {
     }
   }
 
+  /**
+   * Run parallel downloads for multi-part downloads.
+   * Downloads up to PARALLEL_CHUNK_COUNT parts simultaneously.
+   */
+  private async runParallelParts(): Promise<void> {
+    this.useParallelParts = true;
+
+    // Only re-initialize parts if they don't exist (first run, not resume)
+    if (this.parts.length === 0) {
+      this.parts = [];
+    }
+
+    console.log(
+      `[direct] Starting parallel multi-part download with ${this.totalParts} parts`
+    );
+
+    // Initialize part states - check existing files for resume
+    for (let i = 0; i < this.totalParts; i++) {
+      // Skip if part already exists in array (resume scenario)
+      const existingPart = this.parts.find((p) => p.index === i);
+      if (existingPart) {
+        // Reset status if it was downloading when paused
+        if (existingPart.status === 'downloading') {
+          existingPart.status = 'pending';
+        }
+        continue;
+      }
+
+      const job = this.jobs[i];
+      let downloadedBytes = 0;
+      let isComplete = false;
+
+      // Check if part file exists for resume
+      let totalBytes = 0;
+      if (fs.existsSync(job.path)) {
+        downloadedBytes = fs.statSync(job.path).size;
+        console.log(
+          `[direct] Part ${i + 1} file exists with ${downloadedBytes} bytes`
+        );
+
+        // Check if file is complete by getting expected size
+        try {
+          const parallelInfo = await this.shouldUseParallelDownloadForPart(job);
+          totalBytes = parallelInfo.fileSize;
+
+          if (parallelInfo.fileSize > 0) {
+            // For chunked downloads, check if merged file exists and is correct size
+            if (parallelInfo.useParallel) {
+              // Check if all chunk files exist and merged file is correct size
+              const allChunksExist = Array.from(
+                { length: PARALLEL_CHUNK_COUNT },
+                (_, idx) => {
+                  const chunkPath = this.getChunkPath(job.path, idx);
+                  return fs.existsSync(chunkPath);
+                }
+              ).every((exists) => exists);
+
+              if (allChunksExist && downloadedBytes >= parallelInfo.fileSize) {
+                isComplete = true;
+                downloadedBytes = parallelInfo.fileSize; // Ensure it matches expected
+              }
+            } else {
+              // Standard download - check if file size matches expected
+              if (downloadedBytes >= parallelInfo.fileSize) {
+                isComplete = true;
+                downloadedBytes = parallelInfo.fileSize; // Ensure it matches expected
+              }
+            }
+          }
+        } catch (error) {
+          console.log(
+            `[direct] Could not verify completion for part ${i + 1}:`,
+            error
+          );
+        }
+      }
+
+      this.parts.push({
+        index: i,
+        job,
+        status: isComplete ? 'completed' : 'pending',
+        downloadedBytes,
+        totalBytes: totalBytes || 0, // Set if we got it from HEAD request
+        abortController: new AbortController(),
+        useChunks: false,
+        chunks: [],
+        chunkJobPath: '',
+      });
+
+      if (isComplete) {
+        console.log(`[direct] Part ${i + 1} already complete, skipping`);
+      }
+    }
+
+    // Update total bytes for progress calculation
+    this.updateMultiPartTotalBytes();
+
+    this.multiPartStartTime = Date.now();
+    this.startMultiPartProgressTracker();
+
+    // Process parts in batches
+    const pendingParts = () =>
+      this.parts.filter(
+        (p) => p.status === 'pending' || p.status === 'downloading'
+      );
+    const activeParts = () =>
+      this.parts.filter((p) => p.status === 'downloading');
+    const completedParts = () =>
+      this.parts.filter((p) => p.status === 'completed');
+
+    while (pendingParts().length > 0 || activeParts().length > 0) {
+      if (this.status !== 'downloading') {
+        throw new Error('Download not active');
+      }
+
+      // Start new parts if we have capacity
+      const availableSlots = PARALLEL_CHUNK_COUNT - activeParts().length;
+      const partsToStart = this.parts
+        .filter((p) => p.status === 'pending')
+        .slice(0, availableSlots);
+
+      if (partsToStart.length > 0) {
+        console.log(
+          `[direct] Starting ${partsToStart.length} parts (${activeParts().length} active, ${completedParts().length} completed)`
+        );
+
+        // Start downloads without waiting
+        for (const part of partsToStart) {
+          part.status = 'downloading';
+          this.downloadPartWithState(part).catch((error) => {
+            if (this.status === 'downloading') {
+              console.error(`[direct] Part ${part.index + 1} failed:`, error);
+              part.status = 'failed';
+            }
+          });
+        }
+      }
+
+      // Wait a bit before checking again
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Check if all parts are done
+      if (
+        this.parts.every(
+          (p) => p.status === 'completed' || p.status === 'failed'
+        )
+      ) {
+        break;
+      }
+    }
+
+    // Clean up progress tracker
+    if (this.progressInterval) {
+      clearInterval(this.progressInterval);
+      this.progressInterval = undefined;
+    }
+
+    // Check for any failed parts
+    const failedParts = this.parts.filter((p) => p.status === 'failed');
+    if (failedParts.length > 0) {
+      throw new Error(`${failedParts.length} parts failed to download`);
+    }
+
+    console.log('[direct] All parallel parts completed');
+  }
+
+  /**
+   * Download a single part with optional chunk parallelization.
+   * Used by runParallelParts() for multi-part downloads.
+   */
+  private async downloadPartWithState(
+    part: PartState,
+    retries = 5
+  ): Promise<void> {
+    const job = part.job;
+    let lastError: Error | undefined;
+
+    // Check if this part should use chunk parallelization
+    const parallelInfo = await this.shouldUseParallelDownloadForPart(job);
+    part.totalBytes = parallelInfo.fileSize;
+
+    // Update total bytes for progress calculation
+    this.updateMultiPartTotalBytes();
+
+    if (parallelInfo.useParallel) {
+      console.log(
+        `[direct] Part ${part.index + 1}: Using chunk parallelization (${(parallelInfo.fileSize / (1024 * 1024)).toFixed(2)}MB)`
+      );
+      part.useChunks = true;
+      part.chunkJobPath = job.path;
+
+      for (let i = 0; i < retries; i++) {
+        if (this.status !== 'downloading') {
+          throw new Error('Download not active');
+        }
+        try {
+          await this.executeParallelDownloadForPart(
+            part,
+            parallelInfo.fileSize
+          );
+          part.status = 'completed';
+          console.log(`[direct] Part ${part.index + 1} completed (chunked)`);
+          return;
+        } catch (error) {
+          lastError = error as Error;
+          console.log(
+            `[direct] Part ${part.index + 1} chunk download attempt ${i} failed:`,
+            lastError
+          );
+          if (this.status !== 'downloading') throw lastError;
+          await new Promise((resolve) => setTimeout(resolve, 1000 * (i + 1)));
+        }
+      }
+      part.status = 'failed';
+      throw lastError;
+    }
+
+    // Standard download for this part
+    for (let i = 0; i < retries; i++) {
+      if (this.status !== 'downloading') {
+        throw new Error('Download not active');
+      }
+      try {
+        console.log(`[direct] Part ${part.index + 1}: Standard download`);
+        await this.executePartDownload(part);
+        part.status = 'completed';
+        console.log(`[direct] Part ${part.index + 1} completed`);
+        return;
+      } catch (error) {
+        lastError = error as Error;
+        console.log(
+          `[direct] Part ${part.index + 1} download attempt ${i} failed:`,
+          lastError
+        );
+        if (this.status !== 'downloading') throw lastError;
+        await new Promise((resolve) => setTimeout(resolve, 1000 * (i + 1)));
+      }
+    }
+    part.status = 'failed';
+    throw lastError;
+  }
+
+  /**
+   * Check if parallel download should be used for a part in multi-part download.
+   */
+  private async shouldUseParallelDownloadForPart(
+    job: DownloadJob
+  ): Promise<ParallelDownloadInfo> {
+    try {
+      const keepAliveAgent = job.link.startsWith('https')
+        ? new https.Agent({ keepAlive: true })
+        : new http.Agent({ keepAlive: true });
+
+      const headResponse = await axios.head(job.link, {
+        headers: {
+          ...job.headers,
+          'User-Agent': 'OpenGameInstaller Downloader/1.0.0',
+        },
+        httpAgent: keepAliveAgent,
+        httpsAgent: keepAliveAgent,
+        timeout: 10000,
+      });
+
+      const contentLength = headResponse.headers['content-length']
+        ? parseInt(headResponse.headers['content-length'], 10)
+        : 0;
+      const acceptRanges = headResponse.headers['accept-ranges'];
+      const supportsRange = acceptRanges === 'bytes';
+
+      const useParallel =
+        supportsRange && contentLength > PARALLEL_DOWNLOAD_THRESHOLD;
+
+      return {
+        useParallel,
+        fileSize: contentLength,
+        supportsRange,
+      };
+    } catch (error) {
+      console.log(
+        '[direct] HEAD request failed for part, falling back to standard:',
+        error
+      );
+      return {
+        useParallel: false,
+        fileSize: 0,
+        supportsRange: false,
+      };
+    }
+  }
+
+  /**
+   * Execute a parallel (chunked) download for a part.
+   */
+  private async executeParallelDownloadForPart(
+    part: PartState,
+    fileSize: number
+  ): Promise<void> {
+    const job = part.job;
+    part.chunks = [];
+
+    const chunkSize = Math.ceil(fileSize / PARALLEL_CHUNK_COUNT);
+    fs.mkdirSync(dirname(job.path), { recursive: true });
+
+    // Initialize chunks for this part
+    for (let i = 0; i < PARALLEL_CHUNK_COUNT; i++) {
+      const startByte = i * chunkSize;
+      const endByte = Math.min((i + 1) * chunkSize - 1, fileSize - 1);
+      const expectedChunkSize = endByte - startByte + 1;
+      const chunkPath = this.getChunkPath(job.path, i);
+
+      let chunkCurrentBytes = 0;
+      if (fs.existsSync(chunkPath)) {
+        chunkCurrentBytes = fs.statSync(chunkPath).size;
+      }
+
+      part.chunks.push({
+        index: i,
+        startByte,
+        endByte,
+        currentBytes: chunkCurrentBytes,
+        abortController: new AbortController(),
+        completed: chunkCurrentBytes >= expectedChunkSize,
+      });
+    }
+
+    // Download all chunks in parallel
+    const chunkPromises = part.chunks.map((chunk) =>
+      this.downloadChunkForPart(part, chunk)
+    );
+
+    await Promise.all(chunkPromises);
+
+    // Merge chunk files
+    await this.mergeChunkFilesForPart(part);
+
+    // Update part's downloaded bytes
+    part.downloadedBytes = fileSize;
+  }
+
+  /**
+   * Download a single chunk for a part.
+   */
+  private downloadChunkForPart(
+    part: PartState,
+    chunk: ChunkState
+  ): Promise<void> {
+    return new Promise<void>(async (resolve, reject) => {
+      if (chunk.completed) {
+        resolve();
+        return;
+      }
+
+      const actualStartByte = chunk.startByte + chunk.currentBytes;
+      if (actualStartByte > chunk.endByte) {
+        chunk.completed = true;
+        resolve();
+        return;
+      }
+
+      const chunkPath = this.getChunkPath(part.job.path, chunk.index);
+
+      try {
+        const keepAliveAgent = part.job.link.startsWith('https')
+          ? new https.Agent({ keepAlive: true })
+          : new http.Agent({ keepAlive: true });
+
+        const headers = {
+          ...part.job.headers,
+          'User-Agent': 'OpenGameInstaller Downloader/1.0.0',
+          'Accept-Encoding': 'identity',
+          Range: `bytes=${actualStartByte}-${chunk.endByte}`,
+        };
+
+        chunk.response = await axios.get<Readable>(part.job.link, {
+          responseType: 'stream',
+          headers,
+          httpAgent: keepAliveAgent,
+          httpsAgent: keepAliveAgent,
+          signal: chunk.abortController.signal,
+        });
+
+        if (chunk.response.status !== 206) {
+          reject(
+            new Error(
+              `Unexpected status ${chunk.response.status} for range request`
+            )
+          );
+          return;
+        }
+
+        chunk.fileStream = fs.createWriteStream(chunkPath, {
+          flags: chunk.currentBytes > 0 ? 'a' : 'w',
+        });
+
+        const stream = chunk.response.data.pipe(chunk.fileStream);
+
+        stream.on('finish', () => {
+          chunk.completed = true;
+          resolve();
+        });
+
+        chunk.abortController.signal.addEventListener('abort', () => {
+          stream.destroy();
+          reject(new Error('Aborted'));
+        });
+
+        stream.on('error', reject);
+
+        chunk.response.data.on('data', (data: Buffer) => {
+          chunk.currentBytes += data.length;
+          part.downloadedBytes = part.chunks.reduce(
+            (sum, c) => sum + c.currentBytes,
+            0
+          );
+        });
+      } catch (error) {
+        if (error instanceof AxiosError && error.response?.status === 416) {
+          chunk.completed = true;
+          resolve();
+          return;
+        }
+        reject(error);
+      }
+    });
+  }
+
+  /**
+   * Merge chunk files for a part.
+   */
+  private async mergeChunkFilesForPart(part: PartState): Promise<void> {
+    const finalStream = fs.createWriteStream(part.job.path, { flags: 'w' });
+
+    return new Promise<void>((resolve, reject) => {
+      let currentChunkIndex = 0;
+
+      const writeNextChunk = () => {
+        if (currentChunkIndex >= PARALLEL_CHUNK_COUNT) {
+          finalStream.end(() => {
+            this.deleteChunkFiles(part.job.path)
+              .then(resolve)
+              .catch(() => resolve());
+          });
+          return;
+        }
+
+        const chunkPath = this.getChunkPath(part.job.path, currentChunkIndex);
+
+        if (!fs.existsSync(chunkPath)) {
+          reject(new Error(`Chunk file ${chunkPath} not found for merge`));
+          return;
+        }
+
+        const chunkStream = fs.createReadStream(chunkPath);
+        chunkStream.on('error', (err) => {
+          finalStream.destroy();
+          reject(err);
+        });
+        chunkStream.on('end', () => {
+          currentChunkIndex++;
+          writeNextChunk();
+        });
+        chunkStream.pipe(finalStream, { end: false });
+      };
+
+      finalStream.on('error', reject);
+      writeNextChunk();
+    });
+  }
+
+  /**
+   * Execute a standard (non-chunked) download for a part.
+   */
+  private executePartDownload(part: PartState): Promise<void> {
+    return new Promise<void>(async (resolve, reject) => {
+      const job = part.job;
+
+      try {
+        // Check for existing file (resume)
+        let startByte = 0;
+        if (fs.existsSync(job.path)) {
+          startByte = fs.statSync(job.path).size;
+          part.downloadedBytes = startByte;
+        }
+
+        fs.mkdirSync(dirname(job.path), { recursive: true });
+        part.fileStream = fs.createWriteStream(job.path, {
+          flags: startByte > 0 ? 'r+' : 'w',
+          start: startByte,
+        });
+
+        const headers = {
+          ...job.headers,
+          'User-Agent': 'OpenGameInstaller Downloader/1.0.0',
+          'Accept-Encoding': 'identity',
+          ...(startByte > 0 && { Range: `bytes=${startByte}-` }),
+        };
+
+        const keepAliveAgent = job.link.startsWith('https')
+          ? new https.Agent({ keepAlive: true })
+          : new http.Agent({ keepAlive: true });
+
+        part.response = await axios.get<Readable>(job.link, {
+          responseType: 'stream',
+          headers,
+          httpAgent: keepAliveAgent,
+          httpsAgent: keepAliveAgent,
+          signal: part.abortController.signal,
+        });
+
+        if (startByte > 0 && part.response.status !== 206) {
+          // Server doesn't support range requests, restart
+          startByte = 0;
+          part.downloadedBytes = 0;
+          if (part.fileStream) {
+            part.fileStream.close();
+          }
+          await rmAsync(job.path, { force: true });
+          this.executePartDownload(part).then(resolve).catch(reject);
+          return;
+        }
+
+        const contentLength = part.response.headers['content-length']
+          ? parseInt(part.response.headers['content-length'], 10)
+          : 0;
+        part.totalBytes = startByte + contentLength;
+        this.updateMultiPartTotalBytes();
+
+        const stream = part.response.data.pipe(part.fileStream);
+
+        stream.on('finish', () => {
+          if (part.fileStream) {
+            part.fileStream.close();
+            part.fileStream = undefined;
+          }
+          part.response = undefined;
+          resolve();
+        });
+
+        part.abortController.signal.addEventListener('abort', () => {
+          stream.destroy();
+          reject(new Error('Aborted'));
+        });
+
+        stream.on('error', (error) => {
+          if (part.fileStream) {
+            part.fileStream.close();
+            part.fileStream = undefined;
+          }
+          reject(error);
+        });
+
+        part.response.data.on('data', (data: Buffer) => {
+          part.downloadedBytes += data.length;
+        });
+      } catch (error) {
+        if (part.fileStream) {
+          part.fileStream.close();
+          part.fileStream = undefined;
+        }
+        if (error instanceof AxiosError) {
+          if (error.response?.status === 416) {
+            part.downloadedBytes = 0;
+            await rmAsync(job.path, { force: true });
+            this.executePartDownload(part).then(resolve).catch(reject);
+            return;
+          } else if (error.response?.status === 404) {
+            reject(error);
+            return;
+          }
+        }
+        reject(error);
+      }
+    });
+  }
+
+  /**
+   * Update total bytes across all parts for progress calculation.
+   */
+  private updateMultiPartTotalBytes(): void {
+    this.multiPartTotalBytes = this.parts.reduce(
+      (sum, part) => sum + (part.totalBytes || 0),
+      0
+    );
+  }
+
   public pause() {
     if (this.status !== 'downloading') return;
 
     this.status = 'paused';
 
-    if (this.useParallel) {
-      // Abort all chunk downloads
+    if (this.useParallelParts) {
+      // Abort all active part downloads
+      for (const part of this.parts) {
+        if (part.status === 'downloading') {
+          part.abortController.abort();
+          if (part.fileStream) {
+            part.fileStream.close();
+            part.fileStream = undefined;
+          }
+          part.response = undefined;
+          // Also abort any chunks for this part
+          for (const chunk of part.chunks) {
+            chunk.abortController.abort();
+            if (chunk.fileStream) {
+              chunk.fileStream.close();
+              chunk.fileStream = undefined;
+            }
+            chunk.response = undefined;
+          }
+          part.status = 'pending'; // Reset to pending so it can resume
+        }
+      }
+      if (this.progressInterval) {
+        clearInterval(this.progressInterval);
+        this.progressInterval = undefined;
+      }
+    } else if (this.useParallel) {
+      // Abort all chunk downloads (single file)
       for (const chunk of this.chunks) {
         chunk.abortController.abort();
         if (chunk.fileStream) {
@@ -178,10 +814,22 @@ class Download {
     if (this.status !== 'paused') return;
     this.status = 'downloading';
 
-    // Reset parallel state - will be re-evaluated in downloadPart
-    if (this.useParallel) {
+    if (this.useParallelParts) {
+      // Reset abort controllers for parts that need to resume
+      for (const part of this.parts) {
+        if (part.status === 'pending' || part.status === 'downloading') {
+          part.abortController = new AbortController();
+          for (const chunk of part.chunks) {
+            chunk.abortController = new AbortController();
+          }
+        }
+      }
+      // Don't clear parts array - preserve state for resume
+      // Just reset the flag so runParallelParts can continue
+      this.useParallelParts = false;
+    } else if (this.useParallel) {
+      // Reset parallel state for single-file chunk download
       this.useParallel = false;
-      // Reset abort controllers for chunks (they'll be recreated)
       for (const chunk of this.chunks) {
         chunk.abortController = new AbortController();
       }
@@ -197,8 +845,30 @@ class Download {
 
     this.status = 'cancelled';
 
-    if (this.useParallel) {
-      // Abort all chunk downloads
+    if (this.useParallelParts) {
+      // Abort all part downloads and their chunks
+      for (const part of this.parts) {
+        part.abortController.abort();
+        if (part.fileStream) {
+          part.fileStream.close();
+          part.fileStream = undefined;
+        }
+        part.response = undefined;
+        for (const chunk of part.chunks) {
+          chunk.abortController.abort();
+          if (chunk.fileStream) {
+            chunk.fileStream.close();
+            chunk.fileStream = undefined;
+          }
+          chunk.response = undefined;
+        }
+      }
+      if (this.progressInterval) {
+        clearInterval(this.progressInterval);
+        this.progressInterval = undefined;
+      }
+    } else if (this.useParallel) {
+      // Abort all chunk downloads (single file)
       for (const chunk of this.chunks) {
         chunk.abortController.abort();
       }
@@ -221,7 +891,20 @@ class Download {
     this.status = 'completed';
 
     // Clean up any remaining resources
-    if (this.useParallel) {
+    if (this.useParallelParts) {
+      // Clean up multi-part parallel downloads
+      if (this.progressInterval) {
+        clearInterval(this.progressInterval);
+        this.progressInterval = undefined;
+      }
+      for (const part of this.parts) {
+        if (part.fileStream) {
+          part.fileStream.close();
+          part.fileStream = undefined;
+        }
+        part.response = undefined;
+      }
+    } else if (this.useParallel) {
       this.cleanupParallelChunks();
     } else {
       this.cleanupPart();
@@ -241,7 +924,29 @@ class Download {
   private fail(error: Error) {
     this.status = 'failed';
 
-    if (this.useParallel) {
+    if (this.useParallelParts) {
+      // Clean up multi-part parallel downloads
+      if (this.progressInterval) {
+        clearInterval(this.progressInterval);
+        this.progressInterval = undefined;
+      }
+      for (const part of this.parts) {
+        part.abortController.abort();
+        if (part.fileStream) {
+          part.fileStream.close();
+          part.fileStream = undefined;
+        }
+        part.response = undefined;
+        for (const chunk of part.chunks) {
+          chunk.abortController.abort();
+          if (chunk.fileStream) {
+            chunk.fileStream.close();
+            chunk.fileStream = undefined;
+          }
+          chunk.response = undefined;
+        }
+      }
+    } else if (this.useParallel) {
       this.cleanupParallelChunks();
     } else {
       this.cleanupPart();
@@ -462,6 +1167,60 @@ class Download {
 
         this.sendProgress({ progress, downloadSpeed });
       }
+    }, 500);
+  }
+
+  /**
+   * Start progress tracker for multi-part parallel downloads.
+   */
+  private startMultiPartProgressTracker() {
+    this.progressInterval = setInterval(() => {
+      // Aggregate progress from all parts
+      const totalDownloaded = this.parts.reduce(
+        (sum, part) => sum + part.downloadedBytes,
+        0
+      );
+      const elapsedTime = (Date.now() - this.multiPartStartTime) / 1000;
+      const downloadSpeed = elapsedTime > 0 ? totalDownloaded / elapsedTime : 0;
+      const progress =
+        this.multiPartTotalBytes > 0
+          ? totalDownloaded / this.multiPartTotalBytes
+          : 0;
+
+      // Find the highest part number that's currently downloading or pending
+      // This represents the "current" part being worked on
+      const downloadingParts = this.parts.filter(
+        (p) => p.status === 'downloading' || p.status === 'pending'
+      );
+      const completedParts = this.parts.filter((p) => p.status === 'completed');
+
+      // Use the highest downloading/pending part index + 1 (1-indexed for display)
+      // If all parts are completed, use totalParts
+      // If no parts are downloading yet, use 1
+      let currentPartNumber = 1;
+      if (downloadingParts.length > 0) {
+        const maxIndex = Math.max(...downloadingParts.map((p) => p.index));
+        currentPartNumber = maxIndex + 1; // Convert to 1-indexed
+      } else if (completedParts.length === this.totalParts) {
+        currentPartNumber = this.totalParts;
+      } else {
+        // Find the first incomplete part
+        const incompletePart = this.parts.find((p) => p.status !== 'completed');
+        if (incompletePart) {
+          currentPartNumber = incompletePart.index + 1;
+        }
+      }
+
+      this.sendIpc('ddl:download-progress', {
+        id: this.id,
+        progress: progress,
+        downloadSpeed: downloadSpeed,
+        fileSize: this.multiPartTotalBytes,
+        part: currentPartNumber,
+        status: this.status,
+        totalParts: this.totalParts,
+        queuePosition: 1,
+      });
     }, 500);
   }
 
@@ -833,7 +1592,7 @@ class Download {
       )
     );
 
-    // Also delete any chunk files if this was a parallel download
+    // Delete chunk files for single-file parallel downloads
     if (this.currentJobPath) {
       for (let i = 0; i < PARALLEL_CHUNK_COUNT; i++) {
         const chunkPath = this.getChunkPath(this.currentJobPath, i);
@@ -842,6 +1601,25 @@ class Download {
             console.error(`Failed to delete chunk file ${chunkPath}`, e)
           )
         );
+      }
+    }
+
+    // Delete chunk files for multi-part parallel downloads
+    if (this.useParallelParts || this.parts.length > 0) {
+      for (const part of this.parts) {
+        if (part.useChunks) {
+          for (let i = 0; i < PARALLEL_CHUNK_COUNT; i++) {
+            const chunkPath = this.getChunkPath(part.job.path, i);
+            cleanupPromises.push(
+              rmAsync(chunkPath, { force: true }).catch((e) =>
+                console.error(
+                  `Failed to delete part chunk file ${chunkPath}`,
+                  e
+                )
+              )
+            );
+          }
+        }
       }
     }
 

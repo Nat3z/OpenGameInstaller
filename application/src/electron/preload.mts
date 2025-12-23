@@ -351,4 +351,9 @@ ipcRenderer.on('app:ask-root-password', (_, arg) => {
   );
 });
 
+ipcRenderer.on('addon-connected', (_, arg) => {
+  dbg_countEvent();
+  document.dispatchEvent(new CustomEvent('addon-connected', { detail: arg }));
+});
+
 ipcRenderer.send('client-ready-for-events');

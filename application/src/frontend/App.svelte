@@ -346,6 +346,11 @@
       });
     }
   });
+  document.addEventListener('addon-connected', (event) => {
+    if (event instanceof CustomEvent) {
+      fetchAddonsWithConfigure();
+    }
+  });
   currentStorePageOpened.subscribe((value) => {
     if (value) {
       heldPageOpened = value;

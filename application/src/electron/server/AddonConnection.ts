@@ -14,6 +14,7 @@ import {
   currentScreens,
   isSecurityCheckEnabled,
   sendAskForInput,
+  sendIPCMessage,
   sendNotification,
 } from '../main.js';
 import { DeferrableTask, DeferredTasks } from './DeferrableTask.js';
@@ -87,6 +88,7 @@ export class AddonConnection {
               break;
             }
             console.log('Client authenticated:', data.args.name);
+            sendIPCMessage('addon-connected', this.addonInfo.id);
             resolve(true);
             break;
           }

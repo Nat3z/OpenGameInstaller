@@ -25,7 +25,7 @@ import {
 import AddonManagerHandler, { startAddons } from './handlers/handler.addon.js';
 import OOBEHandler from './handlers/handler.oobe.js';
 import { execute as executeMigrations } from './migrations.js';
-import steamworks from 'steamworks.js';
+// import steamworks from 'steamworks.js';
 
 export const VERSION = app.getVersion();
 
@@ -168,57 +168,57 @@ function createWindow() {
   });
 
   app.commandLine.appendSwitch('disable-features', 'HardwareMediaKeyHandling');
-  let steamworksClient: ReturnType<typeof steamworks.init> | null = null;
+  // let steamworksClient: ReturnType<typeof steamworks.init> | null = null;
 
   // non-blocking way to initialize steamworks
-  new Promise<void>((resolve) => {
-    try {
-      steamworksClient = steamworks.init(isDev() ? 480 : undefined);
-    } catch (error) {
-      console.error('Failed to initialize Steamworks:', error);
-      steamworksClient = null;
-    }
-    resolve();
-  });
+  // new Promise<void>((resolve) => {
+  //   try {
+  //     steamworksClient = steamworks.init(isDev() ? 480 : undefined);
+  //   } catch (error) {
+  //     console.error('Failed to initialize Steamworks:', error);
+  //     steamworksClient = null;
+  //   }
+  //   resolve();
+  // });
 
-  ipcMain.handle(
-    'app:open-steam-keyboard',
-    async (
-      _,
-      {
-        x,
-        y,
-        width,
-        height,
-      }: { x: number; y: number; width: number; height: number }
-    ): Promise<boolean> => {
-      if (!steamworksClient) {
-        return false;
-      }
-      // Check if running on Steam Deck or in Big Picture mode
-      // if (!steamworksClient.utils.isSteamRunningOnSteamDeck()) {
-      //   return false;
-      // }
+  // ipcMain.handle(
+  //   'app:open-steam-keyboard',
+  //   async (
+  //     _,
+  //     {
+  //       x,
+  //       y,
+  //       width,
+  //       height,
+  //     }: { x: number; y: number; width: number; height: number }
+  //   ): Promise<boolean> => {
+  //     if (!steamworksClient) {
+  //       return false;
+  //     }
+  //     // Check if running on Steam Deck or in Big Picture mode
+  //     // if (!steamworksClient.utils.isSteamRunningOnSteamDeck()) {
+  //     //   return false;
+  //     // }
 
-      // Show the Steam keyboard overlay
-      // The keyboard will inject text directly into the focused input element
-      return steamworksClient.utils
-        .showFloatingGamepadTextInput(
-          0, // Single line
-          x,
-          y,
-          width,
-          height
-        )
-        .then((result) => {
-          return result;
-        })
-        .catch((error) => {
-          console.error('Failed to show Steam keyboard:', error);
-          return false;
-        });
-    }
-  );
+  //     // Show the Steam keyboard overlay
+  //     // The keyboard will inject text directly into the focused input element
+  //     return steamworksClient.utils
+  //       .showFloatingGamepadTextInput(
+  //         0, // Single line
+  //         x,
+  //         y,
+  //         width,
+  //         height
+  //       )
+  //       .then((result) => {
+  //         return result;
+  //       })
+  //       .catch((error) => {
+  //         console.error('Failed to show Steam keyboard:', error);
+  //         return false;
+  //       });
+  //   }
+  // );
 
   if (isDev()) {
     mainWindow!!.loadURL(

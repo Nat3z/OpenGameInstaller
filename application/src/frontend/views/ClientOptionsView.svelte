@@ -9,6 +9,7 @@
   import TextModal from '../components/modal/TextModal.svelte';
   import SectionModal from '../components/modal/SectionModal.svelte';
   import CustomDropdown from '../components/CustomDropdown.svelte';
+  import { fetchAddonsWithConfigure } from '../utils';
 
   const fs = window.electronAPI.fs;
   interface OptionsCategory {
@@ -400,6 +401,12 @@
     isRestartingServer = true;
     await window.electronAPI.restartAddonServer();
     isRestartingServer = false;
+    fetchAddonsWithConfigure();
+    createNotification({
+      id: Math.random().toString(36).substring(7),
+      message: 'Addon server restarted',
+      type: 'success',
+    });
   }
 
   let showPassword: { [key: string]: boolean } = $state({});

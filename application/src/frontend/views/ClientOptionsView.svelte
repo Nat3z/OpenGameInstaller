@@ -73,10 +73,10 @@
           displayName: 'Parallelize Downloads',
           description:
             "The number of parallel downloads to use per download. More doesn't always mean faster.",
-          defaultValue: 6,
-          value: 6,
+          defaultValue: 8,
+          value: 8,
           type: 'number',
-          max: 16,
+          max: 32,
           min: 1,
         },
         reconfigurSteamGridDb: {

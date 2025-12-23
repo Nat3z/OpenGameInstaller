@@ -1643,7 +1643,7 @@ class Download {
 
 async function checkParallelChunkCount() {
   const chunkCount: number =
-    (await getStoredValue('general', 'parallelChunkCount')) ?? (6 as number);
+    (await getStoredValue('general', 'parallelChunkCount')) ?? (8 as number);
   console.log('[direct] parallel chunk count:', chunkCount);
   if (
     chunkCount &&

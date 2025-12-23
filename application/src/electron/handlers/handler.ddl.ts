@@ -376,12 +376,39 @@ class Download {
             `[direct] Part ${part.index + 1} chunk download attempt ${i} failed:`,
             lastError
           );
+
+          // If 429 error, disable chunk parallelization and retry as standard download
+          if (lastError.message === '429_TOO_MANY_REQUESTS') {
+            console.log(
+              `[direct] Part ${part.index + 1}: 429 detected, disabling chunk parallelization and retrying as standard download`
+            );
+            part.useChunks = false;
+            // Clean up any partial chunk files
+            try {
+              await this.deleteChunkFiles(part.job.path);
+            } catch (cleanupError) {
+              console.log(
+                '[direct] Error cleaning up chunk files:',
+                cleanupError
+              );
+            }
+            // Fall through to standard download
+            break;
+          }
+
           if (this.status !== 'downloading') throw lastError;
           await new Promise((resolve) => setTimeout(resolve, 1000 * (i + 1)));
         }
       }
-      part.status = 'failed';
-      throw lastError;
+
+      // If we broke out due to 429, continue to standard download
+      if (lastError?.message === '429_TOO_MANY_REQUESTS') {
+        // Reset lastError so we can try standard download
+        lastError = undefined;
+      } else {
+        part.status = 'failed';
+        throw lastError;
+      }
     }
 
     // Standard download for this part
@@ -497,7 +524,16 @@ class Download {
       this.downloadChunkForPart(part, chunk)
     );
 
-    await Promise.all(chunkPromises);
+    try {
+      await Promise.all(chunkPromises);
+    } catch (error) {
+      // Check if error is 429
+      if (error instanceof Error && error.message === '429_TOO_MANY_REQUESTS') {
+        throw error;
+      }
+      // Re-throw other errors
+      throw error;
+    }
 
     // Merge chunk files
     await this.mergeChunkFilesForPart(part);
@@ -548,6 +584,13 @@ class Download {
           signal: chunk.abortController.signal,
         });
 
+        if (chunk.response.status === 429) {
+          console.log(
+            `[direct] Part ${part.index + 1} chunk ${chunk.index}: 429 Too Many Requests, disabling chunk parallelization`
+          );
+          reject(new Error('429_TOO_MANY_REQUESTS'));
+          return;
+        }
         if (chunk.response.status !== 206) {
           reject(
             new Error(
@@ -583,10 +626,20 @@ class Download {
           );
         });
       } catch (error) {
-        if (error instanceof AxiosError && error.response?.status === 416) {
-          chunk.completed = true;
-          resolve();
-          return;
+        if (error instanceof AxiosError) {
+          if (error.response?.status === 416) {
+            chunk.completed = true;
+            resolve();
+            return;
+          }
+          if (error.response?.status === 429) {
+            // Too many requests - disable parallelization for this part
+            console.log(
+              `[direct] Part ${part.index + 1} chunk ${chunk.index}: 429 Too Many Requests, disabling chunk parallelization`
+            );
+            reject(new Error('429_TOO_MANY_REQUESTS'));
+            return;
+          }
         }
         reject(error);
       }
@@ -733,6 +786,13 @@ class Download {
             this.executePartDownload(part).then(resolve).catch(reject);
             return;
           } else if (error.response?.status === 404) {
+            reject(error);
+            return;
+          } else if (error.response?.status === 429) {
+            // Too many requests - already using standard download, just retry
+            console.log(
+              `[direct] Part ${part.index + 1}: 429 Too Many Requests, will retry`
+            );
             reject(error);
             return;
           }
@@ -987,11 +1047,37 @@ class Download {
               i,
               lastError
             );
+
+            // If 429 error, disable parallelization and retry as standard download
+            if (lastError.message === '429_TOO_MANY_REQUESTS') {
+              console.log(
+                '[direct] 429 detected, disabling parallelization and retrying as standard download'
+              );
+              // Clean up any partial chunk files
+              try {
+                await this.deleteChunkFiles(job.path);
+              } catch (cleanupError) {
+                console.log(
+                  '[direct] Error cleaning up chunk files:',
+                  cleanupError
+                );
+              }
+              // Fall through to standard download
+              break;
+            }
+
             if (this.status !== 'downloading') throw lastError;
             await new Promise((resolve) => setTimeout(resolve, 1000 * (i + 1)));
           }
         }
-        throw lastError;
+
+        // If we broke out due to 429, continue to standard download
+        if (lastError?.message === '429_TOO_MANY_REQUESTS') {
+          // Reset lastError so we can try standard download
+          lastError = undefined;
+        } else {
+          throw lastError;
+        }
       }
     }
 
@@ -1132,6 +1218,12 @@ class Download {
             reject(error);
           });
           this.cleanupPart();
+          return;
+        } else if (error.response?.status === 429) {
+          // Too many requests - already using standard download, just retry
+          console.log('[direct] 429 Too Many Requests, will retry');
+          this.cleanupPart();
+          reject(error);
           return;
         }
         this.cleanupPart();
@@ -1345,6 +1437,12 @@ class Download {
     } catch (error) {
       // Clean up all chunks on failure
       this.cleanupParallelChunks();
+
+      // If 429 error occurred, propagate it to disable parallelization
+      if (error instanceof Error && error.message === '429_TOO_MANY_REQUESTS') {
+        throw new Error('429_TOO_MANY_REQUESTS');
+      }
+
       throw error;
     }
 
@@ -1402,6 +1500,13 @@ class Download {
         });
 
         // Check for 206 Partial Content response
+        if (chunk.response.status === 429) {
+          console.log(
+            `[direct] Chunk ${chunk.index}: 429 Too Many Requests, disabling parallelization`
+          );
+          reject(new Error('429_TOO_MANY_REQUESTS'));
+          return;
+        }
         if (chunk.response.status !== 206) {
           console.log(
             `[direct] Chunk ${chunk.index}: unexpected status ${chunk.response.status}`
@@ -1451,6 +1556,14 @@ class Download {
             );
             chunk.completed = true;
             resolve();
+            return;
+          }
+          if (error.response?.status === 429) {
+            // Too many requests - disable parallelization and retry as standard download
+            console.log(
+              `[direct] Chunk ${chunk.index}: 429 Too Many Requests, disabling parallelization`
+            );
+            reject(new Error('429_TOO_MANY_REQUESTS'));
             return;
           }
         }

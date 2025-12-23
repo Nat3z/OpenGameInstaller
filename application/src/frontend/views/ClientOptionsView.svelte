@@ -147,11 +147,9 @@
         qbitPort: {
           displayName: 'Port',
           description: 'The port of the qBittorrent server',
-          defaultValue: 8080,
-          value: 8080,
-          type: 'number',
-          max: 65535,
-          min: 1,
+          defaultValue: '8080',
+          value: '',
+          type: 'string',
         },
         qbitUsername: {
           displayName: 'Username',

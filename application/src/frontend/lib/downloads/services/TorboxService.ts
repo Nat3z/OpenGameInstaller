@@ -232,7 +232,7 @@ export class TorboxService extends BaseService {
 
           const torrentInfo =
             await window.electronAPI.app.axios<TorboxTorrentListResponse>({
-              url: `${BASE_URL}/api/torrents/mylist`,
+              url: `${BASE_URL}/api/torrents/mylist?bypass_cache=true`,
               method: 'get',
               headers: {
                 Authorization: `Bearer ${torboxApiKey}`,

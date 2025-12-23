@@ -170,7 +170,7 @@ function createWindow() {
   app.commandLine.appendSwitch('disable-features', 'HardwareMediaKeyHandling');
   let steamworksClient: ReturnType<typeof steamworks.init> | null = null;
   try {
-    steamworksClient = steamworks.init(480);
+    steamworksClient = steamworks.init(isDev() ? 480 : undefined);
   } catch (error) {
     console.error('Failed to initialize Steamworks:', error);
     steamworksClient = null;

@@ -8,6 +8,7 @@
   import DownloadView from './views/DownloadView.svelte';
   import DownloadManager from './managers/DownloadManager.svelte';
   import OOBE from './views/OutOfBoxExperience.svelte';
+  import { GamepadNavigator } from './managers/GamepadManager';
 
   import {
     fetchAddonsWithConfigure,
@@ -98,8 +99,10 @@
     }, 200);
   });
 
-  document.addEventListener('addon-connected', () => {
-    fetchAddonsWithConfigure();
+  // Initialize when DOM is ready
+  document.addEventListener('DOMContentLoaded', () => {
+    window.gamepadNavigator = new GamepadNavigator();
+    window.gamepadNavigator.init();
   });
 
   async function initializeSearch() {
@@ -1196,5 +1199,18 @@
 
   .content-view {
     @apply absolute inset-0 w-full;
+  }
+
+  /* Add to your styles */
+  .gamepad-focus {
+    outline: 3px solid #4a90e2 !important;
+    outline-offset: 2px;
+    box-shadow: 0 0 10px rgba(74, 144, 226, 0.5);
+    transition: all 0.2s ease;
+  }
+
+  /* Hide default focus outline when using gamepad */
+  .gamepad-focus:focus {
+    outline: none;
   }
 </style>

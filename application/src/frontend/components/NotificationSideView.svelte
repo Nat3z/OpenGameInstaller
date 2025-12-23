@@ -17,6 +17,7 @@
   let scrollContainer: HTMLDivElement | null = $state(null);
   let logContainers: Map<string, HTMLDivElement> = $state(new Map());
   let previousLogLengths: Map<string, number> = new Map();
+  let closeTimeout = $state(false);
 
   function startTaskPolling() {
     const pollInterval = setInterval(async () => {
@@ -34,6 +35,10 @@
   onMount(async () => {
     await loadDeferredTasks();
     pollInterval = startTaskPolling();
+    setTimeout(() => {
+      closeTimeout = true;
+      console.log('closeTimeout', closeTimeout);
+    }, 5000);
   });
 
   // Cleanup polling on destroy
@@ -117,6 +122,7 @@
   }
 
   function closeSideView() {
+    if (!closeTimeout) return;
     showNotificationSideView.set(false);
   }
 

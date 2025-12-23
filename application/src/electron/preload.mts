@@ -171,6 +171,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('app:get-local-image', path),
     grantRootPassword: (password: string) =>
       ipcRenderer.invoke('app:root-password-granted', password),
+    openSteamKeyboard: (options: {
+      previousText: string;
+      title: string;
+      maxChars: number;
+    }) => ipcRenderer.invoke('app:open-steam-keyboard', options),
   },
   getVersion: () => ipcRenderer.sendSync('get-version'),
   updateAddons: () => ipcRenderer.invoke('update-addons'),

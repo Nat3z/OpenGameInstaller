@@ -8,6 +8,7 @@ type $Hosts = import('real-debrid-js').$Hosts;
 type $UnrestrictLink = import('real-debrid-js').$UnrestrictLink;
 type $UserInfo = import('real-debrid-js').$UserInfo;
 type $TorrentInfo = import('real-debrid-js').$TorrentInfo;
+type $GamepadNavigator = import('./managers/GamepadManager').GamepadNavigator;
 interface Window {
   electronAPI: {
     fs: {
@@ -127,6 +128,12 @@ interface Window {
       getAddonIcon: (addonID: string) => Promise<string>;
       getLocalImage: (path: string) => Promise<string>;
       grantRootPassword: (password: string) => Promise<void>;
+      openSteamKeyboard: (options: {
+        x: number;
+        y: number;
+        width: number;
+        height: number;
+      }) => Promise<boolean>;
     };
     updateAddons: () => Promise<void>;
     getVersion: () => string;
@@ -136,4 +143,5 @@ interface Window {
     downloadTorrentInto: (link: string) => Promise<Uint8Array>;
     getTorrentHash: (torrent: string | Buffer | Uint8Array) => Promise<string>;
   };
+  gamepadNavigator: $GamepadNavigator;
 }

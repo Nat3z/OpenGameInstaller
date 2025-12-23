@@ -71,11 +71,12 @@
         },
         parallelChunkCount: {
           displayName: 'Parallelize Downloads',
-          description: 'The number of parallel downloads to use per download',
+          description:
+            "The number of parallel downloads to use per download. More doesn't always mean faster.",
           defaultValue: 6,
           value: 6,
           type: 'number',
-          max: 10,
+          max: 16,
           min: 1,
         },
         reconfigurSteamGridDb: {

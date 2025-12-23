@@ -1218,4 +1218,82 @@
   .gamepad-focus:focus {
     outline: none;
   }
+
+  /* Custom Range Slider Styles */
+  input[type='range'] {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 8px;
+    background: #e5e7eb;
+    border-radius: 4px;
+    outline: none;
+    transition: background 0.3s ease;
+  }
+
+  input[type='range']:hover {
+    background: #d1d5db;
+  }
+
+  input[type='range']::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 20px;
+    height: 20px;
+    background: #428a91;
+    border-radius: 50%;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 4px rgba(66, 138, 145, 0.3);
+  }
+
+  input[type='range']::-webkit-slider-thumb:hover {
+    background: #2d626a;
+    transform: scale(1.1);
+    box-shadow: 0 3px 6px rgba(66, 138, 145, 0.4);
+  }
+
+  input[type='range']::-webkit-slider-thumb:active {
+    transform: scale(0.95);
+  }
+
+  input[type='range']::-moz-range-thumb {
+    width: 20px;
+    height: 20px;
+    background: #428a91;
+    border-radius: 50%;
+    cursor: pointer;
+    border: none;
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 4px rgba(66, 138, 145, 0.3);
+  }
+
+  input[type='range']::-moz-range-thumb:hover {
+    background: #2d626a;
+    transform: scale(1.1);
+    box-shadow: 0 3px 6px rgba(66, 138, 145, 0.4);
+  }
+
+  input[type='range']::-moz-range-thumb:active {
+    transform: scale(0.95);
+  }
+
+  input[type='range']::-moz-range-track {
+    width: 100%;
+    height: 8px;
+    background: #e5e7eb;
+    border-radius: 4px;
+  }
+
+  input[type='range']:focus {
+    outline: none;
+  }
+
+  input[type='range']:focus::-webkit-slider-thumb {
+    box-shadow: 0 0 0 3px rgba(66, 138, 145, 0.2);
+  }
+
+  input[type='range']:focus::-moz-range-thumb {
+    box-shadow: 0 0 0 3px rgba(66, 138, 145, 0.2);
+  }
 </style>

@@ -8,10 +8,11 @@ import { DOWNLOAD_QUEUE } from '../manager/manager.queue.js';
 import { Readable } from 'stream';
 import * as http from 'http';
 import * as https from 'https';
+import { getStoredValue } from '../manager/manager.config.js';
 
 // Parallel download configuration
 const PARALLEL_DOWNLOAD_THRESHOLD = 100 * 1024 * 1024; // 100MB in bytes
-const PARALLEL_CHUNK_COUNT = 4; // Number of parallel connections
+let PARALLEL_CHUNK_COUNT: number = 0;
 
 interface DownloadJob {
   link: string;
@@ -1640,6 +1641,27 @@ class Download {
   }
 }
 
+async function checkParallelChunkCount() {
+  const chunkCount: number = await getStoredValue(
+    'general',
+    'parallelChunkCount'
+  );
+  console.log('[direct] parallel chunk count:', chunkCount);
+  if (
+    chunkCount &&
+    PARALLEL_CHUNK_COUNT > 0 &&
+    PARALLEL_CHUNK_COUNT !== chunkCount
+  ) {
+    console.log(
+      '[direct] mismatched parallel chunk counts, will kill all downloads'
+    );
+    for (const download of downloads.values()) {
+      download.cancel();
+    }
+  }
+  PARALLEL_CHUNK_COUNT = chunkCount;
+}
+
 export default function handler(mainWindow: BrowserWindow) {
   ipcMain.handle(
     'ddl:download',
@@ -1648,6 +1670,7 @@ export default function handler(mainWindow: BrowserWindow) {
       args: { link: string; path: string; headers?: Record<string, string> }[],
       part?: number
     ) => {
+      await checkParallelChunkCount();
       const download = new Download(mainWindow, args, part);
       download.start();
       await new Promise((resolve) => setTimeout(resolve, 1000));
@@ -1655,17 +1678,18 @@ export default function handler(mainWindow: BrowserWindow) {
     }
   );
 
-  ipcMain.handle('ddl:pause', (_, id: string) => {
+  ipcMain.handle('ddl:pause', async (_, id: string) => {
     console.log('[direct] Pausing download', id);
     downloads.get(id)?.pause();
   });
 
-  ipcMain.handle('ddl:resume', (_, id: string) => {
+  ipcMain.handle('ddl:resume', async (_, id: string) => {
+    await checkParallelChunkCount();
     console.log('[direct] Resuming download', id);
     downloads.get(id)?.resume();
   });
 
-  ipcMain.handle('ddl:abort', (_, id: string) => {
+  ipcMain.handle('ddl:abort', async (_, id: string) => {
     console.log('[direct] Aborting download', id);
     downloads.get(id)?.cancel();
   });

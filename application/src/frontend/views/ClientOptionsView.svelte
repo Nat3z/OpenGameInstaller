@@ -69,6 +69,15 @@
           ],
           type: 'string',
         },
+        parallelChunkCount: {
+          displayName: 'Parallelize Downloads',
+          description: 'The number of parallel downloads to use per download',
+          defaultValue: 6,
+          value: 6,
+          type: 'number',
+          max: 10,
+          min: 1,
+        },
         reconfigurSteamGridDb: {
           displayName: 'Change SteamGridDB API Key',
           description: 'Reconfigure your SteamGridDB API Key',
@@ -252,6 +261,7 @@
 
   let selectedOption: OptionsCategory | null = $state(null);
   let mainContent: HTMLElement;
+  let rangeValues: { [key: string]: number } = $state({});
 
   function selectOption(addon: OptionsCategory) {
     const selected = document.querySelector('.selected');
@@ -350,7 +360,7 @@
       const storedConfig = JSON.parse(
         fs.read('./config/option/' + selectedOption.id + '.json')
       );
-      return storedConfig[key];
+      return storedConfig[key] ?? selectedOption.options[key].defaultValue;
     }
   }
 
@@ -494,6 +504,20 @@
       if (storedValue && storedValue !== selectedTorrentClientId) {
         selectedTorrentClientId = storedValue as string;
       }
+    }
+  });
+
+  // Initialize range values when selectedOption changes
+  $effect(() => {
+    if (selectedOption) {
+      const currentOption = selectedOption;
+      const newRangeValues: { [key: string]: number } = {};
+      Object.keys(currentOption.options).forEach((key) => {
+        if (currentOption.options[key].type === 'number') {
+          newRangeValues[key] = getStoredOrDefaultValue(key) as number;
+        }
+      });
+      rangeValues = newRangeValues;
     }
   });
 
@@ -812,15 +836,29 @@
                             </p>
                           {/if}
                           <div class="option-input">
-                            <input
-                              type="number"
-                              id={key}
-                              class="input-number"
-                              onchange={updateConfig}
-                              value={getStoredOrDefaultValue(key)}
-                              max={selectedOption.options[key].max}
-                              min={selectedOption.options[key].min}
-                            />
+                            <div class="range-container">
+                              <input
+                                type="range"
+                                id={key}
+                                class="input-number"
+                                oninput={(e) => {
+                                  const value = parseInt(
+                                    (e.target as HTMLInputElement).value
+                                  );
+                                  rangeValues[key] = value;
+                                  rangeValues = { ...rangeValues };
+                                  updateConfig();
+                                }}
+                                value={rangeValues[key] ??
+                                  getStoredOrDefaultValue(key)}
+                                max={selectedOption.options[key].max}
+                                min={selectedOption.options[key].min}
+                              />
+                              <div class="range-value-display">
+                                {rangeValues[key] ??
+                                  getStoredOrDefaultValue(key)}
+                              </div>
+                            </div>
                           </div>
                         </div>
                       {:else if selectedOption.options[key].type === 'action'}
@@ -1210,5 +1248,18 @@
   .input-number::-webkit-outer-spin-button {
     -webkit-appearance: none;
     margin: 0;
+  }
+
+  /* Range Container Styles */
+  .range-container {
+    @apply flex items-center gap-4;
+  }
+
+  .range-container .input-number {
+    @apply flex-1;
+  }
+
+  .range-value-display {
+    @apply min-w-[3rem] text-center px-3 py-1 bg-accent-lighter text-accent-dark rounded-lg font-archivo font-semibold text-lg;
   }
 </style>

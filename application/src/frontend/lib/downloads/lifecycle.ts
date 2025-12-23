@@ -1,4 +1,5 @@
 import {
+  createNotification,
   currentDownloads,
   setupLogs,
   type DownloadStatusAndInfo,
@@ -25,14 +26,22 @@ export async function startDownload(
       | 'qbittorrent'
       | 'real-debrid'
       | 'torbox'
-      | 'premiumize' =
-      (generalOptions ? generalOptions.torrentClient : null) ?? 'webtorrent';
+      | 'premiumize'
+      | 'disable' =
+      (generalOptions ? generalOptions.torrentClient : null) ?? 'disable';
     if (torrentClient === 'real-debrid') {
       downloadHandler = 'real-debrid-' + downloadHandler;
     } else if (torrentClient === 'torbox') {
       downloadHandler = 'torbox-' + downloadHandler;
     } else if (torrentClient === 'premiumize') {
       downloadHandler = 'premiumize-' + downloadHandler;
+    } else if (torrentClient === 'disable') {
+      createNotification({
+        id: Math.random().toString(36).substring(7),
+        type: 'error',
+        message: 'Torrenting is disabled in the settings.',
+      });
+      return;
     }
   }
   // replace the name's speceial characters (like amparsand, :, or any character windows doesn't support, with a dash)
@@ -56,7 +65,10 @@ export function updateDownloadStatus(
   currentDownloads.update((downloads) => {
     return downloads.map((download) => {
       if (download.id === downloadID) {
-        const updatedDownload = { ...download, ...updates };
+        const updatedDownload = {
+          ...download,
+          ...updates,
+        } as DownloadStatusAndInfo;
 
         // Initialize setup logs when status changes to 'completed' (setup phase)
         if (updates.status === 'completed' && download.status !== 'completed') {

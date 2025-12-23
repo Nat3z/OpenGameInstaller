@@ -64,6 +64,7 @@
             'real-debrid',
             'torbox',
             'premiumize',
+            'disable',
           ],
           type: 'string',
         },
@@ -456,6 +457,15 @@
       iconHeight: 24,
       description:
         'Premium seedbox with cached torrents. Requires subscription.',
+    },
+    {
+      id: 'disable',
+      name: 'Disable',
+      icon: './disabled_torrent.svg',
+      iconWidth: 24,
+      iconHeight: 24,
+      description:
+        'Disable torrenting altogether, preventing any downloads from happening.',
     },
   ];
 

@@ -19,6 +19,11 @@ export type DownloadStatusAndInfo = SearchResult & {
   error?: string;
   usedDebridService?: 'realdebrid' | 'torbox' | 'premiumize' | 'none';
   downloadPath: string;
+  files: {
+    name: string;
+    downloadURL: string;
+    headers?: Record<string, string>;
+  }[];
   downloadSpeed: number;
   downloadSize: number;
   addonSource: string;

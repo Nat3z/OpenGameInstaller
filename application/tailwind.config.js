@@ -29,6 +29,7 @@ export default {
         'slide-right': 'slideRight 0.4s ease-out',
         'bounce-in': 'bounceIn 0.6s ease-out',
         'scale-in': 'scaleIn 0.3s ease-out',
+        'pulse-yellow': 'pulseYellow 2s ease-in-out infinite',
       },
       keyframes: {
         fadeIn: {
@@ -68,6 +69,10 @@ export default {
         scaleIn: {
           '0%': { transform: 'scale(0.8)', opacity: '0' },
           '100%': { transform: 'scale(1)', opacity: '1' },
+        },
+        pulseYellow: {
+          '0%, 100%': { opacity: '1', transform: 'scale(1)' },
+          '50%': { opacity: '0.5', transform: 'scale(1.2)' },
         },
       },
     },

@@ -38,6 +38,9 @@ export type DownloadStatusAndInfo = SearchResult & {
   originalDownloadURL?: string;
   originalFiles?: any[];
   pausedAt?: number;
+  // Update-specific properties
+  isUpdate?: boolean;
+  updateVersion?: string;
 };
 
 export type DeferredTask = {

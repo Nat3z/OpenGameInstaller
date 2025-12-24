@@ -12,6 +12,7 @@
     filterLibrary,
     chunkArray,
   } from '../lib/core/library';
+  import { updatesManager } from '../states.svelte';
 
   let library: LibraryInfo[] = $state([]);
   let recentlyPlayed: LibraryInfo[] = $state([]);
@@ -86,7 +87,7 @@
         ></div>
       </div>
     {:then os}
-      {#if os === 'win32' || os === 'darwin'}
+      {#if os === 'win32' || os === 'darwin' || os === 'linux'}
         <div class="flex flex-col w-full h-full overflow-y-auto gap-4 pb-8">
           <!-- Recently Played Section -->
           {#if recentlyPlayed.length > 0}
@@ -103,6 +104,11 @@
                     class="ml-4 flex-shrink-0 border-none relative transition-all shadow-lg hover:shadow-xl rounded-lg overflow-hidden bg-white"
                     onclick={() => ($selectedApp = app)}
                   >
+                    {#if updatesManager.getAppUpdate(app.appID)?.updateAvailable}
+                      <div
+                        class="absolute top-2 right-2 w-3 h-3 bg-yellow-500 rounded-full z-[2] animate-pulse-yellow"
+                      ></div>
+                    {/if}
                     <Image
                       src={app.capsuleImage}
                       alt={app.name}
@@ -202,6 +208,11 @@
                         class="ml-4 border-none relative transition-all shadow-lg hover:shadow-xl rounded-lg overflow-hidden bg-white"
                         onclick={() => ($selectedApp = app)}
                       >
+                        {#if updatesManager.getAppUpdate(app.appID)?.updateAvailable}
+                          <div
+                            class="absolute top-2 right-2 w-3 h-3 bg-yellow-500 rounded-full z-[2] animate-pulse-yellow"
+                          ></div>
+                        {/if}
                         <Image
                           src={app.capsuleImage}
                           alt={app.name}

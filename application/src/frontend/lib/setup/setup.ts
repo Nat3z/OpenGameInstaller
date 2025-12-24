@@ -7,6 +7,7 @@ import { updateDownloadStatus } from '../downloads/lifecycle';
 import { saveFailedSetup } from '../recovery/failedSetups';
 import type { EventListenerTypes, SetupEventResponse } from 'ogi-addon';
 import { safeFetch } from '../core/ipc';
+import { updatesManager } from '../../states.svelte';
 
 function dispatchSetupEvent(
   eventType: 'log' | 'progress',
@@ -171,6 +172,85 @@ export async function runSetupApp(
   } catch (error) {
     // Error flows already handled in callbacks; rethrow for callers to react if needed
     console.error('Error setting up app: ', error);
+    throw error;
+  }
+}
+
+/**
+ * Run setup for an app update. This only updates the version in the library file
+ * without running redistributables or adding to Steam.
+ */
+export async function runSetupAppUpdate(
+  downloadedItem: DownloadStatusAndInfo,
+  outputDir: string,
+  isTorrent: boolean,
+  additionalData: any = {}
+): Promise<SetupEventResponse> {
+  const setupPayload = createSetupPayload(
+    downloadedItem,
+    outputDir,
+    additionalData
+  );
+  const callbacks = createSetupCallbacks(downloadedItem);
+
+  try {
+    // Run addon setup to get the new version info
+    const data: SetupEventResponse = await safeFetch(
+      'setupApp',
+      setupPayload,
+      callbacks
+    );
+
+    // Mark setup log as inactive
+    setupLogs.update((logs) => {
+      if (logs[downloadedItem.id]) {
+        logs[downloadedItem.id].isActive = false;
+      }
+      return logs;
+    });
+
+    // For updates, only update the version - don't run insertApp
+    const result = await window.electronAPI.app.updateAppVersion(
+      downloadedItem.appID,
+      data.version,
+      data.cwd,
+      data.launchExecutable,
+      data.launchArguments
+    );
+
+    if (result === 'app-not-found') {
+      updateDownloadStatus(downloadedItem.id, {
+        status: 'error',
+        error: 'App not found in library',
+      });
+      throw new Error('App not found in library');
+    }
+
+    // Remove from appUpdates state
+    if (data.version === downloadedItem.updateVersion) {
+      updatesManager.removeAppUpdate(downloadedItem.appID);
+
+      createNotification({
+        id: Math.random().toString(36).substring(2, 9),
+        type: 'success',
+        message: `Updated ${downloadedItem.name} to version ${data.version}`,
+      });
+    } else {
+      createNotification({
+        id: Math.random().toString(36).substring(2, 9),
+        type: 'error',
+        message: `Failed to update ${downloadedItem.name} to target version`,
+      });
+    }
+    const finalStatus = isTorrent ? 'seeding' : 'setup-complete';
+    updateDownloadStatus(downloadedItem.id, {
+      status: finalStatus,
+      downloadPath: downloadedItem.downloadPath,
+    });
+
+    return data;
+  } catch (error) {
+    console.error('Error updating app: ', error);
     throw error;
   }
 }

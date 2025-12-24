@@ -7,6 +7,9 @@ export type SearchResultWithAddon = SearchResult & {
   capsuleImage: string;
   coverImage: string;
   storefront: string;
+  // Update-specific optional fields
+  isUpdate?: boolean;
+  updateVersion?: string;
 };
 
 export async function runTask(

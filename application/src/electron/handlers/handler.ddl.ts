@@ -8,7 +8,7 @@ import { DOWNLOAD_QUEUE } from '../manager/manager.queue.js';
 import { Readable } from 'stream';
 import * as http from 'http';
 import * as https from 'https';
-import { getStoredValue } from '../manager/manager.config.js';
+import { getStoredValue, refreshCached } from '../manager/manager.config.js';
 
 // Parallel download configuration
 const PARALLEL_DOWNLOAD_THRESHOLD = 100 * 1024 * 1024; // 100MB in bytes
@@ -462,9 +462,12 @@ class Download {
         : 0;
       const acceptRanges = headResponse.headers['accept-ranges'];
       const supportsRange = acceptRanges === 'bytes';
+      console.log(job.headers);
 
       const useParallel =
-        supportsRange && contentLength > PARALLEL_DOWNLOAD_THRESHOLD;
+        supportsRange &&
+        contentLength > PARALLEL_DOWNLOAD_THRESHOLD &&
+        !(job.headers && job.headers['No-Parallel'] === 'true');
 
       return {
         useParallel,
@@ -1348,7 +1351,8 @@ class Download {
       const useParallel =
         supportsRange &&
         contentLength > PARALLEL_DOWNLOAD_THRESHOLD &&
-        this.totalParts === 1; // Only use parallel for single-file downloads
+        this.totalParts === 1 && // Only use parallel for single-file downloads
+        !(job.headers && job.headers['No-Parallel'] === 'true'); // If the link served has disabled parallel download, don't use it
 
       console.log(
         `[direct] Parallel check: size=${(contentLength / (1024 * 1024 * 1024)).toFixed(2)}GB, ` +
@@ -1755,6 +1759,7 @@ class Download {
 }
 
 async function checkParallelChunkCount() {
+  await refreshCached('general');
   const chunkCount: number =
     (await getStoredValue('general', 'parallelChunkCount')) ?? (8 as number);
   console.log('[direct] parallel chunk count:', chunkCount);

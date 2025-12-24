@@ -286,6 +286,7 @@ export interface StoreData {
   basicDescription: string;
   description: string;
   headerImage: string;
+  latestVersion: string;
 }
 export interface WebsocketMessageClient {
   event: OGIAddonClientSentEvent;

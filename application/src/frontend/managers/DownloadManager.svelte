@@ -7,7 +7,7 @@
     unzipAndReturnOutputDir,
   } from '../lib/setup/extraction';
   import { saveFailedSetup } from '../lib/recovery/failedSetups';
-  import { runSetupApp } from '../lib/setup/setup';
+  import { runSetupApp, runSetupAppUpdate } from '../lib/setup/setup';
 
   function isCustomEvent(event: Event): event is CustomEvent {
     return event instanceof CustomEvent;
@@ -251,7 +251,17 @@
     }
 
     try {
-      await runSetupApp(downloadedItem, outputDir, isTorrent, additionalData);
+      // Check if this is an update download and route to appropriate setup function
+      if (downloadedItem.isUpdate) {
+        await runSetupAppUpdate(
+          downloadedItem,
+          outputDir,
+          isTorrent,
+          additionalData
+        );
+      } else {
+        await runSetupApp(downloadedItem, outputDir, isTorrent, additionalData);
+      }
     } catch (error) {
       console.error('Error setting up app: ', error);
     }

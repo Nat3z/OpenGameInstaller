@@ -134,6 +134,13 @@ interface Window {
         width: number;
         height: number;
       }) => Promise<boolean>;
+      updateAppVersion: (
+        appID: number,
+        version: string,
+        cwd: string,
+        launchExecutable: string,
+        launchArguments?: string
+      ) => Promise<'success' | 'app-not-found'>;
     };
     updateAddons: () => Promise<void>;
     getVersion: () => string;

@@ -241,6 +241,22 @@ contextBridge.exposeInMainWorld('electronAPI', {
       (options: { previousText: string; title: string; maxChars: number }) =>
         ipcRenderer.invoke('app:open-steam-keyboard', options)
     ),
+    updateAppVersion: wrap(
+      (
+        appID: number,
+        version: string,
+        cwd: string,
+        launchExecutable: string,
+        launchArguments?: string
+      ) =>
+        ipcRenderer.invoke('app:update-app-version', {
+          appID,
+          version,
+          cwd,
+          launchExecutable,
+          launchArguments,
+        })
+    ),
   },
   getVersion: wrap(() => ipcRenderer.sendSync('get-version')),
   updateAddons: wrap(() => ipcRenderer.invoke('update-addons')),

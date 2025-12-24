@@ -2,7 +2,7 @@ import { BaseService } from './BaseService';
 import type { SearchResultWithAddon } from '../../tasks/runner';
 import { currentDownloads, type DownloadStatusAndInfo } from '../../../store';
 import { getDownloadPath } from '../../core/fs';
-import { runSetupApp } from '../../setup/setup';
+import { runSetupApp, runSetupAppUpdate } from '../../setup/setup';
 import { updateDownloadStatus } from '../lifecycle';
 
 /**
@@ -35,6 +35,7 @@ export class EmptyService extends BaseService {
       progress: 100,
       appID,
       downloadSize: 0,
+      files: (result as any).files || [],
     };
     // insert to store
     currentDownloads.update((downloads) => {
@@ -42,12 +43,22 @@ export class EmptyService extends BaseService {
     });
     updateDownloadStatus(downloadId, downloadedItem);
 
-    await runSetupApp(
-      downloadedItem,
-      getDownloadPath() + '/' + result.name + '/',
-      false,
-      {}
-    );
+    // Check if this is an update download and route to appropriate setup function
+    if (downloadedItem.isUpdate) {
+      await runSetupAppUpdate(
+        downloadedItem,
+        getDownloadPath() + '/' + result.name + '/',
+        false,
+        {}
+      );
+    } else {
+      await runSetupApp(
+        downloadedItem,
+        getDownloadPath() + '/' + result.name + '/',
+        false,
+        {}
+      );
+    }
 
     htmlButton.textContent = 'Setting up...';
     htmlButton.disabled = true;

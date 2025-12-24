@@ -2,6 +2,7 @@
   import type { LibraryInfo, SearchResult } from 'ogi-addon';
   import PlayIcon from '../Icons/PlayIcon.svelte';
   import {
+    currentDownloads,
     currentStorePageOpened,
     currentStorePageOpenedStorefront,
     gamesLaunched,
@@ -17,10 +18,13 @@
   import AddonPicture from './AddonPicture.svelte';
   import { updatesManager } from '../states.svelte';
   import UpdateIcon from '../Icons/UpdateIcon.svelte';
+  import UpdateAppModal from './built/UpdateAppModal.svelte';
 
   let updateInfo = $derived.by(() => {
     return updatesManager.getAppUpdate(libraryInfo.appID);
   });
+
+  let showUpdateModal = $state(false);
 
   interface Props {
     libraryInfo: LibraryInfo;
@@ -28,7 +32,6 @@
   }
 
   let { libraryInfo = $bindable(), exitPlayPage }: Props = $props();
-
   async function doesLinkExist(url: string | undefined) {
     if (!url) return false;
     const response = await window.electronAPI.app.axios({
@@ -198,8 +201,18 @@
   <GameConfiguration gameInfo={libraryInfo} {onFinish} {exitPlayPage} />
 {/if}
 
+{#if showUpdateModal && updateInfo}
+  <UpdateAppModal
+    appID={libraryInfo.appID}
+    storefront={libraryInfo.storefront}
+    updateVersion={updateInfo.updateVersion}
+    gameName={libraryInfo.name}
+    onClose={() => (showUpdateModal = false)}
+  />
+{/if}
+
 <div
-  class="flex flex-col top-0 left-0 overflow-y-auto absolute w-full h-full bg-white z-[2] animate-fade-in-pop-fast"
+  class="flex flex-col top-0 left-0 overflow-y-auto absolute w-full h-full bg-white z-[3] animate-fade-in-pop-fast"
   out:fly={{ x: 100, duration: 500, easing: quintOut }}
 >
   <!-- Hero Banner Section -->
@@ -244,23 +257,57 @@
 
   <!-- Action Buttons at Top -->
   <div class="bg-accent-lighter px-6 py-4 flex items-center gap-3 rounded-b-lg">
-    {#if updateInfo}
+    {#if updateInfo && !$currentDownloads.find((download) => download.appID === libraryInfo.appID && download.status !== 'error' && download.status !== 'completed' && download.status !== 'seeding' && download.status !== 'setup-complete')}
       <button
         class="px-6 py-3 flex border-none rounded-lg justify-center bg-yellow-500 hover:bg-yellow-600 items-center gap-2 disabled:bg-yellow-500 disabled:cursor-not-allowed transition-colors duration-200"
-        onclick={() => {}}
+        onclick={() => (showUpdateModal = true)}
       >
         <UpdateIcon fill="#ffffff" />
-        <p class="font-archivo font-semibold text-white">Update</p>
+        <p class="font-archivo font-semibold text-white">
+          Update to {updateInfo.updateVersion?.slice(0, 8)}
+        </p>
+      </button>
+    {:else if $currentDownloads.find((download) => download.appID === libraryInfo.appID && download.status !== 'error' && download.status !== 'completed' && download.status !== 'seeding' && download.status !== 'setup-complete')}
+      <button
+        class="px-6 py-3 flex border-none rounded-lg justify-center bg-yellow-500 items-center gap-2 cursor-not-allowed transition-colors duration-200"
+        disabled
+      >
+        <UpdateIcon fill="#ffffff" />
+        <p class="font-archivo font-semibold text-white">Updating</p>
       </button>
     {:else}
-      <button
-        bind:this={playButton}
-        class="px-6 py-3 flex border-none rounded-lg justify-center bg-green-500 hover:bg-green-600 items-center gap-2 disabled:bg-yellow-500 disabled:cursor-not-allowed transition-colors duration-200"
-        onclick={() => launchGameTrigger.set(libraryInfo.appID)}
-      >
-        <PlayIcon fill="#86efac" />
-        <p class="font-archivo font-semibold text-white">PLAY</p>
-      </button>
+      {#await window.electronAPI.app.getOS()}
+        <div class="flex justify-center items-center w-full h-full"></div>
+      {:then os}
+        {#if (os === 'linux' || os === 'darwin') && libraryInfo.launchExecutable.endsWith('.exe')}
+          <div class="relative group">
+            <button
+              class="px-6 py-3 flex border-none rounded-lg justify-center bg-gray-500 items-center gap-2 disabled:bg-gray-500 disabled:cursor-not-allowed transition-colors duration-200"
+              disabled
+            >
+              <PlayIcon fill="#ffffff" />
+              <p class="font-archivo font-semibold text-white">Play</p>
+            </button>
+            <div
+              class="absolute top-full left-0 mt-2 px-3 py-2 bg-accent-lighter drop-shadow-md border border-accent-dark flex flex-row gap-2 items-center text-accent-dark text-sm rounded-lg whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-10"
+            >
+              <img src="/error.svg" alt="error" class="w-4 h-4" />
+              <p class="font-archivo font-semibold text-accent-dark pr-4">
+                You can only play games through Steam using Proton
+              </p>
+            </div>
+          </div>
+        {:else}
+          <button
+            bind:this={playButton}
+            class="px-6 py-3 flex border-none rounded-lg justify-center bg-green-500 hover:bg-green-600 items-center gap-2 disabled:bg-yellow-500 disabled:cursor-not-allowed transition-colors duration-200"
+            onclick={() => launchGameTrigger.set(libraryInfo.appID)}
+          >
+            <PlayIcon fill="#86efac" />
+            <p class="font-archivo font-semibold text-white">PLAY</p>
+          </button>
+        {/if}
+      {/await}
     {/if}
 
     <button

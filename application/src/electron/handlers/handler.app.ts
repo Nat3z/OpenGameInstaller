@@ -963,4 +963,30 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
       return null;
     }
   });
+
+  ipcMain.handle(
+    'app:update-app-version',
+    async (
+      _,
+      data: {
+        appID: number;
+        version: string;
+        cwd: string;
+        launchExecutable: string;
+        launchArguments?: string;
+      }
+    ) => {
+      const appPath = join(__dirname, `library/${data.appID}.json`);
+      if (!fs.existsSync(appPath)) {
+        return 'app-not-found';
+      }
+      const appData = JSON.parse(fs.readFileSync(appPath, 'utf-8'));
+      appData.version = data.version;
+      appData.cwd = data.cwd;
+      appData.launchExecutable = data.launchExecutable;
+      appData.launchArguments = data.launchArguments;
+      fs.writeFileSync(appPath, JSON.stringify(appData, null, 2));
+      return 'success';
+    }
+  );
 }

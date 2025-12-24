@@ -264,11 +264,15 @@ manifest: ${manifest}
           process.exit(1);
         }
         setTimeout(() => {
-          event.resolve({
-            cwd: path,
-            launchExecutable: 'Big Buck Bunny.mp4',
-            launchArguments: 'open %command%',
-            version: '1.0.0',
+          new Promise(async (resolve) => {
+            event.resolve({
+              cwd: path,
+              launchExecutable: 'Big Buck Bunny.mp4',
+              launchArguments: 'open %command%',
+              version:
+                (await addon.getAppDetails(appID, storefront))?.latestVersion ??
+                '1.0.0',
+            });
           });
         }, 5000);
       });
@@ -306,6 +310,7 @@ addon.on('game-details', ({ appID, storefront }, event) => {
       headerImage: 'https://dummyimage.com/500x350/968d96/ffffff',
       publishers: ['OGI Developers'],
       releaseDate: new Date().toISOString(),
+      latestVersion: '1.0.1',
     });
     return;
   }
@@ -358,9 +363,15 @@ addon.on(
   'check-for-updates',
   ({ appID, storefront, currentVersion }, event) => {
     event.defer();
-    event.resolve({
-      available: true,
-      version: '1.0.1',
-    });
+    if (currentVersion !== '1.0.1') {
+      event.resolve({
+        available: true,
+        version: '1.0.1',
+      });
+    } else {
+      event.resolve({
+        available: false,
+      });
+    }
   }
 );

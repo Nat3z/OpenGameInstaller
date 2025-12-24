@@ -205,6 +205,9 @@ export class RealDebridService extends BaseService {
       {
         link: download.download,
         path: getDownloadPath() + '/' + result.name + '/' + result.filename,
+        headers: {
+          'No-Parallel': 'true',
+        },
       },
     ]);
     const updatedState = flush();

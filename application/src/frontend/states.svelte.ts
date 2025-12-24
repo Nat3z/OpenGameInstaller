@@ -8,6 +8,9 @@ export let appUpdates = $state({
 });
 
 export const updatesManager = {
+  clearAppUpdates: () => {
+    appUpdates.apps = [];
+  },
   addAppUpdate: ({
     appID,
     name,

@@ -4,6 +4,8 @@
   import { updatesManager } from '../states.svelte';
 
   document.addEventListener('all-addons-started', () => {
+    // clear the app updates
+    updatesManager.clearAppUpdates();
     checkForAppUpdates();
     console.log('checking for app updates');
   });

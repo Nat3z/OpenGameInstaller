@@ -66,8 +66,6 @@ jobs:
         if: steps.version-check.outputs.changed == 'true'
         working-directory: packages/ogi-addon
         run: npm publish
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Create Git tag
         if: steps.version-check.outputs.changed == 'true'

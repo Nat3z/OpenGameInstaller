@@ -43,20 +43,11 @@ jobs:
 
       - name: Check for changes in application directory
         id: check_changes
-        run: |
-          if [ "${{ github.event_name }}" == "push" ] && [ -n "${{ github.event.before }}" ]; then
-            CHANGED_FILES=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }} | grep -E '^application/' || true)
-            if [ -n "$CHANGED_FILES" ]; then
-              echo "has_application_changes=true" >> $GITHUB_OUTPUT
-              echo "Found changes in application directory"
-            else
-              echo "has_application_changes=false" >> $GITHUB_OUTPUT
-              echo "No changes in application directory"
-            fi
-          else
-            # For tags or workflow_dispatch, assume changes exist
-            echo "has_application_changes=true" >> $GITHUB_OUTPUT
-          fi
+        env:
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          GITHUB_EVENT_BEFORE: ${{ github.event.before }}
+          GITHUB_SHA: ${{ github.sha }}
+        run: node .github/workflows/js/check-application-changes.js
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2

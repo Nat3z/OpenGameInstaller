@@ -26,11 +26,6 @@
     },
     "mac": {}
   },
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/Nat3z/OpenGameInstaller",
-    "directory": "application"
-  },
   "scripts": {
     "build": "rollup -c --bundleConfigAsCjs",
     "build:ogiaddon": "cd ../packages/ogi-addon/ && bun x tsup && cd ../real-debrid/ && bun x tsup",

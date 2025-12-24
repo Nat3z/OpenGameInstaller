@@ -21,10 +21,15 @@ function checkApplicationChanges() {
     const changedFiles = execSync(
       `git diff --name-only ${eventBefore} ${githubSha}`,
       { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'pipe'] }
-    ).trim().split('\n').filter(Boolean);
+    )
+      .trim()
+      .split('\n')
+      .filter(Boolean);
 
     // Check if any file starts with application/
-    const hasChanges = changedFiles.some(file => file.startsWith('application/'));
+    const hasChanges = changedFiles.some((file) =>
+      file.startsWith('application/')
+    );
 
     if (hasChanges) {
       setOutput('has_application_changes', 'true');
@@ -36,7 +41,10 @@ function checkApplicationChanges() {
   } catch (error) {
     // If git diff fails, assume changes exist to be safe
     setOutput('has_application_changes', 'true');
-    console.log('Error checking changes, assuming changes exist:', error.message);
+    console.log(
+      'Error checking changes, assuming changes exist:',
+      error.message
+    );
   }
 }
 
@@ -49,4 +57,3 @@ function setOutput(name, value) {
 }
 
 checkApplicationChanges();
-

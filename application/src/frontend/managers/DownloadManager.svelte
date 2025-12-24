@@ -49,7 +49,12 @@
 
     updateDownloadStatus(downloadID, { status: 'completed' });
 
-    let outputDir = downloadedItem.downloadPath;
+    // remove any trailing slash paths and any file names files from the download path
+    let outputDir = downloadedItem.downloadPath
+      .replace(/(\/|\\)$/g, '')
+      .replace(/\.[^/.]+$/, '');
+
+    let originalOutputDir = outputDir;
 
     // move all files in current directory to a folder called "old_files" that's not the downloaded/extracted directory or the downloaded file itself
     const currentFiles = await window.electronAPI.fs.getFilesInDir(outputDir);
@@ -76,13 +81,13 @@
 
     async function revertOldFiles() {
       const oldFiles = await window.electronAPI.fs.getFilesInDir(
-        outputDir + '/old_files'
+        originalOutputDir + '/old_files'
       );
       if (oldFiles.length === 0) return;
       for (const file of oldFiles) {
         const result = await window.electronAPI.fs.move({
-          source: outputDir + '/old_files/' + file,
-          destination: outputDir + '/' + file,
+          source: originalOutputDir + '/old_files/' + file,
+          destination: originalOutputDir + '/' + file,
         });
         if (result !== 'success') {
           console.error('Failed to move file: ', file);
@@ -105,12 +110,12 @@
       }
       outputDir = outputDir + '/';
       console.log('Newly calculated outputDir: ', outputDir);
+      // write to the downloadItem
+      downloadedItem.downloadPath = outputDir;
+      updateDownloadStatus(downloadID, {
+        downloadPath: outputDir,
+      });
     }
-    // write to the downloadItem
-    downloadedItem.downloadPath = outputDir;
-    updateDownloadStatus(downloadID, {
-      downloadPath: outputDir,
-    });
 
     // Handle RealDebrid extraction for DDL
     if (
@@ -311,14 +316,15 @@
 
       // delete the old_files directory
       try {
-        if (!window.electronAPI.fs.exists(outputDir + '/old_files')) return;
+        if (!window.electronAPI.fs.exists(originalOutputDir + '/old_files'))
+          return;
 
         createNotification({
           id: Math.random().toString(36).substring(2, 9),
           type: 'info',
           message: 'Deleting previous update files...',
         });
-        window.electronAPI.fs.delete(outputDir + '/old_files');
+        window.electronAPI.fs.delete(originalOutputDir + '/old_files');
         console.log('Deleted old_files directory');
       } catch (error) {
         console.error('Failed to delete old_files directory: ', error);

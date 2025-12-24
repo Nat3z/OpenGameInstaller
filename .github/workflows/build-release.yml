@@ -41,26 +41,46 @@ jobs:
         with:
           fetch-depth: 0 # Fetch full history for consistency
 
+      - name: Check for changes in application directory
+        id: check_changes
+        run: |
+          if [ "${{ github.event_name }}" == "push" ] && [ -n "${{ github.event.before }}" ]; then
+            CHANGED_FILES=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }} | grep -E '^application/' || true)
+            if [ -n "$CHANGED_FILES" ]; then
+              echo "has_application_changes=true" >> $GITHUB_OUTPUT
+              echo "Found changes in application directory"
+            else
+              echo "has_application_changes=false" >> $GITHUB_OUTPUT
+              echo "No changes in application directory"
+            fi
+          else
+            # For tags or workflow_dispatch, assume changes exist
+            echo "has_application_changes=true" >> $GITHUB_OUTPUT
+          fi
+
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.2.23
       - name: Install Dependencies
+        if: steps.check_changes.outputs.has_application_changes == 'true'
         run: bun install && cp -r ./node_modules/electron ./application/node_modules/electron && mkdir -p ./updater/node_modules && cp -r ./node_modules/electron ./updater/node_modules/electron
 
       - name: Build Release Client
+        if: steps.check_changes.outputs.has_application_changes == 'true'
         run: cd application && bun run preelectron-pack && bun run electron-pack
 
       - name: Build Release Updater
+        if: steps.check_changes.outputs.has_application_changes == 'true'
         run: cd updater && bun run electron-pack
 
       - name: Zip for Windows Portable
-        if: matrix.os == 'windows-latest'
+        if: matrix.os == 'windows-latest' && steps.check_changes.outputs.has_application_changes == 'true'
         run: |
           Compress-Archive -Path application/dist/win-unpacked/* -Destination application/dist/OpenGameInstaller-Portable.zip
 
       - name: Upload Windows Assets as Artifacts
-        if: matrix.os == 'windows-latest'
+        if: matrix.os == 'windows-latest' && steps.check_changes.outputs.has_application_changes == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: windows-assets
@@ -69,7 +89,7 @@ jobs:
             updater/dist/OpenGameInstaller-Setup.exe
 
       - name: Upload Linux Assets as Artifacts
-        if: matrix.os == 'ubuntu-latest'
+        if: matrix.os == 'ubuntu-latest' && steps.check_changes.outputs.has_application_changes == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: linux-assets

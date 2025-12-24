@@ -18,6 +18,7 @@ interface Window {
       exists: (path: string) => boolean;
       delete: (path: string) => void;
       deleteAsync: (path: string) => Promise<void>;
+      move: (data: { source: string; destination: string }) => Promise<string | any>;
       showFileLoc: (path: string) => void;
       unrar: (data: {
         outputDir: string;

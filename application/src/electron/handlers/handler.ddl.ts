@@ -57,6 +57,7 @@ interface PartState {
 type DownloadStatus =
   | 'queued'
   | 'downloading'
+  | 'merging'
   | 'paused'
   | 'completed'
   | 'failed'
@@ -564,8 +565,17 @@ class Download {
       throw error;
     }
 
+    // Set status to merging before merging chunk files
+    this.status = 'merging';
+    this.sendProgress({ progress: this.currentBytes / this.totalSize });
+
     // Merge chunk files
     await this.mergeChunkFilesForPart(part);
+
+    // Reset status to downloading after merge completes (if not all parts are done)
+    if (this.status === 'merging') {
+      this.status = 'downloading';
+    }
 
     // Update part's downloaded bytes
     part.downloadedBytes = fileSize;
@@ -1498,6 +1508,10 @@ class Download {
     }
 
     this.cleanupParallelChunks();
+
+    // Set status to merging before merging chunk files
+    this.status = 'merging';
+    this.sendProgress({ progress: this.currentBytes / this.totalSize });
 
     // Merge all chunk files into the final file
     await this.mergeChunkFiles(job);

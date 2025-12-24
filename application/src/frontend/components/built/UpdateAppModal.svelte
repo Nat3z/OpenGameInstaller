@@ -15,14 +15,14 @@
   import { fly, slide } from 'svelte/transition';
 
   interface Props {
-    appID: number;
-    storefront: string;
+    libraryInfo: LibraryInfo;
     updateVersion: string;
-    gameName: string;
     onClose: () => void;
   }
 
-  let { appID, storefront, updateVersion, gameName, onClose }: Props = $props();
+  let { libraryInfo, updateVersion, onClose }: Props = $props();
+
+  let { appID, storefront, name: gameName } = libraryInfo;
 
   let results: SearchResultWithAddon[] = $state([]);
   let gameData: StoreData | undefined = $state();
@@ -181,7 +181,7 @@
     loadingAddons = new Set();
   }
 
-  function handleDownloadClick(
+  async function handleDownloadClick(
     result: SearchResultWithAddon,
     event: MouseEvent
   ) {

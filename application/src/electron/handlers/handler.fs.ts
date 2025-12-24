@@ -96,9 +96,25 @@ export default function handler() {
       if (String(arg).startsWith('./')) {
         arg = join(__dirname, arg);
       }
-      await fsAsync.rm(arg);
+      await fsAsync.rm(arg, { recursive: true, force: true });
       return 'success';
     } catch (err) {
+      return err;
+    }
+  });
+  ipcMain.handle('fs:move', async (_, arg: { source: string; destination: string }) => {
+    let { source, destination } = arg;
+    if (String(source).startsWith('./')) {
+      source = join(__dirname, source);
+    }
+    if (String(destination).startsWith('./')) {
+      destination = join(__dirname, destination);
+    }
+    try {
+      await fsAsync.rename(source, destination);
+      return 'success';
+    } catch (err) {
+      console.error(err);
       return err;
     }
   });
@@ -107,7 +123,7 @@ export default function handler() {
       if (String(arg).startsWith('./')) {
         arg = join(__dirname, arg);
       }
-      await fsAsync.rm(arg);
+      await fsAsync.rm(arg, { recursive: true, force: true });
       event.returnValue = 'success';
     } catch (err) {
       console.error(err);

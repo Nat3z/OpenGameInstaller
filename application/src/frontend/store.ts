@@ -7,6 +7,7 @@ export type DownloadStatusAndInfo = SearchResult & {
   id: string;
   status:
     | 'downloading'
+    | 'merging'
     | 'paused'
     | 'completed'
     | 'error'

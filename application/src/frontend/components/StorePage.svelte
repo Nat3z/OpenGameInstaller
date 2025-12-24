@@ -480,14 +480,16 @@
                   {activeDownload.status === 'downloading' ||
                   activeDownload.status === 'rd-downloading'
                     ? Math.round(activeDownload.progress * 100) + '%'
-                    : activeDownload.status === 'completed' ||
-                        activeDownload.status === 'redistr-downloading'
-                      ? 'Setting up...'
-                      : activeDownload.status === 'paused'
-                        ? 'Paused'
-                        : activeDownload.status === 'requesting'
-                          ? 'Requesting...'
-                          : activeDownload.status}
+                    : activeDownload.status === 'merging'
+                      ? 'Merging files...'
+                      : activeDownload.status === 'completed' ||
+                          activeDownload.status === 'redistr-downloading'
+                        ? 'Setting up...'
+                        : activeDownload.status === 'paused'
+                          ? 'Paused'
+                          : activeDownload.status === 'requesting'
+                            ? 'Requesting...'
+                            : activeDownload.status}
                 </span>
               </div>
 
@@ -502,7 +504,7 @@
               </div>
 
               <!-- Download Stats -->
-              {#if activeDownload.status === 'downloading' || activeDownload.status === 'rd-downloading'}
+              {#if activeDownload.status === 'downloading' || activeDownload.status === 'rd-downloading' || activeDownload.status === 'merging'}
                 <div class="flex justify-between text-xs text-accent-dark">
                   <span>
                     {#if activeDownload.downloadSpeed > 0}

@@ -38,9 +38,7 @@
   let addons: ConfigTemplateAndInfo[] = $state([]);
   let catalogs: AddonCatalog[] = $state([]);
   let loading = $state(true);
-  let searchQuery = $state('');
   let allSections = $state<AllSections[]>([]);
-  let filteredSections = $state<AllSections[]>([]);
   let carouselIndices = $state<Record<string, number>>({}); // sectionId -> page index
   let carouselDirections = $state<Record<string, number>>({}); // sectionId -> direction (-1 or 1)
 
@@ -60,42 +58,17 @@
     allSections = sections;
   });
 
-  // Update filtered sections when search query changes
-  $effect(() => {
-    updateFilteredSections();
-  });
-
-  // Reset carousel indices when filteredSections change
+  // Reset carousel indices when allSections change
   $effect(() => {
     const indices: Record<string, number> = {};
     const directions: Record<string, number> = {};
-    filteredSections.forEach((section) => {
+    allSections.forEach((section) => {
       indices[section.sectionId] = 0;
       directions[section.sectionId] = 0;
     });
     carouselIndices = indices;
     carouselDirections = directions;
   });
-
-  function updateFilteredSections() {
-    let filtered = allSections;
-
-    // Filter by search query
-    if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase();
-      filtered = allSections.filter(
-        (item) =>
-          item.section.name.toLowerCase().includes(query) ||
-          item.section.description.toLowerCase().includes(query) ||
-          item.addonName.toLowerCase().includes(query) ||
-          item.section.listings.some((listing) =>
-            listing.name.toLowerCase().includes(query)
-          )
-      );
-    }
-
-    filteredSections = filtered;
-  }
 
   function handleCarouselNav(
     sectionId: string,
@@ -172,45 +145,13 @@
 <div class="flex flex-col w-full h-full overflow-y-auto gap-6 pb-8">
   <!-- Header Section -->
   <div class="bg-accent-lighter px-6 py-4 rounded-lg">
-    <div class="flex items-center justify-between">
-      <div>
-        <h1 class="text-2xl font-semibold text-accent-dark mb-2">
-          Discover Games
-        </h1>
-        <p class="text-accent">
-          Browse curated game collections from your installed addons
-        </p>
-      </div>
-
-      <!-- Search Controls -->
-      <div class="flex gap-4 items-center">
-        <!-- Search Input -->
-        <div class="relative">
-          <div
-            class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"
-          >
-            <svg
-              class="h-4 w-4 text-accent"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-              ></path>
-            </svg>
-          </div>
-          <input
-            type="text"
-            bind:value={searchQuery}
-            placeholder="Search catalogs..."
-            class="block w-64 pl-9 pr-3 py-2 border border-accent rounded-md text-sm bg-white placeholder-accent focus:outline-none focus:ring-1 focus:ring-accent-dark focus:border-accent-dark transition-colors"
-          />
-        </div>
-      </div>
+    <div>
+      <h1 class="text-2xl font-semibold text-accent-dark mb-2">
+        Discover Games
+      </h1>
+      <p class="text-accent">
+        Browse curated game collections from your installed addons
+      </p>
     </div>
   </div>
 
@@ -218,26 +159,20 @@
     <div class="flex justify-center items-center py-16">
       <div class="loading-spinner"></div>
     </div>
-  {:else if filteredSections.length === 0}
+  {:else if allSections.length === 0}
     <div class="flex flex-col gap-4 w-full justify-center items-center py-16">
       <img src="./favicon.png" alt="content" class="w-24 h-24 opacity-50" />
       <div class="text-center">
-        <h2 class="text-xl text-gray-600 mb-2">
-          {searchQuery ? 'No matching catalogs found' : 'No catalogs available'}
-        </h2>
+        <h2 class="text-xl text-gray-600 mb-2">No catalogs available</h2>
         <p class="text-gray-500">
-          {#if searchQuery}
-            Try adjusting your search terms
-          {:else}
-            Install addons that support catalog browsing to see game collections
-          {/if}
+          Install addons that support catalog browsing to see game collections
         </p>
       </div>
     </div>
   {:else}
     <!-- Catalog Content -->
     <div class="space-y-6">
-      {#each filteredSections as sectionItem}
+      {#each allSections as sectionItem}
         <div class="space-y-3 px-4">
           <!-- Section Header with Addon Info -->
           <div class="bg-accent-lighter px-4 py-3 rounded-lg">
@@ -384,10 +319,6 @@
 </div>
 
 <style>
-  .group:hover .group-hover\:scale-110 {
-    transform: scale(1.1);
-  }
-
   button:hover {
     box-shadow:
       0 20px 40px 0 rgba(0, 0, 0, 0.15),

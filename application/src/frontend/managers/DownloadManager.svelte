@@ -50,8 +50,50 @@
     updateDownloadStatus(downloadID, { status: 'completed' });
 
     let outputDir = downloadedItem.downloadPath;
+
+    // move all files in current directory to a folder called "old_files" that's not the downloaded/extracted directory or the downloaded file itself
+    const currentFiles = await window.electronAPI.fs.getFilesInDir(outputDir);
+    if (currentFiles.length > 0) {
+      dispatchSetupEvent('log', downloadID, ['Moving all files to old_files']);
+      window.electronAPI.fs.mkdir(outputDir + '/old_files');
+      const filesNotToMove = downloadedItem.files.map((file) => file.name);
+      for (const file of currentFiles) {
+        if (!filesNotToMove.includes(file)) {
+          const result = await window.electronAPI.fs.move({
+            source: outputDir + '/' + file,
+            destination: outputDir + '/old_files/' + file,
+          });
+          if (result !== 'success') {
+            console.error('Failed to move file: ', file);
+          }
+        }
+      }
+    }
+    dispatchSetupEvent('log', downloadID, ['Moved all files']);
+    console.log('Moved all files to old_files');
     let additionalData: any = {};
     console.log('Downloaded Item: ', downloadedItem);
+
+    async function revertOldFiles() {
+      const oldFiles = await window.electronAPI.fs.getFilesInDir(
+        outputDir + '/old_files'
+      );
+      if (oldFiles.length === 0) return;
+      for (const file of oldFiles) {
+        const result = await window.electronAPI.fs.move({
+          source: outputDir + '/old_files/' + file,
+          destination: outputDir + '/' + file,
+        });
+        if (result !== 'success') {
+          console.error('Failed to move file: ', file);
+        }
+      }
+      createNotification({
+        id: Math.random().toString(36).substring(2, 9),
+        type: 'error',
+        message: 'Moved files back to original directory',
+      });
+    }
 
     // Handle torrent-specific logic
     if (isTorrent) {
@@ -130,6 +172,8 @@
           type: 'error',
           message: 'Failed to extract RAR file',
         });
+
+        await revertOldFiles();
 
         // add a failed setup
         saveFailedSetup({
@@ -215,6 +259,7 @@
           type: 'error',
           message: 'Failed to extract ZIP file',
         });
+        await revertOldFiles();
         updateDownloadStatus(downloadedItem.id, {
           status: 'error',
           error: 'Failed to extract ZIP file',
@@ -252,6 +297,7 @@
 
     try {
       // Check if this is an update download and route to appropriate setup function
+
       if (downloadedItem.isUpdate) {
         await runSetupAppUpdate(
           downloadedItem,
@@ -262,8 +308,24 @@
       } else {
         await runSetupApp(downloadedItem, outputDir, isTorrent, additionalData);
       }
+
+      // delete the old_files directory
+      try {
+        if (!window.electronAPI.fs.exists(outputDir + '/old_files')) return;
+
+        createNotification({
+          id: Math.random().toString(36).substring(2, 9),
+          type: 'info',
+          message: 'Deleting previous update files...',
+        });
+        window.electronAPI.fs.delete(outputDir + '/old_files');
+        console.log('Deleted old_files directory');
+      } catch (error) {
+        console.error('Failed to delete old_files directory: ', error);
+      }
     } catch (error) {
       console.error('Error setting up app: ', error);
+      await revertOldFiles();
     }
   }
 

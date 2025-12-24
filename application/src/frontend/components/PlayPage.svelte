@@ -203,10 +203,8 @@
 
 {#if showUpdateModal && updateInfo}
   <UpdateAppModal
-    appID={libraryInfo.appID}
-    storefront={libraryInfo.storefront}
+    {libraryInfo}
     updateVersion={updateInfo.updateVersion}
-    gameName={libraryInfo.name}
     onClose={() => (showUpdateModal = false)}
   />
 {/if}

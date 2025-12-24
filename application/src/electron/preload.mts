@@ -64,6 +64,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
       console.log('fs:delete called with path:', path);
       return ipcRenderer.invoke('fs:delete', path);
     }),
+    move: wrap((data: { source: string; destination: string }) => {
+      console.log(
+        'fs:move called with source:',
+        data.source,
+        'destination:',
+        data.destination
+      );
+      return ipcRenderer.invoke('fs:move', data);
+    }),
     showFileLoc: wrap((path: string) => {
       console.log('fs:showFileLoc called with path:', path);
       return ipcRenderer.sendSync('fs:show-file-loc', path);

@@ -549,6 +549,25 @@
                     {/if}
                   </div>
                 </div>
+              {:else if download.status === 'merging'}
+                <div class="progress-section">
+                  <div class="progress-bar">
+                    <div
+                      class="progress-fill"
+                      style="width: {Math.min(download.progress * 100, 100)}%"
+                    ></div>
+                  </div>
+                  <div class="progress-stats">
+                    <span class="progress-percentage">
+                      Merging files...
+                      {#if download.part && download.totalParts && download.totalParts > 1}
+                        <span class="text-accent-dark/70 ml-1">
+                          (Part {download.part}/{download.totalParts})
+                        </span>
+                      {/if}
+                    </span>
+                  </div>
+                </div>
               {:else if download.status === 'completed'}
                 <div class="status-badge setup">
                   <div class="spinner"></div>
@@ -939,6 +958,9 @@
   .status-paused {
     @apply bg-orange-500;
   }
+  .status-merging {
+    @apply bg-blue-500;
+  }
 
   .download-content {
     @apply flex-1 flex items-center justify-between gap-4;
@@ -1023,6 +1045,10 @@
 
   .status-badge.paused {
     @apply bg-orange-100 text-orange-800;
+  }
+
+  .status-badge.merging {
+    @apply bg-blue-100 text-blue-800;
   }
 
   /* Spinner Animation */

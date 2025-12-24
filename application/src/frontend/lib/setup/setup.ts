@@ -241,6 +241,12 @@ export async function runSetupAppUpdate(
         type: 'error',
         message: `Failed to update ${downloadedItem.name} to target version`,
       });
+      console.log(
+        'Failed to update app. Target version: ',
+        data.version,
+        'Current version: ',
+        downloadedItem.updateVersion
+      );
     }
     const finalStatus = isTorrent ? 'seeding' : 'setup-complete';
     updateDownloadStatus(downloadedItem.id, {

@@ -6,7 +6,7 @@
     startDownload,
     type SearchResultWithAddon,
   } from '../../utils';
-  import { createNotification, currentDownloads } from '../../store';
+  import { createNotification } from '../../store';
   import type { SearchResult, StoreData } from 'ogi-addon';
   import AddonPicture from '../AddonPicture.svelte';
   import Modal from '../modal/Modal.svelte';
@@ -31,13 +31,6 @@
   let loadingAddons: Set<string> = $state(new Set());
   let emptyAddons: Set<string> = $state(new Set());
   let collapsedAddons: Set<string> = $state(new Set());
-
-  // Check for active downloads for this game
-  let activeDownload = $derived(
-    $currentDownloads.find(
-      (download) => download.appID === appID && download.status !== 'error'
-    )
-  );
 
   onMount(async () => {
     const isOnline = await window.electronAPI.app.isOnline();
@@ -192,15 +185,6 @@
     result: SearchResultWithAddon,
     event: MouseEvent
   ) {
-    if (activeDownload) {
-      createNotification({
-        id: Math.random().toString(36).substring(7),
-        message: `Download already in progress for ${gameName}`,
-        type: 'warning',
-      });
-      return;
-    }
-
     // Add update flags to the result before starting download
     const updateResult = {
       ...result,
@@ -250,36 +234,11 @@
         <p class="ml-3 text-gray-600">Loading sources...</p>
       </div>
     {:else}
-      <!-- Active Download Progress -->
-      {#if activeDownload}
-        <div class="p-4 bg-accent-light/30 rounded-lg mb-4">
-          <div class="flex items-center justify-between mb-2">
-            <h3 class="font-medium text-accent-dark">Downloading Update</h3>
-            <span class="text-sm text-gray-600">
-              {activeDownload.status === 'downloading' ||
-              activeDownload.status === 'rd-downloading'
-                ? Math.round(activeDownload.progress * 100) + '%'
-                : activeDownload.status === 'completed'
-                  ? 'Setting up...'
-                  : activeDownload.status}
-            </span>
-          </div>
-          <div class="w-full bg-accent-lighter rounded-full h-2">
-            <div
-              class="bg-accent h-2 rounded-full transition-all duration-300 ease-out"
-              style="width: {activeDownload.status === 'completed'
-                ? 100
-                : activeDownload.progress * 100}%"
-            ></div>
-          </div>
-        </div>
-      {/if}
-
       <!-- Loading indicators for addons still searching -->
       {#each Array.from(loadingAddons) as addonId, index (addonId)}
         {@const isEmpty = emptyAddons.has(addonId)}
         <div
-          class="bg-accent-lighter rounded-lg p-4 mb-3 opacity-75"
+          class="bg-accent-lighter rounded-lg p-4 mb-1 opacity-75"
           class:opacity-50={isEmpty}
           in:fly={{ y: 20, duration: 300, delay: 50 * index }}
         >
@@ -310,12 +269,12 @@
       {#if resultsByAddon.length > 0}
         {#each resultsByAddon as addonGroup, groupIndex (addonGroup.addonId)}
           <div
-            class="mb-3"
+            class="mb-0"
             in:fly={{ y: 20, duration: 300, delay: 80 * groupIndex }}
           >
             <!-- Addon Section Header -->
             <button
-              class="w-full flex items-center justify-between p-3 bg-accent-lighter hover:bg-accent-light/80 border-none cursor-pointer rounded-lg transition-colors duration-200 mb-2"
+              class="w-full flex items-center justify-between p-3 bg-accent-lighter hover:bg-accent-light/80 border-none cursor-pointer rounded-lg transition-colors duration-200 mb-1"
               onclick={() => toggleAddonCollapse(addonGroup.addonId)}
             >
               <div class="flex items-center gap-3">
@@ -356,7 +315,7 @@
               <div transition:slide={{ duration: 250 }}>
                 {#each addonGroup.results as result, index}
                   <div
-                    class="bg-accent-lighter/60 rounded-lg p-3 mb-2 last:mb-0"
+                    class="bg-accent-lighter/60 rounded-lg p-3 mb-1 last:mb-0"
                     in:fly={{ y: 15, duration: 250, delay: 40 * index }}
                   >
                     <div class="flex items-center justify-between mb-2">
@@ -390,15 +349,10 @@
                       </div>
                     </div>
                     <button
-                      class="w-full text-sm border-none {activeDownload
-                        ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                        : 'bg-accent-light hover:bg-accent/30 text-accent-dark'} font-medium py-2 px-3 rounded-lg transition-colors duration-200"
-                      disabled={!!activeDownload}
+                      class="w-full text-sm border-none bg-accent-light hover:bg-accent/30 text-accent-dark font-medium py-2 px-3 rounded-lg transition-colors duration-200"
                       onclick={(event) => handleDownloadClick(result, event)}
                     >
-                      {activeDownload
-                        ? 'Download in Progress'
-                        : 'Download Update'}
+                      Download Update
                     </button>
                   </div>
                 {/each}

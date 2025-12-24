@@ -29,6 +29,7 @@ export class RequestService extends BaseService {
         ...downloads,
         {
           ...result,
+          files: [], // Ensure 'files' property is present for type safety
           // changed to avoid special characters in the path and make it work with windows on wine
           id: '' + localID,
           status: 'requesting',
@@ -72,7 +73,7 @@ export class RequestService extends BaseService {
 
     console.log('Request response:', response);
 
-    // Merge response with original context
+    // Merge response with original context, preserving update-specific fields
     const updatedResult = {
       ...response,
       addonSource: result.addonSource,
@@ -81,6 +82,8 @@ export class RequestService extends BaseService {
       storefront: result.storefront,
       status: 'downloading',
       name: result.name,
+      isUpdate: result.isUpdate,
+      updateVersion: result.updateVersion,
     };
 
     // Remove the temporary requesting download

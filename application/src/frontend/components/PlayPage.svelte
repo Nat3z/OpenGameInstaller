@@ -230,7 +230,7 @@
       <h1 class="text-4xl font-archivo font-bold text-white mb-2">
         {libraryInfo.name}
       </h1>
-      <div class="text-sm text-gray-200">
+      <!-- <div class="text-sm text-gray-200">
         <span class="text-gray-300">App ID:</span>
         {libraryInfo.appID}
         {#if libraryInfo.storefront}
@@ -238,7 +238,7 @@
           <span class="text-gray-300">Store:</span>
           {libraryInfo.storefront}
         {/if}
-      </div>
+      </div> -->
     </div>
 
     <!-- Title image overlay if available -->
@@ -293,7 +293,7 @@
             >
               <img src="/error.svg" alt="error" class="w-4 h-4" />
               <p class="font-archivo font-semibold text-accent-dark pr-4">
-                You can only play games through Steam using Proton
+                You can only play Windows games through Steam using Proton
               </p>
             </div>
           </div>

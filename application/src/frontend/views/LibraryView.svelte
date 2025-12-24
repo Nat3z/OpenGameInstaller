@@ -106,7 +106,7 @@
                   >
                     {#if updatesManager.getAppUpdate(app.appID)?.updateAvailable}
                       <div
-                        class="absolute top-2 right-2 w-3 h-3 bg-yellow-500 rounded-full z-[2] animate-pulse-yellow"
+                        class="absolute top-2 right-2 w-4 h-4 bg-yellow-600 rounded-full z-[2] animate-pulse-yellow"
                       ></div>
                     {/if}
                     <Image
@@ -210,7 +210,7 @@
                       >
                         {#if updatesManager.getAppUpdate(app.appID)?.updateAvailable}
                           <div
-                            class="absolute top-2 right-2 w-3 h-3 bg-yellow-500 rounded-full z-[2] animate-pulse-yellow"
+                            class="absolute top-2 right-2 w-4 h-4 bg-yellow-600 rounded-full z-[2] animate-pulse-yellow"
                           ></div>
                         {/if}
                         <Image

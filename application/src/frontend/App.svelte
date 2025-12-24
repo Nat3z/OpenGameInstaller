@@ -338,6 +338,19 @@
       });
     }
   });
+  document.addEventListener('all-addons-started', async () => {
+    if ($addonUpdates.length > 0) {
+      await window.electronAPI.updateAddons();
+      createNotification({
+        id: Math.random().toString(36).substring(7),
+        message: 'Addons updated successfully',
+        type: 'success',
+      });
+      addonUpdates.set([]);
+      // restart the addon server
+      await window.electronAPI.restartAddonServer();
+    }
+  });
   document.addEventListener('addon:updated', (event) => {
     if (event instanceof CustomEvent) {
       const { detail } = event;
@@ -398,10 +411,6 @@
   }
   setTimeout(() => {
     fetchCommunityAddons();
-    // automatically update addons
-    if ($isOnline && $addonUpdates.length > 0) {
-      window.electronAPI.updateAddons();
-    }
   }, 2000);
 
   function toggleNotificationSideView() {

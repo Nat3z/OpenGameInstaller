@@ -4,7 +4,7 @@ import { join } from 'path';
 import * as fs from 'fs';
 import * as fsPromises from 'fs/promises';
 import { LibraryInfo } from 'ogi-addon';
-import { app } from 'electron';
+import { app, BrowserWindow } from 'electron';
 import { sendNotification } from './main.js';
 import semver from 'semver';
 
@@ -144,7 +144,7 @@ async function checkForGitUpdates(repoPath: string): Promise<boolean> {
   });
 }
 
-export function checkForAddonUpdates(mainWindow: any) {
+export function checkForAddonUpdates(mainWindow: BrowserWindow) {
   if (!fs.existsSync(join(__dirname, 'addons'))) {
     return;
   }

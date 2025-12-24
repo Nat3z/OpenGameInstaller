@@ -35,6 +35,7 @@ interface ParallelDownloadInfo {
   useParallel: boolean;
   fileSize: number;
   supportsRange: boolean;
+  parallelLimit?: number; // Upper limit from OGI-Parallel-Limit header if set
 }
 
 interface PartState {
@@ -50,6 +51,7 @@ interface PartState {
   useChunks: boolean;
   chunks: ChunkState[];
   chunkJobPath: string;
+  effectiveChunkCount?: number; // Effective chunk count considering parallel limit
 }
 
 type DownloadStatus =
@@ -216,8 +218,12 @@ class Download {
             // For chunked downloads, check if merged file exists and is correct size
             if (parallelInfo.useParallel) {
               // Check if all chunk files exist and merged file is correct size
+              // Use stored effectiveChunkCount if available, otherwise calculate
+              const effectiveChunkCount = parallelInfo.parallelLimit
+                ? Math.min(PARALLEL_CHUNK_COUNT, parallelInfo.parallelLimit)
+                : PARALLEL_CHUNK_COUNT;
               const allChunksExist = Array.from(
-                { length: PARALLEL_CHUNK_COUNT },
+                { length: effectiveChunkCount },
                 (_, idx) => {
                   const chunkPath = this.getChunkPath(job.path, idx);
                   return fs.existsSync(chunkPath);
@@ -254,6 +260,7 @@ class Download {
         useChunks: false,
         chunks: [],
         chunkJobPath: '',
+        effectiveChunkCount: undefined,
       });
 
       if (isComplete) {
@@ -464,15 +471,25 @@ class Download {
       const supportsRange = acceptRanges === 'bytes';
       console.log(job.headers);
 
+      // Parse OGI-Parallel-Limit header from response (case-insensitive)
+      const parallelLimitHeader =
+        headResponse.headers['ogi-parallel-limit'] ||
+        headResponse.headers['OGI-Parallel-Limit'];
+      const parallelLimit = parallelLimitHeader
+        ? parseInt(parallelLimitHeader as string, 10)
+        : undefined;
+
       const useParallel =
         supportsRange &&
         contentLength > PARALLEL_DOWNLOAD_THRESHOLD &&
-        !(job.headers && job.headers['No-Parallel'] === 'true');
+        !(job.headers && job.headers['OGI-Parallel-Limit'] === '1') && // If the link served has a parallel limit of 1, don't use it
+        !(parallelLimit === 1); // Also check response header
 
       return {
         useParallel,
         fileSize: contentLength,
         supportsRange,
+        parallelLimit,
       };
     } catch (error) {
       console.log(
@@ -497,11 +514,20 @@ class Download {
     const job = part.job;
     part.chunks = [];
 
-    const chunkSize = Math.ceil(fileSize / PARALLEL_CHUNK_COUNT);
+    // Get parallel limit from the part's parallel info
+    const parallelInfo = await this.shouldUseParallelDownloadForPart(job);
+    const effectiveChunkCount = parallelInfo.parallelLimit
+      ? Math.min(PARALLEL_CHUNK_COUNT, parallelInfo.parallelLimit)
+      : PARALLEL_CHUNK_COUNT;
+
+    // Store effective chunk count in part state for later use
+    part.effectiveChunkCount = effectiveChunkCount;
+
+    const chunkSize = Math.ceil(fileSize / effectiveChunkCount);
     fs.mkdirSync(dirname(job.path), { recursive: true });
 
     // Initialize chunks for this part
-    for (let i = 0; i < PARALLEL_CHUNK_COUNT; i++) {
+    for (let i = 0; i < effectiveChunkCount; i++) {
       const startByte = i * chunkSize;
       const endByte = Math.min((i + 1) * chunkSize - 1, fileSize - 1);
       const expectedChunkSize = endByte - startByte + 1;
@@ -655,11 +681,15 @@ class Download {
   private async mergeChunkFilesForPart(part: PartState): Promise<void> {
     const finalStream = fs.createWriteStream(part.job.path, { flags: 'w' });
 
+    // Use stored effective chunk count, fallback to PARALLEL_CHUNK_COUNT if not set
+    const effectiveChunkCount =
+      part.effectiveChunkCount ?? PARALLEL_CHUNK_COUNT;
+
     return new Promise<void>((resolve, reject) => {
       let currentChunkIndex = 0;
 
       const writeNextChunk = () => {
-        if (currentChunkIndex >= PARALLEL_CHUNK_COUNT) {
+        if (currentChunkIndex >= effectiveChunkCount) {
           finalStream.end(() => {
             this.deleteChunkFiles(part.job.path)
               .then(resolve)
@@ -1348,21 +1378,31 @@ class Download {
       const acceptRanges = headResponse.headers['accept-ranges'];
       const supportsRange = acceptRanges === 'bytes';
 
+      // Parse OGI-Parallel-Limit header from response (case-insensitive)
+      const parallelLimitHeader =
+        headResponse.headers['ogi-parallel-limit'] ||
+        headResponse.headers['OGI-Parallel-Limit'];
+      const parallelLimit = parallelLimitHeader
+        ? parseInt(parallelLimitHeader as string, 10)
+        : undefined;
+
       const useParallel =
         supportsRange &&
         contentLength > PARALLEL_DOWNLOAD_THRESHOLD &&
         this.totalParts === 1 && // Only use parallel for single-file downloads
-        !(job.headers && job.headers['No-Parallel'] === 'true'); // If the link served has disabled parallel download, don't use it
+        !(job.headers && job.headers['OGI-Parallel-Limit'] === '1') && // If the link served has a parallel limit of 1, don't use it
+        !(parallelLimit === 1); // Also check response header
 
       console.log(
         `[direct] Parallel check: size=${(contentLength / (1024 * 1024 * 1024)).toFixed(2)}GB, ` +
-          `supportsRange=${supportsRange}, useParallel=${useParallel}`
+          `supportsRange=${supportsRange}, useParallel=${useParallel}, parallelLimit=${parallelLimit ?? 'none'}`
       );
 
       return {
         useParallel,
         fileSize: contentLength,
         supportsRange,
+        parallelLimit,
       };
     } catch (error) {
       console.log(
@@ -1390,14 +1430,20 @@ class Download {
     this.currentJobPath = job.path;
     this.chunks = [];
 
+    // Get parallel limit from the parallel info
+    const parallelInfo = await this.shouldUseParallelDownload(job);
+    const effectiveChunkCount = parallelInfo.parallelLimit
+      ? Math.min(PARALLEL_CHUNK_COUNT, parallelInfo.parallelLimit)
+      : PARALLEL_CHUNK_COUNT;
+
     // Calculate chunk sizes
-    const chunkSize = Math.ceil(fileSize / PARALLEL_CHUNK_COUNT);
+    const chunkSize = Math.ceil(fileSize / effectiveChunkCount);
 
     // Create the target directory
     fs.mkdirSync(dirname(job.path), { recursive: true });
 
     // Initialize chunks - check each chunk file individually for resume
-    for (let i = 0; i < PARALLEL_CHUNK_COUNT; i++) {
+    for (let i = 0; i < effectiveChunkCount; i++) {
       const startByte = i * chunkSize;
       const endByte = Math.min((i + 1) * chunkSize - 1, fileSize - 1);
       const expectedChunkSize = endByte - startByte + 1;
@@ -1426,7 +1472,8 @@ class Download {
     this.startProgressTracker();
 
     console.log(
-      `[direct] Starting parallel download with ${PARALLEL_CHUNK_COUNT} chunks, ` +
+      `[direct] Starting parallel download with ${effectiveChunkCount} chunks ` +
+        `(limit: ${parallelInfo.parallelLimit ?? 'none'}), ` +
         `chunk size: ${(chunkSize / (1024 * 1024)).toFixed(2)}MB`
     );
 
@@ -1601,6 +1648,12 @@ class Download {
   private async mergeChunkFiles(job: DownloadJob): Promise<void> {
     console.log('[direct] Merging chunk files into final file...');
 
+    // Get effective chunk count for this job
+    const parallelInfo = await this.shouldUseParallelDownload(job);
+    const effectiveChunkCount = parallelInfo.parallelLimit
+      ? Math.min(PARALLEL_CHUNK_COUNT, parallelInfo.parallelLimit)
+      : PARALLEL_CHUNK_COUNT;
+
     // Create the final file write stream
     const finalStream = fs.createWriteStream(job.path, { flags: 'w' });
 
@@ -1608,7 +1661,7 @@ class Download {
       let currentChunkIndex = 0;
 
       const writeNextChunk = () => {
-        if (currentChunkIndex >= PARALLEL_CHUNK_COUNT) {
+        if (currentChunkIndex >= effectiveChunkCount) {
           // All chunks merged, close the stream
           finalStream.end(() => {
             console.log('[direct] Merge complete, deleting chunk files...');
@@ -1661,6 +1714,9 @@ class Download {
    * Delete all chunk files for a job.
    */
   private async deleteChunkFiles(basePath: string): Promise<void> {
+    // We need to delete up to PARALLEL_CHUNK_COUNT chunks since we don't know
+    // the effective count at cleanup time. This is safe as it will just fail
+    // silently for non-existent files.
     const deletePromises: Promise<void>[] = [];
     for (let i = 0; i < PARALLEL_CHUNK_COUNT; i++) {
       const chunkPath = this.getChunkPath(basePath, i);

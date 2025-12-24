@@ -277,7 +277,7 @@ export class PremiumizeService extends BaseService {
           result.filename +
           '.zip',
         headers: {
-          'No-Parallel': 'true',
+          'OGI-Parallel-Limit': '1',
         },
       },
     ]);

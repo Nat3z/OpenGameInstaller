@@ -5,6 +5,13 @@
   import { gameFocused } from '../store';
   import { writable, type Writable } from 'svelte/store';
   import Image from '../components/Image.svelte';
+  import {
+    getAllApps,
+    getRecentlyPlayed,
+    sortLibraryAlphabetically,
+    filterLibrary,
+    chunkArray,
+  } from '../lib/core/library';
 
   let library: LibraryInfo[] = $state([]);
   let recentlyPlayed: LibraryInfo[] = $state([]);
@@ -27,88 +34,23 @@
   });
 
   async function reloadLibrary() {
-    const apps = await window.electronAPI.app.getAllApps();
-
-    if (window.electronAPI.fs.exists('./internals/apps.json')) {
-      const appsOrdered: number[] = JSON.parse(
-        window.electronAPI.fs.read('./internals/apps.json')
-      );
-      let libraryWithUndefined = appsOrdered.map(
-        (id) => apps.find((app) => app.appID === id) ?? undefined
-      );
-      // get rid of undefined values and duplicate apps
-      library = libraryWithUndefined.filter(
-        (app) => app !== undefined
-      ) as LibraryInfo[];
-      library = library.filter(
-        (app, index) =>
-          library.findIndex((libApp) => libApp.appID === app.appID) === index
-      );
-      // see if other apps are not in the list, if so add them
-      apps.forEach((app) => {
-        if (!library.find((libApp) => libApp.appID === app.appID)) {
-          console.log('Adding app to library: ' + app.name);
-          library.push(app);
-        }
-      });
-    } else {
-      library = apps;
-    }
+    library = await getAllApps();
 
     // Update recently played (first 4 games from the ordered list)
-    updateRecentlyPlayed();
+    recentlyPlayed = getRecentlyPlayed(library);
 
     // Update all games alphabetical
-    updateAllGamesAlphabetical();
+    allGamesAlphabetical = sortLibraryAlphabetically(library);
 
     // Update filtered games
-    updateFilteredGames();
+    filteredGames = filterLibrary(allGamesAlphabetical, searchQuery);
 
     loading = false;
   }
 
-  function updateRecentlyPlayed() {
-    if (window.electronAPI.fs.exists('./internals/apps.json')) {
-      const appsOrdered: number[] = JSON.parse(
-        window.electronAPI.fs.read('./internals/apps.json')
-      );
-
-      recentlyPlayed = [];
-      let itemsAdded = 0;
-
-      appsOrdered.forEach((appID) => {
-        if (itemsAdded >= 4) return;
-        const app = library.find((libApp) => libApp.appID === appID);
-        if (app) {
-          recentlyPlayed.push(app);
-          itemsAdded++;
-        }
-      });
-    } else {
-      recentlyPlayed = [];
-    }
-  }
-
-  function updateAllGamesAlphabetical() {
-    // Sort all games alphabetically by name
-    allGamesAlphabetical = [...library].sort((a, b) =>
-      a.name.toLowerCase().localeCompare(b.name.toLowerCase())
-    );
-  }
-
-  function updateFilteredGames() {
-    if (searchQuery.trim() === '') {
-      filteredGames = allGamesAlphabetical;
-    } else {
-      filteredGames = allGamesAlphabetical.filter((app) =>
-        app.name.toLowerCase().includes(searchQuery.toLowerCase())
-      );
-    }
-  }
-
   // Update filtered games when search query changes
   $effect(() => {
-    updateFilteredGames();
+    filteredGames = filterLibrary(allGamesAlphabetical, searchQuery);
   });
 
   onMount(async () => {
@@ -127,14 +69,6 @@
   onDestroy(() => {
     unsubscribe();
   });
-
-  function chunkArray<T>(array: T[], size: number): T[][] {
-    const chunks: T[][] = [];
-    for (let i = 0; i < array.length; i += size) {
-      chunks.push(array.slice(i, i + size));
-    }
-    return chunks;
-  }
 
   let allGamesChunks = $derived(chunkArray(filteredGames, 5));
 </script>

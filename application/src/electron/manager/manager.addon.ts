@@ -5,6 +5,7 @@ import z from 'zod';
 import exec from 'child_process';
 import { addonSecret } from '../server/constants.js';
 import { clients } from '../server/addon-server.js';
+import { AddonConnection } from '../server/AddonConnection.js';
 
 export let processes: {
   [key: string]: exec.ChildProcess;
@@ -114,7 +115,10 @@ Running post-setup script for ${addonName}...
   return true;
 }
 
-export async function startAddon(addonPath: string, addonLink: string) {
+export async function startAddon(
+  addonPath: string,
+  addonLink: string
+): Promise<AddonConnection | undefined> {
   const addonConfig = await readFile(join(addonPath, 'addon.json'), 'utf-8');
   // remove any trailing slashes
   const addonName =
@@ -174,6 +178,7 @@ export async function startAddon(addonPath: string, addonLink: string) {
           addonLink
       );
     }
+    return client;
   } catch (e) {
     console.error(e);
 
@@ -188,6 +193,7 @@ export async function startAddon(addonPath: string, addonLink: string) {
       message: 'Error running run script for ' + addonPath.split(/[/\\]/).pop(),
       id: Math.random().toString(36).substring(7),
     });
+    return;
   }
 }
 

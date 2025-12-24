@@ -354,112 +354,13 @@ addon.on('catalog', (event) => {
   });
 });
 
-// Bun Serve Test
-Bun.serve({
-  port: 10572,
-  fetch: async (req) => {
-    const filePath = './test.txt';
-    try {
-      const file = Bun.file(filePath);
-      if (!(await file.exists())) {
-        return new Response('File not found', { status: 404 });
-      }
-
-      // Get file size
-      const stat = await file.stat();
-      if (!stat) {
-        return new Response('File not found', { status: 404 });
-      }
-      const totalSize = stat.size;
-      const halfSize = Math.floor(totalSize / 2);
-
-      // Parse Range header if present
-      const rangeHeader = req.headers.get('range') || req.headers.get('Range');
-      let start = 0;
-      let end = totalSize - 1;
-      let isRangeRequest = false;
-
-      if (rangeHeader) {
-        // Example: "bytes=100-"
-        const match = /^bytes=(\d+)-(\d+)?$/.exec(rangeHeader);
-        if (match) {
-          start = parseInt(match[1], 10);
-          if (match[2]) {
-            end = Math.min(parseInt(match[2], 10), totalSize - 1);
-          }
-          isRangeRequest = true;
-        }
-      }
-
-      // If this is a retry (Range request starting after 50%), allow full stream
-      if (isRangeRequest && start >= halfSize) {
-        // Serve the rest of the file as normal
-        const stream = file.stream();
-        return new Response(stream, {
-          status: 206,
-          headers: {
-            'Content-Type': 'text/plain',
-            'Content-Range': `bytes ${start}-${end}/${totalSize}`,
-            'Accept-Ranges': 'bytes',
-            'Content-Length': (end - start + 1).toString(),
-          },
-        });
-      }
-
-      // Otherwise, fail after 50% downloaded
-      const origStream = file.stream();
-      let bytesSent = start;
-      let failed = false;
-
-      const failingStream = new ReadableStream({
-        start(controller) {
-          const reader = origStream.getReader();
-
-          function push() {
-            reader
-              .read()
-              .then(({ done, value }) => {
-                if (done) {
-                  if (!failed) controller.close();
-                  return;
-                }
-                if (failed) return; // Already failed, do nothing
-
-                bytesSent += value.length;
-                // Only fail if we cross 50% and it's not a retry past 50%
-                if (bytesSent + start > halfSize && !failed) {
-                  failed = true;
-                  controller.error(new Error('Simulated failure after 50%'));
-                  reader.cancel();
-                  return;
-                }
-                controller.enqueue(value);
-                push();
-              })
-              .catch((err) => {
-                controller.error(err);
-              });
-          }
-          push();
-        },
-      });
-
-      // If this is a range request, respond with 206
-      const responseHeaders: Record<string, string> = {
-        'Content-Type': 'text/plain',
-        'Accept-Ranges': 'bytes',
-      };
-      if (isRangeRequest) {
-        responseHeaders['Content-Range'] = `bytes ${start}-${end}/${totalSize}`;
-        responseHeaders['Content-Length'] = (end - start + 1).toString();
-      }
-
-      return new Response(failingStream, {
-        status: isRangeRequest ? 206 : 200,
-        headers: responseHeaders,
-      });
-    } catch (err) {
-      return new Response('Internal Server Error', { status: 500 });
-    }
-  },
-});
+addon.on(
+  'check-for-updates',
+  ({ appID, storefront, currentVersion }, event) => {
+    event.defer();
+    event.resolve({
+      available: true,
+      version: '1.0.1',
+    });
+  }
+);

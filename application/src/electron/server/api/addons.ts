@@ -390,6 +390,48 @@ const procedures: Record<string, Procedure<any>> = {
 
       return new ProcedureDeferTask(200, deferrableTask);
     }),
+
+  checkForUpdates: procedure()
+    .input(
+      z.object({
+        appID: z.number(),
+        storefront: z.string(),
+        currentVersion: z.string(),
+      })
+    )
+    .handler(async (input) => {
+      const clientsWithStorefront = Array.from(clients.values()).filter(
+        (client) =>
+          client.addonInfo.storefronts.includes(input.storefront) &&
+          client.eventsAvailable.includes('check-for-updates')
+      );
+      if (clientsWithStorefront.length === 0)
+        return new ProcedureError(
+          404,
+          'Client not found to serve this storefront'
+        );
+
+      if (clientsWithStorefront.length > 1) {
+        return new ProcedureError(
+          400,
+          'Multiple clients found to serve this storefront'
+        );
+      }
+
+      const client = clientsWithStorefront[0];
+      const deferrableTask = new DeferrableTask(async () => {
+        const data = await client.sendEventMessage({
+          event: 'check-for-updates',
+          args: {
+            appID: input.appID,
+            storefront: input.storefront,
+            currentVersion: input.currentVersion,
+          },
+        });
+        return data.args;
+      }, client.addonInfo.id);
+      return new ProcedureDeferTask(200, deferrableTask);
+    }),
 };
 
 export default procedures;

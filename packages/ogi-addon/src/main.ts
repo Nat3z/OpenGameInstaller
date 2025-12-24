@@ -19,6 +19,7 @@ export type OGIAddonEvent =
   | 'library-search'
   | 'game-details'
   | 'exit'
+  | 'check-for-updates'
   | 'task-run'
   | 'request-dl'
   | 'catalog';
@@ -43,6 +44,7 @@ export type OGIAddonServerSentEvent =
   | 'setup'
   | 'response'
   | 'library-search'
+  | 'check-for-updates'
   | 'task-run'
   | 'game-details'
   | 'request-dl'
@@ -250,6 +252,25 @@ export interface EventListenerTypes {
         };
       }>,
       'askForInput'
+    >
+  ) => void;
+
+  /**
+   * This event is emitted when the client requests for an addon to check for updates. Addon should resolve the event with the update information.
+   * @param data
+   * @param event
+   * @returns
+   */
+  'check-for-updates': (
+    data: { appID: number; storefront: string; currentVersion: string },
+    event: EventResponse<
+      | {
+          available: true;
+          version: string;
+        }
+      | {
+          available: false;
+        }
     >
   ) => void;
 }
@@ -841,6 +862,31 @@ class OGIAddonWSListener {
             message.id!!,
             gameDetailsResult.data,
             gameDetailsEvent
+          );
+          break;
+        case 'check-for-updates':
+          let checkForUpdatesEvent = new EventResponse<
+            | {
+                available: true;
+                version: string;
+              }
+            | {
+                available: false;
+              }
+          >((screen, name, description) =>
+            this.userInputAsked(screen, name, description, this.socket)
+          );
+          this.eventEmitter.emit(
+            'check-for-updates',
+            message.args,
+            checkForUpdatesEvent
+          );
+          const checkForUpdatesResult =
+            await this.waitForEventToRespond(checkForUpdatesEvent);
+          this.respondToMessage(
+            message.id!!,
+            checkForUpdatesResult.data,
+            checkForUpdatesEvent
           );
           break;
         case 'request-dl':

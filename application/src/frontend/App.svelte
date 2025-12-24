@@ -45,6 +45,7 @@
   import DiscoverView from './views/DiscoverView.svelte';
   import RootPasswordGranter from './managers/RootPasswordGranter.svelte';
   import { initDownloadPersistence } from './utils';
+  import AppUpdateManager from './managers/AppUpdateManager.svelte';
 
   interface ConfigTemplateAndInfo extends OGIAddonConfiguration {
     configTemplate: ConfigurationFile;
@@ -974,6 +975,7 @@
     <GameManager />
     <Debug />
     <NotificationSideView />
+    <AppUpdateManager />
   </div>
 {/if}
 

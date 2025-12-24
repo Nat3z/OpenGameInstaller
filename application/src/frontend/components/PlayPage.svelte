@@ -15,6 +15,12 @@
   import Image from './Image.svelte';
   import { fetchAddonsWithConfigure, runTask, safeFetch } from '../utils';
   import AddonPicture from './AddonPicture.svelte';
+  import { updatesManager } from '../states.svelte';
+  import UpdateIcon from '../Icons/UpdateIcon.svelte';
+
+  let updateInfo = $derived.by(() => {
+    return updatesManager.getAppUpdate(libraryInfo.appID);
+  });
 
   interface Props {
     libraryInfo: LibraryInfo;
@@ -145,6 +151,7 @@
     const addonsWithStorefront = addons.filter((addon) =>
       addon.storefronts.includes(libraryInfo.storefront)
     );
+
     if (addonsWithStorefront.length === 0) return;
     for (const addon of addonsWithStorefront) {
       searchingAddons[addon.id] = undefined;
@@ -237,14 +244,24 @@
 
   <!-- Action Buttons at Top -->
   <div class="bg-accent-lighter px-6 py-4 flex items-center gap-3 rounded-b-lg">
-    <button
-      bind:this={playButton}
-      class="px-6 py-3 flex border-none rounded-lg justify-center bg-green-500 hover:bg-green-600 items-center gap-2 disabled:bg-yellow-500 disabled:cursor-not-allowed transition-colors duration-200"
-      onclick={() => launchGameTrigger.set(libraryInfo.appID)}
-    >
-      <PlayIcon fill="#86efac" />
-      <p class="font-archivo font-semibold text-white">PLAY</p>
-    </button>
+    {#if updateInfo}
+      <button
+        class="px-6 py-3 flex border-none rounded-lg justify-center bg-yellow-500 hover:bg-yellow-600 items-center gap-2 disabled:bg-yellow-500 disabled:cursor-not-allowed transition-colors duration-200"
+        onclick={() => {}}
+      >
+        <UpdateIcon fill="#ffffff" />
+        <p class="font-archivo font-semibold text-white">Update</p>
+      </button>
+    {:else}
+      <button
+        bind:this={playButton}
+        class="px-6 py-3 flex border-none rounded-lg justify-center bg-green-500 hover:bg-green-600 items-center gap-2 disabled:bg-yellow-500 disabled:cursor-not-allowed transition-colors duration-200"
+        onclick={() => launchGameTrigger.set(libraryInfo.appID)}
+      >
+        <PlayIcon fill="#86efac" />
+        <p class="font-archivo font-semibold text-white">PLAY</p>
+      </button>
+    {/if}
 
     <button
       class="px-4 py-3 flex border-none rounded-lg justify-center bg-accent-light hover:bg-opacity-80 text-accent-dark items-center gap-2 transition-colors duration-200"

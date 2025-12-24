@@ -5,8 +5,9 @@ import { exec } from 'child_process';
 import { processes, setupAddon, startAddon } from '../manager/manager.addon.js';
 import { __dirname } from '../manager/manager.paths.js';
 import { server, clients, port } from '../server/addon-server.js';
-import { sendNotification } from '../main.js';
+import { sendIPCMessage, sendNotification } from '../main.js';
 import axios from 'axios';
+import { AddonConnection } from '../server/AddonConnection.js';
 
 export function startAddons() {
   // start all of the addons
@@ -18,6 +19,7 @@ export function startAddons() {
     fs.readFileSync(join(__dirname, 'config/option/general.json'), 'utf-8')
   );
   const addons = generalConfig.addons as string[];
+  let promises: Promise<AddonConnection | undefined>[] = [];
   for (const addon of addons) {
     let addonPath = '';
     if (addon.startsWith('local:')) {
@@ -42,8 +44,12 @@ export function startAddons() {
     }
 
     console.log(`Starting addon ${addonPath}`);
-    startAddon(addonPath, addon);
+    promises.push(startAddon(addonPath, addon));
   }
+  Promise.all(promises).finally(async () => {
+    console.log('All addons started');
+    await sendIPCMessage('all-addons-started');
+  });
 }
 
 export function restartAddonServer() {

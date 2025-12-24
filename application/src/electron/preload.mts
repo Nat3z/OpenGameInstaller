@@ -257,6 +257,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
           launchArguments,
         })
     ),
+    addToSteam: wrap((appID: number) =>
+      ipcRenderer.invoke('app:add-to-steam', appID)
+    ),
   },
   getVersion: wrap(() => ipcRenderer.sendSync('get-version')),
   updateAddons: wrap(() => ipcRenderer.invoke('update-addons')),

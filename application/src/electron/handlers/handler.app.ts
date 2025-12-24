@@ -989,4 +989,64 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
       return 'success';
     }
   );
+
+  ipcMain.handle('app:add-to-steam', async (_, appID: number) => {
+    if (process.platform !== 'linux') {
+      return { success: false, error: 'Only available on Linux' };
+    }
+
+    if (!fs.existsSync(join(__dirname, 'library'))) {
+      return { success: false, error: 'Library directory not found' };
+    }
+
+    const appPath = join(__dirname, `library/${appID}.json`);
+    if (!fs.existsSync(appPath)) {
+      return { success: false, error: 'Game not found' };
+    }
+
+    const appInfo: LibraryInfo = JSON.parse(fs.readFileSync(appPath, 'utf-8'));
+
+    // Check if wine prefix exists (similar to insert-app logic)
+    const homeDir = process.env.HOME || process.env.USERPROFILE;
+    const protonPath = `${homeDir}/.ogi-wine-prefixes/${appInfo.appID}/pfx`;
+    const useWinePrefix = fs.existsSync(protonPath);
+
+    // Prepare launch options
+    let launchOptions = appInfo.launchArguments ?? '';
+    if (useWinePrefix) {
+      launchOptions = `STEAM_COMPAT_DATA_PATH=${protonPath.split('/pfx')[0]} ${launchOptions}`;
+    }
+
+    // Use steamtinkerlaunch to add the game to steam
+    const result = await new Promise<boolean>((resolve) =>
+      exec(
+        `${STEAMTINKERLAUNCH_PATH} addnonsteamgame --appname="${escapeShellArg(appInfo.name)}" --exepath="${escapeShellArg(appInfo.launchExecutable)}" --startdir="${escapeShellArg(appInfo.cwd)}" --launchoptions="${escapeShellArg(launchOptions)}" --compatibilitytool="proton_experimental" --use-steamgriddb`,
+        {
+          cwd: __dirname,
+        },
+        (error, stdout, stderr) => {
+          if (error) {
+            console.error(error);
+            sendNotification({
+              message: 'Failed to add game to Steam',
+              id: Math.random().toString(36).substring(7),
+              type: 'error',
+            });
+            resolve(false);
+            return;
+          }
+          console.log(stdout);
+          console.log(stderr);
+          sendNotification({
+            message: 'Game added to Steam',
+            id: Math.random().toString(36).substring(7),
+            type: 'success',
+          });
+          resolve(true);
+        }
+      )
+    );
+
+    return { success: result };
+  });
 }

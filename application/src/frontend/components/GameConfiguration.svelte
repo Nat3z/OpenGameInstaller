@@ -24,6 +24,15 @@
 
   let { exitPlayPage, gameInfo, onFinish }: Props = $props();
 
+  let platform = $state<string>('');
+
+  // Get OS platform
+  $effect(() => {
+    window.electronAPI.app.getOS().then((os) => {
+      platform = os;
+    });
+  });
+
   function isStringOption(option: ConfigurationOption): option is StringOption {
     return option.type === 'string';
   }
@@ -111,6 +120,23 @@
     exitPlayPage();
   }
 
+  async function addToSteam() {
+    const result = await window.electronAPI.app.addToSteam(gameInfo.appID);
+    if (result.success) {
+      createNotification({
+        id: Math.random().toString(36).substring(7),
+        message: 'Game added to Steam',
+        type: 'success',
+      });
+    } else {
+      createNotification({
+        id: Math.random().toString(36).substring(7),
+        message: result.error || 'Failed to add game to Steam',
+        type: 'error',
+      });
+    }
+  }
+
   function getInputType(
     option: ConfigurationOption
   ): 'text' | 'password' | 'number' | 'range' | 'select' | 'file' | 'folder' {
@@ -174,11 +200,14 @@
 
   <SectionModal class="mt-4">
     <div class="flex gap-3 flex-row">
-      <ButtonModal
-        text="Save Configuration"
-        variant="primary"
-        onclick={pushChanges}
-      />
+      <ButtonModal text="Save" variant="primary" onclick={pushChanges} />
+      {#if platform === 'linux' || platform === 'darwin'}
+        <ButtonModal
+          text="Add to Steam"
+          variant="secondary"
+          onclick={addToSteam}
+        />
+      {/if}
       <ButtonModal
         text="Remove Game"
         variant="danger"

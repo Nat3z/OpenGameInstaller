@@ -1,6 +1,11 @@
 <script lang="ts">
   import { createNotification, currentDownloads, setupLogs } from '../store';
-  import { updateDownloadStatus, getDownloadItem } from '../utils';
+  import {
+    updateDownloadStatus,
+    getDownloadItem,
+    dirname,
+    basename,
+  } from '../utils';
   // no direct use of EventListenerTypes in this module anymore
   import {
     unrarAndReturnOutputDir,
@@ -8,7 +13,6 @@
   } from '../lib/setup/extraction';
   import { saveFailedSetup } from '../lib/recovery/failedSetups';
   import { runSetupApp, runSetupAppUpdate } from '../lib/setup/setup';
-
   function isCustomEvent(event: Event): event is CustomEvent {
     return event instanceof CustomEvent;
   }
@@ -49,19 +53,22 @@
 
     updateDownloadStatus(downloadID, { status: 'completed' });
 
-    // remove any trailing slash paths and any file names files from the download path
-    let outputDir = downloadedItem.downloadPath
-      .replace(/(\/|\\)$/g, '')
-      .replace(/\.[^/.]+$/, '');
+    let outputDir = dirname(downloadedItem.downloadPath);
 
     let originalOutputDir = outputDir;
 
     // move all files in current directory to a folder called "old_files" that's not the downloaded/extracted directory or the downloaded file itself
     const currentFiles = await window.electronAPI.fs.getFilesInDir(outputDir);
+    const filesNotToMove = [
+      ...(downloadedItem.files ?? []).map((file) => file.name),
+      basename(downloadedItem.downloadPath),
+      'old_files',
+    ];
     if (currentFiles.length > 0) {
       dispatchSetupEvent('log', downloadID, ['Moving all files to old_files']);
       window.electronAPI.fs.mkdir(outputDir + '/old_files');
-      const filesNotToMove = downloadedItem.files.map((file) => file.name);
+
+      console.log('Files not to move: ', filesNotToMove);
       for (const file of currentFiles) {
         if (!filesNotToMove.includes(file)) {
           const result = await window.electronAPI.fs.move({
@@ -80,6 +87,18 @@
     console.log('Downloaded Item: ', downloadedItem);
 
     async function revertOldFiles() {
+      // delete any files in the current original output directory
+      // const currentFiles =
+      //   await window.electronAPI.fs.getFilesInDir(originalOutputDir);
+      // for (const file of currentFiles) {
+      //   if (!filesNotToMove.includes(file)) {
+      //     try {
+      //       window.electronAPI.fs.delete(originalOutputDir + '/' + file);
+      //     } catch (error) {
+      //       console.error('Failed to delete file: ', file);
+      //     }
+      //   }
+      // }
       const oldFiles = await window.electronAPI.fs.getFilesInDir(
         originalOutputDir + '/old_files'
       );
@@ -140,15 +159,8 @@
 
       const attemptUnrar = async () => {
         try {
-          const rarFilePath = downloadedItem.downloadPath.replace(
-            /(\/|\\)$/g,
-            ''
-          );
-          const outputBase = downloadedItem.downloadPath
-            .replace(/(\/|\\)$/g, '')
-            .split('/')
-            .slice(0, -1)
-            .join('/');
+          const rarFilePath = downloadedItem.downloadPath;
+          const outputBase = dirname(downloadedItem.downloadPath);
           const extractedDir = await unrarAndReturnOutputDir({
             rarFilePath,
             outputBaseDir: outputBase,

@@ -25,3 +25,57 @@ export async function fsCheck(path: string) {
     return false;
   }
 }
+
+export function dirname(path: string) {
+  if (!path) return '.';
+
+  // Windows UNC root case
+  if (/^\\\\[^\\]+\\[^\\]+\\?$/.test(path)) return path.replace(/(\\)+$/, '');
+
+  // Remove trailing slashes/backslashes (except at root)
+  let cleaned = path.replace(/[\/\\]+$/, '');
+  if (cleaned === '') return /^([A-Za-z]:)?[\/\\]$/.test(path) ? path : '/';
+
+  // Handle drive letters (Windows)
+  const match = cleaned.match(/^([A-Za-z]:)([\/\\]|$)/);
+  let drive = '';
+  if (match) {
+    drive = match[1];
+    cleaned = cleaned.slice(drive.length);
+  }
+
+  // Use last slash or backslash as separator (prefer last encountered)
+  const idxFwd = cleaned.lastIndexOf('/');
+  const idxBack = cleaned.lastIndexOf('\\');
+  const idx = Math.max(idxFwd, idxBack);
+
+  if (idx === -1) return drive || '.';
+  // If result is empty after cut, return just drive letter + separator or root
+  let dir = cleaned.slice(0, idx);
+  // Ensure we return "/" or "C:\" instead of empty string
+  if (dir === '') return drive ? drive + '\\' : drive || '/';
+
+  return drive + dir;
+}
+
+export function basename(path: string): string {
+  if (!path) return '';
+  // Remove trailing slashes/backslashes except for root
+  let cleaned = path.replace(/[\/\\]+$/, '');
+  // Windows UNC special case (leave as-is)
+  if (/^\\\\[^\\]+\\[^\\]+\\?$/.test(cleaned)) return '';
+  // Remove windows drive prefix for basename search but preserve for root-only case
+  // Example: "C:\foo\bar.txt"
+  const match = cleaned.match(/^([A-Za-z]:)([\/\\]|$)/);
+  let base = cleaned;
+  if (match) {
+    base = cleaned.slice(match[1].length);
+    if (base === '' || base === '\\' || base === '/')
+      return match[1] + (base || '');
+  }
+  // Find last slash or backslash
+  const idxFwd = base.lastIndexOf('/');
+  const idxBack = base.lastIndexOf('\\');
+  const idx = Math.max(idxFwd, idxBack);
+  return idx === -1 ? cleaned : cleaned.slice(idx + 1);
+}

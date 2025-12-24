@@ -32,6 +32,11 @@
     "email": "me@nat3z.com",
     "url": "https://nat3z.com/"
   },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Nat3z/OpenGameInstaller",
+    "directory": "packages/ogi-addon"
+  },
   "dependencies": {
     "fuse.js": "^7.1.0",
     "ws": "^8.4.0",

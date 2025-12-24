@@ -291,7 +291,7 @@
             <div
               class="absolute top-full left-0 mt-2 px-3 py-2 bg-accent-lighter drop-shadow-md border border-accent-dark flex flex-row gap-2 items-center text-accent-dark text-sm rounded-lg whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-10"
             >
-              <img src="/error.svg" alt="error" class="w-4 h-4" />
+              <img src="./error.svg" alt="error" class="w-4 h-4" />
               <p class="font-archivo font-semibold text-accent-dark pr-4">
                 You can only play Windows games through Steam using Proton
               </p>

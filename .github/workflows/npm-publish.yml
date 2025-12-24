@@ -7,6 +7,10 @@ on:
     paths:
       - 'packages/ogi-addon/package.json'
 
+permissions:
+  id-token: write # Required for OIDC
+  contents: read
+
 jobs:
   check-version-and-publish:
     runs-on: ubuntu-latest

@@ -38,6 +38,7 @@ export abstract class BaseService {
           downloadSize: 0,
           status: 'rd-downloading',
           appID: appID,
+          files: [],
           progress: 0,
           // im lazy to type this every single time. so this will do.
           usedDebridService: usedDebridService as any,

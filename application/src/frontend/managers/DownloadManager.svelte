@@ -54,6 +54,7 @@
     updateDownloadStatus(downloadID, { status: 'completed' });
 
     let outputDir = dirname(downloadedItem.downloadPath);
+    // make sure that
 
     let originalOutputDir = outputDir;
 
@@ -64,6 +65,12 @@
       basename(downloadedItem.downloadPath),
       'old_files',
     ];
+    console.log('Current files: ', currentFiles);
+    console.log('downloadedItem.files: ', downloadedItem.files);
+    console.log('outputDir: ', outputDir);
+    console.log('originalOutputDir: ', originalOutputDir);
+    console.log('downloadedItem.downloadPath: ', downloadedItem.downloadPath);
+
     if (currentFiles.length > 0) {
       dispatchSetupEvent('log', downloadID, ['Moving all files to old_files']);
       window.electronAPI.fs.mkdir(outputDir + '/old_files');

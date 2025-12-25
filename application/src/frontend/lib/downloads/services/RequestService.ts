@@ -33,7 +33,7 @@ export class RequestService extends BaseService {
           // changed to avoid special characters in the path and make it work with windows on wine
           id: '' + localID,
           status: 'requesting',
-          downloadPath: getDownloadPath() + '/' + result.name,
+          downloadPath: getDownloadPath() + '/' + result.name + '/',
           downloadSpeed: 0,
           progress: 0,
           appID,

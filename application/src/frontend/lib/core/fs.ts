@@ -32,9 +32,19 @@ export function dirname(path: string) {
   // Windows UNC root case
   if (/^\\\\[^\\]+\\[^\\]+\\?$/.test(path)) return path.replace(/(\\)+$/, '');
 
+  // Check if the path had trailing slashes (indicating it's a directory)
+  const hadTrailingSlash = /[\/\\]+$/.test(path);
+
   // Remove trailing slashes/backslashes (except at root)
   let cleaned = path.replace(/[\/\\]+$/, '');
   if (cleaned === '') return /^([A-Za-z]:)?[\/\\]$/.test(path) ? path : '/';
+
+  // If the original path had trailing slashes, the cleaned path IS the directory
+  if (hadTrailingSlash) {
+    // Special case: Windows root (e.g., "C:\" -> "C:\")
+    if (/^[A-Za-z]:$/.test(cleaned)) return cleaned + '\\';
+    return cleaned;
+  }
 
   // Handle drive letters (Windows)
   const match = cleaned.match(/^([A-Za-z]:)([\/\\]|$)/);

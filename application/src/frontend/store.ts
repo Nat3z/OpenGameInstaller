@@ -92,6 +92,7 @@ export const deferredTasks: Writable<DeferredTask[]> = writable([]);
 export const removedTasks: Writable<string[]> = writable([]);
 export const notifications: Writable<Notification[]> = writable([]);
 export const notificationHistory: Writable<Notification[]> = writable([]);
+export const readNotificationIds: Writable<Set<string>> = writable(new Set());
 export const showNotificationSideView: Writable<boolean> = writable(false);
 
 // Setup logs for individual downloads

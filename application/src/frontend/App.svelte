@@ -31,7 +31,8 @@
     isOnline,
     createNotification,
     fetchCommunityAddons,
-    notifications,
+    notificationHistory,
+    readNotificationIds,
     showNotificationSideView,
     currentDownloads,
   } from './store';
@@ -46,6 +47,7 @@
   import RootPasswordGranter from './managers/RootPasswordGranter.svelte';
   import { initDownloadPersistence } from './utils';
   import AppUpdateManager from './managers/AppUpdateManager.svelte';
+  import ChangelogManager from './managers/ChangelogManager.svelte';
 
   interface ConfigTemplateAndInfo extends OGIAddonConfiguration {
     configTemplate: ConfigurationFile;
@@ -74,6 +76,12 @@
           download.status === 'rd-downloading' ||
           download.status === 'paused'
       ).length
+  );
+
+  // Count unread notifications
+  const unreadNotificationCount = derived(
+    [notificationHistory, readNotificationIds],
+    ([$history, $readIds]) => $history.filter((n) => !$readIds.has(n.id)).length
   );
 
   onMount(() => {
@@ -415,7 +423,17 @@
 
   function toggleNotificationSideView() {
     showNotificationSideView.update((v) => {
-      return !v;
+      const newValue = !v;
+      // Mark all current notifications as read when opening the side view
+      if (newValue) {
+        const currentNotifications = $notificationHistory;
+        readNotificationIds.update((ids) => {
+          const newIds = new Set(ids);
+          currentNotifications.forEach((n) => newIds.add(n.id));
+          return newIds;
+        });
+      }
+      return newValue;
     });
   }
 
@@ -591,11 +609,11 @@
               </clipPath>
             </defs>
           </svg>
-          {#if $notifications.length > 0}
+          {#if $unreadNotificationCount > 0}
             <div
               class="absolute -bottom-1 -right-1 bg-accent-dark text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-bold"
             >
-              {$notifications.length}
+              {$unreadNotificationCount}
             </div>
           {/if}
         </button>
@@ -985,6 +1003,7 @@
     <Debug />
     <NotificationSideView />
     <AppUpdateManager />
+    <ChangelogManager />
   </div>
 {/if}
 

@@ -225,6 +225,15 @@ let migrations: {
       }
     },
   },
+  'changelog-explain-2.5.0': {
+    from: '2.4.0',
+    to: '2.5.0',
+    description: 'Shows the changelog modal for the 2.5.0 update.',
+    platform: 'all',
+    run: async () => {
+      await sendIPCMessage('app:show-changelog', '2.5.0');
+    },
+  },
 };
 export async function execute() {
   // check if the thing is even installed, if not, don't run any migrations because it was just installed

@@ -70,6 +70,14 @@ export function getRecentlyPlayed(library: LibraryInfo[]): LibraryInfo[] {
   }
 }
 
+export function getApp(appID: number): LibraryInfo | undefined {
+  if (window.electronAPI.fs.exists(`./library/${appID}.json`)) {
+    return JSON.parse(window.electronAPI.fs.read(`./library/${appID}.json`));
+  } else {
+    return undefined;
+  }
+}
+
 /**
  * Sorts a library array alphabetically by game name.
  *

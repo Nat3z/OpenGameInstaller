@@ -5,6 +5,7 @@ export let appUpdates = $state({
     updateAvailable: boolean;
     updateVersion: string;
   }[],
+  requiredReadds: [] as number[],
 });
 
 export const updatesManager = {

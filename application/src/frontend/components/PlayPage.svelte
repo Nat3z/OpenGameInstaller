@@ -16,7 +16,7 @@
   import Image from './Image.svelte';
   import { fetchAddonsWithConfigure, runTask, safeFetch } from '../utils';
   import AddonPicture from './AddonPicture.svelte';
-  import { updatesManager } from '../states.svelte';
+  import { updatesManager, appUpdates } from '../states.svelte';
   import UpdateIcon from '../Icons/UpdateIcon.svelte';
   import UpdateAppModal from './built/UpdateAppModal.svelte';
 
@@ -32,6 +32,11 @@
   }
 
   let { libraryInfo = $bindable(), exitPlayPage }: Props = $props();
+
+  let requiresSteamReadd = $derived(
+    appUpdates.requiredReadds.includes(libraryInfo.appID)
+  );
+
   async function doesLinkExist(url: string | undefined) {
     if (!url) return false;
     const response = await window.electronAPI.app.axios({
@@ -335,6 +340,54 @@
       <span class="font-medium">More Info</span>
     </button>
   </div>
+
+  <!-- Steam Re-add Banner -->
+  {#if requiresSteamReadd}
+    <div
+      class="bg-accent-lighter rounded-lg p-5 mx-0 mt-6 flex flex-col gap-3"
+      in:fly={{ y: -20, duration: 300 }}
+    >
+      <div class="flex items-start gap-3">
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          viewBox="0 0 24 24"
+          class="w-6 h-6 fill-accent-dark flex-shrink-0 mt-0.5"
+        >
+          <path
+            d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"
+          />
+        </svg>
+        <div>
+          <h3 class="text-base font-archivo font-bold text-accent-dark">
+            Steam Re-add Required
+          </h3>
+          <p class="text-accent-dark text-sm">
+            This game has been updated. Please re-add it to Steam.
+          </p>
+        </div>
+      </div>
+      <button
+        class="px-4 py-2 bg-accent-light hover:bg-accent-light/80 text-accent-dark font-archivo font-semibold rounded-lg border-none flex items-center justify-center gap-2 transition-colors duration-200 w-full"
+        onclick={async (event) => {
+          (event.target as HTMLButtonElement).disabled = true;
+          await window.electronAPI.app.addToSteam(libraryInfo.appID);
+          (event.target as HTMLButtonElement).disabled = false;
+          appUpdates.requiredReadds = appUpdates.requiredReadds.filter(
+            (id) => id !== libraryInfo.appID
+          );
+        }}
+      >
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          viewBox="0 0 24 24"
+          class="w-5 h-5 fill-accent-dark"
+        >
+          <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
+        </svg>
+        Add to Steam
+      </button>
+    </div>
+  {/if}
 
   <!-- Addon Task Grid -->
   <div class="grid grid-cols-3 gap-4 mt-6">

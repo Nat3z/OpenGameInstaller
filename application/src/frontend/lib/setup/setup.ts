@@ -7,7 +7,8 @@ import { updateDownloadStatus } from '../downloads/lifecycle';
 import { saveFailedSetup } from '../recovery/failedSetups';
 import type { EventListenerTypes, SetupEventResponse } from 'ogi-addon';
 import { safeFetch } from '../core/ipc';
-import { updatesManager } from '../../states.svelte';
+import { appUpdates, updatesManager } from '../../states.svelte';
+import { getApp } from '../core/library';
 
 function dispatchSetupEvent(
   eventType: 'log' | 'progress',
@@ -210,6 +211,7 @@ export async function runSetupAppUpdate(
     });
 
     // For updates, only update the version - don't run insertApp
+    let beforeLibraryApp = getApp(downloadedItem.appID);
     const result = await window.electronAPI.app.updateAppVersion(
       downloadedItem.appID,
       data.version,
@@ -235,6 +237,25 @@ export async function runSetupAppUpdate(
         type: 'success',
         message: `Updated ${downloadedItem.name} to version ${data.version}`,
       });
+
+      if (
+        ((await window.electronAPI.app.getOS()) === 'linux' &&
+          beforeLibraryApp &&
+          beforeLibraryApp?.cwd != data.cwd) ||
+        beforeLibraryApp?.launchExecutable != data.launchExecutable ||
+        beforeLibraryApp?.launchArguments != data.launchArguments
+      ) {
+        createNotification({
+          id: Math.random().toString(36).substring(2, 9),
+          type: 'success',
+          message: `Game configuration changed, go to the play page to re-add the game to Steam or else the game will not launch.`,
+        });
+
+        appUpdates.requiredReadds = [
+          ...appUpdates.requiredReadds,
+          downloadedItem.appID,
+        ];
+      }
     } else {
       createNotification({
         id: Math.random().toString(36).substring(2, 9),

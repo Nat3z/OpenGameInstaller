@@ -10,7 +10,7 @@
     variant?: 'primary' | 'secondary' | 'danger' | 'success';
     disabled?: boolean;
     class?: string;
-    onclick?: () => void;
+    onclick?: (event: MouseEvent) => void;
   } = $props();
 
   const variantClasses = {
@@ -24,9 +24,9 @@
       'btn btn-success bg-green-500 text-white hover:bg-green-600 focus:ring-green-400 border-none',
   };
 
-  function handleClick() {
+  function handleClick(event: MouseEvent) {
     if (!disabled) {
-      onclick?.();
+      onclick?.(event);
     }
   }
 </script>

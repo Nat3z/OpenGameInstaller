@@ -120,21 +120,10 @@
     exitPlayPage();
   }
 
-  async function addToSteam() {
-    const result = await window.electronAPI.app.addToSteam(gameInfo.appID);
-    if (result.success) {
-      createNotification({
-        id: Math.random().toString(36).substring(7),
-        message: 'Game added to Steam',
-        type: 'success',
-      });
-    } else {
-      createNotification({
-        id: Math.random().toString(36).substring(7),
-        message: result.error || 'Failed to add game to Steam',
-        type: 'error',
-      });
-    }
+  async function addToSteam(button: HTMLButtonElement) {
+    button.disabled = true;
+    await window.electronAPI.app.addToSteam(gameInfo.appID);
+    button.disabled = false;
   }
 
   function getInputType(
@@ -205,7 +194,9 @@
         <ButtonModal
           text="Add to Steam"
           variant="secondary"
-          onclick={addToSteam}
+          onclick={(event) => {
+            addToSteam(event.target as HTMLButtonElement);
+          }}
         />
       {/if}
       <ButtonModal

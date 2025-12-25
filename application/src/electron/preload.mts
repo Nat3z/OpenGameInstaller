@@ -491,4 +491,13 @@ ipcRenderer.on(
   })
 );
 
+ipcRenderer.on(
+  'app:show-changelog',
+  wrap((_, arg) => {
+    document.dispatchEvent(
+      new CustomEvent('app:show-changelog', { detail: arg })
+    );
+  })
+);
+
 wrap(() => ipcRenderer.send('client-ready-for-events'))();

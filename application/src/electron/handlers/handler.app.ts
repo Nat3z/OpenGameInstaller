@@ -297,7 +297,10 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
         );
 
         // add to the {appid}.json file the launch options
-        data.launchArguments = launchOptions;
+        data.launchArguments = launchOptions.replace(
+          'STEAM_COMPAT_DATA_PATH=',
+          'WINEPREFIX='
+        );
         fs.writeFileSync(appPath, JSON.stringify(data, null, 2));
 
         if (!result) {
@@ -464,7 +467,11 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
     // Prepare launch options
     let launchOptions = appInfo.launchArguments ?? '';
     if (useWinePrefix) {
-      launchOptions = `STEAM_COMPAT_DATA_PATH=${protonPath.split('/pfx')[0]} ${launchOptions}`;
+      // remove the wineprefix=..... from the launch options so that it's just the steam_compat_data_path
+      launchOptions = launchOptions.replace(
+        'WINEPREFIX=',
+        'STEAM_COMPAT_DATA_PATH='
+      );
     }
 
     // Use steamtinkerlaunch to add the game to steam

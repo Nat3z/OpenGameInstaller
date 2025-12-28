@@ -257,9 +257,8 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
         const hasRedistributables =
           data.redistributables && data.redistributables.length > 0;
 
-        // Ensure the base .ogi-wine-prefixes directory exists (but don't create the actual prefix)
-        if (!fs.existsSync(protonBasePath)) {
-          fs.mkdirSync(protonBasePath, { recursive: true });
+        if (!fs.existsSync(protonPath)) {
+          fs.mkdirSync(protonPath, { recursive: true });
         }
 
         // Add game to Steam first via steamtinkerlaunch
@@ -296,6 +295,10 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
             }
           )
         );
+
+        // add to the {appid}.json file the launch options
+        data.launchArguments = launchOptions;
+        fs.writeFileSync(appPath, JSON.stringify(data, null, 2));
 
         if (!result) {
           return 'setup-failed';
@@ -723,8 +726,111 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
             redistributable.path
           );
 
-          const success = await new Promise<boolean>((resolve) => {
-            if (redistributable.path === 'winetricks') {
+          const success = await new Promise<boolean>(async (resolve) => {
+            if (
+              redistributable.path === 'microsoft' &&
+              redistributable.name === 'dotnet-repair'
+            ) {
+              // Download and run the .NET Framework Repair Tool
+              console.log(
+                '[dotnet-repair] Starting .NET Framework Repair Tool'
+              );
+              const netfxRepairToolUrl =
+                'https://download.microsoft.com/download/2/b/d/2bde5459-2225-48b8-830c-ae19caf038f1/NetFxRepairTool.exe';
+              const toolPath = join(__dirname, 'bin', 'NetFxRepairTool.exe');
+
+              // Create the bin directory if it doesn't exist
+              if (!fs.existsSync(join(__dirname, 'bin'))) {
+                fs.mkdirSync(join(__dirname, 'bin'));
+              }
+
+              try {
+                // Download the tool if it doesn't exist
+                if (!fs.existsSync(toolPath)) {
+                  console.log(
+                    '[dotnet-repair] Downloading .NET Framework Repair Tool...'
+                  );
+                  const response = await axios({
+                    method: 'get',
+                    url: netfxRepairToolUrl,
+                    responseType: 'stream',
+                  });
+
+                  const fileStream = fs.createWriteStream(toolPath);
+                  response.data.pipe(fileStream);
+
+                  await new Promise<void>((downloadResolve, downloadReject) => {
+                    fileStream.on('finish', () => {
+                      fileStream.close();
+                      console.log('[dotnet-repair] Download completed');
+                      downloadResolve();
+                    });
+                    fileStream.on('error', (err) => {
+                      console.error('[dotnet-repair] Download error:', err);
+                      fileStream.close();
+                      try {
+                        fs.unlinkSync(toolPath);
+                      } catch (unlinkErr) {
+                        console.error(
+                          '[dotnet-repair] Failed to cleanup file:',
+                          unlinkErr
+                        );
+                      }
+                      downloadReject(err);
+                    });
+                  });
+                }
+
+                // Run the tool with wine and /p flag
+                console.log(
+                  '[dotnet-repair] Running .NET Framework Repair Tool with wine'
+                );
+                const child = spawn(
+                  'flatpak',
+                  [
+                    `--env=WINEPREFIX=${protonPath}`,
+                    `--env=DISPLAY=:0`,
+                    `--env=WINEDEBUG=-all`,
+                    `--env=WINEDLLOVERRIDES=mscoree,mshtml=`,
+                    '--filesystem=host',
+                    'run',
+                    'org.winehq.Wine',
+                    'bin/NetFxRepairTool.exe',
+                    '/p',
+                  ],
+                  {
+                    stdio: ['inherit', 'pipe', 'pipe'],
+                    cwd: __dirname,
+                  }
+                );
+
+                child.on('close', (code) => {
+                  console.log(
+                    `[dotnet-repair] process exited with code ${code}`
+                  );
+                  resolve(code === 0);
+                });
+
+                child.on('error', (error) => {
+                  console.error('[dotnet-repair] Process error:', error);
+                  resolve(false);
+                });
+
+                // Set timeout (5 minutes for repair tool)
+                setTimeout(
+                  () => {
+                    if (child.pid) {
+                      child.kill('SIGTERM');
+                    }
+                    resolve(false);
+                  },
+                  5 * 60 * 1000
+                );
+              } catch (error) {
+                console.error('[dotnet-repair] Error:', error);
+                resolve(false);
+              }
+            } else if (redistributable.path === 'winetricks') {
               // Use winetricks via flatpak
               const child = spawn(
                 'flatpak',

@@ -144,11 +144,7 @@
     }
 
     // Handle RealDebrid extraction for DDL
-    if (
-      !isTorrent &&
-      downloadedItem.usedDebridService === 'realdebrid' &&
-      !downloadedItem.files
-    ) {
+    if (!isTorrent && downloadedItem.usedDebridService === 'realdebrid') {
       // Initialize setup logs for this download
       setupLogs.update((logs) => ({
         ...logs,
@@ -224,9 +220,8 @@
 
     // handle torbox zip extraction
     if (
-      (downloadedItem.usedDebridService === 'torbox' ||
-        downloadedItem.usedDebridService === 'premiumize') &&
-      !downloadedItem.files
+      downloadedItem.usedDebridService === 'torbox' ||
+      downloadedItem.usedDebridService === 'premiumize'
     ) {
       // Initialize setup logs for this download
       setupLogs.update((logs) => ({

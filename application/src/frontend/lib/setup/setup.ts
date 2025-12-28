@@ -1,6 +1,7 @@
 import {
   createNotification,
   setupLogs,
+  protonPrefixSetups,
   type DownloadStatusAndInfo,
 } from '../../store';
 import { updateDownloadStatus } from '../downloads/lifecycle';
@@ -161,6 +162,38 @@ export async function runSetupApp(
         error: result,
       });
       throw new Error(result);
+    }
+
+    // Handle the new Proton prefix setup flow for Linux with redistributables
+    if (result === 'setup-prefix-required') {
+      console.log(
+        '[setup] Proton prefix setup required for:',
+        downloadedItem.name
+      );
+
+      // Initialize the proton prefix setup state
+      // The prefix path is managed by the backend (~/.ogi-wine-prefixes/{appID})
+      protonPrefixSetups.update((setups) => ({
+        ...setups,
+        [downloadedItem.id]: {
+          downloadId: downloadedItem.id,
+          appID: downloadedItem.appID,
+          gameName: downloadedItem.name,
+          addonSource: downloadedItem.addonSource,
+          redistributables: data.redistributables || [],
+          step: 'added-to-steam',
+          prefixPath: `~/.ogi-wine-prefixes/${downloadedItem.appID}`,
+          prefixExists: false,
+        },
+      }));
+
+      // Update download status to proton-prefix-setup
+      updateDownloadStatus(downloadedItem.id, {
+        status: 'proton-prefix-setup',
+        downloadPath: downloadedItem.downloadPath,
+      });
+
+      return data;
     }
 
     const finalStatus = isTorrent ? 'seeding' : 'setup-complete';

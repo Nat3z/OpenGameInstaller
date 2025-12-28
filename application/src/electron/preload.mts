@@ -269,6 +269,20 @@ contextBridge.exposeInMainWorld('electronAPI', {
     addToSteam: wrap((appID: number) =>
       ipcRenderer.invoke('app:add-to-steam', appID)
     ),
+    killSteam: wrap(() => ipcRenderer.invoke('app:kill-steam')),
+    startSteam: wrap(() => ipcRenderer.invoke('app:start-steam')),
+    launchSteamApp: wrap((appID: number) =>
+      ipcRenderer.invoke('app:launch-steam-app', appID)
+    ),
+    checkPrefixExists: wrap((appID: number) =>
+      ipcRenderer.invoke('app:check-prefix-exists', appID)
+    ),
+    getSteamShortcutId: wrap((appID: number) =>
+      ipcRenderer.invoke('app:get-steam-shortcut-id', appID)
+    ),
+    installRedistributables: wrap((appID: number) =>
+      ipcRenderer.invoke('app:install-redistributables', appID)
+    ),
   },
   getVersion: wrap(() => ipcRenderer.sendSync('get-version')),
   updateAddons: wrap(() => ipcRenderer.invoke('update-addons')),

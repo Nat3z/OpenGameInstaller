@@ -15,7 +15,8 @@ export type DownloadStatusAndInfo = SearchResult & {
     | 'rd-downloading'
     | 'seeding'
     | 'redistr-downloading'
-    | 'requesting';
+    | 'requesting'
+    | 'proton-prefix-setup';
   progress: number;
   error?: string;
   usedDebridService?: 'realdebrid' | 'torbox' | 'premiumize' | 'none';
@@ -104,6 +105,27 @@ export type SetupLog = {
 };
 
 export const setupLogs: Writable<Record<string, SetupLog>> = writable({});
+
+// Proton prefix setup state for redistributable installation flow
+export type ProtonPrefixSetup = {
+  downloadId: string;
+  appID: number;
+  gameName: string;
+  addonSource: string;
+  redistributables: { name: string; path: string }[];
+  step:
+    | 'added-to-steam'
+    | 'kill-steam'
+    | 'start-steam'
+    | 'launch-game'
+    | 'waiting-prefix'
+    | 'ready';
+  prefixPath: string;
+  prefixExists: boolean;
+};
+
+export const protonPrefixSetups: Writable<Record<string, ProtonPrefixSetup>> =
+  writable({});
 
 // OOBE logs for the out-of-box experience
 export type OOBELog = {

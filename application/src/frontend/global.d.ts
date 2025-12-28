@@ -110,6 +110,7 @@ interface Window {
         | 'setup-success'
         | 'setup-redistributables-failed'
         | 'setup-redistributables-success'
+        | 'setup-prefix-required'
       >;
       getAllApps: () => Promise<LibraryInfo[]>;
       launchGame: (appid: string) => Promise<void>;
@@ -146,6 +147,34 @@ interface Window {
         success: boolean;
         error?: string;
       }>;
+      killSteam: () => Promise<{
+        success: boolean;
+        error?: string;
+      }>;
+      startSteam: () => Promise<{
+        success: boolean;
+        error?: string;
+      }>;
+      launchSteamApp: (appID: number) => Promise<{
+        success: boolean;
+        shortcutId?: number;
+        error?: string;
+      }>;
+      checkPrefixExists: (appID: number) => Promise<{
+        exists: boolean;
+        prefixPath?: string;
+        error?: string;
+      }>;
+      getSteamShortcutId: (appID: number) => Promise<{
+        success: boolean;
+        signedAppId?: number;
+        unsignedAppId?: number;
+        hexAppId?: string;
+        error?: string;
+      }>;
+      installRedistributables: (
+        appID: number
+      ) => Promise<'success' | 'failed' | 'not-found'>;
     };
     updateAddons: () => Promise<void>;
     getVersion: () => string;

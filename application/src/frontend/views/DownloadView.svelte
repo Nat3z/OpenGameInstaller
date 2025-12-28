@@ -4,6 +4,7 @@
     currentDownloads,
     failedSetups,
     setupLogs,
+    protonPrefixSetups,
     type FailedSetup,
   } from '../store';
   import {
@@ -16,6 +17,7 @@
   } from '../utils';
   import * as d3 from 'd3';
   import SetupPrompt from '../components/SetupPrompt.svelte';
+  import ProtonPrefixSetupPrompt from '../components/ProtonPrefixSetupPrompt.svelte';
 
   let chartContainer: HTMLDivElement | null = $state(null);
   let speedData: { time: Date; speed: number; downloadId: string }[] = $state(
@@ -578,6 +580,11 @@
                   <div class="spinner"></div>
                   Downloading Redistributables
                 </div>
+              {:else if download.status === 'proton-prefix-setup'}
+                <div class="status-badge proton-setup">
+                  <div class="spinner"></div>
+                  Proton Prefix Setup
+                </div>
               {:else if download.status === 'setup-complete'}
                 <div class="status-badge complete">
                   <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
@@ -758,6 +765,14 @@
               setupLog={$setupLogs[download.id]}
               downloadName={download.name}
               addonSource={download.addonSource}
+            />
+          </div>
+        {/if}
+        {#if download.status === 'proton-prefix-setup' && $protonPrefixSetups[download.id]}
+          <div class="mt-3 w-full">
+            <ProtonPrefixSetupPrompt
+              setup={$protonPrefixSetups[download.id]}
+              downloadId={download.id}
             />
           </div>
         {/if}
@@ -1013,6 +1028,10 @@
 
   .status-badge.redistr-downloading {
     @apply bg-orange-100 text-orange-800;
+  }
+
+  .status-badge.proton-setup {
+    @apply bg-accent-lighter text-accent-dark;
   }
 
   .status-badge.setup {

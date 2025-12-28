@@ -9,6 +9,7 @@ import { __dirname } from '../manager/manager.paths.js';
 import { STEAMTINKERLAUNCH_PATH } from '../startup.js';
 import { clients } from '../server/addon-server.js';
 import { dirname, basename } from 'path';
+import { createHash } from 'crypto';
 
 /**
  * Escapes a string for safe use in shell commands by escaping special characters
@@ -79,132 +80,6 @@ const getSilentInstallFlags = (
   return ['/S'];
 };
 
-const installRedistributablesWithSystemWine = async (
-  redistributables: { name: string; path: string }[],
-  winePrefix: string,
-  gameName: string
-) => {
-  for (const redistributable of redistributables) {
-    try {
-      sendNotification({
-        message: `Installing ${redistributable.name} for ${gameName} (using system Wine)`,
-        id: Math.random().toString(36).substring(7),
-        type: 'info',
-      });
-
-      console.log(
-        `[redistributable] Installing ${redistributable.name} with system wine`
-      );
-
-      const success = await new Promise<boolean>((resolve) => {
-        const redistributablePath = redistributable.path
-          .trim()
-          .replace(/\n$/g, '');
-        const redistributableDir = dirname(redistributablePath);
-
-        // Get appropriate silent installation flags
-        const redistributableFilename = basename(redistributablePath);
-        const silentFlags = getSilentInstallFlags(
-          redistributablePath,
-          redistributableFilename
-        );
-        const args = [redistributablePath, ...silentFlags];
-
-        console.log(
-          `[redistributable] Using silent flags: ${silentFlags.join(' ')} for ${redistributableFilename}`
-        );
-
-        const child = spawn('wine', args, {
-          stdio: ['ignore', 'pipe', 'pipe'],
-          cwd: redistributableDir,
-          env: {
-            ...process.env,
-            WINEPREFIX: winePrefix,
-            WINEDEBUG: '-all', // Reduce wine debug output
-            DISPLAY: ':0', // Ensure we have a display for wine
-            WINEDLLOVERRIDES: 'mscoree,mshtml=', // Disable .NET and HTML rendering for faster installs
-          },
-        });
-
-        let stdout = '';
-        let stderr = '';
-
-        child.stdout?.on('data', (data) => {
-          const output = data.toString();
-          stdout += output;
-          console.log(`[redistributable:stdout] ${output.trim()}`);
-        });
-
-        child.stderr?.on('data', (data) => {
-          const output = data.toString();
-          stderr += output;
-          console.log(`[redistributable:stderr] ${output.trim()}`);
-        });
-
-        child.on('close', (code) => {
-          console.log(
-            `[redistributable] system wine process exited with code ${code}`
-          );
-          if (code === 0) {
-            resolve(true);
-          } else {
-            console.error(
-              `[redistributable] Installation failed with exit code ${code}`
-            );
-            console.error(`[redistributable] stdout: ${stdout}`);
-            console.error(`[redistributable] stderr: ${stderr}`);
-            resolve(false);
-          }
-        });
-
-        child.on('error', (error) => {
-          console.error(
-            `[redistributable] failed to start system wine process: ${error}`
-          );
-          resolve(false);
-        });
-
-        // Set a timeout for the installation (5 minutes for silent installs)
-        setTimeout(
-          () => {
-            console.error(
-              `[redistributable] System wine installation timed out after 5 minutes`
-            );
-            child.kill('SIGTERM');
-            setTimeout(() => {
-              child.kill('SIGKILL'); // Force kill if SIGTERM doesn't work
-            }, 5000);
-            resolve(false);
-          },
-          5 * 60 * 1000
-        );
-      });
-
-      if (success) {
-        sendNotification({
-          message: `Installed ${redistributable.name} for ${gameName}`,
-          id: Math.random().toString(36).substring(7),
-          type: 'success',
-        });
-      } else {
-        sendNotification({
-          message: `Failed to install ${redistributable.name} for ${gameName}`,
-          id: Math.random().toString(36).substring(7),
-          type: 'error',
-        });
-      }
-    } catch (error) {
-      console.error(
-        `[redistributable] Error installing ${redistributable.name}: ${error}`
-      );
-      sendNotification({
-        message: `Failed to install ${redistributable.name} for ${gameName}`,
-        id: Math.random().toString(36).substring(7),
-        type: 'error',
-      });
-    }
-  }
-};
 export default function handler(mainWindow: Electron.BrowserWindow) {
   ipcMain.handle('app:close', () => {
     mainWindow?.close();
@@ -343,6 +218,7 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
       | 'setup-success'
       | 'setup-redistributables-failed'
       | 'setup-redistributables-success'
+      | 'setup-prefix-required'
     > => {
       if (!fs.existsSync(join(__dirname, 'library')))
         fs.mkdirSync(join(__dirname, 'library'));
@@ -374,438 +250,27 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
         // make the launch executable use / instead of \
         data.launchExecutable = data.launchExecutable.replace(/\\/g, '/');
         const homeDir = process.env.HOME || process.env.USERPROFILE;
-        const protonPath = `${homeDir}/.ogi-wine-prefixes/${data.appID}/pfx`;
+        const protonBasePath = `${homeDir}/.ogi-wine-prefixes`;
+        const protonPath = `${protonBasePath}/${data.appID}`;
 
-        let useWinePrefix = false;
+        // Determine if we need to set up wine prefix for redistributables
+        const hasRedistributables =
+          data.redistributables && data.redistributables.length > 0;
 
-        if (data.redistributables && data.redistributables.length > 0) {
-          useWinePrefix = true;
-
-          // if the proton path does not exist, create it
-          if (!fs.existsSync(protonPath)) {
-            fs.mkdirSync(protonPath, { recursive: true });
-          }
-
-          // if there are redistributables, we need to install them
-          // firstly run wineboot to update the wine prefix
-          const wineboot = new Promise<void>((resolve) => {
-            const wineboot = spawn(
-              'flatpak',
-              [
-                `--env=WINEPREFIX=${protonPath}`,
-                '--filesystem=host',
-                `--env=DISPLAY=:0`, // Ensure display for wine UI
-                `--env=WINEDEBUG=-all`, // Reduce wine debug output
-                `--env=WINEDLLOVERRIDES=mscoree,mshtml=`, // Disable .NET and HTML rendering
-                '--command=wineboot',
-                'run',
-                'org.winehq.Wine',
-              ],
-              {
-                stdio: ['inherit', 'pipe', 'pipe'],
-                cwd: __dirname,
-              }
-            );
-            wineboot.on('close', (code) => {
-              if (code === 0) {
-                resolve();
-              } else {
-                resolve();
-              }
-            });
-            wineboot.on('error', (error) => {
-              console.error(error);
-              resolve();
-            });
-            wineboot.stdout?.on('data', (data) => {
-              console.log(`[wineboot:stdout] ${data.toString()}`);
-            });
-            wineboot.stderr?.on('data', (data) => {
-              console.log(`[wineboot:stderr] ${data.toString()}`);
-            });
-          });
-          await wineboot;
-          // check if wine is available via flatpak
-          const wineAvailable = await new Promise<boolean>((resolve) => {
-            exec('flatpak run org.winehq.Wine --help', (err) => {
-              resolve(!err);
-            });
-          });
-
-          if (!wineAvailable) {
-            // Try alternative wine installation methods
-            const alternativeWineAvailable = await new Promise<boolean>(
-              (resolve) => {
-                exec('wine --version', (err) => {
-                  if (!err) {
-                    console.log(
-                      '[redistributable] Found system wine installation'
-                    );
-                    resolve(true);
-                  } else {
-                    // Check for wine in common paths
-                    exec('which wine', (err2) => {
-                      resolve(!err2);
-                    });
-                  }
-                });
-              }
-            );
-
-            if (alternativeWineAvailable) {
-              console.log('[redistributable] Using system wine installation');
-              await installRedistributablesWithSystemWine(
-                data.redistributables,
-                protonPath,
-                data.name
-              );
-            } else {
-              sendNotification({
-                message:
-                  'Wine is not available. Redistributables will be skipped. Please install Wine via Flatpak or your system package manager.',
-                id: Math.random().toString(36).substring(7),
-                type: 'warning',
-              });
-              console.warn(
-                '[redistributable] Wine not available, skipping redistributables'
-              );
-            }
-          } else {
-            for (const redistributable of data.redistributables) {
-              try {
-                sendNotification({
-                  message: `Installing ${redistributable.name} for ${data.name}`,
-                  id: Math.random().toString(36).substring(7),
-                  type: 'info',
-                });
-
-                console.log('Running redistributable: ' + redistributable.path);
-
-                const success = await new Promise<boolean>(async (resolve) => {
-                  if (
-                    redistributable.path === 'microsoft' &&
-                    redistributable.name === 'dotnet-repair'
-                  ) {
-                    console.log('spawning microsoft dotnet-repair tool');
-                    // Download and run the .NET Framework Repair Tool with wine
-                    const netfxRepairToolUrl =
-                      'https://download.microsoft.com/download/2/b/d/2bde5459-2225-48b8-830c-ae19caf038f1/NetFxRepairTool.exe';
-                    const toolPath = join(
-                      __dirname,
-                      'bin',
-                      'NetFxRepairTool.exe'
-                    );
-                    // create the directory if it doesn't exist
-                    if (!fs.existsSync(join(__dirname, 'bin'))) {
-                      fs.mkdirSync(join(__dirname, 'bin'));
-                    }
-
-                    try {
-                      // Download the tool if it doesn't exist
-                      if (!fs.existsSync(toolPath)) {
-                        console.log(
-                          '[dotnet-repair] Downloading .NET Framework Repair Tool...'
-                        );
-                        const response = await axios({
-                          method: 'get',
-                          url: netfxRepairToolUrl,
-                          responseType: 'stream',
-                        });
-
-                        const fileStream = fs.createWriteStream(toolPath);
-                        response.data.pipe(fileStream);
-
-                        await new Promise<void>(
-                          (downloadResolve, downloadReject) => {
-                            fileStream.on('finish', () => {
-                              fileStream.close();
-                              console.log('[dotnet-repair] Download completed');
-                              downloadResolve();
-                            });
-                            fileStream.on('error', (err) => {
-                              console.error(
-                                '[dotnet-repair] Download error:',
-                                err
-                              );
-                              fileStream.close();
-                              try {
-                                fs.unlinkSync(toolPath);
-                              } catch (unlinkErr) {
-                                console.error(
-                                  '[dotnet-repair] Failed to cleanup file:',
-                                  unlinkErr
-                                );
-                              }
-                              downloadReject(err);
-                            });
-                          }
-                        );
-                      }
-
-                      // Run the tool with wine and /p flag
-                      console.log(
-                        '[dotnet-repair] Running .NET Framework Repair Tool with wine'
-                      );
-                      const child = spawn(
-                        'flatpak',
-                        [
-                          `--env=WINEPREFIX=${protonPath}`,
-                          `--env=DISPLAY=:0`, // Ensure display for wine UI
-                          `--env=WINEDEBUG=-all`, // Reduce wine debug output
-                          `--env=WINEDLLOVERRIDES=mscoree,mshtml=`, // Disable .NET and HTML rendering
-                          '--filesystem=host',
-                          'run',
-                          'org.winehq.Wine',
-                          'bin/NetFxRepairTool.exe',
-                          '/p',
-                        ],
-                        {
-                          stdio: ['inherit', 'pipe', 'pipe'],
-                          cwd: __dirname,
-                        }
-                      );
-
-                      let stdout = '';
-                      let stderr = '';
-
-                      child.on('close', (code) => {
-                        console.log(
-                          `[dotnet-repair] process exited with code ${code}`
-                        );
-                        if (code === 0) {
-                          console.log(
-                            '[dotnet-repair] .NET Framework repair completed successfully'
-                          );
-                          resolve(true);
-                        } else {
-                          console.error(
-                            `[dotnet-repair] .NET Framework repair failed with exit code ${code}`
-                          );
-                          console.error(`[dotnet-repair] stdout: ${stdout}`);
-                          console.error(`[dotnet-repair] stderr: ${stderr}`);
-                          resolve(false);
-                        }
-                      });
-                      child.on('error', (error) => {
-                        console.error('[dotnet-repair] Process error:', error);
-                        console.error(`[dotnet-repair] stdout: ${stdout}`);
-                        console.error(`[dotnet-repair] stderr: ${stderr}`);
-                        resolve(false);
-                      });
-                      child.stdout?.on('data', (data) => {
-                        const output = data.toString();
-                        stdout += output;
-                        console.log(`[dotnet-repair:stdout] ${output.trim()}`);
-                      });
-                      child.stderr?.on('data', (data) => {
-                        const output = data.toString();
-                        stderr += output;
-                        console.log(`[dotnet-repair:stderr] ${output.trim()}`);
-                      });
-                      return;
-                    } catch (error) {
-                      console.error('[dotnet-repair] Error:', error);
-                      resolve(false);
-                      return;
-                    }
-                  } else if (redistributable.path === 'winetricks') {
-                    console.log('spawning winetricks redistributable');
-                    // spawn winetricks with the proton path to install the name
-                    // For winetricks to show the installation UI, we need to ensure DISPLAY is set and not use --unattended or -q.
-                    const child = spawn(
-                      'flatpak',
-                      [
-                        `--env=WINEPREFIX=${protonPath}`,
-                        `--env=DISPLAY=:0`, // Ensure display for wine UI
-                        `--env=WINEDEBUG=-all`, // Reduce wine debug output
-                        `--env=WINEDLLOVERRIDES=mscoree,mshtml=`, // Disable .NET and HTML rendering
-                        '--filesystem=host',
-                        '--command=winetricks',
-                        'run',
-                        'org.winehq.Wine',
-                        `${redistributable.name}`,
-                        '--force',
-                        '--unattended',
-                        '-q',
-                      ],
-                      {
-                        stdio: ['inherit', 'pipe', 'pipe'], // Changed from 'ignore' to 'inherit' to allow interactive input
-                        cwd: __dirname,
-                      }
-                    );
-                    let stdout = '';
-                    let stderr = '';
-
-                    child.on('close', (code) => {
-                      console.log(
-                        `[winetricks] process exited with code ${code}`
-                      );
-                      if (code === 0) {
-                        console.log(
-                          '[winetricks] Installation completed successfully'
-                        );
-                        resolve(true);
-                      } else {
-                        console.error(
-                          `[winetricks] Installation failed with exit code ${code}`
-                        );
-                        console.error(`[winetricks] stdout: ${stdout}`);
-                        console.error(`[winetricks] stderr: ${stderr}`);
-                        resolve(false);
-                      }
-                    });
-                    child.on('error', (error) => {
-                      console.error('[winetricks] Process error:', error);
-                      console.error(`[winetricks] stdout: ${stdout}`);
-                      console.error(`[winetricks] stderr: ${stderr}`);
-                      resolve(false);
-                    });
-                    child.stdout?.on('data', (data) => {
-                      const output = data.toString();
-                      stdout += output;
-                      console.log(`[winetricks:stdout] ${output.trim()}`);
-                    });
-                    child.stderr?.on('data', (data) => {
-                      const output = data.toString();
-                      stderr += output;
-                      console.log(`[winetricks:stderr] ${output.trim()}`);
-                    });
-                    return;
-                  }
-
-                  const redistributablePath = redistributable.path
-                    .trim()
-                    .replace(/\n$/g, '');
-                  const redistributableDir = dirname(redistributablePath);
-                  const redistributableFilename = basename(redistributablePath);
-
-                  // Get appropriate silent installation flags
-                  const silentFlags = getSilentInstallFlags(
-                    redistributablePath,
-                    redistributableFilename
-                  );
-                  const redistributableArgs = [
-                    redistributableFilename,
-                    ...silentFlags,
-                  ];
-
-                  console.log(
-                    `[redistributable] Using silent flags: ${silentFlags.join(' ')} for ${redistributableFilename}`
-                  );
-
-                  const command = 'flatpak';
-                  const args = [
-                    `--env=WINEPREFIX=${protonPath}`,
-                    `--env=DISPLAY=:0`, // Ensure display for wine
-                    `--env=WINEDEBUG=-all`, // Reduce wine debug output
-                    `--env=WINEDLLOVERRIDES=mscoree,mshtml=`, // Disable .NET and HTML rendering
-                    '--filesystem=host',
-                    'run',
-                    'org.winehq.Wine',
-                    ...redistributableArgs,
-                  ];
-
-                  console.log(
-                    `[redistributable] Executing: ${command} ${args.join(' ')}`
-                  );
-                  console.log(
-                    `[redistributable] Working directory: ${redistributableDir}`
-                  );
-
-                  const child = spawn(command, args, {
-                    stdio: ['ignore', 'pipe', 'pipe'],
-                    cwd: redistributableDir,
-                  });
-
-                  let stdout = '';
-                  let stderr = '';
-
-                  child.stdout?.on('data', (data) => {
-                    const output = data.toString();
-                    stdout += output;
-                    console.log(`[redistributable:stdout] ${output.trim()}`);
-                  });
-
-                  child.stderr?.on('data', (data) => {
-                    const output = data.toString();
-                    stderr += output;
-                    console.log(`[redistributable:stderr] ${output.trim()}`);
-                  });
-
-                  child.on('close', (code) => {
-                    console.log(
-                      `[redistributable] process exited with code ${code}`
-                    );
-                    if (code === 0) {
-                      resolve(true);
-                    } else {
-                      console.error(
-                        `[redistributable] Installation failed with exit code ${code}`
-                      );
-                      console.error(`[redistributable] stdout: ${stdout}`);
-                      console.error(`[redistributable] stderr: ${stderr}`);
-                      resolve(false);
-                    }
-                  });
-
-                  child.on('error', (error) => {
-                    console.error(
-                      `[redistributable] failed to start process: ${error}`
-                    );
-                    resolve(false);
-                  });
-
-                  // Set a timeout for the installation (10 minutes for silent installs)
-                  setTimeout(
-                    () => {
-                      // check if the process is still running
-                      if (child.pid) {
-                        child.kill('SIGTERM');
-                        setTimeout(() => {
-                          child.kill('SIGKILL'); // Force kill if SIGTERM doesn't work
-                        }, 5000);
-                      }
-                      console.error(
-                        `[redistributable] Flatpak wine installation timed out after 10 minutes`
-                      );
-                      resolve(false);
-                    },
-                    10 * 60 * 1000
-                  );
-                });
-
-                if (!success) {
-                  throw new Error(`Failed to install ${redistributable.name}`);
-                }
-
-                sendNotification({
-                  message: `Installed ${redistributable.name} for ${data.name}`,
-                  id: Math.random().toString(36).substring(7),
-                  type: 'success',
-                });
-              } catch (error) {
-                console.error(
-                  `[redistributable] failed to install ${redistributable.name} for ${data.name}: ${error}`
-                );
-                sendNotification({
-                  message: `Failed to install ${redistributable.name} for ${data.name}`,
-                  id: Math.random().toString(36).substring(7),
-                  type: 'error',
-                });
-              }
-            }
-            sendNotification({
-              message: `Installed redistributables for ${data.name}`,
-              id: Math.random().toString(36).substring(7),
-              type: 'success',
-            });
-          }
+        // Ensure the base .ogi-wine-prefixes directory exists (but don't create the actual prefix)
+        if (!fs.existsSync(protonBasePath)) {
+          fs.mkdirSync(protonBasePath, { recursive: true });
         }
 
-        // use steamtinkerlaunch to add the game to steam
+        // Add game to Steam first via steamtinkerlaunch
+        // Set STEAM_COMPAT_DATA_PATH so Proton will create the prefix in our controlled location
+        const launchOptions = hasRedistributables
+          ? `STEAM_COMPAT_DATA_PATH=${protonPath} ${data.launchArguments ?? ''}`
+          : (data.launchArguments ?? '');
+
         const result = await new Promise<boolean>((resolve) =>
           exec(
-            `${STEAMTINKERLAUNCH_PATH} addnonsteamgame --appname="${escapeShellArg(data.name)}" --exepath="${escapeShellArg(data.launchExecutable)}" --startdir="${escapeShellArg(data.cwd)}" --launchoptions="${escapeShellArg((useWinePrefix ? `STEAM_COMPAT_DATA_PATH=${protonPath.split('/pfx')[0]} ` : '') + (data.launchArguments ?? ''))}" --compatibilitytool="proton_experimental" --use-steamgriddb`,
+            `${STEAMTINKERLAUNCH_PATH} addnonsteamgame --appname="${escapeShellArg(data.name)}" --exepath="${escapeShellArg(data.launchExecutable)}" --startdir="${escapeShellArg(data.cwd)}" --launchoptions="${escapeShellArg(launchOptions)}" --compatibilitytool="proton_experimental" --use-steamgriddb`,
             {
               cwd: __dirname,
             },
@@ -831,43 +296,25 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
             }
           )
         );
+
         if (!result) {
-          return 'setup-redistributables-failed';
+          return 'setup-failed';
         }
 
-        // Run winecfg at the end of dependency installation (non-blocking)
-        if (useWinePrefix) {
-          sendNotification({
-            message: `Starting winecfg for ${data.name}`,
-            id: Math.random().toString(36).substring(7),
-            type: 'info',
-          });
-
-          console.log('[winecfg] Starting winecfg configuration in background');
-
-          const child = spawn(
-            'flatpak',
-            [
-              `--env=WINEPREFIX=${protonPath}`,
-              `--env=DISPLAY=:0`,
-              `--env=WINEDEBUG=-all`,
-              `--env=WINEDLLOVERRIDES=mscoree,mshtml=`,
-              '--filesystem=host',
-              '--command=winecfg',
-              'run',
-              'org.winehq.Wine',
-            ],
-            {
-              stdio: 'ignore',
-              cwd: __dirname,
-              detached: true,
-            }
+        // If there are redistributables, we need to wait for the user to create the Proton prefix
+        // by launching the game through Steam. Return a special status to trigger the UI flow.
+        if (hasRedistributables) {
+          console.log(
+            '[setup] Redistributables detected. Returning setup-prefix-required status.'
+          );
+          console.log(
+            '[setup] User needs to restart Steam and launch the game to create Proton prefix.'
           );
 
-          // Don't wait for winecfg to complete - let it run in background
-          child.unref();
+          // Re-save the data with redistributables preserved for later installation
+          fs.writeFileSync(appPath, JSON.stringify(data, null, 2));
 
-          console.log('[winecfg] winecfg started in background');
+          return 'setup-prefix-required';
         }
       } else if (process.platform === 'win32') {
         // if there are redistributables, we need to install them
@@ -1049,4 +496,372 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
 
     return { success: result };
   });
+
+  // === Steam Shortcut ID Calculation Functions ===
+  // Based on steamtinkerlaunch's implementation
+
+  // Generate shortcut VDF AppID (signed 32-bit integer)
+  // Steam stores shortcuts as signed 32-bit little-endian hex in shortcuts.vdf
+  function generateShortcutVDFAppId(appNameAndExe: string): number {
+    // MD5 hash the input, take first 8 hex chars as seed
+    const hash = createHash('md5').update(appNameAndExe).digest('hex');
+    const seed = hash.substring(0, 8);
+    // Convert hex to number, mod 1000000000, return as negative (signed)
+    return -(parseInt(seed, 16) % 1000000000);
+  }
+
+  // Convert signed 32-bit integer to hex, removing the sign bits
+  function dec2hex(signedInt: number): string {
+    const hex = (signedInt >>> 0).toString(16);
+    return hex.padStart(8, '0');
+  }
+
+  // Convert big-endian hex to little-endian (reverse byte order)
+  function bigToLittleEndian(hex: string): string {
+    const pairs = hex.match(/.{2}/g) || [];
+    return pairs.reverse().join('');
+  }
+
+  // Generate the final little-endian hex AppID for shortcuts.vdf
+  function generateShortcutVDFHexAppId(signedAppId: number): string {
+    return bigToLittleEndian(dec2hex(signedAppId));
+  }
+
+  // For steam://rungameid/, we need the unsigned integer
+  function getUnsignedAppId(signedAppId: number): number {
+    return signedAppId >>> 0;
+  }
+
+  // === Steam Process Management Handlers ===
+
+  ipcMain.handle('app:kill-steam', async () => {
+    if (process.platform !== 'linux') {
+      return { success: false, error: 'Only available on Linux' };
+    }
+
+    console.log('[steam] Attempting to kill Steam process...');
+
+    return new Promise<{ success: boolean; error?: string }>((resolve) => {
+      // Try pkill first, then killall as fallback
+      exec('pkill -f steam', (error) => {
+        if (error) {
+          // pkill returns non-zero if no process found, try killall
+          exec('killall steam', (error2) => {
+            if (error2) {
+              console.log('[steam] No Steam process found to kill');
+              // Not an error - Steam might not be running
+              resolve({ success: true });
+            } else {
+              console.log('[steam] Steam process killed via killall');
+              resolve({ success: true });
+            }
+          });
+        } else {
+          console.log('[steam] Steam process killed via pkill');
+          resolve({ success: true });
+        }
+      });
+    });
+  });
+
+  ipcMain.handle('app:start-steam', async () => {
+    if (process.platform !== 'linux') {
+      return { success: false, error: 'Only available on Linux' };
+    }
+
+    console.log('[steam] Starting Steam...');
+
+    return new Promise<{ success: boolean; error?: string }>((resolve) => {
+      // Launch Steam detached so it doesn't block
+      const child = spawn('steam', [], {
+        detached: true,
+        stdio: 'ignore',
+      });
+
+      child.unref();
+
+      // Give Steam a moment to start
+      setTimeout(() => {
+        console.log('[steam] Steam launch command executed');
+        resolve({ success: true });
+      }, 1000);
+    });
+  });
+
+  ipcMain.handle('app:launch-steam-app', async (_, appID: number) => {
+    if (process.platform !== 'linux') {
+      return { success: false, error: 'Only available on Linux' };
+    }
+
+    const appPath = join(__dirname, `library/${appID}.json`);
+    if (!fs.existsSync(appPath)) {
+      return { success: false, error: 'Game not found' };
+    }
+
+    const appInfo: LibraryInfo = JSON.parse(fs.readFileSync(appPath, 'utf-8'));
+
+    // Calculate the Steam shortcut ID
+    const appNameAndExe = appInfo.name + appInfo.launchExecutable;
+    const signedAppId = generateShortcutVDFAppId(appNameAndExe);
+    const unsignedAppId = getUnsignedAppId(signedAppId);
+
+    console.log(
+      `[steam] Launching app via Steam: ${appInfo.name} (shortcut ID: ${unsignedAppId})`
+    );
+
+    return new Promise<{
+      success: boolean;
+      shortcutId?: number;
+      error?: string;
+    }>((resolve) => {
+      // Use xdg-open to open the steam:// URL
+      exec(`xdg-open steam://rungameid/${unsignedAppId}`, (error) => {
+        if (error) {
+          console.error('[steam] Failed to launch app via Steam:', error);
+          resolve({ success: false, error: error.message });
+        } else {
+          console.log('[steam] Steam app launch command executed');
+          resolve({ success: true, shortcutId: unsignedAppId });
+        }
+      });
+    });
+  });
+
+  ipcMain.handle('app:check-prefix-exists', async (_, appID: number) => {
+    if (process.platform !== 'linux') {
+      return { exists: false, error: 'Only available on Linux' };
+    }
+
+    const homeDir = process.env.HOME || process.env.USERPROFILE;
+    const prefixPath = `${homeDir}/.ogi-wine-prefixes/${appID}/pfx/drive_c`;
+
+    const exists = fs.existsSync(prefixPath);
+    console.log(
+      `[prefix] Checking prefix for appID ${appID}: ${exists ? 'exists' : 'not found'} at ${prefixPath}`
+    );
+
+    return { exists, prefixPath };
+  });
+
+  ipcMain.handle('app:get-steam-shortcut-id', async (_, appID: number) => {
+    const appPath = join(__dirname, `library/${appID}.json`);
+    if (!fs.existsSync(appPath)) {
+      return { success: false, error: 'Game not found' };
+    }
+
+    const appInfo: LibraryInfo = JSON.parse(fs.readFileSync(appPath, 'utf-8'));
+
+    // Calculate the Steam shortcut ID
+    const appNameAndExe = appInfo.name + appInfo.launchExecutable;
+    const signedAppId = generateShortcutVDFAppId(appNameAndExe);
+    const unsignedAppId = getUnsignedAppId(signedAppId);
+    const hexAppId = generateShortcutVDFHexAppId(signedAppId);
+
+    return {
+      success: true,
+      signedAppId,
+      unsignedAppId,
+      hexAppId,
+    };
+  });
+
+  ipcMain.handle(
+    'app:install-redistributables',
+    async (_, appID: number): Promise<'success' | 'failed' | 'not-found'> => {
+      if (process.platform !== 'linux') {
+        return 'failed';
+      }
+
+      const appPath = join(__dirname, `library/${appID}.json`);
+      if (!fs.existsSync(appPath)) {
+        return 'not-found';
+      }
+
+      const appInfo: LibraryInfo & {
+        redistributables?: { name: string; path: string }[];
+      } = JSON.parse(fs.readFileSync(appPath, 'utf-8'));
+
+      if (!appInfo.redistributables || appInfo.redistributables.length === 0) {
+        console.log('[redistributable] No redistributables to install');
+        return 'success';
+      }
+
+      const homeDir = process.env.HOME || process.env.USERPROFILE;
+      const protonPath = `${homeDir}/.ogi-wine-prefixes/${appID}/pfx`;
+
+      // Check if the prefix exists
+      if (!fs.existsSync(protonPath)) {
+        console.error(
+          '[redistributable] Proton prefix does not exist:',
+          protonPath
+        );
+        sendNotification({
+          message:
+            'Proton prefix not found. Please launch the game through Steam first.',
+          id: Math.random().toString(36).substring(7),
+          type: 'error',
+        });
+        return 'failed';
+      }
+
+      console.log(
+        `[redistributable] Installing ${appInfo.redistributables.length} redistributables for ${appInfo.name}`
+      );
+
+      // Install redistributables using winetricks/flatpak wine
+      for (const redistributable of appInfo.redistributables) {
+        try {
+          sendNotification({
+            message: `Installing ${redistributable.name} for ${appInfo.name}`,
+            id: Math.random().toString(36).substring(7),
+            type: 'info',
+          });
+
+          console.log(
+            '[redistributable] Installing:',
+            redistributable.name,
+            redistributable.path
+          );
+
+          const success = await new Promise<boolean>((resolve) => {
+            if (redistributable.path === 'winetricks') {
+              // Use winetricks via flatpak
+              const child = spawn(
+                'flatpak',
+                [
+                  `--env=WINEPREFIX=${protonPath}`,
+                  `--env=DISPLAY=:0`,
+                  `--env=WINEDEBUG=-all`,
+                  `--env=WINEDLLOVERRIDES=mscoree,mshtml=`,
+                  '--filesystem=host',
+                  '--command=winetricks',
+                  'run',
+                  'org.winehq.Wine',
+                  redistributable.name,
+                  '--force',
+                  '--unattended',
+                  '-q',
+                ],
+                {
+                  stdio: ['inherit', 'pipe', 'pipe'],
+                  cwd: __dirname,
+                }
+              );
+
+              child.on('close', (code) => {
+                console.log(`[winetricks] process exited with code ${code}`);
+                resolve(code === 0);
+              });
+
+              child.on('error', (error) => {
+                console.error('[winetricks] Process error:', error);
+                resolve(false);
+              });
+
+              // Set timeout
+              setTimeout(
+                () => {
+                  if (child.pid) {
+                    child.kill('SIGTERM');
+                  }
+                  resolve(false);
+                },
+                10 * 60 * 1000
+              );
+            } else {
+              // Regular redistributable file
+              const redistributablePath = redistributable.path
+                .trim()
+                .replace(/\n$/g, '');
+              const redistributableDir = dirname(redistributablePath);
+              const redistributableFilename = basename(redistributablePath);
+
+              const silentFlags = getSilentInstallFlags(
+                redistributablePath,
+                redistributableFilename
+              );
+
+              const child = spawn(
+                'flatpak',
+                [
+                  `--env=WINEPREFIX=${protonPath}`,
+                  `--env=DISPLAY=:0`,
+                  `--env=WINEDEBUG=-all`,
+                  `--env=WINEDLLOVERRIDES=mscoree,mshtml=`,
+                  '--filesystem=host',
+                  'run',
+                  'org.winehq.Wine',
+                  redistributableFilename,
+                  ...silentFlags,
+                ],
+                {
+                  stdio: ['ignore', 'pipe', 'pipe'],
+                  cwd: redistributableDir,
+                }
+              );
+
+              child.on('close', (code) => {
+                console.log(
+                  `[redistributable] process exited with code ${code}`
+                );
+                resolve(code === 0);
+              });
+
+              child.on('error', (error) => {
+                console.error('[redistributable] Process error:', error);
+                resolve(false);
+              });
+
+              // Set timeout
+              setTimeout(
+                () => {
+                  if (child.pid) {
+                    child.kill('SIGTERM');
+                  }
+                  resolve(false);
+                },
+                10 * 60 * 1000
+              );
+            }
+          });
+
+          if (success) {
+            sendNotification({
+              message: `Installed ${redistributable.name} for ${appInfo.name}`,
+              id: Math.random().toString(36).substring(7),
+              type: 'success',
+            });
+          } else {
+            sendNotification({
+              message: `Failed to install ${redistributable.name} for ${appInfo.name}`,
+              id: Math.random().toString(36).substring(7),
+              type: 'error',
+            });
+          }
+        } catch (error) {
+          console.error(
+            `[redistributable] Error installing ${redistributable.name}:`,
+            error
+          );
+          sendNotification({
+            message: `Failed to install ${redistributable.name} for ${appInfo.name}`,
+            id: Math.random().toString(36).substring(7),
+            type: 'error',
+          });
+        }
+      }
+
+      // Clear redistributables from the library file after installation
+      delete appInfo.redistributables;
+      fs.writeFileSync(appPath, JSON.stringify(appInfo, null, 2));
+
+      sendNotification({
+        message: `Finished installing redistributables for ${appInfo.name}`,
+        id: Math.random().toString(36).substring(7),
+        type: 'success',
+      });
+
+      return 'success';
+    }
+  );
 }

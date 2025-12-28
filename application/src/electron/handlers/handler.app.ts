@@ -543,7 +543,7 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
 
     return new Promise<{ success: boolean; error?: string }>((resolve) => {
       // Try pkill first, then killall as fallback
-      exec('pkill -f steam', (error) => {
+      exec('steam -shutdown', (error) => {
         if (error) {
           // pkill returns non-zero if no process found, try killall
           exec('killall steam', (error2) => {

@@ -15,7 +15,6 @@
 
   let steamKilled = $state(false);
   let steamStarted = $state(false);
-  let gameOpened = $state(false);
   let prefixExists = $state(false);
   let isPolling = $state(false);
   let isInstallingRedist = $state(false);
@@ -24,7 +23,6 @@
   function getDisplayStep(): number {
     // Returns 1-4 for display purposes
     if (prefixExists) return 4;
-    if (gameOpened) return 4; // Waiting on step 4
     if (steamStarted) return 3;
     if (steamKilled) return 2;
     return 1;
@@ -67,6 +65,8 @@
           message: 'Steam is starting...',
           type: 'info',
         });
+        // Start polling for prefix creation once Steam is started
+        startPolling();
       } else {
         createNotification({
           id: Math.random().toString(36).substring(7),
@@ -79,35 +79,6 @@
       createNotification({
         id: Math.random().toString(36).substring(7),
         message: 'Failed to start Steam',
-        type: 'error',
-      });
-    }
-  }
-
-  async function launchGame() {
-    try {
-      const result = await window.electronAPI.app.launchSteamApp(setup.appID);
-      if (result.success) {
-        gameOpened = true;
-        createNotification({
-          id: Math.random().toString(36).substring(7),
-          message: 'Launching game through Steam...',
-          type: 'info',
-        });
-        // Start polling for prefix creation
-        startPolling();
-      } else {
-        createNotification({
-          id: Math.random().toString(36).substring(7),
-          message: result.error || 'Failed to launch game',
-          type: 'error',
-        });
-      }
-    } catch (error) {
-      console.error('Error launching game:', error);
-      createNotification({
-        id: Math.random().toString(36).substring(7),
-        message: 'Failed to launch game',
         type: 'error',
       });
     }
@@ -197,22 +168,6 @@
         type: 'error',
       });
       isInstallingRedist = false;
-    }
-  }
-
-  // Manual continue button for users who launched the game outside of the flow
-  async function manualContinue() {
-    const exists = await checkPrefixExists();
-    if (exists) {
-      prefixExists = true;
-      await continueSetup();
-    } else {
-      createNotification({
-        id: Math.random().toString(36).substring(7),
-        message:
-          'Proton prefix not found. Please launch the game through Steam first.',
-        type: 'warning',
-      });
     }
   }
 
@@ -341,17 +296,16 @@
       </button>
     </div>
 
-    <!-- Step 3: Launch Game -->
+    <!-- Step 3: Launch Game (Instructions) -->
     <div class="step-item flex items-center gap-3">
       <div
-        class="step-number w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold {gameOpened ||
-        prefixExists
+        class="step-number w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold {prefixExists
           ? 'bg-accent text-white'
           : steamStarted
             ? 'bg-gray-300 text-gray-700'
             : 'bg-gray-200 text-gray-400'}"
       >
-        {#if gameOpened || prefixExists}
+        {#if prefixExists}
           <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
             <path
               fill-rule="evenodd"
@@ -363,24 +317,28 @@
           3
         {/if}
       </div>
-      <button
-        class="step-button flex-1 py-2 px-4 rounded-lg text-sm font-medium transition-all {gameOpened ||
-        prefixExists
-          ? 'bg-accent/20 text-accent-dark cursor-default'
+      <div
+        class="step-instruction flex-1 py-2 px-4 rounded-lg text-sm {prefixExists
+          ? 'bg-accent/20 text-accent-dark'
           : steamStarted
-            ? 'bg-accent text-white hover:bg-accent-dark'
-            : 'bg-gray-200 text-gray-400 cursor-not-allowed'}"
-        onclick={launchGame}
-        disabled={!steamStarted || gameOpened || prefixExists}
+            ? 'bg-accent-lighter border border-accent-light text-accent-dark'
+            : 'bg-gray-100 text-gray-400'}"
       >
         {#if prefixExists}
-          Game Launched ✓
-        {:else if gameOpened}
-          Waiting for prefix...
+          <span class="font-medium">Game Launched ✓</span>
+        {:else if steamStarted}
+          <span class="font-medium"
+            >Launch the game in Steam, then close it</span
+          >
+          <p class="text-xs mt-1 opacity-75">
+            Find "{setup.gameName}" in your Steam library and run it once to
+            create the Proton prefix.
+          </p>
         {:else}
-          Launch Game in Steam
+          <span class="font-medium text-gray-500">Launch the game in Steam</span
+          >
         {/if}
-      </button>
+      </div>
     </div>
 
     <!-- Step 4: Continue -->
@@ -423,22 +381,7 @@
       class="polling-status flex items-center gap-2 text-xs text-accent-dark bg-accent-lighter/30 rounded-lg p-2"
     >
       <div class="w-2 h-2 bg-accent rounded-full animate-pulse"></div>
-      <span
-        >Waiting for Proton to create the prefix... Close the game after it
-        launches.</span
-      >
-    </div>
-  {/if}
-
-  <!-- Manual Continue Option -->
-  {#if !prefixExists && steamStarted}
-    <div class="manual-continue border-t border-gray-200 pt-3 mt-2">
-      <button
-        class="text-xs text-accent-dark hover:text-accent underline"
-        onclick={manualContinue}
-      >
-        Already launched the game? Click here to check and continue.
-      </button>
+      <span>Waiting for Proton prefix to be created...</span>
     </div>
   {/if}
 

@@ -21,12 +21,13 @@
   let isInstallingRedist = $state(false);
   let pollInterval: ReturnType<typeof setInterval> | null = null;
 
-  function getCurrentStep(): number {
+  function getDisplayStep(): number {
+    // Returns 1-4 for display purposes
     if (prefixExists) return 4;
-    if (gameOpened) return 3;
-    if (steamStarted) return 2;
-    if (steamKilled) return 1;
-    return 0;
+    if (gameOpened) return 4; // Waiting on step 4
+    if (steamStarted) return 3;
+    if (steamKilled) return 2;
+    return 1;
   }
 
   async function killSteam() {
@@ -250,7 +251,7 @@
 
     <div class="flex items-center gap-2 text-sm text-accent-dark">
       <span class="text-xs bg-accent-lighter px-2 py-1 rounded-full">
-        Step {getCurrentStep() + 1} of 4
+        Step {getDisplayStep()} of 4
       </span>
     </div>
   </div>
@@ -259,7 +260,7 @@
   <div class="w-full bg-accent-lighter rounded-full h-2">
     <div
       class="bg-accent h-2 rounded-full transition-all duration-500"
-      style="width: {((getCurrentStep() + 1) / 4) * 100}%"
+      style="width: {(getDisplayStep() / 4) * 100}%"
     ></div>
   </div>
 

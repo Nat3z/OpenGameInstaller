@@ -495,7 +495,7 @@ ipcRenderer.on(
   'app:show-changelog',
   wrap((_, arg) => {
     document.dispatchEvent(
-      new CustomEvent('app:show-changelog', { detail: arg })
+      new CustomEvent('app:show-changelog', { detail: { version: arg } })
     );
   })
 );

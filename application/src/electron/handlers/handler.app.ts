@@ -250,21 +250,22 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
         // make the launch executable use / instead of \
         data.launchExecutable = data.launchExecutable.replace(/\\/g, '/');
         const homeDir = process.env.HOME || process.env.USERPROFILE;
-        const protonBasePath = `${homeDir}/.ogi-wine-prefixes`;
-        const protonPath = `${protonBasePath}/${data.appID}`;
+        const protonBasePath = `${homeDir}/.steam/steam/steamapps/compatdata`;
+        // predict the appid based on the name and executable
+        const appNameAndExe = data.name + data.launchExecutable;
+        const appId = generateShortcutVDFAppId(appNameAndExe);
+        const protonPath = `${protonBasePath}/${appId}/pfx`;
+        console.log(
+          '[insert-app] we predict the proton path to be: ' + protonPath
+        );
 
         // Determine if we need to set up wine prefix for redistributables
         const hasRedistributables =
           data.redistributables && data.redistributables.length > 0;
 
-        if (!fs.existsSync(protonPath)) {
-          fs.mkdirSync(protonPath, { recursive: true });
-        }
-
         // Add game to Steam first via steamtinkerlaunch
-        // Set STEAM_COMPAT_DATA_PATH so Proton will create the prefix in our controlled location
         const launchOptions = hasRedistributables
-          ? `STEAM_COMPAT_DATA_PATH=${protonPath} ${data.launchArguments ?? ''}`
+          ? `${data.launchArguments ?? ''}`
           : (data.launchArguments ?? '');
 
         const result = await new Promise<boolean>((resolve) =>
@@ -297,10 +298,7 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
         );
 
         // add to the {appid}.json file the launch options
-        data.launchArguments = launchOptions.replace(
-          'STEAM_COMPAT_DATA_PATH=',
-          'WINEPREFIX='
-        );
+        data.launchArguments = 'WINEPREFIX=' + protonPath + ' ' + launchOptions;
         fs.writeFileSync(appPath, JSON.stringify(data, null, 2));
 
         if (!result) {
@@ -458,21 +456,10 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
     }
 
     const appInfo: LibraryInfo = JSON.parse(fs.readFileSync(appPath, 'utf-8'));
-
-    // Check if wine prefix exists (similar to insert-app logic)
-    const homeDir = process.env.HOME || process.env.USERPROFILE;
-    const protonPath = `${homeDir}/.ogi-wine-prefixes/${appInfo.appID}/pfx`;
-    const useWinePrefix = fs.existsSync(protonPath);
-
-    // Prepare launch options
     let launchOptions = appInfo.launchArguments ?? '';
-    if (useWinePrefix) {
-      // remove the wineprefix=..... from the launch options so that it's just the steam_compat_data_path
-      launchOptions = launchOptions.replace(
-        'WINEPREFIX=',
-        'STEAM_COMPAT_DATA_PATH='
-      );
-    }
+
+    // remove any wineprefix=..... from the launch options
+    launchOptions = launchOptions.replace(/WINEPREFIX=.*? /g, '').trim();
 
     // Use steamtinkerlaunch to add the game to steam
     const result = await new Promise<boolean>((resolve) =>
@@ -643,7 +630,16 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
     }
 
     const homeDir = process.env.HOME || process.env.USERPROFILE;
-    const prefixPath = `${homeDir}/.ogi-wine-prefixes/${appID}/pfx/drive_c`;
+    const protonBasePath = `${homeDir}/.steam/steam/steamapps/compatdata`;
+    const appPath = join(__dirname, `library/${appID}.json`);
+    if (!fs.existsSync(appPath)) {
+      return { exists: false, error: 'Game not found' };
+    }
+    const appInfo: LibraryInfo = JSON.parse(fs.readFileSync(appPath, 'utf-8'));
+    const appNameAndExe = appInfo.name + appInfo.launchExecutable;
+    const appId = generateShortcutVDFAppId(appNameAndExe);
+    const protonPath = `${protonBasePath}/${appId}/pfx`;
+    const prefixPath = `${protonPath}/drive_c`;
 
     const exists = fs.existsSync(prefixPath);
     console.log(
@@ -697,7 +693,10 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
       }
 
       const homeDir = process.env.HOME || process.env.USERPROFILE;
-      const protonPath = `${homeDir}/.ogi-wine-prefixes/${appID}/pfx`;
+      const protonBasePath = `${homeDir}/.steam/steam/steamapps/compatdata`;
+      const appNameAndExe = appInfo.name + appInfo.launchExecutable;
+      const appId = generateShortcutVDFAppId(appNameAndExe);
+      const protonPath = `${protonBasePath}/${appId}/pfx`;
 
       // Check if the prefix exists
       if (!fs.existsSync(protonPath)) {

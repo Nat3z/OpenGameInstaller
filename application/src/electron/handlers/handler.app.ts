@@ -513,27 +513,28 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
           }
 
           // Parse the output - extract just the numbers (appid)
-          // Output format: "<appid><tab or space>(<game name>)"
+          // Output format: "Preparing to installSteamTinkerLaunch...\njefopwejfoew\nfijwepfjoeww\n....\n<appid><tab or space>(<game name>)"
           const output = stdout.trim();
-          const match = output.match(/^(\d+)/);
-
-          if (match && match[1]) {
-            const appId = parseInt(match[1], 10);
-            console.log(
-              `[getNonSteamGameAppID] Found app ID ${appId} for "${gameName}"`
-            );
-            resolve({ success: true, appId });
-            cachedAppIds[gameName] = appId;
-          } else {
+          const appIdLine = output
+            .split('\n')
+            .find((line) => line.includes('(' + gameName + ')'));
+          if (!appIdLine) {
             console.error(
-              '[getNonSteamGameAppID] Could not parse app ID from output:',
-              output
+              '[getNonSteamGameAppID] Could not find app ID for game:',
+              gameName
             );
             resolve({
               success: false,
-              error: `Could not parse app ID from output: ${output}`,
+              error: 'Could not find app ID for game',
             });
+            return;
           }
+          const appId = parseInt(appIdLine.split('(')[0].trim());
+          console.log(
+            `[getNonSteamGameAppID] Found app ID ${appId} for "${gameName}"`
+          );
+          resolve({ success: true, appId });
+          cachedAppIds[gameName] = appId;
         }
       );
     });

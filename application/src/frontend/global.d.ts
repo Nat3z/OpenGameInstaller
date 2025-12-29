@@ -18,7 +18,10 @@ interface Window {
       exists: (path: string) => boolean;
       delete: (path: string) => void;
       deleteAsync: (path: string) => Promise<void>;
-      move: (data: { source: string; destination: string }) => Promise<string | any>;
+      move: (data: {
+        source: string;
+        destination: string;
+      }) => Promise<string | any>;
       showFileLoc: (path: string) => void;
       unrar: (data: {
         outputDir: string;
@@ -163,13 +166,6 @@ interface Window {
       checkPrefixExists: (appID: number) => Promise<{
         exists: boolean;
         prefixPath?: string;
-        error?: string;
-      }>;
-      getSteamShortcutId: (appID: number) => Promise<{
-        success: boolean;
-        signedAppId?: number;
-        unsignedAppId?: number;
-        hexAppId?: string;
         error?: string;
       }>;
       installRedistributables: (

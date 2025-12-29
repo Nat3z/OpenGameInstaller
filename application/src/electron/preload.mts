@@ -277,9 +277,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     checkPrefixExists: wrap((appID: number) =>
       ipcRenderer.invoke('app:check-prefix-exists', appID)
     ),
-    getSteamShortcutId: wrap((appID: number) =>
-      ipcRenderer.invoke('app:get-steam-shortcut-id', appID)
-    ),
     installRedistributables: wrap((appID: number) =>
       ipcRenderer.invoke('app:install-redistributables', appID)
     ),

@@ -9,7 +9,6 @@ import { __dirname } from '../manager/manager.paths.js';
 import { STEAMTINKERLAUNCH_PATH } from '../startup.js';
 import { clients } from '../server/addon-server.js';
 import { dirname, basename } from 'path';
-import { createHash } from 'crypto';
 
 /**
  * Escapes a string for safe use in shell commands by escaping special characters
@@ -249,15 +248,6 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
       if (process.platform === 'linux') {
         // make the launch executable use / instead of \
         data.launchExecutable = data.launchExecutable.replace(/\\/g, '/');
-        const homeDir = process.env.HOME || process.env.USERPROFILE;
-        const protonBasePath = `${homeDir}/.steam/steam/steamapps/compatdata`;
-        // predict the appid based on the name and executable
-        const appNameAndExe = data.name + data.launchExecutable;
-        const appId = generateShortcutVDFAppId(appNameAndExe);
-        const protonPath = `${protonBasePath}/${appId}/pfx`;
-        console.log(
-          '[insert-app] we predict the proton path to be: ' + protonPath
-        );
 
         // Determine if we need to set up wine prefix for redistributables
         const hasRedistributables =
@@ -298,6 +288,13 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
         );
 
         // add to the {appid}.json file the launch options
+        const { success, appId: steamAppId } = await getNonSteamGameAppID(
+          data.name
+        );
+        if (!success) {
+          return 'setup-failed';
+        }
+        const protonPath = `${process.env.HOME}/.steam/steam/steamapps/compatdata/${steamAppId}/pfx`;
         data.launchArguments = 'WINEPREFIX=' + protonPath + ' ' + launchOptions;
         fs.writeFileSync(appPath, JSON.stringify(data, null, 2));
 
@@ -494,39 +491,52 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
     return { success: result };
   });
 
-  // === Steam Shortcut ID Calculation Functions ===
-  // Based on steamtinkerlaunch's implementation
+  const cachedAppIds: Record<string, number> = {};
+  // Get the Steam App ID for a non-Steam game using steamtinkerlaunch
+  // Output format from STL: "<appid>\t(<game name>)" or "<appid> (<game name>)"
+  function getNonSteamGameAppID(
+    gameName: string
+  ): Promise<{ success: boolean; appId?: number; error?: string }> {
+    return new Promise((resolve) => {
+      if (cachedAppIds[gameName]) {
+        resolve({ success: true, appId: cachedAppIds[gameName] });
+        return;
+      }
+      exec(
+        `${STEAMTINKERLAUNCH_PATH} getid "${escapeShellArg(gameName)}"`,
+        { cwd: __dirname },
+        (error, stdout, _stderr) => {
+          if (error) {
+            console.error('[getNonSteamGameAppID] Error:', error);
+            resolve({ success: false, error: error.message });
+            return;
+          }
 
-  // Generate shortcut VDF AppID (signed 32-bit integer)
-  // Steam stores shortcuts as signed 32-bit little-endian hex in shortcuts.vdf
-  function generateShortcutVDFAppId(appNameAndExe: string): number {
-    // MD5 hash the input, take first 8 hex chars as seed
-    const hash = createHash('md5').update(appNameAndExe).digest('hex');
-    const seed = hash.substring(0, 8);
-    // Convert hex to number, mod 1000000000, return as negative (signed)
-    return -(parseInt(seed, 16) % 1000000000);
-  }
+          // Parse the output - extract just the numbers (appid)
+          // Output format: "<appid><tab or space>(<game name>)"
+          const output = stdout.trim();
+          const match = output.match(/^(\d+)/);
 
-  // Convert signed 32-bit integer to hex, removing the sign bits
-  function dec2hex(signedInt: number): string {
-    const hex = (signedInt >>> 0).toString(16);
-    return hex.padStart(8, '0');
-  }
-
-  // Convert big-endian hex to little-endian (reverse byte order)
-  function bigToLittleEndian(hex: string): string {
-    const pairs = hex.match(/.{2}/g) || [];
-    return pairs.reverse().join('');
-  }
-
-  // Generate the final little-endian hex AppID for shortcuts.vdf
-  function generateShortcutVDFHexAppId(signedAppId: number): string {
-    return bigToLittleEndian(dec2hex(signedAppId));
-  }
-
-  // For steam://rungameid/, we need the unsigned integer
-  function getUnsignedAppId(signedAppId: number): number {
-    return signedAppId >>> 0;
+          if (match && match[1]) {
+            const appId = parseInt(match[1], 10);
+            console.log(
+              `[getNonSteamGameAppID] Found app ID ${appId} for "${gameName}"`
+            );
+            resolve({ success: true, appId });
+            cachedAppIds[gameName] = appId;
+          } else {
+            console.error(
+              '[getNonSteamGameAppID] Could not parse app ID from output:',
+              output
+            );
+            resolve({
+              success: false,
+              error: `Could not parse app ID from output: ${output}`,
+            });
+          }
+        }
+      );
+    });
   }
 
   // === Steam Process Management Handlers ===
@@ -597,13 +607,14 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
 
     const appInfo: LibraryInfo = JSON.parse(fs.readFileSync(appPath, 'utf-8'));
 
-    // Calculate the Steam shortcut ID
-    const appNameAndExe = appInfo.name + appInfo.launchExecutable;
-    const signedAppId = generateShortcutVDFAppId(appNameAndExe);
-    const unsignedAppId = getUnsignedAppId(signedAppId);
+    // Get the Steam shortcut ID
+    const { success, appId } = await getNonSteamGameAppID(appInfo.name);
+    if (!success) {
+      return { success: false, error: 'Failed to get Steam shortcut ID' };
+    }
 
     console.log(
-      `[steam] Launching app via Steam: ${appInfo.name} (shortcut ID: ${unsignedAppId})`
+      `[steam] Launching app via Steam: ${appInfo.name} (shortcut ID: ${appId})`
     );
 
     return new Promise<{
@@ -612,13 +623,13 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
       error?: string;
     }>((resolve) => {
       // Use xdg-open to open the steam:// URL
-      exec(`xdg-open steam://rungameid/${unsignedAppId}`, (error) => {
+      exec(`xdg-open steam://rungameid/${appId}`, (error) => {
         if (error) {
           console.error('[steam] Failed to launch app via Steam:', error);
           resolve({ success: false, error: error.message });
         } else {
           console.log('[steam] Steam app launch command executed');
-          resolve({ success: true, shortcutId: unsignedAppId });
+          resolve({ success: true, shortcutId: appId });
         }
       });
     });
@@ -628,47 +639,28 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
     if (process.platform !== 'linux') {
       return { exists: false, error: 'Only available on Linux' };
     }
-
-    const homeDir = process.env.HOME || process.env.USERPROFILE;
-    const protonBasePath = `${homeDir}/.steam/steam/steamapps/compatdata`;
+    let libraryInfo: LibraryInfo;
     const appPath = join(__dirname, `library/${appID}.json`);
     if (!fs.existsSync(appPath)) {
       return { exists: false, error: 'Game not found' };
     }
-    const appInfo: LibraryInfo = JSON.parse(fs.readFileSync(appPath, 'utf-8'));
-    const appNameAndExe = appInfo.name + appInfo.launchExecutable;
-    const appId = generateShortcutVDFAppId(appNameAndExe);
-    const protonPath = `${protonBasePath}/${appId}/pfx`;
-    const prefixPath = `${protonPath}/drive_c`;
+    libraryInfo = JSON.parse(fs.readFileSync(appPath, 'utf-8'));
 
+    const { success, appId } = await getNonSteamGameAppID(libraryInfo.name);
+    let homeDir = process.env.HOME || process.env.USERPROFILE;
+    if (!homeDir) {
+      return { exists: false, error: 'Home directory not found' };
+    }
+    if (!success) {
+      return { exists: false, error: 'Failed to get Steam shortcut ID' };
+    }
+    const prefixPath = `${homeDir}/.steam/steam/steamapps/compatdata/${appId}/pfx`;
     const exists = fs.existsSync(prefixPath);
     console.log(
       `[prefix] Checking prefix for appID ${appID}: ${exists ? 'exists' : 'not found'} at ${prefixPath}`
     );
 
     return { exists, prefixPath };
-  });
-
-  ipcMain.handle('app:get-steam-shortcut-id', async (_, appID: number) => {
-    const appPath = join(__dirname, `library/${appID}.json`);
-    if (!fs.existsSync(appPath)) {
-      return { success: false, error: 'Game not found' };
-    }
-
-    const appInfo: LibraryInfo = JSON.parse(fs.readFileSync(appPath, 'utf-8'));
-
-    // Calculate the Steam shortcut ID
-    const appNameAndExe = appInfo.name + appInfo.launchExecutable;
-    const signedAppId = generateShortcutVDFAppId(appNameAndExe);
-    const unsignedAppId = getUnsignedAppId(signedAppId);
-    const hexAppId = generateShortcutVDFHexAppId(signedAppId);
-
-    return {
-      success: true,
-      signedAppId,
-      unsignedAppId,
-      hexAppId,
-    };
   });
 
   ipcMain.handle(
@@ -694,8 +686,10 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
 
       const homeDir = process.env.HOME || process.env.USERPROFILE;
       const protonBasePath = `${homeDir}/.steam/steam/steamapps/compatdata`;
-      const appNameAndExe = appInfo.name + appInfo.launchExecutable;
-      const appId = generateShortcutVDFAppId(appNameAndExe);
+      const { success, appId } = await getNonSteamGameAppID(appInfo.name);
+      if (!success) {
+        return 'failed';
+      }
       const protonPath = `${protonBasePath}/${appId}/pfx`;
 
       // Check if the prefix exists

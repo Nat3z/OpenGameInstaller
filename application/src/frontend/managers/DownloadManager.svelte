@@ -94,18 +94,6 @@
     console.log('Downloaded Item: ', downloadedItem);
 
     async function revertOldFiles() {
-      // delete any files in the current original output directory
-      // const currentFiles =
-      //   await window.electronAPI.fs.getFilesInDir(originalOutputDir);
-      // for (const file of currentFiles) {
-      //   if (!filesNotToMove.includes(file)) {
-      //     try {
-      //       window.electronAPI.fs.delete(originalOutputDir + '/' + file);
-      //     } catch (error) {
-      //       console.error('Failed to delete file: ', file);
-      //     }
-      //   }
-      // }
       const oldFiles = await window.electronAPI.fs.getFilesInDir(
         originalOutputDir + '/old_files'
       );

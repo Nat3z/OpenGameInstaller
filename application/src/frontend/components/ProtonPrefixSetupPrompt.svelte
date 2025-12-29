@@ -325,7 +325,7 @@
             : 'bg-gray-100 text-gray-400'}"
       >
         {#if prefixExists}
-          <span class="font-medium">Game Launched ✓</span>
+          <span class="font-medium text-center w-full">Game Launched ✓</span>
         {:else if steamStarted}
           <span class="font-medium"
             >Launch the game in Steam, then close it</span

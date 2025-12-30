@@ -115,7 +115,9 @@
         // now kill steam and relaunch it
         setTimeout(() => {
           killSteam().then(() => {
-            window.electronAPI.app.startSteam();
+            setTimeout(() => {
+              window.electronAPI.app.startSteam();
+            }, 5000);
           });
         }, 3000);
         settingUpPrefix.appIds.push(setup.appID);

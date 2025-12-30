@@ -4,6 +4,7 @@
   import type { ProtonPrefixSetup } from '../store';
   import { protonPrefixSetups, createNotification } from '../store';
   import { updateDownloadStatus } from '../utils';
+  import { settingUpPrefix } from '../states.svelte';
 
   let {
     setup,
@@ -110,6 +111,14 @@
           message: 'Proton prefix created! Ready to install dependencies.',
           type: 'success',
         });
+
+        // now kill steam and relaunch it
+        setTimeout(() => {
+          killSteam().then(() => {
+            startSteam();
+          });
+        }, 3000);
+        settingUpPrefix.appIds.push(setup.appID);
       }
     }, 2000); // Check every 2 seconds
   }
@@ -147,6 +156,10 @@
           return setups;
         });
 
+        settingUpPrefix.appIds = settingUpPrefix.appIds.filter(
+          (id) => id !== setup.appID
+        );
+
         createNotification({
           id: Math.random().toString(36).substring(7),
           message: `Setup complete for ${setup.gameName}!`,
@@ -176,6 +189,10 @@
     checkPrefixExists().then((exists) => {
       if (exists) {
         prefixExists = true;
+        // set the stage to 4
+        steamKilled = true;
+        steamStarted = true;
+        isInstallingRedist = settingUpPrefix.appIds.includes(setup.appID);
       }
     });
   });

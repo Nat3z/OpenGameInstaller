@@ -32,3 +32,7 @@ export const updatesManager = {
     return appUpdates.apps.find((app) => app.appID === appID);
   },
 };
+
+export const settingUpPrefix = $state({
+  appIds: [] as number[],
+});

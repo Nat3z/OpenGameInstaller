@@ -11,6 +11,7 @@ import { clients } from '../server/addon-server.js';
 import { dirname, basename } from 'path';
 import * as os from 'os';
 import * as path from 'path';
+import { readFile, writeFile } from 'fs/promises';
 
 /**
  * Escapes a string for safe use in shell commands by escaping special characters
@@ -1033,10 +1034,9 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
 
       // dump the icon path into the appdirpath/favicon.png
       if (iconPathForFavicon) {
-        // Ensure we pass a Buffer to writeFileSync, not a potential Uint8Array or NonSharedArrayBuffer
-        fs.writeFileSync(
+        await writeFile(
           path.join(appDirpath, 'favicon.png'),
-          Buffer.from(fs.readFileSync(iconPathForFavicon))
+          await readFile(iconPathForFavicon)
         );
       }
 

@@ -1019,6 +1019,7 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
       if (app.isPackaged) {
         iconPathForFavicon = path.join(
           app.getPath('exe'),
+          '..',
           'opengameinstaller-gui.png'
         );
       } else {

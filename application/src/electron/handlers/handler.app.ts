@@ -1054,7 +1054,7 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
 Type=Application
 Name=OpenGameInstaller
 Exec=${execPath}
-Path=${path.resolve(appDirpath)}
+Path=${execPath.endsWith('-Setup.AppImage') ? path.resolve(appDirpath, '..') : appDirpath}
 Icon=${desktopIconPath}
 Terminal=false
 Categories=Game;

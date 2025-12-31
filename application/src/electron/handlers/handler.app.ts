@@ -992,8 +992,11 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
 
     // get the appimage path
     let execPath =
-      fs.readdirSync(appDirpath).find((file) => file.endsWith('.AppImage')) ??
-      './OpenGameInstaller.AppImage';
+      path.resolve(
+        appDirpath,
+        fs.readdirSync(appDirpath).find((file) => file.endsWith('.AppImage')) ||
+          './OpenGameInstaller.AppImage'
+      ) ?? './OpenGameInstaller.AppImage';
 
     try {
       const desktopDir = path.join(os.homedir(), 'Desktop');
@@ -1009,8 +1012,7 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
 
       // Get executable path
       const setupAppImagePath = path.resolve(
-        path.resolve(appDirpath),
-        '..',
+        path.resolve(appDirpath, '..'),
         'OpenGameInstaller-Setup.AppImage'
       );
       if (fs.existsSync(setupAppImagePath)) {
@@ -1051,7 +1053,7 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
       const desktopContent = `[Desktop Entry]
 Type=Application
 Name=OpenGameInstaller
-Exec=${path.resolve(appDirpath, path.basename(execPath))}
+Exec=${execPath}
 Path=${path.resolve(appDirpath)}
 Icon=${desktopIconPath}
 Terminal=false

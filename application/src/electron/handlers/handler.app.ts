@@ -356,9 +356,7 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
           data.redistributables && data.redistributables.length > 0;
 
         // Add game to Steam first via steamtinkerlaunch
-        const launchOptions = hasRedistributables
-          ? `${data.launchArguments ?? ''}`
-          : (data.launchArguments ?? '');
+        const launchOptions = data.launchArguments ?? '';
 
         const result = await new Promise<boolean>((resolve) =>
           exec(

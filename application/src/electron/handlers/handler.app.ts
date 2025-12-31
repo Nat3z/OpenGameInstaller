@@ -989,7 +989,11 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
       // it's most likely sandboxed, so just use ./
       appDirpath = './';
     }
-    let execPath = path.join(appDirpath, 'OpenGameInstaller.AppImage');
+
+    // get the appimage path
+    let execPath =
+      fs.readdirSync(appDirpath).find((file) => file.endsWith('.AppImage')) ??
+      './OpenGameInstaller.AppImage';
 
     try {
       const desktopDir = path.join(os.homedir(), 'Desktop');

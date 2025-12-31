@@ -82,6 +82,105 @@ const getSilentInstallFlags = (
   return ['/S'];
 };
 
+export async function addToDesktop() {
+  if (process.platform === 'win32') {
+    return {
+      success: false,
+      error: 'This feature is only available on Linux',
+    };
+  }
+  let appDirpath = isDev()
+    ? app.getAppPath() + '/../'
+    : path.dirname(process.execPath);
+  if (process.platform === 'linux') {
+    // it's most likely sandboxed, so just use ./
+    appDirpath = './';
+  }
+
+  // get the appimage path
+  let execPath =
+    path.resolve(
+      appDirpath,
+      fs.readdirSync(appDirpath).find((file) => file.endsWith('.AppImage')) ||
+        './OpenGameInstaller.AppImage'
+    ) ?? './OpenGameInstaller.AppImage';
+
+  try {
+    const desktopDir = path.join(os.homedir(), 'Desktop');
+    const desktopFilePath = path.join(desktopDir, 'OpenGameInstaller.desktop');
+
+    // Ensure Desktop directory exists
+    if (!fs.existsSync(desktopDir)) {
+      fs.mkdirSync(desktopDir, { recursive: true });
+    }
+
+    // Get executable path
+    const setupAppImagePath = path.resolve(
+      path.resolve(appDirpath, '..'),
+      'OpenGameInstaller-Setup.AppImage'
+    );
+    if (fs.existsSync(setupAppImagePath)) {
+      execPath = setupAppImagePath;
+    }
+
+    // Get icon path (try to find favicon.png in resources)
+    let iconPathForFavicon = '';
+    if (app.isPackaged) {
+      iconPathForFavicon = path.join(
+        app.getPath('exe'),
+        '..',
+        'opengameinstaller-gui.png'
+      );
+    } else {
+      // In development, use the public folder
+      iconPathForFavicon = path.join(
+        __dirname,
+        '..',
+        '..',
+        'public',
+        'favicon.png'
+      );
+    }
+
+    // dump the icon path into the appdirpath/favicon.png
+    if (iconPathForFavicon) {
+      createReadStream(iconPathForFavicon).pipe(
+        createWriteStream(path.join(appDirpath, 'favicon.png'))
+      );
+    }
+
+    // now turn the path into an absolute path
+    let desktopIconPath = path.resolve(appDirpath, 'favicon.png');
+    console.log('Desktop icon path:', desktopIconPath);
+
+    // Create .desktop file content
+    const desktopContent = `[Desktop Entry]
+Type=Application
+Name=OpenGameInstaller
+Exec=${execPath}
+Path=${execPath.endsWith('-Setup.AppImage') ? path.resolve(appDirpath, '..') : appDirpath}
+Icon=${desktopIconPath}
+Terminal=false
+Categories=Game;
+StartupNotify=true
+`;
+
+    // Write the .desktop file
+    fs.writeFileSync(desktopFilePath, desktopContent, { mode: 0o755 });
+
+    return {
+      success: true,
+      path: desktopFilePath,
+    };
+  } catch (error: any) {
+    console.error('Failed to create desktop shortcut:', error);
+    return {
+      success: false,
+      error: error.message || 'Failed to create desktop shortcut',
+    };
+  }
+}
+
 export default function handler(mainWindow: Electron.BrowserWindow) {
   ipcMain.handle('app:close', () => {
     mainWindow?.close();
@@ -976,104 +1075,6 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
   );
 
   ipcMain.handle('app:add-to-desktop', async () => {
-    if (process.platform === 'win32') {
-      return {
-        success: false,
-        error: 'This feature is only available on Linux',
-      };
-    }
-    let appDirpath = isDev()
-      ? app.getAppPath() + '/../'
-      : path.dirname(process.execPath);
-    if (process.platform === 'linux') {
-      // it's most likely sandboxed, so just use ./
-      appDirpath = './';
-    }
-
-    // get the appimage path
-    let execPath =
-      path.resolve(
-        appDirpath,
-        fs.readdirSync(appDirpath).find((file) => file.endsWith('.AppImage')) ||
-          './OpenGameInstaller.AppImage'
-      ) ?? './OpenGameInstaller.AppImage';
-
-    try {
-      const desktopDir = path.join(os.homedir(), 'Desktop');
-      const desktopFilePath = path.join(
-        desktopDir,
-        'OpenGameInstaller.desktop'
-      );
-
-      // Ensure Desktop directory exists
-      if (!fs.existsSync(desktopDir)) {
-        fs.mkdirSync(desktopDir, { recursive: true });
-      }
-
-      // Get executable path
-      const setupAppImagePath = path.resolve(
-        path.resolve(appDirpath, '..'),
-        'OpenGameInstaller-Setup.AppImage'
-      );
-      if (fs.existsSync(setupAppImagePath)) {
-        execPath = setupAppImagePath;
-      }
-
-      // Get icon path (try to find favicon.png in resources)
-      let iconPathForFavicon = '';
-      if (app.isPackaged) {
-        iconPathForFavicon = path.join(
-          app.getPath('exe'),
-          '..',
-          'opengameinstaller-gui.png'
-        );
-      } else {
-        // In development, use the public folder
-        iconPathForFavicon = path.join(
-          __dirname,
-          '..',
-          '..',
-          'public',
-          'favicon.png'
-        );
-      }
-
-      // dump the icon path into the appdirpath/favicon.png
-      if (iconPathForFavicon) {
-        createReadStream(iconPathForFavicon).pipe(
-          createWriteStream(path.join(appDirpath, 'favicon.png'))
-        );
-      }
-
-      // now turn the path into an absolute path
-      let desktopIconPath = path.resolve(appDirpath, 'favicon.png');
-      console.log('Desktop icon path:', desktopIconPath);
-
-      // Create .desktop file content
-      const desktopContent = `[Desktop Entry]
-Type=Application
-Name=OpenGameInstaller
-Exec=${execPath}
-Path=${execPath.endsWith('-Setup.AppImage') ? path.resolve(appDirpath, '..') : appDirpath}
-Icon=${desktopIconPath}
-Terminal=false
-Categories=Game;
-StartupNotify=true
-`;
-
-      // Write the .desktop file
-      fs.writeFileSync(desktopFilePath, desktopContent, { mode: 0o755 });
-
-      return {
-        success: true,
-        path: desktopFilePath,
-      };
-    } catch (error: any) {
-      console.error('Failed to create desktop shortcut:', error);
-      return {
-        success: false,
-        error: error.message || 'Failed to create desktop shortcut',
-      };
-    }
+    return await addToDesktop();
   });
 }

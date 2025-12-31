@@ -7,6 +7,7 @@ import { sendNotification, VERSION } from './main.js';
 import { sendIPCMessage } from './main.js';
 import { exec } from 'child_process';
 import { spawn } from 'child_process';
+import { addToDesktop } from './handlers/handler.app.js';
 
 let migrations: {
   [key: string]: {
@@ -232,6 +233,21 @@ let migrations: {
     platform: 'all',
     run: async () => {
       await sendIPCMessage('app:show-changelog', '2.5.0');
+    },
+  },
+  'add-to-desktop-2.5.0': {
+    from: '2.5.0',
+    to: '2.5.0',
+    description: 'Adds a desktop shortcut for OpenGameInstaller',
+    platform: 'linux',
+    run: async () => {
+      await addToDesktop();
+      sendNotification({
+        message:
+          'Desktop shortcut created successfully. You can now find OpenGameInstaller in your Desktop.',
+        id: Math.random().toString(36).substring(7),
+        type: 'success',
+      });
     },
   },
 };

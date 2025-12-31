@@ -472,7 +472,21 @@
 <RootPasswordGranter />
 <Notifications />
 {#if !finishedOOBE}
-  <OOBE finishedSetup={() => (finishedOOBE = true)} />
+  <OOBE
+    finishedSetup={async () => {
+      finishedOOBE = true;
+      if ((await window.electronAPI.app.getOS()) !== 'win32') {
+        const result = await window.electronAPI.app.addToDesktop();
+        if (result.success) {
+          createNotification({
+            id: Math.random().toString(36).substring(7),
+            message: 'Desktop shortcut created successfully',
+            type: 'success',
+          });
+        }
+      }
+    }}
+  />
 {/if}
 
 {#if !loading}

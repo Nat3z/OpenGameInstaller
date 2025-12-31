@@ -12,6 +12,7 @@ import { dirname, basename } from 'path';
 import * as os from 'os';
 import * as path from 'path';
 import { readFile, writeFile } from 'fs/promises';
+import { createReadStream, createWriteStream } from 'fs';
 
 /**
  * Escapes a string for safe use in shell commands by escaping special characters
@@ -1034,9 +1035,8 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
 
       // dump the icon path into the appdirpath/favicon.png
       if (iconPathForFavicon) {
-        await writeFile(
-          path.join(appDirpath, 'favicon.png'),
-          await readFile(iconPathForFavicon)
+        createReadStream(iconPathForFavicon).pipe(
+          createWriteStream(path.join(appDirpath, 'favicon.png'))
         );
       }
 

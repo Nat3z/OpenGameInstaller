@@ -11,7 +11,6 @@ import { clients } from '../server/addon-server.js';
 import { dirname, basename } from 'path';
 import * as os from 'os';
 import * as path from 'path';
-import { readFile, writeFile } from 'fs/promises';
 import { createReadStream, createWriteStream } from 'fs';
 
 /**

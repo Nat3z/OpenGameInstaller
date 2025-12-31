@@ -5,7 +5,7 @@ import { join } from 'path';
 import * as fs from 'fs';
 import { exec, spawn, spawnSync } from 'child_process';
 import { LibraryInfo } from 'ogi-addon';
-import { __dirname } from '../manager/manager.paths.js';
+import { __dirname, isDev } from '../manager/manager.paths.js';
 import { STEAMTINKERLAUNCH_PATH } from '../startup.js';
 import { clients } from '../server/addon-server.js';
 import { dirname, basename } from 'path';
@@ -975,12 +975,20 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
   );
 
   ipcMain.handle('app:add-to-desktop', async () => {
-    if (process.platform !== 'linux') {
+    if (process.platform === 'win32') {
       return {
         success: false,
         error: 'This feature is only available on Linux',
       };
     }
+    let appDirpath = isDev()
+      ? app.getAppPath() + '/../'
+      : path.dirname(process.execPath);
+    if (process.platform === 'linux') {
+      // it's most likely sandboxed, so just use ./
+      appDirpath = './';
+    }
+    let execPath = path.join(appDirpath, 'OpenGameInstaller.AppImage');
 
     try {
       const desktopDir = path.join(os.homedir(), 'Desktop');
@@ -995,8 +1003,6 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
       }
 
       // Get executable path
-      let execPath = app.getPath('exe');
-
       const currentDir = path.dirname(execPath);
       const setupAppImagePath = path.resolve(
         currentDir,
@@ -1008,36 +1014,54 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
       }
 
       // Get icon path (try to find favicon.png in resources)
-      let iconPath = '';
+      let iconPathForFavicon = '';
       if (app.isPackaged) {
         // In packaged app, icon should be in resources
         const resourcesPath = path.join(
           path.dirname(process.execPath),
           'resources'
         );
-        const iconPath1 = path.join(resourcesPath, 'favicon.png');
+        const iconPath1 = path.join(resourcesPath, 'favicon.ico');
         const iconPath2 = path.join(
           resourcesPath,
           'app.asar',
           'public',
-          'favicon.png'
+          'favicon.ico'
         );
         if (fs.existsSync(iconPath1)) {
-          iconPath = iconPath1;
+          iconPathForFavicon = iconPath1;
         } else if (fs.existsSync(iconPath2)) {
-          iconPath = iconPath2;
+          iconPathForFavicon = iconPath2;
         }
       } else {
         // In development, use the public folder
-        iconPath = path.join(__dirname, '..', '..', 'public', 'favicon.png');
+        iconPathForFavicon = path.join(
+          __dirname,
+          '..',
+          '..',
+          'public',
+          'favicon.ico'
+        );
       }
+
+      // dump the icon path into the appdirpath/favicon.png
+      if (iconPathForFavicon) {
+        fs.writeFileSync(
+          path.join(appDirpath, 'favicon.ico'),
+          iconPathForFavicon
+        );
+      }
+
+      // now turn the path into an absolute path
+      let desktopIconPath = path.resolve(appDirpath, 'favicon.ico');
+      console.log('Desktop icon path:', desktopIconPath);
 
       // Create .desktop file content
       const desktopContent = `[Desktop Entry]
 Type=Application
 Name=OpenGameInstaller
 Exec=${execPath}
-Icon=${iconPath || execPath}
+Icon=${desktopIconPath}
 Terminal=false
 Categories=Game;
 StartupNotify=true

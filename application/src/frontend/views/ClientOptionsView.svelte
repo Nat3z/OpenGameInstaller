@@ -102,7 +102,7 @@
           value: '',
           type: 'action',
           condition: async () =>
-            (await window.electronAPI.app.getOS()) === 'linux',
+            (await window.electronAPI.app.getOS()) !== 'win32',
           action: async () => {
             const result = await window.electronAPI.app.addToDesktop();
             if (result.success) {

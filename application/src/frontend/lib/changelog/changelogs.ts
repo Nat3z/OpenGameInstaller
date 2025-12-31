@@ -56,6 +56,8 @@ export const changelogs: Changelog[] = [
               'Added parallelized downloads for the download manager, making previously slow downloads much faster.',
               'Added an in-app updater for games, making it easier to download and install updates for your library.',
               'Added a torrent client called "Disabled" which will prevent torrent downloads from happening.',
+              'Enabled the ability to add a desktop shortcut for OpenGameInstaller on Linux.',
+              'Enabled the "library" feature to be able to view all games in the library.',
               'Added this changelog modal to help you understand what has changed in the application.',
             ],
           },

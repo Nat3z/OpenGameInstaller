@@ -1008,9 +1008,8 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
       }
 
       // Get executable path
-      const currentDir = path.dirname(execPath);
       const setupAppImagePath = path.resolve(
-        currentDir,
+        path.resolve(appDirpath),
         '..',
         'OpenGameInstaller-Setup.AppImage'
       );

@@ -158,7 +158,7 @@ export async function addToDesktop() {
 Type=Application
 Name=OpenGameInstaller
 Exec=${execPath}
-Path=${execPath.endsWith('-Setup.AppImage') ? path.resolve(appDirpath, '..') : appDirpath}
+Path=${execPath.endsWith('-Setup.AppImage') ? path.resolve(appDirpath, '..') : path.resolve(appDirpath)}
 Icon=${desktopIconPath}
 Terminal=false
 Categories=Game;

@@ -1033,10 +1033,10 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
 
       // dump the icon path into the appdirpath/favicon.png
       if (iconPathForFavicon) {
-        // pipe the content into the file
+        // Ensure we pass a Buffer to writeFileSync, not a potential Uint8Array or NonSharedArrayBuffer
         fs.writeFileSync(
           path.join(appDirpath, 'favicon.png'),
-          fs.readFileSync(iconPathForFavicon)
+          Buffer.from(fs.readFileSync(iconPathForFavicon))
         );
       }
 

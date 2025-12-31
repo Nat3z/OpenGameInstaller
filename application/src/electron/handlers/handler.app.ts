@@ -1052,8 +1052,8 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
       const desktopContent = `[Desktop Entry]
 Type=Application
 Name=OpenGameInstaller
-Exec=${path.join(appDirpath, path.basename(execPath))}
-Path=${appDirpath}
+Exec=${path.resolve(appDirpath, path.basename(execPath))}
+Path=${path.resolve(appDirpath)}
 Icon=${desktopIconPath}
 Terminal=false
 Categories=Game;

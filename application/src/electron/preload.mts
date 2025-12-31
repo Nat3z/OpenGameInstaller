@@ -280,6 +280,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     installRedistributables: wrap((appID: number) =>
       ipcRenderer.invoke('app:install-redistributables', appID)
     ),
+    addToDesktop: wrap(() =>
+      ipcRenderer.invoke('app:add-to-desktop')
+    ),
   },
   getVersion: wrap(() => ipcRenderer.sendSync('get-version')),
   updateAddons: wrap(() => ipcRenderer.invoke('update-addons')),

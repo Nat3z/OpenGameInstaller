@@ -95,6 +95,31 @@
             );
           },
         },
+        addToDesktop: {
+          displayName: 'Add to Desktop',
+          description: 'Create a desktop shortcut for OpenGameInstaller',
+          defaultValue: '',
+          value: '',
+          type: 'action',
+          condition: async () =>
+            (await window.electronAPI.app.getOS()) === 'linux',
+          action: async () => {
+            const result = await window.electronAPI.app.addToDesktop();
+            if (result.success) {
+              createNotification({
+                id: Math.random().toString(36).substring(7),
+                message: 'Desktop shortcut created successfully',
+                type: 'success',
+              });
+            } else {
+              createNotification({
+                id: Math.random().toString(36).substring(7),
+                message: result.error || 'Failed to create desktop shortcut',
+                type: 'error',
+              });
+            }
+          },
+        },
         addons: {
           displayName: 'Addons',
           description: 'The addons you want to use',

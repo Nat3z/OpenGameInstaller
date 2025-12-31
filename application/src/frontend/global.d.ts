@@ -171,6 +171,11 @@ interface Window {
       installRedistributables: (
         appID: number
       ) => Promise<'success' | 'failed' | 'not-found'>;
+      addToDesktop: () => Promise<{
+        success: boolean;
+        path?: string;
+        error?: string;
+      }>;
     };
     updateAddons: () => Promise<void>;
     getVersion: () => string;

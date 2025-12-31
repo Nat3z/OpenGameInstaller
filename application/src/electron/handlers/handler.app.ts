@@ -1016,23 +1016,10 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
       // Get icon path (try to find favicon.png in resources)
       let iconPathForFavicon = '';
       if (app.isPackaged) {
-        // In packaged app, icon should be in resources
-        const resourcesPath = path.join(
-          path.dirname(process.execPath),
-          'resources'
+        iconPathForFavicon = path.join(
+          app.getPath('exe'),
+          'opengameinstaller-gui.png'
         );
-        const iconPath1 = path.join(resourcesPath, 'favicon.ico');
-        const iconPath2 = path.join(
-          resourcesPath,
-          'app.asar',
-          'public',
-          'favicon.ico'
-        );
-        if (fs.existsSync(iconPath1)) {
-          iconPathForFavicon = iconPath1;
-        } else if (fs.existsSync(iconPath2)) {
-          iconPathForFavicon = iconPath2;
-        }
       } else {
         // In development, use the public folder
         iconPathForFavicon = path.join(
@@ -1040,20 +1027,21 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
           '..',
           '..',
           'public',
-          'favicon.ico'
+          'favicon.png'
         );
       }
 
       // dump the icon path into the appdirpath/favicon.png
       if (iconPathForFavicon) {
+        // pipe the content into the file
         fs.writeFileSync(
-          path.join(appDirpath, 'favicon.ico'),
-          iconPathForFavicon
+          path.join(appDirpath, 'favicon.png'),
+          fs.readFileSync(iconPathForFavicon)
         );
       }
 
       // now turn the path into an absolute path
-      let desktopIconPath = path.resolve(appDirpath, 'favicon.ico');
+      let desktopIconPath = path.resolve(appDirpath, 'favicon.png');
       console.log('Desktop icon path:', desktopIconPath);
 
       // Create .desktop file content

@@ -3,7 +3,7 @@
   "module": "./build/main.js",
   "type": "module",
   "main": "./build/main.cjs",
-  "version": "1.9.2",
+  "version": "1.9.3",
   "exports": {
     ".": {
       "import": {

@@ -157,18 +157,18 @@ export interface EventListenerTypes {
    * @returns
    */
   search: (
-    query:
+    query: {
+      storefront: string;
+      appID: number;
+    } & (
       | {
-          storefront: string;
-          appID: number;
           for: 'game' | 'task' | 'all';
         }
       | {
-          storefront: string;
-          appID: number;
           for: 'update';
           libraryInfo: LibraryInfo;
-        },
+        }
+    ),
     event: EventResponse<SearchResult[]>
   ) => void;
   /**
@@ -179,8 +179,6 @@ export interface EventListenerTypes {
    */
   setup: (
     data: {
-      for: 'game' | 'update';
-      currentLibraryInfo: LibraryInfo | undefined;
       path: string;
       type: 'direct' | 'torrent' | 'magnet' | 'empty';
       name: string;
@@ -192,7 +190,15 @@ export interface EventListenerTypes {
       appID: number;
       storefront: string;
       manifest?: Record<string, unknown>;
-    },
+    } & (
+      | {
+          for: 'game';
+        }
+      | {
+          for: 'update';
+          currentLibraryInfo: LibraryInfo;
+        }
+    ),
     event: EventResponse<SetupEventResponse>
   ) => void;
 

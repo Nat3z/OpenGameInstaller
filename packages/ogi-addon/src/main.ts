@@ -54,6 +54,7 @@ const defaultPort = 7654;
 import pjson from '../package.json';
 import { exec, spawn } from 'node:child_process';
 import fs from 'node:fs';
+import { z } from 'zod';
 export const VERSION = pjson.version;
 
 export interface ClientSentEventTypes {
@@ -115,6 +116,7 @@ export type SetupEventResponse = Omit<
     path: string;
   }[];
 };
+
 export interface EventListenerTypes {
   /**
    * This event is emitted when the addon connects to the OGI Addon Server. Addon does not need to resolve anything.
@@ -155,7 +157,18 @@ export interface EventListenerTypes {
    * @returns
    */
   search: (
-    query: { storefront: string; appID: number; for: 'game' | 'task' | 'all' },
+    query:
+      | {
+          storefront: string;
+          appID: number;
+          for: 'game' | 'task' | 'all';
+        }
+      | {
+          storefront: string;
+          appID: number;
+          for: 'update';
+          libraryInfo: LibraryInfo;
+        },
     event: EventResponse<SearchResult[]>
   ) => void;
   /**
@@ -166,6 +179,8 @@ export interface EventListenerTypes {
    */
   setup: (
     data: {
+      for: 'game' | 'update';
+      currentLibraryInfo: LibraryInfo | undefined;
       path: string;
       type: 'direct' | 'torrent' | 'magnet' | 'empty';
       name: string;
@@ -627,19 +642,20 @@ export class SearchTool<T> {
 /**
  * Library Info is the metadata for a library entry after setting up a game.
  */
-export interface LibraryInfo {
-  name: string;
-  version: string;
-  cwd: string;
-  appID: number;
-  launchExecutable: string;
-  launchArguments?: string;
-  capsuleImage: string;
-  storefront: string;
-  addonsource: string;
-  coverImage: string;
-  titleImage?: string;
-}
+export const ZodLibraryInfo = z.object({
+  name: z.string(),
+  version: z.string(),
+  cwd: z.string(),
+  appID: z.number(),
+  launchExecutable: z.string(),
+  launchArguments: z.string().optional(),
+  capsuleImage: z.string(),
+  storefront: z.string(),
+  addonsource: z.string(),
+  coverImage: z.string(),
+  titleImage: z.string().optional(),
+});
+export type LibraryInfo = z.infer<typeof ZodLibraryInfo>;
 interface Notification {
   type: 'warning' | 'error' | 'info' | 'success';
   message: string;

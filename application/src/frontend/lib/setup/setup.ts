@@ -6,7 +6,11 @@ import {
 } from '../../store';
 import { updateDownloadStatus } from '../downloads/lifecycle';
 import { saveFailedSetup } from '../recovery/failedSetups';
-import type { EventListenerTypes, SetupEventResponse } from 'ogi-addon';
+import type {
+  EventListenerTypes,
+  LibraryInfo,
+  SetupEventResponse,
+} from 'ogi-addon';
 import { safeFetch } from '../core/ipc';
 import { appUpdates, updatesManager } from '../../states.svelte';
 import { getApp } from '../core/library';
@@ -29,6 +33,8 @@ function dispatchSetupEvent(
 export function createSetupPayload(
   downloadedItem: DownloadStatusAndInfo,
   path: string,
+  forType: 'game' | 'update',
+  currentLibraryInfo: LibraryInfo | undefined,
   additionalData: any = {}
 ) {
   return {
@@ -39,6 +45,8 @@ export function createSetupPayload(
     usedRealDebrid: downloadedItem.usedDebridService !== undefined,
     appID: downloadedItem.appID,
     storefront: downloadedItem.storefront,
+    for: forType,
+    currentLibraryInfo: currentLibraryInfo,
     multiPartFiles: JSON.parse(
       JSON.stringify(
         downloadedItem.downloadType === 'direct'
@@ -117,6 +125,8 @@ export async function runSetupApp(
   const setupPayload = createSetupPayload(
     downloadedItem,
     outputDir,
+    'game',
+    undefined,
     additionalData
   );
   const callbacks = createSetupCallbacks(downloadedItem);
@@ -223,6 +233,8 @@ export async function runSetupAppUpdate(
   const setupPayload = createSetupPayload(
     downloadedItem,
     outputDir,
+    'update',
+    getApp(downloadedItem.appID) as LibraryInfo,
     additionalData
   );
   const callbacks = createSetupCallbacks(downloadedItem);

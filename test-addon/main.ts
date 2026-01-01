@@ -223,6 +223,8 @@ addon.on(
   'setup',
   (
     {
+      for: forSource,
+      currentLibraryInfo,
       path,
       type,
       name,
@@ -236,6 +238,8 @@ addon.on(
   ) => {
     event.defer();
     event.log(`
+for: ${forSource}
+currentLibraryInfo: ${currentLibraryInfo}
 path: ${path}
 type: ${type}
 name: ${name}

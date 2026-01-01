@@ -126,10 +126,11 @@
         safeFetch(
           'search',
           {
+            for: 'update',
             addonID: addon.id,
-            appID: appID,
-            storefront: storefront,
-            for: 'game',
+            appID,
+            storefront,
+            libraryInfo,
           },
           { consume: 'json' }
         )

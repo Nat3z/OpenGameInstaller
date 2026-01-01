@@ -13,7 +13,7 @@ import * as fs from 'fs/promises';
 import { join } from 'path';
 import { restartAddonServer } from '../../handlers/handler.addon.js';
 import { __dirname } from '../../manager/manager.paths.js';
-import { StoreData } from 'ogi-addon';
+import { StoreData, ZodLibraryInfo } from 'ogi-addon';
 
 const procedures: Record<string, Procedure<any>> = {
   // Get all addon info
@@ -64,7 +64,8 @@ const procedures: Record<string, Procedure<any>> = {
         addonID: z.string(),
         appID: z.number(),
         storefront: z.string(),
-        for: z.enum(['game', 'task', 'all']),
+        for: z.enum(['game', 'task', 'all', 'update']),
+        libraryInfo: ZodLibraryInfo.optional(),
       })
     )
     .handler(async (input) => {
@@ -81,6 +82,7 @@ const procedures: Record<string, Procedure<any>> = {
             appID: input.appID,
             storefront: input.storefront,
             for: input.for,
+            libraryInfo: input.libraryInfo,
           },
         });
         console.log('searchComplete', event.args);
@@ -177,6 +179,8 @@ const procedures: Record<string, Procedure<any>> = {
   setupApp: procedure()
     .input(
       z.object({
+        for: z.enum(['game', 'update']),
+        currentLibraryInfo: ZodLibraryInfo.optional(),
         addonID: z.string(),
         path: z.string(),
         type: z.string(),
@@ -220,6 +224,8 @@ const procedures: Record<string, Procedure<any>> = {
             storefront: input.storefront,
             name: input.name,
             multiPartFiles: input.multiPartFiles,
+            currentLibraryInfo: input.currentLibraryInfo,
+            for: input.for,
             deferID: deferrableTask.id!!,
             manifest: input.manifest,
           },

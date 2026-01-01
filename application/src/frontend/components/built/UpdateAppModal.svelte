@@ -130,7 +130,7 @@
             addonID: addon.id,
             appID,
             storefront,
-            libraryInfo,
+            libraryInfo: JSON.parse(JSON.stringify(libraryInfo)),
           },
           { consume: 'json' }
         )

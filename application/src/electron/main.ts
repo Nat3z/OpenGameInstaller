@@ -369,6 +369,9 @@ app.on('window-all-closed', async function () {
   for (const interval of torrentIntervals) {
     clearInterval(interval);
   }
+
+  // now stop the application completely
+  app.exit(0);
 });
 
 app.on('activate', function () {

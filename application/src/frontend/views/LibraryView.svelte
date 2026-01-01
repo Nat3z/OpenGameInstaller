@@ -13,6 +13,7 @@
     chunkArray,
   } from '../lib/core/library';
   import { updatesManager } from '../states.svelte';
+  import UpdateIcon from '../Icons/UpdateIcon.svelte';
 
   let library: LibraryInfo[] = $state([]);
   let recentlyPlayed: LibraryInfo[] = $state([]);
@@ -106,8 +107,15 @@
                   >
                     {#if updatesManager.getAppUpdate(app.appID)?.updateAvailable}
                       <div
-                        class="absolute top-2 right-2 w-4 h-4 bg-yellow-600 rounded-full z-[2] animate-pulse-yellow"
-                      ></div>
+                        class="absolute shadow-md top-2 right-2 h-6 z-[2] flex items-center bg-yellow-500 rounded-lg flex-row justify-end gap-1 px-2"
+                      >
+                        <UpdateIcon fill="#ffffff" width="16px" height="16px" />
+                        <p
+                          class="text-white text-sm font-open-sans font-semibold"
+                        >
+                          Update
+                        </p>
+                      </div>
                     {/if}
                     <Image
                       src={app.capsuleImage}
@@ -210,8 +218,14 @@
                       >
                         {#if updatesManager.getAppUpdate(app.appID)?.updateAvailable}
                           <div
-                            class="absolute top-2 right-2 w-4 h-4 bg-yellow-600 rounded-full z-[2] animate-pulse-yellow"
-                          ></div>
+                            class="absolute shadow-md top-2 right-2 h-6 z-[2] flex items-center bg-yellow-500 rounded-lg flex-row justify-end gap-1 px-2"
+                          >
+                            <UpdateIcon
+                              fill="#ffffff"
+                              width="16px"
+                              height="16px"
+                            />
+                          </div>
                         {/if}
                         <Image
                           src={app.capsuleImage}

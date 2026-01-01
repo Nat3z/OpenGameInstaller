@@ -270,6 +270,25 @@
           Update to {updateInfo.updateVersion?.slice(0, 8)}
         </p>
       </button>
+      <button
+        aria-label="Ignore update"
+        onclick={() => {
+          updatesManager.removeAppUpdate(libraryInfo.appID);
+        }}
+        class="px-3 py-3 flex border-none rounded-lg justify-center bg-red-500 hover:bg-red-600 items-center gap-2 disabled:bg-gray-500 disabled:cursor-not-allowed transition-colors duration-200"
+      >
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          height="20px"
+          viewBox="0 -960 960 960"
+          width="20px"
+          fill="white"
+        >
+          <path
+            d="M480-424 284-228q-17 17-44 17t-44-17q-17-17-17-44t17-44l196-196-196-196q-17-17-17-44t17-44q17-17 44-17t44 17l196 196 196-196q17-17 44-17t44 17q17 17 17 44t-17 44L536-480l196 196q17 17 17 44t-17 44q-17 17-44 17t-44-17L480-424Z"
+          />
+        </svg>
+      </button>
     {:else if $currentDownloads.find((download) => download.appID === libraryInfo.appID && download.status !== 'error' && download.status !== 'completed' && download.status !== 'seeding' && download.status !== 'setup-complete')}
       <button
         class="px-6 py-3 flex border-none rounded-lg justify-center bg-yellow-500 items-center gap-2 cursor-not-allowed transition-colors duration-200"

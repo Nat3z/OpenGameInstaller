@@ -1,4 +1,4 @@
-import OGIAddon, { ConfigurationBuilder } from 'ogi-addon';
+import OGIAddon, { ConfigurationBuilder, type LibraryInfo } from 'ogi-addon';
 
 const addon = new OGIAddon({
   name: 'Test Addon',
@@ -219,25 +219,24 @@ addon.on('search', ({ storefront, appID, for: searchFor }, event) => {
     ]);
   });
 });
-addon.on(
-  'setup',
-  (
-    {
-      for: forSource,
-      currentLibraryInfo,
-      path,
-      type,
-      name,
-      usedRealDebrid,
-      appID,
-      storefront,
-      multiPartFiles,
-      manifest,
-    },
-    event
-  ) => {
-    event.defer();
-    event.log(`
+addon.on('setup', (data, event) => {
+  const {
+    for: forSource,
+    path,
+    type,
+    name,
+    usedRealDebrid,
+    appID,
+    storefront,
+    multiPartFiles,
+    manifest,
+  } = data;
+  let currentLibraryInfo: LibraryInfo | undefined;
+  if (forSource === 'update') {
+    currentLibraryInfo = data.currentLibraryInfo;
+  }
+  event.defer();
+  event.log(`
 for: ${forSource}
 currentLibraryInfo: ${currentLibraryInfo}
 path: ${path}
@@ -247,41 +246,40 @@ usedRealDebrid: ${usedRealDebrid}
 multiPartFiles: ${multiPartFiles} 
 manifest: ${manifest}
   `);
-    console.log('oo hello!');
-    const waitForInput = event
-      .askForInput(
-        'Please enter the code',
-        'code',
-        new ConfigurationBuilder().addNumberOption((option) =>
-          option
-            .setDisplayName('Code')
-            .setName('code')
-            .setDescription('Enter the code')
-            .setMin(1)
-            .setMax(100)
-        )
+  console.log('oo hello!');
+  const waitForInput = event
+    .askForInput(
+      'Please enter the code',
+      'code',
+      new ConfigurationBuilder().addNumberOption((option) =>
+        option
+          .setDisplayName('Code')
+          .setName('code')
+          .setDescription('Enter the code')
+          .setMin(1)
+          .setMax(100)
       )
-      .then((input) => {
-        event.log(`Code: ${input.code}`);
-        console.log(input.code, input.code === 50);
-        if (Number(input.code) === 50) {
-          process.exit(1);
-        }
-        setTimeout(() => {
-          new Promise(async (resolve) => {
-            event.resolve({
-              cwd: path,
-              launchExecutable: 'Big Buck Bunny.mp4',
-              launchArguments: 'open %command%',
-              version:
-                (await addon.getAppDetails(appID, storefront))?.latestVersion ??
-                '1.0.0',
-            });
+    )
+    .then((input) => {
+      event.log(`Code: ${input.code}`);
+      console.log(input.code, input.code === 50);
+      if (Number(input.code) === 50) {
+        process.exit(1);
+      }
+      setTimeout(() => {
+        new Promise(async (resolve) => {
+          event.resolve({
+            cwd: path,
+            launchExecutable: 'Big Buck Bunny.mp4',
+            launchArguments: 'open %command%',
+            version:
+              (await addon.getAppDetails(appID, storefront))?.latestVersion ??
+              '1.0.0',
           });
-        }, 5000);
-      });
-  }
-);
+        });
+      }, 5000);
+    });
+});
 
 addon.on('library-search', (text, event) => {
   if (text === 'test app') {

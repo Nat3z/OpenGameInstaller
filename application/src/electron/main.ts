@@ -114,6 +114,14 @@ export function sendAskForInput(
   currentScreens.set(id, undefined);
 }
 
+/**
+ * Create and configure the main application BrowserWindow and register its IPC and lifecycle handlers.
+ *
+ * Initializes the mainWindow with appropriate web preferences and icon, loads the renderer (development or production),
+ * registers IPC listeners and readiness coordination, and wires lifecycle behaviors used by the application such as
+ * showing the window when ready, initializing runtime handlers, global shortcut management, external-link handling,
+ * and devtools behavior.
+ */
 function createWindow() {
   // Create the browser window.
   // check if the environment variable OGI_DEBUG is set, and if so, allow devtools

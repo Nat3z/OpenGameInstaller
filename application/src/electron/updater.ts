@@ -27,6 +27,12 @@ if (process.platform === 'linux') {
   __dirname = './';
 }
 
+/**
+ * Format a byte count into a human-readable string using B, KB, MB, or GB.
+ *
+ * @param size - The size in bytes to format
+ * @returns The formatted size string (e.g., `512B`, `1.23KB`, `4.56MB`, `7.89GB`); values for KB and above use two decimal places
+ */
 function correctParsingSize(size: number) {
   if (size < 1024) {
     return size + 'B';
@@ -38,6 +44,13 @@ function correctParsingSize(size: number) {
     return (size / (1024 * 1024 * 1024)).toFixed(2) + 'GB';
   }
 }
+/**
+ * Checks GitHub for a newer installer release and, if one is available, downloads it and performs the platform-appropriate update workflow.
+ *
+ * This performs gated checks for offline mode, network connectivity, and portable runs; reads the local updater version and bleeding-edge flag; queries repository releases with a 10s timeout; chooses a suitable release (respecting prerelease when bleeding-edge is enabled); and, when a newer setup is found, presents a small updater UI, streams the installer download with progress updates to the UI, backs up configured local files, and then launches (Windows) or replaces and makes executable (Linux) the downloaded setup. Any errors are logged and the function resolves without throwing.
+ *
+ * @returns Resolves when the update check and any initiated update workflow complete (no return value).
+ */
 export function checkIfInstallerUpdateAvailable() {
   return new Promise<void>(async (resolve) => {
     // Check if launched in offline mode via command line argument from updater

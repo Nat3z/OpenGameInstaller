@@ -45,6 +45,23 @@ if (fs.existsSync(`./bleeding-edge.txt`)) {
   usingBleedingEdge = true;
 }
 
+/**
+ * Create and display the updater window, ensure no other instance is running, and handle update checking, download, installation, and app launch.
+ *
+ * This function:
+ * - Verifies that no other instance is serving on localhost:7654 and exits if one is found.
+ * - Creates the frameless updater BrowserWindow and prevents DevTools from opening.
+ * - If the device is offline, notifies the UI and launches OpenGameInstaller in offline mode.
+ * - When online, queries GitHub Releases for a newer release (respecting bleeding-edge prerelease selection), and either:
+ *   - Uses a cached release if present and valid, copying files into ./update and writing ./version.txt, or
+ *   - Downloads the appropriate platform asset, reports progress to the UI, extracts or places files into ./update (and a temp cache), writes ./version.txt, adjusts execution permissions on Linux, and then launches OpenGameInstaller.
+ * - Falls back to launching the existing installed version if update operations fail or no update is found.
+ *
+ * Side effects:
+ * - Creates and writes files under the app directory (e.g., ./update, ./version.txt) and the OS temp directory for caches.
+ * - May spawn the OpenGameInstaller process and exit the host app.
+ * - Sends status messages to the renderer via mainWindow.webContents.send.
+ */
 async function createWindow() {
   // check if port 7654 is open, if not, start the server
   try {
@@ -390,9 +407,10 @@ async function createWindow() {
 }
 
 /**
+ * Launches the installed OpenGameInstaller, rotating logs, spawning the platform-specific executable in a detached process, and terminating the updater.
  *
- * @param {boolean} online
- * @returns {Promise<void>}
+ * On Windows spawns OpenGameInstaller.exe with `--online=<online>`; on Linux spawns OpenGameInstaller.AppImage with `online=<online>`. Both platforms move an existing latest.log into update/logs with a timestamp, open a new latest.log for the spawned process, and then exit the host updater.
+ * @param {boolean} online - If true, start the application in online mode; otherwise start in offline mode.
  */
 async function launchApp(online) {
   console.log('Launching in ' + (online ? 'online' : 'offline') + ' mode');

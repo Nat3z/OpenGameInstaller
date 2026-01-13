@@ -464,7 +464,7 @@ async function launchApp(online) {
       );
       const spawned = spawn(
         './OpenGameInstaller.AppImage',
-        ['online=' + online],
+        ['--online=' + online],
         {
           cwd: path.join(__dirname, 'update'),
           detached: true,

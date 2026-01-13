@@ -41,9 +41,7 @@ function correctParsingSize(size: number) {
 export function checkIfInstallerUpdateAvailable() {
   return new Promise<void>(async (resolve) => {
     // Check if launched in offline mode via command line argument from updater
-    const isOfflineArg = process.argv.some(
-      (arg) => arg === '--online=false' || arg === 'online=false'
-    );
+    const isOfflineArg = process.argv.some((arg) => arg === '--online=false');
     if (isOfflineArg) {
       console.log('[updater] Launched in offline mode, skipping update check.');
       resolve();

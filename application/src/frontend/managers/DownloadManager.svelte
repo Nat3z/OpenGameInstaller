@@ -13,6 +13,8 @@
   } from '../lib/setup/extraction';
   import { saveFailedSetup } from '../lib/recovery/failedSetups';
   import { runSetupApp, runSetupAppUpdate } from '../lib/setup/setup';
+  import { getApp } from '../lib/core/library';
+  import type { LibraryInfo } from 'ogi-addon';
   function isCustomEvent(event: Event): event is CustomEvent {
     return event instanceof CustomEvent;
   }
@@ -187,9 +189,15 @@
             appID: downloadedItem.appID,
             multiPartFiles: downloadedItem.files || [],
             storefront: downloadedItem.storefront,
-            for: downloadedItem.isUpdate ? 'update' : 'game',
-            currentLibraryInfo: {} as LibraryInfo,
             manifest: downloadedItem.manifest,
+            ...(downloadedItem.isUpdate
+              ? {
+                  for: 'update' as const,
+                  currentLibraryInfo: getApp(
+                    downloadedItem.appID
+                  ) as LibraryInfo,
+                }
+              : { for: 'game' as const }),
           },
           error: 'Failed to extract RAR file',
           should: 'call-unrar',
@@ -276,9 +284,15 @@
             appID: downloadedItem.appID,
             multiPartFiles: downloadedItem.files || [],
             storefront: downloadedItem.storefront,
-            for: downloadedItem.isUpdate ? 'update' : 'game',
-            currentLibraryInfo: {} as LibraryInfo,
             manifest: downloadedItem.manifest,
+            ...(downloadedItem.isUpdate
+              ? {
+                  for: 'update' as const,
+                  currentLibraryInfo: getApp(
+                    downloadedItem.appID
+                  ) as LibraryInfo,
+                }
+              : { for: 'game' as const }),
           },
           error: 'Failed to process ZIP file',
           should: 'call-unzip',

@@ -53,6 +53,7 @@ jobs:
         run: node .github/workflows/js/check-application-changes.js
 
       - name: Setup Bun
+        if: steps.check_changes.outputs.has_application_changes == 'true'
         uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.2.23

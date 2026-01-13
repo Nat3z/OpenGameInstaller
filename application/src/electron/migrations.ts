@@ -269,6 +269,7 @@ export async function execute() {
       'utf-8'
     );
   }
+
   console.log('[migration] local version:', lastVersion);
   // enroll into certain migrations
   for (const migration of Object.keys(migrations)) {

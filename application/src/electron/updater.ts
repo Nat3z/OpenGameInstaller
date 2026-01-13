@@ -40,6 +40,16 @@ function correctParsingSize(size: number) {
 }
 export function checkIfInstallerUpdateAvailable() {
   return new Promise<void>(async (resolve) => {
+    // Check if launched in offline mode via command line argument from updater
+    const isOfflineArg = process.argv.some(
+      (arg) => arg === '--online=false' || arg === 'online=false'
+    );
+    if (isOfflineArg) {
+      console.log('[updater] Launched in offline mode, skipping update check.');
+      resolve();
+      return;
+    }
+
     if (!net.isOnline()) {
       console.error('[updater] No internet connection available.');
       resolve();
@@ -76,7 +86,8 @@ export function checkIfInstallerUpdateAvailable() {
     try {
       const gitRepo = 'nat3z/OpenGameInstaller';
       const releases = await axios.get(
-        `https://api.github.com/repos/${gitRepo}/releases`
+        `https://api.github.com/repos/${gitRepo}/releases`,
+        { timeout: 10000 } // 10 second timeout for update check
       );
       let latestRelease: any | undefined = undefined;
       for (const rel of releases.data) {

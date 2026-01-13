@@ -6,7 +6,6 @@ import fs, { existsSync, readFileSync } from 'fs';
 import { processes } from './manager/manager.addon.js';
 import { stopClient } from './manager/manager.webtorrent.js';
 import { ConfigurationFile } from 'ogi-addon/build/config/ConfigurationBuilder.js';
-import { checkIfInstallerUpdateAvailable } from './updater.js';
 import AppEventHandler from './handlers/handler.app.js';
 import FSEventHandler from './handlers/handler.fs.js';
 import RealdDebridHandler from './handlers/handler.realdebrid.js';
@@ -18,13 +17,11 @@ import {
   checkForAddonUpdates,
   convertLibrary,
   IS_NIXOS,
-  removeCachedAppUpdates,
-  restoreBackup,
   STEAMTINKERLAUNCH_PATH,
 } from './startup.js';
 import AddonManagerHandler, { startAddons } from './handlers/handler.addon.js';
 import OOBEHandler from './handlers/handler.oobe.js';
-import { execute as executeMigrations } from './migrations.js';
+import { runStartupTasks, closeSplashWindow } from './startup-runner.js';
 // import steamworks from 'steamworks.js';
 
 export const VERSION = app.getVersion();
@@ -61,18 +58,8 @@ console.log('STEAMTINKERLAUNCH_PATH: ' + STEAMTINKERLAUNCH_PATH);
 console.log('Running in directory: ' + __dirname);
 
 export let torrentIntervals: NodeJS.Timeout[] = [];
-// Keep a global reference of the window object, if you don't, the window will
-// be closed automatically when the JavaScript object is garbage collected.
+
 let mainWindow: BrowserWindow | null;
-
-// restore the backup if it exists
-restoreBackup();
-
-// run any migrations if necessary
-executeMigrations();
-
-// remove cached app updates
-removeCachedAppUpdates();
 
 interface Notification {
   message: string;
@@ -234,13 +221,6 @@ function createWindow() {
     );
   }
 
-  // Uncomment the following line of code when app is ready to be packaged.
-  // loadURL(mainWindow);
-
-  // Open the DevTools and also disable Electron Security Warning.
-  // process.env['ELECTRON_DISABLE_SECURITY_WARNINGS'] = true;
-  // mainWindow.webContents.openDevTools();
-
   // Emitted when the window is closed.
   mainWindow.on('closed', function () {
     // Dereference the window object, usually you would store windows
@@ -329,10 +309,16 @@ function createWindow() {
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
 app.on('ready', async () => {
-  // check updates for setup
-  await checkIfInstallerUpdateAvailable();
+  // Run all startup tasks with splash screen
+  await runStartupTasks();
 
   createWindow();
+
+  // Close splash when main window is ready to show
+  mainWindow?.once('ready-to-show', () => {
+    closeSplashWindow();
+  });
+
   server.listen(port, () => {
     console.log(`Addon Server is running on http://localhost:${port}`);
     console.log(`Server is being executed by electron!`);

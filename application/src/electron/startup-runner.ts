@@ -7,6 +7,13 @@ import { isDev } from './manager/manager.paths.js';
 
 let splashWindow: BrowserWindow | null = null;
 
+/**
+ * Creates and returns a configured splash screen BrowserWindow used during app startup.
+ *
+ * The window is frameless, non-resizable, always-on-top, and loads the bundled splash HTML; the preload script path is chosen based on development vs production mode.
+ *
+ * @returns The created splash-screen BrowserWindow
+ */
 function createSplashWindow(): BrowserWindow {
   const splash = new BrowserWindow({
     width: 300,
@@ -31,12 +38,22 @@ function createSplashWindow(): BrowserWindow {
   return splash;
 }
 
+/**
+ * Updates the splash screen's status message shown to the user.
+ *
+ * @param text - The status message to display on the splash screen; does nothing if the splash window is not present or has been destroyed
+ */
 function updateSplashStatus(text: string) {
   if (splashWindow && !splashWindow.isDestroyed()) {
     splashWindow.webContents.send('splash-status', text);
   }
 }
 
+/**
+ * Closes the currently open splash window and clears the internal reference.
+ *
+ * If no splash window is present or it has already been destroyed, the function does nothing.
+ */
 export function closeSplashWindow() {
   if (splashWindow && !splashWindow.isDestroyed()) {
     splashWindow.close();

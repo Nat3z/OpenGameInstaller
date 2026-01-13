@@ -251,6 +251,11 @@ let migrations: {
     },
   },
 };
+/**
+ * Run any pending migrations appropriate for the current installation and platform.
+ *
+ * Reads the last applied version from config/option/lastVersion.txt (defaults to "0.0.0"), skips running migrations if the installation marker config/option/installed.json is missing, executes each migration whose version range applies to the stored last version and whose platform matches the current process, and updates config/option/lastVersion.txt to the current VERSION when finished.
+ */
 export async function execute() {
   // check if the thing is even installed, if not, don't run any migrations because it was just installed
   if (!fsSync.existsSync(join(__dirname, 'config/option/installed.json'))) {

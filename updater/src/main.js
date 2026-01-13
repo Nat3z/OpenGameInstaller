@@ -83,13 +83,27 @@ async function createWindow() {
   mainWindow.webContents.on('devtools-opened', () => {
     mainWindow.webContents.closeDevTools();
   });
+
+  // Check if device is offline - skip update check entirely if offline
+  if (!net.isOnline()) {
+    console.log('Device is offline, skipping update check');
+    mainWindow.webContents.send(
+      'text',
+      'Launching OpenGameInstaller',
+      'Offline Mode'
+    );
+    launchApp(false);
+    return;
+  }
+
   // check for updates
   const gitRepo = 'Nat3z/OpenGameInstaller';
 
   // check the github releases
   try {
     const response = await axios.get(
-      `https://api.github.com/repos/${gitRepo}/releases`
+      `https://api.github.com/repos/${gitRepo}/releases`,
+      { timeout: 10000 } // 10 second timeout for update check
     );
     mainWindow.webContents.send('text', 'Checking for Updates');
     // if the version is different, download the new version
@@ -458,7 +472,7 @@ async function launchApp(online) {
         }
       );
       spawned.unref();
-      app.quit();
+      app.exit(0);
     }, 200);
   }
 }

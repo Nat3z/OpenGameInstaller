@@ -34,16 +34,6 @@
     );
   }
 
-  // setup flow helpers are shared in lib/setup/setup.ts
-
-  // callbacks now come from lib/setup/setup.ts
-
-  // payload creation now shared
-
-  // success handling now shared in runSetupApp
-
-  // saveFailedSetup moved to shared module
-
   async function processDownloadComplete(
     downloadID: string,
     isTorrent: boolean = false
@@ -197,6 +187,8 @@
             appID: downloadedItem.appID,
             multiPartFiles: downloadedItem.files || [],
             storefront: downloadedItem.storefront,
+            for: downloadedItem.isUpdate ? 'update' : 'game',
+            currentLibraryInfo: {} as LibraryInfo,
             manifest: downloadedItem.manifest,
           },
           error: 'Failed to extract RAR file',
@@ -284,6 +276,8 @@
             appID: downloadedItem.appID,
             multiPartFiles: downloadedItem.files || [],
             storefront: downloadedItem.storefront,
+            for: downloadedItem.isUpdate ? 'update' : 'game',
+            currentLibraryInfo: {} as LibraryInfo,
             manifest: downloadedItem.manifest,
           },
           error: 'Failed to process ZIP file',

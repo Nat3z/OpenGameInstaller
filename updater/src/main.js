@@ -415,7 +415,7 @@ async function createWindow() {
 /**
  * Launches the installed OpenGameInstaller, rotating logs, spawning the platform-specific executable in a detached process, and terminating the updater.
  *
- * On Windows spawns OpenGameInstaller.exe with `--online=<online>`; on Linux spawns OpenGameInstaller.AppImage with `online=<online>`. Both platforms move an existing latest.log into update/logs with a timestamp, open a new latest.log for the spawned process, and then exit the host updater.
+ * Spawns OpenGameInstaller with `--online=<online>` as an argument.
  * @param {boolean} online - If true, start the application in online mode; otherwise start in offline mode.
  */
 async function launchApp(online) {

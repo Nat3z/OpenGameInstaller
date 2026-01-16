@@ -85,7 +85,7 @@ export function restoreBackup() {
     }
 
     // remove the backup
-    fs.rmdirSync(directory, { recursive: true });
+    fs.rmSync(directory, { recursive: true, force: true });
     console.log('[backup] Backup restored successfully!');
   }
 }
@@ -196,17 +196,24 @@ export async function removeCachedAppUpdates() {
     const aVersion = a.split('-')[1];
     const bVersion = b.split('-')[1];
     if (aVersion.includes('update')) {
-      return 1;
+      return -1;
     }
     if (bVersion.includes('update')) {
-      return -1;
+      return 1;
+    }
+
+    if (!semver.valid(aVersion) || !semver.valid(bVersion)) {
+      return 0;
     }
     return semver.compare(aVersion, bVersion);
   });
 
   // remove all but the latest of 3 cached updates
   for (const update of sortedUpdates.slice(3)) {
-    await fsPromises.rmdir(join(tempFolder, update), { recursive: true });
+    await fsPromises.rm(join(tempFolder, update), {
+      recursive: true,
+      force: true,
+    });
   }
 
   // remove all cached updates that are older than 30 days
@@ -217,7 +224,10 @@ export async function removeCachedAppUpdates() {
       const diffTime = Math.abs(Date.now() - stats.mtime.getTime());
       const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
       if (diffDays > 30) {
-        await fsPromises.rm(join(tempFolder, update), { recursive: true, force: true });
+        await fsPromises.rm(join(tempFolder, update), {
+          recursive: true,
+          force: true,
+        });
       }
     } catch {
       // Directory may not exist or be inaccessible

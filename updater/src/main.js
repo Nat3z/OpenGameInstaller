@@ -344,6 +344,9 @@ async function createWindow() {
 
         if (!assetWithPortable) {
           mainWindow.webContents.send('text', 'No Portable Version Found');
+          setTimeout(() => {
+            launchApp(net.isOnline());
+          }, 2000);
           return;
         }
 
@@ -452,7 +455,7 @@ async function launchApp(online) {
       stdio: ['ignore', logStream, logStream],
     });
     spawned.unref();
-    app.quit();
+    app.exit(0);
   } else if (process.platform === 'linux') {
     if (
       !fs.existsSync(

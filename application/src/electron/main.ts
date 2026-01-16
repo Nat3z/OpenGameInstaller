@@ -76,14 +76,10 @@ let readyForEventWaiters: (() => void)[] = [];
 
 export async function sendIPCMessage(channel: string, ...args: any[]) {
   if (!isReadyForEvents) {
-    // wait for main window to be ready
-    // wait for the main window to be ready with a callback
     await new Promise<void>((resolve) => {
       console.log('waiting for events');
       readyForEventWaiters.push(resolve);
     });
-    // wait for 500ms before checking again
-    await new Promise((resolve) => setTimeout(resolve, 500));
     console.log('events ready');
   }
   mainWindow?.webContents.send(channel, ...args);
@@ -279,15 +275,13 @@ app.on('ready', async () => {
     console.log(`Server is being executed by electron!`);
   });
 
-  setTimeout(() => {
-    sendNotification({
-      message: 'Addons Starting...',
-      id: Math.random().toString(36).substring(7),
-      type: 'success',
-    });
+  sendNotification({
+    message: 'Addons Starting...',
+    id: Math.random().toString(36).substring(7),
+    type: 'success',
+  });
 
-    startAddons();
-  }, 1500);
+  startAddons();
 });
 
 // Quit when all windows are closed.

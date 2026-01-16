@@ -13,6 +13,8 @@
   } from '../lib/setup/extraction';
   import { saveFailedSetup } from '../lib/recovery/failedSetups';
   import { runSetupApp, runSetupAppUpdate } from '../lib/setup/setup';
+  import { getApp } from '../lib/core/library';
+  import type { LibraryInfo } from 'ogi-addon';
   function isCustomEvent(event: Event): event is CustomEvent {
     return event instanceof CustomEvent;
   }
@@ -33,16 +35,6 @@
       })
     );
   }
-
-  // setup flow helpers are shared in lib/setup/setup.ts
-
-  // callbacks now come from lib/setup/setup.ts
-
-  // payload creation now shared
-
-  // success handling now shared in runSetupApp
-
-  // saveFailedSetup moved to shared module
 
   async function processDownloadComplete(
     downloadID: string,
@@ -198,6 +190,14 @@
             multiPartFiles: downloadedItem.files || [],
             storefront: downloadedItem.storefront,
             manifest: downloadedItem.manifest,
+            ...(downloadedItem.isUpdate
+              ? {
+                  for: 'update' as const,
+                  currentLibraryInfo: getApp(
+                    downloadedItem.appID
+                  ) as LibraryInfo,
+                }
+              : { for: 'game' as const }),
           },
           error: 'Failed to extract RAR file',
           should: 'call-unrar',
@@ -285,6 +285,14 @@
             multiPartFiles: downloadedItem.files || [],
             storefront: downloadedItem.storefront,
             manifest: downloadedItem.manifest,
+            ...(downloadedItem.isUpdate
+              ? {
+                  for: 'update' as const,
+                  currentLibraryInfo: getApp(
+                    downloadedItem.appID
+                  ) as LibraryInfo,
+                }
+              : { for: 'game' as const }),
           },
           error: 'Failed to process ZIP file',
           should: 'call-unzip',

@@ -85,7 +85,7 @@ export function restoreBackup() {
     }
 
     // remove the backup
-    fs.rmdirSync(directory, { recursive: true });
+    fs.rmSync(directory, { recursive: true, force: true });
     console.log('[backup] Backup restored successfully!');
   }
 }
@@ -184,45 +184,55 @@ export function checkForAddonUpdates(mainWindow: BrowserWindow) {
   }
 }
 
-export function removeCachedAppUpdates() {
+export async function removeCachedAppUpdates() {
   // find cached updates in the temp folder of this system
-  new Promise<void>(async (resolve, _) => {
-    const tempFolder = app.getPath('temp');
-    const cachedUpdates = (await fsPromises.readdir(tempFolder)).filter(
-      (file) => file.startsWith('ogi-')
-    );
+  const tempFolder = app.getPath('temp');
+  const cachedUpdates = (await fsPromises.readdir(tempFolder)).filter((file) =>
+    file.startsWith('ogi-')
+  );
 
-    // count how many cached updates there are, then sort from oldest to newest based on ogi-{version}-cache using semver
-    const sortedUpdates = cachedUpdates.sort((a, b) => {
-      const aVersion = a.split('-')[1];
-      const bVersion = b.split('-')[1];
-      if (aVersion.includes('update')) {
-        return 1;
-      }
-      if (bVersion.includes('update')) {
-        return -1;
-      }
-      return semver.compare(aVersion, bVersion);
-    });
-
-    // remove all but the latest of 3 cached updates
-    for (const update of sortedUpdates.slice(3)) {
-      await fsPromises.rmdir(join(tempFolder, update), { recursive: true });
+  // count how many cached updates there are, then sort from oldest to newest based on ogi-{version}-cache using semver
+  const sortedUpdates = cachedUpdates.sort((a, b) => {
+    const aVersion = a.split('-')[1];
+    const bVersion = b.split('-')[1];
+    if (aVersion.includes('update')) {
+      return -1;
+    }
+    if (bVersion.includes('update')) {
+      return 1;
     }
 
-    // remove all cached updates that are older than 30 days
-    for (const update of sortedUpdates) {
-      const updateDate = new Date(update.split('-')[1]);
-      const diffTime = Math.abs(Date.now() - updateDate.getTime());
+    if (!semver.valid(aVersion) || !semver.valid(bVersion)) {
+      return 0;
+    }
+    return semver.compare(aVersion, bVersion);
+  });
+
+  // remove all but the latest of 3 cached updates
+  for (const update of sortedUpdates.slice(3)) {
+    await fsPromises.rm(join(tempFolder, update), {
+      recursive: true,
+      force: true,
+    });
+  }
+
+  // remove all cached updates that are older than 30 days
+  // Only check the remaining updates (the latest 3)
+  for (const update of sortedUpdates.slice(0, 3)) {
+    try {
+      const stats = await fsPromises.stat(join(tempFolder, update));
+      const diffTime = Math.abs(Date.now() - stats.mtime.getTime());
       const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
       if (diffDays > 30) {
-        await fsPromises.rmdir(join(tempFolder, update), { recursive: true });
+        await fsPromises.rm(join(tempFolder, update), {
+          recursive: true,
+          force: true,
+        });
       }
+    } catch {
+      // Directory may not exist or be inaccessible
     }
+  }
 
-    console.log('[chore] Removed cached app updates');
-    resolve();
-  }).catch((error) => {
-    console.error('[chore] Failed to remove cached app updates', error);
-  });
+  console.log('[chore] Removed cached app updates');
 }

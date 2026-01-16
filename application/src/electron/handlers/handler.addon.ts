@@ -170,7 +170,7 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
     }
 
     // delete all of the addons
-    fs.rmdirSync(join(__dirname, 'addons/'), { recursive: true });
+    fs.rmSync(join(__dirname, 'addons/'), { recursive: true, force: true });
     fs.mkdirSync(join(__dirname, 'addons/'));
 
     sendNotification({

@@ -45,6 +45,23 @@ if (fs.existsSync(`./bleeding-edge.txt`)) {
   usingBleedingEdge = true;
 }
 
+/**
+ * Create and display the updater window, ensure no other instance is running, and handle update checking, download, installation, and app launch.
+ *
+ * This function:
+ * - Verifies that no other instance is serving on localhost:7654 and exits if one is found.
+ * - Creates the frameless updater BrowserWindow and prevents DevTools from opening.
+ * - If the device is offline, notifies the UI and launches OpenGameInstaller in offline mode.
+ * - When online, queries GitHub Releases for a newer release (respecting bleeding-edge prerelease selection), and either:
+ *   - Uses a cached release if present and valid, copying files into ./update and writing ./version.txt, or
+ *   - Downloads the appropriate platform asset, reports progress to the UI, extracts or places files into ./update (and a temp cache), writes ./version.txt, adjusts execution permissions on Linux, and then launches OpenGameInstaller.
+ * - Falls back to launching the existing installed version if update operations fail or no update is found.
+ *
+ * Side effects:
+ * - Creates and writes files under the app directory (e.g., ./update, ./version.txt) and the OS temp directory for caches.
+ * - May spawn the OpenGameInstaller process and exit the host app.
+ * - Sends status messages to the renderer via mainWindow.webContents.send.
+ */
 async function createWindow() {
   // check if port 7654 is open, if not, start the server
   try {
@@ -83,13 +100,27 @@ async function createWindow() {
   mainWindow.webContents.on('devtools-opened', () => {
     mainWindow.webContents.closeDevTools();
   });
+
+  // Check if device is offline - skip update check entirely if offline
+  if (!net.isOnline()) {
+    console.log('Device is offline, skipping update check');
+    mainWindow.webContents.send(
+      'text',
+      'Launching OpenGameInstaller',
+      'Offline Mode'
+    );
+    launchApp(false);
+    return;
+  }
+
   // check for updates
   const gitRepo = 'Nat3z/OpenGameInstaller';
 
   // check the github releases
   try {
     const response = await axios.get(
-      `https://api.github.com/repos/${gitRepo}/releases`
+      `https://api.github.com/repos/${gitRepo}/releases`,
+      { timeout: 10000 } // 10 second timeout for update check
     );
     mainWindow.webContents.send('text', 'Checking for Updates');
     // if the version is different, download the new version
@@ -180,6 +211,9 @@ async function createWindow() {
         );
         if (!assetWithPortable) {
           mainWindow.webContents.send('text', 'No Portable Version Found');
+          setTimeout(() => {
+            launchApp(net.isOnline());
+          }, 2000);
           return;
         }
         const response = await axios({
@@ -310,6 +344,9 @@ async function createWindow() {
 
         if (!assetWithPortable) {
           mainWindow.webContents.send('text', 'No Portable Version Found');
+          setTimeout(() => {
+            launchApp(net.isOnline());
+          }, 2000);
           return;
         }
 
@@ -376,9 +413,10 @@ async function createWindow() {
 }
 
 /**
+ * Launches the installed OpenGameInstaller, rotating logs, spawning the platform-specific executable in a detached process, and terminating the updater.
  *
- * @param {boolean} online
- * @returns {Promise<void>}
+ * Spawns OpenGameInstaller with `--online=<online>` as an argument.
+ * @param {boolean} online - If true, start the application in online mode; otherwise start in offline mode.
  */
 async function launchApp(online) {
   console.log('Launching in ' + (online ? 'online' : 'offline') + ' mode');
@@ -417,7 +455,7 @@ async function launchApp(online) {
       stdio: ['ignore', logStream, logStream],
     });
     spawned.unref();
-    app.quit();
+    app.exit(0);
   } else if (process.platform === 'linux') {
     if (
       !fs.existsSync(
@@ -450,7 +488,7 @@ async function launchApp(online) {
       );
       const spawned = spawn(
         './OpenGameInstaller.AppImage',
-        ['online=' + online],
+        ['--online=' + online],
         {
           cwd: path.join(__dirname, 'update'),
           detached: true,
@@ -458,7 +496,7 @@ async function launchApp(online) {
         }
       );
       spawned.unref();
-      app.quit();
+      app.exit(0);
     }, 200);
   }
 }

@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>OpenGameInstaller</title>
+  </head>
+  <body>
+    <div>
+      <main>
+        <img
+          src="./favicon-256x256.png"
+          alt="OpenGameInstaller Logo"
+          width="128"
+          height="128"
+        />
+
+        <h1 id="status">Starting...</h1>
+        <div class="spinner"></div>
+      </main>
+    </div>
+  </body>
+</html>
+<script>
+  document.addEventListener('splash-status', (event) => {
+    const { text } = event.detail;
+    document.getElementById('status').textContent = text;
+  });
+</script>
+<style>
+  body {
+    background-color: #1a1a1a;
+    font-family: Arial, sans-serif;
+    margin: 0;
+    padding: 0;
+  }
+  main {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    flex-direction: column;
+    height: 100vh;
+  }
+  main h1 {
+    font-family: 'Archivo', sans-serif;
+    font-weight: 300;
+    font-size: 1.25rem;
+    color: rgb(175, 175, 175);
+    margin-bottom: 1.5rem;
+  }
+
+  * {
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    -khtml-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+  }
+
+  @font-face {
+    font-family: 'Archivo';
+    src: url(./Archivo-VariableFont_wdth\,wght.ttf);
+  }
+
+  .spinner {
+    width: 24px;
+    height: 24px;
+    border: 3px solid rgb(66, 138, 145);
+    border-top-color: transparent;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+  }
+
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+</style>

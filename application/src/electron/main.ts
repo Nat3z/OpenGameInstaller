@@ -6,7 +6,6 @@ import fs, { existsSync, readFileSync } from 'fs';
 import { processes } from './manager/manager.addon.js';
 import { stopClient } from './manager/manager.webtorrent.js';
 import { ConfigurationFile } from 'ogi-addon/build/config/ConfigurationBuilder.js';
-import { checkIfInstallerUpdateAvailable } from './updater.js';
 import AppEventHandler from './handlers/handler.app.js';
 import FSEventHandler from './handlers/handler.fs.js';
 import RealdDebridHandler from './handlers/handler.realdebrid.js';
@@ -18,13 +17,11 @@ import {
   checkForAddonUpdates,
   convertLibrary,
   IS_NIXOS,
-  removeCachedAppUpdates,
-  restoreBackup,
   STEAMTINKERLAUNCH_PATH,
 } from './startup.js';
 import AddonManagerHandler, { startAddons } from './handlers/handler.addon.js';
 import OOBEHandler from './handlers/handler.oobe.js';
-import { execute as executeMigrations } from './migrations.js';
+import { runStartupTasks, closeSplashWindow } from './startup-runner.js';
 // import steamworks from 'steamworks.js';
 
 export const VERSION = app.getVersion();
@@ -61,18 +58,8 @@ console.log('STEAMTINKERLAUNCH_PATH: ' + STEAMTINKERLAUNCH_PATH);
 console.log('Running in directory: ' + __dirname);
 
 export let torrentIntervals: NodeJS.Timeout[] = [];
-// Keep a global reference of the window object, if you don't, the window will
-// be closed automatically when the JavaScript object is garbage collected.
+
 let mainWindow: BrowserWindow | null;
-
-// restore the backup if it exists
-restoreBackup();
-
-// run any migrations if necessary
-executeMigrations();
-
-// remove cached app updates
-removeCachedAppUpdates();
 
 interface Notification {
   message: string;
@@ -89,14 +76,10 @@ let readyForEventWaiters: (() => void)[] = [];
 
 export async function sendIPCMessage(channel: string, ...args: any[]) {
   if (!isReadyForEvents) {
-    // wait for main window to be ready
-    // wait for the main window to be ready with a callback
     await new Promise<void>((resolve) => {
       console.log('waiting for events');
       readyForEventWaiters.push(resolve);
     });
-    // wait for 500ms before checking again
-    await new Promise((resolve) => setTimeout(resolve, 500));
     console.log('events ready');
   }
   mainWindow?.webContents.send(channel, ...args);
@@ -127,6 +110,14 @@ export function sendAskForInput(
   currentScreens.set(id, undefined);
 }
 
+/**
+ * Create and configure the main application BrowserWindow and register its IPC and lifecycle handlers.
+ *
+ * Initializes the mainWindow with appropriate web preferences and icon, loads the renderer (development or production),
+ * registers IPC listeners and readiness coordination, and wires lifecycle behaviors used by the application such as
+ * showing the window when ready, initializing runtime handlers, global shortcut management, external-link handling,
+ * and devtools behavior.
+ */
 function createWindow() {
   // Create the browser window.
   // check if the environment variable OGI_DEBUG is set, and if so, allow devtools
@@ -168,57 +159,6 @@ function createWindow() {
   });
 
   app.commandLine.appendSwitch('disable-features', 'HardwareMediaKeyHandling');
-  // let steamworksClient: ReturnType<typeof steamworks.init> | null = null;
-
-  // non-blocking way to initialize steamworks
-  // new Promise<void>((resolve) => {
-  //   try {
-  //     steamworksClient = steamworks.init(isDev() ? 480 : undefined);
-  //   } catch (error) {
-  //     console.error('Failed to initialize Steamworks:', error);
-  //     steamworksClient = null;
-  //   }
-  //   resolve();
-  // });
-
-  // ipcMain.handle(
-  //   'app:open-steam-keyboard',
-  //   async (
-  //     _,
-  //     {
-  //       x,
-  //       y,
-  //       width,
-  //       height,
-  //     }: { x: number; y: number; width: number; height: number }
-  //   ): Promise<boolean> => {
-  //     if (!steamworksClient) {
-  //       return false;
-  //     }
-  //     // Check if running on Steam Deck or in Big Picture mode
-  //     // if (!steamworksClient.utils.isSteamRunningOnSteamDeck()) {
-  //     //   return false;
-  //     // }
-
-  //     // Show the Steam keyboard overlay
-  //     // The keyboard will inject text directly into the focused input element
-  //     return steamworksClient.utils
-  //       .showFloatingGamepadTextInput(
-  //         0, // Single line
-  //         x,
-  //         y,
-  //         width,
-  //         height
-  //       )
-  //       .then((result) => {
-  //         return result;
-  //       })
-  //       .catch((error) => {
-  //         console.error('Failed to show Steam keyboard:', error);
-  //         return false;
-  //       });
-  //   }
-  // );
 
   if (isDev()) {
     mainWindow!!.loadURL(
@@ -234,13 +174,6 @@ function createWindow() {
     );
   }
 
-  // Uncomment the following line of code when app is ready to be packaged.
-  // loadURL(mainWindow);
-
-  // Open the DevTools and also disable Electron Security Warning.
-  // process.env['ELECTRON_DISABLE_SECURITY_WARNINGS'] = true;
-  // mainWindow.webContents.openDevTools();
-
   // Emitted when the window is closed.
   mainWindow.on('closed', function () {
     // Dereference the window object, usually you would store windows
@@ -253,6 +186,9 @@ function createWindow() {
   // This helps in showing the window gracefully.
   fs.mkdir(join(__dirname, 'config'), (_) => {});
   mainWindow.once('ready-to-show', () => {
+    // Close the splash screen now that main window is shown
+    closeSplashWindow();
+
     AppEventHandler(mainWindow!!);
     FSEventHandler();
     RealdDebridHandler(mainWindow!!);
@@ -329,24 +265,23 @@ function createWindow() {
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
 app.on('ready', async () => {
-  // check updates for setup
-  await checkIfInstallerUpdateAvailable();
+  // Run all startup tasks with splash screen
+  await runStartupTasks();
 
   createWindow();
+
   server.listen(port, () => {
     console.log(`Addon Server is running on http://localhost:${port}`);
     console.log(`Server is being executed by electron!`);
   });
 
-  setTimeout(() => {
-    sendNotification({
-      message: 'Addons Starting...',
-      id: Math.random().toString(36).substring(7),
-      type: 'success',
-    });
+  sendNotification({
+    message: 'Addons Starting...',
+    id: Math.random().toString(36).substring(7),
+    type: 'success',
+  });
 
-    startAddons();
-  }, 1500);
+  startAddons();
 });
 
 // Quit when all windows are closed.

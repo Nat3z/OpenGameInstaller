@@ -22,13 +22,16 @@ jobs:
       startsWith(github.event.head_commit.message, 'hotfix(') ||
       startsWith(github.event.head_commit.message, 'chore(') ||
       startsWith(github.event.head_commit.message, 'test(') ||
+      startsWith(github.event.head_commit.message, 'refactor(') ||
+      startsWith(github.event.head_commit.message, 'feat(') ||
+      startsWith(github.event.head_commit.message, 'fix(') ||
       startsWith(github.event.head_commit.message, 'major:') ||
       startsWith(github.event.head_commit.message, 'hotfix:') ||
       startsWith(github.event.head_commit.message, 'chore:') ||
       startsWith(github.event.head_commit.message, 'feat:') ||
-      startsWith(github.event.head_commit.message, 'feat(') ||
       startsWith(github.event.head_commit.message, 'fix:') ||
-      startsWith(github.event.head_commit.message, 'fix(') ||
+      startsWith(github.event.head_commit.message, 'refactor:') ||
+
       github.event_name == 'workflow_dispatch'
 
     strategy:
@@ -50,6 +53,7 @@ jobs:
         run: node .github/workflows/js/check-application-changes.js
 
       - name: Setup Bun
+        if: steps.check_changes.outputs.has_application_changes == 'true'
         uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.2.23

@@ -211,6 +211,9 @@ async function createWindow() {
         );
         if (!assetWithPortable) {
           mainWindow.webContents.send('text', 'No Portable Version Found');
+          setTimeout(() => {
+            launchApp(net.isOnline());
+          }, 2000);
           return;
         }
         const response = await axios({

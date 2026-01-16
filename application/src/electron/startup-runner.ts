@@ -75,11 +75,19 @@ export async function runStartupTasks(): Promise<void> {
 
   // Run any migrations if necessary
   updateSplashStatus('Running migrations...');
+  // not async because it relies on the app being open
   executeMigrations();
 
   // Remove cached app updates
   updateSplashStatus('Cleaning up...');
-  removeCachedAppUpdates();
+  await new Promise((resolve, _) =>
+    removeCachedAppUpdates()
+      .then(resolve)
+      .catch(() => {
+        console.error('[chore] Failed to remove cached app updates');
+        resolve(void 0);
+      })
+  );
 
   // Check for installer/setup updates
   updateSplashStatus('Checking for updates...');

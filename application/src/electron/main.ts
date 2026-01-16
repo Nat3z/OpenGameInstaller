@@ -163,57 +163,6 @@ function createWindow() {
   });
 
   app.commandLine.appendSwitch('disable-features', 'HardwareMediaKeyHandling');
-  // let steamworksClient: ReturnType<typeof steamworks.init> | null = null;
-
-  // non-blocking way to initialize steamworks
-  // new Promise<void>((resolve) => {
-  //   try {
-  //     steamworksClient = steamworks.init(isDev() ? 480 : undefined);
-  //   } catch (error) {
-  //     console.error('Failed to initialize Steamworks:', error);
-  //     steamworksClient = null;
-  //   }
-  //   resolve();
-  // });
-
-  // ipcMain.handle(
-  //   'app:open-steam-keyboard',
-  //   async (
-  //     _,
-  //     {
-  //       x,
-  //       y,
-  //       width,
-  //       height,
-  //     }: { x: number; y: number; width: number; height: number }
-  //   ): Promise<boolean> => {
-  //     if (!steamworksClient) {
-  //       return false;
-  //     }
-  //     // Check if running on Steam Deck or in Big Picture mode
-  //     // if (!steamworksClient.utils.isSteamRunningOnSteamDeck()) {
-  //     //   return false;
-  //     // }
-
-  //     // Show the Steam keyboard overlay
-  //     // The keyboard will inject text directly into the focused input element
-  //     return steamworksClient.utils
-  //       .showFloatingGamepadTextInput(
-  //         0, // Single line
-  //         x,
-  //         y,
-  //         width,
-  //         height
-  //       )
-  //       .then((result) => {
-  //         return result;
-  //       })
-  //       .catch((error) => {
-  //         console.error('Failed to show Steam keyboard:', error);
-  //         return false;
-  //       });
-  //   }
-  // );
 
   if (isDev()) {
     mainWindow!!.loadURL(
@@ -241,6 +190,9 @@ function createWindow() {
   // This helps in showing the window gracefully.
   fs.mkdir(join(__dirname, 'config'), (_) => {});
   mainWindow.once('ready-to-show', () => {
+    // Close the splash screen now that main window is shown
+    closeSplashWindow();
+
     AppEventHandler(mainWindow!!);
     FSEventHandler();
     RealdDebridHandler(mainWindow!!);
@@ -321,11 +273,6 @@ app.on('ready', async () => {
   await runStartupTasks();
 
   createWindow();
-
-  // Close splash when main window is ready to show
-  mainWindow?.once('ready-to-show', () => {
-    closeSplashWindow();
-  });
 
   server.listen(port, () => {
     console.log(`Addon Server is running on http://localhost:${port}`);

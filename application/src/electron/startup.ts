@@ -210,12 +210,17 @@ export async function removeCachedAppUpdates() {
   }
 
   // remove all cached updates that are older than 30 days
-  for (const update of sortedUpdates) {
-    const updateDate = new Date(update.split('-')[1]);
-    const diffTime = Math.abs(Date.now() - updateDate.getTime());
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    if (diffDays > 30) {
-      await fsPromises.rmdir(join(tempFolder, update), { recursive: true });
+  // Only check the remaining updates (the latest 3)
+  for (const update of sortedUpdates.slice(0, 3)) {
+    try {
+      const stats = await fsPromises.stat(join(tempFolder, update));
+      const diffTime = Math.abs(Date.now() - stats.mtime.getTime());
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      if (diffDays > 30) {
+        await fsPromises.rm(join(tempFolder, update), { recursive: true, force: true });
+      }
+    } catch {
+      // Directory may not exist or be inaccessible
     }
   }
 

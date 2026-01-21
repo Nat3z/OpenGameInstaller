@@ -1,14 +1,16 @@
 import {
-  ConfigurationFile,
   ConfigurationBuilder,
   BooleanOption,
   ConfigurationOption,
-  ConfigurationOptionType,
   NumberOption,
   StringOption,
   isBooleanOption,
   isNumberOption,
   isStringOption,
+} from './ConfigurationBuilder';
+import type {
+  ConfigurationFile,
+  ConfigurationOptionType,
 } from './ConfigurationBuilder';
 
 interface DefiniteConfig {
@@ -114,14 +116,14 @@ export class Configuration {
 }
 
 export {
-  ConfigurationFile,
   ConfigurationBuilder,
   BooleanOption,
   ConfigurationOption,
-  ConfigurationOptionType,
   NumberOption,
   StringOption,
   isBooleanOption,
   isNumberOption,
   isStringOption,
 };
+
+export type { ConfigurationFile, ConfigurationOptionType };

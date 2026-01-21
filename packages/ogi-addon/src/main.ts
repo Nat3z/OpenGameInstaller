@@ -2,11 +2,11 @@ import ws, { WebSocket } from 'ws';
 import events from 'node:events';
 import {
   ConfigurationBuilder,
-  ConfigurationFile,
 } from './config/ConfigurationBuilder';
+import type { ConfigurationFile } from './config/ConfigurationBuilder';
 import { Configuration } from './config/Configuration';
 import EventResponse from './EventResponse';
-import { SearchResult } from './SearchEngine';
+import type { SearchResult } from './SearchEngine';
 import Fuse, { IFuseOptions } from 'fuse.js';
 
 export type OGIAddonEvent =
@@ -49,7 +49,8 @@ export type OGIAddonServerSentEvent =
   | 'game-details'
   | 'request-dl'
   | 'catalog';
-export { ConfigurationBuilder, Configuration, EventResponse, SearchResult };
+export { ConfigurationBuilder, Configuration, EventResponse };
+export type { SearchResult };
 const defaultPort = 7654;
 import pjson from '../package.json';
 import { exec, spawn } from 'node:child_process';

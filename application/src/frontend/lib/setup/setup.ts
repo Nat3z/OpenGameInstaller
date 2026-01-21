@@ -94,7 +94,7 @@ export function handleSetupError(
       downloadedItem.downloadType === 'direct'
         ? downloadedItem.files
         : undefined,
-    manifest: downloadedItem.manifest,
+    manifest: downloadedItem.manifest || {},
   };
 
   saveFailedSetup({

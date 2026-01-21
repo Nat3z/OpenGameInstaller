@@ -43,6 +43,8 @@ export type DownloadStatusAndInfo = SearchResult & {
   // Update-specific properties
   isUpdate?: boolean;
   updateVersion?: string;
+  // Manifest data from the search result, passed to the setup handler
+  manifest?: Record<string, unknown>;
 };
 
 export type DeferredTask = {

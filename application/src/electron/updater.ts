@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { app, BrowserWindow, net } from 'electron';
+import { app, net } from 'electron';
 import {
   chmodSync,
   cpSync,
@@ -16,6 +16,11 @@ import * as path from 'path';
 
 function isDev() {
   return !app.isPackaged;
+}
+
+export interface UpdaterCallbacks {
+  onStatus: (text: string, subtext?: string) => void;
+  onProgress: (current: number, total: number, speed: string) => void;
 }
 
 const filesToBackup = ['config', 'addons', 'library', 'internals'];
@@ -47,12 +52,25 @@ function correctParsingSize(size: number) {
 /**
  * Checks GitHub for a newer installer release and, if one is available, downloads it and performs the platform-appropriate update workflow.
  *
- * This performs gated checks for offline mode, network connectivity, and portable runs; reads the local updater version and bleeding-edge flag; queries repository releases with a 10s timeout; chooses a suitable release (respecting prerelease when bleeding-edge is enabled); and, when a newer setup is found, presents a small updater UI, streams the installer download with progress updates to the UI, backs up configured local files, and then launches (Windows) or replaces and makes executable (Linux) the downloaded setup. Any errors are logged and the function resolves without throwing.
+ * This performs gated checks for offline mode, network connectivity, and portable runs; reads the local updater version and bleeding-edge flag; queries repository releases with a 10s timeout; chooses a suitable release (respecting prerelease when bleeding-edge is enabled); and, when a newer setup is found, streams the installer download with progress updates via callbacks, backs up configured local files, and then launches (Windows) or replaces and makes executable (Linux) the downloaded setup. Any errors are logged and the function resolves without throwing.
  *
+ * @param callbacks - Optional callbacks for status and progress updates (used by splash screen)
  * @returns Resolves when the update check and any initiated update workflow complete (no return value).
  */
-export function checkIfInstallerUpdateAvailable() {
+export function checkIfInstallerUpdateAvailable(callbacks?: UpdaterCallbacks) {
   return new Promise<void>(async (resolve) => {
+    const updateStatus = (text: string, subtext?: string) => {
+      if (callbacks) {
+        callbacks.onStatus(text, subtext);
+      }
+    };
+
+    const updateProgress = (current: number, total: number, speed: string) => {
+      if (callbacks) {
+        callbacks.onProgress(current, total, speed);
+      }
+    };
+
     // Check if launched in offline mode via command line argument from updater
     const isOfflineArg = process.argv.some((arg) => arg === '--online=false');
     if (isOfflineArg) {
@@ -168,25 +186,7 @@ export function checkIfInstallerUpdateAvailable() {
       if (latestSetupVersion !== localVersion) {
         console.log(`[updater] New version available: ${latestVersion}`);
 
-        let mainWindow = new BrowserWindow({
-          width: 300,
-          height: 400,
-          frame: false,
-          webPreferences: {
-            preload: isDev()
-              ? join(app.getAppPath(), 'updater-preload.mjs')
-              : join(app.getAppPath(), 'build/updater-preload.mjs'),
-            nodeIntegration: true,
-            devTools: false,
-            contextIsolation: true,
-          },
-        });
-        mainWindow.loadURL(
-          'file://' + join(app.getAppPath(), 'public', 'updater.html')
-        );
-
-        mainWindow.webContents.send('text', 'Downloading latest Setup...');
-        // wait for the ETXTBSY error to go away
+        updateStatus('Downloading latest Setup...');
         // download the latest setup
         const response = await axios.get(latestSetupVersionUrl, {
           responseType: 'stream',
@@ -196,20 +196,22 @@ export function checkIfInstallerUpdateAvailable() {
           const writer = createWriteStream(directory);
           response.data.pipe(writer);
           const startTime = Date.now();
-          const fileSize = response.headers['content-length'];
+          const fileSize = parseInt(response.headers['content-length'] || '0');
           response.data.on('data', () => {
             const elapsedTime = (Date.now() - startTime) / 1000; // in seconds
             const downloadSpeed = response.data.socket.bytesRead / elapsedTime;
-            mainWindow.webContents.send(
-              'text',
+            updateStatus(
               'Downloading Latest Setup',
+              correctParsingSize(downloadSpeed) + '/s'
+            );
+            updateProgress(
               writer.bytesWritten,
               fileSize,
               correctParsingSize(downloadSpeed) + '/s'
             );
           });
           writer.on('finish', () => {
-            mainWindow.webContents.send('text', 'Backing up Files');
+            updateStatus('Backing up Files');
             console.log(`[updater] Setup downloaded successfully.`);
             console.log(`[updater] Backing up files in update.`);
             writer.close();
@@ -224,19 +226,18 @@ export function checkIfInstallerUpdateAvailable() {
               const destination = join(tempFolder, file);
               if (existsSync(source)) {
                 console.log(`[updater] Copying ${source} to ${destination}`);
-                mainWindow.webContents.send('text', 'Backing up files', source);
+                updateStatus('Backing up files', file);
                 cpSync(source, destination, { recursive: true });
               }
             }
 
-            mainWindow.webContents.send('text', 'Starting Setup');
+            updateStatus('Starting Setup');
 
             setTimeout(() => {
               spawn(directory, {
                 detached: true,
                 stdio: 'ignore',
               }).unref();
-              mainWindow.close();
               process.exit(0);
             }, 500);
           });
@@ -245,20 +246,22 @@ export function checkIfInstallerUpdateAvailable() {
           const writer = createWriteStream('../temp-setup-OGI.AppImage');
           response.data.pipe(writer);
           const startTime = Date.now();
-          const fileSize = response.headers['content-length'];
+          const fileSize = parseInt(response.headers['content-length'] || '0');
           response.data.on('data', () => {
             const elapsedTime = (Date.now() - startTime) / 1000; // in seconds
             const downloadSpeed = response.data.socket.bytesRead / elapsedTime;
-            mainWindow.webContents.send(
-              'text',
+            updateStatus(
               'Downloading Latest Setup',
+              correctParsingSize(downloadSpeed) + '/s'
+            );
+            updateProgress(
               writer.bytesWritten,
               fileSize,
               correctParsingSize(downloadSpeed) + '/s'
             );
           });
           writer.on('finish', () => {
-            mainWindow.webContents.send('text', 'Backing up Files');
+            updateStatus('Backing up Files');
             console.log(`[updater] Setup downloaded successfully.`);
             console.log(`[updater] Backing up files in update.`);
             writer.close();
@@ -274,12 +277,12 @@ export function checkIfInstallerUpdateAvailable() {
               const destination = join(tempFolder, file);
               if (existsSync(source)) {
                 console.log(`[updater] Copying ${source} to ${destination}`);
-                mainWindow.webContents.send('text', 'Backing up files', source);
+                updateStatus('Backing up files', file);
                 cpSync(source, destination, { recursive: true });
               }
             }
 
-            mainWindow.webContents.send('text', 'Starting Setup');
+            updateStatus('Starting Setup');
 
             setTimeout(async () => {
               // rename the temp-setup-OGI.AppImage to the OpenGameInstaller-Setup.AppImage
@@ -301,13 +304,11 @@ export function checkIfInstallerUpdateAvailable() {
 
               // set item +x permissions
               chmodSync('../OpenGameInstaller-Setup.AppImage', 0o755);
-              mainWindow.webContents.send(
-                'text',
+              updateStatus(
                 'Shutting Down OpenGameInstaller',
                 'Please open OpenGameInstaller again'
               );
               await setTimeoutPromise(3000);
-              mainWindow.close();
               process.exit(0);
             }, 500);
           });

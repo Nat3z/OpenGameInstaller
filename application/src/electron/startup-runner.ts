@@ -1,6 +1,9 @@
 import { app, BrowserWindow } from 'electron';
 import { join } from 'path';
-import { checkIfInstallerUpdateAvailable } from './updater.js';
+import {
+  checkIfInstallerUpdateAvailable,
+  type UpdaterCallbacks,
+} from './updater.js';
 import { restoreBackup, removeCachedAppUpdates } from './startup.js';
 import { execute as executeMigrations } from './migrations.js';
 import { isDev } from './manager/manager.paths.js';
@@ -41,11 +44,25 @@ function createSplashWindow(): BrowserWindow {
 /**
  * Updates the splash screen's status message shown to the user.
  *
- * @param text - The status message to display on the splash screen; does nothing if the splash window is not present or has been destroyed
+ * @param text - The status message to display on the splash screen
+ * @param subtext - Optional secondary text (e.g., download speed, file name)
  */
-function updateSplashStatus(text: string) {
+function updateSplashStatus(text: string, subtext?: string) {
   if (splashWindow && !splashWindow.isDestroyed()) {
-    splashWindow.webContents.send('splash-status', text);
+    splashWindow.webContents.send('splash-status', text, subtext);
+  }
+}
+
+/**
+ * Updates the splash screen's progress bar.
+ *
+ * @param current - Current progress value
+ * @param total - Total/maximum progress value
+ * @param speed - Optional speed text (e.g., "1.5MB/s")
+ */
+function updateSplashProgress(current: number, total: number, speed?: string) {
+  if (splashWindow && !splashWindow.isDestroyed()) {
+    splashWindow.webContents.send('splash-progress', current, total, speed);
   }
 }
 
@@ -89,9 +106,17 @@ export async function runStartupTasks(): Promise<void> {
       })
   );
 
-  // Check for installer/setup updates
+  // Check for installer/setup updates with splash screen callbacks
   updateSplashStatus('Checking for updates...');
-  await checkIfInstallerUpdateAvailable();
+  const updaterCallbacks: UpdaterCallbacks = {
+    onStatus: (text: string, subtext?: string) => {
+      updateSplashStatus(text, subtext);
+    },
+    onProgress: (current: number, total: number, speed: string) => {
+      updateSplashProgress(current, total, speed);
+    },
+  };
+  await checkIfInstallerUpdateAvailable(updaterCallbacks);
 
   // Final status before main window loads
   updateSplashStatus('Starting application...');

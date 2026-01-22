@@ -1069,6 +1069,7 @@
 
   body {
     background-color: var(--color-background-color);
+    font-family: var(--font-open-sans);
   }
 
   ::-webkit-scrollbar {

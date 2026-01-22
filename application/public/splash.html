@@ -16,15 +16,40 @@
         />
 
         <h1 id="status">Starting...</h1>
-        <div class="spinner"></div>
+        <p id="subtext"></p>
+        <progress id="progress" value="0" max="100"></progress>
+        <div class="spinner" id="spinner"></div>
       </main>
     </div>
   </body>
 </html>
 <script>
   document.addEventListener('splash-status', (event) => {
-    const { text } = event.detail;
+    const { text, subtext } = event.detail;
     document.getElementById('status').textContent = text;
+    const subtextEl = document.getElementById('subtext');
+    if (subtext) {
+      subtextEl.textContent = subtext;
+      subtextEl.style.display = 'block';
+    } else {
+      subtextEl.style.display = 'none';
+    }
+  });
+
+  document.addEventListener('splash-progress', (event) => {
+    const { current, total, speed } = event.detail;
+    const progressEl = document.getElementById('progress');
+    const spinnerEl = document.getElementById('spinner');
+
+    if (total > 0) {
+      progressEl.style.display = 'block';
+      progressEl.value = current;
+      progressEl.max = total;
+      spinnerEl.style.display = 'none';
+    } else {
+      progressEl.style.display = 'none';
+      spinnerEl.style.display = 'block';
+    }
   });
 </script>
 <style>
@@ -48,7 +73,18 @@
     color: rgb(175, 175, 175);
     width: 100%;
     text-align: center;
-    margin-bottom: 1.5rem;
+    margin-bottom: 0.5rem;
+  }
+  main p {
+    font-family: 'Archivo', sans-serif;
+    font-weight: 300;
+    font-size: 0.875rem;
+    color: rgb(175, 175, 175);
+    width: 100%;
+    text-align: center;
+    margin: 0;
+    margin-bottom: 1rem;
+    display: none;
   }
 
   * {
@@ -79,5 +115,22 @@
     to {
       transform: rotate(360deg);
     }
+  }
+
+  progress {
+    height: 0.3rem;
+    width: 80%;
+    appearance: none;
+    display: none;
+  }
+
+  progress::-webkit-progress-bar {
+    border-radius: 0.5rem;
+    background-color: rgb(174, 205, 199);
+  }
+
+  progress::-webkit-progress-value {
+    border-radius: 0.5rem;
+    background-color: rgb(66, 138, 145);
   }
 </style>

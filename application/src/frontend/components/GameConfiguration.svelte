@@ -122,7 +122,16 @@
 
   async function addToSteam(button: HTMLButtonElement) {
     button.disabled = true;
-    await window.electronAPI.app.addToSteam(gameInfo.appID);
+    try {
+      await window.electronAPI.app.addToSteam(gameInfo.appID);
+    } catch (error) {
+      console.error(error);
+      createNotification({
+        id: Math.random().toString(36).substring(7),
+        message: 'Failed to add game to Steam',
+        type: 'error',
+      });
+    }
     button.disabled = false;
   }
 
@@ -191,7 +200,7 @@
     <SectionModal class="mt-4">
       <div class="flex gap-3 flex-row">
         <ButtonModal text="Save" variant="primary" onclick={pushChanges} />
-        {`#if` platform === 'linux' || platform === 'darwin'}
+        {#if platform === 'linux' || platform === 'darwin'}
           <ButtonModal
             text="Add to Steam"
             variant="secondary"

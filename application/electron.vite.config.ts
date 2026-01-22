@@ -21,6 +21,7 @@ export default defineConfig({
       rollupOptions: {
         input: {
           index: resolve(__dirname, 'src/electron/preload.mts'),
+          splash: resolve(__dirname, 'src/electron/splash-preload.mts'),
         },
         external: ['original-fs'],
       },

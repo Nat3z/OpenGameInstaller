@@ -191,12 +191,12 @@
     <SectionModal class="mt-4">
       <div class="flex gap-3 flex-row">
         <ButtonModal text="Save" variant="primary" onclick={pushChanges} />
-        {#if platform === 'linux' || platform === 'darwin'}
+        {`#if` platform === 'linux' || platform === 'darwin'}
           <ButtonModal
             text="Add to Steam"
             variant="secondary"
             onclick={(event) => {
-              addToSteam(event.target as HTMLButtonElement);
+              addToSteam(event.currentTarget as HTMLButtonElement);
             }}
           />
         {/if}

@@ -187,3 +187,27 @@ a {
     transform: rotate(360deg);
   }
 }
+
+/* Skeleton loading animation */
+@keyframes skeleton-pulse {
+  0% {
+    background-position: 200% 0;
+    opacity: 0.5;
+  }
+  100% {
+    background-position: -200% 0;
+    opacity: 1;
+  }
+}
+
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--color-accent-lighter) 25%,
+    var(--color-accent-light) 50%,
+    var(--color-accent-lighter) 75%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-pulse 1.5s ease-in-out infinite;
+  border-radius: 0.5rem;
+}

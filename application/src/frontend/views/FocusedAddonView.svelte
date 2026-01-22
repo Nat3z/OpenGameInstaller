@@ -541,7 +541,7 @@
                 {#if option.inputType === 'range'}
                   <input
                     type="number"
-                    class="range-value font-archivo w-16 ml-2 px-2 py-1 border border-gray-300 rounded-lg text-center"
+                    class="min-w-12 text-center px-3 py-1 bg-accent-light text-accent-dark rounded-lg font-archivo font-semibold text-lg"
                     value={getStoredOrDefaultValue(key)}
                     min={option.min}
                     max={option.max}

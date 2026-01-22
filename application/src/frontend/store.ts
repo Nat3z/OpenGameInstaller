@@ -176,6 +176,36 @@ export const searchQuery: Writable<string> = writable('');
 export const loadingResults: Writable<boolean> = writable(false);
 export const isOnline: Writable<boolean> = writable(true);
 
+// Header back button state - allows any component to show a back button in the header
+export type HeaderBackButton = {
+  visible: boolean;
+  onClick: (() => void) | null;
+  ariaLabel?: string;
+};
+
+export const headerBackButton: Writable<HeaderBackButton> = writable({
+  visible: false,
+  onClick: null,
+  ariaLabel: 'Go back',
+});
+
+export function setHeaderBackButton(onClick: () => void, ariaLabel?: string) {
+  console.log('setHeaderBackButton called', { ariaLabel });
+  headerBackButton.set({
+    visible: true,
+    onClick,
+    ariaLabel: ariaLabel || 'Go back',
+  });
+}
+
+export function clearHeaderBackButton() {
+  headerBackButton.set({
+    visible: false,
+    onClick: null,
+    ariaLabel: 'Go back',
+  });
+}
+
 export function createNotification(notification: Notification) {
   const notificationWithTimestamp = {
     ...notification,

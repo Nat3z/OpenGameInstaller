@@ -24,7 +24,7 @@
   import HeaderModal from './modal/HeaderModal.svelte';
   import SectionModal from './modal/SectionModal.svelte';
   import TextModal from './modal/TextModal.svelte';
-  import { fade, fly, slide } from 'svelte/transition';
+  import { fly, slide } from 'svelte/transition';
 
   interface Props {
     appID: number;
@@ -410,11 +410,56 @@
 {#if gameData}
   <main class="flex flex-col w-full h-full">
     {#if loading}
-      <div class="flex justify-center items-center w-full h-full">
-        <div class="loading-container">
-          <div class="loading-message" in:fade={{ duration: 300 }}>
-            <div class="loading-spinner"></div>
-            <p class="text-lg">Loading store page...</p>
+      <!-- Skeleton Loading State -->
+      <div class="">
+        <!-- Hero Banner Skeleton -->
+        <div class="relative w-full h-64 overflow-hidden rounded-lg">
+          <div class="skeleton w-full h-full"></div>
+          <div
+            class="absolute bottom-0 left-0 right-0 bg-linear-to-t from-black/70 to-transparent p-6 rounded-b-lg"
+          >
+            <div class="skeleton h-10 w-64 mb-2"></div>
+            <div class="skeleton h-4 w-96"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Main Content Skeleton -->
+      <div class="flex flex-1 overflow-hidden gap-4">
+        <!-- Left side - Description Skeleton -->
+        <div class="mt-4 flex-1 overflow-y-auto">
+          <div class="pb-10 pt-4 space-y-4">
+            <div class="skeleton h-4 w-full"></div>
+            <div class="skeleton h-4 w-5/6"></div>
+            <div class="skeleton h-4 w-4/6"></div>
+            <div class="skeleton h-32 w-full mt-4"></div>
+            <div class="skeleton h-4 w-full"></div>
+            <div class="skeleton h-4 w-3/4"></div>
+          </div>
+        </div>
+
+        <!-- Right sidebar Skeleton -->
+        <div class="w-80 flex flex-col pt-4">
+          <div class="p-6 bg-accent-lighter rounded-lg mb-4">
+            <div class="skeleton h-12 w-full rounded-lg"></div>
+          </div>
+          <div class="bg-accent-lighter rounded-lg p-4 mb-4">
+            <div class="flex items-center gap-3">
+              <div class="skeleton w-12 h-12 rounded-lg"></div>
+              <div class="flex-1">
+                <div class="skeleton h-4 w-24 mb-2"></div>
+                <div class="skeleton h-3 w-16"></div>
+              </div>
+            </div>
+          </div>
+          <div class="bg-accent-lighter rounded-lg p-4">
+            <div class="flex items-center gap-3">
+              <div class="skeleton w-12 h-12 rounded-lg"></div>
+              <div class="flex-1">
+                <div class="skeleton h-4 w-24 mb-2"></div>
+                <div class="skeleton h-3 w-16"></div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -807,14 +852,61 @@
     </h1>
   </div>
 {:else}
-  <div class="flex justify-center items-center w-full h-full">
-    <div class="loading-container">
-      <div class="loading-message" in:fade={{ duration: 300 }}>
-        <div class="loading-spinner"></div>
-        <p class="text-lg">Loading store page...</p>
+  <!-- Initial Skeleton Loading State (no gameData yet) -->
+  <main class="flex flex-col w-full h-full">
+    <div class="">
+      <!-- Hero Banner Skeleton -->
+      <div class="relative w-full h-64 overflow-hidden rounded-lg">
+        <div class="skeleton w-full h-full"></div>
+        <div
+          class="absolute bottom-0 left-0 right-0 bg-linear-to-t from-black/70 to-transparent p-6 rounded-b-lg"
+        >
+          <div class="skeleton h-10 w-64 mb-2"></div>
+          <div class="skeleton h-4 w-96"></div>
+        </div>
       </div>
     </div>
-  </div>
+
+    <!-- Main Content Skeleton -->
+    <div class="flex flex-1 overflow-hidden gap-4">
+      <!-- Left side - Description Skeleton -->
+      <div class="mt-4 flex-1 overflow-y-auto">
+        <div class="pb-10 pt-4 space-y-4">
+          <div class="skeleton h-4 w-full"></div>
+          <div class="skeleton h-4 w-5/6"></div>
+          <div class="skeleton h-4 w-4/6"></div>
+          <div class="skeleton h-32 w-full mt-4"></div>
+          <div class="skeleton h-4 w-full"></div>
+          <div class="skeleton h-4 w-3/4"></div>
+        </div>
+      </div>
+
+      <!-- Right sidebar Skeleton -->
+      <div class="w-80 flex flex-col pt-4">
+        <div class="p-6 bg-accent-lighter rounded-lg mb-4">
+          <div class="skeleton h-12 w-full rounded-lg"></div>
+        </div>
+        <div class="bg-accent-lighter rounded-lg p-4 mb-4">
+          <div class="flex items-center gap-3">
+            <div class="skeleton w-12 h-12 rounded-lg"></div>
+            <div class="flex-1">
+              <div class="skeleton h-4 w-24 mb-2"></div>
+              <div class="skeleton h-3 w-16"></div>
+            </div>
+          </div>
+        </div>
+        <div class="bg-accent-lighter rounded-lg p-4">
+          <div class="flex items-center gap-3">
+            <div class="skeleton w-12 h-12 rounded-lg"></div>
+            <div class="flex-1">
+              <div class="skeleton h-4 w-24 mb-2"></div>
+              <div class="skeleton h-3 w-16"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
 {/if}
 
 {#key selectedResult}

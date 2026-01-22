@@ -7,6 +7,8 @@
     currentStorePageOpenedStorefront,
     gamesLaunched,
     launchGameTrigger,
+    setHeaderBackButton,
+    clearHeaderBackButton,
   } from '../store';
   import { onDestroy, onMount } from 'svelte';
   import SettingsFilled from '../Icons/SettingsFilled.svelte';
@@ -137,6 +139,7 @@
   onDestroy(() => {
     unsubscribe();
     unsubscribe2();
+    clearHeaderBackButton();
   });
 
   let searchingAddons: { [key: string]: SearchResult[] | undefined } = $state(
@@ -155,6 +158,13 @@
   });
 
   onMount(async () => {
+    // Set up the header back button
+    console.log('PlayPage mounted, setting header back button');
+    setHeaderBackButton(() => {
+      console.log('Header back button clicked');
+      exitPlayPage();
+    }, 'Back to library');
+
     const addons = await fetchAddonsWithConfigure();
     const addonsWithStorefront = addons.filter((addon) =>
       addon.storefronts.includes(libraryInfo.storefront)

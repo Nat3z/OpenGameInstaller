@@ -156,8 +156,39 @@
   </div>
 
   {#if loading}
-    <div class="flex justify-center items-center py-16">
-      <div class="loading-spinner"></div>
+    <!-- Skeleton Loading State -->
+    <div class="space-y-6">
+      {#each [1, 2] as sectionIndex}
+        <div class="space-y-3 px-4">
+          <!-- Skeleton Section Header -->
+          <div class="bg-accent-lighter px-4 py-3 rounded-lg">
+            <div class="flex items-center gap-3 mb-2">
+              <div class="skeleton w-8 h-8 rounded"></div>
+              <div class="flex-1">
+                <div class="skeleton h-5 w-32 mb-1"></div>
+                <div class="skeleton h-3 w-24"></div>
+              </div>
+            </div>
+            <div class="skeleton h-4 w-48 mt-2"></div>
+          </div>
+
+          <!-- Skeleton Games Carousel -->
+          <div class="relative flex items-center w-full">
+            <div
+              class="flex flex-row gap-3 w-full justify-center overflow-hidden px-10"
+              style="min-height: 200px;"
+            >
+              {#each [1, 2, 3, 4, 5] as gameIndex}
+                <div
+                  class="w-32 h-48 skeleton rounded-lg"
+                  style="animation-delay: {(sectionIndex - 1) * 200 +
+                    gameIndex * 100}ms"
+                ></div>
+              {/each}
+            </div>
+          </div>
+        </div>
+      {/each}
     </div>
   {:else if allSections.length === 0}
     <div class="flex flex-col gap-4 w-full justify-center items-center py-16">

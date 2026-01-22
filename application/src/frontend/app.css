@@ -167,6 +167,10 @@ a {
   cursor: pointer;
 }
 
+h2 {
+  font-family: var(--font-archivo);
+}
+
 /* Global loading spinner */
 .loading-spinner {
   width: 2rem;

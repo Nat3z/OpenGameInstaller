@@ -1,15 +1,12 @@
 {
   "name": "opengameinstaller-gui",
-  "version": "2.5.2",
+  "version": "2.6.0",
   "description": "The front-facing GUI for OpenGameInstaller and the addon-server.",
   "type": "module",
   "private": false,
   "license": "MIT",
   "main": "./out/main/index.js",
   "author": "Nat3z",
-  "imports": {
-    "#styles": "./src/frontend/app.css"
-  },
   "build": {
     "icon": "public/favicon.ico",
     "productName": "OpenGameInstaller",

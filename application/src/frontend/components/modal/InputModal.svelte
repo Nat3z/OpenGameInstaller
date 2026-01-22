@@ -87,9 +87,9 @@
 </script>
 
 <div class="w-full {className} mt-2">
-  <TextModal text={label} variant="body" class="!text-xl font-bold" />
+  <TextModal text={label} variant="body" class="text-xl! font-bold" />
   {#if description}
-    <TextModal text={description} variant="description" class="!text-base" />
+    <TextModal text={description} variant="description" class="text-base!" />
   {/if}
 
   <div class="option-input mt-2">
@@ -164,6 +164,7 @@
 </div>
 
 <style>
+  @reference "../../app.css";
   .option-label {
     @apply block text-lg font-archivo font-semibold text-gray-900 mb-1 dark:text-gray-100;
   }

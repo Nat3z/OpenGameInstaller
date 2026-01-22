@@ -430,7 +430,7 @@
           />
           <!-- Overlay with game info -->
           <div
-            class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-6 rounded-b-lg"
+            class="absolute bottom-0 left-0 right-0 bg-linear-to-t from-black/70 to-transparent p-6 rounded-b-lg"
           >
             <h1 class="text-4xl font-archivo font-bold text-white mb-2">
               {gameData.name}
@@ -455,7 +455,7 @@
         <div class="mt-4 flex-1 overflow-y-auto relative">
           <!-- Fade gradient overlay at top -->
           <div
-            class="sticky top-0 h-4 bg-gradient-to-b from-white/80 to-transparent z-10 pointer-events-none"
+            class="sticky top-0 h-4 bg-linear-to-b from-white/80 to-transparent z-10 pointer-events-none"
           ></div>
 
           <!-- Detailed description -->
@@ -549,7 +549,7 @@
                 <div class="p-6 bg-accent-lighter rounded-lg mb-4">
                   <button
                     class="w-full border-none {!isWin32Only
-                      ? 'bg-accent-light hover:bg-opacity-80 text-accent-dark'
+                      ? 'bg-accent-light hover:bg-accent-light/80 text-accent-dark'
                       : 'bg-gray-300 text-gray-500 cursor-not-allowed'} font-medium py-3 px-4 rounded-lg transition-colors duration-200 {isWin32Only
                       ? 'mb-3'
                       : ''}"
@@ -719,7 +719,7 @@
                                   class="flex-1 text-sm border-none {activeDownload &&
                                   !alreadyOwns
                                     ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                                    : 'bg-accent-light hover:bg-opacity-80 text-accent-dark'} font-medium py-3 px-3 rounded-lg flex items-center justify-center gap-2 transition-colors duration-200"
+                                    : 'bg-accent-light hover:bg-accent-light/80 text-accent-dark'} font-medium py-3 px-3 rounded-lg flex items-center justify-center gap-2 transition-colors duration-200"
                                   disabled={(results.length === 0 &&
                                     !queryingSources) ||
                                     (activeDownload && !alreadyOwns)}
@@ -733,7 +733,7 @@
                                       : 'Download'}
                                 </button>
                                 <button
-                                  class="text-sm border-none w-12 bg-accent-light hover:bg-opacity-80 text-accent-dark font-medium py-3 rounded-lg flex items-center justify-center gap-2 transition-colors duration-200"
+                                  class="text-sm border-none w-12 bg-accent-light hover:bg-accent-light/80 text-accent-dark font-medium py-3 rounded-lg flex items-center justify-center gap-2 transition-colors duration-200"
                                   aria-label="Source Information"
                                   onclick={() => showSourceInfo(result)}
                                 >
@@ -891,7 +891,7 @@
 {/key}
 
 <style global>
-  @reference "#styles";
+  @reference "../app.css";
   #g-descript {
     @apply text-gray-700 bg-transparent;
   }

@@ -265,7 +265,7 @@
                         />
                         <!-- Overlay with game info -->
                         <div
-                          class="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent p-1.5"
+                          class="absolute inset-x-0 bottom-0 bg-linear-to-t from-black/70 to-transparent p-1.5"
                         >
                           <h4
                             class="text-white text-xs font-medium truncate leading-tight"

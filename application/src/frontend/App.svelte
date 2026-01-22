@@ -555,7 +555,7 @@
               ? 'Search for games...'
               : 'Search unavailable (offline)'}
             disabled={!$isOnline}
-            class="w-full h-[var(--header-button-size)] pl-12 pr-4 text-lg bg-accent-lighter rounded-lg border-none focus:outline-none font-archivo placeholder-accent-dark disabled:opacity-50 transition-all duration-300 ease-out focus:bg-white focus:shadow-md"
+            class="w-full h-(--header-button-size) pl-12 pr-4 text-lg bg-accent-lighter rounded-lg border-none focus:outline-none font-archivo placeholder-accent-dark disabled:opacity-50 transition-all duration-300 ease-out focus:bg-white focus:shadow-md"
             value={$searchQuery}
             oninput={handleSearchInput}
           />
@@ -731,7 +731,7 @@
 
       <!-- Main Content Area -->
       <main
-        class="flex-1 overflow-y-auto left-10 top-4 max-w-[51.5rem] relative mb-10"
+        class="flex-1 overflow-y-auto left-10 top-4 max-w-206 relative mb-10"
       >
         <!-- Content Container with absolute positioning for animations -->
         <div class="content-container overflow-x-hidden">
@@ -1006,7 +1006,7 @@
         </div>
         <!-- Bottom fade gradient overlay -->
         <div
-          class="pointer-events-none absolute left-0 bottom-0 w-full h-2 bg-gradient-to-t from-background-color to-transparent"
+          class="pointer-events-none absolute left-0 bottom-0 w-full h-2 bg-linear-to-t from-background-color to-transparent"
         ></div>
       </main>
     </div>
@@ -1022,7 +1022,7 @@
 {/if}
 
 <style global>
-  @reference "#styles";
+  @reference "./app.css";
 
   :root {
     /* Navigation button sizing */

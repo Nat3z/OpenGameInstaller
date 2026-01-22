@@ -161,7 +161,7 @@
       on:mouseleave={() => resumeNotificationTimer(notification.id)}
     >
       <div class="flex items-center gap-3 pb-3">
-        <div class="flex-shrink-0">
+        <div class="shrink-0">
           <img
             src={`./${notification.type}.svg`}
             alt={notification.type}

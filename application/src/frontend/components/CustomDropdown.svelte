@@ -158,6 +158,8 @@
 </div>
 
 <style>
+  @reference "../app.css";
+
   .custom-dropdown-button {
     @apply w-full px-4 py-3 bg-white border border-gray-300 rounded-lg flex items-center justify-between hover:border-accent focus:ring-2 focus:ring-accent-light focus:border-accent transition-colors;
   }

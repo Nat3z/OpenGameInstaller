@@ -369,7 +369,7 @@
 {/if}
 
 <style>
-  @reference "#styles";
+  @reference "../app.css";
 
   .config {
     @apply flex flex-col w-full h-full;
@@ -407,7 +407,7 @@
   }
 
   .update-badge {
-    @apply inline-flex items-center gap-2 px-3 py-1.5 bg-gradient-to-r from-accent to-accent-dark text-white text-sm font-semibold rounded-full mt-2 shadow-sm hover:shadow-md transition-all duration-200 transform hover:scale-105;
+    @apply inline-flex items-center gap-2 px-3 py-1.5 bg-linear-to-r from-accent to-accent-dark text-white text-sm font-semibold rounded-full mt-2 shadow-sm hover:shadow-md transition-all duration-200 transform hover:scale-105;
     max-width: fit-content;
   }
 

@@ -225,7 +225,7 @@
 
   <SectionModal
     scrollable={true}
-    class="max-h-96 !bg-transparent !p-0 !border-0"
+    class="max-h-96 bg-transparent! p-0! border-0!"
   >
     {#if loading}
       <div class="flex justify-center items-center py-8">

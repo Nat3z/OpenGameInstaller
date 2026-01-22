@@ -80,6 +80,7 @@
   $effect(() => {
     Object.keys(screenRendering).forEach((key) => {
       const option = screenRendering[key];
+      console.log('key', key, 'option', option);
       if (isBooleanOption(option)) {
         formData[key] = option.defaultValue ?? false;
       } else if (isNumberOption(option)) {
@@ -145,6 +146,7 @@
 
   function getInputValue(key: string, option: ConfigurationOption) {
     const value = formData[key];
+    console.log('key', key, 'value', value, 'formData', formData);
     if (isBooleanOption(option)) return undefined; // Handled by CheckboxModal
     return value;
   }
@@ -157,54 +159,56 @@
   }
 </script>
 
-<Modal open={true} size="large" onClose={closeModal}>
-  <TitleModal title={gameInfo.name} />
+{#if Object.keys(formData).length > 0}
+  <Modal open={true} size="large" onClose={closeModal}>
+    <TitleModal title={gameInfo.name} />
 
-  {#each Object.keys(screenRendering) as key}
-    {#if isBooleanOption(screenRendering[key])}
-      <CheckboxModal
-        id={key}
-        label={screenRendering[key].displayName}
-        description={screenRendering[key].description}
-        checked={formData[key]}
-        class="mb-4"
-        onchange={handleInputChange}
-      />
-    {:else}
-      <InputModal
-        id={key}
-        label={screenRendering[key].displayName}
-        description={screenRendering[key].description}
-        type={getInputType(screenRendering[key])}
-        value={getInputValue(key, screenRendering[key])}
-        options={getInputOptions(screenRendering[key]).map((value) => ({
-          id: value,
-          name: value,
-        }))}
-        class="mb-4"
-        onchange={handleInputChange}
-      />
-    {/if}
-  {/each}
-
-  <SectionModal class="mt-4">
-    <div class="flex gap-3 flex-row">
-      <ButtonModal text="Save" variant="primary" onclick={pushChanges} />
-      {#if platform === 'linux' || platform === 'darwin'}
-        <ButtonModal
-          text="Add to Steam"
-          variant="secondary"
-          onclick={(event) => {
-            addToSteam(event.target as HTMLButtonElement);
-          }}
+    {#each Object.keys(screenRendering) as key}
+      {#if isBooleanOption(screenRendering[key])}
+        <CheckboxModal
+          id={key}
+          label={screenRendering[key].displayName}
+          description={screenRendering[key].description}
+          checked={formData[key]}
+          class="mb-4"
+          onchange={handleInputChange}
+        />
+      {:else}
+        <InputModal
+          id={key}
+          label={screenRendering[key].displayName}
+          description={screenRendering[key].description}
+          type={getInputType(screenRendering[key])}
+          value={getInputValue(key, screenRendering[key])}
+          options={getInputOptions(screenRendering[key]).map((value) => ({
+            id: value,
+            name: value,
+          }))}
+          class="mb-4"
+          onchange={handleInputChange}
         />
       {/if}
-      <ButtonModal
-        text="Remove Game"
-        variant="danger"
-        onclick={removeFromList}
-      />
-      <ButtonModal text="Cancel" variant="secondary" onclick={closeModal} />
-    </div>
-  </SectionModal>
-</Modal>
+    {/each}
+
+    <SectionModal class="mt-4">
+      <div class="flex gap-3 flex-row">
+        <ButtonModal text="Save" variant="primary" onclick={pushChanges} />
+        {#if platform === 'linux' || platform === 'darwin'}
+          <ButtonModal
+            text="Add to Steam"
+            variant="secondary"
+            onclick={(event) => {
+              addToSteam(event.target as HTMLButtonElement);
+            }}
+          />
+        {/if}
+        <ButtonModal
+          text="Remove Game"
+          variant="danger"
+          onclick={removeFromList}
+        />
+        <ButtonModal text="Cancel" variant="secondary" onclick={closeModal} />
+      </div>
+    </SectionModal>
+  </Modal>
+{/if}

@@ -786,7 +786,7 @@
   <div class="container mx-auto py-6 max-w-6xl">
     <div class="flex items-center gap-3 mb-4">
       <div
-        class="w-1 h-6 bg-gradient-to-b from-red-500 to-orange-600 rounded-full"
+        class="w-1 h-6 bg-linear-to-b from-red-500 to-orange-600 rounded-full"
       ></div>
       <h2 class="text-2xl font-bold text-gray-900">Failed Setups</h2>
       <span
@@ -877,7 +877,7 @@
 {/if}
 
 <style>
-  @reference "#styles";
+  @reference "../app.css";
 
   /* Chart Styles */
   .chart-section {
@@ -937,7 +937,7 @@
   }
 
   .download-image {
-    @apply relative w-16 h-16 bg-gradient-to-br from-gray-100 to-gray-200 overflow-hidden rounded-lg flex-shrink-0;
+    @apply relative w-16 h-16 bg-linear-to-br from-gray-100 to-gray-200 overflow-hidden rounded-lg flex-shrink-0;
   }
 
   .game-cover {
@@ -1091,7 +1091,7 @@
   }
 
   .failed-setup-image {
-    @apply relative w-12 h-12 bg-gradient-to-br from-gray-100 to-gray-200 overflow-hidden rounded-lg flex-shrink-0;
+    @apply relative w-12 h-12 bg-linear-to-br from-gray-100 to-gray-200 overflow-hidden rounded-lg flex-shrink-0;
   }
 
   .failed-setup-info {
@@ -1140,8 +1140,8 @@
   }
 
   .queue-item {
-    @apply opacity-75 bg-gradient-to-r from-accent-lighter to-accent-light/50;
-    border-left: 3px solid theme('colors.accent');
+    @apply opacity-75 bg-linear-to-r from-accent-lighter to-accent-light/50;
+    border-left: 3px solid var(--color-accent);
   }
 
   .queue-item:hover {

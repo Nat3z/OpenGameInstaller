@@ -302,7 +302,7 @@
 </script>
 
 <main
-  class="flex items-center flex-col justify-center w-full h-full p-8 bg-background-color fixed top-0 left-0 z-[5]"
+  class="flex items-center flex-col justify-center w-full h-full p-8 bg-background-color fixed top-0 left-0 z-5"
   id="oobe"
 >
   {#if stage > 0}
@@ -924,6 +924,7 @@
 </main>
 
 <style scoped>
+  @reference "../app.css";
   progress {
     @apply fixed top-4 left-0 h-2 w-full [&::-webkit-progress-bar]:rounded-lg [&::-webkit-progress-bar]:bg-accent-light px-4;
   }
@@ -943,7 +944,7 @@
   .terminal-content {
     @apply p-4 max-h-48 overflow-y-auto;
     scrollbar-width: thin;
-    scrollbar-color: theme('colors.accent') theme('colors.gray.800');
+    scrollbar-color: var(--color-accent) #1f2937;
   }
 
   .terminal-content::-webkit-scrollbar {
@@ -951,16 +952,16 @@
   }
 
   .terminal-content::-webkit-scrollbar-track {
-    background: theme('colors.gray.800');
+    background: #1f2937;
   }
 
   .terminal-content::-webkit-scrollbar-thumb {
-    background: theme('colors.accent');
+    background: var(--color-accent);
     border-radius: 3px;
   }
 
   .terminal-content::-webkit-scrollbar-thumb:hover {
-    background: theme('colors.accent-dark');
+    background: var(--color-accent-dark);
   }
 
   .terminal-line {

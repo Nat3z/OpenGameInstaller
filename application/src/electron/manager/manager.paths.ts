@@ -8,7 +8,7 @@ export function isDev() {
 }
 
 export let __dirname = isDev()
-  ? app.getAppPath() + '/../development'
+  ? app.getAppPath() + '/development'
   : path.dirname(process.execPath);
 
 if (process.platform === 'linux' && !isDev()) {

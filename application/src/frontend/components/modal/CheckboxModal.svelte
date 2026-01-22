@@ -51,6 +51,8 @@
 </div>
 
 <style>
+  @reference "../../app.css";
+
   .input-checkbox {
     @apply sr-only;
   }

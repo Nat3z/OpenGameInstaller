@@ -420,12 +420,13 @@
 </div>
 
 <style>
+  @reference "../app.css";
   .proton-setup-container {
-    border: 1px solid theme('colors.accent-light');
+    border: 1px solid var(--color-accent-light);
     background: linear-gradient(
       135deg,
-      theme('colors.background-color') 0%,
-      theme('colors.accent-lighter') 100%
+      var(--color-background-color) 0%,
+      var(--color-accent-lighter) 100%
     );
   }
 

@@ -587,7 +587,7 @@
                 <img
                   src="./error.svg"
                   alt="error"
-                  class="w-4 h-4 mt-0.5 flex-shrink-0"
+                  class="w-4 h-4 mt-0.5 shrink-0"
                 />
                 <p class="text-red-700 leading-relaxed"></p>
               </div>
@@ -598,7 +598,7 @@
               >
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
-                  class="w-4 h-4 mt-0.5 flex-shrink-0 text-blue-400"
+                  class="w-4 h-4 mt-0.5 shrink-0 text-blue-400"
                   fill="currentColor"
                   height="24"
                   viewBox="0 0 24 24"
@@ -620,6 +620,8 @@
 </div>
 
 <style>
+  @reference "../app.css";
+
   .addon-header {
     @apply w-full;
   }

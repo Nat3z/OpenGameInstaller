@@ -168,6 +168,10 @@ interface Window {
         prefixPath?: string;
         error?: string;
       }>;
+      movePrefix: (
+        originalPrefix: string,
+        newPrefix: string
+      ) => Promise<'success' | 'failed'>;
       installRedistributables: (
         appID: number
       ) => Promise<'success' | 'failed' | 'not-found'>;

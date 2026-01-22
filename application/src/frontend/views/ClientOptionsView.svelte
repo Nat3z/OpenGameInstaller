@@ -850,6 +850,8 @@
                           </div>
                         </div>
                       {:else if selectedOption.options[key].type === 'number'}
+                        {@const min = selectedOption.options[key].min ?? 0}
+                        {@const max = selectedOption.options[key].max ?? 100}
                         <div class="option-item">
                           <label class="option-label" for={key}>
                             {selectedOption.options[key].displayName}
@@ -870,18 +872,35 @@
                                     (e.target as HTMLInputElement).value
                                   );
                                   rangeValues[key] = value;
-                                  rangeValues = { ...rangeValues };
                                   updateConfig();
                                 }}
-                                value={rangeValues[key] ??
-                                  getStoredOrDefaultValue(key)}
-                                max={selectedOption.options[key].max}
-                                min={selectedOption.options[key].min}
+                                value={rangeValues[key] ?? getStoredOrDefaultValue(key)}
+                                max={max}
+                                min={min}
                               />
-                              <div class="range-value-display">
-                                {rangeValues[key] ??
-                                  getStoredOrDefaultValue(key)}
-                              </div>
+                              <input
+                                type="text"
+                                inputmode="numeric"
+                                pattern="[0-9]*"
+                                class="range-value-input"
+                                value={rangeValues[key] ?? getStoredOrDefaultValue(key)}
+                                onchange={(e) => {
+                                  const input = e.target as HTMLInputElement;
+                                  let value = parseInt(input.value);
+                                  
+                                  if (isNaN(value)) {
+                                    value = rangeValues[key] ?? (getStoredOrDefaultValue(key) as number);
+                                  } else if (value < min) {
+                                    value = min;
+                                  } else if (value > max) {
+                                    value = max;
+                                  }
+                                  
+                                  input.value = value.toString();
+                                  rangeValues[key] = value;
+                                  updateConfig();
+                                }}
+                              />
                             </div>
                           </div>
                         </div>
@@ -1284,7 +1303,13 @@
     @apply flex-1;
   }
 
-  .range-value-display {
-    @apply min-w-12 text-center px-3 py-1 bg-accent-lighter text-accent-dark rounded-lg font-archivo font-semibold text-lg;
+  .range-value-input {
+    @apply w-16 text-center px-3 py-1 bg-accent-lighter text-accent-dark rounded-lg font-archivo font-semibold text-lg border-none focus:ring-2 focus:ring-accent-light outline-none;
+    background-color: #e1f4f0;
+    -webkit-user-select: text;
+    -moz-user-select: text;
+    -ms-user-select: text;
+    user-select: text;
+    cursor: text;
   }
 </style>

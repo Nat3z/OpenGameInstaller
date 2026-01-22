@@ -277,12 +277,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
     checkPrefixExists: wrap((appID: number) =>
       ipcRenderer.invoke('app:check-prefix-exists', appID)
     ),
+    movePrefix: wrap((originalPrefix: string, newPrefix: string) =>
+      ipcRenderer.invoke('app:move-prefix', originalPrefix, newPrefix)
+    ),
     installRedistributables: wrap((appID: number) =>
       ipcRenderer.invoke('app:install-redistributables', appID)
     ),
-    addToDesktop: wrap(() =>
-      ipcRenderer.invoke('app:add-to-desktop')
-    ),
+    addToDesktop: wrap(() => ipcRenderer.invoke('app:add-to-desktop')),
   },
   getVersion: wrap(() => ipcRenderer.sendSync('get-version')),
   updateAddons: wrap(() => ipcRenderer.invoke('update-addons')),

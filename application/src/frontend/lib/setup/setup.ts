@@ -61,7 +61,9 @@ export function createSetupPayload(
 
 export function handleSetupError(
   error: any,
-  downloadedItem: DownloadStatusAndInfo
+  downloadedItem: DownloadStatusAndInfo,
+  forType: 'game' | 'update' = 'game',
+  currentLibraryInfo?: LibraryInfo
 ) {
   console.error('Error setting up app: ', error);
   createNotification({
@@ -95,6 +97,9 @@ export function handleSetupError(
         ? downloadedItem.files
         : undefined,
     manifest: downloadedItem.manifest || {},
+    ...(forType === 'update' && currentLibraryInfo
+      ? { for: 'update' as const, currentLibraryInfo }
+      : { for: 'game' as const }),
   };
 
   saveFailedSetup({
@@ -105,13 +110,18 @@ export function handleSetupError(
   });
 }
 
-export function createSetupCallbacks(downloadedItem: DownloadStatusAndInfo) {
+export function createSetupCallbacks(
+  downloadedItem: DownloadStatusAndInfo,
+  forType: 'game' | 'update' = 'game',
+  currentLibraryInfo?: LibraryInfo
+) {
   return {
     onLogs: (log: string[]) =>
       dispatchSetupEvent('log', downloadedItem.id, log),
     onProgress: (progress: any) =>
       dispatchSetupEvent('progress', downloadedItem.id, progress),
-    onFailed: (error: any) => handleSetupError(error, downloadedItem),
+    onFailed: (error: any) =>
+      handleSetupError(error, downloadedItem, forType, currentLibraryInfo),
     consume: 'json' as const,
   };
 }
@@ -129,7 +139,7 @@ export async function runSetupApp(
     undefined,
     additionalData
   );
-  const callbacks = createSetupCallbacks(downloadedItem);
+  const callbacks = createSetupCallbacks(downloadedItem, 'game');
 
   try {
     const data: SetupEventResponse = await safeFetch(
@@ -230,17 +240,33 @@ export async function runSetupAppUpdate(
   isTorrent: boolean,
   additionalData: any = {}
 ): Promise<SetupEventResponse> {
+  const currentLibraryInfo = getApp(downloadedItem.appID) as LibraryInfo;
   const setupPayload = createSetupPayload(
     downloadedItem,
     outputDir,
     'update',
-    getApp(downloadedItem.appID) as LibraryInfo,
+    currentLibraryInfo,
     additionalData
   );
-  const callbacks = createSetupCallbacks(downloadedItem);
+  const callbacks = createSetupCallbacks(
+    downloadedItem,
+    'update',
+    currentLibraryInfo
+  );
 
   try {
     // Run addon setup to get the new version info
+
+    // get the original prefix before the update
+    let originalPrefix = '';
+    if ((await window.electronAPI.app.getOS()) === 'linux') {
+      const { exists, prefixPath } =
+        await window.electronAPI.app.checkPrefixExists(downloadedItem.appID);
+      if (exists) {
+        originalPrefix = prefixPath ?? '';
+      }
+    }
+
     const data: SetupEventResponse = await safeFetch(
       'setupApp',
       setupPayload,
@@ -290,6 +316,34 @@ export async function runSetupAppUpdate(
         beforeLibraryApp?.launchExecutable != data.launchExecutable ||
         beforeLibraryApp?.launchArguments != data.launchArguments
       ) {
+        let newPrefix = '';
+        if ((await window.electronAPI.app.getOS()) === 'linux') {
+          const { exists, prefixPath } =
+            await window.electronAPI.app.checkPrefixExists(
+              downloadedItem.appID
+            );
+          if (exists) {
+            newPrefix = prefixPath ?? '';
+          }
+        }
+        if (
+          newPrefix !== originalPrefix &&
+          (newPrefix !== '' || originalPrefix !== '')
+        ) {
+          // move the original prefix to the new prefix
+          createNotification({
+            id: Math.random().toString(36).substring(2, 9),
+            type: 'success',
+            message: `Swapping wine prefixes to maintain save data...`,
+          });
+          const result = await window.electronAPI.app.movePrefix(
+            originalPrefix,
+            newPrefix
+          );
+          if (result !== 'success') {
+            throw new Error('Failed to move prefix');
+          }
+        }
         createNotification({
           id: Math.random().toString(36).substring(2, 9),
           type: 'success',

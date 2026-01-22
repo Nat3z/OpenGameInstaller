@@ -1072,6 +1072,46 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
     }
   );
 
+  ipcMain.handle(
+    'app:move-prefix',
+    async (_, originalPrefix: string, name: string) => {
+      if (process.platform !== 'linux') {
+        return 'failed';
+      }
+      const { success, appId } = await getNonSteamGameAppID(name);
+      if (!success) {
+        return 'failed';
+      }
+      const newProtonPath = `${process.env.HOME}/.steam/steam/steamapps/compatdata/${appId}/pfx`;
+      fs.mkdirSync(newProtonPath, { recursive: true });
+      // create an intermediate directory to move the prefix to
+      // find the path after /compatdata
+      const tmpNewPrefixPath = join(
+        newProtonPath,
+        '..',
+        '..',
+        newProtonPath.split('/compatdata/')[1].split('/pfx')[0] + '.og-tmp'
+      );
+      fs.mkdirSync(tmpNewPrefixPath, { recursive: true });
+
+      // 1: move the new prefix to the intermediate directory
+      fs.renameSync(newProtonPath, tmpNewPrefixPath);
+
+      // 2: move the original prefix to the new prefix
+      fs.renameSync(originalPrefix, newProtonPath);
+
+      // 3: make the intermediate directory (of the new prefix) move to the temp path
+      const tempPath = join(
+        app.getPath('temp'),
+        'ogi-original-prefixes',
+        `${appId}.og-tmp`
+      );
+      fs.renameSync(tmpNewPrefixPath, tempPath);
+
+      return 'success';
+    }
+  );
+
   ipcMain.handle('app:add-to-desktop', async () => {
     return await addToDesktop();
   });

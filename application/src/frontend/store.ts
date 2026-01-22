@@ -190,7 +190,6 @@ export const headerBackButton: Writable<HeaderBackButton> = writable({
 });
 
 export function setHeaderBackButton(onClick: () => void, ariaLabel?: string) {
-  console.log('setHeaderBackButton called', { ariaLabel });
   headerBackButton.set({
     visible: true,
     onClick,

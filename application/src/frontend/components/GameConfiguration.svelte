@@ -80,7 +80,6 @@
   $effect(() => {
     Object.keys(screenRendering).forEach((key) => {
       const option = screenRendering[key];
-      console.log('key', key, 'option', option);
       if (isBooleanOption(option)) {
         formData[key] = option.defaultValue ?? false;
       } else if (isNumberOption(option)) {
@@ -146,7 +145,6 @@
 
   function getInputValue(key: string, option: ConfigurationOption) {
     const value = formData[key];
-    console.log('key', key, 'value', value, 'formData', formData);
     if (isBooleanOption(option)) return undefined; // Handled by CheckboxModal
     return value;
   }

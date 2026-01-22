@@ -11,7 +11,7 @@
     ".": {
       "import": {
         "default": "./build/main.mjs",
-        "types": "./build/main.d.ts"
+        "types": "./build/main.d.mts"
       },
       "require": {
         "default": "./build/main.cjs",
@@ -19,7 +19,7 @@
       }
     }
   },
-  "types": "./build/main.d.ts",
+  "types": "./build/main.d.mts",
   "main": "./build/main.js",
   "dependencies": {
     "axios": "^1.7.2",
@@ -27,13 +27,13 @@
   },
   "scripts": {
     "auto-build": "tsc -w",
-    "build": "tsup --config tsup.config.js",
+    "build": "tsdown --config tsdown.config.js",
     "test": "bun test ./tests/**/*.test.ts",
     "release": "bun run build && npm publish"
   },
   "devDependencies": {
     "@types/node": "^20.14.12",
-    "tsup": "^8.2.3",
+    "tsdown": "^0.20.0-beta.4",
     "typescript": "^5.0.0"
   }
 }

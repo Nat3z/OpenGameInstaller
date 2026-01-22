@@ -1,14 +1,14 @@
 {
   "name": "ogi-addon",
-  "module": "./build/main.js",
+  "module": "./build/main.mjs",
   "type": "module",
   "main": "./build/main.cjs",
-  "version": "1.9.3",
+  "version": "1.9.4",
   "exports": {
     ".": {
       "import": {
-        "default": "./build/main.js",
-        "types": "./build/main.d.ts"
+        "default": "./build/main.mjs",
+        "types": "./build/main.d.mts"
       },
       "require": {
         "default": "./build/main.cjs",
@@ -17,8 +17,8 @@
     },
     "./config": {
       "import": {
-        "default": "./build/config/Configuration.js",
-        "types": "./build/config/Configuration.d.ts"
+        "default": "./build/config/Configuration.mjs",
+        "types": "./build/config/Configuration.d.mts"
       },
       "require": {
         "default": "./build/config/Configuration.cjs",
@@ -26,7 +26,7 @@
       }
     }
   },
-  "typings": "./build/main.d.ts",
+  "typings": "./build/main.d.mts",
   "author": {
     "name": "Nat3z",
     "email": "me@nat3z.com",
@@ -44,7 +44,7 @@
   },
   "scripts": {
     "auto-build": "tsc -w",
-    "build": "tsup --config tsup.config.js",
+    "build": "tsdown --config tsdown.config.js",
     "release": "bun run build && npm publish",
     "release-beta": "bun run build && npm publish --tag future"
   },
@@ -53,7 +53,7 @@
     "@types/node": "^20.14.12",
     "@types/ws": "^8.4.0",
     "prettier": "^3.6.0",
-    "tsup": "^8.2.3",
+    "tsdown": "^0.20.0-beta.4",
     "typescript": "^5.0.0"
   }
 }

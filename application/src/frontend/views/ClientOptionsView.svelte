@@ -575,7 +575,7 @@
         />
         <TextModal
           text={reasonForSteamGridLaunch}
-          class="!-mt-2"
+          class="-mt-2!"
           variant="body"
         />
       </SectionModal>
@@ -696,10 +696,10 @@
                     {#if condition}
                       {#if selectedOption.options[key].type === 'section-describer'}
                         <div class="option-item">
-                          <label class="option-label !mb-0 !text-2xl" for={key}>
+                          <label class="option-label mb-0! text-2xl!" for={key}>
                             {selectedOption.options[key].displayName}
                           </label>
-                          <p class="option-description !mb-0">
+                          <p class="option-description mb-0!">
                             {selectedOption.options[key].description}
                           </p>
                         </div>
@@ -741,7 +741,7 @@
                               <input
                                 type={showPassword?.[key] ? 'text' : 'password'}
                                 id={key}
-                                class="input-text !pr-14 relative z-1"
+                                class="input-text pr-14! relative z-1"
                                 onchange={updateConfig}
                                 value={getStoredOrDefaultValue(key)}
                                 maxlength={selectedOption.options[key]
@@ -750,11 +750,11 @@
                                   .minTextLength}
                               />
                               <div
-                                class="pointer-events-none absolute right-12 top-1 h-8 w-8 z-2 rounded-lg bg-gradient-to-r from-transparent to-white/80"
+                                class="pointer-events-none absolute right-12 top-1 h-8 w-8 z-2 rounded-lg bg-linear-to-r from-transparent to-white/80"
                               ></div>
                               <button
                                 type="button"
-                                class="ml-2 px-2 py-1 text-sm absolute right-2 border-none rounded-lg bg-transparent outline-none text-accent-dark z-[3]"
+                                class="ml-2 px-2 py-1 text-sm absolute right-2 border-none rounded-lg bg-transparent outline-none text-accent-dark z-3"
                                 onclick={() => {
                                   if (!showPassword) showPassword = {};
                                   showPassword[key] = !showPassword[key];
@@ -1059,6 +1059,7 @@
 </div>
 
 <style>
+  @reference "../app.css";
   .config-container {
     @apply flex h-full w-full;
   }
@@ -1284,6 +1285,6 @@
   }
 
   .range-value-display {
-    @apply min-w-[3rem] text-center px-3 py-1 bg-accent-lighter text-accent-dark rounded-lg font-archivo font-semibold text-lg;
+    @apply min-w-12 text-center px-3 py-1 bg-accent-lighter text-accent-dark rounded-lg font-archivo font-semibold text-lg;
   }
 </style>

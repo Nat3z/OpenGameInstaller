@@ -5,7 +5,7 @@ import { app, BrowserWindow, globalShortcut, ipcMain, shell } from 'electron';
 import fs, { existsSync, readFileSync } from 'fs';
 import { processes } from './manager/manager.addon.js';
 import { stopClient } from './manager/manager.webtorrent.js';
-import { ConfigurationFile } from 'ogi-addon/build/config/ConfigurationBuilder.js';
+import type { ConfigurationFile } from 'ogi-addon/config';
 import AppEventHandler from './handlers/handler.app.js';
 import FSEventHandler from './handlers/handler.fs.js';
 import RealdDebridHandler from './handlers/handler.realdebrid.js';
@@ -130,9 +130,7 @@ function createWindow() {
       contextIsolation: true,
       // always allow devtools
       devTools: ogiDebug === 'true' || isDev(),
-      preload: isDev()
-        ? join(app.getAppPath(), 'preload.mjs')
-        : join(app.getAppPath(), 'build/preload.mjs'),
+      preload: join(app.getAppPath(), 'out/preload/index.mjs'),
     },
     title: 'OpenGameInstaller',
     fullscreenable: false,
@@ -168,7 +166,7 @@ function createWindow() {
   } else {
     mainWindow!!.loadURL(
       'file://' +
-        join(app.getAppPath(), 'public', 'index.html') +
+        join(app.getAppPath(), 'out', 'renderer', 'index.html') +
         '?secret=' +
         applicationAddonSecret
     );

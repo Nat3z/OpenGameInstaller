@@ -1,6 +1,4 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+/* Base global styles - Tailwind is imported via app.css */
 
 html,
 body {
@@ -44,19 +42,26 @@ select,
 textarea {
   font-family: inherit;
   font-size: inherit;
-  -webkit-padding: 0.4em 0;
-  padding: 0.4em;
   margin: 0 0 0.5em 0;
   box-sizing: border-box;
   border: 1px solid #ccc;
-  @apply p-2 pl-2 bg-slate-100 rounded-lg selection:outline selection:outline-accent-light;
+  padding: 0.5rem;
+  padding-left: 0.5rem;
+  background-color: #f1f5f9;
+  border-radius: 0.5rem;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  outline: 1px solid var(--color-accent-light, #b0dfd5);
 }
 
 button {
   color: #333;
   background-color: #f4f4f4;
   outline: none;
-  @apply transition-all ease-in-out duration-200;
+  transition: all 0.2s ease-in-out;
 }
 
 button:disabled {
@@ -70,11 +75,4 @@ button:focus {
   border-color: #666;
 }
 
-@font-face {
-  font-family: 'Archivo';
-  src: url(./Archivo-VariableFont_wdth\,wght.ttf);
-}
-@font-face {
-  font-family: 'Open Sans';
-  src: url(./OpenSans-VariableFont_wdth\,wght.ttf);
-}
+/* Font faces are now in app.css */

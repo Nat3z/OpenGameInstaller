@@ -102,12 +102,12 @@
                 {#each recentlyPlayed as app}
                   <button
                     data-library-item
-                    class="ml-4 flex-shrink-0 border-none relative transition-all shadow-lg hover:shadow-xl rounded-lg overflow-hidden bg-white"
+                    class="ml-4 shrink-0 border-none relative transition-all shadow-lg hover:shadow-xl rounded-lg overflow-hidden bg-white"
                     onclick={() => ($selectedApp = app)}
                   >
                     {#if updatesManager.getAppUpdate(app.appID)?.updateAvailable}
                       <div
-                        class="absolute shadow-md top-2 right-2 h-6 z-[2] flex items-center bg-yellow-500 rounded-lg flex-row justify-end gap-1 px-2"
+                        class="absolute shadow-md top-2 right-2 h-6 z-2 flex items-center bg-yellow-500 rounded-lg flex-row justify-end gap-1 px-2"
                       >
                         <UpdateIcon fill="#ffffff" width="16px" height="16px" />
                         <p
@@ -144,7 +144,7 @@
                         style="background: linear-gradient(to top, rgba(0,0,0,0.7), transparent);"
                       ></div>
                       <p
-                        class="text-white text-base py-4 text-center font-archivo z-[1]"
+                        class="text-white text-base py-4 text-center font-archivo z-1"
                       >
                         {app.name}
                       </p>
@@ -218,7 +218,7 @@
                       >
                         {#if updatesManager.getAppUpdate(app.appID)?.updateAvailable}
                           <div
-                            class="absolute shadow-md top-2 right-2 h-6 z-[2] flex items-center bg-yellow-500 rounded-lg flex-row justify-end gap-1 px-2"
+                            class="absolute shadow-md top-2 right-2 h-6 z-2 flex items-center bg-yellow-500 rounded-lg flex-row justify-end gap-1 px-2"
                           >
                             <UpdateIcon
                               fill="#ffffff"
@@ -254,7 +254,7 @@
                             style="background: linear-gradient(to top, rgba(0,0,0,0.7), transparent);"
                           ></div>
                           <p
-                            class="text-white text-base py-4 text-center font-archivo z-[1]"
+                            class="text-white text-base py-4 text-center font-archivo z-1"
                           >
                             {app.name}
                           </p>

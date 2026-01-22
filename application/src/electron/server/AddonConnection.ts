@@ -7,7 +7,7 @@ import {
   WebsocketMessageClient,
   WebsocketMessageServer,
 } from 'ogi-addon';
-import { ConfigurationFile } from 'ogi-addon/src/config/ConfigurationBuilder';
+import type { ConfigurationFile } from 'ogi-addon/config';
 import { clients } from './addon-server.js';
 import { addonSecret } from './constants.js';
 import {

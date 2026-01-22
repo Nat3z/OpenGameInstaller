@@ -178,7 +178,7 @@
   <!-- svelte-ignore a11y_click_events_have_key_events -->
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
-    class="fixed inset-0 bg-black bg-opacity-25 z-[100] pointer-events-auto"
+    class="fixed inset-0 bg-black/25 z-100 pointer-events-auto"
     in:fade={{ duration: 200 }}
     out:fade={{ duration: 200 }}
     onclick={handleClickOutside}
@@ -187,7 +187,7 @@
   <!-- Side Panel -->
   <div
     bind:this={sideViewElement}
-    class="fixed right-0 top-0 h-full w-96 bg-background-color shadow-2xl z-[101] flex flex-col"
+    class="fixed right-0 top-0 h-full w-96 bg-background-color shadow-2xl z-101 flex flex-col"
     in:fly={{ x: 384, duration: 300, easing: quintOut }}
     out:fly={{ x: 384, duration: 200 }}
   >
@@ -290,7 +290,7 @@
     </div>
 
     <div
-      class="h-4 w-full pointer-events-none bg-gradient-to-b from-background-color to-transparent"
+      class="h-4 w-full pointer-events-none bg-linear-to-b from-background-color to-transparent"
     ></div>
 
     <!-- Content -->
@@ -363,7 +363,7 @@
                     in:fly={{ y: 20, duration: 300, delay: 50 * index }}
                     out:fly={{ y: 20, duration: 300, delay: 50 * index }}
                   >
-                    <div class="flex-shrink-0 mt-0.5">
+                    <div class="shrink-0 mt-0.5">
                       <img
                         src={getNotificationIcon(notification.type)}
                         alt={notification.type}
@@ -445,7 +445,7 @@
                     in:fly={{ y: 20, duration: 300, delay: 50 * index }}
                     out:fly={{ y: 20, duration: 300, delay: 50 * index }}
                   >
-                    <div class="flex-shrink-0 mt-0.5">
+                    <div class="shrink-0 mt-0.5">
                       <img
                         src={getTaskStatusIcon(task.status)}
                         alt={task.status}

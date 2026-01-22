@@ -1,14 +1,16 @@
 import {
-  ConfigurationFile,
   ConfigurationBuilder,
   BooleanOption,
   ConfigurationOption,
-  ConfigurationOptionType,
   NumberOption,
   StringOption,
   isBooleanOption,
   isNumberOption,
   isStringOption,
+} from './ConfigurationBuilder';
+import type {
+  ConfigurationFile,
+  ConfigurationOptionType,
 } from './ConfigurationBuilder';
 
 interface DefiniteConfig {
@@ -83,7 +85,10 @@ export class Configuration {
   }
 
   getStringValue(optionName: string): string {
-    if (!this.definiteConfig[optionName] === null) {
+    if (
+      this.definiteConfig[optionName] === null ||
+      this.definiteConfig[optionName] === undefined
+    ) {
       throw new Error('Option ' + optionName + ' is not defined');
     }
     if (typeof this.definiteConfig[optionName] !== 'string') {
@@ -93,7 +98,10 @@ export class Configuration {
   }
 
   getNumberValue(optionName: string): number {
-    if (!this.definiteConfig[optionName] === null) {
+    if (
+      this.definiteConfig[optionName] === null ||
+      this.definiteConfig[optionName] === undefined
+    ) {
       throw new Error('Option ' + optionName + ' is not defined');
     }
     if (typeof this.definiteConfig[optionName] !== 'number') {
@@ -103,7 +111,10 @@ export class Configuration {
   }
 
   getBooleanValue(optionName: string): boolean {
-    if (this.definiteConfig[optionName] === null) {
+    if (
+      this.definiteConfig[optionName] === null ||
+      this.definiteConfig[optionName] === undefined
+    ) {
       throw new Error('Option ' + optionName + ' is not defined');
     }
     if (typeof this.definiteConfig[optionName] !== 'boolean') {
@@ -114,14 +125,14 @@ export class Configuration {
 }
 
 export {
-  ConfigurationFile,
   ConfigurationBuilder,
   BooleanOption,
   ConfigurationOption,
-  ConfigurationOptionType,
   NumberOption,
   StringOption,
   isBooleanOption,
   isNumberOption,
   isStringOption,
 };
+
+export type { ConfigurationFile, ConfigurationOptionType };

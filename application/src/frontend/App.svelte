@@ -35,6 +35,7 @@
     readNotificationIds,
     showNotificationSideView,
     currentDownloads,
+    headerBackButton,
   } from './store';
   import StorePage from './components/StorePage.svelte';
   import ConfigurationModal from './components/modal/ConfigurationModal.svelte';
@@ -506,7 +507,27 @@
 
       <!-- Center - Search Bar -->
       <div class="flex flex-row items-center flex-auto max-w-2xl mx-8 gap-2">
-        {#if $currentStorePageOpened}
+        {#if $headerBackButton.visible && $headerBackButton.onClick}
+          <button
+            class="header-button"
+            onclick={() => {
+              if ($headerBackButton.onClick) {
+                $headerBackButton.onClick();
+              }
+            }}
+            aria-label={$headerBackButton.ariaLabel || 'Go back'}
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 24 24"
+              fill="currentColor"
+              class="fill-accent-dark"
+              ><path d="M0 0h24v24H0V0z" fill="none" opacity=".87" /><path
+                d="M16.62 2.99c-.49-.49-1.28-.49-1.77 0L6.54 11.3c-.39.39-.39 1.02 0 1.41l8.31 8.31c.49.49 1.28.49 1.77 0s.49-1.28 0-1.77L9.38 12l7.25-7.25c.48-.48.48-1.28-.01-1.76z"
+              /></svg
+            >
+          </button>
+        {:else if $currentStorePageOpened}
           <button
             class="header-button"
             onclick={() => {
@@ -555,7 +576,7 @@
               ? 'Search for games...'
               : 'Search unavailable (offline)'}
             disabled={!$isOnline}
-            class="w-full h-[var(--header-button-size)] pl-12 pr-4 text-lg bg-accent-lighter rounded-lg border-none focus:outline-none font-archivo placeholder-accent-dark disabled:opacity-50 transition-all duration-300 ease-out focus:bg-white focus:shadow-md"
+            class="w-full h-(--header-button-size) pl-12 pr-4 text-lg bg-accent-lighter rounded-lg border-none focus:outline-none font-archivo placeholder-accent-dark disabled:opacity-50 transition-all duration-300 ease-out focus:bg-white focus:shadow-md"
             value={$searchQuery}
             oninput={handleSearchInput}
           />
@@ -731,7 +752,7 @@
 
       <!-- Main Content Area -->
       <main
-        class="flex-1 overflow-y-auto left-10 top-4 max-w-[51.5rem] relative mb-10"
+        class="flex-1 overflow-y-auto left-10 top-4 max-w-206 relative mb-10"
       >
         <!-- Content Container with absolute positioning for animations -->
         <div class="content-container overflow-x-hidden">
@@ -1006,7 +1027,7 @@
         </div>
         <!-- Bottom fade gradient overlay -->
         <div
-          class="pointer-events-none absolute left-0 bottom-0 w-full h-2 bg-gradient-to-t from-background-color to-transparent"
+          class="pointer-events-none absolute left-0 bottom-0 w-full h-2 bg-linear-to-t from-background-color to-transparent"
         ></div>
       </main>
     </div>
@@ -1022,9 +1043,7 @@
 {/if}
 
 <style global>
-  @tailwind base;
-  @tailwind components;
-  @tailwind utilities;
+  @reference "./app.css";
 
   :root {
     /* Navigation button sizing */
@@ -1049,7 +1068,7 @@
   }
 
   body {
-    @apply bg-background-color;
+    background-color: var(--color-background-color);
   }
 
   ::-webkit-scrollbar {
@@ -1058,33 +1077,36 @@
 
   ::-webkit-scrollbar-thumb {
     background-color: #cbcbcb51;
-    @apply rounded-lg bg-opacity-10;
+    border-radius: 0.5rem;
+    opacity: 0.1;
   }
 
   ::-webkit-scrollbar-thumb:hover {
     background-color: #909090;
-    @apply rounded-lg bg-opacity-100;
+    border-radius: 0.5rem;
+    opacity: 1;
   }
 
   textarea:focus,
   input[type='text']:focus,
   input[type='password']:focus,
   input[type='number']:focus {
-    @apply outline outline-accent-light;
+    outline: 1px solid var(--color-accent-light);
   }
 
   button {
-    @apply font-open-sans;
+    font-family: var(--font-open-sans);
   }
 
   .nav-button {
-    @apply p-3 rounded-lg border-none hover:bg-gray-100 text-accent-dark transition-all duration-300 ease-out flex justify-center items-center;
+    @apply p-3 rounded-lg border-none text-accent-dark transition-all duration-300 ease-out flex justify-center items-center;
     width: var(--nav-button-size);
     height: var(--nav-button-size);
     transform: scale(1);
   }
 
   .nav-button:hover {
+    @apply bg-gray-100;
     transform: scale(1.05);
   }
 
@@ -1133,7 +1155,11 @@
   }
 
   .addon-header {
-    @apply w-full flex items-center justify-between py-3 px-0 bg-transparent border-none cursor-pointer hover:bg-gray-50 rounded-lg transition-colors duration-200;
+    @apply w-full flex items-center justify-between py-3 bg-transparent border-none cursor-pointer rounded-lg transition-colors duration-200;
+  }
+
+  .addon-header:hover {
+    @apply bg-gray-50;
   }
 
   .addon-header-content {
@@ -1177,7 +1203,8 @@
   }
 
   .addon-loading-spinner {
-    @apply w-5 h-5 border-2 border-gray-300 border-t-accent rounded-full animate-spin;
+    @apply w-5 h-5 border-2 border-gray-300 rounded-full animate-spin;
+    border-top-color: var(--color-accent);
   }
 
   .empty-icon {
@@ -1185,17 +1212,15 @@
   }
 
   .search-result-item {
-    @apply flex gap-4 p-4 bg-white rounded-lg border border-gray-200 hover:shadow-md transition-all duration-300 ease-out;
-    transform: translateY(0);
+    @apply flex gap-4 p-4 bg-white rounded-lg border border-gray-200 hover:shadow-md transition-all duration-300 ease-out translate-y-0;
   }
 
   .search-result-item:hover {
-    transform: translateY(-2px);
-    @apply shadow-lg;
+    @apply -translate-y-0.5 shadow-lg;
   }
 
   .result-image {
-    @apply w-24 h-24 rounded object-cover flex-shrink-0;
+    @apply w-24 h-24 rounded object-cover shrink-0;
   }
 
   .result-content {
@@ -1228,7 +1253,6 @@
 
   .loading-spinner {
     @apply w-8 h-8 border-4 border-accent-lighter border-t-accent rounded-full animate-spin mb-4;
-    animation: spin 1s linear infinite;
     filter: drop-shadow(0 2px 4px rgba(66, 138, 145, 0.1));
   }
 

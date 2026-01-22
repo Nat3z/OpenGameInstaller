@@ -240,6 +240,8 @@
 </Modal>
 
 <style>
+  @reference "../../app.css";
+
   .changelog-modal {
     @apply w-full;
   }

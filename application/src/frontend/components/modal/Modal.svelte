@@ -134,6 +134,8 @@
 {/if}
 
 <style global>
+  @reference "../../app.css";
+
   .modal-small {
     @apply max-w-xs w-full max-h-80;
   }

@@ -105,12 +105,13 @@
 </div>
 
 <style>
+  @reference "../app.css";
   .setup-prompt-container {
-    border: 1px solid theme('colors.accent-light');
+    border: 1px solid var(--color-accent-light);
     background: linear-gradient(
       135deg,
-      theme('colors.background-color') 0%,
-      theme('colors.accent-lighter') 100%
+      var(--color-background-color) 0%,
+      var(--color-accent-lighter) 100%
     );
   }
 
@@ -125,7 +126,7 @@
   .terminal-content {
     @apply p-4 max-h-48 overflow-y-auto;
     scrollbar-width: thin;
-    scrollbar-color: theme('colors.accent') theme('colors.gray.800');
+    scrollbar-color: var(--color-accent) #1f2937;
   }
 
   .terminal-content::-webkit-scrollbar {
@@ -133,16 +134,16 @@
   }
 
   .terminal-content::-webkit-scrollbar-track {
-    background: theme('colors.gray.800');
+    background: #1f2937;
   }
 
   .terminal-content::-webkit-scrollbar-thumb {
-    background: theme('colors.accent');
+    background: var(--color-accent);
     border-radius: 3px;
   }
 
   .terminal-content::-webkit-scrollbar-thumb:hover {
-    background: theme('colors.accent-dark');
+    background: var(--color-accent-dark);
   }
 
   .terminal-line {

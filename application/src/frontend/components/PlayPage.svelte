@@ -7,6 +7,8 @@
     currentStorePageOpenedStorefront,
     gamesLaunched,
     launchGameTrigger,
+    setHeaderBackButton,
+    clearHeaderBackButton,
   } from '../store';
   import { onDestroy, onMount } from 'svelte';
   import SettingsFilled from '../Icons/SettingsFilled.svelte';
@@ -137,6 +139,7 @@
   onDestroy(() => {
     unsubscribe();
     unsubscribe2();
+    clearHeaderBackButton();
   });
 
   let searchingAddons: { [key: string]: SearchResult[] | undefined } = $state(
@@ -155,6 +158,13 @@
   });
 
   onMount(async () => {
+    // Set up the header back button
+    console.log('PlayPage mounted, setting header back button');
+    setHeaderBackButton(() => {
+      console.log('Header back button clicked');
+      exitPlayPage();
+    }, 'Back to library');
+
     const addons = await fetchAddonsWithConfigure();
     const addonsWithStorefront = addons.filter((addon) =>
       addon.storefronts.includes(libraryInfo.storefront)
@@ -215,7 +225,7 @@
 {/if}
 
 <div
-  class="flex flex-col top-0 left-0 overflow-y-auto absolute w-full h-full bg-white z-[3] animate-fade-in-pop-fast"
+  class="flex flex-col top-0 left-0 overflow-y-auto absolute w-full h-full bg-white z-3 animate-fade-in-pop-fast"
   out:fly={{ x: 100, duration: 500, easing: quintOut }}
 >
   <!-- Hero Banner Section -->
@@ -228,7 +238,7 @@
     />
     <!-- Overlay with game info -->
     <div
-      class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-6"
+      class="absolute bottom-0 left-0 right-0 bg-linear-to-t from-black/70 to-transparent p-6"
     >
       <h1 class="text-4xl font-archivo font-bold text-white mb-2">
         {libraryInfo.name}
@@ -246,13 +256,13 @@
 
     <!-- Title image overlay if available -->
     {#await doesLinkExist(libraryInfo.titleImage)}
-      <div class="absolute z-[2] w-full h-full"></div>
+      <div class="absolute z-2 w-full h-full"></div>
     {:then result}
       {#if result}
         <img
           src={libraryInfo.titleImage}
           alt="logo"
-          class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-[3] max-w-xs max-h-32 object-contain drop-shadow-lg"
+          class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-3 max-w-xs max-h-32 object-contain drop-shadow-lg"
         />
       {/if}
     {/await}
@@ -333,7 +343,7 @@
     {/if}
 
     <button
-      class="px-4 py-3 flex border-none rounded-lg justify-center bg-accent-light hover:bg-opacity-80 text-accent-dark items-center gap-2 transition-colors duration-200"
+      class="px-4 py-3 flex border-none rounded-lg justify-center bg-accent-light hover:bg-accent-light/80 text-accent-dark items-center gap-2 transition-colors duration-200"
       onclick={openGameConfiguration}
     >
       <SettingsFilled fill="#2D626A" />
@@ -341,7 +351,7 @@
     </button>
 
     <button
-      class="px-4 py-3 flex border-none rounded-lg justify-center bg-accent-light hover:bg-opacity-80 text-accent-dark items-center gap-2 transition-colors duration-200"
+      class="px-4 py-3 flex border-none rounded-lg justify-center bg-accent-light hover:bg-accent-light/80 text-accent-dark items-center gap-2 transition-colors duration-200"
       onclick={() => {
         currentStorePageOpened.set(libraryInfo.appID);
         currentStorePageOpenedStorefront.set(libraryInfo.storefront);
@@ -370,7 +380,7 @@
         <svg
           xmlns="http://www.w3.org/2000/svg"
           viewBox="0 0 24 24"
-          class="w-6 h-6 fill-accent-dark flex-shrink-0 mt-0.5"
+          class="w-6 h-6 fill-accent-dark shrink-0 mt-0.5"
         >
           <path
             d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"
@@ -425,7 +435,7 @@
             </div>
 
             <button
-              class="px-4 py-2 bg-accent-light rounded-lg border-none text-accent-dark hover:bg-opacity-80 transition-colors duration-200"
+              class="px-4 py-2 bg-accent-light rounded-lg border-none text-accent-dark hover:bg-accent-light/80 transition-colors duration-200"
               onclick={() => handleRunTask(task)}>Run Task</button
             >
           </div>

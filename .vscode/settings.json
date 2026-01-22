@@ -10,5 +10,20 @@
     "Debrid",
     "fullgame",
     "Recents"
-  ]
+  ],
+  "tailwindCSS.includeLanguages": {
+    "svelte": "html"
+  },
+  "tailwindCSS.experimental.classRegex": [
+    ["@apply\\s+([^;]+)", "([^`'\"\\s]+)"]
+  ],
+  "tailwindCSS.files.exclude": [
+    "**/.git/**",
+    "**/node_modules/**",
+    "**/.hg/**",
+    "**/.svn/**"
+  ],
+  "css.validate": false,
+  "tailwindCSS.validate": true,
+  "tailwindCSS.emmetCompletions": true
 }

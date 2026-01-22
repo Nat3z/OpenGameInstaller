@@ -1,4 +1,4 @@
-import { defineConfig } from 'tsup';
+import { defineConfig } from 'tsdown';
 
 export default defineConfig({
   entry: ['src/main.ts'],
@@ -8,4 +8,5 @@ export default defineConfig({
   format: ['cjs', 'esm'],
   dts: true,
   outDir: 'build',
+  target: false,
 });

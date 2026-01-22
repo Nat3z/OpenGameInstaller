@@ -22,7 +22,7 @@
 
   let { libraryInfo, updateVersion, onClose }: Props = $props();
 
-  let { appID, storefront, name: gameName } = libraryInfo;
+  let { appID, storefront, name: gameName } = $derived(libraryInfo);
 
   let results: SearchResultWithAddon[] = $state([]);
   let gameData: StoreData | undefined = $state();
@@ -225,7 +225,7 @@
 
   <SectionModal
     scrollable={true}
-    class="max-h-96 !bg-transparent !p-0 !border-0"
+    class="max-h-96 bg-transparent! p-0! border-0!"
   >
     {#if loading}
       <div class="flex justify-center items-center py-8">

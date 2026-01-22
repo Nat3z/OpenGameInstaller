@@ -107,13 +107,6 @@ export class TorboxService extends BaseService {
     // instant in the queue
     addTorrentForm.append('as_queued', 'false');
 
-    // Debug FormData contents
-    console.log('addTorrentForm entries:');
-    addTorrentForm.forEach((value, key) => {
-      console.log('key: ', key);
-      console.log('value: ', value);
-    });
-
     const response = await window.electronAPI.app.axios<{
       success: boolean;
       error: string | null;

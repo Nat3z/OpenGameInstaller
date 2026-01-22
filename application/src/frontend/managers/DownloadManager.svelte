@@ -189,7 +189,7 @@
             appID: downloadedItem.appID,
             multiPartFiles: downloadedItem.files || [],
             storefront: downloadedItem.storefront,
-            manifest: downloadedItem.manifest,
+            manifest: downloadedItem.manifest || {},
             ...(downloadedItem.isUpdate
               ? {
                   for: 'update' as const,
@@ -284,7 +284,7 @@
             appID: downloadedItem.appID,
             multiPartFiles: downloadedItem.files || [],
             storefront: downloadedItem.storefront,
-            manifest: downloadedItem.manifest,
+            manifest: downloadedItem.manifest || {},
             ...(downloadedItem.isUpdate
               ? {
                   for: 'update' as const,

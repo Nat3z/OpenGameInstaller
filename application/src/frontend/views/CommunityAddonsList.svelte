@@ -220,6 +220,8 @@
 </div>
 
 <style>
+  @reference "../app.css";
+
   .community-addons {
     @apply flex flex-col w-full h-full;
   }

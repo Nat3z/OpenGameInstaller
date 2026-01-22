@@ -1099,27 +1099,19 @@
   }
 
   .nav-button {
-    padding: 0.75rem;
-    border-radius: 0.5rem;
-    border: none;
-    color: var(--color-accent-dark);
-    transition: all 0.3s ease-out;
-    display: flex;
-    justify-content: center;
-    align-items: center;
+    @apply p-3 rounded-lg border-none text-accent-dark transition-all duration-300 ease-out flex justify-center items-center;
     width: var(--nav-button-size);
     height: var(--nav-button-size);
     transform: scale(1);
   }
 
   .nav-button:hover {
-    background-color: #f3f4f6;
+    @apply bg-gray-100;
     transform: scale(1.05);
   }
 
   .nav-button[data-selected-header='true'] {
-    background-color: var(--color-accent-lighter);
-    color: var(--color-accent-dark);
+    @apply bg-accent-lighter text-accent-dark;
     transform: scale(1.1);
   }
 
@@ -1129,20 +1121,14 @@
   }
 
   .header-button {
-    border-radius: 0.5rem;
-    background-color: var(--color-accent-lighter);
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    border: none;
-    transition: all 0.3s ease-out;
+    @apply rounded-lg bg-accent-lighter flex justify-center items-center border-none transition-all duration-300 ease-out;
     width: var(--header-button-size);
     height: var(--header-button-size);
     transform: scale(1);
   }
 
   .header-button:hover {
-    background-color: var(--color-accent-light);
+    @apply bg-accent-light;
     transform: scale(1.05);
   }
 
@@ -1157,62 +1143,39 @@
   }
 
   .search-info {
-    margin-bottom: 1.5rem;
+    @apply mb-6;
   }
 
   .search-results {
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
+    @apply flex flex-col gap-4;
   }
 
   .addon-section {
-    margin-bottom: 1rem;
+    @apply mb-4;
   }
 
   .addon-header {
-    width: 100%;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0.75rem 0;
-    background: transparent;
-    border: none;
-    cursor: pointer;
-    border-radius: 0.5rem;
-    transition: background-color 0.2s;
+    @apply w-full flex items-center justify-between py-3 bg-transparent border-none cursor-pointer rounded-lg transition-colors duration-200;
   }
 
   .addon-header:hover {
-    background-color: #f9fafb;
+    @apply bg-gray-50;
   }
 
   .addon-header-content {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
+    @apply flex items-center gap-4;
   }
 
   .addon-name {
-    font-size: 1.125rem;
-    font-weight: 600;
-    color: #1f2937;
-    font-family: var(--font-archivo);
-    padding: 0 0.5rem;
+    @apply text-lg font-semibold text-gray-800 font-archivo px-2;
   }
 
   .result-count {
-    font-size: 0.875rem;
-    color: #4b5563;
-    font-weight: 500;
+    @apply text-sm text-gray-600 font-medium;
   }
 
   .collapse-icon {
-    width: 1.25rem;
-    height: 1.25rem;
-    color: #4b5563;
-    transition: transform 0.2s;
-    margin: 0 0.5rem;
+    @apply w-5 h-5 text-gray-600 transition-transform duration-200 mx-2;
   }
 
   .collapse-icon.collapsed {
@@ -1220,18 +1183,15 @@
   }
 
   .addon-results {
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
-    margin-top: 0.5rem;
+    @apply flex flex-col gap-3 mt-2;
   }
 
   .addon-section.loading {
-    opacity: 0.75;
+    @apply opacity-75;
   }
 
   .addon-section.loading.empty {
-    opacity: 0.5;
+    @apply opacity-50;
   }
 
   .addon-header-loading {
@@ -1243,13 +1203,8 @@
   }
 
   .addon-loading-spinner {
-    width: 1.25rem;
-    height: 1.25rem;
-    border-width: 2px;
-    border-color: #d1d5db;
+    @apply w-5 h-5 border-2 border-gray-300 rounded-full animate-spin;
     border-top-color: var(--color-accent);
-    border-radius: 9999px;
-    animation: spin 1s linear infinite;
   }
 
   .empty-icon {
@@ -1257,17 +1212,15 @@
   }
 
   .search-result-item {
-    @apply flex gap-4 p-4 bg-white rounded-lg border border-gray-200 hover:shadow-md transition-all duration-300 ease-out;
-    transform: translateY(0);
+    @apply flex gap-4 p-4 bg-white rounded-lg border border-gray-200 hover:shadow-md transition-all duration-300 ease-out translate-y-0;
   }
 
   .search-result-item:hover {
-    transform: translateY(-2px);
-    @apply shadow-lg;
+    @apply -translate-y-0.5 shadow-lg;
   }
 
   .result-image {
-    @apply w-24 h-24 rounded object-cover flex-shrink-0;
+    @apply w-24 h-24 rounded object-cover shrink-0;
   }
 
   .result-content {
@@ -1300,7 +1253,6 @@
 
   .loading-spinner {
     @apply w-8 h-8 border-4 border-accent-lighter border-t-accent rounded-full animate-spin mb-4;
-    animation: spin 1s linear infinite;
     filter: drop-shadow(0 2px 4px rgba(66, 138, 145, 0.1));
   }
 

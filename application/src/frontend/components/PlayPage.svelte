@@ -21,12 +21,18 @@
   import { updatesManager, appUpdates } from '../states.svelte';
   import UpdateIcon from '../Icons/UpdateIcon.svelte';
   import UpdateAppModal from './built/UpdateAppModal.svelte';
+  import Modal from './modal/Modal.svelte';
+  import TitleModal from './modal/TitleModal.svelte';
+  import TextModal from './modal/TextModal.svelte';
+  import ButtonModal from './modal/ButtonModal.svelte';
+  import SectionModal from './modal/SectionModal.svelte';
 
   let updateInfo = $derived.by(() => {
     return updatesManager.getAppUpdate(libraryInfo.appID);
   });
 
   let showUpdateModal = $state(false);
+  let showManualInstructionsModal = $state(false);
 
   interface Props {
     libraryInfo: LibraryInfo;
@@ -224,6 +230,59 @@
   />
 {/if}
 
+{#if showManualInstructionsModal}
+  <Modal
+    open={showManualInstructionsModal}
+    onClose={() => (showManualInstructionsModal = false)}
+    size="medium"
+  >
+    <TitleModal title="Manual Steam Re-add Instructions" />
+    <TextModal
+      text="To preserve your save data, you must manually re-add this game to Steam. Follow these steps:"
+      variant="body"
+      class="mb-4"
+    />
+    <SectionModal>
+      <TextModal text="1. Open Steam" variant="body" class="mb-2" />
+      <TextModal
+        text="2. Right-click the game in your library"
+        variant="body"
+        class="mb-2"
+      />
+      <TextModal text="3. Select 'Properties'" variant="body" class="mb-2" />
+      <TextModal
+        text="4. Go to the 'Shortcut' tab"
+        variant="body"
+        class="mb-2"
+      />
+      <TextModal
+        text="5. Set 'Start in' to:"
+        variant="caption"
+        class="mb-1 mt-4"
+      />
+      <TextModal
+        text={libraryInfo.cwd}
+        variant="body"
+        class="mb-4 font-mono text-sm bg-white p-2 rounded border"
+      />
+      <TextModal text="6. Set 'Target' to:" variant="caption" class="mb-1" />
+      <TextModal
+        text={libraryInfo.launchExecutable}
+        variant="body"
+        class="mb-2 font-mono text-sm bg-white p-2 rounded border"
+      />
+    </SectionModal>
+    <div class="flex flex-row items-center gap-2 mt-4">
+      <ButtonModal
+        text="Close"
+        variant="primary"
+        onclick={() => (showManualInstructionsModal = false)}
+        class="flex-1"
+      />
+    </div>
+  </Modal>
+{/if}
+
 <div
   class="flex flex-col top-0 left-0 overflow-y-auto absolute w-full h-full bg-white z-3 animate-fade-in-pop-fast"
   out:fly={{ x: 100, duration: 500, easing: quintOut }}
@@ -391,30 +450,48 @@
             Steam Re-add Required
           </h3>
           <p class="text-accent-dark text-sm">
-            This game has been updated. Please re-add it to Steam.
+            This game has been updated. To preserve your save data, you must
+            re-add it to Steam manually.
           </p>
         </div>
       </div>
-      <button
-        class="px-4 py-2 bg-accent-light hover:bg-accent-light/80 text-accent-dark font-archivo font-semibold rounded-lg border-none flex items-center justify-center gap-2 transition-colors duration-200 w-full"
-        onclick={async (event) => {
-          (event.target as HTMLButtonElement).disabled = true;
-          await window.electronAPI.app.addToSteam(libraryInfo.appID);
-          (event.target as HTMLButtonElement).disabled = false;
-          appUpdates.requiredReadds = appUpdates.requiredReadds.filter(
-            (id) => id !== libraryInfo.appID
-          );
-        }}
-      >
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          viewBox="0 0 24 24"
-          class="w-5 h-5 fill-accent-dark"
+      <div class="flex gap-3">
+        <button
+          class="px-4 py-2 bg-accent-light hover:bg-accent-light/80 text-accent-dark font-archivo font-semibold rounded-lg border-none flex items-center justify-center gap-2 transition-colors duration-200 flex-1"
+          onclick={async (event) => {
+            (event.target as HTMLButtonElement).disabled = true;
+            await window.electronAPI.app.addToSteam(libraryInfo.appID);
+            (event.target as HTMLButtonElement).disabled = false;
+            appUpdates.requiredReadds = appUpdates.requiredReadds.filter(
+              (id) => id !== libraryInfo.appID
+            );
+          }}
         >
-          <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
-        </svg>
-        Add to Steam
-      </button>
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 24 24"
+            class="w-5 h-5 fill-accent-dark"
+          >
+            <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
+          </svg>
+          Add to Steam (Potentially Lose Save Data)
+        </button>
+        <button
+          class="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white font-archivo font-semibold rounded-lg border-none flex items-center justify-center gap-2 transition-colors duration-200 flex-1"
+          onclick={() => (showManualInstructionsModal = true)}
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 24 24"
+            class="w-5 h-5 fill-white"
+          >
+            <path
+              d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"
+            />
+          </svg>
+          Do it Manually
+        </button>
+      </div>
     </div>
   {/if}
 

@@ -22,7 +22,7 @@
 
   let { libraryInfo, updateVersion, onClose }: Props = $props();
 
-  let { appID, storefront, name: gameName } = libraryInfo;
+  let { appID, storefront, name: gameName } = $derived(libraryInfo);
 
   let results: SearchResultWithAddon[] = $state([]);
   let gameData: StoreData | undefined = $state();

@@ -1022,9 +1022,7 @@
 {/if}
 
 <style global>
-  @tailwind base;
-  @tailwind components;
-  @tailwind utilities;
+  @reference "#styles";
 
   :root {
     /* Navigation button sizing */
@@ -1049,7 +1047,7 @@
   }
 
   body {
-    @apply bg-background-color;
+    background-color: var(--color-background-color);
   }
 
   ::-webkit-scrollbar {
@@ -1058,38 +1056,49 @@
 
   ::-webkit-scrollbar-thumb {
     background-color: #cbcbcb51;
-    @apply rounded-lg bg-opacity-10;
+    border-radius: 0.5rem;
+    opacity: 0.1;
   }
 
   ::-webkit-scrollbar-thumb:hover {
     background-color: #909090;
-    @apply rounded-lg bg-opacity-100;
+    border-radius: 0.5rem;
+    opacity: 1;
   }
 
   textarea:focus,
   input[type='text']:focus,
   input[type='password']:focus,
   input[type='number']:focus {
-    @apply outline outline-accent-light;
+    outline: 1px solid var(--color-accent-light);
   }
 
   button {
-    @apply font-open-sans;
+    font-family: var(--font-open-sans);
   }
 
   .nav-button {
-    @apply p-3 rounded-lg border-none hover:bg-gray-100 text-accent-dark transition-all duration-300 ease-out flex justify-center items-center;
+    padding: 0.75rem;
+    border-radius: 0.5rem;
+    border: none;
+    color: var(--color-accent-dark);
+    transition: all 0.3s ease-out;
+    display: flex;
+    justify-content: center;
+    align-items: center;
     width: var(--nav-button-size);
     height: var(--nav-button-size);
     transform: scale(1);
   }
 
   .nav-button:hover {
+    background-color: #f3f4f6;
     transform: scale(1.05);
   }
 
   .nav-button[data-selected-header='true'] {
-    @apply bg-accent-lighter text-accent-dark;
+    background-color: var(--color-accent-lighter);
+    color: var(--color-accent-dark);
     transform: scale(1.1);
   }
 
@@ -1099,14 +1108,20 @@
   }
 
   .header-button {
-    @apply rounded-lg bg-accent-lighter flex justify-center items-center border-none transition-all duration-300 ease-out;
+    border-radius: 0.5rem;
+    background-color: var(--color-accent-lighter);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    border: none;
+    transition: all 0.3s ease-out;
     width: var(--header-button-size);
     height: var(--header-button-size);
     transform: scale(1);
   }
 
   .header-button:hover {
-    @apply bg-accent-light;
+    background-color: var(--color-accent-light);
     transform: scale(1.05);
   }
 
@@ -1121,35 +1136,62 @@
   }
 
   .search-info {
-    @apply mb-6;
+    margin-bottom: 1.5rem;
   }
 
   .search-results {
-    @apply flex flex-col gap-4;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
   }
 
   .addon-section {
-    @apply mb-4;
+    margin-bottom: 1rem;
   }
 
   .addon-header {
-    @apply w-full flex items-center justify-between py-3 px-0 bg-transparent border-none cursor-pointer hover:bg-gray-50 rounded-lg transition-colors duration-200;
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.75rem 0;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    border-radius: 0.5rem;
+    transition: background-color 0.2s;
+  }
+
+  .addon-header:hover {
+    background-color: #f9fafb;
   }
 
   .addon-header-content {
-    @apply flex items-center gap-4;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
   }
 
   .addon-name {
-    @apply text-lg font-semibold text-gray-800 font-archivo px-2;
+    font-size: 1.125rem;
+    font-weight: 600;
+    color: #1f2937;
+    font-family: var(--font-archivo);
+    padding: 0 0.5rem;
   }
 
   .result-count {
-    @apply text-sm text-gray-600 font-medium;
+    font-size: 0.875rem;
+    color: #4b5563;
+    font-weight: 500;
   }
 
   .collapse-icon {
-    @apply w-5 h-5 text-gray-600 transition-transform duration-200 mx-2;
+    width: 1.25rem;
+    height: 1.25rem;
+    color: #4b5563;
+    transition: transform 0.2s;
+    margin: 0 0.5rem;
   }
 
   .collapse-icon.collapsed {
@@ -1157,15 +1199,18 @@
   }
 
   .addon-results {
-    @apply flex flex-col gap-3 mt-2;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    margin-top: 0.5rem;
   }
 
   .addon-section.loading {
-    @apply opacity-75;
+    opacity: 0.75;
   }
 
   .addon-section.loading.empty {
-    @apply opacity-50;
+    opacity: 0.5;
   }
 
   .addon-header-loading {
@@ -1177,7 +1222,13 @@
   }
 
   .addon-loading-spinner {
-    @apply w-5 h-5 border-2 border-gray-300 border-t-accent rounded-full animate-spin;
+    width: 1.25rem;
+    height: 1.25rem;
+    border-width: 2px;
+    border-color: #d1d5db;
+    border-top-color: var(--color-accent);
+    border-radius: 9999px;
+    animation: spin 1s linear infinite;
   }
 
   .empty-icon {

@@ -9,7 +9,7 @@
     "sourceMap": true,
     "stripInternal": true,
     "lib": ["ESNext", "dom"],
-    "moduleResolution": "bundler",
+    "moduleResolution": "Bundler",
     "noImplicitAny": true,
     "strictNullChecks": true,
     "strictFunctionTypes": true,

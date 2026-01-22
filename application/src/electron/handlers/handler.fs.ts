@@ -102,22 +102,25 @@ export default function handler() {
       return err;
     }
   });
-  ipcMain.handle('fs:move', async (_, arg: { source: string; destination: string }) => {
-    let { source, destination } = arg;
-    if (String(source).startsWith('./')) {
-      source = join(__dirname, source);
+  ipcMain.handle(
+    'fs:move',
+    async (_, arg: { source: string; destination: string }) => {
+      let { source, destination } = arg;
+      if (String(source).startsWith('./')) {
+        source = join(__dirname, source);
+      }
+      if (String(destination).startsWith('./')) {
+        destination = join(__dirname, destination);
+      }
+      try {
+        await fsAsync.rename(source, destination);
+        return 'success';
+      } catch (err) {
+        console.error(err);
+        return err;
+      }
     }
-    if (String(destination).startsWith('./')) {
-      destination = join(__dirname, destination);
-    }
-    try {
-      await fsAsync.rename(source, destination);
-      return 'success';
-    } catch (err) {
-      console.error(err);
-      return err;
-    }
-  });
+  );
   ipcMain.on('fs:delete:sync', async (event, arg) => {
     try {
       if (String(arg).startsWith('./')) {

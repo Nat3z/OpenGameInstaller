@@ -891,6 +891,7 @@
 {/key}
 
 <style global>
+  @reference "#styles";
   #g-descript {
     @apply text-gray-700 bg-transparent;
   }

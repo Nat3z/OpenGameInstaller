@@ -130,9 +130,7 @@ function createWindow() {
       contextIsolation: true,
       // always allow devtools
       devTools: ogiDebug === 'true' || isDev(),
-      preload: isDev()
-        ? join(app.getAppPath(), 'preload.mjs')
-        : join(app.getAppPath(), 'build/preload.mjs'),
+      preload: join(app.getAppPath(), 'out/preload/index.mjs'),
     },
     title: 'OpenGameInstaller',
     fullscreenable: false,
@@ -168,7 +166,7 @@ function createWindow() {
   } else {
     mainWindow!!.loadURL(
       'file://' +
-        join(app.getAppPath(), 'public', 'index.html') +
+        join(app.getAppPath(), 'out', 'renderer', 'index.html') +
         '?secret=' +
         applicationAddonSecret
     );

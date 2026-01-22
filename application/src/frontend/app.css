@@ -1,0 +1,153 @@
+@import 'tailwindcss';
+
+/* Custom theme configuration for Tailwind v4 */
+@theme {
+  /* Colors */
+  --color-accent: #428a91;
+  --color-accent-dark: #2d626a;
+  --color-accent-light: #b0dfd5;
+  --color-accent-lighter: #e1f4f0;
+  --color-accent-text-color: #000000;
+  --color-background-color: #f7fffd;
+
+  /* Font families */
+  --font-archivo: 'Archivo', sans-serif;
+  --font-open-sans: 'Open Sans', sans-serif;
+
+  /* Custom animations */
+  --animate-fade-in: fadeIn 0.5s ease-in-out;
+  --animate-fade-in-slow: fadeIn 2s ease-in-out;
+  --animate-fade-in-pop: fadeIn 0.5s ease-in-out, pop 0.5s ease-in-out;
+  --animate-fade-in-pop-fast: fadeIn 0.2s ease-in-out, pop 0.2s ease-in-out;
+  --animate-in-sub-content: inSubContent 1s ease-in-out, fadeIn 2s ease;
+  --animate-in-sub-content-slow: inSubContent 2s ease-in-out, fadeIn 5s ease;
+  --animate-slide-up: slideUp 0.4s ease-out;
+  --animate-slide-down: slideDown 0.4s ease-out;
+  --animate-slide-left: slideLeft 0.4s ease-out;
+  --animate-slide-right: slideRight 0.4s ease-out;
+  --animate-bounce-in: bounceIn 0.6s ease-out;
+  --animate-scale-in: scaleIn 0.3s ease-out;
+  --animate-pulse-yellow: pulseYellow 2s ease-in-out infinite;
+}
+
+@keyframes fadeIn {
+  0% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+@keyframes pop {
+  0% {
+    transform: scale(0.75);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes inSubContent {
+  0% {
+    transform: translateY(100%);
+  }
+  100% {
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideUp {
+  0% {
+    transform: translateY(20px);
+    opacity: 0;
+  }
+  100% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes slideDown {
+  0% {
+    transform: translateY(-20px);
+    opacity: 0;
+  }
+  100% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes slideLeft {
+  0% {
+    transform: translateX(20px);
+    opacity: 0;
+  }
+  100% {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes slideRight {
+  0% {
+    transform: translateX(-20px);
+    opacity: 0;
+  }
+  100% {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes bounceIn {
+  0% {
+    transform: scale(0.3);
+    opacity: 0;
+  }
+  50% {
+    transform: scale(1.05);
+  }
+  70% {
+    transform: scale(0.9);
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes scaleIn {
+  0% {
+    transform: scale(0.8);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes pulseYellow {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.5;
+    transform: scale(1.2);
+  }
+}
+
+/* Font faces */
+@font-face {
+  font-family: 'Archivo';
+  src: url('/Archivo-VariableFont_wdth,wght.ttf');
+}
+
+@font-face {
+  font-family: 'Open Sans';
+  src: url('/OpenSans-VariableFont_wdth,wght.ttf');
+}

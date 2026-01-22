@@ -369,6 +369,8 @@
 {/if}
 
 <style>
+  @reference "#styles";
+
   .config {
     @apply flex flex-col w-full h-full;
   }

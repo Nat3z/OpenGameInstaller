@@ -6,7 +6,6 @@ import {
 } from './updater.js';
 import { restoreBackup, removeCachedAppUpdates } from './startup.js';
 import { execute as executeMigrations } from './migrations.js';
-import { isDev } from './manager/manager.paths.js';
 
 let splashWindow: BrowserWindow | null = null;
 
@@ -29,9 +28,7 @@ function createSplashWindow(): BrowserWindow {
       nodeIntegration: true,
       contextIsolation: true,
       devTools: false,
-      preload: isDev()
-        ? join(app.getAppPath(), 'splash-preload.mjs')
-        : join(app.getAppPath(), 'build/splash-preload.mjs'),
+      preload: join(app.getAppPath(), 'out/preload/splash.mjs'),
     },
   });
   splash.loadURL('file://' + join(app.getAppPath(), 'public', 'splash.html'));

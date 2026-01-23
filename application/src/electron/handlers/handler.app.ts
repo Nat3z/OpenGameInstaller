@@ -1078,37 +1078,128 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
       if (process.platform !== 'linux') {
         return 'failed';
       }
-      const { success, appId } = await getNonSteamGameAppID(name);
-      if (!success) {
+
+      let newProtonPath: string | null = null;
+      let tmpNewPrefixPath: string | null = null;
+      let tempPath: string | null = null;
+      let originalPrefixMoved = false;
+      let newProtonMoved = false;
+
+      try {
+        const { success, appId } = await getNonSteamGameAppID(name);
+        if (!success) {
+          console.error('[move-prefix] Failed to get Steam app ID for:', name);
+          return 'failed';
+        }
+
+        const homeDir = process.env.HOME;
+        if (!homeDir) {
+          console.error('[move-prefix] HOME environment variable not set');
+          return 'failed';
+        }
+
+        const expectedBaseDir = path.resolve(homeDir, '.steam/steam/steamapps/compatdata');
+        newProtonPath = path.resolve(expectedBaseDir, `${appId}/pfx`);
+
+        const resolvedOriginalPrefix = path.resolve(originalPrefix);
+        if (!fs.existsSync(resolvedOriginalPrefix)) {
+          console.error('[move-prefix] Original prefix does not exist:', resolvedOriginalPrefix);
+          return 'failed';
+        }
+
+        const originalPrefixStat = fs.statSync(resolvedOriginalPrefix);
+        if (!originalPrefixStat.isDirectory()) {
+          console.error('[move-prefix] Original prefix is not a directory:', resolvedOriginalPrefix);
+          return 'failed';
+        }
+
+        if (!resolvedOriginalPrefix.startsWith(path.resolve(homeDir))) {
+          console.error('[move-prefix] Path traversal detected. Original prefix outside home directory:', resolvedOriginalPrefix);
+          return 'failed';
+        }
+
+        const resolvedNewProtonPath = path.resolve(newProtonPath);
+        if (!resolvedNewProtonPath.startsWith(expectedBaseDir)) {
+          console.error('[move-prefix] Path traversal detected. New proton path outside expected base:', resolvedNewProtonPath);
+          return 'failed';
+        }
+
+        const tempBaseDir = path.resolve(app.getPath('temp'), 'ogi-original-prefixes');
+        if (!fs.existsSync(tempBaseDir)) {
+          fs.mkdirSync(tempBaseDir, { recursive: true });
+        }
+
+        const timestamp = Date.now();
+        tempPath = path.join(tempBaseDir, `${appId}-${timestamp}.og-tmp`);
+
+        let counter = 0;
+        while (fs.existsSync(tempPath)) {
+          tempPath = path.join(tempBaseDir, `${appId}-${timestamp}-${counter}.og-tmp`);
+          counter++;
+        }
+
+        if (fs.existsSync(newProtonPath)) {
+          tmpNewPrefixPath = tempPath;
+          fs.renameSync(newProtonPath, tmpNewPrefixPath);
+          newProtonMoved = true;
+        } else {
+          const parentDir = path.dirname(newProtonPath);
+          if (!fs.existsSync(parentDir)) {
+            fs.mkdirSync(parentDir, { recursive: true });
+          }
+        }
+
+        fs.renameSync(resolvedOriginalPrefix, resolvedNewProtonPath);
+        originalPrefixMoved = true;
+
+        if (tmpNewPrefixPath && fs.existsSync(tmpNewPrefixPath)) {
+          fs.renameSync(tmpNewPrefixPath, tempPath);
+        }
+
+        return 'success';
+      } catch (error: any) {
+        console.error('[move-prefix] Error during prefix move operation:', error);
+        console.error('[move-prefix] Error details:', {
+          message: error.message,
+          stack: error.stack,
+          originalPrefix,
+          newProtonPath,
+          tmpNewPrefixPath,
+          tempPath,
+          originalPrefixMoved,
+          newProtonMoved,
+        });
+
+        try {
+          if (originalPrefixMoved && newProtonPath && fs.existsSync(newProtonPath)) {
+            const resolvedOriginalPrefix = path.resolve(originalPrefix);
+            if (!fs.existsSync(resolvedOriginalPrefix)) {
+              fs.renameSync(newProtonPath, resolvedOriginalPrefix);
+              console.log('[move-prefix] Rollback: Restored original prefix');
+            }
+          }
+
+          if (newProtonMoved && tmpNewPrefixPath && fs.existsSync(tmpNewPrefixPath)) {
+            if (!fs.existsSync(newProtonPath!)) {
+              fs.renameSync(tmpNewPrefixPath, newProtonPath!);
+              console.log('[move-prefix] Rollback: Restored new proton path');
+            }
+          }
+
+          if (tempPath && fs.existsSync(tempPath) && !newProtonMoved) {
+            try {
+              fs.rmSync(tempPath, { recursive: true, force: true });
+              console.log('[move-prefix] Cleanup: Removed temp directory');
+            } catch (cleanupError) {
+              console.error('[move-prefix] Cleanup error:', cleanupError);
+            }
+          }
+        } catch (rollbackError: any) {
+          console.error('[move-prefix] Rollback failed:', rollbackError);
+        }
+
         return 'failed';
       }
-      const newProtonPath = `${process.env.HOME}/.steam/steam/steamapps/compatdata/${appId}/pfx`;
-      fs.mkdirSync(newProtonPath, { recursive: true });
-      // create an intermediate directory to move the prefix to
-      // find the path after /compatdata
-      const tmpNewPrefixPath = join(
-        newProtonPath,
-        '..',
-        '..',
-        newProtonPath.split('/compatdata/')[1].split('/pfx')[0] + '.og-tmp'
-      );
-      fs.mkdirSync(tmpNewPrefixPath, { recursive: true });
-
-      // 1: move the new prefix to the intermediate directory
-      fs.renameSync(newProtonPath, tmpNewPrefixPath);
-
-      // 2: move the original prefix to the new prefix
-      fs.renameSync(originalPrefix, newProtonPath);
-
-      // 3: make the intermediate directory (of the new prefix) move to the temp path
-      const tempPath = join(
-        app.getPath('temp'),
-        'ogi-original-prefixes',
-        `${appId}.og-tmp`
-      );
-      fs.renameSync(tmpNewPrefixPath, tempPath);
-
-      return 'success';
     }
   );
 

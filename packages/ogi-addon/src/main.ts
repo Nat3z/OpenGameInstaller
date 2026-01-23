@@ -70,7 +70,9 @@ export interface ClientSentEventTypes {
     progress: number;
   };
   notification: Notification;
-  'input-asked': ConfigurationBuilder<Record<string, string | number | boolean>>;
+  'input-asked': ConfigurationBuilder<
+    Record<string, string | number | boolean>
+  >;
   'task-update': {
     id: string;
     progress: number;
@@ -697,7 +699,7 @@ export class Task {
    * Complete the task successfully.
    */
   complete(): void {
-    this.event.resolve();
+    this.event.complete();
   }
 
   /**
@@ -873,7 +875,9 @@ class OGIAddonWSListener {
     this.registerMessageReceiver();
   }
 
-  private async userInputAsked<U extends Record<string, string | number | boolean>>(
+  private async userInputAsked<
+    U extends Record<string, string | number | boolean>,
+  >(
     configBuilt: ConfigurationBuilder<U>,
     name: string,
     description: string,
@@ -882,7 +886,7 @@ class OGIAddonWSListener {
     const config = configBuilt.build(false);
     const id = Math.random().toString(36).substring(7);
     if (!socket) {
-      return {} as U;
+      throw new Error('Socket is not connected');
     }
     socket.send(
       JSON.stringify({

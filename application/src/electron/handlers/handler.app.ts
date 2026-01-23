@@ -357,7 +357,7 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
 
         // Add game to Steam first via steamtinkerlaunch
         const launchOptions = data.launchArguments ?? '';
-        
+
         // Format game name with version for unique Steam shortcut
         const versionedGameName = getVersionedGameName(data.name, data.version);
 
@@ -391,9 +391,8 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
         );
 
         // add to the {appid}.json file the launch options
-        const { success, appId: steamAppId } = await getNonSteamGameAppID(
-          versionedGameName
-        );
+        const { success, appId: steamAppId } =
+          await getNonSteamGameAppID(versionedGameName);
         if (!success) {
           return 'setup-failed';
         }
@@ -535,25 +534,33 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
       appData.version = data.version;
       appData.cwd = data.cwd;
       appData.launchExecutable = data.launchExecutable;
-      
+
       // On Linux, add WINEPREFIX prefix to launchArguments if not already present
       if (process.platform === 'linux') {
         // Preserve the original launch arguments before any modifications
         // Prefer incoming update over existing appData to avoid discarding newly provided edits
-        const originalLaunchArguments = data.launchArguments ?? appData.launchArguments ?? '';
-        
+        const originalLaunchArguments =
+          data.launchArguments ?? appData.launchArguments ?? '';
+
         // Get the Steam app ID and construct the proton path
-        const versionedGameName = getVersionedGameName(appData.name, appData.version);
-        const { success, appId } = await getNonSteamGameAppID(versionedGameName);
+        const versionedGameName = getVersionedGameName(
+          appData.name,
+          appData.version
+        );
+        const { success, appId } =
+          await getNonSteamGameAppID(versionedGameName);
         if (success) {
           // Only modify WINEPREFIX when we successfully get the Steam app ID
           let launchOptions = originalLaunchArguments;
-          
+
           // Remove any existing WINEPREFIX from launch options
-          launchOptions = launchOptions.replace(/WINEPREFIX=.*? /g, '').trim();
-          
+          launchOptions = launchOptions
+            .replace(/WINEPREFIX=\S*\s?/g, '')
+            .trim();
+
           const protonPath = `${process.env.HOME}/.steam/steam/steamapps/compatdata/${appId}/pfx`;
-          appData.launchArguments = 'WINEPREFIX=' + protonPath + ' ' + launchOptions;
+          appData.launchArguments =
+            'WINEPREFIX=' + protonPath + ' ' + launchOptions;
         } else {
           // If we can't get the Steam app ID, preserve the original launch arguments unchanged
           appData.launchArguments = originalLaunchArguments;
@@ -564,7 +571,7 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
       } else {
         appData.launchArguments = data.launchArguments;
       }
-      
+
       fs.writeFileSync(appPath, JSON.stringify(appData, null, 2));
       return 'success';
     }
@@ -591,7 +598,10 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
     launchOptions = launchOptions.replace(/WINEPREFIX=.*? /g, '').trim();
 
     // Format game name with version for unique Steam shortcut
-    const versionedGameName = getVersionedGameName(appInfo.name, appInfo.version);
+    const versionedGameName = getVersionedGameName(
+      appInfo.name,
+      appInfo.version
+    );
 
     // Use steamtinkerlaunch to add the game to steam
     const result = await new Promise<boolean>((resolve) =>
@@ -627,7 +637,7 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
   });
 
   const cachedAppIds: Record<string, number> = {};
-  
+
   // Helper function to format game name with version
   // Returns plain name if version is falsy/blank to support legacy app IDs
   function getVersionedGameName(name: string, version?: string | null): string {
@@ -637,7 +647,7 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
     }
     return `${name} (${version})`;
   }
-  
+
   // Get the Steam App ID for a non-Steam game using steamtinkerlaunch
   // Output format from STL: "<appid>\t(<game name>)" or "<appid> (<game name>)"
   function getNonSteamGameAppID(
@@ -755,7 +765,10 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
     const appInfo: LibraryInfo = JSON.parse(fs.readFileSync(appPath, 'utf-8'));
 
     // Get the Steam shortcut ID
-    const versionedGameName = getVersionedGameName(appInfo.name, appInfo.version);
+    const versionedGameName = getVersionedGameName(
+      appInfo.name,
+      appInfo.version
+    );
     const { success, appId } = await getNonSteamGameAppID(versionedGameName);
     if (!success) {
       return { success: false, error: 'Failed to get Steam shortcut ID' };
@@ -794,7 +807,10 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
     }
     libraryInfo = JSON.parse(fs.readFileSync(appPath, 'utf-8'));
 
-    const versionedGameName = getVersionedGameName(libraryInfo.name, libraryInfo.version);
+    const versionedGameName = getVersionedGameName(
+      libraryInfo.name,
+      libraryInfo.version
+    );
     const { success, appId } = await getNonSteamGameAppID(versionedGameName);
     let homeDir = process.env.HOME || process.env.USERPROFILE;
     if (!homeDir) {
@@ -835,7 +851,10 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
 
       const homeDir = process.env.HOME || process.env.USERPROFILE;
       const protonBasePath = `${homeDir}/.steam/steam/steamapps/compatdata`;
-      const versionedGameName = getVersionedGameName(appInfo.name, appInfo.version);
+      const versionedGameName = getVersionedGameName(
+        appInfo.name,
+        appInfo.version
+      );
       const { success, appId } = await getNonSteamGameAppID(versionedGameName);
       if (!success) {
         return 'failed';

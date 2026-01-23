@@ -1105,6 +1105,18 @@ class OGIAddonWSListener {
             const handler = this.addon.getTaskHandler(taskName)!;
             const task = new Task(taskRunEvent);
             try {
+              const interval = setInterval(() => {
+                if (taskRunEvent.resolved) {
+                  clearInterval(interval);
+                  return;
+                }
+                this.send('defer-update', {
+                  logs: taskRunEvent.logs,
+                  deferID: message.args.deferID,
+                  progress: taskRunEvent.progress,
+                  failed: taskRunEvent.failed,
+                } as ClientSentEventTypes['defer-update']);
+              }, 100);
               const result = handler(task, {
                 manifest: message.args.manifest || {},
                 downloadPath: message.args.downloadPath || '',
@@ -1114,6 +1126,8 @@ class OGIAddonWSListener {
               if (result instanceof Promise) {
                 await result;
               }
+
+              clearInterval(interval);
             } catch (error) {
               taskRunEvent.fail(
                 error instanceof Error ? error.message : String(error)
@@ -1128,18 +1142,6 @@ class OGIAddonWSListener {
             );
           }
 
-          const interval = setInterval(() => {
-            if (taskRunEvent.resolved) {
-              clearInterval(interval);
-              return;
-            }
-            this.send('defer-update', {
-              logs: taskRunEvent.logs,
-              deferID: message.args.deferID,
-              progress: taskRunEvent.progress,
-              failed: taskRunEvent.failed,
-            } as ClientSentEventTypes['defer-update']);
-          }, 100);
           const taskRunResult = await this.waitForEventToRespond(taskRunEvent);
           this.respondToMessage(message.id!!, taskRunResult.data, taskRunEvent);
           break;

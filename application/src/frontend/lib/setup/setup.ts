@@ -46,7 +46,7 @@ export function createSetupPayload(
     appID: downloadedItem.appID,
     storefront: downloadedItem.storefront,
     for: forType,
-    currentLibraryInfo: currentLibraryInfo,
+    ...(currentLibraryInfo ? { currentLibraryInfo } : {}),
     multiPartFiles: JSON.parse(
       JSON.stringify(
         downloadedItem.downloadType === 'direct'
@@ -85,7 +85,7 @@ export function handleSetupError(
     return logs;
   });
 
-  const setupData: Parameters<EventListenerTypes['setup']>[0] = {
+  const baseData = {
     path: downloadedItem.downloadPath,
     type: downloadedItem.downloadType as 'direct' | 'torrent' | 'magnet',
     name: downloadedItem.name,
@@ -97,10 +97,19 @@ export function handleSetupError(
         ? downloadedItem.files
         : undefined,
     manifest: downloadedItem.manifest || {},
-    ...(forType === 'update' && currentLibraryInfo
-      ? { for: 'update' as const, currentLibraryInfo }
-      : { for: 'game' as const }),
   };
+
+  const setupData: Parameters<EventListenerTypes['setup']>[0] =
+    forType === 'update' && currentLibraryInfo
+      ? {
+          ...baseData,
+          for: 'update',
+          currentLibraryInfo,
+        }
+      : {
+          ...baseData,
+          for: 'game',
+        };
 
   saveFailedSetup({
     downloadInfo: downloadedItem,
@@ -240,7 +249,20 @@ export async function runSetupAppUpdate(
   isTorrent: boolean,
   additionalData: any = {}
 ): Promise<SetupEventResponse> {
-  const currentLibraryInfo = getApp(downloadedItem.appID) as LibraryInfo;
+  const currentLibraryInfo = getApp(downloadedItem.appID);
+  if (!currentLibraryInfo) {
+    console.error(
+      `[runSetupAppUpdate] Library entry not found for appID: ${downloadedItem.appID}`
+    );
+    updateDownloadStatus(downloadedItem.id, {
+      status: 'error',
+      error: `App not found in library (appID: ${downloadedItem.appID})`,
+    });
+    throw new Error(
+      `App not found in library (appID: ${downloadedItem.appID})`
+    );
+  }
+
   const setupPayload = createSetupPayload(
     downloadedItem,
     outputDir,
@@ -321,10 +343,11 @@ export async function runSetupAppUpdate(
           newPrefix = prefixPath ?? '';
         }
 
-        // If the new prefix is different from the original prefix, and either is not empty, move the prefix
+        // If the new prefix is different from the original prefix, and both are non-empty, move the prefix
         if (
           newPrefix !== originalPrefix &&
-          (newPrefix !== '' || originalPrefix !== '')
+          newPrefix !== '' &&
+          originalPrefix !== ''
         ) {
           // move the original prefix to the new prefix
           createNotification({
@@ -334,7 +357,7 @@ export async function runSetupAppUpdate(
           });
           const result = await window.electronAPI.app.movePrefix(
             originalPrefix,
-            newPrefix
+            downloadedItem.name
           );
           if (result !== 'success') {
             throw new Error('Failed to move prefix');

@@ -532,7 +532,27 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
       appData.version = data.version;
       appData.cwd = data.cwd;
       appData.launchExecutable = data.launchExecutable;
-      appData.launchArguments = data.launchArguments;
+      
+      // On Linux, add WINEPREFIX prefix to launchArguments if not already present
+      if (process.platform === 'linux') {
+        let launchOptions = data.launchArguments ?? '';
+        
+        // Remove any existing WINEPREFIX from launch options
+        launchOptions = launchOptions.replace(/WINEPREFIX=.*? /g, '').trim();
+        
+        // Get the Steam app ID and construct the proton path
+        const { success, appId } = await getNonSteamGameAppID(appData.name);
+        if (success) {
+          const protonPath = `${process.env.HOME}/.steam/steam/steamapps/compatdata/${appId}/pfx`;
+          appData.launchArguments = 'WINEPREFIX=' + protonPath + ' ' + launchOptions;
+        } else {
+          // If we can't get the Steam app ID, just use the launch arguments as-is
+          appData.launchArguments = launchOptions;
+        }
+      } else {
+        appData.launchArguments = data.launchArguments;
+      }
+      
       fs.writeFileSync(appPath, JSON.stringify(appData, null, 2));
       return 'success';
     }

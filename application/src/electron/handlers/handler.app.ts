@@ -543,13 +543,27 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
           data.launchArguments ?? appData.launchArguments ?? '';
 
         // Get the Steam app ID and construct the proton path
+        // First try with versioned name, then fallback to plain name if that fails
         const versionedGameName = getVersionedGameName(
           appData.name,
           appData.version
         );
-        const { success, appId } =
-          await getNonSteamGameAppID(versionedGameName);
-        if (success) {
+        let { success, appId } = await getNonSteamGameAppID(versionedGameName);
+
+        // If lookup with version failed, try without version (for legacy shortcuts)
+        if (!success && appData.version) {
+          const plainGameName = appData.name;
+          const fallbackResult = await getNonSteamGameAppID(plainGameName);
+          if (fallbackResult.success) {
+            success = true;
+            appId = fallbackResult.appId;
+            console.log(
+              `[app:update-app-version] Found Steam app ID using plain name "${plainGameName}" after versioned lookup failed.`
+            );
+          }
+        }
+
+        if (success && appId) {
           // Only modify WINEPREFIX when we successfully get the Steam app ID
           let launchOptions = originalLaunchArguments;
 
@@ -565,7 +579,7 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
           // If we can't get the Steam app ID, preserve the original launch arguments unchanged
           appData.launchArguments = originalLaunchArguments;
           console.warn(
-            `[app:update-app-version] Failed to get Steam app ID for "${versionedGameName}". Preserving original launch arguments (including any existing WINEPREFIX).`
+            `[app:update-app-version] Failed to get Steam app ID for "${versionedGameName}"${appData.version ? ` and fallback "${appData.name}"` : ''}. Preserving original launch arguments (including any existing WINEPREFIX).`
           );
         }
       } else {

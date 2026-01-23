@@ -310,22 +310,18 @@ export async function runSetupAppUpdate(
       });
 
       if (
-        ((await window.electronAPI.app.getOS()) === 'linux' &&
-          beforeLibraryApp &&
-          beforeLibraryApp?.cwd != data.cwd) ||
-        beforeLibraryApp?.launchExecutable != data.launchExecutable ||
-        beforeLibraryApp?.launchArguments != data.launchArguments
+        (await window.electronAPI.app.getOS()) === 'linux' &&
+        (beforeLibraryApp?.launchExecutable != data.launchExecutable ||
+          beforeLibraryApp?.launchArguments != data.launchArguments)
       ) {
         let newPrefix = '';
-        if ((await window.electronAPI.app.getOS()) === 'linux') {
-          const { exists, prefixPath } =
-            await window.electronAPI.app.checkPrefixExists(
-              downloadedItem.appID
-            );
-          if (exists) {
-            newPrefix = prefixPath ?? '';
-          }
+        const { exists, prefixPath } =
+          await window.electronAPI.app.checkPrefixExists(downloadedItem.appID);
+        if (exists) {
+          newPrefix = prefixPath ?? '';
         }
+
+        // If the new prefix is different from the original prefix, and either is not empty, move the prefix
         if (
           newPrefix !== originalPrefix &&
           (newPrefix !== '' || originalPrefix !== '')

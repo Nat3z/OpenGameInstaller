@@ -61,6 +61,10 @@ export class Configuration {
         throw new Error('Option ' + key + ' is not of the correct type.');
       }
 
+      if (this.storedConfigTemplate[key].type === 'action') {
+        continue;
+      }
+
       const result = this.storedConfigTemplate[key].validate(
         this.definiteConfig[key]
       );

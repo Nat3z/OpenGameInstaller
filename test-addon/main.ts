@@ -10,7 +10,6 @@ const addon = new OGIAddon({
   repository: 'Repository URL',
   storefronts: ['test-front'],
 });
-
 addon.on('configure', (config) =>
   config
     .addStringOption((option) =>
@@ -119,6 +118,13 @@ addon.onTask('custom-task-name', async (task) => {
     'help',
     'help',
     new ConfigurationBuilder()
+      .addStringOption((option) =>
+        option
+          .setDisplayName('Test String Option')
+          .setName('testStringOption')
+          .setDescription('A test string option')
+          .setDefaultValue('Test Value')
+      )
       .addActionOption((option) =>
         option
           .setDisplayName('Run Task')

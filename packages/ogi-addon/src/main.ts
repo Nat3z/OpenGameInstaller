@@ -70,7 +70,7 @@ export interface ClientSentEventTypes {
     progress: number;
   };
   notification: Notification;
-  'input-asked': ConfigurationBuilder;
+  'input-asked': ConfigurationBuilder<Record<string, string | number | boolean>>;
   'task-update': {
     id: string;
     progress: number;
@@ -710,16 +710,17 @@ export class Task {
 
   /**
    * Ask the user for input using a ConfigurationBuilder screen.
+   * The return type is inferred from the ConfigurationBuilder's accumulated option types.
    * @param name {string} The name/title of the input prompt.
    * @param description {string} The description of what input is needed.
-   * @param screen {ConfigurationBuilder} The configuration builder for the input form.
-   * @returns {Promise<{ [key: string]: boolean | string | number }>} The user's input.
+   * @param screen {ConfigurationBuilder<U>} The configuration builder for the input form.
+   * @returns {Promise<U>} The user's input with types matching the configuration options.
    */
-  async askForInput(
+  async askForInput<U extends Record<string, string | number | boolean>>(
     name: string,
     description: string,
-    screen: ConfigurationBuilder
-  ): Promise<{ [key: string]: boolean | string | number }> {
+    screen: ConfigurationBuilder<U>
+  ): Promise<U> {
     return this.event.askForInput(name, description, screen);
   }
 }
@@ -872,16 +873,16 @@ class OGIAddonWSListener {
     this.registerMessageReceiver();
   }
 
-  private async userInputAsked(
-    configBuilt: ConfigurationBuilder,
+  private async userInputAsked<U extends Record<string, string | number | boolean>>(
+    configBuilt: ConfigurationBuilder<U>,
     name: string,
     description: string,
     socket: WebSocket
-  ): Promise<{ [key: string]: number | boolean | string }> {
+  ): Promise<U> {
     const config = configBuilt.build(false);
     const id = Math.random().toString(36).substring(7);
     if (!socket) {
-      return {};
+      return {} as U;
     }
     socket.send(
       JSON.stringify({
@@ -894,7 +895,7 @@ class OGIAddonWSListener {
         id: id,
       })
     );
-    return await this.waitForResponseFromServer(id);
+    return await this.waitForResponseFromServer<U>(id);
   }
 
   private registerMessageReceiver() {

@@ -7,18 +7,18 @@ export default class EventResponse<T> {
   progress: number = 0;
   logs: string[] = [];
   failed: string | undefined = undefined;
-  onInputAsked?: (
-    screen: ConfigurationBuilder,
+  onInputAsked?: <U extends Record<string, string | number | boolean>>(
+    screen: ConfigurationBuilder<U>,
     name: string,
     description: string
-  ) => Promise<{ [key: string]: boolean | string | number }>;
+  ) => Promise<U>;
 
   constructor(
-    onInputAsked?: (
-      screen: ConfigurationBuilder,
+    onInputAsked?: <U extends Record<string, string | number | boolean>>(
+      screen: ConfigurationBuilder<U>,
       name: string,
       description: string
-    ) => Promise<{ [key: string]: boolean | string | number }>
+    ) => Promise<U>
   ) {
     this.onInputAsked = onInputAsked;
   }
@@ -62,17 +62,18 @@ export default class EventResponse<T> {
 
   /**
    * Send a screen to the client to ask for input. Use the `ConfigurationBuilder` system to build the screen. Once sent to the user, the addon cannot change the screen.
+   * The return type is inferred from the ConfigurationBuilder's accumulated option types.
    * @async
-   * @param name {string}
-   * @param description {string}
-   * @param screen {ConfigurationBuilder}
-   * @returns {Promise<{ [key: string]: boolean | string | number }>}
+   * @param name {string} The name/title of the input prompt.
+   * @param description {string} The description of what input is needed.
+   * @param screen {ConfigurationBuilder<U>} The configuration builder for the input form.
+   * @returns {Promise<U>} The user's input with types matching the configuration options.
    */
-  public async askForInput(
+  public async askForInput<U extends Record<string, string | number | boolean>>(
     name: string,
     description: string,
-    screen: ConfigurationBuilder
-  ): Promise<{ [key: string]: boolean | string | number }> {
+    screen: ConfigurationBuilder<U>
+  ): Promise<U> {
     if (!this.onInputAsked) {
       throw new Error('No input asked callback');
     }

@@ -248,31 +248,31 @@
           {/if}
         {/each}
 
-        <!-- Group all action buttons together in a row -->
-        {#if screenRendering && Object.keys(screenRendering).some((key) => screenRendering && isActionOption(screenRendering[key]))}
+        <!-- Action buttons and submit button in the same row -->
+        {#if screenRendering && (Object.keys(screenRendering).some((key) => screenRendering && isActionOption(screenRendering[key])) || Object.keys(screenRendering).some((key) => screenRendering && !isActionOption(screenRendering[key])))}
           <div class="flex flex-row gap-2 mt-4">
+            <!-- Submit button for non-action forms -->
+            {#if Object.keys(screenRendering).some((key) => screenRendering && !isActionOption(screenRendering[key]))}
+              <ButtonModal
+                text="Submit"
+                variant="primary"
+                class="w-fit"
+                onclick={handleSubmit}
+              />
+            {/if}
+            <!-- Action buttons -->
             {#each Object.keys(screenRendering) as key}
               {#if isActionOption(screenRendering[key])}
                 {@const actionOption = screenRendering[key] as ActionOption}
                 <ButtonModal
                   text={actionOption.buttonText || 'Run'}
-                  variant="primary"
+                  variant="secondary"
                   class="w-fit"
                   onclick={() => handleActionSubmit(key)}
                 />
               {/if}
             {/each}
           </div>
-        {/if}
-
-        <!-- Submit button for non-action forms -->
-        {#if screenRendering && Object.keys(screenRendering).some((key) => screenRendering && !isActionOption(screenRendering[key]))}
-          <ButtonModal
-            text="Submit"
-            variant="primary"
-            class="mt-4 w-fit"
-            onclick={handleSubmit}
-          />
         {/if}
       {/if}
     </Modal>

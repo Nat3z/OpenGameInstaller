@@ -539,7 +539,8 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
       // On Linux, add WINEPREFIX prefix to launchArguments if not already present
       if (process.platform === 'linux') {
         // Preserve the original launch arguments before any modifications
-        const originalLaunchArguments = appData.launchArguments ?? data.launchArguments ?? '';
+        // Prefer incoming update over existing appData to avoid discarding newly provided edits
+        const originalLaunchArguments = data.launchArguments ?? appData.launchArguments ?? '';
         
         // Get the Steam app ID and construct the proton path
         const versionedGameName = getVersionedGameName(appData.name, appData.version);
@@ -628,7 +629,12 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
   const cachedAppIds: Record<string, number> = {};
   
   // Helper function to format game name with version
-  function getVersionedGameName(name: string, version: string): string {
+  // Returns plain name if version is falsy/blank to support legacy app IDs
+  function getVersionedGameName(name: string, version?: string | null): string {
+    // Guard for falsy/blank version (undefined, null, empty string, whitespace)
+    if (!version || !version.trim()) {
+      return name;
+    }
     return `${name} (${version})`;
   }
   

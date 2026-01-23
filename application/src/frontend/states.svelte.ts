@@ -1,5 +1,5 @@
 // Load persisted update state from filesystem
-function loadPersistedUpdateState(): {
+export function loadPersistedUpdateState(): {
   requiredReadds: number[];
 } {
   try {
@@ -31,8 +31,6 @@ function loadPersistedUpdateState(): {
   return { requiredReadds: [] };
 }
 
-const persistedState = loadPersistedUpdateState();
-
 export let appUpdates = $state({
   apps: [] as {
     appID: number;
@@ -40,7 +38,7 @@ export let appUpdates = $state({
     updateAvailable: boolean;
     updateVersion: string;
   }[],
-  requiredReadds: persistedState.requiredReadds as number[],
+  requiredReadds: [] as number[],
 });
 
 // Persist requiredReadds to filesystem whenever it changes

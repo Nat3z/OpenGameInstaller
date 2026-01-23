@@ -595,7 +595,7 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
     let launchOptions = appInfo.launchArguments ?? '';
 
     // remove any wineprefix=..... from the launch options
-    launchOptions = launchOptions.replace(/WINEPREFIX=.*? /g, '').trim();
+    launchOptions = launchOptions.replace(/WINEPREFIX=\S*\s?/g, '').trim();
 
     // Format game name with version for unique Steam shortcut
     const versionedGameName = getVersionedGameName(

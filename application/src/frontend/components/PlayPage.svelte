@@ -457,8 +457,6 @@
               delete appUpdates.prefixMoveInfo[libraryInfo.appID];
             } catch (error) {
               console.error(error);
-            } finally {
-              (event.currentTarget as HTMLButtonElement).disabled = false;
             }
           }}
         >

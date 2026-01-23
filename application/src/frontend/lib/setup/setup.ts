@@ -334,7 +334,8 @@ export async function runSetupAppUpdate(
       if (
         (await window.electronAPI.app.getOS()) === 'linux' &&
         (beforeLibraryApp?.launchExecutable != data.launchExecutable ||
-          beforeLibraryApp?.launchArguments != data.launchArguments)
+          beforeLibraryApp?.launchArguments != data.launchArguments ||
+          beforeLibraryApp?.cwd != data.cwd)
       ) {
         let newPrefix = '';
         const { exists, prefixPath } =
@@ -348,21 +349,13 @@ export async function runSetupAppUpdate(
         console.log('beforeLibraryApp?.name', beforeLibraryApp?.name);
 
         // If the new prefix is different from the original prefix, and both are non-empty, store the info for later move
-        if (
-          newPrefix !== originalPrefix &&
-          newPrefix !== '' &&
-          originalPrefix !== '' &&
-          beforeLibraryApp?.name
-        ) {
-          // Store the original prefix info - it will be moved when user clicks "Add to Steam"
-          appUpdates.prefixMoveInfo = {
-            ...appUpdates.prefixMoveInfo,
-            [downloadedItem.appID]: {
-              originalPrefix,
-              gameName: beforeLibraryApp.name,
-            },
-          };
-        }
+        appUpdates.prefixMoveInfo = {
+          ...appUpdates.prefixMoveInfo,
+          [downloadedItem.appID]: {
+            originalPrefix,
+            gameName: beforeLibraryApp?.name ?? '',
+          },
+        };
         createNotification({
           id: Math.random().toString(36).substring(2, 9),
           type: 'success',

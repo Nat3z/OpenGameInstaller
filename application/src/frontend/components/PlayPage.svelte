@@ -408,17 +408,27 @@
 
               // Check if prefix move is needed before adding to Steam
               const os = await window.electronAPI.app.getOS();
+              console.log(
+                'appUpdates.prefixMoveInfo',
+                appUpdates.prefixMoveInfo
+              );
               if (
                 os === 'linux' &&
-                appUpdates.prefixMoveInfo[libraryInfo.appID]
+                appUpdates.prefixMoveInfo[Number(libraryInfo.appID)]
               ) {
-                const prefixInfo = appUpdates.prefixMoveInfo[libraryInfo.appID];
+                const prefixInfo =
+                  appUpdates.prefixMoveInfo[Number(libraryInfo.appID)];
                 const { exists, prefixPath } =
                   await window.electronAPI.app.checkPrefixExists(
-                    libraryInfo.appID
+                    Number(libraryInfo.appID)
                   );
                 const currentPrefix = exists ? (prefixPath ?? '') : '';
-
+                console.log('currentPrefix', currentPrefix);
+                console.log(
+                  'prefixInfo.originalPrefix',
+                  prefixInfo.originalPrefix
+                );
+                console.log('prefixInfo.gameName', prefixInfo.gameName);
                 // If current prefix is different from original, move it
                 if (
                   currentPrefix !== prefixInfo.originalPrefix &&
@@ -439,12 +449,12 @@
                     throw new Error('Failed to move prefix');
                   }
                 }
-                appUpdates.requiredReadds = appUpdates.requiredReadds.filter(
-                  (id) => id !== libraryInfo.appID
-                );
-                // Clean up the stored prefix info
-                delete appUpdates.prefixMoveInfo[libraryInfo.appID];
               }
+              appUpdates.requiredReadds = appUpdates.requiredReadds.filter(
+                (id) => id !== libraryInfo.appID
+              );
+              // Clean up the stored prefix info
+              delete appUpdates.prefixMoveInfo[libraryInfo.appID];
             } catch (error) {
               console.error(error);
             } finally {

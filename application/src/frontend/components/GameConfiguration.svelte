@@ -127,9 +127,10 @@
       // Check if prefix move is needed before adding to Steam
       if (platform === 'linux' && appUpdates.prefixMoveInfo[gameInfo.appID]) {
         const prefixInfo = appUpdates.prefixMoveInfo[gameInfo.appID];
-        const { exists, prefixPath } = await window.electronAPI.app.checkPrefixExists(gameInfo.appID);
+        const { exists, prefixPath } =
+          await window.electronAPI.app.checkPrefixExists(gameInfo.appID);
         const currentPrefix = exists ? (prefixPath ?? '') : '';
-        
+
         // If current prefix is different from original, move it
         if (
           currentPrefix !== prefixInfo.originalPrefix &&
@@ -149,13 +150,13 @@
             throw new Error('Failed to move prefix');
           }
         }
-        
+
         // Clean up the stored prefix info
         delete appUpdates.prefixMoveInfo[gameInfo.appID];
       }
-      
+
       await window.electronAPI.app.addToSteam(gameInfo.appID);
-      
+
       // Remove from requiredReadds if it was there
       appUpdates.requiredReadds = appUpdates.requiredReadds.filter(
         (id) => id !== gameInfo.appID

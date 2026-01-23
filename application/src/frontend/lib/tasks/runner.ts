@@ -10,21 +10,45 @@ export type SearchResultWithAddon = SearchResult & {
   // Update-specific optional fields
   isUpdate?: boolean;
   updateVersion?: string;
-};
+} & (
+  | {
+      downloadType: 'task';
+      taskName: string;
+    }
+  | {
+      downloadType?: 'torrent' | 'magnet' | 'direct' | 'request' | 'empty';
+    }
+);
 
 export async function runTask(
   result: SearchResultWithAddon,
   originalFilePath: string
 ) {
   let taskID: string;
-  const response = await safeFetch(
-    'runTask',
-    {
-      addonID: result.addonSource,
-      manifest: JSON.parse(JSON.stringify(result.manifest)),
-      downloadPath: originalFilePath,
-      name: result.name,
-    },
+  const args: {
+    addonID: string;
+    manifest: Record<string, unknown>;
+    downloadPath: string;
+    name: string;
+    taskName?: string;
+  } = {
+    addonID: result.addonSource,
+    manifest: JSON.parse(JSON.stringify(result.manifest || {})),
+    downloadPath: originalFilePath,
+    name: result.name,
+  };
+
+  // If this is a task-type result, include the taskName
+  if (result.downloadType === 'task') {
+    args.taskName = result.taskName;
+    // Also ensure manifest has __taskName for backward compatibility
+    args.manifest = {
+      ...args.manifest,
+      __taskName: result.taskName,
+    };
+  }
+
+  const response = await safeFetch('runTask', args,
     {
       consume: 'json',
       onTaskStarted: (newTaskId: string) => {

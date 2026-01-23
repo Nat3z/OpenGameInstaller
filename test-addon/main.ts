@@ -37,6 +37,14 @@ addon.on('configure', (config) =>
         .setDescription('A test number option')
         .setMax(20)
     )
+    .addActionOption((option) =>
+      option
+        .setDisplayName('Test Action Option')
+        .setName('testActionOption')
+        .setDescription('A test action option')
+        .setButtonText('Run Custom Task')
+        .setTaskName('custom-task-name')
+    )
     .addNumberOption((option) =>
       option
         .setDisplayName('Test Number Range Option')
@@ -106,39 +114,38 @@ addon.on('exit', () => {
   process.exit(0);
 });
 
-addon.on('task-run', ({ manifest, name, downloadPath }, event) => {
-  event.defer();
-  event.log(`Running task ${name} with manifest ${JSON.stringify(manifest)}`);
-  event.log(`Download path: ${downloadPath}`);
-  new Promise(async (resolve) => {
-    // keep incrementing the progress every 1 second
-    const input = await event.askForInput(
-      'Please enter the code',
-      'code',
-      new ConfigurationBuilder().addNumberOption((option) =>
+addon.onTask('custom-task-name', async (task) => {
+  const input = await task.askForInput(
+    'help',
+    'help',
+    new ConfigurationBuilder()
+      .addActionOption((option) =>
         option
-          .setDisplayName('Code')
-          .setName('code')
-          .setDescription('Enter the code')
-          .setMin(1)
-          .setMax(100)
+          .setDisplayName('Run Task')
+          .setName('runTask')
+          .setDescription('Run Task')
+          .setButtonText('Run Task')
+          .setTaskName('task-test')
       )
-    );
-    if (input.code === 100) {
-      event.fail('Code is 100');
-      return;
-    }
-    const interval = setInterval(() => {
-      if (event.progress >= 100) {
-        clearInterval(interval);
-        console.log('Task completed');
-        event.resolve();
-        return;
-      }
-      event.progress += 10;
-      event.log(`Progress: ${event.progress}`);
-    }, 1000);
-  });
+      .addActionOption((option) =>
+        option
+          .setDisplayName('Run Task 2')
+          .setName('runTask-2')
+          .setDescription('Run Task')
+          .setButtonText('Run Task 2')
+          .setTaskName('task-test-2')
+      )
+  );
+
+  task.complete();
+});
+
+addon.onTask('task-test', (task) => {
+  task.log('Running task test');
+  task.setProgress(50);
+  setTimeout(() => {
+    task.complete();
+  }, 1000);
 });
 
 addon.on('search', ({ storefront, appID, for: searchFor }, event) => {
@@ -159,9 +166,7 @@ addon.on('search', ({ storefront, appID, for: searchFor }, event) => {
       {
         name: 'Task Test',
         downloadType: 'task',
-        manifest: {
-          test: 'Task Test',
-        },
+        taskName: 'task-test',
       },
       {
         name: 'Direct Download Test',

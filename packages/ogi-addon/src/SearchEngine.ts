@@ -19,6 +19,10 @@ export type SearchResult = BaseRequiredFields &
         }[];
       }
     | {
-        downloadType: 'request' | 'task' | 'empty';
+        downloadType: 'task';
+        taskName: string;
+      }
+    | {
+        downloadType: 'request' | 'empty';
       }
   );

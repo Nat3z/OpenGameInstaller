@@ -1,13 +1,15 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { safeFetch } from '../utils';
+  import { safeFetch, runTask } from '../utils';
   import type {
     BooleanOption,
     ConfigurationFile,
     ConfigurationOption,
     NumberOption,
     StringOption,
+    ActionOption,
   } from 'ogi-addon/config';
+  import { isActionOption } from 'ogi-addon/config';
   import type { OGIAddonConfiguration } from 'ogi-addon';
   import { notifications } from '../store';
   import AddonPicture from '../components/AddonPicture.svelte';
@@ -350,6 +352,44 @@
     selectedValues[key] = detail.selectedId;
     updateConfig();
   }
+
+  async function handleActionClick(key: string) {
+    if (!selectedAddon) return;
+    const option = selectedAddon.configTemplate[key];
+    if (!isActionOption(option)) return;
+
+    const actionOption = option as ActionOption & { taskName?: string };
+    const taskName = actionOption.taskName || key;
+    const manifest = {
+      __taskName: taskName,
+      ...actionOption.manifest,
+    };
+
+    try {
+      await runTask(
+        {
+          addonSource: selectedAddon.id,
+          manifest: manifest,
+          name: actionOption.displayName,
+          downloadType: 'task' as const,
+          taskName: taskName,
+          capsuleImage: '',
+          coverImage: '',
+          storefront: '',
+        },
+        ''
+      );
+    } catch (error) {
+      notifications.update((update) => [
+        ...update,
+        {
+          id: Math.random().toString(36).substring(7),
+          type: 'error',
+          message: `Failed to run action: ${error}`,
+        },
+      ]);
+    }
+  }
 </script>
 
 {#if deleteConfirmationModalOpen}
@@ -571,6 +611,17 @@
                   <span class="checkbox-checkmark"></span>
                 </label>
               {/if}
+              {#if isActionOption(selectedAddon.configTemplate[key])}
+                {@const option = selectedAddon.configTemplate[
+                  key
+                ] as ActionOption}
+                <button
+                  onclick={() => handleActionClick(key)}
+                  class="action-button ml-auto"
+                >
+                  {option.buttonText || 'Run'}
+                </button>
+              {/if}
               <p
                 data-error-message
                 class="text-red-500"
@@ -704,8 +755,8 @@
     @apply bg-accent-light hover:bg-accent-dark text-white px-4 py-2 rounded-lg transition-colors border-none cursor-pointer;
   }
 
-  .range-value {
-    @apply text-gray-700 font-medium;
+  .action-button {
+    @apply bg-accent-light hover:bg-accent-dark text-accent-dark hover:text-white px-6 py-2 rounded-lg transition-colors border-none cursor-pointer font-archivo font-semibold;
   }
 
   input[type='number']::-webkit-inner-spin-button,

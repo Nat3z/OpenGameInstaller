@@ -4,9 +4,11 @@ import {
   ConfigurationOption,
   NumberOption,
   StringOption,
+  ActionOption,
   isBooleanOption,
   isNumberOption,
   isStringOption,
+  isActionOption,
 } from './ConfigurationBuilder';
 import type {
   ConfigurationFile,
@@ -39,8 +41,9 @@ export class Configuration {
     const erroredKeys = new Map<string, string>();
     for (const key in this.storedConfigTemplate) {
       if (
-        this.definiteConfig[key] === null ||
-        this.definiteConfig[key] === undefined
+        this.storedConfigTemplate[key].type !== 'action' &&
+        (this.definiteConfig[key] === null ||
+          this.definiteConfig[key] === undefined)
       ) {
         console.warn(
           'Option ' +
@@ -52,9 +55,10 @@ export class Configuration {
           .defaultValue as string | number | boolean;
       }
       if (
+        this.storedConfigTemplate[key].type !== 'action' &&
         this.storedConfigTemplate[key].type !== typeof this.definiteConfig[key]
       ) {
-        throw new Error('Option ' + key + ' is not of the correct type');
+        throw new Error('Option ' + key + ' is not of the correct type.');
       }
 
       const result = this.storedConfigTemplate[key].validate(
@@ -130,9 +134,11 @@ export {
   ConfigurationOption,
   NumberOption,
   StringOption,
+  ActionOption,
   isBooleanOption,
   isNumberOption,
   isStringOption,
+  isActionOption,
 };
 
 export type { ConfigurationFile, ConfigurationOptionType };

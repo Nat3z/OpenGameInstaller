@@ -1,8 +1,6 @@
 import ws, { WebSocket } from 'ws';
 import events from 'node:events';
-import {
-  ConfigurationBuilder,
-} from './config/ConfigurationBuilder';
+import { ConfigurationBuilder } from './config/ConfigurationBuilder';
 import type { ConfigurationFile } from './config/ConfigurationBuilder';
 import { Configuration } from './config/Configuration';
 import EventResponse from './EventResponse';
@@ -20,7 +18,6 @@ export type OGIAddonEvent =
   | 'game-details'
   | 'exit'
   | 'check-for-updates'
-  | 'task-run'
   | 'request-dl'
   | 'catalog';
 
@@ -215,21 +212,6 @@ export interface EventListenerTypes {
   ) => void;
 
   /**
-   * This event is emitted when the client requests for a task to be run. Addon should resolve the event with the task.
-   * @param task
-   * @param event
-   * @returns
-   */
-  'task-run': (
-    task: {
-      manifest: Record<string, unknown>;
-      downloadPath: string;
-      name: string;
-    },
-    event: EventResponse<void>
-  ) => void;
-
-  /**
    * This event is emitted when the client requests for a game details to be fetched. Addon should resolve the event with the game details. This is used to generate a store page for the game.
    * @param appID
    * @param event
@@ -360,6 +342,17 @@ export default class OGIAddon {
   public config: Configuration = new Configuration({});
   private eventsAvailable: OGIAddonEvent[] = [];
   private registeredConnectEvent: boolean = false;
+  private taskHandlers: Map<
+    string,
+    (
+      task: Task,
+      data: {
+        manifest: Record<string, unknown>;
+        downloadPath: string;
+        name: string;
+      }
+    ) => Promise<void> | void
+  > = new Map();
 
   constructor(addonInfo: OGIAddonConfiguration) {
     this.addonInfo = addonInfo;
@@ -449,6 +442,62 @@ export default class OGIAddon {
       failed: undefined,
     });
     return task;
+  }
+
+  /**
+   * Register a task handler for a specific task name. The task name should match the taskName field in SearchResult or ActionOption.
+   * @param taskName {string} The name of the task (should match taskName in SearchResult or ActionOption.setTaskName()).
+   * @param handler {(task: Task, data: { manifest: Record<string, unknown>; downloadPath: string; name: string }) => Promise<void> | void} The handler function.
+   * @example
+   * ```typescript
+   * addon.onTask('clearCache', async (task) => {
+   *   task.log('Clearing cache...');
+   *   task.setProgress(50);
+   *   await clearCacheFiles();
+   *   task.setProgress(100);
+   *   task.complete();
+   * });
+   * ```
+   */
+  public onTask(
+    taskName: string,
+    handler: (
+      task: Task,
+      data: {
+        manifest: Record<string, unknown>;
+        downloadPath: string;
+        name: string;
+      }
+    ) => Promise<void> | void
+  ): void {
+    this.taskHandlers.set(taskName, handler);
+  }
+
+  /**
+   * Check if a task handler is registered for the given task name.
+   * @param taskName {string} The task name to check.
+   * @returns {boolean} True if a handler is registered.
+   */
+  public hasTaskHandler(taskName: string): boolean {
+    return this.taskHandlers.has(taskName);
+  }
+
+  /**
+   * Get a task handler for the given task name.
+   * @param taskName {string} The task name.
+   * @returns The handler function or undefined if not found.
+   */
+  public getTaskHandler(taskName: string):
+    | ((
+        task: Task,
+        data: {
+          manifest: Record<string, unknown>;
+          downloadPath: string;
+          name: string;
+        }
+      ) => Promise<void> | void)
+    | undefined {
+    return this.taskHandlers.get(taskName);
   }
 
   /**
@@ -611,6 +660,67 @@ export class CustomTask {
       finished: this.finished,
       failed: this.failed,
     });
+  }
+}
+
+/**
+ * A cleaner API wrapper around EventResponse for task handlers.
+ * Provides chainable methods for logging, progress updates, and completion.
+ */
+export class Task {
+  private event: EventResponse<void>;
+
+  constructor(event: EventResponse<void>) {
+    this.event = event;
+    this.event.defer();
+  }
+
+  /**
+   * Log a message to the task. Returns this for chaining.
+   * @param message {string} The message to log.
+   */
+  log(message: string): this {
+    this.event.log(message);
+    return this;
+  }
+
+  /**
+   * Set the progress of the task (0-100). Returns this for chaining.
+   * @param progress {number} The progress value (0-100).
+   */
+  setProgress(progress: number): this {
+    this.event.progress = progress;
+    return this;
+  }
+
+  /**
+   * Complete the task successfully.
+   */
+  complete(): void {
+    this.event.resolve();
+  }
+
+  /**
+   * Fail the task with an error message.
+   * @param message {string} The error message.
+   */
+  fail(message: string): void {
+    this.event.fail(message);
+  }
+
+  /**
+   * Ask the user for input using a ConfigurationBuilder screen.
+   * @param name {string} The name/title of the input prompt.
+   * @param description {string} The description of what input is needed.
+   * @param screen {ConfigurationBuilder} The configuration builder for the input form.
+   * @returns {Promise<{ [key: string]: boolean | string | number }>} The user's input.
+   */
+  async askForInput(
+    name: string,
+    description: string,
+    screen: ConfigurationBuilder
+  ): Promise<{ [key: string]: boolean | string | number }> {
+    return this.event.askForInput(name, description, screen);
   }
 }
 /**
@@ -971,7 +1081,48 @@ class OGIAddonWSListener {
             (screen, name, description) =>
               this.userInputAsked(screen, name, description, this.socket)
           );
-          this.eventEmitter.emit('task-run', message.args, taskRunEvent);
+
+          // Check for taskName: first from args directly (from SearchResult), then from manifest.__taskName (for ActionOption)
+          const taskName =
+            message.args.taskName && typeof message.args.taskName === 'string'
+              ? message.args.taskName
+              : message.args.manifest &&
+                  typeof message.args.manifest === 'object'
+                ? (message.args.manifest as Record<string, unknown>).__taskName
+                : undefined;
+
+          if (
+            taskName &&
+            typeof taskName === 'string' &&
+            this.addon.hasTaskHandler(taskName)
+          ) {
+            // Use the registered task handler
+            const handler = this.addon.getTaskHandler(taskName)!;
+            const task = new Task(taskRunEvent);
+            try {
+              const result = handler(task, {
+                manifest: message.args.manifest || {},
+                downloadPath: message.args.downloadPath || '',
+                name: message.args.name || '',
+              });
+              // If handler returns a promise, wait for it
+              if (result instanceof Promise) {
+                await result;
+              }
+            } catch (error) {
+              taskRunEvent.fail(
+                error instanceof Error ? error.message : String(error)
+              );
+            }
+          } else {
+            // No handler found - fail the task
+            taskRunEvent.fail(
+              taskName
+                ? `No task handler registered for task name: ${taskName}`
+                : 'No task name provided'
+            );
+          }
+
           const interval = setInterval(() => {
             if (taskRunEvent.resolved) {
               clearInterval(interval);

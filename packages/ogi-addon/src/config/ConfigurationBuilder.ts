@@ -28,6 +28,12 @@ export function isBooleanOption(
   return option.type === 'boolean';
 }
 
+export function isActionOption(
+  option: ConfigurationOption
+): option is ActionOption {
+  return option.type === 'action';
+}
+
 export class ConfigurationBuilder {
   private options: ConfigurationOption[] = [];
 
@@ -67,6 +73,17 @@ export class ConfigurationBuilder {
     return this;
   }
 
+  /**
+   * Add an action option to the configuration builder and return the builder for chaining. You must provide a name, display name, and description for the option.
+   * @param option { (option: ActionOption) => ActionOption }
+   */
+  public addActionOption(option: (option: ActionOption) => ActionOption) {
+    let newOption = new ActionOption();
+    newOption = option(newOption);
+    this.options.push(newOption);
+    return this;
+  }
+
   public build(includeFunctions: boolean): ConfigurationFile {
     let config: ConfigurationFile = {};
     this.options.forEach((option) => {
@@ -87,7 +104,12 @@ export class ConfigurationBuilder {
   }
 }
 
-export type ConfigurationOptionType = 'string' | 'number' | 'boolean' | 'unset';
+export type ConfigurationOptionType =
+  | 'string'
+  | 'number'
+  | 'boolean'
+  | 'action'
+  | 'unset';
 export class ConfigurationOption {
   public name: string = '';
   public defaultValue: unknown = '';
@@ -289,6 +311,44 @@ export class BooleanOption extends ConfigurationOption {
     if (typeof input !== 'boolean') {
       return [false, 'Input is not a boolean'];
     }
+    return [true, ''];
+  }
+}
+
+export class ActionOption extends ConfigurationOption {
+  public type: ConfigurationOptionType = 'action';
+  public manifest: Record<string, unknown> = {};
+  public buttonText: string = 'Run';
+  public taskName: string = '';
+
+  /**
+   * Set the task name that will be used to identify which task handler to run. This should match the name used in `addon.onTask()`.
+   * @param taskName {string} The task name to identify the handler.
+   */
+  setTaskName(taskName: string): this {
+    this.taskName = taskName;
+    return this;
+  }
+
+  /**
+   * Set the manifest object that will be passed to the task-run handler. The task name should be set via setTaskName() rather than in the manifest.
+   * @param manifest {Record<string, unknown>} The manifest object to pass to the task handler.
+   */
+  setManifest(manifest: Record<string, unknown>): this {
+    this.manifest = manifest;
+    return this;
+  }
+
+  /**
+   * Set the text displayed on the action button.
+   * @param text {string} The button text.
+   */
+  setButtonText(text: string): this {
+    this.buttonText = text;
+    return this;
+  }
+
+  override validate(_input: unknown): [boolean, string] {
     return [true, ''];
   }
 }

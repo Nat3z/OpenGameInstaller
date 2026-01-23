@@ -343,11 +343,16 @@ export async function runSetupAppUpdate(
           newPrefix = prefixPath ?? '';
         }
 
+        console.log('newPrefix', newPrefix);
+        console.log('originalPrefix', originalPrefix);
+        console.log('beforeLibraryApp?.name', beforeLibraryApp?.name);
+
         // If the new prefix is different from the original prefix, and both are non-empty, move the prefix
         if (
           newPrefix !== originalPrefix &&
           newPrefix !== '' &&
-          originalPrefix !== ''
+          originalPrefix !== '' &&
+          beforeLibraryApp?.name
         ) {
           // move the original prefix to the new prefix
           createNotification({
@@ -357,7 +362,7 @@ export async function runSetupAppUpdate(
           });
           const result = await window.electronAPI.app.movePrefix(
             originalPrefix,
-            downloadedItem.name
+            beforeLibraryApp.name
           );
           if (result !== 'success') {
             throw new Error('Failed to move prefix');

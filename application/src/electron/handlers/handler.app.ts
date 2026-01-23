@@ -357,10 +357,13 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
 
         // Add game to Steam first via steamtinkerlaunch
         const launchOptions = data.launchArguments ?? '';
+        
+        // Format game name with version for unique Steam shortcut
+        const versionedGameName = getVersionedGameName(data.name, data.version);
 
         const result = await new Promise<boolean>((resolve) =>
           exec(
-            `${STEAMTINKERLAUNCH_PATH} addnonsteamgame --appname="${escapeShellArg(data.name)}" --exepath="${escapeShellArg(data.launchExecutable)}" --startdir="${escapeShellArg(data.cwd)}" --launchoptions="${escapeShellArg(launchOptions)}" --compatibilitytool="proton_experimental" --use-steamgriddb`,
+            `${STEAMTINKERLAUNCH_PATH} addnonsteamgame --appname="${escapeShellArg(versionedGameName)}" --exepath="${escapeShellArg(data.launchExecutable)}" --startdir="${escapeShellArg(data.cwd)}" --launchoptions="${escapeShellArg(launchOptions)}" --compatibilitytool="proton_experimental" --use-steamgriddb`,
             {
               cwd: __dirname,
             },
@@ -389,7 +392,7 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
 
         // add to the {appid}.json file the launch options
         const { success, appId: steamAppId } = await getNonSteamGameAppID(
-          data.name
+          versionedGameName
         );
         if (!success) {
           return 'setup-failed';
@@ -541,7 +544,8 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
         launchOptions = launchOptions.replace(/WINEPREFIX=.*? /g, '').trim();
         
         // Get the Steam app ID and construct the proton path
-        const { success, appId } = await getNonSteamGameAppID(appData.name);
+        const versionedGameName = getVersionedGameName(appData.name, appData.version);
+        const { success, appId } = await getNonSteamGameAppID(versionedGameName);
         if (success) {
           const protonPath = `${process.env.HOME}/.steam/steam/steamapps/compatdata/${appId}/pfx`;
           appData.launchArguments = 'WINEPREFIX=' + protonPath + ' ' + launchOptions;
@@ -578,10 +582,13 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
     // remove any wineprefix=..... from the launch options
     launchOptions = launchOptions.replace(/WINEPREFIX=.*? /g, '').trim();
 
+    // Format game name with version for unique Steam shortcut
+    const versionedGameName = getVersionedGameName(appInfo.name, appInfo.version);
+
     // Use steamtinkerlaunch to add the game to steam
     const result = await new Promise<boolean>((resolve) =>
       exec(
-        `${STEAMTINKERLAUNCH_PATH} addnonsteamgame --appname="${escapeShellArg(appInfo.name)}" --exepath="${escapeShellArg(appInfo.launchExecutable)}" --startdir="${escapeShellArg(appInfo.cwd)}" --launchoptions="${escapeShellArg(launchOptions)}" --compatibilitytool="proton_experimental" --use-steamgriddb`,
+        `${STEAMTINKERLAUNCH_PATH} addnonsteamgame --appname="${escapeShellArg(versionedGameName)}" --exepath="${escapeShellArg(appInfo.launchExecutable)}" --startdir="${escapeShellArg(appInfo.cwd)}" --launchoptions="${escapeShellArg(launchOptions)}" --compatibilitytool="proton_experimental" --use-steamgriddb`,
         {
           cwd: __dirname,
         },
@@ -612,6 +619,12 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
   });
 
   const cachedAppIds: Record<string, number> = {};
+  
+  // Helper function to format game name with version
+  function getVersionedGameName(name: string, version: string): string {
+    return `${name} (${version})`;
+  }
+  
   // Get the Steam App ID for a non-Steam game using steamtinkerlaunch
   // Output format from STL: "<appid>\t(<game name>)" or "<appid> (<game name>)"
   function getNonSteamGameAppID(
@@ -729,7 +742,8 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
     const appInfo: LibraryInfo = JSON.parse(fs.readFileSync(appPath, 'utf-8'));
 
     // Get the Steam shortcut ID
-    const { success, appId } = await getNonSteamGameAppID(appInfo.name);
+    const versionedGameName = getVersionedGameName(appInfo.name, appInfo.version);
+    const { success, appId } = await getNonSteamGameAppID(versionedGameName);
     if (!success) {
       return { success: false, error: 'Failed to get Steam shortcut ID' };
     }
@@ -767,7 +781,8 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
     }
     libraryInfo = JSON.parse(fs.readFileSync(appPath, 'utf-8'));
 
-    const { success, appId } = await getNonSteamGameAppID(libraryInfo.name);
+    const versionedGameName = getVersionedGameName(libraryInfo.name, libraryInfo.version);
+    const { success, appId } = await getNonSteamGameAppID(versionedGameName);
     let homeDir = process.env.HOME || process.env.USERPROFILE;
     if (!homeDir) {
       return { exists: false, error: 'Home directory not found' };
@@ -807,7 +822,8 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
 
       const homeDir = process.env.HOME || process.env.USERPROFILE;
       const protonBasePath = `${homeDir}/.steam/steam/steamapps/compatdata`;
-      const { success, appId } = await getNonSteamGameAppID(appInfo.name);
+      const versionedGameName = getVersionedGameName(appInfo.name, appInfo.version);
+      const { success, appId } = await getNonSteamGameAppID(versionedGameName);
       if (!success) {
         return 'failed';
       }
@@ -1089,137 +1105,6 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
       });
 
       return 'success';
-    }
-  );
-
-  ipcMain.handle(
-    'app:move-prefix',
-    async (_, originalPrefix: string, name: string) => {
-      if (process.platform !== 'linux') {
-        return 'failed';
-      }
-
-      let newProtonPath: string | null = null;
-      let tmpNewPrefixPath: string | null = null;
-      let tempPath: string | null = null;
-      let originalPrefixMoved = false;
-      let newProtonMoved = false;
-
-      try {
-        const { success, appId } = await getNonSteamGameAppID(name);
-        if (!success) {
-          console.error('[move-prefix] Failed to get Steam app ID for:', name);
-          return 'failed';
-        }
-
-        const homeDir = process.env.HOME;
-        if (!homeDir) {
-          console.error('[move-prefix] HOME environment variable not set');
-          return 'failed';
-        }
-
-        const expectedBaseDir = path.resolve(homeDir, '.steam/steam/steamapps/compatdata');
-        newProtonPath = path.resolve(expectedBaseDir, `${appId}/pfx`);
-
-        const resolvedOriginalPrefix = path.resolve(originalPrefix);
-        if (!fs.existsSync(resolvedOriginalPrefix)) {
-          console.error('[move-prefix] Original prefix does not exist:', resolvedOriginalPrefix);
-          return 'failed';
-        }
-
-        const originalPrefixStat = fs.statSync(resolvedOriginalPrefix);
-        if (!originalPrefixStat.isDirectory()) {
-          console.error('[move-prefix] Original prefix is not a directory:', resolvedOriginalPrefix);
-          return 'failed';
-        }
-
-        if (!resolvedOriginalPrefix.startsWith(path.resolve(homeDir))) {
-          console.error('[move-prefix] Path traversal detected. Original prefix outside home directory:', resolvedOriginalPrefix);
-          return 'failed';
-        }
-
-        const resolvedNewProtonPath = path.resolve(newProtonPath);
-        if (!resolvedNewProtonPath.startsWith(expectedBaseDir)) {
-          console.error('[move-prefix] Path traversal detected. New proton path outside expected base:', resolvedNewProtonPath);
-          return 'failed';
-        }
-
-        const tempBaseDir = path.resolve(app.getPath('temp'), 'ogi-original-prefixes');
-        if (!fs.existsSync(tempBaseDir)) {
-          fs.mkdirSync(tempBaseDir, { recursive: true });
-        }
-
-        const timestamp = Date.now();
-        tempPath = path.join(tempBaseDir, `${appId}-${timestamp}.og-tmp`);
-
-        let counter = 0;
-        while (fs.existsSync(tempPath)) {
-          tempPath = path.join(tempBaseDir, `${appId}-${timestamp}-${counter}.og-tmp`);
-          counter++;
-        }
-
-        if (fs.existsSync(newProtonPath)) {
-          tmpNewPrefixPath = tempPath;
-          fs.renameSync(newProtonPath, tmpNewPrefixPath);
-          newProtonMoved = true;
-        } else {
-          const parentDir = path.dirname(newProtonPath);
-          if (!fs.existsSync(parentDir)) {
-            fs.mkdirSync(parentDir, { recursive: true });
-          }
-        }
-
-        fs.renameSync(resolvedOriginalPrefix, resolvedNewProtonPath);
-        originalPrefixMoved = true;
-
-        if (tmpNewPrefixPath && fs.existsSync(tmpNewPrefixPath)) {
-          fs.renameSync(tmpNewPrefixPath, tempPath);
-        }
-
-        return 'success';
-      } catch (error: any) {
-        console.error('[move-prefix] Error during prefix move operation:', error);
-        console.error('[move-prefix] Error details:', {
-          message: error.message,
-          stack: error.stack,
-          originalPrefix,
-          newProtonPath,
-          tmpNewPrefixPath,
-          tempPath,
-          originalPrefixMoved,
-          newProtonMoved,
-        });
-
-        try {
-          if (originalPrefixMoved && newProtonPath && fs.existsSync(newProtonPath)) {
-            const resolvedOriginalPrefix = path.resolve(originalPrefix);
-            if (!fs.existsSync(resolvedOriginalPrefix)) {
-              fs.renameSync(newProtonPath, resolvedOriginalPrefix);
-              console.log('[move-prefix] Rollback: Restored original prefix');
-            }
-          }
-
-          if (newProtonMoved && tmpNewPrefixPath && fs.existsSync(tmpNewPrefixPath)) {
-            if (!fs.existsSync(newProtonPath!)) {
-              fs.renameSync(tmpNewPrefixPath, newProtonPath!);
-              console.log('[move-prefix] Rollback: Restored new proton path');
-            }
-          }
-
-          if (tempPath && fs.existsSync(tempPath) && !newProtonMoved) {
-            try {
-              fs.rmSync(tempPath, { recursive: true, force: true });
-              console.log('[move-prefix] Cleanup: Removed temp directory');
-            } catch (cleanupError) {
-              console.error('[move-prefix] Cleanup error:', cleanupError);
-            }
-          }
-        } catch (rollbackError: any) {
-          console.error('[move-prefix] Rollback failed:', rollbackError);
-        }
-
-        return 'failed';
-      }
     }
   );
 

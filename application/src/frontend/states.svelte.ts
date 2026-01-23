@@ -1,7 +1,6 @@
 // Load persisted update state from filesystem
 function loadPersistedUpdateState(): {
   requiredReadds: number[];
-  prefixMoveInfo: Record<number, { originalPrefix: string; gameName: string }>;
 } {
   try {
     if (typeof window !== 'undefined' && window.electronAPI?.fs) {
@@ -19,10 +18,6 @@ function loadPersistedUpdateState(): {
             requiredReadds: Array.isArray(parsed.requiredReadds)
               ? parsed.requiredReadds
               : [],
-            prefixMoveInfo:
-              parsed.prefixMoveInfo && typeof parsed.prefixMoveInfo === 'object'
-                ? parsed.prefixMoveInfo
-                : {},
           };
         }
       }
@@ -30,7 +25,7 @@ function loadPersistedUpdateState(): {
   } catch (e) {
     console.error('Failed to load persisted update state:', e);
   }
-  return { requiredReadds: [], prefixMoveInfo: {} };
+  return { requiredReadds: [] };
 }
 
 const persistedState = loadPersistedUpdateState();
@@ -43,18 +38,13 @@ export let appUpdates = $state({
     updateVersion: string;
   }[],
   requiredReadds: persistedState.requiredReadds as number[],
-  prefixMoveInfo: persistedState.prefixMoveInfo as Record<
-    number,
-    { originalPrefix: string; gameName: string }
-  >,
 });
 
-// Persist requiredReadds and prefixMoveInfo to filesystem whenever they change
+// Persist requiredReadds to filesystem whenever it changes
 $effect.root(() => {
   $effect(() => {
-    // Track the values to persist
+    // Track the value to persist
     const requiredReadds = appUpdates.requiredReadds;
-    const prefixMoveInfo = appUpdates.prefixMoveInfo;
 
     try {
       if (typeof window !== 'undefined' && window.electronAPI?.fs) {
@@ -65,7 +55,6 @@ $effect.root(() => {
 
         const stateToSave = {
           requiredReadds,
-          prefixMoveInfo,
         };
         window.electronAPI.fs.write(
           './internals/update-state.json',

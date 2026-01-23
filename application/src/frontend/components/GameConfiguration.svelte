@@ -124,37 +124,6 @@
   async function addToSteam(button: HTMLButtonElement) {
     button.disabled = true;
     try {
-      // Check if prefix move is needed before adding to Steam
-      if (platform === 'linux' && appUpdates.prefixMoveInfo[gameInfo.appID]) {
-        const prefixInfo = appUpdates.prefixMoveInfo[gameInfo.appID];
-        const { exists, prefixPath } =
-          await window.electronAPI.app.checkPrefixExists(gameInfo.appID);
-        const currentPrefix = exists ? (prefixPath ?? '') : '';
-
-        // If current prefix is different from original, move it
-        if (
-          currentPrefix !== prefixInfo.originalPrefix &&
-          currentPrefix !== '' &&
-          prefixInfo.originalPrefix !== ''
-        ) {
-          createNotification({
-            id: Math.random().toString(36).substring(7),
-            type: 'info',
-            message: `Swapping wine prefixes to maintain save data...`,
-          });
-          const result = await window.electronAPI.app.movePrefix(
-            prefixInfo.originalPrefix,
-            prefixInfo.gameName
-          );
-          if (result !== 'success') {
-            throw new Error('Failed to move prefix');
-          }
-        }
-
-        // Clean up the stored prefix info
-        delete appUpdates.prefixMoveInfo[gameInfo.appID];
-      }
-
       await window.electronAPI.app.addToSteam(gameInfo.appID);
 
       // Remove from requiredReadds if it was there

@@ -278,17 +278,6 @@ export async function runSetupAppUpdate(
 
   try {
     // Run addon setup to get the new version info
-
-    // get the original prefix before the update
-    let originalPrefix = '';
-    if ((await window.electronAPI.app.getOS()) === 'linux') {
-      const { exists, prefixPath } =
-        await window.electronAPI.app.checkPrefixExists(downloadedItem.appID);
-      if (exists) {
-        originalPrefix = prefixPath ?? '';
-      }
-    }
-
     const data: SetupEventResponse = await safeFetch(
       'setupApp',
       setupPayload,
@@ -337,25 +326,6 @@ export async function runSetupAppUpdate(
           beforeLibraryApp?.launchArguments != data.launchArguments ||
           beforeLibraryApp?.cwd != data.cwd)
       ) {
-        let newPrefix = '';
-        const { exists, prefixPath } =
-          await window.electronAPI.app.checkPrefixExists(downloadedItem.appID);
-        if (exists) {
-          newPrefix = prefixPath ?? '';
-        }
-
-        console.log('newPrefix', newPrefix);
-        console.log('originalPrefix', originalPrefix);
-        console.log('beforeLibraryApp?.name', beforeLibraryApp?.name);
-
-        // If the new prefix is different from the original prefix, and both are non-empty, store the info for later move
-        appUpdates.prefixMoveInfo = {
-          ...appUpdates.prefixMoveInfo,
-          [downloadedItem.appID]: {
-            originalPrefix,
-            gameName: beforeLibraryApp?.name ?? '',
-          },
-        };
         createNotification({
           id: Math.random().toString(36).substring(2, 9),
           type: 'success',

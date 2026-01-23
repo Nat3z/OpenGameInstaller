@@ -41,30 +41,60 @@ export let appUpdates = $state({
   requiredReadds: [] as number[],
 });
 
-// Persist requiredReadds to filesystem whenever it changes
+let initTimeout = true;
 $effect.root(() => {
   $effect(() => {
     // Track the value to persist
     const requiredReadds = appUpdates.requiredReadds;
 
-    try {
-      if (typeof window !== 'undefined' && window.electronAPI?.fs) {
-        // Ensure internals directory exists
-        if (!window.electronAPI.fs.exists('./internals')) {
-          window.electronAPI.fs.mkdir('./internals');
-        }
+    // Handle async work with proper cleanup
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    let cancelled = false;
 
-        const stateToSave = {
-          requiredReadds,
-        };
-        window.electronAPI.fs.write(
-          './internals/update-state.json',
-          JSON.stringify(stateToSave, null, 2)
-        );
+    const persistState = async () => {
+      if (initTimeout) {
+        await new Promise<void>((resolve) => {
+          timeoutId = setTimeout(() => {
+            timeoutId = null;
+            resolve();
+          }, 1000);
+        });
+        if (cancelled) return;
+        initTimeout = false;
       }
-    } catch (e) {
-      console.error('Failed to persist update state:', e);
-    }
+
+      if (cancelled) return;
+
+      try {
+        if (typeof window !== 'undefined' && window.electronAPI?.fs) {
+          // Ensure internals directory exists
+          if (!window.electronAPI.fs.exists('./internals')) {
+            window.electronAPI.fs.mkdir('./internals');
+          }
+
+          const stateToSave = {
+            requiredReadds,
+          };
+          window.electronAPI.fs.write(
+            './internals/update-state.json',
+            JSON.stringify(stateToSave, null, 2)
+          );
+        }
+      } catch (e) {
+        console.error('Failed to persist update state:', e);
+      }
+    };
+
+    persistState();
+
+    // Cleanup function - clears timeout if effect re-runs before timeout completes
+    return () => {
+      cancelled = true;
+      if (timeoutId !== null) {
+        clearTimeout(timeoutId);
+        timeoutId = null;
+      }
+    };
   });
 });
 

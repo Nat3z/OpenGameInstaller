@@ -16,7 +16,10 @@ function loadPersistedUpdateState(): {
           const parsed = JSON.parse(stored);
           return {
             requiredReadds: Array.isArray(parsed.requiredReadds)
-              ? parsed.requiredReadds
+              ? parsed.requiredReadds.filter(
+                  (v: unknown): v is number =>
+                    typeof v === 'number' && Number.isFinite(v)
+                )
               : [],
           };
         }

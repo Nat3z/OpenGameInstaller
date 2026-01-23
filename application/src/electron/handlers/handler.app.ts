@@ -538,20 +538,27 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
       
       // On Linux, add WINEPREFIX prefix to launchArguments if not already present
       if (process.platform === 'linux') {
-        let launchOptions = data.launchArguments ?? '';
-        
-        // Remove any existing WINEPREFIX from launch options
-        launchOptions = launchOptions.replace(/WINEPREFIX=.*? /g, '').trim();
+        // Preserve the original launch arguments before any modifications
+        const originalLaunchArguments = appData.launchArguments ?? data.launchArguments ?? '';
         
         // Get the Steam app ID and construct the proton path
         const versionedGameName = getVersionedGameName(appData.name, appData.version);
         const { success, appId } = await getNonSteamGameAppID(versionedGameName);
         if (success) {
+          // Only modify WINEPREFIX when we successfully get the Steam app ID
+          let launchOptions = originalLaunchArguments;
+          
+          // Remove any existing WINEPREFIX from launch options
+          launchOptions = launchOptions.replace(/WINEPREFIX=.*? /g, '').trim();
+          
           const protonPath = `${process.env.HOME}/.steam/steam/steamapps/compatdata/${appId}/pfx`;
           appData.launchArguments = 'WINEPREFIX=' + protonPath + ' ' + launchOptions;
         } else {
-          // If we can't get the Steam app ID, just use the launch arguments as-is
-          appData.launchArguments = launchOptions;
+          // If we can't get the Steam app ID, preserve the original launch arguments unchanged
+          appData.launchArguments = originalLaunchArguments;
+          console.warn(
+            `[app:update-app-version] Failed to get Steam app ID for "${versionedGameName}". Preserving original launch arguments (including any existing WINEPREFIX).`
+          );
         }
       } else {
         appData.launchArguments = data.launchArguments;

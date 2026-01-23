@@ -349,6 +349,11 @@ export async function runSetupAppUpdate(
         'Current version: ',
         downloadedItem.updateVersion
       );
+      updateDownloadStatus(downloadedItem.id, {
+        status: 'error',
+        error: `Version mismatch: expected ${downloadedItem.updateVersion}, got ${data.version}`,
+      });
+      return data;
     }
     const finalStatus = isTorrent ? 'seeding' : 'setup-complete';
     updateDownloadStatus(downloadedItem.id, {

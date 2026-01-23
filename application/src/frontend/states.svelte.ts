@@ -6,6 +6,7 @@ export let appUpdates = $state({
     updateVersion: string;
   }[],
   requiredReadds: [] as number[],
+  prefixMoveInfo: {} as Record<number, { originalPrefix: string; gameName: string }>,
 });
 
 export const updatesManager = {

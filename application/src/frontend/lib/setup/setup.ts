@@ -347,26 +347,21 @@ export async function runSetupAppUpdate(
         console.log('originalPrefix', originalPrefix);
         console.log('beforeLibraryApp?.name', beforeLibraryApp?.name);
 
-        // If the new prefix is different from the original prefix, and both are non-empty, move the prefix
+        // If the new prefix is different from the original prefix, and both are non-empty, store the info for later move
         if (
           newPrefix !== originalPrefix &&
           newPrefix !== '' &&
           originalPrefix !== '' &&
           beforeLibraryApp?.name
         ) {
-          // move the original prefix to the new prefix
-          createNotification({
-            id: Math.random().toString(36).substring(2, 9),
-            type: 'success',
-            message: `Swapping wine prefixes to maintain save data...`,
-          });
-          const result = await window.electronAPI.app.movePrefix(
-            originalPrefix,
-            beforeLibraryApp.name
-          );
-          if (result !== 'success') {
-            throw new Error('Failed to move prefix');
-          }
+          // Store the original prefix info - it will be moved when user clicks "Add to Steam"
+          appUpdates.prefixMoveInfo = {
+            ...appUpdates.prefixMoveInfo,
+            [downloadedItem.appID]: {
+              originalPrefix,
+              gameName: beforeLibraryApp.name,
+            },
+          };
         }
         createNotification({
           id: Math.random().toString(36).substring(2, 9),

@@ -2,6 +2,7 @@
   import type { LibraryInfo, SearchResult } from 'ogi-addon';
   import PlayIcon from '../Icons/PlayIcon.svelte';
   import {
+    createNotification,
     currentDownloads,
     currentStorePageOpened,
     currentStorePageOpenedStorefront,
@@ -402,10 +403,48 @@
           onclick={async (event) => {
             try {
               (event.currentTarget as HTMLButtonElement).disabled = true;
+
               await window.electronAPI.app.addToSteam(libraryInfo.appID);
-              appUpdates.requiredReadds = appUpdates.requiredReadds.filter(
-                (id) => id !== libraryInfo.appID
-              );
+
+              // Check if prefix move is needed before adding to Steam
+              const os = await window.electronAPI.app.getOS();
+              if (
+                os === 'linux' &&
+                appUpdates.prefixMoveInfo[libraryInfo.appID]
+              ) {
+                const prefixInfo = appUpdates.prefixMoveInfo[libraryInfo.appID];
+                const { exists, prefixPath } =
+                  await window.electronAPI.app.checkPrefixExists(
+                    libraryInfo.appID
+                  );
+                const currentPrefix = exists ? (prefixPath ?? '') : '';
+
+                // If current prefix is different from original, move it
+                if (
+                  currentPrefix !== prefixInfo.originalPrefix &&
+                  currentPrefix !== '' &&
+                  prefixInfo.originalPrefix !== ''
+                ) {
+                  createNotification({
+                    id: Math.random().toString(36).substring(2, 9),
+                    type: 'info',
+                    message: `Swapping wine prefixes to maintain save data...`,
+                  });
+                  const result = await window.electronAPI.app.movePrefix(
+                    prefixInfo.originalPrefix,
+                    prefixInfo.gameName
+                  );
+                  if (result !== 'success') {
+                    event.currentTarget.disabled = false;
+                    throw new Error('Failed to move prefix');
+                  }
+                }
+                appUpdates.requiredReadds = appUpdates.requiredReadds.filter(
+                  (id) => id !== libraryInfo.appID
+                );
+                // Clean up the stored prefix info
+                delete appUpdates.prefixMoveInfo[libraryInfo.appID];
+              }
             } catch (error) {
               console.error(error);
             } finally {

@@ -581,7 +581,7 @@
                 {#if option.inputType === 'range'}
                   <input
                     type="number"
-                    class="min-w-12 text-center px-3 py-1 bg-accent-light text-accent-dark rounded-lg font-archivo font-semibold text-lg"
+                    class="range-value min-w-12 text-center px-3 py-1 bg-accent-light text-accent-dark rounded-lg font-archivo font-semibold text-lg"
                     value={getStoredOrDefaultValue(key)}
                     min={option.min}
                     max={option.max}
@@ -592,7 +592,6 @@
                       ) as HTMLInputElement;
                       if (element && event.target instanceof HTMLInputElement) {
                         element.value = event.target.value;
-                        updateInputNum(element);
                       }
                     }}
                   />

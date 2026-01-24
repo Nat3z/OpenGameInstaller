@@ -256,7 +256,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
         version: string,
         cwd: string,
         launchExecutable: string,
-        launchArguments?: string
+        launchArguments?: string,
+        addonSource?: string
       ) =>
         ipcRenderer.invoke('app:update-app-version', {
           appID,
@@ -264,6 +265,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
           cwd,
           launchExecutable,
           launchArguments,
+          addonSource,
         })
     ),
     addToSteam: wrap((appID: number, oldSteamAppId?: number) =>

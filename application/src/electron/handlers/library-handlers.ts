@@ -225,11 +225,16 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
         cwd: string;
         launchExecutable: string;
         launchArguments?: string;
+        addonSource?: string;
       }
     ) => {
       const appData = loadLibraryInfo(data.appID);
       if (!appData) {
         return 'app-not-found';
+      }
+
+      if (data.addonSource) {
+        appData.addonsource = data.addonSource;
       }
 
       appData.version = data.version;

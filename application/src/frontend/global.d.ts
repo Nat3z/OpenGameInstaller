@@ -144,9 +144,13 @@ interface Window {
         version: string,
         cwd: string,
         launchExecutable: string,
-        launchArguments?: string
+        launchArguments?: string,
+        addonSource?: string
       ) => Promise<'success' | 'app-not-found'>;
-      addToSteam: (appID: number, oldSteamAppId?: number) => Promise<{
+      addToSteam: (
+        appID: number,
+        oldSteamAppId?: number
+      ) => Promise<{
         success: boolean;
         error?: string;
       }>;

@@ -249,12 +249,14 @@
         {/each}
 
         <!-- Action buttons and submit button in the same row -->
-        {#if screenRendering && (Object.keys(screenRendering).some((key) => screenRendering && isActionOption(screenRendering[key])) || Object.keys(screenRendering).some((key) => screenRendering && !isActionOption(screenRendering[key])))}
+        {#if screenRendering}
           <div class="flex flex-row gap-2 mt-4">
             <!-- Submit button for non-action forms -->
-            {#if Object.keys(screenRendering).some((key) => screenRendering && !isActionOption(screenRendering[key]))}
+            {#if Object.keys(screenRendering).length === 0 || Object.keys(screenRendering).some((key) => screenRendering && !isActionOption(screenRendering[key]))}
               <ButtonModal
-                text="Submit"
+                text={Object.keys(screenRendering).length === 0
+                  ? 'Close'
+                  : 'Submit'}
                 variant="primary"
                 class="w-fit"
                 onclick={handleSubmit}

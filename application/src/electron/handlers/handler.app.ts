@@ -685,30 +685,30 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
             '[add-to-steam] Home directory not found, skipping prefix migration'
           );
         } else {
-          const oldPrefixPath = `${homeDir}/.steam/steam/steamapps/compatdata/${oldSteamAppId}/pfx`;
-          const newPrefixPath = `${homeDir}/.steam/steam/steamapps/compatdata/${newSteamAppId}/pfx`;
-          const newCompatDataDir = `${homeDir}/.steam/steam/steamapps/compatdata/${newSteamAppId}`;
+          const compatDataDir = `${homeDir}/.steam/steam/steamapps/compatdata`;
+          const oldAppIdDir = `${compatDataDir}/${oldSteamAppId}`;
+          const newAppIdDir = `${compatDataDir}/${newSteamAppId}`;
 
           try {
-            // Check if old prefix exists
-            if (fs.existsSync(oldPrefixPath)) {
-              // Check if new prefix already exists
-              if (fs.existsSync(newPrefixPath)) {
+            // Check if old app ID directory exists
+            if (fs.existsSync(oldAppIdDir)) {
+              // Check if new app ID directory already exists
+              if (fs.existsSync(newAppIdDir)) {
                 console.warn(
-                  `[add-to-steam] New prefix already exists at ${newPrefixPath}, skipping migration`
+                  `[add-to-steam] New compatdata directory already exists at ${newAppIdDir}, skipping migration`
                 );
               } else {
-                // Ensure the compatdata directory exists
-                if (!fs.existsSync(newCompatDataDir)) {
-                  fs.mkdirSync(newCompatDataDir, { recursive: true });
-                }
-
                 // Try to rename first (fastest, works on same filesystem)
                 try {
-                  fs.renameSync(oldPrefixPath, newPrefixPath);
+                  fs.renameSync(oldAppIdDir, newAppIdDir);
                   console.log(
-                    `[add-to-steam] Successfully migrated prefix from ${oldPrefixPath} to ${newPrefixPath}`
+                    `[add-to-steam] Successfully migrated compatdata directory from ${oldAppIdDir} to ${newAppIdDir}`
                   );
+                  sendNotification({
+                    message: `Successfully migrated prefix to new version.`,
+                    id: Math.random().toString(36).substring(7),
+                    type: 'success',
+                  });
                 } catch (renameError) {
                   // If rename fails (e.g., cross-filesystem), use copy + delete
                   console.log(
@@ -733,11 +733,11 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
                       fs.copyFileSync(src, dest);
                     }
                   };
-                  copyRecursiveSync(oldPrefixPath, newPrefixPath);
-                  // Delete old prefix
-                  fs.rmSync(oldPrefixPath, { recursive: true, force: true });
+                  copyRecursiveSync(oldAppIdDir, newAppIdDir);
+                  // Delete old directory
+                  fs.rmSync(oldAppIdDir, { recursive: true, force: true });
                   console.log(
-                    `[add-to-steam] Successfully copied prefix from ${oldPrefixPath} to ${newPrefixPath}`
+                    `[add-to-steam] Successfully copied compatdata directory from ${oldAppIdDir} to ${newAppIdDir}`
                   );
 
                   sendNotification({
@@ -749,7 +749,7 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
               }
             } else {
               console.log(
-                `[add-to-steam] Old prefix not found at ${oldPrefixPath}, skipping migration`
+                `[add-to-steam] Old compatdata directory not found at ${oldAppIdDir}, skipping migration`
               );
               sendNotification({
                 message: `Old prefix not found, skipping migration`,

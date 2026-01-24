@@ -593,7 +593,7 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
 
   ipcMain.handle(
     'app:add-to-steam',
-    async (_, appID: number, oldSteamAppId?: number) => {
+    async (_, appID: number, oldSteamAppId: number | undefined) => {
       if (process.platform !== 'linux') {
         return { success: false, error: 'Only available on Linux' };
       }
@@ -667,6 +667,13 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
       }
 
       // Migrate prefix if oldSteamAppId is provided and differs from new ID
+      console.log('oldSteamAppId', oldSteamAppId);
+      console.log('newSteamAppId', newSteamAppId);
+      console.log('oldSteamAppId !== 0', oldSteamAppId !== 0);
+      console.log(
+        'oldSteamAppId !== newSteamAppId',
+        oldSteamAppId !== newSteamAppId
+      );
       if (
         oldSteamAppId &&
         oldSteamAppId !== 0 &&

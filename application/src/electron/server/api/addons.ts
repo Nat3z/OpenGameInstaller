@@ -377,10 +377,6 @@ const procedures: Record<string, Procedure<any>> = {
       const client = clients.get(input.addonID);
       if (!client) return new ProcedureError(404, 'Client not found');
 
-      if (!client.eventsAvailable.includes('task-run')) {
-        return new ProcedureError(400, 'Client does not support task-run');
-      }
-
       const deferrableTask = new DeferrableTask(async () => {
         const data = await client.sendEventMessage({
           event: 'task-run',

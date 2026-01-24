@@ -1,7 +1,7 @@
 import z, { ZodError } from 'zod';
 
 export interface ConfigurationFile {
-  [key: string]: ConfigurationOption;
+  [key: string]: ConfigurationOption<string>;
 }
 
 const configValidation = z.object({
@@ -10,61 +10,98 @@ const configValidation = z.object({
   description: z.string().min(1),
 });
 
-export function isStringOption(
-  option: ConfigurationOption
-): option is StringOption {
+export function isStringOption<N extends string = string>(
+  option: ConfigurationOption<N>
+): option is StringOption<N> {
   return option.type === 'string';
 }
 
-export function isNumberOption(
-  option: ConfigurationOption
-): option is NumberOption {
+export function isNumberOption<N extends string = string>(
+  option: ConfigurationOption<N>
+): option is NumberOption<N> {
   return option.type === 'number';
 }
 
-export function isBooleanOption(
-  option: ConfigurationOption
-): option is BooleanOption {
+export function isBooleanOption<N extends string = string>(
+  option: ConfigurationOption<N>
+): option is BooleanOption<N> {
   return option.type === 'boolean';
 }
 
-export class ConfigurationBuilder {
-  private options: ConfigurationOption[] = [];
+export function isActionOption<N extends string = string>(
+  option: ConfigurationOption<N>
+): option is ActionOption<N> {
+  return option.type === 'action';
+}
+
+/**
+ * A builder for creating configuration screens. The generic type T accumulates
+ * the types of all options added to the builder, enabling type-safe access to
+ * the configuration values.
+ * 
+ * @template T - The accumulated type of all configuration options
+ */
+export class ConfigurationBuilder<
+  T extends Record<string, string | number | boolean> = {}
+> {
+  private options: ConfigurationOption<string>[] = [];
 
   /**
    * Add a number option to the configuration builder and return the builder for chaining. You must provide a name, display name, and description for the option.
-   * @param option { (option: NumberOption) => NumberOption }
-   * @returns
+   * @param option { (option: NumberOption) => NumberOption<K> }
+   * @returns A new ConfigurationBuilder with the number option's type added
    */
-  public addNumberOption(
-    option: (option: NumberOption) => NumberOption
-  ): ConfigurationBuilder {
+  public addNumberOption<K extends string>(
+    option: (option: NumberOption) => NumberOption<K>
+  ): ConfigurationBuilder<T & { [P in K]: number }> {
     let newOption = new NumberOption();
-    newOption = option(newOption);
-    this.options.push(newOption);
-    return this;
+    const configuredOption = option(newOption);
+    this.options.push(configuredOption);
+    return this as unknown as ConfigurationBuilder<T & { [P in K]: number }>;
   }
 
   /**
    * Add a string option to the configuration builder and return the builder for chaining. You must provide a name, display name, and description for the option.
-   * @param option { (option: StringOption) => StringOption }
+   * @param option { (option: StringOption) => StringOption<K> }
+   * @returns A new ConfigurationBuilder with the string option's type added
    */
-  public addStringOption(option: (option: StringOption) => StringOption) {
+  public addStringOption<K extends string>(
+    option: (option: StringOption) => StringOption<K>
+  ): ConfigurationBuilder<T & { [P in K]: string }> {
     let newOption = new StringOption();
-    newOption = option(newOption);
-    this.options.push(newOption);
-    return this;
+    const configuredOption = option(newOption);
+    this.options.push(configuredOption);
+    return this as unknown as ConfigurationBuilder<T & { [P in K]: string }>;
   }
 
   /**
    * Add a boolean option to the configuration builder and return the builder for chaining. You must provide a name, display name, and description for the option.
-   * @param option { (option: BooleanOption) => BooleanOption }
+   * @param option { (option: BooleanOption) => BooleanOption<K> }
+   * @returns A new ConfigurationBuilder with the boolean option's type added
    */
-  public addBooleanOption(option: (option: BooleanOption) => BooleanOption) {
+  public addBooleanOption<K extends string>(
+    option: (option: BooleanOption) => BooleanOption<K>
+  ): ConfigurationBuilder<T & { [P in K]: boolean }> {
     let newOption = new BooleanOption();
-    newOption = option(newOption);
-    this.options.push(newOption);
-    return this;
+    const configuredOption = option(newOption);
+    this.options.push(configuredOption);
+    return this as unknown as ConfigurationBuilder<T & { [P in K]: boolean }>;
+  }
+
+  /**
+   * Add an action option to the configuration builder and return the builder for chaining. 
+   * Action options contribute a boolean to the return type (true if clicked, false if not).
+   * You must provide a name, display name, and description for the option.
+   * @param option { (option: ActionOption) => ActionOption<K> }
+   * @returns A new ConfigurationBuilder with the action option's type added as boolean
+   */
+  public addActionOption<K extends string>(
+    option: (option: ActionOption) => ActionOption<K>
+  ): ConfigurationBuilder<T & { [P in K]: boolean }> {
+    let newOption = new ActionOption();
+    const configuredOption = option(newOption);
+    this.options.push(configuredOption);
+    return this as unknown as ConfigurationBuilder<T & { [P in K]: boolean }>;
   }
 
   public build(includeFunctions: boolean): ConfigurationFile {
@@ -87,9 +124,14 @@ export class ConfigurationBuilder {
   }
 }
 
-export type ConfigurationOptionType = 'string' | 'number' | 'boolean' | 'unset';
-export class ConfigurationOption {
-  public name: string = '';
+export type ConfigurationOptionType =
+  | 'string'
+  | 'number'
+  | 'boolean'
+  | 'action'
+  | 'unset';
+export class ConfigurationOption<N extends string = string> {
+  public name: N = '' as N;
   public defaultValue: unknown = '';
   public displayName: string = '';
   public description: string = '';
@@ -99,9 +141,9 @@ export class ConfigurationOption {
    * Set the name of the option. **REQUIRED**
    * @param name {string} The name of the option. This is used to reference the option in the configuration file.
    */
-  setName(name: string) {
-    this.name = name;
-    return this;
+  setName<K extends string>(name: K): ConfigurationOption<K> {
+    this.name = name as unknown as N;
+    return this as unknown as ConfigurationOption<K>;
   }
 
   /**
@@ -109,7 +151,7 @@ export class ConfigurationOption {
    * @param displayName {string} The display name of the option.
    * @returns
    */
-  setDisplayName(displayName: string) {
+  setDisplayName(displayName: string): this {
     this.displayName = displayName;
     return this;
   }
@@ -119,7 +161,7 @@ export class ConfigurationOption {
    * @param description {string} The description of the option.
    * @returns
    */
-  setDescription(description: string) {
+  setDescription(description: string): this {
     this.description = description;
     return this;
   }
@@ -133,13 +175,22 @@ export class ConfigurationOption {
   }
 }
 
-export class StringOption extends ConfigurationOption {
+export class StringOption<N extends string = string> extends ConfigurationOption<N> {
   public allowedValues: string[] = [];
   public minTextLength: number = 0;
   public maxTextLength: number = Number.MAX_SAFE_INTEGER;
   public defaultValue: string = '';
   public inputType: 'text' | 'file' | 'password' | 'folder' = 'text';
   public type: ConfigurationOptionType = 'string';
+
+  /**
+   * Set the name of the option. **REQUIRED**
+   * @param name {string} The name of the option. This is used to reference the option in the configuration file.
+   */
+  override setName<K extends string>(name: K): StringOption<K> {
+    this.name = name as unknown as N;
+    return this as unknown as StringOption<K>;
+  }
 
   /**
    * Set the allowed values for the string. If the array is empty, any value is allowed. When provided, the client will act like this option is a dropdown.
@@ -215,12 +266,21 @@ export class StringOption extends ConfigurationOption {
   }
 }
 
-export class NumberOption extends ConfigurationOption {
+export class NumberOption<N extends string = string> extends ConfigurationOption<N> {
   public min: number = 0;
   public max: number = Number.MAX_SAFE_INTEGER;
   public defaultValue: number = 0;
   public type: ConfigurationOptionType = 'number';
   public inputType: 'range' | 'number' = 'number';
+
+  /**
+   * Set the name of the option. **REQUIRED**
+   * @param name {string} The name of the option. This is used to reference the option in the configuration file.
+   */
+  override setName<K extends string>(name: K): NumberOption<K> {
+    this.name = name as unknown as N;
+    return this as unknown as NumberOption<K>;
+  }
 
   /**
    * Set the minimum value for the number. If the user provides a number that is less than this value, the validation will fail.
@@ -272,9 +332,18 @@ export class NumberOption extends ConfigurationOption {
   }
 }
 
-export class BooleanOption extends ConfigurationOption {
+export class BooleanOption<N extends string = string> extends ConfigurationOption<N> {
   public type: ConfigurationOptionType = 'boolean';
   public defaultValue: boolean = false;
+
+  /**
+   * Set the name of the option. **REQUIRED**
+   * @param name {string} The name of the option. This is used to reference the option in the configuration file.
+   */
+  override setName<K extends string>(name: K): BooleanOption<K> {
+    this.name = name as unknown as N;
+    return this as unknown as BooleanOption<K>;
+  }
 
   /**
    * Set the default value for the boolean. This value will be used if the user does not provide a value. **HIGHLY RECOMMENDED**
@@ -289,6 +358,53 @@ export class BooleanOption extends ConfigurationOption {
     if (typeof input !== 'boolean') {
       return [false, 'Input is not a boolean'];
     }
+    return [true, ''];
+  }
+}
+
+export class ActionOption<N extends string = string> extends ConfigurationOption<N> {
+  public type: ConfigurationOptionType = 'action';
+  public manifest: Record<string, unknown> = {};
+  public buttonText: string = 'Run';
+  public taskName: string = '';
+
+  /**
+   * Set the name of the option. **REQUIRED**
+   * @param name {string} The name of the option. This is used to reference the option in the configuration file.
+   */
+  override setName<K extends string>(name: K): ActionOption<K> {
+    this.name = name as unknown as N;
+    return this as unknown as ActionOption<K>;
+  }
+
+  /**
+   * Set the task name that will be used to identify which task handler to run. This should match the name used in `addon.onTask()`.
+   * @param taskName {string} The task name to identify the handler.
+   */
+  setTaskName(taskName: string): this {
+    this.taskName = taskName;
+    return this;
+  }
+
+  /**
+   * Set the manifest object that will be passed to the task-run handler. The task name should be set via setTaskName() rather than in the manifest.
+   * @param manifest {Record<string, unknown>} The manifest object to pass to the task handler.
+   */
+  setManifest(manifest: Record<string, unknown>): this {
+    this.manifest = manifest;
+    return this;
+  }
+
+  /**
+   * Set the text displayed on the action button.
+   * @param text {string} The button text.
+   */
+  setButtonText(text: string): this {
+    this.buttonText = text;
+    return this;
+  }
+
+  override validate(_input: unknown): [boolean, string] {
     return [true, ''];
   }
 }

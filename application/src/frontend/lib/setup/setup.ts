@@ -46,7 +46,7 @@ export function createSetupPayload(
     appID: downloadedItem.appID,
     storefront: downloadedItem.storefront,
     for: forType,
-    currentLibraryInfo: currentLibraryInfo,
+    ...(currentLibraryInfo ? { currentLibraryInfo } : {}),
     multiPartFiles: JSON.parse(
       JSON.stringify(
         downloadedItem.downloadType === 'direct'
@@ -61,7 +61,9 @@ export function createSetupPayload(
 
 export function handleSetupError(
   error: any,
-  downloadedItem: DownloadStatusAndInfo
+  downloadedItem: DownloadStatusAndInfo,
+  forType: 'game' | 'update' = 'game',
+  currentLibraryInfo?: LibraryInfo
 ) {
   console.error('Error setting up app: ', error);
   createNotification({
@@ -83,7 +85,7 @@ export function handleSetupError(
     return logs;
   });
 
-  const setupData: Parameters<EventListenerTypes['setup']>[0] = {
+  const baseData = {
     path: downloadedItem.downloadPath,
     type: downloadedItem.downloadType as 'direct' | 'torrent' | 'magnet',
     name: downloadedItem.name,
@@ -97,6 +99,18 @@ export function handleSetupError(
     manifest: downloadedItem.manifest || {},
   };
 
+  const setupData: Parameters<EventListenerTypes['setup']>[0] =
+    forType === 'update' && currentLibraryInfo
+      ? {
+          ...baseData,
+          for: 'update',
+          currentLibraryInfo,
+        }
+      : {
+          ...baseData,
+          for: 'game',
+        };
+
   saveFailedSetup({
     downloadInfo: downloadedItem,
     setupData,
@@ -105,13 +119,18 @@ export function handleSetupError(
   });
 }
 
-export function createSetupCallbacks(downloadedItem: DownloadStatusAndInfo) {
+export function createSetupCallbacks(
+  downloadedItem: DownloadStatusAndInfo,
+  forType: 'game' | 'update' = 'game',
+  currentLibraryInfo?: LibraryInfo
+) {
   return {
     onLogs: (log: string[]) =>
       dispatchSetupEvent('log', downloadedItem.id, log),
     onProgress: (progress: any) =>
       dispatchSetupEvent('progress', downloadedItem.id, progress),
-    onFailed: (error: any) => handleSetupError(error, downloadedItem),
+    onFailed: (error: any) =>
+      handleSetupError(error, downloadedItem, forType, currentLibraryInfo),
     consume: 'json' as const,
   };
 }
@@ -129,7 +148,7 @@ export async function runSetupApp(
     undefined,
     additionalData
   );
-  const callbacks = createSetupCallbacks(downloadedItem);
+  const callbacks = createSetupCallbacks(downloadedItem, 'game');
 
   try {
     const data: SetupEventResponse = await safeFetch(
@@ -230,14 +249,32 @@ export async function runSetupAppUpdate(
   isTorrent: boolean,
   additionalData: any = {}
 ): Promise<SetupEventResponse> {
+  const currentLibraryInfo = getApp(downloadedItem.appID);
+  if (!currentLibraryInfo) {
+    console.error(
+      `[runSetupAppUpdate] Library entry not found for appID: ${downloadedItem.appID}`
+    );
+    updateDownloadStatus(downloadedItem.id, {
+      status: 'error',
+      error: `App not found in library (appID: ${downloadedItem.appID})`,
+    });
+    throw new Error(
+      `App not found in library (appID: ${downloadedItem.appID})`
+    );
+  }
+
   const setupPayload = createSetupPayload(
     downloadedItem,
     outputDir,
     'update',
-    getApp(downloadedItem.appID) as LibraryInfo,
+    currentLibraryInfo,
     additionalData
   );
-  const callbacks = createSetupCallbacks(downloadedItem);
+  const callbacks = createSetupCallbacks(
+    downloadedItem,
+    'update',
+    currentLibraryInfo
+  );
 
   try {
     // Run addon setup to get the new version info
@@ -262,7 +299,8 @@ export async function runSetupAppUpdate(
       data.version,
       data.cwd,
       data.launchExecutable,
-      data.launchArguments
+      data.launchArguments,
+      downloadedItem.addonSource
     );
 
     if (result === 'app-not-found') {
@@ -284,11 +322,10 @@ export async function runSetupAppUpdate(
       });
 
       if (
-        ((await window.electronAPI.app.getOS()) === 'linux' &&
-          beforeLibraryApp &&
-          beforeLibraryApp?.cwd != data.cwd) ||
-        beforeLibraryApp?.launchExecutable != data.launchExecutable ||
-        beforeLibraryApp?.launchArguments != data.launchArguments
+        (await window.electronAPI.app.getOS()) === 'linux' &&
+        (beforeLibraryApp?.launchExecutable !== data.launchExecutable ||
+          beforeLibraryApp?.launchArguments !== data.launchArguments ||
+          beforeLibraryApp?.cwd !== data.cwd)
       ) {
         createNotification({
           id: Math.random().toString(36).substring(2, 9),
@@ -296,10 +333,30 @@ export async function runSetupAppUpdate(
           message: `Game configuration changed, go to the play page to re-add the game to Steam or else the game will not launch.`,
         });
 
-        appUpdates.requiredReadds = [
-          ...appUpdates.requiredReadds,
-          downloadedItem.appID,
-        ];
+        // Get the current Steam app ID before marking for re-add
+        const steamAppIdResult = await window.electronAPI.app.getSteamAppId(
+          downloadedItem.appID
+        );
+        const steamAppId = steamAppIdResult.success
+          ? steamAppIdResult.appId
+          : undefined;
+
+        // Only add to requiredReadds if we successfully got the Steam app ID
+        if (steamAppId !== undefined) {
+          appUpdates.requiredReadds = [
+            ...appUpdates.requiredReadds.filter(
+              (r) => r.appID !== downloadedItem.appID
+            ),
+            { appID: downloadedItem.appID, steamAppId },
+          ];
+        } else {
+          console.warn(
+            `[setup] Failed to get Steam app ID for app ${downloadedItem.appID}, skipping prefix migration tracking`
+          );
+          appUpdates.requiredReadds = appUpdates.requiredReadds.filter(
+            (r) => r.appID !== downloadedItem.appID
+          );
+        }
       }
     } else {
       createNotification({
@@ -313,6 +370,11 @@ export async function runSetupAppUpdate(
         'Current version: ',
         downloadedItem.updateVersion
       );
+      updateDownloadStatus(downloadedItem.id, {
+        status: 'error',
+        error: `Version mismatch: expected ${downloadedItem.updateVersion}, got ${data.version}`,
+      });
+      return data;
     }
     const finalStatus = isTorrent ? 'seeding' : 'setup-complete';
     updateDownloadStatus(downloadedItem.id, {

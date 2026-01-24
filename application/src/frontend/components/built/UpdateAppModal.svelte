@@ -56,14 +56,14 @@
     }
   });
 
-  // Group results by addon
-  let resultsByAddon = $derived.by(() => {
-    const grouped: Array<{
-      addonId: string;
-      addonName: string;
-      results: SearchResultWithAddon[];
-    }> = [];
+  type AddonGroup = {
+    addonId: string;
+    addonName: string;
+    results: SearchResultWithAddon[];
+  };
 
+  // Group results by addon, separating recommended (original addon source) from others
+  let groupedResults = $derived.by(() => {
     const addonMap = new Map<string, SearchResultWithAddon[]>();
 
     results.forEach((result) => {
@@ -73,16 +73,29 @@
       addonMap.get(result.addonSource)!.push(result);
     });
 
+    const originalAddonSource = libraryInfo.addonsource;
+    let recommendedAddon: AddonGroup | null = null;
+    const otherAddons: AddonGroup[] = [];
+
     addonMap.forEach((results, addonId) => {
-      grouped.push({
+      const addonGroup: AddonGroup = {
         addonId,
         addonName: addonId,
         results,
-      });
+      };
+
+      if (addonId === originalAddonSource) {
+        recommendedAddon = addonGroup;
+      } else {
+        otherAddons.push(addonGroup);
+      }
     });
 
-    return grouped;
+    return { recommendedAddon, otherAddons };
   });
+
+  let recommendedAddon = $derived(groupedResults.recommendedAddon);
+  let otherAddons = $derived(groupedResults.otherAddons);
 
   async function loadUpdateSources() {
     results = [];
@@ -267,100 +280,205 @@
       {/each}
 
       <!-- Results grouped by addon -->
-      {#if resultsByAddon.length > 0}
-        {#each resultsByAddon as addonGroup, groupIndex (addonGroup.addonId)}
-          <div
-            class="mb-0"
-            in:fly={{ y: 20, duration: 300, delay: 80 * groupIndex }}
-          >
-            <!-- Addon Section Header -->
-            <button
-              class="w-full flex items-center justify-between p-3 bg-accent-lighter hover:bg-accent-light/80 border-none cursor-pointer rounded-lg transition-colors duration-200 mb-1"
-              onclick={() => toggleAddonCollapse(addonGroup.addonId)}
+      {#if recommendedAddon || otherAddons.length > 0}
+        <!-- Recommended Section -->
+        {#if recommendedAddon}
+          {@const recAddon = recommendedAddon as AddonGroup}
+          <div class="mb-3">
+            <h4 class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2 px-1">Recommended</h4>
+            <div
+              class="mb-0"
+              in:fly={{ y: 20, duration: 300 }}
             >
-              <div class="flex items-center gap-3">
-                <AddonPicture
-                  addonId={addonGroup.addonId}
-                  class="w-8 h-8 rounded-lg"
-                />
-                <div class="text-left">
-                  <h3 class="font-medium text-gray-800 text-sm">
-                    {addonGroup.addonName}
-                  </h3>
-                  <span class="text-xs text-gray-600">
-                    {addonGroup.results.length} source{addonGroup.results
-                      .length === 1
-                      ? ''
-                      : 's'}
-                  </span>
-                </div>
-              </div>
-              <svg
-                class="w-4 h-4 text-gray-600 transition-transform duration-200"
-                class:rotate-180={!collapsedAddons.has(addonGroup.addonId)}
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
+              <!-- Addon Section Header -->
+              <button
+                class="w-full flex items-center justify-between p-3 bg-accent-light/60 hover:bg-accent-light border-none cursor-pointer rounded-lg transition-colors duration-200 mb-1"
+                onclick={() => toggleAddonCollapse(recAddon.addonId)}
               >
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  stroke-width="2"
-                  d="M19 9l-7 7-7-7"
-                />
-              </svg>
-            </button>
-
-            <!-- Results -->
-            {#if !collapsedAddons.has(addonGroup.addonId)}
-              <div transition:slide={{ duration: 250 }}>
-                {#each addonGroup.results as result, index}
-                  <div
-                    class="bg-accent-lighter/60 rounded-lg p-3 mb-1 last:mb-0"
-                    in:fly={{ y: 15, duration: 250, delay: 40 * index }}
-                  >
-                    <div class="flex items-center justify-between mb-2">
-                      <span
-                        class="font-medium text-gray-800 text-sm truncate max-w-[200px]"
-                      >
-                        {result.name}
-                      </span>
-                      <div
-                        class="flex items-center gap-1 text-xs text-gray-500"
-                      >
-                        {#if result.downloadType === 'magnet'}
-                          <img
-                            class="w-4 h-4"
-                            src="./magnet-icon.gif"
-                            alt="Magnet"
-                          />
-                          <span>Magnet</span>
-                        {:else if result.downloadType === 'torrent'}
-                          <img
-                            class="w-4 h-4"
-                            src="./torrent.png"
-                            alt="Torrent"
-                          />
-                          <span>Torrent</span>
-                        {:else if result.downloadType === 'direct'}
-                          <span>Direct</span>
-                        {:else if result.downloadType === 'request'}
-                          <span>Request</span>
-                        {/if}
-                      </div>
-                    </div>
-                    <button
-                      class="w-full text-sm border-none bg-accent-light hover:bg-accent/30 text-accent-dark font-medium py-2 px-3 rounded-lg transition-colors duration-200"
-                      onclick={(event) => handleDownloadClick(result, event)}
-                    >
-                      Download Update
-                    </button>
+                <div class="flex items-center gap-3">
+                  <AddonPicture
+                    addonId={recAddon.addonId}
+                    class="w-8 h-8 rounded-lg"
+                  />
+                  <div class="text-left">
+                    <h3 class="font-medium text-gray-800 text-sm">
+                      {recAddon.addonName}
+                    </h3>
+                    <span class="text-xs text-gray-600">
+                      {recAddon.results.length} source{recAddon.results
+                        .length === 1
+                        ? ''
+                        : 's'}
+                    </span>
                   </div>
-                {/each}
-              </div>
-            {/if}
+                </div>
+                <svg
+                  class="w-4 h-4 text-gray-600 transition-transform duration-200"
+                  class:rotate-180={!collapsedAddons.has(recAddon.addonId)}
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M19 9l-7 7-7-7"
+                  />
+                </svg>
+              </button>
+
+              <!-- Results -->
+              {#if !collapsedAddons.has(recAddon.addonId)}
+                <div transition:slide={{ duration: 250 }}>
+                  {#each recAddon.results as result, index}
+                    <div
+                      class="bg-accent-lighter/60 rounded-lg p-3 mb-1 last:mb-0"
+                      in:fly={{ y: 15, duration: 250, delay: 40 * index }}
+                    >
+                      <div class="flex items-center justify-between mb-2">
+                        <span
+                          class="font-medium text-gray-800 text-sm truncate max-w-[200px]"
+                        >
+                          {result.name}
+                        </span>
+                        <div
+                          class="flex items-center gap-1 text-xs text-gray-500"
+                        >
+                          {#if result.downloadType === 'magnet'}
+                            <img
+                              class="w-4 h-4"
+                              src="./magnet-icon.gif"
+                              alt="Magnet"
+                            />
+                            <span>Magnet</span>
+                          {:else if result.downloadType === 'torrent'}
+                            <img
+                              class="w-4 h-4"
+                              src="./torrent.png"
+                              alt="Torrent"
+                            />
+                            <span>Torrent</span>
+                          {:else if result.downloadType === 'direct'}
+                            <span>Direct</span>
+                          {:else if result.downloadType === 'request'}
+                            <span>Request</span>
+                          {/if}
+                        </div>
+                      </div>
+                      <button
+                        class="w-full text-sm border-none bg-accent-light hover:bg-accent/30 text-accent-dark font-medium py-2 px-3 rounded-lg transition-colors duration-200"
+                        onclick={(event) => handleDownloadClick(result, event)}
+                      >
+                        Download Update
+                      </button>
+                    </div>
+                  {/each}
+                </div>
+              {/if}
+            </div>
           </div>
-        {/each}
+        {/if}
+
+        <!-- Other Sources Section -->
+        {#if otherAddons.length > 0}
+          <div>
+            <h4 class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2 px-1">Other Sources</h4>
+            {#each otherAddons as addonGroup, groupIndex (addonGroup.addonId)}
+              <div
+                class="mb-0"
+                in:fly={{ y: 20, duration: 300, delay: 80 * groupIndex }}
+              >
+                <!-- Addon Section Header -->
+                <button
+                  class="w-full flex items-center justify-between p-3 bg-accent-lighter hover:bg-accent-light/80 border-none cursor-pointer rounded-lg transition-colors duration-200 mb-1"
+                  onclick={() => toggleAddonCollapse(addonGroup.addonId)}
+                >
+                  <div class="flex items-center gap-3">
+                    <AddonPicture
+                      addonId={addonGroup.addonId}
+                      class="w-8 h-8 rounded-lg"
+                    />
+                    <div class="text-left">
+                      <h3 class="font-medium text-gray-800 text-sm">
+                        {addonGroup.addonName}
+                      </h3>
+                      <span class="text-xs text-gray-600">
+                        {addonGroup.results.length} source{addonGroup.results
+                          .length === 1
+                          ? ''
+                          : 's'}
+                      </span>
+                    </div>
+                  </div>
+                  <svg
+                    class="w-4 h-4 text-gray-600 transition-transform duration-200"
+                    class:rotate-180={!collapsedAddons.has(addonGroup.addonId)}
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M19 9l-7 7-7-7"
+                    />
+                  </svg>
+                </button>
+
+                <!-- Results -->
+                {#if !collapsedAddons.has(addonGroup.addonId)}
+                  <div transition:slide={{ duration: 250 }}>
+                    {#each addonGroup.results as result, index}
+                      <div
+                        class="bg-accent-lighter/60 rounded-lg p-3 mb-1 last:mb-0"
+                        in:fly={{ y: 15, duration: 250, delay: 40 * index }}
+                      >
+                        <div class="flex items-center justify-between mb-2">
+                          <span
+                            class="font-medium text-gray-800 text-sm truncate max-w-[200px]"
+                          >
+                            {result.name}
+                          </span>
+                          <div
+                            class="flex items-center gap-1 text-xs text-gray-500"
+                          >
+                            {#if result.downloadType === 'magnet'}
+                              <img
+                                class="w-4 h-4"
+                                src="./magnet-icon.gif"
+                                alt="Magnet"
+                              />
+                              <span>Magnet</span>
+                            {:else if result.downloadType === 'torrent'}
+                              <img
+                                class="w-4 h-4"
+                                src="./torrent.png"
+                                alt="Torrent"
+                              />
+                              <span>Torrent</span>
+                            {:else if result.downloadType === 'direct'}
+                              <span>Direct</span>
+                            {:else if result.downloadType === 'request'}
+                              <span>Request</span>
+                            {/if}
+                          </div>
+                        </div>
+                        <button
+                          class="w-full text-sm border-none bg-accent-light hover:bg-accent/30 text-accent-dark font-medium py-2 px-3 rounded-lg transition-colors duration-200"
+                          onclick={(event) => handleDownloadClick(result, event)}
+                        >
+                          Download Update
+                        </button>
+                      </div>
+                    {/each}
+                  </div>
+                {/if}
+              </div>
+            {/each}
+          </div>
+        {/if}
       {:else if !queryingSources && loadingAddons.size === 0}
         <div class="text-center py-8">
           <svg

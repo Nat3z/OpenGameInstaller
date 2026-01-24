@@ -49,6 +49,7 @@
   import { initDownloadPersistence } from './utils';
   import AppUpdateManager from './managers/AppUpdateManager.svelte';
   import ChangelogManager from './managers/ChangelogManager.svelte';
+  import { appUpdates, loadPersistedUpdateState } from './states.svelte';
 
   interface ConfigTemplateAndInfo extends OGIAddonConfiguration {
     configTemplate: ConfigurationFile;
@@ -106,6 +107,7 @@
       // Initialize search-related data
       initializeSearch();
       initDownloadPersistence();
+      appUpdates.requiredReadds = loadPersistedUpdateState().requiredReadds;
     }, 200);
   });
 

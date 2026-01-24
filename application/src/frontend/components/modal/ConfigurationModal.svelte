@@ -5,6 +5,8 @@
     type ConfigurationOption,
     type NumberOption,
     type StringOption,
+    type ActionOption,
+    isActionOption,
   } from 'ogi-addon/config';
   import { writable, type Writable } from 'svelte/store';
 
@@ -115,6 +117,11 @@
     closeModal();
   }
 
+  function handleActionSubmit(key: string) {
+    formData[key] = true;
+    handleSubmit();
+  }
+
   $effect(() => {
     console.log('screenRendering', screenRendering);
     console.log('isNull', screenRendering === undefined);
@@ -204,46 +211,71 @@
         <TitleModal title={screenName} />
         <HeaderModal header={screenDescription} class="mb-4" />
 
+        <!-- Render non-action options first -->
         {#each Object.keys(screenRendering) as key}
-          {#if isBooleanOption(screenRendering[key])}
-            <CheckboxModal
-              id={key}
-              label={screenRendering[key].displayName}
-              description={screenRendering[key].description}
-              checked={formData[key]}
-              onchange={handleInputChange}
-            />
-          {:else}
-            <InputModal
-              id={key}
-              label={screenRendering[key].displayName}
-              description={screenRendering[key].description}
-              type={getInputType(screenRendering[key])}
-              value={getInputValue(key, screenRendering[key])}
-              options={getInputOptions(screenRendering[key])}
-              min={isNumberOption(screenRendering[key])
-                ? screenRendering[key].min
-                : undefined}
-              max={isNumberOption(screenRendering[key])
-                ? screenRendering[key].max
-                : undefined}
-              maxLength={isStringOption(screenRendering[key])
-                ? screenRendering[key].maxTextLength
-                : undefined}
-              minLength={isStringOption(screenRendering[key])
-                ? screenRendering[key].minTextLength
-                : undefined}
-              onchange={handleInputChange}
-            />
+          {#if !isActionOption(screenRendering[key])}
+            {#if isBooleanOption(screenRendering[key])}
+              <CheckboxModal
+                id={key}
+                label={screenRendering[key].displayName}
+                description={screenRendering[key].description}
+                checked={formData[key]}
+                onchange={handleInputChange}
+              />
+            {:else}
+              <InputModal
+                id={key}
+                label={screenRendering[key].displayName}
+                description={screenRendering[key].description}
+                type={getInputType(screenRendering[key])}
+                value={getInputValue(key, screenRendering[key])}
+                options={getInputOptions(screenRendering[key])}
+                min={isNumberOption(screenRendering[key])
+                  ? screenRendering[key].min
+                  : undefined}
+                max={isNumberOption(screenRendering[key])
+                  ? screenRendering[key].max
+                  : undefined}
+                maxLength={isStringOption(screenRendering[key])
+                  ? screenRendering[key].maxTextLength
+                  : undefined}
+                minLength={isStringOption(screenRendering[key])
+                  ? screenRendering[key].minTextLength
+                  : undefined}
+                onchange={handleInputChange}
+              />
+            {/if}
           {/if}
         {/each}
 
-        <ButtonModal
-          text="Submit"
-          variant="primary"
-          class="mt-4 w-fit"
-          onclick={handleSubmit}
-        />
+        <!-- Action buttons and submit button in the same row -->
+        {#if screenRendering}
+          <div class="flex flex-row gap-2 mt-4">
+            <!-- Submit button for non-action forms -->
+            {#if Object.keys(screenRendering).length === 0 || Object.keys(screenRendering).some((key) => screenRendering && !isActionOption(screenRendering[key]))}
+              <ButtonModal
+                text={Object.keys(screenRendering).length === 0
+                  ? 'Close'
+                  : 'Submit'}
+                variant="primary"
+                class="w-fit"
+                onclick={handleSubmit}
+              />
+            {/if}
+            <!-- Action buttons -->
+            {#each Object.keys(screenRendering) as key}
+              {#if isActionOption(screenRendering[key])}
+                {@const actionOption = screenRendering[key] as ActionOption}
+                <ButtonModal
+                  text={actionOption.buttonText || 'Run'}
+                  variant="secondary"
+                  class="w-fit"
+                  onclick={() => handleActionSubmit(key)}
+                />
+              {/if}
+            {/each}
+          </div>
+        {/if}
       {/if}
     </Modal>
   {/if}

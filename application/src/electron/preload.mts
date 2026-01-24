@@ -256,7 +256,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
         version: string,
         cwd: string,
         launchExecutable: string,
-        launchArguments?: string
+        launchArguments?: string,
+        addonSource?: string
       ) =>
         ipcRenderer.invoke('app:update-app-version', {
           appID,
@@ -264,10 +265,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
           cwd,
           launchExecutable,
           launchArguments,
+          addonSource,
         })
     ),
-    addToSteam: wrap((appID: number) =>
-      ipcRenderer.invoke('app:add-to-steam', appID)
+    addToSteam: wrap((appID: number, oldSteamAppId?: number) =>
+      ipcRenderer.invoke('app:add-to-steam', appID, oldSteamAppId)
     ),
     killSteam: wrap(() => ipcRenderer.invoke('app:kill-steam')),
     startSteam: wrap(() => ipcRenderer.invoke('app:start-steam')),
@@ -280,9 +282,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     installRedistributables: wrap((appID: number) =>
       ipcRenderer.invoke('app:install-redistributables', appID)
     ),
-    addToDesktop: wrap(() =>
-      ipcRenderer.invoke('app:add-to-desktop')
+    getSteamAppId: wrap((appID: number) =>
+      ipcRenderer.invoke('app:get-steam-app-id', appID)
     ),
+    addToDesktop: wrap(() => ipcRenderer.invoke('app:add-to-desktop')),
   },
   getVersion: wrap(() => ipcRenderer.sendSync('get-version')),
   updateAddons: wrap(() => ipcRenderer.invoke('update-addons')),

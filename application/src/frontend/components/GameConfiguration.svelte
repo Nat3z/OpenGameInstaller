@@ -9,6 +9,7 @@
     type StringOption,
   } from 'ogi-addon/config';
   import { createNotification, currentDownloads } from '../store';
+  import { appUpdates } from '../states.svelte';
   import Modal from './modal/Modal.svelte';
   import TitleModal from './modal/TitleModal.svelte';
   import SectionModal from './modal/SectionModal.svelte';
@@ -123,7 +124,21 @@
   async function addToSteam(button: HTMLButtonElement) {
     button.disabled = true;
     try {
-      await window.electronAPI.app.addToSteam(gameInfo.appID);
+      // Get the old Steam app ID from requiredReadds if available
+      const requiredReadd = appUpdates.requiredReadds.find(
+        (r) => r.appID === gameInfo.appID
+      );
+      const oldSteamAppId =
+        requiredReadd?.steamAppId && requiredReadd.steamAppId !== 0
+          ? requiredReadd.steamAppId
+          : undefined;
+
+      await window.electronAPI.app.addToSteam(gameInfo.appID, oldSteamAppId);
+
+      // Remove from requiredReadds if it was there
+      appUpdates.requiredReadds = appUpdates.requiredReadds.filter(
+        (r) => r.appID !== gameInfo.appID
+      );
     } catch (error) {
       console.error(error);
       createNotification({

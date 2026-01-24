@@ -103,7 +103,22 @@ export function registerRedistributableHandlers() {
         return 'failed';
       }
 
-      const protonPath = getProtonPrefixPath(appId);
+      let protonPath: string;
+      try {
+        protonPath = getProtonPrefixPath(appId);
+      } catch (error) {
+        console.error(
+          '[redistributable] Error getting Proton prefix path:',
+          error
+        );
+        sendNotification({
+          message:
+            'Failed to get Proton prefix path. Please check your Steam installation.',
+          id: generateNotificationId(),
+          type: 'error',
+        });
+        return 'failed';
+      }
 
       // Check if the prefix exists
       if (!fs.existsSync(protonPath)) {
@@ -139,209 +154,232 @@ export function registerRedistributableHandlers() {
             redistributable.path
           );
 
-          const success = await new Promise<boolean>(async (resolve) => {
-            if (
-              redistributable.path === 'microsoft' &&
-              redistributable.name === 'dotnet-repair'
-            ) {
-              // Download and run the .NET Framework Repair Tool
-              console.log(
-                '[dotnet-repair] Starting .NET Framework Repair Tool'
-              );
-              const netfxRepairToolUrl =
-                'https://download.microsoft.com/download/2/b/d/2bde5459-2225-48b8-830c-ae19caf038f1/NetFxRepairTool.exe';
-              const toolPath = join(__dirname, 'bin', 'NetFxRepairTool.exe');
+          const success = await new Promise<boolean>((resolve) => {
+            let timeoutId: NodeJS.Timeout | null = null;
+            let resolved = false;
 
-              // Create the bin directory if it doesn't exist
-              if (!fs.existsSync(join(__dirname, 'bin'))) {
-                fs.mkdirSync(join(__dirname, 'bin'));
+            const finalize = (result: boolean) => {
+              if (resolved) return;
+              resolved = true;
+              if (timeoutId) {
+                clearTimeout(timeoutId);
+                timeoutId = null;
               }
+              resolve(result);
+            };
 
+            (async () => {
               try {
-                // Download the tool if it doesn't exist
-                if (!fs.existsSync(toolPath)) {
+                if (
+                  redistributable.path === 'microsoft' &&
+                  redistributable.name === 'dotnet-repair'
+                ) {
+                  // Download and run the .NET Framework Repair Tool
                   console.log(
-                    '[dotnet-repair] Downloading .NET Framework Repair Tool...'
+                    '[dotnet-repair] Starting .NET Framework Repair Tool'
                   );
-                  const response = await axios({
-                    method: 'get',
-                    url: netfxRepairToolUrl,
-                    responseType: 'stream',
-                  });
+                  const netfxRepairToolUrl =
+                    'https://download.microsoft.com/download/2/b/d/2bde5459-2225-48b8-830c-ae19caf038f1/NetFxRepairTool.exe';
+                  const toolPath = join(
+                    __dirname,
+                    'bin',
+                    'NetFxRepairTool.exe'
+                  );
 
-                  const fileStream = fs.createWriteStream(toolPath);
-                  response.data.pipe(fileStream);
+                  // Create the bin directory if it doesn't exist
+                  if (!fs.existsSync(join(__dirname, 'bin'))) {
+                    fs.mkdirSync(join(__dirname, 'bin'));
+                  }
 
-                  await new Promise<void>((downloadResolve, downloadReject) => {
-                    fileStream.on('finish', () => {
-                      fileStream.close();
-                      console.log('[dotnet-repair] Download completed');
-                      downloadResolve();
+                  // Download the tool if it doesn't exist
+                  if (!fs.existsSync(toolPath)) {
+                    console.log(
+                      '[dotnet-repair] Downloading .NET Framework Repair Tool...'
+                    );
+                    const response = await axios({
+                      method: 'get',
+                      url: netfxRepairToolUrl,
+                      responseType: 'stream',
                     });
-                    fileStream.on('error', (err) => {
-                      console.error('[dotnet-repair] Download error:', err);
-                      fileStream.close();
-                      try {
-                        fs.unlinkSync(toolPath);
-                      } catch (unlinkErr) {
-                        console.error(
-                          '[dotnet-repair] Failed to cleanup file:',
-                          unlinkErr
-                        );
+
+                    const fileStream = fs.createWriteStream(toolPath);
+                    response.data.pipe(fileStream);
+
+                    await new Promise<void>(
+                      (downloadResolve, downloadReject) => {
+                        fileStream.on('finish', () => {
+                          fileStream.close();
+                          console.log('[dotnet-repair] Download completed');
+                          downloadResolve();
+                        });
+                        fileStream.on('error', (err) => {
+                          console.error('[dotnet-repair] Download error:', err);
+                          fileStream.close();
+                          try {
+                            fs.unlinkSync(toolPath);
+                          } catch (unlinkErr) {
+                            console.error(
+                              '[dotnet-repair] Failed to cleanup file:',
+                              unlinkErr
+                            );
+                          }
+                          downloadReject(err);
+                        });
                       }
-                      downloadReject(err);
-                    });
+                    );
+                  }
+
+                  // Run the tool with wine and /p flag
+                  console.log(
+                    '[dotnet-repair] Running .NET Framework Repair Tool with wine'
+                  );
+                  const child = spawn(
+                    'flatpak',
+                    [
+                      `--env=WINEPREFIX=${protonPath}`,
+                      `--env=DISPLAY=:0`,
+                      `--env=WINEDEBUG=-all`,
+                      `--env=WINEDLLOVERRIDES=mscoree,mshtml=`,
+                      '--filesystem=host',
+                      'run',
+                      'org.winehq.Wine',
+                      'bin/NetFxRepairTool.exe',
+                      '/p',
+                    ],
+                    {
+                      stdio: ['inherit', 'pipe', 'pipe'],
+                      cwd: __dirname,
+                    }
+                  );
+
+                  timeoutId = setTimeout(
+                    () => {
+                      if (child.pid) {
+                        child.kill('SIGTERM');
+                      }
+                      finalize(false);
+                    },
+                    5 * 60 * 1000
+                  );
+
+                  child.on('close', (code) => {
+                    console.log(
+                      `[dotnet-repair] process exited with code ${code}`
+                    );
+                    finalize(code === 0);
+                  });
+
+                  child.on('error', (error) => {
+                    console.error('[dotnet-repair] Process error:', error);
+                    finalize(false);
+                  });
+                } else if (redistributable.path === 'winetricks') {
+                  // Use winetricks via flatpak
+                  const child = spawn(
+                    'flatpak',
+                    [
+                      `--env=WINEPREFIX=${protonPath}`,
+                      `--env=DISPLAY=:0`,
+                      `--env=WINEDEBUG=-all`,
+                      `--env=WINEDLLOVERRIDES=mscoree,mshtml=`,
+                      '--filesystem=host',
+                      '--command=winetricks',
+                      'run',
+                      'org.winehq.Wine',
+                      redistributable.name,
+                      '--force',
+                      '--unattended',
+                      '-q',
+                    ],
+                    {
+                      stdio: ['inherit', 'pipe', 'pipe'],
+                      cwd: __dirname,
+                    }
+                  );
+
+                  timeoutId = setTimeout(
+                    () => {
+                      if (child.pid) {
+                        child.kill('SIGTERM');
+                      }
+                      finalize(false);
+                    },
+                    10 * 60 * 1000
+                  );
+
+                  child.on('close', (code) => {
+                    console.log(
+                      `[winetricks] process exited with code ${code}`
+                    );
+                    finalize(code === 0);
+                  });
+
+                  child.on('error', (error) => {
+                    console.error('[winetricks] Process error:', error);
+                    finalize(false);
+                  });
+                } else {
+                  // Regular redistributable file
+                  const redistributablePath = redistributable.path
+                    .trim()
+                    .replace(/\n$/g, '');
+                  const redistributableDir = dirname(redistributablePath);
+                  const redistributableFilename = basename(redistributablePath);
+
+                  const silentFlags = getSilentInstallFlags(
+                    redistributablePath,
+                    redistributableFilename
+                  );
+
+                  const child = spawn(
+                    'flatpak',
+                    [
+                      `--env=WINEPREFIX=${protonPath}`,
+                      `--env=DISPLAY=:0`,
+                      `--env=WINEDEBUG=-all`,
+                      `--env=WINEDLLOVERRIDES=mscoree,mshtml=`,
+                      '--filesystem=host',
+                      'run',
+                      'org.winehq.Wine',
+                      redistributableFilename,
+                      ...silentFlags,
+                    ],
+                    {
+                      stdio: ['ignore', 'pipe', 'pipe'],
+                      cwd: redistributableDir,
+                    }
+                  );
+
+                  timeoutId = setTimeout(
+                    () => {
+                      if (child.pid) {
+                        child.kill('SIGTERM');
+                      }
+                      finalize(false);
+                    },
+                    10 * 60 * 1000
+                  );
+
+                  child.on('close', (code) => {
+                    console.log(
+                      `[redistributable] process exited with code ${code}`
+                    );
+                    finalize(code === 0);
+                  });
+
+                  child.on('error', (error) => {
+                    console.error('[redistributable] Process error:', error);
+                    finalize(false);
                   });
                 }
-
-                // Run the tool with wine and /p flag
-                console.log(
-                  '[dotnet-repair] Running .NET Framework Repair Tool with wine'
-                );
-                const child = spawn(
-                  'flatpak',
-                  [
-                    `--env=WINEPREFIX=${protonPath}`,
-                    `--env=DISPLAY=:0`,
-                    `--env=WINEDEBUG=-all`,
-                    `--env=WINEDLLOVERRIDES=mscoree,mshtml=`,
-                    '--filesystem=host',
-                    'run',
-                    'org.winehq.Wine',
-                    'bin/NetFxRepairTool.exe',
-                    '/p',
-                  ],
-                  {
-                    stdio: ['inherit', 'pipe', 'pipe'],
-                    cwd: __dirname,
-                  }
-                );
-
-                child.on('close', (code) => {
-                  console.log(
-                    `[dotnet-repair] process exited with code ${code}`
-                  );
-                  resolve(code === 0);
-                });
-
-                child.on('error', (error) => {
-                  console.error('[dotnet-repair] Process error:', error);
-                  resolve(false);
-                });
-
-                // Set timeout (5 minutes for repair tool)
-                setTimeout(
-                  () => {
-                    if (child.pid) {
-                      child.kill('SIGTERM');
-                    }
-                    resolve(false);
-                  },
-                  5 * 60 * 1000
-                );
               } catch (error) {
-                console.error('[dotnet-repair] Error:', error);
-                resolve(false);
+                console.error('[redistributable] Error:', error);
+                finalize(false);
               }
-            } else if (redistributable.path === 'winetricks') {
-              // Use winetricks via flatpak
-              const child = spawn(
-                'flatpak',
-                [
-                  `--env=WINEPREFIX=${protonPath}`,
-                  `--env=DISPLAY=:0`,
-                  `--env=WINEDEBUG=-all`,
-                  `--env=WINEDLLOVERRIDES=mscoree,mshtml=`,
-                  '--filesystem=host',
-                  '--command=winetricks',
-                  'run',
-                  'org.winehq.Wine',
-                  redistributable.name,
-                  '--force',
-                  '--unattended',
-                  '-q',
-                ],
-                {
-                  stdio: ['inherit', 'pipe', 'pipe'],
-                  cwd: __dirname,
-                }
-              );
-
-              child.on('close', (code) => {
-                console.log(`[winetricks] process exited with code ${code}`);
-                resolve(code === 0);
-              });
-
-              child.on('error', (error) => {
-                console.error('[winetricks] Process error:', error);
-                resolve(false);
-              });
-
-              // Set timeout
-              setTimeout(
-                () => {
-                  if (child.pid) {
-                    child.kill('SIGTERM');
-                  }
-                  resolve(false);
-                },
-                10 * 60 * 1000
-              );
-            } else {
-              // Regular redistributable file
-              const redistributablePath = redistributable.path
-                .trim()
-                .replace(/\n$/g, '');
-              const redistributableDir = dirname(redistributablePath);
-              const redistributableFilename = basename(redistributablePath);
-
-              const silentFlags = getSilentInstallFlags(
-                redistributablePath,
-                redistributableFilename
-              );
-
-              const child = spawn(
-                'flatpak',
-                [
-                  `--env=WINEPREFIX=${protonPath}`,
-                  `--env=DISPLAY=:0`,
-                  `--env=WINEDEBUG=-all`,
-                  `--env=WINEDLLOVERRIDES=mscoree,mshtml=`,
-                  '--filesystem=host',
-                  'run',
-                  'org.winehq.Wine',
-                  redistributableFilename,
-                  ...silentFlags,
-                ],
-                {
-                  stdio: ['ignore', 'pipe', 'pipe'],
-                  cwd: redistributableDir,
-                }
-              );
-
-              child.on('close', (code) => {
-                console.log(
-                  `[redistributable] process exited with code ${code}`
-                );
-                resolve(code === 0);
-              });
-
-              child.on('error', (error) => {
-                console.error('[redistributable] Process error:', error);
-                resolve(false);
-              });
-
-              // Set timeout
-              setTimeout(
-                () => {
-                  if (child.pid) {
-                    child.kill('SIGTERM');
-                  }
-                  resolve(false);
-                },
-                10 * 60 * 1000
-              );
-            }
+            })().catch((err) => {
+              console.error('[redistributable] Promise error:', err);
+              finalize(false);
+            });
           });
 
           if (success) {

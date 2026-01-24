@@ -95,11 +95,34 @@ export function registerSteamHandlers() {
 
       child.unref();
 
-      // Give Steam a moment to start
-      setTimeout(() => {
+      let timeoutId: NodeJS.Timeout | null = setTimeout(() => {
         console.log('[steam] Steam launch command executed');
+        timeoutId = null;
         resolve({ success: true });
       }, 1000);
+
+      child.on('error', (error) => {
+        console.error('[steam] Failed to start Steam:', error);
+        if (timeoutId) {
+          clearTimeout(timeoutId);
+          timeoutId = null;
+        }
+        resolve({ success: false, error: error.message });
+      });
+
+      child.on('exit', (code) => {
+        if (code !== 0 && code !== null) {
+          console.error(`[steam] Steam process exited with code ${code}`);
+          if (timeoutId) {
+            clearTimeout(timeoutId);
+            timeoutId = null;
+          }
+          resolve({
+            success: false,
+            error: `Steam process exited with code ${code}`,
+          });
+        }
+      });
     });
   });
 

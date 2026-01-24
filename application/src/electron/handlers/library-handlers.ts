@@ -25,6 +25,7 @@ import { generateNotificationId } from './helpers.app/notifications.js';
 import { sendNotification } from '../main.js';
 import { getProtonPrefixPath } from './helpers.app/platform.js';
 import { spawnSync } from 'child_process';
+import * as fs from 'fs';
 
 /**
  * Escapes a string for safe use in shell commands by escaping special characters
@@ -175,11 +176,17 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
       } else if (process.platform === 'win32') {
         // if there are redistributables, we need to install them
         if (data.redistributables && data.redistributables.length > 0) {
+          let redistributableFailed = false;
           for (const redistributable of data.redistributables) {
             try {
-              spawnSync(redistributable.path, {
+              if (!fs.existsSync(redistributable.path)) {
+                throw new Error(
+                  `Redistributable path does not exist: ${redistributable.path}`
+                );
+              }
+              spawnSync(redistributable.path, [], {
                 stdio: 'inherit',
-                shell: true,
+                shell: false,
               });
               sendNotification({
                 message: `Installed ${redistributable.name} for ${data.name}`,
@@ -187,10 +194,15 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
                 type: 'success',
               });
             } catch (error) {
+              // TODO: for now do this, because some wine stuff fails
+              // redistributableFailed = true;
               console.error(
                 `[redistributable] failed to install ${redistributable.name} for ${data.name}: ${error}`
               );
             }
+          }
+          if (redistributableFailed) {
+            return 'setup-redistributables-failed';
           }
         }
       }

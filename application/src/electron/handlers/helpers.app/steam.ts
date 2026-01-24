@@ -1,7 +1,7 @@
 /**
  * Steam/Proton helper functions
  */
-import { exec } from 'child_process';
+import { exec, execFile } from 'child_process';
 import { __dirname } from '../../manager/manager.paths.js';
 import { STEAMTINKERLAUNCH_PATH } from '../../startup.js';
 import { notifyError, notifySuccess } from './notifications.js';
@@ -48,8 +48,9 @@ export function getNonSteamGameAppID(
       resolve({ success: true, appId: cachedAppIds[gameName] });
       return;
     }
-    exec(
-      `${STEAMTINKERLAUNCH_PATH} getid "${escapeShellArg(gameName)}"`,
+    execFile(
+      STEAMTINKERLAUNCH_PATH,
+      ['getid', gameName],
       { cwd: __dirname },
       (error, stdout, _stderr) => {
         if (error) {
@@ -111,7 +112,11 @@ export async function getSteamAppIdWithFallback(
     }
   }
 
-  return { success, appId, error: success ? undefined : 'Failed to get Steam app ID' };
+  return {
+    success,
+    appId,
+    error: success ? undefined : 'Failed to get Steam app ID',
+  };
 }
 
 /**

@@ -1,6 +1,11 @@
+type RequiredReadd = {
+  appID: number;
+  steamAppId: number;
+};
+
 // Load persisted update state from filesystem
 export function loadPersistedUpdateState(): {
-  requiredReadds: number[];
+  requiredReadds: RequiredReadd[];
 } {
   try {
     if (typeof window !== 'undefined' && window.electronAPI?.fs) {
@@ -14,14 +19,19 @@ export function loadPersistedUpdateState(): {
         const stored = window.electronAPI.fs.read(statePath);
         if (stored) {
           const parsed = JSON.parse(stored);
-          return {
-            requiredReadds: Array.isArray(parsed.requiredReadds)
-              ? parsed.requiredReadds.filter(
-                  (v: unknown): v is number =>
-                    typeof v === 'number' && Number.isFinite(v)
-                )
-              : [],
-          };
+          if (Array.isArray(parsed.requiredReadds)) {
+            const requiredReadds = parsed.requiredReadds.filter(
+              (v: unknown): v is RequiredReadd => {
+                return (
+                  typeof v === 'object' &&
+                  v !== null &&
+                  typeof (v as any).appID === 'number' &&
+                  typeof (v as any).steamAppId === 'number'
+                );
+              }
+            );
+            return { requiredReadds };
+          }
         }
       }
     }
@@ -38,7 +48,7 @@ export let appUpdates = $state({
     updateAvailable: boolean;
     updateVersion: string;
   }[],
-  requiredReadds: [] as number[],
+  requiredReadds: [] as RequiredReadd[],
 });
 
 let initTimeout = true;

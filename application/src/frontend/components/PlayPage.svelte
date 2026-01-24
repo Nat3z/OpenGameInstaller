@@ -36,7 +36,7 @@
   let { libraryInfo = $bindable(), exitPlayPage }: Props = $props();
 
   let requiresSteamReadd = $derived(
-    appUpdates.requiredReadds.includes(libraryInfo.appID)
+    appUpdates.requiredReadds.some((r) => r.appID === libraryInfo.appID)
   );
 
   async function doesLinkExist(url: string | undefined) {
@@ -403,10 +403,22 @@
             try {
               (event.currentTarget as HTMLButtonElement).disabled = true;
 
-              await window.electronAPI.app.addToSteam(libraryInfo.appID);
+              // Get the old Steam app ID from requiredReadds if available
+              const requiredReadd = appUpdates.requiredReadds.find(
+                (r) => r.appID === libraryInfo.appID
+              );
+              const oldSteamAppId =
+                requiredReadd?.steamAppId && requiredReadd.steamAppId !== 0
+                  ? requiredReadd.steamAppId
+                  : undefined;
+
+              await window.electronAPI.app.addToSteam(
+                libraryInfo.appID,
+                oldSteamAppId
+              );
 
               appUpdates.requiredReadds = appUpdates.requiredReadds.filter(
-                (id) => id !== libraryInfo.appID
+                (r) => r.appID !== libraryInfo.appID
               );
             } catch (error) {
               console.error(error);

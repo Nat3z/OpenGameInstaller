@@ -250,6 +250,106 @@ let migrations: {
       });
     },
   },
+  'migrate-update-state-format': {
+    from: '0.0.0',
+    to: '2.6.0',
+    description:
+      'Migrates update-state.json from old format (array of numbers) to new format (array of objects with appID and steamAppId)',
+    platform: 'all',
+    run: async () => {
+      const updateStatePath = join(__dirname, 'internals/update-state.json');
+
+      // Skip if file doesn't exist
+      if (!fsSync.existsSync(updateStatePath)) {
+        console.log(
+          '[migration] update-state.json does not exist, skipping migration'
+        );
+        return;
+      }
+
+      try {
+        const fileContent = await fs.readFile(updateStatePath, 'utf-8');
+        const parsed = JSON.parse(fileContent);
+
+        // Check if it's already in the new format
+        if (
+          Array.isArray(parsed.requiredReadds) &&
+          parsed.requiredReadds.length > 0 &&
+          typeof parsed.requiredReadds[0] === 'object' &&
+          parsed.requiredReadds[0] !== null &&
+          'appID' in parsed.requiredReadds[0] &&
+          'steamAppId' in parsed.requiredReadds[0]
+        ) {
+          console.log(
+            '[migration] update-state.json already in new format, skipping migration'
+          );
+          return;
+        }
+
+        // Check if it has any old format entries (array containing numbers)
+        if (Array.isArray(parsed.requiredReadds)) {
+          const hasOldFormat = parsed.requiredReadds.some(
+            (v: unknown) => typeof v === 'number' && Number.isFinite(v)
+          );
+
+          if (hasOldFormat) {
+            console.log(
+              '[migration] Converting update-state.json from old format to new format'
+            );
+
+            // Convert: keep new format entries, remove old format entries
+            const convertedRequiredReadds = parsed.requiredReadds
+              .filter((v: unknown) => {
+                // Keep new format entries (objects with appID and steamAppId)
+                if (
+                  typeof v === 'object' &&
+                  v !== null &&
+                  typeof (v as any).appID === 'number' &&
+                  typeof (v as any).steamAppId === 'number'
+                ) {
+                  return true;
+                }
+                // Remove old format entries (plain numbers)
+                return false;
+              })
+              .map((v: any) => ({
+                appID: v.appID,
+                steamAppId: v.steamAppId,
+              }));
+
+            const oldCount =
+              parsed.requiredReadds.length - convertedRequiredReadds.length;
+            if (oldCount > 0) {
+              console.log(
+                `[migration] Removed ${oldCount} old format entries (steamAppId unknown)`
+              );
+            }
+
+            const migratedData = {
+              requiredReadds: convertedRequiredReadds,
+            };
+
+            await fs.writeFile(
+              updateStatePath,
+              JSON.stringify(migratedData, null, 2)
+            );
+            console.log('[migration] Successfully migrated update-state.json');
+          } else {
+            console.log(
+              '[migration] update-state.json already in new format, skipping migration'
+            );
+          }
+        } else {
+          console.log(
+            '[migration] update-state.json format is unrecognized, skipping migration'
+          );
+        }
+      } catch (error) {
+        console.error('[migration] Error migrating update-state.json:', error);
+        // Don't throw - migration failures shouldn't break the app
+      }
+    },
+  },
 };
 /**
  * Run any pending migrations appropriate for the current installation and platform.

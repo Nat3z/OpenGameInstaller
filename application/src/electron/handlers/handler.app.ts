@@ -591,64 +591,226 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
     }
   );
 
-  ipcMain.handle('app:add-to-steam', async (_, appID: number) => {
-    if (process.platform !== 'linux') {
-      return { success: false, error: 'Only available on Linux' };
-    }
+  ipcMain.handle(
+    'app:add-to-steam',
+    async (_, appID: number, oldSteamAppId?: number) => {
+      if (process.platform !== 'linux') {
+        return { success: false, error: 'Only available on Linux' };
+      }
 
-    if (!fs.existsSync(join(__dirname, 'library'))) {
-      return { success: false, error: 'Library directory not found' };
-    }
+      if (!fs.existsSync(join(__dirname, 'library'))) {
+        return { success: false, error: 'Library directory not found' };
+      }
 
-    const appPath = join(__dirname, `library/${appID}.json`);
-    if (!fs.existsSync(appPath)) {
-      return { success: false, error: 'Game not found' };
-    }
+      const appPath = join(__dirname, `library/${appID}.json`);
+      if (!fs.existsSync(appPath)) {
+        return { success: false, error: 'Game not found' };
+      }
 
-    const appInfo: LibraryInfo = JSON.parse(fs.readFileSync(appPath, 'utf-8'));
-    let launchOptions = appInfo.launchArguments ?? '';
+      const appInfo: LibraryInfo = JSON.parse(
+        fs.readFileSync(appPath, 'utf-8')
+      );
+      let launchOptions = appInfo.launchArguments ?? '';
 
-    // remove any wineprefix=..... from the launch options
-    launchOptions = launchOptions.replace(/WINEPREFIX=\S*\s?/g, '').trim();
+      // remove any wineprefix=..... from the launch options
+      launchOptions = launchOptions.replace(/WINEPREFIX=\S*\s?/g, '').trim();
 
-    // Format game name with version for unique Steam shortcut
-    const versionedGameName = getVersionedGameName(
-      appInfo.name,
-      appInfo.version
-    );
+      // Format game name with version for unique Steam shortcut
+      const versionedGameName = getVersionedGameName(
+        appInfo.name,
+        appInfo.version
+      );
 
-    // Use steamtinkerlaunch to add the game to steam
-    const result = await new Promise<boolean>((resolve) =>
-      exec(
-        `${STEAMTINKERLAUNCH_PATH} addnonsteamgame --appname="${escapeShellArg(versionedGameName)}" --exepath="${escapeShellArg(appInfo.launchExecutable)}" --startdir="${escapeShellArg(appInfo.cwd)}" --launchoptions="${escapeShellArg(launchOptions)}" --compatibilitytool="proton_experimental" --use-steamgriddb`,
-        {
-          cwd: __dirname,
-        },
-        (error, stdout, stderr) => {
-          if (error) {
-            console.error(error);
+      // Use steamtinkerlaunch to add the game to steam
+      const result = await new Promise<boolean>((resolve) =>
+        exec(
+          `${STEAMTINKERLAUNCH_PATH} addnonsteamgame --appname="${escapeShellArg(versionedGameName)}" --exepath="${escapeShellArg(appInfo.launchExecutable)}" --startdir="${escapeShellArg(appInfo.cwd)}" --launchoptions="${escapeShellArg(launchOptions)}" --compatibilitytool="proton_experimental" --use-steamgriddb`,
+          {
+            cwd: __dirname,
+          },
+          (error, stdout, stderr) => {
+            if (error) {
+              console.error(error);
+              sendNotification({
+                message: 'Failed to add game to Steam',
+                id: Math.random().toString(36).substring(7),
+                type: 'error',
+              });
+              resolve(false);
+              return;
+            }
+            console.log(stdout);
+            console.log(stderr);
             sendNotification({
-              message: 'Failed to add game to Steam',
+              message: 'Game added to Steam',
+              id: Math.random().toString(36).substring(7),
+              type: 'success',
+            });
+            resolve(true);
+          }
+        )
+      );
+
+      if (!result) {
+        return { success: false };
+      }
+
+      // Get the new Steam app ID after adding
+      const { success, appId: newSteamAppId } =
+        await getNonSteamGameAppID(versionedGameName);
+
+      if (!success || !newSteamAppId) {
+        console.warn(
+          `[add-to-steam] Failed to get new Steam app ID for "${versionedGameName}"`
+        );
+        return { success: true }; // Still return success since Steam add worked
+      }
+
+      // Migrate prefix if oldSteamAppId is provided and differs from new ID
+      if (
+        oldSteamAppId &&
+        oldSteamAppId !== 0 &&
+        oldSteamAppId !== newSteamAppId
+      ) {
+        const homeDir = process.env.HOME || process.env.USERPROFILE;
+        if (!homeDir) {
+          console.warn(
+            '[add-to-steam] Home directory not found, skipping prefix migration'
+          );
+        } else {
+          const oldPrefixPath = `${homeDir}/.steam/steam/steamapps/compatdata/${oldSteamAppId}/pfx`;
+          const newPrefixPath = `${homeDir}/.steam/steam/steamapps/compatdata/${newSteamAppId}/pfx`;
+          const newCompatDataDir = `${homeDir}/.steam/steam/steamapps/compatdata/${newSteamAppId}`;
+
+          try {
+            // Check if old prefix exists
+            if (fs.existsSync(oldPrefixPath)) {
+              // Check if new prefix already exists
+              if (fs.existsSync(newPrefixPath)) {
+                console.warn(
+                  `[add-to-steam] New prefix already exists at ${newPrefixPath}, skipping migration`
+                );
+              } else {
+                // Ensure the compatdata directory exists
+                if (!fs.existsSync(newCompatDataDir)) {
+                  fs.mkdirSync(newCompatDataDir, { recursive: true });
+                }
+
+                // Try to rename first (fastest, works on same filesystem)
+                try {
+                  fs.renameSync(oldPrefixPath, newPrefixPath);
+                  console.log(
+                    `[add-to-steam] Successfully migrated prefix from ${oldPrefixPath} to ${newPrefixPath}`
+                  );
+                } catch (renameError) {
+                  // If rename fails (e.g., cross-filesystem), use copy + delete
+                  console.log(
+                    `[add-to-steam] Rename failed (possibly cross-filesystem), using copy instead`
+                  );
+                  // Copy recursively
+                  const copyRecursiveSync = (src: string, dest: string) => {
+                    const exists = fs.existsSync(src);
+                    const stats = exists ? fs.statSync(src) : null;
+                    const isDirectory = stats?.isDirectory() ?? false;
+                    if (isDirectory) {
+                      if (!fs.existsSync(dest)) {
+                        fs.mkdirSync(dest, { recursive: true });
+                      }
+                      fs.readdirSync(src).forEach((childItemName) => {
+                        copyRecursiveSync(
+                          join(src, childItemName),
+                          join(dest, childItemName)
+                        );
+                      });
+                    } else {
+                      fs.copyFileSync(src, dest);
+                    }
+                  };
+                  copyRecursiveSync(oldPrefixPath, newPrefixPath);
+                  // Delete old prefix
+                  fs.rmSync(oldPrefixPath, { recursive: true, force: true });
+                  console.log(
+                    `[add-to-steam] Successfully copied prefix from ${oldPrefixPath} to ${newPrefixPath}`
+                  );
+
+                  sendNotification({
+                    message: `Successfully migrated prefix to new version.`,
+                    id: Math.random().toString(36).substring(7),
+                    type: 'success',
+                  });
+                }
+              }
+            } else {
+              console.log(
+                `[add-to-steam] Old prefix not found at ${oldPrefixPath}, skipping migration`
+              );
+              sendNotification({
+                message: `Old prefix not found, skipping migration`,
+                id: Math.random().toString(36).substring(7),
+                type: 'error',
+              });
+            }
+          } catch (migrationError) {
+            console.error(
+              `[add-to-steam] Error migrating prefix:`,
+              migrationError
+            );
+            // Don't fail the operation if migration fails
+            sendNotification({
+              message: `Error migrating prefix: ${migrationError}`,
               id: Math.random().toString(36).substring(7),
               type: 'error',
             });
-            resolve(false);
-            return;
           }
-          console.log(stdout);
-          console.log(stderr);
-          sendNotification({
-            message: 'Game added to Steam',
-            id: Math.random().toString(36).substring(7),
-            type: 'success',
-          });
-          resolve(true);
         }
-      )
-    );
+      }
 
-    return { success: result };
-  });
+      // Update the library JSON with the new WINEPREFIX path
+      const protonPath = `${process.env.HOME}/.steam/steam/steamapps/compatdata/${newSteamAppId}/pfx`;
+      appInfo.launchArguments =
+        'WINEPREFIX=' + protonPath + ' ' + launchOptions;
+      fs.writeFileSync(appPath, JSON.stringify(appInfo, null, 2));
+
+      return { success: true };
+    }
+  );
+
+  // Get the Steam app ID for a library app ID
+  ipcMain.handle(
+    'app:get-steam-app-id',
+    async (
+      _,
+      appID: number
+    ): Promise<{ success: boolean; appId?: number; error?: string }> => {
+      if (process.platform !== 'linux') {
+        return { success: false, error: 'Only available on Linux' };
+      }
+
+      const appPath = join(__dirname, `library/${appID}.json`);
+      if (!fs.existsSync(appPath)) {
+        return { success: false, error: 'Game not found' };
+      }
+
+      const appInfo: LibraryInfo = JSON.parse(
+        fs.readFileSync(appPath, 'utf-8')
+      );
+      const versionedGameName = getVersionedGameName(
+        appInfo.name,
+        appInfo.version
+      );
+
+      // Try with versioned name first
+      let result = await getNonSteamGameAppID(versionedGameName);
+
+      // If that fails and there's a version, try without version (for legacy shortcuts)
+      if (!result.success && appInfo.version) {
+        const plainGameName = appInfo.name;
+        result = await getNonSteamGameAppID(plainGameName);
+      }
+
+      return result;
+    }
+  );
 
   const cachedAppIds: Record<string, number> = {};
 

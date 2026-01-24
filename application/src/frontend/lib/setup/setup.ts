@@ -332,10 +332,33 @@ export async function runSetupAppUpdate(
           message: `Game configuration changed, go to the play page to re-add the game to Steam or else the game will not launch.`,
         });
 
-        appUpdates.requiredReadds = [
-          ...appUpdates.requiredReadds,
-          downloadedItem.appID,
-        ];
+        // Get the current Steam app ID before marking for re-add
+        const steamAppIdResult = await window.electronAPI.app.getSteamAppId(
+          downloadedItem.appID
+        );
+        const steamAppId = steamAppIdResult.success
+          ? steamAppIdResult.appId
+          : undefined;
+
+        // Only add to requiredReadds if we successfully got the Steam app ID
+        if (steamAppId !== undefined) {
+          appUpdates.requiredReadds = [
+            ...appUpdates.requiredReadds.filter(
+              (r) => r.appID !== downloadedItem.appID
+            ),
+            { appID: downloadedItem.appID, steamAppId },
+          ];
+        } else {
+          console.warn(
+            `[setup] Failed to get Steam app ID for app ${downloadedItem.appID}, skipping prefix migration tracking`
+          );
+          appUpdates.requiredReadds = [
+            ...appUpdates.requiredReadds.filter(
+              (r) => r.appID !== downloadedItem.appID
+            ),
+            { appID: downloadedItem.appID, steamAppId: 0 }, // Use 0 as sentinel for "unknown"
+          ];
+        }
       }
     } else {
       createNotification({

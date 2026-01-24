@@ -323,9 +323,9 @@ export async function runSetupAppUpdate(
 
       if (
         (await window.electronAPI.app.getOS()) === 'linux' &&
-        (beforeLibraryApp?.launchExecutable != data.launchExecutable ||
-          beforeLibraryApp?.launchArguments != data.launchArguments ||
-          beforeLibraryApp?.cwd != data.cwd)
+        (beforeLibraryApp?.launchExecutable !== data.launchExecutable ||
+          beforeLibraryApp?.launchArguments !== data.launchArguments ||
+          beforeLibraryApp?.cwd !== data.cwd)
       ) {
         createNotification({
           id: Math.random().toString(36).substring(2, 9),
@@ -353,12 +353,9 @@ export async function runSetupAppUpdate(
           console.warn(
             `[setup] Failed to get Steam app ID for app ${downloadedItem.appID}, skipping prefix migration tracking`
           );
-          appUpdates.requiredReadds = [
-            ...appUpdates.requiredReadds.filter(
-              (r) => r.appID !== downloadedItem.appID
-            ),
-            { appID: downloadedItem.appID, steamAppId: 0 }, // Use 0 as sentinel for "unknown"
-          ];
+          appUpdates.requiredReadds = appUpdates.requiredReadds.filter(
+            (r) => r.appID !== downloadedItem.appID
+          );
         }
       }
     } else {

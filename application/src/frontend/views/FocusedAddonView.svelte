@@ -592,7 +592,6 @@
                       ) as HTMLInputElement;
                       if (element && event.target instanceof HTMLInputElement) {
                         element.value = event.target.value;
-                        updateInputNum(element);
                       }
                     }}
                   />

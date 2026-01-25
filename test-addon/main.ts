@@ -75,7 +75,7 @@ addon.on('connect', () => {
       task.setProgress(100);
     }, 5000);
     setTimeout(() => {
-      task.finish();
+      task.complete();
     }, 10000);
   });
   new Promise(async (resolve) => {

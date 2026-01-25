@@ -427,15 +427,13 @@ export default class OGIAddon {
 
   /**
    * Notify the OGI Addon Server that you are performing a background task. This can be used to help users understand what is happening in the background.
-   * @param id {string}
-   * @param progress {number}
-   * @param logs {string[]}
+   * @returns {Promise<Task>} A Task instance for managing the background task.
    */
-  public async task() {
+  public async task(): Promise<Task> {
     const id = Math.random().toString(36).substring(7);
     const progress = 0;
     const logs: string[] = [];
-    const task = new CustomTask(this.addonWSListener, id, progress, logs);
+    const task = new Task(this.addonWSListener, id, progress, logs);
     this.addonWSListener.send('task-update', {
       id,
       progress,
@@ -620,61 +618,55 @@ export default class OGIAddon {
   }
 }
 
-export class CustomTask {
-  public readonly id: string;
-  public progress: number;
-  public logs: string[];
-  public finished: boolean = false;
-  public ws: OGIAddonWSListener;
-  public failed: string | undefined = undefined;
-  constructor(
-    ws: OGIAddonWSListener,
-    id: string,
-    progress: number,
-    logs: string[]
-  ) {
-    this.id = id;
-    this.progress = progress;
-    this.logs = logs;
-    this.ws = ws;
-  }
-  public log(log: string) {
-    this.logs.push(log);
-    this.update();
-  }
-  public finish() {
-    this.finished = true;
-    this.update();
-  }
-  public fail(message: string) {
-    this.failed = message;
-    this.update();
-  }
-  public setProgress(progress: number) {
-    this.progress = progress;
-    this.update();
-  }
-  public update() {
-    this.ws.send('task-update', {
-      id: this.id,
-      progress: this.progress,
-      logs: this.logs,
-      finished: this.finished,
-      failed: this.failed,
-    });
-  }
-}
-
 /**
- * A cleaner API wrapper around EventResponse for task handlers.
+ * A unified task API for both server-initiated tasks (via onTask handlers)
+ * and addon-initiated background tasks (via addon.task()).
  * Provides chainable methods for logging, progress updates, and completion.
  */
 export class Task {
-  private event: EventResponse<void>;
+  // EventResponse-based mode (for onTask handlers)
+  private event: EventResponse<void> | undefined;
+  
+  // WebSocket-based mode (for addon.task())
+  private ws: OGIAddonWSListener | undefined;
+  private readonly id: string | undefined;
+  private progress: number = 0;
+  private logs: string[] = [];
+  private finished: boolean = false;
+  private failed: string | undefined = undefined;
 
-  constructor(event: EventResponse<void>) {
-    this.event = event;
-    this.event.defer();
+  /**
+   * Construct a Task from an EventResponse (for onTask handlers).
+   * @param event {EventResponse<void>} The event response to wrap.
+   */
+  constructor(event: EventResponse<void>);
+  
+  /**
+   * Construct a Task from WebSocket listener (for addon.task()).
+   * @param ws {OGIAddonWSListener} The WebSocket listener.
+   * @param id {string} The task ID.
+   * @param progress {number} Initial progress (0-100).
+   * @param logs {string[]} Initial logs array.
+   */
+  constructor(ws: OGIAddonWSListener, id: string, progress: number, logs: string[]);
+  
+  constructor(
+    eventOrWs: EventResponse<void> | OGIAddonWSListener,
+    id?: string,
+    progress?: number,
+    logs?: string[]
+  ) {
+    if (eventOrWs instanceof EventResponse) {
+      // EventResponse-based mode
+      this.event = eventOrWs;
+      this.event.defer();
+    } else {
+      // WebSocket-based mode
+      this.ws = eventOrWs;
+      this.id = id!;
+      this.progress = progress ?? 0;
+      this.logs = logs ?? [];
+    }
   }
 
   /**
@@ -682,7 +674,12 @@ export class Task {
    * @param message {string} The message to log.
    */
   log(message: string): this {
-    this.event.log(message);
+    if (this.event) {
+      this.event.log(message);
+    } else {
+      this.logs.push(message);
+      this.update();
+    }
     return this;
   }
 
@@ -691,7 +688,12 @@ export class Task {
    * @param progress {number} The progress value (0-100).
    */
   setProgress(progress: number): this {
-    this.event.progress = progress;
+    if (this.event) {
+      this.event.progress = progress;
+    } else {
+      this.progress = progress;
+      this.update();
+    }
     return this;
   }
 
@@ -699,7 +701,12 @@ export class Task {
    * Complete the task successfully.
    */
   complete(): void {
-    this.event.complete();
+    if (this.event) {
+      this.event.complete();
+    } else {
+      this.finished = true;
+      this.update();
+    }
   }
 
   /**
@@ -707,23 +714,49 @@ export class Task {
    * @param message {string} The error message.
    */
   fail(message: string): void {
-    this.event.fail(message);
+    if (this.event) {
+      this.event.fail(message);
+    } else {
+      this.failed = message;
+      this.update();
+    }
   }
 
   /**
    * Ask the user for input using a ConfigurationBuilder screen.
+   * Only available for EventResponse-based tasks (onTask handlers).
    * The return type is inferred from the ConfigurationBuilder's accumulated option types.
    * @param name {string} The name/title of the input prompt.
    * @param description {string} The description of what input is needed.
    * @param screen {ConfigurationBuilder<U>} The configuration builder for the input form.
    * @returns {Promise<U>} The user's input with types matching the configuration options.
+   * @throws {Error} If called on a WebSocket-based task.
    */
   async askForInput<U extends Record<string, string | number | boolean>>(
     name: string,
     description: string,
     screen: ConfigurationBuilder<U>
   ): Promise<U> {
+    if (!this.event) {
+      throw new Error('askForInput() is only available for EventResponse-based tasks (onTask handlers)');
+    }
     return this.event.askForInput(name, description, screen);
+  }
+
+  /**
+   * Update the task state (for WebSocket-based tasks only).
+   * Called automatically when using log(), setProgress(), complete(), or fail().
+   */
+  private update(): void {
+    if (this.ws && this.id !== undefined) {
+      this.ws.send('task-update', {
+        id: this.id,
+        progress: this.progress,
+        logs: this.logs,
+        finished: this.finished,
+        failed: this.failed,
+      });
+    }
   }
 }
 /**

@@ -11,7 +11,7 @@ import {
 } from 'original-fs';
 import { basename, join } from 'path';
 import { setTimeout as setTimeoutPromise } from 'timers/promises';
-import { spawn } from 'child_process';
+import { spawn, exec } from 'child_process';
 import * as path from 'path';
 
 function isDev() {
@@ -48,6 +48,49 @@ function correctParsingSize(size: number) {
   } else {
     return (size / (1024 * 1024 * 1024)).toFixed(2) + 'GB';
   }
+}
+
+/**
+ * Kills any running instances of Setup.AppImage or ogi-updater.exe processes.
+ * Uses platform-specific commands to terminate the processes.
+ * @returns {Promise<void>}
+ */
+function killUpdaterProcesses(): Promise<void> {
+  return new Promise((resolve) => {
+    if (process.platform === 'win32') {
+      // On Windows, use taskkill to kill ogi-updater.exe
+      exec('taskkill /F /IM ogi-updater.exe', (error) => {
+        if (error) {
+          // Process might not be running, which is fine
+          console.log('[updater] No ogi-updater.exe process found to kill');
+        } else {
+          console.log('[updater] Killed ogi-updater.exe process');
+        }
+        resolve();
+      });
+    } else {
+      // On Linux/macOS, use pkill to kill Setup.AppImage processes
+      // pkill can match processes by name pattern
+      exec('pkill -f "OpenGameInstaller-Setup.AppImage"', (error) => {
+        if (error) {
+          // Try killall as fallback (without wildcard, just try common names)
+          exec('killall -q OpenGameInstaller-Setup.AppImage', (error2) => {
+            if (error2) {
+              console.log('[updater] No Setup.AppImage process found to kill');
+            } else {
+              console.log(
+                '[updater] Killed Setup.AppImage process via killall'
+              );
+            }
+            resolve();
+          });
+        } else {
+          console.log('[updater] Killed Setup.AppImage process via pkill');
+          resolve();
+        }
+      });
+    }
+  });
 }
 /**
  * Checks GitHub for a newer installer release and, if one is available, downloads it and performs the platform-appropriate update workflow.
@@ -185,6 +228,10 @@ export function checkIfInstallerUpdateAvailable(callbacks?: UpdaterCallbacks) {
 
       if (latestSetupVersion !== localVersion) {
         console.log(`[updater] New version available: ${latestVersion}`);
+
+        // Kill any running instances of Setup.AppImage or ogi-updater.exe before updating
+        updateStatus('Stopping updater processes');
+        await killUpdaterProcesses();
 
         updateStatus('Downloading latest Setup...');
         // download the latest setup

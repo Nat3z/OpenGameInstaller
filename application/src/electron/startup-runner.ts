@@ -6,6 +6,7 @@ import {
 } from './updater.js';
 import { restoreBackup, removeCachedAppUpdates } from './startup.js';
 import { execute as executeMigrations } from './migrations.js';
+import { tryCatch } from './lib/tryCatch.js';
 
 let splashWindow: BrowserWindow | null = null;
 
@@ -85,7 +86,10 @@ export async function runStartupTasks(): Promise<void> {
 
   // Restore backup if it exists
   updateSplashStatus('Restoring backup...');
-  restoreBackup();
+  const { error } = tryCatch(() => restoreBackup());
+  if (error) {
+    console.error('[startup] Error during backup restoration:', error.message);
+  }
 
   // Run any migrations if necessary
   updateSplashStatus('Running migrations...');

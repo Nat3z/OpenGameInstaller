@@ -75,18 +75,37 @@ export function restoreBackup() {
     // restore the backup
     const directory = join(app.getPath('temp'), 'ogi-update-backup');
     console.log('[backup] Restoring backup...');
-    for (const file of fs.readdirSync(directory)) {
-      console.log('[backup] Restoring ' + file);
-      fs.cpSync(join(directory, file), join(__dirname, file), {
-        recursive: true,
-        force: true,
-      });
-      console.log('[backup] Restored ' + file);
-    }
+    try {
+      for (const file of fs.readdirSync(directory)) {
+        console.log('[backup] Restoring ' + file);
+        fs.cpSync(join(directory, file), join(__dirname, file), {
+          recursive: true,
+          force: true,
+        });
+        console.log('[backup] Restored ' + file);
+      }
 
-    // remove the backup
-    fs.rmSync(directory, { recursive: true, force: true });
-    console.log('[backup] Backup restored successfully!');
+      // remove the backup
+      // On Windows, files may still be locked after copying, so we need to handle permission errors
+      try {
+        fs.rmSync(directory, { recursive: true, force: true });
+        console.log('[backup] Backup restored successfully!');
+      } catch (deleteError: any) {
+        // If deletion fails due to permissions (common on Windows), log a warning but don't fail
+        if (deleteError.code === 'EPERM' || deleteError.code === 'EBUSY') {
+          console.warn(
+            '[backup] Could not delete backup directory immediately (files may be locked). Backup will be cleaned up on next run.',
+            deleteError.message
+          );
+        } else {
+          // Re-throw other errors
+          throw deleteError;
+        }
+      }
+    } catch (error: any) {
+      console.error('[backup] Error restoring backup:', error.message);
+      // Don't throw - allow the app to continue even if backup restoration fails
+    }
   }
 }
 

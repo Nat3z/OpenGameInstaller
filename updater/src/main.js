@@ -56,20 +56,20 @@ function killOpenGameInstallerProcesses() {
         resolve();
       });
     } else {
-      // On Linux/macOS, use killall or pkill
-      exec('killall OpenGameInstaller.AppImage', (error) => {
+      // On Linux/macOS, use pkill or killall
+      exec('pkill -f OpenGameInstaller', (error) => {
         if (error) {
-          // Try pkill as fallback
-          exec('pkill -f OpenGameInstaller', (error2) => {
+          // Try killall as fallback
+          exec('killall OpenGameInstaller.AppImage', (error2) => {
             if (error2) {
               console.log('No OpenGameInstaller process found to kill');
             } else {
-              console.log('Killed OpenGameInstaller process via pkill');
+              console.log('Killed OpenGameInstaller.AppImage process via killall');
             }
             resolve();
           });
         } else {
-          console.log('Killed OpenGameInstaller.AppImage process');
+          console.log('Killed OpenGameInstaller process via pkill');
           resolve();
         }
       });

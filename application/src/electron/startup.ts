@@ -84,8 +84,13 @@ const dirsToSkipRestore = ['node_modules'];
 function countFilesToRestore(sourcePath: string): number {
   if (!existsSync(sourcePath)) return 0;
 
-  const stat = statSync(sourcePath);
-  if (!stat.isDirectory()) return 1;
+  try {
+    const stat = statSync(sourcePath);
+    if (!stat.isDirectory()) return 1;
+  } catch {
+    // Skip this path on transient I/O/permission errors
+    return 0;
+  }
 
   let count = 0;
   try {
@@ -111,7 +116,14 @@ async function* copyDirectoryAsyncRestore(
 ): AsyncGenerator<{ file: string; success: boolean; error?: string }> {
   if (!existsSync(source)) return;
 
-  const stat = statSync(source);
+  let stat;
+  try {
+    stat = statSync(source);
+  } catch (err: any) {
+    console.error(`[backup] Failed to stat ${source}: ${err.message}`);
+    yield { file: source, success: false, error: err.message };
+    return;
+  }
   if (!stat.isDirectory()) {
     // It's a file, copy it
     try {

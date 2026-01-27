@@ -43,8 +43,13 @@ if (process.platform === 'linux') {
 function countFilesToBackup(sourcePath: string): number {
   if (!existsSync(sourcePath)) return 0;
 
-  const stat = statSync(sourcePath);
-  if (!stat.isDirectory()) return 1;
+  try {
+    const stat = statSync(sourcePath);
+    if (!stat.isDirectory()) return 1;
+  } catch {
+    // Skip this path on transient I/O/permission errors
+    return 0;
+  }
 
   let count = 0;
   try {
@@ -70,7 +75,14 @@ async function* copyDirectoryAsync(
 ): AsyncGenerator<{ file: string; success: boolean; error?: string }> {
   if (!existsSync(source)) return;
 
-  const stat = statSync(source);
+  let stat;
+  try {
+    stat = statSync(source);
+  } catch (err: any) {
+    console.error(`[updater] Failed to stat ${source}: ${err.message}`);
+    yield { file: source, success: false, error: err.message };
+    return;
+  }
   if (!stat.isDirectory()) {
     // It's a file, copy it
     try {
@@ -183,9 +195,9 @@ async function backupFilesAsync(
   }
 
   return {
-    success: failedFiles.length < totalFiles * 0.1,
+    success: totalFiles === 0 || failedFiles.length <= totalFiles * 0.1,
     needsAddonReinstall,
-  }; // Allow up to 10% failure
+  }; // Allow up to 10% failure (inclusive), handle zero files
 }
 
 /**

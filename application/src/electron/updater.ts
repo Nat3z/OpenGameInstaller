@@ -214,16 +214,8 @@ function correctParsingSize(size: number) {
 function killUpdaterProcesses(): Promise<void> {
   return new Promise((resolve) => {
     if (process.platform === 'win32') {
-      // On Windows, use taskkill to kill ogi-updater.exe
-      exec('taskkill /F /IM ogi-updater.exe', (error) => {
-        if (error) {
-          // Process might not be running, which is fine
-          console.log('[updater] No ogi-updater.exe process found to kill');
-        } else {
-          console.log('[updater] Killed ogi-updater.exe process');
-        }
-        resolve();
-      });
+      // On Windows, the ogi-updater is already killed by the updater process
+      resolve();
     } else {
       // On Linux/macOS, use pkill to kill Setup.AppImage processes
       // pkill can match processes by name pattern

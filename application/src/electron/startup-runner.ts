@@ -89,7 +89,10 @@ export async function runStartupTasks(): Promise<void> {
 
   // Restore backup if it exists
   updateSplashStatus('Restoring backup...');
-  const backupResult = restoreBackup();
+  const backupResult = await restoreBackup((file, current, total) => {
+    updateSplashStatus('Restoring backup', `${file} (${current}/${total})`);
+    updateSplashProgress(current, total, '');
+  });
 
   // Run any migrations if necessary
   updateSplashStatus('Running migrations...');

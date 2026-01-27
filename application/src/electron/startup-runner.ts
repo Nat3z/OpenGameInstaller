@@ -4,7 +4,11 @@ import {
   checkIfInstallerUpdateAvailable,
   type UpdaterCallbacks,
 } from './updater.js';
-import { restoreBackup, removeCachedAppUpdates } from './startup.js';
+import {
+  restoreBackup,
+  removeCachedAppUpdates,
+  reinstallAddonDependencies,
+} from './startup.js';
 import { execute as executeMigrations } from './migrations.js';
 
 let splashWindow: BrowserWindow | null = null;
@@ -85,7 +89,10 @@ export async function runStartupTasks(): Promise<void> {
 
   // Restore backup if it exists
   updateSplashStatus('Restoring backup...');
-  restoreBackup();
+  const backupResult = await restoreBackup((file, current, total) => {
+    updateSplashStatus('Restoring backup', `${file} (${current}/${total})`);
+    updateSplashProgress(current, total, '');
+  });
 
   // Run any migrations if necessary
   updateSplashStatus('Running migrations...');
@@ -102,6 +109,23 @@ export async function runStartupTasks(): Promise<void> {
         resolve(void 0);
       })
   );
+
+  // If addons need reinstallation (node_modules were skipped during backup)
+  if (backupResult.needsAddonReinstall) {
+    updateSplashStatus('Reinstalling addon dependencies...');
+    try {
+      await reinstallAddonDependencies((addonName, current, total) => {
+        updateSplashStatus(
+          'Installing addon dependencies',
+          `${addonName} (${current}/${total})`
+        );
+        updateSplashProgress(current, total, '');
+      });
+    } catch (error) {
+      console.error('[startup] Failed to reinstall addon dependencies:', error);
+      // Continue anyway - addons may still work or can be reinstalled later
+    }
+  }
 
   // Check for installer/setup updates with splash screen callbacks
   updateSplashStatus('Checking for updates...');

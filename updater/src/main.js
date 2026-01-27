@@ -37,45 +37,6 @@ function correctParsingSize(size) {
   }
 }
 
-/**
- * Kills any running instances of OpenGameInstaller process.
- * Uses platform-specific commands to terminate the process.
- * @returns {Promise<void>}
- */
-function killOpenGameInstallerProcesses() {
-  return new Promise((resolve) => {
-    if (process.platform === 'win32') {
-      // On Windows, use taskkill to kill OpenGameInstaller.exe
-      exec('taskkill /F /IM OpenGameInstaller.exe', (error) => {
-        if (error) {
-          // Process might not be running, which is fine
-          console.log('No OpenGameInstaller.exe process found to kill');
-        } else {
-          console.log('Killed OpenGameInstaller.exe process');
-        }
-        resolve();
-      });
-    } else {
-      // On Linux/macOS, use pkill or killall
-      exec('pkill -f OpenGameInstaller', (error) => {
-        if (error) {
-          // Try killall as fallback
-          exec('killall OpenGameInstaller.AppImage', (error2) => {
-            if (error2) {
-              console.log('No OpenGameInstaller process found to kill');
-            } else {
-              console.log('Killed OpenGameInstaller.AppImage process via killall');
-            }
-            resolve();
-          });
-        } else {
-          console.log('Killed OpenGameInstaller process via pkill');
-          resolve();
-        }
-      });
-    }
-  });
-}
 let localVersion = '0.0.0';
 let usingBleedingEdge = false;
 if (fs.existsSync(`./version.txt`)) {
@@ -184,10 +145,6 @@ async function createWindow() {
     }
     let updating = release !== undefined;
     if (release) {
-      // Kill any running instances of OpenGameInstaller before updating
-      mainWindow.webContents.send('text', 'Stopping OpenGameInstaller');
-      await killOpenGameInstallerProcesses();
-      
       // check if a local cache of the update exists in temp
       const localCache = path.join(
         app.getPath('temp'),

@@ -3,10 +3,19 @@ import { __dirname } from './manager/manager.paths.js';
 import { join } from 'path';
 import * as fs from 'fs';
 import * as fsPromises from 'fs/promises';
+import {
+  existsSync,
+  readdirSync,
+  statSync,
+  copyFileSync,
+  mkdirSync,
+  rmSync,
+} from 'original-fs';
 import { LibraryInfo } from 'ogi-addon';
 import { app, BrowserWindow } from 'electron';
 import { sendNotification } from './main.js';
 import semver from 'semver';
+import { setupAddon } from './manager/manager.addon.js';
 
 // check if NixOS using command -v nixos-rebuild
 export const IS_NIXOS = await (() => {
@@ -66,46 +75,307 @@ if (STEAMTINKERLAUNCH_PATH === '') {
   );
 }
 
-export function restoreBackup() {
-  // restore the backup if it exists
-  if (
-    fs.existsSync(join(app.getPath('temp'), 'ogi-update-backup')) &&
-    process.platform === 'win32'
-  ) {
-    // restore the backup
-    const directory = join(app.getPath('temp'), 'ogi-update-backup');
-    console.log('[backup] Restoring backup...');
+// Directories to skip during restore (same as backup - node_modules will be reinstalled)
+const dirsToSkipRestore = ['node_modules'];
+
+/**
+ * Counts the total number of files to restore, excluding specified directories.
+ */
+function countFilesToRestore(sourcePath: string): number {
+  if (!existsSync(sourcePath)) return 0;
+
+  try {
+    const stat = statSync(sourcePath);
+    if (!stat.isDirectory()) return 1;
+  } catch {
+    // Skip this path on transient I/O/permission errors
+    return 0;
+  }
+
+  let count = 0;
+  try {
+    const entries = readdirSync(sourcePath);
+    for (const entry of entries) {
+      if (dirsToSkipRestore.includes(entry)) continue;
+      const fullPath = join(sourcePath, entry);
+      count += countFilesToRestore(fullPath);
+    }
+  } catch {
+    // Ignore permission errors
+  }
+  return count;
+}
+
+/**
+ * Recursively copies a directory while skipping specified directories (like node_modules).
+ * Yields progress after each file copy.
+ */
+async function* copyDirectoryAsyncRestore(
+  source: string,
+  destination: string
+): AsyncGenerator<{ file: string; success: boolean; error?: string }> {
+  if (!existsSync(source)) return;
+
+  let stat;
+  try {
+    stat = statSync(source);
+  } catch (err: any) {
+    console.error(`[backup] Failed to stat ${source}: ${err.message}`);
+    yield { file: source, success: false, error: err.message };
+    return;
+  }
+  if (!stat.isDirectory()) {
+    // It's a file, copy it
     try {
-      for (const file of fs.readdirSync(directory)) {
-        console.log('[backup] Restoring ' + file);
-        fs.cpSync(join(directory, file), join(__dirname, file), {
-          recursive: true,
-          force: true,
-        });
-        console.log('[backup] Restored ' + file);
+      copyFileSync(source, destination);
+      yield { file: source, success: true };
+    } catch (error: any) {
+      console.error(`[backup] Failed to copy ${source}: ${error.message}`);
+      yield { file: source, success: false, error: error.message };
+    }
+    return;
+  }
+
+  // It's a directory
+  try {
+    if (!existsSync(destination)) {
+      mkdirSync(destination, { recursive: true });
+    }
+
+    const entries = readdirSync(source);
+    for (const entry of entries) {
+      if (dirsToSkipRestore.includes(entry)) {
+        console.log(`[backup] Skipping ${entry} (will be reinstalled)`);
+        continue;
       }
 
-      // remove the backup
-      // On Windows, files may still be locked after copying, so we need to handle permission errors
+      const srcPath = join(source, entry);
+      const destPath = join(destination, entry);
+
+      // Recursively yield from subdirectories/files
+      yield* copyDirectoryAsyncRestore(srcPath, destPath);
+    }
+  } catch (error: any) {
+    console.error(
+      `[backup] Failed to read directory ${source}: ${error.message}`
+    );
+    yield { file: source, success: false, error: error.message };
+  }
+}
+
+export async function restoreBackup(
+  onProgress?: (file: string, current: number, total: number) => void
+): Promise<{ needsAddonReinstall: boolean }> {
+  let needsAddonReinstall = false;
+  const backupDir = join(app.getPath('temp'), 'ogi-update-backup');
+
+  // Check if backup directory exists
+  if (!existsSync(backupDir)) {
+    return { needsAddonReinstall: false };
+  }
+
+  // Check for addon reinstall flag (works for both Windows and Linux)
+  const flagPath = join(backupDir, 'needs-addon-reinstall.flag');
+  if (existsSync(flagPath)) {
+    needsAddonReinstall = true;
+    console.log('[backup] Addon reinstall flag found');
+    try {
+      fs.unlinkSync(flagPath);
+    } catch {
+      // Ignore - will be deleted with the directory
+    }
+  }
+
+  // Restore the backup asynchronously
+  console.log('[backup] Restoring backup...');
+  try {
+    // Get list of files/directories to restore
+    const filesToRestore = readdirSync(backupDir).filter(
+      (file) => file !== 'needs-addon-reinstall.flag'
+    );
+
+    if (filesToRestore.length === 0) {
+      console.log('[backup] No files to restore');
+      // Clean up empty backup directory
       try {
-        fs.rmSync(directory, { recursive: true, force: true });
-        console.log('[backup] Backup restored successfully!');
-      } catch (deleteError: any) {
-        // If deletion fails due to permissions (common on Windows), log a warning but don't fail
-        if (deleteError.code === 'EPERM' || deleteError.code === 'EBUSY') {
+        rmSync(backupDir, { recursive: true, force: true });
+      } catch {
+        // Ignore cleanup errors
+      }
+      return { needsAddonReinstall };
+    }
+
+    // Count total files to restore for progress tracking
+    let totalFiles = 0;
+    for (const file of filesToRestore) {
+      const source = join(backupDir, file);
+      totalFiles += countFilesToRestore(source);
+    }
+
+    console.log(`[backup] Total files to restore: ${totalFiles}`);
+
+    let restoredFiles = 0;
+    let failedFiles: string[] = [];
+
+    // Restore each file/directory
+    for (const file of filesToRestore) {
+      const source = join(backupDir, file);
+      const destination = join(__dirname, file);
+
+      if (!existsSync(source)) {
+        console.log(`[backup] Skipping ${file} (does not exist)`);
+        continue;
+      }
+
+      console.log(`[backup] Restoring ${file}`);
+
+      // Copy files asynchronously with progress
+      for await (const result of copyDirectoryAsyncRestore(
+        source,
+        destination
+      )) {
+        restoredFiles++;
+
+        // Update progress periodically (every 10 files or so to avoid UI spam)
+        if (restoredFiles % 10 === 0 || restoredFiles === totalFiles) {
+          onProgress?.(file, restoredFiles, totalFiles);
+        }
+
+        if (!result.success) {
+          failedFiles.push(result.file);
+        }
+
+        // Yield to event loop to prevent UI freezing
+        await new Promise((resolve) => setImmediate(resolve));
+      }
+    }
+
+    if (failedFiles.length > 0) {
+      console.warn(
+        `[backup] Failed to restore ${failedFiles.length} files:`,
+        failedFiles.slice(0, 10)
+      );
+    }
+
+    // Remove the backup directory
+    // On Windows, files may still be locked after copying, so we need to handle permission errors
+    try {
+      rmSync(backupDir, { recursive: true, force: true });
+      console.log('[backup] Backup restored successfully!');
+    } catch (deleteError: any) {
+      // If deletion fails due to permissions (common on Windows), log a warning but don't fail
+      if (deleteError.code === 'EPERM' || deleteError.code === 'EBUSY') {
+        console.warn(
+          '[backup] Could not delete backup directory immediately (files may be locked). Backup will be cleaned up on next run.',
+          deleteError.message
+        );
+      } else {
+        // Log but don't throw - allow app to continue
+        console.error(
+          '[backup] Error deleting backup directory:',
+          deleteError.message
+        );
+      }
+    }
+  } catch (error: any) {
+    console.error('[backup] Error restoring backup:', error.message);
+    // Don't throw - allow the app to continue even if backup restoration fails
+  }
+
+  return { needsAddonReinstall };
+}
+
+/**
+ * Reinstalls addon dependencies by running setup scripts for each addon.
+ * This is called after an update that skipped node_modules during backup.
+ */
+export async function reinstallAddonDependencies(
+  onProgress?: (addon: string, current: number, total: number) => void
+): Promise<void> {
+  console.log('[startup] Reinstalling addon dependencies...');
+
+  // Check if general config exists
+  const configPath = join(__dirname, 'config/option/general.json');
+  if (!fs.existsSync(configPath)) {
+    console.log('[startup] No general config found, skipping addon reinstall');
+    return;
+  }
+
+  try {
+    const generalConfig = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+    const addons = generalConfig.addons as string[] | undefined;
+
+    if (!addons || addons.length === 0) {
+      console.log('[startup] No addons configured, skipping reinstall');
+      return;
+    }
+
+    let current = 0;
+    for (const addon of addons) {
+      current++;
+      let addonPath = '';
+      let addonName = addon.split(/\/|\\/).pop() ?? 'unknown';
+
+      if (addon.startsWith('local:')) {
+        addonPath = addon.split('local:')[1];
+      } else {
+        addonPath = join(__dirname, 'addons', addonName);
+      }
+
+      if (!fs.existsSync(addonPath)) {
+        console.log(
+          `[startup] Addon ${addonName} not found at ${addonPath}, skipping`
+        );
+        continue;
+      }
+
+      // Check if addon.json exists
+      if (!fs.existsSync(join(addonPath, 'addon.json'))) {
+        console.log(`[startup] No addon.json for ${addonName}, skipping`);
+        continue;
+      }
+
+      // Remove the old installation.log to force setup to run
+      const installLogPath = join(addonPath, 'installation.log');
+      if (fs.existsSync(installLogPath)) {
+        try {
+          fs.unlinkSync(installLogPath);
+          console.log(`[startup] Removed installation.log for ${addonName}`);
+        } catch (err: any) {
           console.warn(
-            '[backup] Could not delete backup directory immediately (files may be locked). Backup will be cleaned up on next run.',
-            deleteError.message
+            `[startup] Could not remove installation.log for ${addonName}:`,
+            err.message
           );
-        } else {
-          // Re-throw other errors
-          throw deleteError;
         }
       }
-    } catch (error: any) {
-      console.error('[backup] Error restoring backup:', error.message);
-      // Don't throw - allow the app to continue even if backup restoration fails
+
+      onProgress?.(addonName, current, addons.length);
+
+      console.log(
+        `[startup] Running setup for addon ${addonName} (${current}/${addons.length})`
+      );
+      try {
+        const success = await setupAddon(addonPath);
+        if (success) {
+          console.log(`[startup] Successfully set up ${addonName}`);
+        } else {
+          console.error(`[startup] Failed to set up ${addonName}`);
+        }
+      } catch (setupError: any) {
+        console.error(
+          `[startup] Error setting up ${addonName}:`,
+          setupError.message
+        );
+        // Continue with other addons
+      }
     }
+
+    console.log('[startup] Addon dependency reinstallation complete');
+  } catch (error: any) {
+    console.error(
+      '[startup] Failed to reinstall addon dependencies:',
+      error.message
+    );
   }
 }
 

@@ -2,12 +2,15 @@ import axios from 'axios';
 import { app, net } from 'electron';
 import {
   chmodSync,
-  cpSync,
   createWriteStream,
   existsSync,
   mkdirSync,
   readFileSync,
+  readdirSync,
   rmSync,
+  statSync,
+  copyFileSync,
+  writeFileSync,
 } from 'original-fs';
 import { basename, join } from 'path';
 import { setTimeout as setTimeoutPromise } from 'timers/promises';
@@ -24,12 +27,165 @@ export interface UpdaterCallbacks {
 }
 
 const filesToBackup = ['config', 'addons', 'library', 'internals'];
+// Directories to skip during backup (addon dependencies will be reinstalled)
+const dirsToSkip = ['node_modules'];
 let __dirname = isDev()
   ? app.getAppPath() + '/../'
   : path.dirname(process.execPath);
 if (process.platform === 'linux') {
   // it's most likely sandboxed, so just use ./
   __dirname = './';
+}
+
+/**
+ * Counts the total number of files to backup, excluding specified directories.
+ */
+function countFilesToBackup(sourcePath: string): number {
+  if (!existsSync(sourcePath)) return 0;
+
+  const stat = statSync(sourcePath);
+  if (!stat.isDirectory()) return 1;
+
+  let count = 0;
+  try {
+    const entries = readdirSync(sourcePath);
+    for (const entry of entries) {
+      if (dirsToSkip.includes(entry)) continue;
+      const fullPath = join(sourcePath, entry);
+      count += countFilesToBackup(fullPath);
+    }
+  } catch {
+    // Ignore permission errors
+  }
+  return count;
+}
+
+/**
+ * Recursively copies a directory while skipping specified directories (like node_modules).
+ * Yields progress after each file copy.
+ */
+async function* copyDirectoryAsync(
+  source: string,
+  destination: string
+): AsyncGenerator<{ file: string; success: boolean; error?: string }> {
+  if (!existsSync(source)) return;
+
+  const stat = statSync(source);
+  if (!stat.isDirectory()) {
+    // It's a file, copy it
+    try {
+      copyFileSync(source, destination);
+      yield { file: source, success: true };
+    } catch (error: any) {
+      console.error(`[updater] Failed to copy ${source}: ${error.message}`);
+      yield { file: source, success: false, error: error.message };
+    }
+    return;
+  }
+
+  // It's a directory
+  try {
+    if (!existsSync(destination)) {
+      mkdirSync(destination, { recursive: true });
+    }
+
+    const entries = readdirSync(source);
+    for (const entry of entries) {
+      if (dirsToSkip.includes(entry)) {
+        console.log(`[updater] Skipping ${entry} (will be reinstalled)`);
+        continue;
+      }
+
+      const srcPath = join(source, entry);
+      const destPath = join(destination, entry);
+
+      // Recursively yield from subdirectories/files
+      yield* copyDirectoryAsync(srcPath, destPath);
+    }
+  } catch (error: any) {
+    console.error(
+      `[updater] Failed to read directory ${source}: ${error.message}`
+    );
+    yield { file: source, success: false, error: error.message };
+  }
+}
+
+/**
+ * Performs async backup of files with progress updates.
+ * Returns a promise that resolves when backup is complete.
+ */
+async function backupFilesAsync(
+  tempFolder: string,
+  updateStatus: (text: string, subtext?: string) => void,
+  updateProgress: (current: number, total: number, speed: string) => void
+): Promise<{ success: boolean; needsAddonReinstall: boolean }> {
+  // First, count total files to backup
+  let totalFiles = 0;
+  for (const file of filesToBackup) {
+    const source = join(__dirname, file);
+    totalFiles += countFilesToBackup(source);
+  }
+
+  console.log(`[updater] Total files to backup: ${totalFiles}`);
+
+  if (!existsSync(tempFolder)) {
+    mkdirSync(tempFolder, { recursive: true });
+  }
+
+  let copiedFiles = 0;
+  let failedFiles: string[] = [];
+  let needsAddonReinstall = false;
+
+  for (const file of filesToBackup) {
+    const source = join(__dirname, file);
+    const destination = join(tempFolder, file);
+
+    if (!existsSync(source)) {
+      console.log(`[updater] Skipping ${file} (does not exist)`);
+      continue;
+    }
+
+    // Check if this is the addons folder - we'll need to reinstall after
+    if (file === 'addons') {
+      needsAddonReinstall = true;
+    }
+
+    console.log(`[updater] Backing up ${source} to ${destination}`);
+
+    for await (const result of copyDirectoryAsync(source, destination)) {
+      copiedFiles++;
+
+      // Update progress periodically (every 10 files or so to avoid UI spam)
+      if (copiedFiles % 10 === 0 || copiedFiles === totalFiles) {
+        const progress =
+          totalFiles > 0 ? Math.round((copiedFiles / totalFiles) * 100) : 100;
+        updateStatus(
+          'Backing up files',
+          `${progress}% (${copiedFiles}/${totalFiles})`
+        );
+        updateProgress(copiedFiles, totalFiles, '');
+      }
+
+      if (!result.success) {
+        failedFiles.push(result.file);
+      }
+
+      // Yield to event loop to prevent UI freezing
+      await new Promise((resolve) => setImmediate(resolve));
+    }
+  }
+
+  if (failedFiles.length > 0) {
+    console.warn(
+      `[updater] Failed to backup ${failedFiles.length} files:`,
+      failedFiles.slice(0, 10)
+    );
+  }
+
+  return {
+    success: failedFiles.length < totalFiles * 0.1,
+    needsAddonReinstall,
+  }; // Allow up to 10% failure
 }
 
 /**
@@ -257,25 +413,46 @@ export function checkIfInstallerUpdateAvailable(callbacks?: UpdaterCallbacks) {
               correctParsingSize(downloadSpeed) + '/s'
             );
           });
-          writer.on('finish', () => {
-            updateStatus('Backing up Files');
+          writer.on('finish', async () => {
             console.log(`[updater] Setup downloaded successfully.`);
             console.log(`[updater] Backing up files in update.`);
             writer.close();
 
-            // now for each file in the update folder, copy it to a temporary folder
+            // Backup files asynchronously with progress
             const tempFolder = app.getPath('temp') + '/ogi-update-backup';
-            if (!existsSync(tempFolder)) {
-              mkdirSync(tempFolder);
-            }
-            for (const file of filesToBackup) {
-              const source = join(__dirname, file);
-              const destination = join(tempFolder, file);
-              if (existsSync(source)) {
-                console.log(`[updater] Copying ${source} to ${destination}`);
-                updateStatus('Backing up files', file);
-                cpSync(source, destination, { recursive: true });
+            try {
+              updateStatus('Backing up Files', 'Calculating...');
+              const backupResult = await backupFilesAsync(
+                tempFolder,
+                updateStatus,
+                updateProgress
+              );
+
+              if (backupResult.needsAddonReinstall) {
+                // Create a flag file to trigger addon reinstall on next launch
+                try {
+                  const flagPath = join(
+                    tempFolder,
+                    'needs-addon-reinstall.flag'
+                  );
+                  writeFileSync(flagPath, new Date().toISOString());
+                  console.log('[updater] Created addon reinstall flag');
+                } catch (flagError: any) {
+                  console.warn(
+                    '[updater] Failed to create reinstall flag:',
+                    flagError.message
+                  );
+                }
               }
+
+              if (!backupResult.success) {
+                console.warn(
+                  '[updater] Backup completed with some failures, but continuing...'
+                );
+              }
+            } catch (backupError: any) {
+              console.error('[updater] Backup failed:', backupError.message);
+              // Continue anyway - better to update with potential data loss than to leave broken
             }
 
             updateStatus('Starting Setup');
@@ -307,50 +484,80 @@ export function checkIfInstallerUpdateAvailable(callbacks?: UpdaterCallbacks) {
               correctParsingSize(downloadSpeed) + '/s'
             );
           });
-          writer.on('finish', () => {
-            updateStatus('Backing up Files');
+          writer.on('finish', async () => {
             console.log(`[updater] Setup downloaded successfully.`);
             console.log(`[updater] Backing up files in update.`);
             writer.close();
 
-            // now for each file in the update folder, copy it to a temporary folder (since it's linux, we don't need to do this)
+            // Backup files asynchronously with progress
             const tempFolder = app.getPath('temp') + '/ogi-update-backup';
-            if (!existsSync(tempFolder)) {
-              mkdirSync(tempFolder);
-            }
+            try {
+              updateStatus('Backing up Files', 'Calculating...');
+              const backupResult = await backupFilesAsync(
+                tempFolder,
+                updateStatus,
+                updateProgress
+              );
 
-            for (const file of filesToBackup) {
-              const source = join(__dirname, file);
-              const destination = join(tempFolder, file);
-              if (existsSync(source)) {
-                console.log(`[updater] Copying ${source} to ${destination}`);
-                updateStatus('Backing up files', file);
-                cpSync(source, destination, { recursive: true });
+              if (backupResult.needsAddonReinstall) {
+                // Create a flag file to trigger addon reinstall on next launch
+                try {
+                  const flagPath = join(
+                    tempFolder,
+                    'needs-addon-reinstall.flag'
+                  );
+                  writeFileSync(flagPath, new Date().toISOString());
+                  console.log('[updater] Created addon reinstall flag');
+                } catch (flagError: any) {
+                  console.warn(
+                    '[updater] Failed to create reinstall flag:',
+                    flagError.message
+                  );
+                }
               }
+
+              if (!backupResult.success) {
+                console.warn(
+                  '[updater] Backup completed with some failures, but continuing...'
+                );
+              }
+            } catch (backupError: any) {
+              console.error('[updater] Backup failed:', backupError.message);
+              // Continue anyway - better to update with potential data loss than to leave broken
             }
 
             updateStatus('Starting Setup');
 
             setTimeout(async () => {
-              // rename the temp-setup-OGI.AppImage to the OpenGameInstaller-Setup.AppImage
-              console.log(
-                `[updater] Renaming setup to OpenGameInstaller-Setup.AppImage`
-              );
-              rmSync('../OpenGameInstaller-Setup.AppImage', { force: true });
-              console.log(
-                `[updater] Moving over setup to OpenGameInstaller-Setup.AppImage`
-              );
-              cpSync(
-                '../temp-setup-OGI.AppImage',
-                '../OpenGameInstaller-Setup.AppImage'
-              );
-              rmSync('../temp-setup-OGI.AppImage', { force: true });
-              console.log(
-                `[updater] Copied setup to OpenGameInstaller-Setup.AppImage`
-              );
+              try {
+                // rename the temp-setup-OGI.AppImage to the OpenGameInstaller-Setup.AppImage
+                console.log(
+                  `[updater] Renaming setup to OpenGameInstaller-Setup.AppImage`
+                );
+                rmSync('../OpenGameInstaller-Setup.AppImage', { force: true });
+                console.log(
+                  `[updater] Moving over setup to OpenGameInstaller-Setup.AppImage`
+                );
+                copyFileSync(
+                  '../temp-setup-OGI.AppImage',
+                  '../OpenGameInstaller-Setup.AppImage'
+                );
+                rmSync('../temp-setup-OGI.AppImage', { force: true });
+                console.log(
+                  `[updater] Copied setup to OpenGameInstaller-Setup.AppImage`
+                );
 
-              // set item +x permissions
-              chmodSync('../OpenGameInstaller-Setup.AppImage', 0o755);
+                // set item +x permissions
+                chmodSync('../OpenGameInstaller-Setup.AppImage', 0o755);
+              } catch (moveError: any) {
+                console.error(
+                  '[updater] Failed to move setup:',
+                  moveError.message
+                );
+                updateStatus('Update Failed', 'Please try again later');
+                await setTimeoutPromise(3000);
+                process.exit(1);
+              }
               updateStatus(
                 'Shutting Down OpenGameInstaller',
                 'Please open OpenGameInstaller again'

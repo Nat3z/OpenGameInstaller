@@ -7,6 +7,7 @@ import { LibraryInfo } from 'ogi-addon';
 import { app, BrowserWindow } from 'electron';
 import { sendNotification } from './main.js';
 import semver from 'semver';
+import { setupAddon } from './manager/manager.addon.js';
 
 // check if NixOS using command -v nixos-rebuild
 export const IS_NIXOS = await (() => {
@@ -66,19 +67,31 @@ if (STEAMTINKERLAUNCH_PATH === '') {
   );
 }
 
-export function restoreBackup() {
+export function restoreBackup(): { needsAddonReinstall: boolean } {
+  let needsAddonReinstall = false;
+  const backupDir = join(app.getPath('temp'), 'ogi-update-backup');
+
   // restore the backup if it exists
-  if (
-    fs.existsSync(join(app.getPath('temp'), 'ogi-update-backup')) &&
-    process.platform === 'win32'
-  ) {
+  if (fs.existsSync(backupDir) && process.platform === 'win32') {
+    // Check for addon reinstall flag
+    const flagPath = join(backupDir, 'needs-addon-reinstall.flag');
+    if (fs.existsSync(flagPath)) {
+      needsAddonReinstall = true;
+      console.log('[backup] Addon reinstall flag found');
+      try {
+        fs.unlinkSync(flagPath);
+      } catch {
+        // Ignore - will be deleted with the directory
+      }
+    }
+
     // restore the backup
-    const directory = join(app.getPath('temp'), 'ogi-update-backup');
     console.log('[backup] Restoring backup...');
     try {
-      for (const file of fs.readdirSync(directory)) {
+      for (const file of fs.readdirSync(backupDir)) {
+        if (file === 'needs-addon-reinstall.flag') continue; // Skip the flag file
         console.log('[backup] Restoring ' + file);
-        fs.cpSync(join(directory, file), join(__dirname, file), {
+        fs.cpSync(join(backupDir, file), join(__dirname, file), {
           recursive: true,
           force: true,
         });
@@ -88,7 +101,7 @@ export function restoreBackup() {
       // remove the backup
       // On Windows, files may still be locked after copying, so we need to handle permission errors
       try {
-        fs.rmSync(directory, { recursive: true, force: true });
+        fs.rmSync(backupDir, { recursive: true, force: true });
         console.log('[backup] Backup restored successfully!');
       } catch (deleteError: any) {
         // If deletion fails due to permissions (common on Windows), log a warning but don't fail
@@ -106,6 +119,107 @@ export function restoreBackup() {
       console.error('[backup] Error restoring backup:', error.message);
       // Don't throw - allow the app to continue even if backup restoration fails
     }
+  } else if (fs.existsSync(backupDir)) {
+    // Linux - also check for the flag
+    const flagPath = join(backupDir, 'needs-addon-reinstall.flag');
+    if (fs.existsSync(flagPath)) {
+      needsAddonReinstall = true;
+      console.log('[backup] Addon reinstall flag found (Linux)');
+      try {
+        fs.unlinkSync(flagPath);
+      } catch {
+        // Ignore
+      }
+    }
+    // Clean up the backup directory on Linux too
+    try {
+      fs.rmSync(backupDir, { recursive: true, force: true });
+    } catch {
+      // Ignore cleanup errors
+    }
+  }
+
+  return { needsAddonReinstall };
+}
+
+/**
+ * Reinstalls addon dependencies by running setup scripts for each addon.
+ * This is called after an update that skipped node_modules during backup.
+ */
+export async function reinstallAddonDependencies(
+  onProgress?: (addon: string, current: number, total: number) => void
+): Promise<void> {
+  console.log('[startup] Reinstalling addon dependencies...');
+
+  // Check if general config exists
+  const configPath = join(__dirname, 'config/option/general.json');
+  if (!fs.existsSync(configPath)) {
+    console.log('[startup] No general config found, skipping addon reinstall');
+    return;
+  }
+
+  try {
+    const generalConfig = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+    const addons = generalConfig.addons as string[] | undefined;
+
+    if (!addons || addons.length === 0) {
+      console.log('[startup] No addons configured, skipping reinstall');
+      return;
+    }
+
+    let current = 0;
+    for (const addon of addons) {
+      current++;
+      let addonPath = '';
+      let addonName = addon.split(/\/|\\/).pop() ?? 'unknown';
+
+      if (addon.startsWith('local:')) {
+        addonPath = addon.split('local:')[1];
+      } else {
+        addonPath = join(__dirname, 'addons', addonName);
+      }
+
+      if (!fs.existsSync(addonPath)) {
+        console.log(`[startup] Addon ${addonName} not found at ${addonPath}, skipping`);
+        continue;
+      }
+
+      // Check if addon.json exists
+      if (!fs.existsSync(join(addonPath, 'addon.json'))) {
+        console.log(`[startup] No addon.json for ${addonName}, skipping`);
+        continue;
+      }
+
+      // Remove the old installation.log to force setup to run
+      const installLogPath = join(addonPath, 'installation.log');
+      if (fs.existsSync(installLogPath)) {
+        try {
+          fs.unlinkSync(installLogPath);
+          console.log(`[startup] Removed installation.log for ${addonName}`);
+        } catch (err: any) {
+          console.warn(`[startup] Could not remove installation.log for ${addonName}:`, err.message);
+        }
+      }
+
+      onProgress?.(addonName, current, addons.length);
+
+      console.log(`[startup] Running setup for addon ${addonName} (${current}/${addons.length})`);
+      try {
+        const success = await setupAddon(addonPath);
+        if (success) {
+          console.log(`[startup] Successfully set up ${addonName}`);
+        } else {
+          console.error(`[startup] Failed to set up ${addonName}`);
+        }
+      } catch (setupError: any) {
+        console.error(`[startup] Error setting up ${addonName}:`, setupError.message);
+        // Continue with other addons
+      }
+    }
+
+    console.log('[startup] Addon dependency reinstallation complete');
+  } catch (error: any) {
+    console.error('[startup] Failed to reinstall addon dependencies:', error.message);
   }
 }
 

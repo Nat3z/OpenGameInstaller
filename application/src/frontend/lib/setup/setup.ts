@@ -66,10 +66,12 @@ export function handleSetupError(
   currentLibraryInfo?: LibraryInfo
 ) {
   console.error('Error setting up app: ', error);
+
   createNotification({
     id: Math.random().toString(36).substring(2, 9),
     type: 'error',
-    message: 'The addon had crashed while setting up.',
+    message:
+      error?.message || error || 'The addon had crashed while setting up.',
   });
 
   updateDownloadStatus(downloadedItem.id, {

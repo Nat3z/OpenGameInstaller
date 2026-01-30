@@ -17,7 +17,7 @@
     viewOpenedWhenChanged,
     currentDownloads,
   } from '../store';
-  import type { SearchResult, StoreData } from 'ogi-addon';
+  import type { SearchResult, StoreData, LibraryInfo } from 'ogi-addon';
   import AddonPicture from './AddonPicture.svelte';
   import Modal from './modal/Modal.svelte';
   import TitleModal from './modal/TitleModal.svelte';
@@ -39,7 +39,9 @@
   let queryingSources = $state(false);
   let selectedResult: SearchResultWithAddon | undefined = $state();
   let isOnline = $state(true);
-  let loadingAddons: Set<string> = $state(new Set());
+  let loadingAddons: Set<{ addonId: string; addonName: string }> = $state(
+    new Set()
+  );
   let emptyAddons: Set<string> = $state(new Set());
   let collapsedAddons: Set<string> = $state(new Set());
   let originalFilePath: string | undefined = $derived.by(() => {
@@ -69,6 +71,23 @@
         if (libraryEntryUnSerialized) {
           const libraryEntry = JSON.parse(libraryEntryUnSerialized);
           return libraryEntry.launchExecutable;
+        }
+      }
+      return undefined;
+    } catch (ex) {
+      console.error(ex);
+      return undefined;
+    }
+  });
+
+  let libraryInfo: LibraryInfo | undefined = $derived.by(() => {
+    try {
+      if (alreadyOwns) {
+        const libraryEntryUnSerialized = window.electronAPI.fs.read(
+          './library/' + appID + '.json'
+        );
+        if (libraryEntryUnSerialized) {
+          return JSON.parse(libraryEntryUnSerialized) as LibraryInfo;
         }
       }
       return undefined;
@@ -165,7 +184,7 @@
     addonMap.forEach((results, addonId) => {
       grouped.push({
         addonId,
-        addonName: addonId, // Using addonId as name for now
+        addonName: results[0].addonName,
         results,
       });
     });
@@ -208,7 +227,9 @@
     }
 
     // Reset loading states
-    loadingAddons = new Set(addons.map((addon) => addon.id));
+    loadingAddons = new Set(
+      addons.map((addon) => ({ addonId: addon.id, addonName: addon.name }))
+    );
     emptyAddons = new Set();
 
     const searchPromises = [];
@@ -217,7 +238,7 @@
         !addon.storefronts.includes(storefront) &&
         !addon.storefronts.includes('*')
       ) {
-        loadingAddons.delete(addon.id);
+        loadingAddons.delete({ addonId: addon.id, addonName: addon.name });
         continue;
       }
 
@@ -240,13 +261,17 @@
                 capsuleImage: (gameData as StoreData).capsuleImage,
                 name: result.name,
                 addonSource: addon.id,
+                addonName: addon.name,
                 storefront: storefront,
               };
             });
 
             if (mappedResults.length > 0) {
               // Remove from loading set immediately for addons with results
-              loadingAddons.delete(addon.id);
+              loadingAddons.delete({
+                addonId: addon.id,
+                addonName: addon.name,
+              });
               loadingAddons = new Set(loadingAddons);
 
               results = [...results, ...mappedResults];
@@ -256,7 +281,10 @@
               emptyAddons = new Set(emptyAddons);
 
               setTimeout(() => {
-                loadingAddons.delete(addon.id);
+                loadingAddons.delete({
+                  addonId: addon.id,
+                  addonName: addon.name,
+                });
                 loadingAddons = new Set(loadingAddons);
 
                 // Clean up empty addon after another delay
@@ -269,7 +297,7 @@
           })
           .catch((ex) => {
             // Remove from loading set even on error
-            loadingAddons.delete(addon.id);
+            loadingAddons.delete({ addonId: addon.id, addonName: addon.name });
             loadingAddons = new Set(loadingAddons);
             console.error(ex);
           })
@@ -318,7 +346,7 @@
 
     // Proceed with download
     if (result.downloadType === 'task') {
-      runTask(result, alreadyOwns ? originalFilePath || '' : '');
+      runTask(result, alreadyOwns ? originalFilePath || '' : '', libraryInfo);
     } else {
       startDownload(
         {
@@ -534,7 +562,11 @@
                           ? 'Paused'
                           : activeDownload.status === 'requesting'
                             ? 'Requesting...'
-                            : activeDownload.status}
+                            : activeDownload.status === 'setup-complete'
+                              ? 'Setup Complete'
+                              : activeDownload.status === 'proton-prefix-setup'
+                                ? 'Setting up Proton...'
+                                : activeDownload.status}
                 </span>
               </div>
 
@@ -588,247 +620,271 @@
               </div>
             </div>
           {:else}
-            <div class="flex-1 overflow-y-auto">
+            <div class="flex-1 overflow-y-auto relative">
+              <!-- Fade gradient overlay at top -->
+              <div
+                class="sticky top-0 h-4 bg-linear-to-b from-white/80 to-transparent z-10 pointer-events-none"
+              ></div>
               <!-- Sources Section -->
-              {#if alreadyOwns}
-                <div class="p-6 bg-accent-lighter rounded-lg mb-4">
-                  <button
-                    class="w-full border-none {!isWin32Only
-                      ? 'bg-accent-light hover:bg-accent-light/80 text-accent-dark'
-                      : 'bg-gray-300 text-gray-500 cursor-not-allowed'} font-medium py-3 px-4 rounded-lg transition-colors duration-200 {isWin32Only
-                      ? 'mb-3'
-                      : ''}"
-                    class:disabled={isWin32Only}
-                    disabled={isWin32Only}
-                    title={isWin32Only ? '' : 'Use Steam to Launch Your Games'}
-                    onclick={() => !isWin32Only && playGame()}
-                  >
-                    Play Game
-                  </button>
-
-                  {#if isWin32Only}
+              <div class="-mt-4">
+                {#if alreadyOwns}
+                  <div class="p-6 bg-accent-lighter rounded-lg mb-4">
                     <button
-                      class="w-full border-none bg-red-100 hover:bg-red-200 text-red-700 font-medium py-3 px-4 rounded-lg transition-colors duration-200"
-                      onclick={() => removeGame()}
+                      class="w-full border-none {!isWin32Only
+                        ? 'bg-accent-light hover:bg-accent-light/80 text-accent-dark'
+                        : 'bg-gray-300 text-gray-500 cursor-not-allowed'} font-medium py-3 px-4 rounded-lg transition-colors duration-200 {isWin32Only
+                        ? 'mb-3'
+                        : ''}"
+                      class:disabled={isWin32Only}
+                      disabled={isWin32Only}
+                      title={isWin32Only
+                        ? ''
+                        : 'Use Steam to Launch Your Games'}
+                      onclick={() => !isWin32Only && playGame()}
                     >
-                      Remove from Library
+                      Play Game
                     </button>
-                  {/if}
-                </div>
-              {/if}
-              <!-- Loading indicators for addons still searching -->
-              {#each Array.from(loadingAddons) as addonId, index (addonId)}
-                {@const isEmpty = emptyAddons.has(addonId)}
-                <div
-                  class="bg-accent-lighter rounded-lg p-4 mb-4 opacity-75"
-                  class:opacity-50={isEmpty}
-                  in:fly={{ y: 30, duration: 400, delay: 50 * index }}
-                >
-                  <div class="flex items-center justify-between">
-                    <div class="flex items-center gap-3">
-                      <AddonPicture {addonId} class="w-12 h-12 rounded-lg" />
-                      <div>
-                        <h3 class="font-medium text-gray-800">{addonId}</h3>
-                        {#if isEmpty}
-                          <span class="text-sm text-gray-500 font-medium italic"
-                            >No results found</span
-                          >
-                        {:else}
-                          <span class="text-sm text-gray-500 font-medium italic"
-                            >Searching...</span
-                          >
-                        {/if}
-                      </div>
-                    </div>
-                    {#if !isEmpty}
-                      <div
-                        class="w-5 h-5 border-2 border-gray-300 border-t-accent rounded-full animate-spin"
-                      ></div>
-                    {:else}
-                      <svg
-                        class="w-5 h-5 text-gray-400"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
+
+                    {#if isWin32Only}
+                      <button
+                        class="w-full border-none bg-red-100 hover:bg-red-200 text-red-700 font-medium py-3 px-4 rounded-lg transition-colors duration-200"
+                        onclick={() => removeGame()}
                       >
-                        <circle cx="12" cy="12" r="10" />
-                        <path d="M16 16s-1.5-2-4-2-4 2-4 2" />
-                        <line x1="9" y1="9" x2="9.01" y2="9" />
-                        <line x1="15" y1="9" x2="15.01" y2="9" />
-                      </svg>
+                        Remove from Library
+                      </button>
                     {/if}
                   </div>
-                </div>
-              {/each}
-
-              <!-- Actual results grouped by addon -->
-              {#if resultsByAddon.length > 0}
-                {#each resultsByAddon.filter( (group) => group.results.some((result) => !alreadyOwns || result.downloadType === 'task') ) as addonGroup, groupIndex (addonGroup.addonId)}
-                  {@const filteredResults = addonGroup.results.filter(
-                    (result) => !alreadyOwns || result.downloadType === 'task'
-                  )}
-                  {#if filteredResults.length > 0}
-                    <div
-                      class="mb-4"
-                      in:fly={{ y: 30, duration: 400, delay: 100 * groupIndex }}
-                    >
-                      <!-- Addon Section Header -->
-                      <button
-                        class="w-full flex items-center justify-between p-3 bg-accent-lighter hover:bg-accent-light/80 border-none cursor-pointer rounded-lg transition-colors duration-200 mb-2"
-                        onclick={() => toggleAddonCollapse(addonGroup.addonId)}
-                      >
-                        <div class="flex items-center gap-3">
-                          <AddonPicture
-                            addonId={addonGroup.addonId}
-                            class="w-10 h-10 rounded-lg"
-                          />
-                          <div class="text-left">
-                            <h3 class="font-medium text-gray-800 text-sm">
-                              {addonGroup.addonName}
-                            </h3>
-                            <span class="text-xs text-gray-600"
-                              >{filteredResults.length} result{filteredResults.length ===
-                              1
-                                ? ''
-                                : 's'}</span
+                {/if}
+                <!-- Loading indicators for addons still searching -->
+                {#each Array.from(loadingAddons) as { addonId, addonName }, index (addonId)}
+                  {@const isEmpty = emptyAddons.has(addonId)}
+                  <div
+                    class="bg-accent-lighter rounded-lg p-4 mb-4 opacity-75"
+                    class:opacity-50={isEmpty}
+                    in:fly={{ y: 30, duration: 400, delay: 50 * index }}
+                  >
+                    <div class="flex items-center justify-between">
+                      <div class="flex items-center gap-3">
+                        <AddonPicture {addonId} class="w-12 h-12 rounded-lg" />
+                        <div>
+                          <h3 class="font-medium text-gray-800">{addonName}</h3>
+                          {#if isEmpty}
+                            <span
+                              class="text-sm text-gray-500 font-medium italic"
+                              >No results found</span
                             >
-                          </div>
+                          {:else}
+                            <span
+                              class="text-sm text-gray-500 font-medium italic"
+                              >Searching...</span
+                            >
+                          {/if}
                         </div>
+                      </div>
+                      {#if !isEmpty}
+                        <div
+                          class="w-5 h-5 border-2 border-gray-300 border-t-accent rounded-full animate-spin"
+                        ></div>
+                      {:else}
                         <svg
-                          class="w-4 h-4 text-gray-600 transition-transform duration-200"
-                          class:rotate-180={!collapsedAddons.has(
-                            addonGroup.addonId
-                          )}
+                          class="w-5 h-5 text-gray-400"
                           viewBox="0 0 24 24"
                           fill="none"
                           stroke="currentColor"
                         >
-                          <path
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                            stroke-width="2"
-                            d="M19 9l-7 7-7-7"
-                          />
+                          <circle cx="12" cy="12" r="10" />
+                          <path d="M16 16s-1.5-2-4-2-4 2-4 2" />
+                          <line x1="9" y1="9" x2="9.01" y2="9" />
+                          <line x1="15" y1="9" x2="15.01" y2="9" />
                         </svg>
-                      </button>
-
-                      <!-- Results with left padding -->
-                      {#if !collapsedAddons.has(addonGroup.addonId)}
-                        <div class="pl-4" transition:slide={{ duration: 300 }}>
-                          {#each filteredResults as result, index}
-                            <div
-                              class="bg-accent-lighter rounded-lg p-3 mb-3 last:mb-0"
-                              in:fly={{
-                                y: 20,
-                                duration: 300,
-                                delay: 50 * index,
-                              }}
-                            >
-                              <div
-                                class="flex items-center justify-between mb-2"
-                              >
-                                <span class="font-medium text-gray-800 text-sm"
-                                  >{result.name.slice(0, 25)}{result.name
-                                    .length > 25
-                                    ? '...'
-                                    : ''}</span
-                                >
-                                <div
-                                  class="flex items-center gap-1 text-xs text-gray-500"
-                                >
-                                  {#if result.downloadType === 'magnet'}
-                                    <img
-                                      class="w-4 h-4"
-                                      src="./magnet-icon.gif"
-                                      alt="Magnet"
-                                    />
-                                    <span>Magnet</span>
-                                  {:else if result.downloadType === 'torrent'}
-                                    <img
-                                      class="w-4 h-4"
-                                      src="./torrent.png"
-                                      alt="Torrent"
-                                    />
-                                    <span>Torrent</span>
-                                  {:else if result.downloadType === 'direct'}
-                                    <span>Direct</span>
-                                  {:else if result.downloadType === 'request'}
-                                    <span>Request</span>
-                                  {:else if result.downloadType === 'task'}
-                                    <span>Task</span>
-                                  {/if}
-                                </div>
-                              </div>
-                              <div class="flex flex-row gap-2">
-                                <button
-                                  class="flex-1 text-sm border-none {activeDownload &&
-                                  !alreadyOwns
-                                    ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                                    : 'bg-accent-light hover:bg-accent-light/80 text-accent-dark'} font-medium py-3 px-3 rounded-lg flex items-center justify-center gap-2 transition-colors duration-200"
-                                  disabled={(results.length === 0 &&
-                                    !queryingSources) ||
-                                    (activeDownload && !alreadyOwns)}
-                                  onclick={(event) =>
-                                    handleDownloadClick(result, event)}
-                                >
-                                  {activeDownload && !alreadyOwns
-                                    ? 'Download in Progress'
-                                    : result.downloadType === 'task'
-                                      ? 'Run Task'
-                                      : 'Download'}
-                                </button>
-                                <button
-                                  class="text-sm border-none w-12 bg-accent-light hover:bg-accent-light/80 text-accent-dark font-medium py-3 rounded-lg flex items-center justify-center gap-2 transition-colors duration-200"
-                                  aria-label="Source Information"
-                                  onclick={() => showSourceInfo(result)}
-                                >
-                                  <svg
-                                    xmlns="http://www.w3.org/2000/svg"
-                                    viewBox="0 0 24 24"
-                                    class="fill-accent-dark w-5 h-5"
-                                  >
-                                    <g clip-path="url(#clip0_22_330)">
-                                      <path
-                                        d="M12 2C6.48 2 2 6.48 2 12C2 17.52 6.48 22 12 22C17.52 22 22 17.52 22 12C22 6.48 17.52 2 12 2ZM12 17C11.45 17 11 16.55 11 16V12C11 11.45 11.45 11 12 11C12.55 11 13 11.45 13 12V16C13 16.55 12.55 17 12 17ZM13 9H11V7H13V9Z"
-                                        fill="#2D626A"
-                                      />
-                                    </g>
-                                    <defs>
-                                      <clipPath id="clip0_22_330">
-                                        <rect
-                                          width="24"
-                                          height="24"
-                                          rx="12"
-                                          fill="white"
-                                        />
-                                      </clipPath>
-                                    </defs>
-                                  </svg>
-                                </button>
-                              </div>
-                            </div>
-                          {/each}
-                        </div>
                       {/if}
                     </div>
-                  {/if}
+                  </div>
                 {/each}
-              {:else if queryingSources && loadingAddons.size === 0}
-                <div class="text-center py-8">
-                  <div
-                    class="animate-spin w-8 h-8 border-2 border-teal-500 border-t-transparent rounded-full mx-auto mb-3"
-                  ></div>
-                  <p class="text-gray-600">Searching sources...</p>
-                </div>
-              {:else if !queryingSources && resultsByAddon.length === 0 && loadingAddons.size === 0}
-                <div class="text-center py-8">
-                  <p class="text-gray-600">
-                    {alreadyOwns
-                      ? 'No tasks available'
-                      : 'No sources available'}
-                  </p>
-                </div>
-              {/if}
+
+                <!-- Actual results grouped by addon -->
+                {#if resultsByAddon.length > 0}
+                  {#each resultsByAddon.filter( (group) => group.results.some( (result) => (alreadyOwns ? result.downloadType === 'task' : result.downloadType !== 'task') ) ) as addonGroup, groupIndex (addonGroup.addonId)}
+                    {@const filteredResults = addonGroup.results.filter(
+                      (result) =>
+                        alreadyOwns
+                          ? result.downloadType === 'task'
+                          : result.downloadType !== 'task'
+                    )}
+                    {#if filteredResults.length > 0}
+                      <div
+                        class="mb-4"
+                        in:fly={{
+                          y: 30,
+                          duration: 400,
+                          delay: 100 * groupIndex,
+                        }}
+                      >
+                        <!-- Addon Section Header -->
+                        <button
+                          class="w-full flex items-center justify-between p-3 bg-accent-lighter hover:bg-accent-light/80 border-none cursor-pointer rounded-lg transition-colors duration-200 mb-2"
+                          onclick={() =>
+                            toggleAddonCollapse(addonGroup.addonId)}
+                        >
+                          <div class="flex items-center gap-3">
+                            <AddonPicture
+                              addonId={addonGroup.addonId}
+                              class="w-10 h-10 rounded-lg"
+                            />
+                            <div class="text-left">
+                              <h3 class="font-medium text-gray-800 text-sm">
+                                {addonGroup.addonName}
+                              </h3>
+                              <span class="text-xs text-gray-600"
+                                >{filteredResults.length} result{filteredResults.length ===
+                                1
+                                  ? ''
+                                  : 's'}</span
+                              >
+                            </div>
+                          </div>
+                          <svg
+                            class="w-4 h-4 text-gray-600 transition-transform duration-200"
+                            class:rotate-180={!collapsedAddons.has(
+                              addonGroup.addonId
+                            )}
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                          >
+                            <path
+                              stroke-linecap="round"
+                              stroke-linejoin="round"
+                              stroke-width="2"
+                              d="M19 9l-7 7-7-7"
+                            />
+                          </svg>
+                        </button>
+
+                        <!-- Results with left padding -->
+                        {#if !collapsedAddons.has(addonGroup.addonId)}
+                          <div
+                            class="pl-4"
+                            transition:slide={{ duration: 300 }}
+                          >
+                            {#each filteredResults as result, index}
+                              <div
+                                class="bg-accent-lighter rounded-lg p-3 mb-3 last:mb-0"
+                                in:fly={{
+                                  y: 20,
+                                  duration: 300,
+                                  delay: 50 * index,
+                                }}
+                              >
+                                <div
+                                  class="flex items-center justify-between mb-2"
+                                >
+                                  <span
+                                    class="font-medium text-gray-800 text-sm"
+                                    >{result.name.slice(0, 25)}{result.name
+                                      .length > 25
+                                      ? '...'
+                                      : ''}</span
+                                  >
+                                  <div
+                                    class="flex items-center gap-1 text-xs text-gray-500"
+                                  >
+                                    {#if result.downloadType === 'magnet'}
+                                      <img
+                                        class="w-4 h-4"
+                                        src="./magnet-icon.gif"
+                                        alt="Magnet"
+                                      />
+                                      <span>Magnet</span>
+                                    {:else if result.downloadType === 'torrent'}
+                                      <img
+                                        class="w-4 h-4"
+                                        src="./torrent.png"
+                                        alt="Torrent"
+                                      />
+                                      <span>Torrent</span>
+                                    {:else if result.downloadType === 'direct'}
+                                      <span>Direct</span>
+                                    {:else if result.downloadType === 'request'}
+                                      <span>Request</span>
+                                    {:else if result.downloadType === 'task'}
+                                      <span>Task</span>
+                                    {:else if result.downloadType === 'empty'}
+                                      <span>Empty</span>
+                                    {/if}
+                                  </div>
+                                </div>
+                                <div class="flex flex-row gap-2">
+                                  <button
+                                    class="flex-1 text-sm border-none {activeDownload &&
+                                    !alreadyOwns
+                                      ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                                      : 'bg-accent-light hover:bg-accent-light/80 text-accent-dark'} font-medium py-3 px-3 rounded-lg flex items-center justify-center gap-2 transition-colors duration-200"
+                                    disabled={(results.length === 0 &&
+                                      !queryingSources) ||
+                                      (activeDownload && !alreadyOwns)}
+                                    onclick={(event) =>
+                                      handleDownloadClick(result, event)}
+                                  >
+                                    {activeDownload && !alreadyOwns
+                                      ? 'Download in Progress'
+                                      : result.downloadType === 'task'
+                                        ? 'Run Task'
+                                        : 'Download'}
+                                  </button>
+                                  <button
+                                    class="text-sm border-none w-12 bg-accent-light hover:bg-accent-light/80 text-accent-dark font-medium py-3 rounded-lg flex items-center justify-center gap-2 transition-colors duration-200"
+                                    aria-label="Source Information"
+                                    onclick={() => showSourceInfo(result)}
+                                  >
+                                    <svg
+                                      xmlns="http://www.w3.org/2000/svg"
+                                      viewBox="0 0 24 24"
+                                      class="fill-accent-dark w-5 h-5"
+                                    >
+                                      <g clip-path="url(#clip0_22_330)">
+                                        <path
+                                          d="M12 2C6.48 2 2 6.48 2 12C2 17.52 6.48 22 12 22C17.52 22 22 17.52 22 12C22 6.48 17.52 2 12 2ZM12 17C11.45 17 11 16.55 11 16V12C11 11.45 11.45 11 12 11C12.55 11 13 11.45 13 12V16C13 16.55 12.55 17 12 17ZM13 9H11V7H13V9Z"
+                                          fill="#2D626A"
+                                        />
+                                      </g>
+                                      <defs>
+                                        <clipPath id="clip0_22_330">
+                                          <rect
+                                            width="24"
+                                            height="24"
+                                            rx="12"
+                                            fill="white"
+                                          />
+                                        </clipPath>
+                                      </defs>
+                                    </svg>
+                                  </button>
+                                </div>
+                              </div>
+                            {/each}
+                          </div>
+                        {/if}
+                      </div>
+                    {/if}
+                  {/each}
+                {:else if queryingSources && loadingAddons.size === 0}
+                  <div class="text-center py-8">
+                    <div
+                      class="animate-spin w-8 h-8 border-2 border-teal-500 border-t-transparent rounded-full mx-auto mb-3"
+                    ></div>
+                    <p class="text-gray-600">Searching sources...</p>
+                  </div>
+                {:else if !queryingSources && resultsByAddon.length === 0 && loadingAddons.size === 0}
+                  <div class="text-center py-8">
+                    <p class="text-gray-600">
+                      {alreadyOwns
+                        ? 'No tasks available'
+                        : 'No sources available'}
+                    </p>
+                  </div>
+                {/if}
+              </div>
             </div>
           {/if}
         </div>
@@ -950,6 +1006,8 @@
                   <span class="text-sm font-medium">Request</span>
                 {:else if selectedResult.downloadType === 'task'}
                   <span class="text-sm font-medium">Task</span>
+                {:else if selectedResult.downloadType === 'empty'}
+                  <span class="text-sm font-medium">Empty</span>
                 {/if}
               </div>
             </div>

@@ -352,6 +352,7 @@ export default class OGIAddon {
         manifest: Record<string, unknown>;
         downloadPath: string;
         name: string;
+        libraryInfo: LibraryInfo;
       }
     ) => Promise<void> | void
   > = new Map();
@@ -447,7 +448,7 @@ export default class OGIAddon {
   /**
    * Register a task handler for a specific task name. The task name should match the taskName field in SearchResult or ActionOption.
    * @param taskName {string} The name of the task (should match taskName in SearchResult or ActionOption.setTaskName()).
-   * @param handler {(task: Task, data: { manifest: Record<string, unknown>; downloadPath: string; name: string }) => Promise<void> | void} The handler function.
+   * @param handler {(task: Task, data: { manifest: Record<string, unknown>; downloadPath: string; name: string; libraryInfo: LibraryInfo }) => Promise<void> | void} The handler function.
    * @example
    * ```typescript
    * addon.onTask('clearCache', async (task) => {
@@ -467,6 +468,7 @@ export default class OGIAddon {
         manifest: Record<string, unknown>;
         downloadPath: string;
         name: string;
+        libraryInfo: LibraryInfo;
       }
     ) => Promise<void> | void
   ): void {
@@ -494,6 +496,7 @@ export default class OGIAddon {
           manifest: Record<string, unknown>;
           downloadPath: string;
           name: string;
+          libraryInfo?: LibraryInfo;
         }
       ) => Promise<void> | void)
     | undefined {
@@ -626,7 +629,7 @@ export default class OGIAddon {
 export class Task {
   // EventResponse-based mode (for onTask handlers)
   private event: EventResponse<void> | undefined;
-  
+
   // WebSocket-based mode (for addon.task())
   private ws: OGIAddonWSListener | undefined;
   private readonly id: string | undefined;
@@ -640,7 +643,7 @@ export class Task {
    * @param event {EventResponse<void>} The event response to wrap.
    */
   constructor(event: EventResponse<void>);
-  
+
   /**
    * Construct a Task from WebSocket listener (for addon.task()).
    * @param ws {OGIAddonWSListener} The WebSocket listener.
@@ -648,8 +651,13 @@ export class Task {
    * @param progress {number} Initial progress (0-100).
    * @param logs {string[]} Initial logs array.
    */
-  constructor(ws: OGIAddonWSListener, id: string, progress: number, logs: string[]);
-  
+  constructor(
+    ws: OGIAddonWSListener,
+    id: string,
+    progress: number,
+    logs: string[]
+  );
+
   constructor(
     eventOrWs: EventResponse<void> | OGIAddonWSListener,
     id?: string,
@@ -738,7 +746,9 @@ export class Task {
     screen: ConfigurationBuilder<U>
   ): Promise<U> {
     if (!this.event) {
-      throw new Error('askForInput() is only available for EventResponse-based tasks (onTask handlers)');
+      throw new Error(
+        'askForInput() is only available for EventResponse-based tasks (onTask handlers)'
+      );
     }
     return this.event.askForInput(name, description, screen);
   }
@@ -1154,6 +1164,7 @@ class OGIAddonWSListener {
                 manifest: message.args.manifest || {},
                 downloadPath: message.args.downloadPath || '',
                 name: message.args.name || '',
+                libraryInfo: message.args.libraryInfo,
               });
               // If handler returns a promise, wait for it
               if (result instanceof Promise) {

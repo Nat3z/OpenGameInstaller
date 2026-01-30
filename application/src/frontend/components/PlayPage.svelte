@@ -145,6 +145,7 @@
   let searchingAddons: { [key: string]: SearchResult[] | undefined } = $state(
     {}
   );
+  let addonsMap: Map<string, { id: string; name: string }> = $state(new Map());
   let settledAddons = $derived.by(() => {
     return (
       Object.values(searchingAddons).filter((task) => task !== undefined)
@@ -166,6 +167,9 @@
     }, 'Back to library');
 
     const addons = await fetchAddonsWithConfigure();
+    addonsMap = new Map(
+      addons.map((addon) => [addon.id, { id: addon.id, name: addon.name }])
+    );
     const addonsWithStorefront = addons.filter((addon) =>
       addon.storefronts.includes(libraryInfo.storefront)
     );
@@ -197,17 +201,20 @@
     );
   });
 
-  function handleRunTask(task: SearchResult) {
+  function handleRunTask(task: SearchResult, addonID: string) {
     console.log('Running task: ' + task.name);
+    const addon = addonsMap.get(addonID);
     runTask(
       {
         ...task,
-        addonSource: libraryInfo.addonsource,
+        addonSource: addonID,
+        addonName: addon?.name || addonID,
         coverImage: libraryInfo.coverImage,
         storefront: libraryInfo.storefront,
         capsuleImage: libraryInfo.capsuleImage,
       },
-      libraryInfo.cwd
+      libraryInfo.cwd,
+      libraryInfo
     );
   }
 </script>
@@ -456,7 +463,7 @@
 
             <button
               class="px-4 py-2 bg-accent-light rounded-lg border-none text-accent-dark hover:bg-accent-light/80 transition-colors duration-200"
-              onclick={() => handleRunTask(task)}>Run Task</button
+              onclick={() => handleRunTask(task, addonID)}>Run Task</button
             >
           </div>
         {/each}

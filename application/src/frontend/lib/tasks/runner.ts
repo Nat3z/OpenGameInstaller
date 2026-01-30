@@ -79,7 +79,7 @@ export async function runTask(
         id: Math.random().toString(36).substring(7),
         type: 'info',
         message:
-          'Task started. You can view the progress the Notifications tab.',
+          'Task started. You can view the progress in the Notifications tab.',
       });
     },
     onLogs: (logs: string[]) => {

@@ -39,9 +39,7 @@
   let queryingSources = $state(false);
   let selectedResult: SearchResultWithAddon | undefined = $state();
   let isOnline = $state(true);
-  let loadingAddons: Set<{ addonId: string; addonName: string }> = $state(
-    new Set()
-  );
+  let loadingAddons: Map<string, string> = $state(new Map());
   let emptyAddons: Set<string> = $state(new Set());
   let collapsedAddons: Set<string> = $state(new Set());
   let originalFilePath: string | undefined = $derived.by(() => {
@@ -227,9 +225,7 @@
     }
 
     // Reset loading states
-    loadingAddons = new Set(
-      addons.map((addon) => ({ addonId: addon.id, addonName: addon.name }))
-    );
+    loadingAddons = new Map(addons.map((addon) => [addon.id, addon.name]));
     emptyAddons = new Set();
 
     const searchPromises = [];
@@ -238,7 +234,7 @@
         !addon.storefronts.includes(storefront) &&
         !addon.storefronts.includes('*')
       ) {
-        loadingAddons.delete({ addonId: addon.id, addonName: addon.name });
+        loadingAddons.delete(addon.id);
         continue;
       }
 
@@ -268,11 +264,8 @@
 
             if (mappedResults.length > 0) {
               // Remove from loading set immediately for addons with results
-              loadingAddons.delete({
-                addonId: addon.id,
-                addonName: addon.name,
-              });
-              loadingAddons = new Set(loadingAddons);
+              loadingAddons.delete(addon.id);
+              loadingAddons = new Map(loadingAddons);
 
               results = [...results, ...mappedResults];
             } else {
@@ -281,11 +274,8 @@
               emptyAddons = new Set(emptyAddons);
 
               setTimeout(() => {
-                loadingAddons.delete({
-                  addonId: addon.id,
-                  addonName: addon.name,
-                });
-                loadingAddons = new Set(loadingAddons);
+                loadingAddons.delete(addon.id);
+                loadingAddons = new Map(loadingAddons);
 
                 // Clean up empty addon after another delay
                 setTimeout(() => {
@@ -297,8 +287,8 @@
           })
           .catch((ex) => {
             // Remove from loading set even on error
-            loadingAddons.delete({ addonId: addon.id, addonName: addon.name });
-            loadingAddons = new Set(loadingAddons);
+            loadingAddons.delete(addon.id);
+            loadingAddons = new Map(loadingAddons);
             console.error(ex);
           })
       );
@@ -306,7 +296,7 @@
     await Promise.allSettled(searchPromises);
     queryingSources = false;
     // Ensure all addons are removed from loading state
-    loadingAddons = new Set();
+    loadingAddons = new Map();
   }
 
   function playGame() {
@@ -656,7 +646,7 @@
                   </div>
                 {/if}
                 <!-- Loading indicators for addons still searching -->
-                {#each Array.from(loadingAddons) as { addonId, addonName }, index (addonId)}
+                {#each Array.from(loadingAddons) as [addonId, addonName], index (addonId)}
                   {@const isEmpty = emptyAddons.has(addonId)}
                   <div
                     class="bg-accent-lighter rounded-lg p-4 mb-4 opacity-75"

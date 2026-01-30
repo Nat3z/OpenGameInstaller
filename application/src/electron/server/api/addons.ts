@@ -371,6 +371,8 @@ const procedures: Record<string, Procedure<any>> = {
         manifest: z.unknown(),
         downloadPath: z.string().optional(),
         name: z.string().optional(),
+        taskName: z.string().optional(),
+        libraryInfo: ZodLibraryInfo.optional(),
       })
     )
     .handler(async (input) => {
@@ -384,6 +386,8 @@ const procedures: Record<string, Procedure<any>> = {
             manifest: input.manifest,
             downloadPath: input.downloadPath,
             name: input.name,
+            taskName: input.taskName,
+            libraryInfo: input.libraryInfo,
             deferID: deferrableTask.id!!,
           },
         });

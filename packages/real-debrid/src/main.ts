@@ -65,6 +65,20 @@ export const TorrentInfoZod = z.object({
   added: z.string(),
   links: z.array(z.string()),
   seeders: z.number().optional(),
+  original_filename: z.string().optional(),
+  original_bytes: z.number().optional(),
+  files: z
+    .array(
+      z.object({
+        id: z.number(),
+        path: z.string(),
+        bytes: z.number(),
+        selected: z.number(),
+      })
+    )
+    .optional(),
+  ended: z.string().optional(),
+  speed: z.number().optional(),
 });
 
 export type $Hosts = z.infer<typeof HostsZod>;
@@ -85,7 +99,13 @@ export default class RealDebrid {
       validateStatus: () => true,
     });
     if (response.status !== 200) {
-      throw new Error(`Failed to fetch user info: ${response.statusText}`);
+      const errorMessage =
+        response.data?.error ||
+        `Failed to fetch user info: ${response.statusText}`;
+      const errorCode = response.data?.error_code;
+      throw new Error(
+        errorCode ? `${errorMessage} (error_code: ${errorCode})` : errorMessage
+      );
     }
     const result = UserInfoZod.parse(response.data);
 
@@ -106,15 +126,25 @@ export default class RealDebrid {
       validateStatus: () => true,
     });
     if (response.status !== 200) {
-      throw new Error(`Failed to unrestrict link: ${response.statusText}`);
+      const errorMessage =
+        response.data?.error ||
+        `Failed to unrestrict link: ${response.statusText}`;
+      const errorCode = response.data?.error_code;
+      throw new Error(
+        errorCode ? `${errorMessage} (error_code: ${errorCode})` : errorMessage
+      );
     }
     const result = UnrestrictLinkZod.parse(response.data);
     return result;
   }
 
-  public async addTorrent(torrent: ReadStream) {
+  public async addTorrent(torrent: ReadStream, host?: string) {
     // set the type to binary
-    const response = await axios(`${REAL_DEBRID_API_URL}/torrents/addTorrent`, {
+    const url = new URL(`${REAL_DEBRID_API_URL}/torrents/addTorrent`);
+    if (host) {
+      url.searchParams.append('host', host);
+    }
+    const response = await axios(url.toString(), {
       method: 'PUT',
       headers: {
         Authorization: `Bearer ${this.configuration.apiKey}`,
@@ -124,7 +154,12 @@ export default class RealDebrid {
       validateStatus: () => true,
     });
     if (response.status !== 201) {
-      throw new Error(`Failed to add torrent: ${response.statusText}`);
+      const errorMessage =
+        response.data?.error || `Failed to add torrent: ${response.statusText}`;
+      const errorCode = response.data?.error_code;
+      throw new Error(
+        errorCode ? `${errorMessage} (error_code: ${errorCode})` : errorMessage
+      );
     }
     torrent.close();
     const result = AddTorrentOrMagnetZod.parse(response.data);
@@ -139,16 +174,24 @@ export default class RealDebrid {
       validateStatus: () => true,
     });
     if (response.status !== 200) {
-      throw new Error(`Failed to fetch torrent info: ${response.statusText}`);
+      const errorMessage =
+        response.data?.error ||
+        `Failed to fetch torrent info: ${response.statusText}`;
+      const errorCode = response.data?.error_code;
+      throw new Error(
+        errorCode ? `${errorMessage} (error_code: ${errorCode})` : errorMessage
+      );
     }
     const result = TorrentInfoZod.parse(response.data);
     return result;
   }
 
-  public async addMagnet(magnet: string, host: $Hosts) {
+  public async addMagnet(magnet: string, host?: string) {
     const formData = new URLSearchParams();
     formData.append('magnet', magnet);
-    formData.append('host', host.host);
+    if (host) {
+      formData.append('host', host);
+    }
     const response = await axios(`${REAL_DEBRID_API_URL}/torrents/addMagnet`, {
       method: 'POST',
       headers: {
@@ -159,7 +202,12 @@ export default class RealDebrid {
       validateStatus: () => true,
     });
     if (response.status !== 201) {
-      throw new Error(`Failed to add magnet: ${response.statusText}`);
+      const errorMessage =
+        response.data?.error || `Failed to add magnet: ${response.statusText}`;
+      const errorCode = response.data?.error_code;
+      throw new Error(
+        errorCode ? `${errorMessage} (error_code: ${errorCode})` : errorMessage
+      );
     }
     const result = AddTorrentOrMagnetZod.parse(response.data);
     return result;
@@ -168,7 +216,6 @@ export default class RealDebrid {
   public async selectTorrents(id: string): Promise<boolean> {
     const formData = new URLSearchParams();
     formData.append('files', 'all');
-    formData.append('check_cache', '1');
     const response = await axios(
       `${REAL_DEBRID_API_URL}/torrents/selectFiles/` + id,
       {
@@ -184,11 +231,12 @@ export default class RealDebrid {
     if (response.status === 200 || response.status === 204) {
       return true;
     }
-    if (response.status !== 200) {
-      throw new Error(`Failed to select files: ${response.statusText}`);
-    }
-
-    return false;
+    const errorMessage =
+      response.data?.error || `Failed to select files: ${response.statusText}`;
+    const errorCode = response.data?.error_code;
+    throw new Error(
+      errorCode ? `${errorMessage} (error_code: ${errorCode})` : errorMessage
+    );
   }
 
   public async isTorrentReady(id: string) {
@@ -207,7 +255,12 @@ export default class RealDebrid {
       }
     );
     if (response.status !== 200) {
-      throw new Error(`Failed to fetch hosts: ${response.statusText}`);
+      const errorMessage =
+        response.data?.error || `Failed to fetch hosts: ${response.statusText}`;
+      const errorCode = response.data?.error_code;
+      throw new Error(
+        errorCode ? `${errorMessage} (error_code: ${errorCode})` : errorMessage
+      );
     }
     const result = HostsZod.array().parse(response.data);
     return result;

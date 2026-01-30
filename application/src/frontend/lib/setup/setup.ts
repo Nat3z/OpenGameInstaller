@@ -66,10 +66,30 @@ export function handleSetupError(
   currentLibraryInfo?: LibraryInfo
 ) {
   console.error('Error setting up app: ', error);
+
+  // Normalize error to a safe string
+  let errorMessage: string;
+  if (error?.message) {
+    errorMessage = String(error.message);
+  } else if (error !== null && error !== undefined) {
+    const stringified = String(error);
+    if (stringified === '[object Object]') {
+      try {
+        errorMessage = JSON.stringify(error);
+      } catch {
+        errorMessage = 'The addon had crashed while setting up.';
+      }
+    } else {
+      errorMessage = stringified;
+    }
+  } else {
+    errorMessage = 'The addon had crashed while setting up.';
+  }
+
   createNotification({
     id: Math.random().toString(36).substring(2, 9),
     type: 'error',
-    message: 'The addon had crashed while setting up.',
+    message: errorMessage,
   });
 
   updateDownloadStatus(downloadedItem.id, {

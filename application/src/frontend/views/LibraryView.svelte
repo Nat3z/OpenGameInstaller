@@ -2,6 +2,7 @@
   import type { LibraryInfo } from 'ogi-addon';
   import { onDestroy, onMount } from 'svelte';
   import PlayPage from '../components/PlayPage.svelte';
+  import AddOwnGameModal from '../components/built/AddOwnGameModal.svelte';
   import { gameFocused } from '../store';
   import { writable, type Writable } from 'svelte/store';
   import Image from '../components/Image.svelte';
@@ -22,6 +23,7 @@
   let selectedApp: Writable<LibraryInfo | undefined> = writable(undefined);
   let loading = $state(true);
   let searchQuery = $state('');
+  let showAddOwnGameModal = $state(false);
 
   let { exitPlayPage = $bindable() } = $props();
 
@@ -158,10 +160,18 @@
           <!-- All Games Section -->
           <div class="space-y-6">
             <div
-              class="bg-accent-lighter px-4 py-2 rounded-lg flex items-center justify-between"
+              class="bg-accent-lighter px-4 py-2 rounded-lg flex items-center justify-between flex-wrap gap-2"
             >
               <h2 class="text-xl font-semibold text-accent-dark">All Games</h2>
-              <div class="relative">
+              <div class="flex items-center gap-2">
+                <button
+                  type="button"
+                  class="px-4 py-2 rounded-lg font-archivo font-semibold text-sm bg-accent text-white hover:bg-accent-dark focus:ring-2 focus:ring-accent transition-colors border-none"
+                  onclick={() => (showAddOwnGameModal = true)}
+                >
+                  Add your own game
+                </button>
+                <div class="relative">
                 <div
                   class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"
                 >
@@ -185,6 +195,7 @@
                   placeholder="Search games..."
                   class="block w-64 pl-9 pr-3 py-2 border border-accent rounded-md text-sm bg-white placeholder-accent focus:outline-none focus:ring-1 focus:ring-accent-dark focus:border-accent-dark transition-colors"
                 />
+                </div>
               </div>
             </div>
 
@@ -292,6 +303,12 @@
         </div>
       {/if}
     {/await}
+
+    <AddOwnGameModal
+      open={showAddOwnGameModal}
+      onClose={() => (showAddOwnGameModal = false)}
+      onSuccess={reloadLibrary}
+    />
   </div>
 {/key}
 

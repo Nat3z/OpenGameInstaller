@@ -1,5 +1,4 @@
-import { app, BrowserWindow } from 'electron';
-import { join } from 'path';
+import { BrowserWindow } from 'electron';
 import {
   checkIfInstallerUpdateAvailable,
   type UpdaterCallbacks,
@@ -11,96 +10,75 @@ import {
 } from './startup.js';
 import { execute as executeMigrations } from './migrations.js';
 
-let splashWindow: BrowserWindow | null = null;
-
 /**
- * Creates and returns a configured splash screen BrowserWindow used during app startup.
+ * Updates the splash UI's status message (sent to the main window when it is showing splash content).
  *
- * The window is frameless, non-resizable, always-on-top, and loads the bundled splash HTML; the preload script path is chosen based on development vs production mode.
- *
- * @returns The created splash-screen BrowserWindow
- */
-function createSplashWindow(): BrowserWindow {
-  const splash = new BrowserWindow({
-    width: 300,
-    height: 350,
-    frame: false,
-    resizable: false,
-    transparent: false,
-    alwaysOnTop: true,
-    webPreferences: {
-      nodeIntegration: true,
-      contextIsolation: true,
-      devTools: false,
-      preload: join(app.getAppPath(), 'out/preload/splash.mjs'),
-    },
-  });
-  splash.loadURL('file://' + join(app.getAppPath(), 'public', 'splash.html'));
-  splash.once('ready-to-show', () => {
-    splash.show();
-  });
-  return splash;
-}
-
-/**
- * Updates the splash screen's status message shown to the user.
- *
- * @param text - The status message to display on the splash screen
+ * @param splashTarget - The window whose webContents is currently showing splash.html
+ * @param text - The status message to display
  * @param subtext - Optional secondary text (e.g., download speed, file name)
  */
-function updateSplashStatus(text: string, subtext?: string) {
-  if (splashWindow && !splashWindow.isDestroyed()) {
-    splashWindow.webContents.send('splash-status', text, subtext);
+function updateSplashStatus(
+  splashTarget: BrowserWindow | null,
+  text: string,
+  subtext?: string
+) {
+  if (splashTarget && !splashTarget.isDestroyed()) {
+    splashTarget.webContents.send('splash-status', text, subtext);
   }
 }
 
 /**
- * Updates the splash screen's progress bar.
+ * Updates the splash UI's progress bar.
  *
+ * @param splashTarget - The window whose webContents is currently showing splash.html
  * @param current - Current progress value
  * @param total - Total/maximum progress value
  * @param speed - Optional speed text (e.g., "1.5MB/s")
  */
-function updateSplashProgress(current: number, total: number, speed?: string) {
-  if (splashWindow && !splashWindow.isDestroyed()) {
-    splashWindow.webContents.send('splash-progress', current, total, speed);
+function updateSplashProgress(
+  splashTarget: BrowserWindow | null,
+  current: number,
+  total: number,
+  speed?: string
+) {
+  if (splashTarget && !splashTarget.isDestroyed()) {
+    splashTarget.webContents.send('splash-progress', current, total, speed);
   }
 }
 
 /**
- * Closes the currently open splash window and clears the internal reference.
- *
- * If no splash window is present or it has already been destroyed, the function does nothing.
+ * No-op for single-window flow: splash is shown in the main window, so there is no separate window to close.
+ * Kept for API compatibility with main.ts.
  */
 export function closeSplashWindow() {
-  if (splashWindow && !splashWindow.isDestroyed()) {
-    splashWindow.close();
-    splashWindow = null;
-  }
+  // Single-window flow: splash is part of the main window; nothing to close.
 }
 
 /**
- * Runs all pre-launch startup tasks with splash screen feedback.
+ * Runs all pre-launch startup tasks with splash feedback in the given window.
+ * The window should already be loading or showing splash.html so status/progress can be sent to it.
  * This includes restoring backups, running migrations, checking for updates, etc.
+ *
+ * @param splashTarget - The BrowserWindow currently displaying splash content (same window that will later show the app)
  */
-export async function runStartupTasks(): Promise<void> {
-  // Show splash screen immediately
-  splashWindow = createSplashWindow();
+export async function runStartupTasks(
+  splashTarget: BrowserWindow
+): Promise<void> {
 
   // Restore backup if it exists
-  updateSplashStatus('Restoring backup...');
+  updateSplashStatus(splashTarget, 'Restoring backup...');
   const backupResult = await restoreBackup((file, current, total) => {
-    updateSplashStatus('Restoring backup', `${file} (${current}/${total})`);
-    updateSplashProgress(current, total, '');
+    updateSplashStatus(splashTarget, 'Restoring backup', `${file} (${current}/${total})`);
+    updateSplashProgress(splashTarget, current, total, '');
   });
 
   // Run any migrations if necessary
-  updateSplashStatus('Running migrations...');
+  updateSplashStatus(splashTarget, 'Running migrations...');
   // not async because it relies on the app being open
   executeMigrations();
 
   // Remove cached app updates
-  updateSplashStatus('Cleaning up...');
+  updateSplashStatus(splashTarget, 'Cleaning up...');
   await new Promise((resolve, _) =>
     removeCachedAppUpdates()
       .then(resolve)
@@ -112,14 +90,15 @@ export async function runStartupTasks(): Promise<void> {
 
   // If addons need reinstallation (node_modules were skipped during backup)
   if (backupResult.needsAddonReinstall) {
-    updateSplashStatus('Reinstalling addon dependencies...');
+    updateSplashStatus(splashTarget, 'Reinstalling addon dependencies...');
     try {
       await reinstallAddonDependencies((addonName, current, total) => {
         updateSplashStatus(
+          splashTarget,
           'Installing addon dependencies',
           `${addonName} (${current}/${total})`
         );
-        updateSplashProgress(current, total, '');
+        updateSplashProgress(splashTarget, current, total, '');
       });
     } catch (error) {
       console.error('[startup] Failed to reinstall addon dependencies:', error);
@@ -128,17 +107,17 @@ export async function runStartupTasks(): Promise<void> {
   }
 
   // Check for installer/setup updates with splash screen callbacks
-  updateSplashStatus('Checking for updates...');
+  updateSplashStatus(splashTarget, 'Checking for updates...');
   const updaterCallbacks: UpdaterCallbacks = {
     onStatus: (text: string, subtext?: string) => {
-      updateSplashStatus(text, subtext);
+      updateSplashStatus(splashTarget, text, subtext);
     },
     onProgress: (current: number, total: number, speed: string) => {
-      updateSplashProgress(current, total, speed);
+      updateSplashProgress(splashTarget, current, total, speed);
     },
   };
   await checkIfInstallerUpdateAvailable(updaterCallbacks);
 
-  // Final status before main window loads
-  updateSplashStatus('Starting application...');
+  // Final status before main app loads in the same window
+  updateSplashStatus(splashTarget, 'Starting application...');
 }

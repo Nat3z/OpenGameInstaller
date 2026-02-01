@@ -500,6 +500,18 @@ ipcRenderer.on(
   })
 );
 
+// Splash screen IPC (used when main window shows splash.html first for Steam Deck / single-window flow)
+ipcRenderer.on('splash-status', (_, text: string, subtext?: string) => {
+  document.dispatchEvent(
+    new CustomEvent('splash-status', { detail: { text, subtext } })
+  );
+});
+ipcRenderer.on('splash-progress', (_, current: number, total: number, speed?: string) => {
+  document.dispatchEvent(
+    new CustomEvent('splash-progress', { detail: { current, total, speed } })
+  );
+});
+
 ipcRenderer.on(
   'all-addons-started',
   wrap(() => {

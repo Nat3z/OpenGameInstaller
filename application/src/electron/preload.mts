@@ -214,6 +214,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     insertApp: wrap((info: LibraryInfo) =>
       ipcRenderer.invoke('app:insert-app', info)
     ),
+    generateCustomAppId: wrap(() =>
+      ipcRenderer.invoke('app:generate-custom-app-id')
+    ),
     getAllApps: wrap(() => ipcRenderer.invoke('app:get-all-apps')),
     launchGame: wrap((appid: string) =>
       ipcRenderer.invoke('app:launch-game', appid)
@@ -513,6 +516,26 @@ ipcRenderer.on(
   wrap((_, arg) => {
     document.dispatchEvent(
       new CustomEvent('app:show-changelog', { detail: { version: arg } })
+    );
+  })
+);
+
+// Single-window / Steam Deck: main window shows splash.html first; forward splash IPC so it can update
+ipcRenderer.on(
+  'splash-status',
+  wrap((_, text: string, subtext?: string) => {
+    document.dispatchEvent(
+      new CustomEvent('splash-status', { detail: { text, subtext } })
+    );
+  })
+);
+ipcRenderer.on(
+  'splash-progress',
+  wrap((_, current: number, total: number, speed?: string) => {
+    document.dispatchEvent(
+      new CustomEvent('splash-progress', {
+        detail: { current, total, speed },
+      })
     );
   })
 );

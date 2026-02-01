@@ -13,6 +13,8 @@
   async function checkForAppUpdates() {
     const library = await core.library.getAllApps();
     for (const app of library) {
+      // Skip update check for user-added local games
+      if (app.storefront === 'local') continue;
       tryCatch(async () => {
         const update: { available: boolean; version: string } =
           await core.ipc.safeFetch('checkForUpdates', {

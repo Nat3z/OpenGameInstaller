@@ -20,12 +20,14 @@ import {
   removeLibraryFile,
   addToInternalsApps,
   removeFromInternalsApps,
+  getNextCustomAppId,
 } from './helpers.app/library.js';
 import { generateNotificationId } from './helpers.app/notifications.js';
 import { sendNotification } from '../main.js';
 import { getProtonPrefixPath } from './helpers.app/platform.js';
 import { spawnSync } from 'child_process';
 import * as fs from 'fs';
+import { dirname } from 'path';
 
 /**
  * Escapes a string for safe use in shell commands by escaping special characters
@@ -118,6 +120,26 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
       ensureLibraryDir();
       ensureInternalsDir();
 
+      // For user-added "own" games (storefront === 'local'), validate executable and default cwd
+      if (data.storefront === 'local') {
+        if (!data.launchExecutable?.trim()) {
+          throw new Error('Executable path is required for locally added games.');
+        }
+        const execPath = data.launchExecutable.trim();
+        if (!fs.existsSync(execPath)) {
+          throw new Error(
+            `Executable not found. You can update the path in Settings. Path: ${execPath}`
+          );
+        }
+        if (!data.cwd?.trim()) {
+          data.cwd = dirname(execPath);
+        } else if (!fs.existsSync(data.cwd.trim())) {
+          throw new Error(
+            `Working directory not found. You can update it in Settings or leave empty to use the executable's folder. Path: ${data.cwd}`
+          );
+        }
+      }
+
       saveLibraryInfo(data.appID, data);
       addToInternalsApps(data.appID);
 
@@ -148,14 +170,18 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
         const { success, appId: steamAppId } =
           await getNonSteamGameAppID(versionedGameName);
         if (!success) {
-          return 'setup-failed';
+          throw new Error(
+            'Could not add game to Steam. Is Steam running? Try launching Steam and adding the game again.'
+          );
         }
         const protonPath = getProtonPrefixPath(steamAppId!);
         data.launchArguments = 'WINEPREFIX=' + protonPath + ' ' + launchOptions;
         saveLibraryInfo(data.appID, data);
 
         if (!result) {
-          return 'setup-failed';
+          throw new Error(
+            'Could not add game to Steam. Is Steam running? Try launching Steam and adding the game again.'
+          );
         }
 
         // If there are redistributables, we need to wait for the user to create the Proton prefix
@@ -210,6 +236,10 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
       return 'setup-success';
     }
   );
+
+  ipcMain.handle('app:generate-custom-app-id', async () => {
+    return getNextCustomAppId();
+  });
 
   ipcMain.handle('app:get-all-apps', async () => {
     return getAllLibraryFiles();

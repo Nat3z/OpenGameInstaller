@@ -100,3 +100,17 @@ export function removeFromInternalsApps(appID: number): void {
     saveInternalsApps(apps);
   }
 }
+
+/**
+ * Returns the next available negative app ID for user-added "own" games.
+ * Existing library files are scanned; the minimum negative ID is found and
+ * (min - 1) is returned. If no negative IDs exist, returns -1.
+ */
+export function getNextCustomAppId(): number {
+  const apps = getAllLibraryFiles();
+  const customIds = apps.map((a) => a.appID).filter((id) => id < 0);
+  if (customIds.length === 0) {
+    return -1;
+  }
+  return Math.min(...customIds) - 1;
+}

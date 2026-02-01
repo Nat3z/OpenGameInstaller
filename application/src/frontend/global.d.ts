@@ -115,6 +115,7 @@ interface Window {
         | 'setup-redistributables-success'
         | 'setup-prefix-required'
       >;
+      generateCustomAppId: () => Promise<number>;
       getAllApps: () => Promise<LibraryInfo[]>;
       launchGame: (appid: string) => Promise<void>;
       removeApp: (appid: number) => Promise<void>;

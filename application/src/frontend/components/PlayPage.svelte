@@ -158,6 +158,27 @@
     console.log('settledAddons', settledAddons);
   });
 
+  const isLocalGame = $derived(libraryInfo.storefront === 'local');
+
+  let executableMissing = $state(false);
+  $effect(() => {
+    if (
+      isLocalGame &&
+      libraryInfo.launchExecutable &&
+      typeof window.electronAPI?.fs?.exists === 'function'
+    ) {
+      try {
+        executableMissing = !window.electronAPI.fs.exists(
+          libraryInfo.launchExecutable
+        );
+      } catch {
+        executableMissing = false;
+      }
+    } else {
+      executableMissing = false;
+    }
+  });
+
   onMount(async () => {
     // Set up the header back button
     console.log('PlayPage mounted, setting header back button');
@@ -165,6 +186,9 @@
       console.log('Header back button clicked');
       exitPlayPage();
     }, 'Back to library');
+
+    // Skip addon storefront lookup for locally added games
+    if (libraryInfo.storefront === 'local') return;
 
     const addons = await fetchAddonsWithConfigure();
     addonsMap = new Map(
@@ -277,7 +301,7 @@
 
   <!-- Action Buttons at Top -->
   <div class="bg-accent-lighter px-6 py-4 flex items-center gap-3 rounded-b-lg">
-    {#if updateInfo && !$currentDownloads.find((download) => download.appID === libraryInfo.appID && download.status !== 'error' && download.status !== 'completed' && download.status !== 'seeding' && download.status !== 'setup-complete')}
+    {#if !isLocalGame && updateInfo && !$currentDownloads.find((download) => download.appID === libraryInfo.appID && download.status !== 'error' && download.status !== 'completed' && download.status !== 'seeding' && download.status !== 'setup-complete')}
       <button
         class="px-6 py-3 flex border-none rounded-lg justify-center bg-yellow-500 hover:bg-yellow-600 items-center gap-2 disabled:bg-yellow-500 disabled:cursor-not-allowed transition-colors duration-200"
         onclick={() => (showUpdateModal = true)}
@@ -306,7 +330,7 @@
           />
         </svg>
       </button>
-    {:else if $currentDownloads.find((download) => download.appID === libraryInfo.appID && download.status !== 'error' && download.status !== 'completed' && download.status !== 'seeding' && download.status !== 'setup-complete')}
+    {:else if !isLocalGame && $currentDownloads.find((download) => download.appID === libraryInfo.appID && download.status !== 'error' && download.status !== 'completed' && download.status !== 'seeding' && download.status !== 'setup-complete')}
       <button
         class="px-6 py-3 flex border-none rounded-lg justify-center bg-yellow-500 items-center gap-2 cursor-not-allowed transition-colors duration-200"
         disabled
@@ -357,27 +381,65 @@
       <span class="font-medium">Settings</span>
     </button>
 
-    <button
-      class="px-4 py-3 flex border-none rounded-lg justify-center bg-accent-light hover:bg-accent-light/80 text-accent-dark items-center gap-2 transition-colors duration-200"
-      onclick={() => {
-        currentStorePageOpened.set(libraryInfo.appID);
-        currentStorePageOpenedStorefront.set(libraryInfo.storefront);
-      }}
-    >
-      <svg
-        xmlns="http://www.w3.org/2000/svg"
-        viewBox="0 0 24 24"
-        class="w-5 h-5 fill-accent-dark"
+    {#if !isLocalGame}
+      <button
+        class="px-4 py-3 flex border-none rounded-lg justify-center bg-accent-light hover:bg-accent-light/80 text-accent-dark items-center gap-2 transition-colors duration-200"
+        onclick={() => {
+          currentStorePageOpened.set(libraryInfo.appID);
+          currentStorePageOpenedStorefront.set(libraryInfo.storefront);
+        }}
       >
-        <path
-          d="M12 2C6.48 2 2 6.48 2 12C2 17.52 6.48 22 12 22C17.52 22 22 17.52 22 12C22 6.48 17.52 2 12 2ZM12 17C11.45 17 11 16.55 11 16V12C11 11.45 11.45 11 12 11C12.55 11 13 11.45 13 12V16C13 16.55 12.55 17 12 17ZM13 9H11V7H13V9Z"
-        />
-      </svg>
-      <span class="font-medium">More Info</span>
-    </button>
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          viewBox="0 0 24 24"
+          class="w-5 h-5 fill-accent-dark"
+        >
+          <path
+            d="M12 2C6.48 2 2 6.48 2 12C2 17.52 6.48 22 12 22C17.52 22 22 17.52 22 12C22 6.48 17.52 2 12 2ZM12 17C11.45 17 11 16.55 11 16V12C11 11.45 11.45 11 12 11C12.55 11 13 11.45 13 12V16C13 16.55 12.55 17 12 17ZM13 9H11V7H13V9Z"
+          />
+        </svg>
+        <span class="font-medium">More Info</span>
+      </button>
+    {:else}
+      <span
+        class="px-4 py-3 flex items-center gap-2 text-accent-dark text-sm font-medium"
+        title="This game was added locally; there is no store page."
+      >
+        Added locally
+      </span>
+    {/if}
   </div>
 
   <!-- Steam Re-add Banner -->
+  <!-- Executable not found warning (locally added games) -->
+  {#if isLocalGame && executableMissing}
+    <div
+      class="bg-amber-100 border border-amber-300 rounded-lg p-5 mx-0 mt-6 flex flex-col gap-3"
+      in:fly={{ y: -20, duration: 300 }}
+    >
+      <div class="flex items-start gap-3">
+        <img src="./error.svg" alt="" class="w-6 h-6 shrink-0 mt-0.5" />
+        <div>
+          <h3 class="text-base font-archivo font-bold text-amber-900">
+            Executable not found
+          </h3>
+          <p class="text-amber-900 text-sm">
+            The game path may be invalid (moved or deleted). Update the path in
+            Settings.
+          </p>
+        </div>
+      </div>
+      <button
+        type="button"
+        class="px-4 py-2 bg-amber-200 hover:bg-amber-300 text-amber-900 font-archivo font-semibold rounded-lg border-none flex items-center justify-center gap-2 transition-colors duration-200 w-fit"
+        onclick={openGameConfiguration}
+      >
+        <SettingsFilled fill="currentColor" />
+        Settings
+      </button>
+    </div>
+  {/if}
+
   {#if requiresSteamReadd}
     <div
       class="bg-accent-lighter rounded-lg p-5 mx-0 mt-6 flex flex-col gap-3"
@@ -445,9 +507,13 @@
     </div>
   {/if}
 
-  <!-- Addon Task Grid -->
+  <!-- Addon Task Grid (hidden for locally added games) -->
   <div class="grid grid-cols-3 gap-4 mt-6">
-    {#if settledAddons}
+    {#if isLocalGame}
+      <p class="text-accent-dark text-sm col-span-3">
+        Addon tasks are not available for games added locally.
+      </p>
+    {:else if settledAddons}
       {#each Object.keys(searchingAddons) as addonID, index}
         {#each searchingAddons[addonID]!!.filter((task) => task.downloadType === 'task') as task, taskIndex}
           <div

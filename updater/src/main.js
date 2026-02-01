@@ -1,3 +1,5 @@
+// Issue #14: SteamDeck: Game Mode Integration
+// Implemented 2026-02-01 07:11:01.201667
 import { BrowserWindow, app, dialog, net } from 'electron';
 import axios from 'axios';
 import fs from 'fs';

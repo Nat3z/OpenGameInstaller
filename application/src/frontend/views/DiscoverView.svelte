@@ -9,7 +9,9 @@
     viewOpenedWhenChanged,
     selectedView,
     createNotification,
+    wishlist,
   } from '../store';
+  import { removeFromWishlist } from '../lib/core/wishlist';
   import AddonPicture from '../components/AddonPicture.svelte';
 
   interface ConfigTemplateAndInfo extends OGIAddonConfiguration {
@@ -137,6 +139,11 @@
     viewOpenedWhenChanged.set($selectedView);
   }
 
+  function removeFromWishlistClick(game: BasicLibraryInfo, e: MouseEvent) {
+    e.stopPropagation();
+    removeFromWishlist(game.appID, game.storefront);
+  }
+
   onMount(() => {
     loadCatalogs();
   });
@@ -154,6 +161,83 @@
       </p>
     </div>
   </div>
+
+  <!-- Your wishlist section (at top) -->
+  {#if $wishlist.length > 0}
+    <div class="space-y-3 px-4">
+      <div class="bg-accent-lighter px-4 py-3 rounded-lg">
+        <h3 class="text-lg font-semibold text-accent-dark">Your wishlist</h3>
+        <p class="text-accent-dark text-sm mt-1">
+          {$wishlist.length} game{$wishlist.length === 1 ? '' : 's'} saved for later
+        </p>
+      </div>
+      <div class="flex flex-row gap-3 flex-wrap">
+        {#each $wishlist as game (game.appID + game.storefront)}
+          <div
+            class="w-32 flex flex-col rounded-lg overflow-hidden bg-white shadow-md hover:shadow-lg transition-shadow"
+          >
+            <button
+              class="group w-32 h-48 relative border-none p-0 cursor-pointer text-left bg-transparent block"
+              onclick={() => openGameStorePage(game)}
+              aria-label={game.name}
+            >
+              <div class="relative w-full h-full">
+                <img
+                  src={game.capsuleImage}
+                  alt={game.name}
+                  class="w-32 h-48 object-cover"
+                  loading="lazy"
+                  onerror={(e) => {
+                    const fallback = './favicon.png';
+                    const img = e.currentTarget as HTMLImageElement;
+                    if (img.src !== fallback) {
+                      img.src = fallback;
+                      img.style.opacity = '0.5';
+                    }
+                  }}
+                />
+                <div
+                  class="absolute inset-x-0 bottom-0 bg-linear-to-t from-black/70 to-transparent p-1.5"
+                >
+                  <h4
+                    class="text-white text-xs font-medium truncate leading-tight"
+                  >
+                    {game.name}
+                  </h4>
+                </div>
+              </div>
+            </button>
+            <div class="flex flex-row gap-1 p-2 bg-accent-lighter">
+              <button
+                class="flex-1 text-xs border-none bg-accent-light hover:bg-accent-light/80 text-accent-dark font-medium py-2 px-2 rounded transition-colors"
+                onclick={() => openGameStorePage(game)}
+              >
+                View
+              </button>
+              <button
+                class="border-none bg-transparent hover:bg-red-100 text-gray-600 hover:text-red-600 p-2 rounded transition-colors"
+                aria-label="Remove from wishlist"
+                onclick={(e) => removeFromWishlistClick(game, e)}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5">
+                  <path d="M11.645 20.91l-.007-.003-.022-.012a15.247 15.247 0 01-.383-.218 25.18 25.18 0 01-4.244-3.17C4.688 15.36 2.25 12.174 2.25 8.25 2.25 5.322 4.714 3 7.688 3A5.5 5.5 0 0112 5.052 5.5 5.5 0 0116.313 3c2.973 0 5.437 2.322 5.437 5.25 0 3.925-2.438 7.111-4.739 9.256a25.175 25.175 0 01-4.244 3.17 15.247 15.247 0 01-.383.219l-.022.012-.007.004-.003.001a.752.752 0 01-.704 0l-.003-.001z" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        {/each}
+      </div>
+    </div>
+  {:else}
+    <div class="space-y-3 px-4">
+      <div class="bg-accent-lighter px-4 py-3 rounded-lg">
+        <h3 class="text-lg font-semibold text-accent-dark">Your wishlist</h3>
+        <p class="text-accent-dark text-sm mt-1">
+          Games you add from search or store will appear here.
+        </p>
+      </div>
+    </div>
+  {/if}
 
   {#if loading}
     <!-- Skeleton Loading State -->

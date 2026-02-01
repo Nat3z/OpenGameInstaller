@@ -1,42 +1,35 @@
-# Pull Request: Startup flow refactor & single-window splash (Steam Deck)
+# Pull Request: Game update check refactor & library update UI
 
 ## Summary
 
-This PR refactors the Electron startup flow so that a **single BrowserWindow** can show the splash screen first, then the main app—fixing Steam Deck / Game Mode behavior where a separate splash window caused focus issues (e.g. black screen). Startup logic is moved into a dedicated **startup-runner** module, and the main preload script is updated to forward splash IPC when the main window is displaying the splash page.
+This PR refactors game update checking by moving logic into a dedicated `lib/updates` module and wiring it to both startup (after addons are ready) and the Library "Check for updates" action. It also introduces persisted update state (e.g. `requiredReadds`) and a Library UI that shows update badges and last-check results.
 
-**Files changed:**
-- `application/src/electron/startup-runner.ts` — Startup orchestration and splash UI targeting
-- `application/src/electron/preload.mts` — Splash IPC forwarding and client-ready signal for single-window flow
+## Key Modifications
 
----
+- **`application/src/frontend/lib/updates/` (new)**  
+  - **`checkGameUpdates.ts`**: Single entry point for running the game update check. Clears current app update state, fetches the library, and for each app calls the addon `checkForUpdates` procedure (appID, storefront, currentVersion), then records available updates via `updatesManager`. Returns `{ updatesFound }`. Used by AppUpdateManager on startup and by LibraryView for the manual check.
 
-## Key modifications
+- **`AppUpdateManager.svelte`**  
+  - Reduced to a thin wrapper: listens for `all-addons-started`, then calls `checkGameUpdates()` from the new lib and logs completion. No inline update-check logic.
 
-### 1. `startup-runner.ts`
-- **Single-window splash:** `runStartupTasks(mainWindow?)` accepts an optional main window. When provided, splash status/progress is sent to that window only; no separate splash window is created. When omitted, a legacy separate splash window is created.
-- **Centralized startup sequence:** Runs in order: restore backup → execute migrations → remove cached app updates → reinstall addon dependencies (if backup flag set) → check for installer updates. All steps use `updateSplashStatus` / `updateSplashProgress` for user feedback.
-- **Splash targeting:** `splashTargetWindow` and `splashWindow` are used so both single-window and legacy flows get status/progress; helpers `updateSplashStatus()` and `updateSplashProgress()` send to whichever target is active.
-- **Exports:** `closeSplashWindow()` and `runStartupTasks(mainWindow?)` for use from `main.ts`.
+- **`states.svelte.ts`**  
+  - **Persisted update state:** `loadPersistedUpdateState()` reads `./internals/update-state.json` and returns `{ requiredReadds }` (validated `appID` / `steamAppId` entries).  
+  - **Reactive persistence:** An effect tracks `appUpdates.requiredReadds` and writes it to `./internals/update-state.json` (with a 1s initial delay and proper cleanup).  
+  - **Game update UI state:** `gameUpdatesCheckState` (isChecking, lastResult) and `updatesManager` (clearAppUpdates, setCheckingForGameUpdates, setLastGameUpdatesCheckResult, addAppUpdate, removeAppUpdate, getAppUpdate) support the Library check button and badges.
 
-### 2. `preload.mts`
-- **Splash IPC forwarding:** New listeners for `splash-status` and `splash-progress` so that when the main window is showing `splash.html` (single-window flow), it receives IPC and dispatches matching `CustomEvent`s for the splash page to consume.
-- **Client-ready signal:** Preload sends `client-ready-for-events` at load so the main process can gate IPC until the renderer is ready.
-- **Debug instrumentation (if present):** Optional wrap/counter and `dbg:events-proc` / `dbg:error` events for profiling and error handling; all exposed API and IPC listeners may be wrapped for consistency.
+- **`LibraryView.svelte`**  
+  - Imports `checkGameUpdates` from `lib/updates/checkGameUpdates`.  
+  - **"Check for updates" button:** Disabled when checking or when library is empty; shows spinner and "Checking…" while running; after completion shows "X update(s) available" or "All games up to date".  
+  - **Update badges:** Recently played and All Games tiles show an update badge when `updatesManager.getAppUpdate(app.appID)?.updateAvailable` is true.  
+  - **Notification:** When the check finds updates, creates an info notification with the count.
 
----
+## Testing Notes
 
-## Testing notes
+- **Startup:** After addons have started, a single game update check should run automatically; console should log "startup game update check complete".
+- **Library – Check for updates:** With at least one game, click "Check for updates". Button should show spinner and "Checking…", then show "X update(s) available" or "All games up to date"; if updates exist, an info notification should appear and library tiles with updates should show the update badge.
+- **Library – empty:** With no games, "Check for updates" should be disabled.
+- **Persistence:** `./internals/update-state.json` should be created/updated when `requiredReadds` changes; after restart, `loadPersistedUpdateState()` (used from App.svelte) should restore requiredReadds so dependent UI (e.g. PlayPage, GameConfiguration) behaves correctly.
 
-- **Single-window flow (Steam Deck / default):** Start app → main window should show splash first (status/progress during backup, migrations, cleanup, addon reinstall, updater check), then load main app in the same window. No separate splash window.
-- **Splash content:** Verify splash screen shows updating status text and progress bar during each startup phase.
-- **Backup restore:** After an update that created a backup, startup should show “Restoring backup…” and progress; if `needs-addon-reinstall` flag existed, “Reinstalling addon dependencies…” should run.
-- **Legacy path:** If `runStartupTasks()` were called without a window (e.g. in tests or alternate entry), a separate splash window should be created and receive the same status/progress.
-- **Main process IPC:** After load, main process should only send IPC to the main window after `client-ready-for-events` is received (no missed or premature messages).
+## Breaking Changes
 
----
-
-## Breaking changes & migrations
-
-- **No breaking API changes.** `runStartupTasks(mainWindow?)` is optional-arg; existing callers that pass no argument keep the previous separate-splash-window behavior.
-- **No data migrations.** Startup sequence still uses the same backup format, migration runner, and config paths; only orchestration and which window gets splash updates changed.
-- **Frontend:** Any UI that assumes a separate splash window can be updated to rely on the main window showing splash first; `splash.html` already listens for `splash-status` and `splash-progress` CustomEvents, which the preload now forwards in the single-window case.
+None. New module and state are additive; existing consumers of `appUpdates` and `requiredReadds` (App.svelte, PlayPage, GameConfiguration, setup) continue to work. No data migrations required beyond the existing update-state.json format and migrations that already handle `requiredReadds`.

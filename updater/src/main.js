@@ -1,3 +1,5 @@
+// Issue #14: SteamDeck: Game Mode Integration
+// Implemented 2026-02-01 07:14:23.064225
 // Issue #18: Add own Games
 // Implemented 2026-02-01 07:14:16.647954
 import { BrowserWindow, app, dialog, net } from 'electron';

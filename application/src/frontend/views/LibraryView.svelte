@@ -2,6 +2,7 @@
   import type { LibraryInfo } from 'ogi-addon';
   import { onDestroy, onMount } from 'svelte';
   import PlayPage from '../components/PlayPage.svelte';
+  import AddOwnGameModal from '../components/AddOwnGameModal.svelte';
   import { gameFocused } from '../store';
   import { writable, type Writable } from 'svelte/store';
   import Image from '../components/Image.svelte';
@@ -22,6 +23,7 @@
   let selectedApp: Writable<LibraryInfo | undefined> = writable(undefined);
   let loading = $state(true);
   let searchQuery = $state('');
+  let showAddOwnGameModal = $state(false);
 
   let { exitPlayPage = $bindable() } = $props();
 
@@ -161,6 +163,14 @@
               class="bg-accent-lighter px-4 py-2 rounded-lg flex items-center justify-between"
             >
               <h2 class="text-xl font-semibold text-accent-dark">All Games</h2>
+              <div class="flex items-center gap-2">
+              <button
+                type="button"
+                class="px-3 py-2 rounded-lg bg-accent text-white text-sm font-archivo font-semibold hover:bg-accent-dark transition-colors border-none"
+                onclick={() => (showAddOwnGameModal = true)}
+              >
+                Add game
+              </button>
               <div class="relative">
                 <div
                   class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"
@@ -186,7 +196,17 @@
                   class="block w-64 pl-9 pr-3 py-2 border border-accent rounded-md text-sm bg-white placeholder-accent focus:outline-none focus:ring-1 focus:ring-accent-dark focus:border-accent-dark transition-colors"
                 />
               </div>
+              </div>
             </div>
+
+            <AddOwnGameModal
+              open={showAddOwnGameModal}
+              onClose={() => (showAddOwnGameModal = false)}
+              onSuccess={() => {
+                showAddOwnGameModal = false;
+                reloadLibrary();
+              }}
+            />
 
             {#if filteredGames.length === 0 && !loading}
               <div
@@ -203,6 +223,14 @@
                   </h1>
                   {#if searchQuery}
                     <p class="text-gray-500">Try adjusting your search terms</p>
+                  {:else}
+                    <button
+                      type="button"
+                      class="mt-3 px-4 py-2 rounded-lg bg-accent text-white font-archivo font-semibold hover:bg-accent-dark transition-colors border-none"
+                      onclick={() => (showAddOwnGameModal = true)}
+                    >
+                      Add installed game
+                    </button>
                   {/if}
                 </div>
               </div>

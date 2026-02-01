@@ -16,6 +16,7 @@
     disabled = false,
     class: className = '',
     onchange,
+    dialogFilters = [],
   }: {
     id: string;
     label: string;
@@ -37,6 +38,8 @@
     disabled?: boolean;
     class?: string;
     onchange?: (id: string, value: string | number) => void;
+    /** For type="file": filters for showOpenDialog (e.g. [{ name: 'Executables', extensions: ['exe', 'sh'] }]) */
+    dialogFilters?: { name: string; extensions: string[] }[];
   } = $props();
 
   let displayValue = $state(value);
@@ -74,7 +77,11 @@
     const dialog = window.electronAPI.fs.dialog;
     const properties: ('openDirectory' | 'openFile')[] =
       browseType === 'folder' ? ['openDirectory'] : ['openFile'];
-    dialog.showOpenDialog({ properties }).then((result) => {
+    const options: { properties: ('openDirectory' | 'openFile')[]; filters?: { name: string; extensions: string[] }[] } = { properties };
+    if (browseType === 'file' && dialogFilters.length > 0) {
+      options.filters = dialogFilters;
+    }
+    dialog.showOpenDialog(options).then((result) => {
       if (result && result.length > 0) {
         const path = result[0];
         displayValue = path;

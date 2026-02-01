@@ -118,7 +118,7 @@ export function sendAskForInput(
 const ogiDebug = () => (process.env.OGI_DEBUG ?? 'false') === 'true';
 
 /**
- * Runs when the main app page has finished loading in the main window (second ready-to-show).
+ * Runs when the main app page has finished loading in the main window (did-finish-load).
  */
 function onMainAppReady() {
   closeSplashWindow();
@@ -203,6 +203,7 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1000,
     height: 700,
+    backgroundColor: '#1a1a1a',
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: true,
@@ -270,7 +271,7 @@ app.on('ready', async () => {
     );
   }
 
-  mainWindow!!.once('ready-to-show', onMainAppReady);
+  mainWindow!!.webContents.once('did-finish-load', onMainAppReady);
 
   server.listen(port, () => {
     console.log(`Addon Server is running on http://localhost:${port}`);

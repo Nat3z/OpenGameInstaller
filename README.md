@@ -42,3 +42,8 @@ Follow the [Building your first addon](https://ogi.nat3z.com/docs/first-addon) g
 The LICENSE of each package are in their directories.
 
 _logo is Firefly by Hoyoverse's Honkai Star Rail. We do not claim ownership of this image nor the character, we just love the game._
+
+
+## Automated Improvements (2026-02-01)
+- Added automated nightly improvements workflow
+- This project now receives creative enhancements

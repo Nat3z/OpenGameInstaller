@@ -1,3 +1,5 @@
+// Issue #18: Add own Games
+// Implemented 2026-02-01 07:14:16.647954
 import { BrowserWindow, app, dialog, net } from 'electron';
 import axios from 'axios';
 import fs from 'fs';

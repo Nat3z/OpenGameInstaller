@@ -36,7 +36,13 @@
     showNotificationSideView,
     currentDownloads,
     headerBackButton,
+    wishlist,
   } from './store';
+  import {
+    addToWishlist,
+    removeFromWishlist,
+    isInWishlist,
+  } from './lib/core/wishlist';
   import StorePage from './components/StorePage.svelte';
   import ConfigurationModal from './components/modal/ConfigurationModal.svelte';
   import LibraryView from './views/LibraryView.svelte';
@@ -46,10 +52,11 @@
   import Debug from './managers/Debug.svelte';
   import DiscoverView from './views/DiscoverView.svelte';
   import RootPasswordGranter from './managers/RootPasswordGranter.svelte';
-  import { initDownloadPersistence } from './utils';
-  import AppUpdateManager from './managers/AppUpdateManager.svelte';
-  import ChangelogManager from './managers/ChangelogManager.svelte';
-  import { appUpdates, loadPersistedUpdateState } from './states.svelte';
+import { initDownloadPersistence } from './utils';
+import AppUpdateManager from './managers/AppUpdateManager.svelte';
+import ChangelogManager from './managers/ChangelogManager.svelte';
+import { appUpdates, loadPersistedUpdateState } from './states.svelte';
+import { loadWishlist } from './lib/core/wishlist';
 
   interface ConfigTemplateAndInfo extends OGIAddonConfiguration {
     configTemplate: ConfigurationFile;
@@ -108,6 +115,7 @@
       initializeSearch();
       initDownloadPersistence();
       appUpdates.requiredReadds = loadPersistedUpdateState().requiredReadds;
+      loadWishlist();
     }, 200);
   });
 
@@ -935,16 +943,57 @@
                                 <p class="result-source">
                                   Storefront: {result.storefront}
                                 </p>
-                                <button
-                                  class="result-button"
-                                  onclick={() =>
-                                    goToListing(
-                                      result.appID,
-                                      result.storefront
-                                    )}
-                                >
-                                  View Details
-                                </button>
+                                <div class="flex flex-row gap-2 items-center">
+                                  <button
+                                    class="result-button"
+                                    onclick={() =>
+                                      goToListing(
+                                        result.appID,
+                                        result.storefront
+                                      )}
+                                  >
+                                    View Details
+                                  </button>
+                                  {#if isInWishlist(
+                                    $wishlist,
+                                    result.appID,
+                                    result.storefront
+                                  )}
+                                    <button
+                                      class="border-none rounded-full p-2 bg-red-100 hover:bg-red-200 text-red-600 transition-colors cursor-pointer"
+                                      aria-label="Remove from wishlist"
+                                      onclick={(e) => {
+                                        e.stopPropagation();
+                                        removeFromWishlist(
+                                          result.appID,
+                                          result.storefront
+                                        );
+                                      }}
+                                    >
+                                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5">
+                                        <path d="M11.645 20.91l-.007-.003-.022-.012a15.247 15.247 0 01-.383-.218 25.18 25.18 0 01-4.244-3.17C4.688 15.36 2.25 12.174 2.25 8.25 2.25 5.322 4.714 3 7.688 3A5.5 5.5 0 0112 5.052 5.5 5.5 0 0116.313 3c2.973 0 5.437 2.322 5.437 5.25 0 3.925-2.438 7.111-4.739 9.256a25.175 25.175 0 01-4.244 3.17 15.247 15.247 0 01-.383.219l-.022.012-.007.004-.003.001a.752.752 0 01-.704 0l-.003-.001z" />
+                                      </svg>
+                                    </button>
+                                  {:else}
+                                    <button
+                                      class="border-none rounded-full p-2 bg-accent-lighter hover:bg-accent-light text-accent-dark transition-colors cursor-pointer"
+                                      aria-label="Add to wishlist"
+                                      onclick={(e) => {
+                                        e.stopPropagation();
+                                        addToWishlist({
+                                          name: result.name,
+                                          capsuleImage: result.capsuleImage,
+                                          appID: result.appID,
+                                          storefront: result.storefront,
+                                        });
+                                      }}
+                                    >
+                                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12z" />
+                                      </svg>
+                                    </button>
+                                  {/if}
+                                </div>
                               </div>
                             </div>
                           {/each}

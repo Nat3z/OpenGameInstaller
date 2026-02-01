@@ -16,7 +16,13 @@
     selectedView,
     viewOpenedWhenChanged,
     currentDownloads,
+    wishlist,
   } from '../store';
+  import {
+    addToWishlist,
+    removeFromWishlist,
+    isInWishlist,
+  } from '../lib/core/wishlist';
   import type { SearchResult, StoreData, LibraryInfo } from 'ogi-addon';
   import AddonPicture from './AddonPicture.svelte';
   import Modal from './modal/Modal.svelte';
@@ -409,6 +415,8 @@
       loadCustomStoreData();
 
       if (alreadyOwns) {
+        // Remove from wishlist when game is installed
+        removeFromWishlist(appID, storefront);
         // Notify user that the game is now available
         createNotification({
           id: Math.random().toString(36).substring(7),
@@ -418,6 +426,23 @@
       }
     }
   });
+
+  let inWishlist = $derived(isInWishlist($wishlist, appID, storefront));
+
+  function toggleWishlist() {
+    if (!gameData) return;
+    const entry = {
+      name: gameData.name ?? '',
+      capsuleImage: gameData.capsuleImage ?? '',
+      appID: gameData.appID,
+      storefront,
+    };
+    if (inWishlist) {
+      removeFromWishlist(appID, storefront);
+    } else {
+      addToWishlist(entry);
+    }
+  }
 
   // Debug reactive statement
   $effect(() => {
@@ -493,21 +518,39 @@
           />
           <!-- Overlay with game info -->
           <div
-            class="absolute bottom-0 left-0 right-0 bg-linear-to-t from-black/70 to-transparent p-6 rounded-b-lg"
+            class="absolute bottom-0 left-0 right-0 bg-linear-to-t from-black/70 to-transparent p-6 rounded-b-lg flex flex-row items-end justify-between gap-4"
           >
-            <h1 class="text-4xl font-archivo font-bold text-white mb-2">
-              {gameData.name}
-            </h1>
-            <div class="text-sm text-gray-200">
-              <span class="text-gray-300">Publisher:</span>
-              {(gameData.publishers ?? []).join(', ')}
-              <span class="mx-4"></span>
-              <span class="text-gray-300">Developer:</span>
-              {(gameData.developers ?? []).join(', ')}
-              <br />
-              <span class="text-gray-300">Release Date:</span>
-              {gameData.releaseDate}
+            <div>
+              <h1 class="text-4xl font-archivo font-bold text-white mb-2">
+                {gameData.name}
+              </h1>
+              <div class="text-sm text-gray-200">
+                <span class="text-gray-300">Publisher:</span>
+                {(gameData.publishers ?? []).join(', ')}
+                <span class="mx-4"></span>
+                <span class="text-gray-300">Developer:</span>
+                {(gameData.developers ?? []).join(', ')}
+                <br />
+                <span class="text-gray-300">Release Date:</span>
+                {gameData.releaseDate}
+              </div>
             </div>
+            <button
+              type="button"
+              class="shrink-0 w-12 h-12 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center border-none cursor-pointer transition-colors"
+              aria-label={inWishlist ? 'Remove from wishlist' : 'Add to wishlist'}
+              onclick={toggleWishlist}
+            >
+              {#if inWishlist}
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-6 h-6 text-red-400">
+                  <path d="M11.645 20.91l-.007-.003-.022-.012a15.247 15.247 0 01-.383-.218 25.18 25.18 0 01-4.244-3.17C4.688 15.36 2.25 12.174 2.25 8.25 2.25 5.322 4.714 3 7.688 3A5.5 5.5 0 0112 5.052 5.5 5.5 0 0116.313 3c2.973 0 5.437 2.322 5.437 5.25 0 3.925-2.438 7.111-4.739 9.256a25.175 25.175 0 01-4.244 3.17 15.247 15.247 0 01-.383.219l-.022.012-.007.004-.003.001a.752.752 0 01-.704 0l-.003-.001z" />
+                </svg>
+              {:else}
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6 text-white">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12z" />
+                </svg>
+              {/if}
+            </button>
           </div>
         </div>
       </div>

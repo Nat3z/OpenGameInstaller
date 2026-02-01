@@ -517,4 +517,24 @@ ipcRenderer.on(
   })
 );
 
+// Single-window / Steam Deck: main window shows splash.html first; forward splash IPC so it can update
+ipcRenderer.on(
+  'splash-status',
+  wrap((_, text: string, subtext?: string) => {
+    document.dispatchEvent(
+      new CustomEvent('splash-status', { detail: { text, subtext } })
+    );
+  })
+);
+ipcRenderer.on(
+  'splash-progress',
+  wrap((_, current: number, total: number, speed?: string) => {
+    document.dispatchEvent(
+      new CustomEvent('splash-progress', {
+        detail: { current, total, speed },
+      })
+    );
+  })
+);
+
 wrap(() => ipcRenderer.send('client-ready-for-events'))();

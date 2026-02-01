@@ -12,7 +12,9 @@
     filterLibrary,
     chunkArray,
   } from '../lib/core/library';
-  import { updatesManager } from '../states.svelte';
+  import { gameUpdatesCheckState, updatesManager } from '../states.svelte';
+  import { checkGameUpdates } from '../lib/updates/checkGameUpdates';
+  import { createNotification } from '../store';
   import UpdateIcon from '../Icons/UpdateIcon.svelte';
 
   let library: LibraryInfo[] = $state([]);
@@ -73,6 +75,25 @@
   });
 
   let allGamesChunks = $derived(chunkArray(filteredGames, 5));
+
+  async function handleCheckForUpdates() {
+    if (gameUpdatesCheckState.isChecking || library.length === 0) return;
+    updatesManager.setCheckingForGameUpdates(true);
+    updatesManager.setLastGameUpdatesCheckResult(null);
+    try {
+      const result = await checkGameUpdates();
+      updatesManager.setLastGameUpdatesCheckResult(result);
+      if (result.updatesFound > 0) {
+        createNotification({
+          type: 'info',
+          message: `${result.updatesFound} game update(s) available.`,
+          id: `game-updates-${Date.now()}`,
+        });
+      }
+    } finally {
+      updatesManager.setCheckingForGameUpdates(false);
+    }
+  }
 </script>
 
 {#key library}
@@ -158,33 +179,62 @@
           <!-- All Games Section -->
           <div class="space-y-6">
             <div
-              class="bg-accent-lighter px-4 py-2 rounded-lg flex items-center justify-between"
+              class="bg-accent-lighter px-4 py-2 rounded-lg flex items-center justify-between gap-4 flex-wrap"
             >
               <h2 class="text-xl font-semibold text-accent-dark">All Games</h2>
-              <div class="relative">
-                <div
-                  class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"
+              <div class="flex items-center gap-3">
+                <button
+                  type="button"
+                  class="inline-flex items-center gap-2 px-3 py-2 border border-accent rounded-md text-sm bg-white text-accent-dark hover:bg-accent-lighter focus:outline-none focus:ring-1 focus:ring-accent-dark focus:border-accent-dark transition-colors disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:bg-white"
+                  disabled={gameUpdatesCheckState.isChecking || library.length === 0}
+                  aria-busy={gameUpdatesCheckState.isChecking}
+                  aria-label={gameUpdatesCheckState.isChecking ? 'Checking for updates…' : 'Check for updates'}
+                  onclick={handleCheckForUpdates}
                 >
-                  <svg
-                    class="h-4 w-4 text-accent"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
+                  {#if gameUpdatesCheckState.isChecking}
+                    <span
+                      class="inline-block h-4 w-4 border-2 border-accent border-t-transparent rounded-full animate-spin"
+                      aria-hidden="true"
+                    ></span>
+                    <span>Checking…</span>
+                  {:else}
+                    <span>Check for updates</span>
+                  {/if}
+                </button>
+                {#if gameUpdatesCheckState.lastResult !== null && !gameUpdatesCheckState.isChecking}
+                  <span class="text-sm text-accent">
+                    {#if gameUpdatesCheckState.lastResult.updatesFound > 0}
+                      {gameUpdatesCheckState.lastResult.updatesFound} update(s) available
+                    {:else}
+                      All games up to date
+                    {/if}
+                  </span>
+                {/if}
+                <div class="relative">
+                  <div
+                    class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"
                   >
-                    <path
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                      stroke-width="2"
-                      d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-                    ></path>
-                  </svg>
+                    <svg
+                      class="h-4 w-4 text-accent"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="2"
+                        d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                      ></path>
+                    </svg>
+                  </div>
+                  <input
+                    type="text"
+                    bind:value={searchQuery}
+                    placeholder="Search games..."
+                    class="block w-64 pl-9 pr-3 py-2 border border-accent rounded-md text-sm bg-white placeholder-accent focus:outline-none focus:ring-1 focus:ring-accent-dark focus:border-accent-dark transition-colors"
+                  />
                 </div>
-                <input
-                  type="text"
-                  bind:value={searchQuery}
-                  placeholder="Search games..."
-                  class="block w-64 pl-9 pr-3 py-2 border border-accent rounded-md text-sm bg-white placeholder-accent focus:outline-none focus:ring-1 focus:ring-accent-dark focus:border-accent-dark transition-colors"
-                />
               </div>
             </div>
 

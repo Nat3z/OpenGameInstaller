@@ -108,9 +108,22 @@ $effect.root(() => {
   });
 });
 
+export let gameUpdatesCheckState = $state({
+  isChecking: false,
+  lastResult: null as { updatesFound: number } | null,
+});
+
 export const updatesManager = {
   clearAppUpdates: () => {
     appUpdates.apps = [];
+  },
+  setCheckingForGameUpdates: (value: boolean) => {
+    gameUpdatesCheckState.isChecking = value;
+  },
+  setLastGameUpdatesCheckResult: (
+    result: { updatesFound: number } | null
+  ) => {
+    gameUpdatesCheckState.lastResult = result;
   },
   addAppUpdate: ({
     appID,

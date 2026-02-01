@@ -42,6 +42,9 @@ function createSplashWindow(): BrowserWindow {
   return splash;
 }
 
+/** When set, splash updates are sent to this window (single-window / Steam Deck flow). */
+let splashTargetWindow: BrowserWindow | null = null;
+
 /**
  * Updates the splash screen's status message shown to the user.
  *
@@ -49,6 +52,9 @@ function createSplashWindow(): BrowserWindow {
  * @param subtext - Optional secondary text (e.g., download speed, file name)
  */
 function updateSplashStatus(text: string, subtext?: string) {
+  if (splashTargetWindow && !splashTargetWindow.isDestroyed()) {
+    splashTargetWindow.webContents.send('splash-status', text, subtext);
+  }
   if (splashWindow && !splashWindow.isDestroyed()) {
     splashWindow.webContents.send('splash-status', text, subtext);
   }
@@ -62,6 +68,9 @@ function updateSplashStatus(text: string, subtext?: string) {
  * @param speed - Optional speed text (e.g., "1.5MB/s")
  */
 function updateSplashProgress(current: number, total: number, speed?: string) {
+  if (splashTargetWindow && !splashTargetWindow.isDestroyed()) {
+    splashTargetWindow.webContents.send('splash-progress', current, total, speed);
+  }
   if (splashWindow && !splashWindow.isDestroyed()) {
     splashWindow.webContents.send('splash-progress', current, total, speed);
   }
@@ -82,10 +91,22 @@ export function closeSplashWindow() {
 /**
  * Runs all pre-launch startup tasks with splash screen feedback.
  * This includes restoring backups, running migrations, checking for updates, etc.
+ *
+ * When mainWindow is passed (single-window / Steam Deck Game Mode flow), splash
+ * status is sent to that window only; no separate splash window is created.
+ * This keeps one window so Steam focuses the same window throughout.
+ *
+ * @param mainWindow - Optional. When provided, use this window for splash UI instead of creating a separate splash window.
  */
-export async function runStartupTasks(): Promise<void> {
-  // Show splash screen immediately
-  splashWindow = createSplashWindow();
+export async function runStartupTasks(
+  mainWindow?: BrowserWindow | null
+): Promise<void> {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    splashTargetWindow = mainWindow;
+  } else {
+    // Legacy: separate splash window (e.g. if run without main window)
+    splashWindow = createSplashWindow();
+  }
 
   // Restore backup if it exists
   updateSplashStatus('Restoring backup...');
@@ -141,4 +162,6 @@ export async function runStartupTasks(): Promise<void> {
 
   // Final status before main window loads
   updateSplashStatus('Starting application...');
+
+  splashTargetWindow = null;
 }

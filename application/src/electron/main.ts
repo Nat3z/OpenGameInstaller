@@ -61,6 +61,10 @@ export let torrentIntervals: NodeJS.Timeout[] = [];
 
 let mainWindow: BrowserWindow | null;
 
+/** Resolved on first client-ready-for-events from the splash (current main window). Used to gate runStartupTasks so splash IPC is not sent before the splash page has loaded. */
+let splashReadyPromise: Promise<void>;
+let splashReadyResolve: (() => void) | null = null;
+
 interface Notification {
   message: string;
   id: string;
@@ -218,12 +222,9 @@ function createWindow() {
   });
   if (!isDev() && !ogiDebug()) mainWindow.removeMenu();
 
-  ipcMain.on('client-ready-for-events', async () => {
-    isReadyForEvents = true;
-    for (const waiter of readyForEventWaiters) {
-      waiter();
-    }
-    readyForEventWaiters = [];
+  // One-time splash-ready gate: resolve when splash page sends client-ready-for-events so runStartupTasks is not sent before splash has loaded
+  splashReadyPromise = new Promise<void>((resolve) => {
+    splashReadyResolve = resolve;
   });
 
   app.commandLine.appendSwitch('disable-features', 'HardwareMediaKeyHandling');
@@ -245,45 +246,70 @@ function createWindow() {
   });
 }
 
-// This method will be called when Electron has finished
-// initialization and is ready to create browser windows.
-// Some APIs can only be used after this event occurs.
-app.on('ready', async () => {
-  // Single window: create it and show splash first so Steam Deck / Game Mode keeps focus
+// Resolve splash-ready only on first client-ready-for-events from the current main window (splash page). Main app load sends again; we keep isReadyForEvents for that.
+ipcMain.on('client-ready-for-events', async (_event) => {
+  if (
+    splashReadyResolve &&
+    mainWindow &&
+    !mainWindow.isDestroyed() &&
+    _event.sender.id === mainWindow.webContents.id
+  ) {
+    splashReadyResolve();
+    splashReadyResolve = null;
+  }
+  isReadyForEvents = true;
+  for (const waiter of readyForEventWaiters) {
+    waiter();
+  }
+  readyForEventWaiters = [];
+});
+
+/**
+ * Creates the main window, waits for splash to be ready for IPC, runs startup tasks, then loads the main app.
+ * Used from both app.on('ready') and app.on('activate') so macOS activate runs the full flow when recreating the window.
+ */
+async function createWindowAndRunStartup(): Promise<void> {
   createWindow();
-
-  // Run startup tasks; splash updates go to the main window
-  await runStartupTasks(mainWindow!);
-
-  // Load the main app into the same window (replaces splash)
+  await splashReadyPromise;
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  await runStartupTasks(mainWindow);
+  if (!mainWindow || mainWindow.isDestroyed()) return;
   if (isDev()) {
-    mainWindow!!.loadURL(
+    mainWindow.loadURL(
       'http://localhost:8080/?secret=' + applicationAddonSecret
     );
     console.log('Running in development');
   } else {
-    mainWindow!!.loadURL(
+    mainWindow.loadURL(
       'file://' +
         join(app.getAppPath(), 'out', 'renderer', 'index.html') +
         '?secret=' +
         applicationAddonSecret
     );
   }
+  mainWindow.once('ready-to-show', onMainAppReady);
+}
 
-  mainWindow!!.once('ready-to-show', onMainAppReady);
+// This method will be called when Electron has finished
+// initialization and is ready to create browser windows.
+// Some APIs can only be used after this event occurs.
+app.on('ready', async () => {
+  await createWindowAndRunStartup();
 
-  server.listen(port, () => {
-    console.log(`Addon Server is running on http://localhost:${port}`);
-    console.log(`Server is being executed by electron!`);
-  });
+  if (mainWindow) {
+    server.listen(port, () => {
+      console.log(`Addon Server is running on http://localhost:${port}`);
+      console.log(`Server is being executed by electron!`);
+    });
 
-  sendNotification({
-    message: 'Addons Starting...',
-    id: Math.random().toString(36).substring(7),
-    type: 'success',
-  });
+    sendNotification({
+      message: 'Addons Starting...',
+      id: Math.random().toString(36).substring(7),
+      type: 'success',
+    });
 
-  startAddons();
+    startAddons();
+  }
 });
 
 // Quit when all windows are closed.
@@ -311,8 +337,8 @@ app.on('window-all-closed', async function () {
   app.exit(0);
 });
 
-app.on('activate', function () {
+app.on('activate', async function () {
   // On macOS it's common to re-create a window in the app when the
-  // dock icon is clicked and there are no other windows open.
-  if (mainWindow === null) createWindow();
+  // dock icon is clicked and there are no other windows open. Run the full startup flow so the user does not see a stuck splash.
+  if (mainWindow === null) await createWindowAndRunStartup();
 });

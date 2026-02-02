@@ -286,6 +286,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('app:get-steam-app-id', appID)
     ),
     addToDesktop: wrap(() => ipcRenderer.invoke('app:add-to-desktop')),
+    openExternal: wrap((url: string) =>
+      ipcRenderer.invoke('app:open-external', url)
+    ),
   },
   getVersion: wrap(() => ipcRenderer.sendSync('get-version')),
   updateAddons: wrap(() => ipcRenderer.invoke('update-addons')),

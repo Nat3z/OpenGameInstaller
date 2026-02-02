@@ -10,6 +10,7 @@
   import SectionModal from '../components/modal/SectionModal.svelte';
   import CustomDropdown from '../components/CustomDropdown.svelte';
   import { fetchAddonsWithConfigure } from '../utils';
+  import { openExternal } from '../lib/openExternal';
 
   const fs = window.electronAPI.fs;
   interface OptionsCategory {
@@ -582,8 +583,11 @@
     {/if}
     <a
       href="https://steamgriddb.com/profile/preferences/api"
-      target="_blank"
       class="text-accent-dark hover:text-accent-light underline mt-4"
+      onclick={(e) => {
+        e.preventDefault();
+        openExternal('https://steamgriddb.com/profile/preferences/api');
+      }}
     >
       Get your API Key here (https://steamgriddb.com/profile/preferences/api)
     </a>
@@ -663,24 +667,35 @@
                 <div class="about-links">
                   <a
                     href="https://github.com/Nat3z/OpenGameInstaller"
-                    target="_blank"
                     class="about-link"
+                    onclick={(e) => {
+                      e.preventDefault();
+                      openExternal('https://github.com/Nat3z/OpenGameInstaller');
+                    }}
                   >
                     GitHub
                   </a>
                   <span class="about-separator">•</span>
                   <a
                     href="https://github.com/Nat3z/OpenGameInstaller/blob/main/application/LICENSE"
-                    target="_blank"
                     class="about-link"
+                    onclick={(e) => {
+                      e.preventDefault();
+                      openExternal(
+                        'https://github.com/Nat3z/OpenGameInstaller/blob/main/application/LICENSE'
+                      );
+                    }}
                   >
                     License
                   </a>
                   <span class="about-separator">•</span>
                   <a
                     href="https://ogi.nat3z.com/docs/"
-                    target="_blank"
                     class="about-link"
+                    onclick={(e) => {
+                      e.preventDefault();
+                      openExternal('https://ogi.nat3z.com/docs/');
+                    }}
                   >
                     Documentation
                   </a>

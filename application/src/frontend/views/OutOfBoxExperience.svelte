@@ -6,6 +6,7 @@
   // @ts-ignore
   import WineIcon from '../Icons/WineIcon.svelte';
   import { createNotification, oobeLog } from '../store';
+  import { openExternal } from '../lib/openExternal';
 
   let stage = $state(0);
 
@@ -560,8 +561,11 @@
           <label class="text-sm text-gray-500 mt-2"
             >Insert your <a
               href="https://real-debrid.com/apitoken"
-              target="_blank"
               class="underline text-accent hover:text-accent-dark"
+              onclick={(e) => {
+                e.preventDefault();
+                openExternal('https://real-debrid.com/apitoken');
+              }}
               >Real Debrid API Key</a
             ></label
           >
@@ -570,7 +574,10 @@
           <a
             href="https://ogi.nat3z.com/docs/for-users/qb-setup"
             class="font-open-sans mb-4 text-center text-sm underline text-accent hover:text-accent-dark"
-            target="_blank"
+            onclick={(e) => {
+              e.preventDefault();
+              openExternal('https://ogi.nat3z.com/docs/for-users/qb-setup');
+            }}
           >
             <p>
               Enable qBittorrent's WebUI so OpenGameInstaller can interact with
@@ -664,8 +671,11 @@
           <label class="text-sm text-gray-500 mt-2"
             >Insert your <a
               href="https://torbox.app/settings"
-              target="_blank"
               class="underline text-accent hover:text-accent-dark"
+              onclick={(e) => {
+                e.preventDefault();
+                openExternal('https://torbox.app/settings');
+              }}
               >TorBox API Key</a
             >.
           </label>
@@ -681,8 +691,11 @@
           <label class="text-sm text-gray-500 mt-2"
             >Insert your <a
               href="https://www.premiumize.me/account"
-              target="_blank"
               class="underline text-accent hover:text-accent-dark"
+              onclick={(e) => {
+                e.preventDefault();
+                openExternal('https://www.premiumize.me/account');
+              }}
               >Premiumize API Key</a
             ></label
           >
@@ -822,8 +835,11 @@
       <h2 class="font-open-sans text-gray-600 text-center mb-6">
         <a
           href="https://www.steamgriddb.com/profile/preferences/api"
-          target="_blank"
           class="underline text-accent hover:text-accent-dark"
+          onclick={(e) => {
+            e.preventDefault();
+            openExternal('https://www.steamgriddb.com/profile/preferences/api');
+          }}
           >Insert your SteamGridDB API Key below. If you don't have one, you can
           get one by going here
           (https://www.steamgriddb.com/profile/preferences/api)</a

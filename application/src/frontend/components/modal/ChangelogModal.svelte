@@ -3,6 +3,7 @@
   import { cubicOut } from 'svelte/easing';
   import Modal from './Modal.svelte';
   import type { Changelog } from '../../lib/changelog/types';
+  import { openExternal } from '../../lib/openExternal';
 
   let {
     changelog,
@@ -55,7 +56,7 @@
   }
 
   function openExternalLink(url: string) {
-    window.open(url, '_blank');
+    openExternal(url);
   }
 </script>
 

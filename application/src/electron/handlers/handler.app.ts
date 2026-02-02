@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { net, ipcMain, app } from 'electron';
+import { net, ipcMain, app, shell } from 'electron';
 import { currentScreens } from '../main.js';
 import * as fs from 'fs';
 import { join } from 'path';
@@ -12,6 +12,19 @@ import { clients } from '../server/addon-server.js';
 import { registerSteamHandlers } from './steam-handlers.js';
 import { registerLibraryHandlers } from './library-handlers.js';
 import { registerRedistributableHandlers } from './redistributable-handlers.js';
+
+/** Allowed protocols for open-external; rejects javascript:, file:, etc. */
+const ALLOWED_PROTOCOLS = ['http:', 'https:'];
+
+function isAllowedExternalUrl(url: unknown): url is string {
+  if (typeof url !== 'string' || url.trim() === '') return false;
+  try {
+    const parsed = new URL(url.trim());
+    return ALLOWED_PROTOCOLS.includes(parsed.protocol);
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Escapes a string for safe use in shell commands by escaping special characters
@@ -132,6 +145,23 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
   });
   ipcMain.handle('app:minimize', () => {
     mainWindow?.minimize();
+  });
+
+  ipcMain.handle('app:open-external', async (_, url: unknown) => {
+    if (!isAllowedExternalUrl(url)) {
+      return { success: false, error: 'Invalid or disallowed URL' };
+    }
+    const normalized = url.trim();
+    try {
+      await shell.openExternal(normalized);
+      return { success: true };
+    } catch (err: any) {
+      console.error('shell.openExternal failed:', err);
+      return {
+        success: false,
+        error: err?.message ?? 'Failed to open external link',
+      };
+    }
   });
 
   // Utilities

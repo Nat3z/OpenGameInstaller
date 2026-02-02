@@ -185,6 +185,10 @@ interface Window {
         path?: string;
         error?: string;
       }>;
+      openExternal: (url: string) => Promise<{
+        success: boolean;
+        error?: string;
+      }>;
     };
     updateAddons: () => Promise<void>;
     getVersion: () => string;

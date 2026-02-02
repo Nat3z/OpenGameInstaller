@@ -30,7 +30,7 @@
   },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "electron-dev": "electron .",
+    "dev": "electron .",
     "electron-pack": "electron-builder"
   },
   "license": "ISC",

@@ -115,6 +115,12 @@ export type SetupEventResponse = Omit<
     name: string;
     path: string;
   }[];
+  /**
+   * Optional cloud save paths suggested by the addon. Paths can be relative to
+   * the game cwd or absolute. OGI can copy these into the local cloud-save
+   * config so the user sees them pre-filled.
+   */
+  cloudSavePaths?: { name: string; path: string }[];
 };
 
 export interface EventListenerTypes {

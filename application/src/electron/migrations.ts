@@ -250,6 +250,32 @@ let migrations: {
       });
     },
   },
+  'cloudsave-config-init': {
+    from: '0.0.0',
+    to: '2.8.0',
+    description:
+      'Ensures config/option/cloudsave.json exists with default (enabled: false).',
+    platform: 'all',
+    run: async () => {
+      const cloudsavePath = join(__dirname, 'config/option/cloudsave.json');
+      if (fsSync.existsSync(cloudsavePath)) {
+        return;
+      }
+      const configDir = join(__dirname, 'config/option');
+      if (!fsSync.existsSync(configDir)) {
+        await fs.mkdir(configDir, { recursive: true });
+      }
+      const defaultConfig = {
+        enabled: false,
+        perGame: {},
+      };
+      await fs.writeFile(
+        cloudsavePath,
+        JSON.stringify(defaultConfig, null, 2)
+      );
+      console.log('[migration] Created default cloudsave.json');
+    },
+  },
   'migrate-update-state-format': {
     from: '0.0.0',
     to: '2.6.0',

@@ -287,6 +287,24 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ),
     addToDesktop: wrap(() => ipcRenderer.invoke('app:add-to-desktop')),
   },
+  cloudsave: {
+    getConfig: wrap(() => ipcRenderer.invoke('cloudsave:get-config')),
+    setConfig: wrap((config: { enabled: boolean; perGame: Record<string, unknown> }) =>
+      ipcRenderer.invoke('cloudsave:set-config', config)
+    ),
+    getLastSync: wrap((appID: number) =>
+      ipcRenderer.invoke('cloudsave:get-last-sync', appID)
+    ),
+    syncDown: wrap((appID: number) =>
+      ipcRenderer.invoke('cloudsave:sync-down', appID)
+    ),
+    syncUp: wrap((appID: number) =>
+      ipcRenderer.invoke('cloudsave:sync-up', appID)
+    ),
+    isEnabledForApp: wrap((appID: number) =>
+      ipcRenderer.invoke('cloudsave:is-enabled-for-app', appID)
+    ),
+  },
   getVersion: wrap(() => ipcRenderer.sendSync('get-version')),
   updateAddons: wrap(() => ipcRenderer.invoke('update-addons')),
   installAddons: wrap((addons: string[]) =>
@@ -442,6 +460,15 @@ ipcRenderer.on(
   'game:exit',
   wrap((_, arg) => {
     document.dispatchEvent(new CustomEvent('game:exit', { detail: arg }));
+  })
+);
+
+ipcRenderer.on(
+  'cloudsave:status',
+  wrap((_, arg) => {
+    document.dispatchEvent(
+      new CustomEvent('cloudsave:status', { detail: arg })
+    );
   })
 );
 ipcRenderer.on(

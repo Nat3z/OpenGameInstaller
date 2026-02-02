@@ -12,6 +12,7 @@ import { clients } from '../server/addon-server.js';
 import { registerSteamHandlers } from './steam-handlers.js';
 import { registerLibraryHandlers } from './library-handlers.js';
 import { registerRedistributableHandlers } from './redistributable-handlers.js';
+import { registerCloudSaveHandlers } from './handler.cloudsave.js';
 
 /**
  * Escapes a string for safe use in shell commands by escaping special characters
@@ -244,4 +245,5 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
   registerSteamHandlers();
   registerLibraryHandlers(mainWindow);
   registerRedistributableHandlers();
+  registerCloudSaveHandlers(mainWindow);
 }

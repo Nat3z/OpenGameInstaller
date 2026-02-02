@@ -21,6 +21,7 @@
   import { updatesManager, appUpdates } from '../states.svelte';
   import UpdateIcon from '../Icons/UpdateIcon.svelte';
   import UpdateAppModal from './built/UpdateAppModal.svelte';
+  import PlayPageCloudSaveBanner from './PlayPageCloudSaveBanner.svelte';
 
   let updateInfo = $derived.by(() => {
     return updatesManager.getAppUpdate(libraryInfo.appID);
@@ -376,6 +377,9 @@
       <span class="font-medium">More Info</span>
     </button>
   </div>
+
+  <!-- Cloud Save Banner -->
+  <PlayPageCloudSaveBanner {libraryInfo} />
 
   <!-- Steam Re-add Banner -->
   {#if requiresSteamReadd}

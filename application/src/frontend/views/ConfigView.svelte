@@ -18,13 +18,14 @@
   import HeaderModal from '../components/modal/HeaderModal.svelte';
   import SectionModal from '../components/modal/SectionModal.svelte';
   import InputModal from '../components/modal/InputModal.svelte';
+  import CloudSaveSettings from './CloudSaveSettings.svelte';
 
   let addons: ConfigTemplateAndInfo[] = $state([]);
   let communityAddonsInfo: boolean = $state(false);
   let showAddonAddModal: boolean = $state(false);
   let addonUrl: string = $state('');
   let pollingInterval: any = null;
-  let view = writable<'my-addons' | 'community-addons'>('my-addons');
+  let view = writable<'my-addons' | 'community-addons' | 'cloud-save'>('my-addons');
 
   onMount(() => {
     // Initial fetch
@@ -197,6 +198,12 @@
           class="h-full flex-1 border-none text-accent-dark rounded-lg bg-accent-lighter shadow-md data-[selected=true]:bg-accent-light font-archivo text-lg hover:bg-accent-light transition-colors"
           >Community Addons</button
         >
+        <button
+          data-selected={$view === 'cloud-save'}
+          onclick={() => view.set('cloud-save')}
+          class="h-full flex-1 border-none text-accent-dark rounded-lg bg-accent-lighter shadow-md data-[selected=true]:bg-accent-light font-archivo text-lg hover:bg-accent-light transition-colors"
+          >Cloud Save</button
+        >
         {#if $view === 'community-addons'}
           <div class="flex justify-center items-center">
             <button
@@ -294,6 +301,14 @@
           out:fly={{ x: -100, duration: 300 }}
         >
           <CommunityAddonsList />
+        </div>
+      {:else if $view === 'cloud-save'}
+        <div
+          class="w-full h-full absolute inset-0"
+          in:fly={{ x: 100, duration: 400, easing: quintOut }}
+          out:fly={{ x: -100, duration: 300 }}
+        >
+          <CloudSaveSettings />
         </div>
       {/if}
     </div>

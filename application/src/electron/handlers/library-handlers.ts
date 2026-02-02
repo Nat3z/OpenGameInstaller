@@ -23,6 +23,14 @@ import {
 } from './helpers.app/library.js';
 import { generateNotificationId } from './helpers.app/notifications.js';
 import { sendNotification } from '../main.js';
+import { runCloudSaveUploadAfterExit } from './handler.cloudsave.js';
+import {
+  isCloudSaveEnabledForApp,
+  getPathsForApp,
+  getCloudSaveConfig,
+  setCloudSaveConfig,
+} from '../manager/manager.cloudsave.js';
+import { downloadSave } from '../lib/cloudsave-sync.js';
 import { getProtonPrefixPath } from './helpers.app/platform.js';
 import { spawnSync } from 'child_process';
 import * as fs from 'fs';
@@ -48,6 +56,21 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
       return;
     }
 
+    // Optional: download cloud save before launch (with timeout)
+    if (isCloudSaveEnabledForApp(appInfo.appID)) {
+      const paths = getPathsForApp(appInfo.appID);
+      if (paths.length > 0) {
+        const syncPromise = downloadSave(appInfo.appID, paths).catch((err) => {
+          console.warn('[cloudsave] Pre-launch download failed:', err);
+        });
+        const timeoutMs = 30_000;
+        await Promise.race([
+          syncPromise,
+          new Promise((r) => setTimeout(r, timeoutMs)),
+        ]);
+      }
+    }
+
     let args = appInfo.launchArguments || '%command%';
     // replace %command% with the launch executable
     args = args.replace(
@@ -67,6 +90,7 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
       });
       console.error('Failed to launch game');
       mainWindow?.webContents.send('game:exit', { id: appInfo.appID });
+      runCloudSaveUploadAfterExit(appInfo.appID, mainWindow);
     });
     spawnedItem.on('exit', (exit) => {
       console.log('Game exited with code: ' + exit);
@@ -78,10 +102,12 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
         });
 
         mainWindow?.webContents.send('game:exit', { id: appInfo.appID });
+        runCloudSaveUploadAfterExit(appInfo.appID, mainWindow);
         return;
       }
 
       mainWindow?.webContents.send('game:exit', { id: appInfo.appID });
+      runCloudSaveUploadAfterExit(appInfo.appID, mainWindow);
     });
 
     mainWindow?.webContents.send('game:launch', { id: appInfo.appID });
@@ -120,6 +146,21 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
 
       saveLibraryInfo(data.appID, data);
       addToInternalsApps(data.appID);
+
+      // If addon provided cloudSavePaths, pre-fill cloud save config for this app
+      const cloudSavePaths = (data as { cloudSavePaths?: { name: string; path: string }[] })
+        .cloudSavePaths;
+      if (cloudSavePaths?.length) {
+        const csConfig = getCloudSaveConfig();
+        const key = String(data.appID);
+        if (!csConfig.perGame[key]?.paths?.length) {
+          csConfig.perGame[key] = {
+            enabled: false,
+            paths: cloudSavePaths,
+          };
+          setCloudSaveConfig(csConfig);
+        }
+      }
 
       // linux case
       if (isLinux()) {

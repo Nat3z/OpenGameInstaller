@@ -186,6 +186,29 @@ interface Window {
         error?: string;
       }>;
     };
+    cloudsave: {
+      getConfig: () => Promise<{
+        enabled: boolean;
+        perGame: Record<
+          string,
+          { enabled: boolean; paths: { name: string; path: string }[] }
+        >;
+      }>;
+      setConfig: (config: {
+        enabled: boolean;
+        perGame: Record<
+          string,
+          { enabled: boolean; paths: { name: string; path: string }[] }
+        >;
+      }) => Promise<void>;
+      getLastSync: (appID: number) => Promise<{
+        up?: number;
+        down?: number;
+      } | null>;
+      syncDown: (appID: number) => Promise<{ success: boolean; error?: string }>;
+      syncUp: (appID: number) => Promise<{ success: boolean; error?: string }>;
+      isEnabledForApp: (appID: number) => Promise<boolean>;
+    };
     updateAddons: () => Promise<void>;
     getVersion: () => string;
     installAddons: (addons: string[]) => Promise<void>;

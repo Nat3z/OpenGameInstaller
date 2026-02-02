@@ -5,6 +5,70 @@ import { getDownloadPath } from '../../core/fs';
 import { listenUntilDownloadReady } from '../events';
 
 /**
+ * Sanitizes a path segment (e.g. result.name or result.filename) to prevent path traversal
+ * and invalid characters. Returns a safe basename-like segment.
+ */
+function sanitizePathSegment(segment: string | undefined | null): string {
+  if (segment == null || segment === '') return 'download';
+  // Take last path component and strip path separators and ..
+  const normalized = segment.replace(/[/\\]+/g, '/').replace(/\.\./g, '');
+  const parts = normalized.split('/').filter(Boolean);
+  const last = parts[parts.length - 1] ?? 'download';
+  return last.replace(/[\0<>:"|?*]/g, '_').substring(0, 255) || 'download';
+}
+
+/**
+ * Polls until the torrent is ready or timeout/cancel. Clears interval on resolve/reject.
+ */
+function waitForTorrentReady(
+  magnetId: string,
+  options?: { intervalMs?: number; timeoutMs?: number; onCancel?: () => void }
+): Promise<void> {
+  const intervalMs = options?.intervalMs ?? 3000;
+  const timeoutMs = options?.timeoutMs ?? 600000; // 10 min default
+  let intervalId: ReturnType<typeof setInterval> | null = null;
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+
+  const clearAll = () => {
+    if (intervalId !== null) {
+      clearInterval(intervalId);
+      intervalId = null;
+    }
+    if (timeoutId !== null) {
+      clearTimeout(timeoutId);
+      timeoutId = null;
+    }
+  };
+
+  return new Promise((resolve, reject) => {
+    timeoutId = setTimeout(() => {
+      clearAll();
+      options?.onCancel?.();
+      reject(new Error('Torrent not ready in time'));
+    }, timeoutMs);
+
+    const check = async () => {
+      try {
+        const isReady = await window.electronAPI.alldebrid.isTorrentReady(
+          magnetId
+        );
+        if (isReady) {
+          clearAll();
+          resolve();
+        }
+      } catch (err) {
+        clearAll();
+        options?.onCancel?.();
+        reject(err);
+      }
+    };
+
+    intervalId = setInterval(check, intervalMs);
+    check();
+  });
+}
+
+/**
  * Handles magnet/torrent downloads that should be routed through AllDebrid.
  */
 export class AllDebridService extends BaseService {
@@ -19,8 +83,12 @@ export class AllDebridService extends BaseService {
       return;
 
     if (event === null) return;
-    if (event.target === null) return;
-    const htmlButton = event.target as HTMLButtonElement;
+    if (
+      event.currentTarget === null ||
+      !(event.currentTarget instanceof HTMLButtonElement)
+    )
+      return;
+    const htmlButton = event.currentTarget;
 
     if (!result.downloadURL) {
       createNotification({
@@ -58,25 +126,48 @@ export class AllDebridService extends BaseService {
   ): Promise<void> {
     if (result.downloadType !== 'magnet') return;
 
-    const magnetLink = await window.electronAPI.alldebrid.addMagnet(
-      result.downloadURL!
-    );
+    let magnetLink: { id: string; uri: string };
+    try {
+      magnetLink = await window.electronAPI.alldebrid.addMagnet(
+        result.downloadURL!
+      );
+    } catch (err) {
+      this.resetButtonOnError(htmlButton, tempId, appID);
+      createNotification({
+        id: Math.random().toString(36).substring(7),
+        type: 'error',
+        message:
+          err instanceof Error
+            ? `Failed to add magnet to AllDebrid: ${err.message}`
+            : 'Failed to add magnet to AllDebrid.',
+      });
+      return;
+    }
+
     let isReady = await window.electronAPI.alldebrid.isTorrentReady(
       magnetLink.id
     );
     if (!isReady) {
       window.electronAPI.alldebrid.selectTorrent();
-      await new Promise<void>((resolve) => {
-        const interval = setInterval(async () => {
-          isReady = await window.electronAPI.alldebrid.isTorrentReady(
-            magnetLink.id
-          );
-          if (isReady) {
-            clearInterval(interval);
-            resolve();
-          }
-        }, 3000);
-      });
+      try {
+        await waitForTorrentReady(magnetLink.id, {
+          intervalMs: 3000,
+          timeoutMs: 600000,
+        });
+      } catch (err) {
+        this.resetButtonOnError(htmlButton, tempId, appID);
+        createNotification({
+          id: Math.random().toString(36).substring(7),
+          type: 'error',
+          message:
+            err instanceof Error && err.message === 'Torrent not ready in time'
+              ? 'Torrent not ready in time.'
+              : err instanceof Error
+                ? err.message
+                : 'Torrent readiness check failed.',
+        });
+        return;
+      }
     }
 
     const torrentInfo = await window.electronAPI.alldebrid.getTorrentInfo(
@@ -108,12 +199,15 @@ export class AllDebridService extends BaseService {
       return;
     }
 
+    const safePath =
+      getDownloadPath() +
+      '/' +
+      sanitizePathSegment(result.name) +
+      '/' +
+      sanitizePathSegment(result.filename);
     const { flush } = listenUntilDownloadReady();
     const downloadID = await window.electronAPI.ddl.download([
-      {
-        link: downloadUrl,
-        path: getDownloadPath() + '/' + result.name + '/' + result.filename,
-      },
+      { link: downloadUrl, path: safePath },
     ]);
     const updatedState = flush();
     if (downloadID === null) {
@@ -124,7 +218,7 @@ export class AllDebridService extends BaseService {
       downloadID,
       tempId,
       downloadUrl,
-      getDownloadPath() + '/' + result.name + '/' + result.filename,
+      safePath,
       'alldebrid',
       updatedState,
       result
@@ -166,17 +260,25 @@ export class AllDebridService extends BaseService {
     );
     if (!isReady) {
       window.electronAPI.alldebrid.selectTorrent();
-      await new Promise<void>((resolve) => {
-        const interval = setInterval(async () => {
-          isReady = await window.electronAPI.alldebrid.isTorrentReady(
-            torrent.id
-          );
-          if (isReady) {
-            clearInterval(interval);
-            resolve();
-          }
-        }, 3000);
-      });
+      try {
+        await waitForTorrentReady(torrent.id, {
+          intervalMs: 3000,
+          timeoutMs: 600000,
+        });
+      } catch (err) {
+        this.resetButtonOnError(htmlButton, tempId, appID);
+        createNotification({
+          id: Math.random().toString(36).substring(7),
+          type: 'error',
+          message:
+            err instanceof Error && err.message === 'Torrent not ready in time'
+              ? 'Torrent not ready in time.'
+              : err instanceof Error
+                ? err.message
+                : 'Torrent readiness check failed.',
+        });
+        return;
+      }
     }
 
     const torrentInfo = await window.electronAPI.alldebrid.getTorrentInfo(
@@ -208,11 +310,17 @@ export class AllDebridService extends BaseService {
       return;
     }
 
+    const safePath =
+      getDownloadPath() +
+      '/' +
+      sanitizePathSegment(result.name) +
+      '/' +
+      sanitizePathSegment(result.filename);
     const { flush } = listenUntilDownloadReady();
     const downloadID = await window.electronAPI.ddl.download([
       {
         link: downloadUrl,
-        path: getDownloadPath() + '/' + result.name + '/' + result.filename,
+        path: safePath,
         headers: { 'OGI-Parallel-Limit': '1' },
       },
     ]);
@@ -225,7 +333,7 @@ export class AllDebridService extends BaseService {
       downloadID,
       tempId,
       downloadUrl,
-      getDownloadPath() + '/' + result.name + '/' + result.filename,
+      safePath,
       'alldebrid',
       updatedState,
       result

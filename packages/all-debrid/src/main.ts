@@ -125,10 +125,12 @@ function checkResponse<T>(response: { data: unknown }, dataSchema: z.ZodType<T>)
   return parsed.data.data;
 }
 
+type Node = { n: string; s?: number; l?: string; e?: Node[] };
+
 /**
  * Recursively collect all direct file links from AllDebrid files tree (n, s, l, e).
  */
-function collectLinks(nodes: { n: string; s?: number; l?: string; e?: typeof nodes }[]): { link: string; name: string; size?: number }[] {
+function collectLinks(nodes: Node[]): { link: string; name: string; size?: number }[] {
   const out: { link: string; name: string; size?: number }[] = [];
   for (const node of nodes) {
     if (node.l) out.push({ link: node.l, name: node.n, size: node.s });

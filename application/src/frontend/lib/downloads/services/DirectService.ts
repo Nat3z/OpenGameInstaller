@@ -17,8 +17,12 @@ export class DirectService extends BaseService {
   ): Promise<void> {
     if (result.downloadType !== 'direct') return;
     if (event === null) return;
-    if (event.target === null) return;
-    const htmlButton = event.target as HTMLButtonElement;
+    if (
+      event.currentTarget === null ||
+      !(event.currentTarget instanceof HTMLButtonElement)
+    )
+      return;
+    const htmlButton = event.currentTarget;
 
     if (!result.files || result.files.length === 0) {
       createNotification({

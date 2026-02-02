@@ -20,7 +20,7 @@
     }
   },
   "types": "./build/main.d.mts",
-  "main": "./build/main.js",
+  "main": "./build/main.cjs",
   "dependencies": {
     "axios": "^1.7.2",
     "form-data": "^4.0.0",

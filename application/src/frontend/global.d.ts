@@ -70,7 +70,7 @@ interface Window {
       getUserInfo: () => Promise<import('all-debrid-js').$UserInfo>;
       unrestrictLink: (link: string) => Promise<{ link: string; download?: string; filename?: string; filesize?: number }>;
       getHosts: () => Promise<import('all-debrid-js').$Hosts>;
-      addMagnet: (url: string, host?: unknown) => Promise<$AddTorrentOrMagnet>;
+      addMagnet: (url: string, host?: string) => Promise<$AddTorrentOrMagnet>;
       addTorrent: (torrent: string) => Promise<$AddTorrentOrMagnet>;
       selectTorrent: () => Promise<boolean>;
       isTorrentReady: (id: string) => Promise<boolean>;

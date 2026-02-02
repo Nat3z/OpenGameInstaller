@@ -163,7 +163,16 @@
       console.log('Submitting AllDebrid API Key');
       const apiKey = document.querySelector(
         'input[data-alldebrid-key]'
-      ) as HTMLInputElement;
+      ) as HTMLInputElement | null;
+      if (!apiKey) {
+        console.error('Missing AllDebrid API key input');
+        return;
+      }
+      const key = apiKey.value.trim();
+      if (!key) {
+        console.error('Missing AllDebrid API key');
+        return;
+      }
       window.electronAPI.fs.mkdir('./config/option/');
       let config: Record<string, string> = {};
       if (window.electronAPI.fs.exists('./config/option/realdebrid.json')) {
@@ -175,7 +184,7 @@
           // use empty config
         }
       }
-      config.alldebridApiKey = apiKey.value;
+      config.alldebridApiKey = key;
       window.electronAPI.fs.write(
         './config/option/realdebrid.json',
         JSON.stringify(config)
@@ -545,7 +554,7 @@
             ? 'border-accent'
             : 'border-accent-light'}"
         >
-          <img class="w-16 h-16" src="./rd-logo.png" alt="AllDebrid" />
+          <img class="w-16 h-16" src="./alldebrid-logo.png" alt="AllDebrid" />
         </button>
         <button
           onclick={() => (selectedTorrenter = 'torbox')}

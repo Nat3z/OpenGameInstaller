@@ -6,3 +6,6 @@ node_modules/
 *.tsbuildinfo
 .cache
 build/
+.env
+.env.*
+!.env.example

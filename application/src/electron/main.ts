@@ -123,29 +123,30 @@ const ogiDebug = () => (process.env.OGI_DEBUG ?? 'false') === 'true';
  */
 function onMainAppReady() {
   closeSplashWindow();
+  if (!mainWindow || mainWindow.isDestroyed()) return;
 
-  AppEventHandler(mainWindow!!);
+  AppEventHandler(mainWindow);
   FSEventHandler();
-  RealdDebridHandler(mainWindow!!);
-  AllDebridHandler(mainWindow!!);
-  TorrentHandler(mainWindow!!);
-  DirectDownloadHandler(mainWindow!!);
+  RealdDebridHandler(mainWindow);
+  AllDebridHandler(mainWindow);
+  TorrentHandler(mainWindow);
+  DirectDownloadHandler(mainWindow);
   AddonRestHandler();
-  AddonManagerHandler(mainWindow!!);
+  AddonManagerHandler(mainWindow);
   OOBEHandler();
 
   ipcMain.on('get-version', async (event) => {
     event.returnValue = VERSION;
   });
   console.log('showing window');
-  mainWindow!!.show();
-  mainWindow!!.focus();
+  mainWindow?.show();
+  mainWindow?.focus();
 
-  if (mainWindow) {
+  if (mainWindow && !mainWindow.isDestroyed()) {
     checkForAddonUpdates(mainWindow);
   }
   if (ogiDebug()) {
-    mainWindow!!.webContents.openDevTools();
+    mainWindow?.webContents?.openDevTools();
   }
   if (!isSecurityCheckEnabled) {
     sendNotification({
@@ -167,7 +168,7 @@ function onMainAppReady() {
     });
   });
 
-  mainWindow!!.webContents.setWindowOpenHandler((details) => {
+  mainWindow?.webContents?.setWindowOpenHandler((details) => {
     shell.openExternal(details.url);
     return { action: 'deny' };
   });
@@ -177,9 +178,9 @@ function onMainAppReady() {
     globalShortcut.unregister('F5');
   });
 
-  mainWindow!!.webContents.on('devtools-opened', () => {
+  mainWindow?.webContents?.on('devtools-opened', () => {
     if (!isDev() && !ogiDebug())
-      mainWindow!!.webContents.closeDevTools();
+      mainWindow?.webContents?.closeDevTools();
   });
 
   app.on('web-contents-created', (_, contents) => {
@@ -258,21 +259,22 @@ app.on('ready', async () => {
   await runStartupTasks(mainWindow!);
 
   // Load the main app into the same window (replaces splash)
-  if (isDev()) {
-    mainWindow!!.loadURL(
-      'http://localhost:8080/?secret=' + applicationAddonSecret
-    );
-    console.log('Running in development');
-  } else {
-    mainWindow!!.loadURL(
-      'file://' +
-        join(app.getAppPath(), 'out', 'renderer', 'index.html') +
-        '?secret=' +
-        applicationAddonSecret
-    );
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    if (isDev()) {
+      mainWindow.loadURL(
+        'http://localhost:8080/?secret=' + applicationAddonSecret
+      );
+      console.log('Running in development');
+    } else {
+      mainWindow.loadURL(
+        'file://' +
+          join(app.getAppPath(), 'out', 'renderer', 'index.html') +
+          '?secret=' +
+          applicationAddonSecret
+      );
+    }
+    mainWindow.once('ready-to-show', onMainAppReady);
   }
-
-  mainWindow!!.once('ready-to-show', onMainAppReady);
 
   server.listen(port, () => {
     console.log(`Addon Server is running on http://localhost:${port}`);

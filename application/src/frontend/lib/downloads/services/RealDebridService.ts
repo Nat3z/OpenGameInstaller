@@ -20,8 +20,12 @@ export class RealDebridService extends BaseService {
       return;
 
     if (event === null) return;
-    if (event.target === null) return;
-    const htmlButton = event.target as HTMLButtonElement;
+    if (
+      event.currentTarget === null ||
+      !(event.currentTarget instanceof HTMLButtonElement)
+    )
+      return;
+    const htmlButton = event.currentTarget;
 
     if (!result.downloadURL) {
       createNotification({

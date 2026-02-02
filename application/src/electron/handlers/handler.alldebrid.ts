@@ -8,7 +8,6 @@ import { __dirname } from '../manager/manager.paths.js';
 import axios from 'axios';
 
 const CONFIG_PATH = join(__dirname, 'config/option/realdebrid.json');
-const TEMP_TORRENT_PATH = join(__dirname, 'temp-alldebrid.torrent');
 
 let allDebridClient = new AllDebrid({
   apiKey: 'UNSET',
@@ -67,33 +66,57 @@ export default function handler(_mainWindow: Electron.BrowserWindow) {
   });
 
   ipcMain.handle('all-debrid:add-torrent', async (_, arg: { torrent: string }) => {
-    const tempPath = TEMP_TORRENT_PATH;
-    const fileStream = fs.createWriteStream(tempPath);
+    const tempPath = join(
+      __dirname,
+      `temp-alldebrid-${Date.now()}-${Math.random().toString(36).slice(2)}.torrent`
+    );
+    let fileStream: fs.WriteStream | null = null;
+    let responseStream: NodeJS.ReadableStream | null = null;
     try {
-      await new Promise<void>((resolve, reject) => {
-        axios({
-          method: 'get',
-          url: arg.torrent,
-          responseType: 'stream',
-        })
-          .then((response) => {
-            response.data.pipe(fileStream);
-            fileStream.on('finish', () => {
-              fileStream.close();
-              resolve();
-            });
-            fileStream.on('error', (err: Error) => {
-              fileStream.close();
-              reject(err);
-            });
-          })
-          .catch(reject);
+      fileStream = fs.createWriteStream(tempPath);
+      const response = await axios({
+        method: 'get',
+        url: arg.torrent,
+        responseType: 'stream',
       });
-
+      responseStream = response.data;
+      await new Promise<void>((resolve, reject) => {
+        const onError = (err: Error) => {
+          if (fileStream) {
+            fileStream.destroy();
+            fileStream = null;
+          }
+          if (responseStream) {
+            responseStream.destroy();
+            responseStream = null;
+          }
+          reject(err);
+        };
+        responseStream!.pipe(fileStream!);
+        fileStream!.on('finish', () => resolve());
+        fileStream!.on('error', onError);
+        responseStream!.on('error', onError);
+      });
+      fileStream.close();
+      fileStream = null;
+      responseStream.destroy();
+      responseStream = null;
       const readStream = fs.createReadStream(tempPath) as ReadStream;
-      const data = await allDebridClient.addTorrent(readStream);
-      return data;
+      try {
+        const data = await allDebridClient.addTorrent(readStream);
+        return data;
+      } finally {
+        readStream.destroy();
+      }
     } catch (err) {
+      if (fileStream) {
+        fileStream.destroy();
+        fileStream = null;
+      }
+      if (responseStream) {
+        responseStream.destroy();
+        responseStream = null;
+      }
       console.error(err);
       sendNotification({
         message: 'Failed to add torrent to AllDebrid',
@@ -102,6 +125,14 @@ export default function handler(_mainWindow: Electron.BrowserWindow) {
       });
       return null;
     } finally {
+      if (fileStream) {
+        fileStream.destroy();
+        fileStream = null;
+      }
+      if (responseStream) {
+        responseStream.destroy();
+        responseStream = null;
+      }
       try {
         if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
       } catch {

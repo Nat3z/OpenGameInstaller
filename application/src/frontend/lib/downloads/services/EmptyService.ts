@@ -19,8 +19,12 @@ export class EmptyService extends BaseService {
     event: MouseEvent
   ): Promise<void> {
     if (event === null) return;
-    if (event.target === null) return;
-    const htmlButton = event.target as HTMLButtonElement;
+    if (
+      event.currentTarget === null ||
+      !(event.currentTarget instanceof HTMLButtonElement)
+    )
+      return;
+    const htmlButton = event.currentTarget;
 
     // Generate a unique ID for this download
     const downloadId = Math.random().toString(36).substring(2, 15);

@@ -14,8 +14,12 @@ export async function startDownload(
   event: MouseEvent
 ) {
   if (event === null) return;
-  if (event.target === null) return;
-  const htmlButton = event.target as HTMLButtonElement;
+  if (
+    event.currentTarget === null ||
+    !(event.currentTarget instanceof HTMLButtonElement)
+  )
+    return;
+  const htmlButton = event.currentTarget;
   htmlButton.textContent = 'Downloading...';
   htmlButton.disabled = true;
   let downloadHandler = result.downloadType;

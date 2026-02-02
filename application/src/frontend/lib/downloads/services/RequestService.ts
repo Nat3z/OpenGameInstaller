@@ -19,8 +19,12 @@ export class RequestService extends BaseService {
     event: MouseEvent
   ): Promise<void> {
     if (event === null) return;
-    if (event.target === null) return;
-    const htmlButton = event.target as HTMLButtonElement;
+    if (
+      event.currentTarget === null ||
+      !(event.currentTarget instanceof HTMLButtonElement)
+    )
+      return;
+    const htmlButton = event.currentTarget;
 
     // Create a local ID for tracking, similar to real-debrid cases
     const localID = Math.floor(Math.random() * 1000000);

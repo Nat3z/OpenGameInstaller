@@ -45,7 +45,7 @@ To use Real-Debrid as a torrenting client, you need to set your Real-Debrid API 
 
 ### AllDebrid
 
-To use AllDebrid as a torrenting client, you need to set your AllDebrid API key in the settings. Make sure it's selected as the client in `Settings > General`. Afterwards, go to `Settings > Torrent Clients` and [set the API key to your AllDebrid key found on this link.](https://alldebrid.com/apikeys)
+To use AllDebrid as a torrenting client, you need to set your AllDebrid API key in the settings. Make sure it's selected as the client in `Settings > General`. Afterward, go to `Settings > Torrent Clients` and [set the API key to your AllDebrid key found on this link.](https://alldebrid.com/apikeys)
 
 > [!INFO]
 > Requires an AllDebrid account and active subscription.

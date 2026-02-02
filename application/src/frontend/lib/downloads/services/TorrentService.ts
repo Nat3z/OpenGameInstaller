@@ -16,11 +16,15 @@ export class TorrentService extends BaseService {
     event: MouseEvent
   ): Promise<void> {
     if (event === null) return;
-    if (event.target === null) return;
+    if (
+      event.currentTarget === null ||
+      !(event.currentTarget instanceof HTMLButtonElement)
+    )
+      return;
     if (result.downloadType !== 'magnet' && result.downloadType !== 'torrent')
       return;
 
-    const htmlButton = event.target as HTMLButtonElement;
+    const htmlButton = event.currentTarget;
 
     if (!result.downloadURL) {
       createNotification({

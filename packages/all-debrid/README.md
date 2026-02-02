@@ -15,5 +15,5 @@ A simple AllDebrid API v4/v4.1 client for NodeJS.
 ## Installation
 
 ```bash
-$ npm install all-debrid-js
+npm install all-debrid-js
 ```

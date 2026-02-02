@@ -501,7 +501,7 @@
     {
       id: 'all-debrid',
       name: 'AllDebrid',
-      icon: './rd-logo.png',
+      icon: './alldebrid-logo.png',
       iconWidth: 24,
       iconHeight: 24,
       description:

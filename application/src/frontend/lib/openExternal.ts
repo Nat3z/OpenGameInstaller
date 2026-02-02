@@ -21,10 +21,12 @@ function isAllowedExternalUrl(url: string): boolean {
 export async function openExternal(
   url: string
 ): Promise<{ success: boolean; error?: string }> {
+  // Flow: trim → validate scheme (http/https only) → Electron IPC (try/catch) → window.open fallback when window context is safe.
   if (typeof url !== 'string' || url.trim() === '') {
     return { success: false, error: 'Invalid URL' };
   }
   const trimmed = url.trim();
+  // Only http: and https: are allowed (enforced by isAllowedExternalUrl / ALLOWED_PROTOCOLS).
   if (!isAllowedExternalUrl(trimmed)) {
     return { success: false, error: 'Invalid or disallowed URL' };
   }

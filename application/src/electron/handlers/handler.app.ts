@@ -162,7 +162,7 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
     if (!isAllowedExternalUrl(url)) {
       return { success: false, error: 'Invalid or disallowed URL' };
     }
-    const normalized = url.trim();
+    const normalized = typeof url === 'string' ? url.trim() : '';
     try {
       await shell.openExternal(normalized);
       return { success: true };

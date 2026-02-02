@@ -1,4 +1,5 @@
 import type { LibraryInfo } from 'ogi-addon';
+import { getRecentlyPlayedFromStats } from './play-statistics';
 
 /**
  * Loads all apps and orders them according to the apps.json file if it exists.
@@ -40,13 +41,20 @@ export async function getAllApps(): Promise<LibraryInfo[]> {
 }
 
 /**
- * Gets the recently played apps from the library based on apps.json order.
- * Returns the first 4 apps from the ordered list.
+ * Gets the recently played apps from the library.
+ * When stats are provided, sorts by lastPlayedAt (first 4). Otherwise uses apps.json order.
  *
  * @param library - The library array to get recently played apps from
+ * @param stats - Optional play statistics; when provided, recently played is derived from lastPlayedAt
  * @returns An array of LibraryInfo representing recently played apps (max 4)
  */
-export function getRecentlyPlayed(library: LibraryInfo[]): LibraryInfo[] {
+export function getRecentlyPlayed(
+  library: LibraryInfo[],
+  stats?: PlayStatistics
+): LibraryInfo[] {
+  if (stats && Object.keys(stats.byAppId).length > 0) {
+    return getRecentlyPlayedFromStats(library, stats);
+  }
   if (window.electronAPI.fs.exists('./internals/apps.json')) {
     const appsOrdered: number[] = JSON.parse(
       window.electronAPI.fs.read('./internals/apps.json')
@@ -65,9 +73,8 @@ export function getRecentlyPlayed(library: LibraryInfo[]): LibraryInfo[] {
     });
 
     return recentlyPlayed;
-  } else {
-    return [];
   }
+  return [];
 }
 
 export function getApp(appID: number): LibraryInfo | undefined {

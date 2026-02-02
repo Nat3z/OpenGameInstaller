@@ -12,6 +12,7 @@ import { clients } from '../server/addon-server.js';
 import { registerSteamHandlers } from './steam-handlers.js';
 import { registerLibraryHandlers } from './library-handlers.js';
 import { registerRedistributableHandlers } from './redistributable-handlers.js';
+import { loadPlayStatistics } from './helpers.app/play-statistics.js';
 
 /**
  * Escapes a string for safe use in shell commands by escaping special characters
@@ -175,6 +176,10 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
 
   ipcMain.handle('app:is-online', async () => {
     return net.isOnline();
+  });
+
+  ipcMain.handle('app:get-play-statistics', async () => {
+    return loadPlayStatistics();
   });
 
   // Addon helpers

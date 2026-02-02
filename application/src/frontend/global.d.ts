@@ -3,6 +3,20 @@
 type AxiosResponse = import('axios').AxiosResponse;
 type AxiosRequestConfig = import('axios').AxiosRequestConfig;
 type LibraryInfo = import('ogi-addon').LibraryInfo;
+
+interface PlayStatisticsEntry {
+  totalPlaytimeMs: number;
+  launchCount: number;
+  lastPlayedAt: number;
+}
+
+interface PlayStatistics {
+  byAppId: Record<string, PlayStatisticsEntry>;
+  activeSession: {
+    appID: number;
+    startTime: number;
+  } | null;
+}
 type $AddTorrentOrMagnet = import('real-debrid-js').$AddTorrentOrMagnet;
 type $Hosts = import('real-debrid-js').$Hosts;
 type $UnrestrictLink = import('real-debrid-js').$UnrestrictLink;
@@ -185,6 +199,7 @@ interface Window {
         path?: string;
         error?: string;
       }>;
+      getPlayStatistics: () => Promise<PlayStatistics>;
     };
     updateAddons: () => Promise<void>;
     getVersion: () => string;

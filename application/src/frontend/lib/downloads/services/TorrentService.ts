@@ -87,7 +87,7 @@ export class TorrentService extends BaseService {
                 files: [],
                 progress: 0,
                 appID,
-                downloadSize: 0,
+                downloadSize: result.sizeInBytes ?? 0,
                 originalDownloadURL: result.downloadURL, // Store original URL for resume
               },
             ];
@@ -120,7 +120,7 @@ export class TorrentService extends BaseService {
                 progress: 0,
                 queuePosition: 999,
                 appID,
-                downloadSize: 0,
+                downloadSize: result.sizeInBytes ?? 0,
                 originalDownloadURL: result.downloadURL, // Store original URL for resume
                 ...result,
               },

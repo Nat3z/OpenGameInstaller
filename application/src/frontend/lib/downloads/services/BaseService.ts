@@ -35,7 +35,7 @@ export abstract class BaseService {
         ...downloads,
         {
           id: '' + tempId,
-          downloadSize: 0,
+          downloadSize: result.sizeInBytes ?? 0,
           status: 'rd-downloading',
           appID: appID,
           files: [],

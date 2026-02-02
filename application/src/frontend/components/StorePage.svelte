@@ -802,6 +802,9 @@
                                     {:else if result.downloadType === 'empty'}
                                       <span>Empty</span>
                                     {/if}
+                                    {#if result.sizeInBytes != null && result.sizeInBytes > 0}
+                                      <span>· {formatSize(result.sizeInBytes)}</span>
+                                    {/if}
                                   </div>
                                 </div>
                                 <div class="flex flex-row gap-2">
@@ -1006,6 +1009,13 @@
               <TextModal text="Download Name" variant="caption" />
               <TextModal text={selectedResult.name} variant="body" />
             </div>
+
+            {#if selectedResult.sizeInBytes != null && selectedResult.sizeInBytes > 0}
+              <div>
+                <TextModal text="Size" variant="caption" />
+                <TextModal text={formatSize(selectedResult.sizeInBytes)} variant="body" />
+              </div>
+            {/if}
           </div>
 
           {#if selectedResult.storefront}

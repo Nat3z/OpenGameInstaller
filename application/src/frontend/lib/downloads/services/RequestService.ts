@@ -37,7 +37,7 @@ export class RequestService extends BaseService {
           downloadSpeed: 0,
           progress: 0,
           appID,
-          downloadSize: 0,
+          downloadSize: result.sizeInBytes ?? 0,
         },
       ];
     });

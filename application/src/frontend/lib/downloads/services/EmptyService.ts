@@ -34,7 +34,7 @@ export class EmptyService extends BaseService {
       downloadSpeed: 0,
       progress: 100,
       appID,
-      downloadSize: 0,
+      downloadSize: result.sizeInBytes ?? 0,
       files: (result as any).files || [],
     };
     // insert to store

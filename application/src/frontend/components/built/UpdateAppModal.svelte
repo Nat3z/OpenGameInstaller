@@ -7,7 +7,7 @@
     type SearchResultWithAddon,
   } from '../../utils';
   import { createNotification } from '../../store';
-  import type { SearchResult, StoreData } from 'ogi-addon';
+  import type { LibraryInfo, SearchResult, StoreData } from 'ogi-addon';
   import AddonPicture from '../AddonPicture.svelte';
   import Modal from '../modal/Modal.svelte';
   import TitleModal from '../modal/TitleModal.svelte';
@@ -217,6 +217,18 @@
     });
   }
 
+  function formatSize(size: number): string {
+    if (size < 1024) {
+      return size + ' B';
+    } else if (size < 1024 * 1024) {
+      return (size / 1024).toFixed(2) + ' KB';
+    } else if (size < 1024 * 1024 * 1024) {
+      return (size / (1024 * 1024)).toFixed(2) + ' MB';
+    } else {
+      return (size / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
+    }
+  }
+
   function toggleAddonCollapse(addonId: string) {
     if (collapsedAddons.has(addonId)) {
       collapsedAddons.delete(addonId);
@@ -364,6 +376,9 @@
                           {:else if result.downloadType === 'request'}
                             <span>Request</span>
                           {/if}
+                          {#if result.sizeInBytes != null && result.sizeInBytes > 0}
+                            <span>· {formatSize(result.sizeInBytes)}</span>
+                          {/if}
                         </div>
                       </div>
                       <button
@@ -462,6 +477,9 @@
                               <span>Direct</span>
                             {:else if result.downloadType === 'request'}
                               <span>Request</span>
+                            {/if}
+                            {#if result.sizeInBytes != null && result.sizeInBytes > 0}
+                              <span>· {formatSize(result.sizeInBytes)}</span>
                             {/if}
                           </div>
                         </div>

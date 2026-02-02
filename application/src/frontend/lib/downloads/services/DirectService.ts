@@ -54,7 +54,7 @@ export class DirectService extends BaseService {
             downloadSpeed: 0,
             progress: 0,
             appID,
-            downloadSize: 0,
+            downloadSize: result.sizeInBytes ?? 0,
             queuePosition: updatedState[id]?.queuePosition ?? 999,
             ...result,
           },

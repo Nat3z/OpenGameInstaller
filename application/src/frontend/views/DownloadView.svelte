@@ -1,8 +1,10 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
+  import { tick } from 'svelte';
   import {
     currentDownloads,
     failedSetups,
+    focusFailedSetups,
     setupLogs,
     protonPrefixSetups,
     type FailedSetup,
@@ -113,15 +115,33 @@
     }));
   }
 
+  // When header asks to focus Failed Setups section, scroll to it
+  function scrollToFailedSetupsSection() {
+    tick().then(() => {
+      const el = document.getElementById('failed-setups-section');
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+      focusFailedSetups.set(false);
+    });
+  }
+
+  let unsubFocusFailedSetups: (() => void) | null = null;
+
   // Load failed setups and paused downloads when component mounts
   onMount(() => {
     loadFailedSetups();
     document.addEventListener('setup:log', setupLog);
     document.addEventListener('setup:progress', setupProgress);
 
+    unsubFocusFailedSetups = focusFailedSetups.subscribe((value) => {
+      if (value) scrollToFailedSetupsSection();
+    });
+
     return () => {
       document.removeEventListener('setup:log', setupLog);
       document.removeEventListener('setup:progress', setupProgress);
+      unsubFocusFailedSetups?.();
     };
   });
 
@@ -783,7 +803,7 @@
 
 <!-- Failed Setups Section -->
 {#if $failedSetups.length > 0}
-  <div class="container mx-auto py-6 max-w-6xl">
+  <div id="failed-setups-section" class="container mx-auto py-6 max-w-6xl">
     <div class="flex items-center gap-3 mb-4">
       <div
         class="w-1 h-6 bg-linear-to-b from-red-500 to-orange-600 rounded-full"

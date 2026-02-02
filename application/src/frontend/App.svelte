@@ -36,6 +36,8 @@
     showNotificationSideView,
     currentDownloads,
     headerBackButton,
+    failedSetups,
+    focusFailedSetups,
   } from './store';
   import StorePage from './components/StorePage.svelte';
   import ConfigurationModal from './components/modal/ConfigurationModal.svelte';
@@ -46,7 +48,7 @@
   import Debug from './managers/Debug.svelte';
   import DiscoverView from './views/DiscoverView.svelte';
   import RootPasswordGranter from './managers/RootPasswordGranter.svelte';
-  import { initDownloadPersistence } from './utils';
+  import { initDownloadPersistence, loadFailedSetups } from './utils';
   import AppUpdateManager from './managers/AppUpdateManager.svelte';
   import ChangelogManager from './managers/ChangelogManager.svelte';
   import { appUpdates, loadPersistedUpdateState } from './states.svelte';
@@ -107,6 +109,7 @@
       // Initialize search-related data
       initializeSearch();
       initDownloadPersistence();
+      loadFailedSetups();
       appUpdates.requiredReadds = loadPersistedUpdateState().requiredReadds;
     }, 200);
   });
@@ -618,6 +621,37 @@
               class="absolute -bottom-1 -right-1 bg-accent-dark text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-bold"
             >
               {$activeDownloadsCount}
+            </div>
+          {/if}
+        </button>
+
+        <!-- Failed Setups button -->
+        <button
+          class="header-button relative"
+          onclick={() => {
+            setView('downloader');
+            focusFailedSetups.set(true);
+          }}
+          aria-label={$failedSetups.length > 0
+            ? `Failed setups (${$failedSetups.length}). View and retry failed installations.`
+            : 'Failed setups. View and retry failed installations.'}
+          title="View and retry failed installations"
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 24 24"
+            fill="currentColor"
+            class="fill-accent-dark"
+          >
+            <path
+              d="M12 2L1 21h22L12 2zm0 3.99L19.53 19H4.47L12 5.99zM11 10v4h2v-4h-2zm0 6v2h2v-2h-2z"
+            />
+          </svg>
+          {#if $failedSetups.length > 0}
+            <div
+              class="absolute -bottom-1 -right-1 bg-accent-dark text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-bold"
+            >
+              {$failedSetups.length}
             </div>
           {/if}
         </button>

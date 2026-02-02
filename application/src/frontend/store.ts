@@ -91,6 +91,10 @@ export type SearchResultWithSource = BasicLibraryInfo & { addonsource: string };
 
 export const currentDownloads: Writable<DownloadStatusAndInfo[]> = writable([]);
 export const failedSetups: Writable<FailedSetup[]> = writable([]);
+
+/** When true, Download view should scroll to the Failed Setups section. Set by header button, cleared after scroll. */
+export const focusFailedSetups: Writable<boolean> = writable(false);
+
 export const deferredTasks: Writable<DeferredTask[]> = writable([]);
 export const removedTasks: Writable<string[]> = writable([]);
 export const notifications: Writable<Notification[]> = writable([]);

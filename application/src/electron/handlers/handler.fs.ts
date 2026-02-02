@@ -6,7 +6,27 @@ import { exec, spawn } from 'child_process';
 import { sendIPCMessage } from '../main.js';
 import * as fsAsync from 'fs/promises';
 
+const VALID_THEME_IDS = new Set(['light', 'dark', 'synthwave']);
+
+function getInitialTheme(): string {
+  const configPath = join(__dirname, './config/option/general.json');
+  try {
+    if (!fs.existsSync(configPath)) return 'light';
+    const raw = fs.readFileSync(configPath, 'utf-8');
+    const data = JSON.parse(raw) as { theme?: unknown };
+    const theme = data?.theme;
+    if (typeof theme === 'string' && VALID_THEME_IDS.has(theme)) return theme;
+    return 'light';
+  } catch {
+    return 'light';
+  }
+}
+
 export default function handler() {
+  ipcMain.on('get-initial-theme', (event) => {
+    event.returnValue = getInitialTheme();
+  });
+
   ipcMain.on('fs:read', (event, arg) => {
     if (String(arg).startsWith('./')) {
       arg = join(__dirname, arg);

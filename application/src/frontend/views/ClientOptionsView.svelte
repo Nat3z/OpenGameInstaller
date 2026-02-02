@@ -10,6 +10,8 @@
   import SectionModal from '../components/modal/SectionModal.svelte';
   import CustomDropdown from '../components/CustomDropdown.svelte';
   import { fetchAddonsWithConfigure } from '../utils';
+  import { THEMES } from '../lib/themes/themes';
+  import { applyTheme } from '../lib/themes/applyTheme';
 
   const fs = window.electronAPI.fs;
   interface OptionsCategory {
@@ -53,6 +55,14 @@
           defaultValue: './downloads',
           value: '',
           type: 'file-folder',
+        },
+        theme: {
+          displayName: 'Theme',
+          description: 'Appearance theme (e.g. light, dark, synthwave)',
+          defaultValue: 'light',
+          value: '',
+          choice: ['light', 'dark', 'synthwave'],
+          type: 'string',
         },
         torrentClient: {
           displayName: 'Torrent Client',
@@ -939,6 +949,20 @@
                                 selectedId={selectedTorrentClientId}
                                 onchange={handleTorrentClientChange}
                               />
+                            {:else if key === 'theme'}
+                              <select
+                                id={key}
+                                class="input-select"
+                                onchange={(e) => {
+                                  updateConfig();
+                                  applyTheme((e.target as HTMLSelectElement).value);
+                                }}
+                                value={getStoredOrDefaultValue(key)}
+                              >
+                                {#each THEMES as t}
+                                  <option value={t.id}>{t.label}</option>
+                                {/each}
+                              </select>
                             {:else}
                               <!-- Regular select for other options -->
                               <select

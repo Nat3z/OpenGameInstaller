@@ -188,6 +188,7 @@ interface Window {
     };
     updateAddons: () => Promise<void>;
     getVersion: () => string;
+    getInitialTheme?: () => string;
     installAddons: (addons: string[]) => Promise<void>;
     restartAddonServer: () => Promise<void>;
     cleanAddons: () => Promise<void>;

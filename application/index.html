@@ -10,6 +10,16 @@
   </head>
 
   <body>
+    <script>
+      (function () {
+        if (window.electronAPI && typeof window.electronAPI.getInitialTheme === 'function') {
+          try {
+            var t = window.electronAPI.getInitialTheme();
+            if (t && typeof t === 'string') document.documentElement.setAttribute('data-theme', t);
+          } catch (e) {}
+        }
+      })();
+    </script>
     <script type="module" src="/src/frontend/main.ts"></script>
   </body>
 </html>

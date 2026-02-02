@@ -141,6 +141,25 @@
   }
 }
 
+/* Theme overrides: default @theme above is light; these override when data-theme is set */
+[data-theme="dark"] {
+  --color-background-color: #1a1a2e;
+  --color-accent: #4a9eff;
+  --color-accent-dark: #2563eb;
+  --color-accent-light: #93c5fd;
+  --color-accent-lighter: #1e293b;
+  --color-accent-text-color: #f1f5f9;
+}
+
+[data-theme="synthwave"] {
+  --color-background-color: #2b213a;
+  --color-accent: #f92aad;
+  --color-accent-dark: #e91e96;
+  --color-accent-light: #ff7edb;
+  --color-accent-lighter: #36224a;
+  --color-accent-text-color: #f0e6ef;
+}
+
 /* Font faces */
 @font-face {
   font-family: 'Archivo';

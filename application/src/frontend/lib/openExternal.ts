@@ -39,6 +39,7 @@ export async function openExternal(
       return { success: false, error: message };
     }
   }
+  // Only use window.open when a safe window context exists.
   if (typeof window !== 'undefined' && typeof window.open === 'function') {
     try {
       window.open(trimmed, '_blank', 'noopener,noreferrer');

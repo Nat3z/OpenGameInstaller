@@ -1,6 +1,7 @@
 import { currentDownloads, type DownloadStatusAndInfo } from '../../../store';
 import { getDownloadPath, updateDownloadStatus } from '../../../utils';
 import type { SearchResultWithAddon } from '../../tasks/runner';
+import { getInitialDownloadSize } from '../initialDownloadSize';
 
 /**
  * Base class that all concrete download services should extend. It defines a
@@ -35,7 +36,7 @@ export abstract class BaseService {
         ...downloads,
         {
           id: '' + tempId,
-          downloadSize: result.sizeInBytes ?? 0,
+          downloadSize: getInitialDownloadSize(result),
           status: 'rd-downloading',
           appID: appID,
           files: [],

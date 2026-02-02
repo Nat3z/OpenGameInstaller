@@ -4,6 +4,7 @@ import { currentDownloads, type DownloadStatusAndInfo } from '../../../store';
 import { getDownloadPath } from '../../core/fs';
 import { runSetupApp, runSetupAppUpdate } from '../../setup/setup';
 import { updateDownloadStatus } from '../lifecycle';
+import { getInitialDownloadSize } from '../initialDownloadSize';
 
 /**
  * Handles "empty" downloads that skip directly to the setup phase.
@@ -34,7 +35,7 @@ export class EmptyService extends BaseService {
       downloadSpeed: 0,
       progress: 100,
       appID,
-      downloadSize: result.sizeInBytes ?? 0,
+      downloadSize: getInitialDownloadSize(result),
       files: (result as any).files || [],
     };
     // insert to store

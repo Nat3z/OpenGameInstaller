@@ -27,6 +27,7 @@
     "mac": {}
   },
   "scripts": {
+    "test": "bun test tests/",
     "build": "electron-vite build",
     "build:ogiaddon": "cd ../packages/ogi-addon/ && bun x tsdown && cd ../real-debrid/ && bun x tsdown",
     "dev": "bun run build:ogiaddon && ELECTRON_EXEC_PATH=\"$(node -p \"require('electron')\" )\" electron-vite dev",

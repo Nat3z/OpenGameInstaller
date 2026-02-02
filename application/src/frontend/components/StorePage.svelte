@@ -18,6 +18,7 @@
     currentDownloads,
   } from '../store';
   import type { SearchResult, StoreData, LibraryInfo } from 'ogi-addon';
+  import { formatSize } from '../lib/formatSize';
   import AddonPicture from './AddonPicture.svelte';
   import Modal from './modal/Modal.svelte';
   import TitleModal from './modal/TitleModal.svelte';
@@ -122,19 +123,6 @@
       return (speed / 1024).toFixed(2) + ' KB/s';
     } else {
       return (speed / (1024 * 1024)).toFixed(2) + ' MB/s';
-    }
-  }
-
-  // Helper function to format file size
-  function formatSize(size: number): string {
-    if (size < 1024) {
-      return size + ' B';
-    } else if (size < 1024 * 1024) {
-      return (size / 1024).toFixed(2) + ' KB';
-    } else if (size < 1024 * 1024 * 1024) {
-      return (size / (1024 * 1024)).toFixed(2) + ' MB';
-    } else {
-      return (size / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
     }
   }
 

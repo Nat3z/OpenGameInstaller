@@ -2,6 +2,7 @@ import { BaseService } from './BaseService';
 import type { SearchResultWithAddon } from '../../tasks/runner';
 import { createNotification, currentDownloads } from '../../../store';
 import { getDownloadPath } from '../../core/fs';
+import { getInitialDownloadSize } from '../initialDownloadSize';
 
 /**
  * Handles standard magnet and torrent downloads via the configured torrent
@@ -87,7 +88,7 @@ export class TorrentService extends BaseService {
                 files: [],
                 progress: 0,
                 appID,
-                downloadSize: result.sizeInBytes ?? 0,
+                downloadSize: getInitialDownloadSize(result),
                 originalDownloadURL: result.downloadURL, // Store original URL for resume
               },
             ];
@@ -120,7 +121,7 @@ export class TorrentService extends BaseService {
                 progress: 0,
                 queuePosition: 999,
                 appID,
-                downloadSize: result.sizeInBytes ?? 0,
+                downloadSize: getInitialDownloadSize(result),
                 originalDownloadURL: result.downloadURL, // Store original URL for resume
                 ...result,
               },

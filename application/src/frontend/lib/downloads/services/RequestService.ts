@@ -5,6 +5,7 @@ import { createNotification, currentDownloads } from '../../../store';
 import { getDownloadPath } from '../../core/fs';
 import { safeFetch } from '../../core/ipc';
 import { startDownload } from '../lifecycle';
+import { getInitialDownloadSize } from '../initialDownloadSize';
 
 /**
  * Handles the initial "request" downloadType where we first need to ask the
@@ -37,7 +38,7 @@ export class RequestService extends BaseService {
           downloadSpeed: 0,
           progress: 0,
           appID,
-          downloadSize: result.sizeInBytes ?? 0,
+          downloadSize: getInitialDownloadSize(result),
         },
       ];
     });

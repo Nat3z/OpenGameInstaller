@@ -3,6 +3,7 @@ import type { SearchResultWithAddon } from '../../tasks/runner';
 import { createNotification, currentDownloads } from '../../../store';
 import { getDownloadPath } from '../../core/fs';
 import { listenUntilDownloadReady } from '../events';
+import { getInitialDownloadSize } from '../initialDownloadSize';
 
 /**
  * Handles simple direct file downloads (single or multi-part).
@@ -54,7 +55,7 @@ export class DirectService extends BaseService {
             downloadSpeed: 0,
             progress: 0,
             appID,
-            downloadSize: result.sizeInBytes ?? 0,
+            downloadSize: getInitialDownloadSize(result),
             queuePosition: updatedState[id]?.queuePosition ?? 999,
             ...result,
           },

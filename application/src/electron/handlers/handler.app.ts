@@ -27,6 +27,11 @@ export function escapeShellArg(arg: string): string {
     .replace(/`/g, '\\`');
 }
 
+/**
+ * Creates a desktop shortcut for the app. On Linux, creates a .desktop file; on Windows returns an error (only supported on Linux).
+ *
+ * @returns Promise resolving to { success, path? } on success or { success: false, error } on failure
+ */
 export async function addToDesktop() {
   if (process.platform === 'win32') {
     return {
@@ -126,6 +131,12 @@ StartupNotify=true
   }
 }
 
+/**
+ * Registers all app IPC handlers: window controls, utilities (axios, OS, screens, online), addon helpers,
+ * play statistics, desktop shortcut, and delegates to sub-handlers (Steam, library, redistributable).
+ *
+ * @param mainWindow - The main BrowserWindow instance
+ */
 export default function handler(mainWindow: Electron.BrowserWindow) {
   // Window controls
   ipcMain.handle('app:close', () => {
@@ -178,6 +189,7 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
     return net.isOnline();
   });
 
+  // Single registration: app:get-play-statistics is only registered here (onMainAppReady runs once).
   ipcMain.handle('app:get-play-statistics', async () => {
     return loadPlayStatistics();
   });

@@ -77,6 +77,12 @@ export function getRecentlyPlayed(
   return [];
 }
 
+/**
+ * Loads a single app from the library by app ID (reads library/{appID}.json).
+ *
+ * @param appID - The app ID to load
+ * @returns The LibraryInfo if the file exists, otherwise undefined
+ */
 export function getApp(appID: number): LibraryInfo | undefined {
   if (window.electronAPI.fs.exists(`./library/${appID}.json`)) {
     return JSON.parse(window.electronAPI.fs.read(`./library/${appID}.json`));

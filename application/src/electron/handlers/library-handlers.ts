@@ -43,6 +43,12 @@ function escapeShellArg(arg: string): string {
     .replace(/`/g, '\\`');
 }
 
+/**
+ * Registers library-related IPC handlers: launch-game, remove-app, insert-app, get-all-apps, update-app-version.
+ * Launch, exit, and error paths record play statistics via recordSessionStart and recordSessionEnd.
+ *
+ * @param mainWindow - The main BrowserWindow instance (for sending game:launch / game:exit events)
+ */
 export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
   ipcMain.handle('app:launch-game', async (_, appid) => {
     ensureLibraryDir();

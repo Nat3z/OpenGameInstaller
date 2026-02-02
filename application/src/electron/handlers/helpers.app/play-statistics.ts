@@ -29,10 +29,21 @@ const defaultStatistics = (): PlayStatistics => ({
   activeSession: null,
 });
 
+/**
+ * Returns the path to the play statistics file on disk.
+ *
+ * @returns The absolute path to internals/play-statistics.json
+ */
 export function getPlayStatisticsPath(): string {
   return join(__dirname, 'internals', STATS_FILENAME);
 }
 
+/**
+ * Loads play statistics from disk. If the file is missing or invalid, returns default empty stats.
+ * Reconciles any stale active session (e.g. app quit while game was running) and persists the result.
+ *
+ * @returns The loaded or default PlayStatistics
+ */
 export function loadPlayStatistics(): PlayStatistics {
   ensureInternalsDir();
   const path = getPlayStatisticsPath();
@@ -69,12 +80,23 @@ export function loadPlayStatistics(): PlayStatistics {
   }
 }
 
+/**
+ * Persists the given play statistics to disk (internals/play-statistics.json).
+ *
+ * @param stats - The PlayStatistics object to save
+ */
 export function savePlayStatistics(stats: PlayStatistics): void {
   ensureInternalsDir();
   const path = getPlayStatisticsPath();
   fs.writeFileSync(path, JSON.stringify(stats, null, 2), 'utf-8');
 }
 
+/**
+ * Closes the active session if present and merges it into byAppId.
+ * Used for stale session reconciliation when loading stats (e.g. app quit while game was running).
+ *
+ * @param stats - The PlayStatistics to reconcile (mutated in place)
+ */
 function closeStaleSession(stats: PlayStatistics): void {
   if (!stats.activeSession) return;
   const { appID, startTime } = stats.activeSession;
@@ -97,6 +119,11 @@ function closeStaleSession(stats: PlayStatistics): void {
   stats.activeSession = null;
 }
 
+/**
+ * Starts a play session for the given app. Closes any existing active session first, then records the new start.
+ *
+ * @param appID - The app ID to start a session for
+ */
 export function recordSessionStart(appID: number): void {
   const stats = loadPlayStatistics();
   if (stats.activeSession) {
@@ -106,6 +133,11 @@ export function recordSessionStart(appID: number): void {
   savePlayStatistics(stats);
 }
 
+/**
+ * Ends the active play session for the given app. Updates total playtime, launch count, and lastPlayedAt for that app.
+ *
+ * @param appID - The app ID to end the session for
+ */
 export function recordSessionEnd(appID: number): void {
   const stats = loadPlayStatistics();
   if (!stats.activeSession || stats.activeSession.appID !== appID) {
@@ -134,6 +166,11 @@ export function recordSessionEnd(appID: number): void {
   savePlayStatistics(stats);
 }
 
+/**
+ * Removes all play statistics for the given app (e.g. when the app is removed from the library).
+ *
+ * @param appID - The app ID to remove from play statistics
+ */
 export function removeAppFromPlayStatistics(appID: number): void {
   const stats = loadPlayStatistics();
   const key = String(appID);

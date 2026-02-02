@@ -16,6 +16,10 @@ import { registerRedistributableHandlers } from './redistributable-handlers.js';
 /** Allowed protocols for open-external; rejects javascript:, file:, etc. */
 const ALLOWED_PROTOCOLS = ['http:', 'https:'];
 
+/**
+ * Returns true if the value is a non-empty string that parses as an http: or https: URL.
+ * Rejects javascript:, file:, and other schemes.
+ */
 function isAllowedExternalUrl(url: unknown): url is string {
   if (typeof url !== 'string' || url.trim() === '') return false;
   try {
@@ -39,6 +43,10 @@ export function escapeShellArg(arg: string): string {
     .replace(/`/g, '\\`');
 }
 
+/**
+ * Creates a .desktop shortcut for the app on the user's desktop (Linux only).
+ * On Windows returns an error. Uses AppImage paths when available.
+ */
 export async function addToDesktop() {
   if (process.platform === 'win32') {
     return {
@@ -138,6 +146,9 @@ StartupNotify=true
   }
 }
 
+/**
+ * Registers app-related IPC handlers (window controls, open-external, axios, OS, desktop shortcut, etc.).
+ */
 export default function handler(mainWindow: Electron.BrowserWindow) {
   // Window controls
   ipcMain.handle('app:close', () => {

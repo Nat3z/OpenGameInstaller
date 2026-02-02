@@ -189,6 +189,11 @@ export const headerBackButton: Writable<HeaderBackButton> = writable({
   ariaLabel: 'Go back',
 });
 
+/**
+ * Shows a back button in the header with the given click handler and optional aria label.
+ * @param onClick - Callback when the back button is clicked
+ * @param ariaLabel - Optional accessible label (defaults to "Go back")
+ */
 export function setHeaderBackButton(onClick: () => void, ariaLabel?: string) {
   headerBackButton.set({
     visible: true,
@@ -197,6 +202,9 @@ export function setHeaderBackButton(onClick: () => void, ariaLabel?: string) {
   });
 }
 
+/**
+ * Hides the header back button and clears its click handler.
+ */
 export function clearHeaderBackButton() {
   headerBackButton.set({
     visible: false,
@@ -205,6 +213,10 @@ export function clearHeaderBackButton() {
   });
 }
 
+/**
+ * Adds a notification to the active list and history. Assigns a timestamp if missing.
+ * @param notification - The notification to add (message, id, type, optional timestamp)
+ */
 export function createNotification(notification: Notification) {
   const notificationWithTimestamp = {
     ...notification,
@@ -240,6 +252,12 @@ export const communityAddonsLocal: Writable<CommunityAddon[]> = writable([]);
 export const communityAddonsLoading: Writable<boolean> = writable(false);
 export const communityAddonsError: Writable<string | null> = writable(null);
 
+/**
+ * Normalizes a caught error into a user-facing message for community addon fetch failures.
+ * Handles response.status (404, 5xx), Error.message, and unknown shapes; always returns a string.
+ * @param err - Thrown value from the fetch (e.g. axios error with response, or Error)
+ * @returns A short, displayable string (e.g. "Community addons list not found.", "Server error. Try again later.", or a generic connection message)
+ */
 function communityAddonsErrorMessage(err: unknown): string {
   if (err && typeof err === 'object' && 'response' in err) {
     const res = (err as { response?: { status?: number } }).response;
@@ -250,6 +268,12 @@ function communityAddonsErrorMessage(err: unknown): string {
   return "Couldn't load community addons. Check your connection and try again.";
 }
 
+/**
+ * Fetches the community addons list from the remote API and updates store state.
+ * Sets communityAddonsLoading true at start and false in finally; clears then possibly sets communityAddonsError; on success updates communityAddonsLocal.
+ * On error, leaves communityAddonsLocal unchanged so any cached/previous list can still be shown; the error message is set via communityAddonsErrorMessage.
+ * @returns Promise that resolves when the fetch and store updates are complete
+ */
 export async function fetchCommunityAddons(): Promise<void> {
   communityAddonsLoading.set(true);
   communityAddonsError.set(null);

@@ -1,0 +1,40 @@
+{
+  "name": "all-debrid-js",
+  "version": "1.0.0",
+  "module": "./build/main.mjs",
+  "author": {
+    "name": "Nat3z",
+    "email": "me@nat3z.com",
+    "url": "https://nat3z.com/"
+  },
+  "exports": {
+    ".": {
+      "import": {
+        "default": "./build/main.mjs",
+        "types": "./build/main.d.mts"
+      },
+      "require": {
+        "default": "./build/main.cjs",
+        "types": "./build/main.d.cts"
+      }
+    }
+  },
+  "types": "./build/main.d.mts",
+  "main": "./build/main.js",
+  "dependencies": {
+    "axios": "^1.7.2",
+    "form-data": "^4.0.0",
+    "zod": "^3.23.8"
+  },
+  "scripts": {
+    "auto-build": "tsc -w",
+    "build": "tsdown --config tsdown.config.js",
+    "test": "bun test ./tests/**/*.test.ts",
+    "release": "bun run build && npm publish"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.12",
+    "tsdown": "^0.20.0-beta.4",
+    "typescript": "^5.0.0"
+  }
+}

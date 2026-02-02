@@ -28,7 +28,7 @@
   },
   "scripts": {
     "build": "electron-vite build",
-    "build:ogiaddon": "cd ../packages/ogi-addon/ && bun x tsdown && cd ../real-debrid/ && bun x tsdown",
+    "build:ogiaddon": "cd ../packages/ogi-addon/ && bun x tsdown && cd ../real-debrid/ && bun x tsdown && cd ../all-debrid/ && bun x tsdown",
     "dev": "bun run build:ogiaddon && ELECTRON_EXEC_PATH=\"$(node -p \"require('electron')\" )\" electron-vite dev",
     "preview": "electron-vite preview",
     "dev:server": "nodemon --watch server --ext ts,json --exec \"tsc --p tsconfig.addonserver.json && bun run --bun build-addons/dev-server.js\"",
@@ -52,6 +52,7 @@
     "ogi-addon": "workspace:*",
     "parse-torrent": "^11.0.18",
     "real-debrid-js": "*",
+    "all-debrid-js": "workspace:*",
     "sanitize-html": "^2.13.0",
     "semver": "^7.7.2",
     "steamworks.js": "^0.4.0",

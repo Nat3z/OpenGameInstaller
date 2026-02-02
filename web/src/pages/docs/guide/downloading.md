@@ -43,6 +43,13 @@ To use Real-Debrid as a torrenting client, you need to set your Real-Debrid API 
 > [!INFO]
 > Requires a Real-Debrid account and active subscription. [Get a subscription with my link here](http://real-debrid.com/?id=11485717).
 
+### AllDebrid
+
+To use AllDebrid as a torrenting client, you need to set your AllDebrid API key in the settings. Make sure it's selected as the client in `Settings > General`. Afterwards, go to `Settings > Torrent Clients` and [set the API key to your AllDebrid key found on this link.](https://alldebrid.com/apikeys)
+
+> [!INFO]
+> Requires an AllDebrid account and active subscription.
+
 ### qBittorrent
 
 To use qBittorrent as a torrenting client, please refer to our [qBittorrent WebUI guide](/docs/for-users/qb-setup) to learn how to set up a WebUI. After that, go to `Settings > General` and select `qBittorrent` as the torrent client, then go to `Settings > qBittorrent` and adjust the settings to match what you set in qBittorrent.
@@ -66,7 +73,7 @@ When choosing a torrent client, you should consider some factors:
 1. Are you willing to pay for a premium service?
 
 Simply put, if you are in a country with strict DMCA laws or you want privacy when torrenting, we recommend
-to use a premium cloud downloading service. Great options include Real-Debrid, Premiumize, and TorBox.
+to use a premium cloud downloading service. Great options include Real-Debrid, AllDebrid, Premiumize, and TorBox.
 If you aren't interested in cloud downloading but still want privacy, we recommend to pay for an external VPN
 and use qBittorrent (with proper VPN binding). Otherwise, if you just want a seamless experience with OpenGameInstaller,
 we recommend to use WebTorrent as it is built into the app and requires no setup.

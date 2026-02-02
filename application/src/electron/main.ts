@@ -9,6 +9,7 @@ import type { ConfigurationFile } from 'ogi-addon/config';
 import AppEventHandler from './handlers/handler.app.js';
 import FSEventHandler from './handlers/handler.fs.js';
 import RealdDebridHandler from './handlers/handler.realdebrid.js';
+import AllDebridHandler from './handlers/handler.alldebrid.js';
 import TorrentHandler from './handlers/handler.torrent.js';
 import DirectDownloadHandler from './handlers/handler.ddl.js';
 import AddonRestHandler from './handlers/handler.rest.js';
@@ -126,6 +127,7 @@ function onMainAppReady() {
   AppEventHandler(mainWindow!!);
   FSEventHandler();
   RealdDebridHandler(mainWindow!!);
+  AllDebridHandler(mainWindow!!);
   TorrentHandler(mainWindow!!);
   DirectDownloadHandler(mainWindow!!);
   AddonRestHandler();

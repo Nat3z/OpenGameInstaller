@@ -12,6 +12,7 @@
   let selectedTorrenter:
     | 'qbittorrent'
     | 'real-debrid'
+    | 'all-debrid'
     | 'webtorrent'
     | 'torbox'
     | 'premiumize'
@@ -156,6 +157,28 @@
       window.electronAPI.fs.write(
         './config/option/realdebrid.json',
         JSON.stringify({ premiumizeApiKey: apiKey.value, debridApiKey: '' })
+      );
+      fulfilledRequirements = true;
+    } else if (selectedTorrenter === 'all-debrid') {
+      console.log('Submitting AllDebrid API Key');
+      const apiKey = document.querySelector(
+        'input[data-alldebrid-key]'
+      ) as HTMLInputElement;
+      window.electronAPI.fs.mkdir('./config/option/');
+      let config: Record<string, string> = {};
+      if (window.electronAPI.fs.exists('./config/option/realdebrid.json')) {
+        try {
+          config = JSON.parse(
+            window.electronAPI.fs.read('./config/option/realdebrid.json')
+          );
+        } catch {
+          // use empty config
+        }
+      }
+      config.alldebridApiKey = apiKey.value;
+      window.electronAPI.fs.write(
+        './config/option/realdebrid.json',
+        JSON.stringify(config)
       );
       fulfilledRequirements = true;
     }
@@ -516,6 +539,15 @@
           <img class="w-16 h-16" src="./rd-logo.png" alt="Real Debrid" />
         </button>
         <button
+          onclick={() => (selectedTorrenter = 'all-debrid')}
+          class="flex justify-center p-4 items-center w-24 h-24 bg-accent-lighter hover:bg-accent-light rounded-lg border-2 transition-colors duration-200 {selectedTorrenter ===
+          'all-debrid'
+            ? 'border-accent'
+            : 'border-accent-light'}"
+        >
+          <img class="w-16 h-16" src="./rd-logo.png" alt="AllDebrid" />
+        </button>
+        <button
           onclick={() => (selectedTorrenter = 'torbox')}
           class="flex justify-center p-4 items-center w-24 h-24 bg-accent-lighter hover:bg-accent-light rounded-lg border-2 transition-colors duration-200 {selectedTorrenter ===
           'torbox'
@@ -684,6 +716,23 @@
               target="_blank"
               class="underline text-accent hover:text-accent-dark"
               >Premiumize API Key</a
+            ></label
+          >
+        {:else if selectedTorrenter === 'all-debrid'}
+          <input
+            data-alldebrid-key
+            type="text"
+            onchange={submitTorrenter}
+            placeholder="AllDebrid API Key"
+            class="w-full p-3 bg-white border border-accent-light rounded-lg focus:outline-none focus:ring-2 focus:ring-accent"
+          />
+          <!-- svelte-ignore a11y_label_has_associated_control -->
+          <label class="text-sm text-gray-500 mt-2"
+            >Insert your <a
+              href="https://alldebrid.com/apikeys"
+              target="_blank"
+              class="underline text-accent hover:text-accent-dark"
+              >AllDebrid API Key</a
             ></label
           >
         {/if}

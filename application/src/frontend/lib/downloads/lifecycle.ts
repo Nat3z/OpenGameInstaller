@@ -25,12 +25,15 @@ export async function startDownload(
       | 'webtorrent'
       | 'qbittorrent'
       | 'real-debrid'
+      | 'all-debrid'
       | 'torbox'
       | 'premiumize'
       | 'disable' =
       (generalOptions ? generalOptions.torrentClient : null) ?? 'disable';
     if (torrentClient === 'real-debrid') {
       downloadHandler = 'real-debrid-' + downloadHandler;
+    } else if (torrentClient === 'all-debrid') {
+      downloadHandler = 'all-debrid-' + downloadHandler;
     } else if (torrentClient === 'torbox') {
       downloadHandler = 'torbox-' + downloadHandler;
     } else if (torrentClient === 'premiumize') {

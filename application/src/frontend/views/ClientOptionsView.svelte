@@ -63,6 +63,7 @@
             'webtorrent',
             'qbittorrent',
             'real-debrid',
+            'all-debrid',
             'torbox',
             'premiumize',
             'disable',
@@ -151,6 +152,13 @@
         premiumizeApiKey: {
           displayName: 'Premiumize API Key',
           description: 'Your Premiumize API Key',
+          defaultValue: '',
+          value: '',
+          type: 'password',
+        },
+        alldebridApiKey: {
+          displayName: 'AllDebrid API Key',
+          description: 'Your AllDebrid API Key',
           defaultValue: '',
           value: '',
           type: 'password',
@@ -489,6 +497,15 @@
       iconHeight: 24,
       description:
         'Premium service for faster downloads and cached torrents. Requires subscription.',
+    },
+    {
+      id: 'all-debrid',
+      name: 'AllDebrid',
+      icon: './rd-logo.png',
+      iconWidth: 24,
+      iconHeight: 24,
+      description:
+        'Premium debrid service for faster downloads and cached torrents. Requires subscription.',
     },
     {
       id: 'premiumize',

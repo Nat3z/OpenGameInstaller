@@ -56,10 +56,10 @@ jobs:
         if: steps.check_changes.outputs.has_application_changes == 'true'
         uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.2.23
+          bun-version: 1.3.8
       - name: Install Dependencies
         if: steps.check_changes.outputs.has_application_changes == 'true'
-        run: bun install && cp -r ./node_modules/electron ./application/node_modules/electron && mkdir -p ./updater/node_modules && cp -r ./node_modules/electron ./updater/node_modules/electron
+        run: bun install
 
       - name: Build Release Client
         if: steps.check_changes.outputs.has_application_changes == 'true'

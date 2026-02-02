@@ -16,6 +16,7 @@
   import ButtonModal from './modal/ButtonModal.svelte';
   import InputModal from './modal/InputModal.svelte';
   import CheckboxModal from './modal/CheckboxModal.svelte';
+  import UninstallAppWarningModal from './built/UninstallAppWarningModal.svelte';
 
   interface Props {
     exitPlayPage: () => void;
@@ -107,6 +108,8 @@
     onFinish(undefined);
   }
 
+  let showUninstallModal = $state(false);
+
   async function removeFromList() {
     await window.electronAPI.app.removeApp(gameInfo.appID);
     createNotification({
@@ -119,6 +122,40 @@
       downloads.filter((download) => download.appID !== gameInfo.appID)
     );
     exitPlayPage();
+  }
+
+  async function confirmUninstall() {
+    try {
+      const result = await window.electronAPI.app.uninstallApp(gameInfo.appID);
+      showUninstallModal = false;
+      if (result.success) {
+        createNotification({
+          id: Math.random().toString(36).substring(7),
+          message: `${gameInfo.name} uninstalled.`,
+          type: 'success',
+        });
+      } else {
+        createNotification({
+          id: Math.random().toString(36).substring(7),
+          message: result.error
+            ? `Uninstalled from library, but some files could not be deleted: ${result.error}`
+            : `${gameInfo.name} uninstalled from library.`,
+          type: result.error ? 'warning' : 'success',
+        });
+      }
+      currentDownloads.update((downloads) =>
+        downloads.filter((download) => download.appID !== gameInfo.appID)
+      );
+      exitPlayPage();
+    } catch (ex) {
+      console.error('Failed to uninstall game:', ex);
+      createNotification({
+        id: Math.random().toString(36).substring(7),
+        message: `Failed to uninstall ${gameInfo.name}`,
+        type: 'error',
+      });
+      showUninstallModal = false;
+    }
   }
 
   async function addToSteam(button: HTMLButtonElement) {
@@ -213,7 +250,7 @@
     {/each}
 
     <SectionModal class="mt-4">
-      <div class="flex gap-3 flex-row">
+      <div class="flex gap-3 flex-row flex-wrap">
         <ButtonModal text="Save" variant="primary" onclick={pushChanges} />
         {#if platform === 'linux' || platform === 'darwin'}
           <ButtonModal
@@ -229,8 +266,20 @@
           variant="danger"
           onclick={removeFromList}
         />
+        <ButtonModal
+          text="Uninstall (delete files)"
+          variant="danger"
+          onclick={() => (showUninstallModal = true)}
+        />
         <ButtonModal text="Cancel" variant="secondary" onclick={closeModal} />
       </div>
     </SectionModal>
   </Modal>
+
+  <UninstallAppWarningModal
+    open={showUninstallModal}
+    gameName={gameInfo.name}
+    onClose={() => (showUninstallModal = false)}
+    onConfirm={confirmUninstall}
+  />
 {/if}

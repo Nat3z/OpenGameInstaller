@@ -20,7 +20,10 @@ import {
   removeLibraryFile,
   addToInternalsApps,
   removeFromInternalsApps,
+  resolveGameCwd,
+  isSafeToDeleteGamePath,
 } from './helpers.app/library.js';
+import { __dirname } from '../manager/manager.paths.js';
 import { generateNotificationId } from './helpers.app/notifications.js';
 import { sendNotification } from '../main.js';
 import { getProtonPrefixPath } from './helpers.app/platform.js';
@@ -100,6 +103,54 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
     removeFromInternalsApps(appid);
     return;
   });
+
+  ipcMain.handle(
+    'app:uninstall-app',
+    async (
+      _,
+      appid: number
+    ): Promise<{ success: boolean; error?: string }> => {
+      ensureLibraryDir();
+      ensureInternalsDir();
+
+      const appInfo = loadLibraryInfo(appid);
+      if (!appInfo) {
+        return { success: false, error: 'app-not-found' };
+      }
+
+      const cwd = appInfo.cwd?.trim();
+      if (!cwd) {
+        removeLibraryFile(appid);
+        removeFromInternalsApps(appid);
+        return { success: true };
+      }
+
+      const resolvedCwd = resolveGameCwd(cwd, __dirname);
+      if (!isSafeToDeleteGamePath(cwd, __dirname)) {
+        removeLibraryFile(appid);
+        removeFromInternalsApps(appid);
+        return { success: false, error: 'path-not-allowed' };
+      }
+
+      let deleteError: string | undefined;
+      try {
+        await fs.promises.rm(resolvedCwd, { recursive: true, force: true });
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        if ((err as NodeJS.ErrnoException)?.code !== 'ENOENT') {
+          deleteError = message;
+        }
+      }
+
+      removeLibraryFile(appid);
+      removeFromInternalsApps(appid);
+
+      if (deleteError) {
+        return { success: false, error: deleteError };
+      }
+      return { success: true };
+    }
+  );
 
   ipcMain.handle(
     'app:insert-app',

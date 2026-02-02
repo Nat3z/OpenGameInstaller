@@ -24,6 +24,7 @@
   import HeaderModal from './modal/HeaderModal.svelte';
   import SectionModal from './modal/SectionModal.svelte';
   import TextModal from './modal/TextModal.svelte';
+  import UninstallAppWarningModal from './built/UninstallAppWarningModal.svelte';
   import { fly, slide } from 'svelte/transition';
 
   interface Props {
@@ -353,6 +354,8 @@
     selectedResult = undefined;
   }
 
+  let showUninstallModal = $state(false);
+
   async function removeGame() {
     if (!gameData) return;
 
@@ -376,6 +379,47 @@
         message: `Failed to remove ${gameData.name} from library`,
         type: 'error',
       });
+    }
+  }
+
+  async function confirmUninstall() {
+    if (!gameData) return;
+
+    try {
+      const result = await window.electronAPI.app.uninstallApp(appID);
+      if (result.success) {
+        createNotification({
+          id: Math.random().toString(36).substring(7),
+          message: `${gameData.name} uninstalled.`,
+          type: 'success',
+        });
+        showUninstallModal = false;
+        currentDownloads.update((downloads) =>
+          downloads.filter((download) => download.appID !== appID)
+        );
+        loadCustomStoreData();
+      } else {
+        createNotification({
+          id: Math.random().toString(36).substring(7),
+          message: result.error
+            ? `Uninstalled from library, but some files could not be deleted: ${result.error}`
+            : `${gameData.name} uninstalled from library.`,
+          type: result.error ? 'warning' : 'success',
+        });
+        showUninstallModal = false;
+        currentDownloads.update((downloads) =>
+          downloads.filter((download) => download.appID !== appID)
+        );
+        loadCustomStoreData();
+      }
+    } catch (ex) {
+      console.error('Failed to uninstall game:', ex);
+      createNotification({
+        id: Math.random().toString(36).substring(7),
+        message: `Failed to uninstall ${gameData.name}`,
+        type: 'error',
+      });
+      showUninstallModal = false;
     }
   }
 
@@ -643,6 +687,12 @@
                         Remove from Library
                       </button>
                     {/if}
+                    <button
+                      class="w-full border-none bg-red-500 hover:bg-red-600 text-white font-medium py-3 px-4 rounded-lg transition-colors duration-200 mt-2"
+                      onclick={() => (showUninstallModal = true)}
+                    >
+                      Uninstall (delete files)
+                    </button>
                   </div>
                 {/if}
                 <!-- Loading indicators for addons still searching -->
@@ -954,6 +1004,13 @@
     </div>
   </main>
 {/if}
+
+<UninstallAppWarningModal
+  open={showUninstallModal}
+  gameName={gameData?.name ?? ''}
+  onClose={() => (showUninstallModal = false)}
+  onConfirm={confirmUninstall}
+/>
 
 {#key selectedResult}
   {#if selectedResult}

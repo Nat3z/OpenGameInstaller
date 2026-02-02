@@ -221,6 +221,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     removeApp: wrap((appid: number) =>
       ipcRenderer.invoke('app:remove-app', appid)
     ),
+    uninstallApp: wrap((appid: number) =>
+      ipcRenderer.invoke('app:uninstall-app', appid)
+    ),
     getOS: wrap(() => ipcRenderer.invoke('app:get-os')),
     isOnline: wrap(() => ipcRenderer.invoke('app:is-online')),
     request: wrap(

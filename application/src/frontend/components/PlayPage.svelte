@@ -2,6 +2,7 @@
   import type { LibraryInfo, SearchResult } from 'ogi-addon';
   import PlayIcon from '../Icons/PlayIcon.svelte';
   import {
+    createNotification,
     currentDownloads,
     currentStorePageOpened,
     currentStorePageOpenedStorefront,
@@ -21,12 +22,14 @@
   import { updatesManager, appUpdates } from '../states.svelte';
   import UpdateIcon from '../Icons/UpdateIcon.svelte';
   import UpdateAppModal from './built/UpdateAppModal.svelte';
+  import UninstallAppWarningModal from './built/UninstallAppWarningModal.svelte';
 
   let updateInfo = $derived.by(() => {
     return updatesManager.getAppUpdate(libraryInfo.appID);
   });
 
   let showUpdateModal = $state(false);
+  let showUninstallModal = $state(false);
 
   interface Props {
     libraryInfo: LibraryInfo;
@@ -136,6 +139,40 @@
     );
   }
 
+  async function confirmUninstall() {
+    try {
+      const result = await window.electronAPI.app.uninstallApp(libraryInfo.appID);
+      showUninstallModal = false;
+      if (result.success) {
+        createNotification({
+          id: Math.random().toString(36).substring(7),
+          message: `${libraryInfo.name} uninstalled.`,
+          type: 'success',
+        });
+      } else {
+        createNotification({
+          id: Math.random().toString(36).substring(7),
+          message: result.error
+            ? `Uninstalled from library, but some files could not be deleted: ${result.error}`
+            : `${libraryInfo.name} uninstalled from library.`,
+          type: result.error ? 'warning' : 'success',
+        });
+      }
+      currentDownloads.update((downloads) =>
+        downloads.filter((download) => download.appID !== libraryInfo.appID)
+      );
+      exitPlayPage();
+    } catch (ex) {
+      console.error('Failed to uninstall game:', ex);
+      createNotification({
+        id: Math.random().toString(36).substring(7),
+        message: `Failed to uninstall ${libraryInfo.name}`,
+        type: 'error',
+      });
+      showUninstallModal = false;
+    }
+  }
+
   onDestroy(() => {
     unsubscribe();
     unsubscribe2();
@@ -230,6 +267,13 @@
     onClose={() => (showUpdateModal = false)}
   />
 {/if}
+
+<UninstallAppWarningModal
+  open={showUninstallModal}
+  gameName={libraryInfo.name}
+  onClose={() => (showUninstallModal = false)}
+  onConfirm={confirmUninstall}
+/>
 
 <div
   class="flex flex-col top-0 left-0 overflow-y-auto absolute w-full h-full bg-white z-3 animate-fade-in-pop-fast"
@@ -355,6 +399,22 @@
     >
       <SettingsFilled fill="#2D626A" />
       <span class="font-medium">Settings</span>
+    </button>
+
+    <button
+      class="px-4 py-3 flex border-none rounded-lg justify-center bg-red-500 hover:bg-red-600 text-white items-center gap-2 transition-colors duration-200"
+      onclick={() => (showUninstallModal = true)}
+    >
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        viewBox="0 0 24 24"
+        class="w-5 h-5 fill-white"
+      >
+        <path
+          d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"
+        />
+      </svg>
+      <span class="font-medium">Uninstall</span>
     </button>
 
     <button

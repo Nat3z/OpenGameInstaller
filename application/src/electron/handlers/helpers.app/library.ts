@@ -1,10 +1,37 @@
 /**
  * Library file operations
  */
-import { join } from 'path';
+import { join, resolve, relative } from 'path';
 import * as fs from 'fs';
 import { LibraryInfo } from 'ogi-addon';
 import { __dirname } from '../../manager/manager.paths.js';
+
+/**
+ * Resolves game cwd to an absolute path (relative paths resolved against appDataDir).
+ */
+export function resolveGameCwd(cwd: string, appDataDir: string): string {
+  if (cwd.startsWith('/') || (cwd.length >= 2 && cwd[1] === ':')) {
+    return resolve(cwd);
+  }
+  return resolve(appDataDir, cwd);
+}
+
+/**
+ * Returns true if the resolved game path is safe to delete (must be strictly under
+ * appDataDir to avoid deleting system, home root, or the app data directory itself).
+ */
+export function isSafeToDeleteGamePath(
+  cwd: string,
+  appDataDir: string
+): boolean {
+  const resolved = resolve(resolveGameCwd(cwd, appDataDir));
+  const root = resolve(appDataDir);
+  const rel = relative(root, resolved);
+  if (rel.startsWith('..') || rel === '' || rel === '.') {
+    return false;
+  }
+  return resolved.startsWith(root + join.sep);
+}
 
 export function getLibraryPath(appID: number): string {
   return join(__dirname, `library/${appID}.json`);

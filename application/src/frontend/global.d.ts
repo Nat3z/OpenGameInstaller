@@ -118,6 +118,10 @@ interface Window {
       getAllApps: () => Promise<LibraryInfo[]>;
       launchGame: (appid: string) => Promise<void>;
       removeApp: (appid: number) => Promise<void>;
+      uninstallApp: (appid: number) => Promise<{
+        success: boolean;
+        error?: string;
+      }>;
       getOS: () => Promise<string>;
       isOnline: () => Promise<boolean>;
       request: (

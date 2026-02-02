@@ -126,22 +126,20 @@
     });
   }
 
-  let unsubFocusFailedSetups: (() => void) | null = null;
-
   // Load failed setups and paused downloads when component mounts
   onMount(() => {
     loadFailedSetups();
     document.addEventListener('setup:log', setupLog);
     document.addEventListener('setup:progress', setupProgress);
 
-    unsubFocusFailedSetups = focusFailedSetups.subscribe((value) => {
+    const unsubFocusFailedSetups = focusFailedSetups.subscribe((value) => {
       if (value) scrollToFailedSetupsSection();
     });
 
     return () => {
       document.removeEventListener('setup:log', setupLog);
       document.removeEventListener('setup:progress', setupProgress);
-      unsubFocusFailedSetups?.();
+      unsubFocusFailedSetups();
     };
   });
 

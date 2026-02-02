@@ -117,33 +117,71 @@ export function sendAskForInput(
 
 const ogiDebug = () => (process.env.OGI_DEBUG ?? 'false') === 'true';
 
+ipcMain.on('get-version', (event) => {
+  event.returnValue = VERSION;
+});
+
+app.on('browser-window-focus', function () {
+  globalShortcut.register('CommandOrControl+R', () => {
+    console.log('CommandOrControl+R is pressed: Shortcut Disabled');
+  });
+  globalShortcut.register('F5', () => {
+    console.log('F5 is pressed: Shortcut Disabled');
+  });
+});
+
+app.on('browser-window-blur', function () {
+  globalShortcut.unregister('CommandOrControl+R');
+  globalShortcut.unregister('F5');
+});
+
+app.on('will-quit', () => {
+  globalShortcut.unregister('CommandOrControl+R');
+  globalShortcut.unregister('F5');
+});
+
+app.on('web-contents-created', (_, contents) => {
+  contents.on('will-navigate', (event, navigationUrl) => {
+    const parsedUrl = new URL(navigationUrl);
+
+    if (
+      parsedUrl.origin !== 'http://localhost:8080' &&
+      parsedUrl.origin !== 'file://'
+    ) {
+      event.preventDefault();
+      console.warn(
+        `Blocked navigation to disallowed origin: ${parsedUrl.origin}`
+      );
+    }
+  });
+});
+
 /**
  * Runs when the main app page has finished loading in the main window (second ready-to-show).
  */
 function onMainAppReady() {
+  if (!mainWindow) {
+    console.error('onMainAppReady called but mainWindow is null');
+    return;
+  }
   closeSplashWindow();
 
-  AppEventHandler(mainWindow!!);
+  AppEventHandler(mainWindow);
   FSEventHandler();
-  RealdDebridHandler(mainWindow!!);
-  TorrentHandler(mainWindow!!);
-  DirectDownloadHandler(mainWindow!!);
+  RealdDebridHandler(mainWindow);
+  TorrentHandler(mainWindow);
+  DirectDownloadHandler(mainWindow);
   AddonRestHandler();
-  AddonManagerHandler(mainWindow!!);
+  AddonManagerHandler(mainWindow);
   OOBEHandler();
 
-  ipcMain.on('get-version', async (event) => {
-    event.returnValue = VERSION;
-  });
   console.log('showing window');
-  mainWindow!!.show();
-  mainWindow!!.focus();
+  mainWindow.show();
+  mainWindow.focus();
 
-  if (mainWindow) {
-    checkForAddonUpdates(mainWindow);
-  }
+  checkForAddonUpdates(mainWindow);
   if (ogiDebug()) {
-    mainWindow!!.webContents.openDevTools();
+    mainWindow.webContents.openDevTools();
   }
   if (!isSecurityCheckEnabled) {
     sendNotification({
@@ -156,42 +194,14 @@ function onMainAppReady() {
 
   convertLibrary();
 
-  app.on('browser-window-focus', function () {
-    globalShortcut.register('CommandOrControl+R', () => {
-      console.log('CommandOrControl+R is pressed: Shortcut Disabled');
-    });
-    globalShortcut.register('F5', () => {
-      console.log('F5 is pressed: Shortcut Disabled');
-    });
-  });
-
-  mainWindow!!.webContents.setWindowOpenHandler((details) => {
+  mainWindow.webContents.setWindowOpenHandler((details) => {
     shell.openExternal(details.url);
     return { action: 'deny' };
   });
 
-  app.on('browser-window-blur', function () {
-    globalShortcut.unregister('CommandOrControl+R');
-    globalShortcut.unregister('F5');
-  });
-
-  mainWindow!!.webContents.on('devtools-opened', () => {
+  mainWindow.webContents.on('devtools-opened', () => {
     if (!isDev() && !ogiDebug())
-      mainWindow!!.webContents.closeDevTools();
-  });
-
-  app.on('web-contents-created', (_, contents) => {
-    contents.on('will-navigate', (event, navigationUrl) => {
-      const parsedUrl = new URL(navigationUrl);
-
-      if (
-        parsedUrl.origin !== 'http://localhost:8080' &&
-        parsedUrl.origin !== 'file://'
-      ) {
-        event.preventDefault();
-        throw new Error('Navigating to that address is not allowed.');
-      }
-    });
+      mainWindow.webContents.closeDevTools();
   });
 }
 
@@ -237,7 +247,7 @@ function createWindow() {
     mainWindow = null;
   });
 
-  fs.mkdir(join(__dirname, 'config'), (_) => {});
+  fs.mkdirSync(join(__dirname, 'config'), { recursive: true });
 
   // First ready-to-show: splash is ready; show window so user sees loading
   mainWindow.once('ready-to-show', () => {

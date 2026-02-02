@@ -537,4 +537,5 @@ ipcRenderer.on(
   })
 );
 
+// Signal to main process that renderer is ready to receive IPC events
 wrap(() => ipcRenderer.send('client-ready-for-events'))();

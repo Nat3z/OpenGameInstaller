@@ -7,10 +7,18 @@ import type { $Hosts } from 'real-debrid-js';
 let dbg_eventsProcessed = 0;
 let dbg_lastReportTime = Date.now();
 
+/**
+ * Debug helper; increments a counter used for events-processed-per-second reporting. No parameters, no return.
+ */
 function dbg_countEvent() {
   dbg_eventsProcessed++;
 }
 
+/**
+ * Wraps an IPC/renderer function so each call is counted for debug stats and errors are dispatched as dbg:error CustomEvents.
+ * @param fn - Function to wrap.
+ * @returns A function with the same signature as fn.
+ */
 const wrap = (fn: (...args: any[]) => any) => {
   return (...args: any[]) => {
     dbg_countEvent();

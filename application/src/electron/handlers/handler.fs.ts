@@ -8,6 +8,11 @@ import * as fsAsync from 'fs/promises';
 
 const VALID_THEME_IDS = new Set(['light', 'dark', 'synthwave']);
 
+/**
+ * Reads the theme from config/option/general.json, validates it against VALID_THEME_IDS,
+ * and returns a valid theme id or 'light' on missing/invalid config or on error.
+ * Used synchronously at load to avoid FOUC.
+ */
 function getInitialTheme(): string {
   const configPath = join(__dirname, './config/option/general.json');
   try {
@@ -22,6 +27,9 @@ function getInitialTheme(): string {
   }
 }
 
+/**
+ * Registers IPC handlers for the FS and theme APIs (e.g. get-initial-theme, fs:read, fs:write, etc.).
+ */
 export default function handler() {
   ipcMain.on('get-initial-theme', (event) => {
     event.returnValue = getInitialTheme();

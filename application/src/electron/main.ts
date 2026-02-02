@@ -66,6 +66,11 @@ interface Notification {
   id: string;
   type: 'info' | 'error' | 'success' | 'warning';
 }
+
+/**
+ * Sends a notification to the renderer via IPC.
+ * @param notification - Object with message, id, and type ('info' | 'error' | 'success' | 'warning').
+ */
 export function sendNotification(notification: Notification) {
   sendIPCMessage('notification', notification);
 }
@@ -74,6 +79,12 @@ let isReadyForEvents = false;
 
 let readyForEventWaiters: (() => void)[] = [];
 
+/**
+ * Sends an IPC message to the main window. If the renderer is not yet ready for events,
+ * queues the send until after client-ready-for-events. Used for notifications, splash updates, etc.
+ * @param channel - IPC channel name.
+ * @param args - Arguments to send.
+ */
 export async function sendIPCMessage(channel: string, ...args: any[]) {
   if (!isReadyForEvents) {
     await new Promise<void>((resolve) => {
@@ -90,6 +101,14 @@ export let currentScreens = new Map<
   { [key: string]: string | boolean | number } | undefined
 >();
 
+/**
+ * Asks the renderer to show an input modal for the given option. Sends input-asked with
+ * option id, config, name, description. Main window must exist and have webContents.
+ * @param id - Option id.
+ * @param config - Configuration file.
+ * @param name - Display name.
+ * @param description - Description for the modal.
+ */
 export function sendAskForInput(
   id: string,
   config: ConfigurationFile,
@@ -111,14 +130,15 @@ export function sendAskForInput(
 }
 
 /**
- * Single-window flow for Steam Deck / Game Mode: one BrowserWindow shows splash first, then the main app.
- * This avoids Steam focusing a separate splash window and leaving the main window black.
+ * Returns whether the OGI_DEBUG env flag is set (e.g. process.env.OGI_DEBUG === 'true').
+ * Used for dev tools and debug behavior.
  */
-
 const ogiDebug = () => (process.env.OGI_DEBUG ?? 'false') === 'true';
 
 /**
- * Runs when the main app page has finished loading in the main window (second ready-to-show).
+ * Lifecycle hook run when the main app page has finished loading in the main window. Closes splash,
+ * wires all IPC/event handlers (App, FS, RealDebrid, Torrent, etc.), shows/focuses the window,
+ * runs addon update check and library conversion. Optionally opens dev tools if ogiDebug() is true.
  */
 function onMainAppReady() {
   closeSplashWindow();

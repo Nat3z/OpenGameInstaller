@@ -7,7 +7,13 @@
   import Modal from '../components/modal/Modal.svelte';
   import TextModal from '../components/modal/TextModal.svelte';
   import TitleModal from '../components/modal/TitleModal.svelte';
-  import { type CommunityAddon, communityAddonsLocal } from '../store';
+  import {
+    type CommunityAddon,
+    communityAddonsLocal,
+    communityAddonsLoading,
+    communityAddonsError,
+    fetchCommunityAddons,
+  } from '../store';
   import { fade } from 'svelte/transition';
 
   let communityList: CommunityAddon[] = $state([]);
@@ -101,15 +107,31 @@
 {/if}
 
 <div class="community-addons">
-  {#if communityList.length === 0}
+  {#if $communityAddonsLoading}
     <div class="loading-container">
       <div class="loading-message" in:fade={{ duration: 300 }}>
         <div class="loading-spinner"></div>
         <p class="text-lg">Loading community addons...</p>
       </div>
     </div>
+  {:else if $communityAddonsError}
+    <div class="error-container" in:fade={{ duration: 300 }}>
+      <p class="error-message text-lg text-gray-700">
+        {$communityAddonsError}
+      </p>
+      <button
+        type="button"
+        class="retry-button"
+        onclick={() => fetchCommunityAddons()}
+      >
+        Retry
+      </button>
+    </div>
   {:else}
     <div class="addon-grid">
+      {#if communityList.length === 0}
+        <p class="empty-message text-lg text-gray-600">No community addons.</p>
+      {:else}
       {#if showWarningModal && selectedAddon}
         <Modal
           open={showWarningModal}
@@ -215,6 +237,7 @@
           </div>
         </div>
       {/each}
+      {/if}
     </div>
   {/if}
 </div>
@@ -229,6 +252,18 @@
   .loading-container,
   .error-container {
     @apply flex items-center justify-center w-full h-full;
+  }
+
+  .error-container {
+    @apply flex-col gap-4;
+  }
+
+  .error-message {
+    @apply text-center max-w-md;
+  }
+
+  .retry-button {
+    @apply px-4 py-2 rounded-lg font-medium bg-accent hover:bg-accent-dark text-white border-none cursor-pointer transition-colors duration-200;
   }
 
   .loading-text,

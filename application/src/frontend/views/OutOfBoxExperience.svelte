@@ -5,7 +5,15 @@
   import { onMount, onDestroy } from 'svelte';
   // @ts-ignore
   import WineIcon from '../Icons/WineIcon.svelte';
-  import { createNotification, oobeLog } from '../store';
+  import {
+    createNotification,
+    oobeLog,
+    type CommunityAddon,
+    communityAddonsLocal,
+    communityAddonsLoading,
+    communityAddonsError,
+    fetchCommunityAddons,
+  } from '../store';
 
   let stage = $state(0);
 
@@ -48,15 +56,6 @@
     finishedSetup: () => void;
   }
 
-  type CommunityAddon = {
-    name: string;
-    author: string;
-    source: string;
-    img: string;
-    description: string;
-  };
-
-  let communityList: Promise<CommunityAddon[]> | null = $state(null);
   let { finishedSetup }: Props = $props();
 
   async function downloadTools() {
@@ -290,9 +289,7 @@
         stage = 2;
       }
     }
-    communityList = fetch('https://ogi.nat3z.com/api/community.json').then(
-      (response) => response.json()
-    );
+    fetchCommunityAddons();
   });
 
   onDestroy(() => {
@@ -742,44 +739,53 @@
       <div
         class="w-full max-w-3xl h-64 overflow-y-auto border border-accent-light rounded-lg p-4 bg-white"
       >
-        {#if communityList}
-          {#await communityList}
-            <div class="flex items-center justify-center h-full">
-              <p class="text-gray-600">Loading community addons...</p>
-            </div>
-          {:then list}
-            <div class="flex flex-col gap-3">
-              {#each list as addon}
-                <div
-                  class="flex flex-row gap-4 items-center p-3 rounded-lg hover:bg-accent-lighter transition-colors duration-200 border border-transparent hover:border-accent-light"
-                >
-                  <img
-                    src={addon.img}
-                    alt={addon.name}
-                    class="w-12 h-12 rounded-lg object-cover"
-                  />
-                  <div class="flex flex-col flex-1">
-                    <h3 class="font-open-sans font-semibold text-gray-900">
-                      {addon.name}
-                    </h3>
-                    <p class="text-sm text-gray-600">{addon.description}</p>
-                  </div>
-                  <button
-                    onclick={() => toggleAddon(addon)}
-                    class="px-4 py-2 rounded-lg font-open-sans font-medium transition-colors duration-200 border-none {selectedAddons.includes(
-                      addon.source
-                    )
-                      ? 'bg-accent hover:bg-accent-dark text-white'
-                      : 'bg-accent-light hover:bg-accent text-accent-dark hover:text-white'}"
-                  >
-                    {selectedAddons.includes(addon.source)
-                      ? 'Selected'
-                      : 'Select'}
-                  </button>
+        {#if $communityAddonsLoading}
+          <div class="flex items-center justify-center h-full">
+            <p class="text-gray-600">Loading community addons...</p>
+          </div>
+        {:else if $communityAddonsError}
+          <div class="flex flex-col items-center justify-center gap-3 h-full">
+            <p class="text-gray-700 text-center">{$communityAddonsError}</p>
+            <button
+              type="button"
+              onclick={() => fetchCommunityAddons()}
+              class="px-4 py-2 rounded-lg font-open-sans font-medium bg-accent hover:bg-accent-dark text-white border-none cursor-pointer"
+            >
+              Retry
+            </button>
+          </div>
+        {:else}
+          <div class="flex flex-col gap-3">
+            {#each $communityAddonsLocal as addon}
+              <div
+                class="flex flex-row gap-4 items-center p-3 rounded-lg hover:bg-accent-lighter transition-colors duration-200 border border-transparent hover:border-accent-light"
+              >
+                <img
+                  src={addon.img}
+                  alt={addon.name}
+                  class="w-12 h-12 rounded-lg object-cover"
+                />
+                <div class="flex flex-col flex-1">
+                  <h3 class="font-open-sans font-semibold text-gray-900">
+                    {addon.name}
+                  </h3>
+                  <p class="text-sm text-gray-600">{addon.description}</p>
                 </div>
-              {/each}
-            </div>
-          {/await}
+                <button
+                  onclick={() => toggleAddon(addon)}
+                  class="px-4 py-2 rounded-lg font-open-sans font-medium transition-colors duration-200 border-none {selectedAddons.includes(
+                    addon.source
+                  )
+                    ? 'bg-accent hover:bg-accent-dark text-white'
+                    : 'bg-accent-light hover:bg-accent text-accent-dark hover:text-white'}"
+                >
+                  {selectedAddons.includes(addon.source)
+                    ? 'Selected'
+                    : 'Select'}
+                </button>
+              </div>
+            {/each}
+          </div>
         {/if}
       </div>
       <h2 class="font-open-sans text-gray-600 text-center max-w-2xl">

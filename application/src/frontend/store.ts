@@ -237,18 +237,37 @@ export type CommunityAddon = {
   description: string;
 };
 export const communityAddonsLocal: Writable<CommunityAddon[]> = writable([]);
+export const communityAddonsLoading: Writable<boolean> = writable(false);
+export const communityAddonsError: Writable<string | null> = writable(null);
 
-export async function fetchCommunityAddons() {
-  window.electronAPI.app
-    .axios({
+function communityAddonsErrorMessage(err: unknown): string {
+  if (err && typeof err === 'object' && 'response' in err) {
+    const res = (err as { response?: { status?: number } }).response;
+    if (res?.status === 404) return 'Community addons list not found.';
+    if (res?.status && res.status >= 500) return 'Server error. Try again later.';
+  }
+  if (err instanceof Error && err.message) return err.message;
+  return "Couldn't load community addons. Check your connection and try again.";
+}
+
+export async function fetchCommunityAddons(): Promise<void> {
+  communityAddonsLoading.set(true);
+  communityAddonsError.set(null);
+  try {
+    const response = await window.electronAPI.app.axios({
       method: 'GET',
       url: 'https://ogi.nat3z.com/api/community.json',
       headers: {
         'Content-Type': 'application/json',
         'User-Agent': 'OpenGameInstaller Client/Rest1.0',
       },
-    })
-    .then((response) => {
-      communityAddonsLocal.set(response.data as CommunityAddon[]);
     });
+    communityAddonsLocal.set(response.data as CommunityAddon[]);
+    communityAddonsError.set(null);
+  } catch (err) {
+    communityAddonsError.set(communityAddonsErrorMessage(err));
+    // Leave communityAddonsLocal unchanged so cached/previous list can still show
+  } finally {
+    communityAddonsLoading.set(false);
+  }
 }

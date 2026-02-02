@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { onDestroy } from 'svelte';
+  import { onDestroy, onMount } from 'svelte';
+  import { get } from 'svelte/store';
   import DeleteAddonWarningModal from '../components/built/DeleteAddonWarningModal.svelte';
   import ButtonModal from '../components/modal/ButtonModal.svelte';
   import CloseModal from '../components/modal/CloseModal.svelte';
@@ -94,6 +95,12 @@
   });
   onDestroy(() => {
     unsub();
+  });
+
+  onMount(() => {
+    if (!get(communityAddonsLoading) && get(communityAddonsLocal).length === 0) {
+      fetchCommunityAddons();
+    }
   });
 </script>
 

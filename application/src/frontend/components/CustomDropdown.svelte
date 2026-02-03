@@ -140,13 +140,13 @@
                 class="object-contain"
               />
             {/if}
-            <div class="font-medium text-gray-900">
+            <div class="font-medium text-text">
               {option.name}
             </div>
           </div>
           {#if option.description}
             <div class="flex-1 text-left">
-              <div class="text-sm text-gray-600 mt-1">
+              <div class="text-sm text-text-muted mt-1">
                 {option.description}
               </div>
             </div>
@@ -181,7 +181,7 @@
   }
 
   .custom-dropdown-menu::-webkit-scrollbar-track {
-    @apply bg-gray-100 rounded-r-lg;
+    @apply bg-surface rounded-r-lg;
     -webkit-box-shadow: inset 0 0 1px rgba(0, 0, 0, 0.1);
   }
 
@@ -197,7 +197,7 @@
   }
 
   .custom-dropdown-menu::-webkit-scrollbar-corner {
-    @apply bg-gray-100;
+    @apply bg-surface;
   }
 
   .custom-dropdown-menu {

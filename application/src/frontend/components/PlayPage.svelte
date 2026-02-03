@@ -250,12 +250,12 @@
       <h1 class="text-4xl font-archivo font-bold text-white mb-2">
         {libraryInfo.name}
       </h1>
-      <!-- <div class="text-sm text-gray-200">
-        <span class="text-gray-300">App ID:</span>
+      <!-- <div class="text-sm text-text-muted">
+        <span class="text-text-muted">App ID:</span>
         {libraryInfo.appID}
         {#if libraryInfo.storefront}
           <span class="mx-4"></span>
-          <span class="text-gray-300">Store:</span>
+          <span class="text-text-muted">Store:</span>
           {libraryInfo.storefront}
         {/if}
       </div> -->

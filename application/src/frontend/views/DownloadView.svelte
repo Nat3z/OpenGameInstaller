@@ -475,10 +475,10 @@
               /></svg
             >
           </div>
-          <h3 class="text-lg font-archivo font-semibold text-gray-600 mb-2">
+          <h3 class="text-lg font-archivo font-semibold text-text-muted mb-2">
             No Downloads
           </h3>
-          <p class="text-gray-500 text-sm">You don't have any downloads yet.</p>
+          <p class="text-text-muted text-sm">You don't have any downloads yet.</p>
         </div>
       </div>
     </div>
@@ -788,7 +788,7 @@
       <div
         class="w-1 h-6 bg-linear-to-b from-red-500 to-orange-600 rounded-full"
       ></div>
-      <h2 class="text-2xl font-bold text-gray-900">Failed Setups</h2>
+      <h2 class="text-2xl font-bold text-text">Failed Setups</h2>
       <span
         class="bg-red-100 text-red-800 text-xs font-medium px-2 py-1 rounded-full"
       >
@@ -988,7 +988,7 @@
   }
 
   .download-title {
-    @apply text-sm font-semibold text-gray-900 truncate;
+    @apply text-sm font-semibold text-text truncate;
   }
 
   .progress-section {
@@ -1004,7 +1004,7 @@
   }
 
   .progress-stats {
-    @apply flex justify-between text-xs text-gray-600;
+    @apply flex justify-between text-xs text-text-muted;
   }
 
   .progress-percentage {
@@ -1012,7 +1012,7 @@
   }
 
   .progress-eta {
-    @apply text-gray-500;
+    @apply text-text-muted;
   }
 
   .download-actions {
@@ -1099,11 +1099,11 @@
   }
 
   .failed-setup-title {
-    @apply text-sm font-semibold text-gray-900 truncate mb-1;
+    @apply text-sm font-semibold text-text truncate mb-1;
   }
 
   .failed-setup-meta {
-    @apply flex items-center gap-2 text-xs text-gray-500;
+    @apply flex items-center gap-2 text-xs text-text-muted;
   }
 
   .error-time {

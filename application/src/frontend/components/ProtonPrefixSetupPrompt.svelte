@@ -217,7 +217,7 @@
         <h3 class="text-sm font-archivo font-semibold text-accent-dark">
           Proton Prefix Setup Required
         </h3>
-        <p class="text-xs text-gray-600">
+        <p class="text-xs text-text-muted">
           {setup.gameName} • by {setup.addonSource}
         </p>
       </div>
@@ -256,7 +256,7 @@
       <div
         class="step-number w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold {steamKilled
           ? 'bg-accent text-white'
-          : 'bg-gray-200 text-gray-600'}"
+          : 'bg-surface text-text-muted'}"
       >
         {#if steamKilled}
           <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
@@ -287,8 +287,8 @@
         class="step-number w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold {steamStarted
           ? 'bg-accent text-white'
           : steamKilled
-            ? 'bg-gray-300 text-gray-700'
-            : 'bg-gray-200 text-gray-400'}"
+            ? 'bg-border-muted text-text'
+            : 'bg-surface text-text-muted'}"
       >
         {#if steamStarted}
           <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
@@ -307,7 +307,7 @@
           ? 'bg-accent/20 text-accent-dark cursor-default'
           : steamKilled
             ? 'bg-accent text-white hover:bg-accent-dark'
-            : 'bg-gray-200 text-gray-400 cursor-not-allowed'}"
+            : 'bg-surface text-text-muted cursor-not-allowed'}"
         onclick={startSteam}
         disabled={!steamKilled || steamStarted}
       >
@@ -321,8 +321,8 @@
         class="step-number w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold {prefixExists
           ? 'bg-accent text-white'
           : steamStarted
-            ? 'bg-gray-300 text-gray-700'
-            : 'bg-gray-200 text-gray-400'}"
+            ? 'bg-border-muted text-text'
+            : 'bg-surface text-text-muted'}"
       >
         {#if prefixExists}
           <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
@@ -341,7 +341,7 @@
           ? 'bg-accent/20 text-accent-dark'
           : steamStarted
             ? 'bg-accent-lighter border border-accent-light text-accent-dark'
-            : 'bg-gray-100 text-gray-400'}"
+            : 'bg-surface text-text-muted'}"
       >
         {#if prefixExists}
           <span class="font-medium text-center w-full">Game Launched ✓</span>
@@ -354,7 +354,7 @@
             create the Proton prefix.
           </p>
         {:else}
-          <span class="font-medium text-gray-500">Launch the game in Steam</span
+          <span class="font-medium text-text-muted">Launch the game in Steam</span
           >
         {/if}
       </div>
@@ -365,7 +365,7 @@
       <div
         class="step-number w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold {prefixExists
           ? 'bg-accent text-white'
-          : 'bg-gray-200 text-gray-400'}"
+          : 'bg-surface text-text-muted'}"
       >
         {#if isInstallingRedist}
           <div
@@ -379,7 +379,7 @@
         class="step-button flex-1 py-2 px-4 rounded-lg text-sm font-medium transition-all {prefixExists &&
         !isInstallingRedist
           ? 'bg-accent text-white hover:bg-accent-dark'
-          : 'bg-gray-200 text-gray-400 cursor-not-allowed'}"
+          : 'bg-surface text-text-muted cursor-not-allowed'}"
         onclick={continueSetup}
         disabled={!prefixExists || isInstallingRedist}
       >
@@ -407,10 +407,10 @@
   <!-- Dependencies Info -->
   {#if setup.redistributables && setup.redistributables.length > 0}
     <div class="dependencies-info border-t border-border pt-3 mt-2">
-      <p class="text-xs text-gray-500 mb-2">Dependencies to install:</p>
+      <p class="text-xs text-text-muted mb-2">Dependencies to install:</p>
       <div class="flex flex-wrap gap-1">
         {#each setup.redistributables as redist}
-          <span class="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded">
+          <span class="text-xs bg-surface text-text-muted px-2 py-1 rounded">
             {redist.name}
           </span>
         {/each}

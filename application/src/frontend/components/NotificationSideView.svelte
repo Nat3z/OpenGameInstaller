@@ -333,18 +333,18 @@
                   </svg>
                 </div>
                 <h3
-                  class="text-lg font-archivo font-semibold text-gray-600 mb-2"
+                  class="text-lg font-archivo font-semibold text-text-muted mb-2"
                 >
                   No Notifications
                 </h3>
-                <p class="text-gray-500 text-sm">
+                <p class="text-text-muted text-sm">
                   You don't have any notifications yet.
                 </p>
               </div>
             {:else}
               <div class="p-4 space-y-3">
                 <div class="flex items-center justify-between mb-3">
-                  <span class="text-sm text-gray-600">
+                  <span class="text-sm text-text-muted">
                     {$notificationHistory.length} notification{$notificationHistory.length !==
                     1
                       ? 's'
@@ -372,12 +372,12 @@
                     </div>
                     <div class="flex-1 min-w-0">
                       <p
-                        class="text-sm font-medium text-gray-900 leading-relaxed mb-1"
+                        class="text-sm font-medium text-text leading-relaxed mb-1"
                       >
                         {notification.message}
                       </p>
                       {#if notification.timestamp}
-                        <p class="text-xs text-gray-500">
+                        <p class="text-xs text-text-muted">
                           {formatTimestamp(notification.timestamp)}
                         </p>
                       {/if}
@@ -406,18 +406,18 @@
                   >
                 </div>
                 <h3
-                  class="text-lg font-archivo font-semibold text-gray-600 mb-2"
+                  class="text-lg font-archivo font-semibold text-text-muted mb-2"
                 >
                   No Active Tasks
                 </h3>
-                <p class="text-gray-500 text-sm">
+                <p class="text-text-muted text-sm">
                   Background tasks will appear here when they're running.
                 </p>
               </div>
             {:else}
               <div class="p-4 space-y-3">
                 <div class="flex items-center justify-between mb-3">
-                  <span class="text-sm text-gray-600">
+                  <span class="text-sm text-text-muted">
                     {$deferredTasks.length} active task{$deferredTasks.length !==
                     1
                       ? 's'
@@ -455,7 +455,7 @@
                     <div class="flex-1 min-w-0">
                       <div class="flex items-start justify-between mb-1">
                         <div class="flex items-center gap-2">
-                          <p class="text-sm font-medium text-gray-900">
+                          <p class="text-sm font-medium text-text">
                             {task.name}
                           </p>
                         </div>
@@ -496,12 +496,12 @@
                         {/if}
                       </div>
 
-                      <p class="text-xs text-gray-600 mb-2">
+                      <p class="text-xs text-text-muted mb-2">
                         {task.description}
                       </p>
 
                       {#if task.status === 'running' && task.progress > 0}
-                        <div class="w-full bg-gray-200 rounded-full h-1.5 mb-2">
+                        <div class="w-full bg-border-muted rounded-full h-1.5 mb-2">
                           <div
                             class="bg-accent h-1.5 rounded-full transition-all duration-300"
                             style="width: {task.progress}%"
@@ -510,7 +510,7 @@
                       {/if}
 
                       <div
-                        class="flex items-center justify-between text-xs text-gray-500"
+                        class="flex items-center justify-between text-xs text-text-muted"
                       >
                         <span>by {task.addonOwner}</span>
                         <div class="flex items-center gap-2">
@@ -533,12 +533,12 @@
                       {#if task.logs && task.logs.length > 0}
                         <details class="mt-2">
                           <summary
-                            class="text-xs text-gray-600 cursor-pointer hover:text-gray-800"
+                            class="text-xs text-text-muted cursor-pointer hover:text-text"
                           >
                             View logs ({task.logs.length} lines)
                           </summary>
                           <div
-                            class="mt-1 p-2 bg-gray-900 rounded text-xs text-green-400 font-mono max-h-20 overflow-y-auto"
+                            class="mt-1 p-2 bg-surface rounded text-xs text-green-400 font-mono max-h-20 overflow-y-auto"
                             use:registerLogContainer={task.id}
                           >
                             {#each task.logs as log}

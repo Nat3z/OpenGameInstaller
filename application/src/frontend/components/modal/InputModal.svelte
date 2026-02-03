@@ -166,11 +166,11 @@
 <style>
   @reference "../../app.css";
   .option-label {
-    @apply block text-lg font-archivo font-semibold text-gray-900 mb-1 dark:text-gray-100;
+    @apply block text-lg font-archivo font-semibold text-text mb-1;
   }
 
   .option-description {
-    @apply text-sm text-gray-600 mb-4 dark:text-gray-400;
+    @apply text-sm text-text-muted mb-4;
   }
 
   .option-input {

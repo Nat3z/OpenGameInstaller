@@ -779,7 +779,7 @@
                   <h2 class="text-2xl font-archivo font-bold mb-2">
                     Search Results
                   </h2>
-                  <p class="text-gray-600">
+                  <p class="text-text-muted">
                     Results for: <span class="font-semibold"
                       >"{$searchQuery}"</span
                     >
@@ -796,8 +796,8 @@
                     alt="offline"
                     class="w-32 h-32 opacity-50"
                   />
-                  <h3 class="text-xl text-gray-700">You're Offline</h3>
-                  <p class="text-gray-500 text-center">
+                  <h3 class="text-xl text-text">You're Offline</h3>
+                  <p class="text-text-muted text-center">
                     Searching for games is unavailable when you're offline.
                   </p>
                 </div>
@@ -955,10 +955,10 @@
 
                   {#if $searchResultsByAddon.length === 0 && !$loadingResults}
                     <div class="no-results" in:fade={{ duration: 300 }}>
-                      <h3 class="text-xl text-gray-700 mb-2">
+                      <h3 class="text-xl text-text mb-2">
                         No Results Found
                       </h3>
-                      <p class="text-gray-500">
+                      <p class="text-text-muted">
                         Try searching for a different game
                       </p>
                     </div>
@@ -1109,7 +1109,7 @@
   }
 
   .nav-button:hover {
-    @apply bg-gray-100;
+    @apply bg-surface;
     transform: scale(1.05);
   }
 
@@ -1162,7 +1162,7 @@
   }
 
   .addon-header:hover {
-    @apply bg-gray-50;
+    @apply bg-background-color;
   }
 
   .addon-header-content {
@@ -1170,15 +1170,15 @@
   }
 
   .addon-name {
-    @apply text-lg font-semibold text-gray-800 font-archivo px-2;
+    @apply text-lg font-semibold text-text font-archivo px-2;
   }
 
   .result-count {
-    @apply text-sm text-gray-600 font-medium;
+    @apply text-sm text-text-muted font-medium;
   }
 
   .collapse-icon {
-    @apply w-5 h-5 text-gray-600 transition-transform duration-200 mx-2;
+    @apply w-5 h-5 text-text-muted transition-transform duration-200 mx-2;
   }
 
   .collapse-icon.collapsed {
@@ -1202,7 +1202,7 @@
   }
 
   .loading-text {
-    @apply text-sm text-gray-500 font-medium italic;
+    @apply text-sm text-text-muted font-medium italic;
   }
 
   .addon-loading-spinner {
@@ -1211,7 +1211,7 @@
   }
 
   .empty-icon {
-    @apply w-5 h-5 text-gray-400;
+    @apply w-5 h-5 text-text-muted;
   }
 
   .search-result-item {
@@ -1231,11 +1231,11 @@
   }
 
   .result-title {
-    @apply text-lg font-archivo font-semibold text-gray-900;
+    @apply text-lg font-archivo font-semibold text-text;
   }
 
   .result-source {
-    @apply text-sm text-gray-500 capitalize;
+    @apply text-sm text-text-muted capitalize;
   }
 
   .result-button {

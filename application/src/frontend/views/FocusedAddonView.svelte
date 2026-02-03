@@ -695,14 +695,14 @@
   }
 
   .addon-title {
-    @apply font-semibold text-gray-900 font-archivo;
+    @apply font-semibold text-text font-archivo;
     font-size: 1.25rem;
     margin-bottom: 0.25rem;
     line-height: 1.2;
   }
 
   .addon-description {
-    @apply text-gray-600;
+    @apply text-text-muted;
     font-size: 0.95rem;
     line-height: 1.4;
     margin-bottom: 0;
@@ -718,7 +718,7 @@
   }
 
   .config-label {
-    @apply text-lg font-medium text-gray-700 min-w-48 font-archivo;
+    @apply text-lg font-medium text-text min-w-48 font-archivo;
   }
 
   .config-input {
@@ -743,7 +743,7 @@
   }
   .input-checkbox:not(:checked) + .checkbox-checkmark::after {
     content: '–';
-    @apply text-gray-400 text-sm font-archivo;
+    @apply text-text-muted text-sm font-archivo;
   }
   .input-checkbox:checked + .checkbox-checkmark::after {
     content: '•';

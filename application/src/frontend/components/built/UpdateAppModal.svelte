@@ -230,7 +230,7 @@
 <Modal open={true} size="medium" {onClose}>
   <TitleModal title="Update {gameName}" />
 
-  <p class="text-sm text-gray-600 mt-1 mb-4">
+  <p class="text-sm text-text-muted mt-1 mb-4">
     Select a source to download version <span
       class="font-semibold text-accent-dark">{updateVersion}</span
     >
@@ -245,7 +245,7 @@
         <div
           class="w-8 h-8 border-2 border-accent border-t-transparent rounded-full animate-spin"
         ></div>
-        <p class="ml-3 text-gray-600">Loading sources...</p>
+        <p class="ml-3 text-text-muted">Loading sources...</p>
       </div>
     {:else}
       <!-- Loading indicators for addons still searching -->
@@ -260,13 +260,13 @@
             <div class="flex items-center gap-3">
               <AddonPicture {addonId} class="w-10 h-10 rounded-lg" />
               <div>
-                <h3 class="font-medium text-gray-800 text-sm">{addonId}</h3>
+                <h3 class="font-medium text-text text-sm">{addonId}</h3>
                 {#if isEmpty}
-                  <span class="text-xs text-gray-500 italic"
+                  <span class="text-xs text-text-muted italic"
                     >No results found</span
                   >
                 {:else}
-                  <span class="text-xs text-gray-500 italic">Searching...</span>
+                  <span class="text-xs text-text-muted italic">Searching...</span>
                 {/if}
               </div>
             </div>
@@ -285,7 +285,7 @@
         {#if recommendedAddon}
           {@const recAddon = recommendedAddon as AddonGroup}
           <div class="mb-3">
-            <h4 class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2 px-1">Recommended</h4>
+            <h4 class="text-xs font-semibold text-text-muted uppercase tracking-wide mb-2 px-1">Recommended</h4>
             <div
               class="mb-0"
               in:fly={{ y: 20, duration: 300 }}
@@ -301,10 +301,10 @@
                     class="w-8 h-8 rounded-lg"
                   />
                   <div class="text-left">
-                    <h3 class="font-medium text-gray-800 text-sm">
+                    <h3 class="font-medium text-text text-sm">
                       {recAddon.addonName}
                     </h3>
-                    <span class="text-xs text-gray-600">
+                    <span class="text-xs text-text-muted">
                       {recAddon.results.length} source{recAddon.results
                         .length === 1
                         ? ''
@@ -313,7 +313,7 @@
                   </div>
                 </div>
                 <svg
-                  class="w-4 h-4 text-gray-600 transition-transform duration-200"
+                  class="w-4 h-4 text-text-muted transition-transform duration-200"
                   class:rotate-180={!collapsedAddons.has(recAddon.addonId)}
                   viewBox="0 0 24 24"
                   fill="none"
@@ -338,12 +338,12 @@
                     >
                       <div class="flex items-center justify-between mb-2">
                         <span
-                          class="font-medium text-gray-800 text-sm truncate max-w-[200px]"
+                          class="font-medium text-text text-sm truncate max-w-[200px]"
                         >
                           {result.name}
                         </span>
                         <div
-                          class="flex items-center gap-1 text-xs text-gray-500"
+                          class="flex items-center gap-1 text-xs text-text-muted"
                         >
                           {#if result.downloadType === 'magnet'}
                             <img
@@ -383,7 +383,7 @@
         <!-- Other Sources Section -->
         {#if otherAddons.length > 0}
           <div>
-            <h4 class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2 px-1">Other Sources</h4>
+            <h4 class="text-xs font-semibold text-text-muted uppercase tracking-wide mb-2 px-1">Other Sources</h4>
             {#each otherAddons as addonGroup, groupIndex (addonGroup.addonId)}
               <div
                 class="mb-0"
@@ -400,10 +400,10 @@
                       class="w-8 h-8 rounded-lg"
                     />
                     <div class="text-left">
-                      <h3 class="font-medium text-gray-800 text-sm">
+                      <h3 class="font-medium text-text text-sm">
                         {addonGroup.addonName}
                       </h3>
-                      <span class="text-xs text-gray-600">
+                      <span class="text-xs text-text-muted">
                         {addonGroup.results.length} source{addonGroup.results
                           .length === 1
                           ? ''
@@ -412,7 +412,7 @@
                     </div>
                   </div>
                   <svg
-                    class="w-4 h-4 text-gray-600 transition-transform duration-200"
+                    class="w-4 h-4 text-text-muted transition-transform duration-200"
                     class:rotate-180={!collapsedAddons.has(addonGroup.addonId)}
                     viewBox="0 0 24 24"
                     fill="none"
@@ -437,12 +437,12 @@
                       >
                         <div class="flex items-center justify-between mb-2">
                           <span
-                            class="font-medium text-gray-800 text-sm truncate max-w-[200px]"
+                            class="font-medium text-text text-sm truncate max-w-[200px]"
                           >
                             {result.name}
                           </span>
                           <div
-                            class="flex items-center gap-1 text-xs text-gray-500"
+                            class="flex items-center gap-1 text-xs text-text-muted"
                           >
                             {#if result.downloadType === 'magnet'}
                               <img
@@ -482,7 +482,7 @@
       {:else if !queryingSources && loadingAddons.size === 0}
         <div class="text-center py-8">
           <svg
-            class="w-12 h-12 mx-auto text-gray-400 mb-3"
+            class="w-12 h-12 mx-auto text-text-muted mb-3"
             viewBox="0 0 24 24"
             fill="none"
             stroke="currentColor"
@@ -490,8 +490,8 @@
             <circle cx="12" cy="12" r="10" stroke-width="2" />
             <path d="M8 12h8M12 8v8" stroke-width="2" stroke-linecap="round" />
           </svg>
-          <p class="text-gray-600">No update sources available</p>
-          <p class="text-sm text-gray-500 mt-1">
+          <p class="text-text-muted">No update sources available</p>
+          <p class="text-sm text-text-muted mt-1">
             Try again later or check your addons
           </p>
         </div>

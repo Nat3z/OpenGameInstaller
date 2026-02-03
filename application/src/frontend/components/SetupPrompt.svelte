@@ -50,7 +50,7 @@
         <h3 class="text-sm font-archivo font-semibold text-accent-dark">
           Setting up {downloadName}
         </h3>
-        <p class="text-xs text-gray-600">
+        <p class="text-xs text-text-muted">
           by {addonSource}
         </p>
       </div>
@@ -76,7 +76,7 @@
   <div class="setup-terminal">
     <div class="terminal-header">
       <div class="flex items-center gap-2">
-        <span class="text-xs text-gray-400 font-mono">Setup Console</span>
+        <span class="text-xs text-text-muted font-mono">Setup Console</span>
       </div>
     </div>
 

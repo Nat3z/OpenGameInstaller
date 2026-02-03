@@ -194,8 +194,8 @@
     <div class="flex flex-col gap-4 w-full justify-center items-center py-16">
       <img src="./favicon.png" alt="content" class="w-24 h-24 opacity-50" />
       <div class="text-center">
-        <h2 class="text-xl text-gray-600 mb-2">No catalogs available</h2>
-        <p class="text-gray-500">
+        <h2 class="text-xl text-text-muted mb-2">No catalogs available</h2>
+        <p class="text-text-muted">
           Install addons that support catalog browsing to see game collections
         </p>
       </div>
@@ -339,7 +339,7 @@
               </button>
             </div>
           {:else}
-            <div class="text-center py-6 text-gray-500">
+            <div class="text-center py-6 text-text-muted">
               <p class="text-sm">No games in this collection</p>
             </div>
           {/if}

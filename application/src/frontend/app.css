@@ -17,6 +17,8 @@
 
   /* Primary text (e.g. on surface/cards) */
   --color-text: #1e293b;
+  /* Secondary/muted text (descriptions, captions, placeholders) */
+  --color-text-muted: #64748b;
 
   /* Semantic error/info for alerts */
   --color-error-bg: #fef2f2;
@@ -170,6 +172,7 @@
   --color-border-muted: #4b5563;
 
   --color-text: #f1f5f9;
+  --color-text-muted: #94a3b8;
 
   --color-error-bg: #450a0a;
   --color-error-border: #7f1d1d;
@@ -191,6 +194,7 @@
   --color-border-muted: #5c4d6e;
 
   --color-text: #f0e6ef;
+  --color-text-muted: #c4b5d4;
 
   --color-error-bg: #3d1f1f;
   --color-error-border: #9b2c2c;

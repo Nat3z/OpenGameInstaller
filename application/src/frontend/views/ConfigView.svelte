@@ -399,11 +399,11 @@
   }
 
   .addon-title {
-    @apply text-2xl font-semibold text-gray-900 mb-2;
+    @apply text-2xl font-semibold text-text mb-2;
   }
 
   .addon-description {
-    @apply text-lg text-gray-600 leading-relaxed;
+    @apply text-lg text-text-muted leading-relaxed;
   }
 
   .update-badge {
@@ -433,6 +433,6 @@
   }
 
   .settings-button {
-    @apply w-full h-full flex items-center justify-center bg-transparent hover:bg-gray-100 rounded-2xl transition-colors duration-200;
+    @apply w-full h-full flex items-center justify-center bg-transparent hover:bg-surface rounded-2xl transition-colors duration-200;
   }
 </style>

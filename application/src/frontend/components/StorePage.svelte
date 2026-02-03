@@ -498,14 +498,14 @@
             <h1 class="text-4xl font-archivo font-bold text-white mb-2">
               {gameData.name}
             </h1>
-            <div class="text-sm text-gray-200">
-              <span class="text-gray-300">Publisher:</span>
+            <div class="text-sm text-text-muted">
+              <span class="text-text-muted">Publisher:</span>
               {(gameData.publishers ?? []).join(', ')}
               <span class="mx-4"></span>
-              <span class="text-gray-300">Developer:</span>
+              <span class="text-text-muted">Developer:</span>
               {(gameData.developers ?? []).join(', ')}
               <br />
-              <span class="text-gray-300">Release Date:</span>
+              <span class="text-text-muted">Release Date:</span>
               {gameData.releaseDate}
             </div>
           </div>
@@ -539,7 +539,7 @@
             <div class="p-6 bg-accent-lighter rounded-lg mb-4">
               <div class="flex items-center justify-between mb-3">
                 <h3 class="font-medium text-accent-dark">Downloading</h3>
-                <span class="text-sm text-gray-600">
+                <span class="text-sm text-text-muted">
                   {activeDownload.status === 'downloading' ||
                   activeDownload.status === 'rd-downloading'
                     ? Math.round(activeDownload.progress * 100) + '%'
@@ -590,7 +590,7 @@
                 </div>
 
                 {#if activeDownload.queuePosition && activeDownload.queuePosition > 1}
-                  <div class="text-xs text-gray-500 mt-1">
+                  <div class="text-xs text-text-muted mt-1">
                     Queue position: {activeDownload.queuePosition === 999
                       ? '-'
                       : activeDownload.queuePosition}
@@ -604,7 +604,7 @@
                   addonId={activeDownload.addonSource}
                   class="w-6 h-6 rounded"
                 />
-                <span class="text-sm text-gray-700"
+                <span class="text-sm text-text"
                   >{activeDownload.addonSource}</span
                 >
               </div>
@@ -622,7 +622,7 @@
                     <button
                       class="w-full border-none {!isWin32Only
                         ? 'bg-accent-light hover:bg-accent-light/80 text-accent-dark'
-                        : 'bg-gray-300 text-gray-500 cursor-not-allowed'} font-medium py-3 px-4 rounded-lg transition-colors duration-200 {isWin32Only
+                        : 'bg-gray-300 text-text-muted cursor-not-allowed'} font-medium py-3 px-4 rounded-lg transition-colors duration-200 {isWin32Only
                         ? 'mb-3'
                         : ''}"
                       class:disabled={isWin32Only}
@@ -657,15 +657,15 @@
                       <div class="flex items-center gap-3">
                         <AddonPicture {addonId} class="w-12 h-12 rounded-lg" />
                         <div>
-                          <h3 class="font-medium text-gray-800">{addonName}</h3>
+                          <h3 class="font-medium text-text">{addonName}</h3>
                           {#if isEmpty}
                             <span
-                              class="text-sm text-gray-500 font-medium italic"
+                              class="text-sm text-text-muted font-medium italic"
                               >No results found</span
                             >
                           {:else}
                             <span
-                              class="text-sm text-gray-500 font-medium italic"
+                              class="text-sm text-text-muted font-medium italic"
                               >Searching...</span
                             >
                           {/if}
@@ -677,7 +677,7 @@
                         ></div>
                       {:else}
                         <svg
-                          class="w-5 h-5 text-gray-400"
+                          class="w-5 h-5 text-text-muted"
                           viewBox="0 0 24 24"
                           fill="none"
                           stroke="currentColor"
@@ -722,10 +722,10 @@
                               class="w-10 h-10 rounded-lg"
                             />
                             <div class="text-left">
-                              <h3 class="font-medium text-gray-800 text-sm">
+                              <h3 class="font-medium text-text text-sm">
                                 {addonGroup.addonName}
                               </h3>
-                              <span class="text-xs text-gray-600"
+                              <span class="text-xs text-text-muted"
                                 >{filteredResults.length} result{filteredResults.length ===
                                 1
                                   ? ''
@@ -734,7 +734,7 @@
                             </div>
                           </div>
                           <svg
-                            class="w-4 h-4 text-gray-600 transition-transform duration-200"
+                            class="w-4 h-4 text-text-muted transition-transform duration-200"
                             class:rotate-180={!collapsedAddons.has(
                               addonGroup.addonId
                             )}
@@ -770,14 +770,14 @@
                                   class="flex items-center justify-between mb-2"
                                 >
                                   <span
-                                    class="font-medium text-gray-800 text-sm"
+                                    class="font-medium text-text text-sm"
                                     >{result.name.slice(0, 25)}{result.name
                                       .length > 25
                                       ? '...'
                                       : ''}</span
                                   >
                                   <div
-                                    class="flex items-center gap-1 text-xs text-gray-500"
+                                    class="flex items-center gap-1 text-xs text-text-muted"
                                   >
                                     {#if result.downloadType === 'magnet'}
                                       <img
@@ -808,7 +808,7 @@
                                   <button
                                     class="flex-1 text-sm border-none {activeDownload &&
                                     !alreadyOwns
-                                      ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                                      ? 'bg-gray-300 text-text-muted cursor-not-allowed'
                                       : 'bg-accent-light hover:bg-accent-light/80 text-accent-dark'} font-medium py-3 px-3 rounded-lg flex items-center justify-center gap-2 transition-colors duration-200"
                                     disabled={(results.length === 0 &&
                                       !queryingSources) ||
@@ -863,11 +863,11 @@
                     <div
                       class="animate-spin w-8 h-8 border-2 border-teal-500 border-t-transparent rounded-full mx-auto mb-3"
                     ></div>
-                    <p class="text-gray-600">Searching sources...</p>
+                    <p class="text-text-muted">Searching sources...</p>
                   </div>
                 {:else if !queryingSources && resultsByAddon.length === 0 && loadingAddons.size === 0}
                   <div class="text-center py-8">
-                    <p class="text-gray-600">
+                    <p class="text-text-muted">
                       {alreadyOwns
                         ? 'No tasks available'
                         : 'No sources available'}
@@ -884,16 +884,16 @@
 {:else if !isOnline}
   <div class="flex flex-col gap-2 w-full justify-center items-center h-full">
     <img src="./favicon.png" alt="content" class="w-32 h-32" />
-    <h1 class="text-2xl text-black">You're Offline</h1>
-    <h1 class="text-lg text-gray-500 text-center">
+    <h1 class="text-2xl text-text">You're Offline</h1>
+    <h1 class="text-lg text-text-muted text-center">
       Loading Game Stores is unsupported when you're offline.
     </h1>
   </div>
 {:else if !loading}
   <div class="flex flex-col gap-2 w-full justify-center items-center h-full">
     <img src="./favicon.png" alt="content" class="w-32 h-32" />
-    <h1 class="text-2xl text-black">Game not found</h1>
-    <h1 class="text-lg text-gray-500 text-center">
+    <h1 class="text-2xl text-text">Game not found</h1>
+    <h1 class="text-lg text-text-muted text-center">
       The game you're looking for is not available.
     </h1>
   </div>
@@ -1033,7 +1033,7 @@
 <style global>
   @reference "../app.css";
   #g-descript {
-    @apply text-gray-700 bg-transparent;
+    @apply text-text bg-transparent;
   }
 
   #g-descript img {
@@ -1041,19 +1041,19 @@
   }
 
   #g-descript p {
-    @apply text-sm text-gray-700 mb-3 leading-relaxed;
+    @apply text-sm text-text mb-3 leading-relaxed;
   }
 
   #g-descript h1 {
-    @apply text-xl font-archivo font-semibold text-gray-800 mb-3;
+    @apply text-xl font-archivo font-semibold text-text mb-3;
   }
 
   #g-descript h2 {
-    @apply text-lg font-archivo font-medium text-gray-800 mb-2;
+    @apply text-lg font-archivo font-medium text-text mb-2;
   }
 
   #g-descript strong {
-    @apply font-semibold text-gray-900;
+    @apply font-semibold text-text;
   }
 
   #g-descript ul,
@@ -1062,11 +1062,11 @@
   }
 
   #g-descript li {
-    @apply text-sm text-gray-700 mb-1;
+    @apply text-sm text-text mb-1;
   }
 
   #g-descript-custom {
-    @apply text-gray-700 bg-transparent;
+    @apply text-text bg-transparent;
   }
 
   #g-descript-custom img {
@@ -1074,19 +1074,19 @@
   }
 
   #g-descript-custom p {
-    @apply text-sm text-gray-700 mb-3 leading-relaxed;
+    @apply text-sm text-text mb-3 leading-relaxed;
   }
 
   #g-descript-custom h1 {
-    @apply text-xl font-archivo font-semibold text-gray-800 mb-3;
+    @apply text-xl font-archivo font-semibold text-text mb-3;
   }
 
   #g-descript-custom h2 {
-    @apply text-lg font-archivo font-medium text-gray-800 mb-2;
+    @apply text-lg font-archivo font-medium text-text mb-2;
   }
 
   #g-descript-custom strong {
-    @apply font-semibold text-gray-900;
+    @apply font-semibold text-text;
   }
 
   #g-descript-custom ul,
@@ -1095,6 +1095,6 @@
   }
 
   #g-descript-custom li {
-    @apply text-sm text-gray-700 mb-1;
+    @apply text-sm text-text mb-1;
   }
 </style>

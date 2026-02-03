@@ -315,11 +315,11 @@
       class="animate-fade-in-pop flex justify-center items-center flex-col gap-6"
     >
       <img src="./favicon.png" alt="OpenGameInstaller Logo" class="w-32 h-32" />
-      <h1 class="text-4xl font-archivo font-semibold text-gray-900">
+      <h1 class="text-4xl font-archivo font-semibold text-text">
         Welcome to OpenGameInstaller
       </h1>
       <h2
-        class="animate-in-sub-content font-open-sans text-lg text-gray-600 text-center max-w-md"
+        class="animate-in-sub-content font-open-sans text-lg text-text-muted text-center max-w-md"
       >
         An open-source game installer for your video games!
       </h2>
@@ -336,10 +336,10 @@
     <div
       class="animate-fade-in-pop flex justify-start items-center h-full flex-col gap-6 p-10 w-full max-w-4xl"
     >
-      <h1 class="text-3xl font-archivo font-semibold text-gray-900 mt-2">
+      <h1 class="text-3xl font-archivo font-semibold text-text mt-2">
         Install Tools
       </h1>
-      <h2 class="font-open-sans text-gray-600 text-center mb-6">
+      <h2 class="font-open-sans text-text-muted text-center mb-6">
         These tools are required for launching and running OpenGameInstaller
         services.
       </h2>
@@ -360,10 +360,10 @@
                   </h4>
                 </div>
                 <span class="flex flex-col justify-start items-start">
-                  <span class="font-open-sans font-semibold text-gray-900"
+                  <span class="font-open-sans font-semibold text-text"
                     >7zip</span
                   >
-                  <span class="font-open-sans text-sm text-gray-600"
+                  <span class="font-open-sans text-sm text-text-muted"
                     >Required for unzipping .rar file extensions</span
                   >
                 </span>
@@ -380,10 +380,10 @@
                   </h4>
                 </div>
                 <span class="flex flex-col justify-start items-start">
-                  <span class="font-open-sans font-semibold text-gray-900"
+                  <span class="font-open-sans font-semibold text-text"
                     >Steamtinkerlaunch</span
                   >
-                  <span class="font-open-sans text-sm text-gray-600"
+                  <span class="font-open-sans text-sm text-text-muted"
                     >Required for adding games to Steam</span
                   >
                 </span>
@@ -395,10 +395,10 @@
                   <WineIcon />
                 </div>
                 <span class="flex flex-col justify-start items-start">
-                  <span class="font-open-sans font-semibold text-gray-900"
+                  <span class="font-open-sans font-semibold text-text"
                     >Wine</span
                   >
-                  <span class="font-open-sans text-sm text-gray-600"
+                  <span class="font-open-sans text-sm text-text-muted"
                     >Required for launching games/installer.</span
                   >
                 </span>
@@ -410,9 +410,9 @@
           >
             <img class="w-12 h-12" src="./bun.svg" alt="Bun" />
             <span class="flex flex-col justify-start items-start">
-              <span class="font-open-sans font-semibold text-gray-900">Bun</span
+              <span class="font-open-sans font-semibold text-text">Bun</span
               >
-              <span class="font-open-sans text-sm text-gray-600"
+              <span class="font-open-sans text-sm text-text-muted"
                 >Required for executing addons</span
               >
             </span>
@@ -422,9 +422,9 @@
           >
             <img class="w-12 h-12" src="./git.svg" alt="Git" />
             <span class="flex flex-col justify-start items-start">
-              <span class="font-open-sans font-semibold text-gray-900">Git</span
+              <span class="font-open-sans font-semibold text-text">Git</span
               >
-              <span class="font-open-sans text-sm text-gray-600"
+              <span class="font-open-sans text-sm text-text-muted"
                 >Required for downloading addons</span
               >
             </span>
@@ -442,7 +442,7 @@
         <div class="oobe-terminal w-full max-w-3xl mt-6 h-64">
           <div class="terminal-header">
             <div class="flex items-center gap-2">
-              <span class="text-xs text-gray-400 font-mono"
+              <span class="text-xs text-text-muted font-mono"
                 >Installation Console</span
               >
             </div>
@@ -472,10 +472,10 @@
     <div
       class="animate-fade-in-pop flex justify-center items-center h-full flex-col gap-6 p-10 w-full"
     >
-      <h1 class="text-3xl font-archivo font-semibold text-gray-900 mt-2">
+      <h1 class="text-3xl font-archivo font-semibold text-text mt-2">
         Restart Required
       </h1>
-      <h2 class="font-open-sans text-gray-600 text-center mb-6">
+      <h2 class="font-open-sans text-text-muted text-center mb-6">
         OpenGameInstaller requires a restart of your device to continue the
         setup process.
       </h2>
@@ -489,10 +489,10 @@
     <div
       class="animate-fade-in-pop flex justify-start items-center h-full flex-col gap-6 p-10 w-full max-w-4xl"
     >
-      <h1 class="text-3xl font-archivo font-semibold text-gray-900 mt-2">
+      <h1 class="text-3xl font-archivo font-semibold text-text mt-2">
         Torrenting
       </h1>
-      <h2 class="font-open-sans text-gray-600 text-center mb-6">
+      <h2 class="font-open-sans text-text-muted text-center mb-6">
         How would you like to torrent your files?
       </h2>
       <!-- svelte-ignore a11y_consider_explicit_label -->
@@ -557,7 +557,7 @@
             class="w-full p-3 bg-surface border border-accent-light rounded-lg focus:outline-none focus:ring-2 focus:ring-accent"
           />
           <!-- svelte-ignore a11y_label_has_associated_control -->
-          <label class="text-sm text-gray-500 mt-2"
+          <label class="text-sm text-text-muted mt-2"
             >Insert your <a
               href="https://real-debrid.com/apitoken"
               target="_blank"
@@ -590,7 +590,7 @@
                 value="http://127.0.0.1"
                 class="w-full p-3 bg-surface border border-accent-light rounded-lg focus:outline-none focus:ring-2 focus:ring-accent"
               />
-              <label class="text-sm text-gray-500 mt-1">Hostname</label>
+              <label class="text-sm text-text-muted mt-1">Hostname</label>
             </span>
             <span class="items-center justify-center flex flex-col w-24">
               <input
@@ -601,7 +601,7 @@
                 value="8080"
                 class="w-full p-3 bg-surface border border-accent-light rounded-lg focus:outline-none focus:ring-2 focus:ring-accent"
               />
-              <label class="text-sm text-gray-500 mt-1">Port</label>
+              <label class="text-sm text-text-muted mt-1">Port</label>
             </span>
           </div>
 
@@ -617,7 +617,7 @@
                 value=""
                 class="w-full p-3 bg-surface border border-accent-light rounded-lg focus:outline-none focus:ring-2 focus:ring-accent"
               />
-              <label class="text-sm text-gray-500 mt-1">Username</label>
+              <label class="text-sm text-text-muted mt-1">Username</label>
             </span>
             <span class="items-center justify-center flex flex-col flex-1">
               <input
@@ -628,27 +628,27 @@
                 value=""
                 class="w-full p-3 bg-surface border border-accent-light rounded-lg focus:outline-none focus:ring-2 focus:ring-accent"
               />
-              <label class="text-sm text-gray-500 mt-1">Password</label>
+              <label class="text-sm text-text-muted mt-1">Password</label>
             </span>
           </div>
         {:else if selectedTorrenter === 'webtorrent'}
-          <p class="text-gray-600 text-center">
+          <p class="text-text-muted text-center">
             WebTorrent is built into OpenGameInstaller. No configuration is
             required.
           </p>
           <div
             class="flex justify-center mt-4 items-center flex-col border-red-500 border-2 rounded-lg p-4 bg-red-500/25"
           >
-            <p class="text-black text-center">
+            <p class="text-text text-center">
               Security features like VPN binding are <span class="underline"
                 >NOT SUPPORTED</span
               > for WebTorrent.
             </p>
-            <p class="text-black text-center">
+            <p class="text-text text-center">
               Please use qBittorrent/a debrid service if you rely on these
               features.
             </p>
-            <p class="text-black text-center font-bold">
+            <p class="text-text text-center font-bold">
               VPNs are still supported.
             </p>
           </div>
@@ -661,7 +661,7 @@
             class="w-full p-3 bg-surface border border-accent-light rounded-lg focus:outline-none focus:ring-2 focus:ring-accent"
           />
           <!-- svelte-ignore a11y_label_has_associated_control -->
-          <label class="text-sm text-gray-500 mt-2"
+          <label class="text-sm text-text-muted mt-2"
             >Insert your <a
               href="https://torbox.app/settings"
               target="_blank"
@@ -678,7 +678,7 @@
             class="w-full p-3 bg-surface border border-accent-light rounded-lg focus:outline-none focus:ring-2 focus:ring-accent"
           />
           <!-- svelte-ignore a11y_label_has_associated_control -->
-          <label class="text-sm text-gray-500 mt-2"
+          <label class="text-sm text-text-muted mt-2"
             >Insert your <a
               href="https://www.premiumize.me/account"
               target="_blank"
@@ -700,10 +700,10 @@
     <div
       class="animate-fade-in-pop flex justify-center items-center h-full flex-col gap-6 p-10 w-full max-w-2xl"
     >
-      <h1 class="text-3xl font-archivo font-semibold text-gray-900 mt-2">
+      <h1 class="text-3xl font-archivo font-semibold text-text mt-2">
         Download Location
       </h1>
-      <h2 class="font-open-sans text-gray-600 text-center mb-6">
+      <h2 class="font-open-sans text-text-muted text-center mb-6">
         Where should we save your games?
       </h2>
       <div class="flex justify-center items-center flex-row gap-4 w-full">
@@ -730,13 +730,13 @@
     <div
       class="animate-fade-in-pop flex justify-start items-center h-full flex-col gap-6 p-10 w-full max-w-4xl"
     >
-      <h1 class="text-3xl font-archivo font-semibold text-gray-900 mt-2">
+      <h1 class="text-3xl font-archivo font-semibold text-text mt-2">
         Addons
       </h1>
-      <h2 class="font-open-sans text-gray-900">
+      <h2 class="font-open-sans text-text">
         Kickstart OpenGameInstaller and download some addons!
       </h2>
-      <h2 class="font-open-sans text-gray-600 text-center -mt-2">
+      <h2 class="font-open-sans text-text-muted text-center -mt-2">
         Select from our community addons, or add your own below.
       </h2>
       <div
@@ -745,7 +745,7 @@
         {#if communityList}
           {#await communityList}
             <div class="flex items-center justify-center h-full">
-              <p class="text-gray-600">Loading community addons...</p>
+              <p class="text-text-muted">Loading community addons...</p>
             </div>
           {:then list}
             <div class="flex flex-col gap-3">
@@ -759,10 +759,10 @@
                     class="w-12 h-12 rounded-lg object-cover"
                   />
                   <div class="flex flex-col flex-1">
-                    <h3 class="font-open-sans font-semibold text-gray-900">
+                    <h3 class="font-open-sans font-semibold text-text">
                       {addon.name}
                     </h3>
-                    <p class="text-sm text-gray-600">{addon.description}</p>
+                    <p class="text-sm text-text-muted">{addon.description}</p>
                   </div>
                   <button
                     onclick={() => toggleAddon(addon)}
@@ -782,7 +782,7 @@
           {/await}
         {/if}
       </div>
-      <h2 class="font-open-sans text-gray-600 text-center max-w-2xl">
+      <h2 class="font-open-sans text-text-muted text-center max-w-2xl">
         Insert the Github/Git Repo link of your addons to download them. Split
         each addon by new line.
       </h2>
@@ -812,14 +812,14 @@
     <div
       class="animate-fade-in-pop flex justify-center items-center h-full flex-col gap-6 p-10 w-full max-w-2xl"
     >
-      <h1 class="text-3xl font-archivo font-semibold text-gray-900 mt-2">
+      <h1 class="text-3xl font-archivo font-semibold text-text mt-2">
         SteamGridDB
       </h1>
-      <h2 class="font-open-sans text-gray-600 text-center mb-6">
+      <h2 class="font-open-sans text-text-muted text-center mb-6">
         To automate downloading images for the games you install on Steam, we
         need to use SteamGridDB.
       </h2>
-      <h2 class="font-open-sans text-gray-600 text-center mb-6">
+      <h2 class="font-open-sans text-text-muted text-center mb-6">
         <a
           href="https://www.steamgriddb.com/profile/preferences/api"
           target="_blank"
@@ -891,10 +891,10 @@
       class="animate-fade-in-pop flex justify-center items-center h-full flex-col gap-6 p-10 w-full"
     >
       <img src="./favicon.png" alt="OpenGameInstaller Logo" class="w-32 h-32" />
-      <h1 class="text-3xl font-archivo font-semibold text-gray-900 mt-2">
+      <h1 class="text-3xl font-archivo font-semibold text-text mt-2">
         You're all set!
       </h1>
-      <h2 class="font-open-sans text-gray-600 text-center mb-6 max-w-md">
+      <h2 class="font-open-sans text-text-muted text-center mb-6 max-w-md">
         OpenGameInstaller is ready to go! Click below to start downloading your
         games!
       </h2>
@@ -910,10 +910,10 @@
       class="animate-fade-in-pop flex justify-center items-center h-full flex-col gap-6 p-10 w-full"
     >
       <img src="./favicon.png" alt="OpenGameInstaller Logo" class="w-32 h-32" />
-      <h1 class="text-3xl font-archivo font-semibold text-gray-900 mt-2">
+      <h1 class="text-3xl font-archivo font-semibold text-text mt-2">
         Setting up addons.
       </h1>
-      <h2 class="font-open-sans text-gray-600 text-center mb-6 max-w-md">
+      <h2 class="font-open-sans text-text-muted text-center mb-6 max-w-md">
         OpenGameInstaller is setting up your addons. Please hold while we do
         this. Do not close this app, it is regular for this to take a while.
       </h2>

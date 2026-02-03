@@ -1138,11 +1138,11 @@
   }
 
   .sidebar-item-title {
-    @apply text-lg font-archivo font-semibold text-gray-900;
+    @apply text-lg font-archivo font-semibold text-text;
   }
 
   .sidebar-item-description {
-    @apply text-sm text-gray-600;
+    @apply text-sm text-text-muted;
   }
 
   /* Main Content Styles */
@@ -1172,11 +1172,11 @@
   }
 
   .about-title {
-    @apply text-3xl font-archivo font-bold text-gray-900;
+    @apply text-3xl font-archivo font-bold text-text;
   }
 
   .about-subtitle {
-    @apply text-lg text-gray-600;
+    @apply text-lg text-text-muted;
   }
 
   .about-links {
@@ -1188,11 +1188,11 @@
   }
 
   .about-separator {
-    @apply text-gray-400;
+    @apply text-text-muted;
   }
 
   .about-version {
-    @apply text-sm text-gray-500 mt-8;
+    @apply text-sm text-text-muted mt-8;
   }
 
   /* Options Grid */
@@ -1205,11 +1205,11 @@
   }
 
   .option-label {
-    @apply block text-lg font-archivo font-semibold text-gray-900 mb-1;
+    @apply block text-lg font-archivo font-semibold text-text mb-1;
   }
 
   .option-description {
-    @apply text-sm text-gray-600 mb-4;
+    @apply text-sm text-text-muted mb-4;
   }
 
   .option-input {
@@ -1258,7 +1258,7 @@
 
   .input-checkbox:not(:checked) + .checkbox-checkmark::after {
     content: '–';
-    @apply text-gray-400 text-sm font-archivo;
+    @apply text-text-muted text-sm font-archivo;
   }
 
   .input-checkbox:checked + .checkbox-checkmark::after {
@@ -1272,7 +1272,7 @@
   }
 
   .action-title {
-    @apply text-xl font-archivo font-semibold text-gray-900 mb-4;
+    @apply text-xl font-archivo font-semibold text-text mb-4;
   }
 
   .action-buttons {
@@ -1309,15 +1309,15 @@
   }
 
   .no-selection-icon {
-    @apply w-16 h-16 text-gray-400 mx-auto;
+    @apply w-16 h-16 text-text-muted mx-auto;
   }
 
   .no-selection-title {
-    @apply text-2xl font-archivo font-semibold text-gray-900;
+    @apply text-2xl font-archivo font-semibold text-text;
   }
 
   .no-selection-description {
-    @apply text-gray-600;
+    @apply text-text-muted;
   }
 
   /* Remove webkit number input spinners */

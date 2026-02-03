@@ -198,11 +198,11 @@
                   class="w-24 h-24 opacity-50"
                 />
                 <div class="text-center">
-                  <h1 class="text-xl text-gray-600 mb-2">
+                  <h1 class="text-xl text-text-muted mb-2">
                     {searchQuery ? 'No games found' : 'No games in library'}
                   </h1>
                   {#if searchQuery}
-                    <p class="text-gray-500">Try adjusting your search terms</p>
+                    <p class="text-text-muted">Try adjusting your search terms</p>
                   {/if}
                 </div>
               </div>

@@ -179,7 +179,7 @@
 
   .input-text,
   .input-number {
-    @apply w-full px-4 py-2 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-accent-light focus:border-accent transition-colors text-accent-text-color;
+    @apply w-full px-4 py-2 border border-border-muted rounded-lg bg-surface focus:ring-2 focus:ring-accent-light focus:border-accent transition-colors text-accent-text-color;
   }
 
   .file-input-group {

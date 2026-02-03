@@ -267,7 +267,7 @@
         >
           Notifications
           {#if $notificationHistory.length > 0}
-            <span class="ml-2 bg-white/20 px-1.5 py-0.5 rounded text-xs">
+            <span class="ml-2 bg-surface/20 px-1.5 py-0.5 rounded text-xs">
               {$notificationHistory.length}
             </span>
           {/if}
@@ -281,7 +281,7 @@
         >
           Tasks
           {#if $deferredTasks.length > 0}
-            <span class="ml-2 bg-white/20 px-1.5 py-0.5 rounded text-xs">
+            <span class="ml-2 bg-surface/20 px-1.5 py-0.5 rounded text-xs">
               {$deferredTasks.length}
             </span>
           {/if}
@@ -359,7 +359,7 @@
                 </div>
                 {#each $notificationHistory as notification, index (notification.id)}
                   <div
-                    class="flex gap-3 p-4 bg-white rounded-lg border border-gray-200 shadow-sm hover:shadow-md transition-all duration-200"
+                    class="flex gap-3 p-4 bg-surface rounded-lg border border-border shadow-sm hover:shadow-md transition-all duration-200"
                     in:fly={{ y: 20, duration: 300, delay: 50 * index }}
                     out:fly={{ y: 20, duration: 300, delay: 50 * index }}
                   >
@@ -431,7 +431,7 @@
                       Clear Completed
                     </button>
                     <button
-                      class="px-2 py-1 text-xs text-red-700 bg-red-100 border-none hover:bg-red-200 rounded-lg transition-colors duration-200"
+                      class="px-2 py-1 text-xs text-error-text bg-error-bg border-none hover:opacity-90 rounded-lg transition-colors duration-200"
                       onclick={handleClearAllTasks}
                     >
                       Clear All
@@ -440,7 +440,7 @@
                 </div>
                 {#each $deferredTasks as task, index (task.id)}
                   <div
-                    class="flex gap-3 p-4 bg-white rounded-lg border border-gray-200 shadow-sm hover:shadow-md transition-all duration-200"
+                    class="flex gap-3 p-4 bg-surface rounded-lg border border-border shadow-sm hover:shadow-md transition-all duration-200"
                     data-task-id={task.id}
                     in:fly={{ y: 20, duration: 300, delay: 50 * index }}
                     out:fly={{ y: 20, duration: 300, delay: 50 * index }}
@@ -523,7 +523,7 @@
 
                       {#if task.error || task.failed}
                         <div
-                          class="mt-2 p-2 bg-red-50 border border-red-200 rounded text-xs text-red-700"
+                          class="mt-2 p-2 bg-error-bg border border-error-border rounded text-xs text-error-text"
                         >
                           <strong>Error:</strong>
                           {task.error || task.failed}

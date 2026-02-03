@@ -275,7 +275,7 @@
                 >
                   {#each sectionItem.section.listings.slice(carouselIndices[sectionItem.sectionId] * 5, carouselIndices[sectionItem.sectionId] * 5 + 5) as game (game.appID)}
                     <button
-                      class="group w-32 h-48 relative border-none transition-all duration-200 shadow-md hover:shadow-lg rounded-lg overflow-hidden bg-white transform hover:scale-102 hover:-translate-y-0.5"
+                      class="group w-32 h-48 relative border-none transition-all duration-200 shadow-md hover:shadow-lg rounded-lg overflow-hidden bg-surface transform hover:scale-102 hover:-translate-y-0.5"
                       onclick={() => openGameStorePage(game)}
                       aria-label={game.name}
                     >

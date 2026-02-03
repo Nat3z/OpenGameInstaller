@@ -205,7 +205,7 @@
 </script>
 
 <div
-  class="proton-setup-container bg-white rounded-lg border border-gray-200 shadow-sm p-4 space-y-4"
+  class="proton-setup-container bg-surface rounded-lg border border-border shadow-sm p-4 space-y-4"
   in:fade={{ duration: 200 }}
   out:fade={{ duration: 200 }}
 >
@@ -406,7 +406,7 @@
 
   <!-- Dependencies Info -->
   {#if setup.redistributables && setup.redistributables.length > 0}
-    <div class="dependencies-info border-t border-gray-200 pt-3 mt-2">
+    <div class="dependencies-info border-t border-border pt-3 mt-2">
       <p class="text-xs text-gray-500 mb-2">Dependencies to install:</p>
       <div class="flex flex-wrap gap-1">
         {#each setup.redistributables as redist}

@@ -38,7 +38,7 @@
 </script>
 
 <div
-  class="setup-prompt-container bg-white rounded-lg border border-gray-200 shadow-sm p-4 space-y-3"
+  class="setup-prompt-container bg-surface rounded-lg border border-border shadow-sm p-4 space-y-3"
   in:fade={{ duration: 200 }}
   out:fade={{ duration: 200 }}
 >
@@ -116,11 +116,11 @@
   }
 
   .setup-terminal {
-    @apply bg-gray-900 rounded-lg overflow-hidden border border-gray-700;
+    @apply bg-surface rounded-lg overflow-hidden border border-border;
   }
 
   .terminal-header {
-    @apply bg-gray-800 px-4 py-2 border-b border-gray-700;
+    @apply bg-border px-4 py-2 border-b border-border;
   }
 
   .terminal-content {

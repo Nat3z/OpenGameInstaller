@@ -769,7 +769,7 @@
                                   .minTextLength}
                               />
                               <div
-                                class="pointer-events-none absolute right-12 top-1 h-8 w-8 z-2 rounded-lg bg-linear-to-r from-transparent to-white/80"
+                                class="pointer-events-none absolute right-12 top-1 h-8 w-8 z-2 rounded-lg bg-linear-to-r from-transparent to-surface/80"
                               ></div>
                               <button
                                 type="button"
@@ -1201,7 +1201,7 @@
   }
 
   .option-item {
-    @apply bg-white p-6 rounded-lg border border-gray-200 shadow-sm;
+    @apply bg-surface p-6 rounded-lg border border-border shadow-sm;
   }
 
   .option-label {
@@ -1220,11 +1220,11 @@
   .input-text,
   .input-number,
   .input-select {
-    @apply w-full px-4 py-2 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-accent-light focus:border-accent transition-colors text-accent-text-color;
+    @apply w-full px-4 py-2 border border-border-muted rounded-lg bg-surface focus:ring-2 focus:ring-accent-light focus:border-accent transition-colors text-accent-text-color;
   }
 
   .input-textarea {
-    @apply w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-accent-light focus:border-accent transition-colors resize-none h-32;
+    @apply w-full px-4 py-2 border border-border-muted rounded-lg bg-surface focus:ring-2 focus:ring-accent-light focus:border-accent transition-colors resize-none h-32;
   }
 
   .file-input-group {
@@ -1249,7 +1249,7 @@
   }
 
   .checkbox-checkmark {
-    @apply w-5 h-5 bg-white border-2 border-gray-300 rounded flex items-center justify-center transition-colors;
+    @apply w-5 h-5 bg-surface border-2 border-border-muted rounded flex items-center justify-center transition-colors;
   }
 
   .input-checkbox:checked + .checkbox-checkmark {
@@ -1268,7 +1268,7 @@
 
   /* Action Section */
   .action-section {
-    @apply mt-8 p-6 bg-white rounded-lg border border-gray-200;
+    @apply mt-8 p-6 bg-surface rounded-lg border border-border;
   }
 
   .action-title {

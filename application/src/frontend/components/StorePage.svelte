@@ -518,7 +518,7 @@
         <div class="mt-4 flex-1 overflow-y-auto relative">
           <!-- Fade gradient overlay at top -->
           <div
-            class="sticky top-0 h-4 bg-linear-to-b from-white/80 to-transparent z-10 pointer-events-none"
+            class="sticky top-0 h-4 bg-linear-to-b from-surface/80 to-transparent z-10 pointer-events-none"
           ></div>
 
           <!-- Detailed description -->
@@ -613,7 +613,7 @@
             <div class="flex-1 overflow-y-auto relative">
               <!-- Fade gradient overlay at top -->
               <div
-                class="sticky top-0 h-4 bg-linear-to-b from-white/80 to-transparent z-10 pointer-events-none"
+                class="sticky top-0 h-4 bg-linear-to-b from-surface/80 to-transparent z-10 pointer-events-none"
               ></div>
               <!-- Sources Section -->
               <div class="-mt-4">
@@ -673,7 +673,7 @@
                       </div>
                       {#if !isEmpty}
                         <div
-                          class="w-5 h-5 border-2 border-gray-300 border-t-accent rounded-full animate-spin"
+                          class="w-5 h-5 border-2 border-border-muted border-t-accent rounded-full animate-spin"
                         ></div>
                       {:else}
                         <svg

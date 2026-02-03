@@ -554,7 +554,7 @@
             type="text"
             onchange={submitTorrenter}
             placeholder="Real Debrid API Key"
-            class="w-full p-3 bg-white border border-accent-light rounded-lg focus:outline-none focus:ring-2 focus:ring-accent"
+            class="w-full p-3 bg-surface border border-accent-light rounded-lg focus:outline-none focus:ring-2 focus:ring-accent"
           />
           <!-- svelte-ignore a11y_label_has_associated_control -->
           <label class="text-sm text-gray-500 mt-2"
@@ -588,7 +588,7 @@
                 onchange={submitTorrenter}
                 placeholder="Host"
                 value="http://127.0.0.1"
-                class="w-full p-3 bg-white border border-accent-light rounded-lg focus:outline-none focus:ring-2 focus:ring-accent"
+                class="w-full p-3 bg-surface border border-accent-light rounded-lg focus:outline-none focus:ring-2 focus:ring-accent"
               />
               <label class="text-sm text-gray-500 mt-1">Hostname</label>
             </span>
@@ -599,7 +599,7 @@
                 onchange={submitTorrenter}
                 placeholder="Port"
                 value="8080"
-                class="w-full p-3 bg-white border border-accent-light rounded-lg focus:outline-none focus:ring-2 focus:ring-accent"
+                class="w-full p-3 bg-surface border border-accent-light rounded-lg focus:outline-none focus:ring-2 focus:ring-accent"
               />
               <label class="text-sm text-gray-500 mt-1">Port</label>
             </span>
@@ -615,7 +615,7 @@
                 onchange={submitTorrenter}
                 placeholder="Username"
                 value=""
-                class="w-full p-3 bg-white border border-accent-light rounded-lg focus:outline-none focus:ring-2 focus:ring-accent"
+                class="w-full p-3 bg-surface border border-accent-light rounded-lg focus:outline-none focus:ring-2 focus:ring-accent"
               />
               <label class="text-sm text-gray-500 mt-1">Username</label>
             </span>
@@ -626,7 +626,7 @@
                 onchange={submitTorrenter}
                 placeholder="Password"
                 value=""
-                class="w-full p-3 bg-white border border-accent-light rounded-lg focus:outline-none focus:ring-2 focus:ring-accent"
+                class="w-full p-3 bg-surface border border-accent-light rounded-lg focus:outline-none focus:ring-2 focus:ring-accent"
               />
               <label class="text-sm text-gray-500 mt-1">Password</label>
             </span>
@@ -658,7 +658,7 @@
             type="text"
             onchange={submitTorrenter}
             placeholder="TorBox API Key"
-            class="w-full p-3 bg-white border border-accent-light rounded-lg focus:outline-none focus:ring-2 focus:ring-accent"
+            class="w-full p-3 bg-surface border border-accent-light rounded-lg focus:outline-none focus:ring-2 focus:ring-accent"
           />
           <!-- svelte-ignore a11y_label_has_associated_control -->
           <label class="text-sm text-gray-500 mt-2"
@@ -675,7 +675,7 @@
             type="text"
             onchange={submitTorrenter}
             placeholder="Premiumize API Key"
-            class="w-full p-3 bg-white border border-accent-light rounded-lg focus:outline-none focus:ring-2 focus:ring-accent"
+            class="w-full p-3 bg-surface border border-accent-light rounded-lg focus:outline-none focus:ring-2 focus:ring-accent"
           />
           <!-- svelte-ignore a11y_label_has_associated_control -->
           <label class="text-sm text-gray-500 mt-2"
@@ -710,7 +710,7 @@
         <input
           data-dwloc
           type="text"
-          class="flex-1 p-3 bg-white border border-accent-light rounded-lg focus:outline-none focus:ring-2 focus:ring-accent"
+          class="flex-1 p-3 bg-surface border border-accent-light rounded-lg focus:outline-none focus:ring-2 focus:ring-accent"
           placeholder="Select download location..."
         />
         <button
@@ -740,7 +740,7 @@
         Select from our community addons, or add your own below.
       </h2>
       <div
-        class="w-full max-w-3xl h-64 overflow-y-auto border border-accent-light rounded-lg p-4 bg-white"
+        class="w-full max-w-3xl h-64 overflow-y-auto border border-accent-light rounded-lg p-4 bg-surface"
       >
         {#if communityList}
           {#await communityList}
@@ -788,7 +788,7 @@
       </h2>
       <textarea
         onchange={updateAddons}
-        class="w-full max-w-3xl h-24 p-3 bg-white border border-accent-light rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-accent"
+        class="w-full max-w-3xl h-24 p-3 bg-surface border border-accent-light rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-accent"
         placeholder="https://github.com/user/my-custom-addon"
         value=""
       ></textarea>
@@ -833,7 +833,7 @@
         <input
           data-sgdb-key
           type="text"
-          class="flex-1 p-3 bg-white border border-accent-light rounded-lg focus:outline-none focus:ring-2 focus:ring-accent"
+          class="flex-1 p-3 bg-surface border border-accent-light rounded-lg focus:outline-none focus:ring-2 focus:ring-accent"
           placeholder="SteamGridDB API Key"
         />
       </div>
@@ -934,11 +934,11 @@
   }
 
   .oobe-terminal {
-    @apply bg-gray-900 rounded-lg overflow-hidden border border-gray-700;
+    @apply bg-surface rounded-lg overflow-hidden border border-border;
   }
 
   .terminal-header {
-    @apply bg-gray-800 px-4 py-2 border-b border-gray-700;
+    @apply bg-border px-4 py-2 border-b border-border;
   }
 
   .terminal-content {

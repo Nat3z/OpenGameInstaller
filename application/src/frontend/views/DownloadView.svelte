@@ -326,7 +326,7 @@
             >
               <div class="grid grid-cols-2 gap-4">
                 <div
-                  class="flex items-center gap-3 p-3 bg-white rounded-lg border border-accent-light shadow-sm hover:shadow-md transition-all duration-200"
+                  class="flex items-center gap-3 p-3 bg-surface rounded-lg border border-accent-light shadow-sm hover:shadow-md transition-all duration-200"
                 >
                   <div class="p-2 bg-accent text-white rounded-lg">
                     <svg
@@ -354,7 +354,7 @@
                   </div>
                 </div>
                 <div
-                  class="flex items-center gap-3 p-3 bg-white rounded-lg border border-accent-light shadow-sm hover:shadow-md transition-all duration-200"
+                  class="flex items-center gap-3 p-3 bg-surface rounded-lg border border-accent-light shadow-sm hover:shadow-md transition-all duration-200"
                 >
                   <div class="p-2 bg-accent text-white rounded-lg">
                     <svg
@@ -383,7 +383,7 @@
                 </div>
 
                 <div
-                  class="flex items-center gap-3 p-3 bg-white rounded-lg border border-accent-light shadow-sm hover:shadow-md transition-all duration-200"
+                  class="flex items-center gap-3 p-3 bg-surface rounded-lg border border-accent-light shadow-sm hover:shadow-md transition-all duration-200"
                 >
                   <div class="p-2 bg-accent text-white rounded-lg">
                     <svg
@@ -421,7 +421,7 @@
                 </div>
 
                 <div
-                  class="flex items-center gap-3 p-3 bg-white rounded-lg border border-accent-light shadow-sm hover:shadow-md transition-all duration-200"
+                  class="flex items-center gap-3 p-3 bg-surface rounded-lg border border-accent-light shadow-sm hover:shadow-md transition-all duration-200"
                 >
                   <div class="p-2 bg-accent text-white rounded-lg">
                     <svg
@@ -881,11 +881,11 @@
 
   /* Chart Styles */
   .chart-section {
-    @apply bg-white rounded-lg shadow-md border border-gray-200 p-6 mb-8;
+    @apply bg-surface rounded-lg shadow-md border border-border p-6 mb-8;
   }
 
   .chart-container {
-    @apply w-full h-52 bg-background-color rounded-lg border border-gray-100;
+    @apply w-full h-52 bg-background-color rounded-lg border border-border;
   }
 
   /* Button System */
@@ -919,11 +919,11 @@
   }
 
   .empty-state {
-    @apply flex flex-col items-center justify-center text-center py-16 px-8 bg-gray-50 rounded-2xl border-2 border-dashed border-gray-300;
+    @apply flex flex-col items-center justify-center text-center py-16 px-8 bg-surface rounded-2xl border-2 border-dashed border-border-muted;
   }
 
   .empty-state-icon {
-    @apply mb-4 p-4 bg-gray-100 rounded-full;
+    @apply mb-4 p-4 bg-border rounded-full;
   }
 
   /* Downloads Grid */
@@ -1083,7 +1083,7 @@
   }
 
   .failed-setup-compact {
-    @apply bg-white rounded-lg border border-red-200 shadow-sm hover:shadow-md transition-all duration-200 p-4;
+    @apply bg-error-bg rounded-lg border border-error-border shadow-sm hover:shadow-md transition-all duration-200 p-4;
   }
 
   .failed-setup-header {

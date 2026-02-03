@@ -232,7 +232,7 @@
 {/if}
 
 <div
-  class="flex flex-col top-0 left-0 overflow-y-auto absolute w-full h-full bg-white z-3 animate-fade-in-pop-fast"
+  class="flex flex-col top-0 left-0 overflow-y-auto absolute w-full h-full bg-surface z-3 animate-fade-in-pop-fast"
   out:fly={{ x: 100, duration: 500, easing: quintOut }}
 >
   <!-- Hero Banner Section -->

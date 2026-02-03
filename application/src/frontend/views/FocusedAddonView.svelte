@@ -632,7 +632,7 @@
               <div
                 data-contextual
                 style="display: none"
-                class="absolute flex flex-row gap-3 justify-start items-center z-30 top-12 left-0 bg-white border border-red-200 text-sm p-4 rounded-lg shadow-lg w-full"
+                class="absolute flex flex-row gap-3 justify-start items-center z-30 top-12 left-0 bg-error-bg border border-error-border text-sm p-4 rounded-lg shadow-lg w-full"
               >
                 <img
                   src="./error.svg"
@@ -644,7 +644,7 @@
               <div
                 data-description
                 style="display: none"
-                class="absolute flex flex-row gap-3 justify-start items-center z-30 top-12 left-0 bg-white border border-blue-200 text-sm p-4 rounded-lg shadow-lg w-full"
+                class="absolute flex flex-row gap-3 justify-start items-center z-30 top-12 left-0 bg-info-bg border border-info-border text-sm p-4 rounded-lg shadow-lg w-full"
               >
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
@@ -722,7 +722,7 @@
   }
 
   .config-input {
-    @apply px-3 py-2 bg-white rounded-lg border border-gray-300 text-base min-w-64 ml-auto;
+    @apply px-3 py-2 bg-surface rounded-lg border border-border-muted text-base min-w-64 ml-auto;
   }
 
   .config-input-container {
@@ -736,7 +736,7 @@
     @apply sr-only;
   }
   .checkbox-checkmark {
-    @apply w-5 h-5 bg-white border-2 border-gray-300 rounded flex items-center justify-center transition-colors;
+    @apply w-5 h-5 bg-surface border-2 border-border-muted rounded flex items-center justify-center transition-colors;
   }
   .input-checkbox:checked + .checkbox-checkmark {
     @apply bg-accent border-accent;

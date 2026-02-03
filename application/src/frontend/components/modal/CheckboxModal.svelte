@@ -58,7 +58,7 @@
   }
 
   .checkbox-checkmark {
-    @apply w-5 h-5 bg-white border-2 border-gray-300 rounded flex items-center justify-center transition-colors;
+    @apply w-5 h-5 bg-surface border-2 border-border-muted rounded flex items-center justify-center transition-colors;
   }
 
   .input-checkbox:checked + .checkbox-checkmark {
@@ -76,6 +76,6 @@
   }
 
   .input-checkbox:disabled + .checkbox-checkmark {
-    @apply bg-gray-200 border-gray-300;
+    @apply bg-border border-border-muted;
   }
 </style>

@@ -208,7 +208,7 @@
   }
 
   .notification-card {
-    background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+    background: var(--color-surface);
     box-shadow:
       0 4px 6px -1px rgba(0, 0, 0, 0.1),
       0 2px 4px -1px rgba(0, 0, 0, 0.06),
@@ -231,8 +231,7 @@
   }
 
   .notification-text {
-    color: #1e293b;
-    text-shadow: 0 1px 2px rgba(255, 255, 255, 0.8);
+    color: var(--color-text);
   }
 
   .progress-bar {

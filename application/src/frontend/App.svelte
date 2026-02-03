@@ -578,7 +578,7 @@
               ? 'Search for games...'
               : 'Search unavailable (offline)'}
             disabled={!$isOnline}
-            class="w-full h-(--header-button-size) pl-12 pr-4 text-lg bg-accent-lighter rounded-lg border-none focus:outline-none font-archivo placeholder-accent-dark disabled:opacity-50 transition-all duration-300 ease-out focus:bg-white focus:shadow-md"
+            class="w-full h-(--header-button-size) pl-12 pr-4 text-lg bg-accent-lighter rounded-lg border-none focus:outline-none font-archivo placeholder-accent-dark disabled:opacity-50 transition-all duration-300 ease-out focus:bg-surface focus:shadow-md"
             value={$searchQuery}
             oninput={handleSearchInput}
           />
@@ -1206,7 +1206,7 @@
   }
 
   .addon-loading-spinner {
-    @apply w-5 h-5 border-2 border-gray-300 rounded-full animate-spin;
+    @apply w-5 h-5 border-2 border-border-muted rounded-full animate-spin;
     border-top-color: var(--color-accent);
   }
 
@@ -1215,7 +1215,7 @@
   }
 
   .search-result-item {
-    @apply flex gap-4 p-4 bg-white rounded-lg border border-gray-200 hover:shadow-md transition-all duration-300 ease-out translate-y-0;
+    @apply flex gap-4 p-4 bg-surface rounded-lg border border-border hover:shadow-md transition-all duration-300 ease-out translate-y-0;
   }
 
   .search-result-item:hover {

@@ -272,7 +272,7 @@
             </div>
             {#if !isEmpty}
               <div
-                class="w-4 h-4 border-2 border-gray-300 border-t-accent rounded-full animate-spin"
+                class="w-4 h-4 border-2 border-border-muted border-t-accent rounded-full animate-spin"
               ></div>
             {/if}
           </div>

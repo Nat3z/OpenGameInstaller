@@ -161,11 +161,11 @@
   @reference "../app.css";
 
   .custom-dropdown-button {
-    @apply w-full px-4 py-3 bg-white border border-gray-300 rounded-lg flex items-center justify-between hover:border-accent focus:ring-2 focus:ring-accent-light focus:border-accent transition-colors;
+    @apply w-full px-4 py-3 bg-surface border border-border-muted rounded-lg flex items-center justify-between hover:border-accent focus:ring-2 focus:ring-accent-light focus:border-accent transition-colors;
   }
 
   .custom-dropdown-menu {
-    @apply absolute top-full left-0 right-0 mt-1 bg-white border border-gray-300 rounded-lg shadow-lg z-10 max-h-80 overflow-y-auto;
+    @apply absolute top-full left-0 right-0 mt-1 bg-surface border border-border-muted rounded-lg shadow-lg z-10 max-h-80 overflow-y-auto;
     box-shadow:
       0 10px 25px -5px rgba(0, 0, 0, 0.1),
       0 8px 10px -6px rgba(0, 0, 0, 0.1);

@@ -10,6 +10,21 @@
   --color-accent-text-color: #000000;
   --color-background-color: #f7fffd;
 
+  /* Surface and borders (theme-aware) */
+  --color-surface: #ffffff;
+  --color-border: #e5e7eb;
+  --color-border-muted: #d1d5db;
+
+  /* Primary text (e.g. on surface/cards) */
+  --color-text: #1e293b;
+
+  /* Semantic error/info for alerts */
+  --color-error-bg: #fef2f2;
+  --color-error-border: #fecaca;
+  --color-error-text: #b91c1c;
+  --color-info-bg: #eff6ff;
+  --color-info-border: #bfdbfe;
+
   /* Font families */
   --font-archivo: 'Archivo', sans-serif;
   --font-open-sans: 'Open Sans', sans-serif;
@@ -149,6 +164,18 @@
   --color-accent-light: #93c5fd;
   --color-accent-lighter: #1e293b;
   --color-accent-text-color: #f1f5f9;
+
+  --color-surface: #252540;
+  --color-border: #374151;
+  --color-border-muted: #4b5563;
+
+  --color-text: #f1f5f9;
+
+  --color-error-bg: #450a0a;
+  --color-error-border: #7f1d1d;
+  --color-error-text: #fca5a5;
+  --color-info-bg: #1e3a5f;
+  --color-info-border: #1d4ed8;
 }
 
 [data-theme="synthwave"] {
@@ -158,6 +185,18 @@
   --color-accent-light: #ff7edb;
   --color-accent-lighter: #36224a;
   --color-accent-text-color: #f0e6ef;
+
+  --color-surface: #352a45;
+  --color-border: #4a3d5c;
+  --color-border-muted: #5c4d6e;
+
+  --color-text: #f0e6ef;
+
+  --color-error-bg: #3d1f1f;
+  --color-error-border: #9b2c2c;
+  --color-error-text: #fbbfbf;
+  --color-info-bg: #1e2a4a;
+  --color-info-border: #6366f1;
 }
 
 /* Font faces */

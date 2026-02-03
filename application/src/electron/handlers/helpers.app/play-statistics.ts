@@ -152,6 +152,8 @@ export function recordSessionStart(appID: number): void {
 
 /**
  * Ends the active play session for the given app. Updates total playtime, launch count, and lastPlayedAt for that app.
+ * If there is no active session or the active session is for a different appID, returns without mutating or saving
+ * (logs a warning on appID mismatch).
  *
  * @param appID - The app ID to end the session for
  * @returns void

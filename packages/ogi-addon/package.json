@@ -48,7 +48,6 @@
     "typecheck": "tsc --noEmit",
     "release": "bun run build && npm publish",
     "release-beta": "bun run build && npm publish --tag future",
-    "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
     "@types/minimatch": "^6.0.0",

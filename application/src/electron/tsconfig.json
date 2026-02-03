@@ -2,16 +2,18 @@
   "compileOnSave": true,
   "compilerOptions": {
     "outDir": "../../build",
+    "baseUrl": ".",
     "typeRoots": ["node_modules/@types"],
     "target": "ES2022",
     "allowJs": true,
-    "module": "Node16",
+    "module": "ESNext",
     "sourceMap": true,
     "stripInternal": true,
     "lib": ["ES2022", "dom"],
-    "moduleResolution": "node16",
+    "moduleResolution": "bundler",
     "paths": {
-      "ogi-addon/config": ["../../node_modules/ogi-addon/build/config/Configuration.d.mts"]
+      "ogi-addon/config": ["../../node_modules/ogi-addon/build/config/Configuration.d.mts"],
+      "ogi-addon": ["../../node_modules/ogi-addon/build/main.d.mts"]
     },
     "noImplicitAny": true,
     "strictNullChecks": true,

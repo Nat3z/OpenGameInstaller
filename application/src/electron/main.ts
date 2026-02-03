@@ -146,7 +146,7 @@ app.on('web-contents-created', (_, contents) => {
 
     if (
       parsedUrl.origin !== 'http://localhost:8080' &&
-      parsedUrl.origin !== 'file://'
+      parsedUrl.protocol !== 'file:'
     ) {
       event.preventDefault();
       console.warn(
@@ -265,6 +265,10 @@ app.on('ready', async () => {
 
   // Run startup tasks; splash updates go to the main window
   await runStartupTasks(mainWindow);
+
+  // Reset IPC readiness so main app does a fresh handshake (splash's client-ready-for-events must not count)
+  isReadyForEvents = false;
+  readyForEventWaiters = [];
 
   // Load the main app into the same window (replaces splash)
   if (isDev()) {

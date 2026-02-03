@@ -66,6 +66,12 @@ interface Notification {
   id: string;
   type: 'info' | 'error' | 'success' | 'warning';
 }
+
+/**
+ * Sends a notification to the renderer to be displayed in the UI.
+ *
+ * @param notification - The notification payload (message, id, type)
+ */
 export function sendNotification(notification: Notification) {
   sendIPCMessage('notification', notification);
 }
@@ -74,6 +80,12 @@ let isReadyForEvents = false;
 
 let readyForEventWaiters: (() => void)[] = [];
 
+/**
+ * Sends a message to the renderer via IPC. Waits for the client to be ready if needed.
+ *
+ * @param channel - IPC channel name
+ * @param args - Arguments to pass to the renderer
+ */
 export async function sendIPCMessage(channel: string, ...args: any[]) {
   if (!isReadyForEvents) {
     await new Promise<void>((resolve) => {
@@ -90,6 +102,14 @@ export let currentScreens = new Map<
   { [key: string]: string | boolean | number } | undefined
 >();
 
+/**
+ * Asks the renderer to show an input dialog for addon configuration.
+ *
+ * @param id - Addon/config identifier
+ * @param config - Configuration schema
+ * @param name - Display name for the prompt
+ * @param description - Description for the prompt
+ */
 export function sendAskForInput(
   id: string,
   config: ConfigurationFile,

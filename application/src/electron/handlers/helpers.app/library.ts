@@ -33,10 +33,22 @@ export function isSafeToDeleteGamePath(
   return resolved.startsWith(root + sep);
 }
 
+/**
+ * Returns the filesystem path to the library JSON file for a given app ID.
+ *
+ * @param appID - The application/game ID
+ * @returns Absolute path to library/{appID}.json
+ */
 export function getLibraryPath(appID: number): string {
   return join(__dirname, `library/${appID}.json`);
 }
 
+/**
+ * Loads library metadata for an app from disk, or null if the file does not exist.
+ *
+ * @param appID - The application/game ID
+ * @returns Parsed LibraryInfo or null
+ */
 export function loadLibraryInfo(appID: number): LibraryInfo | null {
   const appPath = getLibraryPath(appID);
   if (!fs.existsSync(appPath)) {
@@ -45,6 +57,13 @@ export function loadLibraryInfo(appID: number): LibraryInfo | null {
   return JSON.parse(fs.readFileSync(appPath, 'utf-8'));
 }
 
+/**
+ * Loads library metadata for an app or throws if the file does not exist.
+ *
+ * @param appID - The application/game ID
+ * @returns Parsed LibraryInfo
+ * @throws Error if the game is not found
+ */
 export function loadLibraryInfoOrThrow(appID: number): LibraryInfo {
   const appInfo = loadLibraryInfo(appID);
   if (!appInfo) {
@@ -53,11 +72,20 @@ export function loadLibraryInfoOrThrow(appID: number): LibraryInfo {
   return appInfo;
 }
 
+/**
+ * Writes library metadata for an app to disk.
+ *
+ * @param appID - The application/game ID
+ * @param data - LibraryInfo to persist
+ */
 export function saveLibraryInfo(appID: number, data: LibraryInfo): void {
   const appPath = getLibraryPath(appID);
   fs.writeFileSync(appPath, JSON.stringify(data, null, 2));
 }
 
+/**
+ * Creates the library directory if it does not exist.
+ */
 export function ensureLibraryDir(): void {
   const libraryDir = join(__dirname, 'library');
   if (!fs.existsSync(libraryDir)) {
@@ -65,6 +93,9 @@ export function ensureLibraryDir(): void {
   }
 }
 
+/**
+ * Creates the internals directory if it does not exist.
+ */
 export function ensureInternalsDir(): void {
   const internalsDir = join(__dirname, 'internals');
   if (!fs.existsSync(internalsDir)) {
@@ -72,6 +103,11 @@ export function ensureInternalsDir(): void {
   }
 }
 
+/**
+ * Reads all library JSON files and returns their parsed contents.
+ *
+ * @returns Array of LibraryInfo; empty if the library directory does not exist
+ */
 export function getAllLibraryFiles(): LibraryInfo[] {
   const libraryDir = join(__dirname, 'library');
   if (!fs.existsSync(libraryDir)) {
@@ -86,6 +122,11 @@ export function getAllLibraryFiles(): LibraryInfo[] {
   return apps;
 }
 
+/**
+ * Deletes the library JSON file for an app if it exists.
+ *
+ * @param appID - The application/game ID
+ */
 export function removeLibraryFile(appID: number): void {
   const appPath = getLibraryPath(appID);
   if (fs.existsSync(appPath)) {
@@ -93,10 +134,20 @@ export function removeLibraryFile(appID: number): void {
   }
 }
 
+/**
+ * Returns the filesystem path to the internals apps list (apps.json).
+ *
+ * @returns Absolute path to internals/apps.json
+ */
 export function getInternalsAppsPath(): string {
   return join(__dirname, 'internals/apps.json');
 }
 
+/**
+ * Loads the list of app IDs stored in internals (e.g. for Steam integration).
+ *
+ * @returns Array of app IDs; empty array if the file does not exist
+ */
 export function loadInternalsApps(): number[] {
   const appsPath = getInternalsAppsPath();
   if (!fs.existsSync(appsPath)) {
@@ -105,12 +156,22 @@ export function loadInternalsApps(): number[] {
   return JSON.parse(fs.readFileSync(appsPath, 'utf-8'));
 }
 
+/**
+ * Persists the list of app IDs to internals/apps.json.
+ *
+ * @param appIDs - Array of app IDs to save
+ */
 export function saveInternalsApps(appIDs: number[]): void {
   ensureInternalsDir();
   const appsPath = getInternalsAppsPath();
   fs.writeFileSync(appsPath, JSON.stringify(appIDs, null, 2));
 }
 
+/**
+ * Appends an app ID to the internals list if not already present.
+ *
+ * @param appID - The application/game ID to add
+ */
 export function addToInternalsApps(appID: number): void {
   const apps = loadInternalsApps();
   if (!apps.includes(appID)) {
@@ -119,6 +180,11 @@ export function addToInternalsApps(appID: number): void {
   }
 }
 
+/**
+ * Removes an app ID from the internals list if present.
+ *
+ * @param appID - The application/game ID to remove
+ */
 export function removeFromInternalsApps(appID: number): void {
   const apps = loadInternalsApps();
   const index = apps.indexOf(appID);

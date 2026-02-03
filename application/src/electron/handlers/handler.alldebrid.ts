@@ -45,8 +45,8 @@ export default function handler(_mainWindow: Electron.BrowserWindow) {
     return allDebridClient.getHosts();
   });
 
-  ipcMain.handle('all-debrid:add-magnet', async (_, arg: { url: string; host?: unknown }) => {
-    return allDebridClient.addMagnet(arg.url, arg.host as string | undefined);
+  ipcMain.handle('all-debrid:add-magnet', async (_, arg: { url: string; host?: string }) => {
+    return allDebridClient.addMagnet(arg.url, arg.host);
   });
 
   ipcMain.handle('all-debrid:is-torrent-ready', async (_, id: string) => {
@@ -65,6 +65,7 @@ export default function handler(_mainWindow: Electron.BrowserWindow) {
     return true;
   });
 
+  // Streams (fileStream, responseStream, readStream) are explicitly destroyed on all paths to avoid leaks.
   ipcMain.handle('all-debrid:add-torrent', async (_, arg: { torrent: string }) => {
     const tempPath = join(
       __dirname,

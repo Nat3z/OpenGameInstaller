@@ -135,11 +135,16 @@ export function sendAskForInput(
  * This avoids Steam focusing a separate splash window and leaving the main window black.
  */
 
-/** Returns true when the OGI_DEBUG environment variable is 'true'. */
+/**
+ * Returns true when the OGI_DEBUG environment variable is 'true'.
+ *
+ * @returns {boolean} True if OGI_DEBUG is 'true', false otherwise
+ */
 const ogiDebug = () => (process.env.OGI_DEBUG ?? 'false') === 'true';
 
 /**
  * Runs when the main app page has finished loading in the main window (second ready-to-show).
+ * Registers IPC handlers, shows the window, and runs post-load setup.
  */
 function onMainAppReady() {
   closeSplashWindow();

@@ -24,7 +24,11 @@ export interface PlayStatistics {
   } | null;
 }
 
-/** Returns a fresh empty PlayStatistics object. */
+/**
+ * Returns a fresh empty PlayStatistics object (no entries, no active session).
+ *
+ * @returns {PlayStatistics} Empty play statistics with byAppId {} and activeSession null
+ */
 const defaultStatistics = (): PlayStatistics => ({
   byAppId: {},
   activeSession: null,

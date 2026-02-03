@@ -281,6 +281,7 @@ function communityAddonsErrorMessage(err: unknown): string {
  * Sets communityAddonsLoading true at start and false in finally; clears then possibly sets communityAddonsError; on success updates communityAddonsLocal.
  * On error, leaves communityAddonsLocal unchanged so any cached/previous list can still be shown; the error message is set via communityAddonsErrorMessage.
  * Overlapping calls are ignored for store updates and loading state: only the latest request's result and loading state are applied (in-flight guard via request id).
+ * The request id is monotonic and is not reset in finally by design, so stale completions never apply.
  * @returns Promise that resolves when the fetch and store updates are complete
  */
 export async function fetchCommunityAddons(): Promise<void> {

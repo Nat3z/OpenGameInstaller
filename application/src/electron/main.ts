@@ -206,8 +206,13 @@ function onMainAppReady(): void {
   });
 
   mainWindow.webContents.on('devtools-opened', () => {
-    if (!isDev() && !ogiDebug())
-      mainWindow.webContents.closeDevTools();
+    if (
+      !isDev() &&
+      !ogiDebug() &&
+      mainWindow &&
+      !mainWindow.isDestroyed()
+    )
+      mainWindow?.webContents.closeDevTools();
   });
 
   app.on('web-contents-created', (_, contents) => {

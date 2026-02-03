@@ -26,7 +26,8 @@
     // Linter Checks
     "noImplicitReturns": true,
     "noUnusedLocals": true, // Report errors on unused local variables.
-    "noUnusedParameters": true // Report errors on unused parameters in functions
+    "noUnusedParameters": true, // Report errors on unused parameters in functions
+    "skipLibCheck": true // Skip type-checking of declaration files (avoids upstream type conflicts)
   },
   "include": ["./*/**.ts"],
   "exclude": ["node_modules/**/*", "build/**/*"]

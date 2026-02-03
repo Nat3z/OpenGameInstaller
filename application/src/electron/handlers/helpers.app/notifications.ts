@@ -9,7 +9,7 @@ import { sendNotification } from '../../main.js';
  * @returns Random alphanumeric string
  */
 export function generateNotificationId(): string {
-  return Math.random().toString(36).substring(7);
+  return Math.random().toString(36).substring(2, 9);
 }
 
 /**

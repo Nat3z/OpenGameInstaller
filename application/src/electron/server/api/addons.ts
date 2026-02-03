@@ -13,7 +13,8 @@ import * as fs from 'fs/promises';
 import { join } from 'path';
 import { restartAddonServer } from '../../handlers/handler.addon.js';
 import { __dirname } from '../../manager/manager.paths.js';
-import { StoreData, ZodLibraryInfo } from 'ogi-addon';
+import type { StoreData } from 'ogi-addon';
+import { ZodLibraryInfo } from 'ogi-addon';
 
 const procedures: Record<string, Procedure<any>> = {
   // Get all addon info

@@ -3,7 +3,7 @@
  */
 import { join, resolve, relative, sep } from 'path';
 import * as fs from 'fs';
-import { LibraryInfo } from 'ogi-addon';
+import type { LibraryInfo } from 'ogi-addon';
 import { __dirname } from '../../manager/manager.paths.js';
 
 /**
@@ -62,7 +62,12 @@ export function loadLibraryInfo(appID: number): LibraryInfo | null {
   if (!fs.existsSync(appPath)) {
     return null;
   }
-  return JSON.parse(fs.readFileSync(appPath, 'utf-8'));
+  try {
+    return JSON.parse(fs.readFileSync(appPath, 'utf-8'));
+  } catch {
+    console.error(`Failed to parse library info for app ${appID}:`);
+    return null;
+  }
 }
 
 /**
@@ -121,11 +126,15 @@ export function getAllLibraryFiles(): LibraryInfo[] {
   if (!fs.existsSync(libraryDir)) {
     return [];
   }
-  const files = fs.readdirSync(libraryDir);
+  const files = fs.readdirSync(libraryDir).filter((f) => f.endsWith('.json'));
   const apps: LibraryInfo[] = [];
   for (const file of files) {
-    const data = fs.readFileSync(join(libraryDir, file), 'utf-8');
-    apps.push(JSON.parse(data));
+    try {
+      const data = fs.readFileSync(join(libraryDir, file), 'utf-8');
+      apps.push(JSON.parse(data));
+    } catch {
+      console.error(`Failed to parse library file ${file}:`);
+    }
   }
   return apps;
 }

@@ -1,5 +1,5 @@
 import wsLib from 'ws';
-import {
+import type {
   ClientSentEventTypes,
   OGIAddonConfiguration,
   OGIAddonEvent,
@@ -20,9 +20,9 @@ import {
 import { DeferrableTask, DeferredTasks } from './DeferrableTask.js';
 
 export class AddonConnection {
-  public addonInfo: OGIAddonConfiguration;
+  public addonInfo!: OGIAddonConfiguration;
   public ws: wsLib.WebSocket;
-  public configTemplate: ConfigurationFile;
+  public configTemplate!: ConfigurationFile;
   public filePath: string | undefined;
   public addonLink: string | undefined;
   public eventsAvailable: OGIAddonEvent[] = [];

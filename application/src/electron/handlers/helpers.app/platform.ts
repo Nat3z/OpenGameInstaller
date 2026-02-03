@@ -22,11 +22,16 @@ export function getHomeDir(): string | null {
 
 /**
  * Returns the Steam compatdata directory used for Proton prefixes.
+ * Linux only; only the default Steam path (~/.steam/steam/steamapps/compatdata) is supported.
+ * Alternative locations (e.g. Flatpak, Snap) are not currently handled.
  *
  * @returns Path to compatdata (e.g. ~/.steam/steam/steamapps/compatdata)
- * @throws Error if home directory is not found
+ * @throws Error if not on Linux or if home directory is not found
  */
 export function getCompatDataDir(): string {
+  if (!isLinux()) {
+    throw new Error('Compat data directory is only supported on Linux');
+  }
   const homeDir = getHomeDir();
   if (!homeDir) {
     throw new Error('Home directory not found');

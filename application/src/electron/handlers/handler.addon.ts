@@ -227,19 +227,24 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
     );
     const addons = generalConfig.addons as string[];
 
+    const updatePromises: Promise<void>[] = [];
     for (const addon of addons) {
       let addonPath = '';
       if (addon.startsWith('local:')) {
         addonPath = addon.split('local:')[1];
       } else {
-        addonPath = join(__dirname, 'addons', addon.split(/\/|\\/).pop()!!);
+        addonPath = join(
+          __dirname,
+          'addons',
+          addon.split(/\/|\\/).pop() || addon
+        );
       }
       if (!fs.existsSync(join(addonPath, '.git'))) {
         console.log(`Addon ${addon} is not a git repository`);
         continue;
       }
 
-      new Promise<void>((resolve, reject) => {
+      const updatePromise = new Promise<void>((resolve, reject) => {
         exec(
           `git pull`,
           { cwd: addonPath, env: { ...process.env, LANG: 'en_US.UTF-8' } },
@@ -247,7 +252,7 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
             if (err) {
               sendNotification({
                 message: `Failed to update addon ${addon}`,
-                id: Math.random().toString(36).substring(7),
+                id: Math.random().toString(36).substring(2, 9),
                 type: 'error',
               });
               console.error(err);
@@ -264,10 +269,12 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
             ) {
               sendNotification({
                 message: `Addon ${addon} is already up to date.`,
-                id: Math.random().toString(36).substring(7),
+                id: Math.random().toString(36).substring(2, 9),
                 type: 'info',
               });
-              mainWindow!!.webContents.send('addon:updated', addon);
+              if (mainWindow && !mainWindow.isDestroyed()) {
+                mainWindow.webContents.send('addon:updated', addon);
+              }
               // No need to run setupAddon if nothing changed
               addonsUpdated++;
               resolve();
@@ -282,17 +289,19 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
 
             sendNotification({
               message: `Addon ${addon} updated successfully.`,
-              id: Math.random().toString(36).substring(7),
+              id: Math.random().toString(36).substring(2, 9),
               type: 'info',
             });
 
-            mainWindow!!.webContents.send('addon:updated', addon);
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.webContents.send('addon:updated', addon);
+            }
             // setup the addon
             setupAddon(addonPath).then((success) => {
               if (!success) {
                 sendNotification({
                   message: `An error occurred when setting up ${addon}`,
-                  id: Math.random().toString(36).substring(7),
+                  id: Math.random().toString(36).substring(2, 9),
                   type: 'error',
                 });
                 failed = true;
@@ -306,28 +315,20 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
           }
         );
       });
+      updatePromises.push(updatePromise);
     }
 
-    await new Promise<void>((resolve, reject) => {
-      const interval = setInterval(() => {
-        if (addonsUpdated === addons.length) {
-          resolve();
-          clearInterval(interval);
-        }
-        if (failed) {
-          reject();
-          clearInterval(interval);
-        }
-      }, 50);
-    });
+    await Promise.allSettled(updatePromises);
 
     // restart all of the addons
     restartAddonServer();
 
-    sendNotification({
-      message: 'Successfully updated addons.',
-      id: Math.random().toString(36).substring(7),
-      type: 'info',
-    });
+    if (!failed) {
+      sendNotification({
+        message: 'Successfully updated addons.',
+        id: Math.random().toString(36).substring(2, 9),
+        type: 'info',
+      });
+    }
   });
 }

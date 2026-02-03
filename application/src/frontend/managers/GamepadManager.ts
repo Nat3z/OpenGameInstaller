@@ -557,10 +557,9 @@ export class GamepadNavigator {
       // Try to open Steam keyboard overlay
       // The keyboard injects text directly into the focused input
       const opened = await window.electronAPI.app.openSteamKeyboard({
-        x: 0,
-        y: 0,
-        width: 500,
-        height: 500,
+        previousText,
+        title,
+        maxChars,
       });
 
       if (!opened) {

@@ -11,7 +11,7 @@ import {
   mkdirSync,
   rmSync,
 } from 'original-fs';
-import { LibraryInfo } from 'ogi-addon';
+import type { LibraryInfo } from 'ogi-addon';
 import { app, BrowserWindow } from 'electron';
 import { sendNotification } from './main.js';
 import semver from 'semver';
@@ -54,10 +54,12 @@ async function fetch_STLPath() {
     exec('which steamtinkerlaunch', (error, stdout, stderr) => {
       if (error) {
         console.error(`exec error: ${error}`);
+        resolve();
         return;
       }
       if (stderr) {
         console.error(`stderr: ${stderr}`);
+        resolve();
         return;
       }
 
@@ -476,10 +478,11 @@ export function checkForAddonUpdates(mainWindow: BrowserWindow) {
   const generalConfig = JSON.parse(
     fs.readFileSync(join(__dirname, 'config/option/general.json'), 'utf-8')
   );
-  const addons = generalConfig.addons;
+  const addons = generalConfig.addons as string[];
+  const promises: Promise<void>[] = [];
   for (const addon of addons) {
     let addonPath = '';
-    let addonName = addon.split(/\/|\\/).pop()!!;
+    const addonName = addon.split(/\/|\\/).pop() || addon;
     if (addon.startsWith('local:')) {
       addonPath = addon.split('local:')[1];
     } else {
@@ -491,22 +494,25 @@ export function checkForAddonUpdates(mainWindow: BrowserWindow) {
       continue;
     }
 
-    new Promise<void>(async (resolve, _) => {
+    const p = (async () => {
       const isUpdate = await checkForGitUpdates(addonPath);
       if (isUpdate) {
         sendNotification({
           message: `Addon ${addonName} has updates.`,
-          id: Math.random().toString(36).substring(7),
+          id: Math.random().toString(36).substring(2, 9),
           type: 'info',
         });
-        mainWindow!!.webContents.send('addon:update-available', addon);
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('addon:update-available', addon);
+        }
         console.log(`Addon ${addonName} has updates.`);
-        resolve();
+      } else {
+        console.log(`Addon ${addonName} is up to date.`);
       }
-      console.log(`Addon ${addonName} is up to date.`);
-      resolve();
-    });
+    })();
+    promises.push(p);
   }
+  void Promise.allSettled(promises);
 }
 
 /**

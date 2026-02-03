@@ -30,12 +30,12 @@ export function escapeShellArg(arg: string): string {
 }
 
 /**
- * Creates a desktop shortcut for the application (Linux: .desktop file; Windows: not supported).
+ * Creates a desktop shortcut for the application (Linux: .desktop file; Windows and macOS: not supported).
  *
  * @returns Result with success true, or success false and error message (e.g. platform not supported)
  */
 export async function addToDesktop() {
-  if (process.platform === 'win32') {
+  if (process.platform === 'win32' || process.platform === 'darwin') {
     return {
       success: false,
       error: 'This feature is only available on Linux',

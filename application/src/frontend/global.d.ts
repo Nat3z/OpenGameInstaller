@@ -187,7 +187,7 @@ interface Window {
       }>;
     };
     updateAddons: () => Promise<void>;
-    getVersion: () => string;
+    getVersion: () => Promise<string>;
     installAddons: (addons: string[]) => Promise<void>;
     restartAddonServer: () => Promise<void>;
     cleanAddons: () => Promise<void>;

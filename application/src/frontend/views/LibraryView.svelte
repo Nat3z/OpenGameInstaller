@@ -90,6 +90,14 @@
           id: `game-updates-${Date.now()}`,
         });
       }
+    } catch (err) {
+      updatesManager.setLastGameUpdatesCheckResult(null);
+      console.error('Check for updates failed', err);
+      createNotification({
+        type: 'error',
+        message: 'Check for updates failed.',
+        id: `game-updates-failed-${Date.now()}`,
+      });
     } finally {
       updatesManager.setCheckingForGameUpdates(false);
     }

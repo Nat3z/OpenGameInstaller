@@ -287,7 +287,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ),
     addToDesktop: wrap(() => ipcRenderer.invoke('app:add-to-desktop')),
   },
-  getVersion: wrap(() => ipcRenderer.sendSync('get-version')),
+  getVersion: wrap(() => ipcRenderer.invoke('get-version')),
   updateAddons: wrap(() => ipcRenderer.invoke('update-addons')),
   installAddons: wrap((addons: string[]) =>
     ipcRenderer.invoke('install-addons', addons)

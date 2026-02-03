@@ -26,6 +26,8 @@ import { runStartupTasks, closeSplashWindow } from './startup-runner.js';
 
 export const VERSION = app.getVersion();
 
+const DEV_APP_ORIGIN = 'http://localhost:8080';
+
 export let isSecurityCheckEnabled = true;
 if (existsSync(join(__dirname, 'config/option/developer.json'))) {
   const developerConfig = JSON.parse(
@@ -121,29 +123,29 @@ const ogiDebug = () => (process.env.OGI_DEBUG ?? 'false') === 'true';
  * Runs when the main app page has finished loading in the main window (second ready-to-show).
  */
 function onMainAppReady() {
+  if (!mainWindow) {
+    console.error('onMainAppReady called but mainWindow is null');
+    return;
+  }
   closeSplashWindow();
 
-  AppEventHandler(mainWindow!!);
+  AppEventHandler(mainWindow);
   FSEventHandler();
-  RealdDebridHandler(mainWindow!!);
-  TorrentHandler(mainWindow!!);
-  DirectDownloadHandler(mainWindow!!);
+  RealdDebridHandler(mainWindow);
+  TorrentHandler(mainWindow);
+  DirectDownloadHandler(mainWindow);
   AddonRestHandler();
-  AddonManagerHandler(mainWindow!!);
+  AddonManagerHandler(mainWindow);
   OOBEHandler();
 
-  ipcMain.on('get-version', async (event) => {
-    event.returnValue = VERSION;
-  });
+  ipcMain.handle('get-version', () => VERSION);
   console.log('showing window');
-  mainWindow!!.show();
-  mainWindow!!.focus();
+  mainWindow.show();
+  mainWindow.focus();
 
-  if (mainWindow) {
-    checkForAddonUpdates(mainWindow);
-  }
+  checkForAddonUpdates(mainWindow);
   if (ogiDebug()) {
-    mainWindow!!.webContents.openDevTools();
+    mainWindow.webContents.openDevTools();
   }
   if (!isSecurityCheckEnabled) {
     sendNotification({
@@ -165,7 +167,7 @@ function onMainAppReady() {
     });
   });
 
-  mainWindow!!.webContents.setWindowOpenHandler((details) => {
+  mainWindow.webContents.setWindowOpenHandler((details) => {
     shell.openExternal(details.url);
     return { action: 'deny' };
   });
@@ -175,9 +177,8 @@ function onMainAppReady() {
     globalShortcut.unregister('F5');
   });
 
-  mainWindow!!.webContents.on('devtools-opened', () => {
-    if (!isDev() && !ogiDebug())
-      mainWindow!!.webContents.closeDevTools();
+  mainWindow.webContents.on('devtools-opened', () => {
+    if (!isDev() && !ogiDebug()) mainWindow.webContents.closeDevTools();
   });
 
   app.on('web-contents-created', (_, contents) => {
@@ -185,11 +186,14 @@ function onMainAppReady() {
       const parsedUrl = new URL(navigationUrl);
 
       if (
-        parsedUrl.origin !== 'http://localhost:8080' &&
+        parsedUrl.origin !== DEV_APP_ORIGIN &&
         parsedUrl.origin !== 'file://'
       ) {
         event.preventDefault();
-        throw new Error('Navigating to that address is not allowed.');
+        console.warn(
+          'Blocked navigation to disallowed origin:',
+          navigationUrl
+        );
       }
     });
   });
@@ -258,7 +262,7 @@ app.on('ready', async () => {
   // Load the main app into the same window (replaces splash)
   if (isDev()) {
     mainWindow!!.loadURL(
-      'http://localhost:8080/?secret=' + applicationAddonSecret
+      DEV_APP_ORIGIN + '/?secret=' + applicationAddonSecret
     );
     console.log('Running in development');
   } else {

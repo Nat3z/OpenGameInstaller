@@ -685,7 +685,9 @@
                     Documentation
                   </a>
                 </div>
-                <p class="about-version">v{window.electronAPI.getVersion()}</p>
+                {#await window.electronAPI.getVersion() then version}
+                  <p class="about-version">v{version}</p>
+                {/await}
               </div>
             </div>
           {:else}

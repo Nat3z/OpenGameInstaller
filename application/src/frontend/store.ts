@@ -285,6 +285,7 @@ function communityAddonsErrorMessage(err: unknown): string {
  * @returns Promise that resolves when the fetch and store updates are complete
  */
 export async function fetchCommunityAddons(): Promise<void> {
+  // In-flight guard: avoid overlapping requests; only one fetch runs at a time.
   if (get(communityAddonsLoading)) return;
   const requestId = ++communityAddonsRequestId;
   communityAddonsLoading.set(true);

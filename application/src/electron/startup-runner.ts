@@ -48,9 +48,11 @@ let splashTargetWindow: BrowserWindow | null = null;
 
 /**
  * Updates the splash screen's status message shown to the user.
+ * Sends to both splashTargetWindow (single-window flow) and splashWindow (legacy) when present.
  *
  * @param text - The status message to display on the splash screen
  * @param subtext - Optional secondary text (e.g., download speed, file name)
+ * @returns void
  */
 function updateSplashStatus(text: string, subtext?: string) {
   if (splashTargetWindow && !splashTargetWindow.isDestroyed()) {
@@ -63,10 +65,12 @@ function updateSplashStatus(text: string, subtext?: string) {
 
 /**
  * Updates the splash screen's progress bar.
+ * Sends to both splashTargetWindow (single-window flow) and splashWindow (legacy) when present.
  *
  * @param current - Current progress value
  * @param total - Total/maximum progress value
  * @param speed - Optional speed text (e.g., "1.5MB/s")
+ * @returns void
  */
 function updateSplashProgress(current: number, total: number, speed?: string) {
   if (splashTargetWindow && !splashTargetWindow.isDestroyed()) {

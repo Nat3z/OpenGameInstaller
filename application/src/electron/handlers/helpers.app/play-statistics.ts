@@ -10,12 +10,18 @@ import { ensureInternalsDir } from './library.js';
 const STATS_FILENAME = 'play-statistics.json';
 const MAX_SESSION_MS = 24 * 60 * 60 * 1000;
 
+/**
+ * Per-app play statistics: total playtime, launch count, and last played timestamp.
+ */
 export interface PlayStatisticsEntry {
   totalPlaytimeMs: number;
   launchCount: number;
   lastPlayedAt: number;
 }
 
+/**
+ * Full play statistics: per-app entries and optional active session (one game currently running).
+ */
 export interface PlayStatistics {
   byAppId: Record<string, PlayStatisticsEntry>;
   activeSession: {

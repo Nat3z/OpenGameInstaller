@@ -1,3 +1,6 @@
+/**
+ * Frontend helpers for play statistics: load from main process, derive recently/most played from stats, format playtime.
+ */
 import type { LibraryInfo } from 'ogi-addon';
 
 const RECENTLY_PLAYED_COUNT = 4;

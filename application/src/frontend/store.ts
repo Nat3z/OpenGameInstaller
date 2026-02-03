@@ -1,5 +1,5 @@
 import type { EventListenerTypes, SearchResult } from 'ogi-addon';
-import { writable, type Writable } from 'svelte/store';
+import { get, writable, type Writable } from 'svelte/store';
 import type { BasicLibraryInfo } from 'ogi-addon';
 
 export type DownloadStatusAndInfo = SearchResult & {
@@ -284,9 +284,11 @@ function communityAddonsErrorMessage(err: unknown): string {
  * @returns Promise that resolves when the fetch and store updates are complete
  */
 export async function fetchCommunityAddons(): Promise<void> {
+  if (get(communityAddonsLoading)) return;
   const requestId = ++communityAddonsRequestId;
   communityAddonsLoading.set(true);
   communityAddonsError.set(null);
+  // Completion-path updates (try/catch/finally) apply only when requestId === communityAddonsRequestId so stale responses do not overwrite state.
   try {
     const response = await window.electronAPI.app.axios({
       method: 'GET',

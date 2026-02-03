@@ -98,7 +98,8 @@
   });
 
   onMount(() => {
-    // Defensive fetch for direct navigation: run only when not loading, list is empty, and no current error (user can use Retry to refetch after error).
+    // Defensive fetch for direct navigation: run only when not loading, list is empty, and no current error.
+    // We do not auto-fetch when there is an error so the failed state stays visible; user uses Retry to refetch.
     if (
       !get(communityAddonsLoading) &&
       get(communityAddonsLocal).length === 0 &&

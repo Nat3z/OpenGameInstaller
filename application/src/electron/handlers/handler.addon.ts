@@ -297,21 +297,32 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
               mainWindow.webContents.send('addon:updated', addon);
             }
             // setup the addon
-            setupAddon(addonPath).then((success) => {
-              if (!success) {
+            setupAddon(addonPath)
+              .then((success) => {
+                if (!success) {
+                  sendNotification({
+                    message: `An error occurred when setting up ${addon}`,
+                    id: Math.random().toString(36).substring(2, 9),
+                    type: 'error',
+                  });
+                  failed = true;
+                  reject();
+                  return;
+                }
+                addonsUpdated++;
+                console.log(`Addon ${addon} updated successfully.`);
+                resolve();
+              })
+              .catch((err) => {
+                console.error(`Failed to update addon ${addon}:`, err);
                 sendNotification({
-                  message: `An error occurred when setting up ${addon}`,
+                  message: `Failed to update addon ${addon}`,
                   id: Math.random().toString(36).substring(2, 9),
                   type: 'error',
                 });
                 failed = true;
                 reject();
-                return;
-              }
-              addonsUpdated++;
-              console.log(`Addon ${addon} updated successfully.`);
-              resolve();
-            });
+              });
           }
         );
       });

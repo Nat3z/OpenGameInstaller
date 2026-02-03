@@ -412,19 +412,23 @@ export async function convertLibrary() {
   }
   const files = fs.readdirSync(libraryPath);
   for (const file of files) {
-    const filePath = join(libraryPath, file);
-    const fileData = fs.readFileSync(filePath, 'utf-8');
-    let data: LibraryInfo & { steamAppID?: number } = JSON.parse(fileData);
-    if (data.steamAppID) {
-      // convert the app id to an appID
-      data.appID = data.steamAppID;
-      delete data.steamAppID;
-      data.coverImage = `https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/${data.appID}/library_hero.jpg`;
-      data.titleImage = `https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/${data.appID}/logo_2x.png`;
-      data.addonsource = 'steam';
-      data.storefront = 'steam';
-      fs.writeFileSync(filePath, JSON.stringify(data, null, 4));
-      console.log(`Converted ${file} to new format`);
+    try {
+      const filePath = join(libraryPath, file);
+      const fileData = fs.readFileSync(filePath, 'utf-8');
+      let data: LibraryInfo & { steamAppID?: number } = JSON.parse(fileData);
+      if (data.steamAppID) {
+        // convert the app id to an appID
+        data.appID = data.steamAppID;
+        delete data.steamAppID;
+        data.coverImage = `https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/${data.appID}/library_hero.jpg`;
+        data.titleImage = `https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/${data.appID}/logo_2x.png`;
+        data.addonsource = 'steam';
+        data.storefront = 'steam';
+        fs.writeFileSync(filePath, JSON.stringify(data, null, 4));
+        console.log(`Converted ${file} to new format`);
+      }
+    } catch (err) {
+      console.error(`[convertLibrary] Failed to process ${file}:`, (err as Error).message);
     }
   }
 }
@@ -478,7 +482,7 @@ export function checkForAddonUpdates(mainWindow: BrowserWindow) {
   const generalConfig = JSON.parse(
     fs.readFileSync(join(__dirname, 'config/option/general.json'), 'utf-8')
   );
-  const addons = generalConfig.addons as string[];
+  const addons = Array.isArray(generalConfig.addons) ? generalConfig.addons : [];
   const promises: Promise<void>[] = [];
   for (const addon of addons) {
     let addonPath = '';

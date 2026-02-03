@@ -294,14 +294,19 @@ app.on('ready', async () => {
   // Run startup tasks; splash updates go to the main window
   await runStartupTasks(mainWindow!);
 
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    console.error('Main window unavailable after startup tasks');
+    return;
+  }
+
   // Load the main app into the same window (replaces splash)
   if (isDev()) {
-    mainWindow!!.loadURL(
+    mainWindow.loadURL(
       'http://localhost:8080/?secret=' + applicationAddonSecret
     );
     console.log('Running in development');
   } else {
-    mainWindow!!.loadURL(
+    mainWindow.loadURL(
       'file://' +
         join(app.getAppPath(), 'out', 'renderer', 'index.html') +
         '?secret=' +
@@ -309,7 +314,7 @@ app.on('ready', async () => {
     );
   }
 
-  mainWindow!!.once('ready-to-show', onMainAppReady);
+  mainWindow.once('ready-to-show', onMainAppReady);
 
   server.listen(port, () => {
     console.log(`Addon Server is running on http://localhost:${port}`);

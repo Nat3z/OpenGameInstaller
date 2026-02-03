@@ -170,7 +170,12 @@ export function loadInternalsApps(): number[] {
   if (!fs.existsSync(appsPath)) {
     return [];
   }
-  return JSON.parse(fs.readFileSync(appsPath, 'utf-8'));
+  try {
+    return JSON.parse(fs.readFileSync(appsPath, 'utf-8'));
+  } catch {
+    console.error('Failed to parse internals apps.json');
+    return [];
+  }
 }
 
 /**

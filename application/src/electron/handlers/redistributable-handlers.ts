@@ -54,9 +54,9 @@ const getSilentInstallFlags = (
     return ['/S', '/v/qn'];
   }
 
-  // MSI installers
+  // MSI installers (msiexec is invoked separately with /i <file> /qn)
   if (lowerFileName.endsWith('.msi')) {
-    return ['/S', '/qn']; // /qn = quiet no UI
+    return ['/qn'];
   }
 
   // NSIS installers (path-only; many setup.exe are Inno/InstallShield)
@@ -337,11 +337,19 @@ export function registerRedistributableHandlers(): void {
                     .replace(/\n$/g, '');
                   const redistributableDir = dirname(redistributablePath);
                   const redistributableFilename = basename(redistributablePath);
+                  const isMsi = redistributableFilename
+                    .toLowerCase()
+                    .endsWith('.msi');
 
                   const silentFlags = getSilentInstallFlags(
                     redistributablePath,
                     redistributableFilename
                   );
+
+                  const wineProgram = isMsi ? 'msiexec' : redistributableFilename;
+                  const wineArgs = isMsi
+                    ? ['/i', redistributableFilename, ...silentFlags]
+                    : [...silentFlags];
 
                   const child = spawn(
                     'flatpak',
@@ -353,8 +361,8 @@ export function registerRedistributableHandlers(): void {
                       '--filesystem=host',
                       'run',
                       'org.winehq.Wine',
-                      redistributableFilename,
-                      ...silentFlags,
+                      wineProgram,
+                      ...wineArgs,
                     ],
                     {
                       stdio: ['ignore', 'pipe', 'pipe'],

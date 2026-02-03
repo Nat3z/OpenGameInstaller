@@ -138,10 +138,9 @@ interface Window {
       getLocalImage: (path: string) => Promise<string>;
       grantRootPassword: (password: string) => Promise<void>;
       openSteamKeyboard: (options: {
-        x: number;
-        y: number;
-        width: number;
-        height: number;
+        previousText: string;
+        title: string;
+        maxChars: number;
       }) => Promise<boolean>;
       updateAppVersion: (
         appID: number,

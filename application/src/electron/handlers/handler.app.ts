@@ -254,6 +254,18 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
     return await addToDesktop();
   });
 
+  // Steam overlay keyboard (Steam Deck / Big Picture); stub returns false when not available
+  ipcMain.handle(
+    'app:open-steam-keyboard',
+    async (
+      _,
+      _options: { previousText: string; title: string; maxChars: number }
+    ): Promise<boolean> => {
+      // No Steam overlay API integration; frontend can fall back to normal input
+      return false;
+    }
+  );
+
   // Register sub-handlers
   registerSteamHandlers();
   registerLibraryHandlers(mainWindow);

@@ -23,6 +23,7 @@ jobs:
 
       - name: Copy Electron for application typecheck
         run: |
+          mkdir -p ./application/node_modules
           cp -r ./node_modules/electron ./application/node_modules/electron
           mkdir -p ./updater/node_modules
           cp -r ./node_modules/electron ./updater/node_modules/electron

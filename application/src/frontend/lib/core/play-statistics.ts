@@ -5,6 +5,8 @@ const MOST_PLAYED_COUNT = 8;
 
 /**
  * Load play statistics from the main process.
+ *
+ * @returns Promise resolving to the current play statistics
  */
 export async function getPlayStatistics(): Promise<PlayStatistics> {
   return window.electronAPI.app.getPlayStatistics();
@@ -12,6 +14,10 @@ export async function getPlayStatistics(): Promise<PlayStatistics> {
 
 /**
  * Get recently played games from library using stats (sort by lastPlayedAt desc, first N).
+ *
+ * @param library - Full library list to resolve app IDs against
+ * @param stats - Play statistics (byAppId with lastPlayedAt)
+ * @returns Up to RECENTLY_PLAYED_COUNT library apps, ordered by last played
  */
 export function getRecentlyPlayedFromStats(
   library: LibraryInfo[],
@@ -34,6 +40,10 @@ export function getRecentlyPlayedFromStats(
 
 /**
  * Get most played games from library using stats (sort by totalPlaytimeMs desc, cap at N).
+ *
+ * @param library - Full library list to resolve app IDs against
+ * @param stats - Play statistics (byAppId with totalPlaytimeMs)
+ * @returns Up to MOST_PLAYED_COUNT library apps, ordered by total playtime
  */
 export function getMostPlayedFromStats(
   library: LibraryInfo[],
@@ -56,6 +66,9 @@ export function getMostPlayedFromStats(
 
 /**
  * Format playtime in ms to a short string (e.g. "12h 34m" or "45m").
+ *
+ * @param totalPlaytimeMs - Total playtime in milliseconds
+ * @returns Formatted string (e.g. "< 1m", "45m", "12h 34m")
  */
 export function formatPlaytime(totalPlaytimeMs: number): string {
   if (totalPlaytimeMs < 60_000) {

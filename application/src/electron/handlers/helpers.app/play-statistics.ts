@@ -142,6 +142,7 @@ export function recordSessionStart(appID: number): void {
  * Ends the active play session for the given app. Updates total playtime, launch count, and lastPlayedAt for that app.
  *
  * @param appID - The app ID to end the session for
+ * @returns void
  */
 export function recordSessionEnd(appID: number): void {
   const stats = loadPlayStatistics();
@@ -175,6 +176,7 @@ export function recordSessionEnd(appID: number): void {
  * Removes all play statistics for the given app (e.g. when the app is removed from the library).
  *
  * @param appID - The app ID to remove from play statistics
+ * @returns void
  */
 export function removeAppFromPlayStatistics(appID: number): void {
   const stats = loadPlayStatistics();

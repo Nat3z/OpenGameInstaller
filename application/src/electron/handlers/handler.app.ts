@@ -26,6 +26,11 @@ export function escapeShellArg(arg: string): string {
     .replace(/`/g, '\\`');
 }
 
+/**
+ * Creates a desktop shortcut for the application (Linux: .desktop file; Windows: not supported).
+ *
+ * @returns Result with success true, or success false and error message (e.g. platform not supported)
+ */
 export async function addToDesktop() {
   if (process.platform === 'win32') {
     return {

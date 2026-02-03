@@ -3,6 +3,11 @@ import path, { join } from 'path';
 import os from 'os';
 import fs from 'fs';
 
+/**
+ * Returns true when running in development (unpackaged); false when packaged.
+ *
+ * @returns true if app is not packaged (dev), false otherwise
+ */
 export function isDev() {
   return !app.isPackaged;
 }

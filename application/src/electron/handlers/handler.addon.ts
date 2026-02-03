@@ -9,6 +9,10 @@ import { sendIPCMessage, sendNotification } from '../main.js';
 import axios from 'axios';
 import { AddonConnection } from '../server/AddonConnection.js';
 
+/**
+ * Reads general config and starts all configured addons. Skips addons that are not yet installed.
+ * Sends 'all-addons-started' via IPC when all start attempts have completed.
+ */
 export function startAddons() {
   // start all of the addons
   if (!fs.existsSync(join(__dirname, 'config/option/general.json'))) {
@@ -52,6 +56,10 @@ export function startAddons() {
   });
 }
 
+/**
+ * Stops the addon server and all addon processes, then starts the server again and starts addons.
+ * Sends a success notification when done.
+ */
 export function restartAddonServer() {
   // stop the server
   console.log('Stopping server...');
@@ -77,6 +85,11 @@ export function restartAddonServer() {
   });
 }
 
+/**
+ * Registers IPC handlers for addon management (install, start, restart, etc.) and uses the main window for UI feedback.
+ *
+ * @param mainWindow - BrowserWindow used to send addon-related events to the renderer
+ */
 export default function AddonManagerHandler(mainWindow: BrowserWindow) {
   ipcMain.handle('install-addons', async (_, addons) => {
     // addons is an array of URLs to the addons to install. these should be valid git repositories

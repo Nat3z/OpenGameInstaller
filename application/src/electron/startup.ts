@@ -163,6 +163,13 @@ async function* copyDirectoryAsyncRestore(
   }
 }
 
+/**
+ * Restores application files from a backup directory (e.g. after an update).
+ * Optionally reports progress per file. Returns whether addon dependencies need reinstallation.
+ *
+ * @param onProgress - Optional callback invoked with (file, current, total) during restore
+ * @returns Object with needsAddonReinstall true if addon node_modules were skipped during backup
+ */
 export async function restoreBackup(
   onProgress?: (file: string, current: number, total: number) => void
 ): Promise<{ needsAddonReinstall: boolean }> {
@@ -379,6 +386,10 @@ export async function reinstallAddonDependencies(
   }
 }
 
+/**
+ * Converts legacy library JSON files (steamAppID) to the current format (appID, coverImage, etc.).
+ * Reads the library directory and updates each file that has steamAppID.
+ */
 export async function convertLibrary() {
   // read the library directory
   const libraryPath = join(__dirname, 'library/');
@@ -433,6 +444,12 @@ async function checkForGitUpdates(repoPath: string): Promise<boolean> {
   });
 }
 
+/**
+ * Checks each configured addon (git repo) for available updates and notifies the user.
+ * Sends 'addon:update-available' to the main window when an addon has updates.
+ *
+ * @param mainWindow - BrowserWindow used to send update notifications to the renderer
+ */
 export function checkForAddonUpdates(mainWindow: BrowserWindow) {
   if (!fs.existsSync(join(__dirname, 'addons'))) {
     return;
@@ -473,6 +490,10 @@ export function checkForAddonUpdates(mainWindow: BrowserWindow) {
   }
 }
 
+/**
+ * Removes cached installer/app update directories from the system temp folder.
+ * Keeps the most recent cache and deletes older ogi-* versioned directories.
+ */
 export async function removeCachedAppUpdates() {
   // find cached updates in the temp folder of this system
   const tempFolder = app.getPath('temp');

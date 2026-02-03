@@ -8,6 +8,10 @@ import { __dirname } from '../../manager/manager.paths.js';
 
 /**
  * Resolves game cwd to an absolute path (relative paths resolved against appDataDir).
+ *
+ * @param cwd - Game working directory (absolute or relative)
+ * @param appDataDir - Application data directory used as base for relative cwd
+ * @returns Absolute path to the game directory
  */
 export function resolveGameCwd(cwd: string, appDataDir: string): string {
   if (cwd.startsWith('/') || (cwd.length >= 2 && cwd[1] === ':')) {
@@ -19,6 +23,10 @@ export function resolveGameCwd(cwd: string, appDataDir: string): string {
 /**
  * Returns true if the resolved game path is safe to delete (must be strictly under
  * appDataDir to avoid deleting system, home root, or the app data directory itself).
+ *
+ * @param cwd - Game working directory (absolute or relative)
+ * @param appDataDir - Application data directory; path must be strictly under this
+ * @returns true if the path is safe to delete, false otherwise
  */
 export function isSafeToDeleteGamePath(
   cwd: string,

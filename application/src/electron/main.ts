@@ -135,10 +135,16 @@ export function sendAskForInput(
  * This avoids Steam focusing a separate splash window and leaving the main window black.
  */
 
+/**
+ * Returns true when OGI_DEBUG env var is set to 'true' (enables dev tools and debug behavior).
+ *
+ * @returns true if OGI_DEBUG is 'true', false otherwise
+ */
 const ogiDebug = () => (process.env.OGI_DEBUG ?? 'false') === 'true';
 
 /**
  * Runs when the main app page has finished loading in the main window (second ready-to-show).
+ * Registers IPC handlers, closes splash, and shows the main window.
  */
 function onMainAppReady() {
   if (!mainWindow || mainWindow.isDestroyed()) {
@@ -220,6 +226,8 @@ function onMainAppReady() {
 /**
  * Creates the main BrowserWindow, loads splash first, then caller loads the app and registers onMainAppReady.
  * Single-window flow so Steam Deck / Game Mode keeps focus on the same window.
+ *
+ * Sets up IPC listeners for client-ready-for-events and loads the splash URL; the app URL is loaded by the ready handler.
  */
 function createWindow() {
   mainWindow = new BrowserWindow({

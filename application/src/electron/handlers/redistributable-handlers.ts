@@ -200,7 +200,7 @@ export function registerRedistributableHandlers(): void {
 
                   // Create the bin directory if it doesn't exist
                   if (!fs.existsSync(join(__dirname, 'bin'))) {
-                    fs.mkdirSync(join(__dirname, 'bin'));
+                    fs.mkdirSync(join(__dirname, 'bin'), { recursive: true });
                   }
 
                   // Download the tool if it doesn't exist

@@ -479,10 +479,23 @@ export function checkForAddonUpdates(mainWindow: BrowserWindow) {
   if (!fs.existsSync(join(__dirname, 'addons'))) {
     return;
   }
-  const generalConfig = JSON.parse(
-    fs.readFileSync(join(__dirname, 'config/option/general.json'), 'utf-8')
-  );
-  const addons = Array.isArray(generalConfig.addons) ? generalConfig.addons : [];
+  const generalConfigPath = join(__dirname, 'config/option/general.json');
+  if (!fs.existsSync(generalConfigPath)) {
+    return;
+  }
+  let addons: string[] = [];
+  try {
+    const generalConfig = JSON.parse(
+      fs.readFileSync(generalConfigPath, 'utf-8')
+    );
+    addons = Array.isArray(generalConfig.addons) ? generalConfig.addons : [];
+  } catch (err) {
+    console.error(
+      '[checkForAddonUpdates] Failed to read/parse general.json',
+      (err as Error).message
+    );
+    addons = [];
+  }
   const promises: Promise<void>[] = [];
   for (const addon of addons) {
     let addonPath = '';

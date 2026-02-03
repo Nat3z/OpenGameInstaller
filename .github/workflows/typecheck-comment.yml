@@ -5,12 +5,17 @@ on:
     workflows: ["Typecheck"]
     types: [completed]
 
+permissions:
+  actions: read
+  pull-requests: write
+
 jobs:
   comment:
     runs-on: ubuntu-latest
-    if: github.event.workflow_run.event == 'pull_request'
+    if: github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.conclusion == 'failure'
     steps:
       - name: Download artifact
+        id: download
         uses: actions/github-script@v7
         with:
           script: |
@@ -24,8 +29,10 @@ jobs:
             })[0];
             if (!matchArtifact) {
               console.log("No typecheck-results artifact found");
+              core.setOutput('artifact_found', 'false');
               return;
             }
+            core.setOutput('artifact_found', 'true');
             let download = await github.rest.actions.downloadArtifact({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -36,9 +43,11 @@ jobs:
             fs.writeFileSync(`${process.env.GITHUB_WORKSPACE}/typecheck-results.zip`, Buffer.from(download.data));
 
       - name: Unzip artifact
+        if: steps.download.outputs.artifact_found == 'true'
         run: unzip -o typecheck-results.zip -d typecheck-results
 
       - name: Check typecheck results
+        if: steps.download.outputs.artifact_found == 'true'
         id: check
         run: |
           if [ -f typecheck-results/errors.txt ]; then
@@ -49,7 +58,7 @@ jobs:
           fi
 
       - name: Post comment on PR
-        if: steps.check.outputs.has_errors == 'true'
+        if: steps.download.outputs.artifact_found == 'true' && steps.check.outputs.has_errors == 'true'
         uses: actions/github-script@v7
         with:
           script: |

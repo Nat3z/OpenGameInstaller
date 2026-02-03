@@ -156,6 +156,14 @@ app.on('web-contents-created', (_, contents) => {
   });
 });
 
+ipcMain.on('client-ready-for-events', async () => {
+  isReadyForEvents = true;
+  for (const waiter of readyForEventWaiters) {
+    waiter();
+  }
+  readyForEventWaiters = [];
+});
+
 /**
  * Runs when the main app page has finished loading in the main window (second ready-to-show).
  */
@@ -228,14 +236,6 @@ function createWindow() {
   });
   if (!isDev() && !ogiDebug()) mainWindow.removeMenu();
 
-  ipcMain.on('client-ready-for-events', async () => {
-    isReadyForEvents = true;
-    for (const waiter of readyForEventWaiters) {
-      waiter();
-    }
-    readyForEventWaiters = [];
-  });
-
   app.commandLine.appendSwitch('disable-features', 'HardwareMediaKeyHandling');
 
   // Load splash first so there is only one window (fixes Steam Deck Game Mode black screen)
@@ -251,7 +251,7 @@ function createWindow() {
 
   // First ready-to-show: splash is ready; show window so user sees loading
   mainWindow.once('ready-to-show', () => {
-    mainWindow!!.show();
+    if (mainWindow) mainWindow.show();
   });
 }
 
@@ -261,18 +261,19 @@ function createWindow() {
 app.on('ready', async () => {
   // Single window: create it and show splash first so Steam Deck / Game Mode keeps focus
   createWindow();
+  if (!mainWindow) return;
 
   // Run startup tasks; splash updates go to the main window
-  await runStartupTasks(mainWindow!);
+  await runStartupTasks(mainWindow);
 
   // Load the main app into the same window (replaces splash)
   if (isDev()) {
-    mainWindow!!.loadURL(
+    mainWindow.loadURL(
       'http://localhost:8080/?secret=' + applicationAddonSecret
     );
     console.log('Running in development');
   } else {
-    mainWindow!!.loadURL(
+    mainWindow.loadURL(
       'file://' +
         join(app.getAppPath(), 'out', 'renderer', 'index.html') +
         '?secret=' +
@@ -280,7 +281,7 @@ app.on('ready', async () => {
     );
   }
 
-  mainWindow!!.once('ready-to-show', onMainAppReady);
+  mainWindow.once('ready-to-show', onMainAppReady);
 
   server.listen(port, () => {
     console.log(`Addon Server is running on http://localhost:${port}`);

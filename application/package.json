@@ -36,6 +36,10 @@
     "electron-pack": "electron-builder",
     "electron-pack:linux": "electron-builder -l",
     "check": "svelte-check --tsconfig ./tsconfig.svelte.json",
+    "typecheck": "bun run typecheck:svelte && bun run typecheck:electron && bun run typecheck:addonserver",
+    "typecheck:svelte": "svelte-check --tsconfig ./tsconfig.svelte.json",
+    "typecheck:electron": "tsc -p tsconfig.electron.json --noEmit",
+    "typecheck:addonserver": "tsc -p tsconfig.addonserver.json --noEmit",
     "rebuild": "npm rebuild"
   },
   "dependencies": {

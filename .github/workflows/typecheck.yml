@@ -1,0 +1,33 @@
+name: Typecheck
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: typecheck-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out Git repository
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.8
+
+      - name: Install dependencies
+        run: |
+          bun install --frozen-lockfile
+          cp -r ./node_modules/electron ./application/node_modules/electron
+          mkdir -p ./updater/node_modules
+          cp -r ./node_modules/electron ./updater/node_modules/electron
+
+      - name: Run project-wide typecheck
+        run: bun run typecheck

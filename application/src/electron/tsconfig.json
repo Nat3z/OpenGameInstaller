@@ -3,13 +3,16 @@
   "compilerOptions": {
     "outDir": "../../build",
     "typeRoots": ["node_modules/@types"],
-    "target": "ES2020",
+    "target": "ES2022",
     "allowJs": true,
-    "module": "ESNext",
+    "module": "Node16",
     "sourceMap": true,
     "stripInternal": true,
-    "lib": ["ES2020", "dom"],
-    "moduleResolution": "bundler",
+    "lib": ["ES2022", "dom"],
+    "moduleResolution": "node16",
+    "paths": {
+      "ogi-addon/config": ["../../node_modules/ogi-addon/build/config/Configuration.d.mts"]
+    },
     "noImplicitAny": true,
     "strictNullChecks": true,
     "strictFunctionTypes": true,

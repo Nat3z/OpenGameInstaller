@@ -40,15 +40,18 @@ export async function openExternal(
     }
   }
   // Only use window.open when a safe window context exists.
-  if (typeof window !== 'undefined' && typeof window.open === 'function') {
-    try {
-      window.open(trimmed, '_blank', 'noopener,noreferrer');
-      return { success: true };
-    } catch (err: unknown) {
-      const message =
-        err instanceof Error ? err.message : 'Failed to open link';
-      return { success: false, error: message };
-    }
+  if (typeof window === 'undefined' || typeof window.open !== 'function') {
+    return {
+      success: false,
+      error: 'No way to open external links in this environment',
+    };
   }
-  return { success: false, error: 'No way to open external links in this environment' };
+  try {
+    window.open(trimmed, '_blank', 'noopener,noreferrer');
+    return { success: true };
+  } catch (err: unknown) {
+    const message =
+      err instanceof Error ? err.message : 'Failed to open link';
+    return { success: false, error: message };
+  }
 }

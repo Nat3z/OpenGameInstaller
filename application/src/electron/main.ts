@@ -145,8 +145,10 @@ const ogiDebug = () => (process.env.OGI_DEBUG ?? 'false') === 'true';
 /**
  * Runs when the main app page has finished loading in the main window (second ready-to-show).
  * Registers IPC handlers, closes splash, and shows the main window.
+ *
+ * @returns void
  */
-function onMainAppReady() {
+function onMainAppReady(): void {
   if (!mainWindow || mainWindow.isDestroyed()) {
     console.error('Main window unavailable in onMainAppReady');
     return;
@@ -228,8 +230,10 @@ function onMainAppReady() {
  * Single-window flow so Steam Deck / Game Mode keeps focus on the same window.
  *
  * Sets up IPC listeners for client-ready-for-events and loads the splash URL; the app URL is loaded by the ready handler.
+ *
+ * @returns void
  */
-function createWindow() {
+function createWindow(): void {
   mainWindow = new BrowserWindow({
     width: 1000,
     height: 700,

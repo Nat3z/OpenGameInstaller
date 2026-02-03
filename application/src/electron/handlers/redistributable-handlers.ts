@@ -14,6 +14,14 @@ import { generateNotificationId } from './helpers.app/notifications.js';
 import { sendNotification } from '../main.js';
 import { __dirname } from '../manager/manager.paths.js';
 
+/**
+ * Returns silent/quiet install flags for a given installer path and file name.
+ * Used for Windows redistributables (VC++, DirectX, .NET, MSI, NSIS, etc.).
+ *
+ * @param filePath - Full path to the installer (used for path-based heuristics)
+ * @param fileName - File name of the installer (e.g. vcredist_x64.exe)
+ * @returns Array of command-line flags for silent installation
+ */
 const getSilentInstallFlags = (
   filePath: string,
   fileName: string
@@ -70,7 +78,11 @@ const getSilentInstallFlags = (
   return ['/S'];
 };
 
-export function registerRedistributableHandlers() {
+/**
+ * Registers IPC handlers for installing redistributables (e.g. VC++, DirectX)
+ * into a game's Proton prefix on Linux.
+ */
+export function registerRedistributableHandlers(): void {
   ipcMain.handle(
     'app:install-redistributables',
     async (_, appID: number): Promise<'success' | 'failed' | 'not-found'> => {

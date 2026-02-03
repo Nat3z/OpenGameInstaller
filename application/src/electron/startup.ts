@@ -44,6 +44,11 @@ export let STEAMTINKERLAUNCH_PATH = join(
   __dirname,
   'bin/steamtinkerlaunch/steamtinkerlaunch'
 );
+
+/**
+ * Resolves the steamtinkerlaunch executable path via `which steamtinkerlaunch`
+ * and updates STEAMTINKERLAUNCH_PATH. Used on NixOS where the bundled path may not apply.
+ */
 async function fetch_STLPath() {
   return new Promise<void>((resolve) => {
     exec('which steamtinkerlaunch', (error, stdout, stderr) => {
@@ -80,6 +85,9 @@ const dirsToSkipRestore = ['node_modules'];
 
 /**
  * Counts the total number of files to restore, excluding specified directories.
+ *
+ * @param sourcePath - Path to the directory to count (e.g. backup subdirectory)
+ * @returns Number of files (excluding dirsToSkipRestore like node_modules)
  */
 function countFilesToRestore(sourcePath: string): number {
   if (!existsSync(sourcePath)) return 0;
@@ -109,6 +117,10 @@ function countFilesToRestore(sourcePath: string): number {
 /**
  * Recursively copies a directory while skipping specified directories (like node_modules).
  * Yields progress after each file copy.
+ *
+ * @param source - Source directory path
+ * @param destination - Destination directory path
+ * @yields Object with file path, success flag, and optional error message
  */
 async function* copyDirectoryAsyncRestore(
   source: string,
@@ -414,6 +426,13 @@ export async function convertLibrary() {
     }
   }
 }
+
+/**
+ * Checks whether a git repository has remote updates available (git fetch --dry-run).
+ *
+ * @param repoPath - Path to the git repository
+ * @returns true if there are updates available, false otherwise or on error
+ */
 async function checkForGitUpdates(repoPath: string): Promise<boolean> {
   // Change the directory to the repository path and run 'git fetch --dry-run'
   return new Promise((resolve, _) => {

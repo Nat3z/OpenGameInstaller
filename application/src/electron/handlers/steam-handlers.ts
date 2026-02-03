@@ -25,7 +25,11 @@ import {
 import { generateNotificationId } from './helpers.app/notifications.js';
 import { sendNotification } from '../main.js';
 
-export function registerSteamHandlers() {
+/**
+ * Registers IPC handlers for Steam-related operations (get Steam app ID, kill Steam,
+ * add game to Steam, etc.). Only applicable on Linux.
+ */
+export function registerSteamHandlers(): void {
   ipcMain.handle(
     'app:get-steam-app-id',
     async (

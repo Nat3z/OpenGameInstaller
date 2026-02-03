@@ -14,7 +14,10 @@ import { registerLibraryHandlers } from './library-handlers.js';
 import { registerRedistributableHandlers } from './redistributable-handlers.js';
 
 /**
- * Escapes a string for safe use in shell commands by escaping special characters
+ * Escapes a string for safe use in shell commands by escaping special characters.
+ *
+ * @param arg - The string to escape (e.g. path or user input)
+ * @returns The escaped string safe for shell use
  */
 export function escapeShellArg(arg: string): string {
   // Replace any backslashes first (to avoid double-escaping)
@@ -130,6 +133,12 @@ StartupNotify=true
   }
 }
 
+/**
+ * Registers IPC handlers for app operations (window controls, axios, addon path/icon,
+ * desktop shortcut, etc.) and registers sub-handlers for Steam, library, and redistributables.
+ *
+ * @param mainWindow - The main BrowserWindow; used for IPC and sub-handler registration
+ */
 export default function handler(mainWindow: Electron.BrowserWindow) {
   // Window controls
   ipcMain.handle('app:close', () => {

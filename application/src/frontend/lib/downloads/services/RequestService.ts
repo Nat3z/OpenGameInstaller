@@ -16,15 +16,13 @@ export class RequestService extends BaseService {
   async startDownload(
     result: SearchResultWithAddon,
     appID: number,
-    event: MouseEvent
+    event: MouseEvent,
+    htmlButton?: HTMLButtonElement
   ): Promise<void> {
+    const button = htmlButton ?? (event?.currentTarget ?? null);
     if (event === null) return;
-    if (
-      event.currentTarget === null ||
-      !(event.currentTarget instanceof HTMLButtonElement)
-    )
-      return;
-    const htmlButton = event.currentTarget;
+    if (button === null || !(button instanceof HTMLButtonElement)) return;
+    const resolvedButton = button;
 
     // Create a local ID for tracking, similar to real-debrid cases
     const localID = Math.floor(Math.random() * 1000000);
@@ -65,7 +63,8 @@ export class RequestService extends BaseService {
           currentDownloads.update((downloads) => {
             const matchingDownload = downloads.find(
               (d) => d.id === localID + ''
-            )!!;
+            );
+            if (!matchingDownload) return downloads;
             matchingDownload.status = 'error';
             matchingDownload.error = error;
             downloads[downloads.indexOf(matchingDownload)] = matchingDownload;
@@ -96,11 +95,10 @@ export class RequestService extends BaseService {
     });
 
     // Reset button state before recursive call
-    htmlButton.textContent = 'Downloading...';
-    htmlButton.disabled = true;
+    resolvedButton.textContent = 'Downloading...';
+    resolvedButton.disabled = true;
 
-    // Recursively call startDownload with the resolved result
-    // We need to import the startDownload function to call it recursively
-    return await startDownload(updatedResult, appID, event);
+    // Recursively call startDownload with the resolved result (pass button so recursive call doesn't rely on currentTarget)
+    return await startDownload(updatedResult, appID, event, resolvedButton);
   }
 }

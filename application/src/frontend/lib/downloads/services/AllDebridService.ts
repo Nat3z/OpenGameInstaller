@@ -77,18 +77,16 @@ export class AllDebridService extends BaseService {
   async startDownload(
     result: SearchResultWithAddon,
     appID: number,
-    event: MouseEvent
+    event: MouseEvent,
+    htmlButton?: HTMLButtonElement
   ): Promise<void> {
     if (result.downloadType !== 'magnet' && result.downloadType !== 'torrent')
       return;
 
+    const button = htmlButton ?? (event?.currentTarget ?? null);
     if (event === null) return;
-    if (
-      event.currentTarget === null ||
-      !(event.currentTarget instanceof HTMLButtonElement)
-    )
-      return;
-    const htmlButton = event.currentTarget;
+    if (button === null || !(button instanceof HTMLButtonElement)) return;
+    const resolvedButton = button;
 
     if (!result.downloadURL) {
       createNotification({
@@ -112,9 +110,9 @@ export class AllDebridService extends BaseService {
     const tempId = this.queueRequestDownload(result, appID, 'alldebrid');
 
     if (result.downloadType === 'magnet') {
-      await this.handleMagnetDownload(result, appID, tempId, htmlButton);
+      await this.handleMagnetDownload(result, appID, tempId, resolvedButton);
     } else if (result.downloadType === 'torrent') {
-      await this.handleTorrentDownload(result, appID, tempId, htmlButton);
+      await this.handleTorrentDownload(result, appID, tempId, resolvedButton);
     }
   }
 
@@ -170,59 +168,68 @@ export class AllDebridService extends BaseService {
       }
     }
 
-    const torrentInfo = await window.electronAPI.alldebrid.getTorrentInfo(
-      magnetLink.id
-    );
-    const firstLink =
-      torrentInfo.links[0] ?? torrentInfo.files[0]?.link;
-    if (!firstLink) {
+    try {
+      const torrentInfo = await window.electronAPI.alldebrid.getTorrentInfo(
+        magnetLink.id
+      );
+      const firstLink =
+        torrentInfo.links[0] ?? torrentInfo.files[0]?.link;
+      if (!firstLink) {
+        createNotification({
+          id: Math.random().toString(36).substring(7),
+          type: 'error',
+          message: 'No download link from AllDebrid.',
+        });
+        this.resetButtonOnError(htmlButton, tempId, appID);
+        return;
+      }
+
+      const download = await window.electronAPI.alldebrid.unrestrictLink(
+        firstLink
+      );
+      const downloadUrl = download.download ?? download.link;
+      if (!downloadUrl) {
+        createNotification({
+          id: Math.random().toString(36).substring(7),
+          type: 'error',
+          message: 'Failed to unrestrict the link.',
+        });
+        this.resetButtonOnError(htmlButton, tempId, appID);
+        return;
+      }
+
+      const safePath =
+        getDownloadPath() +
+        '/' +
+        sanitizePathSegment(result.name) +
+        '/' +
+        sanitizePathSegment(result.filename);
+      const { flush } = listenUntilDownloadReady();
+      const downloadID = await window.electronAPI.ddl.download([
+        { link: downloadUrl, path: safePath },
+      ]);
+      const updatedState = flush();
+      if (downloadID === null) {
+        this.resetButtonOnError(htmlButton, tempId, appID);
+        return;
+      }
+      this.updateDownloadRequested(
+        downloadID,
+        tempId,
+        downloadUrl,
+        safePath,
+        'alldebrid',
+        updatedState,
+        result
+      );
+    } catch (err) {
+      this.resetButtonOnError(htmlButton, tempId, appID);
       createNotification({
         id: Math.random().toString(36).substring(7),
         type: 'error',
-        message: 'No download link from AllDebrid.',
+        message: err instanceof Error ? err.message : 'Download failed.',
       });
-      this.resetButtonOnError(htmlButton, tempId, appID);
-      return;
     }
-
-    const download = await window.electronAPI.alldebrid.unrestrictLink(
-      firstLink
-    );
-    const downloadUrl = download.download ?? download.link;
-    if (!downloadUrl) {
-      createNotification({
-        id: Math.random().toString(36).substring(7),
-        type: 'error',
-        message: 'Failed to unrestrict the link.',
-      });
-      this.resetButtonOnError(htmlButton, tempId, appID);
-      return;
-    }
-
-    const safePath =
-      getDownloadPath() +
-      '/' +
-      sanitizePathSegment(result.name) +
-      '/' +
-      sanitizePathSegment(result.filename);
-    const { flush } = listenUntilDownloadReady();
-    const downloadID = await window.electronAPI.ddl.download([
-      { link: downloadUrl, path: safePath },
-    ]);
-    const updatedState = flush();
-    if (downloadID === null) {
-      this.resetButtonOnError(htmlButton, tempId, appID);
-      return;
-    }
-    this.updateDownloadRequested(
-      downloadID,
-      tempId,
-      downloadUrl,
-      safePath,
-      'alldebrid',
-      updatedState,
-      result
-    );
   }
 
   private async handleTorrentDownload(
@@ -281,63 +288,72 @@ export class AllDebridService extends BaseService {
       }
     }
 
-    const torrentInfo = await window.electronAPI.alldebrid.getTorrentInfo(
-      torrent.id
-    );
-    const firstLink =
-      torrentInfo.links[0] ?? torrentInfo.files[0]?.link;
-    if (!firstLink) {
+    try {
+      const torrentInfo = await window.electronAPI.alldebrid.getTorrentInfo(
+        torrent.id
+      );
+      const firstLink =
+        torrentInfo.links[0] ?? torrentInfo.files[0]?.link;
+      if (!firstLink) {
+        createNotification({
+          id: Math.random().toString(36).substring(7),
+          type: 'error',
+          message: 'No download link from AllDebrid.',
+        });
+        this.resetButtonOnError(htmlButton, tempId, appID);
+        return;
+      }
+
+      const download = await window.electronAPI.alldebrid.unrestrictLink(
+        firstLink
+      );
+      const downloadUrl = download.download ?? download.link;
+      if (!downloadUrl) {
+        createNotification({
+          id: Math.random().toString(36).substring(7),
+          type: 'error',
+          message: 'Failed to unrestrict the link.',
+        });
+        this.resetButtonOnError(htmlButton, tempId, appID);
+        return;
+      }
+
+      const safePath =
+        getDownloadPath() +
+        '/' +
+        sanitizePathSegment(result.name) +
+        '/' +
+        sanitizePathSegment(result.filename);
+      const { flush } = listenUntilDownloadReady();
+      const downloadID = await window.electronAPI.ddl.download([
+        {
+          link: downloadUrl,
+          path: safePath,
+          headers: { 'OGI-Parallel-Limit': '1' },
+        },
+      ]);
+      const updatedState = flush();
+      if (downloadID === null) {
+        this.resetButtonOnError(htmlButton, tempId, appID);
+        return;
+      }
+      this.updateDownloadRequested(
+        downloadID,
+        tempId,
+        downloadUrl,
+        safePath,
+        'alldebrid',
+        updatedState,
+        result
+      );
+    } catch (err) {
+      this.resetButtonOnError(htmlButton, tempId, appID);
       createNotification({
         id: Math.random().toString(36).substring(7),
         type: 'error',
-        message: 'No download link from AllDebrid.',
+        message: err instanceof Error ? err.message : 'Download failed.',
       });
-      this.resetButtonOnError(htmlButton, tempId, appID);
-      return;
     }
-
-    const download = await window.electronAPI.alldebrid.unrestrictLink(
-      firstLink
-    );
-    const downloadUrl = download.download ?? download.link;
-    if (!downloadUrl) {
-      createNotification({
-        id: Math.random().toString(36).substring(7),
-        type: 'error',
-        message: 'Failed to unrestrict the link.',
-      });
-      this.resetButtonOnError(htmlButton, tempId, appID);
-      return;
-    }
-
-    const safePath =
-      getDownloadPath() +
-      '/' +
-      sanitizePathSegment(result.name) +
-      '/' +
-      sanitizePathSegment(result.filename);
-    const { flush } = listenUntilDownloadReady();
-    const downloadID = await window.electronAPI.ddl.download([
-      {
-        link: downloadUrl,
-        path: safePath,
-        headers: { 'OGI-Parallel-Limit': '1' },
-      },
-    ]);
-    const updatedState = flush();
-    if (downloadID === null) {
-      this.resetButtonOnError(htmlButton, tempId, appID);
-      return;
-    }
-    this.updateDownloadRequested(
-      downloadID,
-      tempId,
-      downloadUrl,
-      safePath,
-      'alldebrid',
-      updatedState,
-      result
-    );
   }
 
   private resetButtonOnError(

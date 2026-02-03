@@ -6,6 +6,7 @@ import FormData from 'form-data';
 const BASE_V4 = 'https://api.alldebrid.com/v4';
 const BASE_V4_1 = 'https://api.alldebrid.com/v4.1';
 
+/** Configuration for the AllDebrid API client (API key). */
 export interface AllDebridConfiguration {
   apiKey: string;
 }
@@ -115,6 +116,9 @@ export const UnrestrictLinkResponseZod = z.object({
 }).passthrough();
 export type $UnrestrictLink = { link: string; filename?: string; filesize?: number; download?: string };
 
+/**
+ * Parses and validates an API response; throws on error status or invalid shape.
+ */
 function checkResponse<T>(response: { data: unknown }, dataSchema: z.ZodType<T>): T {
   const parsed = z.union([ApiResponseSuccess(dataSchema), ApiResponseError]).safeParse(response.data);
   if (!parsed.success) throw new Error('Invalid API response');
@@ -139,6 +143,10 @@ function collectLinks(nodes: Node[]): { link: string; name: string; size?: numbe
   return out;
 }
 
+/**
+ * Client for the AllDebrid API (v4 / v4.1). Handles user info, hosts, magnet/torrent upload,
+ * status polling, file links, and link unrestrict.
+ */
 export default class AllDebrid {
   constructor(public configuration: AllDebridConfiguration) {}
 
@@ -146,6 +154,7 @@ export default class AllDebrid {
     return { Authorization: `Bearer ${this.configuration.apiKey}` };
   }
 
+  /** Fetches the current user's account info (username, premium status, etc.). */
   public async getUserInfo(): Promise<$UserInfo> {
     const response = await axios.get(`${BASE_V4}/user`, {
       headers: this.headers(),
@@ -225,6 +234,7 @@ export default class AllDebrid {
     return { statusCode: magnet.statusCode };
   }
 
+  /** Returns true when the magnet/torrent is ready for download (statusCode 4). */
   public async isTorrentReady(id: string): Promise<boolean> {
     const { statusCode } = await this.getMagnetStatus(id);
     return statusCode === 4;

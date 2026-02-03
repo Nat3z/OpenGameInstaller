@@ -11,17 +11,15 @@ import type { SearchResultWithAddon } from '../tasks/runner';
 export async function startDownload(
   result: SearchResultWithAddon,
   appID: number,
-  event: MouseEvent
+  event: MouseEvent,
+  htmlButton?: HTMLButtonElement
 ) {
+  const button = htmlButton ?? (event?.currentTarget ?? null);
   if (event === null) return;
-  if (
-    event.currentTarget === null ||
-    !(event.currentTarget instanceof HTMLButtonElement)
-  )
-    return;
-  const htmlButton = event.currentTarget;
-  htmlButton.textContent = 'Downloading...';
-  htmlButton.disabled = true;
+  if (button === null || !(button instanceof HTMLButtonElement)) return;
+  const resolvedButton = button;
+  resolvedButton.textContent = 'Downloading...';
+  resolvedButton.disabled = true;
   let downloadHandler = result.downloadType;
   if (downloadHandler === 'torrent' || downloadHandler === 'magnet') {
     const generalOptions = getConfigClientOption('general') as any;
@@ -57,7 +55,7 @@ export async function startDownload(
   // Service-based architecture: find and delegate to the appropriate service
   const svc = ALL_SERVICES.find((s) => s.types.includes(downloadHandler));
   if (svc) {
-    await svc.startDownload(result, appID, event);
+    await svc.startDownload(result, appID, event, resolvedButton);
     return;
   }
 

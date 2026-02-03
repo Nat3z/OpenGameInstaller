@@ -244,7 +244,7 @@ function createWindow() {
 
   // First ready-to-show: splash is ready; show window so user sees loading
   mainWindow.once('ready-to-show', () => {
-    mainWindow!!.show();
+    mainWindow?.show();
   });
 }
 
@@ -256,7 +256,9 @@ app.on('ready', async () => {
   createWindow();
 
   // Run startup tasks; splash updates go to the main window
-  await runStartupTasks(mainWindow!);
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    await runStartupTasks(mainWindow);
+  }
 
   // Load the main app into the same window (replaces splash)
   if (mainWindow && !mainWindow.isDestroyed()) {

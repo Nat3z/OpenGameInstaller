@@ -13,16 +13,14 @@ export class DirectService extends BaseService {
   async startDownload(
     result: SearchResultWithAddon,
     appID: number,
-    event: MouseEvent
+    event: MouseEvent,
+    htmlButton?: HTMLButtonElement
   ): Promise<void> {
     if (result.downloadType !== 'direct') return;
+    const button = htmlButton ?? (event?.currentTarget ?? null);
     if (event === null) return;
-    if (
-      event.currentTarget === null ||
-      !(event.currentTarget instanceof HTMLButtonElement)
-    )
-      return;
-    const htmlButton = event.currentTarget;
+    if (button === null || !(button instanceof HTMLButtonElement)) return;
+    const resolvedButton = button;
 
     if (!result.files || result.files.length === 0) {
       createNotification({
@@ -45,8 +43,8 @@ export class DirectService extends BaseService {
     const { flush } = listenUntilDownloadReady();
 
     window.electronAPI.ddl.download(collectedFiles).then((id) => {
-      htmlButton.textContent = 'Downloading...';
-      htmlButton.disabled = true;
+      resolvedButton.textContent = 'Downloading...';
+      resolvedButton.disabled = true;
       const updatedState = flush();
       currentDownloads.update((downloads) => {
         return [

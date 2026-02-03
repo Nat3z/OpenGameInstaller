@@ -18,4 +18,9 @@ describe('getInitialDownloadSize', () => {
   test('returns 0 when sizeInBytes is undefined', () => {
     expect(getInitialDownloadSize({ sizeInBytes: undefined })).toBe(0);
   });
+
+  test('accepts Record<string, unknown> with no sizeInBytes and returns 0', () => {
+    const result: Record<string, unknown> = { name: 'game', other: true };
+    expect(getInitialDownloadSize(result)).toBe(0);
+  });
 });

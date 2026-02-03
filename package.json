@@ -25,7 +25,8 @@
     "typescript": "^5.9.3"
   },
   "overrides": {
-    "@types/minimatch": "5.1.2"
+    "@types/minimatch": "5.1.2",
+    "@types/node": "^22.15.0"
   },
   "trustedDependencies": [
     "node-datachannel"

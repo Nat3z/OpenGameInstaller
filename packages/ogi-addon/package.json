@@ -47,7 +47,7 @@
     "build": "tsdown --config tsdown.config.js",
     "typecheck": "tsc --noEmit",
     "release": "bun run build && npm publish",
-    "release-beta": "bun run build && npm publish --tag future",
+    "release-beta": "bun run build && npm publish --tag future"
   },
   "devDependencies": {
     "@types/minimatch": "^6.0.0",

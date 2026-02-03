@@ -241,6 +241,7 @@ export const priorityToNumber: Record<QueuedModal['priority'], number> = {
 
 export const modalQueue: Writable<QueuedModal[]> = writable([]);
 
+/** Community addon entry from the remote list (name, author, source URL, image, description). */
 export type CommunityAddon = {
   name: string;
   author: string;
@@ -248,8 +249,12 @@ export type CommunityAddon = {
   img: string;
   description: string;
 };
+
+/** Local cache of the community addons list; updated by fetchCommunityAddons. */
 export const communityAddonsLocal: Writable<CommunityAddon[]> = writable([]);
+/** True while the community addons list is being fetched. */
 export const communityAddonsLoading: Writable<boolean> = writable(false);
+/** Error message from the last failed fetch, or null when successful or not yet fetched. */
 export const communityAddonsError: Writable<string | null> = writable(null);
 
 /**

@@ -98,8 +98,8 @@
   });
 
   onMount(() => {
-    // Defensive fetch for direct navigation: only auto-fetch when not loading, list is empty, and no error
-    if (!get(communityAddonsLoading) && get(communityAddonsLocal).length === 0 && !get(communityAddonsError)) {
+    // Defensive fetch for direct navigation: auto-fetch when not already loading and list is empty (retries on remount if there was an error)
+    if (!get(communityAddonsLoading) && get(communityAddonsLocal).length === 0) {
       fetchCommunityAddons();
     }
   });

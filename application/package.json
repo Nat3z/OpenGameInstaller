@@ -64,7 +64,7 @@
     "@tailwindcss/vite": "^4.1.18",
     "@tsconfig/svelte": "^5.0.6",
     "@types/d3": "^7.4.3",
-    "@types/node": "^24.10.9",
+    "@types/node": "^22.15.0",
     "@types/parse-torrent": "^5.8.8",
     "@types/sanitize-html": "^2.16.0",
     "@types/sass": "^1.45.0",

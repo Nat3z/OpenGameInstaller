@@ -3,6 +3,7 @@
   import { fade } from 'svelte/transition';
 
   import { onMount, onDestroy } from 'svelte';
+  import { get } from 'svelte/store';
   // @ts-ignore
   import WineIcon from '../Icons/WineIcon.svelte';
   import {
@@ -289,7 +290,10 @@
         stage = 2;
       }
     }
-    fetchCommunityAddons();
+    // Defensive fetch for direct navigation: only auto-fetch when not loading, list is empty, and no error
+    if (!get(communityAddonsLoading) && get(communityAddonsLocal).length === 0 && !get(communityAddonsError)) {
+      fetchCommunityAddons();
+    }
   });
 
   onDestroy(() => {

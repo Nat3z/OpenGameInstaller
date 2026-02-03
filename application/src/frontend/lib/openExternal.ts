@@ -11,9 +11,9 @@ function isAllowedExternalUrl(url: string): boolean {
 
 /**
  * Opens a URL in the system default browser.
- * In Electron: uses shell.openExternal via IPC (with URL validation).
- * In browser (e.g. dev): falls back to window.open when available.
  * Only http: and https: URLs are allowed; invalid or disallowed URLs return an error.
+ * In Electron: uses shell.openExternal via IPC (with URL validation).
+ * In browser (e.g. dev): falls back to window.open only when a safe window context exists (window and window.open are defined).
  *
  * @param url - The URL to open (must be http or https).
  * @returns Promise resolving to `{ success: true }` or `{ success: false, error: string }`.

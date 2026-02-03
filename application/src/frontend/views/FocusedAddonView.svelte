@@ -751,11 +751,11 @@
   }
 
   .browse-button {
-    @apply bg-accent-light hover:bg-accent-dark text-white px-4 py-2 rounded-lg transition-colors border-none cursor-pointer;
+    @apply bg-accent-light hover:bg-accent-dark text-accent-text-color px-4 py-2 rounded-lg transition-colors border-none cursor-pointer;
   }
 
   .action-button {
-    @apply bg-accent-light hover:bg-accent-dark text-accent-dark hover:text-white px-6 py-2 rounded-lg transition-colors border-none cursor-pointer font-archivo font-semibold;
+    @apply bg-accent-light hover:bg-accent-dark text-accent-dark hover:text-accent-text-color px-6 py-2 rounded-lg transition-colors border-none cursor-pointer font-archivo font-semibold;
   }
 
   input[type='number']::-webkit-inner-spin-button,

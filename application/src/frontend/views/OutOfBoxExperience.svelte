@@ -327,7 +327,7 @@
       <div class="animate-in-sub-content-slow">
         <button
           onclick={() => (stage = 1)}
-          class="bg-accent hover:bg-accent-dark text-white font-open-sans font-semibold py-3 px-6 rounded-lg transition-colors duration-200"
+          class="bg-accent hover:bg-accent-dark text-accent-text-color font-open-sans font-semibold py-3 px-6 rounded-lg transition-colors duration-200"
           >Get Started</button
         >
       </div>
@@ -432,7 +432,7 @@
         </div>
         <button
           onclick={downloadTools}
-          class="bg-accent hover:bg-accent-dark text-white disabled:text-white disabled:bg-yellow-500 font-open-sans font-semibold py-3 px-6 rounded-lg transition-colors duration-200"
+          class="bg-accent hover:bg-accent-dark text-accent-text-color disabled:text-white disabled:bg-yellow-500 font-open-sans font-semibold py-3 px-6 rounded-lg transition-colors duration-200"
           >Install</button
         >
       {/if}
@@ -481,7 +481,7 @@
       </h2>
       <button
         onclick={() => window.electronAPI.app.close()}
-        class="bg-accent hover:bg-accent-dark text-white font-open-sans font-semibold py-3 px-6 rounded-lg transition-colors duration-200"
+        class="bg-accent hover:bg-accent-dark text-accent-text-color font-open-sans font-semibold py-3 px-6 rounded-lg transition-colors duration-200"
         >Close</button
       >
     </div>
@@ -691,7 +691,7 @@
       {#if fulfilledRequirements || selectedTorrenter === 'webtorrent'}
         <button
           onclick={() => (stage = 3)}
-          class="bg-accent animate-fade-in hover:bg-accent-dark text-white font-open-sans font-semibold py-3 px-6 rounded-lg transition-colors duration-200"
+          class="bg-accent animate-fade-in hover:bg-accent-dark text-accent-text-color font-open-sans font-semibold py-3 px-6 rounded-lg transition-colors duration-200"
           >Continue</button
         >
       {/if}
@@ -715,14 +715,14 @@
         />
         <button
           onclick={updateDownloadLocation}
-          class="bg-accent hover:bg-accent-dark text-white font-open-sans font-semibold py-3 px-4 rounded-lg transition-colors duration-200"
+          class="bg-accent hover:bg-accent-dark text-accent-text-color font-open-sans font-semibold py-3 px-4 rounded-lg transition-colors duration-200"
           >Browse</button
         >
       </div>
 
       <button
         onclick={sendDownloadLocation}
-        class="bg-accent hover:bg-accent-dark text-white font-open-sans font-semibold py-3 px-6 rounded-lg transition-colors duration-200"
+        class="bg-accent hover:bg-accent-dark text-accent-text-color font-open-sans font-semibold py-3 px-6 rounded-lg transition-colors duration-200"
         >Continue</button
       >
     </div>
@@ -769,8 +769,8 @@
                     class="px-4 py-2 rounded-lg font-open-sans font-medium transition-colors duration-200 border-none {selectedAddons.includes(
                       addon.source
                     )
-                      ? 'bg-accent hover:bg-accent-dark text-white'
-                      : 'bg-accent-light hover:bg-accent text-accent-dark hover:text-white'}"
+                      ? 'bg-accent hover:bg-accent-dark text-accent-text-color'
+                      : 'bg-accent-light hover:bg-accent text-accent-dark hover:text-accent-text-color'}"
                   >
                     {selectedAddons.includes(addon.source)
                       ? 'Selected'
@@ -804,7 +804,7 @@
             stage = 5;
           }
         }}
-        class="bg-accent hover:bg-accent-dark text-white font-open-sans font-semibold py-3 px-6 rounded-lg transition-colors duration-200"
+        class="bg-accent hover:bg-accent-dark text-accent-text-color font-open-sans font-semibold py-3 px-6 rounded-lg transition-colors duration-200"
         >Continue</button
       >
     </div>
@@ -864,7 +864,7 @@
             stage = 6;
             isSettingKey = false;
           }}
-          class="bg-accent hover:bg-accent-dark text-white font-open-sans font-semibold py-3 px-6 rounded-lg transition-colors duration-200 flex items-center justify-center"
+          class="bg-accent hover:bg-accent-dark text-accent-text-color font-open-sans font-semibold py-3 px-6 rounded-lg transition-colors duration-200 flex items-center justify-center"
           disabled={isSettingKey}
         >
           {#if isSettingKey}
@@ -901,7 +901,7 @@
 
       <button
         onclick={waitForSetup}
-        class="bg-accent hover:bg-accent-dark text-white font-open-sans font-semibold py-3 px-6 rounded-lg transition-colors duration-200"
+        class="bg-accent hover:bg-accent-dark text-accent-text-color font-open-sans font-semibold py-3 px-6 rounded-lg transition-colors duration-200"
         >Finish</button
       >
     </div>

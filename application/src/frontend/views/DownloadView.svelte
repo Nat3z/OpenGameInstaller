@@ -308,7 +308,7 @@
         />
         {#if targetDownload.queuePosition && targetDownload.queuePosition > 1}
           <div
-            class="absolute top-2 left-2 bg-accent text-white text-xs font-bold px-2 py-1 rounded-full shadow-lg"
+            class="absolute top-2 left-2 bg-accent text-accent-text-color text-xs font-bold px-2 py-1 rounded-full shadow-lg"
           >
             Queued #{targetDownload.queuePosition}
           </div>
@@ -328,7 +328,7 @@
                 <div
                   class="flex items-center gap-3 p-3 bg-surface rounded-lg border border-accent-light shadow-sm hover:shadow-md transition-all duration-200"
                 >
-                  <div class="p-2 bg-accent text-white rounded-lg">
+                  <div class="p-2 bg-accent text-accent-text-color rounded-lg">
                     <svg
                       fill="currentColor"
                       xmlns="http://www.w3.org/2000/svg"
@@ -356,7 +356,7 @@
                 <div
                   class="flex items-center gap-3 p-3 bg-surface rounded-lg border border-accent-light shadow-sm hover:shadow-md transition-all duration-200"
                 >
-                  <div class="p-2 bg-accent text-white rounded-lg">
+                  <div class="p-2 bg-accent text-accent-text-color rounded-lg">
                     <svg
                       xmlns="http://www.w3.org/2000/svg"
                       height="24"
@@ -385,7 +385,7 @@
                 <div
                   class="flex items-center gap-3 p-3 bg-surface rounded-lg border border-accent-light shadow-sm hover:shadow-md transition-all duration-200"
                 >
-                  <div class="p-2 bg-accent text-white rounded-lg">
+                  <div class="p-2 bg-accent text-accent-text-color rounded-lg">
                     <svg
                       xmlns="http://www.w3.org/2000/svg"
                       enable-background="new 0 0 20 20"
@@ -423,7 +423,7 @@
                 <div
                   class="flex items-center gap-3 p-3 bg-surface rounded-lg border border-accent-light shadow-sm hover:shadow-md transition-all duration-200"
                 >
-                  <div class="p-2 bg-accent text-white rounded-lg">
+                  <div class="p-2 bg-accent text-accent-text-color rounded-lg">
                     <svg
                       fill="currentColor"
                       xmlns="http://www.w3.org/2000/svg"
@@ -894,7 +894,7 @@
   }
 
   .btn-primary {
-    @apply bg-accent text-white hover:bg-accent-dark focus:ring-accent shadow-md hover:shadow-lg;
+    @apply bg-accent text-accent-text-color hover:bg-accent-dark focus:ring-accent shadow-md hover:shadow-lg;
   }
 
   .btn-secondary {
@@ -937,7 +937,7 @@
   }
 
   .download-image {
-    @apply relative w-16 h-16 bg-linear-to-br from-gray-100 to-gray-200 overflow-hidden rounded-lg flex-shrink-0;
+    @apply relative w-16 h-16 bg-linear-to-br from-surface to-border-muted overflow-hidden rounded-lg flex-shrink-0;
   }
 
   .game-cover {
@@ -1041,7 +1041,7 @@
   }
 
   .status-badge.error {
-    @apply bg-red-100 text-red-800;
+    @apply bg-error-bg text-error-text;
   }
 
   .status-badge.complete {
@@ -1061,7 +1061,7 @@
   }
 
   .status-badge.errored {
-    @apply bg-red-100 text-red-800;
+    @apply bg-error-bg text-error-text;
   }
 
   .status-badge.paused {
@@ -1091,7 +1091,7 @@
   }
 
   .failed-setup-image {
-    @apply relative w-12 h-12 bg-linear-to-br from-gray-100 to-gray-200 overflow-hidden rounded-lg flex-shrink-0;
+    @apply relative w-12 h-12 bg-linear-to-br from-surface to-border-muted overflow-hidden rounded-lg flex-shrink-0;
   }
 
   .failed-setup-info {
@@ -1111,15 +1111,15 @@
   }
 
   .retry-count {
-    @apply bg-red-100 text-red-700 px-2 py-0.5 rounded-md font-medium;
+    @apply bg-error-bg text-error-text px-2 py-0.5 rounded-md font-medium;
   }
 
   .failed-setup-error {
-    @apply mb-3 p-3 bg-red-50 border border-red-200 rounded-md;
+    @apply mb-3 p-3 bg-error-bg border border-error-border rounded-md;
   }
 
   .error-message {
-    @apply text-sm text-red-700 leading-relaxed;
+    @apply text-sm text-error-text leading-relaxed;
   }
 
   .failed-setup-actions {
@@ -1128,7 +1128,7 @@
 
   /* Queue Position Styles */
   .queue-position-badge {
-    @apply absolute top-1 left-1 bg-accent-dark text-white text-xs font-bold px-2 py-1 rounded-full shadow-lg;
+    @apply absolute top-1 left-1 bg-accent-dark text-accent-text-color text-xs font-bold px-2 py-1 rounded-full shadow-lg;
     backdrop-filter: blur(4px);
     background-color: rgba(66, 138, 145, 0.9);
   }

@@ -1126,7 +1126,7 @@
   }
 
   .sidebar-item {
-    @apply w-full p-4 rounded-lg border-none bg-transparent hover:bg-accent-lighter transition-colors duration-200 text-left text-white;
+    @apply w-full p-4 rounded-lg border-none bg-transparent hover:bg-accent-lighter transition-colors duration-200 text-left text-text;
   }
 
   .sidebar-item.selected {
@@ -1236,7 +1236,7 @@
   }
 
   .browse-button {
-    @apply px-4 py-2 bg-accent text-white rounded-lg hover:bg-accent-dark transition-colors border-none font-archivo font-semibold;
+    @apply px-4 py-2 bg-accent text-accent-text-color rounded-lg hover:bg-accent-dark transition-colors border-none font-archivo font-semibold;
   }
 
   /* Checkbox Styles */

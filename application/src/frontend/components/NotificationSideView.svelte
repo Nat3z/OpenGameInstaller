@@ -261,7 +261,7 @@
         <button
           class="flex-1 px-3 py-2 text-sm font-medium rounded-lg transition-colors duration-200 border-none {currentTab ===
           'notifications'
-            ? 'bg-accent text-white'
+            ? 'bg-accent text-accent-text-color'
             : 'text-accent-dark bg-accent-lighter hover:bg-accent-dark/25'}"
           onclick={() => (currentTab = 'notifications')}
         >
@@ -275,7 +275,7 @@
         <button
           class="flex-1 px-3 py-2 text-sm font-medium rounded-lg transition-colors duration-200 border-none {currentTab ===
           'tasks'
-            ? 'bg-accent text-white'
+            ? 'bg-accent text-accent-text-color'
             : 'text-accent-dark bg-accent-lighter hover:bg-accent-dark/25'}"
           onclick={() => (currentTab = 'tasks')}
         >

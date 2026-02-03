@@ -615,7 +615,7 @@
           </svg>
           {#if $activeDownloadsCount > 0}
             <div
-              class="absolute -bottom-1 -right-1 bg-accent-dark text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-bold"
+              class="absolute -bottom-1 -right-1 bg-accent-dark text-accent-text-color text-xs rounded-full w-5 h-5 flex items-center justify-center font-bold"
             >
               {$activeDownloadsCount}
             </div>
@@ -648,7 +648,7 @@
           </svg>
           {#if $unreadNotificationCount > 0}
             <div
-              class="absolute -bottom-1 -right-1 bg-accent-dark text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-bold"
+              class="absolute -bottom-1 -right-1 bg-accent-dark text-accent-text-color text-xs rounded-full w-5 h-5 flex items-center justify-center font-bold"
             >
               {$unreadNotificationCount}
             </div>
@@ -1239,7 +1239,7 @@
   }
 
   .result-button {
-    @apply self-start px-4 py-2 bg-accent-dark text-white rounded-lg hover:bg-accent transition-colors;
+    @apply self-start px-4 py-2 bg-accent-dark text-accent-text-color rounded-lg hover:bg-accent transition-colors;
   }
 
   .no-results {

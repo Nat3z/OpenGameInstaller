@@ -15,7 +15,7 @@
 
   const variantClasses = {
     primary:
-      'btn btn-primary bg-accent text-white hover:bg-accent-dark focus:ring-accent border-none',
+      'btn btn-primary bg-accent text-accent-text-color hover:bg-accent-dark focus:ring-accent border-none',
     secondary:
       'btn btn-secondary bg-accent-lighter text-accent-dark hover:bg-accent-light focus:ring-accent border border-accent-light',
     danger:

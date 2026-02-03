@@ -255,7 +255,7 @@
     <div class="step-item flex items-center gap-3">
       <div
         class="step-number w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold {steamKilled
-          ? 'bg-accent text-white'
+          ? 'bg-accent text-accent-text-color'
           : 'bg-surface text-text-muted'}"
       >
         {#if steamKilled}
@@ -273,7 +273,7 @@
       <button
         class="step-button flex-1 py-2 px-4 rounded-lg text-sm font-medium transition-all {steamKilled
           ? 'bg-accent/20 text-accent-dark cursor-default'
-          : 'bg-accent text-white hover:bg-accent-dark'}"
+          : 'bg-accent text-accent-text-color hover:bg-accent-dark'}"
         onclick={killSteam}
         disabled={steamKilled}
       >
@@ -285,7 +285,7 @@
     <div class="step-item flex items-center gap-3">
       <div
         class="step-number w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold {steamStarted
-          ? 'bg-accent text-white'
+          ? 'bg-accent text-accent-text-color'
           : steamKilled
             ? 'bg-border-muted text-text'
             : 'bg-surface text-text-muted'}"
@@ -306,7 +306,7 @@
         class="step-button flex-1 py-2 px-4 rounded-lg text-sm font-medium transition-all {steamStarted
           ? 'bg-accent/20 text-accent-dark cursor-default'
           : steamKilled
-            ? 'bg-accent text-white hover:bg-accent-dark'
+            ? 'bg-accent text-accent-text-color hover:bg-accent-dark'
             : 'bg-surface text-text-muted cursor-not-allowed'}"
         onclick={startSteam}
         disabled={!steamKilled || steamStarted}
@@ -319,7 +319,7 @@
     <div class="step-item flex items-center gap-3">
       <div
         class="step-number w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold {prefixExists
-          ? 'bg-accent text-white'
+          ? 'bg-accent text-accent-text-color'
           : steamStarted
             ? 'bg-border-muted text-text'
             : 'bg-surface text-text-muted'}"
@@ -364,7 +364,7 @@
     <div class="step-item flex items-center gap-3">
       <div
         class="step-number w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold {prefixExists
-          ? 'bg-accent text-white'
+          ? 'bg-accent text-accent-text-color'
           : 'bg-surface text-text-muted'}"
       >
         {#if isInstallingRedist}
@@ -378,7 +378,7 @@
       <button
         class="step-button flex-1 py-2 px-4 rounded-lg text-sm font-medium transition-all {prefixExists &&
         !isInstallingRedist
-          ? 'bg-accent text-white hover:bg-accent-dark'
+          ? 'bg-accent text-accent-text-color hover:bg-accent-dark'
           : 'bg-surface text-text-muted cursor-not-allowed'}"
         onclick={continueSetup}
         disabled={!prefixExists || isInstallingRedist}

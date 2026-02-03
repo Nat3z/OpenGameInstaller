@@ -20,12 +20,16 @@ wss.on('connection', async (ws) => {
   if (!connected) return;
 
   ws.on('close', () => {
-    console.log('Client disconnected', connection.addonInfo.id);
-    clients.delete(connection.addonInfo.id);
+    console.log('Client disconnected', connection.addonInfo?.id);
+    if (connection.addonInfo) {
+      clients.delete(connection.addonInfo.id);
+    }
   });
 
-  clients.set(connection.addonInfo.id, connection);
-  await sendIPCMessage('addon-connected', connection.addonInfo.id);
+  if (connection.addonInfo) {
+    clients.set(connection.addonInfo.id, connection);
+    await sendIPCMessage('addon-connected', connection.addonInfo.id);
+  }
 });
 
 app.all('*', (_, res, next) => {

@@ -13,7 +13,8 @@ import * as fs from 'fs/promises';
 import { join } from 'path';
 import { restartAddonServer } from '../../handlers/handler.addon.js';
 import { __dirname } from '../../manager/manager.paths.js';
-import { StoreData, ZodLibraryInfo } from 'ogi-addon';
+import type { StoreData } from 'ogi-addon';
+import { ZodLibraryInfo } from 'ogi-addon';
 
 const procedures: Record<string, Procedure<any>> = {
   // Get all addon info
@@ -22,10 +23,12 @@ const procedures: Record<string, Procedure<any>> = {
     .handler(async () => {
       let info = [];
       for (const client of clients.values()) {
-        info.push({
-          ...client.addonInfo,
-          configTemplate: client.configTemplate,
-        });
+        if (client.addonInfo) {
+          info.push({
+            ...client.addonInfo,
+            configTemplate: client.configTemplate,
+          });
+        }
       }
       return new ProcedureJSON(200, info);
     }),
@@ -87,7 +90,7 @@ const procedures: Record<string, Procedure<any>> = {
         });
         console.log('searchComplete', event.args);
         return event.args;
-      }, client.addonInfo.id);
+      }, client.addonInfo!.id);
 
       return new ProcedureDeferTask(200, deferrableTask);
     }),
@@ -117,7 +120,7 @@ const procedures: Record<string, Procedure<any>> = {
           args: input.query,
         });
         return event.args;
-      }, client.addonInfo.id);
+      }, client.addonInfo!.id);
 
       return new ProcedureDeferTask(200, deferrableTask);
     }),
@@ -145,7 +148,7 @@ const procedures: Record<string, Procedure<any>> = {
           args: { appID: input.appID, info: input.info },
         });
         return data.args;
-      }, client.addonInfo.id);
+      }, client.addonInfo!.id);
 
       return new ProcedureDeferTask(200, deferrableTask);
     }),
@@ -171,7 +174,7 @@ const procedures: Record<string, Procedure<any>> = {
           args: {},
         });
         return data.args;
-      }, client.addonInfo.id);
+      }, client.addonInfo!.id);
 
       return new ProcedureDeferTask(200, deferrableTask);
     }),
@@ -231,7 +234,7 @@ const procedures: Record<string, Procedure<any>> = {
           },
         });
         return data.args;
-      }, client.addonInfo.id);
+      }, client.addonInfo!.id);
 
       return new ProcedureDeferTask(200, deferrableTask);
     }),
@@ -247,7 +250,7 @@ const procedures: Record<string, Procedure<any>> = {
     .handler(async (input) => {
       const clientsWithStorefront = Array.from(clients.values()).filter(
         (client) =>
-          client.addonInfo.storefronts.includes(input.storefront) &&
+          client.addonInfo?.storefronts.includes(input.storefront) &&
           client.eventsAvailable.includes('game-details')
       );
       if (clientsWithStorefront.length === 0)
@@ -392,7 +395,7 @@ const procedures: Record<string, Procedure<any>> = {
           },
         });
         return data.args;
-      }, client.addonInfo.id);
+      }, client.addonInfo!.id);
 
       return new ProcedureDeferTask(200, deferrableTask);
     }),
@@ -408,7 +411,7 @@ const procedures: Record<string, Procedure<any>> = {
     .handler(async (input) => {
       const clientsWithStorefront = Array.from(clients.values()).filter(
         (client) =>
-          client.addonInfo.storefronts.includes(input.storefront) &&
+          client.addonInfo?.storefronts.includes(input.storefront) &&
           client.eventsAvailable.includes('check-for-updates')
       );
       if (clientsWithStorefront.length === 0)
@@ -435,7 +438,7 @@ const procedures: Record<string, Procedure<any>> = {
           },
         });
         return data.args;
-      }, client.addonInfo.id);
+      }, client.addonInfo!.id);
       return new ProcedureDeferTask(200, deferrableTask);
     }),
 };

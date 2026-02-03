@@ -4,11 +4,16 @@ on:
   pull_request:
     branches: ["**"]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   typecheck:
     runs-on: ubuntu-latest
     permissions:
       pull-requests: write
+     
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -34,7 +39,6 @@ jobs:
         run: bun install --frozen-lockfile
 
       - name: Run typecheck
-        id: typecheck
         run: cd application && bun run check 2>&1 | tee typecheck-output.txt
         continue-on-error: true
 

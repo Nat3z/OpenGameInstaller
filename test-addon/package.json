@@ -2,6 +2,9 @@
   "name": "test-addon",
   "module": "main.ts",
   "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
   "dependencies": {
     "ogi-addon": "workspace:*"
   },

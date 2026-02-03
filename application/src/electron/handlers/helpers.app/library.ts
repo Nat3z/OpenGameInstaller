@@ -14,7 +14,11 @@ import { __dirname } from '../../manager/manager.paths.js';
  * @returns Absolute path to the game directory
  */
 export function resolveGameCwd(cwd: string, appDataDir: string): string {
-  if (cwd.startsWith('/') || (cwd.length >= 2 && cwd[1] === ':')) {
+  if (
+    cwd.startsWith('/') ||
+    cwd.startsWith('\\\\') ||
+    (cwd.length >= 2 && cwd[1] === ':')
+  ) {
     return resolve(cwd);
   }
   return resolve(appDataDir, cwd);

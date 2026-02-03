@@ -135,12 +135,8 @@ export function sendAskForInput(
  * This avoids Steam focusing a separate splash window and leaving the main window black.
  */
 
-/**
- * Returns true when OGI_DEBUG env var is set to 'true' (enables dev tools and debug behavior).
- *
- * @returns true if OGI_DEBUG is 'true', false otherwise
- */
-const ogiDebug = () => (process.env.OGI_DEBUG ?? 'false') === 'true';
+/** True when OGI_DEBUG env var is set to 'true' (enables dev tools and debug behavior). */
+const ogiDebug = (process.env.OGI_DEBUG ?? 'false') === 'true';
 
 /**
  * Runs when the main app page has finished loading in the main window (second ready-to-show).
@@ -172,7 +168,7 @@ function onMainAppReady(): void {
   mainWindow.focus();
 
   checkForAddonUpdates(mainWindow);
-  if (ogiDebug()) {
+  if (ogiDebug) {
     mainWindow.webContents.openDevTools();
   }
   if (!isSecurityCheckEnabled) {
@@ -208,7 +204,7 @@ function onMainAppReady(): void {
   mainWindow.webContents.on('devtools-opened', () => {
     if (
       !isDev() &&
-      !ogiDebug() &&
+      !ogiDebug &&
       mainWindow &&
       !mainWindow.isDestroyed()
     )
@@ -245,7 +241,7 @@ function createWindow(): void {
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: true,
-      devTools: ogiDebug() || isDev(),
+      devTools: ogiDebug || isDev(),
       preload: join(app.getAppPath(), 'out/preload/index.mjs'),
     },
     title: 'OpenGameInstaller',
@@ -255,7 +251,7 @@ function createWindow(): void {
     autoHideMenuBar: true,
     show: false,
   });
-  if (!isDev() && !ogiDebug()) mainWindow.removeMenu();
+  if (!isDev() && !ogiDebug) mainWindow.removeMenu();
 
   ipcMain.on('client-ready-for-events', async () => {
     isReadyForEvents = true;
@@ -280,7 +276,7 @@ function createWindow(): void {
 
   // First ready-to-show: splash is ready; show window so user sees loading
   mainWindow.once('ready-to-show', () => {
-    mainWindow!!.show();
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.show();
   });
 }
 
@@ -332,6 +328,7 @@ app.on('ready', async () => {
 
 // Quit when all windows are closed.
 app.on('window-all-closed', async function () {
+  globalShortcut.unregisterAll();
   // On macOS it is common for applications and their menu bar
   // to stay active until the user quits explicitly with Cmd + Q
   if (process.platform !== 'darwin') app.quit();

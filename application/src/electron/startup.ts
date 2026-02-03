@@ -541,18 +541,24 @@ export async function removeCachedAppUpdates() {
       return 1;
     }
 
-    if (!semver.valid(aVersion) || !semver.valid(bVersion)) {
-      return 0;
-    }
+    const aValid = semver.valid(aVersion);
+    const bValid = semver.valid(bVersion);
+    if (!aValid && !bValid) return 0;
+    if (!aValid) return -1;
+    if (!bValid) return 1;
     return semver.compare(aVersion, bVersion);
   });
 
   // remove all but the latest of 3 cached updates
   for (const update of sortedUpdates.slice(3)) {
-    await fsPromises.rm(join(tempFolder, update), {
-      recursive: true,
-      force: true,
-    });
+    try {
+      await fsPromises.rm(join(tempFolder, update), {
+        recursive: true,
+        force: true,
+      });
+    } catch (err) {
+      console.warn(`[chore] Failed to remove ${update}:`, (err as Error).message);
+    }
   }
 
   // remove all cached updates that are older than 30 days

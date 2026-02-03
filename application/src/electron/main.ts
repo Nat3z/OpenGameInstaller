@@ -172,6 +172,7 @@ function onMainAppReady() {
     console.error('onMainAppReady called but mainWindow is null');
     return;
   }
+  // Close separate splash window if it was used (no-op in single-window / Steam Deck flow)
   closeSplashWindow();
 
   AppEventHandler(mainWindow);
@@ -208,8 +209,9 @@ function onMainAppReady() {
   });
 
   mainWindow.webContents.on('devtools-opened', () => {
-    if (!isDev() && !ogiDebug())
-      mainWindow.webContents.closeDevTools();
+    if (!isDev() && !ogiDebug()) {
+      mainWindow?.webContents.closeDevTools();
+    }
   });
 }
 
@@ -255,6 +257,26 @@ function createWindow() {
   });
 }
 
+async function initializeMainApp(window: BrowserWindow): Promise<void> {
+  await runStartupTasks(window);
+  isReadyForEvents = false;
+  readyForEventWaiters = [];
+  if (isDev()) {
+    window.loadURL(
+      'http://localhost:8080/?secret=' + applicationAddonSecret
+    );
+    console.log('Running in development');
+  } else {
+    window.loadURL(
+      'file://' +
+        join(app.getAppPath(), 'out', 'renderer', 'index.html') +
+        '?secret=' +
+        applicationAddonSecret
+    );
+  }
+  window.once('ready-to-show', onMainAppReady);
+}
+
 // This method will be called when Electron has finished
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
@@ -263,29 +285,7 @@ app.on('ready', async () => {
   createWindow();
   if (!mainWindow) return;
 
-  // Run startup tasks; splash updates go to the main window
-  await runStartupTasks(mainWindow);
-
-  // Reset IPC readiness so main app does a fresh handshake (splash's client-ready-for-events must not count)
-  isReadyForEvents = false;
-  readyForEventWaiters = [];
-
-  // Load the main app into the same window (replaces splash)
-  if (isDev()) {
-    mainWindow.loadURL(
-      'http://localhost:8080/?secret=' + applicationAddonSecret
-    );
-    console.log('Running in development');
-  } else {
-    mainWindow.loadURL(
-      'file://' +
-        join(app.getAppPath(), 'out', 'renderer', 'index.html') +
-        '?secret=' +
-        applicationAddonSecret
-    );
-  }
-
-  mainWindow.once('ready-to-show', onMainAppReady);
+  await initializeMainApp(mainWindow);
 
   server.listen(port, () => {
     console.log(`Addon Server is running on http://localhost:${port}`);
@@ -329,5 +329,8 @@ app.on('window-all-closed', async function () {
 app.on('activate', function () {
   // On macOS it's common to re-create a window in the app when the
   // dock icon is clicked and there are no other windows open.
-  if (mainWindow === null) createWindow();
+  if (mainWindow === null) {
+    createWindow();
+    if (mainWindow) void initializeMainApp(mainWindow);
+  }
 });

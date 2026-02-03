@@ -1,3 +1,6 @@
+/**
+ * Preload script for the main renderer. Exposes electronAPI (including getInitialTheme) to the renderer via contextBridge and forwards IPC events (splash, notifications, DDL/torrent progress, etc.) as DOM CustomEvents.
+ */
 import { AxiosRequestConfig } from 'axios';
 import { contextBridge, ipcRenderer } from 'electron';
 import { LibraryInfo } from 'ogi-addon';

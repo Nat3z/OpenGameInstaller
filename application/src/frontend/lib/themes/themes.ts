@@ -1,16 +1,16 @@
 /**
- * Theme registry: ids and display names for the Settings UI and validation.
- * Add new themes here, then add a corresponding [data-theme="id"] block in app.css.
+ * Theme registry: ids and display names for the Settings UI. Add new themes here and a matching [data-theme='id'] block in app.css.
  */
-
 export const THEMES = [
   { id: 'light', label: 'Light' },
   { id: 'dark', label: 'Dark' },
   { id: 'synthwave', label: 'Synthwave' },
 ] as const;
 
+/** Union of theme id strings from THEMES. */
 export type ThemeId = (typeof THEMES)[number]['id'];
 
+/** Array of theme ids for validation/iteration. */
 export const THEME_IDS: ThemeId[] = THEMES.map((t) => t.id);
 
 const VALID_THEME_IDS = new Set<string>(THEME_IDS);

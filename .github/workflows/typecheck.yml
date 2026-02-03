@@ -1,8 +1,6 @@
 name: Typecheck
 
 on:
-  push:
-    branches: ["**"]
   pull_request:
     branches: ["**"]
 
@@ -13,6 +11,9 @@ concurrency:
 jobs:
   typecheck:
     runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+     
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -43,16 +44,27 @@ jobs:
 
       - name: Extract errors
         if: always()
+        id: errors
         run: |
-          mkdir -p typecheck-results
           if grep -q "error" application/typecheck-output.txt; then
-            grep "error" application/typecheck-output.txt > typecheck-results/errors.txt || true
+            echo "has_errors=true" >> $GITHUB_OUTPUT
+            grep "error" application/typecheck-output.txt > errors.txt || true
+          else
+            echo "has_errors=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Upload typecheck results
-        if: always()
-        uses: actions/upload-artifact@v4
+      - name: Post review on errors
+        if: steps.errors.outputs.has_errors == 'true'
+        uses: actions/github-script@v7
         with:
-          name: typecheck-results
-          path: typecheck-results/
-          retention-days: 1
+          script: |
+            const fs = require('fs');
+            const errors = fs.readFileSync('errors.txt', 'utf8');
+            
+            github.rest.pulls.createReview({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number,
+              event: 'REQUEST_CHANGES',
+              body: `❌ **Typecheck Failed**\n\nPlease fix the following type errors:\n\n\`\`\`\n${errors}\n\`\`\``
+            });

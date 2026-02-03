@@ -45,11 +45,18 @@ export function getPlayStatisticsPath(): string {
 
 /**
  * Loads play statistics from disk. If the file is missing or invalid, returns default empty stats.
- * Reconciles any stale active session (e.g. app quit while game was running) and persists the result.
  *
+ * When `reconcile === true`, any existing activeSession is reconciled (closed and merged into byAppId)
+ * and the result is saved to disk. Use this once at app startup to close sessions left from a previous run.
+ *
+ * When `reconcile` is false or omitted, the function only loads and returns stats without mutating
+ * or saving (no closeStaleSession, no savePlayStatistics). Use this for UI and other readers so they
+ * never prematurely end a live session.
+ *
+ * @param reconcile - If true, reconcile and persist any active session; default false (read-only load)
  * @returns The loaded or default PlayStatistics
  */
-export function loadPlayStatistics(): PlayStatistics {
+export function loadPlayStatistics(reconcile: boolean = false): PlayStatistics {
   ensureInternalsDir();
   const path = getPlayStatisticsPath();
   if (!fs.existsSync(path)) {
@@ -73,8 +80,7 @@ export function loadPlayStatistics(): PlayStatistics {
 
     const stats: PlayStatistics = { byAppId, activeSession };
 
-    // Reconcile stale activeSession on load (e.g. app quit while game was running)
-    if (stats.activeSession) {
+    if (reconcile === true && stats.activeSession) {
       closeStaleSession(stats);
       savePlayStatistics(stats);
     }
@@ -146,9 +152,13 @@ export function recordSessionStart(appID: number): void {
  */
 export function recordSessionEnd(appID: number): void {
   const stats = loadPlayStatistics();
-  if (!stats.activeSession || stats.activeSession.appID !== appID) {
-    stats.activeSession = null;
-    savePlayStatistics(stats);
+  if (!stats.activeSession) {
+    return;
+  }
+  if (stats.activeSession.appID !== appID) {
+    console.warn(
+      `[play-statistics] recordSessionEnd(${appID}) called but active session is for app ${stats.activeSession.appID}; ignoring`
+    );
     return;
   }
   const { startTime } = stats.activeSession;

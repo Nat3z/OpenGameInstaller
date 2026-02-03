@@ -10,6 +10,7 @@ import {
   reinstallAddonDependencies,
 } from './startup.js';
 import { execute as executeMigrations } from './migrations.js';
+import { loadPlayStatistics } from './handlers/helpers.app/play-statistics.js';
 
 let splashWindow: BrowserWindow | null = null;
 
@@ -107,6 +108,10 @@ export async function runStartupTasks(
     // Legacy: separate splash window (e.g. if run without main window)
     splashWindow = createSplashWindow();
   }
+
+  // Reconcile play statistics once at startup (close any stale session from previous run)
+  updateSplashStatus('Reconciling play statistics...');
+  loadPlayStatistics(true);
 
   // Restore backup if it exists
   updateSplashStatus('Restoring backup...');

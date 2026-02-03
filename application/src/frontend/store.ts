@@ -309,6 +309,7 @@ export async function fetchCommunityAddons(): Promise<void> {
     }
     // Leave communityAddonsLocal unchanged so cached/previous list can still show
   } finally {
+    // requestId is not reset; monotonic id ensures only the latest completion applies.
     if (requestId === communityAddonsRequestId) {
       communityAddonsLoading.set(false);
     }

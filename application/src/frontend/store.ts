@@ -257,6 +257,9 @@ export const communityAddonsLoading: Writable<boolean> = writable(false);
 /** Error message from the last failed fetch, or null when successful or not yet fetched. */
 export const communityAddonsError: Writable<string | null> = writable(null);
 
+/** Request id for in-flight guard; only the latest request's result and loading state are applied. */
+let communityAddonsRequestId = 0;
+
 /**
  * Normalizes a caught error into a user-facing message for community addon fetch failures.
  * Handles response.status (404, 5xx), Error.message, and unknown shapes; always returns a string.
@@ -277,9 +280,11 @@ function communityAddonsErrorMessage(err: unknown): string {
  * Fetches the community addons list from the remote API and updates store state.
  * Sets communityAddonsLoading true at start and false in finally; clears then possibly sets communityAddonsError; on success updates communityAddonsLocal.
  * On error, leaves communityAddonsLocal unchanged so any cached/previous list can still be shown; the error message is set via communityAddonsErrorMessage.
+ * Overlapping calls are ignored for store updates and loading state: only the latest request's result and loading state are applied (in-flight guard via request id).
  * @returns Promise that resolves when the fetch and store updates are complete
  */
 export async function fetchCommunityAddons(): Promise<void> {
+  const requestId = ++communityAddonsRequestId;
   communityAddonsLoading.set(true);
   communityAddonsError.set(null);
   try {
@@ -291,12 +296,18 @@ export async function fetchCommunityAddons(): Promise<void> {
         'User-Agent': 'OpenGameInstaller Client/Rest1.0',
       },
     });
-    communityAddonsLocal.set(response.data as CommunityAddon[]);
-    communityAddonsError.set(null);
+    if (requestId === communityAddonsRequestId) {
+      communityAddonsLocal.set(response.data as CommunityAddon[]);
+      communityAddonsError.set(null);
+    }
   } catch (err) {
-    communityAddonsError.set(communityAddonsErrorMessage(err));
+    if (requestId === communityAddonsRequestId) {
+      communityAddonsError.set(communityAddonsErrorMessage(err));
+    }
     // Leave communityAddonsLocal unchanged so cached/previous list can still show
   } finally {
-    communityAddonsLoading.set(false);
+    if (requestId === communityAddonsRequestId) {
+      communityAddonsLoading.set(false);
+    }
   }
 }

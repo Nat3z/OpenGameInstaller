@@ -385,6 +385,14 @@
   async function confirmUninstall() {
     if (!gameData) return;
 
+    const cleanup = () => {
+      showUninstallModal = false;
+      currentDownloads.update((downloads) =>
+        downloads.filter((download) => download.appID !== appID)
+      );
+      loadCustomStoreData();
+    };
+
     try {
       const result = await window.electronAPI.app.uninstallApp(appID);
       if (result.success) {
@@ -393,11 +401,7 @@
           message: `${gameData.name} uninstalled.`,
           type: 'success',
         });
-        showUninstallModal = false;
-        currentDownloads.update((downloads) =>
-          downloads.filter((download) => download.appID !== appID)
-        );
-        loadCustomStoreData();
+        cleanup();
       } else {
         createNotification({
           id: Math.random().toString(36).substring(7),
@@ -406,11 +410,7 @@
             : `${gameData.name} uninstalled from library.`,
           type: result.error ? 'warning' : 'success',
         });
-        showUninstallModal = false;
-        currentDownloads.update((downloads) =>
-          downloads.filter((download) => download.appID !== appID)
-        );
-        loadCustomStoreData();
+        cleanup();
       }
     } catch (ex) {
       console.error('Failed to uninstall game:', ex);
@@ -419,7 +419,7 @@
         message: `Failed to uninstall ${gameData.name}`,
         type: 'error',
       });
-      showUninstallModal = false;
+      cleanup();
     }
   }
 

@@ -121,29 +121,31 @@ const ogiDebug = () => (process.env.OGI_DEBUG ?? 'false') === 'true';
  * Runs when the main app page has finished loading in the main window (second ready-to-show).
  */
 function onMainAppReady() {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    console.error('Main window unavailable in onMainAppReady');
+    return;
+  }
   closeSplashWindow();
 
-  AppEventHandler(mainWindow!!);
+  AppEventHandler(mainWindow);
   FSEventHandler();
-  RealdDebridHandler(mainWindow!!);
-  TorrentHandler(mainWindow!!);
-  DirectDownloadHandler(mainWindow!!);
+  RealdDebridHandler(mainWindow);
+  TorrentHandler(mainWindow);
+  DirectDownloadHandler(mainWindow);
   AddonRestHandler();
-  AddonManagerHandler(mainWindow!!);
+  AddonManagerHandler(mainWindow);
   OOBEHandler();
 
   ipcMain.on('get-version', async (event) => {
     event.returnValue = VERSION;
   });
   console.log('showing window');
-  mainWindow!!.show();
-  mainWindow!!.focus();
+  mainWindow.show();
+  mainWindow.focus();
 
-  if (mainWindow) {
-    checkForAddonUpdates(mainWindow);
-  }
+  checkForAddonUpdates(mainWindow);
   if (ogiDebug()) {
-    mainWindow!!.webContents.openDevTools();
+    mainWindow.webContents.openDevTools();
   }
   if (!isSecurityCheckEnabled) {
     sendNotification({
@@ -165,7 +167,7 @@ function onMainAppReady() {
     });
   });
 
-  mainWindow!!.webContents.setWindowOpenHandler((details) => {
+  mainWindow.webContents.setWindowOpenHandler((details) => {
     shell.openExternal(details.url);
     return { action: 'deny' };
   });
@@ -175,9 +177,9 @@ function onMainAppReady() {
     globalShortcut.unregister('F5');
   });
 
-  mainWindow!!.webContents.on('devtools-opened', () => {
+  mainWindow.webContents.on('devtools-opened', () => {
     if (!isDev() && !ogiDebug())
-      mainWindow!!.webContents.closeDevTools();
+      mainWindow.webContents.closeDevTools();
   });
 
   app.on('web-contents-created', (_, contents) => {

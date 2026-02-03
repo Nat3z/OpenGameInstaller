@@ -54,8 +54,7 @@ let splashTargetWindow: BrowserWindow | null = null;
 function updateSplashStatus(text: string, subtext?: string) {
   if (splashTargetWindow && !splashTargetWindow.isDestroyed()) {
     splashTargetWindow.webContents.send('splash-status', text, subtext);
-  }
-  if (splashWindow && !splashWindow.isDestroyed()) {
+  } else if (splashWindow && !splashWindow.isDestroyed()) {
     splashWindow.webContents.send('splash-status', text, subtext);
   }
 }
@@ -70,8 +69,7 @@ function updateSplashStatus(text: string, subtext?: string) {
 function updateSplashProgress(current: number, total: number, speed?: string) {
   if (splashTargetWindow && !splashTargetWindow.isDestroyed()) {
     splashTargetWindow.webContents.send('splash-progress', current, total, speed);
-  }
-  if (splashWindow && !splashWindow.isDestroyed()) {
+  } else if (splashWindow && !splashWindow.isDestroyed()) {
     splashWindow.webContents.send('splash-progress', current, total, speed);
   }
 }

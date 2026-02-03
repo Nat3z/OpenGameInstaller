@@ -24,12 +24,12 @@
   <TextModal
     text={`This will delete all game files from disk and remove the game from your library.`}
     variant="warning"
-    class="mb-4 text-red-600"
+    class="mb-4"
   />
   <TextModal
     text="This action cannot be undone."
     variant="warning"
-    class="mb-4 text-red-600"
+    class="mb-4"
   />
   <div class="flex flex-row items-center gap-2">
     <ButtonModal text="Cancel" variant="secondary" onclick={onClose} />

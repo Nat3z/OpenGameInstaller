@@ -1,7 +1,7 @@
 /**
  * Library file operations
  */
-import { join, resolve, relative } from 'path';
+import { join, resolve, relative, sep } from 'path';
 import * as fs from 'fs';
 import { LibraryInfo } from 'ogi-addon';
 import { __dirname } from '../../manager/manager.paths.js';
@@ -30,7 +30,7 @@ export function isSafeToDeleteGamePath(
   if (rel.startsWith('..') || rel === '' || rel === '.') {
     return false;
   }
-  return resolved.startsWith(root + join.sep);
+  return resolved.startsWith(root + sep);
 }
 
 export function getLibraryPath(appID: number): string {

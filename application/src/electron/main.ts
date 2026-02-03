@@ -66,6 +66,12 @@ interface Notification {
   id: string;
   type: 'info' | 'error' | 'success' | 'warning';
 }
+
+/**
+ * Sends a notification to the renderer via IPC (channel: 'notification').
+ *
+ * @param notification - The notification payload (message, id, type)
+ */
 export function sendNotification(notification: Notification) {
   sendIPCMessage('notification', notification);
 }
@@ -74,6 +80,12 @@ let isReadyForEvents = false;
 
 let readyForEventWaiters: (() => void)[] = [];
 
+/**
+ * Waits for the main app to be ready for events, then sends an IPC message to the renderer.
+ *
+ * @param channel - The IPC channel name
+ * @param args - Arguments to send to the renderer
+ */
 export async function sendIPCMessage(channel: string, ...args: any[]) {
   if (!isReadyForEvents) {
     await new Promise<void>((resolve) => {
@@ -90,6 +102,14 @@ export let currentScreens = new Map<
   { [key: string]: string | boolean | number } | undefined
 >();
 
+/**
+ * Sends an input-asked event to the renderer so the user can configure an addon (e.g. API key).
+ *
+ * @param id - Addon/config identifier
+ * @param config - The configuration file for the addon
+ * @param name - Display name for the input
+ * @param description - Description shown to the user
+ */
 export function sendAskForInput(
   id: string,
   config: ConfigurationFile,
@@ -115,6 +135,7 @@ export function sendAskForInput(
  * This avoids Steam focusing a separate splash window and leaving the main window black.
  */
 
+/** Returns true when the OGI_DEBUG environment variable is 'true'. */
 const ogiDebug = () => (process.env.OGI_DEBUG ?? 'false') === 'true';
 
 /**

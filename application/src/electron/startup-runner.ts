@@ -108,60 +108,62 @@ export async function runStartupTasks(
     splashWindow = createSplashWindow();
   }
 
-  // Restore backup if it exists
-  updateSplashStatus('Restoring backup...');
-  const backupResult = await restoreBackup((file, current, total) => {
-    updateSplashStatus('Restoring backup', `${file} (${current}/${total})`);
-    updateSplashProgress(current, total, '');
-  });
+  try {
+    // Restore backup if it exists
+    updateSplashStatus('Restoring backup...');
+    const backupResult = await restoreBackup((file, current, total) => {
+      updateSplashStatus('Restoring backup', `${file} (${current}/${total})`);
+      updateSplashProgress(current, total, '');
+    });
 
-  // Run any migrations if necessary
-  updateSplashStatus('Running migrations...');
-  // not async because it relies on the app being open
-  executeMigrations();
+    // Run any migrations if necessary
+    updateSplashStatus('Running migrations...');
+    // not async because it relies on the app being open
+    executeMigrations();
 
-  // Remove cached app updates
-  updateSplashStatus('Cleaning up...');
-  await new Promise((resolve, _) =>
-    removeCachedAppUpdates()
-      .then(resolve)
-      .catch(() => {
-        console.error('[chore] Failed to remove cached app updates');
-        resolve(void 0);
-      })
-  );
+    // Remove cached app updates
+    updateSplashStatus('Cleaning up...');
+    await new Promise((resolve, _) =>
+      removeCachedAppUpdates()
+        .then(resolve)
+        .catch(() => {
+          console.error('[chore] Failed to remove cached app updates');
+          resolve(void 0);
+        })
+    );
 
-  // If addons need reinstallation (node_modules were skipped during backup)
-  if (backupResult.needsAddonReinstall) {
-    updateSplashStatus('Reinstalling addon dependencies...');
-    try {
-      await reinstallAddonDependencies((addonName, current, total) => {
-        updateSplashStatus(
-          'Installing addon dependencies',
-          `${addonName} (${current}/${total})`
-        );
-        updateSplashProgress(current, total, '');
-      });
-    } catch (error) {
-      console.error('[startup] Failed to reinstall addon dependencies:', error);
-      // Continue anyway - addons may still work or can be reinstalled later
+    // If addons need reinstallation (node_modules were skipped during backup)
+    if (backupResult.needsAddonReinstall) {
+      updateSplashStatus('Reinstalling addon dependencies...');
+      try {
+        await reinstallAddonDependencies((addonName, current, total) => {
+          updateSplashStatus(
+            'Installing addon dependencies',
+            `${addonName} (${current}/${total})`
+          );
+          updateSplashProgress(current, total, '');
+        });
+      } catch (error) {
+        console.error('[startup] Failed to reinstall addon dependencies:', error);
+        // Continue anyway - addons may still work or can be reinstalled later
+      }
     }
+
+    // Check for installer/setup updates with splash screen callbacks
+    updateSplashStatus('Checking for updates...');
+    const updaterCallbacks: UpdaterCallbacks = {
+      onStatus: (text: string, subtext?: string) => {
+        updateSplashStatus(text, subtext);
+      },
+      onProgress: (current: number, total: number, speed: string) => {
+        updateSplashProgress(current, total, speed);
+      },
+    };
+    await checkIfInstallerUpdateAvailable(updaterCallbacks);
+
+    // Final status before main window loads
+    updateSplashStatus('Starting application...');
+  } finally {
+    splashTargetWindow = null;
   }
-
-  // Check for installer/setup updates with splash screen callbacks
-  updateSplashStatus('Checking for updates...');
-  const updaterCallbacks: UpdaterCallbacks = {
-    onStatus: (text: string, subtext?: string) => {
-      updateSplashStatus(text, subtext);
-    },
-    onProgress: (current: number, total: number, speed: string) => {
-      updateSplashProgress(current, total, speed);
-    },
-  };
-  await checkIfInstallerUpdateAvailable(updaterCallbacks);
-
-  // Final status before main window loads
-  updateSplashStatus('Starting application...');
-
-  splashTargetWindow = null;
 }

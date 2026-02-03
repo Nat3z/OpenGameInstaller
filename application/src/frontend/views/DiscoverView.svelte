@@ -172,7 +172,7 @@
         </p>
       </div>
       <div class="flex flex-row gap-3 flex-wrap">
-        {#each $wishlist as game (game.appID + game.storefront)}
+        {#each $wishlist as game (`${game.appID}-${game.storefront}`)}
           <div
             class="w-32 flex flex-col rounded-lg overflow-hidden bg-white shadow-md hover:shadow-lg transition-shadow"
           >

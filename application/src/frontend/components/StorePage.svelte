@@ -397,14 +397,14 @@
       const result = await window.electronAPI.app.uninstallApp(appID);
       if (result.success) {
         createNotification({
-          id: Math.random().toString(36).substring(7),
+          id: Math.random().toString(36).substring(2, 9),
           message: `${gameData.name} uninstalled.`,
           type: 'success',
         });
         cleanup();
       } else {
         createNotification({
-          id: Math.random().toString(36).substring(7),
+          id: Math.random().toString(36).substring(2, 9),
           message: result.error
             ? `Uninstalled from library, but some files could not be deleted: ${result.error}`
             : `${gameData.name} uninstalled from library.`,
@@ -415,7 +415,7 @@
     } catch (ex) {
       console.error('Failed to uninstall game:', ex);
       createNotification({
-        id: Math.random().toString(36).substring(7),
+        id: Math.random().toString(36).substring(2, 9),
         message: `Failed to uninstall ${gameData.name}`,
         type: 'error',
       });

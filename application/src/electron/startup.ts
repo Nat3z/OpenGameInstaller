@@ -410,7 +410,7 @@ export async function convertLibrary() {
   if (!fs.existsSync(libraryPath)) {
     return;
   }
-  const files = fs.readdirSync(libraryPath);
+  const files = fs.readdirSync(libraryPath).filter((f) => f.endsWith('.json'));
   for (const file of files) {
     try {
       const filePath = join(libraryPath, file);
@@ -446,7 +446,7 @@ async function checkForGitUpdates(repoPath: string): Promise<boolean> {
       if (error) {
         sendNotification({
           message: 'Failed to check for updates',
-          id: Math.random().toString(36).substring(7),
+          id: Math.random().toString(36).substring(2, 9),
           type: 'error',
         });
         console.log(error);
@@ -563,7 +563,7 @@ export async function removeCachedAppUpdates() {
   });
 
   // remove all but the latest of 3 cached updates
-  for (const update of sortedUpdates.slice(3)) {
+  for (const update of sortedUpdates.slice(0, -3)) {
     try {
       await fsPromises.rm(join(tempFolder, update), {
         recursive: true,
@@ -576,7 +576,7 @@ export async function removeCachedAppUpdates() {
 
   // remove all cached updates that are older than 30 days
   // Only check the remaining updates (the latest 3)
-  for (const update of sortedUpdates.slice(0, 3)) {
+  for (const update of sortedUpdates.slice(-3)) {
     try {
       const stats = await fsPromises.stat(join(tempFolder, update));
       const diffTime = Math.abs(Date.now() - stats.mtime.getTime());

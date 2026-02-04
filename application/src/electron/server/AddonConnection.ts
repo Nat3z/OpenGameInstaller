@@ -50,7 +50,14 @@ export class AddonConnection {
         } else {
           str = Buffer.from(message as ArrayBuffer).toString();
         }
-        const data: WebsocketMessageClient = JSON.parse(str);
+        let data: WebsocketMessageClient;
+        try {
+          data = JSON.parse(str);
+        } catch (err) {
+          console.error('AddonConnection: invalid JSON', err);
+          this.ws.close(1008, 'Invalid JSON');
+          return;
+        }
         switch (data.event) {
           case 'notification': {
             sendNotification(data.args[0]);
@@ -447,7 +454,14 @@ export class AddonConnection {
             } else {
               rawStr = Buffer.from(messageRaw as ArrayBuffer).toString();
             }
-            const messageFromClient: WebsocketMessageClient = JSON.parse(rawStr);
+            let messageFromClient: WebsocketMessageClient;
+            try {
+              messageFromClient = JSON.parse(rawStr);
+            } catch (err) {
+              console.error('AddonConnection: invalid JSON in response', err);
+              reject(err);
+              return;
+            }
             if (
               messageFromClient.event === 'response' &&
               messageFromClient.id === message.id

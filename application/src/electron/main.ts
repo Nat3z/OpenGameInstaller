@@ -175,7 +175,7 @@ function onMainAppReady(): void {
     sendNotification({
       message:
         "Security checks are disabled and application security LOWERED. Only enable if you know what you're doing.",
-      id: Math.random().toString(36).substring(7),
+      id: Math.random().toString(36).substring(2, 9),
       type: 'warning',
     });
   }
@@ -319,7 +319,7 @@ app.on('ready', async () => {
 
   sendNotification({
     message: 'Addons Starting...',
-    id: Math.random().toString(36).substring(7),
+    id: Math.random().toString(36).substring(2, 9),
     type: 'success',
   });
 

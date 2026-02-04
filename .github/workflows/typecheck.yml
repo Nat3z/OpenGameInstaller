@@ -44,6 +44,7 @@ jobs:
 
       - name: Run typecheck
         id: typecheck
+        continue-on-error: true
         run: |
           set -o pipefail
           bun run typecheck 2>&1 | tee typecheck-output.txt
@@ -98,3 +99,7 @@ jobs:
               event: 'REQUEST_CHANGES',
               body: `❌ **Typecheck Failed**\n\nPlease fix the following type errors:\n\n\`\`\`\n${errors}\n\`\`\``
             });
+
+      - name: Fail if typecheck failed
+        if: steps.typecheck.outcome == 'failure'
+        run: exit 1

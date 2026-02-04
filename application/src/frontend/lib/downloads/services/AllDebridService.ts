@@ -74,6 +74,9 @@ function waitForTorrentReady(
 export class AllDebridService extends BaseService {
   readonly types = ['all-debrid-magnet', 'all-debrid-torrent'];
 
+  /**
+   * Starts an AllDebrid download (magnet or torrent). Delegates to handleMagnetDownload or handleTorrentDownload.
+   */
   async startDownload(
     result: SearchResultWithAddon,
     appID: number,
@@ -116,6 +119,9 @@ export class AllDebridService extends BaseService {
     }
   }
 
+  /**
+   * Adds magnet to AllDebrid, waits for readiness, then fetches link and starts ddl.download.
+   */
   private async handleMagnetDownload(
     result: SearchResultWithAddon,
     appID: number,
@@ -142,30 +148,43 @@ export class AllDebridService extends BaseService {
       return;
     }
 
-    let isReady = await window.electronAPI.alldebrid.isTorrentReady(
-      magnetLink.id
-    );
-    if (!isReady) {
-      window.electronAPI.alldebrid.selectTorrent();
-      try {
-        await waitForTorrentReady(magnetLink.id, {
-          intervalMs: 3000,
-          timeoutMs: 600000,
-        });
-      } catch (err) {
-        this.resetButtonOnError(htmlButton, tempId, appID);
-        createNotification({
-          id: Math.random().toString(36).substring(7),
-          type: 'error',
-          message:
-            err instanceof Error && err.message === 'Torrent not ready in time'
-              ? 'Torrent not ready in time.'
-              : err instanceof Error
-                ? err.message
-                : 'Torrent readiness check failed.',
-        });
-        return;
+    try {
+      let isReady = await window.electronAPI.alldebrid.isTorrentReady(
+        magnetLink.id
+      );
+      if (!isReady) {
+        window.electronAPI.alldebrid.selectTorrent();
+        try {
+          await waitForTorrentReady(magnetLink.id, {
+            intervalMs: 3000,
+            timeoutMs: 600000,
+          });
+        } catch (err) {
+          this.resetButtonOnError(htmlButton, tempId, appID);
+          createNotification({
+            id: Math.random().toString(36).substring(7),
+            type: 'error',
+            message:
+              err instanceof Error && err.message === 'Torrent not ready in time'
+                ? 'Torrent not ready in time.'
+                : err instanceof Error
+                  ? err.message
+                  : 'Torrent readiness check failed.',
+          });
+          return;
+        }
       }
+    } catch (err) {
+      this.resetButtonOnError(htmlButton, tempId, appID);
+      createNotification({
+        id: Math.random().toString(36).substring(7),
+        type: 'error',
+        message:
+          err instanceof Error
+            ? `Torrent readiness check failed: ${err.message}`
+            : 'Torrent readiness check failed.',
+      });
+      return;
     }
 
     try {
@@ -232,6 +251,9 @@ export class AllDebridService extends BaseService {
     }
   }
 
+  /**
+   * Adds torrent to AllDebrid, waits for readiness, then fetches link and starts ddl.download.
+   */
   private async handleTorrentDownload(
     result: SearchResultWithAddon,
     appID: number,
@@ -262,30 +284,43 @@ export class AllDebridService extends BaseService {
       return;
     }
 
-    let isReady = await window.electronAPI.alldebrid.isTorrentReady(
-      torrent.id
-    );
-    if (!isReady) {
-      window.electronAPI.alldebrid.selectTorrent();
-      try {
-        await waitForTorrentReady(torrent.id, {
-          intervalMs: 3000,
-          timeoutMs: 600000,
-        });
-      } catch (err) {
-        this.resetButtonOnError(htmlButton, tempId, appID);
-        createNotification({
-          id: Math.random().toString(36).substring(7),
-          type: 'error',
-          message:
-            err instanceof Error && err.message === 'Torrent not ready in time'
-              ? 'Torrent not ready in time.'
-              : err instanceof Error
-                ? err.message
-                : 'Torrent readiness check failed.',
-        });
-        return;
+    try {
+      let isReady = await window.electronAPI.alldebrid.isTorrentReady(
+        torrent.id
+      );
+      if (!isReady) {
+        window.electronAPI.alldebrid.selectTorrent();
+        try {
+          await waitForTorrentReady(torrent.id, {
+            intervalMs: 3000,
+            timeoutMs: 600000,
+          });
+        } catch (err) {
+          this.resetButtonOnError(htmlButton, tempId, appID);
+          createNotification({
+            id: Math.random().toString(36).substring(7),
+            type: 'error',
+            message:
+              err instanceof Error && err.message === 'Torrent not ready in time'
+                ? 'Torrent not ready in time.'
+                : err instanceof Error
+                  ? err.message
+                  : 'Torrent readiness check failed.',
+          });
+          return;
+        }
       }
+    } catch (err) {
+      this.resetButtonOnError(htmlButton, tempId, appID);
+      createNotification({
+        id: Math.random().toString(36).substring(7),
+        type: 'error',
+        message:
+          err instanceof Error
+            ? `Torrent readiness check failed: ${err.message}`
+            : 'Torrent readiness check failed.',
+      });
+      return;
     }
 
     try {
@@ -356,6 +391,9 @@ export class AllDebridService extends BaseService {
     }
   }
 
+  /**
+   * Resets the download button to "Download" and marks the queued request as error.
+   */
   private resetButtonOnError(
     htmlButton: HTMLButtonElement,
     tempId: string,

@@ -42,27 +42,39 @@ export class DirectService extends BaseService {
 
     const { flush } = listenUntilDownloadReady();
 
-    window.electronAPI.ddl.download(collectedFiles).then((id) => {
-      resolvedButton.textContent = 'Downloading...';
-      resolvedButton.disabled = true;
-      const updatedState = flush();
-      currentDownloads.update((downloads) => {
-        return [
-          ...downloads,
-          {
-            id,
-            status: 'downloading',
-            downloadPath: getDownloadPath() + '/' + result.name + '/',
-            downloadSpeed: 0,
-            progress: 0,
-            appID,
-            downloadSize: 0,
-            queuePosition: updatedState[id]?.queuePosition ?? 999,
-            ...result,
-          },
-        ];
+    resolvedButton.textContent = 'Downloading...';
+    resolvedButton.disabled = true;
+    window.electronAPI.ddl
+      .download(collectedFiles)
+      .then((id) => {
+        const updatedState = flush();
+        currentDownloads.update((downloads) => {
+          return [
+            ...downloads,
+            {
+              id,
+              status: 'downloading',
+              downloadPath: getDownloadPath() + '/' + result.name + '/',
+              downloadSpeed: 0,
+              progress: 0,
+              appID,
+              downloadSize: 0,
+              queuePosition: updatedState[id]?.queuePosition ?? 999,
+              ...result,
+            },
+          ];
+        });
+        console.log('updatedState', updatedState);
+      })
+      .catch((err) => {
+        console.error('Direct download error:', err);
+        resolvedButton.textContent = 'Download';
+        resolvedButton.disabled = false;
+        createNotification({
+          id: Math.random().toString(36).substring(7),
+          type: 'error',
+          message: err instanceof Error ? err.message : 'Direct download failed.',
+        });
       });
-      console.log('updatedState', updatedState);
-    });
   }
 }

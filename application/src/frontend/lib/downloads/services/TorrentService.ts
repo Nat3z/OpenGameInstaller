@@ -73,6 +73,8 @@ export class TorrentService extends BaseService {
               message: 'Failed to download torrent.',
             });
             console.error('No download ID returned');
+            resolvedButton.textContent = 'Download';
+            resolvedButton.disabled = false;
             return;
           }
           resolvedButton.textContent = 'Downloading...';
@@ -94,6 +96,16 @@ export class TorrentService extends BaseService {
               },
             ];
           });
+        })
+        .catch((err) => {
+          console.error('Torrent download error:', err);
+          resolvedButton.textContent = 'Download';
+          resolvedButton.disabled = false;
+          createNotification({
+            id: Math.random().toString(36).substring(7),
+            type: 'error',
+            message: err instanceof Error ? err.message : 'Torrent download failed.',
+          });
         });
     } else if (result.downloadType === 'magnet') {
       window.electronAPI.torrent
@@ -106,6 +118,8 @@ export class TorrentService extends BaseService {
               message: 'Failed to download torrent.',
             });
             console.error('No download ID returned');
+            resolvedButton.textContent = 'Download';
+            resolvedButton.disabled = false;
             return;
           }
           resolvedButton.textContent = 'Downloading...';
@@ -127,6 +141,16 @@ export class TorrentService extends BaseService {
                 ...result,
               },
             ];
+          });
+        })
+        .catch((err) => {
+          console.error('Torrent download error:', err);
+          resolvedButton.textContent = 'Download';
+          resolvedButton.disabled = false;
+          createNotification({
+            id: Math.random().toString(36).substring(7),
+            type: 'error',
+            message: err instanceof Error ? err.message : 'Torrent download failed.',
           });
         });
     }

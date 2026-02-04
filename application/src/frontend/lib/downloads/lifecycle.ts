@@ -8,6 +8,10 @@ import { getConfigClientOption } from '../config/client';
 import { ALL_SERVICES } from './services';
 import type { SearchResultWithAddon } from '../tasks/runner';
 
+/**
+ * Resolves download handler from config, finds the matching service, and starts the download.
+ * Resets the button and notifies on failure if startDownload throws.
+ */
 export async function startDownload(
   result: SearchResultWithAddon,
   appID: number,
@@ -55,7 +59,18 @@ export async function startDownload(
   // Service-based architecture: find and delegate to the appropriate service
   const svc = ALL_SERVICES.find((s) => s.types.includes(downloadHandler));
   if (svc) {
-    await svc.startDownload(result, appID, event, resolvedButton);
+    try {
+      await svc.startDownload(result, appID, event, resolvedButton);
+    } catch (err) {
+      resolvedButton.textContent = 'Download';
+      resolvedButton.disabled = false;
+      console.error('startDownload failed:', err);
+      createNotification({
+        id: Math.random().toString(36).substring(7),
+        type: 'error',
+        message: err instanceof Error ? err.message : 'Download failed.',
+      });
+    }
     return;
   }
 
@@ -63,6 +78,9 @@ export async function startDownload(
   console.error(`No service found for download type: ${downloadHandler}`);
 }
 
+/**
+ * Updates a download's status and optional fields in the currentDownloads store.
+ */
 export function updateDownloadStatus(
   downloadID: string,
   updates: Partial<DownloadStatusAndInfo>
@@ -95,6 +113,9 @@ export function updateDownloadStatus(
   });
 }
 
+/**
+ * Returns the download item for the given ID from the store (one-time read).
+ */
 export function getDownloadItem(
   downloadID: string
 ): DownloadStatusAndInfo | undefined {

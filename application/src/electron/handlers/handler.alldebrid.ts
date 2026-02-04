@@ -13,6 +13,10 @@ let allDebridClient = new AllDebrid({
   apiKey: 'UNSET',
 });
 
+/**
+ * Reads the AllDebrid API key from the realdebrid config file.
+ * @returns The API key or null if missing or invalid.
+ */
 function readAlldebridKey(): string | null {
   if (!fs.existsSync(CONFIG_PATH)) return null;
   try {
@@ -24,6 +28,10 @@ function readAlldebridKey(): string | null {
   }
 }
 
+/**
+ * Registers IPC handlers for AllDebrid: set key, update key, user info, hosts,
+ * add magnet/torrent, readiness check, get torrent info, unrestrict link, select torrent.
+ */
 export default function handler(_mainWindow: Electron.BrowserWindow) {
   ipcMain.handle('all-debrid:set-key', async (_, arg: string) => {
     allDebridClient = new AllDebrid({ apiKey: arg });

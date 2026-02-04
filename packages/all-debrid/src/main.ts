@@ -148,8 +148,10 @@ function collectLinks(nodes: Node[]): { link: string; name: string; size?: numbe
  * status polling, file links, and link unrestrict.
  */
 export default class AllDebrid {
+  /** Creates an AllDebrid API client with the given configuration (API key). */
   constructor(public configuration: AllDebridConfiguration) {}
 
+  /** Returns auth headers for API requests. */
   private headers() {
     return { Authorization: `Bearer ${this.configuration.apiKey}` };
   }
@@ -213,7 +215,10 @@ export default class AllDebrid {
     if (!first || first.error) {
       throw new Error(first?.error?.message ?? 'No file returned');
     }
-    return { id: String(first.id), uri: `magnet:?xt=urn:btih:${first.hash ?? ''}` };
+    if (!first.hash) {
+      throw new Error('Torrent upload did not return a hash');
+    }
+    return { id: String(first.id), uri: `magnet:?xt=urn:btih:${first.hash}` };
   }
 
   /**

@@ -1,8 +1,10 @@
 name: Typecheck
 
 on:
+  push:
+    branches: ["main"]
   pull_request:
-    branches: ["**"]
+    branches: ["main"]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -12,6 +14,7 @@ jobs:
   typecheck:
     runs-on: ubuntu-latest
     permissions:
+      contents: read
       pull-requests: write
      
     steps:
@@ -39,27 +42,38 @@ jobs:
         run: bun install --frozen-lockfile
 
       - name: Run typecheck
-        run: cd application && bun run check 2>&1 | tee typecheck-output.txt
-        continue-on-error: true
+        run: |
+          set -o pipefail
+          bun run typecheck 2>&1 | tee typecheck-output.txt
 
       - name: Extract errors
         if: always()
         id: errors
         run: |
-          if grep -q "error" application/typecheck-output.txt; then
+          if grep -qiE '\berrors?\b' typecheck-output.txt; then
             echo "has_errors=true" >> $GITHUB_OUTPUT
-            grep "error" application/typecheck-output.txt > errors.txt || true
+            grep -iE '\berrors?\b' typecheck-output.txt > errors.txt || true
           else
             echo "has_errors=false" >> $GITHUB_OUTPUT
           fi
 
+      - name: Upload typecheck results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: typecheck-results
+          path: errors.txt
+
       - name: Post review on errors
-        if: steps.errors.outputs.has_errors == 'true'
+        if: steps.errors.outputs.has_errors == 'true' && github.event_name == 'pull_request'
         uses: actions/github-script@v7
         with:
           script: |
             const fs = require('fs');
-            const errors = fs.readFileSync('errors.txt', 'utf8');
+            let errors = '';
+            if (fs.existsSync('errors.txt')) {
+              errors = fs.readFileSync('errors.txt', 'utf8');
+            }
             
             github.rest.pulls.createReview({
               owner: context.repo.owner,

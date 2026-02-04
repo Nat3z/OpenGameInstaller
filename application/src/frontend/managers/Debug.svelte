@@ -27,7 +27,6 @@
     description: string;
   } = {
     config: {
-      // @ts-expect-error - options is a valid property for a string option if a choice.
       t: {
         name: 'test-options',
         displayName: 'Test Options',
@@ -35,12 +34,10 @@
         defaultValue: '',
         type: 'string',
       },
-      // @ts-expect-error - options is a valid property for a string option if a choice.
-      t: {
+      t2: {
         name: 'test-option-2',
         displayName: 'Test Options',
         description: 'This is a test options modal',
-        // @ts-expect-error - options is a valid property for a string option if a choice.
         allowedValues: ['test-option-1', 'test-option-2', 'test-option-3'],
         type: 'string',
       },

@@ -1,4 +1,5 @@
 import wsLib from 'ws';
+import type { RawData } from 'ws';
 import type {
   ClientSentEventTypes,
   OGIAddonConfiguration,
@@ -19,14 +20,16 @@ import {
 } from '../main.js';
 import { DeferrableTask, DeferredTasks } from './DeferrableTask.js';
 
+type WsSocket = InstanceType<typeof wsLib>;
+
 export class AddonConnection {
   public addonInfo!: OGIAddonConfiguration;
-  public ws: wsLib.WebSocket;
+  public ws: WsSocket;
   public configTemplate!: ConfigurationFile;
   public filePath: string | undefined;
   public addonLink: string | undefined;
   public eventsAvailable: OGIAddonEvent[] = [];
-  constructor(ws: wsLib.WebSocket) {
+  constructor(ws: WsSocket) {
     this.ws = ws;
   }
 
@@ -38,8 +41,16 @@ export class AddonConnection {
         resolve(false);
       }, 1000);
 
-      this.ws.on('message', async (message) => {
-        const data: WebsocketMessageClient = JSON.parse(message.toString());
+      this.ws.on('message', async (message: RawData) => {
+        let str: string;
+        if (Buffer.isBuffer(message)) {
+          str = message.toString();
+        } else if (Array.isArray(message)) {
+          str = Buffer.concat(message as readonly Uint8Array[]).toString();
+        } else {
+          str = Buffer.from(message as ArrayBuffer).toString();
+        }
+        const data: WebsocketMessageClient = JSON.parse(str);
         switch (data.event) {
           case 'notification': {
             sendNotification(data.args[0]);
@@ -416,7 +427,7 @@ export class AddonConnection {
       message.id = Math.random().toString(36).substring(7);
     }
     return new Promise((resolve, reject) => {
-      this.ws.send(JSON.stringify(message), (err) => {
+      this.ws.send(JSON.stringify(message), (err?: Error) => {
         if (err) {
           reject(err);
         }
@@ -427,10 +438,16 @@ export class AddonConnection {
             reject('Websocket closed');
             return;
           }
-          this.ws.once('message', (messageRaw) => {
-            const messageFromClient: WebsocketMessageClient = JSON.parse(
-              '' + messageRaw.toString()
-            );
+          this.ws.once('message', (messageRaw: RawData) => {
+            let rawStr: string;
+            if (Buffer.isBuffer(messageRaw)) {
+              rawStr = messageRaw.toString();
+            } else if (Array.isArray(messageRaw)) {
+              rawStr = Buffer.concat(messageRaw as readonly Uint8Array[]).toString();
+            } else {
+              rawStr = Buffer.from(messageRaw as ArrayBuffer).toString();
+            }
+            const messageFromClient: WebsocketMessageClient = JSON.parse(rawStr);
             if (
               messageFromClient.event === 'response' &&
               messageFromClient.id === message.id

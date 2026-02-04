@@ -172,7 +172,7 @@ function onMainAppReady() {
     console.error('onMainAppReady called but mainWindow is null');
     return;
   }
-  // Close separate splash window if it was used (no-op in single-window / Steam Deck flow)
+  // Close separate splash window if it was used (no-op in single-window / Steam Deck flow). Retained for legacy/fallback paths.
   closeSplashWindow();
 
   AppEventHandler(mainWindow);

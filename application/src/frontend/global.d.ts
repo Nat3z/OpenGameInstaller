@@ -3,6 +3,7 @@
 type AxiosResponse = import('axios').AxiosResponse;
 type AxiosRequestConfig = import('axios').AxiosRequestConfig;
 type LibraryInfo = import('ogi-addon').LibraryInfo;
+type ConfigurationFile = Record<string, any>;
 type $AddTorrentOrMagnet = import('real-debrid-js').$AddTorrentOrMagnet;
 type $Hosts = import('real-debrid-js').$Hosts;
 type $UnrestrictLink = import('real-debrid-js').$UnrestrictLink;

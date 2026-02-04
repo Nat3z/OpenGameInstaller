@@ -3,7 +3,7 @@
  */
 import { ipcMain } from 'electron';
 import { exec } from 'child_process';
-import { LibraryInfo } from 'ogi-addon';
+import type { LibraryInfo } from 'ogi-addon';
 import { isLinux } from './helpers.app/platform.js';
 import {
   getSteamAppIdWithFallback,

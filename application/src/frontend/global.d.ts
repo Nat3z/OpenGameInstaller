@@ -9,7 +9,12 @@ type $Hosts = import('real-debrid-js').$Hosts;
 type $UnrestrictLink = import('real-debrid-js').$UnrestrictLink;
 type $UserInfo = import('real-debrid-js').$UserInfo;
 type $TorrentInfo = import('real-debrid-js').$TorrentInfo;
-type $AllDebridTorrentInfo = { links: string[]; files: { link: string; name: string; size?: number }[] };
+type $AllDebridTorrentInfo = {
+  links: string[];
+  files: { link: string; name: string; size?: number }[];
+};
+type $AllDebridUserInfo = import('all-debrid-js').$UserInfo;
+type $AllDebridHosts = import('all-debrid-js').$Hosts;
 type $GamepadNavigator = import('./managers/GamepadManager').GamepadNavigator;
 interface Window {
   electronAPI: {
@@ -68,9 +73,16 @@ interface Window {
     };
     alldebrid: {
       setKey: (key: string) => Promise<string>;
-      getUserInfo: () => Promise<import('all-debrid-js').$UserInfo>;
-      unrestrictLink: (link: string) => Promise<{ link: string; download?: string; filename?: string; filesize?: number }>;
-      getHosts: () => Promise<import('all-debrid-js').$Hosts>;
+      getUserInfo: () => Promise<$AllDebridUserInfo>;
+      unrestrictLink: (
+        link: string
+      ) => Promise<{
+        link: string;
+        download?: string;
+        filename?: string;
+        filesize?: number;
+      }>;
+      getHosts: () => Promise<$AllDebridHosts>;
       addMagnet: (url: string, host?: string) => Promise<$AddTorrentOrMagnet>;
       addTorrent: (torrent: string) => Promise<$AddTorrentOrMagnet | null>;
       selectTorrent: () => Promise<boolean>;

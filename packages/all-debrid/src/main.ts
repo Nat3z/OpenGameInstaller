@@ -89,7 +89,12 @@ export const MagnetStatusResponseZod = z.object({
 });
 
 // Magnet files: data.magnets[] with id and files[]; each file: n (name), s (size), l (link), e (entries for folders)
-const FileNodeZod: z.ZodType<{ n: string; s?: number; l?: string; e?: z.infer<typeof FileNodeZod>[] }> = z.lazy(() =>
+const FileNodeZod: z.ZodType<{
+  n: string;
+  s?: number;
+  l?: string;
+  e?: z.infer<typeof FileNodeZod>[];
+}> = z.lazy(() =>
   z.object({
     n: z.string(),
     s: z.number().optional(),
@@ -107,26 +112,43 @@ export const MagnetFilesResponseZod = z.object({
 });
 
 // Link unlock: data.link, data.filename, data.filesize (API may return more fields)
-export const UnrestrictLinkResponseZod = z.object({
-  link: z.string(),
-  filename: z.string().optional(),
-  filesize: z.number().optional(),
-  host: z.string().optional(),
-  id: z.union([z.string(), z.number()]).optional(),
-}).passthrough();
-export type $UnrestrictLink = { link: string; filename?: string; filesize?: number; download?: string };
+export const UnrestrictLinkResponseZod = z
+  .object({
+    link: z.string(),
+    filename: z.string().optional(),
+    filesize: z.number().optional(),
+    host: z.string().optional(),
+    id: z.union([z.string(), z.number()]).optional(),
+  })
+  .passthrough();
+export type $UnrestrictLink = {
+  link: string;
+  filename?: string;
+  filesize?: number;
+  download?: string;
+};
 
 /**
  * Parses and validates an API response; throws on error status or invalid shape.
  */
-function checkResponse<T>(response: { data: unknown }, dataSchema: z.ZodType<T>): T {
-  const parsed = z.union([ApiResponseSuccess(dataSchema), ApiResponseError]).safeParse(response.data);
+function checkResponse<T>(
+  response: { data: unknown },
+  dataSchema: z.ZodType<T>
+): T {
+  const parsed = z
+    .union([ApiResponseSuccess(dataSchema), ApiResponseError])
+    .safeParse(response.data);
   if (!parsed.success) throw new Error('Invalid API response');
   if (parsed.data.status === 'error') {
-    const err = parsed.data.error;
+    const err = (
+      parsed.data as {
+        status: 'error';
+        error: { code: string; message: string };
+      }
+    ).error;
     throw new Error(`${err.message} (${err.code})`);
   }
-  return parsed.data.data;
+  return (parsed.data as { status: 'success'; data: T }).data;
 }
 
 type Node = { n: string; s?: number; l?: string; e?: Node[] };
@@ -134,7 +156,9 @@ type Node = { n: string; s?: number; l?: string; e?: Node[] };
 /**
  * Recursively collect all direct file links from AllDebrid files tree (n, s, l, e).
  */
-function collectLinks(nodes: Node[]): { link: string; name: string; size?: number }[] {
+function collectLinks(
+  nodes: Node[]
+): { link: string; name: string; size?: number }[] {
   const out: { link: string; name: string; size?: number }[] = [];
   for (const node of nodes) {
     if (node.l) out.push({ link: node.l, name: node.n, size: node.s });
@@ -181,12 +205,18 @@ export default class AllDebrid {
   /**
    * Add magnet. Returns { id, uri } shape for compatibility with Real-Debrid usage. Id is string.
    */
-  public async addMagnet(magnet: string, _host?: string): Promise<$AddMagnetOrTorrent> {
+  public async addMagnet(
+    magnet: string,
+    _host?: string
+  ): Promise<$AddMagnetOrTorrent> {
     const response = await axios.post(
       `${BASE_V4}/magnet/upload`,
       new URLSearchParams({ 'magnets[]': magnet }),
       {
-        headers: { ...this.headers(), 'Content-Type': 'application/x-www-form-urlencoded' },
+        headers: {
+          ...this.headers(),
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
         validateStatus: () => true,
       }
     );
@@ -229,7 +259,10 @@ export default class AllDebrid {
       `${BASE_V4_1}/magnet/status`,
       new URLSearchParams({ id }),
       {
-        headers: { ...this.headers(), 'Content-Type': 'application/x-www-form-urlencoded' },
+        headers: {
+          ...this.headers(),
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
         validateStatus: () => true,
       }
     );
@@ -249,12 +282,20 @@ export default class AllDebrid {
    * Get files/links for a magnet. Returns { links: string[], files: { link, name, size }[] }.
    * Uses first file link if no filename match; callers can pick by result.filename or take first.
    */
-  public async getMagnetFiles(id: string): Promise<{ links: string[]; files: { link: string; name: string; size?: number }[] }> {
+  public async getMagnetFiles(
+    id: string
+  ): Promise<{
+    links: string[];
+    files: { link: string; name: string; size?: number }[];
+  }> {
     const response = await axios.post(
       `${BASE_V4}/magnet/files`,
       new URLSearchParams({ 'id[]': id }),
       {
-        headers: { ...this.headers(), 'Content-Type': 'application/x-www-form-urlencoded' },
+        headers: {
+          ...this.headers(),
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
         validateStatus: () => true,
       }
     );
@@ -272,11 +313,17 @@ export default class AllDebrid {
    * Unrestrict a link. Returns shape compatible with app: { link, download?, filename, filesize }.
    * AllDebrid returns data.link as the direct download URL.
    */
-  public async unrestrictLink(link: string, password: string = ''): Promise<$UnrestrictLink> {
+  public async unrestrictLink(
+    link: string,
+    password: string = ''
+  ): Promise<$UnrestrictLink> {
     const params = new URLSearchParams({ link });
     if (password) params.append('password', password);
     const response = await axios.post(`${BASE_V4}/link/unlock`, params, {
-      headers: { ...this.headers(), 'Content-Type': 'application/x-www-form-urlencoded' },
+      headers: {
+        ...this.headers(),
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
       validateStatus: () => true,
     });
     const data = checkResponse(response, UnrestrictLinkResponseZod);

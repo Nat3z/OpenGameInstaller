@@ -4,12 +4,13 @@
   "scripts": {
     "release": "cd packages/ogi-addon && bun run release && cd ../real-debrid && bun run release",
     "dev": "cd application && bun run electron-dev",
-    "typecheck": "bun run build:typecheck-deps && bun run typecheck:ogi-addon && bun run typecheck:real-debrid && bun run typecheck:application && bun run typecheck:web && bun run typecheck:test-addon",
+    "typecheck": "bun run build:typecheck-deps && bun run typecheck:ogi-addon && bun run typecheck:real-debrid && bun run typecheck:all-debrid && bun run typecheck:application && bun run typecheck:web && bun run typecheck:test-addon",
     "build:typecheck-deps": "cd packages/ogi-addon && bun run build && cd ../real-debrid && bun run build",
     "typecheck:application": "cd application && bun run typecheck",
     "typecheck:web": "cd web && bun run typecheck",
     "typecheck:ogi-addon": "cd packages/ogi-addon && bun run typecheck",
     "typecheck:real-debrid": "cd packages/real-debrid && bun run typecheck",
+    "typecheck:all-debrid": "cd packages/all-debrid && bun run typecheck",
     "typecheck:test-addon": "cd test-addon && bun run typecheck"
   },
   "workspaces": [

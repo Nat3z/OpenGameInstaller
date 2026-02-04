@@ -49,7 +49,8 @@ export class AddonConnection {
             clearTimeout(authenticationTimeout);
 
             // authentication
-            this.addonInfo = data.args as OGIAddonConfiguration;
+            const addonInfo = data.args as OGIAddonConfiguration;
+            this.addonInfo = addonInfo;
             if (
               isSecurityCheckEnabled &&
               (!data.args.secret || data.args.secret !== addonSecret)
@@ -65,7 +66,7 @@ export class AddonConnection {
               break;
             }
 
-            // if (this.addonInfo.version !== ogiAddonVERSION) {
+            // if (addonInfo.version !== ogiAddonVERSION) {
             //   sendNotification({
             //     type: 'error',
             //     message: 'Client attempted to authenticate with an addon version that is not compatible with the OGI Addon Server',
@@ -76,7 +77,7 @@ export class AddonConnection {
             //   resolve(false)
             //   break;
             // }
-            if (clients.has(this.addonInfo!.id)) {
+            if (clients.has(addonInfo.id)) {
               console.error(
                 'Client attempted to authenticate with an ID that is already in use'
               );
@@ -88,7 +89,8 @@ export class AddonConnection {
               break;
             }
             console.log('Client authenticated:', data.args.name);
-            sendIPCMessage('addon-connected', this.addonInfo!.id);
+            clients.set(addonInfo.id, this);
+            sendIPCMessage('addon-connected', addonInfo.id);
             resolve(true);
             break;
           }

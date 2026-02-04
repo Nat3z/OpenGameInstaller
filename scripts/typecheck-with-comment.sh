@@ -32,9 +32,9 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# Run typecheck
+# Run typecheck (do not mask failures)
 echo "▶️  Running typecheck..."
-TYPECHECK_OUTPUT=$(bun run typecheck 2>&1 || true)
+TYPECHECK_OUTPUT=$(bun run typecheck 2>&1)
 TYPECHECK_EXIT_CODE=$?
 
 # Parse results
@@ -48,13 +48,13 @@ SVELTE_WARNINGS=$(echo "$SVELTE_WARNINGS" | tr -d '\n' | tr -d ' ')
 
 # Count TypeScript errors
 TS_ERROR_COUNT=$(echo "$TYPECHECK_OUTPUT" | grep -c "error TS" || true)
-TS_ERRORS=$((TS_ERROR_COUNT))
+TS_ERRORS=$((TS_ERROR_COUNT + 0))
 
 # Extract error lines
 ERROR_LINES=$(echo "$TYPECHECK_OUTPUT" | grep "error TS" | head -10 || echo "")
 
-# Determine status
-if [ "${SVELTE_ERRORS:-0}" = "0" ] && [ "$TS_ERRORS" -eq 0 ]; then
+# Determine status (use real typecheck exit code)
+if [ "$TYPECHECK_EXIT_CODE" -eq 0 ] && [ "${SVELTE_ERRORS:-0}" = "0" ] && [ "$TS_ERRORS" -eq 0 ]; then
   STATUS="✅ PASSED"
   EMOJI="✅"
   EXIT_CODE=0
@@ -106,20 +106,23 @@ $ERROR_LINES
 "
   fi
 
-  # Post to GitHub
+  # Post to GitHub (capture HTTP status and body)
   PAYLOAD=$(jq -n --arg body "$COMMENT_BODY" '{body: $body}')
-  
-  RESPONSE=$(curl -s -X POST \
+  RESPONSE_FILE=$(mktemp)
+  HTTP_CODE=$(curl -s -w "%{http_code}" -o "$RESPONSE_FILE" -X POST \
     -H "Authorization: token $GITHUB_TOKEN" \
     -H "Content-Type: application/json" \
     -d "$PAYLOAD" \
     "https://api.github.com/repos/$OWNER/$REPO/issues/$PR_NUMBER/comments")
-  
-  if echo "$RESPONSE" | jq . > /dev/null 2>&1; then
+  RESPONSE=$(cat "$RESPONSE_FILE")
+  rm -f "$RESPONSE_FILE"
+
+  if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
     echo "✅ Comment posted successfully!"
   else
-    echo "⚠️  Failed to post comment:"
+    echo "⚠️  Failed to post comment (HTTP $HTTP_CODE):"
     echo "$RESPONSE"
+    exit 1
   fi
 elif [ "$POST_COMMENT" = true ]; then
   echo "⚠️  Cannot post comment: missing PR_NUMBER and/or GITHUB_TOKEN"

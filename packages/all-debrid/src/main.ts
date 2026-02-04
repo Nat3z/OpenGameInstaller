@@ -118,6 +118,9 @@ export type $UnrestrictLink = { link: string; filename?: string; filesize?: numb
 
 /**
  * Parses and validates an API response; throws on error status or invalid shape.
+ * @param response - Axios response with data
+ * @param dataSchema - Zod schema for the success payload
+ * @returns Validated data on success
  */
 function checkResponse<T>(response: { data: unknown }, dataSchema: z.ZodType<T>): T {
   const parsed = z.union([ApiResponseSuccess(dataSchema), ApiResponseError]).safeParse(response.data);
@@ -129,6 +132,7 @@ function checkResponse<T>(response: { data: unknown }, dataSchema: z.ZodType<T>)
   return parsed.data.data;
 }
 
+/** Node in AllDebrid files tree: n (name), s (size), l (link), e (children). */
 type Node = { n: string; s?: number; l?: string; e?: Node[] };
 
 /**

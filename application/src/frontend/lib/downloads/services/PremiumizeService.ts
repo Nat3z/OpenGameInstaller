@@ -74,16 +74,25 @@ export class PremiumizeService extends BaseService {
     result: SearchResultWithAddon,
     appID: number,
     _event: MouseEvent,
-    _htmlButton?: HTMLButtonElement
+    htmlButton?: HTMLButtonElement
   ): Promise<void> {
     if (result.downloadType !== 'magnet' && result.downloadType !== 'torrent')
       return;
+
+    if (htmlButton) {
+      htmlButton.textContent = 'Downloading...';
+      htmlButton.disabled = true;
+    }
 
     console.log('PremiumizeService startDownload', result);
     const optionHandled = getConfigClientOption<{ premiumizeApiKey?: string }>(
       'realdebrid'
     );
     if (!optionHandled || !optionHandled.premiumizeApiKey) {
+      if (htmlButton) {
+        htmlButton.textContent = 'Download';
+        htmlButton.disabled = false;
+      }
       createNotification({
         id: Math.random().toString(36).substring(7),
         type: 'error',
@@ -130,6 +139,10 @@ export class PremiumizeService extends BaseService {
         if (folder) {
           folderId = folder.id;
         } else {
+          if (htmlButton) {
+            htmlButton.textContent = 'Download';
+            htmlButton.disabled = false;
+          }
           createNotification({
             id: Math.random().toString(36).substring(7),
             type: 'error',
@@ -138,6 +151,10 @@ export class PremiumizeService extends BaseService {
           throw new Error('OpenGameInstaller folder not found in Premiumize');
         }
       } else if (responseFolderContentData.status === 'error') {
+        if (htmlButton) {
+          htmlButton.textContent = 'Download';
+          htmlButton.disabled = false;
+        }
         createNotification({
           id: Math.random().toString(36).substring(7),
           type: 'error',
@@ -173,6 +190,10 @@ export class PremiumizeService extends BaseService {
       });
 
     if (responseAddTorrent.data.status === 'error') {
+      if (htmlButton) {
+        htmlButton.textContent = 'Download';
+        htmlButton.disabled = false;
+      }
       createNotification({
         id: Math.random().toString(36).substring(7),
         type: 'error',
@@ -222,11 +243,16 @@ export class PremiumizeService extends BaseService {
     });
 
     if (!foundFolderId) {
+      if (htmlButton) {
+        htmlButton.textContent = 'Download';
+        htmlButton.disabled = false;
+      }
       createNotification({
         id: Math.random().toString(36).substring(7),
         type: 'error',
         message: 'Failed to download torrent from Premiumize',
       });
+      return;
     }
 
     // -- Step 4: Get the direct download --
@@ -243,6 +269,10 @@ export class PremiumizeService extends BaseService {
       });
 
     if (responseTorrentFile.status !== 200) {
+      if (htmlButton) {
+        htmlButton.textContent = 'Download';
+        htmlButton.disabled = false;
+      }
       createNotification({
         id: Math.random().toString(36).substring(7),
         type: 'error',
@@ -253,6 +283,10 @@ export class PremiumizeService extends BaseService {
     }
 
     if (responseTorrentFile.data.status === 'error') {
+      if (htmlButton) {
+        htmlButton.textContent = 'Download';
+        htmlButton.disabled = false;
+      }
       createNotification({
         id: Math.random().toString(36).substring(7),
         type: 'error',
@@ -284,11 +318,16 @@ export class PremiumizeService extends BaseService {
     ]);
     const updatedState = flush();
     if (downloadID === null) {
+      if (htmlButton) {
+        htmlButton.textContent = 'Download';
+        htmlButton.disabled = false;
+      }
       createNotification({
         id: Math.random().toString(36).substring(7),
         type: 'error',
         message: 'Failed to download the torrent.',
       });
+      return;
     }
 
     this.updateDownloadRequested(

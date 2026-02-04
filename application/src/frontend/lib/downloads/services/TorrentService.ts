@@ -22,8 +22,6 @@ export class TorrentService extends BaseService {
     if (result.downloadType !== 'magnet' && result.downloadType !== 'torrent')
       return;
 
-    const resolvedButton = button;
-
     if (!result.downloadURL) {
       createNotification({
         id: Math.random().toString(36).substring(7),
@@ -73,12 +71,12 @@ export class TorrentService extends BaseService {
               message: 'Failed to download torrent.',
             });
             console.error('No download ID returned');
-            resolvedButton.textContent = 'Download';
-            resolvedButton.disabled = false;
+            button.textContent = 'Download';
+            button.disabled = false;
             return;
           }
-          resolvedButton.textContent = 'Downloading...';
-          resolvedButton.disabled = true;
+          button.textContent = 'Downloading...';
+          button.disabled = true;
           currentDownloads.update((downloads) => {
             return [
               ...downloads,
@@ -99,8 +97,8 @@ export class TorrentService extends BaseService {
         })
         .catch((err) => {
           console.error('Torrent download error:', err);
-          resolvedButton.textContent = 'Download';
-          resolvedButton.disabled = false;
+          button.textContent = 'Download';
+          button.disabled = false;
           createNotification({
             id: Math.random().toString(36).substring(7),
             type: 'error',
@@ -118,12 +116,12 @@ export class TorrentService extends BaseService {
               message: 'Failed to download torrent.',
             });
             console.error('No download ID returned');
-            resolvedButton.textContent = 'Download';
-            resolvedButton.disabled = false;
+            button.textContent = 'Download';
+            button.disabled = false;
             return;
           }
-          resolvedButton.textContent = 'Downloading...';
-          resolvedButton.disabled = true;
+          button.textContent = 'Downloading...';
+          button.disabled = true;
           currentDownloads.update((downloads) => {
             return [
               ...downloads,
@@ -145,8 +143,8 @@ export class TorrentService extends BaseService {
         })
         .catch((err) => {
           console.error('Torrent download error:', err);
-          resolvedButton.textContent = 'Download';
-          resolvedButton.disabled = false;
+          button.textContent = 'Download';
+          button.disabled = false;
           createNotification({
             id: Math.random().toString(36).substring(7),
             type: 'error',

@@ -11,6 +11,10 @@ import type { SearchResultWithAddon } from '../tasks/runner';
 /**
  * Resolves download handler from config, finds the matching service, and starts the download.
  * Resets the button and notifies on failure if startDownload throws.
+ * @param result - Search result with addon and download URL/type
+ * @param appID - Application ID for the download
+ * @param event - Mouse event (used to resolve button if htmlButton not provided)
+ * @param htmlButton - Optional button element (e.g. when called recursively)
  */
 export async function startDownload(
   result: SearchResultWithAddon,
@@ -80,6 +84,8 @@ export async function startDownload(
 
 /**
  * Updates a download's status and optional fields in the currentDownloads store.
+ * @param downloadID - ID of the download to update
+ * @param updates - Partial fields to merge (e.g. status, progress)
  */
 export function updateDownloadStatus(
   downloadID: string,
@@ -115,6 +121,8 @@ export function updateDownloadStatus(
 
 /**
  * Returns the download item for the given ID from the store (one-time read).
+ * @param downloadID - ID of the download
+ * @returns The download item or undefined if not found
  */
 export function getDownloadItem(
   downloadID: string

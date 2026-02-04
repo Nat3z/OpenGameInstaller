@@ -76,6 +76,10 @@ export class AllDebridService extends BaseService {
 
   /**
    * Starts an AllDebrid download (magnet or torrent). Delegates to handleMagnetDownload or handleTorrentDownload.
+   * @param result - Search result with download URL and type
+   * @param appID - Application ID for the download
+   * @param event - Mouse event (used to resolve button if htmlButton not provided)
+   * @param htmlButton - Optional button element for consistent UX (e.g. recursive call)
    */
   async startDownload(
     result: SearchResultWithAddon,

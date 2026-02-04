@@ -1,3 +1,8 @@
+/**
+ * AllDebrid IPC handlers: API key, user info, hosts, add magnet/torrent,
+ * readiness check, torrent info, unrestrict link. Uses unique temp paths
+ * and cleans up streams on all code paths.
+ */
 import { ipcMain } from 'electron';
 import { sendNotification } from '../main.js';
 import { join } from 'path';

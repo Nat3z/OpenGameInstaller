@@ -6,7 +6,7 @@ import { spawn } from 'child_process';
 import axios from 'axios';
 import { join, dirname, basename } from 'path';
 import * as fs from 'fs';
-import { LibraryInfo } from 'ogi-addon';
+import type { LibraryInfo } from 'ogi-addon';
 import { isLinux, getProtonPrefixPath } from './helpers.app/platform.js';
 import { getSteamAppIdWithFallback } from './helpers.app/steam.js';
 import { loadLibraryInfo, saveLibraryInfo } from './helpers.app/library.js';

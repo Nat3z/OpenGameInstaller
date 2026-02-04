@@ -53,10 +53,19 @@ jobs:
         if: always()
         id: errors
         run: |
-          if [ -f typecheck-output.txt ] && grep -qE 'error TS|Error:' typecheck-output.txt; then
-            echo "has_errors=true" >> $GITHUB_OUTPUT
-            # Strip ANSI escape codes; capture lines with real errors (not e.g. "0 errors")
-            sed -r "s/\x1B\[([0-9]{1,3}(;[0-9]{1,2})?)?[mGK]//g" typecheck-output.txt | grep -E 'error TS|Error:' > errors.txt || true
+          # Always create errors.txt (even if empty)
+          touch errors.txt
+          
+          if [ -f typecheck-output.txt ]; then
+            # Strip ANSI escape codes and extract error lines
+            sed -r "s/\x1B\[([0-9]{1,3}(;[0-9]{1,2})?)?[mGK]//g" typecheck-output.txt | grep -E 'error TS[0-9]+:|Error:' > errors.txt || true
+            
+            # Check if we found any errors
+            if [ -s errors.txt ]; then
+              echo "has_errors=true" >> $GITHUB_OUTPUT
+            else
+              echo "has_errors=false" >> $GITHUB_OUTPUT
+            fi
           else
             echo "has_errors=false" >> $GITHUB_OUTPUT
           fi

@@ -154,7 +154,7 @@
     } catch (ex) {
       console.error(ex);
       createNotification({
-        id: Math.random().toString(36).substring(7),
+        id: Math.random().toString(36).substring(2, 9),
         message: `Failed to fetch store page`,
         type: 'error',
       });
@@ -328,7 +328,7 @@
     // Check if there's already an active download for this game
     if (activeDownload) {
       createNotification({
-        id: Math.random().toString(36).substring(7),
+        id: Math.random().toString(36).substring(2, 9),
         message: `Download already in progress for ${gameData?.name}`,
         type: 'warning',
       });
@@ -362,7 +362,7 @@
     try {
       await window.electronAPI.app.removeApp(appID);
       createNotification({
-        id: Math.random().toString(36).substring(7),
+        id: Math.random().toString(36).substring(2, 9),
         message: `${gameData.name} removed from library. (Not deleted from disk)`,
         type: 'success',
       });
@@ -375,7 +375,7 @@
     } catch (ex) {
       console.error('Failed to remove game:', ex);
       createNotification({
-        id: Math.random().toString(36).substring(7),
+        id: Math.random().toString(36).substring(2, 9),
         message: `Failed to remove ${gameData.name} from library`,
         type: 'error',
       });
@@ -455,7 +455,7 @@
       if (alreadyOwns) {
         // Notify user that the game is now available
         createNotification({
-          id: Math.random().toString(36).substring(7),
+          id: Math.random().toString(36).substring(2, 9),
           message: `${gameData?.name || 'Game'} is now ready to play!`,
           type: 'success',
         });

@@ -36,7 +36,7 @@ export function startAddons() {
       console.error(`Addon ${addonPath} does not exist`);
       sendNotification({
         message: `Addon ${addonPath} does not exist`,
-        id: Math.random().toString(36).substring(7),
+        id: Math.random().toString(36).substring(2, 9),
         type: 'error',
       });
       continue;
@@ -80,7 +80,7 @@ export function restartAddonServer() {
 
   sendNotification({
     message: 'Addon server restarted successfully.',
-    id: Math.random().toString(36).substring(7),
+    id: Math.random().toString(36).substring(2, 9),
     type: 'success',
   });
 }
@@ -111,7 +111,7 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
     if (!gitInstalled) {
       sendNotification({
         message: 'Git is not installed. Please install git and try again.',
-        id: Math.random().toString(36).substring(7),
+        id: Math.random().toString(36).substring(2, 9),
         type: 'error',
       });
       return;
@@ -128,7 +128,7 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
         console.log(`Addon ${addonName} already installed and setup.`);
         sendNotification({
           message: `Addon ${addonName} already installed and setup.`,
-          id: Math.random().toString(36).substring(7),
+          id: Math.random().toString(36).substring(2, 9),
           type: 'info',
         });
         continue;
@@ -140,7 +140,7 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
             if (err) {
               sendNotification({
                 message: `Failed to install addon ${addonName}`,
-                id: Math.random().toString(36).substring(7),
+                id: Math.random().toString(36).substring(2, 9),
                 type: 'error',
               });
               console.error(err);
@@ -156,13 +156,13 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
       if (!hasAddonBeenSetup) {
         sendNotification({
           message: `An error occurred when setting up ${addonName}`,
-          id: Math.random().toString(36).substring(7),
+          id: Math.random().toString(36).substring(2, 9),
           type: 'error',
         });
       } else {
         sendNotification({
           message: `Addon ${addonName} installed successfully.`,
-          id: Math.random().toString(36).substring(7),
+          id: Math.random().toString(36).substring(2, 9),
           type: 'success',
         });
       }
@@ -188,7 +188,7 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
 
     sendNotification({
       message: 'Successfully cleaned addons.',
-      id: Math.random().toString(36).substring(7),
+      id: Math.random().toString(36).substring(2, 9),
       type: 'info',
     });
   });

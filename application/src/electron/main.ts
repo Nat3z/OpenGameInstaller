@@ -94,7 +94,13 @@ export async function sendIPCMessage(channel: string, ...args: any[]) {
     });
     console.log('events ready');
   }
-  mainWindow?.webContents.send(channel, ...args);
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    console.warn(
+      `IPC message to '${channel}' dropped: mainWindow unavailable`
+    );
+    return;
+  }
+  mainWindow.webContents.send(channel, ...args);
 }
 
 export let currentScreens = new Map<
@@ -220,7 +226,11 @@ function onMainAppReady(): void {
         parsedUrl.origin !== 'file://'
       ) {
         event.preventDefault();
-        throw new Error('Navigating to that address is not allowed.');
+        console.warn(
+          'Navigating to that address is not allowed:',
+          parsedUrl.origin
+        );
+        return;
       }
     });
   });
@@ -288,7 +298,7 @@ app.on('ready', async () => {
   createWindow();
 
   // Run startup tasks; splash updates go to the main window
-  await runStartupTasks(mainWindow!);
+  if (mainWindow) await runStartupTasks(mainWindow);
 
   if (!mainWindow || mainWindow.isDestroyed()) {
     console.error('Main window unavailable after startup tasks');

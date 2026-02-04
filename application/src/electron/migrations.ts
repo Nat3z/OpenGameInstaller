@@ -147,7 +147,7 @@ let migrations: {
       const result = await new Promise<boolean>((resolve) => {
         sendNotification({
           message: 'Installing wine via flatpak...',
-          id: Math.random().toString(36).substring(7),
+          id: Math.random().toString(36).substring(2, 9),
           type: 'info',
         });
         const childProcess = spawn(
@@ -245,7 +245,7 @@ let migrations: {
       sendNotification({
         message:
           'Desktop shortcut created successfully. You can now find OpenGameInstaller in your Desktop.',
-        id: Math.random().toString(36).substring(7),
+        id: Math.random().toString(36).substring(2, 9),
         type: 'success',
       });
     },

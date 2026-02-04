@@ -71,7 +71,9 @@ async function fetch_STLPath() {
   });
 }
 console.log('NIXOS: ' + IS_NIXOS);
-if (IS_NIXOS) await fetch_STLPath();
+await (async () => {
+  if (IS_NIXOS) await fetch_STLPath();
+})();
 if (STEAMTINKERLAUNCH_PATH === '') {
   STEAMTINKERLAUNCH_PATH = join(
     __dirname,

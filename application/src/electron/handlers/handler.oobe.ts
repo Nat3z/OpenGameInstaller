@@ -112,7 +112,7 @@ export default function OOBEHandler() {
                       sendNotification({
                         message:
                           'Failed to install 7zip. Please allow the installer to run as administrator.',
-                        id: Math.random().toString(36).substring(7),
+                        id: Math.random().toString(36).substring(2, 9),
                         type: 'error',
                       });
                       cleanlyDownloadedAll = false;
@@ -124,7 +124,7 @@ export default function OOBEHandler() {
                     fs.unlinkSync(join(__dirname, '7z-install.exe'));
                     sendNotification({
                       message: 'Successfully installed 7zip.',
-                      id: Math.random().toString(36).substring(7),
+                      id: Math.random().toString(36).substring(2, 9),
                       type: 'info',
                     });
                     requireRestart = true;
@@ -161,7 +161,7 @@ export default function OOBEHandler() {
       if (process.platform === 'win32') {
         sendNotification({
           message: 'Git is not installed. Downloading git now.',
-          id: Math.random().toString(36).substring(7),
+          id: Math.random().toString(36).substring(2, 9),
           type: 'info',
         });
         const gitDownload =
@@ -223,7 +223,7 @@ export default function OOBEHandler() {
                     fs.unlinkSync(join(__dirname, 'git-install.exe'));
                     sendNotification({
                       message: 'Successfully installed git.',
-                      id: Math.random().toString(36).substring(7),
+                      id: Math.random().toString(36).substring(2, 9),
                       type: 'info',
                     });
                     requireRestart = true;
@@ -244,7 +244,7 @@ export default function OOBEHandler() {
         );
       } else {
         sendNotification({
-          id: Math.random().toString(36).substring(7),
+          id: Math.random().toString(36).substring(2, 9),
           message: 'Missing Git and auto-install is not supported for linux.',
           type: 'error',
         });
@@ -301,7 +301,7 @@ export default function OOBEHandler() {
                       sendOOBELog(stderr);
                       sendNotification({
                         message: 'Successfully installed steamtinkerlaunch.',
-                        id: Math.random().toString(36).substring(7),
+                        id: Math.random().toString(36).substring(2, 9),
                         type: 'info',
                       });
                       resolve();
@@ -341,7 +341,7 @@ export default function OOBEHandler() {
                   sendOOBELog(stderr);
                   sendNotification({
                     message: 'Successfully updated steamtinkerlaunch.',
-                    id: Math.random().toString(36).substring(7),
+                    id: Math.random().toString(36).substring(2, 9),
                     type: 'info',
                   });
                   resolve();
@@ -357,7 +357,7 @@ export default function OOBEHandler() {
         sendNotification({
           message:
             'SteamTinkerLaunch is not installed. You are not on a supported OS. Please install it manually.',
-          id: Math.random().toString(36).substring(7),
+          id: Math.random().toString(36).substring(2, 9),
           type: 'error',
         });
         cleanlyDownloadedAll = false;
@@ -391,7 +391,7 @@ export default function OOBEHandler() {
               sendOOBELog(stderr);
               sendNotification({
                 message: 'Successfully installed bun.',
-                id: Math.random().toString(36).substring(7),
+                id: Math.random().toString(36).substring(2, 9),
                 type: 'info',
               });
               requireRestart = true;
@@ -431,7 +431,7 @@ export default function OOBEHandler() {
                   sendOOBELog(stderr);
                   sendNotification({
                     message: 'Successfully installed bun and added to path.',
-                    id: Math.random().toString(36).substring(7),
+                    id: Math.random().toString(36).substring(2, 9),
                     type: 'info',
                   });
                   resolve();
@@ -445,7 +445,7 @@ export default function OOBEHandler() {
         sendNotification({
           message:
             'Bun is not installed. You are not on a supported OS. Please install it manually.',
-          id: Math.random().toString(36).substring(7),
+          id: Math.random().toString(36).substring(2, 9),
           type: 'error',
         });
         cleanlyDownloadedAll = false;
@@ -463,7 +463,7 @@ export default function OOBEHandler() {
           sendOOBELog(stderr);
           sendNotification({
             message: 'Successfully upgraded bun.',
-            id: Math.random().toString(36).substring(7),
+            id: Math.random().toString(36).substring(2, 9),
             type: 'info',
           });
           resolve();
@@ -486,7 +486,7 @@ export default function OOBEHandler() {
         sendNotification({
           message:
             'Flatpak is not installed. Please install Wine through Flatpak for redistributables to work.',
-          id: Math.random().toString(36).substring(7),
+          id: Math.random().toString(36).substring(2, 9),
           type: 'error',
         });
         cleanlyDownloadedAll = false;
@@ -537,7 +537,7 @@ export default function OOBEHandler() {
           if (!result) {
             sendNotification({
               message: 'Failed to install wine through flatpak.',
-              id: Math.random().toString(36).substring(7),
+              id: Math.random().toString(36).substring(2, 9),
               type: 'error',
             });
             cleanlyDownloadedAll = false;
@@ -555,14 +555,14 @@ export default function OOBEHandler() {
             if (!wineInstalled) {
               sendNotification({
                 message: 'Failed to install wine through flatpak.',
-                id: Math.random().toString(36).substring(7),
+                id: Math.random().toString(36).substring(2, 9),
                 type: 'error',
               });
               cleanlyDownloadedAll = false;
             } else {
               sendNotification({
                 message: 'Successfully installed wine through flatpak.',
-                id: Math.random().toString(36).substring(7),
+                id: Math.random().toString(36).substring(2, 9),
                 type: 'info',
               });
             }

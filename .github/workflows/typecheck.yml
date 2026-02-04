@@ -1,3 +1,4 @@
+# Unified typecheck workflow matching Flex pattern
 name: Typecheck
 
 on:

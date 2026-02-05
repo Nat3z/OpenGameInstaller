@@ -80,6 +80,7 @@ export class RequestService extends BaseService {
     const updatedResult = {
       ...response,
       addonSource: result.addonSource,
+      addonName: result.addonName,
       capsuleImage: result.capsuleImage,
       coverImage: result.coverImage,
       storefront: result.storefront,

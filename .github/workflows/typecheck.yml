@@ -1,0 +1,114 @@
+# Unified typecheck workflow matching Flex pattern
+name: Typecheck
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["**"]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  typecheck:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+     
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1"
+
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.bun/install/cache
+            node_modules
+            application/node_modules
+            packages/*/node_modules
+          key: ${{ runner.os }}-bun-${{ hashFiles('**/bun.lockb', '**/bun.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Run typecheck
+        id: typecheck
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          bun run typecheck 2>&1 | tee typecheck-output.txt
+
+      - name: Extract errors
+        if: always()
+        id: errors
+        run: |
+          # Always create errors.txt (even if empty)
+          touch errors.txt
+          
+          if [ -f typecheck-output.txt ]; then
+            # Strip ANSI escape codes and extract error lines
+            sed -r "s/\x1B\[([0-9]{1,3}(;[0-9]{1,2})?)?[mGK]//g" typecheck-output.txt | grep -E 'error TS[0-9]+:|Error:' > errors.txt || true
+            
+            # Check if we found any errors
+            if [ -s errors.txt ]; then
+              echo "has_errors=true" >> $GITHUB_OUTPUT
+            else
+              echo "has_errors=false" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "has_errors=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Upload typecheck results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: typecheck-results
+          path: errors.txt
+          if-no-files-found: ignore
+
+      - name: Post review on errors
+        if: steps.errors.outputs.has_errors == 'true' && github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const MAX_BODY = 60000;
+            let errors = '';
+            if (fs.existsSync('errors.txt')) {
+              errors = fs.readFileSync('errors.txt', 'utf8');
+            }
+            if (errors.length > MAX_BODY) {
+              errors = errors.slice(0, MAX_BODY) + '\n...truncated';
+            }
+            const pullNumber = context.eventName === 'workflow_run'
+              ? (context.payload.workflow_run?.pull_requests?.length > 0
+                  ? context.payload.workflow_run.pull_requests[0].number
+                  : null)
+              : context.issue.number;
+            if (pullNumber == null) {
+              console.log('Skipping review: no PR number available');
+              return;
+            }
+            await github.rest.pulls.createReview({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: pullNumber,
+              event: 'REQUEST_CHANGES',
+              body: `❌ **Typecheck Failed**\n\nPlease fix the following type errors:\n\n\`\`\`\n${errors}\n\`\`\``
+            });
+
+      - name: Fail if typecheck failed
+        if: steps.typecheck.outcome == 'failure'
+        run: exit 1

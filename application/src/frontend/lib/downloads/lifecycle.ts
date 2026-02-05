@@ -26,6 +26,10 @@ export async function startDownload(
   if (event === null) return;
   if (button === null || !(button instanceof HTMLButtonElement)) return;
   const resolvedButton = button;
+  const resetButton = () => {
+    resolvedButton.textContent = 'Download';
+    resolvedButton.disabled = false;
+  };
   resolvedButton.textContent = 'Downloading...';
   resolvedButton.disabled = true;
   let downloadHandler = result.downloadType;
@@ -54,6 +58,7 @@ export async function startDownload(
         type: 'error',
         message: 'Torrenting is disabled in the settings.',
       });
+      resetButton();
       return;
     }
   }
@@ -66,8 +71,7 @@ export async function startDownload(
     try {
       await svc.startDownload(result, appID, event, resolvedButton);
     } catch (err) {
-      resolvedButton.textContent = 'Download';
-      resolvedButton.disabled = false;
+      resetButton();
       console.error('startDownload failed:', err);
       createNotification({
         id: Math.random().toString(36).substring(7),
@@ -80,6 +84,7 @@ export async function startDownload(
 
   // If no service is found for this download type, log an error
   console.error(`No service found for download type: ${downloadHandler}`);
+  resetButton();
 }
 
 /**

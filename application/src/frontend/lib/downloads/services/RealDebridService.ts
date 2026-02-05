@@ -80,8 +80,18 @@ export class RealDebridService extends BaseService {
     );
     if (!isReady) {
       window.electronAPI.realdebrid.selectTorrent(magnetLink.id);
-      await new Promise<void>((resolve) => {
+      await new Promise<void>((resolve, reject) => {
+        const startTime = Date.now();
+        const timeout = 10 * 60 * 1000; // 10 minutes
         const interval = setInterval(async () => {
+          if (Date.now() - startTime > timeout) {
+            clearInterval(interval);
+            reject(
+              new Error(
+                'Timed out waiting for Real-Debrid torrent to be ready.'
+              )
+            );
+          }
           const isReady = await window.electronAPI.realdebrid.isTorrentReady(
             magnetLink.id
           );
@@ -172,8 +182,18 @@ export class RealDebridService extends BaseService {
     );
     if (!isReady) {
       window.electronAPI.realdebrid.selectTorrent(torrent.id);
-      await new Promise<void>((resolve) => {
+      await new Promise<void>((resolve, reject) => {
+        const startTime = Date.now();
+        const timeout = 10 * 60 * 1000; // 10 minutes
         const interval = setInterval(async () => {
+          if (Date.now() - startTime > timeout) {
+            clearInterval(interval);
+            reject(
+              new Error(
+                'Timed out waiting for Real-Debrid torrent to be ready.'
+              )
+            );
+          }
           const isReady = await window.electronAPI.realdebrid.isTorrentReady(
             torrent.id
           );

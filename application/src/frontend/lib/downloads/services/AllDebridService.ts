@@ -94,12 +94,15 @@ export class AllDebridService extends BaseService {
     if (button === null || !(button instanceof HTMLButtonElement)) return;
     const resolvedButton = button;
 
+    const tempId = this.queueRequestDownload(result, appID, 'alldebrid');
+
     if (!result.downloadURL) {
       createNotification({
         id: Math.random().toString(36).substring(7),
         type: 'error',
         message: 'Addon did not provide a magnet link.',
       });
+      this.resetButtonOnError(resolvedButton, tempId, appID);
       return;
     }
 
@@ -110,10 +113,9 @@ export class AllDebridService extends BaseService {
         type: 'error',
         message: 'Please set your AllDebrid API key in the settings.',
       });
+      this.resetButtonOnError(resolvedButton, tempId, appID);
       return;
     }
-
-    const tempId = this.queueRequestDownload(result, appID, 'alldebrid');
 
     if (result.downloadType === 'magnet') {
       await this.handleMagnetDownload(result, appID, tempId, resolvedButton);
@@ -271,6 +273,7 @@ export class AllDebridService extends BaseService {
         type: 'error',
         message: 'Addon did not provide a name for the torrent.',
       });
+      this.resetButtonOnError(htmlButton, tempId, appID);
       return;
     }
 

@@ -101,14 +101,20 @@ export default function handler(_mainWindow: Electron.BrowserWindow) {
           method: 'get',
           url: arg.torrent,
           responseType: 'stream',
-          timeout: 30000, // 30 second timeout
+          timeout: 30000, // Connection timeout
           signal: controller.signal,
         });
         responseStream = response.data as IncomingMessage;
         let bytesRead = 0;
 
         await new Promise<void>((resolve, reject) => {
+          const streamTimeout = setTimeout(() => {
+            controller.abort();
+            onError(new Error('Torrent download timed out after 60 seconds'));
+          }, 60000);
+
           const onError = (err: Error) => {
+            clearTimeout(streamTimeout);
             cleanup();
             reject(err);
           };
@@ -129,15 +135,23 @@ export default function handler(_mainWindow: Electron.BrowserWindow) {
               bytesRead += chunk.length;
               if (bytesRead > MAX_BYTES) {
                 controller.abort();
-                onError(new Error(`Torrent file exceeds size limit of ${MAX_BYTES} bytes`));
+                onError(
+                  new Error(
+                    `Torrent file exceeds size limit of ${MAX_BYTES} bytes`
+                  )
+                );
               }
             });
 
             responseStream.pipe(fileStream);
-            fileStream.on('finish', () => resolve());
+            fileStream.on('finish', () => {
+              clearTimeout(streamTimeout);
+              resolve();
+            });
             fileStream.on('error', onError);
             responseStream.on('error', onError);
           } else {
+            clearTimeout(streamTimeout);
             reject(new Error('Failed to initialize streams'));
           }
         });

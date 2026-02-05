@@ -215,6 +215,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('app:insert-app', info)
     ),
     getAllApps: wrap(() => ipcRenderer.invoke('app:get-all-apps')),
+    addManualGame: wrap((info: LibraryInfo) =>
+      ipcRenderer.invoke('app:add-manual-game', info)
+    ),
     launchGame: wrap((appid: string) =>
       ipcRenderer.invoke('app:launch-game', appid)
     ),

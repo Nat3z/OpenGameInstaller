@@ -215,6 +215,21 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
     return getAllLibraryFiles();
   });
 
+  ipcMain.handle('app:add-manual-game', async (_, data: LibraryInfo) => {
+    ensureLibraryDir();
+    ensureInternalsDir();
+
+    // If appID is not provided, generate a unique one
+    if (!data.appID) {
+      data.appID = Date.now();
+    }
+
+    saveLibraryInfo(data.appID, data);
+    addToInternalsApps(data.appID);
+
+    return 'success';
+  });
+
   ipcMain.handle(
     'app:update-app-version',
     async (

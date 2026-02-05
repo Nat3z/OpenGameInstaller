@@ -42,6 +42,13 @@
   let displayValue = $state(value);
   let selectedId = $state(typeof value === 'string' ? value : '');
 
+  $effect(() => {
+    displayValue = value;
+    if (typeof value === 'string') {
+      selectedId = value;
+    }
+  });
+
   function handleChange(event: Event) {
     const target = event.target as HTMLInputElement;
     if (type === 'number' || type === 'range') {

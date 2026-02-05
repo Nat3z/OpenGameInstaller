@@ -431,7 +431,7 @@ export class AddonConnection {
     expectResponse: boolean = true
   ): Promise<WebsocketMessageClient> {
     if (expectResponse) {
-      message.id = Math.random().toString(36).substring(7);
+      message.id = Math.random().toString(36).substring(2, 9);
     }
     return new Promise((resolve, reject) => {
       this.ws.send(JSON.stringify(message), (err?: Error) => {

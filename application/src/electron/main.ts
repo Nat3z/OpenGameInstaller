@@ -170,12 +170,14 @@ function onMainAppReady(): void {
     event.returnValue = VERSION;
   });
   console.log('showing window');
-  mainWindow.show();
-  mainWindow.focus();
+  mainWindow?.show();
+  mainWindow?.focus();
 
-  checkForAddonUpdates(mainWindow);
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    checkForAddonUpdates(mainWindow);
+  }
   if (ogiDebug) {
-    mainWindow.webContents.openDevTools();
+    mainWindow?.webContents?.openDevTools();
   }
   if (!isSecurityCheckEnabled) {
     sendNotification({

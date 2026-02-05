@@ -54,6 +54,7 @@
     "express": "^4.19.2",
     "fuse.js": "^7.1.0",
     "ogi-addon": "workspace:*",
+    "all-debrid-js": "workspace:*",
     "parse-torrent": "^11.0.18",
     "real-debrid-js": "*",
     "sanitize-html": "^2.13.0",

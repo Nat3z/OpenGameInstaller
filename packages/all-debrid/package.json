@@ -1,6 +1,7 @@
 {
   "name": "all-debrid-js",
   "version": "1.0.0",
+  "license": "MIT",
   "module": "./build/main.mjs",
   "author": {
     "name": "Nat3z",

@@ -92,16 +92,28 @@ export default function handler(_mainWindow: Electron.BrowserWindow) {
       );
       let fileStream: fs.WriteStream | null = null;
       let responseStream: IncomingMessage | null = null;
+      const controller = new AbortController();
+      const MAX_BYTES = 10 * 1024 * 1024; // 10MB limit for torrent files
+
       try {
         fileStream = fs.createWriteStream(tempPath);
         const response = await axios({
           method: 'get',
           url: arg.torrent,
           responseType: 'stream',
+          timeout: 30000, // 30 second timeout
+          signal: controller.signal,
         });
         responseStream = response.data as IncomingMessage;
+        let bytesRead = 0;
+
         await new Promise<void>((resolve, reject) => {
           const onError = (err: Error) => {
+            cleanup();
+            reject(err);
+          };
+
+          const cleanup = () => {
             if (fileStream) {
               fileStream.destroy();
               fileStream = null;
@@ -110,17 +122,30 @@ export default function handler(_mainWindow: Electron.BrowserWindow) {
               responseStream.destroy();
               responseStream = null;
             }
-            reject(err);
           };
+
           if (responseStream && fileStream) {
+            responseStream.on('data', (chunk) => {
+              bytesRead += chunk.length;
+              if (bytesRead > MAX_BYTES) {
+                controller.abort();
+                onError(new Error(`Torrent file exceeds size limit of ${MAX_BYTES} bytes`));
+              }
+            });
+
             responseStream.pipe(fileStream);
             fileStream.on('finish', () => resolve());
             fileStream.on('error', onError);
             responseStream.on('error', onError);
+          } else {
+            reject(new Error('Failed to initialize streams'));
           }
         });
-        fileStream.close();
-        fileStream = null;
+
+        if (fileStream) {
+          fileStream.close();
+          fileStream = null;
+        }
         if (responseStream) {
           responseStream.destroy();
           responseStream = null;

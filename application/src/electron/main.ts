@@ -182,20 +182,6 @@ function onMainAppReady() {
     if (!isDev() && !ogiDebug())
       mainWindow?.webContents?.closeDevTools();
   });
-
-  app.on('web-contents-created', (_, contents) => {
-    contents.on('will-navigate', (event, navigationUrl) => {
-      const parsedUrl = new URL(navigationUrl);
-
-      if (
-        parsedUrl.origin !== 'http://localhost:8080' &&
-        parsedUrl.origin !== 'file://'
-      ) {
-        event.preventDefault();
-        throw new Error('Navigating to that address is not allowed.');
-      }
-    });
-  });
 }
 
 /**
@@ -219,6 +205,18 @@ function createWindow() {
     autoHideMenuBar: true,
     show: false,
   });
+
+  mainWindow.webContents.on('will-navigate', (event, navigationUrl) => {
+    const parsedUrl = new URL(navigationUrl);
+    if (
+      parsedUrl.origin !== 'http://localhost:8080' &&
+      parsedUrl.protocol !== 'file:'
+    ) {
+      event.preventDefault();
+      console.warn(`Blocked navigation to: ${navigationUrl}`);
+    }
+  });
+
   if (!isDev() && !ogiDebug()) mainWindow.removeMenu();
 
   ipcMain.on('client-ready-for-events', async () => {

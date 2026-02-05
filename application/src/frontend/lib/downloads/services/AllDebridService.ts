@@ -84,14 +84,13 @@ export class AllDebridService extends BaseService {
   async startDownload(
     result: SearchResultWithAddon,
     appID: number,
-    event: MouseEvent,
+    event?: MouseEvent,
     htmlButton?: HTMLButtonElement
   ): Promise<void> {
     if (result.downloadType !== 'magnet' && result.downloadType !== 'torrent')
       return;
 
     const button = htmlButton ?? (event?.currentTarget ?? null);
-    if (event === null) return;
     if (button === null || !(button instanceof HTMLButtonElement)) return;
     const resolvedButton = button;
 

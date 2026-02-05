@@ -16,11 +16,10 @@ export class EmptyService extends BaseService {
   async startDownload(
     result: SearchResultWithAddon,
     appID: number,
-    event: MouseEvent,
+    event?: MouseEvent,
     htmlButton?: HTMLButtonElement
   ): Promise<void> {
     const button = htmlButton ?? (event?.currentTarget ?? null);
-    if (event === null) return;
     if (button === null || !(button instanceof HTMLButtonElement)) return;
     const resolvedButton = button;
 

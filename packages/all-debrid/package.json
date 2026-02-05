@@ -30,7 +30,8 @@
     "auto-build": "tsc -w",
     "build": "tsdown --config tsdown.config.js",
     "test": "bun test ./tests/**/*.test.ts",
-    "release": "bun run build && npm publish"
+    "release": "bun run build && npm publish",
+    "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
     "@types/node": "^20.14.12",

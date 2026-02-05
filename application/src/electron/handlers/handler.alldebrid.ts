@@ -59,9 +59,12 @@ export default function handler(_mainWindow: Electron.BrowserWindow) {
     return allDebridClient.getHosts();
   });
 
-  ipcMain.handle('all-debrid:add-magnet', async (_, arg: { url: string; host?: string }) => {
-    return allDebridClient.addMagnet(arg.url, arg.host);
-  });
+  ipcMain.handle(
+    'all-debrid:add-magnet',
+    async (_, arg: { url: string; host?: string }) => {
+      return allDebridClient.addMagnet(arg.url, arg.host);
+    }
+  );
 
   ipcMain.handle('all-debrid:is-torrent-ready', async (_, id: string) => {
     return allDebridClient.isTorrentReady(id);
@@ -80,81 +83,86 @@ export default function handler(_mainWindow: Electron.BrowserWindow) {
   });
 
   // Streams (fileStream, responseStream, readStream) are explicitly destroyed on all paths to avoid leaks.
-  ipcMain.handle('all-debrid:add-torrent', async (_, arg: { torrent: string }) => {
-    const tempPath = join(
-      __dirname,
-      `temp-alldebrid-${Date.now()}-${Math.random().toString(36).slice(2)}.torrent`
-    );
-    let fileStream: fs.WriteStream | null = null;
-    let responseStream: IncomingMessage | null = null;
-    try {
-      fileStream = fs.createWriteStream(tempPath);
-      const response = await axios({
-        method: 'get',
-        url: arg.torrent,
-        responseType: 'stream',
-      });
-      responseStream = response.data as IncomingMessage;
-      await new Promise<void>((resolve, reject) => {
-        const onError = (err: Error) => {
-          if (fileStream) {
-            fileStream.destroy();
-            fileStream = null;
-          }
-          if (responseStream) {
-            responseStream.destroy();
-            responseStream = null;
-          }
-          reject(err);
-        };
-        responseStream!.pipe(fileStream!);
-        fileStream!.on('finish', () => resolve());
-        fileStream!.on('error', onError);
-        responseStream!.on('error', onError);
-      });
-      fileStream.close();
-      fileStream = null;
-      if (responseStream) {
-        responseStream.destroy();
-        responseStream = null;
-      }
-      const readStream = fs.createReadStream(tempPath) as ReadStream;
+  ipcMain.handle(
+    'all-debrid:add-torrent',
+    async (_, arg: { torrent: string }) => {
+      const tempPath = join(
+        __dirname,
+        `temp-alldebrid-${Date.now()}-${Math.random().toString(36).slice(2)}.torrent`
+      );
+      let fileStream: fs.WriteStream | null = null;
+      let responseStream: IncomingMessage | null = null;
       try {
-        const data = await allDebridClient.addTorrent(readStream);
-        return data;
+        fileStream = fs.createWriteStream(tempPath);
+        const response = await axios({
+          method: 'get',
+          url: arg.torrent,
+          responseType: 'stream',
+        });
+        responseStream = response.data as IncomingMessage;
+        await new Promise<void>((resolve, reject) => {
+          const onError = (err: Error) => {
+            if (fileStream) {
+              fileStream.destroy();
+              fileStream = null;
+            }
+            if (responseStream) {
+              responseStream.destroy();
+              responseStream = null;
+            }
+            reject(err);
+          };
+          if (responseStream && fileStream) {
+            responseStream.pipe(fileStream);
+            fileStream.on('finish', () => resolve());
+            fileStream.on('error', onError);
+            responseStream.on('error', onError);
+          }
+        });
+        fileStream.close();
+        fileStream = null;
+        if (responseStream) {
+          responseStream.destroy();
+          responseStream = null;
+        }
+        const readStream = fs.createReadStream(tempPath) as ReadStream;
+        try {
+          const data = await allDebridClient.addTorrent(readStream);
+          return data;
+        } finally {
+          readStream.destroy();
+        }
+      } catch (err) {
+        if (fileStream) {
+          fileStream.destroy();
+          fileStream = null;
+        }
+        if (responseStream) {
+          responseStream.destroy();
+          responseStream = null;
+        }
+        console.error(err);
+        sendNotification({
+          message: 'Failed to add torrent to AllDebrid',
+          id: Math.random().toString(36).substring(7),
+          type: 'error',
+        });
+        return null;
       } finally {
-        readStream.destroy();
-      }
-    } catch (err) {
-      if (fileStream) {
-        fileStream.destroy();
-        fileStream = null;
-      }
-      if (responseStream) {
-        responseStream.destroy();
-        responseStream = null;
-      }
-      console.error(err);
-      sendNotification({
-        message: 'Failed to add torrent to AllDebrid',
-        id: Math.random().toString(36).substring(7),
-        type: 'error',
-      });
-      return null;
-    } finally {
-      if (fileStream) {
-        fileStream.destroy();
-        fileStream = null;
-      }
-      if (responseStream) {
-        responseStream.destroy();
-        responseStream = null;
-      }
-      try {
-        if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
-      } catch {
-        // ignore
+        if (fileStream) {
+          fileStream.destroy();
+          fileStream = null;
+        }
+        if (responseStream) {
+          responseStream.destroy();
+          responseStream = null;
+        }
+        try {
+          if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
+        } catch {
+          // ignore
+        }
       }
     }
-  });
+  );
 }

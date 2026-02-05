@@ -21,6 +21,7 @@
     "test-addon"
   ],
   "devDependencies": {
+    "electron": "^40.1.0",
     "prettier": "^3.6.2",
     "prettier-plugin-svelte": "^3.4.0",
     "typescript": "^5.9.3"
@@ -30,6 +31,7 @@
     "@types/node": "^22.15.0"
   },
   "trustedDependencies": [
+    "electron",
     "node-datachannel",
     "sharp"
   ]

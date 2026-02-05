@@ -63,6 +63,7 @@
             'webtorrent',
             'qbittorrent',
             'real-debrid',
+            'all-debrid',
             'torbox',
             'premiumize',
             'disable',
@@ -151,6 +152,13 @@
         premiumizeApiKey: {
           displayName: 'Premiumize API Key',
           description: 'Your Premiumize API Key',
+          defaultValue: '',
+          value: '',
+          type: 'password',
+        },
+        alldebridApiKey: {
+          displayName: 'AllDebrid API Key',
+          description: 'Your AllDebrid API Key',
           defaultValue: '',
           value: '',
           type: 'password',
@@ -489,6 +497,15 @@
       iconHeight: 24,
       description:
         'Premium service for faster downloads and cached torrents. Requires subscription.',
+    },
+    {
+      id: 'all-debrid',
+      name: 'AllDebrid',
+      icon: './alldebrid-logo.png',
+      iconWidth: 24,
+      iconHeight: 24,
+      description:
+        'Another Premium Debrid service for faster downloads and cached torrents. Requires subscription.',
     },
     {
       id: 'premiumize',
@@ -874,28 +891,32 @@
                                   rangeValues[key] = value;
                                   updateConfig();
                                 }}
-                                value={rangeValues[key] ?? getStoredOrDefaultValue(key)}
-                                max={max}
-                                min={min}
+                                value={rangeValues[key] ??
+                                  getStoredOrDefaultValue(key)}
+                                {max}
+                                {min}
                               />
                               <input
                                 type="text"
                                 inputmode="numeric"
                                 pattern="[0-9]*"
                                 class="range-value-input"
-                                value={rangeValues[key] ?? getStoredOrDefaultValue(key)}
+                                value={rangeValues[key] ??
+                                  getStoredOrDefaultValue(key)}
                                 onchange={(e) => {
                                   const input = e.target as HTMLInputElement;
                                   let value = parseInt(input.value);
-                                  
+
                                   if (isNaN(value)) {
-                                    value = rangeValues[key] ?? (getStoredOrDefaultValue(key) as number);
+                                    value =
+                                      rangeValues[key] ??
+                                      (getStoredOrDefaultValue(key) as number);
                                   } else if (value < min) {
                                     value = min;
                                   } else if (value > max) {
                                     value = max;
                                   }
-                                  
+
                                   input.value = value.toString();
                                   rangeValues[key] = value;
                                   updateConfig();

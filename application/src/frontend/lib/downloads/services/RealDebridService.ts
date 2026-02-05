@@ -14,14 +14,16 @@ export class RealDebridService extends BaseService {
   async startDownload(
     result: SearchResultWithAddon,
     appID: number,
-    event: MouseEvent
+    event: MouseEvent,
+    htmlButton?: HTMLButtonElement
   ): Promise<void> {
     if (result.downloadType !== 'magnet' && result.downloadType !== 'torrent')
       return;
 
+    const button = htmlButton ?? (event?.currentTarget ?? null);
     if (event === null) return;
-    if (event.target === null) return;
-    const htmlButton = event.target as HTMLButtonElement;
+    if (button === null || !(button instanceof HTMLButtonElement)) return;
+    const resolvedButton = button;
 
     if (!result.downloadURL) {
       createNotification({
@@ -52,10 +54,10 @@ export class RealDebridService extends BaseService {
         appID,
         tempId,
         hosts[0],
-        htmlButton
+        resolvedButton
       );
     } else if (result.downloadType === 'torrent') {
-      await this.handleTorrentDownload(result, appID, tempId, htmlButton);
+      await this.handleTorrentDownload(result, appID, tempId, resolvedButton);
     }
   }
 

@@ -13,14 +13,14 @@ export class TorrentService extends BaseService {
   async startDownload(
     result: SearchResultWithAddon,
     appID: number,
-    event: MouseEvent
+    event: MouseEvent,
+    htmlButton?: HTMLButtonElement
   ): Promise<void> {
+    const button = htmlButton ?? (event?.currentTarget ?? null);
     if (event === null) return;
-    if (event.target === null) return;
+    if (button === null || !(button instanceof HTMLButtonElement)) return;
     if (result.downloadType !== 'magnet' && result.downloadType !== 'torrent')
       return;
-
-    const htmlButton = event.target as HTMLButtonElement;
 
     if (!result.downloadURL) {
       createNotification({
@@ -71,10 +71,12 @@ export class TorrentService extends BaseService {
               message: 'Failed to download torrent.',
             });
             console.error('No download ID returned');
+            button.textContent = 'Download';
+            button.disabled = false;
             return;
           }
-          htmlButton.textContent = 'Downloading...';
-          htmlButton.disabled = true;
+          button.textContent = 'Downloading...';
+          button.disabled = true;
           currentDownloads.update((downloads) => {
             return [
               ...downloads,
@@ -92,6 +94,16 @@ export class TorrentService extends BaseService {
               },
             ];
           });
+        })
+        .catch((err) => {
+          console.error('Torrent download error:', err);
+          button.textContent = 'Download';
+          button.disabled = false;
+          createNotification({
+            id: Math.random().toString(36).substring(7),
+            type: 'error',
+            message: err instanceof Error ? err.message : 'Torrent download failed.',
+          });
         });
     } else if (result.downloadType === 'magnet') {
       window.electronAPI.torrent
@@ -104,10 +116,12 @@ export class TorrentService extends BaseService {
               message: 'Failed to download torrent.',
             });
             console.error('No download ID returned');
+            button.textContent = 'Download';
+            button.disabled = false;
             return;
           }
-          htmlButton.textContent = 'Downloading...';
-          htmlButton.disabled = true;
+          button.textContent = 'Downloading...';
+          button.disabled = true;
           currentDownloads.update((downloads) => {
             return [
               ...downloads,
@@ -125,6 +139,16 @@ export class TorrentService extends BaseService {
                 ...result,
               },
             ];
+          });
+        })
+        .catch((err) => {
+          console.error('Torrent download error:', err);
+          button.textContent = 'Download';
+          button.disabled = false;
+          createNotification({
+            id: Math.random().toString(36).substring(7),
+            type: 'error',
+            message: err instanceof Error ? err.message : 'Torrent download failed.',
           });
         });
     }

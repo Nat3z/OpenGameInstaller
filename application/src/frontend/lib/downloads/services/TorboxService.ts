@@ -57,16 +57,26 @@ export class TorboxService extends BaseService {
   async startDownload(
     result: SearchResultWithAddon,
     appID: number,
-    event: MouseEvent
+    event: MouseEvent,
+    htmlButton?: HTMLButtonElement
   ): Promise<void> {
     if (event === null) return;
     if (result.downloadType !== 'magnet' && result.downloadType !== 'torrent')
       return;
 
+    if (htmlButton) {
+      htmlButton.textContent = 'Downloading...';
+      htmlButton.disabled = true;
+    }
+
     const optionHandled = getConfigClientOption<{ torboxApiKey?: string }>(
       'realdebrid'
     );
     if (!optionHandled || !optionHandled.torboxApiKey) {
+      if (htmlButton) {
+        htmlButton.textContent = 'Download';
+        htmlButton.disabled = false;
+      }
       createNotification({
         id: Math.random().toString(36).substring(7),
         type: 'error',
@@ -165,6 +175,10 @@ export class TorboxService extends BaseService {
         type: 'error',
         message: message,
       });
+      if (htmlButton) {
+        htmlButton.textContent = 'Download';
+        htmlButton.disabled = false;
+      }
       return;
     }
     console.log('response: ', response);
@@ -176,6 +190,10 @@ export class TorboxService extends BaseService {
     let torrent_id = (response.data.data as { torrent_id?: number }).torrent_id;
 
     if (!queued_id && !torrent_id) {
+      if (htmlButton) {
+        htmlButton.textContent = 'Download';
+        htmlButton.disabled = false;
+      }
       console.error('No queued id or torrent id found');
       return;
     }
@@ -196,6 +214,10 @@ export class TorboxService extends BaseService {
       });
 
       if (startTorrentResponse.status !== 200) {
+        if (htmlButton) {
+          htmlButton.textContent = 'Download';
+          htmlButton.disabled = false;
+        }
         console.error('startTorrentResponse: ', startTorrentResponse);
         console.error('Failed to start torrent');
         return;
@@ -288,6 +310,10 @@ export class TorboxService extends BaseService {
       ]);
       const updatedState = flush();
       if (downloadID === null) {
+        if (htmlButton) {
+          htmlButton.textContent = 'Download';
+          htmlButton.disabled = false;
+        }
         createNotification({
           id: Math.random().toString(36).substring(7),
           type: 'error',
@@ -309,6 +335,11 @@ export class TorboxService extends BaseService {
         updatedState,
         result
       );
+    } else {
+      if (htmlButton) {
+        htmlButton.textContent = 'Download';
+        htmlButton.disabled = false;
+      }
     }
   }
 }

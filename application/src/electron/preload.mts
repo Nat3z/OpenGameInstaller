@@ -156,6 +156,32 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('real-debrid:get-torrent-info', id)
     ),
   },
+  alldebrid: {
+    setKey: wrap((key: string) =>
+      ipcRenderer.invoke('all-debrid:set-key', key)
+    ),
+    getUserInfo: wrap(() => ipcRenderer.invoke('all-debrid:get-user-info')),
+    unrestrictLink: wrap((link: string) =>
+      ipcRenderer.invoke('all-debrid:unrestrict-link', link)
+    ),
+    addMagnet: wrap((url: string, host?: unknown) =>
+      ipcRenderer.invoke('all-debrid:add-magnet', { url, host })
+    ),
+    getHosts: wrap(() => ipcRenderer.invoke('all-debrid:get-hosts')),
+    updateKey: wrap(() => ipcRenderer.invoke('all-debrid:update-key')),
+    addTorrent: wrap((torrent: string) =>
+      ipcRenderer.invoke('all-debrid:add-torrent', { torrent })
+    ),
+    selectTorrent: wrap(() =>
+      ipcRenderer.invoke('all-debrid:select-torrent')
+    ),
+    isTorrentReady: wrap((id: string) =>
+      ipcRenderer.invoke('all-debrid:is-torrent-ready', id)
+    ),
+    getTorrentInfo: wrap((id: string) =>
+      ipcRenderer.invoke('all-debrid:get-torrent-info', id)
+    ),
+  },
   ddl: {
     download: wrap(
       (
@@ -513,6 +539,26 @@ ipcRenderer.on(
   wrap((_, arg) => {
     document.dispatchEvent(
       new CustomEvent('app:show-changelog', { detail: { version: arg } })
+    );
+  })
+);
+
+// Single-window / Steam Deck: main window shows splash.html first; forward splash IPC so it can update
+ipcRenderer.on(
+  'splash-status',
+  wrap((_, text: string, subtext?: string) => {
+    document.dispatchEvent(
+      new CustomEvent('splash-status', { detail: { text, subtext } })
+    );
+  })
+);
+ipcRenderer.on(
+  'splash-progress',
+  wrap((_, current: number, total: number, speed?: string) => {
+    document.dispatchEvent(
+      new CustomEvent('splash-progress', {
+        detail: { current, total, speed },
+      })
     );
   })
 );

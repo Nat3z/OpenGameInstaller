@@ -123,13 +123,24 @@ export type $UnrestrictLink = { link: string; filename?: string; filesize?: numb
  * @returns Validated data on success
  */
 function checkResponse<T>(response: { data: unknown }, dataSchema: z.ZodType<T>): T {
-  const parsed = z.union([ApiResponseSuccess(dataSchema), ApiResponseError]).safeParse(response.data);
-  if (!parsed.success) throw new Error('Invalid API response');
-  if (parsed.data.status === 'error') {
-    const err = parsed.data.error;
-    throw new Error(`${err.message} (${err.code})`);
+  const successSchema = ApiResponseSuccess(dataSchema);
+  const errorSchema = ApiResponseError;
+
+  if (response.data && typeof response.data === 'object' && 'status' in response.data) {
+    const status = (response.data as any).status;
+    if (status === 'error') {
+      const parsed = errorSchema.safeParse(response.data);
+      if (parsed.success) {
+        throw new Error(`${parsed.data.error.message} (${parsed.data.error.code})`);
+      }
+    } else if (status === 'success') {
+      const parsed = successSchema.safeParse(response.data);
+      if (parsed.success) {
+        return parsed.data.data as T;
+      }
+    }
   }
-  return parsed.data.data;
+  throw new Error('Invalid API response');
 }
 
 /** Node in AllDebrid files tree: n (name), s (size), l (link), e (children). */

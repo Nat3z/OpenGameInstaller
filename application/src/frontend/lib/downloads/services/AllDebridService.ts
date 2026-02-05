@@ -275,16 +275,30 @@ export class AllDebridService extends BaseService {
       return;
     }
 
-    const torrent = await window.electronAPI.alldebrid.addTorrent(
-      result.downloadURL
-    );
-    if (!torrent) {
+    let torrent: Awaited<ReturnType<typeof window.electronAPI.alldebrid.addTorrent>>;
+    try {
+      torrent = await window.electronAPI.alldebrid.addTorrent(
+        result.downloadURL
+      );
+      if (!torrent) {
+        createNotification({
+          id: Math.random().toString(36).substring(7),
+          type: 'error',
+          message: 'Failed to add torrent to AllDebrid.',
+        });
+        this.resetButtonOnError(htmlButton, tempId, appID);
+        return;
+      }
+    } catch (err) {
+      this.resetButtonOnError(htmlButton, tempId, appID);
       createNotification({
         id: Math.random().toString(36).substring(7),
         type: 'error',
-        message: 'Failed to add torrent to AllDebrid.',
+        message:
+          err instanceof Error
+            ? `Failed to add torrent to AllDebrid: ${err.message}`
+            : 'Failed to add torrent to AllDebrid.',
       });
-      this.resetButtonOnError(htmlButton, tempId, appID);
       return;
     }
 

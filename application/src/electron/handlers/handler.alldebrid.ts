@@ -7,6 +7,7 @@ import { ipcMain } from 'electron';
 import { sendNotification } from '../main.js';
 import { join } from 'path';
 import * as fs from 'fs';
+import type { IncomingMessage } from 'http';
 import AllDebrid from 'all-debrid-js';
 import { ReadStream } from 'original-fs';
 import { __dirname } from '../manager/manager.paths.js';
@@ -85,7 +86,7 @@ export default function handler(_mainWindow: Electron.BrowserWindow) {
       `temp-alldebrid-${Date.now()}-${Math.random().toString(36).slice(2)}.torrent`
     );
     let fileStream: fs.WriteStream | null = null;
-    let responseStream: NodeJS.ReadableStream | null = null;
+    let responseStream: IncomingMessage | null = null;
     try {
       fileStream = fs.createWriteStream(tempPath);
       const response = await axios({
@@ -93,7 +94,7 @@ export default function handler(_mainWindow: Electron.BrowserWindow) {
         url: arg.torrent,
         responseType: 'stream',
       });
-      responseStream = response.data;
+      responseStream = response.data as IncomingMessage;
       await new Promise<void>((resolve, reject) => {
         const onError = (err: Error) => {
           if (fileStream) {
@@ -113,8 +114,10 @@ export default function handler(_mainWindow: Electron.BrowserWindow) {
       });
       fileStream.close();
       fileStream = null;
-      responseStream.destroy();
-      responseStream = null;
+      if (responseStream) {
+        responseStream.destroy();
+        responseStream = null;
+      }
       const readStream = fs.createReadStream(tempPath) as ReadStream;
       try {
         const data = await allDebridClient.addTorrent(readStream);

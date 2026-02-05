@@ -35,7 +35,7 @@
     "preelectron-pack": "bun run build:ogiaddon && bun run build",
     "electron-pack": "electron-builder",
     "electron-pack:linux": "electron-builder -l",
-    "check": "svelte-check --tsconfig ./tsconfig.svelte.json",
+    "check": "bun run build:ogiaddon && svelte-check --tsconfig ./tsconfig.svelte.json",
     "rebuild": "npm rebuild"
   },
   "dependencies": {

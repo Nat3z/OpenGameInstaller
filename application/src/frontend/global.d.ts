@@ -186,6 +186,15 @@ interface Window {
         path?: string;
         error?: string;
       }>;
+      addManualGame: (info: LibraryInfo & {
+        redistributables?: { name: string; path: string }[];
+      }) => Promise<
+        | 'setup-failed'
+        | 'setup-success'
+        | 'setup-redistributables-failed'
+        | 'setup-redistributables-success'
+        | 'setup-prefix-required'
+      >;
     };
     updateAddons: () => Promise<void>;
     getVersion: () => string;

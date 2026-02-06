@@ -146,8 +146,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     addTorrent: wrap((torrent: string, host: $Hosts) =>
       ipcRenderer.invoke('real-debrid:add-torrent', { torrent, host })
     ),
-    selectTorrent: wrap((torrents: number[]) =>
-      ipcRenderer.invoke('real-debrid:select-torrent', torrents)
+    selectTorrent: wrap((torrent: string) =>
+      ipcRenderer.invoke('real-debrid:select-torrent', torrent)
     ),
     isTorrentReady: wrap((id: string) =>
       ipcRenderer.invoke('real-debrid:is-torrent-ready', id)
@@ -311,10 +311,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getSteamAppId: wrap((appID: number) =>
       ipcRenderer.invoke('app:get-steam-app-id', appID)
     ),
-    addManualGame: wrap((info: LibraryInfo) =>
-      ipcRenderer.invoke('app:insert-app', info)
-    ),
     addToDesktop: wrap(() => ipcRenderer.invoke('app:add-to-desktop')),
+    addManualGame: wrap(
+      (
+        info: LibraryInfo & {
+          redistributables?: { name: string; path: string }[];
+        }
+      ) => ipcRenderer.invoke('app:insert-app', info)
+    ),
   },
   getVersion: wrap(() => ipcRenderer.sendSync('get-version')),
   updateAddons: wrap(() => ipcRenderer.invoke('update-addons')),

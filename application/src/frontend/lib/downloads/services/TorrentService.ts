@@ -1,6 +1,6 @@
 import { BaseService } from './BaseService';
 import type { SearchResultWithAddon } from '../../tasks/runner';
-import { createNotification, currentDownloads } from '../../../store';
+import { currentDownloads } from '../../../store';
 import { getDownloadPath } from '../../core/fs';
 
 /**
@@ -23,12 +23,7 @@ export class TorrentService extends BaseService {
       return;
 
     if (!result.downloadURL) {
-      createNotification({
-        id: Math.random().toString(36).substring(7),
-        type: 'error',
-        message: `Addon did not provide a ${result.downloadType} file.`,
-      });
-      return;
+      throw new Error(`Addon did not provide a ${result.downloadType} file.`);
     }
 
     // Generate a safe filename fallback for torrent files
@@ -60,97 +55,66 @@ export class TorrentService extends BaseService {
 
     const downloadPath = getDownloadPath() + '/' + result.name + '/' + filename;
 
-    if (result.downloadType === 'torrent') {
-      window.electronAPI.torrent
-        .downloadTorrent(result.downloadURL, downloadPath)
-        .then((id) => {
-          if (id === null) {
-            createNotification({
-              id: Math.random().toString(36).substring(7),
-              type: 'error',
-              message: 'Failed to download torrent.',
-            });
-            console.error('No download ID returned');
-            button.textContent = 'Download';
-            button.disabled = false;
-            return;
-          }
-          button.textContent = 'Downloading...';
-          button.disabled = true;
-          currentDownloads.update((downloads) => {
-            return [
-              ...downloads,
-              {
-                ...result,
-                id,
-                status: 'downloading',
-                downloadPath: getDownloadPath() + '/' + result.name + '/',
-                downloadSpeed: 0,
-                files: [],
-                progress: 0,
-                appID,
-                downloadSize: 0,
-                originalDownloadURL: result.downloadURL, // Store original URL for resume
-              },
-            ];
-          });
-        })
-        .catch((err) => {
-          console.error('Torrent download error:', err);
-          button.textContent = 'Download';
-          button.disabled = false;
-          createNotification({
-            id: Math.random().toString(36).substring(7),
-            type: 'error',
-            message: err instanceof Error ? err.message : 'Torrent download failed.',
-          });
+    const resolvedButton = button;
+    resolvedButton.textContent = 'Downloading...';
+    resolvedButton.disabled = true;
+
+    try {
+      if (result.downloadType === 'torrent') {
+        const id = await window.electronAPI.torrent.downloadTorrent(
+          result.downloadURL,
+          downloadPath
+        );
+        if (id === null) {
+          throw new Error('Failed to download torrent.');
+        }
+        currentDownloads.update((downloads) => {
+          return [
+            ...downloads,
+            {
+              ...result,
+              id,
+              status: 'downloading',
+              downloadPath: getDownloadPath() + '/' + result.name + '/',
+              downloadSpeed: 0,
+              files: [],
+              progress: 0,
+              appID,
+              downloadSize: 0,
+              originalDownloadURL: result.downloadURL, // Store original URL for resume
+            },
+          ];
         });
-    } else if (result.downloadType === 'magnet') {
-      window.electronAPI.torrent
-        .downloadMagnet(result.downloadURL, downloadPath)
-        .then((id) => {
-          if (id === null) {
-            createNotification({
-              id: Math.random().toString(36).substring(7),
-              type: 'error',
-              message: 'Failed to download torrent.',
-            });
-            console.error('No download ID returned');
-            button.textContent = 'Download';
-            button.disabled = false;
-            return;
-          }
-          button.textContent = 'Downloading...';
-          button.disabled = true;
-          currentDownloads.update((downloads) => {
-            return [
-              ...downloads,
-              {
-                id,
-                status: 'downloading',
-                downloadPath: getDownloadPath() + '/' + result.name + '/',
-                downloadSpeed: 0,
-                files: [],
-                progress: 0,
-                queuePosition: 999,
-                appID,
-                downloadSize: 0,
-                originalDownloadURL: result.downloadURL, // Store original URL for resume
-                ...result,
-              },
-            ];
-          });
-        })
-        .catch((err) => {
-          console.error('Torrent download error:', err);
-          button.textContent = 'Download';
-          button.disabled = false;
-          createNotification({
-            id: Math.random().toString(36).substring(7),
-            type: 'error',
-            message: err instanceof Error ? err.message : 'Torrent download failed.',
-          });
+      } else if (result.downloadType === 'magnet') {
+        const id = await window.electronAPI.torrent.downloadMagnet(
+          result.downloadURL,
+          downloadPath
+        );
+        if (id === null) {
+          throw new Error('Failed to download torrent.');
+        }
+        currentDownloads.update((downloads) => {
+          return [
+            ...downloads,
+            {
+              id,
+              status: 'downloading',
+              downloadPath: getDownloadPath() + '/' + result.name + '/',
+              downloadSpeed: 0,
+              files: [],
+              progress: 0,
+              queuePosition: 999,
+              appID,
+              downloadSize: 0,
+              originalDownloadURL: result.downloadURL, // Store original URL for resume
+              ...result,
+            },
+          ];
         });
+      }
+    } catch (err) {
+      console.error('Torrent download error:', err);
+      throw err;
     }
   }
 }

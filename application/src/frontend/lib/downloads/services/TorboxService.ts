@@ -1,4 +1,4 @@
-import { createNotification, currentDownloads } from '../../../store';
+import { currentDownloads } from '../../../store';
 import { getDownloadPath, listenUntilDownloadReady } from '../../../utils';
 import { getConfigClientOption } from '../../config/client';
 import type { SearchResultWithAddon } from '../../tasks/runner';
@@ -73,16 +73,7 @@ export class TorboxService extends BaseService {
       'realdebrid'
     );
     if (!optionHandled || !optionHandled.torboxApiKey) {
-      if (htmlButton) {
-        htmlButton.textContent = 'Download';
-        htmlButton.disabled = false;
-      }
-      createNotification({
-        id: Math.random().toString(36).substring(7),
-        type: 'error',
-        message: 'Please set your TorBox API key in the settings.',
-      });
-      return;
+      throw new Error('Please set your TorBox API key in the settings.');
     }
     const { torboxApiKey } = optionHandled;
     const addTorrentForm = new FormData();
@@ -170,16 +161,7 @@ export class TorboxService extends BaseService {
                   ? 'Addon did not provide a valid file or magnet.'
                   : response.data.detail;
 
-      createNotification({
-        id: Math.random().toString(36).substring(7),
-        type: 'error',
-        message: message,
-      });
-      if (htmlButton) {
-        htmlButton.textContent = 'Download';
-        htmlButton.disabled = false;
-      }
-      return;
+      throw new Error(message);
     }
     console.log('response: ', response);
 
@@ -190,12 +172,7 @@ export class TorboxService extends BaseService {
     let torrent_id = (response.data.data as { torrent_id?: number }).torrent_id;
 
     if (!queued_id && !torrent_id) {
-      if (htmlButton) {
-        htmlButton.textContent = 'Download';
-        htmlButton.disabled = false;
-      }
-      console.error('No queued id or torrent id found');
-      return;
+      throw new Error('No queued id or torrent id found');
     }
 
     if (queued_id) {
@@ -214,13 +191,8 @@ export class TorboxService extends BaseService {
       });
 
       if (startTorrentResponse.status !== 200) {
-        if (htmlButton) {
-          htmlButton.textContent = 'Download';
-          htmlButton.disabled = false;
-        }
         console.error('startTorrentResponse: ', startTorrentResponse);
-        console.error('Failed to start torrent');
-        return;
+        throw new Error('Failed to start torrent');
       }
     }
 
@@ -310,19 +282,10 @@ export class TorboxService extends BaseService {
       ]);
       const updatedState = flush();
       if (downloadID === null) {
-        if (htmlButton) {
-          htmlButton.textContent = 'Download';
-          htmlButton.disabled = false;
-        }
-        createNotification({
-          id: Math.random().toString(36).substring(7),
-          type: 'error',
-          message: 'Failed to download the torrent.',
-        });
         currentDownloads.update((downloads) => {
           return downloads.filter((download) => download.id !== tempId);
         });
-        return;
+        throw new Error('Failed to download the torrent.');
       }
 
       console.log('updatedState: ', updatedState);
@@ -336,10 +299,7 @@ export class TorboxService extends BaseService {
         result
       );
     } else {
-      if (htmlButton) {
-        htmlButton.textContent = 'Download';
-        htmlButton.disabled = false;
-      }
+      throw new Error('Timed out waiting for torrent to be ready.');
     }
   }
 }

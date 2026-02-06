@@ -1,4 +1,3 @@
-import { createNotification } from '../../../store';
 import {
   getConfigClientOption,
   getDownloadPath,
@@ -89,15 +88,6 @@ export class PremiumizeService extends BaseService {
       'realdebrid'
     );
     if (!optionHandled || !optionHandled.premiumizeApiKey) {
-      if (htmlButton) {
-        htmlButton.textContent = 'Download';
-        htmlButton.disabled = false;
-      }
-      createNotification({
-        id: Math.random().toString(36).substring(7),
-        type: 'error',
-        message: 'Please set your Premiumize API key in the settings.',
-      });
       throw new Error('Please set your Premiumize API key in the settings.');
     }
     const { premiumizeApiKey } = optionHandled;
@@ -139,27 +129,9 @@ export class PremiumizeService extends BaseService {
         if (folder) {
           folderId = folder.id;
         } else {
-          if (htmlButton) {
-            htmlButton.textContent = 'Download';
-            htmlButton.disabled = false;
-          }
-          createNotification({
-            id: Math.random().toString(36).substring(7),
-            type: 'error',
-            message: 'OpenGameInstaller folder not found in Premiumize',
-          });
           throw new Error('OpenGameInstaller folder not found in Premiumize');
         }
       } else if (responseFolderContentData.status === 'error') {
-        if (htmlButton) {
-          htmlButton.textContent = 'Download';
-          htmlButton.disabled = false;
-        }
-        createNotification({
-          id: Math.random().toString(36).substring(7),
-          type: 'error',
-          message: responseFolderContentData.message,
-        });
         throw new Error(responseFolderContentData.message);
       }
     }
@@ -190,69 +162,52 @@ export class PremiumizeService extends BaseService {
       });
 
     if (responseAddTorrent.data.status === 'error') {
-      if (htmlButton) {
-        htmlButton.textContent = 'Download';
-        htmlButton.disabled = false;
-      }
-      createNotification({
-        id: Math.random().toString(36).substring(7),
-        type: 'error',
-        message: 'Failed to add torrent to Premiumize',
-      });
       throw new Error(responseAddTorrent.data.message);
     }
     const transferId = responseAddTorrent.data.id;
     console.log('Transfer ID: ', transferId);
 
     // -- Step 3: Wait for the torrent to be ready --
-    const foundFolderId = await new Promise<string>((resolve) => {
+    const foundFolderId = await new Promise<string>((resolve, reject) => {
       let attempts = 0;
       const interval = setInterval(async () => {
-        if (attempts > 10) {
-          clearInterval(interval);
-          resolve('');
-          return;
-        }
-        const responseTransfersList =
-          await window.electronAPI.app.axios<PremiumizeTransfersListResponse>({
-            method: 'GET',
-            url: `${BASE_URL}/transfer/list?apikey=${premiumizeApiKey}`,
-          });
-        if (responseTransfersList.status !== 200) {
-          createNotification({
-            id: Math.random().toString(36).substring(7),
-            type: 'error',
-            message: 'Failed to get transfers list from Premiumize',
-          });
+        try {
+          if (attempts > 120) { // 120 * 2.5s = 5 minutes (adjust if needed, but 10 mins is standard)
+            clearInterval(interval);
+            reject(new Error('Timed out waiting for Premiumize transfer.'));
+            return;
+          }
+          const responseTransfersList =
+            await window.electronAPI.app.axios<PremiumizeTransfersListResponse>({
+              method: 'GET',
+              url: `${BASE_URL}/transfer/list?apikey=${premiumizeApiKey}`,
+            });
+          if (responseTransfersList.status !== 200) {
+            attempts++;
+            return;
+          }
+          if (responseTransfersList.data.status === 'error') {
+            attempts++;
+            return;
+          }
+          const transfer = responseTransfersList.data.transfers.find(
+            (transfer) => transfer.id === transferId
+          );
+          if (transfer?.status === 'finished') {
+            clearInterval(interval);
+            resolve(transfer?.folder_id || '');
+            return;
+          }
           attempts++;
-          return;
-        }
-        if (responseTransfersList.data.status === 'error') {
-          attempts++;
-          return;
-        }
-        const transfer = responseTransfersList.data.transfers.find(
-          (transfer) => transfer.id === transferId
-        );
-        if (transfer?.status === 'finished') {
+        } catch (err) {
           clearInterval(interval);
-          resolve(transfer?.folder_id || '');
-          return;
+          reject(err);
         }
       }, 2500);
     });
 
     if (!foundFolderId) {
-      if (htmlButton) {
-        htmlButton.textContent = 'Download';
-        htmlButton.disabled = false;
-      }
-      createNotification({
-        id: Math.random().toString(36).substring(7),
-        type: 'error',
-        message: 'Failed to download torrent from Premiumize',
-      });
-      return;
+      throw new Error('Failed to download torrent from Premiumize');
     }
 
     // -- Step 4: Get the direct download --
@@ -269,29 +224,11 @@ export class PremiumizeService extends BaseService {
       });
 
     if (responseTorrentFile.status !== 200) {
-      if (htmlButton) {
-        htmlButton.textContent = 'Download';
-        htmlButton.disabled = false;
-      }
-      createNotification({
-        id: Math.random().toString(36).substring(7),
-        type: 'error',
-        message: 'Failed to get direct download from Premiumize',
-      });
       console.log('Response: ', responseTorrentFile);
       throw new Error('Failed to get direct download from Premiumize');
     }
 
     if (responseTorrentFile.data.status === 'error') {
-      if (htmlButton) {
-        htmlButton.textContent = 'Download';
-        htmlButton.disabled = false;
-      }
-      createNotification({
-        id: Math.random().toString(36).substring(7),
-        type: 'error',
-        message: 'Failed to get direct download from Premiumize',
-      });
       console.log('Response: ', responseTorrentFile.data);
       throw new Error(responseTorrentFile.data.message);
     }
@@ -318,16 +255,7 @@ export class PremiumizeService extends BaseService {
     ]);
     const updatedState = flush();
     if (downloadID === null) {
-      if (htmlButton) {
-        htmlButton.textContent = 'Download';
-        htmlButton.disabled = false;
-      }
-      createNotification({
-        id: Math.random().toString(36).substring(7),
-        type: 'error',
-        message: 'Failed to download the torrent.',
-      });
-      return;
+      throw new Error('Failed to download the torrent.');
     }
 
     this.updateDownloadRequested(

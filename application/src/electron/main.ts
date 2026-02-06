@@ -62,6 +62,9 @@ export let torrentIntervals: NodeJS.Timeout[] = [];
 
 let mainWindow: BrowserWindow | null;
 
+// Flag to ensure process-wide listeners are registered only once
+let listenersRegistered = false;
+
 interface Notification {
   message: string;
   id: string;
@@ -135,9 +138,29 @@ function onMainAppReady() {
   AddonManagerHandler(mainWindow);
   OOBEHandler();
 
-  ipcMain.on('get-version', async (event) => {
-    event.returnValue = VERSION;
-  });
+  // Register process-wide listeners only once
+  if (!listenersRegistered) {
+    listenersRegistered = true;
+
+    ipcMain.on('get-version', async (event) => {
+      event.returnValue = VERSION;
+    });
+
+    app.on('browser-window-focus', function () {
+      globalShortcut.register('CommandOrControl+R', () => {
+        console.log('CommandOrControl+R is pressed: Shortcut Disabled');
+      });
+      globalShortcut.register('F5', () => {
+        console.log('F5 is pressed: Shortcut Disabled');
+      });
+    });
+
+    app.on('browser-window-blur', function () {
+      globalShortcut.unregister('CommandOrControl+R');
+      globalShortcut.unregister('F5');
+    });
+  }
+
   console.log('showing window');
   mainWindow?.show();
   mainWindow?.focus();
@@ -159,28 +182,13 @@ function onMainAppReady() {
 
   convertLibrary();
 
-  app.on('browser-window-focus', function () {
-    globalShortcut.register('CommandOrControl+R', () => {
-      console.log('CommandOrControl+R is pressed: Shortcut Disabled');
-    });
-    globalShortcut.register('F5', () => {
-      console.log('F5 is pressed: Shortcut Disabled');
-    });
-  });
-
   mainWindow?.webContents?.setWindowOpenHandler((details) => {
     shell.openExternal(details.url);
     return { action: 'deny' };
   });
 
-  app.on('browser-window-blur', function () {
-    globalShortcut.unregister('CommandOrControl+R');
-    globalShortcut.unregister('F5');
-  });
-
   mainWindow?.webContents?.on('devtools-opened', () => {
-    if (!isDev() && !ogiDebug())
-      mainWindow?.webContents?.closeDevTools();
+    if (!isDev() && !ogiDebug()) mainWindow?.webContents?.closeDevTools();
   });
 }
 

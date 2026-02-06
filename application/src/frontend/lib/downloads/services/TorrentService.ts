@@ -16,7 +16,7 @@ export class TorrentService extends BaseService {
     event: MouseEvent,
     htmlButton?: HTMLButtonElement
   ): Promise<void> {
-    const button = htmlButton ?? (event?.currentTarget ?? null);
+    const button = htmlButton ?? event?.currentTarget ?? null;
     if (event === null) return;
     if (button === null || !(button instanceof HTMLButtonElement)) return;
     if (result.downloadType !== 'magnet' && result.downloadType !== 'torrent')
@@ -97,6 +97,7 @@ export class TorrentService extends BaseService {
           return [
             ...downloads,
             {
+              ...result,
               id,
               status: 'downloading',
               downloadPath: getDownloadPath() + '/' + result.name + '/',
@@ -107,7 +108,6 @@ export class TorrentService extends BaseService {
               appID,
               downloadSize: 0,
               originalDownloadURL: result.downloadURL, // Store original URL for resume
-              ...result,
             },
           ];
         });

@@ -74,9 +74,7 @@ interface Window {
     alldebrid: {
       setKey: (key: string) => Promise<string>;
       getUserInfo: () => Promise<$AllDebridUserInfo>;
-      unrestrictLink: (
-        link: string
-      ) => Promise<{
+      unrestrictLink: (link: string) => Promise<{
         link: string;
         download?: string;
         filename?: string;
@@ -211,15 +209,6 @@ interface Window {
         path?: string;
         error?: string;
       }>;
-      addManualGame: (info: LibraryInfo & {
-        redistributables?: { name: string; path: string }[];
-      }) => Promise<
-        | 'setup-failed'
-        | 'setup-success'
-        | 'setup-redistributables-failed'
-        | 'setup-redistributables-success'
-        | 'setup-prefix-required'
-      >;
     };
     updateAddons: () => Promise<void>;
     getVersion: () => string;

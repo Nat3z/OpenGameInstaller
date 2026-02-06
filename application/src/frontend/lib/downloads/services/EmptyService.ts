@@ -19,9 +19,7 @@ export class EmptyService extends BaseService {
     event?: MouseEvent,
     htmlButton?: HTMLButtonElement
   ): Promise<void> {
-    const button = htmlButton ?? (event?.currentTarget ?? null);
-    if (button === null || !(button instanceof HTMLButtonElement)) return;
-    const resolvedButton = button;
+    const resolvedButton = htmlButton ?? event?.currentTarget ?? null;
 
     // Generate a unique ID for this download
     const downloadId = Math.random().toString(36).substring(2, 15);
@@ -61,7 +59,10 @@ export class EmptyService extends BaseService {
       );
     }
 
-    resolvedButton.textContent = 'Setting up...';
-    resolvedButton.disabled = true;
+    // UI-specific actions only run when a valid button is provided
+    if (resolvedButton instanceof HTMLButtonElement) {
+      resolvedButton.textContent = 'Setting up...';
+      resolvedButton.disabled = true;
+    }
   }
 }

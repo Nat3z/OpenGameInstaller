@@ -172,9 +172,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     addTorrent: wrap((torrent: string) =>
       ipcRenderer.invoke('all-debrid:add-torrent', { torrent })
     ),
-    selectTorrent: wrap(() =>
-      ipcRenderer.invoke('all-debrid:select-torrent')
-    ),
+    selectTorrent: wrap(() => ipcRenderer.invoke('all-debrid:select-torrent')),
     isTorrentReady: wrap((id: string) =>
       ipcRenderer.invoke('all-debrid:is-torrent-ready', id)
     ),
@@ -312,13 +310,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('app:get-steam-app-id', appID)
     ),
     addToDesktop: wrap(() => ipcRenderer.invoke('app:add-to-desktop')),
-    addManualGame: wrap(
-      (
-        info: LibraryInfo & {
-          redistributables?: { name: string; path: string }[];
-        }
-      ) => ipcRenderer.invoke('app:insert-app', info)
-    ),
   },
   getVersion: wrap(() => ipcRenderer.sendSync('get-version')),
   updateAddons: wrap(() => ipcRenderer.invoke('update-addons')),

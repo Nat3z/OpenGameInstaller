@@ -317,7 +317,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
         info: LibraryInfo & {
           redistributables?: { name: string; path: string }[];
         }
-      ) => ipcRenderer.invoke('app:insert-app', info)
+      ) => ipcRenderer.invoke('app:addManualGame', info)
     ),
   },
   getVersion: wrap(() => ipcRenderer.sendSync('get-version')),

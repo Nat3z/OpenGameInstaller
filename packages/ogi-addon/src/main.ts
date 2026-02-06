@@ -817,6 +817,7 @@ export const ZodLibraryInfo = z.object({
   addonsource: z.string(),
   coverImage: z.string(),
   titleImage: z.string().optional(),
+  lastPlayed: z.number().optional(),
 });
 export type LibraryInfo = z.infer<typeof ZodLibraryInfo>;
 interface Notification {

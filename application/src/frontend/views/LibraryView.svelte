@@ -12,20 +12,32 @@
     sortLibraryAlphabetically,
     filterLibrary,
     chunkArray,
+    sortLibraryByLastPlayed,
   } from '../lib/core/library';
   import { updatesManager } from '../states.svelte';
   import UpdateIcon from '../Icons/UpdateIcon.svelte';
 
   let library: LibraryInfo[] = $state([]);
   let recentlyPlayed: LibraryInfo[] = $state([]);
-  let allGamesAlphabetical: LibraryInfo[] = $state([]);
-  let filteredGames: LibraryInfo[] = $state([]);
   let selectedApp: Writable<LibraryInfo | undefined> = writable(undefined);
   let loading = $state(true);
   let searchQuery = $state('');
+  let sortOption: 'alphabetical' | 'lastPlayed' = $state('alphabetical');
   let showAddGameModal = $state(false);
 
   let { exitPlayPage = $bindable() } = $props();
+
+  // Derived state for sorted library
+  let allGamesSorted = $derived(
+    sortOption === 'alphabetical'
+      ? sortLibraryAlphabetically(library)
+      : sortLibraryByLastPlayed(library)
+  );
+
+  // Derived state for filtered games
+  let filteredGames = $derived(filterLibrary(allGamesSorted, searchQuery));
+
+  let allGamesChunks = $derived(chunkArray(filteredGames, 5));
 
   // Avoid infinite update loop by only assigning exitPlayPage once on mount
   onMount(() => {
@@ -43,19 +55,8 @@
     // Update recently played (first 4 games from the ordered list)
     recentlyPlayed = getRecentlyPlayed(library);
 
-    // Update all games alphabetical
-    allGamesAlphabetical = sortLibraryAlphabetically(library);
-
-    // Update filtered games
-    filteredGames = filterLibrary(allGamesAlphabetical, searchQuery);
-
     loading = false;
   }
-
-  // Update filtered games when search query changes
-  $effect(() => {
-    filteredGames = filterLibrary(allGamesAlphabetical, searchQuery);
-  });
 
   onMount(async () => {
     await reloadLibrary();
@@ -73,8 +74,6 @@
   onDestroy(() => {
     unsubscribe();
   });
-
-  let allGamesChunks = $derived(chunkArray(filteredGames, 5));
 </script>
 
 {#key library}
@@ -145,11 +144,20 @@
                         class="absolute inset-x-0 bottom-0 w-full h-1/2 pointer-events-none"
                         style="background: linear-gradient(to top, rgba(0,0,0,0.7), transparent);"
                       ></div>
-                      <p
-                        class="text-white text-base py-4 text-center font-archivo z-1"
-                      >
-                        {app.name}
-                      </p>
+                      <div class="z-1 flex flex-col items-center pb-4 w-full px-2">
+                        <p
+                          class="text-white text-base text-center font-archivo truncate w-full"
+                        >
+                          {app.name}
+                        </p>
+                        {#if app.lastPlayed}
+                          <p
+                            class="text-gray-300 text-xs text-center font-open-sans"
+                          >
+                            {new Date(app.lastPlayed).toLocaleDateString()}
+                          </p>
+                        {/if}
+                      </div>
                     </div>
                   </button>
                 {/each}
@@ -163,7 +171,9 @@
               class="bg-accent-lighter px-4 py-2 rounded-lg flex items-center justify-between"
             >
               <div class="flex items-center gap-4">
-                <h2 class="text-xl font-semibold text-accent-dark">All Games</h2>
+                <h2 class="text-xl font-semibold text-accent-dark">
+                  All Games
+                </h2>
                 <button
                   class="bg-accent text-white px-3 py-1 rounded-md text-sm font-semibold hover:bg-accent-dark transition-colors flex items-center gap-1 border-none shadow-sm"
                   onclick={() => (showAddGameModal = true)}
@@ -182,30 +192,59 @@
                   Add Game
                 </button>
               </div>
-              <div class="relative">
-                <div
-                  class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"
-                >
-                  <svg
-                    class="h-4 w-4 text-accent"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
+              <div class="flex items-center gap-2">
+                <div class="relative">
+                  <select
+                    bind:value={sortOption}
+                    class="block w-40 pl-3 pr-10 py-2 text-sm border-accent rounded-md bg-white focus:outline-none focus:ring-1 focus:ring-accent-dark focus:border-accent-dark transition-colors cursor-pointer appearance-none border"
                   >
-                    <path
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                      stroke-width="2"
-                      d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-                    ></path>
-                  </svg>
+                    <option value="alphabetical">Alphabetical</option>
+                    <option value="lastPlayed">Last Played</option>
+                  </select>
+                  <div
+                    class="absolute inset-y-0 right-0 flex items-center pr-2 pointer-events-none"
+                  >
+                    <svg
+                      class="h-4 w-4 text-accent"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="2"
+                        d="M19 9l-7 7-7-7"
+                      ></path>
+                    </svg>
+                  </div>
                 </div>
-                <input
-                  type="text"
-                  bind:value={searchQuery}
-                  placeholder="Search games..."
-                  class="block w-64 pl-9 pr-3 py-2 border border-accent rounded-md text-sm bg-white placeholder-accent focus:outline-none focus:ring-1 focus:ring-accent-dark focus:border-accent-dark transition-colors"
-                />
+
+                <div class="relative">
+                  <div
+                    class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"
+                  >
+                    <svg
+                      class="h-4 w-4 text-accent"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="2"
+                        d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                      ></path>
+                    </svg>
+                  </div>
+                  <input
+                    type="text"
+                    bind:value={searchQuery}
+                    placeholder="Search games..."
+                    class="block w-64 pl-9 pr-3 py-2 border border-accent rounded-md text-sm bg-white placeholder-accent focus:outline-none focus:ring-1 focus:ring-accent-dark focus:border-accent-dark transition-colors"
+                  />
+                </div>
               </div>
             </div>
 
@@ -274,11 +313,22 @@
                             class="absolute inset-x-0 bottom-0 w-full h-1/2 pointer-events-none"
                             style="background: linear-gradient(to top, rgba(0,0,0,0.7), transparent);"
                           ></div>
-                          <p
-                            class="text-white text-base py-4 text-center font-archivo z-1"
+                          <div
+                            class="z-1 flex flex-col items-center pb-4 w-full px-2"
                           >
-                            {app.name}
-                          </p>
+                            <p
+                              class="text-white text-base text-center font-archivo truncate w-full"
+                            >
+                              {app.name}
+                            </p>
+                            {#if app.lastPlayed}
+                              <p
+                                class="text-gray-300 text-xs text-center font-open-sans"
+                              >
+                                {new Date(app.lastPlayed).toLocaleDateString()}
+                              </p>
+                            {/if}
+                          </div>
                         </div>
                       </button>
                     {/each}

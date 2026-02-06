@@ -127,3 +127,20 @@ export function chunkArray<T>(array: T[], size: number): T[][] {
   }
   return chunks;
 }
+
+/**
+ * Sorts a library array by last played time (descending).
+ * Games that have never been played (no lastPlayed) will be at the bottom.
+ *
+ * @param library - The library array to sort
+ * @returns A new sorted array of LibraryInfo
+ */
+export function sortLibraryByLastPlayed(
+  library: LibraryInfo[]
+): LibraryInfo[] {
+  return [...library].sort((a, b) => {
+    const timeA = a.lastPlayed || 0;
+    const timeB = b.lastPlayed || 0;
+    return timeB - timeA;
+  });
+}

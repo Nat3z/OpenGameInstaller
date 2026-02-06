@@ -48,6 +48,10 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
       return;
     }
 
+    // Update last played time
+    appInfo.lastPlayed = Date.now();
+    saveLibraryInfo(appid, appInfo);
+
     let args = appInfo.launchArguments || '%command%';
     // replace %command% with the launch executable
     args = args.replace(

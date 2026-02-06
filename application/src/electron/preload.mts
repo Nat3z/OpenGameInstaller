@@ -311,6 +311,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getSteamAppId: wrap((appID: number) =>
       ipcRenderer.invoke('app:get-steam-app-id', appID)
     ),
+    addManualGame: wrap((info: LibraryInfo) =>
+      ipcRenderer.invoke('app:insert-app', info)
+    ),
     addToDesktop: wrap(() => ipcRenderer.invoke('app:add-to-desktop')),
   },
   getVersion: wrap(() => ipcRenderer.sendSync('get-version')),

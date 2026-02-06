@@ -66,7 +66,7 @@ export async function startDownload(
   result.name = result.name.replace(/[\\/:*?"<>|]/g, '-');
 
   // Service-based architecture: find and delegate to the appropriate service
-  const svc = ALL_SERVICES.find((s) => s.types.includes(downloadHandler));
+    const svc = ALL_SERVICES.find((s) => s.types.includes(downloadHandler));
   if (svc) {
     try {
       await svc.startDownload(result, appID, event, resolvedButton);

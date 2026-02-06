@@ -80,27 +80,41 @@ export class RealDebridService extends BaseService {
     );
     if (!isReady) {
       window.electronAPI.realdebrid.selectTorrent(magnetLink.id);
-      await new Promise<void>((resolve, reject) => {
-        const startTime = Date.now();
-        const timeout = 10 * 60 * 1000; // 10 minutes
-        const interval = setInterval(async () => {
-          if (Date.now() - startTime > timeout) {
-            clearInterval(interval);
-            reject(
-              new Error(
-                'Timed out waiting for Real-Debrid torrent to be ready.'
-              )
+      try {
+        await new Promise<void>((resolve, reject) => {
+          const startTime = Date.now();
+          const timeout = 10 * 60 * 1000; // 10 minutes
+          const interval = setInterval(async () => {
+            if (Date.now() - startTime > timeout) {
+              clearInterval(interval);
+              reject(
+                new Error(
+                  'Timed out waiting for Real-Debrid torrent to be ready.'
+                )
+              );
+              return;
+            }
+            const isReady = await window.electronAPI.realdebrid.isTorrentReady(
+              magnetLink.id
             );
-          }
-          const isReady = await window.electronAPI.realdebrid.isTorrentReady(
-            magnetLink.id
-          );
-          if (isReady) {
-            clearInterval(interval);
-            resolve();
-          }
-        }, 3000);
-      });
+            if (isReady) {
+              clearInterval(interval);
+              resolve();
+            }
+          }, 3000);
+        });
+      } catch (err: any) {
+        if (htmlButton) {
+          htmlButton.textContent = 'Download';
+          htmlButton.disabled = false;
+        }
+        createNotification({
+          id: Math.random().toString(36).substring(7),
+          type: 'error',
+          message: err.message || 'Timed out waiting for torrent to be ready.',
+        });
+        return;
+      }
     }
 
     const torrentInfo = await window.electronAPI.realdebrid.getTorrentInfo(
@@ -182,27 +196,41 @@ export class RealDebridService extends BaseService {
     );
     if (!isReady) {
       window.electronAPI.realdebrid.selectTorrent(torrent.id);
-      await new Promise<void>((resolve, reject) => {
-        const startTime = Date.now();
-        const timeout = 10 * 60 * 1000; // 10 minutes
-        const interval = setInterval(async () => {
-          if (Date.now() - startTime > timeout) {
-            clearInterval(interval);
-            reject(
-              new Error(
-                'Timed out waiting for Real-Debrid torrent to be ready.'
-              )
+      try {
+        await new Promise<void>((resolve, reject) => {
+          const startTime = Date.now();
+          const timeout = 10 * 60 * 1000; // 10 minutes
+          const interval = setInterval(async () => {
+            if (Date.now() - startTime > timeout) {
+              clearInterval(interval);
+              reject(
+                new Error(
+                  'Timed out waiting for Real-Debrid torrent to be ready.'
+                )
+              );
+              return;
+            }
+            const isReady = await window.electronAPI.realdebrid.isTorrentReady(
+              torrent.id
             );
-          }
-          const isReady = await window.electronAPI.realdebrid.isTorrentReady(
-            torrent.id
-          );
-          if (isReady) {
-            clearInterval(interval);
-            resolve();
-          }
-        }, 3000);
-      });
+            if (isReady) {
+              clearInterval(interval);
+              resolve();
+            }
+          }, 3000);
+        });
+      } catch (err: any) {
+        if (htmlButton) {
+          htmlButton.textContent = 'Download';
+          htmlButton.disabled = false;
+        }
+        createNotification({
+          id: Math.random().toString(36).substring(7),
+          type: 'error',
+          message: err.message || 'Timed out waiting for torrent to be ready.',
+        });
+        return;
+      }
     }
 
     const torrentInfo = await window.electronAPI.realdebrid.getTorrentInfo(

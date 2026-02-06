@@ -57,8 +57,10 @@ jobs:
           touch errors.txt
           
           if [ -f typecheck-output.txt ]; then
+            # Improved regex to catch actual errors but ignore "0 errors"
+            ERROR_REGEX='found [1-9][0-9]* error|error TS[0-9]+:|Error:'
             # Strip ANSI escape codes and extract error lines
-            sed -r "s/\x1B\[([0-9]{1,3}(;[0-9]{1,2})?)?[mGK]//g" typecheck-output.txt | grep -E 'error TS[0-9]+:|Error:' > errors.txt || true
+            sed -r "s/\x1B\[([0-9]{1,3}(;[0-9]{1,2})?)?[mGK]//g" typecheck-output.txt | grep -iE "$ERROR_REGEX" > errors.txt || true
             
             # Check if we found any errors
             if [ -s errors.txt ]; then

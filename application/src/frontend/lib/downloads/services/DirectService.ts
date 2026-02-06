@@ -1,6 +1,6 @@
 import { BaseService } from './BaseService';
 import type { SearchResultWithAddon } from '../../tasks/runner';
-import { createNotification, currentDownloads } from '../../../store';
+import { currentDownloads } from '../../../store';
 import { getDownloadPath } from '../../core/fs';
 import { listenUntilDownloadReady } from '../events';
 
@@ -13,20 +13,17 @@ export class DirectService extends BaseService {
   async startDownload(
     result: SearchResultWithAddon,
     appID: number,
-    event: MouseEvent
+    event: MouseEvent,
+    htmlButton?: HTMLButtonElement
   ): Promise<void> {
     if (result.downloadType !== 'direct') return;
+    const button = htmlButton ?? (event?.currentTarget ?? null);
     if (event === null) return;
-    if (event.target === null) return;
-    const htmlButton = event.target as HTMLButtonElement;
+    if (button === null || !(button instanceof HTMLButtonElement)) return;
+    const resolvedButton = button;
 
     if (!result.files || result.files.length === 0) {
-      createNotification({
-        id: Math.random().toString(36).substring(7),
-        type: 'error',
-        message: 'Addon did not provide files for the direct download.',
-      });
-      return;
+      throw new Error('Addon did not provide files for the direct download.');
     }
 
     const collectedFiles = result.files.map((file) => {
@@ -40,9 +37,11 @@ export class DirectService extends BaseService {
 
     const { flush } = listenUntilDownloadReady();
 
-    window.electronAPI.ddl.download(collectedFiles).then((id) => {
-      htmlButton.textContent = 'Downloading...';
-      htmlButton.disabled = true;
+    resolvedButton.textContent = 'Downloading...';
+    resolvedButton.disabled = true;
+
+    try {
+      const id = await window.electronAPI.ddl.download(collectedFiles);
       const updatedState = flush();
       currentDownloads.update((downloads) => {
         return [
@@ -61,6 +60,9 @@ export class DirectService extends BaseService {
         ];
       });
       console.log('updatedState', updatedState);
-    });
+    } catch (err) {
+      console.error('Direct download error:', err);
+      throw err;
+    }
   }
 }

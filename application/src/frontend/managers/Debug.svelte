@@ -8,7 +8,10 @@
   import ButtonModal from '../components/modal/ButtonModal.svelte';
   import { createNotification, notificationHistory } from '../store';
   import CheckboxModal from '../components/modal/CheckboxModal.svelte';
-  import type { ConfigurationFile } from 'ogi-addon/config';
+  import {
+    ConfigurationBuilder,
+    type ConfigurationFile,
+  } from 'ogi-addon/config';
   import HeaderModal from '../components/modal/HeaderModal.svelte';
 
   let showDebugModal = $state(false);
@@ -20,28 +23,33 @@
   let showEventsPerSec = $state(false);
   let showNotificationSideView = $state(false);
   let showInsertAppModal = $state(false);
+  // Build test config with real StringOption instances (matches production shape)
   const optionConfig: {
     config: ConfigurationFile;
     id: string;
     name: string;
     description: string;
   } = {
-    config: {
-      t: {
-        name: 'test-options',
-        displayName: 'Test Options',
-        description: 'This is a test options modal',
-        defaultValue: '',
-        type: 'string',
-      },
-      t2: {
-        name: 'test-option-2',
-        displayName: 'Test Options',
-        description: 'This is a test options modal',
-        allowedValues: ['test-option-1', 'test-option-2', 'test-option-3'],
-        type: 'string',
-      },
-    },
+    config: new ConfigurationBuilder()
+      .addStringOption((option) =>
+        option
+          .setName('test-options')
+          .setDisplayName('Test Options')
+          .setDescription('This is a test options modal')
+          .setDefaultValue('')
+      )
+      .addStringOption((option) =>
+        option
+          .setName('test-option-2')
+          .setDisplayName('Test Options')
+          .setDescription('This is a test options modal')
+          .setAllowedValues([
+            'test-option-1',
+            'test-option-2',
+            'test-option-3',
+          ])
+      )
+      .build(false),
     id: 'test-options',
     name: 'Test Options',
     description: 'This is a test options modal',

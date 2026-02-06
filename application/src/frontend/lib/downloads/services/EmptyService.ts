@@ -16,11 +16,12 @@ export class EmptyService extends BaseService {
   async startDownload(
     result: SearchResultWithAddon,
     appID: number,
-    event: MouseEvent
+    event?: MouseEvent,
+    htmlButton?: HTMLButtonElement
   ): Promise<void> {
-    if (event === null) return;
-    if (event.target === null) return;
-    const htmlButton = event.target as HTMLButtonElement;
+    const button = htmlButton ?? (event?.currentTarget ?? null);
+    if (button === null || !(button instanceof HTMLButtonElement)) return;
+    const resolvedButton = button;
 
     // Generate a unique ID for this download
     const downloadId = Math.random().toString(36).substring(2, 15);
@@ -60,7 +61,7 @@ export class EmptyService extends BaseService {
       );
     }
 
-    htmlButton.textContent = 'Setting up...';
-    htmlButton.disabled = true;
+    resolvedButton.textContent = 'Setting up...';
+    resolvedButton.disabled = true;
   }
 }

@@ -9,6 +9,12 @@ type $Hosts = import('real-debrid-js').$Hosts;
 type $UnrestrictLink = import('real-debrid-js').$UnrestrictLink;
 type $UserInfo = import('real-debrid-js').$UserInfo;
 type $TorrentInfo = import('real-debrid-js').$TorrentInfo;
+type $AllDebridTorrentInfo = {
+  links: string[];
+  files: { link: string; name: string; size?: number }[];
+};
+type $AllDebridUserInfo = import('all-debrid-js').$UserInfo;
+type $AllDebridHosts = import('all-debrid-js').$Hosts;
 type $GamepadNavigator = import('./managers/GamepadManager').GamepadNavigator;
 interface Window {
   electronAPI: {
@@ -63,6 +69,25 @@ interface Window {
       selectTorrent: (torrent: string) => Promise<boolean>;
       isTorrentReady: (id: string) => Promise<boolean>;
       getTorrentInfo: (id: string) => Promise<$TorrentInfo>;
+      updateKey: () => Promise<boolean>;
+    };
+    alldebrid: {
+      setKey: (key: string) => Promise<string>;
+      getUserInfo: () => Promise<$AllDebridUserInfo>;
+      unrestrictLink: (
+        link: string
+      ) => Promise<{
+        link: string;
+        download?: string;
+        filename?: string;
+        filesize?: number;
+      }>;
+      getHosts: () => Promise<$AllDebridHosts>;
+      addMagnet: (url: string, host?: string) => Promise<$AddTorrentOrMagnet>;
+      addTorrent: (torrent: string) => Promise<$AddTorrentOrMagnet | null>;
+      selectTorrent: () => Promise<boolean>;
+      isTorrentReady: (id: string) => Promise<boolean>;
+      getTorrentInfo: (id: string) => Promise<$AllDebridTorrentInfo>;
       updateKey: () => Promise<boolean>;
     };
     torbox: {
@@ -186,6 +211,15 @@ interface Window {
         path?: string;
         error?: string;
       }>;
+      addManualGame: (info: LibraryInfo & {
+        redistributables?: { name: string; path: string }[];
+      }) => Promise<
+        | 'setup-failed'
+        | 'setup-success'
+        | 'setup-redistributables-failed'
+        | 'setup-redistributables-success'
+        | 'setup-prefix-required'
+      >;
     };
     updateAddons: () => Promise<void>;
     getVersion: () => string;

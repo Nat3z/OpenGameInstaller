@@ -216,6 +216,75 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
   });
 
   ipcMain.handle(
+    'app:addManualGame',
+    async (
+      _,
+      data: LibraryInfo & {
+        redistributables?: { name: string; path: string }[];
+      }
+    ): Promise<
+      | 'setup-failed'
+      | 'setup-success'
+      | 'setup-redistributables-failed'
+      | 'setup-redistributables-success'
+      | 'setup-prefix-required'
+    > => {
+      // Manually added games use the same logic as insert-app
+      // but we ensure the storefront and addonsource are set to 'manual'
+      const manualGameData = {
+        ...data,
+        storefront: 'manual',
+        addonsource: 'manual',
+      };
+
+      ensureLibraryDir();
+      ensureInternalsDir();
+
+      saveLibraryInfo(manualGameData.appID, manualGameData);
+      addToInternalsApps(manualGameData.appID);
+
+      // For manually added games, we typically won't need redistributables on Linux
+      // but we support them for Windows
+      if (process.platform === 'win32') {
+        // if there are redistributables, we need to install them
+        if (
+          manualGameData.redistributables &&
+          manualGameData.redistributables.length > 0
+        ) {
+          let redistributableFailed = false;
+          for (const redistributable of manualGameData.redistributables) {
+            try {
+              if (!fs.existsSync(redistributable.path)) {
+                throw new Error(
+                  `Redistributable path does not exist: ${redistributable.path}`
+                );
+              }
+              spawnSync(redistributable.path, [], {
+                stdio: 'inherit',
+                shell: false,
+              });
+              sendNotification({
+                message: `Installed ${redistributable.name} for ${manualGameData.name}`,
+                id: generateNotificationId(),
+                type: 'success',
+              });
+            } catch (error) {
+              console.error(
+                `[redistributable] failed to install ${redistributable.name} for ${manualGameData.name}: ${error}`
+              );
+            }
+          }
+          if (redistributableFailed) {
+            return 'setup-redistributables-failed';
+          }
+        }
+      }
+
+      return 'setup-success';
+    }
+  );
+
+  ipcMain.handle(
     'app:update-app-version',
     async (
       _,

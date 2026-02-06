@@ -20,6 +20,7 @@
     "test-addon"
   ],
   "devDependencies": {
+    "@types/sass": "^1.45.0",
     "prettier": "^3.6.2",
     "prettier-plugin-svelte": "^3.4.0",
     "typescript": "^5.9.3"

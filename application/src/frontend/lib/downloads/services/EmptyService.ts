@@ -22,6 +22,9 @@ export class EmptyService extends BaseService {
     if (event.target === null) return;
     const htmlButton = event.target as HTMLButtonElement;
 
+    htmlButton.textContent = 'Setting up...';
+    htmlButton.disabled = true;
+
     // Generate a unique ID for this download
     const downloadId = Math.random().toString(36).substring(2, 15);
 
@@ -59,8 +62,5 @@ export class EmptyService extends BaseService {
         {}
       );
     }
-
-    htmlButton.textContent = 'Setting up...';
-    htmlButton.disabled = true;
   }
 }

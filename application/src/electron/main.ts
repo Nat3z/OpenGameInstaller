@@ -9,6 +9,7 @@ import type { ConfigurationFile } from 'ogi-addon/config';
 import AppEventHandler from './handlers/handler.app.js';
 import FSEventHandler from './handlers/handler.fs.js';
 import RealdDebridHandler from './handlers/handler.realdebrid.js';
+import AllDebridHandler from './handlers/handler.alldebrid.js';
 import TorrentHandler from './handlers/handler.torrent.js';
 import DirectDownloadHandler from './handlers/handler.ddl.js';
 import AddonRestHandler from './handlers/handler.rest.js';
@@ -190,6 +191,7 @@ function createWindow() {
     AppEventHandler(mainWindow!!);
     FSEventHandler();
     RealdDebridHandler(mainWindow!!);
+    AllDebridHandler(mainWindow!!);
     TorrentHandler(mainWindow!!);
     DirectDownloadHandler(mainWindow!!);
     AddonRestHandler();
@@ -218,43 +220,15 @@ function createWindow() {
 
     convertLibrary();
 
-    app.on('browser-window-focus', function () {
-      globalShortcut.register('CommandOrControl+R', () => {
-        console.log('CommandOrControl+R is pressed: Shortcut Disabled');
-      });
-      globalShortcut.register('F5', () => {
-        console.log('F5 is pressed: Shortcut Disabled');
-      });
-    });
-
     mainWindow!!.webContents.setWindowOpenHandler((details) => {
       shell.openExternal(details.url);
       return { action: 'deny' };
-    });
-
-    app.on('browser-window-blur', function () {
-      globalShortcut.unregister('CommandOrControl+R');
-      globalShortcut.unregister('F5');
     });
 
     // disable devtools
     mainWindow!!.webContents.on('devtools-opened', () => {
       if (!isDev() && process.env.OGI_DEBUG !== 'true')
         mainWindow!!.webContents.closeDevTools();
-    });
-
-    app.on('web-contents-created', (_, contents) => {
-      contents.on('will-navigate', (event, navigationUrl) => {
-        const parsedUrl = new URL(navigationUrl);
-
-        if (
-          parsedUrl.origin !== 'http://localhost:8080' &&
-          parsedUrl.origin !== 'file://'
-        ) {
-          event.preventDefault();
-          throw new Error('Navigating to that address is not allowed.');
-        }
-      });
     });
   });
 }
@@ -263,6 +237,36 @@ function createWindow() {
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
 app.on('ready', async () => {
+  app.on('browser-window-focus', function () {
+    globalShortcut.register('CommandOrControl+R', () => {
+      console.log('CommandOrControl+R is pressed: Shortcut Disabled');
+    });
+    globalShortcut.register('F5', () => {
+      console.log('F5 is pressed: Shortcut Disabled');
+    });
+  });
+
+  app.on('browser-window-blur', function () {
+    globalShortcut.unregister('CommandOrControl+R');
+    globalShortcut.unregister('F5');
+  });
+
+  app.on('web-contents-created', (_, contents) => {
+    contents.on('will-navigate', (event, navigationUrl) => {
+      const parsedUrl = new URL(navigationUrl);
+
+      if (
+        parsedUrl.origin !== 'http://localhost:8080' &&
+        parsedUrl.protocol !== 'file:'
+      ) {
+        event.preventDefault();
+        console.error(
+          'Navigating to that address is not allowed: ' + navigationUrl
+        );
+      }
+    });
+  });
+
   // Run all startup tasks with splash screen
   await runStartupTasks();
 

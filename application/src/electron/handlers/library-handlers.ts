@@ -216,7 +216,7 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
   });
 
   ipcMain.handle(
-    'app:addManualGame',
+    'app:add-manual-game',
     async (
       _,
       data: LibraryInfo & {
@@ -274,9 +274,15 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
                 type: 'success',
               });
             } catch (error) {
+              redistributableFailed = true;
               console.error(
                 `[redistributable] failed to install ${redistributable.name} for ${manualGameData.name}: ${error}`
               );
+              sendNotification({
+                message: `Failed to install ${redistributable.name} for ${manualGameData.name}`,
+                id: generateNotificationId(),
+                type: 'error',
+              });
             }
           }
           if (redistributableFailed) {

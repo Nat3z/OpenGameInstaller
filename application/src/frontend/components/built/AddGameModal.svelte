@@ -56,12 +56,31 @@
     };
 
     try {
-      await window.electronAPI.app.addManualGame(gameInfo);
-      createNotification({
-        id: Math.random().toString(36).substring(7),
-        message: 'Game added successfully',
-        type: 'success',
-      });
+      const result = await window.electronAPI.app.addManualGame(gameInfo);
+      
+      if (!result || result === 'setup-failed') {
+        createNotification({
+          id: Math.random().toString(36).substring(7),
+          message: 'Failed to add game',
+          type: 'error',
+        });
+        return;
+      }
+      
+      if (result === 'setup-redistributables-failed') {
+        createNotification({
+          id: Math.random().toString(36).substring(7),
+          message: 'Game added, but some redistributables failed to install',
+          type: 'warning',
+        });
+      } else {
+        createNotification({
+          id: Math.random().toString(36).substring(7),
+          message: 'Game added successfully',
+          type: 'success',
+        });
+      }
+      
       open = false;
       onAdded();
       

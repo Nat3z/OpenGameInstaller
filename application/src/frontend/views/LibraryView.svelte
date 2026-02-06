@@ -295,8 +295,6 @@
   </div>
 {/key}
 
-<AddGameModal bind:open={showAddGameModal} onAdded={() => reloadLibrary()} />
-
 <style>
   [data-library-item]:hover {
     transform: perspective(600px) rotateX(4deg) scale(1.03) translateY(-6px);

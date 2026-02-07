@@ -129,6 +129,13 @@ export class TorboxService extends BaseService {
       },
     });
 
+    let queued_id: number | undefined;
+    let torrent_id: number | undefined;
+    const responseData = response.data.data;
+    if ('hash' in responseData) {
+      ({ queued_id, torrent_id } = responseData);
+    }
+
     // check if it worked then provide a good response message
     if (
       response.status !== 200 &&

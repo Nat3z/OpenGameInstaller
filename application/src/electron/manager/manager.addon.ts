@@ -183,10 +183,11 @@ export async function startAddon(
     console.error(e);
 
     // write to the run-crash.log file
-    const message = e instanceof Error ? e.message : String(e);
+    const errorMessage = e instanceof Error ? e.message : String(e);
     await writeFile(
       join(addonPath, 'run-crash.log'),
-      stripAnsiCodes(message)
+      stripAnsiCodes(errorMessage)
+
     );
 
     sendNotification({

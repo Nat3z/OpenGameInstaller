@@ -20,16 +20,14 @@ import {
 } from '../main.js';
 import { DeferrableTask, DeferredTasks } from './DeferrableTask.js';
 
-type WsSocket = InstanceType<typeof wsLib>;
-
 export class AddonConnection {
-  public addonInfo!: OGIAddonConfiguration;
-  public ws: WsSocket;
-  public configTemplate!: ConfigurationFile;
+  public addonInfo: OGIAddonConfiguration | undefined;
+  public ws: InstanceType<typeof wsLib>;
+  public configTemplate: ConfigurationFile | undefined;
   public filePath: string | undefined;
   public addonLink: string | undefined;
   public eventsAvailable: OGIAddonEvent[] = [];
-  constructor(ws: WsSocket) {
+  constructor(ws: InstanceType<typeof wsLib>) {
     this.ws = ws;
   }
 
@@ -58,6 +56,7 @@ export class AddonConnection {
           this.ws.close(1008, 'Invalid JSON');
           return;
         }
+
         switch (data.event) {
           case 'notification': {
             sendNotification(data.args[0]);
@@ -67,7 +66,8 @@ export class AddonConnection {
             clearTimeout(authenticationTimeout);
 
             // authentication
-            this.addonInfo = data.args;
+            const addonInfo = data.args as OGIAddonConfiguration;
+            this.addonInfo = addonInfo;
             if (
               isSecurityCheckEnabled &&
               (!data.args.secret || data.args.secret !== addonSecret)
@@ -83,7 +83,7 @@ export class AddonConnection {
               break;
             }
 
-            // if (this.addonInfo.version !== ogiAddonVERSION) {
+            // if (addonInfo.version !== ogiAddonVERSION) {
             //   sendNotification({
             //     type: 'error',
             //     message: 'Client attempted to authenticate with an addon version that is not compatible with the OGI Addon Server',
@@ -94,7 +94,7 @@ export class AddonConnection {
             //   resolve(false)
             //   break;
             // }
-            if (clients.has(this.addonInfo.id)) {
+            if (clients.has(addonInfo.id)) {
               console.error(
                 'Client attempted to authenticate with an ID that is already in use'
               );
@@ -106,7 +106,8 @@ export class AddonConnection {
               break;
             }
             console.log('Client authenticated:', data.args.name);
-            sendIPCMessage('addon-connected', this.addonInfo.id);
+            clients.set(addonInfo.id, this);
+            sendIPCMessage('addon-connected', addonInfo.id);
             resolve(true);
             break;
           }
@@ -158,7 +159,7 @@ export class AddonConnection {
               );
               return;
             }
-            if (deferredTask.addonOwner !== this.addonInfo.id) {
+            if (deferredTask.addonOwner !== this.addonInfo!.id) {
               console.error(
                 'Client attempted to send defer-update with an ID that does not belong to them'
               );
@@ -271,7 +272,7 @@ export class AddonConnection {
             if (!task) {
               task = new DeferrableTask(async () => {
                 return null;
-              }, this.addonInfo.id);
+              }, this.addonInfo!.id);
               DeferredTasks.getTasks()[data.args.id] = task;
               // sendNotification({
               //   type: 'info',
@@ -323,7 +324,7 @@ export class AddonConnection {
             // query all of the clients for the app details
             const clientsWithStorefront = Array.from(clients.values()).filter(
               (client) =>
-                client.addonInfo.storefronts.includes(storefront) &&
+                client.addonInfo?.storefronts.includes(storefront) &&
                 client.eventsAvailable.includes('game-details')
             );
             // find a storefront that gives app details that isn't undefined
@@ -381,7 +382,7 @@ export class AddonConnection {
             }: ClientSentEventTypes['search-app-name'] = data.args;
             const clientsWithStorefront = Array.from(clients.values()).filter(
               (client) =>
-                client.addonInfo.storefronts.includes(storefront) &&
+                client.addonInfo?.storefronts.includes(storefront) &&
                 client.eventsAvailable.includes('library-search')
             );
             const searchResult: StoreData[] = [];
@@ -416,7 +417,7 @@ export class AddonConnection {
                 'Setting events-available to',
                 data.args.value,
                 'for addon',
-                this.addonInfo.id
+                this.addonInfo!.id
               );
               this.eventsAvailable = data.args.value as OGIAddonEvent[];
             }
@@ -434,14 +435,15 @@ export class AddonConnection {
       message.id = Math.random().toString(36).substring(2, 9);
     }
     return new Promise((resolve, reject) => {
-      this.ws.send(JSON.stringify(message), (err?: Error) => {
+      this.ws.send(JSON.stringify(message), (err: Error | null | undefined) => {
         if (err) {
           reject(err);
         }
       });
       if (expectResponse) {
         const waitResponse = () => {
-          if (this.ws.readyState === wsLib.CLOSED) {
+          // CLOSED state is 3
+          if (this.ws.readyState === 3) {
             reject('Websocket closed');
             return;
           }
@@ -462,6 +464,7 @@ export class AddonConnection {
               reject(err);
               return;
             }
+
             if (
               messageFromClient.event === 'response' &&
               messageFromClient.id === message.id

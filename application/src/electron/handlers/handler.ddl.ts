@@ -2,8 +2,8 @@ import { ipcMain, BrowserWindow } from 'electron';
 import * as fs from 'fs';
 import { rm as rmAsync } from 'fs/promises';
 import { sendNotification } from '../main.js';
-import axios, { AxiosError } from 'axios';
-import type { AxiosResponse } from 'axios';
+import axios, { AxiosError, type AxiosResponse } from 'axios';
+
 import { dirname } from 'path';
 import { DOWNLOAD_QUEUE } from '../manager/manager.queue.js';
 import { Readable } from 'stream';

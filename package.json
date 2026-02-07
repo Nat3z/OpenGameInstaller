@@ -6,6 +6,7 @@
     "dev": "cd application && bun run electron-dev",
     "typecheck": "bun run build:typecheck-deps && bun run typecheck:ogi-addon && bun run typecheck:real-debrid && bun run typecheck:application && bun run typecheck:web && bun run typecheck:test-addon",
     "build:typecheck-deps": "cd packages/ogi-addon && bun run build && cd ../real-debrid && bun run build && (cd packages/all-debrid && bun run build) || true",
+
     "typecheck:application": "cd application && bun run typecheck",
     "typecheck:web": "cd web && bun run typecheck",
     "typecheck:ogi-addon": "cd packages/ogi-addon && bun run typecheck",
@@ -25,9 +26,11 @@
     "typescript": "^5.9.3"
   },
   "overrides": {
-    "@types/minimatch": "5.1.2"
+    "@types/minimatch": "5.1.2",
+    "@types/node": "^22.15.0"
   },
   "trustedDependencies": [
-    "node-datachannel"
+    "node-datachannel",
+    "sharp"
   ]
 }

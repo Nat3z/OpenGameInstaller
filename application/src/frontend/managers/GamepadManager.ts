@@ -539,20 +539,6 @@ export class GamepadNavigator {
     // Focus the element first - Steam keyboard will inject text here
     element.focus();
 
-    // Get input properties for the keyboard
-    const previousText = element.value || '';
-    const title =
-      element.placeholder ||
-      element.getAttribute('aria-label') ||
-      element.name ||
-      'Enter text';
-    const maxChars =
-      element instanceof HTMLInputElement
-        ? element.maxLength > 0
-          ? element.maxLength
-          : 500
-        : 2000;
-
     try {
       // Try to open Steam keyboard overlay
       // The keyboard injects text directly into the focused input

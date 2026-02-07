@@ -57,7 +57,7 @@ export class TorboxService extends BaseService {
   async startDownload(
     result: SearchResultWithAddon,
     appID: number,
-    event: MouseEvent,
+    event: MouseEvent | null,
     htmlButton?: HTMLButtonElement
   ): Promise<void> {
     if (event === null) return;
@@ -129,19 +129,9 @@ export class TorboxService extends BaseService {
       },
     });
 
-    let queued_id: number | undefined;
-    let torrent_id: number | undefined;
-    const responseData = response.data.data;
-    if ('hash' in responseData) {
-      ({ queued_id, torrent_id } = responseData);
-    }
-
-    // check if it worked then provide a good response message
-    if (
-      response.status !== 200 &&
-      response.data.detail !== 'Download already queued.'
-    ) {
-      // get the error message from the data
+    // Check response status and handle errors
+    if (response.status !== 200) {
+      // Handle non-200 status codes
       const errorMessage = response.data.detail;
       console.error('Failed to create torrent on Torbox: ', errorMessage);
 
@@ -154,26 +144,28 @@ export class TorboxService extends BaseService {
                   'reached your monthly download limit'
                 )
               ? 'You have reached your monthly download limit.'
-              : response.data.detail.includes('cooldown')
-                ? 'You are on a cooldown period. Please wait until ' +
-                  new Date(
-                    (response.data.data as { cooldown_until: number })
-                      .cooldown_until * 1000
-                  ).toLocaleString() +
-                  ' to try again.'
-                : response.data.detail.includes('must provide') &&
-                    response.data.detail.includes('file or magnet')
-                  ? 'Addon did not provide a valid file or magnet.'
-                  : response.data.detail;
+              : response.data.detail.includes('must provide') &&
+                  response.data.detail.includes('file or magnet')
+                ? 'Addon did not provide a valid file or magnet.'
+                : response.data.detail;
 
       throw new Error(message);
     }
 
+    // Type narrowing: Check if response is success or cooldown
+    const responseData = response.data.data;
+    if ('cooldown_until' in responseData) {
+      // Cooldown response (shouldn't happen with status 200, but handle safely)
+      throw new Error(
+        'You are on a cooldown period. Please wait until ' +
+          new Date(responseData.cooldown_until * 1000).toLocaleString() +
+          ' to try again.'
+      );
+    }
+
+    // Now TypeScript knows responseData is the success type
     // Extract queued_id and torrent_id from response data
-    const responseData =
-      response.data.data as { hash: string; queued_id?: number; torrent_id?: number };
-    const queued_id = responseData.queued_id;
-    const torrent_id = responseData.torrent_id;
+    const { queued_id, torrent_id } = responseData;
 
     if (!queued_id && !torrent_id) {
       throw new Error('No queued id or torrent id found');

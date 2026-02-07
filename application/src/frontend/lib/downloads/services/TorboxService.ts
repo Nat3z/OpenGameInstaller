@@ -99,8 +99,6 @@ export class TorboxService extends BaseService {
       );
     }
 
-    console.log('torrentHash: ', torrentHash);
-
     // seed to auto (the preference of the user)
     addTorrentForm.append('seed', '1');
     // alow the torrent output downloaded to be a zip file
@@ -138,7 +136,7 @@ export class TorboxService extends BaseService {
     ) {
       // get the error message from the data
       const errorMessage = response.data.detail;
-      console.log('Failed to create torrent on Torbox: ', errorMessage);
+      console.error('Failed to create torrent on Torbox: ', errorMessage);
 
       const message =
         response.data.error === 'DOWNLOAD_TOO_LARGE'
@@ -163,14 +161,6 @@ export class TorboxService extends BaseService {
 
       throw new Error(message);
     }
-    console.log('response: ', response);
-
-    // -- STEP 2: GET THE TORRENT ID --
-
-    // check if there is a queued id or a torrent id
-    const queued_id = (response.data.data as { queued_id?: number }).queued_id;
-    let torrent_id = (response.data.data as { torrent_id?: number }).torrent_id;
-
     if (!queued_id && !torrent_id) {
       throw new Error('No queued id or torrent id found');
     }
@@ -200,51 +190,50 @@ export class TorboxService extends BaseService {
     // insert into the downloadItems array the temp id
     const tempId = this.queueRequestDownload(result, appID, 'torbox');
 
-    // wait for the torrent to be on the dashboard
-    console.log('torrentHash: ', torrentHash);
     const torrentGrabber = await new Promise<TorboxTorrent | undefined>(
       (resolve) => {
         const startTime = Date.now();
         const timeoutMs = 650 * 1000; // 650 seconds
         const interval = setInterval(async () => {
-          // Check for timeout
-          if (Date.now() - startTime > timeoutMs) {
-            clearInterval(interval);
-            console.error(
-              'Timeout: Torrent did not appear in mylist within 60 seconds'
+          try {
+            // Check for timeout
+            if (Date.now() - startTime > timeoutMs) {
+              clearInterval(interval);
+              console.error(
+                'Timeout: Torrent did not appear on Torbox within the allowed time'
+              );
+              resolve(undefined);
+              return;
+            }
+
+            const torrentInfo =
+              await window.electronAPI.app.axios<TorboxTorrentListResponse>({
+                url: `${BASE_URL}/api/torrents/mylist?bypass_cache=true`,
+                method: 'get',
+                headers: {
+                  Authorization: `Bearer ${torboxApiKey}`,
+                },
+              });
+
+            if (!torrentInfo.data.success) {
+              return;
+            }
+
+            const torrent = torrentInfo.data.data.find(
+              (torrent) => torrent.hash === torrentHash
             );
-            resolve(undefined);
-            return;
-          }
 
-          const torrentInfo =
-            await window.electronAPI.app.axios<TorboxTorrentListResponse>({
-              url: `${BASE_URL}/api/torrents/mylist?bypass_cache=true`,
-              method: 'get',
-              headers: {
-                Authorization: `Bearer ${torboxApiKey}`,
-              },
-            });
+            if (!torrent) {
+              return;
+            }
 
-          if (!torrentInfo.data.success) {
-            console.error('Failed to get torrent list');
-            return;
-          }
-          console.log('torrentInfo.data.data: ', torrentInfo.data.data);
-
-          const torrent = torrentInfo.data.data.find(
-            (torrent) => torrent.hash === torrentHash
-          );
-
-          if (!torrent) {
-            console.error('Torrent not found in mylist');
-            return;
-          }
-
-          if (torrent.download_finished) {
-            clearInterval(interval);
-            resolve(torrent);
-            return;
+            if (torrent.download_finished) {
+              clearInterval(interval);
+              resolve(torrent);
+              return;
+            }
+          } catch (error) {
+            console.error('Error polling Torbox:', error);
           }
         }, 3000);
       }
@@ -262,7 +251,6 @@ export class TorboxService extends BaseService {
 
       // generate the whole url
       const downloadUrl = url.toString();
-      console.log('Final Torbox download URL: ', downloadUrl);
 
       const { flush } = listenUntilDownloadReady();
       const downloadID = await window.electronAPI.ddl.download([
@@ -288,7 +276,6 @@ export class TorboxService extends BaseService {
         throw new Error('Failed to download the torrent.');
       }
 
-      console.log('updatedState: ', updatedState);
       this.updateDownloadRequested(
         downloadID,
         tempId,

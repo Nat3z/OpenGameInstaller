@@ -168,5 +168,7 @@ export async function runStartupTasks(
     updateSplashStatus('Starting application...');
   } finally {
     splashTargetWindow = null;
+    // Ensure splash window is closed if it was created
+    closeSplashWindow();
   }
 }

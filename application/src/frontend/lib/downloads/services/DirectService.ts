@@ -20,7 +20,6 @@ export class DirectService extends BaseService {
     const button = htmlButton ?? (event?.currentTarget ?? null);
     if (event === null) return;
     if (button === null || !(button instanceof HTMLButtonElement)) return;
-    const resolvedButton = button;
 
     if (!result.files || result.files.length === 0) {
       throw new Error('Addon did not provide files for the direct download.');
@@ -37,8 +36,8 @@ export class DirectService extends BaseService {
 
     const { flush } = listenUntilDownloadReady();
 
-    resolvedButton.textContent = 'Downloading...';
-    resolvedButton.disabled = true;
+    button.textContent = 'Downloading...';
+    button.disabled = true;
 
     try {
       const id = await window.electronAPI.ddl.download(collectedFiles);

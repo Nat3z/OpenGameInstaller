@@ -2,6 +2,7 @@
  * Theme registry: ids and display names for the Settings UI. Add new themes here and a matching [data-theme='id'] block in app.css.
  */
 export const THEMES = [
+  { id: 'system', label: 'System' },
   { id: 'light', label: 'Light' },
   { id: 'dark', label: 'Dark' },
   { id: 'synthwave', label: 'Synthwave' },
@@ -25,10 +26,10 @@ export function isValidThemeId(value: unknown): value is ThemeId {
 }
 
 /**
- * Coerces unknown input to a ThemeId. Returns value if it is a valid theme id, otherwise returns 'light'.
+ * Coerces unknown input to a ThemeId. Returns value if it is a valid theme id, otherwise returns 'system'.
  * Safe for use with config or URL params; does not throw.
  * @param value - Value to normalize.
  */
 export function normalizeThemeId(value: unknown): ThemeId {
-  return isValidThemeId(value) ? value : 'light';
+  return isValidThemeId(value) ? value : 'system';
 }

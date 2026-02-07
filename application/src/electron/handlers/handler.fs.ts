@@ -6,24 +6,24 @@ import { exec, spawn } from 'child_process';
 import { sendIPCMessage } from '../main.js';
 import * as fsAsync from 'fs/promises';
 
-const VALID_THEME_IDS = new Set(['light', 'dark', 'synthwave']);
+const VALID_THEME_IDS = new Set(['system', 'light', 'dark', 'synthwave']);
 
 /**
  * Reads the theme from config/option/general.json, validates it against VALID_THEME_IDS,
- * and returns a valid theme id or 'light' on missing/invalid config or on error.
+ * and returns a valid theme id or 'system' on missing/invalid config or on error.
  * Used synchronously at load to avoid FOUC.
  */
 function getInitialTheme(): string {
   const configPath = join(__dirname, './config/option/general.json');
   try {
-    if (!fs.existsSync(configPath)) return 'light';
+    if (!fs.existsSync(configPath)) return 'system';
     const raw = fs.readFileSync(configPath, 'utf-8');
     const data = JSON.parse(raw) as { theme?: unknown };
     const theme = data?.theme;
     if (typeof theme === 'string' && VALID_THEME_IDS.has(theme)) return theme;
-    return 'light';
+    return 'system';
   } catch {
-    return 'light';
+    return 'system';
   }
 }
 

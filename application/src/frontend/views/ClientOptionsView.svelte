@@ -58,10 +58,10 @@
         },
         theme: {
           displayName: 'Theme',
-          description: 'Appearance theme (e.g. light, dark, synthwave)',
-          defaultValue: 'light',
+          description: 'Appearance theme (system follows OS, or choose light, dark, synthwave)',
+          defaultValue: 'system',
           value: '',
-          choice: ['light', 'dark', 'synthwave'],
+          choice: ['system', 'light', 'dark', 'synthwave'],
           type: 'string',
         },
         torrentClient: {

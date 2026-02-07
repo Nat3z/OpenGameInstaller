@@ -16,7 +16,7 @@ export class DeferrableTask<T> {
   private task: () => Promise<any>;
   public finished: boolean = false;
 
-  public data: T | null;
+  public data: T | null = null;
   public id: string = Math.random().toString(36).substring(7);
   public addonOwner = '';
   public logs: string[] = [];
@@ -35,7 +35,7 @@ export class DeferrableTask<T> {
       this.data = safeSerialize(result);
       console.log('task finished', this.id);
     } catch (error) {
-      this.failed = error;
+      this.failed = error instanceof Error ? error.message : String(error);
       this.data = null;
       this.finished = true;
     }

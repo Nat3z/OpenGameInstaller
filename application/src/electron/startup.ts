@@ -11,7 +11,7 @@ import {
   mkdirSync,
   rmSync,
 } from 'original-fs';
-import { LibraryInfo } from 'ogi-addon';
+import type { LibraryInfo } from 'ogi-addon';
 import { app, BrowserWindow } from 'electron';
 import { sendNotification } from './main.js';
 import semver from 'semver';

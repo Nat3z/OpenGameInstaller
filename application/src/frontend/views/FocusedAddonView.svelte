@@ -369,6 +369,7 @@
       await runTask(
         {
           addonSource: selectedAddon.id,
+          addonName: selectedAddon.name,
           manifest: manifest,
           name: actionOption.displayName,
           downloadType: 'task' as const,

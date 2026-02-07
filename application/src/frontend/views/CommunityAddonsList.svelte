@@ -226,14 +226,8 @@
     @apply flex flex-col w-full h-full;
   }
 
-  .loading-container,
-  .error-container {
+  .loading-container {
     @apply flex items-center justify-center w-full h-full;
-  }
-
-  .loading-text,
-  .error-text {
-    @apply text-lg text-gray-600;
   }
 
   .addon-grid {

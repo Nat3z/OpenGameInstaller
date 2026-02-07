@@ -7,7 +7,6 @@ import addonProcedures from './api/addons.js';
 import deferProcedures from './api/defer.js';
 import { AddonConnection } from './AddonConnection.js';
 import { AddonServer } from './serve.js';
-import { sendIPCMessage } from '../main.js';
 const app = express();
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
@@ -20,12 +19,13 @@ wss.on('connection', async (ws) => {
   if (!connected) return;
 
   ws.on('close', () => {
-    console.log('Client disconnected', connection.addonInfo.id);
-    clients.delete(connection.addonInfo.id);
+    console.log('Client disconnected', connection.addonInfo?.id);
+    if (connection.addonInfo) {
+      clients.delete(connection.addonInfo.id);
+    }
   });
 
-  clients.set(connection.addonInfo.id, connection);
-  await sendIPCMessage('addon-connected', connection.addonInfo.id);
+  // Client is registered in AddonConnection.authenticate (clients.set + sendIPCMessage)
 });
 
 app.all('*', (_, res, next) => {

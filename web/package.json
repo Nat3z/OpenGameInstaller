@@ -7,7 +7,8 @@
     "start": "astro dev",
     "build": "astro check && astro build",
     "preview": "astro preview",
-    "astro": "astro"
+    "astro": "astro",
+    "typecheck": "astro check"
   },
   "dependencies": {
     "@astrojs/check": "^0.9.2",
@@ -15,6 +16,7 @@
     "astro": "^4.13.3",
     "front-matter": "^4.0.2",
     "remark-gfm": "^4.0.1",
+    "sharp": "^0.34.5",
     "tailwindcss": "^3.4.9",
     "typescript": "^5.5.4",
     "unist-util-visit": "^5.0.0"

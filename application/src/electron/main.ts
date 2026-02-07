@@ -142,6 +142,8 @@ export function sendAskForInput(
  */
 const ogiDebug = () => (process.env.OGI_DEBUG ?? 'false') === 'true';
 
+let listenersRegistered = false;
+
 /**
  * Runs when the main app page has finished loading in the main window (second ready-to-show).
  * Registers IPC handlers (each registered only once because onMainAppReady runs once), shows the window,
@@ -159,9 +161,28 @@ function onMainAppReady() {
   AddonManagerHandler(mainWindow!!);
   OOBEHandler();
 
-  ipcMain.on('get-version', async (event) => {
-    event.returnValue = VERSION;
-  });
+  if (!listenersRegistered) {
+    ipcMain.on('get-version', async (event) => {
+      event.returnValue = VERSION;
+    });
+
+    app.on('browser-window-focus', function () {
+      globalShortcut.register('CommandOrControl+R', () => {
+        console.log('CommandOrControl+R is pressed: Shortcut Disabled');
+      });
+      globalShortcut.register('F5', () => {
+        console.log('F5 is pressed: Shortcut Disabled');
+      });
+    });
+
+    app.on('browser-window-blur', function () {
+      globalShortcut.unregister('CommandOrControl+R');
+      globalShortcut.unregister('F5');
+    });
+
+    listenersRegistered = true;
+  }
+
   console.log('showing window');
   mainWindow!!.show();
   mainWindow!!.focus();
@@ -183,23 +204,9 @@ function onMainAppReady() {
 
   convertLibrary();
 
-  app.on('browser-window-focus', function () {
-    globalShortcut.register('CommandOrControl+R', () => {
-      console.log('CommandOrControl+R is pressed: Shortcut Disabled');
-    });
-    globalShortcut.register('F5', () => {
-      console.log('F5 is pressed: Shortcut Disabled');
-    });
-  });
-
   mainWindow!!.webContents.setWindowOpenHandler((details) => {
     shell.openExternal(details.url);
     return { action: 'deny' };
-  });
-
-  app.on('browser-window-blur', function () {
-    globalShortcut.unregister('CommandOrControl+R');
-    globalShortcut.unregister('F5');
   });
 
   mainWindow!!.webContents.on('devtools-opened', () => {
@@ -207,18 +214,17 @@ function onMainAppReady() {
       mainWindow!!.webContents.closeDevTools();
   });
 
-  app.on('web-contents-created', (_, contents) => {
-    contents.on('will-navigate', (event, navigationUrl) => {
-      const parsedUrl = new URL(navigationUrl);
+  // Attach navigation guard directly to mainWindow.webContents
+  mainWindow!!.webContents.on('will-navigate', (event, navigationUrl) => {
+    const parsedUrl = new URL(navigationUrl);
 
-      if (
-        parsedUrl.origin !== 'http://localhost:8080' &&
-        parsedUrl.origin !== 'file://'
-      ) {
-        event.preventDefault();
-        throw new Error('Navigating to that address is not allowed.');
-      }
-    });
+    if (
+      parsedUrl.origin !== 'http://localhost:8080' &&
+      parsedUrl.protocol !== 'file:'
+    ) {
+      event.preventDefault();
+      console.warn('Blocked navigation to:', navigationUrl);
+    }
   });
 }
 

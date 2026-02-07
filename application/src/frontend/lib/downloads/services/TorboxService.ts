@@ -57,9 +57,9 @@ export class TorboxService extends BaseService {
   async startDownload(
     result: SearchResultWithAddon,
     appID: number,
-    event: MouseEvent
+    event: MouseEvent | null,
+    htmlButton?: HTMLButtonElement
   ): Promise<void> {
-    if (event === null) return;
     if (result.downloadType !== 'magnet' && result.downloadType !== 'torrent')
       return;
 

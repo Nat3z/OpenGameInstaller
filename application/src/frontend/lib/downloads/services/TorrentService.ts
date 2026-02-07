@@ -13,14 +13,14 @@ export class TorrentService extends BaseService {
   async startDownload(
     result: SearchResultWithAddon,
     appID: number,
-    event: MouseEvent
+    event: MouseEvent | null,
+    htmlButton?: HTMLButtonElement
   ): Promise<void> {
-    if (event === null) return;
-    if (event.target === null) return;
     if (result.downloadType !== 'magnet' && result.downloadType !== 'torrent')
       return;
 
-    const htmlButton = event.target as HTMLButtonElement;
+    const resolvedButton = htmlButton ?? (event?.currentTarget as HTMLButtonElement | null);
+    if (!resolvedButton || !(resolvedButton instanceof HTMLButtonElement)) return;
 
     if (!result.downloadURL) {
       createNotification({
@@ -73,8 +73,8 @@ export class TorrentService extends BaseService {
             console.error('No download ID returned');
             return;
           }
-          htmlButton.textContent = 'Downloading...';
-          htmlButton.disabled = true;
+          resolvedButton.textContent = 'Downloading...';
+          resolvedButton.disabled = true;
           currentDownloads.update((downloads) => {
             return [
               ...downloads,
@@ -106,8 +106,8 @@ export class TorrentService extends BaseService {
             console.error('No download ID returned');
             return;
           }
-          htmlButton.textContent = 'Downloading...';
-          htmlButton.disabled = true;
+          resolvedButton.textContent = 'Downloading...';
+          resolvedButton.disabled = true;
           currentDownloads.update((downloads) => {
             return [
               ...downloads,

@@ -14,14 +14,14 @@ export class RealDebridService extends BaseService {
   async startDownload(
     result: SearchResultWithAddon,
     appID: number,
-    event: MouseEvent
+    event: MouseEvent | null,
+    htmlButton?: HTMLButtonElement
   ): Promise<void> {
     if (result.downloadType !== 'magnet' && result.downloadType !== 'torrent')
       return;
 
-    if (event === null) return;
-    if (event.target === null) return;
-    const htmlButton = event.target as HTMLButtonElement;
+    const resolvedButton = htmlButton ?? (event?.currentTarget as HTMLButtonElement | null);
+    if (!resolvedButton || !(resolvedButton instanceof HTMLButtonElement)) return;
 
     if (!result.downloadURL) {
       createNotification({
@@ -52,10 +52,10 @@ export class RealDebridService extends BaseService {
         appID,
         tempId,
         hosts[0],
-        htmlButton
+        resolvedButton
       );
     } else if (result.downloadType === 'torrent') {
-      await this.handleTorrentDownload(result, appID, tempId, htmlButton);
+      await this.handleTorrentDownload(result, appID, tempId, resolvedButton);
     }
   }
 
@@ -78,8 +78,19 @@ export class RealDebridService extends BaseService {
     );
     if (!isReady) {
       window.electronAPI.realdebrid.selectTorrent(magnetLink.id);
-      await new Promise<void>((resolve) => {
+      await new Promise<void>((resolve, reject) => {
+        const startTime = Date.now();
+        const timeout = 600 * 1000; // 10 minutes
         const interval = setInterval(async () => {
+          if (Date.now() - startTime > timeout) {
+            clearInterval(interval);
+            reject(
+              new Error(
+                'Timed out waiting for Real-Debrid torrent to be ready.'
+              )
+            );
+            return;
+          }
           const isReady = await window.electronAPI.realdebrid.isTorrentReady(
             magnetLink.id
           );
@@ -170,8 +181,19 @@ export class RealDebridService extends BaseService {
     );
     if (!isReady) {
       window.electronAPI.realdebrid.selectTorrent(torrent.id);
-      await new Promise<void>((resolve) => {
+      await new Promise<void>((resolve, reject) => {
+        const startTime = Date.now();
+        const timeout = 600 * 1000; // 10 minutes
         const interval = setInterval(async () => {
+          if (Date.now() - startTime > timeout) {
+            clearInterval(interval);
+            reject(
+              new Error(
+                'Timed out waiting for Real-Debrid torrent to be ready.'
+              )
+            );
+            return;
+          }
           const isReady = await window.electronAPI.realdebrid.isTorrentReady(
             torrent.id
           );

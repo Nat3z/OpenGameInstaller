@@ -16,7 +16,7 @@ export class EmptyService extends BaseService {
   async startDownload(
     result: SearchResultWithAddon,
     appID: number,
-    event?: MouseEvent,
+    event: MouseEvent | null,
     htmlButton?: HTMLButtonElement
   ): Promise<void> {
     const resolvedButton = htmlButton ?? event?.currentTarget ?? null;

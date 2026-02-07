@@ -49,9 +49,8 @@ function waitForTorrentReady(
 
     const check = async () => {
       try {
-        const isReady = await window.electronAPI.alldebrid.isTorrentReady(
-          magnetId
-        );
+        const isReady =
+          await window.electronAPI.alldebrid.isTorrentReady(magnetId);
         if (isReady) {
           clearAll();
           resolve();
@@ -84,13 +83,13 @@ export class AllDebridService extends BaseService {
   async startDownload(
     result: SearchResultWithAddon,
     appID: number,
-    event?: MouseEvent,
+    event: MouseEvent | null,
     htmlButton?: HTMLButtonElement
   ): Promise<void> {
     if (result.downloadType !== 'magnet' && result.downloadType !== 'torrent')
       return;
 
-    const button = htmlButton ?? (event?.currentTarget ?? null);
+    const button = htmlButton ?? event?.currentTarget ?? null;
     if (button === null || !(button instanceof HTMLButtonElement)) return;
 
     const tempId = this.queueRequestDownload(result, appID, 'alldebrid');
@@ -153,9 +152,8 @@ export class AllDebridService extends BaseService {
       throw new Error('No download link from AllDebrid.');
     }
 
-    const download = await window.electronAPI.alldebrid.unrestrictLink(
-      firstLink
-    );
+    const download =
+      await window.electronAPI.alldebrid.unrestrictLink(firstLink);
     const downloadUrl = download.download ?? download.link;
     if (!downloadUrl) {
       throw new Error('Failed to unrestrict the link.');
@@ -244,9 +242,8 @@ export class AllDebridService extends BaseService {
       throw new Error('No download link from AllDebrid.');
     }
 
-    const download = await window.electronAPI.alldebrid.unrestrictLink(
-      firstLink
-    );
+    const download =
+      await window.electronAPI.alldebrid.unrestrictLink(firstLink);
     const downloadUrl = download.download ?? download.link;
     if (!downloadUrl) {
       throw new Error('Failed to unrestrict the link.');

@@ -4,6 +4,7 @@ import {
   setupLogs,
   type DownloadStatusAndInfo,
 } from '../../store';
+import { get } from 'svelte/store';
 import { getConfigClientOption } from '../config/client';
 import { ALL_SERVICES } from './services';
 import type { SearchResultWithAddon } from '../tasks/runner';
@@ -141,9 +142,5 @@ export function updateDownloadStatus(
 export function getDownloadItem(
   downloadID: string
 ): DownloadStatusAndInfo | undefined {
-  let downloadItem: DownloadStatusAndInfo | undefined;
-  currentDownloads.subscribe((downloads) => {
-    downloadItem = downloads.find((d) => d.id === downloadID);
-  })();
-  return downloadItem;
+  return get(currentDownloads).find((d) => d.id === downloadID);
 }

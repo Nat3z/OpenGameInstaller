@@ -34,7 +34,7 @@ export class EmptyService extends BaseService {
       progress: 100,
       appID,
       downloadSize: 0,
-      files: (result as any).files || [],
+      files: (result as unknown as { files?: any[] }).files || [],
     };
     // insert to store
     currentDownloads.update((downloads) => {

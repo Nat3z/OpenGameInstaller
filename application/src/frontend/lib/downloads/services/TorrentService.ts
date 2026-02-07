@@ -26,34 +26,7 @@ export class TorrentService extends BaseService {
       throw new Error(`Addon did not provide a ${result.downloadType} file.`);
     }
 
-    // Generate a safe filename fallback for torrent files
-    let filename = result.filename;
-    if (!filename) {
-      if (result.downloadType === 'magnet') {
-        // For magnet links, extract name from the magnet URI or use a generic name
-        const magnetMatch = result.downloadURL.match(/dn=([^&]*)/);
-        if (magnetMatch) {
-          filename = decodeURIComponent(magnetMatch[1]);
-        } else {
-          // Use the result name or a generic fallback
-          filename = result.name || 'torrent_download';
-        }
-      } else {
-        // For torrent files, try to extract filename from URL
-        const urlParts = result.downloadURL.split(/[\\/]/);
-        const lastPart = urlParts[urlParts.length - 1];
-        if (lastPart && lastPart.includes('.')) {
-          filename = lastPart;
-        } else {
-          // Use the result name or a generic fallback
-          filename = result.name || 'torrent_download';
-        }
-      }
-      // Sanitize filename to remove invalid characters and limit length
-      filename = filename.replace(/[<>:"/\\|?*]/g, '_').substring(0, 100);
-    }
-
-    const downloadPath = getDownloadPath() + '/' + result.name + '/' + filename;
+    const downloadPath = getDownloadPath() + '/' + result.name + '/';
 
     if (resolvedButton) {
       resolvedButton.textContent = 'Downloading...';

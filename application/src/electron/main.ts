@@ -215,7 +215,15 @@ function createWindow() {
   });
 
   mainWindow.webContents.on('will-navigate', (event, navigationUrl) => {
-    const parsedUrl = new URL(navigationUrl);
+    let parsedUrl: URL;
+    try {
+      parsedUrl = new URL(navigationUrl);
+    } catch {
+      event.preventDefault();
+      console.error('Blocked navigation to malformed URL:', navigationUrl);
+      return;
+    }
+
     if (
       parsedUrl.origin !== 'http://localhost:8080' &&
       parsedUrl.protocol !== 'file:'
@@ -254,6 +262,31 @@ function createWindow() {
   });
 }
 
+async function startAppFlow(win: BrowserWindow) {
+  // Run startup tasks; splash updates go to the main window
+  if (win && !win.isDestroyed()) {
+    await runStartupTasks(win);
+  }
+
+  // Load the main app into the same window (replaces splash)
+  if (win && !win.isDestroyed()) {
+    if (isDev()) {
+      win.loadURL(
+        'http://localhost:8080/?secret=' + applicationAddonSecret
+      );
+      console.log('Running in development');
+    } else {
+      win.loadURL(
+        'file://' +
+          join(app.getAppPath(), 'out', 'renderer', 'index.html') +
+          '?secret=' +
+          applicationAddonSecret
+      );
+    }
+    win.once('ready-to-show', onMainAppReady);
+  }
+}
+
 // This method will be called when Electron has finished
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
@@ -261,27 +294,8 @@ app.on('ready', async () => {
   // Single window: create it and show splash first so Steam Deck / Game Mode keeps focus
   createWindow();
 
-  // Run startup tasks; splash updates go to the main window
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    await runStartupTasks(mainWindow);
-  }
-
-  // Load the main app into the same window (replaces splash)
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    if (isDev()) {
-      mainWindow.loadURL(
-        'http://localhost:8080/?secret=' + applicationAddonSecret
-      );
-      console.log('Running in development');
-    } else {
-      mainWindow.loadURL(
-        'file://' +
-          join(app.getAppPath(), 'out', 'renderer', 'index.html') +
-          '?secret=' +
-          applicationAddonSecret
-      );
-    }
-    mainWindow.once('ready-to-show', onMainAppReady);
+  if (mainWindow) {
+    await startAppFlow(mainWindow);
   }
 
   server.listen(port, () => {
@@ -323,8 +337,11 @@ app.on('window-all-closed', async function () {
   app.exit(0);
 });
 
-app.on('activate', function () {
+app.on('activate', async function () {
   // On macOS it's common to re-create a window in the app when the
   // dock icon is clicked and there are no other windows open.
-  if (mainWindow === null) createWindow();
+  if (mainWindow === null) {
+    createWindow();
+    if (mainWindow) await startAppFlow(mainWindow);
+  }
 });

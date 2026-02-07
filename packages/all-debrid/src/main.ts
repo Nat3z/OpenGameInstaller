@@ -111,6 +111,11 @@ export const MagnetFilesResponseZod = z.object({
   magnets: z.array(MagnetFilesMagnetZod),
 });
 
+export type $AllDebridTorrentInfo = {
+  links: string[];
+  files: { link: string; name: string; size?: number }[];
+};
+
 // Link unlock: data.link, data.filename, data.filesize (API may return more fields)
 export const UnrestrictLinkResponseZod = z
   .object({
@@ -289,10 +294,7 @@ export default class AllDebrid {
    */
   public async getMagnetFiles(
     id: string
-  ): Promise<{
-    links: string[];
-    files: { link: string; name: string; size?: number }[];
-  }> {
+  ): Promise<$AllDebridTorrentInfo> {
     const response = await axios.post(
       `${BASE_V4}/magnet/files`,
       new URLSearchParams({ 'id[]': id }),

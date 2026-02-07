@@ -19,19 +19,24 @@ import type { SearchResultWithAddon } from '../tasks/runner';
 export async function startDownload(
   result: SearchResultWithAddon,
   appID: number,
-  event: MouseEvent,
+  event: MouseEvent | null,
   htmlButton?: HTMLButtonElement
 ) {
-  const button = htmlButton ?? (event?.currentTarget ?? null);
-  if (event === null) return;
-  if (button === null || !(button instanceof HTMLButtonElement)) return;
-  const resolvedButton = button;
+  const button = htmlButton ?? (event?.currentTarget as HTMLButtonElement | null);
+  const resolvedButton = (button instanceof HTMLButtonElement) ? button : null;
+
   const resetButton = () => {
-    resolvedButton.textContent = 'Download';
-    resolvedButton.disabled = false;
+    if (resolvedButton) {
+      resolvedButton.textContent = 'Download';
+      resolvedButton.disabled = false;
+    }
   };
-  resolvedButton.textContent = 'Downloading...';
-  resolvedButton.disabled = true;
+
+  if (resolvedButton) {
+    resolvedButton.textContent = 'Downloading...';
+    resolvedButton.disabled = true;
+  }
+
   let downloadHandler = result.downloadType;
   if (downloadHandler === 'torrent' || downloadHandler === 'magnet') {
     const generalOptions = getConfigClientOption('general') as any;
@@ -62,14 +67,18 @@ export async function startDownload(
       return;
     }
   }
-  // replace the name's speceial characters (like amparsand, :, or any character windows doesn't support, with a dash)
-  result.name = result.name.replace(/[\\/:*?"<>|]/g, '-');
+
+  // Replace special characters (e.g. ampersand, colon, or any character Windows doesn't support) with a dash
+  const sanitizedResult = {
+    ...result,
+    name: result.name.replace(/[\\/:*?"<>|]/g, '-'),
+  };
 
   // Service-based architecture: find and delegate to the appropriate service
   const svc = ALL_SERVICES.find((s) => s.types.includes(downloadHandler));
   if (svc) {
     try {
-      await svc.startDownload(result, appID, event, resolvedButton);
+      await svc.startDownload(sanitizedResult, appID, event, resolvedButton ?? undefined);
     } catch (err) {
       resetButton();
       console.error('startDownload failed:', err);

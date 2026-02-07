@@ -13,12 +13,12 @@ export class TorrentService extends BaseService {
   async startDownload(
     result: SearchResultWithAddon,
     appID: number,
-    event: MouseEvent,
+    event: MouseEvent | null,
     htmlButton?: HTMLButtonElement
   ): Promise<void> {
-    const button = htmlButton ?? event?.currentTarget ?? null;
-    if (event === null) return;
-    if (button === null || !(button instanceof HTMLButtonElement)) return;
+    const button = htmlButton ?? (event?.currentTarget as HTMLButtonElement | null);
+    const resolvedButton = button instanceof HTMLButtonElement ? button : null;
+
     if (result.downloadType !== 'magnet' && result.downloadType !== 'torrent')
       return;
 
@@ -55,9 +55,10 @@ export class TorrentService extends BaseService {
 
     const downloadPath = getDownloadPath() + '/' + result.name + '/' + filename;
 
-    const resolvedButton = button;
-    resolvedButton.textContent = 'Downloading...';
-    resolvedButton.disabled = true;
+    if (resolvedButton) {
+      resolvedButton.textContent = 'Downloading...';
+      resolvedButton.disabled = true;
+    }
 
     try {
       if (result.downloadType === 'torrent') {
@@ -114,6 +115,10 @@ export class TorrentService extends BaseService {
       }
     } catch (err) {
       console.error('Torrent download error:', err);
+      if (resolvedButton) {
+        resolvedButton.textContent = 'Download';
+        resolvedButton.disabled = false;
+      }
       throw err;
     }
   }

@@ -167,18 +167,19 @@ export class TorboxService extends BaseService {
       });
       return;
     }
-    console.log('response: ', response);
 
-    // -- STEP 2: GET THE TORRENT ID --
-
-    // check if there is a queued id or a torrent id
-    const queued_id = (response.data.data as { queued_id?: number }).queued_id;
-    let torrent_id = (response.data.data as { torrent_id?: number }).torrent_id;
+    // Extract queued_id and torrent_id from response data
+    const responseData =
+      response.data.data as { hash: string; queued_id?: number; torrent_id?: number };
+    const queued_id = responseData.queued_id;
+    const torrent_id = responseData.torrent_id;
 
     if (!queued_id && !torrent_id) {
       console.error('No queued id or torrent id found');
       return;
     }
+
+    let finalTorrentId = torrent_id;
 
     if (queued_id) {
       // -- STEP 2.5: GET THE TORRENT ID FROM THE QUEUED ID BY INSTANTLY STARTING IT --
@@ -206,63 +207,74 @@ export class TorboxService extends BaseService {
     // insert into the downloadItems array the temp id
     const tempId = this.queueRequestDownload(result, appID, 'torbox');
 
-    // wait for the torrent to be on the dashboard
-    console.log('torrentHash: ', torrentHash);
-    const torrentGrabber = await new Promise<TorboxTorrent | undefined>(
-      (resolve) => {
-        const startTime = Date.now();
-        const timeoutMs = 650 * 1000; // 650 seconds
-        const interval = setInterval(async () => {
-          // Check for timeout
-          if (Date.now() - startTime > timeoutMs) {
-            clearInterval(interval);
-            console.error(
-              'Timeout: Torrent did not appear in mylist within 60 seconds'
-            );
-            resolve(undefined);
-            return;
-          }
+    // If we already have a torrent_id, use it; otherwise poll for it
+    if (!finalTorrentId) {
+      const torrentGrabber = await new Promise<TorboxTorrent | undefined>(
+        (resolve) => {
+          const startTime = Date.now();
+          const timeoutMs = 650 * 1000; // 650 seconds
+          let interval: ReturnType<typeof setInterval> | null = null;
 
-          const torrentInfo =
-            await window.electronAPI.app.axios<TorboxTorrentListResponse>({
-              url: `${BASE_URL}/api/torrents/mylist?bypass_cache=true`,
-              method: 'get',
-              headers: {
-                Authorization: `Bearer ${torboxApiKey}`,
-              },
-            });
+          const cleanup = () => {
+            if (interval !== null) {
+              clearInterval(interval);
+              interval = null;
+            }
+          };
 
-          if (!torrentInfo.data.success) {
-            console.error('Failed to get torrent list');
-            return;
-          }
-          console.log('torrentInfo.data.data: ', torrentInfo.data.data);
+          interval = setInterval(async () => {
+            try {
+              // Check for timeout
+              if (Date.now() - startTime > timeoutMs) {
+                cleanup();
+                console.error(
+                  'Timeout: Torrent did not appear on Torbox within the allowed time'
+                );
+                resolve(undefined);
+                return;
+              }
 
-          const torrent = torrentInfo.data.data.find(
-            (torrent) => torrent.hash === torrentHash
-          );
+              const torrentInfo =
+                await window.electronAPI.app.axios<TorboxTorrentListResponse>({
+                  url: `${BASE_URL}/api/torrents/mylist?bypass_cache=true`,
+                  method: 'get',
+                  headers: {
+                    Authorization: `Bearer ${torboxApiKey}`,
+                  },
+                });
 
-          if (!torrent) {
-            console.error('Torrent not found in mylist');
-            return;
-          }
+              if (!torrentInfo.data.success) {
+                return;
+              }
 
-          if (torrent.download_finished) {
-            clearInterval(interval);
-            resolve(torrent);
-            return;
-          }
-        }, 3000);
-      }
-    );
+              const torrent = torrentInfo.data.data.find(
+                (torrent) => torrent.hash === torrentHash
+              );
 
-    torrent_id = torrentGrabber?.id;
+              if (!torrent) {
+                return;
+              }
 
-    if (torrent_id) {
+              if (torrent.download_finished) {
+                cleanup();
+                resolve(torrent);
+                return;
+              }
+            } catch (error) {
+              console.error('Error polling Torbox:', error);
+            }
+          }, 3000);
+        }
+      );
+
+      finalTorrentId = torrentGrabber?.id;
+    }
+
+    if (finalTorrentId) {
       // -- STEP 4: DOWNLOAD THE TORRENT --
       const url = new URL(`${BASE_URL}/api/torrents/requestdl`);
       url.searchParams.set('token', torboxApiKey);
-      url.searchParams.set('torrent_id', torrent_id!.toString());
+      url.searchParams.set('torrent_id', finalTorrentId.toString());
       url.searchParams.set('zip_link', 'true');
       url.searchParams.set('redirect', 'true');
 

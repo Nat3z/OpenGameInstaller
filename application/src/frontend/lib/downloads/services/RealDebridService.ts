@@ -75,7 +75,7 @@ export class RealDebridService extends BaseService {
                   'Timed out waiting for Real-Debrid torrent to be ready.'
                 )
               );
-              return;
+              return; // prevent further isTorrentReady call after reject
             }
             const isReady = await window.electronAPI.realdebrid.isTorrentReady(
               magnetLink.id
@@ -174,7 +174,7 @@ export class RealDebridService extends BaseService {
                   'Timed out waiting for Real-Debrid torrent to be ready.'
                 )
               );
-              return;
+              return; // prevent further isTorrentReady call after reject
             }
             const isReady = await window.electronAPI.realdebrid.isTorrentReady(
               torrent.id

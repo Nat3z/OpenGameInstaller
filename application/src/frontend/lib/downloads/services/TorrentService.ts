@@ -88,11 +88,12 @@ export class TorrentService extends BaseService {
       }
     } catch (err) {
       console.error('Torrent download error:', err);
+      throw err;
+    } finally {
       if (resolvedButton) {
         resolvedButton.textContent = 'Download';
         resolvedButton.disabled = false;
       }
-      throw err;
     }
   }
 }

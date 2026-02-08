@@ -14,6 +14,12 @@ type $AllDebridUserInfo = import('all-debrid-js').$UserInfo;
 type $AllDebridHosts = import('all-debrid-js').$Hosts;
 type $AddMagnetOrTorrent = import('all-debrid-js').$AddMagnetOrTorrent;
 type $GamepadNavigator = import('./managers/GamepadManager').GamepadNavigator;
+
+/** Shared type for app insertion (insertApp) to avoid duplicating LibraryInfo + redistributables. */
+type InsertAppInfo = LibraryInfo & {
+  redistributables?: { name: string; path: string }[];
+};
+
 interface Window {
   electronAPI: {
     fs: {
@@ -126,17 +132,14 @@ interface Window {
         options: AxiosRequestConfig
       ) => Promise<{ status: number; success: boolean; data: T }>;
       inputSend: (id: string, data: any) => Promise<void>;
-      insertApp: (
-        info: LibraryInfo & {
-          redistributables?: { name: string; path: string }[];
-        }
-      ) => Promise<
+      insertApp: (info: InsertAppInfo) => Promise<
         | 'setup-failed'
         | 'setup-success'
         | 'setup-redistributables-failed'
         | 'setup-redistributables-success'
         | 'setup-prefix-required'
       >;
+      addManualGame: (info: LibraryInfo) => Promise<'success' | 'error'>;
       getAllApps: () => Promise<LibraryInfo[]>;
       launchGame: (appid: string) => Promise<void>;
       removeApp: (appid: number) => Promise<void>;

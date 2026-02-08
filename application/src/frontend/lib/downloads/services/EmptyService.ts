@@ -16,11 +16,16 @@ export class EmptyService extends BaseService {
   async startDownload(
     result: SearchResultWithAddon,
     appID: number,
-    event: MouseEvent
+    event: MouseEvent | null,
+    htmlButton?: HTMLButtonElement
   ): Promise<void> {
-    if (event === null) return;
-    if (event.target === null) return;
-    const htmlButton = event.target as HTMLButtonElement;
+    const resolvedButton = htmlButton ?? event?.currentTarget ?? null;
+
+    // UI-specific actions: set button to "Setting up..." BEFORE running async setup
+    if (resolvedButton instanceof HTMLButtonElement) {
+      resolvedButton.textContent = 'Setting up...';
+      resolvedButton.disabled = true;
+    }
 
     // Generate a unique ID for this download
     const downloadId = Math.random().toString(36).substring(2, 15);
@@ -35,7 +40,7 @@ export class EmptyService extends BaseService {
       progress: 100,
       appID,
       downloadSize: 0,
-      files: (result as any).files || [],
+      files: (result as unknown as { files?: any[] }).files || [],
     };
     // insert to store
     currentDownloads.update((downloads) => {
@@ -59,8 +64,5 @@ export class EmptyService extends BaseService {
         {}
       );
     }
-
-    htmlButton.textContent = 'Setting up...';
-    htmlButton.disabled = true;
   }
 }

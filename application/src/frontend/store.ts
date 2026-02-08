@@ -19,7 +19,7 @@ export type DownloadStatusAndInfo = SearchResult & {
     | 'proton-prefix-setup';
   progress: number;
   error?: string;
-  usedDebridService?: 'realdebrid' | 'torbox' | 'premiumize' | 'none';
+  usedDebridService?: 'realdebrid' | 'alldebrid' | 'torbox' | 'premiumize' | 'none';
   downloadPath: string;
   files: {
     name: string;

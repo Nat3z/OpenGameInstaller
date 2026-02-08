@@ -1,0 +1,10 @@
+# Based on https://raw.githubusercontent.com/github/gitignore/main/Node.gitignore
+logs
+*.log
+npm-debug.log*
+node_modules/
+*.tsbuildinfo
+.cache
+src/
+tsconfig.json
+tsdown.config.js

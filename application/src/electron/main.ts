@@ -66,6 +66,12 @@ interface Notification {
   id: string;
   type: 'info' | 'error' | 'success' | 'warning';
 }
+
+/**
+ * Sends a notification to the renderer via IPC (channel: 'notification').
+ *
+ * @param notification - The notification payload (message, id, type)
+ */
 export function sendNotification(notification: Notification) {
   sendIPCMessage('notification', notification);
 }
@@ -74,6 +80,12 @@ let isReadyForEvents = false;
 
 let readyForEventWaiters: (() => void)[] = [];
 
+/**
+ * Waits for the main app to be ready for events, then sends an IPC message to the renderer.
+ *
+ * @param channel - The IPC channel name
+ * @param args - Arguments to send to the renderer
+ */
 export async function sendIPCMessage(channel: string, ...args: any[]) {
   if (!isReadyForEvents) {
     await new Promise<void>((resolve) => {
@@ -90,6 +102,14 @@ export let currentScreens = new Map<
   { [key: string]: string | boolean | number } | undefined
 >();
 
+/**
+ * Sends an input-asked event to the renderer so the user can configure an addon (e.g. API key).
+ *
+ * @param id - Addon/config identifier
+ * @param config - The configuration file for the addon
+ * @param name - Display name for the input
+ * @param description - Description shown to the user
+ */
 export function sendAskForInput(
   id: string,
   config: ConfigurationFile,
@@ -111,82 +131,28 @@ export function sendAskForInput(
 }
 
 /**
- * Create and configure the main application BrowserWindow and register its IPC and lifecycle handlers.
- *
- * Initializes the mainWindow with appropriate web preferences and icon, loads the renderer (development or production),
- * registers IPC listeners and readiness coordination, and wires lifecycle behaviors used by the application such as
- * showing the window when ready, initializing runtime handlers, global shortcut management, external-link handling,
- * and devtools behavior.
+ * Single-window flow for Steam Deck / Game Mode: one BrowserWindow shows splash first, then the main app.
+ * This avoids Steam focusing a separate splash window and leaving the main window black.
  */
-function createWindow() {
-  // Create the browser window.
-  // check if the environment variable OGI_DEBUG is set, and if so, allow devtools
-  const ogiDebug = process.env.OGI_DEBUG ?? 'false';
-  mainWindow = new BrowserWindow({
-    width: 1000,
-    height: 700,
-    webPreferences: {
-      nodeIntegration: true,
-      contextIsolation: true,
-      // always allow devtools
-      devTools: ogiDebug === 'true' || isDev(),
-      preload: join(app.getAppPath(), 'out/preload/index.mjs'),
-    },
-    title: 'OpenGameInstaller',
-    fullscreenable: false,
-    resizable: false,
-    icon: join(app.getAppPath(), 'public/favicon.ico'),
-    autoHideMenuBar: true,
-    show: false,
-  });
-  if (ogiDebug === 'true') {
-    // open devtools
-    mainWindow.webContents.openDevTools();
-  }
-  if (!isDev() && ogiDebug !== 'true') mainWindow.removeMenu();
 
-  // This block of code is intended for development purpose only.
-  // Delete this entire block of code when you are ready to package the application.
+/**
+ * Returns true when the OGI_DEBUG environment variable is 'true'.
+ *
+ * @returns {boolean} True if OGI_DEBUG is 'true', false otherwise
+ */
+const ogiDebug = () => (process.env.OGI_DEBUG ?? 'false') === 'true';
 
-  ipcMain.on('client-ready-for-events', async () => {
-    isReadyForEvents = true;
-    for (const waiter of readyForEventWaiters) {
-      waiter();
-    }
-    readyForEventWaiters = [];
-  });
+let listenersRegistered = false;
 
-  app.commandLine.appendSwitch('disable-features', 'HardwareMediaKeyHandling');
+/**
+ * Runs when the main app page has finished loading in the main window (second ready-to-show).
+ * Registers IPC handlers (each registered only once because onMainAppReady runs once), shows the window,
+ * and runs post-load setup (addons, library conversion, devtools if OGI_DEBUG).
+ */
+function onMainAppReady() {
+  closeSplashWindow();
 
-  if (isDev()) {
-    mainWindow!!.loadURL(
-      'http://localhost:8080/?secret=' + applicationAddonSecret
-    );
-    console.log('Running in development');
-  } else {
-    mainWindow!!.loadURL(
-      'file://' +
-        join(app.getAppPath(), 'out', 'renderer', 'index.html') +
-        '?secret=' +
-        applicationAddonSecret
-    );
-  }
-
-  // Emitted when the window is closed.
-  mainWindow.on('closed', function () {
-    // Dereference the window object, usually you would store windows
-    // in an array if your app supports multi windows, this is the time
-    // when you should delete the corresponding element.
-    mainWindow = null;
-  });
-
-  // Emitted when the window is ready to be shown
-  // This helps in showing the window gracefully.
-  fs.mkdir(join(__dirname, 'config'), (_) => {});
-  mainWindow.once('ready-to-show', () => {
-    // Close the splash screen now that main window is shown
-    closeSplashWindow();
-
+  if (!listenersRegistered) {
     AppEventHandler(mainWindow!!);
     FSEventHandler();
     RealdDebridHandler(mainWindow!!);
@@ -199,24 +165,6 @@ function createWindow() {
     ipcMain.on('get-version', async (event) => {
       event.returnValue = VERSION;
     });
-    console.log('showing window');
-    mainWindow!!.show();
-    // start the app with it being focused
-    mainWindow!!.focus();
-
-    if (mainWindow) {
-      checkForAddonUpdates(mainWindow);
-    }
-    if (!isSecurityCheckEnabled) {
-      sendNotification({
-        message:
-          "Security checks are disabled and application security LOWERED. Only enable if you know what you're doing.",
-        id: Math.random().toString(36).substring(7),
-        type: 'warning',
-      });
-    }
-
-    convertLibrary();
 
     app.on('browser-window-focus', function () {
       globalShortcut.register('CommandOrControl+R', () => {
@@ -227,35 +175,110 @@ function createWindow() {
       });
     });
 
-    mainWindow!!.webContents.setWindowOpenHandler((details) => {
-      shell.openExternal(details.url);
-      return { action: 'deny' };
-    });
-
     app.on('browser-window-blur', function () {
       globalShortcut.unregister('CommandOrControl+R');
       globalShortcut.unregister('F5');
     });
 
-    // disable devtools
-    mainWindow!!.webContents.on('devtools-opened', () => {
-      if (!isDev() && process.env.OGI_DEBUG !== 'true')
-        mainWindow!!.webContents.closeDevTools();
-    });
+    listenersRegistered = true;
+  }
+  console.log('showing window');
+  mainWindow!!.show();
+  mainWindow!!.focus();
 
-    app.on('web-contents-created', (_, contents) => {
-      contents.on('will-navigate', (event, navigationUrl) => {
-        const parsedUrl = new URL(navigationUrl);
-
-        if (
-          parsedUrl.origin !== 'http://localhost:8080' &&
-          parsedUrl.origin !== 'file://'
-        ) {
-          event.preventDefault();
-          throw new Error('Navigating to that address is not allowed.');
-        }
-      });
+  if (mainWindow) {
+    checkForAddonUpdates(mainWindow);
+  }
+  if (ogiDebug()) {
+    mainWindow!!.webContents.openDevTools();
+  }
+  if (!isSecurityCheckEnabled) {
+    sendNotification({
+      message:
+        "Security checks are disabled and application security LOWERED. Only enable if you know what you're doing.",
+      id: Math.random().toString(36).substring(7),
+      type: 'warning',
     });
+  }
+
+  convertLibrary();
+
+  mainWindow!!.webContents.setWindowOpenHandler((details) => {
+    shell.openExternal(details.url);
+    return { action: 'deny' };
+  });
+
+  mainWindow!!.webContents.on('devtools-opened', () => {
+    if (!isDev() && !ogiDebug())
+      mainWindow!!.webContents.closeDevTools();
+  });
+
+  // Attach navigation guard directly to mainWindow.webContents
+  mainWindow!!.webContents.on('will-navigate', (event, navigationUrl) => {
+    const parsedUrl = new URL(navigationUrl);
+
+    if (
+      parsedUrl.origin !== 'http://localhost:8080' &&
+      parsedUrl.protocol !== 'file:'
+    ) {
+      event.preventDefault();
+      console.warn('Blocked navigation to:', navigationUrl);
+    }
+  });
+}
+
+/**
+ * Creates the main BrowserWindow, loads splash first, then caller loads the app and registers onMainAppReady.
+ * Single-window flow so Steam Deck / Game Mode keeps focus on the same window.
+ *
+ * @returns void
+ */
+function createWindow() {
+  mainWindow = new BrowserWindow({
+    width: 1000,
+    height: 700,
+    webPreferences: {
+      nodeIntegration: true,
+      contextIsolation: true,
+      devTools: ogiDebug() || isDev(),
+      preload: join(app.getAppPath(), 'out/preload/index.mjs'),
+    },
+    title: 'OpenGameInstaller',
+    fullscreenable: false,
+    resizable: false,
+    icon: join(app.getAppPath(), 'public/favicon.ico'),
+    autoHideMenuBar: true,
+    show: false,
+  });
+  if (!isDev() && !ogiDebug()) mainWindow.removeMenu();
+
+  // Guard: only register client-ready-for-events once (prevents duplicate registration on macOS activate)
+  if (!listenersRegistered) {
+    ipcMain.on('client-ready-for-events', async () => {
+      isReadyForEvents = true;
+      for (const waiter of readyForEventWaiters) {
+        waiter();
+      }
+      readyForEventWaiters = [];
+    });
+  }
+
+  app.commandLine.appendSwitch('disable-features', 'HardwareMediaKeyHandling');
+
+  // Load splash first so there is only one window (fixes Steam Deck Game Mode black screen)
+  mainWindow.loadURL(
+    'file://' + join(app.getAppPath(), 'public', 'splash.html')
+  );
+
+  mainWindow.on('closed', function () {
+    mainWindow = null;
+  });
+
+  fs.mkdir(join(__dirname, 'config'), (_) => {});
+
+  // First ready-to-show: splash is ready; show window so user sees loading
+  mainWindow.once('ready-to-show', () => {
+    mainWindow!!.show();
   });
 }
 
@@ -263,10 +286,34 @@ function createWindow() {
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
 app.on('ready', async () => {
-  // Run all startup tasks with splash screen
-  await runStartupTasks();
-
+  // Single window: create it and show splash first so Steam Deck / Game Mode keeps focus
   createWindow();
+
+  // Run startup tasks; splash updates go to the main window
+  await runStartupTasks(mainWindow!);
+
+  // Guard: ensure mainWindow is still valid after async startup tasks
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    console.error('[main] mainWindow was closed during startup tasks; cannot continue');
+    return;
+  }
+
+  // Load the main app into the same window (replaces splash)
+  if (isDev()) {
+    mainWindow.loadURL(
+      'http://localhost:8080/?secret=' + applicationAddonSecret
+    );
+    console.log('Running in development');
+  } else {
+    mainWindow.loadURL(
+      'file://' +
+        join(app.getAppPath(), 'out', 'renderer', 'index.html') +
+        '?secret=' +
+        applicationAddonSecret
+    );
+  }
+
+  mainWindow.once('ready-to-show', onMainAppReady);
 
   server.listen(port, () => {
     console.log(`Addon Server is running on http://localhost:${port}`);

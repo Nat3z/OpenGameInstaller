@@ -1,17 +1,32 @@
-import { app, BrowserWindow } from 'electron';
-import { join } from 'path';
+import {
+  BrowserWindow,
+  app,
+  dialog,
+  screen,
+  ipcMain,
+  shell,
+} from 'electron';
+import fs from 'node:fs';
+import path from 'node:path';
 import {
   checkIfInstallerUpdateAvailable,
-  type UpdaterCallbacks,
-} from './updater.js';
+  UpdaterCallbacks,
+} from './updater/self-updater';
 import {
+  createSplashWindow,
+  updateSplashStatus,
+  updateSplashProgress,
+  closeSplashWindow,
+} from './splash';
+import {
+  backupUserData,
   restoreBackup,
   removeCachedAppUpdates,
   reinstallAddonDependencies,
 } from './startup.js';
-import { execute as executeMigrations } from './migrations.js';
-
-let splashWindow: BrowserWindow | null = null;
+import { execute } from './migrations.js';
+import { loadPlayStatistics } from './handlers/helpers.app/play-statistics.js';
+import { join } from 'path';
 
 /**
  * Creates and returns a configured splash screen BrowserWindow used during app startup.
@@ -42,103 +57,78 @@ function createSplashWindow(): BrowserWindow {
   return splash;
 }
 
-/**
- * Updates the splash screen's status message shown to the user.
- *
- * @param text - The status message to display on the splash screen
- * @param subtext - Optional secondary text (e.g., download speed, file name)
- */
-function updateSplashStatus(text: string, subtext?: string) {
-  if (splashWindow && !splashWindow.isDestroyed()) {
-    splashWindow.webContents.send('splash-status', text, subtext);
-  }
-}
+let splashWindow: BrowserWindow | null = null;
 
-/**
- * Updates the splash screen's progress bar.
- *
- * @param current - Current progress value
- * @param total - Total/maximum progress value
- * @param speed - Optional speed text (e.g., "1.5MB/s")
- */
-function updateSplashProgress(current: number, total: number, speed?: string) {
-  if (splashWindow && !splashWindow.isDestroyed()) {
-    splashWindow.webContents.send('splash-progress', current, total, speed);
-  }
-}
+/** When set, splash updates are sent to this window (single-window / Steam Deck flow). */
+let splashTargetWindow: BrowserWindow | null = null;
 
-/**
- * Closes the currently open splash window and clears the internal reference.
- *
- * If no splash window is present or it has already been destroyed, the function does nothing.
- */
-export function closeSplashWindow() {
-  if (splashWindow && !splashWindow.isDestroyed()) {
-    splashWindow.close();
-    splashWindow = null;
-  }
-}
-
-/**
- * Runs all pre-launch startup tasks with splash screen feedback.
- * This includes restoring backups, running migrations, checking for updates, etc.
- */
-export async function runStartupTasks(): Promise<void> {
-  // Show splash screen immediately
-  splashWindow = createSplashWindow();
-
-  // Restore backup if it exists
-  updateSplashStatus('Restoring backup...');
-  const backupResult = await restoreBackup((file, current, total) => {
-    updateSplashStatus('Restoring backup', `${file} (${current}/${total})`);
-    updateSplashProgress(current, total, '');
-  });
-
-  // Run any migrations if necessary
-  updateSplashStatus('Running migrations...');
-  // not async because it relies on the app being open
-  executeMigrations();
-
-  // Remove cached app updates
-  updateSplashStatus('Cleaning up...');
-  await new Promise((resolve, _) =>
-    removeCachedAppUpdates()
-      .then(resolve)
-      .catch(() => {
-        console.error('[chore] Failed to remove cached app updates');
-        resolve(void 0);
-      })
-  );
-
-  // If addons need reinstallation (node_modules were skipped during backup)
-  if (backupResult.needsAddonReinstall) {
-    updateSplashStatus('Reinstalling addon dependencies...');
-    try {
-      await reinstallAddonDependencies((addonName, current, total) => {
-        updateSplashStatus(
-          'Installing addon dependencies',
-          `${addonName} (${current}/${total})`
-        );
-        updateSplashProgress(current, total, '');
-      });
-    } catch (error) {
-      console.error('[startup] Failed to reinstall addon dependencies:', error);
-      // Continue anyway - addons may still work or can be reinstalled later
+export async function runStartupTasks(
+  mainWindow?: BrowserWindow | null
+): Promise<void> {
+  try {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      splashTargetWindow = mainWindow;
+    } else {
+      // Legacy: separate splash window (e.g. if run without main window)
+      splashWindow = createSplashWindow();
     }
+
+    // Reconcile play statistics once at startup (close any stale session from previous run)
+    updateSplashStatus('Reconciling play statistics...');
+    loadPlayStatistics(true);
+
+    // Restore backup if it exists
+    updateSplashStatus('Restoring backup...');
+    const backupResult = await restoreBackup((file: string, current: number, total: number): void => {
+      updateSplashStatus('Restoring backup', `${file} (${current}/${total})`);
+      updateSplashProgress(current, total, '');
+    });
+
+    // Run any migrations if necessary
+    updateSplashStatus('Running migrations...');
+    // not async because it relies on the app being open
+    execute();
+
+    // Remove cached app updates
+    updateSplashStatus('Cleaning up...');
+    await removeCachedAppUpdates().catch(() => {
+      console.error('[chore] Failed to remove cached app updates');
+    });
+
+    // If addons need reinstallation (node_modules were skipped during backup)
+    if (backupResult.needsAddonReinstall) {
+      updateSplashStatus('Reinstalling addon dependencies...');
+      try {
+        await reinstallAddonDependencies((addonName: string, current: number, total: number): void => {
+          updateSplashStatus(
+            'Installing addon dependencies',
+            `${addonName} (${current}/${total})`
+          );
+          updateSplashProgress(current, total, '');
+        });
+      } catch (error) {
+        console.error('[startup] Failed to reinstall addon dependencies:', error);
+        // Continue anyway - addons may still work or can be reinstalled later
+      }
+    }
+
+    // Check for installer/setup updates with splash screen callbacks
+    updateSplashStatus('Checking for updates...');
+    const updaterCallbacks: UpdaterCallbacks = {
+      onStatus: (text: string, subtext?: string) => {
+        updateSplashStatus(text, subtext);
+      },
+      onProgress: (current: number, total: number, speed: string) => {
+        updateSplashProgress(current, total, speed);
+      },
+    };
+    await checkIfInstallerUpdateAvailable(updaterCallbacks);
+
+    // Final status before main window loads
+    updateSplashStatus('Starting application...');
+  } finally {
+    splashTargetWindow = null;
+    // Ensure splash window is closed if it was created
+    closeSplashWindow();
   }
-
-  // Check for installer/setup updates with splash screen callbacks
-  updateSplashStatus('Checking for updates...');
-  const updaterCallbacks: UpdaterCallbacks = {
-    onStatus: (text: string, subtext?: string) => {
-      updateSplashStatus(text, subtext);
-    },
-    onProgress: (current: number, total: number, speed: string) => {
-      updateSplashProgress(current, total, speed);
-    },
-  };
-  await checkIfInstallerUpdateAvailable(updaterCallbacks);
-
-  // Final status before main window loads
-  updateSplashStatus('Starting application...');
 }

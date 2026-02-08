@@ -7,10 +7,19 @@ import type { $Hosts } from 'real-debrid-js';
 let dbg_eventsProcessed = 0;
 let dbg_lastReportTime = Date.now();
 
+/**
+ * Increments the debug event counter (used for events-per-second reporting).
+ */
 function dbg_countEvent() {
   dbg_eventsProcessed++;
 }
 
+/**
+ * Wraps a function to count invocations for debug metrics and dispatch errors to document.
+ *
+ * @param fn - The function to wrap
+ * @returns Wrapped function that counts calls and dispatches dbg:error on throw
+ */
 const wrap = (fn: (...args: any[]) => any) => {
   return (...args: any[]) => {
     dbg_countEvent();
@@ -286,6 +295,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('app:get-steam-app-id', appID)
     ),
     addToDesktop: wrap(() => ipcRenderer.invoke('app:add-to-desktop')),
+    getPlayStatistics: wrap(() =>
+      ipcRenderer.invoke('app:get-play-statistics')
+    ),
   },
   getVersion: wrap(() => ipcRenderer.sendSync('get-version')),
   updateAddons: wrap(() => ipcRenderer.invoke('update-addons')),
@@ -513,6 +525,26 @@ ipcRenderer.on(
   wrap((_, arg) => {
     document.dispatchEvent(
       new CustomEvent('app:show-changelog', { detail: { version: arg } })
+    );
+  })
+);
+
+// Single-window / Steam Deck: main window shows splash.html first; forward splash IPC so it can update
+ipcRenderer.on(
+  'splash-status',
+  wrap((_, text: string, subtext?: string) => {
+    document.dispatchEvent(
+      new CustomEvent('splash-status', { detail: { text, subtext } })
+    );
+  })
+);
+ipcRenderer.on(
+  'splash-progress',
+  wrap((_, current: number, total: number, speed?: string) => {
+    document.dispatchEvent(
+      new CustomEvent('splash-progress', {
+        detail: { current, total, speed },
+      })
     );
   })
 );

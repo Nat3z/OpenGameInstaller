@@ -73,7 +73,7 @@ export class PremiumizeService extends BaseService {
   async startDownload(
     result: SearchResultWithAddon,
     appID: number,
-    _event: MouseEvent
+    _event: MouseEvent | null
   ): Promise<void> {
     if (result.downloadType !== 'magnet' && result.downloadType !== 'torrent')
       return;

@@ -11,13 +11,11 @@ import type { SearchResultWithAddon } from '../tasks/runner';
 export async function startDownload(
   result: SearchResultWithAddon,
   appID: number,
-  event: MouseEvent
+  event: MouseEvent | null,
+  htmlButton?: HTMLButtonElement
 ) {
-  if (event === null) return;
-  if (event.target === null) return;
-  const htmlButton = event.target as HTMLButtonElement;
-  htmlButton.textContent = 'Downloading...';
-  htmlButton.disabled = true;
+  const resolvedButton = htmlButton ?? (event?.currentTarget as HTMLButtonElement | null);
+  
   let downloadHandler = result.downloadType;
   if (downloadHandler === 'torrent' || downloadHandler === 'magnet') {
     const generalOptions = getConfigClientOption('general') as any;
@@ -41,6 +39,10 @@ export async function startDownload(
         type: 'error',
         message: 'Torrenting is disabled in the settings.',
       });
+      if (resolvedButton) {
+        resolvedButton.textContent = 'Download';
+        resolvedButton.disabled = false;
+      }
       return;
     }
   }
@@ -50,11 +52,27 @@ export async function startDownload(
   // Service-based architecture: find and delegate to the appropriate service
   const svc = ALL_SERVICES.find((s) => s.types.includes(downloadHandler));
   if (svc) {
-    await svc.startDownload(result, appID, event);
+    if (resolvedButton) {
+      resolvedButton.textContent = 'Downloading...';
+      resolvedButton.disabled = true;
+    }
+    try {
+      await svc.startDownload(result, appID, event, resolvedButton ?? undefined);
+    } catch (error) {
+      if (resolvedButton) {
+        resolvedButton.textContent = 'Download';
+        resolvedButton.disabled = false;
+      }
+      throw error;
+    }
     return;
   }
 
   // If no service is found for this download type, log an error
+  if (resolvedButton) {
+    resolvedButton.textContent = 'Download';
+    resolvedButton.disabled = false;
+  }
   console.error(`No service found for download type: ${downloadHandler}`);
 }
 

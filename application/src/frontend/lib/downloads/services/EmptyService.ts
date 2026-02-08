@@ -16,11 +16,10 @@ export class EmptyService extends BaseService {
   async startDownload(
     result: SearchResultWithAddon,
     appID: number,
-    event: MouseEvent
+    event: MouseEvent | null,
+    htmlButton?: HTMLButtonElement
   ): Promise<void> {
-    if (event === null) return;
-    if (event.target === null) return;
-    const htmlButton = event.target as HTMLButtonElement;
+    const resolvedButton = htmlButton ?? (event?.currentTarget as HTMLButtonElement | null);
 
     // Generate a unique ID for this download
     const downloadId = Math.random().toString(36).substring(2, 15);
@@ -43,6 +42,12 @@ export class EmptyService extends BaseService {
     });
     updateDownloadStatus(downloadId, downloadedItem);
 
+    // Update UI before async operations if button is available
+    if (resolvedButton && resolvedButton instanceof HTMLButtonElement) {
+      resolvedButton.textContent = 'Setting up...';
+      resolvedButton.disabled = true;
+    }
+
     // Check if this is an update download and route to appropriate setup function
     if (downloadedItem.isUpdate) {
       await runSetupAppUpdate(
@@ -59,8 +64,5 @@ export class EmptyService extends BaseService {
         {}
       );
     }
-
-    htmlButton.textContent = 'Setting up...';
-    htmlButton.disabled = true;
   }
 }

@@ -21,6 +21,11 @@ import {
   addToInternalsApps,
   removeFromInternalsApps,
 } from './helpers.app/library.js';
+import {
+  recordSessionStart,
+  recordSessionEnd,
+  removeAppFromPlayStatistics,
+} from './helpers.app/play-statistics.js';
 import { generateNotificationId } from './helpers.app/notifications.js';
 import { sendNotification } from '../main.js';
 import { getProtonPrefixPath } from './helpers.app/platform.js';
@@ -38,6 +43,12 @@ function escapeShellArg(arg: string): string {
     .replace(/`/g, '\\`');
 }
 
+/**
+ * Registers library-related IPC handlers: launch-game, remove-app, insert-app, get-all-apps, update-app-version.
+ * Launch, exit, and error paths record play statistics via recordSessionStart and recordSessionEnd.
+ *
+ * @param mainWindow - The main BrowserWindow instance (for sending game:launch / game:exit events)
+ */
 export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
   ipcMain.handle('app:launch-game', async (_, appid) => {
     ensureLibraryDir();
@@ -60,6 +71,7 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
     });
     spawnedItem.on('error', (error) => {
       console.error(error);
+      recordSessionEnd(appInfo.appID);
       sendNotification({
         message: 'Failed to launch game',
         id: generateNotificationId(),
@@ -70,6 +82,7 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
     });
     spawnedItem.on('exit', (exit) => {
       console.log('Game exited with code: ' + exit);
+      recordSessionEnd(appInfo.appID);
       if (exit !== 0) {
         sendNotification({
           message: 'Game Crashed',
@@ -85,6 +98,7 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
     });
 
     mainWindow?.webContents.send('game:launch', { id: appInfo.appID });
+    recordSessionStart(appInfo.appID);
   });
 
   ipcMain.handle('app:remove-app', async (_, appid: number) => {
@@ -98,6 +112,7 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
 
     removeLibraryFile(appid);
     removeFromInternalsApps(appid);
+    removeAppFromPlayStatistics(appid);
     return;
   });
 

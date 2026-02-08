@@ -12,11 +12,18 @@
     filterLibrary,
     chunkArray,
   } from '../lib/core/library';
+  import {
+    getPlayStatistics,
+    getMostPlayedFromStats,
+    formatPlaytime,
+  } from '../lib/core/play-statistics';
   import { updatesManager } from '../states.svelte';
   import UpdateIcon from '../Icons/UpdateIcon.svelte';
 
   let library: LibraryInfo[] = $state([]);
   let recentlyPlayed: LibraryInfo[] = $state([]);
+  let mostPlayed: LibraryInfo[] = $state([]);
+  let playStats: PlayStatistics | null = $state(null);
   let allGamesAlphabetical: LibraryInfo[] = $state([]);
   let filteredGames: LibraryInfo[] = $state([]);
   let selectedApp: Writable<LibraryInfo | undefined> = writable(undefined);
@@ -36,15 +43,17 @@
   });
 
   async function reloadLibrary() {
-    library = await getAllApps();
+    const [apps, stats] = await Promise.all([
+      getAllApps(),
+      getPlayStatistics(),
+    ]);
+    library = apps;
+    playStats = stats;
 
-    // Update recently played (first 4 games from the ordered list)
-    recentlyPlayed = getRecentlyPlayed(library);
+    recentlyPlayed = getRecentlyPlayed(library, stats ?? undefined);
+    mostPlayed = stats ? getMostPlayedFromStats(library, stats) : [];
 
-    // Update all games alphabetical
     allGamesAlphabetical = sortLibraryAlphabetically(library);
-
-    // Update filtered games
     filteredGames = filterLibrary(allGamesAlphabetical, searchQuery);
 
     loading = false;
@@ -151,6 +160,92 @@
                     </div>
                   </button>
                 {/each}
+              </div>
+            </div>
+          {/if}
+
+          <!-- Most Played Section -->
+          {#if mostPlayed.length > 0}
+            <div class="space-y-6">
+              <div class="bg-accent-lighter px-4 py-2 rounded-lg">
+                <h2 class="text-xl font-semibold text-accent-dark">
+                  Most Played
+                </h2>
+              </div>
+              <div class="flex gap-4 flex-row overflow-x-auto">
+                {#each mostPlayed as app}
+                  {@const entry = playStats?.byAppId[app.appID.toString()]}
+                  <button
+                    data-library-item
+                    class="ml-4 shrink-0 border-none relative transition-all shadow-lg hover:shadow-xl rounded-lg overflow-hidden bg-white"
+                    onclick={() => ($selectedApp = app)}
+                  >
+                    {#if updatesManager.getAppUpdate(app.appID)?.updateAvailable}
+                      <div
+                        class="absolute shadow-md top-2 right-2 h-6 z-2 flex items-center bg-yellow-500 rounded-lg flex-row justify-end gap-1 px-2"
+                      >
+                        <UpdateIcon fill="#ffffff" width="16px" height="16px" />
+                        <p
+                          class="text-white text-sm font-open-sans font-semibold"
+                        >
+                          Update
+                        </p>
+                      </div>
+                    {/if}
+                    <Image
+                      src={app.capsuleImage}
+                      alt={app.name}
+                      classifier={app.appID.toString() + '-capsule'}
+                      onerror={(e) => {
+                        const fallback = './favicon.png';
+                        const img = e.currentTarget as HTMLImageElement;
+                        if (img.src !== fallback) {
+                          img.src = fallback;
+                          img.style.opacity = '0.5';
+                          (
+                            (img.parentElement as HTMLElement)
+                              .children[1]! as HTMLElement
+                          ).dataset.backup = 'enabled';
+                        }
+                      }}
+                      class="w-48 h-72 object-cover"
+                    />
+                    <div
+                      data-backup="disabled"
+                      class="absolute inset-0 flex items-end justify-center data-[backup=disabled]:hidden"
+                    >
+                      <div
+                        class="absolute inset-x-0 bottom-0 w-full h-1/2 pointer-events-none"
+                        style="background: linear-gradient(to top, rgba(0,0,0,0.7), transparent);"
+                      ></div>
+                      <div class="w-full py-4 px-2 text-center z-1">
+                        <p class="text-white text-base font-archivo">
+                          {app.name}
+                        </p>
+                        {#if entry?.totalPlaytimeMs}
+                          <p class="text-white/90 text-sm font-archivo mt-0.5">
+                            {formatPlaytime(entry.totalPlaytimeMs)} total
+                          </p>
+                        {/if}
+                      </div>
+                    </div>
+                  </button>
+                {/each}
+              </div>
+            </div>
+          {:else if playStats && !loading}
+            <div class="space-y-6">
+              <div class="bg-accent-lighter px-4 py-2 rounded-lg">
+                <h2 class="text-xl font-semibold text-accent-dark">
+                  Most Played
+                </h2>
+              </div>
+              <div
+                class="flex flex-col gap-2 w-full justify-center items-center py-8 text-center"
+              >
+                <p class="text-accent">
+                  Play games to see your most played titles.
+                </p>
               </div>
             </div>
           {/if}

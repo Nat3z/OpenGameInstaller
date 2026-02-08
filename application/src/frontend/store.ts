@@ -220,7 +220,7 @@ export function clearHeaderBackButton() {
 export function createNotification(notification: Notification) {
   const notificationWithTimestamp = {
     ...notification,
-    timestamp: notification.timestamp || Date.now(),
+    timestamp: notification.timestamp ?? Date.now(),
   };
 
   notifications.update((n) => [...n, notificationWithTimestamp]);
@@ -300,8 +300,12 @@ export async function fetchCommunityAddons(): Promise<void> {
         'User-Agent': 'OpenGameInstaller Client/Rest1.0',
       },
     });
+    const data = response.data;
+    if (!Array.isArray(data)) {
+      throw new Error('Unexpected response format from community addons API.');
+    }
     if (requestId === communityAddonsRequestId) {
-      communityAddonsLocal.set(response.data as CommunityAddon[]);
+      communityAddonsLocal.set(data as CommunityAddon[]);
       communityAddonsError.set(null);
     }
   } catch (err) {

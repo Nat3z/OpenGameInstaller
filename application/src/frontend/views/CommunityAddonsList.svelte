@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy, onMount } from 'svelte';
+  import { onDestroy } from 'svelte';
   import { get } from 'svelte/store';
   import DeleteAddonWarningModal from '../components/built/DeleteAddonWarningModal.svelte';
   import ButtonModal from '../components/modal/ButtonModal.svelte';
@@ -97,17 +97,16 @@
     unsub();
   });
 
-  onMount(() => {
-    // Defensive fetch so the view self-initializes when navigated to directly: run only when not loading, list is empty, and no current error.
-    // We do not auto-fetch when there is an error so the failed state stays visible; user uses Retry to refetch.
-    if (
-      !get(communityAddonsLoading) &&
-      get(communityAddonsLocal).length === 0 &&
-      !get(communityAddonsError)
-    ) {
-      fetchCommunityAddons();
-    }
-  });
+  // Defensive fetch so the view self-initializes when navigated to directly: run only when not loading, list is empty, and no current error.
+  // We do not auto-fetch when there is an error so the failed state stays visible; user uses Retry to refetch.
+  // Called at top level (not just onMount) to ensure loading state is set before first render, preventing "No community addons" flash.
+  if (
+    !get(communityAddonsLoading) &&
+    get(communityAddonsLocal).length === 0 &&
+    !get(communityAddonsError)
+  ) {
+    fetchCommunityAddons();
+  }
 </script>
 
 {#if deleteConfirmationModalAddon}

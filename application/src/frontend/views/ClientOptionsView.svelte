@@ -1220,7 +1220,7 @@
   .input-text,
   .input-number,
   .input-select {
-    @apply w-full px-4 py-2 border border-border-muted rounded-lg bg-surface focus:ring-2 focus:ring-accent-light focus:border-accent transition-colors text-accent-text-color;
+    @apply w-full px-4 py-2 border border-border-muted rounded-lg bg-surface focus:ring-2 focus:ring-accent-light focus:border-accent transition-colors text-text;
   }
 
   .input-textarea {
@@ -1338,7 +1338,6 @@
 
   .range-value-input {
     @apply w-16 text-center px-3 py-1 bg-accent-lighter text-accent-dark rounded-lg font-archivo font-semibold text-lg border-none focus:ring-2 focus:ring-accent-light outline-none;
-    background-color: #e1f4f0;
     -webkit-user-select: text;
     -moz-user-select: text;
     -ms-user-select: text;

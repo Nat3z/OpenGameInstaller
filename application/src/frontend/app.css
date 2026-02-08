@@ -159,48 +159,50 @@
 }
 
 /* Theme overrides: default @theme above is light; these override when data-theme is set */
-[data-theme="dark"] {
-  --color-background-color: #1a1a2e;
-  --color-accent: #4a9eff;
-  --color-accent-dark: #2563eb;
-  --color-accent-light: #93c5fd;
-  --color-accent-lighter: #1e293b;
-  --color-accent-text-color: #f1f5f9;
+@layer theme {
+  [data-theme="dark"] {
+    --color-background-color: #1a1a2e;
+    --color-accent: #4a9eff;
+    --color-accent-dark: #2563eb;
+    --color-accent-light: #93c5fd;
+    --color-accent-lighter: #1e293b;
+    --color-accent-text-color: #f1f5f9;
 
-  --color-surface: #252540;
-  --color-border: #374151;
-  --color-border-muted: #4b5563;
+    --color-surface: #252540;
+    --color-border: #374151;
+    --color-border-muted: #4b5563;
 
-  --color-text: #f1f5f9;
-  --color-text-muted: #94a3b8;
+    --color-text: #f1f5f9;
+    --color-text-muted: #94a3b8;
 
-  --color-error-bg: #450a0a;
-  --color-error-border: #7f1d1d;
-  --color-error-text: #fca5a5;
-  --color-info-bg: #1e3a5f;
-  --color-info-border: #1d4ed8;
-}
+    --color-error-bg: #450a0a;
+    --color-error-border: #7f1d1d;
+    --color-error-text: #fca5a5;
+    --color-info-bg: #1e3a5f;
+    --color-info-border: #1d4ed8;
+  }
 
-[data-theme="synthwave"] {
-  --color-background-color: #2b213a;
-  --color-accent: #f92aad;
-  --color-accent-dark: #e91e96;
-  --color-accent-light: #ff7edb;
-  --color-accent-lighter: #36224a;
-  --color-accent-text-color: #f0e6ef;
+  [data-theme="synthwave"] {
+    --color-background-color: #2b213a;
+    --color-accent: #f92aad;
+    --color-accent-dark: #e91e96;
+    --color-accent-light: #ff7edb;
+    --color-accent-lighter: #36224a;
+    --color-accent-text-color: #f0e6ef;
 
-  --color-surface: #352a45;
-  --color-border: #4a3d5c;
-  --color-border-muted: #5c4d6e;
+    --color-surface: #352a45;
+    --color-border: #4a3d5c;
+    --color-border-muted: #5c4d6e;
 
-  --color-text: #f0e6ef;
-  --color-text-muted: #c4b5d4;
+    --color-text: #f0e6ef;
+    --color-text-muted: #c4b5d4;
 
-  --color-error-bg: #3d1f1f;
-  --color-error-border: #9b2c2c;
-  --color-error-text: #fbbfbf;
-  --color-info-bg: #1e2a4a;
-  --color-info-border: #6366f1;
+    --color-error-bg: #3d1f1f;
+    --color-error-border: #9b2c2c;
+    --color-error-text: #fbbfbf;
+    --color-info-bg: #1e2a4a;
+    --color-info-border: #6366f1;
+  }
 }
 
 /* Font faces */
@@ -242,7 +244,7 @@ h2 {
   border-radius: 9999px;
   animation: spin 1s linear infinite;
   margin-bottom: 1rem;
-  filter: drop-shadow(0 2px 4px rgba(66, 138, 145, 0.1));
+  filter: drop-shadow(0 2px 4px color-mix(in srgb, var(--color-accent) 10%, transparent));
 }
 
 @keyframes spin {

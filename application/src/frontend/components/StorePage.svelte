@@ -498,14 +498,14 @@
             <h1 class="text-4xl font-archivo font-bold text-white mb-2">
               {gameData.name}
             </h1>
-            <div class="text-sm text-text-muted">
-              <span class="text-text-muted">Publisher:</span>
+            <div class="text-sm text-white/70">
+              <span class="text-white/70">Publisher:</span>
               {(gameData.publishers ?? []).join(', ')}
               <span class="mx-4"></span>
-              <span class="text-text-muted">Developer:</span>
+              <span class="text-white/70">Developer:</span>
               {(gameData.developers ?? []).join(', ')}
               <br />
-              <span class="text-text-muted">Release Date:</span>
+              <span class="text-white/70">Release Date:</span>
               {gameData.releaseDate}
             </div>
           </div>

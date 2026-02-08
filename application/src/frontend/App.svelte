@@ -1256,7 +1256,7 @@
 
   .loading-spinner {
     @apply w-8 h-8 border-4 border-accent-lighter border-t-accent rounded-full animate-spin mb-4;
-    filter: drop-shadow(0 2px 4px rgba(66, 138, 145, 0.1));
+    filter: drop-shadow(0 2px 4px color-mix(in srgb, var(--color-accent) 10%, transparent));
   }
 
   @keyframes spin {
@@ -1296,14 +1296,14 @@
     appearance: none;
     width: 100%;
     height: 8px;
-    background: #e5e7eb;
+    background: var(--color-border);
     border-radius: 4px;
     outline: none;
     transition: background 0.3s ease;
   }
 
   input[type='range']:hover {
-    background: #d1d5db;
+    background: var(--color-border-muted);
   }
 
   input[type='range']::-webkit-slider-thumb {
@@ -1311,17 +1311,17 @@
     appearance: none;
     width: 20px;
     height: 20px;
-    background: #428a91;
+    background: var(--color-accent);
     border-radius: 50%;
     cursor: pointer;
     transition: all 0.2s ease;
-    box-shadow: 0 2px 4px rgba(66, 138, 145, 0.3);
+    box-shadow: 0 2px 4px color-mix(in srgb, var(--color-accent) 30%, transparent);
   }
 
   input[type='range']::-webkit-slider-thumb:hover {
-    background: #2d626a;
+    background: var(--color-accent-dark);
     transform: scale(1.1);
-    box-shadow: 0 3px 6px rgba(66, 138, 145, 0.4);
+    box-shadow: 0 3px 6px color-mix(in srgb, var(--color-accent) 40%, transparent);
   }
 
   input[type='range']::-webkit-slider-thumb:active {
@@ -1331,18 +1331,18 @@
   input[type='range']::-moz-range-thumb {
     width: 20px;
     height: 20px;
-    background: #428a91;
+    background: var(--color-accent);
     border-radius: 50%;
     cursor: pointer;
     border: none;
     transition: all 0.2s ease;
-    box-shadow: 0 2px 4px rgba(66, 138, 145, 0.3);
+    box-shadow: 0 2px 4px color-mix(in srgb, var(--color-accent) 30%, transparent);
   }
 
   input[type='range']::-moz-range-thumb:hover {
-    background: #2d626a;
+    background: var(--color-accent-dark);
     transform: scale(1.1);
-    box-shadow: 0 3px 6px rgba(66, 138, 145, 0.4);
+    box-shadow: 0 3px 6px color-mix(in srgb, var(--color-accent) 40%, transparent);
   }
 
   input[type='range']::-moz-range-thumb:active {
@@ -1352,7 +1352,7 @@
   input[type='range']::-moz-range-track {
     width: 100%;
     height: 8px;
-    background: #e5e7eb;
+    background: var(--color-border);
     border-radius: 4px;
   }
 
@@ -1361,10 +1361,10 @@
   }
 
   input[type='range']:focus::-webkit-slider-thumb {
-    box-shadow: 0 0 0 3px rgba(66, 138, 145, 0.2);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 20%, transparent);
   }
 
   input[type='range']:focus::-moz-range-thumb {
-    box-shadow: 0 0 0 3px rgba(66, 138, 145, 0.2);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 20%, transparent);
   }
 </style>

@@ -369,7 +369,7 @@
       >
         {#if isInstallingRedist}
           <div
-            class="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin"
+            class="w-3 h-3 border-2 border-accent-text-color border-t-transparent rounded-full animate-spin"
           ></div>
         {:else}
           4

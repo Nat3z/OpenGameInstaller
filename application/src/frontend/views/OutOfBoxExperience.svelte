@@ -944,7 +944,7 @@
   .terminal-content {
     @apply p-4 max-h-48 overflow-y-auto;
     scrollbar-width: thin;
-    scrollbar-color: var(--color-accent) #1f2937;
+    scrollbar-color: var(--color-accent) var(--color-surface);
   }
 
   .terminal-content::-webkit-scrollbar {
@@ -952,7 +952,7 @@
   }
 
   .terminal-content::-webkit-scrollbar-track {
-    background: #1f2937;
+    background: var(--color-surface);
   }
 
   .terminal-content::-webkit-scrollbar-thumb {

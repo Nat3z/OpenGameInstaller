@@ -202,7 +202,7 @@
 
   .custom-dropdown-menu {
     scrollbar-width: thin;
-    scrollbar-color: #428a91 #f3f4f6; /* [[memory:3711419]] */
+    scrollbar-color: var(--color-accent) var(--color-surface);
     scrollbar-gutter: stable;
   }
 

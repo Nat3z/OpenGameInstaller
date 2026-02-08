@@ -236,7 +236,13 @@
     }
 
     // Color scale using darker accent colors only (avoid very light tones for readability)
-    const accentPalette = ['#2d626a', '#428a91', '#2d626a', '#428a91'];
+    // Read theme colors at runtime for theme-aware chart
+    const style = getComputedStyle(document.documentElement);
+    const accentColor = style.getPropertyValue('--color-accent').trim() || '#428a91';
+    const accentDark = style.getPropertyValue('--color-accent-dark').trim() || '#2d626a';
+    const gridColor = style.getPropertyValue('--color-border').trim() || '#e5e7eb';
+    
+    const accentPalette = [accentDark, accentColor, accentDark, accentColor];
     const colorScale = d3
       .scaleOrdinal()
       .domain(idsOrdered)
@@ -252,7 +258,7 @@
       .attr('x2', width)
       .attr('y1', (d) => yScale(d))
       .attr('y2', (d) => yScale(d))
-      .attr('stroke', '#e5e7eb')
+      .attr('stroke', gridColor)
       .attr('stroke-width', 0.5)
       .attr('opacity', 0.7);
 
@@ -1128,15 +1134,13 @@
 
   /* Queue Position Styles */
   .queue-position-badge {
-    @apply absolute top-1 left-1 bg-accent-dark text-accent-text-color text-xs font-bold px-2 py-1 rounded-full shadow-lg;
+    @apply absolute top-1 left-1 bg-accent-dark/90 text-accent-text-color text-xs font-bold px-2 py-1 rounded-full shadow-lg;
     backdrop-filter: blur(4px);
-    background-color: rgba(66, 138, 145, 0.9);
   }
 
   .active-download-badge {
-    @apply absolute top-1 left-1 bg-green-600 text-white text-xs font-bold px-2 py-1 rounded-full shadow-lg flex items-center gap-1;
+    @apply absolute top-1 left-1 bg-green-600/90 text-white text-xs font-bold px-2 py-1 rounded-full shadow-lg flex items-center gap-1;
     backdrop-filter: blur(4px);
-    background-color: rgba(34, 197, 94, 0.9);
   }
 
   .queue-item {

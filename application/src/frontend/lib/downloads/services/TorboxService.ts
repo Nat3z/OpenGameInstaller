@@ -258,7 +258,9 @@ export class TorboxService extends BaseService {
                   return;
                 }
               } catch (error) {
+                cleanup();
                 console.error('Error polling Torbox:', error);
+                resolve(undefined);
               }
             }, 3000);
           }

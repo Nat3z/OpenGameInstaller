@@ -42,6 +42,12 @@
   let displayValue = $state(value);
   let selectedId = $state(typeof value === 'string' ? value : '');
 
+  $effect(() => {
+    displayValue = value;
+    // Clear dropdown selection when value is not a string (e.g. switched from select to number)
+    selectedId = typeof value === 'string' ? value : '';
+  });
+
   function handleChange(event: Event) {
     const target = event.target as HTMLInputElement;
     if (type === 'number' || type === 'range') {

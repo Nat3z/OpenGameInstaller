@@ -28,7 +28,7 @@
     "zod": "^3.23.8"
   },
   "scripts": {
-    "auto-build": "tsc -w",
+    "auto-build": "tsdown --config tsdown.config.js --watch",
     "build": "tsdown --config tsdown.config.js",
     "test": "bun test ./tests/**/*.test.ts",
     "release": "bun run build && npm publish",

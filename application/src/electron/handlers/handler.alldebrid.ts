@@ -51,12 +51,35 @@ export default function handler(_mainWindow: Electron.BrowserWindow) {
     return true;
   });
 
+  async function safeAllDebridCall<T>(
+    operation: () => Promise<T>,
+    errorMessage: string
+  ): Promise<T | null> {
+    try {
+      return await operation();
+    } catch (err) {
+      console.error(err);
+      sendNotification({
+        message: errorMessage,
+        id: Math.random().toString(36).substring(7),
+        type: 'error',
+      });
+      return null;
+    }
+  }
+
   ipcMain.handle('all-debrid:get-user-info', async () => {
-    return allDebridClient.getUserInfo();
+    return safeAllDebridCall(
+      () => allDebridClient.getUserInfo(),
+      'Failed to fetch AllDebrid user info'
+    );
   });
 
   ipcMain.handle('all-debrid:get-hosts', async () => {
-    return allDebridClient.getHosts();
+    return safeAllDebridCall(
+      () => allDebridClient.getHosts(),
+      'Failed to fetch AllDebrid hosts'
+    );
   });
 
   ipcMain.handle(
@@ -78,6 +101,7 @@ export default function handler(_mainWindow: Electron.BrowserWindow) {
     return allDebridClient.unrestrictLink(link);
   });
 
+  // AllDebrid auto-selects all files; no explicit selection needed
   ipcMain.handle('all-debrid:select-torrent', async () => {
     return true;
   });

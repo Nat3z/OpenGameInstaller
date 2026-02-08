@@ -14,8 +14,8 @@ export class RealDebridService extends BaseService {
   async startDownload(
     result: SearchResultWithAddon,
     appID: number,
-    event: MouseEvent | null,
-    htmlButton?: HTMLButtonElement
+    _event: MouseEvent | null,
+    _htmlButton?: HTMLButtonElement
   ): Promise<void> {
     if (result.downloadType !== 'magnet' && result.downloadType !== 'torrent')
       return;

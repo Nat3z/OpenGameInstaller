@@ -48,21 +48,28 @@ export class EmptyService extends BaseService {
     });
     updateDownloadStatus(downloadId, downloadedItem);
 
-    // Check if this is an update download and route to appropriate setup function
-    if (downloadedItem.isUpdate) {
-      await runSetupAppUpdate(
-        downloadedItem,
-        getDownloadPath() + '/' + result.name + '/',
-        false,
-        {}
-      );
-    } else {
-      await runSetupApp(
-        downloadedItem,
-        getDownloadPath() + '/' + result.name + '/',
-        false,
-        {}
-      );
+    try {
+      // Check if this is an update download and route to appropriate setup function
+      if (downloadedItem.isUpdate) {
+        await runSetupAppUpdate(
+          downloadedItem,
+          getDownloadPath() + '/' + result.name + '/',
+          false,
+          {}
+        );
+      } else {
+        await runSetupApp(
+          downloadedItem,
+          getDownloadPath() + '/' + result.name + '/',
+          false,
+          {}
+        );
+      }
+    } finally {
+      if (resolvedButton instanceof HTMLButtonElement) {
+        resolvedButton.textContent = 'Download';
+        resolvedButton.disabled = false;
+      }
     }
   }
 }

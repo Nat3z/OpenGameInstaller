@@ -194,8 +194,7 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
                 type: 'success',
               });
             } catch (error) {
-              // TODO: for now do this, because some wine stuff fails
-              // redistributableFailed = true;
+              redistributableFailed = true;
               console.error(
                 `[redistributable] failed to install ${redistributable.name} for ${data.name}: ${error}`
               );

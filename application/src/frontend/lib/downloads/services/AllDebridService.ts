@@ -1,6 +1,6 @@
 import { BaseService } from './BaseService';
 import type { SearchResultWithAddon } from '../../tasks/runner';
-import { currentDownloads } from '../../../store';
+import { currentDownloads, createNotification } from '../../../store';
 import { getDownloadPath } from '../../core/fs';
 import { listenUntilDownloadReady } from '../events';
 
@@ -83,8 +83,8 @@ export class AllDebridService extends BaseService {
   async startDownload(
     result: SearchResultWithAddon,
     appID: number,
-    event: MouseEvent | null,
-    htmlButton?: HTMLButtonElement
+    _event: MouseEvent | null,
+    _htmlButton?: HTMLButtonElement
   ): Promise<void> {
     if (result.downloadType !== 'magnet' && result.downloadType !== 'torrent')
       return;
@@ -100,10 +100,16 @@ export class AllDebridService extends BaseService {
       throw new Error('Please set your AllDebrid API key in the settings.');
     }
 
+    const resolvedButton =
+      _htmlButton ??
+      (_event?.currentTarget instanceof HTMLButtonElement
+        ? _event.currentTarget
+        : null);
+
     if (result.downloadType === 'magnet') {
       await this.handleMagnetDownload(result, appID, tempId);
     } else if (result.downloadType === 'torrent') {
-      await this.handleTorrentDownload(result, appID, tempId);
+      await this.handleTorrentDownload(result, appID, tempId, resolvedButton);
     }
   }
 
@@ -196,17 +202,28 @@ export class AllDebridService extends BaseService {
   private async handleTorrentDownload(
     result: SearchResultWithAddon,
     appID: number,
-    tempId: string
+    tempId: string,
+    htmlButton?: HTMLButtonElement | null
   ): Promise<void> {
     if (result.downloadType !== 'torrent') return;
 
+    const resetButton = () => {
+      if (htmlButton) {
+        htmlButton.textContent = 'Download';
+        htmlButton.disabled = false;
+      }
+    };
+
     if (!result.name || !result.downloadURL) {
-      if (!result.name) {
-        throw new Error('Addon did not provide a name for the torrent.');
-      }
-      if (!result.downloadURL) {
-        throw new Error('Addon did not provide a downloadURL for the torrent.');
-      }
+      createNotification({
+        id: Math.random().toString(36).substring(7),
+        type: 'error',
+        message: !result.name
+          ? 'Addon did not provide a name for the torrent.'
+          : 'Addon did not provide a downloadURL for the torrent.',
+      });
+      resetButton();
+      return;
     }
 
     let torrent: Awaited<

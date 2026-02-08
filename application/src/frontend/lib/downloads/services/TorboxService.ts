@@ -57,8 +57,7 @@ export class TorboxService extends BaseService {
   async startDownload(
     result: SearchResultWithAddon,
     appID: number,
-    event: MouseEvent | null,
-    htmlButton?: HTMLButtonElement
+    _event: MouseEvent | null
   ): Promise<void> {
     if (result.downloadType !== 'magnet' && result.downloadType !== 'torrent')
       return;
@@ -292,7 +291,19 @@ export class TorboxService extends BaseService {
       finalTorrentId = torrentGrabber?.id;
     }
 
-    if (finalTorrentId) {
+    if (!finalTorrentId) {
+      createNotification({
+        id: Math.random().toString(36).substring(7),
+        type: 'error',
+        message: 'Timed out waiting for Torbox torrent to be ready.',
+      });
+      currentDownloads.update((downloads) =>
+        downloads.filter((d) => d.id !== tempId)
+      );
+      return;
+    }
+
+    {
       // -- STEP 4: DOWNLOAD THE TORRENT --
       const url = new URL(`${BASE_URL}/api/torrents/requestdl`);
       url.searchParams.set('token', torboxApiKey);

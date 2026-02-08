@@ -152,16 +152,16 @@ let listenersRegistered = false;
 function onMainAppReady() {
   closeSplashWindow();
 
-  AppEventHandler(mainWindow!!);
-  FSEventHandler();
-  RealdDebridHandler(mainWindow!!);
-  TorrentHandler(mainWindow!!);
-  DirectDownloadHandler(mainWindow!!);
-  AddonRestHandler();
-  AddonManagerHandler(mainWindow!!);
-  OOBEHandler();
-
   if (!listenersRegistered) {
+    AppEventHandler(mainWindow!!);
+    FSEventHandler();
+    RealdDebridHandler(mainWindow!!);
+    TorrentHandler(mainWindow!!);
+    DirectDownloadHandler(mainWindow!!);
+    AddonRestHandler();
+    AddonManagerHandler(mainWindow!!);
+    OOBEHandler();
+
     ipcMain.on('get-version', async (event) => {
       event.returnValue = VERSION;
     });
@@ -182,7 +182,6 @@ function onMainAppReady() {
 
     listenersRegistered = true;
   }
-
   console.log('showing window');
   mainWindow!!.show();
   mainWindow!!.focus();
@@ -253,13 +252,16 @@ function createWindow() {
   });
   if (!isDev() && !ogiDebug()) mainWindow.removeMenu();
 
-  ipcMain.on('client-ready-for-events', async () => {
-    isReadyForEvents = true;
-    for (const waiter of readyForEventWaiters) {
-      waiter();
-    }
-    readyForEventWaiters = [];
-  });
+  // Guard: only register client-ready-for-events once (prevents duplicate registration on macOS activate)
+  if (!listenersRegistered) {
+    ipcMain.on('client-ready-for-events', async () => {
+      isReadyForEvents = true;
+      for (const waiter of readyForEventWaiters) {
+        waiter();
+      }
+      readyForEventWaiters = [];
+    });
+  }
 
   app.commandLine.appendSwitch('disable-features', 'HardwareMediaKeyHandling');
 
@@ -290,14 +292,20 @@ app.on('ready', async () => {
   // Run startup tasks; splash updates go to the main window
   await runStartupTasks(mainWindow!);
 
+  // Guard: ensure mainWindow is still valid after async startup tasks
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    console.error('[main] mainWindow was closed during startup tasks; cannot continue');
+    return;
+  }
+
   // Load the main app into the same window (replaces splash)
   if (isDev()) {
-    mainWindow!!.loadURL(
+    mainWindow.loadURL(
       'http://localhost:8080/?secret=' + applicationAddonSecret
     );
     console.log('Running in development');
   } else {
-    mainWindow!!.loadURL(
+    mainWindow.loadURL(
       'file://' +
         join(app.getAppPath(), 'out', 'renderer', 'index.html') +
         '?secret=' +
@@ -305,7 +313,7 @@ app.on('ready', async () => {
     );
   }
 
-  mainWindow!!.once('ready-to-show', onMainAppReady);
+  mainWindow.once('ready-to-show', onMainAppReady);
 
   server.listen(port, () => {
     console.log(`Addon Server is running on http://localhost:${port}`);

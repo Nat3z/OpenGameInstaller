@@ -1,5 +1,5 @@
 import type { EventListenerTypes, SearchResult } from 'ogi-addon';
-import { writable, type Writable } from 'svelte/store';
+import { get, writable, type Writable } from 'svelte/store';
 import type { BasicLibraryInfo } from 'ogi-addon';
 
 export type DownloadStatusAndInfo = SearchResult & {
@@ -189,6 +189,11 @@ export const headerBackButton: Writable<HeaderBackButton> = writable({
   ariaLabel: 'Go back',
 });
 
+/**
+ * Shows a back button in the header with the given click handler and optional aria label.
+ * @param onClick - Callback when the back button is clicked
+ * @param ariaLabel - Optional accessible label (defaults to "Go back")
+ */
 export function setHeaderBackButton(onClick: () => void, ariaLabel?: string) {
   headerBackButton.set({
     visible: true,
@@ -197,6 +202,9 @@ export function setHeaderBackButton(onClick: () => void, ariaLabel?: string) {
   });
 }
 
+/**
+ * Hides the header back button and clears its click handler.
+ */
 export function clearHeaderBackButton() {
   headerBackButton.set({
     visible: false,
@@ -205,10 +213,14 @@ export function clearHeaderBackButton() {
   });
 }
 
+/**
+ * Adds a notification to the active list and history. Assigns a timestamp if missing.
+ * @param notification - The notification to add (message, id, type, optional timestamp)
+ */
 export function createNotification(notification: Notification) {
   const notificationWithTimestamp = {
     ...notification,
-    timestamp: notification.timestamp || Date.now(),
+    timestamp: notification.timestamp ?? Date.now(),
   };
 
   notifications.update((n) => [...n, notificationWithTimestamp]);
@@ -229,6 +241,7 @@ export const priorityToNumber: Record<QueuedModal['priority'], number> = {
 
 export const modalQueue: Writable<QueuedModal[]> = writable([]);
 
+/** Community addon entry from the remote list (name, author, source URL, image, description). */
 export type CommunityAddon = {
   name: string;
   author: string;
@@ -236,19 +249,74 @@ export type CommunityAddon = {
   img: string;
   description: string;
 };
-export const communityAddonsLocal: Writable<CommunityAddon[]> = writable([]);
 
-export async function fetchCommunityAddons() {
-  window.electronAPI.app
-    .axios({
+/** Local cache of the community addons list; updated by fetchCommunityAddons. */
+export const communityAddonsLocal: Writable<CommunityAddon[]> = writable([]);
+/** True while the community addons list is being fetched. */
+export const communityAddonsLoading: Writable<boolean> = writable(false);
+/** Error message from the last failed fetch, or null when successful or not yet fetched. */
+export const communityAddonsError: Writable<string | null> = writable(null);
+
+/** Request id for in-flight guard; only the latest request's result and loading state are applied. */
+let communityAddonsRequestId = 0;
+
+/**
+ * Normalizes a caught error into a user-facing message for community addon fetch failures.
+ * Handles response.status (404, 5xx), Error.message, and unknown shapes; always returns a string.
+ * @param err - Thrown value from the fetch (e.g. axios error with response, or Error)
+ * @returns A short, displayable string (e.g. "Community addons list not found.", "Server error. Try again later.", or a generic connection message)
+ */
+function communityAddonsErrorMessage(err: unknown): string {
+  if (err && typeof err === 'object' && 'response' in err) {
+    const res = (err as { response?: { status?: number } }).response;
+    if (res?.status === 404) return 'Community addons list not found.';
+    if (res?.status && res.status >= 500) return 'Server error. Try again later.';
+  }
+  if (err instanceof Error && err.message) return err.message;
+  return "Couldn't load community addons. Check your connection and try again.";
+}
+
+/**
+ * Fetches the community addons list from the remote API and updates store state.
+ * Sets communityAddonsLoading true at start and false in finally; clears then possibly sets communityAddonsError; on success updates communityAddonsLocal.
+ * On error, leaves communityAddonsLocal unchanged so any cached/previous list can still be shown; the error message is set via communityAddonsErrorMessage.
+ * Overlapping calls are ignored for store updates and loading state: only the latest request's result and loading state are applied (in-flight guard via request id).
+ * The request id is monotonic and is not reset in finally by design, so stale completions never apply.
+ * @returns Promise that resolves when the fetch and store updates are complete
+ */
+export async function fetchCommunityAddons(): Promise<void> {
+  // In-flight guard: avoid overlapping requests; only one fetch runs at a time.
+  if (get(communityAddonsLoading)) return;
+  const requestId = ++communityAddonsRequestId;
+  communityAddonsLoading.set(true);
+  communityAddonsError.set(null);
+  // Completion-path updates (try/catch/finally) apply only when requestId === communityAddonsRequestId so stale responses do not overwrite state.
+  try {
+    const response = await window.electronAPI.app.axios({
       method: 'GET',
       url: 'https://ogi.nat3z.com/api/community.json',
       headers: {
         'Content-Type': 'application/json',
         'User-Agent': 'OpenGameInstaller Client/Rest1.0',
       },
-    })
-    .then((response) => {
-      communityAddonsLocal.set(response.data as CommunityAddon[]);
     });
+    const data = response.data;
+    if (!Array.isArray(data)) {
+      throw new Error('Unexpected response format from community addons API.');
+    }
+    if (requestId === communityAddonsRequestId) {
+      communityAddonsLocal.set(data as CommunityAddon[]);
+      communityAddonsError.set(null);
+    }
+  } catch (err) {
+    if (requestId === communityAddonsRequestId) {
+      communityAddonsError.set(communityAddonsErrorMessage(err));
+    }
+    // Leave communityAddonsLocal unchanged so cached/previous list can still show
+  } finally {
+    // Token is intentionally not reset (monotonic); only the latest request's completion applies, so stale responses never match.
+    if (requestId === communityAddonsRequestId) {
+      communityAddonsLoading.set(false);
+    }
+  }
 }

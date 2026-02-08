@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
+  import { get } from 'svelte/store';
   import DeleteAddonWarningModal from '../components/built/DeleteAddonWarningModal.svelte';
   import ButtonModal from '../components/modal/ButtonModal.svelte';
   import CloseModal from '../components/modal/CloseModal.svelte';
@@ -7,7 +8,13 @@
   import Modal from '../components/modal/Modal.svelte';
   import TextModal from '../components/modal/TextModal.svelte';
   import TitleModal from '../components/modal/TitleModal.svelte';
-  import { type CommunityAddon, communityAddonsLocal } from '../store';
+  import {
+    type CommunityAddon,
+    communityAddonsLocal,
+    communityAddonsLoading,
+    communityAddonsError,
+    fetchCommunityAddons,
+  } from '../store';
   import { fade } from 'svelte/transition';
 
   let communityList: CommunityAddon[] = $state([]);
@@ -89,6 +96,17 @@
   onDestroy(() => {
     unsub();
   });
+
+  // Defensive fetch so the view self-initializes when navigated to directly: run only when not loading, list is empty, and no current error.
+  // We do not auto-fetch when there is an error so the failed state stays visible; user uses Retry to refetch.
+  // Called at top level (not just onMount) to ensure loading state is set before first render, preventing "No community addons" flash.
+  if (
+    !get(communityAddonsLoading) &&
+    get(communityAddonsLocal).length === 0 &&
+    !get(communityAddonsError)
+  ) {
+    fetchCommunityAddons();
+  }
 </script>
 
 {#if deleteConfirmationModalAddon}
@@ -101,15 +119,31 @@
 {/if}
 
 <div class="community-addons">
-  {#if communityList.length === 0}
+  {#if $communityAddonsLoading}
     <div class="loading-container">
       <div class="loading-message" in:fade={{ duration: 300 }}>
         <div class="loading-spinner"></div>
         <p class="text-lg">Loading community addons...</p>
       </div>
     </div>
+  {:else if $communityAddonsError}
+    <div class="error-container" in:fade={{ duration: 300 }}>
+      <p class="error-message text-lg text-gray-700">
+        {$communityAddonsError}
+      </p>
+      <button
+        type="button"
+        class="retry-button"
+        onclick={() => fetchCommunityAddons()}
+      >
+        Retry
+      </button>
+    </div>
   {:else}
     <div class="addon-grid">
+      {#if communityList.length === 0}
+        <p class="empty-message text-lg text-gray-600">No community addons.</p>
+      {:else}
       {#if showWarningModal && selectedAddon}
         <Modal
           open={showWarningModal}
@@ -215,6 +249,7 @@
           </div>
         </div>
       {/each}
+      {/if}
     </div>
   {/if}
 </div>
@@ -228,6 +263,18 @@
 
   .loading-container {
     @apply flex items-center justify-center w-full h-full;
+  }
+
+  .error-container {
+    @apply flex flex-col items-center justify-center w-full h-full gap-4;
+  }
+
+  .error-message {
+    @apply text-center max-w-md;
+  }
+
+  .retry-button {
+    @apply px-4 py-2 rounded-lg font-medium bg-accent hover:bg-accent-dark text-white border-none cursor-pointer transition-colors duration-200;
   }
 
   .addon-grid {

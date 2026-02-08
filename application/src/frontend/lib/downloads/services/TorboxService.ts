@@ -139,6 +139,7 @@ export class TorboxService extends BaseService {
       const errorMessage = response.data.detail;
       console.log('Failed to create torrent on Torbox: ', errorMessage);
 
+      const responseData = response.data.data;
       const message =
         response.data.error === 'DOWNLOAD_TOO_LARGE'
           ? 'Your current plan does not support the size you are trying to download.'
@@ -151,8 +152,9 @@ export class TorboxService extends BaseService {
               : response.data.detail.includes('cooldown')
                 ? 'You are on a cooldown period. Please wait until ' +
                   new Date(
-                    (response.data.data as { cooldown_until: number })
-                      .cooldown_until * 1000
+                    ('cooldown_until' in responseData
+                      ? responseData.cooldown_until
+                      : 0) * 1000
                   ).toLocaleString() +
                   ' to try again.'
                 : response.data.detail.includes('must provide') &&
@@ -171,9 +173,23 @@ export class TorboxService extends BaseService {
 
     // -- STEP 2: GET THE TORRENT ID --
 
-    // check if there is a queued id or a torrent id
-    const queued_id = (response.data.data as { queued_id?: number }).queued_id;
-    let torrent_id = (response.data.data as { torrent_id?: number }).torrent_id;
+    // Type narrowing: after error handling, we know status is 200 or "Download already queued"
+    const responseData = response.data.data;
+    
+    // Check if we have a cooldown response (shouldn't happen with status 200, but type-safe)
+    if ('cooldown_until' in responseData) {
+      console.error('Unexpected cooldown response with status 200');
+      createNotification({
+        id: Math.random().toString(36).substring(7),
+        type: 'error',
+        message: 'Unexpected cooldown response. Please try again.',
+      });
+      return;
+    }
+
+    // Now TypeScript knows responseData is the success type with hash
+    const { queued_id } = responseData;
+    let torrent_id = responseData.torrent_id;
 
     if (!queued_id && !torrent_id) {
       console.error('No queued id or torrent id found');

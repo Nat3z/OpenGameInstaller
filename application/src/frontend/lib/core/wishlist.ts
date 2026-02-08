@@ -39,7 +39,9 @@ export async function loadWishlist(): Promise<BasicLibraryInfo[]> {
     return [];
   }
   const raw = window.electronAPI.fs.read(WISHLIST_PATH);
-  if (typeof raw !== 'string') {
+  // Guard against error objects from preload fs wrapper
+  if (typeof raw !== 'string' || raw === null || raw === undefined) {
+    console.warn('[wishlist] Failed to read wishlist file, falling back to empty array');
     wishlist.set([]);
     return [];
   }
@@ -57,38 +59,59 @@ function saveWishlistSync(entries: BasicLibraryInfo[]): boolean {
     WISHLIST_PATH,
     JSON.stringify(entries, null, 2)
   );
-  return result === 'success';
+  // Guard against error objects and only update store on successful write
+  if (result !== 'success') {
+    console.error('[wishlist] Failed to write wishlist to disk:', result);
+    return false;
+  }
+  return true;
 }
 
 /**
  * Add an entry to the wishlist. Dedupes by (appID, storefront). Updates store only after successful write.
  */
 export function addToWishlist(entry: BasicLibraryInfo): void {
+  ensureInternals();
   const raw = window.electronAPI.fs.exists(WISHLIST_PATH)
     ? window.electronAPI.fs.read(WISHLIST_PATH)
     : '[]';
-  if (typeof raw !== 'string') return;
+  // Validate read result before parsing
+  if (typeof raw !== 'string' || raw === null || raw === undefined) {
+    console.error('[wishlist] Failed to read wishlist for add operation');
+    return;
+  }
   const entries = parseWishlistJson(raw);
   const exists = entries.some(
     (e) => e.appID === entry.appID && e.storefront === entry.storefront
   );
   if (exists) return;
   const next = [...entries, entry];
-  if (saveWishlistSync(next)) wishlist.set(next);
+  // Persist to disk first, only update in-memory store if write succeeds
+  if (saveWishlistSync(next)) {
+    wishlist.set(next);
+  }
 }
 
 /**
  * Remove an entry by (appID, storefront). Updates store only after successful write.
  */
 export function removeFromWishlist(appID: number, storefront: string): void {
+  ensureInternals();
   const raw = window.electronAPI.fs.exists(WISHLIST_PATH)
     ? window.electronAPI.fs.read(WISHLIST_PATH)
     : '[]';
-  if (typeof raw !== 'string') return;
+  // Validate read result before parsing
+  if (typeof raw !== 'string' || raw === null || raw === undefined) {
+    console.error('[wishlist] Failed to read wishlist for remove operation');
+    return;
+  }
   const entries = parseWishlistJson(raw).filter(
     (e) => !(e.appID === appID && e.storefront === storefront)
   );
-  if (saveWishlistSync(entries)) wishlist.set(entries);
+  // Persist to disk first, only update in-memory store if write succeeds
+  if (saveWishlistSync(entries)) {
+    wishlist.set(entries);
+  }
 }
 
 /**

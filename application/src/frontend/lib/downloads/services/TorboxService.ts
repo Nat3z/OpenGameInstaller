@@ -131,38 +131,38 @@ export class TorboxService extends BaseService {
     });
 
     // Extract response data once for use in error handling and success path
-    const responseData = response.data.data;
+    const responseData = response.data?.data;
 
     // check if it worked then provide a good response message
+    const detail = response.data?.detail;
+    const dataError = response.data?.error;
     if (
       response.status !== 200 &&
-      response.data.detail !== 'Download already queued.'
+      detail !== 'Download already queued.'
     ) {
       // get the error message from the data
-      const errorMessage = response.data.detail;
+      const errorMessage = detail ?? 'Unknown error';
       console.log('Failed to create torrent on Torbox: ', errorMessage);
 
       const message =
-        response.data.error === 'DOWNLOAD_TOO_LARGE'
+        dataError === 'DOWNLOAD_TOO_LARGE'
           ? 'Your current plan does not support the size you are trying to download.'
-          : response.data.detail.includes('active torrent limit of')
+          : (detail?.includes('active torrent limit of'))
             ? 'You have reached your active torrent limit.'
-            : response.data.detail.includes(
-                  'reached your monthly download limit'
-                )
+            : (detail?.includes('reached your monthly download limit'))
               ? 'You have reached your monthly download limit.'
-              : response.data.detail.includes('cooldown')
+              : (detail?.includes('cooldown'))
                 ? 'You are on a cooldown period. Please wait until ' +
                   new Date(
-                    ('cooldown_until' in responseData
+                    (responseData && 'cooldown_until' in responseData
                       ? responseData.cooldown_until
                       : 0) * 1000
                   ).toLocaleString() +
                   ' to try again.'
-                : response.data.detail.includes('must provide') &&
-                    response.data.detail.includes('file or magnet')
+                : (detail?.includes('must provide') &&
+                    detail?.includes('file or magnet'))
                   ? 'Addon did not provide a valid file or magnet.'
-                  : response.data.detail;
+                  : (detail ?? 'Failed to create torrent on Torbox');
 
       createNotification({
         id: Math.random().toString(36).substring(7),
@@ -178,11 +178,11 @@ export class TorboxService extends BaseService {
     let queued_id: number | undefined;
     let torrent_id: number | undefined;
 
-    if ('hash' in responseData) {
+    if (responseData && 'hash' in responseData) {
       // This is the success type
       queued_id = responseData.queued_id;
       torrent_id = responseData.torrent_id;
-    } else if ('cooldown_until' in responseData) {
+    } else if (responseData && 'cooldown_until' in responseData) {
       // This should have been caught by the error handling, but handle it safely
       console.error('Unexpected cooldown response with status 200');
       createNotification({
@@ -197,7 +197,11 @@ export class TorboxService extends BaseService {
     }
 
     if (!queued_id && !torrent_id) {
-      console.error('No queued id or torrent id found');
+      createNotification({
+        id: Math.random().toString(36).substring(7),
+        type: 'error',
+        message: 'No queued id or torrent id found.',
+      });
       return;
     }
 

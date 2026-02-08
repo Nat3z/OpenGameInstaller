@@ -20,19 +20,24 @@ async function waitForTorrentReady(
   return new Promise<void>((resolve, reject) => {
     const startTime = Date.now();
     const interval = setInterval(async () => {
-      if (Date.now() - startTime > timeoutMs) {
-        clearInterval(interval);
-        reject(
-          new Error('Timed out waiting for Real-Debrid torrent to be ready.')
+      try {
+        if (Date.now() - startTime > timeoutMs) {
+          clearInterval(interval);
+          reject(
+            new Error('Timed out waiting for Real-Debrid torrent to be ready.')
+          );
+          return;
+        }
+        const isReady = await window.electronAPI.realdebrid.isTorrentReady(
+          torrentId
         );
-        return;
-      }
-      const isReady = await window.electronAPI.realdebrid.isTorrentReady(
-        torrentId
-      );
-      if (isReady) {
+        if (isReady) {
+          clearInterval(interval);
+          resolve();
+        }
+      } catch (err) {
         clearInterval(interval);
-        resolve();
+        reject(err);
       }
     }, 3000);
   });
@@ -54,7 +59,7 @@ export class RealDebridService extends BaseService {
       return;
 
     const resolvedButton =
-      htmlButton ?? (event?.target as HTMLButtonElement | null);
+      htmlButton ?? (event?.currentTarget as HTMLButtonElement | null);
 
     if (!result.downloadURL) {
       createNotification({
@@ -158,14 +163,18 @@ export class RealDebridService extends BaseService {
         htmlButton.textContent = 'Download';
         htmlButton.disabled = false;
       }
-      currentDownloads.update((downloads) => {
-        const matchingDownload = downloads.find((d) => d.id === tempId)!!;
-        matchingDownload.status = 'error';
-        matchingDownload.usedDebridService = 'realdebrid';
-        matchingDownload.appID = appID;
-        downloads[downloads.indexOf(matchingDownload)] = matchingDownload;
-        return downloads;
-      });
+      currentDownloads.update((downloads) =>
+        downloads.map((d) =>
+          d.id === tempId
+            ? {
+                ...d,
+                status: 'error' as const,
+                usedDebridService: 'realdebrid' as const,
+                appID,
+              }
+            : d
+        )
+      );
 
       return;
     }
@@ -255,14 +264,18 @@ export class RealDebridService extends BaseService {
         htmlButton.textContent = 'Download';
         htmlButton.disabled = false;
       }
-      currentDownloads.update((downloads) => {
-        const matchingDownload = downloads.find((d) => d.id === tempId)!!;
-        matchingDownload.status = 'error';
-        matchingDownload.usedDebridService = 'realdebrid';
-        matchingDownload.appID = appID;
-        downloads[downloads.indexOf(matchingDownload)] = matchingDownload;
-        return downloads;
-      });
+      currentDownloads.update((downloads) =>
+        downloads.map((d) =>
+          d.id === tempId
+            ? {
+                ...d,
+                status: 'error' as const,
+                usedDebridService: 'realdebrid' as const,
+                appID,
+              }
+            : d
+        )
+      );
 
       return;
     }

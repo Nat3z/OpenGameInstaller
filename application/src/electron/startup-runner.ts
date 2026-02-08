@@ -1,4 +1,4 @@
-import { BrowserWindow, app } from 'electron';
+import { BrowserWindow } from 'electron';
 import {
   checkIfInstallerUpdateAvailable,
   type UpdaterCallbacks,
@@ -10,74 +10,26 @@ import {
 } from './startup.js';
 import { execute } from './migrations.js';
 import { loadPlayStatistics } from './handlers/helpers.app/play-statistics.js';
-import { join } from 'path';
+import {
+  createSplashWindow,
+  setSplashTargetWindow,
+  setSplashWindow,
+  updateSplashStatus,
+  updateSplashProgress,
+  closeSplashWindow,
+} from './splash.js';
 
-/**
- * Creates and returns a configured splash screen BrowserWindow used during app startup.
- *
- * The window is frameless, non-resizable, always-on-top, and loads the bundled splash HTML; the preload script path is chosen based on development vs production mode.
- *
- * @returns The created splash-screen BrowserWindow
- */
-function createSplashWindow(): BrowserWindow {
-  const splash = new BrowserWindow({
-    width: 300,
-    height: 350,
-    frame: false,
-    resizable: false,
-    transparent: false,
-    alwaysOnTop: true,
-    webPreferences: {
-      nodeIntegration: true,
-      contextIsolation: true,
-      devTools: false,
-      preload: join(app.getAppPath(), 'out/preload/splash.mjs'),
-    },
-  });
-  splash.loadURL('file://' + join(app.getAppPath(), 'public', 'splash.html'));
-  splash.once('ready-to-show', () => {
-    splash.show();
-  });
-  return splash;
-}
-
-let splashWindow: BrowserWindow | null = null;
-
-/** When set, splash updates are sent to this window (single-window / Steam Deck flow). */
-let splashTargetWindow: BrowserWindow | null = null;
-
-function getSplashWindow(): BrowserWindow | null {
-  const w = splashTargetWindow ?? splashWindow;
-  return w && !w.isDestroyed() ? w : null;
-}
-
-function updateSplashStatus(text: string, subtext?: string): void {
-  const w = getSplashWindow();
-  if (w?.webContents) w.webContents.send('splash-status', text, subtext);
-}
-
-function updateSplashProgress(current: number, total: number, speed: string): void {
-  const w = getSplashWindow();
-  if (w?.webContents) w.webContents.send('splash-progress', current, total, speed);
-}
-
-/** Closes the dedicated splash window if one was created (e.g. legacy flow). Exported for main. */
-export function closeSplashWindow(): void {
-  if (splashWindow && !splashWindow.isDestroyed()) {
-    splashWindow.close();
-    splashWindow = null;
-  }
-}
+export { closeSplashWindow };
 
 export async function runStartupTasks(
   mainWindow?: BrowserWindow | null
 ): Promise<void> {
   try {
     if (mainWindow && !mainWindow.isDestroyed()) {
-      splashTargetWindow = mainWindow;
+      setSplashTargetWindow(mainWindow);
     } else {
       // Legacy: separate splash window (e.g. if run without main window)
-      splashWindow = createSplashWindow();
+      setSplashWindow(createSplashWindow());
     }
 
     // Reconcile play statistics once at startup (close any stale session from previous run)
@@ -86,15 +38,21 @@ export async function runStartupTasks(
 
     // Restore backup if it exists
     updateSplashStatus('Restoring backup...');
-    const backupResult = await restoreBackup((file: string, current: number, total: number): void => {
-      updateSplashStatus('Restoring backup', `${file} (${current}/${total})`);
-      updateSplashProgress(current, total, '');
-    });
+    const backupResult = await restoreBackup(
+      (file: string, current: number, total: number): void => {
+        updateSplashStatus('Restoring backup', `${file} (${current}/${total})`);
+        updateSplashProgress(current, total, '');
+      }
+    );
 
     // Run any migrations if necessary
     updateSplashStatus('Running migrations...');
-    // not async because it relies on the app being open
-    execute();
+    try {
+      await execute();
+    } catch (err) {
+      console.error('[startup] Migrations failed:', err);
+      // Continue anyway so the app can start
+    }
 
     // Remove cached app updates
     updateSplashStatus('Cleaning up...');
@@ -106,13 +64,15 @@ export async function runStartupTasks(
     if (backupResult.needsAddonReinstall) {
       updateSplashStatus('Reinstalling addon dependencies...');
       try {
-        await reinstallAddonDependencies((addonName: string, current: number, total: number): void => {
-          updateSplashStatus(
-            'Installing addon dependencies',
-            `${addonName} (${current}/${total})`
-          );
-          updateSplashProgress(current, total, '');
-        });
+        await reinstallAddonDependencies(
+          (addonName: string, current: number, total: number): void => {
+            updateSplashStatus(
+              'Installing addon dependencies',
+              `${addonName} (${current}/${total})`
+            );
+            updateSplashProgress(current, total, '');
+          }
+        );
       } catch (error) {
         console.error('[startup] Failed to reinstall addon dependencies:', error);
         // Continue anyway - addons may still work or can be reinstalled later
@@ -134,7 +94,7 @@ export async function runStartupTasks(
     // Final status before main window loads
     updateSplashStatus('Starting application...');
   } finally {
-    splashTargetWindow = null;
+    setSplashTargetWindow(null);
     // Ensure splash window is closed if it was created
     closeSplashWindow();
   }

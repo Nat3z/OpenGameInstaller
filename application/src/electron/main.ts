@@ -21,7 +21,8 @@ import {
 } from './startup.js';
 import AddonManagerHandler, { startAddons } from './handlers/handler.addon.js';
 import OOBEHandler from './handlers/handler.oobe.js';
-import { runStartupTasks, closeSplashWindow } from './startup-runner.js';
+import { runStartupTasks } from './startup-runner.js';
+import { closeSplashWindow } from './splash.js';
 // import steamworks from 'steamworks.js';
 
 export const VERSION = app.getVersion();
@@ -139,6 +140,14 @@ const ogiDebug = () => (process.env.OGI_DEBUG ?? 'false') === 'true';
 
 let listenersRegistered = false;
 
+function onClientReadyForEvents() {
+  isReadyForEvents = true;
+  for (const waiter of readyForEventWaiters) {
+    waiter();
+  }
+  readyForEventWaiters = [];
+}
+
 /**
  * Runs when the main app page has finished loading in the main window (second ready-to-show).
  * Registers IPC handlers (each registered only once because onMainAppReady runs once), shows the window,
@@ -226,9 +235,9 @@ function onMainAppReady() {
  * Creates the main BrowserWindow, loads splash first, then caller loads the app and registers onMainAppReady.
  * Single-window flow for Steam Deck / Game Mode: one window shows splash first, then the main app, avoiding a separate splash window and black screen.
  *
- * @returns void
+ * @returns The created BrowserWindow (also stored in mainWindow)
  */
-function createWindow() {
+function createWindow(): BrowserWindow {
   mainWindow = new BrowserWindow({
     width: 1000,
     height: 700,
@@ -249,13 +258,8 @@ function createWindow() {
 
   // Guard: only register client-ready-for-events once (prevents duplicate registration on macOS activate)
   if (!listenersRegistered) {
-    ipcMain.on('client-ready-for-events', async () => {
-      isReadyForEvents = true;
-      for (const waiter of readyForEventWaiters) {
-        waiter();
-      }
-      readyForEventWaiters = [];
-    });
+    ipcMain.removeAllListeners('client-ready-for-events');
+    ipcMain.on('client-ready-for-events', onClientReadyForEvents);
   }
 
   app.commandLine.appendSwitch('disable-features', 'HardwareMediaKeyHandling');
@@ -268,6 +272,7 @@ function createWindow() {
   mainWindow.on('closed', function () {
     mainWindow = null;
     listenersRegistered = false;
+    isReadyForEvents = false;
   });
 
   fs.mkdir(join(__dirname, 'config'), (_) => {});
@@ -276,6 +281,7 @@ function createWindow() {
   mainWindow.once('ready-to-show', () => {
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.show();
   });
+  return mainWindow;
 }
 
 // This method will be called when Electron has finished
@@ -350,8 +356,26 @@ app.on('window-all-closed', async function () {
   app.exit(0);
 });
 
-app.on('activate', function () {
+app.on('activate', async function () {
   // On macOS it's common to re-create a window in the app when the
   // dock icon is clicked and there are no other windows open.
-  if (mainWindow === null) createWindow();
+  if (mainWindow === null) {
+    const win = createWindow();
+    await runStartupTasks(win);
+    if (!win.isDestroyed()) {
+      if (isDev()) {
+        win.loadURL(
+          'http://localhost:8080/?secret=' + applicationAddonSecret
+        );
+      } else {
+        win.loadURL(
+          'file://' +
+            join(app.getAppPath(), 'out', 'renderer', 'index.html') +
+            '?secret=' +
+            applicationAddonSecret
+        );
+      }
+      win.once('ready-to-show', onMainAppReady);
+    }
+  }
 });

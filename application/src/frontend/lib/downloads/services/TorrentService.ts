@@ -20,7 +20,9 @@ export class TorrentService extends BaseService {
       return;
 
     const resolvedButton = htmlButton ?? (event?.currentTarget as HTMLButtonElement | null);
-    if (!resolvedButton || !(resolvedButton instanceof HTMLButtonElement)) return;
+    if (event && resolvedButton && !(resolvedButton instanceof HTMLButtonElement)) {
+      console.warn('[TorrentService] startDownload: event target is not an HTMLButtonElement');
+    }
 
     if (!result.downloadURL) {
       createNotification({
@@ -61,8 +63,10 @@ export class TorrentService extends BaseService {
     const downloadPath = getDownloadPath() + '/' + result.name + '/' + filename;
 
     const resetButton = () => {
-      resolvedButton.textContent = 'Download';
-      resolvedButton.disabled = false;
+      if (resolvedButton instanceof HTMLButtonElement) {
+        resolvedButton.textContent = 'Download';
+        resolvedButton.disabled = false;
+      }
     };
 
     if (result.downloadType === 'torrent') {
@@ -79,8 +83,10 @@ export class TorrentService extends BaseService {
             resetButton();
             return;
           }
-          resolvedButton.textContent = 'Downloading...';
-          resolvedButton.disabled = true;
+          if (resolvedButton instanceof HTMLButtonElement) {
+            resolvedButton.textContent = 'Downloading...';
+            resolvedButton.disabled = true;
+          }
           currentDownloads.update((downloads) => {
             return [
               ...downloads,
@@ -121,12 +127,15 @@ export class TorrentService extends BaseService {
             resetButton();
             return;
           }
-          resolvedButton.textContent = 'Downloading...';
-          resolvedButton.disabled = true;
+          if (resolvedButton instanceof HTMLButtonElement) {
+            resolvedButton.textContent = 'Downloading...';
+            resolvedButton.disabled = true;
+          }
           currentDownloads.update((downloads) => {
             return [
               ...downloads,
               {
+                ...result,
                 id,
                 status: 'downloading',
                 downloadPath: getDownloadPath() + '/' + result.name + '/',
@@ -137,7 +146,6 @@ export class TorrentService extends BaseService {
                 appID,
                 downloadSize: 0,
                 originalDownloadURL: result.downloadURL, // Store original URL for resume
-                ...result,
               },
             ];
           });

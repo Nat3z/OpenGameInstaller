@@ -83,12 +83,10 @@ export class RealDebridService extends BaseService {
             if (isReady) {
               clearInterval(interval);
               resolve();
-              return;
             }
           } catch (err) {
             clearInterval(interval);
             reject(err);
-            return;
           }
         }, 3000);
       });
@@ -117,7 +115,8 @@ export class RealDebridService extends BaseService {
     const updatedState = flush();
     if (downloadID === null) {
       currentDownloads.update((downloads) => {
-        const matchingDownload = downloads.find((d) => d.id === tempId)!!;
+        const matchingDownload = downloads.find((d) => d.id === tempId);
+        if (!matchingDownload) return downloads;
         matchingDownload.status = 'error';
         matchingDownload.usedDebridService = 'realdebrid';
         matchingDownload.appID = appID;
@@ -183,12 +182,10 @@ export class RealDebridService extends BaseService {
             if (isReady) {
               clearInterval(interval);
               resolve();
-              return;
             }
           } catch (err) {
             clearInterval(interval);
             reject(err);
-            return;
           }
         }, 3000);
       });
@@ -219,7 +216,8 @@ export class RealDebridService extends BaseService {
     const updatedState = flush();
     if (downloadID === null) {
       currentDownloads.update((downloads) => {
-        const matchingDownload = downloads.find((d) => d.id === tempId)!!;
+        const matchingDownload = downloads.find((d) => d.id === tempId);
+        if (!matchingDownload) return downloads;
         matchingDownload.status = 'error';
         matchingDownload.usedDebridService = 'realdebrid';
         matchingDownload.appID = appID;

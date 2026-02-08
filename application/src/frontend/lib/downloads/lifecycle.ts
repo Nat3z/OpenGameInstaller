@@ -33,11 +33,6 @@ export async function startDownload(
     }
   };
 
-  if (resolvedButton) {
-    resolvedButton.textContent = 'Downloading...';
-    resolvedButton.disabled = true;
-  }
-
   let downloadHandler = result.downloadType;
   if (downloadHandler === 'torrent' || downloadHandler === 'magnet') {
     const generalOptions = getConfigClientOption('general') as any;
@@ -50,6 +45,17 @@ export async function startDownload(
       | 'premiumize'
       | 'disable' =
       (generalOptions ? generalOptions.torrentClient : null) ?? 'disable';
+    
+    if (torrentClient === 'disable') {
+      createNotification({
+        id: Math.random().toString(36).substring(7),
+        type: 'error',
+        message: 'Torrenting is disabled in the settings.',
+      });
+      resetButton();
+      return;
+    }
+    
     if (torrentClient === 'real-debrid') {
       downloadHandler = 'real-debrid-' + downloadHandler;
     } else if (torrentClient === 'all-debrid') {
@@ -58,14 +64,6 @@ export async function startDownload(
       downloadHandler = 'torbox-' + downloadHandler;
     } else if (torrentClient === 'premiumize') {
       downloadHandler = 'premiumize-' + downloadHandler;
-    } else if (torrentClient === 'disable') {
-      createNotification({
-        id: Math.random().toString(36).substring(7),
-        type: 'error',
-        message: 'Torrenting is disabled in the settings.',
-      });
-      resetButton();
-      return;
     }
   }
 
@@ -77,24 +75,30 @@ export async function startDownload(
 
   // Service-based architecture: find and delegate to the appropriate service
   const svc = ALL_SERVICES.find((s) => s.types.includes(downloadHandler));
-  if (svc) {
-    try {
-      await svc.startDownload(sanitizedResult, appID, event, resolvedButton ?? undefined);
-    } catch (err) {
-      resetButton();
-      console.error('startDownload failed:', err);
-      createNotification({
-        id: Math.random().toString(36).substring(7),
-        type: 'error',
-        message: err instanceof Error ? err.message : 'Download failed.',
-      });
-    }
+  if (!svc) {
+    // If no service is found for this download type, log an error and reset button
+    console.error(`No service found for download type: ${downloadHandler}`);
+    resetButton();
     return;
   }
 
-  // If no service is found for this download type, log an error
-  console.error(`No service found for download type: ${downloadHandler}`);
-  resetButton();
+  // Set button state only after confirming a service exists
+  if (resolvedButton) {
+    resolvedButton.textContent = 'Downloading...';
+    resolvedButton.disabled = true;
+  }
+
+  try {
+    await svc.startDownload(sanitizedResult, appID, event, resolvedButton ?? undefined);
+  } catch (err) {
+    resetButton();
+    console.error('startDownload failed:', err);
+    createNotification({
+      id: Math.random().toString(36).substring(7),
+      type: 'error',
+      message: err instanceof Error ? err.message : 'Download failed.',
+    });
+  }
 }
 
 /**

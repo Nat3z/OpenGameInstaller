@@ -21,6 +21,12 @@ export class EmptyService extends BaseService {
   ): Promise<void> {
     const resolvedButton = htmlButton ?? event?.currentTarget ?? null;
 
+    // UI-specific actions: set button to "Setting up..." BEFORE running async setup
+    if (resolvedButton instanceof HTMLButtonElement) {
+      resolvedButton.textContent = 'Setting up...';
+      resolvedButton.disabled = true;
+    }
+
     // Generate a unique ID for this download
     const downloadId = Math.random().toString(36).substring(2, 15);
 
@@ -57,12 +63,6 @@ export class EmptyService extends BaseService {
         false,
         {}
       );
-    }
-
-    // UI-specific actions only run when a valid button is provided
-    if (resolvedButton instanceof HTMLButtonElement) {
-      resolvedButton.textContent = 'Setting up...';
-      resolvedButton.disabled = true;
     }
   }
 }

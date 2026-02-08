@@ -164,7 +164,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     unrestrictLink: wrap((link: string) =>
       ipcRenderer.invoke('all-debrid:unrestrict-link', link)
     ),
-    addMagnet: wrap((url: string, host?: unknown) =>
+    addMagnet: wrap((url: string, host?: string) =>
       ipcRenderer.invoke('all-debrid:add-magnet', { url, host })
     ),
     getHosts: wrap(() => ipcRenderer.invoke('all-debrid:get-hosts')),

@@ -131,11 +131,6 @@ export function sendAskForInput(
 }
 
 /**
- * Single-window flow for Steam Deck / Game Mode: one BrowserWindow shows splash first, then the main app.
- * This avoids Steam focusing a separate splash window and leaving the main window black.
- */
-
-/**
  * Returns true when the OGI_DEBUG environment variable is 'true'.
  *
  * @returns {boolean} True if OGI_DEBUG is 'true', false otherwise
@@ -150,16 +145,17 @@ let listenersRegistered = false;
  * and runs post-load setup (addons, library conversion, devtools if OGI_DEBUG).
  */
 function onMainAppReady() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
   closeSplashWindow();
 
   if (!listenersRegistered) {
-    AppEventHandler(mainWindow!!);
+    AppEventHandler(mainWindow);
     FSEventHandler();
-    RealdDebridHandler(mainWindow!!);
-    TorrentHandler(mainWindow!!);
-    DirectDownloadHandler(mainWindow!!);
+    RealdDebridHandler(mainWindow);
+    TorrentHandler(mainWindow);
+    DirectDownloadHandler(mainWindow);
     AddonRestHandler();
-    AddonManagerHandler(mainWindow!!);
+    AddonManagerHandler(mainWindow);
     OOBEHandler();
 
     ipcMain.on('get-version', async (event) => {
@@ -183,14 +179,12 @@ function onMainAppReady() {
     listenersRegistered = true;
   }
   console.log('showing window');
-  mainWindow!!.show();
-  mainWindow!!.focus();
+  mainWindow.show();
+  mainWindow.focus();
 
-  if (mainWindow) {
-    checkForAddonUpdates(mainWindow);
-  }
+  checkForAddonUpdates(mainWindow);
   if (ogiDebug()) {
-    mainWindow!!.webContents.openDevTools();
+    mainWindow.webContents.openDevTools();
   }
   if (!isSecurityCheckEnabled) {
     sendNotification({
@@ -203,18 +197,19 @@ function onMainAppReady() {
 
   convertLibrary();
 
-  mainWindow!!.webContents.setWindowOpenHandler((details) => {
+  mainWindow.webContents.setWindowOpenHandler((details) => {
     shell.openExternal(details.url);
     return { action: 'deny' };
   });
 
-  mainWindow!!.webContents.on('devtools-opened', () => {
-    if (!isDev() && !ogiDebug())
-      mainWindow!!.webContents.closeDevTools();
+  const win = mainWindow;
+  mainWindow.webContents.on('devtools-opened', () => {
+    if (!isDev() && !ogiDebug() && win && !win.isDestroyed())
+      win.webContents.closeDevTools();
   });
 
   // Attach navigation guard directly to mainWindow.webContents
-  mainWindow!!.webContents.on('will-navigate', (event, navigationUrl) => {
+  mainWindow.webContents.on('will-navigate', (event, navigationUrl) => {
     const parsedUrl = new URL(navigationUrl);
 
     if (
@@ -229,7 +224,7 @@ function onMainAppReady() {
 
 /**
  * Creates the main BrowserWindow, loads splash first, then caller loads the app and registers onMainAppReady.
- * Single-window flow so Steam Deck / Game Mode keeps focus on the same window.
+ * Single-window flow for Steam Deck / Game Mode: one window shows splash first, then the main app, avoiding a separate splash window and black screen.
  *
  * @returns void
  */
@@ -272,13 +267,14 @@ function createWindow() {
 
   mainWindow.on('closed', function () {
     mainWindow = null;
+    listenersRegistered = false;
   });
 
   fs.mkdir(join(__dirname, 'config'), (_) => {});
 
   // First ready-to-show: splash is ready; show window so user sees loading
   mainWindow.once('ready-to-show', () => {
-    mainWindow!!.show();
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.show();
   });
 }
 

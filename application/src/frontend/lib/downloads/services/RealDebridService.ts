@@ -5,6 +5,39 @@ import { getDownloadPath } from '../../core/fs';
 import { listenUntilDownloadReady } from '../events';
 import type { $Hosts } from 'real-debrid-js';
 
+const DEFAULT_TORRENT_READY_TIMEOUT_MS = 600_000; // 10 minutes
+
+/**
+ * Polls until the Real-Debrid torrent is ready or the timeout is reached.
+ * @param torrentId - Real-Debrid torrent ID
+ * @param timeoutMs - Max wait in ms
+ * @throws Error if timeout is reached
+ */
+async function waitForTorrentReady(
+  torrentId: string,
+  timeoutMs = DEFAULT_TORRENT_READY_TIMEOUT_MS
+): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    const startTime = Date.now();
+    const interval = setInterval(async () => {
+      if (Date.now() - startTime > timeoutMs) {
+        clearInterval(interval);
+        reject(
+          new Error('Timed out waiting for Real-Debrid torrent to be ready.')
+        );
+        return;
+      }
+      const isReady = await window.electronAPI.realdebrid.isTorrentReady(
+        torrentId
+      );
+      if (isReady) {
+        clearInterval(interval);
+        resolve();
+      }
+    }, 3000);
+  });
+}
+
 /**
  * Handles magnet/torrent downloads that should be routed through Real-Debrid.
  */
@@ -14,12 +47,14 @@ export class RealDebridService extends BaseService {
   async startDownload(
     result: SearchResultWithAddon,
     appID: number,
-    event: MouseEvent | null
+    event: MouseEvent | null,
+    htmlButton?: HTMLButtonElement
   ): Promise<void> {
     if (result.downloadType !== 'magnet' && result.downloadType !== 'torrent')
       return;
 
-    const htmlButton = event?.target as HTMLButtonElement | null;
+    const resolvedButton =
+      htmlButton ?? (event?.target as HTMLButtonElement | null);
 
     if (!result.downloadURL) {
       createNotification({
@@ -50,10 +85,10 @@ export class RealDebridService extends BaseService {
         appID,
         tempId,
         hosts[0],
-        htmlButton
+        resolvedButton
       );
     } else if (result.downloadType === 'torrent') {
-      await this.handleTorrentDownload(result, appID, tempId, htmlButton);
+      await this.handleTorrentDownload(result, appID, tempId, resolvedButton);
     }
   }
 
@@ -77,28 +112,7 @@ export class RealDebridService extends BaseService {
     if (!isReady) {
       window.electronAPI.realdebrid.selectTorrent(magnetLink.id);
       try {
-        await new Promise<void>((resolve, reject) => {
-          const startTime = Date.now();
-          const timeout = 600 * 1000; // 10 minutes
-          const interval = setInterval(async () => {
-            if (Date.now() - startTime > timeout) {
-              clearInterval(interval);
-              reject(
-                new Error(
-                  'Timed out waiting for Real-Debrid torrent to be ready.'
-                )
-              );
-              return;
-            }
-            const isReady = await window.electronAPI.realdebrid.isTorrentReady(
-              magnetLink.id
-            );
-            if (isReady) {
-              clearInterval(interval);
-              resolve();
-            }
-          }, 3000);
-        });
+        await waitForTorrentReady(magnetLink.id);
       } catch (err) {
         createNotification({
           id: Math.random().toString(36).substring(7),
@@ -193,28 +207,7 @@ export class RealDebridService extends BaseService {
     if (!isReady) {
       window.electronAPI.realdebrid.selectTorrent(torrent.id);
       try {
-        await new Promise<void>((resolve, reject) => {
-          const startTime = Date.now();
-          const timeout = 600 * 1000; // 10 minutes
-          const interval = setInterval(async () => {
-            if (Date.now() - startTime > timeout) {
-              clearInterval(interval);
-              reject(
-                new Error(
-                  'Timed out waiting for Real-Debrid torrent to be ready.'
-                )
-              );
-              return;
-            }
-            const isReady = await window.electronAPI.realdebrid.isTorrentReady(
-              torrent.id
-            );
-            if (isReady) {
-              clearInterval(interval);
-              resolve();
-            }
-          }, 3000);
-        });
+        await waitForTorrentReady(torrent.id);
       } catch (err) {
         createNotification({
           id: Math.random().toString(36).substring(7),

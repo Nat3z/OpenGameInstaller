@@ -1,25 +1,9 @@
-import {
-  BrowserWindow,
-  app,
-  dialog,
-  screen,
-  ipcMain,
-  shell,
-} from 'electron';
-import fs from 'node:fs';
-import path from 'node:path';
+import { BrowserWindow, app } from 'electron';
 import {
   checkIfInstallerUpdateAvailable,
-  UpdaterCallbacks,
-} from './updater/self-updater';
+  type UpdaterCallbacks,
+} from './updater.js';
 import {
-  createSplashWindow,
-  updateSplashStatus,
-  updateSplashProgress,
-  closeSplashWindow,
-} from './splash';
-import {
-  backupUserData,
   restoreBackup,
   removeCachedAppUpdates,
   reinstallAddonDependencies,
@@ -61,6 +45,29 @@ let splashWindow: BrowserWindow | null = null;
 
 /** When set, splash updates are sent to this window (single-window / Steam Deck flow). */
 let splashTargetWindow: BrowserWindow | null = null;
+
+function getSplashWindow(): BrowserWindow | null {
+  const w = splashTargetWindow ?? splashWindow;
+  return w && !w.isDestroyed() ? w : null;
+}
+
+function updateSplashStatus(text: string, subtext?: string): void {
+  const w = getSplashWindow();
+  if (w?.webContents) w.webContents.send('splash-status', text, subtext);
+}
+
+function updateSplashProgress(current: number, total: number, speed: string): void {
+  const w = getSplashWindow();
+  if (w?.webContents) w.webContents.send('splash-progress', current, total, speed);
+}
+
+/** Closes the dedicated splash window if one was created (e.g. legacy flow). Exported for main. */
+export function closeSplashWindow(): void {
+  if (splashWindow && !splashWindow.isDestroyed()) {
+    splashWindow.close();
+    splashWindow = null;
+  }
+}
 
 export async function runStartupTasks(
   mainWindow?: BrowserWindow | null

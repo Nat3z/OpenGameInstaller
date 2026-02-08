@@ -60,6 +60,11 @@ export class TorrentService extends BaseService {
 
     const downloadPath = getDownloadPath() + '/' + result.name + '/' + filename;
 
+    const resetButton = () => {
+      resolvedButton.textContent = 'Download';
+      resolvedButton.disabled = false;
+    };
+
     if (result.downloadType === 'torrent') {
       window.electronAPI.torrent
         .downloadTorrent(result.downloadURL, downloadPath)
@@ -71,6 +76,7 @@ export class TorrentService extends BaseService {
               message: 'Failed to download torrent.',
             });
             console.error('No download ID returned');
+            resetButton();
             return;
           }
           resolvedButton.textContent = 'Downloading...';
@@ -92,6 +98,14 @@ export class TorrentService extends BaseService {
               },
             ];
           });
+        })
+        .catch((err) => {
+          createNotification({
+            id: Math.random().toString(36).substring(7),
+            type: 'error',
+            message: (err as Error)?.message ?? 'Failed to download torrent.',
+          });
+          resetButton();
         });
     } else if (result.downloadType === 'magnet') {
       window.electronAPI.torrent
@@ -104,6 +118,7 @@ export class TorrentService extends BaseService {
               message: 'Failed to download torrent.',
             });
             console.error('No download ID returned');
+            resetButton();
             return;
           }
           resolvedButton.textContent = 'Downloading...';
@@ -126,6 +141,14 @@ export class TorrentService extends BaseService {
               },
             ];
           });
+        })
+        .catch((err) => {
+          createNotification({
+            id: Math.random().toString(36).substring(7),
+            type: 'error',
+            message: (err as Error)?.message ?? 'Failed to download magnet.',
+          });
+          resetButton();
         });
     }
   }

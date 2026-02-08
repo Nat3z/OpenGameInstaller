@@ -52,6 +52,8 @@ export async function startDownload(
   // Service-based architecture: find and delegate to the appropriate service
   const svc = ALL_SERVICES.find((s) => s.types.includes(downloadHandler));
   if (svc) {
+    // Belt-and-suspenders: lifecycle and some services both set "Downloading…" / disabled and reset on error.
+    // This is intentional so the button is restored even if a service forgets to reset it (idempotent DOM writes).
     if (resolvedButton) {
       resolvedButton.textContent = 'Downloading...';
       resolvedButton.disabled = true;

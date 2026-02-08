@@ -139,6 +139,7 @@ export class TorboxService extends BaseService {
       const errorMessage = response.data.detail;
       console.log('Failed to create torrent on Torbox: ', errorMessage);
 
+      const responseData = response.data.data;
       const message =
         response.data.error === 'DOWNLOAD_TOO_LARGE'
           ? 'Your current plan does not support the size you are trying to download.'
@@ -151,8 +152,9 @@ export class TorboxService extends BaseService {
               : response.data.detail.includes('cooldown')
                 ? 'You are on a cooldown period. Please wait until ' +
                   new Date(
-                    (response.data.data as { cooldown_until: number })
-                      .cooldown_until * 1000
+                    ('cooldown_until' in responseData
+                      ? responseData.cooldown_until
+                      : 0) * 1000
                   ).toLocaleString() +
                   ' to try again.'
                 : response.data.detail.includes('must provide') &&
@@ -169,10 +171,29 @@ export class TorboxService extends BaseService {
     }
 
     // Extract queued_id and torrent_id from response data
-    const responseData =
-      response.data.data as { hash: string; queued_id?: number; torrent_id?: number };
-    const queued_id = responseData.queued_id;
-    const torrent_id = responseData.torrent_id;
+    // After error handling, we know status is 200 or "Download already queued"
+    // Now we need to properly narrow the type
+    const responseData = response.data.data;
+    let queued_id: number | undefined;
+    let torrent_id: number | undefined;
+
+    if ('hash' in responseData) {
+      // This is the success type
+      queued_id = responseData.queued_id;
+      torrent_id = responseData.torrent_id;
+    } else if ('cooldown_until' in responseData) {
+      // This should have been caught by the error handling, but handle it safely
+      console.error('Unexpected cooldown response with status 200');
+      createNotification({
+        id: Math.random().toString(36).substring(7),
+        type: 'error',
+        message:
+          'You are on a cooldown period. Please wait until ' +
+          new Date(responseData.cooldown_until * 1000).toLocaleString() +
+          ' to try again.',
+      });
+      return;
+    }
 
     if (!queued_id && !torrent_id) {
       console.error('No queued id or torrent id found');

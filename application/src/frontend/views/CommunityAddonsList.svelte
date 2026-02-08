@@ -267,7 +267,7 @@
   }
 
   .error-container {
-    @apply flex-col gap-4;
+    @apply flex flex-col items-center justify-center w-full h-full gap-4;
   }
 
   .error-message {
@@ -276,11 +276,6 @@
 
   .retry-button {
     @apply px-4 py-2 rounded-lg font-medium bg-accent hover:bg-accent-dark text-white border-none cursor-pointer transition-colors duration-200;
-  }
-
-  .loading-text,
-  .error-text {
-    @apply text-lg text-gray-600;
   }
 
   .addon-grid {

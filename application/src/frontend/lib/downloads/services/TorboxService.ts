@@ -57,7 +57,7 @@ export class TorboxService extends BaseService {
   async startDownload(
     result: SearchResultWithAddon,
     appID: number,
-    event: MouseEvent
+    event: MouseEvent | null
   ): Promise<void> {
     if (event === null) return;
     if (result.downloadType !== 'magnet' && result.downloadType !== 'torrent')
@@ -139,7 +139,7 @@ export class TorboxService extends BaseService {
       const errorMessage = response.data.detail;
       console.log('Failed to create torrent on Torbox: ', errorMessage);
 
-      const responseData = response.data.data;
+      const errorResponseData = response.data.data;
       const message =
         response.data.error === 'DOWNLOAD_TOO_LARGE'
           ? 'Your current plan does not support the size you are trying to download.'
@@ -152,8 +152,8 @@ export class TorboxService extends BaseService {
               : response.data.detail.includes('cooldown')
                 ? 'You are on a cooldown period. Please wait until ' +
                   new Date(
-                    ('cooldown_until' in responseData
-                      ? responseData.cooldown_until
+                    ('cooldown_until' in errorResponseData
+                      ? errorResponseData.cooldown_until
                       : 0) * 1000
                   ).toLocaleString() +
                   ' to try again.'

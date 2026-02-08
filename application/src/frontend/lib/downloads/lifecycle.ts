@@ -11,7 +11,7 @@ import type { SearchResultWithAddon } from '../tasks/runner';
 export async function startDownload(
   result: SearchResultWithAddon,
   appID: number,
-  event: MouseEvent
+  event: MouseEvent | null
 ) {
   if (event === null) return;
   if (event.target === null) return;

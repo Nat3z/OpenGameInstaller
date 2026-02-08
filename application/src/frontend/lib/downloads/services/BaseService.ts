@@ -21,7 +21,7 @@ export abstract class BaseService {
   abstract startDownload(
     result: SearchResultWithAddon,
     appID: number,
-    event: MouseEvent
+    event: MouseEvent | null
   ): Promise<void>;
 
   queueRequestDownload(

@@ -16,7 +16,7 @@ export class RequestService extends BaseService {
   async startDownload(
     result: SearchResultWithAddon,
     appID: number,
-    event: MouseEvent
+    event: MouseEvent | null
   ): Promise<void> {
     if (event === null) return;
     if (event.target === null) return;

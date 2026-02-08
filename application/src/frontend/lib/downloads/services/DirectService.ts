@@ -13,7 +13,7 @@ export class DirectService extends BaseService {
   async startDownload(
     result: SearchResultWithAddon,
     appID: number,
-    event: MouseEvent
+    event: MouseEvent | null
   ): Promise<void> {
     if (result.downloadType !== 'direct') return;
     if (event === null) return;

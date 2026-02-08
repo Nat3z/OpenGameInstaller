@@ -78,19 +78,25 @@ export class PremiumizeService extends BaseService {
     if (result.downloadType !== 'magnet' && result.downloadType !== 'torrent')
       return;
 
+    let originalText = '';
+    let originalDisabled = false;
+
     if (htmlButton) {
+      originalText = htmlButton.textContent || '';
+      originalDisabled = htmlButton.disabled;
       htmlButton.textContent = 'Downloading...';
       htmlButton.disabled = true;
     }
 
-    console.log('PremiumizeService startDownload', result);
-    const optionHandled = getConfigClientOption<{ premiumizeApiKey?: string }>(
-      'realdebrid'
-    );
-    if (!optionHandled || !optionHandled.premiumizeApiKey) {
-      throw new Error('Please set your Premiumize API key in the settings.');
-    }
-    const { premiumizeApiKey } = optionHandled;
+    try {
+      console.log('PremiumizeService startDownload', result);
+      const optionHandled = getConfigClientOption<{ premiumizeApiKey?: string }>(
+        'realdebrid'
+      );
+      if (!optionHandled || !optionHandled.premiumizeApiKey) {
+        throw new Error('Please set your Premiumize API key in the settings.');
+      }
+      const { premiumizeApiKey } = optionHandled;
 
     const tempId = this.queueRequestDownload(result, appID, 'premiumize');
 
@@ -267,5 +273,11 @@ export class PremiumizeService extends BaseService {
       updatedState,
       result
     );
+    } finally {
+      if (htmlButton) {
+        htmlButton.textContent = originalText;
+        htmlButton.disabled = originalDisabled;
+      }
+    }
   }
 }

@@ -89,9 +89,6 @@ export class AllDebridService extends BaseService {
     if (result.downloadType !== 'magnet' && result.downloadType !== 'torrent')
       return;
 
-    const button = htmlButton ?? event?.currentTarget ?? null;
-    if (button === null || !(button instanceof HTMLButtonElement)) return;
-
     const tempId = this.queueRequestDownload(result, appID, 'alldebrid');
 
     if (!result.downloadURL) {
@@ -204,7 +201,12 @@ export class AllDebridService extends BaseService {
     if (result.downloadType !== 'torrent') return;
 
     if (!result.name || !result.downloadURL) {
-      throw new Error('Addon did not provide a name for the torrent.');
+      if (!result.name) {
+        throw new Error('Addon did not provide a name for the torrent.');
+      }
+      if (!result.downloadURL) {
+        throw new Error('Addon did not provide a downloadURL for the torrent.');
+      }
     }
 
     let torrent: Awaited<

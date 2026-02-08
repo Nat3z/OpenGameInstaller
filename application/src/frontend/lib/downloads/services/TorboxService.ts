@@ -130,6 +130,9 @@ export class TorboxService extends BaseService {
       },
     });
 
+    // Extract response data once for use in error handling and success path
+    const responseData = response.data.data;
+
     // check if it worked then provide a good response message
     if (
       response.status !== 200 &&
@@ -139,7 +142,6 @@ export class TorboxService extends BaseService {
       const errorMessage = response.data.detail;
       console.log('Failed to create torrent on Torbox: ', errorMessage);
 
-      const responseData = response.data.data;
       const message =
         response.data.error === 'DOWNLOAD_TOO_LARGE'
           ? 'Your current plan does not support the size you are trying to download.'
@@ -173,7 +175,6 @@ export class TorboxService extends BaseService {
     // Extract queued_id and torrent_id from response data
     // After error handling, we know status is 200 or "Download already queued"
     // Now we need to properly narrow the type
-    const responseData = response.data.data;
     let queued_id: number | undefined;
     let torrent_id: number | undefined;
 

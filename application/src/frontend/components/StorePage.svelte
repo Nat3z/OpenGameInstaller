@@ -622,7 +622,7 @@
                     <button
                       class="w-full border-none {!isWin32Only
                         ? 'bg-accent-light hover:bg-accent-light/80 text-accent-dark'
-                        : 'bg-gray-300 text-text-muted cursor-not-allowed'} font-medium py-3 px-4 rounded-lg transition-colors duration-200 {isWin32Only
+                        : 'bg-border text-text-muted cursor-not-allowed'} font-medium py-3 px-4 rounded-lg transition-colors duration-200 {isWin32Only
                         ? 'mb-3'
                         : ''}"
                       class:disabled={isWin32Only}
@@ -637,7 +637,7 @@
 
                     {#if isWin32Only}
                       <button
-                        class="w-full border-none bg-red-100 hover:bg-red-200 text-red-700 font-medium py-3 px-4 rounded-lg transition-colors duration-200"
+                        class="w-full border-none bg-error-bg hover:bg-error-border text-error-text font-medium py-3 px-4 rounded-lg transition-colors duration-200"
                         onclick={() => removeGame()}
                       >
                         Remove from Library
@@ -808,7 +808,7 @@
                                   <button
                                     class="flex-1 text-sm border-none {activeDownload &&
                                     !alreadyOwns
-                                      ? 'bg-gray-300 text-text-muted cursor-not-allowed'
+                                      ? 'bg-border text-text-muted cursor-not-allowed'
                                       : 'bg-accent-light hover:bg-accent-light/80 text-accent-dark'} font-medium py-3 px-3 rounded-lg flex items-center justify-center gap-2 transition-colors duration-200"
                                     disabled={(results.length === 0 &&
                                       !queryingSources) ||

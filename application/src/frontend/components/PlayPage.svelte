@@ -292,7 +292,7 @@
         onclick={() => {
           updatesManager.removeAppUpdate(libraryInfo.appID);
         }}
-        class="px-3 py-3 flex border-none rounded-lg justify-center bg-red-500 hover:bg-red-600 items-center gap-2 disabled:bg-gray-500 disabled:cursor-not-allowed transition-colors duration-200"
+        class="px-3 py-3 flex border-none rounded-lg justify-center bg-red-500 hover:bg-red-600 items-center gap-2 disabled:bg-border-muted disabled:cursor-not-allowed transition-colors duration-200"
       >
         <svg
           xmlns="http://www.w3.org/2000/svg"
@@ -321,7 +321,7 @@
         {#if (os === 'linux' || os === 'darwin') && libraryInfo.launchExecutable.endsWith('.exe')}
           <div class="relative group">
             <button
-              class="px-6 py-3 flex border-none rounded-lg justify-center bg-gray-500 items-center gap-2 disabled:bg-gray-500 disabled:cursor-not-allowed transition-colors duration-200"
+              class="px-6 py-3 flex border-none rounded-lg justify-center bg-border-muted items-center gap-2 disabled:bg-border-muted disabled:cursor-not-allowed transition-colors duration-200"
               disabled
             >
               <PlayIcon fill="#ffffff" />
@@ -405,7 +405,7 @@
       </div>
       <div class="flex gap-3">
         <button
-          class="px-4 py-2 bg-accent-light hover:bg-accent-light/80 text-accent-dark font-archivo font-semibold rounded-lg border-none flex items-center justify-center gap-2 transition-colors duration-200 flex-1 disabled:bg-gray-500/50 disabled:cursor-not-allowed"
+          class="px-4 py-2 bg-accent-light hover:bg-accent-light/80 text-accent-dark font-archivo font-semibold rounded-lg border-none flex items-center justify-center gap-2 transition-colors duration-200 flex-1 disabled:bg-border-muted/50 disabled:cursor-not-allowed"
           onclick={async (event) => {
             try {
               (event.currentTarget as HTMLButtonElement).disabled = true;

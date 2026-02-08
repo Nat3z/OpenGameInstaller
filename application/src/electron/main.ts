@@ -79,6 +79,9 @@ let isReadyForEvents = false;
 
 let readyForEventWaiters: (() => void)[] = [];
 
+// Flag to ensure IPC handlers are only registered once
+let handlersRegistered = false;
+
 /**
  * Sends an IPC message to the main window. If the renderer is not yet ready for events,
  * queues the send until after client-ready-for-events. Used for notifications, splash updates, etc.
@@ -89,7 +92,14 @@ export async function sendIPCMessage(channel: string, ...args: any[]) {
   if (!isReadyForEvents) {
     await new Promise<void>((resolve) => {
       console.log('waiting for events');
-      readyForEventWaiters.push(resolve);
+      const timeout = setTimeout(() => {
+        console.warn(`sendIPCMessage('${channel}'): timed out waiting for renderer readiness`);
+        resolve();
+      }, 30_000);
+      readyForEventWaiters.push(() => {
+        clearTimeout(timeout);
+        resolve();
+      });
     });
     console.log('events ready');
   }
@@ -136,6 +146,56 @@ export function sendAskForInput(
 const ogiDebug = () => (process.env.OGI_DEBUG ?? 'false') === 'true';
 
 /**
+ * Registers all IPC handlers and app-level event listeners once. Called before any window is created.
+ */
+function registerHandlers() {
+  if (handlersRegistered) {
+    return;
+  }
+  handlersRegistered = true;
+
+  ipcMain.on('get-version', async (event) => {
+    event.returnValue = VERSION;
+  });
+
+  ipcMain.on('client-ready-for-events', async () => {
+    isReadyForEvents = true;
+    for (const waiter of readyForEventWaiters) {
+      waiter();
+    }
+    readyForEventWaiters = [];
+  });
+
+  app.on('browser-window-focus', function () {
+    globalShortcut.register('CommandOrControl+R', () => {
+      console.log('CommandOrControl+R is pressed: Shortcut Disabled');
+    });
+    globalShortcut.register('F5', () => {
+      console.log('F5 is pressed: Shortcut Disabled');
+    });
+  });
+
+  app.on('browser-window-blur', function () {
+    globalShortcut.unregister('CommandOrControl+R');
+    globalShortcut.unregister('F5');
+  });
+
+  app.on('web-contents-created', (_, contents) => {
+    contents.on('will-navigate', (event, navigationUrl) => {
+      const parsedUrl = new URL(navigationUrl);
+
+      if (
+        parsedUrl.origin !== 'http://localhost:8080' &&
+        parsedUrl.origin !== 'file://'
+      ) {
+        event.preventDefault();
+        console.error(`Blocked navigation to: ${navigationUrl}`);
+      }
+    });
+  });
+}
+
+/**
  * Lifecycle hook run when the main app page has finished loading in the main window. Closes splash,
  * wires all IPC/event handlers (App, FS, RealDebrid, Torrent, etc.), shows/focuses the window,
  * runs addon update check and library conversion. Optionally opens dev tools if ogiDebug() is true.
@@ -152,9 +212,6 @@ function onMainAppReady() {
   AddonManagerHandler(mainWindow!!);
   OOBEHandler();
 
-  ipcMain.on('get-version', async (event) => {
-    event.returnValue = VERSION;
-  });
   console.log('showing window');
   mainWindow!!.show();
   mainWindow!!.focus();
@@ -176,42 +233,14 @@ function onMainAppReady() {
 
   convertLibrary();
 
-  app.on('browser-window-focus', function () {
-    globalShortcut.register('CommandOrControl+R', () => {
-      console.log('CommandOrControl+R is pressed: Shortcut Disabled');
-    });
-    globalShortcut.register('F5', () => {
-      console.log('F5 is pressed: Shortcut Disabled');
-    });
-  });
-
   mainWindow!!.webContents.setWindowOpenHandler((details) => {
     shell.openExternal(details.url);
     return { action: 'deny' };
   });
 
-  app.on('browser-window-blur', function () {
-    globalShortcut.unregister('CommandOrControl+R');
-    globalShortcut.unregister('F5');
-  });
-
   mainWindow!!.webContents.on('devtools-opened', () => {
     if (!isDev() && !ogiDebug())
       mainWindow!!.webContents.closeDevTools();
-  });
-
-  app.on('web-contents-created', (_, contents) => {
-    contents.on('will-navigate', (event, navigationUrl) => {
-      const parsedUrl = new URL(navigationUrl);
-
-      if (
-        parsedUrl.origin !== 'http://localhost:8080' &&
-        parsedUrl.origin !== 'file://'
-      ) {
-        event.preventDefault();
-        throw new Error('Navigating to that address is not allowed.');
-      }
-    });
   });
 }
 
@@ -238,20 +267,11 @@ function createWindow() {
   });
   if (!isDev() && !ogiDebug()) mainWindow.removeMenu();
 
-  ipcMain.on('client-ready-for-events', async () => {
-    isReadyForEvents = true;
-    for (const waiter of readyForEventWaiters) {
-      waiter();
-    }
-    readyForEventWaiters = [];
-  });
-
   app.commandLine.appendSwitch('disable-features', 'HardwareMediaKeyHandling');
 
   // Load splash first so there is only one window (fixes Steam Deck Game Mode black screen)
-  mainWindow.loadURL(
-    'file://' + join(app.getAppPath(), 'public', 'splash.html')
-  );
+  // Use loadFile for cross-platform safety
+  mainWindow.loadFile(join(app.getAppPath(), 'public', 'splash.html'));
 
   mainWindow.on('closed', function () {
     mainWindow = null;
@@ -269,6 +289,9 @@ function createWindow() {
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
 app.on('ready', async () => {
+  // Register all handlers once before creating any windows
+  registerHandlers();
+
   // Single window: create it and show splash first so Steam Deck / Game Mode keeps focus
   createWindow();
 
@@ -282,11 +305,9 @@ app.on('ready', async () => {
     );
     console.log('Running in development');
   } else {
-    mainWindow!!.loadURL(
-      'file://' +
-        join(app.getAppPath(), 'out', 'renderer', 'index.html') +
-        '?secret=' +
-        applicationAddonSecret
+    mainWindow!!.loadFile(
+      join(app.getAppPath(), 'out', 'renderer', 'index.html'),
+      { search: `secret=${applicationAddonSecret}` }
     );
   }
 
@@ -331,8 +352,22 @@ app.on('window-all-closed', async function () {
   app.exit(0);
 });
 
-app.on('activate', function () {
+app.on('activate', async function () {
   // On macOS it's common to re-create a window in the app when the
   // dock icon is clicked and there are no other windows open.
-  if (mainWindow === null) createWindow();
+  if (mainWindow === null) {
+    createWindow();
+    await runStartupTasks(mainWindow!);
+    if (isDev()) {
+      mainWindow!!.loadURL(
+        'http://localhost:8080/?secret=' + applicationAddonSecret
+      );
+    } else {
+      mainWindow!!.loadFile(
+        join(app.getAppPath(), 'out', 'renderer', 'index.html'),
+        { search: `secret=${applicationAddonSecret}` }
+      );
+    }
+    mainWindow!!.once('ready-to-show', onMainAppReady);
+  }
 });

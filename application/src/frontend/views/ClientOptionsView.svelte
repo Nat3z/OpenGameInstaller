@@ -1284,19 +1284,19 @@
   }
 
   .action-button.primary {
-    @apply bg-green-500 text-white hover:bg-green-600 disabled:bg-gray-400;
+    @apply bg-green-500 text-white hover:bg-green-600 disabled:bg-border-muted;
   }
 
   .action-button.secondary {
-    @apply bg-blue-500 text-white hover:bg-blue-600 disabled:bg-gray-400;
+    @apply bg-blue-500 text-white hover:bg-blue-600 disabled:bg-border-muted;
   }
 
   .action-button.danger {
-    @apply bg-red-500 text-white hover:bg-red-600 disabled:bg-gray-400;
+    @apply bg-red-500 text-white hover:bg-red-600 disabled:bg-border-muted;
   }
 
   .action-button.warning {
-    @apply bg-yellow-500 text-white hover:bg-yellow-600 disabled:bg-gray-400;
+    @apply bg-yellow-500 text-white hover:bg-yellow-600 disabled:bg-border-muted;
   }
 
   /* No Selection State */

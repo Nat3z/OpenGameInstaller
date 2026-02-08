@@ -1,3 +1,6 @@
+/**
+ * Preload script for the main renderer. Exposes electronAPI (including getInitialTheme) to the renderer via contextBridge and forwards IPC events (splash, notifications, DDL/torrent progress, etc.) as DOM CustomEvents.
+ */
 import { AxiosRequestConfig } from 'axios';
 import { contextBridge, ipcRenderer } from 'electron';
 import { LibraryInfo } from 'ogi-addon';
@@ -7,10 +10,18 @@ import type { $Hosts } from 'real-debrid-js';
 let dbg_eventsProcessed = 0;
 let dbg_lastReportTime = Date.now();
 
+/**
+ * Debug helper; increments a counter used for events-processed-per-second reporting. No parameters, no return.
+ */
 function dbg_countEvent() {
   dbg_eventsProcessed++;
 }
 
+/**
+ * Wraps an IPC/renderer function so each call is counted for debug stats and errors are dispatched as dbg:error CustomEvents.
+ * @param fn - Function to wrap.
+ * @returns A function with the same signature as fn.
+ */
 const wrap = (fn: (...args: any[]) => any) => {
   return (...args: any[]) => {
     dbg_countEvent();
@@ -288,6 +299,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     addToDesktop: wrap(() => ipcRenderer.invoke('app:add-to-desktop')),
   },
   getVersion: wrap(() => ipcRenderer.sendSync('get-version')),
+  getInitialTheme: wrap(() => ipcRenderer.sendSync('get-initial-theme')),
   updateAddons: wrap(() => ipcRenderer.invoke('update-addons')),
   installAddons: wrap((addons: string[]) =>
     ipcRenderer.invoke('install-addons', addons)
@@ -513,6 +525,26 @@ ipcRenderer.on(
   wrap((_, arg) => {
     document.dispatchEvent(
       new CustomEvent('app:show-changelog', { detail: { version: arg } })
+    );
+  })
+);
+
+// Single-window / Steam Deck: main window shows splash.html first; forward splash IPC so it can update
+ipcRenderer.on(
+  'splash-status',
+  wrap((_, text: string, subtext?: string) => {
+    document.dispatchEvent(
+      new CustomEvent('splash-status', { detail: { text, subtext } })
+    );
+  })
+);
+ipcRenderer.on(
+  'splash-progress',
+  wrap((_, current: number, total: number, speed?: string) => {
+    document.dispatchEvent(
+      new CustomEvent('splash-progress', {
+        detail: { current, total, speed },
+      })
     );
   })
 );

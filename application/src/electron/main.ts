@@ -66,6 +66,11 @@ interface Notification {
   id: string;
   type: 'info' | 'error' | 'success' | 'warning';
 }
+
+/**
+ * Sends a notification to the renderer via IPC.
+ * @param notification - Object with message, id, and type ('info' | 'error' | 'success' | 'warning').
+ */
 export function sendNotification(notification: Notification) {
   sendIPCMessage('notification', notification);
 }
@@ -74,6 +79,12 @@ let isReadyForEvents = false;
 
 let readyForEventWaiters: (() => void)[] = [];
 
+/**
+ * Sends an IPC message to the main window. If the renderer is not yet ready for events,
+ * queues the send until after client-ready-for-events. Used for notifications, splash updates, etc.
+ * @param channel - IPC channel name.
+ * @param args - Arguments to send.
+ */
 export async function sendIPCMessage(channel: string, ...args: any[]) {
   if (!isReadyForEvents) {
     await new Promise<void>((resolve) => {
@@ -90,6 +101,14 @@ export let currentScreens = new Map<
   { [key: string]: string | boolean | number } | undefined
 >();
 
+/**
+ * Asks the renderer to show an input modal for the given option. Sends input-asked with
+ * option id, config, name, description. Main window must exist and have webContents.
+ * @param id - Option id.
+ * @param config - Configuration file.
+ * @param name - Display name.
+ * @param description - Description for the modal.
+ */
 export function sendAskForInput(
   id: string,
   config: ConfigurationFile,
@@ -111,25 +130,103 @@ export function sendAskForInput(
 }
 
 /**
- * Create and configure the main application BrowserWindow and register its IPC and lifecycle handlers.
- *
- * Initializes the mainWindow with appropriate web preferences and icon, loads the renderer (development or production),
- * registers IPC listeners and readiness coordination, and wires lifecycle behaviors used by the application such as
- * showing the window when ready, initializing runtime handlers, global shortcut management, external-link handling,
- * and devtools behavior.
+ * Returns whether the OGI_DEBUG env flag is set (e.g. process.env.OGI_DEBUG === 'true').
+ * Used for dev tools and debug behavior.
+ */
+const ogiDebug = () => (process.env.OGI_DEBUG ?? 'false') === 'true';
+
+/**
+ * Lifecycle hook run when the main app page has finished loading in the main window. Closes splash,
+ * wires all IPC/event handlers (App, FS, RealDebrid, Torrent, etc.), shows/focuses the window,
+ * runs addon update check and library conversion. Optionally opens dev tools if ogiDebug() is true.
+ */
+function onMainAppReady() {
+  closeSplashWindow();
+
+  AppEventHandler(mainWindow!!);
+  FSEventHandler();
+  RealdDebridHandler(mainWindow!!);
+  TorrentHandler(mainWindow!!);
+  DirectDownloadHandler(mainWindow!!);
+  AddonRestHandler();
+  AddonManagerHandler(mainWindow!!);
+  OOBEHandler();
+
+  ipcMain.on('get-version', async (event) => {
+    event.returnValue = VERSION;
+  });
+  console.log('showing window');
+  mainWindow!!.show();
+  mainWindow!!.focus();
+
+  if (mainWindow) {
+    checkForAddonUpdates(mainWindow);
+  }
+  if (ogiDebug()) {
+    mainWindow!!.webContents.openDevTools();
+  }
+  if (!isSecurityCheckEnabled) {
+    sendNotification({
+      message:
+        "Security checks are disabled and application security LOWERED. Only enable if you know what you're doing.",
+      id: Math.random().toString(36).substring(7),
+      type: 'warning',
+    });
+  }
+
+  convertLibrary();
+
+  app.on('browser-window-focus', function () {
+    globalShortcut.register('CommandOrControl+R', () => {
+      console.log('CommandOrControl+R is pressed: Shortcut Disabled');
+    });
+    globalShortcut.register('F5', () => {
+      console.log('F5 is pressed: Shortcut Disabled');
+    });
+  });
+
+  mainWindow!!.webContents.setWindowOpenHandler((details) => {
+    shell.openExternal(details.url);
+    return { action: 'deny' };
+  });
+
+  app.on('browser-window-blur', function () {
+    globalShortcut.unregister('CommandOrControl+R');
+    globalShortcut.unregister('F5');
+  });
+
+  mainWindow!!.webContents.on('devtools-opened', () => {
+    if (!isDev() && !ogiDebug())
+      mainWindow!!.webContents.closeDevTools();
+  });
+
+  app.on('web-contents-created', (_, contents) => {
+    contents.on('will-navigate', (event, navigationUrl) => {
+      const parsedUrl = new URL(navigationUrl);
+
+      if (
+        parsedUrl.origin !== 'http://localhost:8080' &&
+        parsedUrl.origin !== 'file://'
+      ) {
+        event.preventDefault();
+        throw new Error('Navigating to that address is not allowed.');
+      }
+    });
+  });
+}
+
+/**
+ * Creates the main BrowserWindow, loads splash first, then caller loads the app and registers onMainAppReady.
+ * Single-window flow so Steam Deck / Game Mode keeps focus on the same window.
  */
 function createWindow() {
-  // Create the browser window.
-  // check if the environment variable OGI_DEBUG is set, and if so, allow devtools
-  const ogiDebug = process.env.OGI_DEBUG ?? 'false';
   mainWindow = new BrowserWindow({
     width: 1000,
     height: 700,
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: true,
-      // always allow devtools
-      devTools: ogiDebug === 'true' || isDev(),
+      devTools: ogiDebug() || isDev(),
       preload: join(app.getAppPath(), 'out/preload/index.mjs'),
     },
     title: 'OpenGameInstaller',
@@ -139,14 +236,7 @@ function createWindow() {
     autoHideMenuBar: true,
     show: false,
   });
-  if (ogiDebug === 'true') {
-    // open devtools
-    mainWindow.webContents.openDevTools();
-  }
-  if (!isDev() && ogiDebug !== 'true') mainWindow.removeMenu();
-
-  // This block of code is intended for development purpose only.
-  // Delete this entire block of code when you are ready to package the application.
+  if (!isDev() && !ogiDebug()) mainWindow.removeMenu();
 
   ipcMain.on('client-ready-for-events', async () => {
     isReadyForEvents = true;
@@ -158,6 +248,34 @@ function createWindow() {
 
   app.commandLine.appendSwitch('disable-features', 'HardwareMediaKeyHandling');
 
+  // Load splash first so there is only one window (fixes Steam Deck Game Mode black screen)
+  mainWindow.loadURL(
+    'file://' + join(app.getAppPath(), 'public', 'splash.html')
+  );
+
+  mainWindow.on('closed', function () {
+    mainWindow = null;
+  });
+
+  fs.mkdir(join(__dirname, 'config'), (_) => {});
+
+  // First ready-to-show: splash is ready; show window so user sees loading
+  mainWindow.once('ready-to-show', () => {
+    mainWindow!!.show();
+  });
+}
+
+// This method will be called when Electron has finished
+// initialization and is ready to create browser windows.
+// Some APIs can only be used after this event occurs.
+app.on('ready', async () => {
+  // Single window: create it and show splash first so Steam Deck / Game Mode keeps focus
+  createWindow();
+
+  // Run startup tasks; splash updates go to the main window
+  await runStartupTasks(mainWindow!);
+
+  // Load the main app into the same window (replaces splash)
   if (isDev()) {
     mainWindow!!.loadURL(
       'http://localhost:8080/?secret=' + applicationAddonSecret
@@ -172,101 +290,7 @@ function createWindow() {
     );
   }
 
-  // Emitted when the window is closed.
-  mainWindow.on('closed', function () {
-    // Dereference the window object, usually you would store windows
-    // in an array if your app supports multi windows, this is the time
-    // when you should delete the corresponding element.
-    mainWindow = null;
-  });
-
-  // Emitted when the window is ready to be shown
-  // This helps in showing the window gracefully.
-  fs.mkdir(join(__dirname, 'config'), (_) => {});
-  mainWindow.once('ready-to-show', () => {
-    // Close the splash screen now that main window is shown
-    closeSplashWindow();
-
-    AppEventHandler(mainWindow!!);
-    FSEventHandler();
-    RealdDebridHandler(mainWindow!!);
-    TorrentHandler(mainWindow!!);
-    DirectDownloadHandler(mainWindow!!);
-    AddonRestHandler();
-    AddonManagerHandler(mainWindow!!);
-    OOBEHandler();
-
-    ipcMain.on('get-version', async (event) => {
-      event.returnValue = VERSION;
-    });
-    console.log('showing window');
-    mainWindow!!.show();
-    // start the app with it being focused
-    mainWindow!!.focus();
-
-    if (mainWindow) {
-      checkForAddonUpdates(mainWindow);
-    }
-    if (!isSecurityCheckEnabled) {
-      sendNotification({
-        message:
-          "Security checks are disabled and application security LOWERED. Only enable if you know what you're doing.",
-        id: Math.random().toString(36).substring(7),
-        type: 'warning',
-      });
-    }
-
-    convertLibrary();
-
-    app.on('browser-window-focus', function () {
-      globalShortcut.register('CommandOrControl+R', () => {
-        console.log('CommandOrControl+R is pressed: Shortcut Disabled');
-      });
-      globalShortcut.register('F5', () => {
-        console.log('F5 is pressed: Shortcut Disabled');
-      });
-    });
-
-    mainWindow!!.webContents.setWindowOpenHandler((details) => {
-      shell.openExternal(details.url);
-      return { action: 'deny' };
-    });
-
-    app.on('browser-window-blur', function () {
-      globalShortcut.unregister('CommandOrControl+R');
-      globalShortcut.unregister('F5');
-    });
-
-    // disable devtools
-    mainWindow!!.webContents.on('devtools-opened', () => {
-      if (!isDev() && process.env.OGI_DEBUG !== 'true')
-        mainWindow!!.webContents.closeDevTools();
-    });
-
-    app.on('web-contents-created', (_, contents) => {
-      contents.on('will-navigate', (event, navigationUrl) => {
-        const parsedUrl = new URL(navigationUrl);
-
-        if (
-          parsedUrl.origin !== 'http://localhost:8080' &&
-          parsedUrl.origin !== 'file://'
-        ) {
-          event.preventDefault();
-          throw new Error('Navigating to that address is not allowed.');
-        }
-      });
-    });
-  });
-}
-
-// This method will be called when Electron has finished
-// initialization and is ready to create browser windows.
-// Some APIs can only be used after this event occurs.
-app.on('ready', async () => {
-  // Run all startup tasks with splash screen
-  await runStartupTasks();
-
-  createWindow();
+  mainWindow!!.once('ready-to-show', onMainAppReady);
 
   server.listen(port, () => {
     console.log(`Addon Server is running on http://localhost:${port}`);

@@ -50,6 +50,7 @@
   import AppUpdateManager from './managers/AppUpdateManager.svelte';
   import ChangelogManager from './managers/ChangelogManager.svelte';
   import { appUpdates, loadPersistedUpdateState } from './states.svelte';
+  import { setupSystemThemeListener } from './lib/themes/applyTheme';
 
   interface ConfigTemplateAndInfo extends OGIAddonConfiguration {
     configTemplate: ConfigurationFile;
@@ -91,6 +92,13 @@
     console.log('App mounted, initializing stores');
     showNotificationSideView.set(false);
     loading = true;
+    
+    // Set up system theme listener for automatic theme switching
+    setupSystemThemeListener(() => {
+      const config = getConfigClientOption('theme');
+      return typeof config === 'string' ? config : 'system';
+    });
+    
     setTimeout(() => {
       fetchAddonsWithConfigure();
       const installedOption = getConfigClientOption('installed') as {

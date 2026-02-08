@@ -139,6 +139,7 @@ export class TorboxService extends BaseService {
       const errorMessage = response.data.detail;
       console.log('Failed to create torrent on Torbox: ', errorMessage);
 
+      const responseData = response.data.data;
       const message =
         response.data.error === 'DOWNLOAD_TOO_LARGE'
           ? 'Your current plan does not support the size you are trying to download.'
@@ -150,10 +151,9 @@ export class TorboxService extends BaseService {
               ? 'You have reached your monthly download limit.'
               : response.data.detail.includes('cooldown')
                 ? 'You are on a cooldown period. Please wait until ' +
-                  new Date(
-                    (response.data.data as { cooldown_until: number })
-                      .cooldown_until * 1000
-                  ).toLocaleString() +
+                  ('cooldown_until' in responseData
+                    ? new Date(responseData.cooldown_until * 1000).toLocaleString()
+                    : 'unknown time') +
                   ' to try again.'
                 : response.data.detail.includes('must provide') &&
                     response.data.detail.includes('file or magnet')
@@ -171,9 +171,21 @@ export class TorboxService extends BaseService {
 
     // -- STEP 2: GET THE TORRENT ID --
 
-    // check if there is a queued id or a torrent id
-    const queued_id = (response.data.data as { queued_id?: number }).queued_id;
-    let torrent_id = (response.data.data as { torrent_id?: number }).torrent_id;
+    // Type narrowing: check if we have a success response
+    const responseData = response.data.data;
+    if ('cooldown_until' in responseData) {
+      // This should have been caught by status check, but handle safely
+      createNotification({
+        id: Math.random().toString(36).substring(7),
+        type: 'error',
+        message: 'Unexpected cooldown response with status 200',
+      });
+      return;
+    }
+
+    // Now responseData is narrowed to the success type
+    const queued_id = responseData.queued_id;
+    let torrent_id = responseData.torrent_id;
 
     if (!queued_id && !torrent_id) {
       console.error('No queued id or torrent id found');

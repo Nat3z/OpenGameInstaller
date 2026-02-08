@@ -10,6 +10,8 @@
   import SectionModal from '../components/modal/SectionModal.svelte';
   import CustomDropdown from '../components/CustomDropdown.svelte';
   import { fetchAddonsWithConfigure } from '../utils';
+  import { THEMES } from '../lib/themes/themes';
+  import { applyTheme } from '../lib/themes/applyTheme';
 
   const fs = window.electronAPI.fs;
   interface OptionsCategory {
@@ -53,6 +55,14 @@
           defaultValue: './downloads',
           value: '',
           type: 'file-folder',
+        },
+        theme: {
+          displayName: 'Theme',
+          description: 'Appearance theme (system follows OS, or choose light, dark, synthwave)',
+          defaultValue: 'system',
+          value: '',
+          choice: ['system', 'light', 'dark', 'synthwave'],
+          type: 'string',
         },
         torrentClient: {
           displayName: 'Torrent Client',
@@ -287,6 +297,7 @@
   let mainContent: HTMLElement;
   let rangeValues: { [key: string]: number } = $state({});
 
+  /** Selects an options category and updates the UI. */
   function selectOption(addon: OptionsCategory) {
     const selected = document.querySelector('.selected');
     if (selected) {
@@ -299,6 +310,7 @@
     }
   }
 
+  /** Reads form state and writes current option config to disk. */
   function updateConfig() {
     const config: any = {};
     Object.keys(selectedOption!!.options).forEach((key) => {
@@ -376,6 +388,7 @@
     );
   }
 
+  /** Returns stored value for key or option default. */
   function getStoredOrDefaultValue(key: string) {
     if (!selectedOption) return;
     if (!fs.exists('./config/option/' + selectedOption.id + '.json')) {
@@ -388,6 +401,7 @@
     }
   }
 
+  /** Opens folder picker and updates the associated input. */
   function browseForFolder(event: MouseEvent) {
     const dialog = window.electronAPI.fs.dialog;
     const element = (event.target as HTMLElement).parentElement!!.querySelector(
@@ -403,6 +417,7 @@
     });
   }
 
+  /** Installs addons from the configured list. */
   async function installAddons() {
     isInstallingAddons = true;
     const addons = getStoredOrDefaultValue('addons') as string[];
@@ -419,18 +434,21 @@
     isInstallingAddons = false;
   }
 
+  /** Cleans addon installations. */
   async function cleanAddons() {
     isCleaningAddons = true;
     await window.electronAPI.cleanAddons();
     isCleaningAddons = false;
   }
 
+  /** Updates addons. */
   async function updateAddons() {
     isUpdatingAddons = true;
     await window.electronAPI.updateAddons();
     isUpdatingAddons = false;
   }
 
+  /** Restarts the addon server and refreshes addon list. */
   async function restartAddonServer() {
     isRestartingServer = true;
     await window.electronAPI.restartAddonServer();
@@ -510,6 +528,7 @@
     },
   ];
 
+  /** Handles torrent client dropdown change and persists config. */
   function handleTorrentClientChange(detail: { selectedId: string }) {
     selectedTorrentClientId = detail.selectedId;
     updateConfig();
@@ -939,6 +958,20 @@
                                 selectedId={selectedTorrentClientId}
                                 onchange={handleTorrentClientChange}
                               />
+                            {:else if key === 'theme'}
+                              <select
+                                id={key}
+                                class="input-select"
+                                onchange={(e) => {
+                                  updateConfig();
+                                  applyTheme((e.target as HTMLSelectElement).value);
+                                }}
+                                value={getStoredOrDefaultValue(key)}
+                              >
+                                {#each THEMES as t}
+                                  <option value={t.id}>{t.label}</option>
+                                {/each}
+                              </select>
                             {:else}
                               <!-- Regular select for other options -->
                               <select

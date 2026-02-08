@@ -8,7 +8,8 @@ body {
 }
 
 body {
-  color: #333;
+  color: var(--color-accent-text-color);
+  background-color: var(--color-background-color);
   margin: 0;
   padding: 8px;
   box-sizing: border-box;
@@ -16,7 +17,7 @@ body {
 }
 
 a {
-  color: rgb(0, 100, 200);
+  color: var(--color-accent);
   text-decoration: none;
 }
 
@@ -25,15 +26,16 @@ a:hover {
 }
 
 a:visited {
-  color: rgb(0, 80, 160);
+  color: var(--color-accent-dark);
 }
 
 label {
   display: block;
+  color: var(--color-accent-text-color);
 }
 
 div {
-  border-color: #ccc;
+  border-color: var(--color-accent-lighter);
 }
 
 input,
@@ -44,10 +46,11 @@ textarea {
   font-size: inherit;
   margin: 0 0 0.5em 0;
   box-sizing: border-box;
-  border: 1px solid #ccc;
+  border: 1px solid var(--color-accent-lighter);
   padding: 0.5rem;
   padding-left: 0.5rem;
-  background-color: #f1f5f9;
+  background-color: var(--color-accent-lighter);
+  color: var(--color-accent-text-color);
   border-radius: 0.5rem;
 }
 
@@ -58,8 +61,8 @@ textarea:focus {
 }
 
 button {
-  color: #333;
-  background-color: #f4f4f4;
+  color: var(--color-accent-text-color);
+  background-color: var(--color-accent-lighter);
   outline: none;
   transition: all 0.2s ease-in-out;
 }
@@ -68,11 +71,11 @@ button:disabled {
 }
 
 button:not(:disabled):active {
-  background-color: #ddd;
+  background-color: var(--color-accent-light);
 }
 
 button:focus {
-  border-color: #666;
+  border-color: var(--color-accent);
 }
 
 /* Font faces are now in app.css */

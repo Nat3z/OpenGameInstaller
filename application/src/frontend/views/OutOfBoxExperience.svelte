@@ -432,7 +432,7 @@
         </div>
         <button
           onclick={downloadTools}
-          class="bg-accent hover:bg-accent-dark text-accent-text-color disabled:text-white disabled:bg-yellow-500 font-open-sans font-semibold py-3 px-6 rounded-lg transition-colors duration-200"
+          class="bg-accent hover:bg-accent-dark text-accent-text-color disabled:text-text-muted disabled:bg-border-muted font-open-sans font-semibold py-3 px-6 rounded-lg transition-colors duration-200"
           >Install</button
         >
       {/if}
@@ -454,13 +454,13 @@
                 class="terminal-line"
                 in:fade={{ duration: 150, delay: index * 20 }}
               >
-                <span class="text-green-400 font-mono text-sm leading-relaxed">
+                <span class="text-success-text font-mono text-sm leading-relaxed">
                   {log}
                 </span>
               </div>
             {/each}
             <div class="terminal-cursor">
-              <span class="text-green-400 font-mono text-sm animate-pulse"
+              <span class="text-success-text font-mono text-sm animate-pulse"
                 >▋</span
               >
             </div>
@@ -637,7 +637,7 @@
             required.
           </p>
           <div
-            class="flex justify-center mt-4 items-center flex-col border-red-500 border-2 rounded-lg p-4 bg-red-500/25"
+            class="flex justify-center mt-4 items-center flex-col border-error-border border-2 rounded-lg p-4 bg-error-bg"
           >
             <p class="text-text text-center">
               Security features like VPN binding are <span class="underline"

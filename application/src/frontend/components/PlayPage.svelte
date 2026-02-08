@@ -250,15 +250,6 @@
       <h1 class="text-4xl font-archivo font-bold text-white mb-2">
         {libraryInfo.name}
       </h1>
-      <!-- <div class="text-sm text-text-muted">
-        <span class="text-text-muted">App ID:</span>
-        {libraryInfo.appID}
-        {#if libraryInfo.storefront}
-          <span class="mx-4"></span>
-          <span class="text-text-muted">Store:</span>
-          {libraryInfo.storefront}
-        {/if}
-      </div> -->
     </div>
 
     <!-- Title image overlay if available -->
@@ -279,11 +270,11 @@
   <div class="bg-accent-lighter px-6 py-4 flex items-center gap-3 rounded-b-lg">
     {#if updateInfo && !$currentDownloads.find((download) => download.appID === libraryInfo.appID && download.status !== 'error' && download.status !== 'completed' && download.status !== 'seeding' && download.status !== 'setup-complete')}
       <button
-        class="px-6 py-3 flex border-none rounded-lg justify-center bg-yellow-500 hover:bg-yellow-600 items-center gap-2 disabled:bg-yellow-500 disabled:cursor-not-allowed transition-colors duration-200"
+        class="px-6 py-3 flex border-none rounded-lg justify-center bg-accent text-accent-text-color hover:bg-accent-dark items-center gap-2 disabled:bg-accent disabled:cursor-not-allowed transition-colors duration-200"
         onclick={() => (showUpdateModal = true)}
       >
-        <UpdateIcon fill="#ffffff" />
-        <p class="font-archivo font-semibold text-white">
+        <UpdateIcon fill="currentColor" />
+        <p class="font-archivo font-semibold text-accent-text-color">
           Update to {updateInfo.updateVersion?.slice(0, 8)}
         </p>
       </button>
@@ -292,14 +283,14 @@
         onclick={() => {
           updatesManager.removeAppUpdate(libraryInfo.appID);
         }}
-        class="px-3 py-3 flex border-none rounded-lg justify-center bg-red-500 hover:bg-red-600 items-center gap-2 disabled:bg-border-muted disabled:cursor-not-allowed transition-colors duration-200"
+        class="px-3 py-3 flex border-none rounded-lg justify-center bg-error-border text-error-text hover:opacity-90 items-center gap-2 disabled:bg-border-muted disabled:cursor-not-allowed transition-colors duration-200"
       >
         <svg
           xmlns="http://www.w3.org/2000/svg"
           height="20px"
           viewBox="0 -960 960 960"
           width="20px"
-          fill="white"
+          fill="currentColor"
         >
           <path
             d="M480-424 284-228q-17 17-44 17t-44-17q-17-17-17-44t17-44l196-196-196-196q-17-17-17-44t17-44q17-17 44-17t44 17l196 196 196-196q17-17 44-17t44 17q17 17 17 44t-17 44L536-480l196 196q17 17 17 44t-17 44q-17 17-44 17t-44-17L480-424Z"
@@ -308,11 +299,11 @@
       </button>
     {:else if $currentDownloads.find((download) => download.appID === libraryInfo.appID && download.status !== 'error' && download.status !== 'completed' && download.status !== 'seeding' && download.status !== 'setup-complete')}
       <button
-        class="px-6 py-3 flex border-none rounded-lg justify-center bg-yellow-500 items-center gap-2 cursor-not-allowed transition-colors duration-200"
+        class="px-6 py-3 flex border-none rounded-lg justify-center bg-border-muted text-text items-center gap-2 cursor-not-allowed transition-colors duration-200"
         disabled
       >
-        <UpdateIcon fill="#ffffff" />
-        <p class="font-archivo font-semibold text-white">Updating</p>
+        <UpdateIcon fill="currentColor" />
+        <p class="font-archivo font-semibold text-text">Updating</p>
       </button>
     {:else}
       {#await window.electronAPI.app.getOS()}
@@ -321,11 +312,11 @@
         {#if (os === 'linux' || os === 'darwin') && libraryInfo.launchExecutable.endsWith('.exe')}
           <div class="relative group">
             <button
-              class="px-6 py-3 flex border-none rounded-lg justify-center bg-border-muted items-center gap-2 disabled:bg-border-muted disabled:cursor-not-allowed transition-colors duration-200"
+              class="px-6 py-3 flex border-none rounded-lg justify-center bg-border-muted text-text items-center gap-2 disabled:bg-border-muted disabled:cursor-not-allowed transition-colors duration-200"
               disabled
             >
-              <PlayIcon fill="#ffffff" />
-              <p class="font-archivo font-semibold text-white">Play</p>
+              <PlayIcon fill="currentColor" />
+              <p class="font-archivo font-semibold text-text">Play</p>
             </button>
             <div
               class="absolute top-full left-0 mt-2 px-3 py-2 bg-accent-lighter drop-shadow-md border border-accent-dark flex flex-row gap-2 items-center text-accent-dark text-sm rounded-lg whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-10"
@@ -339,11 +330,11 @@
         {:else}
           <button
             bind:this={playButton}
-            class="px-6 py-3 flex border-none rounded-lg justify-center bg-green-500 hover:bg-green-600 items-center gap-2 disabled:bg-yellow-500 disabled:cursor-not-allowed transition-colors duration-200"
+            class="px-6 py-3 flex border-none rounded-lg justify-center bg-accent text-accent-text-color hover:bg-accent-dark items-center gap-2 disabled:bg-border-muted disabled:cursor-not-allowed transition-colors duration-200"
             onclick={() => launchGameTrigger.set(libraryInfo.appID)}
           >
-            <PlayIcon fill="#86efac" />
-            <p class="font-archivo font-semibold text-white">PLAY</p>
+            <PlayIcon fill="currentColor" />
+            <p class="font-archivo font-semibold text-accent-text-color">PLAY</p>
           </button>
         {/if}
       {/await}
@@ -353,7 +344,7 @@
       class="px-4 py-3 flex border-none rounded-lg justify-center bg-accent-light hover:bg-accent-light/80 text-accent-dark items-center gap-2 transition-colors duration-200"
       onclick={openGameConfiguration}
     >
-      <SettingsFilled fill="#2D626A" />
+      <SettingsFilled fill="currentColor" />
       <span class="font-medium">Settings</span>
     </button>
 

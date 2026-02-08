@@ -9,6 +9,7 @@ type $UnrestrictLink = import('real-debrid-js').$UnrestrictLink;
 type $UserInfo = import('real-debrid-js').$UserInfo;
 type $TorrentInfo = import('real-debrid-js').$TorrentInfo;
 type $GamepadNavigator = import('./managers/GamepadManager').GamepadNavigator;
+type ThemeId = import('./lib/themes/themes').ThemeId;
 interface Window {
   electronAPI: {
     fs: {
@@ -188,7 +189,7 @@ interface Window {
     };
     updateAddons: () => Promise<void>;
     getVersion: () => string;
-    getInitialTheme?: () => string;
+    getInitialTheme?: () => ThemeId;
     installAddons: (addons: string[]) => Promise<void>;
     restartAddonServer: () => Promise<void>;
     cleanAddons: () => Promise<void>;

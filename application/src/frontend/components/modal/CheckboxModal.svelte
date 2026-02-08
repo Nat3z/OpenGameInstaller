@@ -72,7 +72,7 @@
 
   .input-checkbox:checked + .checkbox-checkmark::after {
     content: '•';
-    @apply text-white text-sm font-archivo;
+    @apply text-accent-text-color text-sm font-archivo;
   }
 
   .input-checkbox:disabled + .checkbox-checkmark {

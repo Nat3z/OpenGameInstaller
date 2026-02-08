@@ -162,7 +162,7 @@
             >
             {#if $addonUpdates.length > 0}
               <div
-                class="absolute -bottom-1 -right-1 bg-yellow-500 rounded-full w-4 h-4 animate-pulse"
+                class="absolute -bottom-1 -right-1 bg-accent rounded-full w-4 h-4 animate-pulse"
               ></div>
             {/if}
           </button>
@@ -253,7 +253,7 @@
                         .map((update) => update.toLowerCase())
                         .includes(addon.repository.toLowerCase())}
                         <div
-                          class="absolute -bottom-1 -right-1 bg-yellow-500 rounded-full w-4 h-4 animate-pulse"
+                          class="absolute -bottom-1 -right-1 bg-accent rounded-full w-4 h-4 animate-pulse"
                         ></div>
                       {/if}
                     </div>
@@ -407,7 +407,7 @@
   }
 
   .update-badge {
-    @apply inline-flex items-center gap-2 px-3 py-1.5 bg-linear-to-r from-accent to-accent-dark text-white text-sm font-semibold rounded-full mt-2 shadow-sm hover:shadow-md transition-all duration-200 transform hover:scale-105;
+    @apply inline-flex items-center gap-2 px-3 py-1.5 bg-linear-to-r from-accent to-accent-dark text-accent-text-color text-sm font-semibold rounded-full mt-2 shadow-sm hover:shadow-md transition-all duration-200 transform hover:scale-105;
     max-width: fit-content;
   }
 

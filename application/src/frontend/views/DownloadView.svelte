@@ -727,7 +727,7 @@
               {:else if download.status === 'paused'}
                 <!-- RESUME BUTTON -->
                 <button
-                  class="text-green-600 border-none p-3 rounded-lg bg-green-100 hover:bg-green-200 transition-colors mr-2"
+                  class="text-accent-dark border-none p-3 rounded-lg bg-accent-lighter hover:bg-accent-light transition-colors mr-2"
                   aria-label="Resume Download"
                   onclick={async () => {
                     await resumeDownload(download.id);
@@ -746,7 +746,7 @@
                 </button>
                 <!-- ABORT BUTTON -->
                 <button
-                  class="text-red-600 border-none p-3 rounded-lg bg-red-100 hover:bg-red-200 transition-colors"
+                  class="text-error-text border-none p-3 rounded-lg bg-error-bg hover:bg-error-border transition-colors"
                   aria-label="Cancel Download"
                   onclick={() => cancelPausedDownload(download.id)}
                 >
@@ -792,11 +792,11 @@
   <div class="container mx-auto py-6 max-w-6xl">
     <div class="flex items-center gap-3 mb-4">
       <div
-        class="w-1 h-6 bg-linear-to-b from-red-500 to-orange-600 rounded-full"
+        class="w-1 h-6 bg-linear-to-b from-error-border to-accent rounded-full"
       ></div>
       <h2 class="text-2xl font-bold text-text">Failed Setups</h2>
       <span
-        class="bg-red-100 text-red-800 text-xs font-medium px-2 py-1 rounded-full"
+        class="bg-error-bg text-error-text text-xs font-medium px-2 py-1 rounded-full"
       >
         {$failedSetups.length}
       </span>
@@ -908,7 +908,7 @@
   }
 
   .btn-danger {
-    @apply bg-red-600 text-white hover:bg-red-700 focus:ring-red-500 shadow-md hover:shadow-lg;
+    @apply bg-error-border text-error-text hover:opacity-90 focus:ring-error-border shadow-md hover:shadow-lg;
   }
 
   .btn-sm {
@@ -958,31 +958,31 @@
     @apply bg-accent;
   }
   .status-completed {
-    @apply bg-yellow-500;
+    @apply bg-success-bg;
   }
   .status-setup-complete {
-    @apply bg-green-500;
+    @apply bg-success-bg;
   }
   .status-seeding {
-    @apply bg-purple-500;
+    @apply bg-accent;
   }
   .status-error {
-    @apply bg-red-500;
+    @apply bg-error-border;
   }
   .status-rd-downloading {
-    @apply bg-orange-500;
+    @apply bg-accent;
   }
   .status-requesting {
     @apply bg-accent;
   }
   .status-errored {
-    @apply bg-red-600;
+    @apply bg-error-border;
   }
   .status-paused {
-    @apply bg-orange-500;
+    @apply bg-accent-lighter;
   }
   .status-merging {
-    @apply bg-blue-500;
+    @apply bg-accent;
   }
 
   .download-content {
@@ -1031,11 +1031,11 @@
   }
 
   .status-badge.seeding {
-    @apply bg-purple-100 text-purple-800;
+    @apply bg-accent-lighter text-accent-dark;
   }
 
   .status-badge.redistr-downloading {
-    @apply bg-orange-100 text-orange-800;
+    @apply bg-accent-lighter text-accent-dark;
   }
 
   .status-badge.proton-setup {
@@ -1043,7 +1043,7 @@
   }
 
   .status-badge.setup {
-    @apply bg-yellow-100 text-yellow-800;
+    @apply bg-accent-lighter text-accent-dark;
   }
 
   .status-badge.error {
@@ -1051,7 +1051,7 @@
   }
 
   .status-badge.complete {
-    @apply bg-green-100 text-green-800;
+    @apply bg-success-bg text-success-text;
   }
 
   .status-badge.downloading {
@@ -1071,11 +1071,11 @@
   }
 
   .status-badge.paused {
-    @apply bg-orange-100 text-orange-800;
+    @apply bg-accent-lighter text-accent-dark;
   }
 
   .status-badge.merging {
-    @apply bg-blue-100 text-blue-800;
+    @apply bg-accent-lighter text-accent-dark;
   }
 
   /* Spinner Animation */
@@ -1139,7 +1139,7 @@
   }
 
   .active-download-badge {
-    @apply absolute top-1 left-1 bg-green-600/90 text-white text-xs font-bold px-2 py-1 rounded-full shadow-lg flex items-center gap-1;
+    @apply absolute top-1 left-1 bg-success-bg/90 text-success-text text-xs font-bold px-2 py-1 rounded-full shadow-lg flex items-center gap-1;
     backdrop-filter: blur(4px);
   }
 

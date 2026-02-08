@@ -107,12 +107,10 @@
                   >
                     {#if updatesManager.getAppUpdate(app.appID)?.updateAvailable}
                       <div
-                        class="absolute shadow-md top-2 right-2 h-6 z-2 flex items-center bg-yellow-500 rounded-lg flex-row justify-end gap-1 px-2"
+                        class="absolute shadow-md top-2 right-2 h-6 z-2 flex items-center bg-accent text-accent-text-color rounded-lg flex-row justify-end gap-1 px-2"
                       >
-                        <UpdateIcon fill="#ffffff" width="16px" height="16px" />
-                        <p
-                          class="text-white text-sm font-open-sans font-semibold"
-                        >
+                        <UpdateIcon fill="currentColor" width="16px" height="16px" />
+                        <p class="text-sm font-open-sans font-semibold">
                           Update
                         </p>
                       </div>
@@ -218,10 +216,10 @@
                       >
                         {#if updatesManager.getAppUpdate(app.appID)?.updateAvailable}
                           <div
-                            class="absolute shadow-md top-2 right-2 h-6 z-2 flex items-center bg-yellow-500 rounded-lg flex-row justify-end gap-1 px-2"
+                            class="absolute shadow-md top-2 right-2 h-6 z-2 flex items-center bg-accent text-accent-text-color rounded-lg flex-row justify-end gap-1 px-2"
                           >
                             <UpdateIcon
-                              fill="#ffffff"
+                              fill="currentColor"
                               width="16px"
                               height="16px"
                             />

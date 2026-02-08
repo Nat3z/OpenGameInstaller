@@ -1030,7 +1030,7 @@
                     >
                       {#if isInstallingAddons}
                         <div
-                          class="animate-spin mr-2 h-5 w-5 border-2 border-white border-t-transparent rounded-full"
+                          class="animate-spin mr-2 h-5 w-5 border-2 border-accent-text-color border-t-transparent rounded-full"
                         ></div>
                         Installing...
                       {:else}
@@ -1044,7 +1044,7 @@
                     >
                       {#if isUpdatingAddons}
                         <div
-                          class="animate-spin mr-2 h-5 w-5 border-2 border-white border-t-transparent rounded-full"
+                          class="animate-spin mr-2 h-5 w-5 border-2 border-accent-text-color border-t-transparent rounded-full"
                         ></div>
                         Updating...
                       {:else}
@@ -1058,7 +1058,7 @@
                     >
                       {#if isCleaningAddons}
                         <div
-                          class="animate-spin mr-2 h-5 w-5 border-2 border-white border-t-transparent rounded-full"
+                          class="animate-spin mr-2 h-5 w-5 border-2 border-accent-text-color border-t-transparent rounded-full"
                         ></div>
                         Cleaning...
                       {:else}
@@ -1074,7 +1074,7 @@
                     >
                       {#if isRestartingServer}
                         <div
-                          class="animate-spin mr-2 h-5 w-5 border-2 border-white border-t-transparent rounded-full"
+                          class="animate-spin mr-2 h-5 w-5 border-2 border-accent-text-color border-t-transparent rounded-full"
                         ></div>
                         Restarting...
                       {:else}
@@ -1263,7 +1263,7 @@
 
   .input-checkbox:checked + .checkbox-checkmark::after {
     content: '•';
-    @apply text-white text-sm font-archivo;
+    @apply text-accent-text-color text-sm font-archivo;
   }
 
   /* Action Section */
@@ -1284,19 +1284,19 @@
   }
 
   .action-button.primary {
-    @apply bg-green-500 text-white hover:bg-green-600 disabled:bg-border-muted;
+    @apply bg-success-bg text-success-text hover:opacity-90 disabled:bg-border-muted;
   }
 
   .action-button.secondary {
-    @apply bg-blue-500 text-white hover:bg-blue-600 disabled:bg-border-muted;
+    @apply bg-accent text-accent-text-color hover:bg-accent-dark disabled:bg-border-muted;
   }
 
   .action-button.danger {
-    @apply bg-red-500 text-white hover:bg-red-600 disabled:bg-border-muted;
+    @apply bg-error-border text-error-text hover:opacity-90 disabled:bg-border-muted;
   }
 
   .action-button.warning {
-    @apply bg-yellow-500 text-white hover:bg-yellow-600 disabled:bg-border-muted;
+    @apply bg-accent-lighter text-accent-dark hover:bg-accent-light disabled:bg-border-muted;
   }
 
   /* No Selection State */

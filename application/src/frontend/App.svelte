@@ -599,17 +599,17 @@
             xmlns="http://www.w3.org/2000/svg"
             viewBox="0 0 50 50"
             fill="none"
-            class="fill-accent-dark"
+            class="fill-accent-dark text-accent-dark"
           >
             <g clip-path="url(#clip0_2_123)">
               <path
                 d="M34.5625 18.75H31.25V8.33333C31.25 7.1875 30.3125 6.25 29.1666 6.25H20.8333C19.6875 6.25 18.75 7.1875 18.75 8.33333V18.75H15.4375C13.5833 18.75 12.6458 21 13.9583 22.3125L23.5208 31.875C24.3333 32.6875 25.6458 32.6875 26.4583 31.875L36.0208 22.3125C37.3333 21 36.4166 18.75 34.5625 18.75ZM10.4166 39.5833C10.4166 40.7292 11.3541 41.6667 12.5 41.6667H37.5C38.6458 41.6667 39.5833 40.7292 39.5833 39.5833C39.5833 38.4375 38.6458 37.5 37.5 37.5H12.5C11.3541 37.5 10.4166 38.4375 10.4166 39.5833Z"
-                fill="#2D626A"
+                fill="currentColor"
               />
             </g>
             <defs>
               <clipPath id="clip0_2_123">
-                <rect width="50" height="50" fill="white" />
+                <rect width="50" height="50" fill="var(--color-background-color)" />
               </clipPath>
             </defs>
           </svg>
@@ -632,17 +632,17 @@
             xmlns="http://www.w3.org/2000/svg"
             viewBox="0 0 50 50"
             fill="none"
-            class="fill-accent-dark"
+            class="fill-accent-dark text-accent-dark"
           >
             <g clip-path="url(#clip0_22_1842)">
               <path
                 d="M25 45.8333C27.2917 45.8333 29.1667 43.9583 29.1667 41.6666H20.8333C20.8333 43.9583 22.6875 45.8333 25 45.8333ZM37.5 33.3333V22.9166C37.5 16.5208 34.0833 11.1666 28.125 9.74998V8.33331C28.125 6.60415 26.7292 5.20831 25 5.20831C23.2708 5.20831 21.875 6.60415 21.875 8.33331V9.74998C15.8958 11.1666 12.5 16.5 12.5 22.9166V33.3333L9.81249 36.0208C8.49999 37.3333 9.41665 39.5833 11.2708 39.5833H38.7083C40.5625 39.5833 41.5 37.3333 40.1875 36.0208L37.5 33.3333Z"
-                fill="#2D626A"
+                fill="currentColor"
               />
             </g>
             <defs>
               <clipPath id="clip0_22_1842">
-                <rect width="50" height="50" fill="white" />
+                <rect width="50" height="50" fill="var(--color-background-color)" />
               </clipPath>
             </defs>
           </svg>
@@ -719,7 +719,7 @@
               </g>
               <defs>
                 <clipPath id="clip0_2_52">
-                  <rect width="60" height="60" fill="white" />
+                  <rect width="60" height="60" fill="var(--color-background-color)" />
                 </clipPath>
               </defs>
             </svg>
@@ -744,7 +744,7 @@
               </g>
               <defs>
                 <clipPath id="clip0_2_25">
-                  <rect width="60" height="60" fill="white" />
+                  <rect width="60" height="60" fill="var(--color-background-color)" />
                 </clipPath>
               </defs>
             </svg>
@@ -1079,15 +1079,13 @@
   }
 
   ::-webkit-scrollbar-thumb {
-    background-color: #cbcbcb51;
+    background-color: color-mix(in srgb, var(--color-border-muted) 60%, transparent);
     border-radius: 0.5rem;
-    opacity: 0.1;
   }
 
   ::-webkit-scrollbar-thumb:hover {
-    background-color: #909090;
+    background-color: var(--color-border-muted);
     border-radius: 0.5rem;
-    opacity: 1;
   }
 
   textarea:focus,
@@ -1279,9 +1277,9 @@
 
   /* Add to your styles */
   .gamepad-focus {
-    outline: 3px solid #4a90e2 !important;
+    outline: 3px solid var(--color-accent) !important;
     outline-offset: 2px;
-    box-shadow: 0 0 10px rgba(74, 144, 226, 0.5);
+    box-shadow: 0 0 10px color-mix(in srgb, var(--color-accent) 50%, transparent);
     transition: all 0.2s ease;
   }
 

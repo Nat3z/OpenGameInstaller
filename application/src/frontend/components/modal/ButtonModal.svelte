@@ -19,9 +19,9 @@
     secondary:
       'btn btn-secondary bg-accent-lighter text-accent-dark hover:bg-accent-light focus:ring-accent border border-accent-light',
     danger:
-      'btn btn-danger bg-red-500 text-white hover:bg-red-600 focus:ring-red-400 border-none',
+      'btn btn-danger bg-error-border text-error-text hover:opacity-90 focus:ring-error-border border-none',
     success:
-      'btn btn-success bg-green-500 text-white hover:bg-green-600 focus:ring-green-400 border-none',
+      'btn btn-success bg-success-bg text-success-text hover:opacity-90 focus:ring-success-bg border-none',
   };
 
   function handleClick(event: MouseEvent) {

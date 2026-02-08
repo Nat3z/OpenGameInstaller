@@ -20,10 +20,15 @@
   /* Secondary/muted text (descriptions, captions, placeholders) */
   --color-text-muted: #64748b;
 
-  /* Semantic error/info for alerts */
+  /* Modal overlay (theme-aware dimming) */
+  --color-modal-overlay: rgba(15, 23, 42, 0.4);
+
+  /* Semantic error/success/info for alerts and status */
   --color-error-bg: #fef2f2;
   --color-error-border: #fecaca;
   --color-error-text: #b91c1c;
+  --color-success-bg: #dcfce7;
+  --color-success-text: #166534;
   --color-info-bg: #eff6ff;
   --color-info-border: #bfdbfe;
 
@@ -161,6 +166,7 @@
 /* Theme overrides: default @theme above is light; these override when data-theme is set */
 @layer theme {
   [data-theme="dark"] {
+    --color-modal-overlay: rgba(0, 0, 0, 0.5);
     --color-background-color: #1a1a2e;
     --color-accent: #4a9eff;
     --color-accent-dark: #2563eb;
@@ -178,11 +184,14 @@
     --color-error-bg: #450a0a;
     --color-error-border: #7f1d1d;
     --color-error-text: #fca5a5;
+    --color-success-bg: #14532d;
+    --color-success-text: #86efac;
     --color-info-bg: #1e3a5f;
     --color-info-border: #1d4ed8;
   }
 
   [data-theme="synthwave"] {
+    --color-modal-overlay: rgba(0, 0, 0, 0.5);
     --color-background-color: #2b213a;
     --color-accent: #f92aad;
     --color-accent-dark: #e91e96;
@@ -200,6 +209,8 @@
     --color-error-bg: #3d1f1f;
     --color-error-border: #9b2c2c;
     --color-error-text: #fbbfbf;
+    --color-success-bg: #2d1f3d;
+    --color-success-text: #f0abfc;
     --color-info-bg: #1e2a4a;
     --color-info-border: #6366f1;
   }

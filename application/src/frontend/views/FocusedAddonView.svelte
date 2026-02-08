@@ -411,7 +411,7 @@
     <TextModal
       text="Unsaved or invalid changes may be lost."
       variant="warning"
-      class="mb-4 text-red-600"
+      class="mb-4 text-error-text"
     />
     <div class="flex flex-row items-center gap-2">
       <ButtonModal
@@ -623,7 +623,7 @@
               {/if}
               <p
                 data-error-message
-                class="text-red-500"
+                class="text-error-text"
                 data-context=""
                 onmouseenter={showContextHint}
                 onmouseleave={hideContextHint}
@@ -639,7 +639,7 @@
                   alt="error"
                   class="w-4 h-4 mt-0.5 shrink-0"
                 />
-                <p class="text-red-700 leading-relaxed"></p>
+                <p class="text-error-text leading-relaxed"></p>
               </div>
               <div
                 data-description
@@ -648,7 +648,7 @@
               >
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
-                  class="w-4 h-4 mt-0.5 shrink-0 text-blue-400"
+                  class="w-4 h-4 mt-0.5 shrink-0 text-accent-dark"
                   fill="currentColor"
                   height="24"
                   viewBox="0 0 24 24"
@@ -657,7 +657,7 @@
                     d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 15c-.55 0-1-.45-1-1v-4c0-.55.45-1 1-1s1 .45 1 1v4c0 .55-.45 1-1 1zm1-8h-2V7h2v2z"
                   /></svg
                 >
-                <p class="text-blue-400 leading-relaxed relative top-[0.1rem]">
+                <p class="text-accent leading-relaxed relative top-[0.1rem]">
                   {selectedAddon.configTemplate[key].description}
                 </p>
               </div>
@@ -747,7 +747,7 @@
   }
   .input-checkbox:checked + .checkbox-checkmark::after {
     content: '•';
-    @apply text-white text-sm font-archivo;
+    @apply text-accent-text-color text-sm font-archivo;
   }
 
   .browse-button {

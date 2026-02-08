@@ -80,7 +80,7 @@
     <div class="loading-spinner"></div>
   </div>
 {:else if error}
-  <div class="w-full h-full flex items-center justify-center text-red-500">
+  <div class="w-full h-full flex items-center justify-center text-error-text">
     {error}
   </div>
 {:else}

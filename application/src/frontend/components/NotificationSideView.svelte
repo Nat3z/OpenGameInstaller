@@ -200,17 +200,17 @@
               xmlns="http://www.w3.org/2000/svg"
               viewBox="0 0 50 50"
               fill="none"
-              class="w-6 h-6 fill-accent-dark"
+              class="w-6 h-6 fill-accent-dark text-accent-dark"
             >
               <g clip-path="url(#clip0_22_1842)">
                 <path
                   d="M25 45.8333C27.2917 45.8333 29.1667 43.9583 29.1667 41.6666H20.8333C20.8333 43.9583 22.6875 45.8333 25 45.8333ZM37.5 33.3333V22.9166C37.5 16.5208 34.0833 11.1666 28.125 9.74998V8.33331C28.125 6.60415 26.7292 5.20831 25 5.20831C23.2708 5.20831 21.875 6.60415 21.875 8.33331V9.74998C15.8958 11.1666 12.5 16.5 12.5 22.9166V33.3333L9.81249 36.0208C8.49999 37.3333 9.41665 39.5833 11.2708 39.5833H38.7083C40.5625 39.5833 41.5 37.3333 40.1875 36.0208L37.5 33.3333Z"
-                  fill="#2D626A"
+                  fill="currentColor"
                 />
               </g>
               <defs>
                 <clipPath id="clip0_22_1842">
-                  <rect width="50" height="50" fill="white" />
+                  <rect width="50" height="50" fill="var(--color-background-color)" />
                 </clipPath>
               </defs>
             </svg>
@@ -222,7 +222,7 @@
               xmlns="http://www.w3.org/2000/svg"
               viewBox="0 0 24 24"
               fill="none"
-              class="w-6 h-6 fill-accent-dark"
+              class="w-6 h-6 fill-accent-dark text-accent-dark"
             >
               <path d="M0 0h24v24H0V0z" fill="none" /><path
                 d="M19 3h-4.18C14.4 1.84 13.3 1 12 1s-2.4.84-2.82 2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 0c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 .45-1 1-1zm1 14H8c-.55 0-1-.45-1-1s.45-1 1-1h5c.55 0 1 .45 1 1s-.45 1-1 1zm3-4H8c-.55 0-1-.45-1-1s.45-1 1-1h8c.55 0 1 .45 1 1s-.45 1-1 1zm0-4H8c-.55 0-1-.45-1-1s.45-1 1-1h8c.55 0 1 .45 1 1s-.45 1-1 1z"
@@ -317,17 +317,17 @@
                     xmlns="http://www.w3.org/2000/svg"
                     viewBox="0 0 50 50"
                     fill="none"
-                    class="w-8 h-8 fill-accent-dark opacity-50"
+                    class="w-8 h-8 text-accent-dark opacity-50"
                   >
                     <g clip-path="url(#clip0_22_1842)">
                       <path
                         d="M25 45.8333C27.2917 45.8333 29.1667 43.9583 29.1667 41.6666H20.8333C20.8333 43.9583 22.6875 45.8333 25 45.8333ZM37.5 33.3333V22.9166C37.5 16.5208 34.0833 11.1666 28.125 9.74998V8.33331C28.125 6.60415 26.7292 5.20831 25 5.20831C23.2708 5.20831 21.875 6.60415 21.875 8.33331V9.74998C15.8958 11.1666 12.5 16.5 12.5 22.9166V33.3333L9.81249 36.0208C8.49999 37.3333 9.41665 39.5833 11.2708 39.5833H38.7083C40.5625 39.5833 41.5 37.3333 40.1875 36.0208L37.5 33.3333Z"
-                        fill="#2D626A"
+                        fill="currentColor"
                       />
                     </g>
                     <defs>
                       <clipPath id="clip0_22_1842">
-                        <rect width="50" height="50" fill="white" />
+                        <rect width="50" height="50" fill="var(--color-background-color)" />
                       </clipPath>
                     </defs>
                   </svg>
@@ -461,35 +461,35 @@
                         </div>
                         {#if task.status === 'running'}
                           <div
-                            class="flex items-center gap-1 text-xs text-blue-600"
+                            class="flex items-center gap-1 text-xs text-accent"
                           >
                             <div
-                              class="w-2 h-2 bg-blue-500 rounded-full animate-pulse"
+                              class="w-2 h-2 bg-accent rounded-full animate-pulse"
                             ></div>
                             {Math.floor(task.progress)}%
                           </div>
                         {:else if task.status === 'completed'}
                           <div
-                            class="flex items-center gap-1 text-xs text-green-600"
+                            class="flex items-center gap-1 text-xs text-success-text"
                           >
                             <div
-                              class="w-2 h-2 bg-green-500 rounded-full"
+                              class="w-2 h-2 bg-success-bg rounded-full"
                             ></div>
                             Done
                           </div>
                         {:else if task.status === 'error'}
                           <div
-                            class="flex items-center gap-1 text-xs text-red-600"
+                            class="flex items-center gap-1 text-xs text-error-text"
                           >
-                            <div class="w-2 h-2 bg-red-500 rounded-full"></div>
+                            <div class="w-2 h-2 bg-error-border rounded-full"></div>
                             Failed
                           </div>
                         {:else if task.status === 'pending'}
                           <div
-                            class="flex items-center gap-1 text-xs text-yellow-600"
+                            class="flex items-center gap-1 text-xs text-text-muted"
                           >
                             <div
-                              class="w-2 h-2 bg-yellow-500 rounded-full"
+                              class="w-2 h-2 bg-border-muted rounded-full"
                             ></div>
                             Waiting
                           </div>
@@ -538,7 +538,7 @@
                             View logs ({task.logs.length} lines)
                           </summary>
                           <div
-                            class="mt-1 p-2 bg-surface rounded text-xs text-green-400 font-mono max-h-20 overflow-y-auto"
+                            class="mt-1 p-2 bg-surface rounded text-xs text-success-text font-mono max-h-20 overflow-y-auto"
                             use:registerLogContainer={task.id}
                           >
                             {#each task.logs as log}

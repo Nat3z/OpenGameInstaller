@@ -436,6 +436,6 @@
 
   .step-button:not(:disabled):hover {
     transform: translateY(-1px);
-    box-shadow: 0 2px 8px rgba(66, 138, 145, 0.3);
+    box-shadow: 0 2px 8px color-mix(in srgb, var(--color-accent) 30%, transparent);
   }
 </style>

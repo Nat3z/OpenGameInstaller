@@ -127,12 +127,12 @@
           <TextModal
             text="Warning: This is a community addon and is not officially authorized for use. Proceed at your own risk."
             variant="warning"
-            class="mb-4 text-red-600"
+            class="mb-4 text-error-text"
           />
           <TextModal
             text="All content downloaded from this addon is the responsibility of the user."
             variant="warning"
-            class="mb-6 text-red-600"
+            class="mb-6 text-error-text"
           />
           <div class="flex gap-4 justify-end mt-auto">
             <ButtonModal

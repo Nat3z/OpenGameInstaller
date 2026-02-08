@@ -24,12 +24,12 @@
   <TextModal
     text={`This will delete the addon '${addonName}' and all of its configurations.`}
     variant="warning"
-    class="mb-4 text-red-600"
+    class="mb-4 text-error-text"
   />
   <TextModal
     text="This action cannot be undone."
     variant="warning"
-    class="mb-4 text-red-600"
+    class="mb-4 text-error-text"
   />
   <div class="flex flex-row items-center gap-2">
     <ButtonModal text="Cancel" variant="secondary" onclick={onClose} />

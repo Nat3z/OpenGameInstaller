@@ -193,17 +193,17 @@
     0% {
       opacity: 0;
       transform: translateX(100%) scale(0.9);
-      border-left: 4px solid #428a91;
+      border-left: 4px solid var(--color-accent);
     }
     40% {
       opacity: 0.9;
       transform: translateX(-5px) scale(1.02);
-      border-left: 4px solid #428a91;
+      border-left: 4px solid var(--color-accent);
     }
     100% {
       opacity: 1;
       transform: translateX(0) scale(1);
-      border-left: 4px solid #428a91;
+      border-left: 4px solid var(--color-accent);
     }
   }
 
@@ -212,9 +212,9 @@
     box-shadow:
       0 4px 6px -1px rgba(0, 0, 0, 0.1),
       0 2px 4px -1px rgba(0, 0, 0, 0.06),
-      0 0 0 1px rgba(66, 138, 145, 0.1);
+      0 0 0 1px color-mix(in srgb, var(--color-accent) 10%, transparent);
     backdrop-filter: blur(8px);
-    border: 1px solid rgba(66, 138, 145, 0.15);
+    border: 1px solid color-mix(in srgb, var(--color-accent) 15%, transparent);
     transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
   }
 
@@ -223,7 +223,7 @@
     box-shadow:
       0 8px 25px -1px rgba(0, 0, 0, 0.15),
       0 4px 10px -1px rgba(0, 0, 0, 0.1),
-      0 0 0 1px rgba(66, 138, 145, 0.2);
+      0 0 0 1px color-mix(in srgb, var(--color-accent) 20%, transparent);
   }
 
   .notification-icon {
@@ -235,7 +235,7 @@
   }
 
   .progress-bar {
-    background: rgba(66, 138, 145, 0.2);
+    background: color-mix(in srgb, var(--color-accent) 20%, transparent);
     border-radius: 0 0 12px 12px;
     overflow: hidden;
     margin: 0 -16px -16px -16px;
@@ -243,7 +243,7 @@
   }
 
   .progress-fill {
-    background: linear-gradient(90deg, #428a91, #2d626a);
+    background: linear-gradient(90deg, var(--color-accent), var(--color-accent-dark));
     height: 100%;
     border-radius: 0 0 12px 12px;
     transition: width 0.016s linear;

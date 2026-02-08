@@ -91,7 +91,6 @@ let handlersRegistered = false;
 export async function sendIPCMessage(channel: string, ...args: any[]) {
   if (!isReadyForEvents) {
     await new Promise<void>((resolve) => {
-      console.log('waiting for events');
       const timeout = setTimeout(() => {
         console.warn(`sendIPCMessage('${channel}'): timed out waiting for renderer readiness`);
         resolve();
@@ -101,7 +100,6 @@ export async function sendIPCMessage(channel: string, ...args: any[]) {
         resolve();
       });
     });
-    console.log('events ready');
   }
   mainWindow?.webContents.send(channel, ...args);
 }
@@ -285,6 +283,27 @@ function createWindow() {
   });
 }
 
+/**
+ * Shared startup sequence after createWindow(): run startup tasks, load main app URL,
+ * and wire ready-to-show to onMainAppReady. Used by both app.on('ready') and app.on('activate').
+ */
+async function runPostSplashStartup() {
+  if (!mainWindow) return;
+  await runStartupTasks(mainWindow);
+  if (isDev()) {
+    mainWindow.loadURL(
+      'http://localhost:8080/?secret=' + applicationAddonSecret
+    );
+    console.log('Running in development');
+  } else {
+    mainWindow.loadFile(
+      join(app.getAppPath(), 'out', 'renderer', 'index.html'),
+      { search: `secret=${applicationAddonSecret}` }
+    );
+  }
+  mainWindow.once('ready-to-show', onMainAppReady);
+}
+
 // This method will be called when Electron has finished
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
@@ -294,24 +313,7 @@ app.on('ready', async () => {
 
   // Single window: create it and show splash first so Steam Deck / Game Mode keeps focus
   createWindow();
-
-  // Run startup tasks; splash updates go to the main window
-  await runStartupTasks(mainWindow!);
-
-  // Load the main app into the same window (replaces splash)
-  if (isDev()) {
-    mainWindow!!.loadURL(
-      'http://localhost:8080/?secret=' + applicationAddonSecret
-    );
-    console.log('Running in development');
-  } else {
-    mainWindow!!.loadFile(
-      join(app.getAppPath(), 'out', 'renderer', 'index.html'),
-      { search: `secret=${applicationAddonSecret}` }
-    );
-  }
-
-  mainWindow!!.once('ready-to-show', onMainAppReady);
+  await runPostSplashStartup();
 
   server.listen(port, () => {
     console.log(`Addon Server is running on http://localhost:${port}`);
@@ -357,17 +359,6 @@ app.on('activate', async function () {
   // dock icon is clicked and there are no other windows open.
   if (mainWindow === null) {
     createWindow();
-    await runStartupTasks(mainWindow!);
-    if (isDev()) {
-      mainWindow!!.loadURL(
-        'http://localhost:8080/?secret=' + applicationAddonSecret
-      );
-    } else {
-      mainWindow!!.loadFile(
-        join(app.getAppPath(), 'out', 'renderer', 'index.html'),
-        { search: `secret=${applicationAddonSecret}` }
-      );
-    }
-    mainWindow!!.once('ready-to-show', onMainAppReady);
+    await runPostSplashStartup();
   }
 });

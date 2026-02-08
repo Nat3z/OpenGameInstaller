@@ -82,7 +82,7 @@
 
     <div bind:this={logContainer} class="terminal-content">
       {#if setupLog.logs.length === 0}
-        <div class="text-green-400 font-mono text-sm opacity-75">
+        <div class="text-success-text font-mono text-sm opacity-75">
           Initializing setup process...
         </div>
       {:else}
@@ -91,13 +91,13 @@
             class="terminal-line"
             in:fade={{ duration: 150, delay: index * 20 }}
           >
-            <span class="text-green-400 font-mono text-sm leading-relaxed">
+            <span class="text-success-text font-mono text-sm leading-relaxed">
               {log}
             </span>
           </div>
         {/each}
         <div class="terminal-cursor">
-          <span class="text-green-400 font-mono text-sm animate-pulse">▋</span>
+          <span class="text-success-text font-mono text-sm animate-pulse">▋</span>
         </div>
       {/if}
     </div>

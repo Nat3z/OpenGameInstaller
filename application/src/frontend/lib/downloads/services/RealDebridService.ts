@@ -20,10 +20,6 @@ export class RealDebridService extends BaseService {
     if (result.downloadType !== 'magnet' && result.downloadType !== 'torrent')
       return;
 
-    const button = htmlButton ?? (event?.currentTarget ?? null);
-    if (event === null) return;
-    if (button === null || !(button instanceof HTMLButtonElement)) return;
-
     if (!result.downloadURL) {
       throw new Error('Addon did not provide a magnet link.');
     }
@@ -150,7 +146,12 @@ export class RealDebridService extends BaseService {
     if (result.downloadType !== 'torrent') return;
 
     if (!result.name || !result.downloadURL) {
-      throw new Error('Addon did not provide a name for the torrent.');
+      if (!result.name) {
+        throw new Error('Addon did not provide a name for the torrent.');
+      }
+      if (!result.downloadURL) {
+        throw new Error('Addon did not provide a downloadURL for the torrent.');
+      }
     }
 
     // add torrent link

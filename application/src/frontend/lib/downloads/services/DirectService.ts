@@ -18,7 +18,6 @@ export class DirectService extends BaseService {
   ): Promise<void> {
     if (result.downloadType !== 'direct') return;
     const button = htmlButton ?? (event?.currentTarget ?? null);
-    if (event === null) return;
     if (button === null || !(button instanceof HTMLButtonElement)) return;
 
     if (!result.files || result.files.length === 0) {

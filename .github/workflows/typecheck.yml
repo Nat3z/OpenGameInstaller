@@ -111,6 +111,20 @@ jobs:
               body: `❌ **Typecheck Failed**\n\nPlease fix the following type errors:\n\n\`\`\`\n${errors}\n\`\`\``
             });
 
+      - name: Approve review on success
+        if: steps.errors.outputs.has_errors == 'false' && github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pullNumber = context.payload.pull_request?.number || context.issue.number;
+            await github.rest.pulls.createReview({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: pullNumber,
+              event: 'APPROVE',
+              body: '✅ **Typecheck Passed** - All type checks successful!'
+            });
+
       - name: Fail if typecheck failed
         if: steps.typecheck.outcome == 'failure'
         run: exit 1

@@ -87,31 +87,6 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
     mainWindow?.webContents.send('game:launch', { id: appInfo.appID });
   });
 
-  ipcMain.handle(
-    'app:add-manual-game',
-    async (_, data: LibraryInfo): Promise<'success' | 'error'> => {
-      ensureLibraryDir();
-      ensureInternalsDir();
-
-      const gameData: LibraryInfo = {
-        ...data,
-        appID: data.appID || Date.now() + Math.floor(Math.random() * 1000),
-        storefront: 'manual',
-        addonsource: 'manual',
-      };
-
-      try {
-        saveLibraryInfo(gameData.appID, gameData);
-        addToInternalsApps(gameData.appID);
-      } catch (error) {
-        console.error('[app:add-manual-game] Failed to add game:', error);
-        return 'error';
-      }
-
-      return 'success';
-    }
-  );
-
   ipcMain.handle('app:remove-app', async (_, appid: number) => {
     ensureLibraryDir();
     ensureInternalsDir();

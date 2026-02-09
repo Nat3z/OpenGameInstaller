@@ -48,45 +48,53 @@ export const HostsResponseZod = z.object({ hosts: z.record(HostEntryZod) });
 export type $Hosts = z.infer<typeof HostEntryZod>[];
 
 // Add magnet response: data.magnets[] with id, ready, hash, magnet, name, size
-export const MagnetUploadItemZod = z.object({
-  id: z.number(),
-  magnet: z.string().optional(),
-  hash: z.string(),
-  name: z.string().optional(),
-  size: z.number().optional(),
-  ready: z.boolean().optional(),
-  error: z.object({ code: z.string(), message: z.string() }).optional(),
-});
+export const MagnetUploadItemZod = z
+  .object({
+    id: z.number(),
+    magnet: z.string().optional(),
+    hash: z.string(),
+    name: z.string().optional(),
+    size: z.number().optional(),
+    ready: z.boolean().optional(),
+    error: z.object({ code: z.string(), message: z.string() }).optional(),
+  })
+  .passthrough();
 export const AddMagnetResponseZod = z.object({
   magnets: z.array(MagnetUploadItemZod),
 });
 export type $AddMagnetOrTorrent = { id: string; uri: string };
 
 // Upload file response: data.files[]
-export const FileUploadItemZod = z.object({
-  id: z.number(),
-  file: z.string().optional(),
-  name: z.string().optional(),
-  hash: z.string().optional(),
-  size: z.number().optional(),
-  ready: z.boolean().optional(),
-  error: z.object({ code: z.string(), message: z.string() }).optional(),
-});
+export const FileUploadItemZod = z
+  .object({
+    id: z.number(),
+    file: z.string().optional(),
+    name: z.string().optional(),
+    hash: z.string().optional(),
+    size: z.number().optional(),
+    ready: z.boolean().optional(),
+    error: z.object({ code: z.string(), message: z.string() }).optional(),
+  })
+  .passthrough();
 export const AddTorrentResponseZod = z.object({
   files: z.array(FileUploadItemZod),
 });
 
 // Magnet status (v4.1): data.magnets[] with statusCode (4 = Ready)
-export const MagnetStatusItemZod = z.object({
-  id: z.number(),
-  filename: z.string().optional(),
-  size: z.number().optional(),
-  status: z.string().optional(),
-  statusCode: z.number(),
-});
-export const MagnetStatusResponseZod = z.object({
-  magnets: z.array(MagnetStatusItemZod),
-});
+export const MagnetStatusItemZod = z
+  .object({
+    id: z.coerce.number(),
+    filename: z.string().optional(),
+    size: z.coerce.number().optional(),
+    status: z.string().optional(),
+    statusCode: z.coerce.number(),
+  })
+  .passthrough();
+export const MagnetStatusResponseZod = z
+  .object({
+    magnets: z.union([z.array(MagnetStatusItemZod), MagnetStatusItemZod]),
+  })
+  .passthrough();
 
 // Magnet files: data.magnets[] with id and files[]; each file: n (name), s (size), l (link), e (entries for folders)
 const FileNodeZod: z.ZodType<{
@@ -102,11 +110,13 @@ const FileNodeZod: z.ZodType<{
     e: z.array(FileNodeZod).optional(),
   })
 );
-export const MagnetFilesMagnetZod = z.object({
-  id: z.union([z.string(), z.number()]),
-  files: z.array(FileNodeZod).optional(),
-  error: z.object({ code: z.string(), message: z.string() }).optional(),
-});
+export const MagnetFilesMagnetZod = z
+  .object({
+    id: z.union([z.string(), z.number()]),
+    files: z.array(FileNodeZod).optional(),
+    error: z.object({ code: z.string(), message: z.string() }).optional(),
+  })
+  .passthrough();
 export const MagnetFilesResponseZod = z.object({
   magnets: z.array(MagnetFilesMagnetZod),
 });
@@ -117,15 +127,20 @@ export type $AllDebridTorrentInfo = {
 };
 
 // Link unlock: data.link, data.filename, data.filesize (API may return more fields)
+// When delayed is present, link may not be returned (delayed link flow)
 export const UnrestrictLinkResponseZod = z
   .object({
-    link: z.string(),
+    link: z.string().optional(),
     filename: z.string().optional(),
     filesize: z.number().optional(),
     host: z.string().optional(),
     id: z.union([z.string(), z.number()]).optional(),
+    delayed: z.number().optional(),
   })
-  .passthrough();
+  .passthrough()
+  .refine((data) => data.link !== undefined || data.delayed !== undefined, {
+    message: 'Either link or delayed must be present in unlock response',
+  });
 export type $UnrestrictLink = {
   link: string;
   filename?: string;
@@ -133,31 +148,53 @@ export type $UnrestrictLink = {
   download?: string;
 };
 
+// Delayed link status response: status (1=processing, 2=ready, 3=error), time_left, optional link
+export const DelayedLinkResponseZod = z.object({
+  status: z.union([z.literal(1), z.literal(2), z.literal(3)]),
+  time_left: z.number(),
+  link: z.string().optional(),
+});
+export type $DelayedLinkStatus = z.infer<typeof DelayedLinkResponseZod>;
+
 /**
  * Parses and validates an API response; throws on error status or invalid shape.
  * @param response - Axios response with data
  * @param dataSchema - Zod schema for the success payload
  * @returns Validated data on success
  */
-function checkResponse<T>(response: { data: unknown }, dataSchema: z.ZodType<T>): T {
+function checkResponse<T>(
+  response: { data: unknown },
+  dataSchema: z.ZodType<T>
+): T {
   const successSchema = ApiResponseSuccess(dataSchema);
   const errorSchema = ApiResponseError;
 
-  if (response.data && typeof response.data === 'object' && 'status' in response.data) {
+  if (
+    response.data &&
+    typeof response.data === 'object' &&
+    'status' in response.data
+  ) {
     const status = (response.data as any).status;
     if (status === 'error') {
       const parsed = errorSchema.safeParse(response.data);
       if (parsed.success) {
-        throw new Error(`${parsed.data.error.message} (${parsed.data.error.code})`);
+        throw new Error(
+          `${parsed.data.error.message} (${parsed.data.error.code})`
+        );
       }
     } else if (status === 'success') {
       const parsed = successSchema.safeParse(response.data);
       if (parsed.success) {
         return parsed.data.data as T;
       }
+      // Include Zod validation error details
+      throw new Error(
+        `Invalid API response: ${parsed.error.errors.map((e) => `${e.path.join('.')}: ${e.message}`).join(', ')}`,
+        { cause: response.data }
+      );
     }
   }
-  throw new Error('Invalid API response');
+  throw new Error('Invalid API response', { cause: response.data });
 }
 
 /** Node in AllDebrid files tree: n (name), s (size), l (link), e (children). */
@@ -277,7 +314,8 @@ export default class AllDebrid {
       }
     );
     const data = checkResponse(response, MagnetStatusResponseZod);
-    const magnet = data.magnets[0];
+    // API returns object when querying single magnet, array when querying all
+    const magnet = Array.isArray(data.magnets) ? data.magnets[0] : data.magnets;
     if (!magnet) throw new Error('Magnet not found');
     return { statusCode: magnet.statusCode };
   }
@@ -292,9 +330,7 @@ export default class AllDebrid {
    * Get files/links for a magnet. Returns { links: string[], files: { link, name, size }[] }.
    * Uses first file link if no filename match; callers can pick by result.filename or take first.
    */
-  public async getMagnetFiles(
-    id: string
-  ): Promise<$AllDebridTorrentInfo> {
+  public async getMagnetFiles(id: string): Promise<$AllDebridTorrentInfo> {
     const response = await axios.post(
       `${BASE_V4}/magnet/files`,
       new URLSearchParams({ 'id[]': id }),
@@ -317,8 +353,51 @@ export default class AllDebrid {
   }
 
   /**
+   * Check status of a delayed link. Returns the link when ready (status 2), null when still processing (status 1),
+   * or throws when error (status 3).
+   * @param delayedId - The delayed ID from link/unlock response
+   * @returns Link string when ready, null when still processing
+   * @throws Error when status is 3 (error) or API call fails
+   */
+  private async getDelayedLink(delayedId: number): Promise<string | null> {
+    const response = await axios.post(
+      `${BASE_V4}/link/delayed`,
+      new URLSearchParams({ id: String(delayedId) }),
+      {
+        headers: {
+          ...this.headers(),
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        validateStatus: () => true,
+      }
+    );
+    const data = checkResponse(response, DelayedLinkResponseZod);
+
+    if (data.status === 2) {
+      // Ready - link is available
+      if (!data.link) {
+        throw new Error(
+          'Delayed link status is ready but no link was returned'
+        );
+      }
+      return data.link;
+    } else if (data.status === 3) {
+      // Error - could not generate download link
+      throw new Error(
+        `Failed to generate delayed link (status: ${data.status}, time_left: ${data.time_left})`
+      );
+    } else if (data.status === 1) {
+      // Still processing
+      return null;
+    } else {
+      throw new Error(`Unexpected delayed link status: ${data.status}`);
+    }
+  }
+
+  /**
    * Unrestrict a link. Returns shape compatible with app: { link, download?, filename, filesize }.
-   * AllDebrid returns data.link as the direct download URL.
+   * AllDebrid returns data.link as the direct download URL, or data.delayed if the link needs time to generate.
+   * When delayed is present, polls /link/delayed until the link is ready.
    */
   public async unrestrictLink(
     link: string,
@@ -333,12 +412,50 @@ export default class AllDebrid {
       },
       validateStatus: () => true,
     });
-    const data = checkResponse(response, UnrestrictLinkResponseZod);
-    return {
-      link: data.link,
-      filename: data.filename,
-      filesize: data.filesize,
-      download: data.link,
-    };
+    const data = checkResponse(response, UnrestrictLinkResponseZod) as z.infer<
+      typeof UnrestrictLinkResponseZod
+    >;
+
+    // If link is immediately available, return it
+    if (data.link) {
+      return {
+        link: data.link,
+        filename: data.filename,
+        filesize: data.filesize,
+        download: data.link,
+      };
+    }
+
+    // If delayed is present, poll until link is ready
+    if (data.delayed !== undefined) {
+      const POLL_INTERVAL_MS = 5000; // 5 seconds as per docs
+      const MAX_POLL_TIME_MS = 5 * 60 * 1000; // 5 minutes timeout
+      const startTime = Date.now();
+
+      while (Date.now() - startTime < MAX_POLL_TIME_MS) {
+        const delayedLink = await this.getDelayedLink(data.delayed);
+        if (delayedLink !== null) {
+          // Link is ready
+          return {
+            link: delayedLink,
+            filename: data.filename,
+            filesize: data.filesize,
+            download: delayedLink,
+          };
+        }
+        // Still processing, wait before next poll
+        await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
+      }
+
+      // Timeout reached
+      throw new Error(
+        `Delayed link not ready after ${MAX_POLL_TIME_MS / 1000} seconds`
+      );
+    }
+
+    // Neither link nor delayed present (should not happen due to schema validation)
+    throw new Error(
+      'Invalid unlock response: neither link nor delayed present'
+    );
   }
 }

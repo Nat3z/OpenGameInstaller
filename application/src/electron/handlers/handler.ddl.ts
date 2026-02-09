@@ -748,6 +748,12 @@ class Download {
         }
 
         fs.mkdirSync(dirname(job.path), { recursive: true });
+        
+        // Ensure path is not a directory
+        if (fs.existsSync(job.path) && fs.statSync(job.path).isDirectory()) {
+          throw new Error(`Cannot write to path: ${job.path} is a directory`);
+        }
+        
         part.fileStream = fs.createWriteStream(job.path, {
           flags: startByte > 0 ? 'r+' : 'w',
           start: startByte,
@@ -1160,6 +1166,12 @@ class Download {
         this.currentBytes = this.startByte;
 
         fs.mkdirSync(dirname(job.path), { recursive: true });
+        
+        // Ensure path is not a directory
+        if (fs.existsSync(job.path) && fs.statSync(job.path).isDirectory()) {
+          throw new Error(`Cannot write to path: ${job.path} is a directory`);
+        }
+        
         this.fileStream = fs.createWriteStream(job.path, {
           flags: this.startByte > 0 ? 'r+' : 'w',
           start: this.startByte,

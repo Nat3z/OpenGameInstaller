@@ -132,14 +132,15 @@ interface Window {
         options: AxiosRequestConfig
       ) => Promise<{ status: number; success: boolean; data: T }>;
       inputSend: (id: string, data: any) => Promise<void>;
-      insertApp: (info: InsertAppInfo) => Promise<
+      insertApp: (
+        info: InsertAppInfo
+      ) => Promise<
         | 'setup-failed'
         | 'setup-success'
         | 'setup-redistributables-failed'
         | 'setup-redistributables-success'
         | 'setup-prefix-required'
       >;
-      addManualGame: (info: LibraryInfo) => Promise<'success' | 'error'>;
       getAllApps: () => Promise<LibraryInfo[]>;
       launchGame: (appid: string) => Promise<void>;
       removeApp: (appid: number) => Promise<void>;

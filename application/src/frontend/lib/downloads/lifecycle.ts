@@ -23,8 +23,9 @@ export async function startDownload(
   event: MouseEvent | null,
   htmlButton?: HTMLButtonElement
 ) {
-  const button = htmlButton ?? (event?.currentTarget as HTMLButtonElement | null);
-  const resolvedButton = (button instanceof HTMLButtonElement) ? button : null;
+  const button =
+    htmlButton ?? (event?.currentTarget as HTMLButtonElement | null);
+  const resolvedButton = button instanceof HTMLButtonElement ? button : null;
 
   const resetButton = () => {
     if (resolvedButton) {
@@ -45,7 +46,7 @@ export async function startDownload(
       | 'premiumize'
       | 'disable' =
       (generalOptions ? generalOptions.torrentClient : null) ?? 'disable';
-    
+
     if (torrentClient === 'disable') {
       createNotification({
         id: Math.random().toString(36).substring(7),
@@ -55,7 +56,7 @@ export async function startDownload(
       resetButton();
       return;
     }
-    
+
     if (torrentClient === 'real-debrid') {
       downloadHandler = 'real-debrid-' + downloadHandler;
     } else if (torrentClient === 'all-debrid') {
@@ -75,6 +76,7 @@ export async function startDownload(
 
   // Service-based architecture: find and delegate to the appropriate service
   const svc = ALL_SERVICES.find((s) => s.types.includes(downloadHandler));
+  console.log('Service:', svc);
   if (!svc) {
     // If no service is found for this download type, log an error and reset button
     console.error(`No service found for download type: ${downloadHandler}`);
@@ -89,7 +91,12 @@ export async function startDownload(
   }
 
   try {
-    await svc.startDownload(sanitizedResult, appID, event, resolvedButton ?? undefined);
+    await svc.startDownload(
+      sanitizedResult,
+      appID,
+      event,
+      resolvedButton ?? undefined
+    );
   } catch (err) {
     resetButton();
     console.error('startDownload failed:', err);

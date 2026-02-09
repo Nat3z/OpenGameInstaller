@@ -22,7 +22,7 @@ import {
   removeFromInternalsApps,
 } from './helpers.app/library.js';
 import { generateNotificationId } from './helpers.app/notifications.js';
-import { sendNotification } from '../main.js';
+import { getMainWindow, sendNotification } from '../main.js';
 import { getProtonPrefixPath } from './helpers.app/platform.js';
 import { spawnSync } from 'child_process';
 import * as fs from 'fs';
@@ -38,7 +38,7 @@ function escapeShellArg(arg: string): string {
     .replace(/`/g, '\\`');
 }
 
-export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
+export function registerLibraryHandlers() {
   ipcMain.handle('app:launch-game', async (_, appid) => {
     ensureLibraryDir();
     ensureInternalsDir();
@@ -66,7 +66,7 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
         type: 'error',
       });
       console.error('Failed to launch game');
-      mainWindow?.webContents.send('game:exit', { id: appInfo.appID });
+      getMainWindow()?.webContents.send('game:exit', { id: appInfo.appID });
     });
     spawnedItem.on('exit', (exit) => {
       console.log('Game exited with code: ' + exit);
@@ -77,14 +77,14 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
           type: 'error',
         });
 
-        mainWindow?.webContents.send('game:exit', { id: appInfo.appID });
+        getMainWindow()?.webContents.send('game:exit', { id: appInfo.appID });
         return;
       }
 
-      mainWindow?.webContents.send('game:exit', { id: appInfo.appID });
+      getMainWindow()?.webContents.send('game:exit', { id: appInfo.appID });
     });
 
-    mainWindow?.webContents.send('game:launch', { id: appInfo.appID });
+    getMainWindow()?.webContents.send('game:launch', { id: appInfo.appID });
   });
 
   ipcMain.handle('app:remove-app', async (_, appid: number) => {

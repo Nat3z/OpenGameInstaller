@@ -908,7 +908,7 @@
   }
 
   .btn-danger {
-    @apply bg-error-border text-error-text hover:opacity-90 focus:ring-error-border shadow-md hover:shadow-lg;
+    @apply bg-error-bg text-error-text hover:opacity-90 focus:ring-error-border shadow-md hover:shadow-lg;
   }
 
   .btn-sm {

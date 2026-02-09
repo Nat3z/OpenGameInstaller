@@ -1,6 +1,6 @@
 import axios from 'axios';
-import { ipcMain, BrowserWindow } from 'electron';
-import { sendNotification } from '../main.js';
+import { ipcMain } from 'electron';
+import { getMainWindow, sendNotification } from '../main.js';
 import { join } from 'path';
 import * as fs from 'fs';
 import { rm as rmAsync, readFile } from 'fs/promises';
@@ -42,7 +42,6 @@ class TorrentDownload {
     this._status = newStatus;
   }
 
-  private mainWindow: BrowserWindow;
   private job: TorrentJob;
   private taskFinisher: () => void = () => {};
   private torrentClientType: 'webtorrent' | 'qbittorrent' | 'unselected' =
@@ -68,9 +67,8 @@ class TorrentDownload {
   private progress: number = 0;
   private ratio: number = 0;
 
-  constructor(mainWindow: BrowserWindow, job: TorrentJob) {
+  constructor(job: TorrentJob) {
     this.id = Math.random().toString(36).substring(7);
-    this.mainWindow = mainWindow;
     this.job = job;
 
     downloads.set(this.id, this);
@@ -407,15 +405,16 @@ class TorrentDownload {
   }
 
   private sendIpc(channel: string, data: any) {
-    if (this.mainWindow && !this.mainWindow.isDestroyed()) {
-      this.mainWindow.webContents.send(channel, data);
+    const win = getMainWindow();
+    if (win && !win.isDestroyed()) {
+      win.webContents.send(channel, data);
     }
   }
 }
 
-export default function handler(mainWindow: BrowserWindow) {
+export default function handler() {
   const startDownload = async (job: TorrentJob) => {
-    const download = new TorrentDownload(mainWindow, job);
+    const download = new TorrentDownload(job);
     download.start();
     await new Promise((resolve) => setTimeout(resolve, 1000));
     return download.id;

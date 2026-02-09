@@ -1,11 +1,11 @@
-import { BrowserWindow, ipcMain } from 'electron';
+import { ipcMain } from 'electron';
 import fs from 'fs';
 import { join } from 'path';
 import { exec } from 'child_process';
 import { processes, setupAddon, startAddon } from '../manager/manager.addon.js';
 import { __dirname } from '../manager/manager.paths.js';
 import { server, clients, port } from '../server/addon-server.js';
-import { sendIPCMessage, sendNotification } from '../main.js';
+import { getMainWindow, sendIPCMessage, sendNotification } from '../main.js';
 import axios from 'axios';
 import { AddonConnection } from '../server/AddonConnection.js';
 
@@ -77,7 +77,7 @@ export function restartAddonServer() {
   });
 }
 
-export default function AddonManagerHandler(mainWindow: BrowserWindow) {
+export default function AddonManagerHandler() {
   ipcMain.handle('install-addons', async (_, addons) => {
     // addons is an array of URLs to the addons to install. these should be valid git repositories
     // check if git is installed
@@ -254,7 +254,7 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
                 id: Math.random().toString(36).substring(7),
                 type: 'info',
               });
-              mainWindow!!.webContents.send('addon:updated', addon);
+              getMainWindow()?.webContents.send('addon:updated', addon);
               // No need to run setupAddon if nothing changed
               addonsUpdated++;
               resolve();
@@ -273,7 +273,7 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
               type: 'info',
             });
 
-            mainWindow!!.webContents.send('addon:updated', addon);
+            getMainWindow()?.webContents.send('addon:updated', addon);
             // setup the addon
             setupAddon(addonPath).then((success) => {
               if (!success) {

@@ -1,7 +1,7 @@
-import { ipcMain, BrowserWindow } from 'electron';
+import { ipcMain } from 'electron';
 import * as fs from 'fs';
 import { rm as rmAsync } from 'fs/promises';
-import { sendNotification } from '../main.js';
+import { getMainWindow, sendNotification } from '../main.js';
 import axios, { AxiosError, AxiosResponse } from 'axios';
 import { dirname } from 'path';
 import { DOWNLOAD_QUEUE } from '../manager/manager.queue.js';
@@ -77,7 +77,6 @@ class Download {
     this._status = newStatus;
   }
 
-  private mainWindow: BrowserWindow;
   private jobs: DownloadJob[];
   private totalParts: number;
   private currentPart: number = 0;
@@ -105,13 +104,8 @@ class Download {
   private multiPartTotalBytes: number = 0;
   private multiPartStartTime: number = 0;
 
-  constructor(
-    mainWindow: BrowserWindow,
-    jobs: DownloadJob[],
-    startPart: number = 1
-  ) {
+  constructor(jobs: DownloadJob[], startPart: number = 1) {
     this.id = Math.random().toString(36).substring(7);
-    this.mainWindow = mainWindow;
     this.jobs = jobs;
     this.totalParts = jobs.length;
     this.currentPart = startPart || 1;
@@ -1815,8 +1809,9 @@ class Download {
   }
 
   private sendIpc(channel: string, data: any) {
-    if (this.mainWindow && !this.mainWindow.isDestroyed()) {
-      this.mainWindow.webContents.send(channel, data);
+    const win = getMainWindow();
+    if (win && !win.isDestroyed()) {
+      win.webContents.send(channel, data);
     }
   }
 
@@ -1848,7 +1843,7 @@ async function checkParallelChunkCount() {
   PARALLEL_CHUNK_COUNT = chunkCount;
 }
 
-export default function handler(mainWindow: BrowserWindow) {
+export default function handler() {
   ipcMain.handle(
     'ddl:download',
     async (
@@ -1857,7 +1852,7 @@ export default function handler(mainWindow: BrowserWindow) {
       part?: number
     ) => {
       await checkParallelChunkCount();
-      const download = new Download(mainWindow, args, part);
+      const download = new Download(args, part);
       download.start();
       await new Promise((resolve) => setTimeout(resolve, 1000));
       return download.id;

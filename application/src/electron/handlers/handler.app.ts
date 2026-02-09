@@ -1,6 +1,6 @@
 import axios from 'axios';
 import { net, ipcMain, app } from 'electron';
-import { currentScreens } from '../main.js';
+import { currentScreens, getMainWindow } from '../main.js';
 import * as fs from 'fs';
 import { join } from 'path';
 import * as os from 'os';
@@ -125,13 +125,13 @@ StartupNotify=true
   }
 }
 
-export default function handler(mainWindow: Electron.BrowserWindow) {
-  // Window controls
+export default function handler() {
+  // Window controls (use getMainWindow so handlers work after window recreate, e.g. macOS activate)
   ipcMain.handle('app:close', () => {
-    mainWindow?.close();
+    getMainWindow()?.close();
   });
   ipcMain.handle('app:minimize', () => {
-    mainWindow?.minimize();
+    getMainWindow()?.minimize();
   });
 
   // Utilities
@@ -242,6 +242,6 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
 
   // Register sub-handlers
   registerSteamHandlers();
-  registerLibraryHandlers(mainWindow);
+  registerLibraryHandlers();
   registerRedistributableHandlers();
 }

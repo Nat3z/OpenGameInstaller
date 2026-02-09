@@ -61,6 +61,11 @@ export let torrentIntervals: NodeJS.Timeout[] = [];
 
 let mainWindow: BrowserWindow | null;
 
+/** Returns the current main window (or null if closed). Used by IPC handlers so they always target the active window after recreate (e.g. macOS activate). */
+export function getMainWindow(): BrowserWindow | null {
+  return mainWindow;
+}
+
 interface Notification {
   message: string;
   id: string;
@@ -81,6 +86,10 @@ let readyForEventWaiters: (() => void)[] = [];
 
 // Flag to ensure IPC handlers are only registered once
 let handlersRegistered = false;
+
+// Flag to ensure domain handlers (App, FS, RealDebrid, Torrent, etc.) are only registered once.
+// They use getMainWindow() so they always target the current window after recreate (e.g. macOS activate).
+let domainHandlersRegistered = false;
 
 /**
  * Sends an IPC message to the main window. If the renderer is not yet ready for events,
@@ -207,14 +216,17 @@ function onMainAppReady() {
   if (!mainWindow) return;
   closeSplashWindow();
 
-  AppEventHandler(mainWindow);
-  FSEventHandler();
-  RealdDebridHandler(mainWindow);
-  TorrentHandler(mainWindow);
-  DirectDownloadHandler(mainWindow);
-  AddonRestHandler();
-  AddonManagerHandler(mainWindow);
-  OOBEHandler();
+  if (!domainHandlersRegistered) {
+    domainHandlersRegistered = true;
+    AppEventHandler();
+    FSEventHandler();
+    RealdDebridHandler();
+    TorrentHandler();
+    DirectDownloadHandler();
+    AddonRestHandler();
+    AddonManagerHandler();
+    OOBEHandler();
+  }
 
   console.log('showing window');
   mainWindow.show();
@@ -282,8 +294,9 @@ function createWindow() {
   fs.mkdir(join(__dirname, 'config'), (_) => {});
 
   // First ready-to-show: splash is ready; show window so user sees loading
+  const win = mainWindow;
   mainWindow.once('ready-to-show', () => {
-    mainWindow!!.show();
+    if (win && !win.isDestroyed()) win.show();
   });
 }
 
@@ -294,7 +307,7 @@ function createWindow() {
 async function runPostSplashStartup() {
   if (!mainWindow) return;
   await runStartupTasks(mainWindow);
-  if (!mainWindow) return;
+  if (!mainWindow || mainWindow.isDestroyed()) return;
   if (isDev()) {
     mainWindow.loadURL(
       'http://localhost:8080/?secret=' + applicationAddonSecret

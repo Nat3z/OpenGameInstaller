@@ -1,6 +1,6 @@
 import axios from 'axios';
 import { ipcMain } from 'electron';
-import { sendNotification } from '../main.js';
+import { getMainWindow, sendNotification } from '../main.js';
 import { join } from 'path';
 import * as fs from 'fs';
 import RealDebrid from 'real-debrid-js';
@@ -10,7 +10,7 @@ import { __dirname } from '../manager/manager.paths.js';
 let realDebridClient = new RealDebrid({
   apiKey: 'UNSET',
 });
-export default function handler(mainWindow: Electron.BrowserWindow) {
+export default function handler() {
   ipcMain.handle('real-debrid:set-key', async (_, arg) => {
     realDebridClient = new RealDebrid({
       apiKey: arg,
@@ -97,14 +97,15 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
           });
         });
       }).catch((err) => {
-        if (!mainWindow || !mainWindow.webContents) {
+        const win = getMainWindow();
+        if (!win || !win.webContents) {
           console.error(
             'Seems like the window is closed. Cannot send error message to renderer.'
           );
           return;
         }
         console.error(err);
-        mainWindow.webContents.send('ddl:download-error', {
+        win.webContents.send('ddl:download-error', {
           id: downloadID,
           error: err,
         });

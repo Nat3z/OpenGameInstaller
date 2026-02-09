@@ -1,7 +1,7 @@
 import { BrowserWindow, ipcMain } from 'electron';
 import fs from 'fs';
 import { join } from 'path';
-import { exec } from 'child_process';
+import { exec, execFile } from 'child_process';
 import { processes, setupAddon, startAddon } from '../manager/manager.addon.js';
 import { __dirname } from '../manager/manager.paths.js';
 import { server, clients, port } from '../server/addon-server.js';
@@ -122,8 +122,19 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
       }
 
       if (!isLocal && !fs.existsSync(join(addonPath, 'addon.json'))) {
+        // Validate git URL format (https://, http://, git@, or git://)
+        const isValidGitUrl = /^(https?:\/\/|git@|git:\/\/)/.test(addon);
+        if (!isValidGitUrl) {
+          sendNotification({
+            message: `Invalid addon URL format for ${addonName}`,
+            id: Math.random().toString(36).substring(7),
+            type: 'error',
+          });
+          continue;
+        }
+
         await new Promise<void>((resolve, reject) => {
-          exec(`git clone ${addon} "${addonPath}"`, (err, stdout, _) => {
+          execFile('git', ['clone', addon, addonPath], (err, stdout, _) => {
             if (err) {
               sendNotification({
                 message: `Failed to install addon ${addonName}`,
@@ -131,7 +142,7 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
                 type: 'error',
               });
               console.error(err);
-              return reject();
+              return reject(err);
             }
             console.log(stdout);
             resolve();

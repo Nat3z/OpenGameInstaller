@@ -62,10 +62,6 @@ jobs:
         shell: bash
         run: |
           bun install --frozen-lockfile
-          mkdir -p ./application/node_modules ./updater/node_modules
-          rm -rf ./application/node_modules/electron ./updater/node_modules/electron
-          cp -r ./node_modules/electron ./application/node_modules/electron
-          cp -r ./node_modules/electron ./updater/node_modules/electron
 
       - name: Build Release Client
         if: steps.check_changes.outputs.has_application_changes == 'true'

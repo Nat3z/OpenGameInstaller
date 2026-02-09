@@ -7,6 +7,17 @@
     <title>OpenGameInstaller</title>
 
     <link rel="icon" type="image/png" href="/favicon.png" />
+    <script>
+      (function () {
+        var theme = 'light';
+        try {
+          if (typeof window !== 'undefined' && window.electronAPI && typeof window.electronAPI.getTheme === 'function') {
+            theme = window.electronAPI.getTheme();
+          }
+        } catch (e) {}
+        document.documentElement.setAttribute('data-theme', theme);
+      })();
+    </script>
   </head>
 
   <body>

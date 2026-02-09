@@ -18,6 +18,21 @@ let migrations: {
     run: () => Promise<void>;
   };
 } = {
+  'add-theme-to-general': {
+    from: '0.0.0',
+    to: '2.1.99',
+    description: 'Add theme setting to general.json for theme support.',
+    platform: 'all',
+    run: async () => {
+      const configPath = join(__dirname, 'config/option/general.json');
+      if (!fsSync.existsSync(configPath)) return;
+      const generalConfig = await fs.readFile(configPath, 'utf-8');
+      const generalConfigObj = JSON.parse(generalConfig) as Record<string, unknown>;
+      if (generalConfigObj.theme !== undefined) return;
+      generalConfigObj.theme = 'light';
+      await fs.writeFile(configPath, JSON.stringify(generalConfigObj));
+    },
+  },
   'install-steam-addon': {
     from: '1.6.8',
     to: '2.0.0',

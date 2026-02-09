@@ -47,6 +47,14 @@
       id: 'general',
       description: 'General Settings',
       options: {
+        theme: {
+          displayName: 'Theme',
+          description: 'Appearance theme (Light, Dark, or Synthwave)',
+          defaultValue: 'light',
+          value: 'light',
+          choice: ['light', 'dark', 'synthwave'],
+          type: 'string',
+        },
         fileDownloadLocation: {
           displayName: 'Download Location',
           description: 'The location where files will be downloaded to',
@@ -767,7 +775,7 @@
                                   .minTextLength}
                               />
                               <div
-                                class="pointer-events-none absolute right-12 top-1 h-8 w-8 z-2 rounded-lg bg-linear-to-r from-transparent to-white/80"
+                                class="pointer-events-none absolute right-12 top-1 h-8 w-8 z-2 rounded-lg bg-linear-to-r from-transparent to-surface/80"
                               ></div>
                               <button
                                 type="button"
@@ -960,6 +968,21 @@
                                 selectedId={selectedTorrentClientId}
                                 onchange={handleTorrentClientChange}
                               />
+                            {:else if key === 'theme'}
+                              <select
+                                id={key}
+                                class="input-select"
+                                value={getStoredOrDefaultValue(key)}
+                                onchange={(e) => {
+                                  const val = (e.target as HTMLSelectElement).value as 'light' | 'dark' | 'synthwave';
+                                  updateConfig();
+                                  document.documentElement.setAttribute('data-theme', val);
+                                }}
+                              >
+                                <option value="light">Light</option>
+                                <option value="dark">Dark</option>
+                                <option value="synthwave">Synthwave</option>
+                              </select>
                             {:else}
                               <!-- Regular select for other options -->
                               <select
@@ -1114,7 +1137,7 @@
   }
 
   .sidebar-item {
-    @apply w-full p-4 rounded-lg border-none bg-transparent hover:bg-accent-lighter transition-colors duration-200 text-left text-white;
+    @apply w-full p-4 rounded-lg border-none bg-transparent hover:bg-accent-lighter transition-colors duration-200 text-left text-text-primary;
   }
 
   .sidebar-item.selected {
@@ -1126,11 +1149,11 @@
   }
 
   .sidebar-item-title {
-    @apply text-lg font-archivo font-semibold text-gray-900;
+    @apply text-lg font-archivo font-semibold text-text-primary;
   }
 
   .sidebar-item-description {
-    @apply text-sm text-gray-600;
+    @apply text-sm text-text-secondary;
   }
 
   /* Main Content Styles */
@@ -1160,11 +1183,11 @@
   }
 
   .about-title {
-    @apply text-3xl font-archivo font-bold text-gray-900;
+    @apply text-3xl font-archivo font-bold text-text-primary;
   }
 
   .about-subtitle {
-    @apply text-lg text-gray-600;
+    @apply text-lg text-text-secondary;
   }
 
   .about-links {
@@ -1176,11 +1199,11 @@
   }
 
   .about-separator {
-    @apply text-gray-400;
+    @apply text-text-muted;
   }
 
   .about-version {
-    @apply text-sm text-gray-500 mt-8;
+    @apply text-sm text-text-muted mt-8;
   }
 
   /* Options Grid */
@@ -1189,15 +1212,15 @@
   }
 
   .option-item {
-    @apply bg-white p-6 rounded-lg border border-gray-200 shadow-sm;
+    @apply bg-surface p-6 rounded-lg border border-border shadow-sm;
   }
 
   .option-label {
-    @apply block text-lg font-archivo font-semibold text-gray-900 mb-1;
+    @apply block text-lg font-archivo font-semibold text-text-primary mb-1;
   }
 
   .option-description {
-    @apply text-sm text-gray-600 mb-4;
+    @apply text-sm text-text-secondary mb-4;
   }
 
   .option-input {
@@ -1208,11 +1231,11 @@
   .input-text,
   .input-number,
   .input-select {
-    @apply w-full px-4 py-2 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-accent-light focus:border-accent transition-colors text-accent-text-color;
+    @apply w-full px-4 py-2 border border-border rounded-lg bg-surface focus:ring-2 focus:ring-accent-light focus:border-accent transition-colors text-accent-text-color;
   }
 
   .input-textarea {
-    @apply w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-accent-light focus:border-accent transition-colors resize-none h-32;
+    @apply w-full px-4 py-2 border border-border rounded-lg focus:ring-2 focus:ring-accent-light focus:border-accent transition-colors resize-none h-32;
   }
 
   .file-input-group {
@@ -1237,7 +1260,7 @@
   }
 
   .checkbox-checkmark {
-    @apply w-5 h-5 bg-white border-2 border-gray-300 rounded flex items-center justify-center transition-colors;
+    @apply w-5 h-5 bg-surface border-2 border-border rounded flex items-center justify-center transition-colors;
   }
 
   .input-checkbox:checked + .checkbox-checkmark {
@@ -1246,21 +1269,21 @@
 
   .input-checkbox:not(:checked) + .checkbox-checkmark::after {
     content: '–';
-    @apply text-gray-400 text-sm font-archivo;
+    @apply text-text-muted text-sm font-archivo;
   }
 
   .input-checkbox:checked + .checkbox-checkmark::after {
     content: '•';
-    @apply text-white text-sm font-archivo;
+    @apply text-accent-text-color text-sm font-archivo;
   }
 
   /* Action Section */
   .action-section {
-    @apply mt-8 p-6 bg-white rounded-lg border border-gray-200;
+    @apply mt-8 p-6 bg-surface rounded-lg border border-border;
   }
 
   .action-title {
-    @apply text-xl font-archivo font-semibold text-gray-900 mb-4;
+    @apply text-xl font-archivo font-semibold text-text-primary mb-4;
   }
 
   .action-buttons {
@@ -1297,15 +1320,15 @@
   }
 
   .no-selection-icon {
-    @apply w-16 h-16 text-gray-400 mx-auto;
+    @apply w-16 h-16 text-text-muted mx-auto;
   }
 
   .no-selection-title {
-    @apply text-2xl font-archivo font-semibold text-gray-900;
+    @apply text-2xl font-archivo font-semibold text-text-primary;
   }
 
   .no-selection-description {
-    @apply text-gray-600;
+    @apply text-text-secondary;
   }
 
   /* Remove webkit number input spinners */
@@ -1326,7 +1349,7 @@
 
   .range-value-input {
     @apply w-16 text-center px-3 py-1 bg-accent-lighter text-accent-dark rounded-lg font-archivo font-semibold text-lg border-none focus:ring-2 focus:ring-accent-light outline-none;
-    background-color: #e1f4f0;
+    background-color: var(--theme-accent-lighter);
     -webkit-user-select: text;
     -moz-user-select: text;
     -ms-user-select: text;

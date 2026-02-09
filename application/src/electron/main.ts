@@ -58,6 +58,25 @@ if (STEAMTINKERLAUNCH_PATH === '') {
 console.log('STEAMTINKERLAUNCH_PATH: ' + STEAMTINKERLAUNCH_PATH);
 console.log('Running in directory: ' + __dirname);
 
+/* Sync IPC for initial theme: must be registered before renderer loads to avoid flash */
+ipcMain.on('get-initial-theme', (event) => {
+  try {
+    const configPath = join(__dirname, 'config/option/general.json');
+    if (existsSync(configPath)) {
+      const data = JSON.parse(
+        readFileSync(configPath, 'utf-8')
+      ) as { theme?: string };
+      const t = data.theme;
+      event.returnValue =
+        t === 'dark' || t === 'synthwave' ? t : 'light';
+    } else {
+      event.returnValue = 'light';
+    }
+  } catch {
+    event.returnValue = 'light';
+  }
+});
+
 export let torrentIntervals: NodeJS.Timeout[] = [];
 
 let mainWindow: BrowserWindow | null;

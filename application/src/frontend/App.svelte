@@ -578,7 +578,7 @@
               ? 'Search for games...'
               : 'Search unavailable (offline)'}
             disabled={!$isOnline}
-            class="w-full h-(--header-button-size) pl-12 pr-4 text-lg bg-accent-lighter rounded-lg border-none focus:outline-none font-archivo placeholder-accent-dark disabled:opacity-50 transition-all duration-300 ease-out focus:bg-white focus:shadow-md"
+            class="w-full h-(--header-button-size) pl-12 pr-4 text-lg bg-accent-lighter rounded-lg border-none focus:outline-none font-archivo placeholder-accent-dark disabled:opacity-50 transition-all duration-300 ease-out focus:bg-surface focus:shadow-md"
             value={$searchQuery}
             oninput={handleSearchInput}
           />
@@ -602,10 +602,10 @@
             class="fill-accent-dark"
           >
             <g clip-path="url(#clip0_2_123)">
-              <path
-                d="M34.5625 18.75H31.25V8.33333C31.25 7.1875 30.3125 6.25 29.1666 6.25H20.8333C19.6875 6.25 18.75 7.1875 18.75 8.33333V18.75H15.4375C13.5833 18.75 12.6458 21 13.9583 22.3125L23.5208 31.875C24.3333 32.6875 25.6458 32.6875 26.4583 31.875L36.0208 22.3125C37.3333 21 36.4166 18.75 34.5625 18.75ZM10.4166 39.5833C10.4166 40.7292 11.3541 41.6667 12.5 41.6667H37.5C38.6458 41.6667 39.5833 40.7292 39.5833 39.5833C39.5833 38.4375 38.6458 37.5 37.5 37.5H12.5C11.3541 37.5 10.4166 38.4375 10.4166 39.5833Z"
-                fill="#2D626A"
-              />
+                <path
+                  d="M34.5625 18.75H31.25V8.33333C31.25 7.1875 30.3125 6.25 29.1666 6.25H20.8333C19.6875 6.25 18.75 7.1875 18.75 8.33333V18.75H15.4375C13.5833 18.75 12.6458 21 13.9583 22.3125L23.5208 31.875C24.3333 32.6875 25.6458 32.6875 26.4583 31.875L36.0208 22.3125C37.3333 21 36.4166 18.75 34.5625 18.75ZM10.4166 39.5833C10.4166 40.7292 11.3541 41.6667 12.5 41.6667H37.5C38.6458 41.6667 39.5833 40.7292 39.5833 39.5833C39.5833 38.4375 38.6458 37.5 37.5 37.5H12.5C11.3541 37.5 10.4166 38.4375 10.4166 39.5833Z"
+                  fill="currentColor"
+                />
             </g>
             <defs>
               <clipPath id="clip0_2_123">
@@ -635,10 +635,10 @@
             class="fill-accent-dark"
           >
             <g clip-path="url(#clip0_22_1842)">
-              <path
-                d="M25 45.8333C27.2917 45.8333 29.1667 43.9583 29.1667 41.6666H20.8333C20.8333 43.9583 22.6875 45.8333 25 45.8333ZM37.5 33.3333V22.9166C37.5 16.5208 34.0833 11.1666 28.125 9.74998V8.33331C28.125 6.60415 26.7292 5.20831 25 5.20831C23.2708 5.20831 21.875 6.60415 21.875 8.33331V9.74998C15.8958 11.1666 12.5 16.5 12.5 22.9166V33.3333L9.81249 36.0208C8.49999 37.3333 9.41665 39.5833 11.2708 39.5833H38.7083C40.5625 39.5833 41.5 37.3333 40.1875 36.0208L37.5 33.3333Z"
-                fill="#2D626A"
-              />
+                <path
+                  d="M25 45.8333C27.2917 45.8333 29.1667 43.9583 29.1667 41.6666H20.8333C20.8333 43.9583 22.6875 45.8333 25 45.8333ZM37.5 33.3333V22.9166C37.5 16.5208 34.0833 11.1666 28.125 9.74998V8.33331C28.125 6.60415 26.7292 5.20831 25 5.20831C23.2708 5.20831 21.875 6.60415 21.875 8.33331V9.74998C15.8958 11.1666 12.5 16.5 12.5 22.9166V33.3333L9.81249 36.0208C8.49999 37.3333 9.41665 39.5833 11.2708 39.5833H38.7083C40.5625 39.5833 41.5 37.3333 40.1875 36.0208L37.5 33.3333Z"
+                  fill="currentColor"
+                />
             </g>
             <defs>
               <clipPath id="clip0_22_1842">
@@ -779,7 +779,7 @@
                   <h2 class="text-2xl font-archivo font-bold mb-2">
                     Search Results
                   </h2>
-                  <p class="text-gray-600">
+                  <p class="text-text-secondary">
                     Results for: <span class="font-semibold"
                       >"{$searchQuery}"</span
                     >
@@ -796,8 +796,8 @@
                     alt="offline"
                     class="w-32 h-32 opacity-50"
                   />
-                  <h3 class="text-xl text-gray-700">You're Offline</h3>
-                  <p class="text-gray-500 text-center">
+                  <h3 class="text-xl text-text-primary">You're Offline</h3>
+                  <p class="text-text-muted text-center">
                     Searching for games is unavailable when you're offline.
                   </p>
                 </div>
@@ -955,10 +955,10 @@
 
                   {#if $searchResultsByAddon.length === 0 && !$loadingResults}
                     <div class="no-results" in:fade={{ duration: 300 }}>
-                      <h3 class="text-xl text-gray-700 mb-2">
+                      <h3 class="text-xl text-text-primary mb-2">
                         No Results Found
                       </h3>
-                      <p class="text-gray-500">
+                      <p class="text-text-muted">
                         Try searching for a different game
                       </p>
                     </div>
@@ -1079,13 +1079,13 @@
   }
 
   ::-webkit-scrollbar-thumb {
-    background-color: #cbcbcb51;
+    background-color: var(--theme-scrollbar);
     border-radius: 0.5rem;
     opacity: 0.1;
   }
 
   ::-webkit-scrollbar-thumb:hover {
-    background-color: #909090;
+    background-color: var(--theme-scrollbar-hover);
     border-radius: 0.5rem;
     opacity: 1;
   }
@@ -1109,7 +1109,7 @@
   }
 
   .nav-button:hover {
-    @apply bg-gray-100;
+    background-color: var(--theme-accent-lighter);
     transform: scale(1.05);
   }
 
@@ -1162,7 +1162,7 @@
   }
 
   .addon-header:hover {
-    @apply bg-gray-50;
+    background-color: var(--theme-accent-lighter);
   }
 
   .addon-header-content {
@@ -1170,15 +1170,15 @@
   }
 
   .addon-name {
-    @apply text-lg font-semibold text-gray-800 font-archivo px-2;
+    @apply text-lg font-semibold text-text-primary font-archivo px-2;
   }
 
   .result-count {
-    @apply text-sm text-gray-600 font-medium;
+    @apply text-sm text-text-secondary font-medium;
   }
 
   .collapse-icon {
-    @apply w-5 h-5 text-gray-600 transition-transform duration-200 mx-2;
+    @apply w-5 h-5 text-text-secondary transition-transform duration-200 mx-2;
   }
 
   .collapse-icon.collapsed {
@@ -1202,20 +1202,23 @@
   }
 
   .loading-text {
-    @apply text-sm text-gray-500 font-medium italic;
+    @apply text-sm text-text-muted font-medium italic;
   }
 
   .addon-loading-spinner {
-    @apply w-5 h-5 border-2 border-gray-300 rounded-full animate-spin;
+    @apply w-5 h-5 border-2 rounded-full animate-spin;
+    border-color: var(--color-border);
     border-top-color: var(--color-accent);
   }
 
   .empty-icon {
-    @apply w-5 h-5 text-gray-400;
+    @apply w-5 h-5 text-text-muted;
   }
 
   .search-result-item {
-    @apply flex gap-4 p-4 bg-white rounded-lg border border-gray-200 hover:shadow-md transition-all duration-300 ease-out translate-y-0;
+    @apply flex gap-4 p-4 rounded-lg hover:shadow-md transition-all duration-300 ease-out translate-y-0;
+    background-color: var(--color-surface);
+    border: 1px solid var(--color-border);
   }
 
   .search-result-item:hover {
@@ -1231,11 +1234,11 @@
   }
 
   .result-title {
-    @apply text-lg font-archivo font-semibold text-gray-900;
+    @apply text-lg font-archivo font-semibold text-text-primary;
   }
 
   .result-source {
-    @apply text-sm text-gray-500 capitalize;
+    @apply text-sm text-text-muted capitalize;
   }
 
   .result-button {
@@ -1296,14 +1299,14 @@
     appearance: none;
     width: 100%;
     height: 8px;
-    background: #e5e7eb;
+    background: var(--theme-border);
     border-radius: 4px;
     outline: none;
     transition: background 0.3s ease;
   }
 
   input[type='range']:hover {
-    background: #d1d5db;
+    background: var(--theme-border-strong);
   }
 
   input[type='range']::-webkit-slider-thumb {
@@ -1311,17 +1314,17 @@
     appearance: none;
     width: 20px;
     height: 20px;
-    background: #428a91;
+    background: var(--color-accent);
     border-radius: 50%;
     cursor: pointer;
     transition: all 0.2s ease;
-    box-shadow: 0 2px 4px rgba(66, 138, 145, 0.3);
+    box-shadow: 0 2px 4px var(--theme-focus-ring);
   }
 
   input[type='range']::-webkit-slider-thumb:hover {
-    background: #2d626a;
+    background: var(--color-accent-dark);
     transform: scale(1.1);
-    box-shadow: 0 3px 6px rgba(66, 138, 145, 0.4);
+    box-shadow: 0 3px 6px var(--theme-focus-ring);
   }
 
   input[type='range']::-webkit-slider-thumb:active {
@@ -1331,18 +1334,18 @@
   input[type='range']::-moz-range-thumb {
     width: 20px;
     height: 20px;
-    background: #428a91;
+    background: var(--color-accent);
     border-radius: 50%;
     cursor: pointer;
     border: none;
     transition: all 0.2s ease;
-    box-shadow: 0 2px 4px rgba(66, 138, 145, 0.3);
+    box-shadow: 0 2px 4px var(--theme-focus-ring);
   }
 
   input[type='range']::-moz-range-thumb:hover {
-    background: #2d626a;
+    background: var(--color-accent-dark);
     transform: scale(1.1);
-    box-shadow: 0 3px 6px rgba(66, 138, 145, 0.4);
+    box-shadow: 0 3px 6px var(--theme-focus-ring);
   }
 
   input[type='range']::-moz-range-thumb:active {
@@ -1352,7 +1355,7 @@
   input[type='range']::-moz-range-track {
     width: 100%;
     height: 8px;
-    background: #e5e7eb;
+    background: var(--theme-border);
     border-radius: 4px;
   }
 
@@ -1361,10 +1364,10 @@
   }
 
   input[type='range']:focus::-webkit-slider-thumb {
-    box-shadow: 0 0 0 3px rgba(66, 138, 145, 0.2);
+    box-shadow: 0 0 0 3px var(--theme-focus-ring);
   }
 
   input[type='range']:focus::-moz-range-thumb {
-    box-shadow: 0 0 0 3px rgba(66, 138, 145, 0.2);
+    box-shadow: 0 0 0 3px var(--theme-focus-ring);
   }
 </style>

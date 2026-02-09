@@ -2,7 +2,6 @@ import { currentDownloads } from '../../../store';
 import { getDownloadPath, listenUntilDownloadReady } from '../../../utils';
 import { getConfigClientOption } from '../../config/client';
 import type { SearchResultWithAddon } from '../../tasks/runner';
-import { sanitizePathSegment } from '../pathUtils';
 import { BaseService } from './BaseService';
 
 const BASE_URL = 'https://api.torbox.app/v1';
@@ -61,7 +60,7 @@ export class TorboxService extends BaseService {
     event: MouseEvent | null,
     htmlButton?: HTMLButtonElement
   ): Promise<void> {
-    if (event === null && !htmlButton) return;
+    if (event === null) return;
     if (result.downloadType !== 'magnet' && result.downloadType !== 'torrent')
       return;
 
@@ -77,7 +76,7 @@ export class TorboxService extends BaseService {
 
     try {
       const optionHandled = getConfigClientOption<{ torboxApiKey?: string }>(
-        'torbox'
+        'realdebrid'
       );
       if (!optionHandled || !optionHandled.torboxApiKey) {
         throw new Error('Please set your TorBox API key in the settings.');
@@ -129,8 +128,9 @@ export class TorboxService extends BaseService {
       }>({
         url: `${BASE_URL}/api/torrents/createtorrent`,
         method: 'post',
-        data: addTorrentForm,
+        data: Object.fromEntries(addTorrentForm.entries()),
         headers: {
+          'Content-Type': 'multipart/form-data',
           Authorization: `Bearer ${torboxApiKey}`,
         },
       });
@@ -203,9 +203,9 @@ export class TorboxService extends BaseService {
       // -- STEP 3: WAIT FOR THE TORRENT TO BE READY  --
       // insert into the downloadItems array the temp id
       const tempId = this.queueRequestDownload(result, appID, 'torbox');
-      try {
-        // If we already have a torrent_id, use it; otherwise poll for it
-        if (!finalTorrentId) {
+
+      // If we already have a torrent_id, use it; otherwise poll for it
+      if (!finalTorrentId) {
         const torrentGrabber = await new Promise<TorboxTorrent | undefined>(
           (resolve) => {
             const startTime = Date.now();
@@ -267,17 +267,9 @@ export class TorboxService extends BaseService {
         );
 
         finalTorrentId = torrentGrabber?.id;
-        }
+      }
 
-        if (finalTorrentId) {
-        const filename = result.filename;
-        if (!filename) {
-          currentDownloads.update((downloads) =>
-            downloads.filter((download) => download.id !== tempId)
-          );
-          throw new Error('Missing filename in torrent result.');
-        }
-
+      if (finalTorrentId) {
         // -- STEP 4: DOWNLOAD THE TORRENT --
         const url = new URL(`${BASE_URL}/api/torrents/requestdl`);
         url.searchParams.set('token', torboxApiKey);
@@ -285,20 +277,20 @@ export class TorboxService extends BaseService {
         url.searchParams.set('zip_link', 'true');
         url.searchParams.set('redirect', 'true');
 
+        // generate the whole url
         const downloadUrl = url.toString();
-        const downloadPath =
-          getDownloadPath() +
-          '/' +
-          sanitizePathSegment(result.name) +
-          '/' +
-          sanitizePathSegment(filename) +
-          '.zip';
 
         const { flush } = listenUntilDownloadReady();
         const downloadID = await window.electronAPI.ddl.download([
           {
             link: downloadUrl,
-            path: downloadPath,
+            path:
+              getDownloadPath() +
+              '/' +
+              result.name +
+              '/' +
+              result.filename! +
+              '.zip',
             headers: {
               'OGI-Parallel-Limit': '1',
             },
@@ -316,19 +308,13 @@ export class TorboxService extends BaseService {
           downloadID,
           tempId,
           downloadUrl,
-          downloadPath,
+          getDownloadPath() + '/' + result.name + '/' + result.filename + '.zip',
           'torbox',
           updatedState,
           result
         );
       } else {
         throw new Error('Timed out waiting for torrent to be ready.');
-      }
-      } catch (err) {
-        currentDownloads.update((downloads) =>
-          downloads.filter((d) => d.id !== tempId)
-        );
-        throw err;
       }
     } finally {
       if (htmlButton) {

@@ -89,8 +89,9 @@ export class PremiumizeService extends BaseService {
     }
 
     try {
+      console.log('PremiumizeService startDownload', result);
       const optionHandled = getConfigClientOption<{ premiumizeApiKey?: string }>(
-        'premiumize'
+        'realdebrid'
       );
       if (!optionHandled || !optionHandled.premiumizeApiKey) {
         throw new Error('Please set your Premiumize API key in the settings.');
@@ -170,6 +171,7 @@ export class PremiumizeService extends BaseService {
       throw new Error(responseAddTorrent.data.message);
     }
     const transferId = responseAddTorrent.data.id;
+    console.log('Transfer ID: ', transferId);
 
     // -- Step 3: Wait for the torrent to be ready --
     const foundFolderId = await new Promise<string>((resolve, reject) => {
@@ -228,14 +230,17 @@ export class PremiumizeService extends BaseService {
       });
 
     if (responseTorrentFile.status !== 200) {
+      console.log('Response: ', responseTorrentFile);
       throw new Error('Failed to get direct download from Premiumize');
     }
 
     if (responseTorrentFile.data.status === 'error') {
+      console.log('Response: ', responseTorrentFile.data);
       throw new Error(responseTorrentFile.data.message);
     }
 
     const directDownloadUrl = responseTorrentFile.data.location;
+    console.log('Direct download URL: ', directDownloadUrl);
 
     // -- Step 5: Send the direct download to the download handler --
     const { flush } = listenUntilDownloadReady();

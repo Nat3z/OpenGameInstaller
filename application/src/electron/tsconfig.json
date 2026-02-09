@@ -13,8 +13,7 @@
     "moduleResolution": "bundler",
     "paths": {
       "ogi-addon/config": ["../../node_modules/ogi-addon/build/config/Configuration.d.mts"],
-      "ogi-addon": ["../../node_modules/ogi-addon/build/main.d.mts"],
-      "all-debrid-js": ["../../node_modules/all-debrid-js/build/main.d.mts"]
+      "ogi-addon": ["../../node_modules/ogi-addon/build/main.d.mts"]
     },
     "noImplicitAny": true,
     "strictNullChecks": true,

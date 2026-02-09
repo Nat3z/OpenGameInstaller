@@ -7,7 +7,7 @@
 ### Key Features
 - **Addon System**: Extensible plugin architecture for game sources and management
 - **Multi-Platform Support**: Windows, Linux (including Steam Deck), and macOS
-- **Download Management**: Supports torrents, direct downloads, and premium debrid services (Real-Debrid, Premiumize, Torbox, AllDebrid)
+- **Download Management**: Supports torrents, direct downloads, and premium debrid services (Real-Debrid, Premiumize, Torbox)
 - **Game Library Management**: Track and launch installed games
 - **Auto-Updater**: Built-in updater application to keep the main app current
 - **WebSocket Communication**: Real-time communication between addons and the main application
@@ -20,13 +20,12 @@
 
 This is an **npm workspace monorepo** containing multiple packages and applications:
 
-```plaintext
+```
 OpenGameInstaller/
 ├── application/          # Main Electron GUI application
 ├── packages/
 │   ├── ogi-addon/        # Addon SDK/library for developers
 │   ├── real-debrid/      # Real-Debrid API client library
-│   ├── all-debrid/       # AllDebrid API client library
 │   └── create-ogi-addon/ # CLI tool to scaffold new addons
 ├── web/                  # Documentation website (Astro)
 ├── updater/              # Auto-updater Electron app
@@ -44,7 +43,7 @@ OpenGameInstaller/
 
 ### Communication Flow
 
-```plaintext
+```
 ┌─────────────────┐
 │  Electron Main  │
 │   (Node.js)     │
@@ -77,7 +76,6 @@ The main Electron desktop application.
     - `handler.ddl.ts` - Direct download handling
     - `handler.fs.ts` - Filesystem operations
     - `handler.realdebrid.ts` - Real-Debrid integration
-    - `handler.alldebrid.ts` - AllDebrid integration
     - `handler.torrent.ts` - Torrent management
     - `handler.rest.ts` - REST API handlers
     - `handler.oobe.ts` - Out-of-box experience
@@ -164,19 +162,7 @@ A TypeScript client library for the Real-Debrid API.
 
 **Usage:** Published as `real-debrid-js` on npm (used internally as workspace dependency).
 
-### 3.4 AllDebrid Package (`packages/all-debrid/`)
-
-A TypeScript client library for the AllDebrid API.
-
-**Features:**
-- Add torrents
-- Add magnet links
-- Unrestrict links
-- Manage downloads
-
-**Usage:** Published as `all-debrid-js` on npm (used internally as workspace dependency).
-
-### 3.5 Create OGI Addon (`packages/create-ogi-addon/`)
+### 3.4 Create OGI Addon (`packages/create-ogi-addon/`)
 
 CLI tool to scaffold new addon projects.
 
@@ -187,7 +173,7 @@ npx create-ogi-addon
 
 Creates addon templates in TypeScript or JavaScript.
 
-### 3.6 Web (`web/`)
+### 3.5 Web (`web/`)
 
 Documentation website built with Astro.
 
@@ -198,7 +184,7 @@ Documentation website built with Astro.
 
 **Tech:** Astro + Tailwind CSS + Markdown
 
-### 3.7 Updater (`updater/`)
+### 3.6 Updater (`updater/`)
 
 Separate Electron application that handles auto-updates.
 
@@ -207,7 +193,7 @@ Separate Electron application that handles auto-updates.
 - Provides installation wizard
 - Bundled as `OpenGameInstaller-Setup.exe` (Windows) or `.AppImage` (Linux)
 
-### 3.8 Test Addon (`test-addon/`)
+### 3.7 Test Addon (`test-addon/`)
 
 Example addon implementation for testing and reference.
 
@@ -393,7 +379,7 @@ bun run check  # Svelte type checking
 ### Project Structure Conventions
 
 **Addon Structure:**
-```plaintext
+```
 addon-name/
 ├── addon.json          # Addon manifest (required)
 ├── main.ts             # Entry point (or specified in addon.json)
@@ -465,7 +451,6 @@ Abstract `BaseService` class with implementations:
 - `DirectService` - Direct HTTP downloads
 - `TorrentService` - WebTorrent-based downloads
 - `RealDebridService` - Real-Debrid premium downloads
-- `AllDebridService` - AllDebrid premium downloads
 - `PremiumizeService` - Premiumize.me integration
 - `TorboxService` - Torbox integration
 
@@ -482,7 +467,7 @@ Abstract `BaseService` class with implementations:
 
 ## 8. File Structure Summary
 
-```plaintext
+```
 OpenGameInstaller/
 ├── .github/workflows/     # CI/CD workflows
 ├── application/           # Main Electron app
@@ -493,7 +478,6 @@ OpenGameInstaller/
 ├── packages/
 │   ├── ogi-addon/         # Addon SDK
 │   ├── real-debrid/       # Real-Debrid client
-│   ├── all-debrid/        # AllDebrid client
 │   └── create-ogi-addon/  # Addon scaffolder
 ├── web/                   # Documentation site
 ├── updater/               # Auto-updater app

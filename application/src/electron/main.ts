@@ -128,26 +128,19 @@ function onMainAppReady() {
   closeSplashWindow();
   if (!mainWindow || mainWindow.isDestroyed()) return;
 
-  // Register process-wide listeners only once (avoids duplicate handlers on macOS window recreate)
+  AppEventHandler(mainWindow);
+  FSEventHandler();
+  RealdDebridHandler(mainWindow);
+  AllDebridHandler(mainWindow);
+  TorrentHandler(mainWindow);
+  DirectDownloadHandler(mainWindow);
+  AddonRestHandler();
+  AddonManagerHandler(mainWindow);
+  OOBEHandler();
+
+  // Register process-wide listeners only once
   if (!listenersRegistered) {
     listenersRegistered = true;
-    AppEventHandler(mainWindow);
-    FSEventHandler();
-    RealdDebridHandler(mainWindow);
-    AllDebridHandler(mainWindow);
-    TorrentHandler(mainWindow);
-    DirectDownloadHandler(mainWindow);
-    AddonRestHandler();
-    AddonManagerHandler(mainWindow);
-    OOBEHandler();
-
-    ipcMain.on('client-ready-for-events', async () => {
-      isReadyForEvents = true;
-      for (const waiter of readyForEventWaiters) {
-        waiter();
-      }
-      readyForEventWaiters = [];
-    });
 
     ipcMain.on('get-version', async (event) => {
       event.returnValue = VERSION;
@@ -241,6 +234,14 @@ function createWindow() {
   });
 
   if (!isDev() && !ogiDebug()) mainWindow.removeMenu();
+
+  ipcMain.on('client-ready-for-events', async () => {
+    isReadyForEvents = true;
+    for (const waiter of readyForEventWaiters) {
+      waiter();
+    }
+    readyForEventWaiters = [];
+  });
 
   app.commandLine.appendSwitch('disable-features', 'HardwareMediaKeyHandling');
 
@@ -341,9 +342,6 @@ app.on('activate', async function () {
   // dock icon is clicked and there are no other windows open.
   if (mainWindow === null) {
     createWindow();
-    if (mainWindow) {
-      isReadyForEvents = false;
-      await startAppFlow(mainWindow);
-    }
+    if (mainWindow) await startAppFlow(mainWindow);
   }
 });

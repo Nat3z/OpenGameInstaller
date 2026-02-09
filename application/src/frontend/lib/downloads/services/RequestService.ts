@@ -43,6 +43,7 @@ export class RequestService extends BaseService {
       ];
     });
 
+    console.log('Requesting download', result);
     const response: SearchResult = await safeFetch(
       'requestDownload',
       {
@@ -71,6 +72,8 @@ export class RequestService extends BaseService {
         },
       }
     );
+
+    console.log('Request response:', response);
 
     // Merge response with original context, preserving update-specific fields
     const updatedResult = {

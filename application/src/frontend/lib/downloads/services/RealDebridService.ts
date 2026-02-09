@@ -3,31 +3,13 @@ import type { SearchResultWithAddon } from '../../tasks/runner';
 import { currentDownloads } from '../../../store';
 import { getDownloadPath } from '../../core/fs';
 import { listenUntilDownloadReady } from '../events';
-import { sanitizePathSegment } from '../pathUtils';
 import type { $Hosts } from 'real-debrid-js';
-
-const POLL_INTERVAL_MS = 3000;
-const POLL_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
 
 /**
  * Handles magnet/torrent downloads that should be routed through Real-Debrid.
  */
 export class RealDebridService extends BaseService {
   readonly types = ['real-debrid-magnet', 'real-debrid-torrent'];
-
-  private async pollUntilReady(id: string): Promise<void> {
-    const startTime = Date.now();
-    while (true) {
-      await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
-      if (Date.now() - startTime >= POLL_TIMEOUT_MS) {
-        throw new Error(
-          'Timed out waiting for Real-Debrid torrent to be ready.'
-        );
-      }
-      const ready = await window.electronAPI.realdebrid.isTorrentReady(id);
-      if (ready) break;
-    }
-  }
 
   async startDownload(
     result: SearchResultWithAddon,
@@ -47,10 +29,8 @@ export class RealDebridService extends BaseService {
       throw new Error('Please set your Real-Debrid API key in the settings.');
     }
 
+    // get the first host
     const hosts = await window.electronAPI.realdebrid.getHosts();
-    if (!hosts || hosts.length === 0) {
-      throw new Error('No Real-Debrid hosts available.');
-    }
     const tempId = this.queueRequestDownload(result, appID, 'realdebrid');
 
     if (result.downloadType === 'magnet') {
@@ -78,12 +58,38 @@ export class RealDebridService extends BaseService {
       result.downloadURL!,
       host
     );
-    let isReady = await window.electronAPI.realdebrid.isTorrentReady(
+    const isReady = await window.electronAPI.realdebrid.isTorrentReady(
       magnetLink.id
     );
     if (!isReady) {
-      await window.electronAPI.realdebrid.selectTorrent(magnetLink.id);
-      await this.pollUntilReady(magnetLink.id);
+      window.electronAPI.realdebrid.selectTorrent(magnetLink.id);
+      await new Promise<void>((resolve, reject) => {
+        const startTime = Date.now();
+        const timeout = 10 * 60 * 1000; // 10 minutes
+        const interval = setInterval(async () => {
+          try {
+            if (Date.now() - startTime > timeout) {
+              clearInterval(interval);
+              reject(
+                new Error(
+                  'Timed out waiting for Real-Debrid torrent to be ready.'
+                )
+              );
+              return; // prevent further isTorrentReady call after reject
+            }
+            const isReady = await window.electronAPI.realdebrid.isTorrentReady(
+              magnetLink.id
+            );
+            if (isReady) {
+              clearInterval(interval);
+              resolve();
+            }
+          } catch (err) {
+            clearInterval(interval);
+            reject(err);
+          }
+        }, 3000);
+      });
     }
 
     const torrentInfo = await window.electronAPI.realdebrid.getTorrentInfo(
@@ -103,12 +109,7 @@ export class RealDebridService extends BaseService {
     const downloadID = await window.electronAPI.ddl.download([
       {
         link: download.download,
-        path:
-          getDownloadPath() +
-          '/' +
-          sanitizePathSegment(result.name) +
-          '/' +
-          sanitizePathSegment(result.filename),
+        path: getDownloadPath() + '/' + result.name + '/' + result.filename,
       },
     ]);
     const updatedState = flush();
@@ -125,17 +126,11 @@ export class RealDebridService extends BaseService {
 
       throw new Error('Download failed to start.');
     }
-    const safePath =
-      getDownloadPath() +
-      '/' +
-      sanitizePathSegment(result.name) +
-      '/' +
-      sanitizePathSegment(result.filename);
     this.updateDownloadRequested(
       downloadID,
       tempId,
       download.download,
-      safePath,
+      getDownloadPath() + '/' + result.name + '/' + result.filename,
       'realdebrid',
       updatedState,
       result
@@ -149,23 +144,51 @@ export class RealDebridService extends BaseService {
   ): Promise<void> {
     if (result.downloadType !== 'torrent') return;
 
-    if (!result.name) {
-      throw new Error('Addon did not provide a name for the torrent.');
-    }
-    if (!result.downloadURL) {
-      throw new Error('Addon did not provide a downloadURL for the torrent.');
+    if (!result.name || !result.downloadURL) {
+      if (!result.name) {
+        throw new Error('Addon did not provide a name for the torrent.');
+      }
+      if (!result.downloadURL) {
+        throw new Error('Addon did not provide a downloadURL for the torrent.');
+      }
     }
 
     // add torrent link
     const torrent = await window.electronAPI.realdebrid.addTorrent(
       result.downloadURL
     );
-    let isReady = await window.electronAPI.realdebrid.isTorrentReady(
+    const isReady = await window.electronAPI.realdebrid.isTorrentReady(
       torrent.id
     );
     if (!isReady) {
-      await window.electronAPI.realdebrid.selectTorrent(torrent.id);
-      await this.pollUntilReady(torrent.id);
+      window.electronAPI.realdebrid.selectTorrent(torrent.id);
+      await new Promise<void>((resolve, reject) => {
+        const startTime = Date.now();
+        const timeout = 10 * 60 * 1000; // 10 minutes
+        const interval = setInterval(async () => {
+          try {
+            if (Date.now() - startTime > timeout) {
+              clearInterval(interval);
+              reject(
+                new Error(
+                  'Timed out waiting for Real-Debrid torrent to be ready.'
+                )
+              );
+              return; // prevent further isTorrentReady call after reject
+            }
+            const isReady = await window.electronAPI.realdebrid.isTorrentReady(
+              torrent.id
+            );
+            if (isReady) {
+              clearInterval(interval);
+              resolve();
+            }
+          } catch (err) {
+            clearInterval(interval);
+            reject(err);
+          }
+        }, 3000);
+      });
     }
 
     const torrentInfo = await window.electronAPI.realdebrid.getTorrentInfo(
@@ -181,16 +204,10 @@ export class RealDebridService extends BaseService {
 
     // Temporarily register an event listener to store any download updates so that we can match our download to the correct downloadID
     const { flush } = listenUntilDownloadReady();
-    const safePath =
-      getDownloadPath() +
-      '/' +
-      sanitizePathSegment(result.name) +
-      '/' +
-      sanitizePathSegment(result.filename);
     const downloadID = await window.electronAPI.ddl.download([
       {
         link: download.download,
-        path: safePath,
+        path: getDownloadPath() + '/' + result.name + '/' + result.filename,
         headers: {
           'OGI-Parallel-Limit': '1',
         },
@@ -214,7 +231,7 @@ export class RealDebridService extends BaseService {
       downloadID,
       tempId,
       download.download,
-      safePath,
+      getDownloadPath() + '/' + result.name + '/' + result.filename,
       'realdebrid',
       updatedState,
       result

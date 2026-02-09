@@ -979,9 +979,9 @@
                                   document.documentElement.setAttribute('data-theme', val);
                                 }}
                               >
-                                <option value="light">Light</option>
-                                <option value="dark">Dark</option>
-                                <option value="synthwave">Synthwave</option>
+                                {#each selectedOption.options[key].choice as choiceValue}
+                                  <option value={choiceValue}>{choiceValue.charAt(0).toUpperCase() + choiceValue.slice(1)}</option>
+                                {/each}
                               </select>
                             {:else}
                               <!-- Regular select for other options -->
@@ -1231,11 +1231,15 @@
   .input-text,
   .input-number,
   .input-select {
-    @apply w-full px-4 py-2 border border-border rounded-lg bg-surface focus:ring-2 focus:ring-accent-light focus:border-accent transition-colors text-accent-text-color;
+    @apply w-full px-4 py-2 border border-border rounded-lg bg-surface focus:ring-2 focus:ring-accent-light focus:border-accent transition-colors;
+    color: var(--theme-text-primary);
+    background-color: var(--theme-input-bg);
   }
 
   .input-textarea {
     @apply w-full px-4 py-2 border border-border rounded-lg focus:ring-2 focus:ring-accent-light focus:border-accent transition-colors resize-none h-32;
+    color: var(--theme-text-primary);
+    background-color: var(--theme-input-bg);
   }
 
   .file-input-group {
@@ -1247,7 +1251,8 @@
   }
 
   .browse-button {
-    @apply px-4 py-2 bg-accent text-white rounded-lg hover:bg-accent-dark transition-colors border-none font-archivo font-semibold;
+    @apply px-4 py-2 bg-accent rounded-lg hover:bg-accent-dark transition-colors border-none font-archivo font-semibold;
+    color: var(--theme-overlay-text);
   }
 
   /* Checkbox Styles */
@@ -1295,19 +1300,55 @@
   }
 
   .action-button.primary {
-    @apply bg-green-500 text-white hover:bg-green-600 disabled:bg-gray-400;
+    background-color: var(--theme-success);
+    color: var(--theme-overlay-text);
+  }
+
+  .action-button.primary:hover:not(:disabled) {
+    background-color: var(--theme-success-hover);
+  }
+
+  .action-button.primary:disabled {
+    background-color: var(--theme-disabled);
   }
 
   .action-button.secondary {
-    @apply bg-blue-500 text-white hover:bg-blue-600 disabled:bg-gray-400;
+    background-color: var(--theme-info);
+    color: var(--theme-overlay-text);
+  }
+
+  .action-button.secondary:hover:not(:disabled) {
+    background-color: var(--theme-info-hover);
+  }
+
+  .action-button.secondary:disabled {
+    background-color: var(--theme-disabled);
   }
 
   .action-button.danger {
-    @apply bg-red-500 text-white hover:bg-red-600 disabled:bg-gray-400;
+    background-color: var(--theme-error);
+    color: var(--theme-overlay-text);
+  }
+
+  .action-button.danger:hover:not(:disabled) {
+    background-color: var(--theme-error-hover);
+  }
+
+  .action-button.danger:disabled {
+    background-color: var(--theme-disabled);
   }
 
   .action-button.warning {
-    @apply bg-yellow-500 text-white hover:bg-yellow-600 disabled:bg-gray-400;
+    background-color: var(--theme-warning);
+    color: var(--theme-overlay-text);
+  }
+
+  .action-button.warning:hover:not(:disabled) {
+    background-color: var(--theme-warning-hover);
+  }
+
+  .action-button.warning:disabled {
+    background-color: var(--theme-disabled);
   }
 
   /* No Selection State */

@@ -20,6 +20,17 @@
   --theme-scrollbar-hover: #909090;
   --theme-input-bg: #ffffff;
   --theme-focus-ring: rgba(66, 138, 145, 0.2);
+  --theme-overlay-bg: rgba(0, 0, 0, 0.7);
+  --theme-overlay-text: #ffffff;
+  --theme-success: #10b981;
+  --theme-success-hover: #059669;
+  --theme-info: #3b82f6;
+  --theme-info-hover: #2563eb;
+  --theme-error: #ef4444;
+  --theme-error-hover: #dc2626;
+  --theme-warning: #f59e0b;
+  --theme-warning-hover: #d97706;
+  --theme-disabled: #9ca3af;
 }
 
 [data-theme='dark'] {
@@ -40,6 +51,17 @@
   --theme-scrollbar-hover: #64748b;
   --theme-input-bg: #1e293b;
   --theme-focus-ring: rgba(94, 231, 224, 0.3);
+  --theme-overlay-bg: rgba(0, 0, 0, 0.7);
+  --theme-overlay-text: #ffffff;
+  --theme-success: #10b981;
+  --theme-success-hover: #059669;
+  --theme-info: #3b82f6;
+  --theme-info-hover: #2563eb;
+  --theme-error: #ef4444;
+  --theme-error-hover: #dc2626;
+  --theme-warning: #f59e0b;
+  --theme-warning-hover: #d97706;
+  --theme-disabled: #9ca3af;
 }
 
 [data-theme='synthwave'] {
@@ -60,6 +82,17 @@
   --theme-scrollbar-hover: #a78bfa;
   --theme-input-bg: #312e81;
   --theme-focus-ring: rgba(255, 126, 219, 0.4);
+  --theme-overlay-bg: rgba(0, 0, 0, 0.7);
+  --theme-overlay-text: #ffffff;
+  --theme-success: #10b981;
+  --theme-success-hover: #059669;
+  --theme-info: #3b82f6;
+  --theme-info-hover: #2563eb;
+  --theme-error: #ef4444;
+  --theme-error-hover: #dc2626;
+  --theme-warning: #f59e0b;
+  --theme-warning-hover: #d97706;
+  --theme-disabled: #9ca3af;
 }
 
 /* Custom theme configuration for Tailwind v4 - references themed variables */
@@ -77,7 +110,23 @@
   --color-text-secondary: var(--theme-text-secondary);
   --color-text-muted: var(--theme-text-muted);
   --color-border: var(--theme-border);
+  --color-border-strong: var(--theme-border-strong);
+  --color-scrollbar: var(--theme-scrollbar);
+  --color-scrollbar-hover: var(--theme-scrollbar-hover);
+  --color-input-bg: var(--theme-input-bg);
+  --color-focus-ring: var(--theme-focus-ring);
   --color-surface: var(--theme-surface);
+  --color-overlay-bg: var(--theme-overlay-bg);
+  --color-overlay-text: var(--theme-overlay-text);
+  --color-success: var(--theme-success);
+  --color-success-hover: var(--theme-success-hover);
+  --color-info: var(--theme-info);
+  --color-info-hover: var(--theme-info-hover);
+  --color-error: var(--theme-error);
+  --color-error-hover: var(--theme-error-hover);
+  --color-warning: var(--theme-warning);
+  --color-warning-hover: var(--theme-warning-hover);
+  --color-disabled: var(--theme-disabled);
 
   /* Font families */
   --font-archivo: 'Archivo', sans-serif;
@@ -249,7 +298,7 @@ h2 {
   border-radius: 9999px;
   animation: spin 1s linear infinite;
   margin-bottom: 1rem;
-  filter: drop-shadow(0 2px 4px rgba(66, 138, 145, 0.1));
+  filter: drop-shadow(0 2px 4px var(--theme-focus-ring));
 }
 
 @keyframes spin {

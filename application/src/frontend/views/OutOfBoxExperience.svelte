@@ -681,16 +681,16 @@
           <div
             class="flex justify-center mt-4 items-center flex-col border-red-500 border-2 rounded-lg p-4 bg-red-500/25"
           >
-            <p class="text-black text-center">
+            <p class="text-text-primary text-center">
               Security features like VPN binding are <span class="underline"
                 >NOT SUPPORTED</span
               > for WebTorrent.
             </p>
-            <p class="text-black text-center">
+            <p class="text-text-primary text-center">
               Please use qBittorrent/a debrid service if you rely on these
               features.
             </p>
-            <p class="text-black text-center font-bold">
+            <p class="text-text-primary text-center font-bold">
               VPNs are still supported.
             </p>
           </div>
@@ -1007,7 +1007,7 @@
   .terminal-content {
     @apply p-4 max-h-48 overflow-y-auto;
     scrollbar-width: thin;
-    scrollbar-color: var(--color-accent) var(--theme-bg-secondary);
+    scrollbar-color: var(--theme-scrollbar) var(--theme-bg-secondary);
   }
 
   .terminal-content::-webkit-scrollbar {

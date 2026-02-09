@@ -609,13 +609,14 @@
             </g>
             <defs>
               <clipPath id="clip0_2_123">
-                <rect width="50" height="50" fill="white" />
+                <rect width="50" height="50" fill="currentColor" />
               </clipPath>
             </defs>
           </svg>
           {#if $activeDownloadsCount > 0}
             <div
-              class="absolute -bottom-1 -right-1 bg-accent-dark text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-bold"
+              class="absolute -bottom-1 -right-1 bg-accent-dark text-xs rounded-full w-5 h-5 flex items-center justify-center font-bold"
+              style="color: var(--theme-overlay-text);"
             >
               {$activeDownloadsCount}
             </div>
@@ -642,13 +643,14 @@
             </g>
             <defs>
               <clipPath id="clip0_22_1842">
-                <rect width="50" height="50" fill="white" />
+                <rect width="50" height="50" fill="currentColor" />
               </clipPath>
             </defs>
           </svg>
           {#if $unreadNotificationCount > 0}
             <div
-              class="absolute -bottom-1 -right-1 bg-accent-dark text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-bold"
+              class="absolute -bottom-1 -right-1 bg-accent-dark text-xs rounded-full w-5 h-5 flex items-center justify-center font-bold"
+              style="color: var(--theme-overlay-text);"
             >
               {$unreadNotificationCount}
             </div>
@@ -1259,7 +1261,7 @@
 
   .loading-spinner {
     @apply w-8 h-8 border-4 border-accent-lighter border-t-accent rounded-full animate-spin mb-4;
-    filter: drop-shadow(0 2px 4px rgba(66, 138, 145, 0.1));
+    filter: drop-shadow(0 2px 4px var(--theme-focus-ring));
   }
 
   @keyframes spin {

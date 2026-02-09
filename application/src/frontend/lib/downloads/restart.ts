@@ -210,7 +210,8 @@ export async function restartDownload(
   } catch (error) {
     console.error('Error restarting download:', error);
 
-    updateDownloadStatus(pausedState.id, {
+    // Use newDownloadId instead of stale pausedState.id
+    updateDownloadStatus(newDownloadId, {
       status: 'error',
       error: 'Failed to restart download',
     });

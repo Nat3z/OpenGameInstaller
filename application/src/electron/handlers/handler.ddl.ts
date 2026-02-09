@@ -291,7 +291,7 @@ class Download {
       }
 
       // Start new parts if we have capacity
-      const availableSlots = PARALLEL_CHUNK_COUNT - activeParts().length;
+      const availableSlots = Math.max(1, PARALLEL_CHUNK_COUNT - activeParts().length);
       const partsToStart = this.parts
         .filter((p) => p.status === 'pending')
         .slice(0, availableSlots);
@@ -565,17 +565,15 @@ class Download {
       throw error;
     }
 
-    // Set status to merging before merging chunk files
-    this.status = 'merging';
+    // Set part status to merging before merging chunk files
+    part.status = 'merging';
     this.sendProgress({ progress: this.currentBytes / this.totalSize });
 
     // Merge chunk files
     await this.mergeChunkFilesForPart(part);
 
-    // Reset status to downloading after merge completes (if not all parts are done)
-    if (this.status === 'merging') {
-      this.status = 'downloading';
-    }
+    // Reset part status to downloading after merge completes
+    part.status = 'downloading';
 
     // Update part's downloaded bytes
     part.downloadedBytes = fileSize;
@@ -1845,8 +1843,12 @@ async function checkParallelChunkCount() {
   const chunkCount: number =
     (await getStoredValue('general', 'parallelChunkCount')) ?? (8 as number);
   console.log('[direct] parallel chunk count:', chunkCount);
+  
+  // Coerce to safe positive integer, ensuring minimum of 1
+  let val = Number(chunkCount);
+  PARALLEL_CHUNK_COUNT = Math.max(1, Number.isFinite(val) ? val : 8);
+  
   if (
-    chunkCount &&
     PARALLEL_CHUNK_COUNT > 0 &&
     PARALLEL_CHUNK_COUNT !== chunkCount
   ) {
@@ -1857,7 +1859,6 @@ async function checkParallelChunkCount() {
       download.cancel();
     }
   }
-  PARALLEL_CHUNK_COUNT = chunkCount;
 }
 
 export default function handler(mainWindow: BrowserWindow) {

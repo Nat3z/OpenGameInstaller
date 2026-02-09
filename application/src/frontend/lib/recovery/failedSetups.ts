@@ -221,11 +221,16 @@ export async function retryFailedSetup(failedSetup: FailedSetup) {
       for (let i = 0; i < 3; i++) {
         try {
           outputDir = await attemptUnzip();
-          await new Promise((resolve) => setTimeout(resolve, 1000));
+          if (outputDir) {
+            break; // Success, exit loop
+          }
         } catch (error) {
-          console.log('Failed to extract ZIP file');
+          console.log('Failed to extract ZIP file (attempt ' + (i + 1) + ')');
           console.error('Failed to process ZIP file: ', error);
-          throw error;
+          if (i < 2) {
+            // Wait before retrying (except on last attempt)
+            await new Promise((resolve) => setTimeout(resolve, 1000));
+          }
         }
       }
 

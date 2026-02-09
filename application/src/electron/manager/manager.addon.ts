@@ -27,19 +27,59 @@ function stripAnsiCodes(input: string): string {
   return input.replace(ansiRegex, '');
 }
 export async function setupAddon(addonPath: string): Promise<boolean> {
-  const addonConfig = await readFile(join(addonPath, 'addon.json'), 'utf-8');
   const addonName = addonPath.split(/\/|\\/).pop() ?? 'unknown-addon';
-  if (!addonConfig) {
+  let addonConfig: string;
+  try {
+    addonConfig = await readFile(join(addonPath, 'addon.json'), 'utf-8');
+  } catch (err: any) {
+    if (err.code === 'ENOENT') {
+      sendNotification({
+        type: 'error',
+        message: 'Addon configuration not found for ' + addonName,
+        id: Math.random().toString(36).substring(7),
+      });
+      return false;
+    }
     sendNotification({
       type: 'error',
-      message:
-        'Addon configuration not found for ' + addonPath.split(/[/\\]/).pop(),
+      message: 'Failed to read addon configuration for ' + addonName + ': ' + err.message,
       id: Math.random().toString(36).substring(7),
     });
     return false;
   }
-  const addonJSON: any = JSON.parse(addonConfig);
-  const addon = AddonFileConfigurationSchema.parse(addonJSON);
+  
+  if (!addonConfig) {
+    sendNotification({
+      type: 'error',
+      message: 'Addon configuration not found for ' + addonName,
+      id: Math.random().toString(36).substring(7),
+    });
+    return false;
+  }
+  
+  let addonJSON: any;
+  let addon: z.infer<typeof AddonFileConfigurationSchema>;
+  try {
+    addonJSON = JSON.parse(addonConfig);
+  } catch (err: any) {
+    sendNotification({
+      type: 'error',
+      message: 'Failed to parse addon configuration JSON for ' + addonName + ': ' + err.message,
+      id: Math.random().toString(36).substring(7),
+    });
+    return false;
+  }
+  
+  try {
+    addon = AddonFileConfigurationSchema.parse(addonJSON);
+  } catch (err: any) {
+    sendNotification({
+      type: 'error',
+      message: 'Addon configuration validation failed for ' + addonName + ': ' + err.message,
+      id: Math.random().toString(36).substring(7),
+    });
+    return false;
+  }
 
   let setupLogs = '';
   sendNotification({
@@ -119,10 +159,30 @@ export async function startAddon(
   addonPath: string,
   addonLink: string
 ): Promise<AddonConnection | undefined> {
-  const addonConfig = await readFile(join(addonPath, 'addon.json'), 'utf-8');
   // remove any trailing slashes
   const addonName =
     addonPath.replace(/\/$/, '').split(/\/|\\/).pop() ?? 'unknown-addon';
+  
+  let addonConfig: string;
+  try {
+    addonConfig = await readFile(join(addonPath, 'addon.json'), 'utf-8');
+  } catch (err: any) {
+    if (err.code === 'ENOENT') {
+      sendNotification({
+        type: 'error',
+        message: 'Addon configuration not found for ' + addonName,
+        id: Math.random().toString(36).substring(7),
+      });
+      return;
+    }
+    sendNotification({
+      type: 'error',
+      message: 'Failed to read addon configuration for ' + addonName + ': ' + err.message,
+      id: Math.random().toString(36).substring(7),
+    });
+    return;
+  }
+  
   if (!addonConfig) {
     sendNotification({
       type: 'error',
@@ -131,8 +191,30 @@ export async function startAddon(
     });
     return;
   }
-  const addonJSON: any = JSON.parse(addonConfig);
-  const addon = AddonFileConfigurationSchema.parse(addonJSON);
+  
+  let addonJSON: any;
+  let addon: z.infer<typeof AddonFileConfigurationSchema>;
+  try {
+    addonJSON = JSON.parse(addonConfig);
+  } catch (err: any) {
+    sendNotification({
+      type: 'error',
+      message: 'Failed to parse addon configuration JSON for ' + addonName + ': ' + err.message,
+      id: Math.random().toString(36).substring(7),
+    });
+    return;
+  }
+  
+  try {
+    addon = AddonFileConfigurationSchema.parse(addonJSON);
+  } catch (err: any) {
+    sendNotification({
+      type: 'error',
+      message: 'Addon configuration validation failed for ' + addonName + ': ' + err.message,
+      id: Math.random().toString(36).substring(7),
+    });
+    return;
+  }
   try {
     executeScript(
       'run',

@@ -124,19 +124,25 @@ const ogiDebug = () => (process.env.OGI_DEBUG ?? 'false') === 'true';
 /**
  * Runs when the main app page has finished loading in the main window (second ready-to-show).
  */
+let handlersRegistered = false;
+
 function onMainAppReady() {
   closeSplashWindow();
   if (!mainWindow || mainWindow.isDestroyed()) return;
 
-  AppEventHandler(mainWindow);
-  FSEventHandler();
-  RealdDebridHandler(mainWindow);
-  AllDebridHandler(mainWindow);
-  TorrentHandler(mainWindow);
-  DirectDownloadHandler(mainWindow);
-  AddonRestHandler();
-  AddonManagerHandler(mainWindow);
-  OOBEHandler();
+  // Guard handler registrations to run only once
+  if (!handlersRegistered) {
+    handlersRegistered = true;
+    AppEventHandler(mainWindow);
+    FSEventHandler();
+    RealdDebridHandler(mainWindow);
+    AllDebridHandler(mainWindow);
+    TorrentHandler(mainWindow);
+    DirectDownloadHandler(mainWindow);
+    AddonRestHandler();
+    AddonManagerHandler(mainWindow);
+    OOBEHandler();
+  }
 
   // Register process-wide listeners only once
   if (!listenersRegistered) {
@@ -316,25 +322,40 @@ app.on('ready', async () => {
 app.on('window-all-closed', async function () {
   // On macOS it is common for applications and their menu bar
   // to stay active until the user quits explicitly with Cmd + Q
-  if (process.platform !== 'darwin') app.quit();
-  // stop torrenting
-  console.log('Stopping torrent client...');
-  await stopClient();
-  // stop the server
-  console.log('Stopping server...');
-  server.close();
-  // stop all of the addons
-  for (const process of Object.keys(processes)) {
-    console.log(`Killing process ${process}`);
-    processes[process].kill('SIGKILL');
-  }
-  // stopping all of the torrent intervals
-  for (const interval of torrentIntervals) {
-    clearInterval(interval);
+  if (process.platform === 'darwin') {
+    return;
   }
 
-  // now stop the application completely
-  app.exit(0);
+  // Perform cleanup before quitting
+  try {
+    // stop torrenting
+    console.log('Stopping torrent client...');
+    await stopClient();
+    
+    // stop the server
+    console.log('Stopping server...');
+    await new Promise<void>((resolve) => {
+      server.close(() => {
+        resolve();
+      });
+    });
+    
+    // stop all of the addons
+    for (const process of Object.keys(processes)) {
+      console.log(`Killing process ${process}`);
+      processes[process].kill('SIGKILL');
+    }
+    
+    // stopping all of the torrent intervals
+    for (const interval of torrentIntervals) {
+      clearInterval(interval);
+    }
+  } catch (error) {
+    console.error('Error during cleanup:', error);
+  }
+
+  // Now quit the application
+  app.quit();
 });
 
 app.on('activate', async function () {

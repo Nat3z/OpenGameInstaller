@@ -5,6 +5,19 @@ import { getDownloadPath } from '../../core/fs';
 import { listenUntilDownloadReady } from '../events';
 
 /**
+ * Sanitizes a path segment (e.g. result.name or result.filename) to prevent path traversal
+ * and invalid characters. Returns a safe basename-like segment.
+ */
+function sanitizePathSegment(segment: string | undefined | null): string {
+  if (segment == null || segment === '') return 'download';
+  // Take last path component and strip path separators and ..
+  const normalized = segment.replace(/[/\\]+/g, '/').replace(/\.\./g, '');
+  const parts = normalized.split('/').filter(Boolean);
+  const last = parts[parts.length - 1] ?? 'download';
+  return last.replace(/[\0<>:"|?*]/g, '_').substring(0, 255) || 'download';
+}
+
+/**
  * Handles simple direct file downloads (single or multi-part).
  */
 export class DirectService extends BaseService {
@@ -24,9 +37,11 @@ export class DirectService extends BaseService {
       throw new Error('Addon did not provide files for the direct download.');
     }
 
+    const sanitizedName = sanitizePathSegment(result.name);
     const collectedFiles = result.files.map((file) => {
+      const sanitizedFileName = sanitizePathSegment(file.name);
       return {
-        path: getDownloadPath() + '/' + result.name + '/' + file.name,
+        path: getDownloadPath() + '/' + sanitizedName + '/' + sanitizedFileName,
         link: file.downloadURL,
         // remove proxy
         headers: JSON.parse(JSON.stringify(file.headers || {})),
@@ -47,7 +62,7 @@ export class DirectService extends BaseService {
           {
             id,
             status: 'downloading',
-            downloadPath: getDownloadPath() + '/' + result.name + '/',
+            downloadPath: getDownloadPath() + '/' + sanitizedName + '/',
             downloadSpeed: 0,
             progress: 0,
             appID,

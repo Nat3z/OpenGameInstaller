@@ -1,7 +1,7 @@
 import { BrowserWindow, ipcMain } from 'electron';
 import fs from 'fs';
 import { join } from 'path';
-import { exec } from 'child_process';
+import { exec, spawn } from 'child_process';
 import { processes, setupAddon, startAddon } from '../manager/manager.addon.js';
 import { __dirname } from '../manager/manager.paths.js';
 import { server, clients, port } from '../server/addon-server.js';
@@ -122,19 +122,58 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
       }
 
       if (!isLocal && !fs.existsSync(join(addonPath, 'addon.json'))) {
+        // Validate git URL/SSH pattern before cloning
+        const gitUrlPattern = /^(https?:\/\/|git@|ssh:\/\/)[^\s]+$/;
+        if (!gitUrlPattern.test(addon)) {
+          sendNotification({
+            message: `Invalid git URL format for addon ${addonName}`,
+            id: Math.random().toString(36).substring(7),
+            type: 'error',
+          });
+          continue;
+        }
+
         await new Promise<void>((resolve, reject) => {
-          exec(`git clone ${addon} "${addonPath}"`, (err, stdout, _) => {
-            if (err) {
+          const gitProcess = spawn('git', ['clone', addon, addonPath], {
+            stdio: 'pipe',
+          });
+
+          let stdout = '';
+          let stderr = '';
+
+          gitProcess.stdout.on('data', (data: Buffer) => {
+            stdout += data.toString();
+            console.log(data.toString());
+          });
+
+          gitProcess.stderr.on('data', (data: Buffer) => {
+            stderr += data.toString();
+            console.error(data.toString());
+          });
+
+          gitProcess.on('close', (code: number) => {
+            if (code !== 0) {
               sendNotification({
                 message: `Failed to install addon ${addonName}`,
                 id: Math.random().toString(36).substring(7),
                 type: 'error',
               });
-              console.error(err);
-              return reject();
+              console.error(`git clone exited with code ${code}: ${stderr}`);
+              reject(new Error(`git clone failed with code ${code}`));
+              return;
             }
             console.log(stdout);
             resolve();
+          });
+
+          gitProcess.on('error', (err: Error) => {
+            sendNotification({
+              message: `Failed to install addon ${addonName}`,
+              id: Math.random().toString(36).substring(7),
+              type: 'error',
+            });
+            console.error(err);
+            reject(err);
           });
         });
       }
@@ -207,12 +246,12 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
     if (!fs.existsSync(join(__dirname, 'addons/'))) {
       return;
     }
-    let addonsUpdated = 0;
-    let failed = false;
     const generalConfig = JSON.parse(
       fs.readFileSync(join(__dirname, 'config/option/general.json'), 'utf-8')
     );
     const addons = generalConfig.addons as string[];
+
+    const updatePromises: Promise<void>[] = [];
 
     for (const addon of addons) {
       let addonPath = '';
@@ -223,10 +262,12 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
       }
       if (!fs.existsSync(join(addonPath, '.git'))) {
         console.log(`Addon ${addon} is not a git repository`);
+        // Treat skipped non-.git addons as resolved
+        updatePromises.push(Promise.resolve());
         continue;
       }
 
-      new Promise<void>((resolve, reject) => {
+      const updatePromise = new Promise<void>((resolve, reject) => {
         exec(
           `git pull`,
           { cwd: addonPath, env: { ...process.env, LANG: 'en_US.UTF-8' } },
@@ -238,8 +279,7 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
                 type: 'error',
               });
               console.error(err);
-              failed = true;
-              reject();
+              reject(new Error(`Failed to update addon ${addon}: ${err.message}`));
               return;
             }
             console.log(stdout);
@@ -256,7 +296,6 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
               });
               mainWindow!!.webContents.send('addon:updated', addon);
               // No need to run setupAddon if nothing changed
-              addonsUpdated++;
               resolve();
               return;
             }
@@ -275,37 +314,42 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
 
             mainWindow!!.webContents.send('addon:updated', addon);
             // setup the addon
-            setupAddon(addonPath).then((success) => {
-              if (!success) {
+            setupAddon(addonPath)
+              .then((success) => {
+                if (!success) {
+                  sendNotification({
+                    message: `An error occurred when setting up ${addon}`,
+                    id: Math.random().toString(36).substring(7),
+                    type: 'error',
+                  });
+                  reject(new Error(`Failed to setup addon ${addon}`));
+                  return;
+                }
+                console.log(`Addon ${addon} updated successfully.`);
+                resolve();
+              })
+              .catch((setupErr) => {
                 sendNotification({
                   message: `An error occurred when setting up ${addon}`,
                   id: Math.random().toString(36).substring(7),
                   type: 'error',
                 });
-                failed = true;
-                reject();
-                return;
-              }
-              addonsUpdated++;
-              console.log(`Addon ${addon} updated successfully.`);
-              resolve();
-            });
+                reject(setupErr);
+              });
           }
         );
       });
+
+      updatePromises.push(updatePromise);
     }
 
-    await new Promise<void>((resolve, reject) => {
-      const interval = setInterval(() => {
-        if (addonsUpdated === addons.length) {
-          resolve();
-          clearInterval(interval);
-        }
-        if (failed) {
-          reject();
-          clearInterval(interval);
-        }
-      }, 50);
+    const results = await Promise.allSettled(updatePromises);
+    let failed = false;
+    results.forEach((result, index) => {
+      if (result.status === 'rejected') {
+        failed = true;
+        console.error(`Addon update failed for ${addons[index]}:`, result.reason);
+      }
     });
 
     // restart all of the addons

@@ -221,15 +221,41 @@ export async function deleteDownloadedItems(id: string) {
   const content = window.electronAPI.fs.read(record);
   const parsed = JSON.parse(content) as PersistedRecord;
   const downloadInfo = parsed.downloadInfo;
-  let downloadFolder = downloadInfo.downloadPath
-    .split('/')
-    .slice(0, -1)
-    .join('/');
-  window.electronAPI.fs.getFilesInDir(downloadFolder).then((files) => {
-    files.forEach((file) => {
-      window.electronAPI.fs.deleteAsync(downloadFolder + '/' + file);
-    });
-  });
+  
+  // Normalize and resolve the path correctly
+  let downloadFolder = downloadInfo.downloadPath;
+  // Remove trailing slashes
+  downloadFolder = downloadFolder.replace(/[/\\]+$/, '');
+  // Get directory name (parent directory)
+  const lastSlash = Math.max(downloadFolder.lastIndexOf('/'), downloadFolder.lastIndexOf('\\'));
+  if (lastSlash !== -1) {
+    downloadFolder = downloadFolder.slice(0, lastSlash);
+  }
+  
+  // Only delete files that belong to this specific download
+  // Derive exact file paths from downloadInfo
+  const filesToDelete: string[] = [];
+  
+  if (downloadInfo.files && Array.isArray(downloadInfo.files)) {
+    // Multi-part download - delete specific files
+    for (const file of downloadInfo.files) {
+      if (file.name) {
+        filesToDelete.push(downloadFolder + '/' + file.name);
+      }
+    }
+  } else if (downloadInfo.filename) {
+    // Single file download - delete the specific file
+    filesToDelete.push(downloadFolder + '/' + downloadInfo.filename);
+  }
+  
+  // Delete only the validated files
+  for (const filePath of filesToDelete) {
+    try {
+      await window.electronAPI.fs.deleteAsync(filePath);
+    } catch (err) {
+      console.error('Failed to delete file:', filePath, err);
+    }
+  }
 }
 export function deletePersistedDownload(id: string) {
   removeRecord(id);

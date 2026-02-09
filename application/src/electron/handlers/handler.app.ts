@@ -213,6 +213,34 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
     if (!fs.existsSync(path)) {
       return null;
     }
+
+    // Validate path against allowed directories
+    const allowedDirs = [
+      join(__dirname, 'addons'),
+      join(__dirname, 'public'),
+      join(__dirname, 'config'),
+    ];
+
+    let realPath: string;
+    try {
+      realPath = fs.realpathSync(path);
+    } catch (err) {
+      console.error('Failed to resolve real path:', path, err);
+      return null;
+    }
+
+    // Normalize paths for comparison
+    const normalizedRealPath = realPath.replace(/\\/g, '/');
+    const isAllowed = allowedDirs.some((allowedDir) => {
+      const normalizedAllowed = allowedDir.replace(/\\/g, '/');
+      return normalizedRealPath.startsWith(normalizedAllowed);
+    });
+
+    if (!isAllowed) {
+      console.error('Path not in allowed directories:', realPath);
+      return null;
+    }
+
     const ext = path.split('.').pop()?.toLowerCase() || 'png';
 
     const mimeType =
@@ -226,11 +254,11 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
         svg: 'image/svg+xml',
       }[ext] || 'image/png';
     try {
-      const buffer = fs.readFileSync(path);
+      const buffer = fs.readFileSync(realPath);
       const base64 = buffer.toString('base64');
       return `data:${mimeType};base64,${base64}`;
     } catch (err) {
-      console.error('Failed to read image file: ' + path);
+      console.error('Failed to read image file: ' + realPath);
       return null;
     }
   });

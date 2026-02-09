@@ -91,7 +91,7 @@ export class PremiumizeService extends BaseService {
     try {
       console.log('PremiumizeService startDownload', result);
       const optionHandled = getConfigClientOption<{ premiumizeApiKey?: string }>(
-        'realdebrid'
+        'premiumize'
       );
       if (!optionHandled || !optionHandled.premiumizeApiKey) {
         throw new Error('Please set your Premiumize API key in the settings.');
@@ -161,7 +161,7 @@ export class PremiumizeService extends BaseService {
       await window.electronAPI.app.axios<PremiumizeTransferResponse>({
         method: 'POST',
         url: `${BASE_URL}/transfer/create?apikey=${premiumizeApiKey}`,
-        data: Object.fromEntries(formDataAddTorrent.entries()),
+        data: formDataAddTorrent,
         headers: {
           'Content-Type': 'multipart/form-data',
         },

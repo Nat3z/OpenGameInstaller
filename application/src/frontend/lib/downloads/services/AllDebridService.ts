@@ -1,21 +1,9 @@
 import { BaseService } from './BaseService';
 import type { SearchResultWithAddon } from '../../tasks/runner';
-import { currentDownloads, createNotification } from '../../../store';
+import { currentDownloads } from '../../../store';
 import { getDownloadPath } from '../../core/fs';
 import { listenUntilDownloadReady } from '../events';
-
-/**
- * Sanitizes a path segment (e.g. result.name or result.filename) to prevent path traversal
- * and invalid characters. Returns a safe basename-like segment.
- */
-function sanitizePathSegment(segment: string | undefined | null): string {
-  if (segment == null || segment === '') return 'download';
-  // Take last path component and strip path separators and ..
-  const normalized = segment.replace(/[/\\]+/g, '/').replace(/\.\./g, '');
-  const parts = normalized.split('/').filter(Boolean);
-  const last = parts[parts.length - 1] ?? 'download';
-  return last.replace(/[\0<>:"|?*]/g, '_').substring(0, 255) || 'download';
-}
+import { sanitizePathSegment } from '../pathUtils';
 
 /**
  * Polls until the torrent is ready or timeout/cancel. Clears interval on resolve/reject.
@@ -89,8 +77,6 @@ export class AllDebridService extends BaseService {
     if (result.downloadType !== 'magnet' && result.downloadType !== 'torrent')
       return;
 
-    const tempId = this.queueRequestDownload(result, appID, 'alldebrid');
-
     if (!result.downloadURL) {
       throw new Error('Addon did not provide a magnet link.');
     }
@@ -100,16 +86,24 @@ export class AllDebridService extends BaseService {
       throw new Error('Please set your AllDebrid API key in the settings.');
     }
 
-    const resolvedButton =
-      _htmlButton ??
-      (_event?.currentTarget instanceof HTMLButtonElement
-        ? _event.currentTarget
-        : null);
+    const tempId = this.queueRequestDownload(result, appID, 'alldebrid');
+    try {
+      const resolvedButton =
+        _htmlButton ??
+        (_event?.currentTarget instanceof HTMLButtonElement
+          ? _event.currentTarget
+          : null);
 
-    if (result.downloadType === 'magnet') {
-      await this.handleMagnetDownload(result, appID, tempId);
-    } else if (result.downloadType === 'torrent') {
-      await this.handleTorrentDownload(result, appID, tempId, resolvedButton);
+      if (result.downloadType === 'magnet') {
+        await this.handleMagnetDownload(result, appID, tempId, resolvedButton);
+      } else if (result.downloadType === 'torrent') {
+        await this.handleTorrentDownload(result, appID, tempId, resolvedButton);
+      }
+    } catch (err) {
+      currentDownloads.update((downloads) =>
+        downloads.filter((d) => d.id !== tempId)
+      );
+      throw err;
     }
   }
 
@@ -119,28 +113,23 @@ export class AllDebridService extends BaseService {
   private async handleMagnetDownload(
     result: SearchResultWithAddon,
     appID: number,
-    tempId: string
+    tempId: string,
+    _htmlButton?: HTMLButtonElement | null
   ): Promise<void> {
     if (result.downloadType !== 'magnet') return;
 
-    let magnetLink: { id: string; uri: string };
-    try {
-      magnetLink = await window.electronAPI.alldebrid.addMagnet(
-        result.downloadURL!
-      );
-    } catch (err) {
-      throw new Error(
-        err instanceof Error
-          ? `Failed to add magnet to AllDebrid: ${err.message}`
-          : 'Failed to add magnet to AllDebrid.'
-      );
+    let magnetLink = await window.electronAPI.alldebrid.addMagnet(
+      result.downloadURL!
+    );
+    if (!magnetLink) {
+      throw new Error('Failed to add magnet to AllDebrid.');
     }
 
     let isReady = await window.electronAPI.alldebrid.isTorrentReady(
       magnetLink.id
     );
     if (!isReady) {
-      window.electronAPI.alldebrid.selectTorrent();
+      await window.electronAPI.alldebrid.selectTorrent();
       await waitForTorrentReady(magnetLink.id, {
         intervalMs: 3000,
         timeoutMs: 600000,
@@ -150,6 +139,9 @@ export class AllDebridService extends BaseService {
     const torrentInfo = await window.electronAPI.alldebrid.getTorrentInfo(
       magnetLink.id
     );
+    if (!torrentInfo) {
+      throw new Error('Failed to get torrent info from AllDebrid.');
+    }
     const firstLink = torrentInfo.links[0] ?? torrentInfo.files[0]?.link;
     if (!firstLink) {
       throw new Error('No download link from AllDebrid.');
@@ -157,6 +149,9 @@ export class AllDebridService extends BaseService {
 
     const download =
       await window.electronAPI.alldebrid.unrestrictLink(firstLink);
+    if (!download) {
+      throw new Error('Failed to unrestrict the link.');
+    }
     const downloadUrl = download.download ?? download.link;
     if (!downloadUrl) {
       throw new Error('Failed to unrestrict the link.');
@@ -203,39 +198,24 @@ export class AllDebridService extends BaseService {
     result: SearchResultWithAddon,
     appID: number,
     tempId: string,
-    htmlButton?: HTMLButtonElement | null
+    _htmlButton?: HTMLButtonElement | null
   ): Promise<void> {
     if (result.downloadType !== 'torrent') return;
 
-    const resetButton = () => {
-      if (htmlButton) {
-        htmlButton.textContent = 'Download';
-        htmlButton.disabled = false;
-      }
-    };
-
-    if (!result.name || !result.downloadURL) {
-      createNotification({
-        id: Math.random().toString(36).substring(7),
-        type: 'error',
-        message: !result.name
-          ? 'Addon did not provide a name for the torrent.'
-          : 'Addon did not provide a downloadURL for the torrent.',
-      });
-      resetButton();
-      return;
+    if (!result.name) {
+      throw new Error('Addon did not provide a name for the torrent.');
+    }
+    if (!result.downloadURL) {
+      throw new Error('Addon did not provide a downloadURL for the torrent.');
     }
 
     let torrent: Awaited<
       ReturnType<typeof window.electronAPI.alldebrid.addTorrent>
-    >;
+    > | null = null;
     try {
       torrent = await window.electronAPI.alldebrid.addTorrent(
         result.downloadURL
       );
-      if (!torrent) {
-        throw new Error('Failed to add torrent to AllDebrid.');
-      }
     } catch (err) {
       throw new Error(
         err instanceof Error
@@ -243,10 +223,14 @@ export class AllDebridService extends BaseService {
           : 'Failed to add torrent to AllDebrid.'
       );
     }
+    if (!torrent) {
+      throw new Error('Failed to add torrent to AllDebrid.');
+    }
+
 
     let isReady = await window.electronAPI.alldebrid.isTorrentReady(torrent.id);
     if (!isReady) {
-      window.electronAPI.alldebrid.selectTorrent();
+      await window.electronAPI.alldebrid.selectTorrent();
       await waitForTorrentReady(torrent.id, {
         intervalMs: 3000,
         timeoutMs: 600000,
@@ -256,6 +240,9 @@ export class AllDebridService extends BaseService {
     const torrentInfo = await window.electronAPI.alldebrid.getTorrentInfo(
       torrent.id
     );
+    if (!torrentInfo) {
+      throw new Error('Failed to get torrent info from AllDebrid.');
+    }
     const firstLink = torrentInfo.links[0] ?? torrentInfo.files[0]?.link;
     if (!firstLink) {
       throw new Error('No download link from AllDebrid.');
@@ -263,6 +250,9 @@ export class AllDebridService extends BaseService {
 
     const download =
       await window.electronAPI.alldebrid.unrestrictLink(firstLink);
+    if (!download) {
+      throw new Error('Failed to unrestrict the link.');
+    }
     const downloadUrl = download.download ?? download.link;
     if (!downloadUrl) {
       throw new Error('Failed to unrestrict the link.');

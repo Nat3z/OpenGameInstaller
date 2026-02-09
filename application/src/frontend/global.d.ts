@@ -13,6 +13,7 @@ type $AllDebridTorrentInfo = import('all-debrid-js').$AllDebridTorrentInfo;
 type $AllDebridUserInfo = import('all-debrid-js').$UserInfo;
 type $AllDebridHosts = import('all-debrid-js').$Hosts;
 type $AddMagnetOrTorrent = import('all-debrid-js').$AddMagnetOrTorrent;
+type $AllDebridUnrestrictLink = import('all-debrid-js').$UnrestrictLink;
 type $GamepadNavigator = import('./managers/GamepadManager').GamepadNavigator;
 
 /** Shared type for app insertion (insertApp) to avoid duplicating LibraryInfo + redistributables. */
@@ -78,12 +79,7 @@ interface Window {
     alldebrid: {
       setKey: (key: string) => Promise<string>;
       getUserInfo: () => Promise<$AllDebridUserInfo>;
-      unrestrictLink: (link: string) => Promise<{
-        link: string;
-        download?: string;
-        filename?: string;
-        filesize?: number;
-      }>;
+      unrestrictLink: (link: string) => Promise<$AllDebridUnrestrictLink>;
       getHosts: () => Promise<$AllDebridHosts>;
       addMagnet: (url: string, host?: string) => Promise<$AddMagnetOrTorrent>;
       addTorrent: (torrent: string) => Promise<$AddMagnetOrTorrent | null>;

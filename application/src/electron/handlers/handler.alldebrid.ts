@@ -85,20 +85,32 @@ export default function handler(_mainWindow: Electron.BrowserWindow) {
   ipcMain.handle(
     'all-debrid:add-magnet',
     async (_, arg: { url: string; host?: string }) => {
-      return allDebridClient.addMagnet(arg.url, arg.host);
+      return safeAllDebridCall(
+        () => allDebridClient.addMagnet(arg.url, arg.host),
+        'Failed to add magnet to AllDebrid'
+      );
     }
   );
 
   ipcMain.handle('all-debrid:is-torrent-ready', async (_, id: string) => {
-    return allDebridClient.isTorrentReady(id);
+    return safeAllDebridCall(
+      () => allDebridClient.isTorrentReady(id),
+      'Failed to check AllDebrid torrent status'
+    );
   });
 
   ipcMain.handle('all-debrid:get-torrent-info', async (_, id: string) => {
-    return allDebridClient.getMagnetFiles(id);
+    return safeAllDebridCall(
+      () => allDebridClient.getMagnetFiles(id),
+      'Failed to get AllDebrid torrent info'
+    );
   });
 
   ipcMain.handle('all-debrid:unrestrict-link', async (_, link: string) => {
-    return allDebridClient.unrestrictLink(link);
+    return safeAllDebridCall(
+      () => allDebridClient.unrestrictLink(link),
+      'Failed to unrestrict AllDebrid link'
+    );
   });
 
   // AllDebrid auto-selects all files; no explicit selection needed

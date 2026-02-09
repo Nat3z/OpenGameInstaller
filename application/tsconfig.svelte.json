@@ -1,3 +1,9 @@
 {
-  "extends": "./src/frontend/tsconfig.json"
+  "extends": "./src/frontend/tsconfig.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "all-debrid-js": ["./node_modules/all-debrid-js/build/main.d.mts"]
+    }
+  }
 }

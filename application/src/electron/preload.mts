@@ -1,6 +1,10 @@
 import { AxiosRequestConfig } from 'axios';
 import { contextBridge, ipcRenderer } from 'electron';
-import { LibraryInfo } from 'ogi-addon';
+import type { LibraryInfo } from 'ogi-addon';
+
+type InsertAppInfo = LibraryInfo & {
+  redistributables?: { name: string; path: string }[];
+};
 import type { $Hosts } from 'real-debrid-js';
 
 // === Debug: Events Processed/sec Counter ===
@@ -235,7 +239,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     inputSend: wrap((id: string, data: any) =>
       ipcRenderer.invoke('app:screen-input', { id, data })
     ),
-    insertApp: wrap((info: LibraryInfo) =>
+    insertApp: wrap((info: InsertAppInfo) =>
       ipcRenderer.invoke('app:insert-app', info)
     ),
     addManualGame: wrap((info: LibraryInfo) =>

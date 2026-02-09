@@ -70,7 +70,7 @@ export async function startDownload(
   // Replace special characters (e.g. ampersand, colon, or any character Windows doesn't support) with a dash
   const sanitizedResult = {
     ...result,
-    name: result.name.replace(/[\\/:*?"<>|]/g, '-'),
+    name: result.name.replace(/[\\/:*?"<>|&]/g, '-'),
   };
 
   // Service-based architecture: find and delegate to the appropriate service

@@ -24,9 +24,10 @@ export class DirectService extends BaseService {
       throw new Error('Addon did not provide files for the direct download.');
     }
 
+    const downloadPath = getDownloadPath() + '/' + result.name + '/';
     const collectedFiles = result.files.map((file) => {
       return {
-        path: getDownloadPath() + '/' + result.name + '/' + file.name,
+        path: downloadPath + file.name,
         link: file.downloadURL,
         // remove proxy
         headers: JSON.parse(JSON.stringify(file.headers || {})),
@@ -35,6 +36,8 @@ export class DirectService extends BaseService {
 
     const { flush } = listenUntilDownloadReady();
 
+    const originalText = button.textContent ?? '';
+    const originalDisabled = button.disabled;
     button.textContent = 'Downloading...';
     button.disabled = true;
 
@@ -47,7 +50,7 @@ export class DirectService extends BaseService {
           {
             id,
             status: 'downloading',
-            downloadPath: getDownloadPath() + '/' + result.name + '/',
+            downloadPath,
             downloadSpeed: 0,
             progress: 0,
             appID,
@@ -57,10 +60,12 @@ export class DirectService extends BaseService {
           },
         ];
       });
-      console.log('updatedState', updatedState);
     } catch (err) {
       console.error('Direct download error:', err);
       throw err;
+    } finally {
+      button.textContent = originalText;
+      button.disabled = originalDisabled;
     }
   }
 }

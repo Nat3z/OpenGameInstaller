@@ -4,6 +4,7 @@ import { currentDownloads, type DownloadStatusAndInfo } from '../../../store';
 import { getDownloadPath } from '../../core/fs';
 import { runSetupApp, runSetupAppUpdate } from '../../setup/setup';
 import { updateDownloadStatus } from '../lifecycle';
+import { sanitizePathSegment } from '../pathUtils';
 
 /**
  * Handles "empty" downloads that skip directly to the setup phase.
@@ -30,17 +31,18 @@ export class EmptyService extends BaseService {
     // Generate a unique ID for this download
     const downloadId = Math.random().toString(36).substring(2, 15);
 
-    // Add download to store with 'completed' status to trigger setup immediately
+    const basePath =
+      getDownloadPath() + '/' + sanitizePathSegment(result.name) + '/';
     const downloadedItem: DownloadStatusAndInfo = {
       ...result,
       id: downloadId,
       status: 'completed',
-      downloadPath: getDownloadPath() + '/' + result.name + '/',
+      downloadPath: basePath,
       downloadSpeed: 0,
       progress: 100,
       appID,
       downloadSize: 0,
-      files: (result as unknown as { files?: any[] }).files || [],
+      files: [],
     };
     // insert to store
     currentDownloads.update((downloads) => {
@@ -53,14 +55,14 @@ export class EmptyService extends BaseService {
       if (downloadedItem.isUpdate) {
         await runSetupAppUpdate(
           downloadedItem,
-          getDownloadPath() + '/' + result.name + '/',
+          basePath,
           false,
           {}
         );
       } else {
         await runSetupApp(
           downloadedItem,
-          getDownloadPath() + '/' + result.name + '/',
+          basePath,
           false,
           {}
         );

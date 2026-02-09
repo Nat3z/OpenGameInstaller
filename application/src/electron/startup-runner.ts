@@ -123,14 +123,9 @@ export async function runStartupTasks(
 
     // Remove cached app updates
     updateSplashStatus('Cleaning up...');
-    await new Promise((resolve, _) =>
-      removeCachedAppUpdates()
-        .then(resolve)
-        .catch(() => {
-          console.error('[chore] Failed to remove cached app updates');
-          resolve(void 0);
-        })
-    );
+    await removeCachedAppUpdates().catch(() => {
+      console.error('[chore] Failed to remove cached app updates');
+    });
 
     // If addons need reinstallation (node_modules were skipped during backup)
     if (backupResult.needsAddonReinstall) {

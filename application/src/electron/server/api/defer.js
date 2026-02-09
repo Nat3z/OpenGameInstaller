@@ -1,0 +1,63 @@
+import { z } from 'zod';
+import { clients } from '../addon-server.js';
+import { DeferredTasks } from '../DeferrableTask.js';
+import { procedure, ProcedureError, ProcedureJSON, } from '../serve.js';
+const procedures = {
+    // Get all deferred tasks
+    getAllTasks: procedure()
+        .input(z.object({}))
+        .handler(async () => {
+        const tasks = Object.values(DeferredTasks.getTasks()).map((task) => ({
+            name: `Task ${task.id}`,
+            description: 'Background task',
+            id: task.id,
+            addonOwner: task.addonOwner,
+            finished: task.finished,
+            progress: task.progress,
+            logs: task.logs,
+            failed: task.failed,
+        }));
+        return new ProcedureJSON(200, tasks);
+    }),
+    // Get specific task by ID
+    getTask: procedure()
+        .input(z.object({
+        taskID: z.string(),
+    }))
+        .handler(async (input) => {
+        if (DeferredTasks.getTasks()[input.taskID] === undefined) {
+            console.log('task not found @' + input.taskID + '@', DeferredTasks);
+            return new ProcedureError(404, 'Task not found');
+        }
+        const task = DeferredTasks.getTasks()[input.taskID];
+        // check if the addon is still running
+        const stillExists = clients.has(task.addonOwner);
+        // when the addon owner is *, we don't need to check if it's still connected as it's a global task spawned by the server
+        if (!stillExists && task.addonOwner !== '*') {
+            DeferredTasks.removeTask(input.taskID);
+            return new ProcedureError(410, 'Addon is no longer connected');
+        }
+        if (task.failed) {
+            DeferredTasks.removeTask(input.taskID);
+            return new ProcedureError(500, task.failed);
+        }
+        if (task.finished) {
+            DeferredTasks.removeTask(input.taskID);
+            // Use the getSerializedData method to ensure data is properly serialized
+            return new ProcedureJSON(200, {
+                data: task.getSerializedData(),
+                resolved: true,
+            });
+        }
+        else {
+            return new ProcedureJSON(200, {
+                progress: task.progress,
+                logs: task.logs,
+                failed: task.failed,
+                resolved: false,
+            });
+        }
+    }),
+};
+export default procedures;
+//# sourceMappingURL=defer.js.map

@@ -6,6 +6,9 @@ import FormData from 'form-data';
 const BASE_V4 = 'https://api.alldebrid.com/v4';
 const BASE_V4_1 = 'https://api.alldebrid.com/v4.1';
 
+/** AllDebrid magnet/torrent statusCode for "Ready". */
+const STATUS_READY = 4;
+
 /** Configuration for the AllDebrid API client (API key). */
 export interface AllDebridConfiguration {
   apiKey: string;
@@ -155,9 +158,10 @@ function checkResponse<T>(response: { data: unknown }, dataSchema: z.ZodType<T>)
       if (parsed.success) {
         return parsed.data.data as T;
       }
+      throw new Error(`API response validation failed: ${parsed.error.message}`);
     }
   }
-  throw new Error('Invalid API response');
+  throw new Error('Invalid API response: unexpected shape or missing status field');
 }
 
 /** Node in AllDebrid files tree: n (name), s (size), l (link), e (children). */
@@ -195,6 +199,7 @@ export default class AllDebrid {
     const response = await axios.get(`${BASE_V4}/user`, {
       headers: this.headers(),
       validateStatus: () => true,
+      timeout: 15_000,
     });
     const data = checkResponse(response, z.object({ user: UserZod }));
     return data.user;
@@ -207,6 +212,7 @@ export default class AllDebrid {
     const response = await axios.get(`${BASE_V4_1}/user/hosts`, {
       headers: this.headers(),
       validateStatus: () => true,
+      timeout: 15_000,
     });
     const data = checkResponse(response, HostsResponseZod);
     return Object.values(data.hosts);
@@ -228,6 +234,7 @@ export default class AllDebrid {
           'Content-Type': 'application/x-www-form-urlencoded',
         },
         validateStatus: () => true,
+        timeout: 15_000,
       }
     );
     const data = checkResponse(response, AddMagnetResponseZod);
@@ -247,6 +254,7 @@ export default class AllDebrid {
     const response = await axios.post(`${BASE_V4}/magnet/upload/file`, form, {
       headers: { ...this.headers(), ...form.getHeaders() },
       validateStatus: () => true,
+      timeout: 15_000,
       maxBodyLength: Infinity,
       maxContentLength: Infinity,
     });
@@ -274,6 +282,7 @@ export default class AllDebrid {
           'Content-Type': 'application/x-www-form-urlencoded',
         },
         validateStatus: () => true,
+        timeout: 15_000,
       }
     );
     const data = checkResponse(response, MagnetStatusResponseZod);
@@ -285,7 +294,7 @@ export default class AllDebrid {
   /** Returns true when the magnet/torrent is ready for download (statusCode 4). */
   public async isTorrentReady(id: string): Promise<boolean> {
     const { statusCode } = await this.getMagnetStatus(id);
-    return statusCode === 4;
+    return statusCode === STATUS_READY;
   }
 
   /**
@@ -304,6 +313,7 @@ export default class AllDebrid {
           'Content-Type': 'application/x-www-form-urlencoded',
         },
         validateStatus: () => true,
+        timeout: 15_000,
       }
     );
     const data = checkResponse(response, MagnetFilesResponseZod);
@@ -332,6 +342,7 @@ export default class AllDebrid {
         'Content-Type': 'application/x-www-form-urlencoded',
       },
       validateStatus: () => true,
+      timeout: 15_000,
     });
     const data = checkResponse(response, UnrestrictLinkResponseZod);
     return {

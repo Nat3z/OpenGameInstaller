@@ -291,7 +291,8 @@ class Download {
       }
 
       // Start new parts if we have capacity
-      const availableSlots = PARALLEL_CHUNK_COUNT - activeParts().length;
+      const availableSlots =
+        Math.max(1, PARALLEL_CHUNK_COUNT) - activeParts().length;
       const partsToStart = this.parts
         .filter((p) => p.status === 'pending')
         .slice(0, availableSlots);
@@ -565,17 +566,15 @@ class Download {
       throw error;
     }
 
-    // Set status to merging before merging chunk files
-    this.status = 'merging';
+    // Mark only this part as merging (don't change global status)
+    part.status = 'merging';
     this.sendProgress({ progress: this.currentBytes / this.totalSize });
 
     // Merge chunk files
     await this.mergeChunkFilesForPart(part);
 
-    // Reset status to downloading after merge completes (if not all parts are done)
-    if (this.status === 'merging') {
-      this.status = 'downloading';
-    }
+    // Reset this part's status to downloading
+    part.status = 'downloading';
 
     // Update part's downloaded bytes
     part.downloadedBytes = fileSize;
@@ -748,12 +747,12 @@ class Download {
         }
 
         fs.mkdirSync(dirname(job.path), { recursive: true });
-        
+
         // Ensure path is not a directory
         if (fs.existsSync(job.path) && fs.statSync(job.path).isDirectory()) {
           throw new Error(`Cannot write to path: ${job.path} is a directory`);
         }
-        
+
         part.fileStream = fs.createWriteStream(job.path, {
           flags: startByte > 0 ? 'r+' : 'w',
           start: startByte,
@@ -1166,12 +1165,12 @@ class Download {
         this.currentBytes = this.startByte;
 
         fs.mkdirSync(dirname(job.path), { recursive: true });
-        
+
         // Ensure path is not a directory
         if (fs.existsSync(job.path) && fs.statSync(job.path).isDirectory()) {
           throw new Error(`Cannot write to path: ${job.path} is a directory`);
         }
-        
+
         this.fileStream = fs.createWriteStream(job.path, {
           flags: this.startByte > 0 ? 'r+' : 'w',
           start: this.startByte,
@@ -1842,14 +1841,11 @@ class Download {
 
 async function checkParallelChunkCount() {
   await refreshCached('general');
-  const chunkCount: number =
-    (await getStoredValue('general', 'parallelChunkCount')) ?? (8 as number);
+  let val = Number(await getStoredValue('general', 'parallelChunkCount'));
+  // Ensure minimum of 1, default to 8 if invalid
+  const chunkCount = Math.max(1, Number.isFinite(val) ? val : 8);
   console.log('[direct] parallel chunk count:', chunkCount);
-  if (
-    chunkCount &&
-    PARALLEL_CHUNK_COUNT > 0 &&
-    PARALLEL_CHUNK_COUNT !== chunkCount
-  ) {
+  if (PARALLEL_CHUNK_COUNT > 0 && PARALLEL_CHUNK_COUNT !== chunkCount) {
     console.log(
       '[direct] mismatched parallel chunk counts, will kill all downloads'
     );

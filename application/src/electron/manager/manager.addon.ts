@@ -27,19 +27,51 @@ function stripAnsiCodes(input: string): string {
   return input.replace(ansiRegex, '');
 }
 export async function setupAddon(addonPath: string): Promise<boolean> {
-  const addonConfig = await readFile(join(addonPath, 'addon.json'), 'utf-8');
   const addonName = addonPath.split(/\/|\\/).pop() ?? 'unknown-addon';
-  if (!addonConfig) {
+  let addonConfig: string;
+  let addonJSON: any;
+  let addon: any;
+
+  try {
+    addonConfig = await readFile(join(addonPath, 'addon.json'), 'utf-8');
+  } catch (err: any) {
+    if (err.code === 'ENOENT') {
+      sendNotification({
+        type: 'error',
+        message: `Addon configuration not found for ${addonName}`,
+        id: Math.random().toString(36).substring(7),
+      });
+    } else {
+      sendNotification({
+        type: 'error',
+        message: `Error reading addon configuration for ${addonName}: ${err.message}`,
+        id: Math.random().toString(36).substring(7),
+      });
+    }
+    return false;
+  }
+
+  try {
+    addonJSON = JSON.parse(addonConfig);
+  } catch (err: any) {
     sendNotification({
       type: 'error',
-      message:
-        'Addon configuration not found for ' + addonPath.split(/[/\\]/).pop(),
+      message: `Invalid JSON in addon configuration for ${addonName}: ${err.message}`,
       id: Math.random().toString(36).substring(7),
     });
     return false;
   }
-  const addonJSON: any = JSON.parse(addonConfig);
-  const addon = AddonFileConfigurationSchema.parse(addonJSON);
+
+  try {
+    addon = AddonFileConfigurationSchema.parse(addonJSON);
+  } catch (err: any) {
+    sendNotification({
+      type: 'error',
+      message: `Invalid addon configuration schema for ${addonName}: ${err.message}`,
+      id: Math.random().toString(36).substring(7),
+    });
+    return false;
+  }
 
   let setupLogs = '';
   sendNotification({
@@ -119,20 +151,47 @@ export async function startAddon(
   addonPath: string,
   addonLink: string
 ): Promise<AddonConnection | undefined> {
-  const addonConfig = await readFile(join(addonPath, 'addon.json'), 'utf-8');
-  // remove any trailing slashes
   const addonName =
     addonPath.replace(/\/$/, '').split(/\/|\\/).pop() ?? 'unknown-addon';
-  if (!addonConfig) {
+  let addonConfig: string;
+  let addonJSON: any;
+  let addon: any;
+
+  try {
+    addonConfig = await readFile(join(addonPath, 'addon.json'), 'utf-8');
+  } catch (err: any) {
+    if (err.code === 'ENOENT') {
+      sendNotification({
+        type: 'error',
+        message: 'Addon configuration not found for ' + addonName,
+        id: Math.random().toString(36).substring(7),
+      });
+    } else {
+      sendNotification({
+        type: 'error',
+        message:
+          'Error reading addon configuration for ' +
+          addonName +
+          ': ' +
+          err.message,
+        id: Math.random().toString(36).substring(7),
+      });
+    }
+    return;
+  }
+
+  try {
+    addonJSON = JSON.parse(addonConfig);
+    addon = AddonFileConfigurationSchema.parse(addonJSON);
+  } catch (err: any) {
     sendNotification({
       type: 'error',
-      message: 'Addon configuration not found for ' + addonName,
+      message:
+        'Invalid addon configuration for ' + addonName + ': ' + err.message,
       id: Math.random().toString(36).substring(7),
     });
     return;
   }
-  const addonJSON: any = JSON.parse(addonConfig);
-  const addon = AddonFileConfigurationSchema.parse(addonJSON);
   try {
     executeScript(
       'run',

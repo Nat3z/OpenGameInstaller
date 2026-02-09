@@ -209,28 +209,61 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
     }
     return iconPath;
   });
-  ipcMain.handle('app:get-local-image', async (_, path: string) => {
-    if (!fs.existsSync(path)) {
-      return null;
-    }
-    const ext = path.split('.').pop()?.toLowerCase() || 'png';
+  ipcMain.handle('app:get-local-image', async (_, requestPath: string) => {
+    // Define allowed directories for path traversal protection
+    const allowedDirs = [
+      path.resolve(__dirname),
+      path.resolve(app.getPath('userData')),
+      path.resolve(app.getAppPath()),
+    ];
 
-    const mimeType =
-      {
-        jpg: 'image/jpeg',
-        jpeg: 'image/jpeg',
-        png: 'image/png',
-        gif: 'image/gif',
-        webp: 'image/webp',
-        bmp: 'image/bmp',
-        svg: 'image/svg+xml',
-      }[ext] || 'image/png';
     try {
-      const buffer = fs.readFileSync(path);
-      const base64 = buffer.toString('base64');
-      return `data:${mimeType};base64,${base64}`;
+      // Resolve to absolute path and normalize
+      const resolvedPath = path.resolve(requestPath);
+      let realPath: string;
+      try {
+        realPath = fs.realpathSync(resolvedPath);
+      } catch {
+        realPath = resolvedPath;
+      }
+
+      // Validate path is within allowed directories
+      const isAllowed = allowedDirs.some((allowedDir) => {
+        const relative = path.relative(allowedDir, realPath);
+        return !relative.startsWith('..') && !path.isAbsolute(relative);
+      });
+
+      if (!isAllowed) {
+        console.error('Path traversal attempt blocked:', realPath);
+        return null;
+      }
+
+      if (!fs.existsSync(realPath)) {
+        return null;
+      }
+
+      const ext = realPath.split('.').pop()?.toLowerCase() || 'png';
+
+      const mimeType =
+        {
+          jpg: 'image/jpeg',
+          jpeg: 'image/jpeg',
+          png: 'image/png',
+          gif: 'image/gif',
+          webp: 'image/webp',
+          bmp: 'image/bmp',
+          svg: 'image/svg+xml',
+        }[ext] || 'image/png';
+      try {
+        const buffer = fs.readFileSync(realPath);
+        const base64 = buffer.toString('base64');
+        return `data:${mimeType};base64,${base64}`;
+      } catch (err) {
+        console.error('Failed to read image file: ' + realPath);
+        return null;
+      }
     } catch (err) {
-      console.error('Failed to read image file: ' + path);
+      console.error('Error handling get-local-image request:', err);
       return null;
     }
   });

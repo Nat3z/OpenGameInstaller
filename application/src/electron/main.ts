@@ -271,9 +271,7 @@ async function startAppFlow(win: BrowserWindow) {
   // Load the main app into the same window (replaces splash)
   if (win && !win.isDestroyed()) {
     if (isDev()) {
-      win.loadURL(
-        'http://localhost:8080/?secret=' + applicationAddonSecret
-      );
+      win.loadURL('http://localhost:8080/?secret=' + applicationAddonSecret);
       console.log('Running in development');
     } else {
       win.loadURL(
@@ -316,25 +314,30 @@ app.on('ready', async () => {
 app.on('window-all-closed', async function () {
   // On macOS it is common for applications and their menu bar
   // to stay active until the user quits explicitly with Cmd + Q
-  if (process.platform !== 'darwin') app.quit();
-  // stop torrenting
+  if (process.platform === 'darwin') {
+    return; // Don't quit on macOS - let the activate handler recreate windows
+  }
+
+  // Perform cleanup before quitting
   console.log('Stopping torrent client...');
   await stopClient();
-  // stop the server
+
   console.log('Stopping server...');
   server.close();
+
   // stop all of the addons
   for (const process of Object.keys(processes)) {
     console.log(`Killing process ${process}`);
     processes[process].kill('SIGKILL');
   }
+
   // stopping all of the torrent intervals
   for (const interval of torrentIntervals) {
     clearInterval(interval);
   }
 
-  // now stop the application completely
-  app.exit(0);
+  // Now quit the application
+  app.quit();
 });
 
 app.on('activate', async function () {

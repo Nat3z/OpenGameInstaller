@@ -72,8 +72,9 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
     // arg.url is a link to the download, we need to get the file
     // and send it to the real-debrid API
     console.log(arg);
+    const tempPath = join(__dirname, 'temp.torrent');
     try {
-      const fileStream = fs.createWriteStream(join(__dirname, 'temp.torrent'));
+      const fileStream = fs.createWriteStream(tempPath);
       const downloadID = Math.random().toString(36).substring(7);
       const torrentData = await new Promise<ReadStream>((resolve, reject) => {
         axios({
@@ -86,36 +87,45 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
           fileStream.on('finish', () => {
             console.log('Download complete!!');
             fileStream.close();
-            resolve(fs.createReadStream(join(__dirname, 'temp.torrent')));
+            resolve(fs.createReadStream(tempPath));
           });
 
           fileStream.on('error', (err) => {
             console.error(err);
             fileStream.close();
-            fs.unlinkSync(arg.path);
-            reject();
+            reject(err);
           });
         });
-      }).catch((err) => {
-        if (!mainWindow || !mainWindow.webContents) {
-          console.error(
-            'Seems like the window is closed. Cannot send error message to renderer.'
-          );
-          return;
-        }
-        console.error(err);
-        mainWindow.webContents.send('ddl:download-error', {
-          id: downloadID,
-          error: err,
+      })
+        .catch((err) => {
+          if (!mainWindow || !mainWindow.webContents) {
+            console.error(
+              'Seems like the window is closed. Cannot send error message to renderer.'
+            );
+            return;
+          }
+          console.error(err);
+          mainWindow.webContents.send('ddl:download-error', {
+            id: downloadID,
+            error: err,
+          });
+          fileStream.close();
+          sendNotification({
+            message: 'Download failed for torrent',
+            id: downloadID,
+            type: 'error',
+          });
+        })
+        .finally(() => {
+          // Always cleanup temp file
+          try {
+            if (fs.existsSync(tempPath)) {
+              fs.unlinkSync(tempPath);
+            }
+          } catch (cleanupErr) {
+            console.error('Error cleaning up temp file:', cleanupErr);
+          }
         });
-        fileStream.close();
-        fs.unlinkSync(arg.path);
-        sendNotification({
-          message: 'Download failed for ' + arg.path,
-          id: downloadID,
-          type: 'error',
-        });
-      });
       if (!torrentData) {
         return null;
       }

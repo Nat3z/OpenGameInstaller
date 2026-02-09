@@ -45,7 +45,6 @@
       document.removeEventListener('click', handleClickOutside);
     };
   });
-
 </script>
 
 <div class="relative">
@@ -176,13 +175,13 @@
   }
 
   .custom-dropdown-menu::-webkit-scrollbar-track {
-    background-color: var(--color-bg-secondary);
+    background-color: var(--theme-bg-secondary);
     border-radius: 0.5rem;
     -webkit-box-shadow: inset 0 0 1px rgba(0, 0, 0, 0.1);
   }
 
   .custom-dropdown-menu::-webkit-scrollbar-thumb {
-    background-color: var(--color-scrollbar);
+    background-color: var(--theme-scrollbar);
     border-radius: 9999px;
     transition: background-color 0.2s ease;
     -webkit-box-shadow: inset 0 0 1px rgba(0, 0, 0, 0.2);
@@ -190,16 +189,16 @@
   }
 
   .custom-dropdown-menu::-webkit-scrollbar-thumb:hover {
-    background-color: var(--color-scrollbar-hover);
+    background-color: var(--theme-scrollbar-hover);
   }
 
   .custom-dropdown-menu::-webkit-scrollbar-corner {
-    background-color: var(--color-bg-secondary);
+    background-color: var(--theme-bg-secondary);
   }
 
   .custom-dropdown-menu {
     scrollbar-width: thin;
-    scrollbar-color: var(--color-scrollbar) var(--color-bg-secondary);
+    scrollbar-color: var(--theme-scrollbar) var(--theme-bg-secondary);
     scrollbar-gutter: stable;
   }
 

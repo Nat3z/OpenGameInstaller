@@ -443,7 +443,8 @@
           >
             <img class="w-12 h-12" src="./bun.svg" alt="Bun" />
             <span class="flex flex-col justify-start items-start">
-              <span class="font-open-sans font-semibold text-text-primary">Bun</span
+              <span class="font-open-sans font-semibold text-text-primary"
+                >Bun</span
               >
               <span class="font-open-sans text-sm text-text-secondary"
                 >Required for executing addons</span
@@ -455,7 +456,8 @@
           >
             <img class="w-12 h-12" src="./git.svg" alt="Git" />
             <span class="flex flex-col justify-start items-start">
-              <span class="font-open-sans font-semibold text-text-primary">Git</span
+              <span class="font-open-sans font-semibold text-text-primary"
+                >Git</span
               >
               <span class="font-open-sans text-sm text-text-secondary"
                 >Required for downloading addons</span
@@ -821,7 +823,9 @@
                     <h3 class="font-open-sans font-semibold text-text-primary">
                       {addon.name}
                     </h3>
-                    <p class="text-sm text-text-secondary">{addon.description}</p>
+                    <p class="text-sm text-text-secondary">
+                      {addon.description}
+                    </p>
                   </div>
                   <button
                     onclick={() => toggleAddon(addon)}

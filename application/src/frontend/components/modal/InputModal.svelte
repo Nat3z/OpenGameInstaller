@@ -171,6 +171,17 @@
 
 <style>
   @reference "../../app.css";
+<<<<<<< HEAD
+=======
+  .option-label {
+    @apply block text-lg font-archivo font-semibold text-text-primary mb-1;
+  }
+
+  .option-description {
+    @apply text-sm text-text-secondary mb-4;
+  }
+
+>>>>>>> b28de40 (fix(review): replace hardcoded colors with theme variables)
   .option-input {
     @apply space-y-2;
   }
@@ -190,7 +201,11 @@
 
   .browse-button {
     @apply px-4 py-2 bg-accent rounded-lg hover:bg-accent-dark transition-colors border-none font-archivo font-semibold;
+<<<<<<< HEAD
     color: var(--color-overlay-text);
+=======
+    color: var(--theme-overlay-text);
+>>>>>>> b28de40 (fix(review): replace hardcoded colors with theme variables)
   }
 
   /* Remove webkit number input spinners */

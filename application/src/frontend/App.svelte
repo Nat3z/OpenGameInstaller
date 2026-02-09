@@ -602,10 +602,10 @@
             class="fill-accent-dark"
           >
             <g clip-path="url(#clip0_2_123)">
-                <path
-                  d="M34.5625 18.75H31.25V8.33333C31.25 7.1875 30.3125 6.25 29.1666 6.25H20.8333C19.6875 6.25 18.75 7.1875 18.75 8.33333V18.75H15.4375C13.5833 18.75 12.6458 21 13.9583 22.3125L23.5208 31.875C24.3333 32.6875 25.6458 32.6875 26.4583 31.875L36.0208 22.3125C37.3333 21 36.4166 18.75 34.5625 18.75ZM10.4166 39.5833C10.4166 40.7292 11.3541 41.6667 12.5 41.6667H37.5C38.6458 41.6667 39.5833 40.7292 39.5833 39.5833C39.5833 38.4375 38.6458 37.5 37.5 37.5H12.5C11.3541 37.5 10.4166 38.4375 10.4166 39.5833Z"
-                  fill="currentColor"
-                />
+              <path
+                d="M34.5625 18.75H31.25V8.33333C31.25 7.1875 30.3125 6.25 29.1666 6.25H20.8333C19.6875 6.25 18.75 7.1875 18.75 8.33333V18.75H15.4375C13.5833 18.75 12.6458 21 13.9583 22.3125L23.5208 31.875C24.3333 32.6875 25.6458 32.6875 26.4583 31.875L36.0208 22.3125C37.3333 21 36.4166 18.75 34.5625 18.75ZM10.4166 39.5833C10.4166 40.7292 11.3541 41.6667 12.5 41.6667H37.5C38.6458 41.6667 39.5833 40.7292 39.5833 39.5833C39.5833 38.4375 38.6458 37.5 37.5 37.5H12.5C11.3541 37.5 10.4166 38.4375 10.4166 39.5833Z"
+                fill="currentColor"
+              />
             </g>
             <defs>
               <clipPath id="clip0_2_123">
@@ -615,8 +615,7 @@
           </svg>
           {#if $activeDownloadsCount > 0}
             <div
-              class="absolute -bottom-1 -right-1 bg-accent-dark text-xs rounded-full w-5 h-5 flex items-center justify-center font-bold"
-              style="color: var(--color-overlay-text);"
+              class="absolute -bottom-1 -right-1 bg-accent-dark text-xs rounded-full w-5 h-5 flex items-center justify-center font-bold text-overlay-text"
             >
               {$activeDownloadsCount}
             </div>
@@ -636,10 +635,10 @@
             class="fill-accent-dark"
           >
             <g clip-path="url(#clip0_22_1842)">
-                <path
-                  d="M25 45.8333C27.2917 45.8333 29.1667 43.9583 29.1667 41.6666H20.8333C20.8333 43.9583 22.6875 45.8333 25 45.8333ZM37.5 33.3333V22.9166C37.5 16.5208 34.0833 11.1666 28.125 9.74998V8.33331C28.125 6.60415 26.7292 5.20831 25 5.20831C23.2708 5.20831 21.875 6.60415 21.875 8.33331V9.74998C15.8958 11.1666 12.5 16.5 12.5 22.9166V33.3333L9.81249 36.0208C8.49999 37.3333 9.41665 39.5833 11.2708 39.5833H38.7083C40.5625 39.5833 41.5 37.3333 40.1875 36.0208L37.5 33.3333Z"
-                  fill="currentColor"
-                />
+              <path
+                d="M25 45.8333C27.2917 45.8333 29.1667 43.9583 29.1667 41.6666H20.8333C20.8333 43.9583 22.6875 45.8333 25 45.8333ZM37.5 33.3333V22.9166C37.5 16.5208 34.0833 11.1666 28.125 9.74998V8.33331C28.125 6.60415 26.7292 5.20831 25 5.20831C23.2708 5.20831 21.875 6.60415 21.875 8.33331V9.74998C15.8958 11.1666 12.5 16.5 12.5 22.9166V33.3333L9.81249 36.0208C8.49999 37.3333 9.41665 39.5833 11.2708 39.5833H38.7083C40.5625 39.5833 41.5 37.3333 40.1875 36.0208L37.5 33.3333Z"
+                fill="currentColor"
+              />
             </g>
             <defs>
               <clipPath id="clip0_22_1842">
@@ -649,8 +648,7 @@
           </svg>
           {#if $unreadNotificationCount > 0}
             <div
-              class="absolute -bottom-1 -right-1 bg-accent-dark text-xs rounded-full w-5 h-5 flex items-center justify-center font-bold"
-              style="color: var(--color-overlay-text);"
+              class="absolute -bottom-1 -right-1 bg-accent-dark text-xs rounded-full w-5 h-5 flex items-center justify-center font-bold text-overlay-text"
             >
               {$unreadNotificationCount}
             </div>
@@ -1261,7 +1259,11 @@
 
   .loading-spinner {
     @apply w-8 h-8 border-4 border-accent-lighter border-t-accent rounded-full animate-spin mb-4;
+<<<<<<< HEAD
     filter: drop-shadow(0 2px 4px var(--color-focus-ring));
+=======
+    filter: drop-shadow(0 2px 4px var(--theme-focus-ring));
+>>>>>>> b28de40 (fix(review): replace hardcoded colors with theme variables)
   }
 
   @keyframes spin {

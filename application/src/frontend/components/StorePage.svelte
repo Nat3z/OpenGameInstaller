@@ -415,7 +415,6 @@
       }
     }
   });
-
 </script>
 
 {#if gameData}
@@ -427,8 +426,7 @@
         <div class="relative w-full h-64 overflow-hidden rounded-lg">
           <div class="skeleton w-full h-full"></div>
           <div
-            class="absolute bottom-0 left-0 right-0 p-6 rounded-b-lg"
-            style="background: linear-gradient(to top, var(--color-overlay-bg), transparent);"
+            class="absolute bottom-0 left-0 right-0 p-6 rounded-b-lg bg-linear-to-t from-overlay-bg to-transparent"
           >
             <div class="skeleton h-10 w-64 mb-2"></div>
             <div class="skeleton h-4 w-96"></div>
@@ -488,12 +486,18 @@
           <!-- Overlay with game info -->
           <div
             class="absolute bottom-0 left-0 right-0 p-6 rounded-b-lg"
-            style="background: linear-gradient(to top, var(--color-overlay-bg), transparent);"
+            style="background: linear-gradient(to top, var(--theme-overlay-bg), transparent);"
           >
-            <h1 class="text-4xl font-archivo font-bold mb-2" style="color: var(--color-overlay-text);">
+            <h1
+              class="text-4xl font-archivo font-bold mb-2"
+              style="color: var(--theme-overlay-text);"
+            >
               {gameData.name}
             </h1>
-            <div class="text-sm" style="color: var(--color-overlay-text); opacity: 0.9;">
+            <div
+              class="text-sm"
+              style="color: var(--theme-overlay-text); opacity: 0.9;"
+            >
               <span style="opacity: 0.7;">Publisher:</span>
               {(gameData.publishers ?? []).join(', ')}
               <span class="mx-4"></span>
@@ -652,7 +656,9 @@
                       <div class="flex items-center gap-3">
                         <AddonPicture {addonId} class="w-12 h-12 rounded-lg" />
                         <div>
-                          <h3 class="font-medium text-text-primary">{addonName}</h3>
+                          <h3 class="font-medium text-text-primary">
+                            {addonName}
+                          </h3>
                           {#if isEmpty}
                             <span
                               class="text-sm text-text-muted font-medium italic"
@@ -684,6 +690,23 @@
                         </svg>
                       {/if}
                     </div>
+                    {#if !isEmpty}
+                      <div
+                        class="w-5 h-5 border-2 border-border border-t-accent rounded-full animate-spin"
+                      ></div>
+                    {:else}
+                      <svg
+                        class="w-5 h-5 text-text-muted"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                      >
+                        <circle cx="12" cy="12" r="10" />
+                        <path d="M16 16s-1.5-2-4-2-4 2-4 2" />
+                        <line x1="9" y1="9" x2="9.01" y2="9" />
+                        <line x1="15" y1="9" x2="15.01" y2="9" />
+                      </svg>
+                    {/if}
                   </div>
                 {/each}
 
@@ -1028,7 +1051,6 @@
 
 <style global>
   @reference "../app.css";
-  #g-descript,
   #g-descript-custom {
     @apply text-text-primary bg-transparent;
   }

@@ -974,13 +974,20 @@
                                 class="input-select"
                                 value={getStoredOrDefaultValue(key)}
                                 onchange={(e) => {
-                                  const val = (e.target as HTMLSelectElement).value as 'light' | 'dark' | 'synthwave';
+                                  const val = (e.target as HTMLSelectElement)
+                                    .value as 'light' | 'dark' | 'synthwave';
                                   updateConfig();
-                                  document.documentElement.setAttribute('data-theme', val);
+                                  document.documentElement.setAttribute(
+                                    'data-theme',
+                                    val
+                                  );
                                 }}
                               >
                                 {#each selectedOption.options[key].choice as choiceValue}
-                                  <option value={choiceValue}>{choiceValue.charAt(0).toUpperCase() + choiceValue.slice(1)}</option>
+                                  <option value={choiceValue}
+                                    >{choiceValue.charAt(0).toUpperCase() +
+                                      choiceValue.slice(1)}</option
+                                  >
                                 {/each}
                               </select>
                             {:else}
@@ -1238,6 +1245,10 @@
     @apply w-full px-4 py-2 border border-border rounded-lg bg-input-bg text-text-primary focus:ring-2 focus:ring-accent-light focus:border-accent transition-colors resize-none h-32;
   }
 
+  .input-textarea {
+    @apply w-full px-4 py-2 border border-border rounded-lg focus:ring-2 focus:ring-accent-light focus:border-accent transition-colors resize-none h-32 text-text-primary bg-input-bg;
+  }
+
   .file-input-group {
     @apply flex gap-2;
   }
@@ -1247,8 +1258,7 @@
   }
 
   .browse-button {
-    @apply px-4 py-2 bg-accent rounded-lg hover:bg-accent-dark transition-colors border-none font-archivo font-semibold;
-    color: var(--color-overlay-text);
+    @apply px-4 py-2 bg-accent rounded-lg hover:bg-accent-dark transition-colors border-none font-archivo font-semibold text-overlay-text;
   }
 
   /* Checkbox Styles */
@@ -1296,55 +1306,51 @@
   }
 
   .action-button.primary {
-    background-color: var(--color-success);
-    color: var(--color-overlay-text);
+    @apply bg-success text-overlay-text;
   }
 
   .action-button.primary:hover:not(:disabled) {
-    background-color: var(--color-success-hover);
+    @apply bg-success-hover;
   }
 
   .action-button.primary:disabled {
-    background-color: var(--color-disabled);
+    @apply bg-disabled;
   }
 
   .action-button.secondary {
-    background-color: var(--color-info);
-    color: var(--color-overlay-text);
+    @apply bg-info text-overlay-text;
   }
 
   .action-button.secondary:hover:not(:disabled) {
-    background-color: var(--color-info-hover);
+    @apply bg-info-hover;
   }
 
   .action-button.secondary:disabled {
-    background-color: var(--color-disabled);
+    @apply bg-disabled;
   }
 
   .action-button.danger {
-    background-color: var(--color-error);
-    color: var(--color-overlay-text);
+    @apply bg-error text-overlay-text;
   }
 
   .action-button.danger:hover:not(:disabled) {
-    background-color: var(--color-error-hover);
+    @apply bg-error-hover;
   }
 
   .action-button.danger:disabled {
-    background-color: var(--color-disabled);
+    @apply bg-disabled;
   }
 
   .action-button.warning {
-    background-color: var(--color-warning);
-    color: var(--color-overlay-text);
+    @apply bg-warning text-overlay-text;
   }
 
   .action-button.warning:hover:not(:disabled) {
-    background-color: var(--color-warning-hover);
+    @apply bg-warning-hover;
   }
 
   .action-button.warning:disabled {
-    background-color: var(--color-disabled);
+    @apply bg-disabled;
   }
 
   /* No Selection State */

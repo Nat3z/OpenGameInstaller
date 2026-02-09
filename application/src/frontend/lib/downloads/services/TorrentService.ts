@@ -40,7 +40,11 @@ export class TorrentService extends BaseService {
         // For magnet links, extract name from the magnet URI or use a generic name
         const magnetMatch = result.downloadURL.match(/dn=([^&]*)/);
         if (magnetMatch) {
-          filename = decodeURIComponent(magnetMatch[1]);
+          try {
+            filename = decodeURIComponent(magnetMatch[1]);
+          } catch {
+            filename = magnetMatch[1];
+          }
         } else {
           // Use the result name or a generic fallback
           filename = result.name || 'torrent_download';

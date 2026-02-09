@@ -19,8 +19,6 @@ import {
   closeSplashWindow,
 } from './splash.js';
 
-export { closeSplashWindow };
-
 export async function runStartupTasks(
   mainWindow?: BrowserWindow | null
 ): Promise<void> {

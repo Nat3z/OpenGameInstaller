@@ -64,7 +64,7 @@ export class TorboxService extends BaseService {
       return;
 
     const optionHandled = getConfigClientOption<{ torboxApiKey?: string }>(
-      'realdebrid'
+      'torbox'
     );
     if (!optionHandled || !optionHandled.torboxApiKey) {
       createNotification({
@@ -320,6 +320,8 @@ export class TorboxService extends BaseService {
       const downloadUrl = url.toString();
       console.log('Final Torbox download URL: ', downloadUrl);
 
+      const safeFilename =
+        result.filename ?? result.name ?? 'torbox_download';
       const { flush } = listenUntilDownloadReady();
       const downloadID = await window.electronAPI.ddl.download([
         {
@@ -329,7 +331,7 @@ export class TorboxService extends BaseService {
             '/' +
             result.name +
             '/' +
-            result.filename! +
+            safeFilename +
             '.zip',
           headers: {
             'OGI-Parallel-Limit': '1',
@@ -354,7 +356,7 @@ export class TorboxService extends BaseService {
         downloadID,
         tempId,
         downloadUrl,
-        getDownloadPath() + '/' + result.name + '/' + result.filename + '.zip',
+        getDownloadPath() + '/' + result.name + '/' + safeFilename + '.zip',
         'torbox',
         updatedState,
         result

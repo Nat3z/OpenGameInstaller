@@ -284,6 +284,26 @@ function createWindow(): BrowserWindow {
   return mainWindow;
 }
 
+/**
+ * Loads the main app URL into the given window (dev or prod) and registers ready-to-show for onMainAppReady.
+ * Used by both app.on('ready') and app.on('activate') to avoid duplicating URL and listener logic.
+ */
+function loadMainApp(win: BrowserWindow): void {
+  if (isDev()) {
+    win.loadURL(
+      'http://localhost:8080/?secret=' + applicationAddonSecret
+    );
+  } else {
+    win.loadURL(
+      'file://' +
+        join(app.getAppPath(), 'out', 'renderer', 'index.html') +
+        '?secret=' +
+        applicationAddonSecret
+    );
+  }
+  win.once('ready-to-show', onMainAppReady);
+}
+
 // This method will be called when Electron has finished
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
@@ -301,21 +321,8 @@ app.on('ready', async () => {
   }
 
   // Load the main app into the same window (replaces splash)
-  if (isDev()) {
-    mainWindow.loadURL(
-      'http://localhost:8080/?secret=' + applicationAddonSecret
-    );
-    console.log('Running in development');
-  } else {
-    mainWindow.loadURL(
-      'file://' +
-        join(app.getAppPath(), 'out', 'renderer', 'index.html') +
-        '?secret=' +
-        applicationAddonSecret
-    );
-  }
-
-  mainWindow.once('ready-to-show', onMainAppReady);
+  if (isDev()) console.log('Running in development');
+  loadMainApp(mainWindow);
 
   server.listen(port, () => {
     console.log(`Addon Server is running on http://localhost:${port}`);
@@ -363,19 +370,7 @@ app.on('activate', async function () {
     const win = createWindow();
     await runStartupTasks(win);
     if (!win.isDestroyed()) {
-      if (isDev()) {
-        win.loadURL(
-          'http://localhost:8080/?secret=' + applicationAddonSecret
-        );
-      } else {
-        win.loadURL(
-          'file://' +
-            join(app.getAppPath(), 'out', 'renderer', 'index.html') +
-            '?secret=' +
-            applicationAddonSecret
-        );
-      }
-      win.once('ready-to-show', onMainAppReady);
+      loadMainApp(win);
     }
   }
 });

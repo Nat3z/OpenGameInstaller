@@ -81,7 +81,7 @@ export class PremiumizeService extends BaseService {
 
     console.log('PremiumizeService startDownload', result);
     const optionHandled = getConfigClientOption<{ premiumizeApiKey?: string }>(
-      'realdebrid'
+      'premiumize'
     );
     if (!optionHandled || !optionHandled.premiumizeApiKey) {
       createNotification({

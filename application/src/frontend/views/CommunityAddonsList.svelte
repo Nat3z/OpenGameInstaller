@@ -97,9 +97,6 @@
     unsub();
   });
 
-  // Defensive fetch so the view self-initializes when navigated to directly: run only when not loading, list is empty, and no current error.
-  // We do not auto-fetch when there is an error so the failed state stays visible; user uses Retry to refetch.
-  // Called at top level (not just onMount) to ensure loading state is set before first render, preventing "No community addons" flash.
   if (
     !get(communityAddonsLoading) &&
     get(communityAddonsLocal).length === 0 &&

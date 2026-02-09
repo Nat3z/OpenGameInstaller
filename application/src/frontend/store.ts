@@ -262,7 +262,7 @@ let communityAddonsRequestId = 0;
 
 /**
  * Normalizes a caught error into a user-facing message for community addon fetch failures.
- * Handles response.status (404, 5xx), Error.message, and unknown shapes; always returns a string.
+ * Handles response.status (404, 5xx) with specific messages; for non-HTTP errors uses a generic message to avoid leaking internal details.
  * @param err - Thrown value from the fetch (e.g. axios error with response, or Error)
  * @returns A short, displayable string (e.g. "Community addons list not found.", "Server error. Try again later.", or a generic connection message)
  */
@@ -272,7 +272,6 @@ function communityAddonsErrorMessage(err: unknown): string {
     if (res?.status === 404) return 'Community addons list not found.';
     if (res?.status && res.status >= 500) return 'Server error. Try again later.';
   }
-  if (err instanceof Error && err.message) return err.message;
   return "Couldn't load community addons. Check your connection and try again.";
 }
 

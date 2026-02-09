@@ -233,29 +233,21 @@ export class TorboxService extends BaseService {
     // insert into the downloadItems array the temp id
     const tempId = this.queueRequestDownload(result, appID, 'torbox');
 
-    // If we already have a torrent_id, use it; otherwise poll for it
+    // If we already have a torrent_id, use it; otherwise poll for it (sequential setTimeout to avoid stacking concurrent requests)
     if (!finalTorrentId) {
       const torrentGrabber = await new Promise<TorboxTorrent | undefined>(
         (resolve) => {
           const startTime = Date.now();
           const timeoutMs = 650 * 1000; // 650 seconds
-          let interval: ReturnType<typeof setInterval> | null = null;
+          let timeoutId: ReturnType<typeof setTimeout> | null = null;
 
-          const cleanup = () => {
-            if (interval !== null) {
-              clearInterval(interval);
-              interval = null;
-            }
-          };
-
-          interval = setInterval(async () => {
+          const poll = async () => {
             try {
-              // Check for timeout
               if (Date.now() - startTime > timeoutMs) {
-                cleanup();
                 console.error(
                   'Timeout: Torrent did not appear on Torbox within the allowed time'
                 );
+                if (timeoutId !== null) clearTimeout(timeoutId);
                 resolve(undefined);
                 return;
               }
@@ -270,26 +262,28 @@ export class TorboxService extends BaseService {
                 });
 
               if (!torrentInfo.data.success) {
+                timeoutId = setTimeout(poll, 3000);
                 return;
               }
 
               const torrent = torrentInfo.data.data.find(
-                (torrent) => torrent.hash === torrentHash
+                (t) => t.hash === torrentHash
               );
 
-              if (!torrent) {
+              if (!torrent || !torrent.download_finished) {
+                timeoutId = setTimeout(poll, 3000);
                 return;
               }
 
-              if (torrent.download_finished) {
-                cleanup();
-                resolve(torrent);
-                return;
-              }
+              if (timeoutId !== null) clearTimeout(timeoutId);
+              resolve(torrent);
             } catch (error) {
               console.error('Error polling Torbox:', error);
+              timeoutId = setTimeout(poll, 3000);
             }
-          }, 3000);
+          };
+
+          timeoutId = setTimeout(poll, 3000);
         }
       );
 

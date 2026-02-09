@@ -265,6 +265,9 @@ export class PremiumizeService extends BaseService {
     const directDownloadUrl = responseTorrentFile.data.location;
     console.log('Direct download URL: ', directDownloadUrl);
 
+    const safeFilename =
+      result.filename ?? result.name ?? 'premiumize_download';
+
     // -- Step 5: Send the direct download to the download handler --
     const { flush } = listenUntilDownloadReady();
     const downloadID = await window.electronAPI.ddl.download([
@@ -275,7 +278,7 @@ export class PremiumizeService extends BaseService {
           '/' +
           result.name +
           '/' +
-          result.filename +
+          safeFilename +
           '.zip',
         headers: {
           'OGI-Parallel-Limit': '1',
@@ -295,7 +298,7 @@ export class PremiumizeService extends BaseService {
       downloadID,
       tempId,
       directDownloadUrl,
-      getDownloadPath() + '/' + result.name + '/' + result.filename + '.zip',
+      getDownloadPath() + '/' + result.name + '/' + safeFilename + '.zip',
       'premiumize',
       updatedState,
       result

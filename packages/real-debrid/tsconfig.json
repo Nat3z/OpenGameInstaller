@@ -3,6 +3,7 @@
     // project options
     "lib": ["ESNext"], // specifies which default set of type definitions to use ("DOM", "ES6", etc)
     "types": ["node"],
+    "skipLibCheck": true,
     "removeComments": true, // Strips all comments from TypeScript files when converting into JavaScript- you rarely read compiled code so this saves space
     "target": "ESNext", // Target environment. Most modern browsers support ES6, but you may want to set it to newer or older. (defaults to ES3)
     "module": "ESNext",

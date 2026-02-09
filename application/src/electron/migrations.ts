@@ -379,9 +379,8 @@ export async function execute() {
   // enroll into certain migrations
   for (const migration of Object.keys(migrations)) {
     if (
-      (semver.lt(lastVersion, migrations[migration].from) ||
-        (semver.gte(lastVersion, migrations[migration].from) &&
-          semver.lt(lastVersion, migrations[migration].to))) &&
+      semver.gte(lastVersion, migrations[migration].from) &&
+      semver.lt(lastVersion, migrations[migration].to) &&
       (migrations[migration].platform === 'all' ||
         migrations[migration].platform === process.platform)
     ) {

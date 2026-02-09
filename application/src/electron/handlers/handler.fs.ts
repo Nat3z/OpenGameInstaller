@@ -177,7 +177,8 @@ export default function handler() {
                   log: [`RAR extraction failed: ${err.message}`],
                 });
               }
-              return reject(new Error('Failed to extract RAR file'));
+              reject(new Error('Failed to extract RAR file'));
+              return;
             }
             console.log(stdout);
             console.log(stderr);
@@ -244,46 +245,8 @@ export default function handler() {
                 log: [`Unrar process failed with exit code ${code}`],
               });
             }
-            return reject(new Error(`Unrar process failed with exit code ${code}`));
-          }
-          if (downloadId) {
-            sendIPCMessage('setup:log', {
-              id: downloadId,
-              log: ['RAR extraction completed successfully'],
-            });
-          }
-          resolve();
-        });
-      });
-            }
-          }
-        });
-
-        unrarProcess.stderr.on('data', (data) => {
-          console.error(`[unrar stderr]: ${data}`);
-          if (downloadId) {
-            const logMessage = data.toString().trim();
-            if (logMessage) {
-              sendIPCMessage('setup:log', {
-                id: downloadId,
-                log: [logMessage],
-              });
-            }
-          }
-        });
-
-        unrarProcess.on('close', (code) => {
-          if (code !== 0) {
-            console.error(`unrar process exited with code ${code}`);
-            if (downloadId) {
-              sendIPCMessage('setup:log', {
-                id: downloadId,
-                log: [`Unrar process failed with exit code ${code}`],
-              });
-            }
-            return reject(
-              new Error(`Unrar process failed with exit code ${code}`)
-            );
+            reject(new Error(`Unrar process failed with exit code ${code}`));
+            return;
           }
           if (downloadId) {
             sendIPCMessage('setup:log', {
@@ -364,7 +327,8 @@ export default function handler() {
                       log: [`Extraction failed: ${err.message}`],
                     });
                   }
-                  return reject(new Error('Failed to extract ZIP file'));
+                  reject(new Error('Failed to extract ZIP file'));
+                  return;
                 }
                 console.log(stdout);
                 console.log(stderr);
@@ -445,7 +409,8 @@ export default function handler() {
                     log: [`Unzip process failed with exit code ${code}`],
                   });
                 }
-                return reject(new Error('Failed to extract ZIP file'));
+                reject(new Error('Failed to extract ZIP file'));
+                return;
               }
               if (downloadId) {
                 sendIPCMessage('setup:log', {

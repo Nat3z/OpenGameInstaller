@@ -72,30 +72,44 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
     // arg.url is a link to the download, we need to get the file
     // and send it to the real-debrid API
     console.log(arg);
-    const tempPath = join(__dirname, 'temp.torrent');
+    const tempPath = join(
+      __dirname,
+      `temp-realdebrid-${Date.now()}-${Math.random().toString(36).slice(2)}.torrent`
+    );
+    let fileStream: fs.WriteStream | null = null;
+    const downloadID = Math.random().toString(36).substring(7);
+
     try {
-      const fileStream = fs.createWriteStream(tempPath);
-      const downloadID = Math.random().toString(36).substring(7);
+      fileStream = fs.createWriteStream(tempPath);
       const torrentData = await new Promise<ReadStream>((resolve, reject) => {
         axios({
           method: 'get',
           url: arg.torrent,
           responseType: 'stream',
-        }).then((response) => {
-          response.data.pipe(fileStream);
+        })
+          .then((response) => {
+            response.data.pipe(fileStream!);
 
-          fileStream.on('finish', () => {
-            console.log('Download complete!!');
-            fileStream.close();
-            resolve(fs.createReadStream(tempPath));
-          });
+            fileStream!.on('finish', () => {
+              console.log('Download complete!!');
+              fileStream!.close();
+              resolve(fs.createReadStream(tempPath));
+            });
 
-          fileStream.on('error', (err) => {
-            console.error(err);
-            fileStream.close();
+            fileStream!.on('error', (err) => {
+              console.error(err);
+              if (fileStream && !fileStream.destroyed) {
+                fileStream.close();
+              }
+              reject(err);
+            });
+          })
+          .catch((err) => {
+            if (fileStream && !fileStream.destroyed) {
+              fileStream.close();
+            }
             reject(err);
           });
-        });
       })
         .catch((err) => {
           if (!mainWindow || !mainWindow.webContents) {
@@ -109,7 +123,9 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
             id: downloadID,
             error: err,
           });
-          fileStream.close();
+          if (fileStream && !fileStream.destroyed) {
+            fileStream.close();
+          }
           sendNotification({
             message: 'Download failed for torrent',
             id: downloadID,
@@ -126,6 +142,7 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
             console.error('Error cleaning up temp file:', cleanupErr);
           }
         });
+
       if (!torrentData) {
         return null;
       }
@@ -142,6 +159,18 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
         type: 'error',
       });
       return null;
+    } finally {
+      // Cleanup temp file
+      try {
+        if (fileStream && !fileStream.destroyed) {
+          fileStream.close();
+        }
+        if (fs.existsSync(tempPath)) {
+          fs.unlinkSync(tempPath);
+        }
+      } catch (cleanupErr) {
+        console.error('Error cleaning up temp file:', cleanupErr);
+      }
     }
   });
 }

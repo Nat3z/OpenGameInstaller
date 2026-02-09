@@ -166,12 +166,13 @@ export async function restartDownload(
   pausedState: PausedDownloadState,
   pausedDownloadStates: Map<string, PausedDownloadState>
 ): Promise<boolean> {
+  let newDownloadId = '';
   try {
     const download = pausedState.downloadInfo;
     console.log('Restarting download:', download.name);
 
     // Generate new download ID to avoid conflicts
-    const newDownloadId = Math.random().toString(36).substring(7);
+    newDownloadId = Math.random().toString(36).substring(7);
 
     // Clean up old paused state
     pausedDownloadStates.delete(pausedState.id);
@@ -210,10 +211,18 @@ export async function restartDownload(
   } catch (error) {
     console.error('Error restarting download:', error);
 
-    updateDownloadStatus(pausedState.id, {
-      status: 'error',
-      error: 'Failed to restart download',
-    });
+    // Use newDownloadId instead of stale pausedState.id
+    if (newDownloadId) {
+      updateDownloadStatus(newDownloadId, {
+        status: 'error',
+        error: 'Failed to restart download',
+      });
+    } else {
+      updateDownloadStatus(pausedState.id, {
+        status: 'error',
+        error: 'Failed to restart download',
+      });
+    }
 
     createNotification({
       id: Math.random().toString(36).substring(2, 9),

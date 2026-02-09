@@ -209,39 +209,41 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
     }
     return iconPath;
   });
+
   ipcMain.handle('app:get-local-image', async (_, requestPath: string) => {
-    // Define allowed directories for path traversal protection
+    if (!fs.existsSync(requestPath)) {
+      return null;
+    }
+
+    // Validate path against allowed directories
     const allowedDirs = [
-      path.resolve(__dirname),
-      path.resolve(app.getPath('userData')),
-      path.resolve(app.getAppPath()),
+      join(__dirname, 'addons'),
+      join(__dirname, 'public'),
+      join(__dirname, 'config'),
     ];
+
+    let realPath: string;
+    try {
+      realPath = fs.realpathSync(requestPath);
+    } catch (err) {
+      console.error('Failed to resolve real path:', path, err);
+      return null;
+    }
+
+    // Normalize paths for comparison
+    const normalizedRealPath = realPath.replace(/\\/g, '/');
+    const isAllowed = allowedDirs.some((allowedDir) => {
+      const normalizedAllowed = allowedDir.replace(/\\/g, '/');
+      return normalizedRealPath.startsWith(normalizedAllowed);
+    });
+
+    if (!isAllowed) {
+      console.error('Path not in allowed directories:', realPath);
+      return null;
+    }
 
     try {
       // Resolve to absolute path and normalize
-      const resolvedPath = path.resolve(requestPath);
-      let realPath: string;
-      try {
-        realPath = fs.realpathSync(resolvedPath);
-      } catch {
-        realPath = resolvedPath;
-      }
-
-      // Validate path is within allowed directories
-      const isAllowed = allowedDirs.some((allowedDir) => {
-        const relative = path.relative(allowedDir, realPath);
-        return !relative.startsWith('..') && !path.isAbsolute(relative);
-      });
-
-      if (!isAllowed) {
-        console.error('Path traversal attempt blocked:', realPath);
-        return null;
-      }
-
-      if (!fs.existsSync(realPath)) {
-        return null;
-      }
-
       const ext = realPath.split('.').pop()?.toLowerCase() || 'png';
 
       const mimeType =

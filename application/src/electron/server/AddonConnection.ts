@@ -26,6 +26,8 @@ export class AddonConnection {
   public filePath: string | undefined;
   public addonLink: string | undefined;
   public eventsAvailable: OGIAddonEvent[] = [];
+  private pendingResponses: Map<string, { resolve: (value: WebsocketMessageClient) => void; reject: (reason?: any) => void }> = new Map();
+  private messageHandler: ((message: string | Buffer) => void) | null = null;
   constructor(ws: InstanceType<typeof wsLib>) {
     this.ws = ws;
   }
@@ -38,8 +40,38 @@ export class AddonConnection {
         resolve(false);
       }, 1000);
 
-      this.ws.on('message', async (message: string | Buffer) => {
-        const data: WebsocketMessageClient = JSON.parse(message.toString());
+      // Set up persistent message handler
+      this.messageHandler = async (message: string | Buffer) => {
+        let data: WebsocketMessageClient;
+        try {
+          data = JSON.parse(message.toString());
+        } catch (err) {
+          console.error('Failed to parse websocket message:', err);
+          this.ws.close(1008, 'Invalid JSON message');
+          return;
+        }
+        
+        // Check if this is a response to a pending request
+        if (data.event === 'response' && data.id && this.pendingResponses.has(data.id)) {
+          const pending = this.pendingResponses.get(data.id)!;
+          this.pendingResponses.delete(data.id);
+          if (!data.args || data.statusError) {
+            if (!data.args && !data.statusError) {
+              pending.resolve({
+                event: 'response',
+                args: undefined,
+                id: data.id,
+              });
+            } else {
+              pending.reject(data.statusError);
+            }
+            return;
+          }
+          pending.resolve(data);
+          return;
+        }
+        
+        // Handle other message types
         switch (data.event) {
           case 'notification': {
             sendNotification(data.args[0]);
@@ -407,6 +439,23 @@ export class AddonConnection {
             break;
           }
         }
+      };
+      
+      this.ws.on('message', this.messageHandler);
+      
+      // Clean up pending responses on close/error
+      this.ws.on('close', () => {
+        for (const [_, pending] of this.pendingResponses.entries()) {
+          pending.reject(new Error('Websocket closed'));
+        }
+        this.pendingResponses.clear();
+      });
+      
+      this.ws.on('error', () => {
+        for (const [_, pending] of this.pendingResponses.entries()) {
+          pending.reject(new Error('Websocket error'));
+        }
+        this.pendingResponses.clear();
       });
     });
   }
@@ -418,43 +467,22 @@ export class AddonConnection {
       message.id = Math.random().toString(36).substring(7);
     }
     return new Promise((resolve, reject) => {
+      // CLOSED state is 3
+      if (this.ws.readyState === 3) {
+        reject(new Error('Websocket closed'));
+        return;
+      }
+      
       this.ws.send(JSON.stringify(message), (err: Error | null | undefined) => {
         if (err) {
           reject(err);
+          return;
         }
       });
-      if (expectResponse) {
-        const waitResponse = () => {
-          // CLOSED state is 3
-          if (this.ws.readyState === 3) {
-            reject('Websocket closed');
-            return;
-          }
-          this.ws.once('message', (messageRaw: string | Buffer) => {
-            const messageFromClient: WebsocketMessageClient = JSON.parse(
-              '' + messageRaw.toString()
-            );
-            if (
-              messageFromClient.event === 'response' &&
-              messageFromClient.id === message.id
-            ) {
-              if (!messageFromClient.args || messageFromClient.statusError) {
-                if (!messageFromClient.args && !messageFromClient.statusError)
-                  resolve({
-                    event: 'response',
-                    args: undefined,
-                    id: message.id,
-                  });
-                else reject(messageFromClient.statusError);
-                return;
-              }
-              resolve(messageFromClient);
-            } else {
-              waitResponse();
-            }
-          });
-        };
-        waitResponse();
+      
+      if (expectResponse && message.id) {
+        // Store the pending response handler
+        this.pendingResponses.set(message.id, { resolve, reject });
       } else {
         resolve({ event: 'response', args: 'OK' });
       }

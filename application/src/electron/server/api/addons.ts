@@ -54,12 +54,12 @@ const procedures: Record<string, Procedure<any>> = {
         args: input.config,
       });
 
-      if (response.args.success) {
+      if (response.args && response.args.success) {
         return new ProcedureJSON(200, { success: true });
       } else {
         return new ProcedureJSON(400, {
           success: false,
-          errors: response.args.error,
+          errors: response.args?.error || 'Unknown error',
         });
       }
     }),

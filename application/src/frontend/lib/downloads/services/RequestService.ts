@@ -20,8 +20,7 @@ export class RequestService extends BaseService {
     htmlButton?: HTMLButtonElement
   ): Promise<void> {
     const button = htmlButton ?? (event?.currentTarget ?? null);
-    if (button === null || !(button instanceof HTMLButtonElement)) return;
-    const resolvedButton = button;
+    const resolvedButton = button instanceof HTMLButtonElement ? button : undefined;
 
     // Create a local ID for tracking, similar to real-debrid cases
     const localID = Math.floor(Math.random() * 1000000);
@@ -73,6 +72,25 @@ export class RequestService extends BaseService {
       }
     );
 
+    // Check if response is null/undefined
+    if (response === null || response === undefined) {
+      currentDownloads.update((downloads) => {
+        const matchingDownload = downloads.find(
+          (d) => d.id === localID + ''
+        );
+        if (!matchingDownload) return downloads;
+        matchingDownload.status = 'error';
+        matchingDownload.error = 'Failed to get download response';
+        downloads[downloads.indexOf(matchingDownload)] = matchingDownload;
+        return downloads;
+      });
+      if (resolvedButton) {
+        resolvedButton.textContent = 'Download';
+        resolvedButton.disabled = false;
+      }
+      return;
+    }
+
     console.log('Request response:', response);
 
     // Merge response with original context, preserving update-specific fields
@@ -95,8 +113,10 @@ export class RequestService extends BaseService {
     });
 
     // Reset button state before recursive call
-    resolvedButton.textContent = 'Downloading...';
-    resolvedButton.disabled = true;
+    if (resolvedButton) {
+      resolvedButton.textContent = 'Downloading...';
+      resolvedButton.disabled = true;
+    }
 
     // Recursively call startDownload with the resolved result (pass button so recursive call doesn't rely on currentTarget)
     return await startDownload(updatedResult, appID, event, resolvedButton);

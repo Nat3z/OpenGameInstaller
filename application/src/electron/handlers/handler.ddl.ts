@@ -41,7 +41,7 @@ interface ParallelDownloadInfo {
 interface PartState {
   index: number;
   job: DownloadJob;
-  status: 'pending' | 'downloading' | 'completed' | 'failed';
+  status: 'pending' | 'downloading' | 'completed' | 'failed' | 'merging';
   downloadedBytes: number;
   totalBytes: number;
   abortController: AbortController;
@@ -291,8 +291,10 @@ class Download {
       }
 
       // Start new parts if we have capacity
-      const availableSlots =
-        Math.max(1, PARALLEL_CHUNK_COUNT) - activeParts().length;
+      const availableSlots = Math.max(
+        1,
+        PARALLEL_CHUNK_COUNT - activeParts().length
+      );
       const partsToStart = this.parts
         .filter((p) => p.status === 'pending')
         .slice(0, availableSlots);
@@ -573,7 +575,7 @@ class Download {
     // Merge chunk files
     await this.mergeChunkFilesForPart(part);
 
-    // Reset this part's status to downloading
+    // Reset part status to downloading after merge completes
     part.status = 'downloading';
 
     // Update part's downloaded bytes
@@ -1845,6 +1847,10 @@ async function checkParallelChunkCount() {
   // Ensure minimum of 1, default to 8 if invalid
   const chunkCount = Math.max(1, Number.isFinite(val) ? val : 8);
   console.log('[direct] parallel chunk count:', chunkCount);
+
+  // Coerce to safe positive integer, ensuring minimum of 1
+  PARALLEL_CHUNK_COUNT = chunkCount;
+
   if (PARALLEL_CHUNK_COUNT > 0 && PARALLEL_CHUNK_COUNT !== chunkCount) {
     console.log(
       '[direct] mismatched parallel chunk counts, will kill all downloads'
@@ -1853,7 +1859,6 @@ async function checkParallelChunkCount() {
       download.cancel();
     }
   }
-  PARALLEL_CHUNK_COUNT = chunkCount;
 }
 
 export default function handler(mainWindow: BrowserWindow) {

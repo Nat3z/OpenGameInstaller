@@ -304,7 +304,6 @@
 
     const gameID = (gameData as StoreData).appID;
 
-    console.log('Playing game with ID: ' + gameID);
     selectedView.set('library');
     viewOpenedWhenChanged.set('library');
     currentStorePageOpened.set(undefined);
@@ -316,7 +315,6 @@
   }
 
   function showSourceInfo(result: SearchResultWithAddon) {
-    console.log('Showing source info for: ' + result.addonSource);
     selectedResult = result;
   }
 
@@ -399,7 +397,6 @@
       !alreadyOwns &&
       !matchedDownload
     ) {
-      console.log('Download completed, refreshing store data...');
       // Refresh the alreadyOwns status
       alreadyOwns = window.electronAPI.fs.exists(
         './library/' + appID + '.json'
@@ -419,10 +416,6 @@
     }
   });
 
-  // Debug reactive statement
-  $effect(() => {
-    console.log('Modal state changed - selectedResult:', selectedResult);
-  });
 </script>
 
 {#if gameData}
@@ -435,7 +428,7 @@
           <div class="skeleton w-full h-full"></div>
           <div
             class="absolute bottom-0 left-0 right-0 p-6 rounded-b-lg"
-            style="background: linear-gradient(to top, var(--theme-overlay-bg), transparent);"
+            style="background: linear-gradient(to top, var(--color-overlay-bg), transparent);"
           >
             <div class="skeleton h-10 w-64 mb-2"></div>
             <div class="skeleton h-4 w-96"></div>
@@ -495,12 +488,12 @@
           <!-- Overlay with game info -->
           <div
             class="absolute bottom-0 left-0 right-0 p-6 rounded-b-lg"
-            style="background: linear-gradient(to top, var(--theme-overlay-bg), transparent);"
+            style="background: linear-gradient(to top, var(--color-overlay-bg), transparent);"
           >
-            <h1 class="text-4xl font-archivo font-bold mb-2" style="color: var(--theme-overlay-text);">
+            <h1 class="text-4xl font-archivo font-bold mb-2" style="color: var(--color-overlay-text);">
               {gameData.name}
             </h1>
-            <div class="text-sm" style="color: var(--theme-overlay-text); opacity: 0.9;">
+            <div class="text-sm" style="color: var(--color-overlay-text); opacity: 0.9;">
               <span style="opacity: 0.7;">Publisher:</span>
               {(gameData.publishers ?? []).join(', ')}
               <span class="mx-4"></span>
@@ -656,40 +649,40 @@
                     in:fly={{ y: 30, duration: 400, delay: 50 * index }}
                   >
                     <div class="flex items-center justify-between">
-                          <div class="flex items-center gap-3">
-                            <AddonPicture {addonId} class="w-12 h-12 rounded-lg" />
-                            <div>
-                              <h3 class="font-medium text-text-primary">{addonName}</h3>
-                              {#if isEmpty}
-                                <span
-                                  class="text-sm text-text-muted font-medium italic"
-                                  >No results found</span
-                                >
-                              {:else}
-                                <span
-                                  class="text-sm text-text-muted font-medium italic"
-                                  >Searching...</span
-                                >
-                              {/if}
-                            </div>
-                          </div>
-                          {#if !isEmpty}
-                            <div
-                              class="w-5 h-5 border-2 border-border border-t-accent rounded-full animate-spin"
-                            ></div>
-                          {:else}
-                            <svg
-                              class="w-5 h-5 text-text-muted"
-                              viewBox="0 0 24 24"
-                              fill="none"
-                              stroke="currentColor"
+                      <div class="flex items-center gap-3">
+                        <AddonPicture {addonId} class="w-12 h-12 rounded-lg" />
+                        <div>
+                          <h3 class="font-medium text-text-primary">{addonName}</h3>
+                          {#if isEmpty}
+                            <span
+                              class="text-sm text-text-muted font-medium italic"
+                              >No results found</span
                             >
-                              <circle cx="12" cy="12" r="10" />
-                              <path d="M16 16s-1.5-2-4-2-4 2-4 2" />
-                              <line x1="9" y1="9" x2="9.01" y2="9" />
-                              <line x1="15" y1="9" x2="15.01" y2="9" />
-                            </svg>
+                          {:else}
+                            <span
+                              class="text-sm text-text-muted font-medium italic"
+                              >Searching...</span
+                            >
                           {/if}
+                        </div>
+                      </div>
+                      {#if !isEmpty}
+                        <div
+                          class="w-5 h-5 border-2 border-border border-t-accent rounded-full animate-spin"
+                        ></div>
+                      {:else}
+                        <svg
+                          class="w-5 h-5 text-text-muted"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                        >
+                          <circle cx="12" cy="12" r="10" />
+                          <path d="M16 16s-1.5-2-4-2-4 2-4 2" />
+                          <line x1="9" y1="9" x2="9.01" y2="9" />
+                          <line x1="15" y1="9" x2="15.01" y2="9" />
+                        </svg>
+                      {/if}
                     </div>
                   </div>
                 {/each}
@@ -907,7 +900,8 @@
       <div class="relative w-full h-64 overflow-hidden rounded-lg">
         <div class="skeleton w-full h-full"></div>
         <div
-          class="absolute bottom-0 left-0 right-0 bg-linear-to-t from-black/70 to-transparent p-6 rounded-b-lg"
+          class="absolute bottom-0 left-0 right-0 p-6 rounded-b-lg"
+          style="background: linear-gradient(to top, var(--color-overlay-bg), transparent);"
         >
           <div class="skeleton h-10 w-64 mb-2"></div>
           <div class="skeleton h-4 w-96"></div>
@@ -1034,68 +1028,44 @@
 
 <style global>
   @reference "../app.css";
-  #g-descript {
-    @apply text-text-primary bg-transparent;
-  }
-
-  #g-descript img {
-    @apply w-full rounded-lg my-4;
-  }
-
-  #g-descript p {
-    @apply text-sm text-text-primary mb-3 leading-relaxed;
-  }
-
-  #g-descript h1 {
-    @apply text-xl font-archivo font-semibold text-text-primary mb-3;
-  }
-
-  #g-descript h2 {
-    @apply text-lg font-archivo font-medium text-text-primary mb-2;
-  }
-
-  #g-descript strong {
-    @apply font-semibold text-text-primary;
-  }
-
-  #g-descript ul,
-  #g-descript ol {
-    @apply mb-3 ml-4;
-  }
-
-  #g-descript li {
-    @apply text-sm text-text-primary mb-1;
-  }
-
+  #g-descript,
   #g-descript-custom {
     @apply text-text-primary bg-transparent;
   }
 
+  #g-descript img,
   #g-descript-custom img {
     @apply w-full rounded-lg my-4;
   }
 
+  #g-descript p,
   #g-descript-custom p {
     @apply text-sm text-text-primary mb-3 leading-relaxed;
   }
 
+  #g-descript h1,
   #g-descript-custom h1 {
     @apply text-xl font-archivo font-semibold text-text-primary mb-3;
   }
 
+  #g-descript h2,
   #g-descript-custom h2 {
     @apply text-lg font-archivo font-medium text-text-primary mb-2;
   }
 
+  #g-descript strong,
   #g-descript-custom strong {
     @apply font-semibold text-text-primary;
   }
 
+  #g-descript ul,
+  #g-descript ol,
   #g-descript-custom ul,
   #g-descript-custom ol {
     @apply mb-3 ml-4;
   }
 
+  #g-descript li,
   #g-descript-custom li {
     @apply text-sm text-text-primary mb-1;
   }

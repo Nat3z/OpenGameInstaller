@@ -171,14 +171,6 @@
 
 <style>
   @reference "../../app.css";
-  .option-label {
-    @apply block text-lg font-archivo font-semibold text-text-primary mb-1;
-  }
-
-  .option-description {
-    @apply text-sm text-text-secondary mb-4;
-  }
-
   .option-input {
     @apply space-y-2;
   }
@@ -198,7 +190,7 @@
 
   .browse-button {
     @apply px-4 py-2 bg-accent rounded-lg hover:bg-accent-dark transition-colors border-none font-archivo font-semibold;
-    color: var(--theme-overlay-text);
+    color: var(--color-overlay-text);
   }
 
   /* Remove webkit number input spinners */

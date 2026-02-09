@@ -1,6 +1,19 @@
 @import 'tailwindcss';
 
 /* Theme variables: set per data-theme; Tailwind @theme references these via var() */
+/* Status colors (shared across themes; never overridden per-theme) */
+:root {
+  --theme-success: #10b981;
+  --theme-success-hover: #059669;
+  --theme-info: #3b82f6;
+  --theme-info-hover: #2563eb;
+  --theme-error: #ef4444;
+  --theme-error-hover: #dc2626;
+  --theme-warning: #f59e0b;
+  --theme-warning-hover: #d97706;
+  --theme-disabled: #9ca3af;
+}
+
 :root,
 [data-theme='light'] {
   --theme-accent: #428a91;
@@ -22,15 +35,6 @@
   --theme-focus-ring: rgba(66, 138, 145, 0.2);
   --theme-overlay-bg: rgba(0, 0, 0, 0.7);
   --theme-overlay-text: #ffffff;
-  --theme-success: #10b981;
-  --theme-success-hover: #059669;
-  --theme-info: #3b82f6;
-  --theme-info-hover: #2563eb;
-  --theme-error: #ef4444;
-  --theme-error-hover: #dc2626;
-  --theme-warning: #f59e0b;
-  --theme-warning-hover: #d97706;
-  --theme-disabled: #9ca3af;
 }
 
 [data-theme='dark'] {
@@ -53,15 +57,6 @@
   --theme-focus-ring: rgba(94, 231, 224, 0.3);
   --theme-overlay-bg: rgba(0, 0, 0, 0.7);
   --theme-overlay-text: #ffffff;
-  --theme-success: #10b981;
-  --theme-success-hover: #059669;
-  --theme-info: #3b82f6;
-  --theme-info-hover: #2563eb;
-  --theme-error: #ef4444;
-  --theme-error-hover: #dc2626;
-  --theme-warning: #f59e0b;
-  --theme-warning-hover: #d97706;
-  --theme-disabled: #9ca3af;
 }
 
 [data-theme='synthwave'] {
@@ -84,15 +79,6 @@
   --theme-focus-ring: rgba(255, 126, 219, 0.4);
   --theme-overlay-bg: rgba(0, 0, 0, 0.7);
   --theme-overlay-text: #ffffff;
-  --theme-success: #10b981;
-  --theme-success-hover: #059669;
-  --theme-info: #3b82f6;
-  --theme-info-hover: #2563eb;
-  --theme-error: #ef4444;
-  --theme-error-hover: #dc2626;
-  --theme-warning: #f59e0b;
-  --theme-warning-hover: #d97706;
-  --theme-disabled: #9ca3af;
 }
 
 /* Custom theme configuration for Tailwind v4 - references themed variables */
@@ -298,7 +284,7 @@ h2 {
   border-radius: 9999px;
   animation: spin 1s linear infinite;
   margin-bottom: 1rem;
-  filter: drop-shadow(0 2px 4px var(--theme-focus-ring));
+  filter: drop-shadow(0 2px 4px var(--color-focus-ring));
 }
 
 @keyframes spin {

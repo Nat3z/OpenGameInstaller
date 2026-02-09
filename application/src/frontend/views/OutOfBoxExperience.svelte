@@ -994,20 +994,20 @@
 
   .oobe-terminal {
     @apply rounded-lg overflow-hidden border;
-    background-color: var(--theme-bg-secondary);
-    border-color: var(--theme-border);
+    background-color: var(--color-bg-secondary);
+    border-color: var(--color-border);
   }
 
   .terminal-header {
     @apply px-4 py-2 border-b;
-    background-color: var(--theme-surface);
-    border-color: var(--theme-border);
+    background-color: var(--color-surface);
+    border-color: var(--color-border);
   }
 
   .terminal-content {
     @apply p-4 max-h-48 overflow-y-auto;
     scrollbar-width: thin;
-    scrollbar-color: var(--theme-scrollbar) var(--theme-bg-secondary);
+    scrollbar-color: var(--color-scrollbar) var(--color-bg-secondary);
   }
 
   .terminal-content::-webkit-scrollbar {
@@ -1015,7 +1015,7 @@
   }
 
   .terminal-content::-webkit-scrollbar-track {
-    background: var(--theme-bg-secondary);
+    background: var(--color-bg-secondary);
   }
 
   .terminal-content::-webkit-scrollbar-thumb {

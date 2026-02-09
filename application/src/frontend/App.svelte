@@ -616,7 +616,7 @@
           {#if $activeDownloadsCount > 0}
             <div
               class="absolute -bottom-1 -right-1 bg-accent-dark text-xs rounded-full w-5 h-5 flex items-center justify-center font-bold"
-              style="color: var(--theme-overlay-text);"
+              style="color: var(--color-overlay-text);"
             >
               {$activeDownloadsCount}
             </div>
@@ -650,7 +650,7 @@
           {#if $unreadNotificationCount > 0}
             <div
               class="absolute -bottom-1 -right-1 bg-accent-dark text-xs rounded-full w-5 h-5 flex items-center justify-center font-bold"
-              style="color: var(--theme-overlay-text);"
+              style="color: var(--color-overlay-text);"
             >
               {$unreadNotificationCount}
             </div>
@@ -1081,13 +1081,13 @@
   }
 
   ::-webkit-scrollbar-thumb {
-    background-color: var(--theme-scrollbar);
+    background-color: var(--color-scrollbar);
     border-radius: 0.5rem;
     opacity: 0.1;
   }
 
   ::-webkit-scrollbar-thumb:hover {
-    background-color: var(--theme-scrollbar-hover);
+    background-color: var(--color-scrollbar-hover);
     border-radius: 0.5rem;
     opacity: 1;
   }
@@ -1111,7 +1111,7 @@
   }
 
   .nav-button:hover {
-    background-color: var(--theme-accent-lighter);
+    background-color: var(--color-accent-lighter);
     transform: scale(1.05);
   }
 
@@ -1164,7 +1164,7 @@
   }
 
   .addon-header:hover {
-    background-color: var(--theme-accent-lighter);
+    background-color: var(--color-accent-lighter);
   }
 
   .addon-header-content {
@@ -1261,7 +1261,7 @@
 
   .loading-spinner {
     @apply w-8 h-8 border-4 border-accent-lighter border-t-accent rounded-full animate-spin mb-4;
-    filter: drop-shadow(0 2px 4px var(--theme-focus-ring));
+    filter: drop-shadow(0 2px 4px var(--color-focus-ring));
   }
 
   @keyframes spin {
@@ -1284,9 +1284,9 @@
 
   /* Add to your styles */
   .gamepad-focus {
-    outline: 3px solid #4a90e2 !important;
+    outline: 3px solid var(--color-accent) !important;
     outline-offset: 2px;
-    box-shadow: 0 0 10px rgba(74, 144, 226, 0.5);
+    box-shadow: 0 0 10px var(--color-focus-ring);
     transition: all 0.2s ease;
   }
 
@@ -1301,14 +1301,14 @@
     appearance: none;
     width: 100%;
     height: 8px;
-    background: var(--theme-border);
+    background: var(--color-border);
     border-radius: 4px;
     outline: none;
     transition: background 0.3s ease;
   }
 
   input[type='range']:hover {
-    background: var(--theme-border-strong);
+    background: var(--color-border-strong);
   }
 
   input[type='range']::-webkit-slider-thumb {
@@ -1320,13 +1320,13 @@
     border-radius: 50%;
     cursor: pointer;
     transition: all 0.2s ease;
-    box-shadow: 0 2px 4px var(--theme-focus-ring);
+    box-shadow: 0 2px 4px var(--color-focus-ring);
   }
 
   input[type='range']::-webkit-slider-thumb:hover {
     background: var(--color-accent-dark);
     transform: scale(1.1);
-    box-shadow: 0 3px 6px var(--theme-focus-ring);
+    box-shadow: 0 3px 6px var(--color-focus-ring);
   }
 
   input[type='range']::-webkit-slider-thumb:active {
@@ -1341,13 +1341,13 @@
     cursor: pointer;
     border: none;
     transition: all 0.2s ease;
-    box-shadow: 0 2px 4px var(--theme-focus-ring);
+    box-shadow: 0 2px 4px var(--color-focus-ring);
   }
 
   input[type='range']::-moz-range-thumb:hover {
     background: var(--color-accent-dark);
     transform: scale(1.1);
-    box-shadow: 0 3px 6px var(--theme-focus-ring);
+    box-shadow: 0 3px 6px var(--color-focus-ring);
   }
 
   input[type='range']::-moz-range-thumb:active {
@@ -1357,7 +1357,7 @@
   input[type='range']::-moz-range-track {
     width: 100%;
     height: 8px;
-    background: var(--theme-border);
+    background: var(--color-border);
     border-radius: 4px;
   }
 
@@ -1366,10 +1366,10 @@
   }
 
   input[type='range']:focus::-webkit-slider-thumb {
-    box-shadow: 0 0 0 3px var(--theme-focus-ring);
+    box-shadow: 0 0 0 3px var(--color-focus-ring);
   }
 
   input[type='range']:focus::-moz-range-thumb {
-    box-shadow: 0 0 0 3px var(--theme-focus-ring);
+    box-shadow: 0 0 0 3px var(--color-focus-ring);
   }
 </style>

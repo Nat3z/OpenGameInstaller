@@ -245,7 +245,8 @@
     />
     <!-- Overlay with game info -->
     <div
-      class="absolute bottom-0 left-0 right-0 bg-linear-to-t from-black/70 to-transparent p-6"
+      class="absolute bottom-0 left-0 right-0 p-6"
+      style="background: linear-gradient(to top, var(--color-overlay-bg), transparent);"
     >
       <h1 class="text-4xl font-archivo font-bold text-white mb-2">
         {libraryInfo.name}

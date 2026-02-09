@@ -1231,15 +1231,11 @@
   .input-text,
   .input-number,
   .input-select {
-    @apply w-full px-4 py-2 border border-border rounded-lg bg-surface focus:ring-2 focus:ring-accent-light focus:border-accent transition-colors;
-    color: var(--theme-text-primary);
-    background-color: var(--theme-input-bg);
+    @apply w-full px-4 py-2 border border-border rounded-lg bg-input-bg text-text-primary focus:ring-2 focus:ring-accent-light focus:border-accent transition-colors;
   }
 
   .input-textarea {
-    @apply w-full px-4 py-2 border border-border rounded-lg focus:ring-2 focus:ring-accent-light focus:border-accent transition-colors resize-none h-32;
-    color: var(--theme-text-primary);
-    background-color: var(--theme-input-bg);
+    @apply w-full px-4 py-2 border border-border rounded-lg bg-input-bg text-text-primary focus:ring-2 focus:ring-accent-light focus:border-accent transition-colors resize-none h-32;
   }
 
   .file-input-group {
@@ -1252,7 +1248,7 @@
 
   .browse-button {
     @apply px-4 py-2 bg-accent rounded-lg hover:bg-accent-dark transition-colors border-none font-archivo font-semibold;
-    color: var(--theme-overlay-text);
+    color: var(--color-overlay-text);
   }
 
   /* Checkbox Styles */
@@ -1300,55 +1296,55 @@
   }
 
   .action-button.primary {
-    background-color: var(--theme-success);
-    color: var(--theme-overlay-text);
+    background-color: var(--color-success);
+    color: var(--color-overlay-text);
   }
 
   .action-button.primary:hover:not(:disabled) {
-    background-color: var(--theme-success-hover);
+    background-color: var(--color-success-hover);
   }
 
   .action-button.primary:disabled {
-    background-color: var(--theme-disabled);
+    background-color: var(--color-disabled);
   }
 
   .action-button.secondary {
-    background-color: var(--theme-info);
-    color: var(--theme-overlay-text);
+    background-color: var(--color-info);
+    color: var(--color-overlay-text);
   }
 
   .action-button.secondary:hover:not(:disabled) {
-    background-color: var(--theme-info-hover);
+    background-color: var(--color-info-hover);
   }
 
   .action-button.secondary:disabled {
-    background-color: var(--theme-disabled);
+    background-color: var(--color-disabled);
   }
 
   .action-button.danger {
-    background-color: var(--theme-error);
-    color: var(--theme-overlay-text);
+    background-color: var(--color-error);
+    color: var(--color-overlay-text);
   }
 
   .action-button.danger:hover:not(:disabled) {
-    background-color: var(--theme-error-hover);
+    background-color: var(--color-error-hover);
   }
 
   .action-button.danger:disabled {
-    background-color: var(--theme-disabled);
+    background-color: var(--color-disabled);
   }
 
   .action-button.warning {
-    background-color: var(--theme-warning);
-    color: var(--theme-overlay-text);
+    background-color: var(--color-warning);
+    color: var(--color-overlay-text);
   }
 
   .action-button.warning:hover:not(:disabled) {
-    background-color: var(--theme-warning-hover);
+    background-color: var(--color-warning-hover);
   }
 
   .action-button.warning:disabled {
-    background-color: var(--theme-disabled);
+    background-color: var(--color-disabled);
   }
 
   /* No Selection State */
@@ -1390,7 +1386,7 @@
 
   .range-value-input {
     @apply w-16 text-center px-3 py-1 bg-accent-lighter text-accent-dark rounded-lg font-archivo font-semibold text-lg border-none focus:ring-2 focus:ring-accent-light outline-none;
-    background-color: var(--theme-accent-lighter);
+    background-color: var(--color-accent-lighter);
     -webkit-user-select: text;
     -moz-user-select: text;
     -ms-user-select: text;

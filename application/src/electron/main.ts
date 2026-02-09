@@ -103,7 +103,6 @@ export async function sendIPCMessage(channel: string, ...args: any[]) {
     await new Promise<void>((resolve) => {
       const timeout = setTimeout(() => {
         resolvedByTimeout = true;
-        console.warn(`sendIPCMessage('${channel}'): timed out waiting for renderer readiness`);
         resolve();
       }, 30_000);
       readyForEventWaiters.push(() => {

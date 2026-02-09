@@ -117,7 +117,7 @@
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
     class="w-full h-full fixed backdrop-blur-sm flex top-0 left-0 justify-center items-center z-40 transition-all duration-200"
-style="background-color: var(--color-modal-overlay)"
+    style="background-color: var(--color-modal-overlay)"
     onclick={handleOverlayClick}
     onkeydown={handleKeydown}
     tabindex="-1"

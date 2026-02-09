@@ -123,7 +123,7 @@
       });
     }
 
-    // Handle RealDebrid extraction for DDL
+    // Handle RealDebrid extraction for DDL (same RAR flow)
     if (!isTorrent && downloadedItem.usedDebridService === 'realdebrid') {
       // Initialize setup logs for this download
       setupLogs.update((logs) => ({

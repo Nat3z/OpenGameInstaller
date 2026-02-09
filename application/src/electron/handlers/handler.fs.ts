@@ -178,6 +178,7 @@ export default function handler() {
                 });
               }
               reject(new Error('Failed to extract RAR file'));
+              return;
             }
             console.log(stdout);
             console.log(stderr);
@@ -201,7 +202,7 @@ export default function handler() {
           log: ['Using unrar to extract RAR files...'],
         });
       }
-      await new Promise<void>((resolve) => {
+      await new Promise<void>((resolve, reject) => {
         const unrarProcess = spawn('unrar', [
           'x',
           '-y',
@@ -244,7 +245,10 @@ export default function handler() {
                 log: [`Unrar process failed with exit code ${code}`],
               });
             }
-          } else if (downloadId) {
+            reject(new Error(`Unrar process failed with exit code ${code}`));
+            return;
+          }
+          if (downloadId) {
             sendIPCMessage('setup:log', {
               id: downloadId,
               log: ['RAR extraction completed successfully'],
@@ -324,6 +328,7 @@ export default function handler() {
                     });
                   }
                   reject(new Error('Failed to extract ZIP file'));
+                  return;
                 }
                 console.log(stdout);
                 console.log(stderr);
@@ -405,6 +410,7 @@ export default function handler() {
                   });
                 }
                 reject(new Error('Failed to extract ZIP file'));
+                return;
               }
               if (downloadId) {
                 sendIPCMessage('setup:log', {

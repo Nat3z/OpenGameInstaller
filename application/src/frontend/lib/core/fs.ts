@@ -87,5 +87,5 @@ export function basename(path: string): string {
   const idxFwd = base.lastIndexOf('/');
   const idxBack = base.lastIndexOf('\\');
   const idx = Math.max(idxFwd, idxBack);
-  return idx === -1 ? cleaned : cleaned.slice(idx + 1);
+  return idx === -1 ? base : base.slice(idx + 1);
 }

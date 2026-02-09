@@ -16,12 +16,15 @@ export abstract class BaseService {
   /**
    * Execute the download flow for the given result. Concrete implementations
    * should move the logic that currently lives in lifecycle.ts into this
-   * method.
+   * method. When called recursively (e.g. from RequestService), htmlButton may
+   * be passed so the button element is available even when event.currentTarget
+   * is null.
    */
   abstract startDownload(
     result: SearchResultWithAddon,
     appID: number,
-    event: MouseEvent
+    event: MouseEvent | null,
+    htmlButton?: HTMLButtonElement
   ): Promise<void>;
 
   queueRequestDownload(

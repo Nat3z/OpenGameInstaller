@@ -16,11 +16,16 @@ export class EmptyService extends BaseService {
   async startDownload(
     result: SearchResultWithAddon,
     appID: number,
-    event: MouseEvent
+    event: MouseEvent | null,
+    htmlButton?: HTMLButtonElement
   ): Promise<void> {
-    if (event === null) return;
-    if (event.target === null) return;
-    const htmlButton = event.target as HTMLButtonElement;
+    const resolvedButton = htmlButton ?? event?.currentTarget ?? null;
+
+    // UI-specific actions: set button to "Setting up..." BEFORE running async setup
+    if (resolvedButton instanceof HTMLButtonElement) {
+      resolvedButton.textContent = 'Setting up...';
+      resolvedButton.disabled = true;
+    }
 
     // Generate a unique ID for this download
     const downloadId = Math.random().toString(36).substring(2, 15);
@@ -35,7 +40,7 @@ export class EmptyService extends BaseService {
       progress: 100,
       appID,
       downloadSize: 0,
-      files: (result as any).files || [],
+      files: (result as unknown as { files?: any[] }).files || [],
     };
     // insert to store
     currentDownloads.update((downloads) => {
@@ -43,24 +48,28 @@ export class EmptyService extends BaseService {
     });
     updateDownloadStatus(downloadId, downloadedItem);
 
-    // Check if this is an update download and route to appropriate setup function
-    if (downloadedItem.isUpdate) {
-      await runSetupAppUpdate(
-        downloadedItem,
-        getDownloadPath() + '/' + result.name + '/',
-        false,
-        {}
-      );
-    } else {
-      await runSetupApp(
-        downloadedItem,
-        getDownloadPath() + '/' + result.name + '/',
-        false,
-        {}
-      );
+    try {
+      // Check if this is an update download and route to appropriate setup function
+      if (downloadedItem.isUpdate) {
+        await runSetupAppUpdate(
+          downloadedItem,
+          getDownloadPath() + '/' + result.name + '/',
+          false,
+          {}
+        );
+      } else {
+        await runSetupApp(
+          downloadedItem,
+          getDownloadPath() + '/' + result.name + '/',
+          false,
+          {}
+        );
+      }
+    } finally {
+      if (resolvedButton instanceof HTMLButtonElement) {
+        resolvedButton.textContent = 'Download';
+        resolvedButton.disabled = false;
+      }
     }
-
-    htmlButton.textContent = 'Setting up...';
-    htmlButton.disabled = true;
   }
 }

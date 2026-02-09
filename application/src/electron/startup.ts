@@ -49,10 +49,12 @@ async function fetch_STLPath() {
     exec('which steamtinkerlaunch', (error, stdout, stderr) => {
       if (error) {
         console.error(`exec error: ${error}`);
+        resolve();
         return;
       }
       if (stderr) {
         console.error(`stderr: ${stderr}`);
+        resolve();
         return;
       }
 
@@ -497,8 +499,9 @@ export async function removeCachedAppUpdates() {
     return semver.compare(aVersion, bVersion);
   });
 
-  // remove all but the latest of 3 cached updates
-  for (const update of sortedUpdates.slice(3)) {
+  // remove all but the newest 3 cached updates (keep the last 3)
+  const toRemove = sortedUpdates.slice(0, Math.max(0, sortedUpdates.length - 3));
+  for (const update of toRemove) {
     await fsPromises.rm(join(tempFolder, update), {
       recursive: true,
       force: true,
@@ -506,8 +509,9 @@ export async function removeCachedAppUpdates() {
   }
 
   // remove all cached updates that are older than 30 days
-  // Only check the remaining updates (the latest 3)
-  for (const update of sortedUpdates.slice(0, 3)) {
+  // Only check the remaining updates (the newest 3)
+  const toKeep = sortedUpdates.slice(Math.max(0, sortedUpdates.length - 3));
+  for (const update of toKeep) {
     try {
       const stats = await fsPromises.stat(join(tempFolder, update));
       const diffTime = Math.abs(Date.now() - stats.mtime.getTime());

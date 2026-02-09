@@ -31,7 +31,7 @@ Go to the [latest release](https://github.com/Nat3z/OpenGameInstaller/releases/l
 
 # What is this repository?
 
-This is the npm workspace which stores all of the packages required for OpenGameInstaller, including the front-facing GUI `application`, a web-interface for docs `web`, a library to interface with the Real-Debrid API `packages/real-debrid`, and a library to interface with OpenGameInstaller's addons platform `packages/ogi-addon`.
+This is the npm workspace which stores all of the packages required for OpenGameInstaller, including the front-facing GUI `application`, a web-interface for docs `web`, a library to interface with the Real-Debrid API `packages/real-debrid`, a library to interface with the AllDebrid API `packages/all-debrid`, and a library to interface with OpenGameInstaller's addons platform `packages/ogi-addon`.
 
 # How do I build addons?
 

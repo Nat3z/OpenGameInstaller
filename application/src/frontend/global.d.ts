@@ -9,7 +9,17 @@ type $Hosts = import('real-debrid-js').$Hosts;
 type $UnrestrictLink = import('real-debrid-js').$UnrestrictLink;
 type $UserInfo = import('real-debrid-js').$UserInfo;
 type $TorrentInfo = import('real-debrid-js').$TorrentInfo;
+type $AllDebridTorrentInfo = import('all-debrid-js').$AllDebridTorrentInfo;
+type $AllDebridUserInfo = import('all-debrid-js').$UserInfo;
+type $AllDebridHosts = import('all-debrid-js').$Hosts;
+type $AddMagnetOrTorrent = import('all-debrid-js').$AddMagnetOrTorrent;
 type $GamepadNavigator = import('./managers/GamepadManager').GamepadNavigator;
+
+/** Shared type for app insertion (insertApp) to avoid duplicating LibraryInfo + redistributables. */
+type InsertAppInfo = LibraryInfo & {
+  redistributables?: { name: string; path: string }[];
+};
+
 interface Window {
   electronAPI: {
     fs: {
@@ -54,7 +64,7 @@ interface Window {
       };
     };
     realdebrid: {
-      setKey: (key: string) => Promise<boolean>;
+      setKey: (key: string) => Promise<string>;
       getUserInfo: () => Promise<$UserInfo>;
       unrestrictLink: (link: string) => Promise<$UnrestrictLink>;
       getHosts: () => Promise<$Hosts[]>;
@@ -63,6 +73,23 @@ interface Window {
       selectTorrent: (torrent: string) => Promise<boolean>;
       isTorrentReady: (id: string) => Promise<boolean>;
       getTorrentInfo: (id: string) => Promise<$TorrentInfo>;
+      updateKey: () => Promise<boolean>;
+    };
+    alldebrid: {
+      setKey: (key: string) => Promise<string>;
+      getUserInfo: () => Promise<$AllDebridUserInfo>;
+      unrestrictLink: (link: string) => Promise<{
+        link: string;
+        download?: string;
+        filename?: string;
+        filesize?: number;
+      }>;
+      getHosts: () => Promise<$AllDebridHosts>;
+      addMagnet: (url: string, host?: string) => Promise<$AddMagnetOrTorrent>;
+      addTorrent: (torrent: string) => Promise<$AddMagnetOrTorrent | null>;
+      selectTorrent: () => Promise<boolean>;
+      isTorrentReady: (id: string) => Promise<boolean>;
+      getTorrentInfo: (id: string) => Promise<$AllDebridTorrentInfo>;
       updateKey: () => Promise<boolean>;
     };
     torbox: {
@@ -106,9 +133,7 @@ interface Window {
       ) => Promise<{ status: number; success: boolean; data: T }>;
       inputSend: (id: string, data: any) => Promise<void>;
       insertApp: (
-        info: LibraryInfo & {
-          redistributables?: { name: string; path: string }[];
-        }
+        info: InsertAppInfo
       ) => Promise<
         | 'setup-failed'
         | 'setup-success'

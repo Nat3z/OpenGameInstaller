@@ -182,7 +182,7 @@ export default function OOBEHandler() {
                 fileStream.close();
 
                 fs.writeFileSync(
-                  'git_install.ini',
+                  'git_options.ini',
                   `
     [Setup]
     Lang=default

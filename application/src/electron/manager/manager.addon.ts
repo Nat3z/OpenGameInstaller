@@ -26,20 +26,61 @@ function stripAnsiCodes(input: string): string {
   const ansiRegex = /\x1b\[[0-9;]*m/g;
   return input.replace(ansiRegex, '');
 }
-export async function setupAddon(addonPath: string): Promise<boolean> {
-  const addonConfig = await readFile(join(addonPath, 'addon.json'), 'utf-8');
-  const addonName = addonPath.split(/\/|\\/).pop() ?? 'unknown-addon';
-  if (!addonConfig) {
+
+async function loadAddonConfig(
+  addonPath: string,
+  addonName: string
+): Promise<z.infer<typeof AddonFileConfigurationSchema> | null> {
+  let addonConfig: string;
+  try {
+    addonConfig = await readFile(join(addonPath, 'addon.json'), 'utf-8');
+  } catch (err: any) {
+    if (err.code === 'ENOENT') {
+      sendNotification({
+        type: 'error',
+        message: `Addon configuration not found for ${addonName}`,
+        id: Math.random().toString(36).substring(7),
+      });
+    } else {
+      sendNotification({
+        type: 'error',
+        message: `Error reading addon configuration for ${addonName}: ${err.message}`,
+        id: Math.random().toString(36).substring(7),
+      });
+    }
+    return null;
+  }
+
+  let addonJSON: any;
+  try {
+    addonJSON = JSON.parse(addonConfig);
+  } catch (err: any) {
     sendNotification({
       type: 'error',
-      message:
-        'Addon configuration not found for ' + addonPath.split(/[/\\]/).pop(),
+      message: `Failed to parse addon configuration JSON for ${addonName}: ${err.message}`,
       id: Math.random().toString(36).substring(7),
     });
+    return null;
+  }
+
+  try {
+    return AddonFileConfigurationSchema.parse(addonJSON);
+  } catch (err: any) {
+    sendNotification({
+      type: 'error',
+      message: `Addon configuration validation failed for ${addonName}: ${err.message}`,
+      id: Math.random().toString(36).substring(7),
+    });
+    return null;
+  }
+}
+export async function setupAddon(addonPath: string): Promise<boolean> {
+  const addonName = addonPath.split(/\/|\\/).pop() ?? 'unknown-addon';
+
+  const addon = await loadAddonConfig(addonPath, addonName);
+  if (!addon) {
     return false;
   }
-  const addonJSON: any = JSON.parse(addonConfig);
-  const addon = AddonFileConfigurationSchema.parse(addonJSON);
 
   let setupLogs = '';
   sendNotification({
@@ -75,7 +116,12 @@ Running pre-setup script for ${addonName}...
 Running setup script for ${addonName}...
 > ${addon.scripts.setup}
       `;
-      await executeScript('setup', addon.scripts.setup, addonPath, addonName);
+      setupLogs += await executeScript(
+        'setup',
+        addon.scripts.setup,
+        addonPath,
+        addonName
+      );
     } catch (e) {
       sendNotification({
         type: 'error',
@@ -92,7 +138,7 @@ Running setup script for ${addonName}...
 Running post-setup script for ${addonName}...
 > ${addon.scripts.postSetup}
       `;
-      await executeScript(
+      setupLogs += await executeScript(
         'post-setup',
         addon.scripts.postSetup,
         addonPath,
@@ -119,20 +165,14 @@ export async function startAddon(
   addonPath: string,
   addonLink: string
 ): Promise<AddonConnection | undefined> {
-  const addonConfig = await readFile(join(addonPath, 'addon.json'), 'utf-8');
   // remove any trailing slashes
   const addonName =
     addonPath.replace(/\/$/, '').split(/\/|\\/).pop() ?? 'unknown-addon';
-  if (!addonConfig) {
-    sendNotification({
-      type: 'error',
-      message: 'Addon configuration not found for ' + addonName,
-      id: Math.random().toString(36).substring(7),
-    });
+
+  const addon = await loadAddonConfig(addonPath, addonName);
+  if (!addon) {
     return;
   }
-  const addonJSON: any = JSON.parse(addonConfig);
-  const addon = AddonFileConfigurationSchema.parse(addonJSON);
   try {
     executeScript(
       'run',
@@ -211,9 +251,9 @@ async function executeScript(
     if (process.platform === 'win32') {
       if (!process.env.USERPROFILE) {
         sendNotification({
+          type: 'error',
           message: 'USERPROFILE is not set. Cannot run scripts.',
           id: Math.random().toString(36).substring(7),
-          type: 'error',
         });
         return reject();
       }
@@ -221,9 +261,9 @@ async function executeScript(
     } else {
       if (!process.env.HOME) {
         sendNotification({
+          type: 'error',
           message: 'HOME is not set. Cannot run scripts.',
           id: Math.random().toString(36).substring(7),
-          type: 'error',
         });
         return reject();
       }

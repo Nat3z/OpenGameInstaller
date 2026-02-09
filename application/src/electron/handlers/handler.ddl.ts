@@ -566,7 +566,7 @@ class Download {
     }
 
     // Set part status to merging before merging chunk files
-    part.status = 'merging';
+    (part as any).status = 'merging';
     this.sendProgress({ progress: this.currentBytes / this.totalSize });
 
     // Merge chunk files

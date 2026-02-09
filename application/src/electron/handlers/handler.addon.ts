@@ -344,13 +344,17 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
     }
 
     const results = await Promise.allSettled(updatePromises);
-    let failed = false;
+    let failedCount = 0;
     results.forEach((result, index) => {
       if (result.status === 'rejected') {
-        failed = true;
+        failedCount++;
         console.error(`Addon update failed for ${addons[index]}:`, result.reason);
       }
     });
+
+    if (failedCount > 0) {
+      console.log(`${failedCount} addons failed to update.`);
+    }
 
     // restart all of the addons
     restartAddonServer();

@@ -243,7 +243,7 @@ export async function deleteDownloadedItems(id: string) {
         filesToDelete.push(downloadFolder + '/' + file.name);
       }
     }
-  } else if (downloadInfo.filename) {
+  } else if ('filename' in downloadInfo && downloadInfo.filename) {
     // Single file download - delete the specific file
     filesToDelete.push(downloadFolder + '/' + downloadInfo.filename);
   }

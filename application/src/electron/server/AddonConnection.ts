@@ -445,14 +445,14 @@ export class AddonConnection {
       
       // Clean up pending responses on close/error
       this.ws.on('close', () => {
-        for (const [id, pending] of this.pendingResponses.entries()) {
+        for (const [_, pending] of this.pendingResponses.entries()) {
           pending.reject(new Error('Websocket closed'));
         }
         this.pendingResponses.clear();
       });
       
       this.ws.on('error', () => {
-        for (const [id, pending] of this.pendingResponses.entries()) {
+        for (const [_, pending] of this.pendingResponses.entries()) {
           pending.reject(new Error('Websocket error'));
         }
         this.pendingResponses.clear();

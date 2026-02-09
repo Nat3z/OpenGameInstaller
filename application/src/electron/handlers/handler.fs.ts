@@ -202,7 +202,7 @@ export default function handler() {
           log: ['Using unrar to extract RAR files...'],
         });
       }
-      await new Promise<void>((resolve) => {
+      await new Promise<void>((resolve, reject) => {
         const unrarProcess = spawn('unrar', [
           'x',
           '-y',

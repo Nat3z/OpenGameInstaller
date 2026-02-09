@@ -20,7 +20,7 @@ export class RequestService extends BaseService {
     htmlButton?: HTMLButtonElement
   ): Promise<void> {
     const button = htmlButton ?? (event?.currentTarget ?? null);
-    const resolvedButton = button instanceof HTMLButtonElement ? button : null;
+    const resolvedButton = button instanceof HTMLButtonElement ? button : undefined;
 
     // Create a local ID for tracking, similar to real-debrid cases
     const localID = Math.floor(Math.random() * 1000000);

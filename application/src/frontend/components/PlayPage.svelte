@@ -283,7 +283,7 @@
         onclick={() => {
           updatesManager.removeAppUpdate(libraryInfo.appID);
         }}
-        class="px-3 py-3 flex border-none rounded-lg justify-center bg-error-border text-error-text hover:opacity-90 items-center gap-2 disabled:bg-border-muted disabled:cursor-not-allowed transition-colors duration-200"
+        class="px-3 py-3 flex border-none rounded-lg justify-center bg-error-bg text-error-text hover:opacity-90 items-center gap-2 disabled:bg-border-muted disabled:cursor-not-allowed transition-colors duration-200"
       >
         <svg
           xmlns="http://www.w3.org/2000/svg"

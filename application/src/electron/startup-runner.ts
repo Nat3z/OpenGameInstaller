@@ -35,7 +35,7 @@ function createSplashWindow(): BrowserWindow {
       preload: join(app.getAppPath(), 'out/preload/splash.mjs'),
     },
   });
-  splash.loadURL('file://' + join(app.getAppPath(), 'public', 'splash.html'));
+  splash.loadFile(join(app.getAppPath(), 'public', 'splash.html'));
   splash.once('ready-to-show', () => {
     splash.show();
   });
@@ -122,8 +122,8 @@ export async function runStartupTasks(
 
   // Remove cached app updates
   updateSplashStatus('Cleaning up...');
-  await removeCachedAppUpdates().catch(() => {
-    console.error('[chore] Failed to remove cached app updates');
+  await removeCachedAppUpdates().catch((err) => {
+    console.error('[chore] Failed to remove cached app updates', err);
   });
 
   // If addons need reinstallation (node_modules were skipped during backup)

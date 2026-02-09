@@ -19,7 +19,7 @@
     secondary:
       'btn btn-secondary bg-accent-lighter text-accent-dark hover:bg-accent-light focus:ring-accent border border-accent-light',
     danger:
-      'btn btn-danger bg-error-border text-error-text hover:opacity-90 focus:ring-error-border border-none',
+      'btn btn-danger bg-error-bg text-error-text hover:opacity-90 focus:ring-error-border border-none',
     success:
       'btn btn-success bg-success-bg text-success-text hover:opacity-90 focus:ring-success-bg border-none',
   };

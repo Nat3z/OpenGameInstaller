@@ -89,9 +89,11 @@ let handlersRegistered = false;
  * @param args - Arguments to send.
  */
 export async function sendIPCMessage(channel: string, ...args: any[]) {
+  let resolvedByTimeout = false;
   if (!isReadyForEvents) {
     await new Promise<void>((resolve) => {
       const timeout = setTimeout(() => {
+        resolvedByTimeout = true;
         console.warn(`sendIPCMessage('${channel}'): timed out waiting for renderer readiness`);
         resolve();
       }, 30_000);
@@ -100,6 +102,9 @@ export async function sendIPCMessage(channel: string, ...args: any[]) {
         resolve();
       });
     });
+  }
+  if (resolvedByTimeout) {
+    console.warn(`sendIPCMessage('${channel}'): message may not have been delivered (renderer never became ready)`);
   }
   mainWindow?.webContents.send(channel, ...args);
 }
@@ -152,11 +157,11 @@ function registerHandlers() {
   }
   handlersRegistered = true;
 
-  ipcMain.on('get-version', async (event) => {
+  ipcMain.on('get-version', (event) => {
     event.returnValue = VERSION;
   });
 
-  ipcMain.on('client-ready-for-events', async () => {
+  ipcMain.on('client-ready-for-events', () => {
     isReadyForEvents = true;
     for (const waiter of readyForEventWaiters) {
       waiter();
@@ -199,26 +204,25 @@ function registerHandlers() {
  * runs addon update check and library conversion. Optionally opens dev tools if ogiDebug() is true.
  */
 function onMainAppReady() {
+  if (!mainWindow) return;
   closeSplashWindow();
 
-  AppEventHandler(mainWindow!!);
+  AppEventHandler(mainWindow);
   FSEventHandler();
-  RealdDebridHandler(mainWindow!!);
-  TorrentHandler(mainWindow!!);
-  DirectDownloadHandler(mainWindow!!);
+  RealdDebridHandler(mainWindow);
+  TorrentHandler(mainWindow);
+  DirectDownloadHandler(mainWindow);
   AddonRestHandler();
-  AddonManagerHandler(mainWindow!!);
+  AddonManagerHandler(mainWindow);
   OOBEHandler();
 
   console.log('showing window');
-  mainWindow!!.show();
-  mainWindow!!.focus();
+  mainWindow.show();
+  mainWindow.focus();
 
-  if (mainWindow) {
-    checkForAddonUpdates(mainWindow);
-  }
+  checkForAddonUpdates(mainWindow);
   if (ogiDebug()) {
-    mainWindow!!.webContents.openDevTools();
+    mainWindow.webContents.openDevTools();
   }
   if (!isSecurityCheckEnabled) {
     sendNotification({
@@ -231,14 +235,14 @@ function onMainAppReady() {
 
   convertLibrary();
 
-  mainWindow!!.webContents.setWindowOpenHandler((details) => {
+  mainWindow.webContents.setWindowOpenHandler((details) => {
     shell.openExternal(details.url);
     return { action: 'deny' };
   });
 
-  mainWindow!!.webContents.on('devtools-opened', () => {
-    if (!isDev() && !ogiDebug())
-      mainWindow!!.webContents.closeDevTools();
+  const win = mainWindow;
+  mainWindow.webContents.on('devtools-opened', () => {
+    if (win && !isDev() && !ogiDebug()) win.webContents.closeDevTools();
   });
 }
 
@@ -290,6 +294,7 @@ function createWindow() {
 async function runPostSplashStartup() {
   if (!mainWindow) return;
   await runStartupTasks(mainWindow);
+  if (!mainWindow) return;
   if (isDev()) {
     mainWindow.loadURL(
       'http://localhost:8080/?secret=' + applicationAddonSecret
@@ -358,6 +363,7 @@ app.on('activate', async function () {
   // On macOS it's common to re-create a window in the app when the
   // dock icon is clicked and there are no other windows open.
   if (mainWindow === null) {
+    isReadyForEvents = false;
     createWindow();
     await runPostSplashStartup();
   }

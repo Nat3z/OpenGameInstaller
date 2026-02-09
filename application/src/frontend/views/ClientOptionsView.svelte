@@ -1292,7 +1292,7 @@
   }
 
   .action-button.danger {
-    @apply bg-error-border text-error-text hover:opacity-90 disabled:bg-border-muted;
+    @apply bg-error-bg text-error-text hover:opacity-90 disabled:bg-border-muted;
   }
 
   .action-button.warning {

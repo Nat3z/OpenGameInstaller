@@ -149,7 +149,7 @@ export class TorrentService extends BaseService {
                 queuePosition: 999,
                 appID,
                 downloadSize: 0,
-                originalDownloadURL: result.downloadURL, // Store original URL for resume
+                originalDownloadURL: result.downloadURL,
               },
             ];
           });

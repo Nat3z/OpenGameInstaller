@@ -2,7 +2,7 @@
   import type { LibraryInfo } from 'ogi-addon';
   import { onDestroy, onMount } from 'svelte';
   import PlayPage from '../components/PlayPage.svelte';
-  import { gameFocused } from '../store';
+  import { gameFocused, createNotification } from '../store';
   import { writable, type Writable } from 'svelte/store';
   import Image from '../components/Image.svelte';
   import {
@@ -14,7 +14,6 @@
   } from '../lib/core/library';
   import { gameUpdatesCheckState, updatesManager } from '../states.svelte';
   import { checkGameUpdates } from '../lib/updates/checkGameUpdates';
-  import { createNotification } from '../store';
   import UpdateIcon from '../Icons/UpdateIcon.svelte';
 
   let library: LibraryInfo[] = $state([]);
@@ -84,9 +83,10 @@
       const result = await checkGameUpdates();
       updatesManager.setLastGameUpdatesCheckResult(result);
       if (result.updatesFound > 0) {
+        const label = result.updatesFound === 1 ? 'update' : 'updates';
         createNotification({
           type: 'info',
-          message: `${result.updatesFound} game update(s) available.`,
+          message: `${result.updatesFound} game ${label} available.`,
           id: `game-updates-${Date.now()}`,
         });
       }
@@ -212,7 +212,7 @@
                 {#if gameUpdatesCheckState.lastResult !== null && !gameUpdatesCheckState.isChecking}
                   <span class="text-sm text-accent">
                     {#if gameUpdatesCheckState.lastResult.updatesFound > 0}
-                      {gameUpdatesCheckState.lastResult.updatesFound} update(s) available
+                      {gameUpdatesCheckState.lastResult.updatesFound} {gameUpdatesCheckState.lastResult.updatesFound === 1 ? 'update' : 'updates'} available
                     {:else}
                       All games up to date
                     {/if}

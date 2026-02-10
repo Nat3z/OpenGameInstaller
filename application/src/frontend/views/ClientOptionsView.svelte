@@ -687,6 +687,8 @@
                 </div>
                 {#await window.electronAPI.getVersion() then version}
                   <p class="about-version">v{version}</p>
+                {:catch}
+                  <p class="about-version">Version unavailable</p>
                 {/await}
               </div>
             </div>

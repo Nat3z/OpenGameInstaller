@@ -178,7 +178,7 @@ function onMainAppReady() {
   });
 
   mainWindow.webContents.on('devtools-opened', () => {
-    if (!isDev() && !ogiDebug()) mainWindow.webContents.closeDevTools();
+    if (!isDev() && !ogiDebug()) mainWindow?.webContents.closeDevTools();
   });
 
   app.on('web-contents-created', (_, contents) => {
@@ -247,7 +247,7 @@ function createWindow() {
 
   // First ready-to-show: splash is ready; show window so user sees loading
   mainWindow.once('ready-to-show', () => {
-    mainWindow!!.show();
+    mainWindow?.show();
   });
 }
 
@@ -261,14 +261,19 @@ app.on('ready', async () => {
   // Run startup tasks; splash updates go to the main window
   await runStartupTasks(mainWindow!);
 
+  if (!mainWindow) {
+    console.error('mainWindow was closed during startup tasks');
+    return;
+  }
+
   // Load the main app into the same window (replaces splash)
   if (isDev()) {
-    mainWindow!!.loadURL(
+    mainWindow.loadURL(
       DEV_APP_ORIGIN + '/?secret=' + applicationAddonSecret
     );
     console.log('Running in development');
   } else {
-    mainWindow!!.loadURL(
+    mainWindow.loadURL(
       'file://' +
         join(app.getAppPath(), 'out', 'renderer', 'index.html') +
         '?secret=' +
@@ -276,7 +281,7 @@ app.on('ready', async () => {
     );
   }
 
-  mainWindow!!.once('ready-to-show', onMainAppReady);
+  mainWindow.once('ready-to-show', onMainAppReady);
 
   server.listen(port, () => {
     console.log(`Addon Server is running on http://localhost:${port}`);

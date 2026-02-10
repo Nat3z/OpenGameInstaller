@@ -32,13 +32,6 @@
   class="font-archivo rounded-lg px-6 py-2.5 text-base font-semibold shadow transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-accent disabled:opacity-60 disabled:cursor-not-allowed {variantClasses[
     variant
   ]} {className}"
-  style={variant === 'danger'
-    ? `background-color: var(--color-error); color: var(--color-overlay-text);`
-    : variant === 'success'
-      ? `background-color: var(--color-success); color: var(--color-overlay-text);`
-      : variant === 'primary'
-        ? `color: var(--color-overlay-text);`
-        : ''}
   onmouseenter={(e) => {
     if (!disabled && (variant === 'danger' || variant === 'success')) {
       e.currentTarget.style.backgroundColor =
@@ -62,6 +55,11 @@
 <style>
   .btn-primary {
     color: var(--color-overlay-text);
+    background-color: var(--color-accent);
+  }
+  .btn-primary:hover:not(:disabled),
+  .btn-primary:focus-visible {
+    background-color: var(--color-accent-dark);
   }
 
   .btn-danger {

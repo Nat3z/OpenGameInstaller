@@ -1257,10 +1257,6 @@
     @apply flex flex-col items-center justify-center py-12 text-center bg-accent-lighter rounded-lg mb-4;
   }
 
-  .loading-message {
-    @apply flex flex-col items-center justify-center py-12 text-center;
-  }
-
   .loading-spinner {
     @apply w-8 h-8 border-4 border-accent-lighter border-t-accent rounded-full animate-spin mb-4 drop-shadow-md drop-shadow-focus-ring;
   }
@@ -1282,18 +1278,4 @@
   .content-view {
     @apply absolute inset-0 w-full;
   }
-
-  /* Add to your styles */
-  .gamepad-focus {
-    outline: 3px solid var(--color-accent) !important;
-    outline-offset: 2px;
-    box-shadow: 0 0 10px var(--color-focus-ring);
-    transition: all 0.2s ease;
-  }
-
-  /* Hide default focus outline when using gamepad */
-  .gamepad-focus:focus {
-    outline: none;
-  }
-
 </style>

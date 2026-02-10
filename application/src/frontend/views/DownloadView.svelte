@@ -235,14 +235,18 @@
       }
     }
 
-    // Color scale using darker accent colors only (avoid very light tones for readability)
-    const accentPalette = ['#2d626a', '#428a91', '#2d626a', '#428a91'];
+    // Color scale from theme (accent and accent-dark)
+    const style = getComputedStyle(document.documentElement);
+    const accent = style.getPropertyValue('--theme-accent').trim() || '#428a91';
+    const accentDark = style.getPropertyValue('--theme-accent-dark').trim() || '#2d626a';
+    const borderColor = style.getPropertyValue('--theme-border').trim() || '#e5e7eb';
+    const accentPalette = [accentDark, accent, accentDark, accent];
     const colorScale = d3
       .scaleOrdinal()
       .domain(idsOrdered)
       .range(accentPalette.slice(0, idsOrdered.length));
 
-    // Add grid lines
+    // Add grid lines (theme border)
     g.selectAll('.grid-line-y')
       .data(yScale.ticks())
       .enter()
@@ -252,7 +256,7 @@
       .attr('x2', width)
       .attr('y1', (d) => yScale(d))
       .attr('y2', (d) => yScale(d))
-      .attr('stroke', '#e5e7eb')
+      .attr('stroke', borderColor)
       .attr('stroke-width', 0.5)
       .attr('opacity', 0.7);
 
@@ -308,7 +312,7 @@
         />
         {#if targetDownload.queuePosition && targetDownload.queuePosition > 1}
           <div
-            class="absolute top-2 left-2 bg-accent text-white text-xs font-bold px-2 py-1 rounded-full shadow-lg"
+            class="absolute top-2 left-2 bg-accent text-overlay-text text-xs font-bold px-2 py-1 rounded-full shadow-lg"
           >
             Queued #{targetDownload.queuePosition}
           </div>
@@ -322,13 +326,13 @@
           {@const stats = getDownloadStatistics()}
           {#if stats}
             <div
-              class="mt-4 p-4 bg-accent-lighter rounded-lg border border-accent-light"
+              class="mt-4 p-4 bg-accent-lighter rounded-lg border border-border"
             >
               <div class="grid grid-cols-2 gap-4">
                 <div
-                  class="flex items-center gap-3 p-3 bg-surface rounded-lg border border-accent-light shadow-sm hover:shadow-md transition-all duration-200"
+                  class="flex items-center gap-3 p-3 bg-surface rounded-lg border border-border shadow-sm hover:shadow-md transition-all duration-200"
                 >
-                  <div class="p-2 bg-accent text-white rounded-lg">
+                  <div class="p-2 bg-accent text-overlay-text rounded-lg">
                     <svg
                       fill="currentColor"
                       xmlns="http://www.w3.org/2000/svg"
@@ -354,9 +358,9 @@
                   </div>
                 </div>
                 <div
-                  class="flex items-center gap-3 p-3 bg-surface rounded-lg border border-accent-light shadow-sm hover:shadow-md transition-all duration-200"
+                  class="flex items-center gap-3 p-3 bg-surface rounded-lg border border-border shadow-sm hover:shadow-md transition-all duration-200"
                 >
-                  <div class="p-2 bg-accent text-white rounded-lg">
+                  <div class="p-2 bg-accent text-overlay-text rounded-lg">
                     <svg
                       xmlns="http://www.w3.org/2000/svg"
                       height="24"
@@ -383,9 +387,9 @@
                 </div>
 
                 <div
-                  class="flex items-center gap-3 p-3 bg-surface rounded-lg border border-accent-light shadow-sm hover:shadow-md transition-all duration-200"
+                  class="flex items-center gap-3 p-3 bg-surface rounded-lg border border-border shadow-sm hover:shadow-md transition-all duration-200"
                 >
-                  <div class="p-2 bg-accent text-white rounded-lg">
+                  <div class="p-2 bg-accent text-overlay-text rounded-lg">
                     <svg
                       xmlns="http://www.w3.org/2000/svg"
                       enable-background="new 0 0 20 20"
@@ -421,9 +425,9 @@
                 </div>
 
                 <div
-                  class="flex items-center gap-3 p-3 bg-surface rounded-lg border border-accent-light shadow-sm hover:shadow-md transition-all duration-200"
+                  class="flex items-center gap-3 p-3 bg-surface rounded-lg border border-border shadow-sm hover:shadow-md transition-all duration-200"
                 >
-                  <div class="p-2 bg-accent text-white rounded-lg">
+                  <div class="p-2 bg-accent text-overlay-text rounded-lg">
                     <svg
                       fill="currentColor"
                       xmlns="http://www.w3.org/2000/svg"
@@ -684,7 +688,7 @@
                 </button>
               {:else if download.status === 'downloading' && download.queuePosition && download.queuePosition > 1}
                 <button
-                  class="text-accent-dark border-none p-4 rounded-lg bg-accent-light hover:bg-accent-dark/50 transition-colors"
+                  class="text-overlay-text border-none p-4 rounded-lg bg-accent hover:bg-accent-dark transition-colors"
                   onclick={() => window.electronAPI.queue.cancel(download.id)}
                   aria-label="Cancel Download"
                 >
@@ -703,7 +707,7 @@
               {:else if download.status === 'downloading'}
                 <!-- PAUSE BUTTON -->
                 <button
-                  class="text-accent-dark border-none p-4 rounded-lg bg-accent-light hover:bg-accent-dark/50 transition-colors"
+                  class="text-overlay-text border-none p-4 rounded-lg bg-accent hover:bg-accent-dark transition-colors"
                   aria-label="Pause Download"
                   onclick={async () => {
                     if (download.queuePosition && download.queuePosition > 1) {
@@ -727,7 +731,7 @@
               {:else if download.status === 'paused'}
                 <!-- RESUME BUTTON -->
                 <button
-                  class="text-green-600 border-none p-3 rounded-lg bg-green-100 hover:bg-green-200 transition-colors mr-2"
+                  class="text-overlay-text border-none p-3 rounded-lg bg-success hover:bg-success-hover transition-colors mr-2"
                   aria-label="Resume Download"
                   onclick={async () => {
                     await resumeDownload(download.id);
@@ -746,7 +750,7 @@
                 </button>
                 <!-- ABORT BUTTON -->
                 <button
-                  class="text-red-600 border-none p-3 rounded-lg bg-red-100 hover:bg-red-200 transition-colors"
+                  class="text-overlay-text border-none p-3 rounded-lg bg-error hover:bg-error-hover transition-colors"
                   aria-label="Cancel Download"
                   onclick={() => cancelPausedDownload(download.id)}
                 >
@@ -792,11 +796,11 @@
   <div class="container mx-auto py-6 max-w-6xl">
     <div class="flex items-center gap-3 mb-4">
       <div
-        class="w-1 h-6 bg-linear-to-b from-red-500 to-orange-600 rounded-full"
+        class="w-1 h-6 bg-linear-to-b from-error to-warning rounded-full"
       ></div>
       <h2 class="text-2xl font-bold text-text-primary">Failed Setups</h2>
       <span
-        class="bg-red-100 text-red-800 text-xs font-medium px-2 py-1 rounded-full"
+        class="bg-error/20 text-error text-xs font-medium px-2 py-1 rounded-full"
       >
         {$failedSetups.length}
       </span>
@@ -900,7 +904,7 @@
   }
 
   .btn-primary {
-    @apply bg-accent text-white hover:bg-accent-dark focus:ring-accent shadow-md hover:shadow-lg;
+    @apply bg-accent text-overlay-text hover:bg-accent-dark focus:ring-accent shadow-md hover:shadow-lg;
   }
 
   .btn-secondary {
@@ -908,7 +912,7 @@
   }
 
   .btn-danger {
-    @apply bg-red-600 text-white hover:bg-red-700 focus:ring-red-500 shadow-md hover:shadow-lg;
+    @apply bg-error text-overlay-text hover:bg-error-hover focus:ring-error shadow-md hover:shadow-lg;
   }
 
   .btn-sm {
@@ -943,7 +947,8 @@
   }
 
   .download-image {
-    @apply relative w-16 h-16 bg-linear-to-br from-gray-100 to-gray-200 overflow-hidden rounded-lg flex-shrink-0;
+    @apply relative w-16 h-16 overflow-hidden rounded-lg flex-shrink-0;
+    background: linear-gradient(to bottom right, var(--theme-border), var(--theme-border-strong));
   }
 
   .game-cover {
@@ -955,34 +960,34 @@
   }
 
   .status-downloading {
-    @apply bg-accent;
+    background: var(--theme-accent);
   }
   .status-completed {
-    @apply bg-yellow-500;
+    background: var(--theme-warning);
   }
   .status-setup-complete {
-    @apply bg-green-500;
+    background: var(--theme-success);
   }
   .status-seeding {
-    @apply bg-purple-500;
+    background: var(--theme-info);
   }
   .status-error {
-    @apply bg-red-500;
+    background: var(--theme-error);
   }
   .status-rd-downloading {
-    @apply bg-orange-500;
+    background: var(--theme-warning);
   }
   .status-requesting {
-    @apply bg-accent;
+    background: var(--theme-accent);
   }
   .status-errored {
-    @apply bg-red-600;
+    background: var(--theme-error);
   }
   .status-paused {
-    @apply bg-orange-500;
+    background: var(--theme-warning);
   }
   .status-merging {
-    @apply bg-blue-500;
+    background: var(--theme-info);
   }
 
   .download-content {
@@ -1031,11 +1036,13 @@
   }
 
   .status-badge.seeding {
-    @apply bg-purple-100 text-purple-800;
+    background: color-mix(in srgb, var(--theme-info) 18%, transparent);
+    color: var(--theme-info);
   }
 
   .status-badge.redistr-downloading {
-    @apply bg-orange-100 text-orange-800;
+    background: color-mix(in srgb, var(--theme-warning) 18%, transparent);
+    color: var(--theme-warning-hover);
   }
 
   .status-badge.proton-setup {
@@ -1043,15 +1050,18 @@
   }
 
   .status-badge.setup {
-    @apply bg-yellow-100 text-yellow-800;
+    background: color-mix(in srgb, var(--theme-warning) 18%, transparent);
+    color: var(--theme-warning-hover);
   }
 
   .status-badge.error {
-    @apply bg-red-100 text-red-800;
+    background: color-mix(in srgb, var(--theme-error) 18%, transparent);
+    color: var(--theme-error);
   }
 
   .status-badge.complete {
-    @apply bg-green-100 text-green-800;
+    background: color-mix(in srgb, var(--theme-success) 18%, transparent);
+    color: var(--theme-success-hover);
   }
 
   .status-badge.downloading {
@@ -1067,15 +1077,18 @@
   }
 
   .status-badge.errored {
-    @apply bg-red-100 text-red-800;
+    background: color-mix(in srgb, var(--theme-error) 18%, transparent);
+    color: var(--theme-error);
   }
 
   .status-badge.paused {
-    @apply bg-orange-100 text-orange-800;
+    background: color-mix(in srgb, var(--theme-warning) 18%, transparent);
+    color: var(--theme-warning-hover);
   }
 
   .status-badge.merging {
-    @apply bg-blue-100 text-blue-800;
+    background: color-mix(in srgb, var(--theme-info) 18%, transparent);
+    color: var(--theme-info-hover);
   }
 
   /* Spinner Animation */
@@ -1089,7 +1102,8 @@
   }
 
   .failed-setup-compact {
-    @apply bg-surface rounded-lg border border-red-200 shadow-sm hover:shadow-md transition-all duration-200 p-4;
+    @apply bg-surface rounded-lg shadow-sm hover:shadow-md transition-all duration-200 p-4;
+    border: 1px solid color-mix(in srgb, var(--theme-error) 35%, transparent);
   }
 
   .failed-setup-header {
@@ -1097,7 +1111,8 @@
   }
 
   .failed-setup-image {
-    @apply relative w-12 h-12 bg-linear-to-br from-gray-100 to-gray-200 overflow-hidden rounded-lg flex-shrink-0;
+    @apply relative w-12 h-12 overflow-hidden rounded-lg flex-shrink-0;
+    background: linear-gradient(to bottom right, var(--theme-border), var(--theme-border-strong));
   }
 
   .failed-setup-info {
@@ -1117,15 +1132,20 @@
   }
 
   .retry-count {
-    @apply bg-red-100 text-red-700 px-2 py-0.5 rounded-md font-medium;
+    background: color-mix(in srgb, var(--theme-error) 18%, transparent);
+    color: var(--theme-error);
+    @apply px-2 py-0.5 rounded-md font-medium;
   }
 
   .failed-setup-error {
-    @apply mb-3 p-3 bg-red-50 border border-red-200 rounded-md;
+    @apply mb-3 p-3 rounded-md;
+    background: color-mix(in srgb, var(--theme-error) 10%, transparent);
+    border: 1px solid color-mix(in srgb, var(--theme-error) 30%, transparent);
   }
 
   .error-message {
-    @apply text-sm text-red-700 leading-relaxed;
+    @apply text-sm leading-relaxed;
+    color: var(--theme-error);
   }
 
   .failed-setup-actions {
@@ -1134,15 +1154,15 @@
 
   /* Queue Position Styles */
   .queue-position-badge {
-    @apply absolute top-1 left-1 bg-accent-dark text-white text-xs font-bold px-2 py-1 rounded-full shadow-lg;
+    @apply absolute top-1 left-1 text-overlay-text text-xs font-bold px-2 py-1 rounded-full shadow-lg;
     backdrop-filter: blur(4px);
-    background-color: rgba(66, 138, 145, 0.9);
+    background-color: var(--theme-accent-dark);
   }
 
   .active-download-badge {
-    @apply absolute top-1 left-1 bg-green-600 text-white text-xs font-bold px-2 py-1 rounded-full shadow-lg flex items-center gap-1;
+    @apply absolute top-1 left-1 text-overlay-text text-xs font-bold px-2 py-1 rounded-full shadow-lg flex items-center gap-1;
     backdrop-filter: blur(4px);
-    background-color: rgba(34, 197, 94, 0.9);
+    background-color: var(--theme-success);
   }
 
   .queue-item {

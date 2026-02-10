@@ -215,11 +215,12 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
       return null;
     }
 
-    // Validate path against allowed directories
     const allowedDirs = [
       join(__dirname, 'addons'),
       join(__dirname, 'public'),
       join(__dirname, 'config'),
+      // for each addon, add the basedir of the addon to the allowed dirs
+      ...Array.from(clients.values()).map((client) => client.filePath + '/'),
     ];
 
     let realPath: string;

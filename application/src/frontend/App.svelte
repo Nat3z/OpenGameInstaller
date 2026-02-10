@@ -493,11 +493,11 @@
 {/if}
 
 {#if !loading}
-  <div class="flex flex-col h-screen w-screen fixed left-0 top-0">
+  <div
+    class="flex flex-col h-screen w-screen fixed left-0 top-0 bg-background-color"
+  >
     <!-- Top Header -->
-    <header
-      class="flex items-center justify-start w-full h-24 px-2 bg-background-color"
-    >
+    <header class="flex items-center justify-start w-full h-24 px-2">
       <!-- Left side - Avatar/Logo -->
       <div class="flex items-center justify-center h-24 w-24">
         <img
@@ -599,7 +599,7 @@
             xmlns="http://www.w3.org/2000/svg"
             viewBox="0 0 50 50"
             fill="none"
-            class="fill-accent-dark"
+            class="text-accent-dark"
           >
             <g clip-path="url(#clip0_2_123)">
               <path
@@ -632,7 +632,7 @@
             xmlns="http://www.w3.org/2000/svg"
             viewBox="0 0 50 50"
             fill="none"
-            class="fill-accent-dark"
+            class="text-accent-dark"
           >
             <g clip-path="url(#clip0_22_1842)">
               <path
@@ -674,6 +674,7 @@
               viewBox="0 0 60 60"
               xmlns="http://www.w3.org/2000/svg"
               fill="none"
+              class="text-accent-dark"
             >
               <path
                 d="M39 15.87V3C39 1.35 37.65 0 36 0H24C22.35 0 21 1.35 21 3V15.87C21 16.26 21.15 16.65 21.45 16.92L28.95 24.42C29.55 25.02 30.48 25.02 31.08 24.42L38.58 16.92C38.85 16.65 39 16.29 39 15.87ZM15.87 21H3C1.35 21 0 22.35 0 24V36C0 37.65 1.35 39 3 39H15.87C16.26 39 16.65 38.85 16.92 38.55L24.42 31.05C25.02 30.45 25.02 29.52 24.42 28.92L16.92 21.42C16.65 21.15 16.29 21 15.87 21ZM21 44.13V57C21 58.65 22.35 60 24 60H36C37.65 60 39 58.65 39 57V44.13C39 43.74 38.85 43.35 38.55 43.08L31.05 35.58C30.45 34.98 29.52 34.98 28.92 35.58L21.42 43.08C21.15 43.35 21 43.71 21 44.13ZM43.05 21.45L35.55 28.95C34.95 29.55 34.95 30.48 35.55 31.08L43.05 38.58C43.32 38.85 43.71 39.03 44.1 39.03H57C58.65 39.03 60 37.68 60 36.03V24.03C60 22.38 58.65 21.03 57 21.03H44.13C43.71 21 43.35 21.15 43.05 21.45Z"
@@ -694,6 +695,7 @@
               height="24"
               viewBox="0 0 24 24"
               width="24"
+              class="text-accent-dark"
               ><path d="M0 0h24v24H0V0z" fill="none" /><path
                 d="M12 10.9c-.61 0-1.1.49-1.1 1.1s.49 1.1 1.1 1.1c.61 0 1.1-.49 1.1-1.1s-.49-1.1-1.1-1.1zM12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm2.19 12.19L6 18l3.81-8.19L18 6l-3.81 8.19z"
               /></svg
@@ -710,6 +712,7 @@
               viewBox="0 0 60 60"
               xmlns="http://www.w3.org/2000/svg"
               fill="none"
+              class="text-accent-dark"
             >
               <g clip-path="url(#clip0_2_52)">
                 <path
@@ -735,6 +738,7 @@
               viewBox="0 0 60 60"
               xmlns="http://www.w3.org/2000/svg"
               fill="none"
+              class="text-accent-dark"
             >
               <g clip-path="url(#clip0_2_25)">
                 <path
@@ -1258,12 +1262,7 @@
   }
 
   .loading-spinner {
-    @apply w-8 h-8 border-4 border-accent-lighter border-t-accent rounded-full animate-spin mb-4;
-<<<<<<< HEAD
-    filter: drop-shadow(0 2px 4px var(--color-focus-ring));
-=======
-    filter: drop-shadow(0 2px 4px var(--theme-focus-ring));
->>>>>>> b28de40 (fix(review): replace hardcoded colors with theme variables)
+    @apply w-8 h-8 border-4 border-accent-lighter border-t-accent rounded-full animate-spin mb-4 drop-shadow-md drop-shadow-focus-ring;
   }
 
   @keyframes spin {
@@ -1297,81 +1296,4 @@
     outline: none;
   }
 
-  /* Custom Range Slider Styles */
-  input[type='range'] {
-    -webkit-appearance: none;
-    appearance: none;
-    width: 100%;
-    height: 8px;
-    background: var(--color-border);
-    border-radius: 4px;
-    outline: none;
-    transition: background 0.3s ease;
-  }
-
-  input[type='range']:hover {
-    background: var(--color-border-strong);
-  }
-
-  input[type='range']::-webkit-slider-thumb {
-    -webkit-appearance: none;
-    appearance: none;
-    width: 20px;
-    height: 20px;
-    background: var(--color-accent);
-    border-radius: 50%;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    box-shadow: 0 2px 4px var(--color-focus-ring);
-  }
-
-  input[type='range']::-webkit-slider-thumb:hover {
-    background: var(--color-accent-dark);
-    transform: scale(1.1);
-    box-shadow: 0 3px 6px var(--color-focus-ring);
-  }
-
-  input[type='range']::-webkit-slider-thumb:active {
-    transform: scale(0.95);
-  }
-
-  input[type='range']::-moz-range-thumb {
-    width: 20px;
-    height: 20px;
-    background: var(--color-accent);
-    border-radius: 50%;
-    cursor: pointer;
-    border: none;
-    transition: all 0.2s ease;
-    box-shadow: 0 2px 4px var(--color-focus-ring);
-  }
-
-  input[type='range']::-moz-range-thumb:hover {
-    background: var(--color-accent-dark);
-    transform: scale(1.1);
-    box-shadow: 0 3px 6px var(--color-focus-ring);
-  }
-
-  input[type='range']::-moz-range-thumb:active {
-    transform: scale(0.95);
-  }
-
-  input[type='range']::-moz-range-track {
-    width: 100%;
-    height: 8px;
-    background: var(--color-border);
-    border-radius: 4px;
-  }
-
-  input[type='range']:focus {
-    outline: none;
-  }
-
-  input[type='range']:focus::-webkit-slider-thumb {
-    box-shadow: 0 0 0 3px var(--color-focus-ring);
-  }
-
-  input[type='range']:focus::-moz-range-thumb {
-    box-shadow: 0 0 0 3px var(--color-focus-ring);
-  }
 </style>

@@ -38,7 +38,7 @@
 </script>
 
 <div
-  class="setup-prompt-container bg-white rounded-lg border border-gray-200 shadow-sm p-4 space-y-3"
+  class="setup-prompt-container bg-surface rounded-lg border border-border shadow-sm p-4 space-y-3"
   in:fade={{ duration: 200 }}
   out:fade={{ duration: 200 }}
 >
@@ -50,7 +50,7 @@
         <h3 class="text-sm font-archivo font-semibold text-accent-dark">
           Setting up {downloadName}
         </h3>
-        <p class="text-xs text-gray-600">
+        <p class="text-xs text-text-secondary">
           by {addonSource}
         </p>
       </div>
@@ -76,7 +76,7 @@
   <div class="setup-terminal">
     <div class="terminal-header">
       <div class="flex items-center gap-2">
-        <span class="text-xs text-gray-400 font-mono">Setup Console</span>
+        <span class="text-xs text-text-muted font-mono">Setup Console</span>
       </div>
     </div>
 
@@ -116,11 +116,11 @@
   }
 
   .setup-terminal {
-    @apply bg-gray-900 rounded-lg overflow-hidden border border-gray-700;
+    @apply bg-gray-900 rounded-lg overflow-hidden border border-border-strong;
   }
 
   .terminal-header {
-    @apply bg-gray-800 px-4 py-2 border-b border-gray-700;
+    @apply bg-gray-800 px-4 py-2 border-b border-border-strong;
   }
 
   .terminal-content {

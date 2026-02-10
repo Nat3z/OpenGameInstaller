@@ -1,6 +1,7 @@
 <script lang="ts">
   import TextModal from './TextModal.svelte';
   import CustomDropdown from '../CustomDropdown.svelte';
+  import RangeInput from '../RangeInput.svelte';
 
   let {
     id,
@@ -67,14 +68,6 @@
     }
   }
 
-  function handleRangeInput(event: Event) {
-    const target = event.target as HTMLInputElement;
-    displayValue = Number(target.value);
-    const paragraph = target.parentElement?.querySelector('p');
-    if (paragraph) {
-      paragraph.textContent = target.value;
-    }
-  }
 
   function browseForPath(browseType: 'file' | 'folder') {
     const dialog = window.electronAPI.fs.dialog;
@@ -106,6 +99,19 @@
         {selectedId}
         onchange={handleDropdownChange}
       />
+    {:else if type === 'range'}
+      <RangeInput
+        value={Number(displayValue) || 0}
+        min={min ?? 0}
+        max={max ?? 100}
+        {id}
+        showValue={true}
+        editableValue={false}
+        onchange={(v) => {
+          displayValue = v;
+          onchange?.(id, v);
+        }}
+      />
     {:else if type === 'text' || type === 'password'}
       <input
         {type}
@@ -130,22 +136,6 @@
         class="input-number"
         data-input
       />
-    {:else if type === 'range'}
-      <div class="flex items-center gap-4">
-        <input
-          type="range"
-          {id}
-          value={displayValue}
-          oninput={handleRangeInput}
-          onchange={handleChange}
-          {min}
-          {max}
-          {disabled}
-          data-input
-          class="w-full"
-        />
-        <p class="font-mono text-sm">{displayValue}</p>
-      </div>
     {:else if type === 'file' || type === 'folder'}
       <div class="file-input-group">
         <input
@@ -171,8 +161,6 @@
 
 <style>
   @reference "../../app.css";
-<<<<<<< HEAD
-=======
   .option-label {
     @apply block text-lg font-archivo font-semibold text-text-primary mb-1;
   }
@@ -181,14 +169,19 @@
     @apply text-sm text-text-secondary mb-4;
   }
 
->>>>>>> b28de40 (fix(review): replace hardcoded colors with theme variables)
   .option-input {
     @apply space-y-2;
   }
 
   .input-text,
   .input-number {
-    @apply w-full px-4 py-2 border border-border rounded-lg bg-input-bg focus:ring-2 focus:ring-accent-light focus:border-accent transition-colors text-text-primary;
+    @apply w-full px-4 py-2 border border-border rounded-lg bg-input-bg focus:ring-2 focus:ring-accent-light focus:border-accent transition-colors;
+    color: var(--theme-text-primary);
+  }
+
+  .input-text::placeholder,
+  .input-number::placeholder {
+    color: var(--theme-text-muted);
   }
 
   .file-input-group {
@@ -200,12 +193,7 @@
   }
 
   .browse-button {
-    @apply px-4 py-2 bg-accent rounded-lg hover:bg-accent-dark transition-colors border-none font-archivo font-semibold;
-<<<<<<< HEAD
-    color: var(--color-overlay-text);
-=======
-    color: var(--theme-overlay-text);
->>>>>>> b28de40 (fix(review): replace hardcoded colors with theme variables)
+    @apply px-4 py-2 bg-accent rounded-lg hover:bg-accent-dark transition-colors border-none font-archivo font-semibold text-overlay-text;
   }
 
   /* Remove webkit number input spinners */

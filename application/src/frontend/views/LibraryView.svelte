@@ -84,7 +84,7 @@
     {#await window.electronAPI.app.getOS()}
       <div class="flex justify-center items-center w-full h-full">
         <div
-          class="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"
+          class="animate-spin rounded-full h-8 w-8 border-b-2 border-accent-dark"
         ></div>
       </div>
     {:then os}
@@ -102,7 +102,7 @@
                 {#each recentlyPlayed as app}
                   <button
                     data-library-item
-                    class="ml-4 shrink-0 border-none relative transition-all shadow-lg hover:shadow-xl rounded-lg overflow-hidden bg-white"
+                    class="ml-4 shrink-0 border-none relative transition-all shadow-lg hover:shadow-xl rounded-lg overflow-hidden bg-surface"
                     onclick={() => ($selectedApp = app)}
                   >
                     {#if updatesManager.getAppUpdate(app.appID)?.updateAvailable}
@@ -183,7 +183,7 @@
                   type="text"
                   bind:value={searchQuery}
                   placeholder="Search games..."
-                  class="block w-64 pl-9 pr-3 py-2 border border-accent rounded-md text-sm bg-white placeholder-accent focus:outline-none focus:ring-1 focus:ring-accent-dark focus:border-accent-dark transition-colors"
+                  class="block w-64 pl-9 pr-3 py-2 border border-accent rounded-md text-sm bg-surface placeholder-accent focus:outline-none focus:ring-1 focus:ring-accent-dark focus:border-accent-dark transition-colors"
                 />
               </div>
             </div>
@@ -198,11 +198,13 @@
                   class="w-24 h-24 opacity-50"
                 />
                 <div class="text-center">
-                  <h1 class="text-xl text-gray-600 mb-2">
+                  <h1 class="text-xl text-text-secondary mb-2">
                     {searchQuery ? 'No games found' : 'No games in library'}
                   </h1>
                   {#if searchQuery}
-                    <p class="text-gray-500">Try adjusting your search terms</p>
+                    <p class="text-text-muted">
+                      Try adjusting your search terms
+                    </p>
                   {/if}
                 </div>
               </div>

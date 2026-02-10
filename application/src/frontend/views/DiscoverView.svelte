@@ -194,8 +194,8 @@
     <div class="flex flex-col gap-4 w-full justify-center items-center py-16">
       <img src="./favicon.png" alt="content" class="w-24 h-24 opacity-50" />
       <div class="text-center">
-        <h2 class="text-xl text-gray-600 mb-2">No catalogs available</h2>
-        <p class="text-gray-500">
+        <h2 class="text-xl text-text-secondary mb-2">No catalogs available</h2>
+        <p class="text-text-muted">
           Install addons that support catalog browsing to see game collections
         </p>
       </div>
@@ -275,7 +275,7 @@
                 >
                   {#each sectionItem.section.listings.slice(carouselIndices[sectionItem.sectionId] * 5, carouselIndices[sectionItem.sectionId] * 5 + 5) as game (game.appID)}
                     <button
-                      class="group w-32 h-48 relative border-none transition-all duration-200 shadow-md hover:shadow-lg rounded-lg overflow-hidden bg-white transform hover:scale-102 hover:-translate-y-0.5"
+                      class="group w-32 h-48 relative border-none transition-all duration-200 shadow-md hover:shadow-lg rounded-lg overflow-hidden bg-surface transform hover:scale-102 hover:-translate-y-0.5"
                       onclick={() => openGameStorePage(game)}
                       aria-label={game.name}
                     >
@@ -340,7 +340,7 @@
               </button>
             </div>
           {:else}
-            <div class="text-center py-6 text-gray-500">
+            <div class="text-center py-6 text-text-muted">
               <p class="text-sm">No games in this collection</p>
             </div>
           {/if}

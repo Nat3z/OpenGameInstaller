@@ -74,7 +74,7 @@
           Version {changelog.version}
         </h1>
         {#if changelog.date}
-          <span class="text-sm text-gray-500">{changelog.date}</span>
+          <span class="text-sm text-text-muted">{changelog.date}</span>
         {/if}
       </div>
       <button
@@ -122,7 +122,7 @@
                     {block.text}
                   </h2>
                 {:else if block.type === 'description'}
-                  <p class="text-gray-700 font-open-sans leading-relaxed">
+                  <p class="text-text-secondary font-open-sans leading-relaxed">
                     {block.text}
                   </p>
                 {:else if block.type === 'image'}
@@ -133,13 +133,15 @@
                       class="rounded-lg shadow-md max-h-48 object-contain"
                     />
                     {#if block.caption}
-                      <figcaption class="text-sm text-gray-500 italic">
+                      <figcaption class="text-sm text-text-muted italic">
                         {block.caption}
                       </figcaption>
                     {/if}
                   </figure>
                 {:else if block.type === 'bullets'}
-                  <ul class="list-disc list-inside space-y-2 text-gray-700">
+                  <ul
+                    class="list-disc list-inside space-y-2 text-text-secondary"
+                  >
                     {#each block.items as item}
                       <li class="font-open-sans">{item}</li>
                     {/each}
@@ -233,7 +235,7 @@
     </div>
 
     <!-- Slide Counter -->
-    <div class="text-center mt-4 text-sm text-gray-500">
+    <div class="text-center mt-4 text-sm text-text-muted">
       {currentSlideIndex + 1} / {totalSlides}
     </div>
   </div>
@@ -271,7 +273,7 @@
   }
 
   .dot-indicator {
-    @apply w-3 h-3 rounded-full bg-gray-300 transition-all duration-200
+    @apply w-3 h-3 rounded-full bg-border transition-all duration-200
            hover:bg-accent-light;
   }
 

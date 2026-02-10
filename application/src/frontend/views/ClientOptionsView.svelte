@@ -9,6 +9,7 @@
   import TextModal from '../components/modal/TextModal.svelte';
   import SectionModal from '../components/modal/SectionModal.svelte';
   import CustomDropdown from '../components/CustomDropdown.svelte';
+  import RangeInput from '../components/RangeInput.svelte';
   import { fetchAddonsWithConfigure } from '../utils';
 
   const fs = window.electronAPI.fs;
@@ -374,7 +375,10 @@
           }
         }
         if (selectedOption.options[key].type === 'number') {
-          config[key] = parseInt(element.value);
+          config[key] =
+            rangeValues[key] !== undefined
+              ? rangeValues[key]
+              : parseInt(element.value);
         }
         if (
           selectedOption.options[key].type === 'boolean' &&
@@ -779,7 +783,7 @@
                               ></div>
                               <button
                                 type="button"
-                                class="ml-2 px-2 py-1 text-sm absolute right-2 border-none rounded-lg bg-transparent outline-none text-accent-dark z-3"
+                                class="ml-2 px-2 py-1 text-sm absolute right-2 border-none rounded-lg bg-transparent outline-none hover:bg-accent-light/20 transition-colors active:bg-accent-light/40 text-accent-dark z-3"
                                 onclick={() => {
                                   if (!showPassword) showPassword = {};
                                   showPassword[key] = !showPassword[key];
@@ -888,45 +892,15 @@
                           {/if}
                           <div class="option-input">
                             <div class="range-container">
-                              <input
-                                type="range"
+                              <RangeInput
                                 id={key}
-                                class="input-number"
-                                oninput={(e) => {
-                                  const value = parseInt(
-                                    (e.target as HTMLInputElement).value
-                                  );
-                                  rangeValues[key] = value;
-                                  updateConfig();
-                                }}
                                 value={rangeValues[key] ??
-                                  getStoredOrDefaultValue(key)}
-                                {max}
+                                  (getStoredOrDefaultValue(key) as number)}
                                 {min}
-                              />
-                              <input
-                                type="text"
-                                inputmode="numeric"
-                                pattern="[0-9]*"
-                                class="range-value-input"
-                                value={rangeValues[key] ??
-                                  getStoredOrDefaultValue(key)}
-                                onchange={(e) => {
-                                  const input = e.target as HTMLInputElement;
-                                  let value = parseInt(input.value);
-
-                                  if (isNaN(value)) {
-                                    value =
-                                      rangeValues[key] ??
-                                      (getStoredOrDefaultValue(key) as number);
-                                  } else if (value < min) {
-                                    value = min;
-                                  } else if (value > max) {
-                                    value = max;
-                                  }
-
-                                  input.value = value.toString();
-                                  rangeValues[key] = value;
+                                {max}
+                                editableValue={true}
+                                onchange={(v) => {
+                                  rangeValues[key] = v;
                                   updateConfig();
                                 }}
                               />
@@ -1048,7 +1022,7 @@
                     >
                       {#if isInstallingAddons}
                         <div
-                          class="animate-spin mr-2 h-5 w-5 border-2 border-white border-t-transparent rounded-full"
+                          class="animate-spin mr-2 h-5 w-5 border-2 border-overlay-text border-t-transparent rounded-full"
                         ></div>
                         Installing...
                       {:else}
@@ -1062,7 +1036,7 @@
                     >
                       {#if isUpdatingAddons}
                         <div
-                          class="animate-spin mr-2 h-5 w-5 border-2 border-white border-t-transparent rounded-full"
+                          class="animate-spin mr-2 h-5 w-5 border-2 border-overlay-text border-t-transparent rounded-full"
                         ></div>
                         Updating...
                       {:else}
@@ -1076,7 +1050,7 @@
                     >
                       {#if isCleaningAddons}
                         <div
-                          class="animate-spin mr-2 h-5 w-5 border-2 border-white border-t-transparent rounded-full"
+                          class="animate-spin mr-2 h-5 w-5 border-2 border-overlay-text border-t-transparent rounded-full"
                         ></div>
                         Cleaning...
                       {:else}
@@ -1092,7 +1066,7 @@
                     >
                       {#if isRestartingServer}
                         <div
-                          class="animate-spin mr-2 h-5 w-5 border-2 border-white border-t-transparent rounded-full"
+                          class="animate-spin mr-2 h-5 w-5 border-2 border-overlay-text border-t-transparent rounded-full"
                         ></div>
                         Restarting...
                       {:else}
@@ -1108,7 +1082,7 @@
           <div class="no-selection">
             <div class="no-selection-content">
               <svg
-                class="no-selection-icon"
+                class="no-selection-icon text-text-muted"
                 fill="currentColor"
                 viewBox="0 0 24 24"
               >
@@ -1116,8 +1090,10 @@
                   d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"
                 />
               </svg>
-              <h2 class="no-selection-title">Select a Setting Category</h2>
-              <p class="no-selection-description">
+              <h2 class="no-selection-title text-text-primary">
+                Select a Setting Category
+              </h2>
+              <p class="no-selection-description text-text-secondary">
                 Choose a category from the sidebar to configure your settings
               </p>
             </div>
@@ -1258,7 +1234,7 @@
   }
 
   .browse-button {
-    @apply px-4 py-2 bg-accent rounded-lg hover:bg-accent-dark transition-colors border-none font-archivo font-semibold text-overlay-text;
+    @apply px-4 py-2 bg-accent-light rounded-lg hover:bg-accent-dark/80 transition-colors border-none font-archivo font-semibold text-accent-dark;
   }
 
   /* Checkbox Styles */
@@ -1381,22 +1357,8 @@
     margin: 0;
   }
 
-  /* Range Container Styles */
+  /* Range container uses shared RangeInput component */
   .range-container {
-    @apply flex items-center gap-4;
-  }
-
-  .range-container .input-number {
-    @apply flex-1;
-  }
-
-  .range-value-input {
-    @apply w-16 text-center px-3 py-1 bg-accent-lighter text-accent-dark rounded-lg font-archivo font-semibold text-lg border-none focus:ring-2 focus:ring-accent-light outline-none;
-    background-color: var(--color-accent-lighter);
-    -webkit-user-select: text;
-    -moz-user-select: text;
-    -ms-user-select: text;
-    user-select: text;
-    cursor: text;
+    @apply flex items-center gap-4 w-full;
   }
 </style>

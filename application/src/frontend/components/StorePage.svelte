@@ -486,17 +486,17 @@
           <!-- Overlay with game info -->
           <div
             class="absolute bottom-0 left-0 right-0 p-6 rounded-b-lg"
-            style="background: linear-gradient(to top, var(--theme-overlay-bg), transparent);"
+            style="background: linear-gradient(to top, var(--color-overlay-bg), transparent);"
           >
             <h1
               class="text-4xl font-archivo font-bold mb-2"
-              style="color: var(--theme-overlay-text);"
+              style="color: var(--color-overlay-text);"
             >
               {gameData.name}
             </h1>
             <div
               class="text-sm"
-              style="color: var(--theme-overlay-text); opacity: 0.9;"
+              style="color: var(--color-overlay-text); opacity: 0.9;"
             >
               <span style="opacity: 0.7;">Publisher:</span>
               {(gameData.publishers ?? []).join(', ')}
@@ -515,13 +515,13 @@
       <div class="flex flex-1 overflow-hidden gap-4">
         <!-- Left side - Description -->
         <div class="mt-4 flex-1 overflow-y-auto relative">
-          <!-- Fade gradient overlay at top -->
+          <!-- Fade gradient overlay at top (opaque at top edge, fading down) -->
           <div
-            class="sticky top-0 h-4 bg-linear-to-b from-bg-primary/80 to-transparent z-10 pointer-events-none"
+            class="sticky top-0 h-3 bg-linear-to-t from-transparent to-bg-primary/40 z-10 pointer-events-none"
           ></div>
 
           <!-- Detailed description -->
-          <div class="pb-10 -mt-4">
+          <div class="pb-10 -mt-3">
             <article
               id="g-descript"
               class="prose max-w-none text-accent-dark pt-4"
@@ -529,6 +529,10 @@
               {@html gameData.description}
             </article>
           </div>
+          <!-- Fade gradient overlay at bottom (opaque at bottom edge, fading up) -->
+          <div
+            class="sticky bottom-0 h-3 bg-linear-to-b from-transparent to-bg-primary/40 z-10 pointer-events-none"
+          ></div>
         </div>
 
         <!-- Right sidebar -->
@@ -610,12 +614,12 @@
             </div>
           {:else}
             <div class="flex-1 overflow-y-auto relative">
-              <!-- Fade gradient overlay at top -->
+              <!-- Fade gradient overlay at top (opaque at top edge, fading down) -->
               <div
-                class="sticky top-0 h-4 bg-linear-to-b from-bg-primary/80 to-transparent z-10 pointer-events-none"
+                class="sticky top-0 h-3 bg-linear-to-t from-transparent to-bg-primary/40 z-10 pointer-events-none"
               ></div>
               <!-- Sources Section -->
-              <div class="-mt-4">
+              <div class="-mt-3">
                 {#if alreadyOwns}
                   <div class="p-6 bg-accent-lighter rounded-lg mb-4">
                     <button
@@ -690,23 +694,6 @@
                         </svg>
                       {/if}
                     </div>
-                    {#if !isEmpty}
-                      <div
-                        class="w-5 h-5 border-2 border-border border-t-accent rounded-full animate-spin"
-                      ></div>
-                    {:else}
-                      <svg
-                        class="w-5 h-5 text-text-muted"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                      >
-                        <circle cx="12" cy="12" r="10" />
-                        <path d="M16 16s-1.5-2-4-2-4 2-4 2" />
-                        <line x1="9" y1="9" x2="9.01" y2="9" />
-                        <line x1="15" y1="9" x2="15.01" y2="9" />
-                      </svg>
-                    {/if}
                   </div>
                 {/each}
 
@@ -893,6 +880,10 @@
                   </div>
                 {/if}
               </div>
+              <!-- Fade gradient overlay at bottom (opaque at bottom edge, fading up) -->
+              <div
+                class="sticky bottom-0 h-3 bg-linear-to-b from-transparent to-bg-primary/40 z-10 pointer-events-none"
+              ></div>
             </div>
           {/if}
         </div>
@@ -992,7 +983,7 @@
               class="w-16 h-16 rounded-lg"
             />
             <div>
-              <h3 class="text-lg font-semibold">
+              <h3 class="text-lg font-semibold text-text-primary">
                 {selectedResult.addonSource}
               </h3>
               <TextModal text="Addon Source" variant="description" />
@@ -1005,18 +996,18 @@
               <div class="flex items-center gap-2">
                 {#if selectedResult.downloadType === 'magnet'}
                   <img class="w-5 h-5" src="./magnet-icon.gif" alt="Magnet" />
-                  <span class="text-sm font-medium">Magnet Link</span>
+                  <span class="text-sm font-medium text-text-primary">Magnet Link</span>
                 {:else if selectedResult.downloadType === 'torrent'}
                   <img class="w-5 h-5" src="./torrent.png" alt="Torrent" />
-                  <span class="text-sm font-medium">Torrent File</span>
+                  <span class="text-sm font-medium text-text-primary">Torrent File</span>
                 {:else if selectedResult.downloadType === 'direct'}
-                  <span class="text-sm font-medium">Direct Download</span>
+                  <span class="text-sm font-medium text-text-primary">Direct Download</span>
                 {:else if selectedResult.downloadType === 'request'}
-                  <span class="text-sm font-medium">Request</span>
+                  <span class="text-sm font-medium text-text-primary">Request</span>
                 {:else if selectedResult.downloadType === 'task'}
-                  <span class="text-sm font-medium">Task</span>
+                  <span class="text-sm font-medium text-text-primary">Task</span>
                 {:else if selectedResult.downloadType === 'empty'}
-                  <span class="text-sm font-medium">Empty</span>
+                  <span class="text-sm font-medium text-text-primary">Empty</span>
                 {/if}
               </div>
             </div>

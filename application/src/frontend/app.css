@@ -11,7 +11,7 @@
   --theme-error-hover: #dc2626;
   --theme-warning: #f59e0b;
   --theme-warning-hover: #d97706;
-  --theme-disabled: #9ca3af;
+  --theme-disabled: #9b8fa8;
 }
 
 :root,
@@ -43,12 +43,12 @@
   --theme-error-hover: #dc2626;
   --theme-warning: #f59e0b;
   --theme-warning-hover: #d97706;
-  --theme-disabled: #9ca3af;
+  --theme-disabled: #9b8fa8;
 }
 
 [data-theme='dark'] {
   --theme-accent: #5ee7e0;
-  --theme-accent-dark: #2dd4d4;
+  --theme-accent-dark: #4fd2bc;
   --theme-accent-light: #0d9488;
   --theme-accent-lighter: #134e4a;
   --theme-accent-text: #000000;
@@ -74,12 +74,12 @@
   --theme-error-hover: #dc2626;
   --theme-warning: #f59e0b;
   --theme-warning-hover: #d97706;
-  --theme-disabled: #9ca3af;
+  --theme-disabled: #3c6050;
 }
 
 [data-theme='synthwave'] {
   --theme-accent: #ff7edb;
-  --theme-accent-dark: #e879f9;
+  --theme-accent-dark: #c026d3;
   --theme-accent-light: #f0abfc;
   --theme-accent-lighter: #2e1065;
   --theme-accent-text: #000000;
@@ -105,7 +105,7 @@
   --theme-error-hover: #dc2626;
   --theme-warning: #f59e0b;
   --theme-warning-hover: #d97706;
-  --theme-disabled: #9ca3af;
+  --theme-disabled: #7c6b8a;
 }
 
 /* Custom theme configuration for Tailwind v4 - references themed variables */

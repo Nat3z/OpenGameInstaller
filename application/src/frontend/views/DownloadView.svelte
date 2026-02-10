@@ -326,7 +326,7 @@
             >
               <div class="grid grid-cols-2 gap-4">
                 <div
-                  class="flex items-center gap-3 p-3 bg-white rounded-lg border border-accent-light shadow-sm hover:shadow-md transition-all duration-200"
+                  class="flex items-center gap-3 p-3 bg-surface rounded-lg border border-accent-light shadow-sm hover:shadow-md transition-all duration-200"
                 >
                   <div class="p-2 bg-accent text-white rounded-lg">
                     <svg
@@ -354,7 +354,7 @@
                   </div>
                 </div>
                 <div
-                  class="flex items-center gap-3 p-3 bg-white rounded-lg border border-accent-light shadow-sm hover:shadow-md transition-all duration-200"
+                  class="flex items-center gap-3 p-3 bg-surface rounded-lg border border-accent-light shadow-sm hover:shadow-md transition-all duration-200"
                 >
                   <div class="p-2 bg-accent text-white rounded-lg">
                     <svg
@@ -383,7 +383,7 @@
                 </div>
 
                 <div
-                  class="flex items-center gap-3 p-3 bg-white rounded-lg border border-accent-light shadow-sm hover:shadow-md transition-all duration-200"
+                  class="flex items-center gap-3 p-3 bg-surface rounded-lg border border-accent-light shadow-sm hover:shadow-md transition-all duration-200"
                 >
                   <div class="p-2 bg-accent text-white rounded-lg">
                     <svg
@@ -421,7 +421,7 @@
                 </div>
 
                 <div
-                  class="flex items-center gap-3 p-3 bg-white rounded-lg border border-accent-light shadow-sm hover:shadow-md transition-all duration-200"
+                  class="flex items-center gap-3 p-3 bg-surface rounded-lg border border-accent-light shadow-sm hover:shadow-md transition-all duration-200"
                 >
                   <div class="p-2 bg-accent text-white rounded-lg">
                     <svg
@@ -475,10 +475,14 @@
               /></svg
             >
           </div>
-          <h3 class="text-lg font-archivo font-semibold text-gray-600 mb-2">
+          <h3
+            class="text-lg font-archivo font-semibold text-text-secondary mb-2"
+          >
             No Downloads
           </h3>
-          <p class="text-gray-500 text-sm">You don't have any downloads yet.</p>
+          <p class="text-text-muted text-sm">
+            You don't have any downloads yet.
+          </p>
         </div>
       </div>
     </div>
@@ -790,7 +794,7 @@
       <div
         class="w-1 h-6 bg-linear-to-b from-red-500 to-orange-600 rounded-full"
       ></div>
-      <h2 class="text-2xl font-bold text-gray-900">Failed Setups</h2>
+      <h2 class="text-2xl font-bold text-text-primary">Failed Setups</h2>
       <span
         class="bg-red-100 text-red-800 text-xs font-medium px-2 py-1 rounded-full"
       >
@@ -883,11 +887,11 @@
 
   /* Chart Styles */
   .chart-section {
-    @apply bg-white rounded-lg shadow-md border border-gray-200 p-6 mb-8;
+    @apply bg-surface rounded-lg shadow-md border border-border p-6 mb-8;
   }
 
   .chart-container {
-    @apply w-full h-52 bg-background-color rounded-lg border border-gray-100;
+    @apply w-full h-52 bg-background-color rounded-lg border border-border;
   }
 
   /* Button System */
@@ -921,11 +925,11 @@
   }
 
   .empty-state {
-    @apply flex flex-col items-center justify-center text-center py-16 px-8 bg-gray-50 rounded-2xl border-2 border-dashed border-gray-300;
+    @apply flex flex-col items-center justify-center text-center py-16 px-8 bg-bg-secondary rounded-2xl border-2 border-dashed border-border;
   }
 
   .empty-state-icon {
-    @apply mb-4 p-4 bg-gray-100 rounded-full;
+    @apply mb-4 p-4 bg-bg-secondary rounded-full;
   }
 
   /* Downloads Grid */
@@ -990,7 +994,7 @@
   }
 
   .download-title {
-    @apply text-sm font-semibold text-gray-900 truncate;
+    @apply text-sm font-semibold text-text-primary truncate;
   }
 
   .progress-section {
@@ -1006,7 +1010,7 @@
   }
 
   .progress-stats {
-    @apply flex justify-between text-xs text-gray-600;
+    @apply flex justify-between text-xs text-text-secondary;
   }
 
   .progress-percentage {
@@ -1014,7 +1018,7 @@
   }
 
   .progress-eta {
-    @apply text-gray-500;
+    @apply text-text-muted;
   }
 
   .download-actions {
@@ -1085,7 +1089,7 @@
   }
 
   .failed-setup-compact {
-    @apply bg-white rounded-lg border border-red-200 shadow-sm hover:shadow-md transition-all duration-200 p-4;
+    @apply bg-surface rounded-lg border border-red-200 shadow-sm hover:shadow-md transition-all duration-200 p-4;
   }
 
   .failed-setup-header {
@@ -1101,11 +1105,11 @@
   }
 
   .failed-setup-title {
-    @apply text-sm font-semibold text-gray-900 truncate mb-1;
+    @apply text-sm font-semibold text-text-primary truncate mb-1;
   }
 
   .failed-setup-meta {
-    @apply flex items-center gap-2 text-xs text-gray-500;
+    @apply flex items-center gap-2 text-xs text-text-muted;
   }
 
   .error-time {

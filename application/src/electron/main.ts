@@ -80,6 +80,9 @@ let isReadyForEvents = false;
 
 let readyForEventWaiters: (() => void)[] = [];
 
+/** Prevents duplicate IPC handler registration when window is re-created (e.g. macOS activate). */
+let handlersRegistered = false;
+
 export async function sendIPCMessage(channel: string, ...args: any[]) {
   if (!isReadyForEvents) {
     await new Promise<void>((resolve) => {
@@ -131,24 +134,49 @@ function onMainAppReady() {
     console.error('onMainAppReady called but mainWindow is null');
     return;
   }
+  const win = mainWindow;
+  const setupWindowOpenHandler = () => {
+    win.webContents.setWindowOpenHandler((details) => {
+      try {
+        const url = new URL(details.url);
+        if (url.protocol === 'https:' || url.protocol === 'http:') {
+          shell.openExternal(details.url);
+        } else {
+          console.warn('Blocked external open for non-http(s) URL:', details.url);
+        }
+      } catch {
+        console.warn('Blocked external open for malformed URL:', details.url);
+      }
+      return { action: 'deny' };
+    });
+  };
+
+  if (handlersRegistered) {
+    closeSplashWindow();
+    setupWindowOpenHandler();
+    win.show();
+    win.focus();
+    return;
+  }
+  handlersRegistered = true;
   closeSplashWindow();
 
-  AppEventHandler(mainWindow);
+  AppEventHandler(win);
   FSEventHandler();
-  RealdDebridHandler(mainWindow);
-  TorrentHandler(mainWindow);
-  DirectDownloadHandler(mainWindow);
+  RealdDebridHandler(win);
+  TorrentHandler(win);
+  DirectDownloadHandler(win);
   AddonRestHandler();
-  AddonManagerHandler(mainWindow);
+  AddonManagerHandler(win);
   OOBEHandler();
 
   console.log('showing window');
-  mainWindow.show();
-  mainWindow.focus();
+  win.show();
+  win.focus();
 
-  checkForAddonUpdates(mainWindow);
+  checkForAddonUpdates(win);
   if (ogiDebug()) {
-    mainWindow.webContents.openDevTools();
+    win.webContents.openDevTools();
   }
   if (!isSecurityCheckEnabled) {
     sendNotification({
@@ -161,19 +189,7 @@ function onMainAppReady() {
 
   convertLibrary();
 
-  mainWindow.webContents.setWindowOpenHandler((details) => {
-    try {
-      const url = new URL(details.url);
-      if (url.protocol === 'https:' || url.protocol === 'http:') {
-        shell.openExternal(details.url);
-      } else {
-        console.warn('Blocked external open for non-http(s) URL:', details.url);
-      }
-    } catch {
-      console.warn('Blocked external open for malformed URL:', details.url);
-    }
-    return { action: 'deny' };
-  });
+  setupWindowOpenHandler();
 }
 
 /**
@@ -230,8 +246,6 @@ function createWindow() {
   });
   if (!isDev() && !ogiDebug()) mainWindow.removeMenu();
 
-  app.commandLine.appendSwitch('disable-features', 'HardwareMediaKeyHandling');
-
   // Load splash first so there is only one window (fixes Steam Deck Game Mode black screen)
   mainWindow.loadURL(
     'file://' + join(app.getAppPath(), 'public', 'splash.html')
@@ -239,6 +253,7 @@ function createWindow() {
 
   mainWindow.on('closed', function () {
     mainWindow = null;
+    isReadyForEvents = false;
   });
 
   fs.mkdir(join(__dirname, 'config'), (_) => {});
@@ -253,6 +268,8 @@ function createWindow() {
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
 app.on('ready', async () => {
+  app.commandLine.appendSwitch('disable-features', 'HardwareMediaKeyHandling');
+
   // One-time app-level listeners so they do not stack on window re-creation (e.g. macOS activate)
   ipcMain.on('client-ready-for-events', () => {
     isReadyForEvents = true;
@@ -323,33 +340,50 @@ app.on('ready', async () => {
 
 // Quit when all windows are closed.
 app.on('window-all-closed', async function () {
-  // On macOS it is common for applications and their menu bar
-  // to stay active until the user quits explicitly with Cmd + Q
-  if (process.platform !== 'darwin') app.quit();
-  // stop torrenting
+  if (process.platform === 'darwin') return; // keep alive for dock re-open
+
+  // Non-macOS: full cleanup and exit
   console.log('Stopping torrent client...');
   await stopClient();
-  // stop the server
   console.log('Stopping server...');
   server.close();
-  // stop all of the addons
   for (const process of Object.keys(processes)) {
     console.log(`Killing process ${process}`);
     processes[process].kill('SIGKILL');
   }
-  // stopping all of the torrent intervals
   for (const interval of torrentIntervals) {
     clearInterval(interval);
   }
-
-  // now stop the application completely
   app.exit(0);
+});
+
+// On macOS, run cleanup when user explicitly quits (e.g. Cmd+Q).
+let macOSQuitInProgress = false;
+app.on('before-quit', (event) => {
+  if (process.platform !== 'darwin') return;
+  if (macOSQuitInProgress) return; // already cleaning up; let app.exit(0) proceed
+  event.preventDefault();
+  macOSQuitInProgress = true;
+  (async () => {
+    console.log('Stopping torrent client...');
+    await stopClient();
+    console.log('Stopping server...');
+    server.close();
+    for (const process of Object.keys(processes)) {
+      console.log(`Killing process ${process}`);
+      processes[process].kill('SIGKILL');
+    }
+    for (const interval of torrentIntervals) {
+      clearInterval(interval);
+    }
+    app.exit(0);
+  })();
 });
 
 app.on('activate', async () => {
   // On macOS it's common to re-create a window when the dock icon is clicked and there are no other windows open.
   // Re-run the full flow: create window (splash), then load main app so the user does not get stuck on splash.
-  if (mainWindow === null) {
+  if (!mainWindow) {
     createWindow();
     await loadMainAppIntoWindow();
   }

@@ -1,5 +1,5 @@
 import type { EventListenerTypes, SearchResult } from 'ogi-addon';
-import { get, writable, type Writable } from 'svelte/store';
+import { writable, type Writable } from 'svelte/store';
 import type { BasicLibraryInfo } from 'ogi-addon';
 
 export type DownloadStatusAndInfo = SearchResult & {
@@ -259,6 +259,8 @@ export const communityAddonsError: Writable<string | null> = writable(null);
 
 /** Request id for in-flight guard; only the latest request's result and loading state are applied. */
 let communityAddonsRequestId = 0;
+/** True while any fetchCommunityAddons() call is in progress; used for early-return so we don't use communityAddonsLoading (which the view may set before calling fetch) for that check. */
+let communityAddonsInFlight = false;
 
 /**
  * Normalizes a caught error into a user-facing message for community addon fetch failures.
@@ -279,13 +281,13 @@ function communityAddonsErrorMessage(err: unknown): string {
  * Fetches the community addons list from the remote API and updates store state.
  * Sets communityAddonsLoading true at start and false in finally; clears then possibly sets communityAddonsError; on success updates communityAddonsLocal.
  * On error, leaves communityAddonsLocal unchanged so any cached/previous list can still be shown; the error message is set via communityAddonsErrorMessage.
- * Overlapping calls are ignored for store updates and loading state: only the latest request's result and loading state are applied (in-flight guard via request id).
+ * Overlapping calls are ignored via communityAddonsInFlight; only the latest request's result and loading state are applied (request id).
  * The request id is monotonic and is not reset in finally by design, so stale completions never apply.
  * @returns Promise that resolves when the fetch and store updates are complete
  */
 export async function fetchCommunityAddons(): Promise<void> {
-  // In-flight guard: avoid overlapping requests; only one fetch runs at a time.
-  if (get(communityAddonsLoading)) return;
+  if (communityAddonsInFlight) return;
+  communityAddonsInFlight = true;
   const requestId = ++communityAddonsRequestId;
   communityAddonsLoading.set(true);
   communityAddonsError.set(null);
@@ -295,7 +297,6 @@ export async function fetchCommunityAddons(): Promise<void> {
       method: 'GET',
       url: 'https://ogi.nat3z.com/api/community.json',
       headers: {
-        'Content-Type': 'application/json',
         'User-Agent': 'OpenGameInstaller Client/Rest1.0',
       },
     });
@@ -313,7 +314,7 @@ export async function fetchCommunityAddons(): Promise<void> {
     }
     // Leave communityAddonsLocal unchanged so cached/previous list can still show
   } finally {
-    // Token is intentionally not reset (monotonic); only the latest request's completion applies, so stale responses never match.
+    communityAddonsInFlight = false;
     if (requestId === communityAddonsRequestId) {
       communityAddonsLoading.set(false);
     }

@@ -70,7 +70,6 @@
     "@types/d3": "^7.4.3",
     "@types/node": "^22.15.0",
     "@types/parse-torrent": "^5.8.8",
-    "@types/sass": "^1.49.0",
     "@types/sanitize-html": "^2.16.0",
     "@types/semver": "^7.7.1",
     "@types/webtorrent": "^0.110.1",

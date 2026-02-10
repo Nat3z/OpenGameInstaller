@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { get } from 'svelte/store';
   import DeleteAddonWarningModal from '../components/built/DeleteAddonWarningModal.svelte';
   import ButtonModal from '../components/modal/ButtonModal.svelte';
@@ -102,8 +102,19 @@
     get(communityAddonsLocal).length === 0 &&
     !get(communityAddonsError)
   ) {
+    communityAddonsLoading.set(true);
     fetchCommunityAddons();
   }
+
+  onMount(() => {
+    if (
+      !get(communityAddonsLoading) &&
+      get(communityAddonsLocal).length === 0 &&
+      !get(communityAddonsError)
+    ) {
+      fetchCommunityAddons();
+    }
+  });
 </script>
 
 {#if deleteConfirmationModalAddon}

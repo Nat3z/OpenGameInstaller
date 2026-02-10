@@ -192,7 +192,9 @@ function onMainAppReady() {
         event.preventDefault();
         console.warn(
           'Blocked navigation to disallowed origin:',
-          navigationUrl
+          navigationUrl,
+          '(allowed: file:// and',
+          DEV_APP_ORIGIN + ')'
         );
       }
     });

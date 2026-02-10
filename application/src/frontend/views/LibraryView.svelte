@@ -75,6 +75,10 @@
 
   let allGamesChunks = $derived(chunkArray(filteredGames, 5));
 
+  function updatesLabel(count: number): string {
+    return count === 1 ? 'update' : 'updates';
+  }
+
   async function handleCheckForUpdates() {
     if (gameUpdatesCheckState.isChecking || library.length === 0) return;
     updatesManager.setCheckingForGameUpdates(true);
@@ -83,10 +87,9 @@
       const result = await checkGameUpdates();
       updatesManager.setLastGameUpdatesCheckResult(result);
       if (result.updatesFound > 0) {
-        const label = result.updatesFound === 1 ? 'update' : 'updates';
         createNotification({
           type: 'info',
-          message: `${result.updatesFound} game ${label} available.`,
+          message: `${result.updatesFound} game ${updatesLabel(result.updatesFound)} available.`,
           id: `game-updates-${Date.now()}`,
         });
       }
@@ -212,7 +215,7 @@
                 {#if gameUpdatesCheckState.lastResult !== null && !gameUpdatesCheckState.isChecking}
                   <span class="text-sm text-accent">
                     {#if gameUpdatesCheckState.lastResult.updatesFound > 0}
-                      {gameUpdatesCheckState.lastResult.updatesFound} {gameUpdatesCheckState.lastResult.updatesFound === 1 ? 'update' : 'updates'} available
+                      {gameUpdatesCheckState.lastResult.updatesFound} {updatesLabel(gameUpdatesCheckState.lastResult.updatesFound)} available
                     {:else}
                       All games up to date
                     {/if}

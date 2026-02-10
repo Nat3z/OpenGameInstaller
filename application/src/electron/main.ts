@@ -168,7 +168,16 @@ function onMainAppReady() {
   });
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
-    shell.openExternal(details.url);
+    try {
+      const url = new URL(details.url);
+      if (url.protocol === 'https:' || url.protocol === 'http:') {
+        shell.openExternal(details.url);
+      } else {
+        console.warn('Blocked external open for non-http(s) URL:', details.url);
+      }
+    } catch {
+      console.warn('Blocked external open for malformed URL:', details.url);
+    }
     return { action: 'deny' };
   });
 
@@ -177,25 +186,28 @@ function onMainAppReady() {
     globalShortcut.unregister('F5');
   });
 
-  mainWindow.webContents.on('devtools-opened', () => {
-    if (!isDev() && !ogiDebug()) mainWindow?.webContents.closeDevTools();
-  });
-
   app.on('web-contents-created', (_, contents) => {
+    contents.on('devtools-opened', () => {
+      if (!isDev() && !ogiDebug()) contents.closeDevTools();
+    });
     contents.on('will-navigate', (event, navigationUrl) => {
-      const parsedUrl = new URL(navigationUrl);
+      try {
+        const parsedUrl = new URL(navigationUrl);
+        const allowedOrigins: string[] = ['file://'];
+        if (isDev()) allowedOrigins.push(DEV_APP_ORIGIN);
 
-      if (
-        parsedUrl.origin !== DEV_APP_ORIGIN &&
-        parsedUrl.origin !== 'file://'
-      ) {
+        if (!allowedOrigins.includes(parsedUrl.origin)) {
+          event.preventDefault();
+          console.warn(
+            'Blocked navigation to disallowed origin:',
+            navigationUrl,
+            '(allowed:',
+            allowedOrigins.join(', ') + ')'
+          );
+        }
+      } catch {
         event.preventDefault();
-        console.warn(
-          'Blocked navigation to disallowed origin:',
-          navigationUrl,
-          '(allowed: file:// and',
-          DEV_APP_ORIGIN + ')'
-        );
+        console.warn('Blocked navigation to malformed URL:', navigationUrl);
       }
     });
   });

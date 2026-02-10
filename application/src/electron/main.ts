@@ -26,6 +26,10 @@ import { runStartupTasks, closeSplashWindow } from './startup-runner.js';
 
 export const VERSION = app.getVersion();
 
+// Register once at module load so it is safe on window re-creation (e.g. macOS activate).
+ipcMain.removeHandler('get-version');
+ipcMain.handle('get-version', () => VERSION);
+
 const DEV_APP_ORIGIN = 'http://localhost:8080';
 
 export let isSecurityCheckEnabled = true;
@@ -138,7 +142,6 @@ function onMainAppReady() {
   AddonManagerHandler(mainWindow);
   OOBEHandler();
 
-  ipcMain.handle('get-version', () => VERSION);
   console.log('showing window');
   mainWindow.show();
   mainWindow.focus();
@@ -158,15 +161,6 @@ function onMainAppReady() {
 
   convertLibrary();
 
-  app.on('browser-window-focus', function () {
-    globalShortcut.register('CommandOrControl+R', () => {
-      console.log('CommandOrControl+R is pressed: Shortcut Disabled');
-    });
-    globalShortcut.register('F5', () => {
-      console.log('F5 is pressed: Shortcut Disabled');
-    });
-  });
-
   mainWindow.webContents.setWindowOpenHandler((details) => {
     try {
       const url = new URL(details.url);
@@ -180,37 +174,37 @@ function onMainAppReady() {
     }
     return { action: 'deny' };
   });
+}
 
-  app.on('browser-window-blur', function () {
-    globalShortcut.unregister('CommandOrControl+R');
-    globalShortcut.unregister('F5');
-  });
-
-  app.on('web-contents-created', (_, contents) => {
-    contents.on('devtools-opened', () => {
-      if (!isDev() && !ogiDebug()) contents.closeDevTools();
-    });
-    contents.on('will-navigate', (event, navigationUrl) => {
-      try {
-        const parsedUrl = new URL(navigationUrl);
-        const allowedOrigins: string[] = ['file://'];
-        if (isDev()) allowedOrigins.push(DEV_APP_ORIGIN);
-
-        if (!allowedOrigins.includes(parsedUrl.origin)) {
-          event.preventDefault();
-          console.warn(
-            'Blocked navigation to disallowed origin:',
-            navigationUrl,
-            '(allowed:',
-            allowedOrigins.join(', ') + ')'
-          );
-        }
-      } catch {
-        event.preventDefault();
-        console.warn('Blocked navigation to malformed URL:', navigationUrl);
-      }
-    });
-  });
+/**
+ * Loads the main app into the existing main window after splash: runs startup tasks,
+ * then loads the app URL and wires onMainAppReady. Used by both app.on('ready') and
+ * app.on('activate') on macOS when the window is re-created.
+ */
+async function loadMainAppIntoWindow(): Promise<void> {
+  if (!mainWindow) {
+    console.error('loadMainAppIntoWindow called but mainWindow is null');
+    return;
+  }
+  await runStartupTasks(mainWindow);
+  if (!mainWindow) {
+    console.error('mainWindow was closed during startup tasks');
+    return;
+  }
+  if (isDev()) {
+    mainWindow.loadURL(
+      DEV_APP_ORIGIN + '/?secret=' + applicationAddonSecret
+    );
+    console.log('Running in development');
+  } else {
+    mainWindow.loadURL(
+      'file://' +
+        join(app.getAppPath(), 'out', 'renderer', 'index.html') +
+        '?secret=' +
+        applicationAddonSecret
+    );
+  }
+  mainWindow.once('ready-to-show', onMainAppReady);
 }
 
 /**
@@ -222,7 +216,7 @@ function createWindow() {
     width: 1000,
     height: 700,
     webPreferences: {
-      nodeIntegration: true,
+      nodeIntegration: false,
       contextIsolation: true,
       devTools: ogiDebug() || isDev(),
       preload: join(app.getAppPath(), 'out/preload/index.mjs'),
@@ -235,14 +229,6 @@ function createWindow() {
     show: false,
   });
   if (!isDev() && !ogiDebug()) mainWindow.removeMenu();
-
-  ipcMain.on('client-ready-for-events', async () => {
-    isReadyForEvents = true;
-    for (const waiter of readyForEventWaiters) {
-      waiter();
-    }
-    readyForEventWaiters = [];
-  });
 
   app.commandLine.appendSwitch('disable-features', 'HardwareMediaKeyHandling');
 
@@ -267,33 +253,59 @@ function createWindow() {
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
 app.on('ready', async () => {
+  // One-time app-level listeners so they do not stack on window re-creation (e.g. macOS activate)
+  ipcMain.on('client-ready-for-events', () => {
+    isReadyForEvents = true;
+    for (const waiter of readyForEventWaiters) {
+      waiter();
+    }
+    readyForEventWaiters = [];
+  });
+
+  app.on('browser-window-focus', () => {
+    globalShortcut.register('CommandOrControl+R', () => {
+      console.log('CommandOrControl+R is pressed: Shortcut Disabled');
+    });
+    globalShortcut.register('F5', () => {
+      console.log('F5 is pressed: Shortcut Disabled');
+    });
+  });
+  app.on('browser-window-blur', () => {
+    globalShortcut.unregister('CommandOrControl+R');
+    globalShortcut.unregister('F5');
+  });
+  app.on('web-contents-created', (_, contents) => {
+    contents.on('devtools-opened', () => {
+      if (!isDev() && !ogiDebug()) contents.closeDevTools();
+    });
+    contents.on('will-navigate', (event, navigationUrl) => {
+      try {
+        const parsedUrl = new URL(navigationUrl);
+        // Packaged: allow only file:. Dev: allow file: and DEV_APP_ORIGIN (Node reports file: origin as "null")
+        const allowed =
+          parsedUrl.protocol === 'file:' ||
+          (isDev() && parsedUrl.origin === DEV_APP_ORIGIN);
+
+        if (!allowed) {
+          event.preventDefault();
+          console.warn(
+            'Blocked navigation to disallowed origin:',
+            navigationUrl,
+            isDev()
+              ? '(allowed: file:, ' + DEV_APP_ORIGIN + ')'
+              : '(allowed: file: only)'
+          );
+        }
+      } catch {
+        event.preventDefault();
+        console.warn('Blocked navigation to malformed URL:', navigationUrl);
+      }
+    });
+  });
+
   // Single window: create it and show splash first so Steam Deck / Game Mode keeps focus
   createWindow();
-
-  // Run startup tasks; splash updates go to the main window
-  await runStartupTasks(mainWindow!);
-
-  if (!mainWindow) {
-    console.error('mainWindow was closed during startup tasks');
-    return;
-  }
-
-  // Load the main app into the same window (replaces splash)
-  if (isDev()) {
-    mainWindow.loadURL(
-      DEV_APP_ORIGIN + '/?secret=' + applicationAddonSecret
-    );
-    console.log('Running in development');
-  } else {
-    mainWindow.loadURL(
-      'file://' +
-        join(app.getAppPath(), 'out', 'renderer', 'index.html') +
-        '?secret=' +
-        applicationAddonSecret
-    );
-  }
-
-  mainWindow.once('ready-to-show', onMainAppReady);
+  await loadMainAppIntoWindow();
 
   server.listen(port, () => {
     console.log(`Addon Server is running on http://localhost:${port}`);
@@ -334,8 +346,11 @@ app.on('window-all-closed', async function () {
   app.exit(0);
 });
 
-app.on('activate', function () {
-  // On macOS it's common to re-create a window in the app when the
-  // dock icon is clicked and there are no other windows open.
-  if (mainWindow === null) createWindow();
+app.on('activate', async () => {
+  // On macOS it's common to re-create a window when the dock icon is clicked and there are no other windows open.
+  // Re-run the full flow: create window (splash), then load main app so the user does not get stuck on splash.
+  if (mainWindow === null) {
+    createWindow();
+    await loadMainAppIntoWindow();
+  }
 });

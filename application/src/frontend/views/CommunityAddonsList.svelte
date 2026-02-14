@@ -259,11 +259,11 @@
   }
 
   .addon-title {
-    @apply text-2xl font-semibold text-gray-900 mb-2;
+    @apply text-2xl font-semibold text-text-primary mb-2;
   }
 
   .addon-description {
-    @apply text-lg text-gray-600 leading-relaxed;
+    @apply text-lg text-text-secondary leading-relaxed;
   }
 
   .addon-actions {
@@ -273,7 +273,7 @@
   }
 
   .action-button {
-    @apply w-full h-full flex items-center justify-center border-none outline-none cursor-pointer bg-transparent hover:bg-gray-100 rounded-2xl transition-colors duration-200;
+    @apply w-full h-full flex items-center justify-center border-none outline-none cursor-pointer bg-transparent hover:bg-bg-secondary rounded-2xl transition-colors duration-200;
   }
 
   .action-button:disabled {

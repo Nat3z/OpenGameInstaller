@@ -493,11 +493,11 @@
 {/if}
 
 {#if !loading}
-  <div class="flex flex-col h-screen w-screen fixed left-0 top-0">
+  <div
+    class="flex flex-col h-screen w-screen fixed left-0 top-0 bg-background-color"
+  >
     <!-- Top Header -->
-    <header
-      class="flex items-center justify-start w-full h-24 px-2 bg-background-color"
-    >
+    <header class="flex items-center justify-start w-full h-24 px-2">
       <!-- Left side - Avatar/Logo -->
       <div class="flex items-center justify-center h-24 w-24">
         <img
@@ -578,7 +578,7 @@
               ? 'Search for games...'
               : 'Search unavailable (offline)'}
             disabled={!$isOnline}
-            class="w-full h-(--header-button-size) pl-12 pr-4 text-lg bg-accent-lighter rounded-lg border-none focus:outline-none font-archivo placeholder-accent-dark disabled:opacity-50 transition-all duration-300 ease-out focus:bg-white focus:shadow-md"
+            class="w-full h-(--header-button-size) pl-12 pr-4 text-lg bg-accent-lighter rounded-lg border-none focus:outline-none font-archivo placeholder-accent-dark disabled:opacity-50 transition-all duration-300 ease-out focus:bg-surface focus:shadow-md"
             value={$searchQuery}
             oninput={handleSearchInput}
           />
@@ -599,23 +599,23 @@
             xmlns="http://www.w3.org/2000/svg"
             viewBox="0 0 50 50"
             fill="none"
-            class="fill-accent-dark"
+            class="text-accent-dark"
           >
             <g clip-path="url(#clip0_2_123)">
               <path
                 d="M34.5625 18.75H31.25V8.33333C31.25 7.1875 30.3125 6.25 29.1666 6.25H20.8333C19.6875 6.25 18.75 7.1875 18.75 8.33333V18.75H15.4375C13.5833 18.75 12.6458 21 13.9583 22.3125L23.5208 31.875C24.3333 32.6875 25.6458 32.6875 26.4583 31.875L36.0208 22.3125C37.3333 21 36.4166 18.75 34.5625 18.75ZM10.4166 39.5833C10.4166 40.7292 11.3541 41.6667 12.5 41.6667H37.5C38.6458 41.6667 39.5833 40.7292 39.5833 39.5833C39.5833 38.4375 38.6458 37.5 37.5 37.5H12.5C11.3541 37.5 10.4166 38.4375 10.4166 39.5833Z"
-                fill="#2D626A"
+                fill="currentColor"
               />
             </g>
             <defs>
               <clipPath id="clip0_2_123">
-                <rect width="50" height="50" fill="white" />
+                <rect width="50" height="50" fill="currentColor" />
               </clipPath>
             </defs>
           </svg>
           {#if $activeDownloadsCount > 0}
             <div
-              class="absolute -bottom-1 -right-1 bg-accent-dark text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-bold"
+              class="absolute -bottom-1 -right-1 bg-accent-dark text-xs rounded-full w-5 h-5 flex items-center justify-center font-bold text-overlay-text"
             >
               {$activeDownloadsCount}
             </div>
@@ -632,23 +632,23 @@
             xmlns="http://www.w3.org/2000/svg"
             viewBox="0 0 50 50"
             fill="none"
-            class="fill-accent-dark"
+            class="text-accent-dark"
           >
             <g clip-path="url(#clip0_22_1842)">
               <path
                 d="M25 45.8333C27.2917 45.8333 29.1667 43.9583 29.1667 41.6666H20.8333C20.8333 43.9583 22.6875 45.8333 25 45.8333ZM37.5 33.3333V22.9166C37.5 16.5208 34.0833 11.1666 28.125 9.74998V8.33331C28.125 6.60415 26.7292 5.20831 25 5.20831C23.2708 5.20831 21.875 6.60415 21.875 8.33331V9.74998C15.8958 11.1666 12.5 16.5 12.5 22.9166V33.3333L9.81249 36.0208C8.49999 37.3333 9.41665 39.5833 11.2708 39.5833H38.7083C40.5625 39.5833 41.5 37.3333 40.1875 36.0208L37.5 33.3333Z"
-                fill="#2D626A"
+                fill="currentColor"
               />
             </g>
             <defs>
               <clipPath id="clip0_22_1842">
-                <rect width="50" height="50" fill="white" />
+                <rect width="50" height="50" fill="currentColor" />
               </clipPath>
             </defs>
           </svg>
           {#if $unreadNotificationCount > 0}
             <div
-              class="absolute -bottom-1 -right-1 bg-accent-dark text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-bold"
+              class="absolute -bottom-1 -right-1 bg-accent-dark text-xs rounded-full w-5 h-5 flex items-center justify-center font-bold text-overlay-text"
             >
               {$unreadNotificationCount}
             </div>
@@ -674,6 +674,7 @@
               viewBox="0 0 60 60"
               xmlns="http://www.w3.org/2000/svg"
               fill="none"
+              class="text-accent-dark"
             >
               <path
                 d="M39 15.87V3C39 1.35 37.65 0 36 0H24C22.35 0 21 1.35 21 3V15.87C21 16.26 21.15 16.65 21.45 16.92L28.95 24.42C29.55 25.02 30.48 25.02 31.08 24.42L38.58 16.92C38.85 16.65 39 16.29 39 15.87ZM15.87 21H3C1.35 21 0 22.35 0 24V36C0 37.65 1.35 39 3 39H15.87C16.26 39 16.65 38.85 16.92 38.55L24.42 31.05C25.02 30.45 25.02 29.52 24.42 28.92L16.92 21.42C16.65 21.15 16.29 21 15.87 21ZM21 44.13V57C21 58.65 22.35 60 24 60H36C37.65 60 39 58.65 39 57V44.13C39 43.74 38.85 43.35 38.55 43.08L31.05 35.58C30.45 34.98 29.52 34.98 28.92 35.58L21.42 43.08C21.15 43.35 21 43.71 21 44.13ZM43.05 21.45L35.55 28.95C34.95 29.55 34.95 30.48 35.55 31.08L43.05 38.58C43.32 38.85 43.71 39.03 44.1 39.03H57C58.65 39.03 60 37.68 60 36.03V24.03C60 22.38 58.65 21.03 57 21.03H44.13C43.71 21 43.35 21.15 43.05 21.45Z"
@@ -694,6 +695,7 @@
               height="24"
               viewBox="0 0 24 24"
               width="24"
+              class="text-accent-dark"
               ><path d="M0 0h24v24H0V0z" fill="none" /><path
                 d="M12 10.9c-.61 0-1.1.49-1.1 1.1s.49 1.1 1.1 1.1c.61 0 1.1-.49 1.1-1.1s-.49-1.1-1.1-1.1zM12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm2.19 12.19L6 18l3.81-8.19L18 6l-3.81 8.19z"
               /></svg
@@ -710,6 +712,7 @@
               viewBox="0 0 60 60"
               xmlns="http://www.w3.org/2000/svg"
               fill="none"
+              class="text-accent-dark"
             >
               <g clip-path="url(#clip0_2_52)">
                 <path
@@ -735,6 +738,7 @@
               viewBox="0 0 60 60"
               xmlns="http://www.w3.org/2000/svg"
               fill="none"
+              class="text-accent-dark"
             >
               <g clip-path="url(#clip0_2_25)">
                 <path
@@ -779,7 +783,7 @@
                   <h2 class="text-2xl font-archivo font-bold mb-2">
                     Search Results
                   </h2>
-                  <p class="text-gray-600">
+                  <p class="text-text-secondary">
                     Results for: <span class="font-semibold"
                       >"{$searchQuery}"</span
                     >
@@ -796,8 +800,8 @@
                     alt="offline"
                     class="w-32 h-32 opacity-50"
                   />
-                  <h3 class="text-xl text-gray-700">You're Offline</h3>
-                  <p class="text-gray-500 text-center">
+                  <h3 class="text-xl text-text-primary">You're Offline</h3>
+                  <p class="text-text-muted text-center">
                     Searching for games is unavailable when you're offline.
                   </p>
                 </div>
@@ -955,10 +959,10 @@
 
                   {#if $searchResultsByAddon.length === 0 && !$loadingResults}
                     <div class="no-results" in:fade={{ duration: 300 }}>
-                      <h3 class="text-xl text-gray-700 mb-2">
+                      <h3 class="text-xl text-text-primary mb-2">
                         No Results Found
                       </h3>
-                      <p class="text-gray-500">
+                      <p class="text-text-muted">
                         Try searching for a different game
                       </p>
                     </div>
@@ -1079,13 +1083,13 @@
   }
 
   ::-webkit-scrollbar-thumb {
-    background-color: #cbcbcb51;
+    background-color: var(--color-scrollbar);
     border-radius: 0.5rem;
     opacity: 0.1;
   }
 
   ::-webkit-scrollbar-thumb:hover {
-    background-color: #909090;
+    background-color: var(--color-scrollbar-hover);
     border-radius: 0.5rem;
     opacity: 1;
   }
@@ -1109,7 +1113,7 @@
   }
 
   .nav-button:hover {
-    @apply bg-gray-100;
+    background-color: var(--color-accent-lighter);
     transform: scale(1.05);
   }
 
@@ -1162,7 +1166,7 @@
   }
 
   .addon-header:hover {
-    @apply bg-gray-50;
+    background-color: var(--color-accent-lighter);
   }
 
   .addon-header-content {
@@ -1170,15 +1174,15 @@
   }
 
   .addon-name {
-    @apply text-lg font-semibold text-gray-800 font-archivo px-2;
+    @apply text-lg font-semibold text-text-primary font-archivo px-2;
   }
 
   .result-count {
-    @apply text-sm text-gray-600 font-medium;
+    @apply text-sm text-text-secondary font-medium;
   }
 
   .collapse-icon {
-    @apply w-5 h-5 text-gray-600 transition-transform duration-200 mx-2;
+    @apply w-5 h-5 text-text-secondary transition-transform duration-200 mx-2;
   }
 
   .collapse-icon.collapsed {
@@ -1202,20 +1206,23 @@
   }
 
   .loading-text {
-    @apply text-sm text-gray-500 font-medium italic;
+    @apply text-sm text-text-muted font-medium italic;
   }
 
   .addon-loading-spinner {
-    @apply w-5 h-5 border-2 border-gray-300 rounded-full animate-spin;
+    @apply w-5 h-5 border-2 rounded-full animate-spin;
+    border-color: var(--color-border);
     border-top-color: var(--color-accent);
   }
 
   .empty-icon {
-    @apply w-5 h-5 text-gray-400;
+    @apply w-5 h-5 text-text-muted;
   }
 
   .search-result-item {
-    @apply flex gap-4 p-4 bg-white rounded-lg border border-gray-200 hover:shadow-md transition-all duration-300 ease-out translate-y-0;
+    @apply flex gap-4 p-4 rounded-lg hover:shadow-md transition-all duration-300 ease-out translate-y-0;
+    background-color: var(--color-surface);
+    border: 1px solid var(--color-border);
   }
 
   .search-result-item:hover {
@@ -1231,11 +1238,11 @@
   }
 
   .result-title {
-    @apply text-lg font-archivo font-semibold text-gray-900;
+    @apply text-lg font-archivo font-semibold text-text-primary;
   }
 
   .result-source {
-    @apply text-sm text-gray-500 capitalize;
+    @apply text-sm text-text-muted capitalize;
   }
 
   .result-button {
@@ -1250,13 +1257,8 @@
     @apply flex flex-col items-center justify-center py-12 text-center bg-accent-lighter rounded-lg mb-4;
   }
 
-  .loading-message {
-    @apply flex flex-col items-center justify-center py-12 text-center;
-  }
-
   .loading-spinner {
-    @apply w-8 h-8 border-4 border-accent-lighter border-t-accent rounded-full animate-spin mb-4;
-    filter: drop-shadow(0 2px 4px rgba(66, 138, 145, 0.1));
+    @apply w-8 h-8 border-4 border-accent-lighter border-t-accent rounded-full animate-spin mb-4 drop-shadow-md drop-shadow-focus-ring;
   }
 
   @keyframes spin {
@@ -1275,96 +1277,5 @@
 
   .content-view {
     @apply absolute inset-0 w-full;
-  }
-
-  /* Add to your styles */
-  .gamepad-focus {
-    outline: 3px solid #4a90e2 !important;
-    outline-offset: 2px;
-    box-shadow: 0 0 10px rgba(74, 144, 226, 0.5);
-    transition: all 0.2s ease;
-  }
-
-  /* Hide default focus outline when using gamepad */
-  .gamepad-focus:focus {
-    outline: none;
-  }
-
-  /* Custom Range Slider Styles */
-  input[type='range'] {
-    -webkit-appearance: none;
-    appearance: none;
-    width: 100%;
-    height: 8px;
-    background: #e5e7eb;
-    border-radius: 4px;
-    outline: none;
-    transition: background 0.3s ease;
-  }
-
-  input[type='range']:hover {
-    background: #d1d5db;
-  }
-
-  input[type='range']::-webkit-slider-thumb {
-    -webkit-appearance: none;
-    appearance: none;
-    width: 20px;
-    height: 20px;
-    background: #428a91;
-    border-radius: 50%;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    box-shadow: 0 2px 4px rgba(66, 138, 145, 0.3);
-  }
-
-  input[type='range']::-webkit-slider-thumb:hover {
-    background: #2d626a;
-    transform: scale(1.1);
-    box-shadow: 0 3px 6px rgba(66, 138, 145, 0.4);
-  }
-
-  input[type='range']::-webkit-slider-thumb:active {
-    transform: scale(0.95);
-  }
-
-  input[type='range']::-moz-range-thumb {
-    width: 20px;
-    height: 20px;
-    background: #428a91;
-    border-radius: 50%;
-    cursor: pointer;
-    border: none;
-    transition: all 0.2s ease;
-    box-shadow: 0 2px 4px rgba(66, 138, 145, 0.3);
-  }
-
-  input[type='range']::-moz-range-thumb:hover {
-    background: #2d626a;
-    transform: scale(1.1);
-    box-shadow: 0 3px 6px rgba(66, 138, 145, 0.4);
-  }
-
-  input[type='range']::-moz-range-thumb:active {
-    transform: scale(0.95);
-  }
-
-  input[type='range']::-moz-range-track {
-    width: 100%;
-    height: 8px;
-    background: #e5e7eb;
-    border-radius: 4px;
-  }
-
-  input[type='range']:focus {
-    outline: none;
-  }
-
-  input[type='range']:focus::-webkit-slider-thumb {
-    box-shadow: 0 0 0 3px rgba(66, 138, 145, 0.2);
-  }
-
-  input[type='range']:focus::-moz-range-thumb {
-    box-shadow: 0 0 0 3px rgba(66, 138, 145, 0.2);
   }
 </style>

@@ -232,7 +232,7 @@
 {/if}
 
 <div
-  class="flex flex-col top-0 left-0 overflow-y-auto absolute w-full h-full bg-white z-3 animate-fade-in-pop-fast"
+  class="flex flex-col top-0 left-0 overflow-y-auto absolute w-full h-full bg-background-color z-3 animate-fade-in-pop-fast"
   out:fly={{ x: 100, duration: 500, easing: quintOut }}
 >
   <!-- Hero Banner Section -->
@@ -245,9 +245,10 @@
     />
     <!-- Overlay with game info -->
     <div
-      class="absolute bottom-0 left-0 right-0 bg-linear-to-t from-black/70 to-transparent p-6"
+      class="absolute bottom-0 left-0 right-0 p-6"
+      style="background: linear-gradient(to top, var(--color-overlay-bg), transparent);"
     >
-      <h1 class="text-4xl font-archivo font-bold text-white mb-2">
+      <h1 class="text-4xl font-archivo font-bold text-overlay-text mb-2">
         {libraryInfo.name}
       </h1>
       <!-- <div class="text-sm text-gray-200">
@@ -279,11 +280,11 @@
   <div class="bg-accent-lighter px-6 py-4 flex items-center gap-3 rounded-b-lg">
     {#if updateInfo && !$currentDownloads.find((download) => download.appID === libraryInfo.appID && download.status !== 'error' && download.status !== 'completed' && download.status !== 'seeding' && download.status !== 'setup-complete')}
       <button
-        class="px-6 py-3 flex border-none rounded-lg justify-center bg-yellow-500 hover:bg-yellow-600 items-center gap-2 disabled:bg-yellow-500 disabled:cursor-not-allowed transition-colors duration-200"
+        class="px-6 py-3 flex border-none rounded-lg justify-center bg-success hover:bg-success-hover items-center gap-2 disabled:bg-disabled disabled:cursor-not-allowed transition-colors duration-200 text-overlay-text"
         onclick={() => (showUpdateModal = true)}
       >
-        <UpdateIcon fill="#ffffff" />
-        <p class="font-archivo font-semibold text-white">
+        <UpdateIcon fill="var(--color-overlay-text)" />
+        <p class="font-archivo font-semibold text-overlay-text">
           Update to {updateInfo.updateVersion?.slice(0, 8)}
         </p>
       </button>
@@ -292,14 +293,14 @@
         onclick={() => {
           updatesManager.removeAppUpdate(libraryInfo.appID);
         }}
-        class="px-3 py-3 flex border-none rounded-lg justify-center bg-red-500 hover:bg-red-600 items-center gap-2 disabled:bg-gray-500 disabled:cursor-not-allowed transition-colors duration-200"
+        class="px-3 py-3 flex border-none rounded-lg justify-center bg-error hover:bg-error-hover items-center gap-2 disabled:bg-disabled disabled:cursor-not-allowed transition-colors duration-200 text-overlay-text"
       >
         <svg
           xmlns="http://www.w3.org/2000/svg"
           height="20px"
           viewBox="0 -960 960 960"
           width="20px"
-          fill="white"
+          fill="var(--color-overlay-text)"
         >
           <path
             d="M480-424 284-228q-17 17-44 17t-44-17q-17-17-17-44t17-44l196-196-196-196q-17-17-17-44t17-44q17-17 44-17t44 17l196 196 196-196q17-17 44-17t44 17q17 17 17 44t-17 44L536-480l196 196q17 17 17 44t-17 44q-17 17-44 17t-44-17L480-424Z"
@@ -308,11 +309,11 @@
       </button>
     {:else if $currentDownloads.find((download) => download.appID === libraryInfo.appID && download.status !== 'error' && download.status !== 'completed' && download.status !== 'seeding' && download.status !== 'setup-complete')}
       <button
-        class="px-6 py-3 flex border-none rounded-lg justify-center bg-yellow-500 items-center gap-2 cursor-not-allowed transition-colors duration-200"
+        class="px-6 py-3 flex border-none rounded-lg justify-center bg-success items-center gap-2 cursor-not-allowed transition-colors duration-200 text-overlay-text"
         disabled
       >
-        <UpdateIcon fill="#ffffff" />
-        <p class="font-archivo font-semibold text-white">Updating</p>
+        <UpdateIcon fill="var(--color-overlay-text)" />
+        <p class="font-archivo font-semibold text-overlay-text">Updating</p>
       </button>
     {:else}
       {#await window.electronAPI.app.getOS()}
@@ -321,10 +322,10 @@
         {#if (os === 'linux' || os === 'darwin') && libraryInfo.launchExecutable.endsWith('.exe')}
           <div class="relative group">
             <button
-              class="px-6 py-3 flex border-none rounded-lg justify-center bg-gray-500 items-center gap-2 disabled:bg-gray-500 disabled:cursor-not-allowed transition-colors duration-200"
+              class="px-6 py-3 flex border-none rounded-lg justify-center bg-disabled items-center gap-2 disabled:bg-disabled disabled:cursor-not-allowed transition-colors duration-200"
               disabled
             >
-              <PlayIcon fill="#ffffff" />
+              <PlayIcon fill="var(--color-overlay-text)" />
               <p class="font-archivo font-semibold text-white">Play</p>
             </button>
             <div
@@ -339,11 +340,11 @@
         {:else}
           <button
             bind:this={playButton}
-            class="px-6 py-3 flex border-none rounded-lg justify-center bg-green-500 hover:bg-green-600 items-center gap-2 disabled:bg-yellow-500 disabled:cursor-not-allowed transition-colors duration-200"
+            class="px-6 py-3 flex border-none rounded-lg justify-center bg-success hover:bg-success-hover items-center gap-2 disabled:bg-disabled disabled:cursor-not-allowed transition-colors duration-200 text-overlay-text"
             onclick={() => launchGameTrigger.set(libraryInfo.appID)}
           >
-            <PlayIcon fill="#86efac" />
-            <p class="font-archivo font-semibold text-white">PLAY</p>
+            <PlayIcon fill="var(--color-overlay-text)" />
+            <p class="font-archivo font-semibold text-overlay-text">PLAY</p>
           </button>
         {/if}
       {/await}
@@ -353,7 +354,7 @@
       class="px-4 py-3 flex border-none rounded-lg justify-center bg-accent-light hover:bg-accent-light/80 text-accent-dark items-center gap-2 transition-colors duration-200"
       onclick={openGameConfiguration}
     >
-      <SettingsFilled fill="#2D626A" />
+      <SettingsFilled fill="var(--color-accent-dark)" />
       <span class="font-medium">Settings</span>
     </button>
 
@@ -405,7 +406,7 @@
       </div>
       <div class="flex gap-3">
         <button
-          class="px-4 py-2 bg-accent-light hover:bg-accent-light/80 text-accent-dark font-archivo font-semibold rounded-lg border-none flex items-center justify-center gap-2 transition-colors duration-200 flex-1 disabled:bg-gray-500/50 disabled:cursor-not-allowed"
+          class="px-4 py-2 bg-accent-light hover:bg-accent-light/80 text-accent-dark font-archivo font-semibold rounded-lg border-none flex items-center justify-center gap-2 transition-colors duration-200 flex-1 disabled:bg-disabled/50 disabled:cursor-not-allowed"
           onclick={async (event) => {
             try {
               (event.currentTarget as HTMLButtonElement).disabled = true;

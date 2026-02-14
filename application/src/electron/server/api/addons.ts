@@ -47,7 +47,8 @@ const procedures: Record<string, Procedure<any>> = {
     .handler(async (input) => {
       const client = clients.get(input.addonID);
       if (!client) return new ProcedureError(404, 'Client not found');
-      if (!client.addonInfo) return new ProcedureError(400, 'Client has no addon info');
+      if (!client.addonInfo)
+        return new ProcedureError(400, 'Client has no addon info');
 
       const response = await client.sendEventMessage({
         event: 'config-update',
@@ -78,7 +79,8 @@ const procedures: Record<string, Procedure<any>> = {
     .handler(async (input) => {
       const client = clients.get(input.addonID);
       if (!client) return new ProcedureError(404, 'Client not found');
-      if (!client.addonInfo) return new ProcedureError(400, 'Client has no addon info');
+      if (!client.addonInfo)
+        return new ProcedureError(400, 'Client has no addon info');
       if (!client.eventsAvailable.includes('search')) {
         return new ProcedureError(400, 'Client does not support search');
       }
@@ -111,7 +113,8 @@ const procedures: Record<string, Procedure<any>> = {
     .handler(async (input) => {
       const client = clients.get(input.addonID);
       if (!client) return new ProcedureError(404, 'Client not found');
-      if (!client.addonInfo) return new ProcedureError(400, 'Client has no addon info');
+      if (!client.addonInfo)
+        return new ProcedureError(400, 'Client has no addon info');
 
       if (!client.eventsAvailable.includes('library-search')) {
         return new ProcedureError(
@@ -143,7 +146,8 @@ const procedures: Record<string, Procedure<any>> = {
     .handler(async (input) => {
       const client = clients.get(input.addonID);
       if (!client) return new ProcedureError(404, 'Client not found');
-      if (!client.addonInfo) return new ProcedureError(400, 'Client has no addon info');
+      if (!client.addonInfo)
+        return new ProcedureError(400, 'Client has no addon info');
 
       if (!client.eventsAvailable.includes('request-dl')) {
         return new ProcedureError(400, 'Client does not support request-dl');
@@ -170,7 +174,8 @@ const procedures: Record<string, Procedure<any>> = {
     .handler(async (input) => {
       const client = clients.get(input.addonID);
       if (!client) return new ProcedureError(404, 'Client not found');
-      if (!client.addonInfo) return new ProcedureError(400, 'Client has no addon info');
+      if (!client.addonInfo)
+        return new ProcedureError(400, 'Client has no addon info');
 
       if (!client.eventsAvailable.includes('catalog')) {
         return new ProcedureError(400, 'Client does not support catalog');
@@ -218,7 +223,8 @@ const procedures: Record<string, Procedure<any>> = {
         console.error('Client not found');
         return new ProcedureError(404, 'Client not found');
       }
-      if (!client.addonInfo) return new ProcedureError(400, 'Client has no addon info');
+      if (!client.addonInfo)
+        return new ProcedureError(400, 'Client has no addon info');
 
       if (!client.eventsAvailable.includes('setup')) {
         console.error('Client does not support setup');
@@ -320,7 +326,8 @@ const procedures: Record<string, Procedure<any>> = {
     .handler(async (input) => {
       const client = clients.get(input.addonID);
       if (!client) return new ProcedureError(404, 'Client not found');
-      if (!client.addonInfo) return new ProcedureError(400, 'Client has no addon info');
+      if (!client.addonInfo)
+        return new ProcedureError(400, 'Client has no addon info');
       if (!client.addonLink || client.addonLink.startsWith('local:')) {
         return new ProcedureError(
           400,
@@ -391,7 +398,8 @@ const procedures: Record<string, Procedure<any>> = {
     .handler(async (input) => {
       const client = clients.get(input.addonID);
       if (!client) return new ProcedureError(404, 'Client not found');
-      if (!client.addonInfo) return new ProcedureError(400, 'Client has no addon info');
+      if (!client.addonInfo)
+        return new ProcedureError(400, 'Client has no addon info');
 
       const deferrableTask = new DeferrableTask(async () => {
         const data = await client.sendEventMessage({
@@ -439,7 +447,8 @@ const procedures: Record<string, Procedure<any>> = {
       }
 
       const client = clientsWithStorefront[0];
-      if (!client.addonInfo) return new ProcedureError(400, 'Client has no addon info');
+      if (!client.addonInfo)
+        return new ProcedureError(400, 'Client has no addon info');
       const deferrableTask = new DeferrableTask(async () => {
         const data = await client.sendEventMessage({
           event: 'check-for-updates',

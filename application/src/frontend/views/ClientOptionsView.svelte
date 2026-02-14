@@ -9,6 +9,7 @@
   import TextModal from '../components/modal/TextModal.svelte';
   import SectionModal from '../components/modal/SectionModal.svelte';
   import CustomDropdown from '../components/CustomDropdown.svelte';
+  import RangeInput from '../components/RangeInput.svelte';
   import { fetchAddonsWithConfigure } from '../utils';
 
   const fs = window.electronAPI.fs;
@@ -47,6 +48,14 @@
       id: 'general',
       description: 'General Settings',
       options: {
+        theme: {
+          displayName: 'Theme',
+          description: 'Appearance theme (Light, Dark, or Synthwave)',
+          defaultValue: 'light',
+          value: 'light',
+          choice: ['light', 'dark', 'synthwave'],
+          type: 'string',
+        },
         fileDownloadLocation: {
           displayName: 'Download Location',
           description: 'The location where files will be downloaded to',
@@ -366,7 +375,10 @@
           }
         }
         if (selectedOption.options[key].type === 'number') {
-          config[key] = parseInt(element.value);
+          config[key] =
+            rangeValues[key] !== undefined
+              ? rangeValues[key]
+              : parseInt(element.value);
         }
         if (
           selectedOption.options[key].type === 'boolean' &&
@@ -767,11 +779,11 @@
                                   .minTextLength}
                               />
                               <div
-                                class="pointer-events-none absolute right-12 top-1 h-8 w-8 z-2 rounded-lg bg-linear-to-r from-transparent to-white/80"
+                                class="pointer-events-none absolute right-12 top-1 h-8 w-8 z-2 rounded-lg bg-linear-to-r from-transparent to-surface/80"
                               ></div>
                               <button
                                 type="button"
-                                class="ml-2 px-2 py-1 text-sm absolute right-2 border-none rounded-lg bg-transparent outline-none text-accent-dark z-3"
+                                class="ml-2 px-2 py-1 text-sm absolute right-2 border-none rounded-lg bg-transparent outline-none hover:bg-accent-light/20 transition-colors active:bg-accent-light/40 text-accent-dark z-3"
                                 onclick={() => {
                                   if (!showPassword) showPassword = {};
                                   showPassword[key] = !showPassword[key];
@@ -880,45 +892,15 @@
                           {/if}
                           <div class="option-input">
                             <div class="range-container">
-                              <input
-                                type="range"
+                              <RangeInput
                                 id={key}
-                                class="input-number"
-                                oninput={(e) => {
-                                  const value = parseInt(
-                                    (e.target as HTMLInputElement).value
-                                  );
-                                  rangeValues[key] = value;
-                                  updateConfig();
-                                }}
                                 value={rangeValues[key] ??
-                                  getStoredOrDefaultValue(key)}
-                                {max}
+                                  (getStoredOrDefaultValue(key) as number)}
                                 {min}
-                              />
-                              <input
-                                type="text"
-                                inputmode="numeric"
-                                pattern="[0-9]*"
-                                class="range-value-input"
-                                value={rangeValues[key] ??
-                                  getStoredOrDefaultValue(key)}
-                                onchange={(e) => {
-                                  const input = e.target as HTMLInputElement;
-                                  let value = parseInt(input.value);
-
-                                  if (isNaN(value)) {
-                                    value =
-                                      rangeValues[key] ??
-                                      (getStoredOrDefaultValue(key) as number);
-                                  } else if (value < min) {
-                                    value = min;
-                                  } else if (value > max) {
-                                    value = max;
-                                  }
-
-                                  input.value = value.toString();
-                                  rangeValues[key] = value;
+                                {max}
+                                editableValue={true}
+                                onchange={(v) => {
+                                  rangeValues[key] = v;
                                   updateConfig();
                                 }}
                               />
@@ -960,6 +942,28 @@
                                 selectedId={selectedTorrentClientId}
                                 onchange={handleTorrentClientChange}
                               />
+                            {:else if key === 'theme'}
+                              <select
+                                id={key}
+                                class="input-select"
+                                value={getStoredOrDefaultValue(key)}
+                                onchange={(e) => {
+                                  const val = (e.target as HTMLSelectElement)
+                                    .value as 'light' | 'dark' | 'synthwave';
+                                  updateConfig();
+                                  document.documentElement.setAttribute(
+                                    'data-theme',
+                                    val
+                                  );
+                                }}
+                              >
+                                {#each selectedOption.options[key].choice as choiceValue}
+                                  <option value={choiceValue}
+                                    >{choiceValue.charAt(0).toUpperCase() +
+                                      choiceValue.slice(1)}</option
+                                  >
+                                {/each}
+                              </select>
                             {:else}
                               <!-- Regular select for other options -->
                               <select
@@ -1018,7 +1022,7 @@
                     >
                       {#if isInstallingAddons}
                         <div
-                          class="animate-spin mr-2 h-5 w-5 border-2 border-white border-t-transparent rounded-full"
+                          class="animate-spin mr-2 h-5 w-5 border-2 border-overlay-text border-t-transparent rounded-full"
                         ></div>
                         Installing...
                       {:else}
@@ -1032,7 +1036,7 @@
                     >
                       {#if isUpdatingAddons}
                         <div
-                          class="animate-spin mr-2 h-5 w-5 border-2 border-white border-t-transparent rounded-full"
+                          class="animate-spin mr-2 h-5 w-5 border-2 border-overlay-text border-t-transparent rounded-full"
                         ></div>
                         Updating...
                       {:else}
@@ -1046,7 +1050,7 @@
                     >
                       {#if isCleaningAddons}
                         <div
-                          class="animate-spin mr-2 h-5 w-5 border-2 border-white border-t-transparent rounded-full"
+                          class="animate-spin mr-2 h-5 w-5 border-2 border-overlay-text border-t-transparent rounded-full"
                         ></div>
                         Cleaning...
                       {:else}
@@ -1062,7 +1066,7 @@
                     >
                       {#if isRestartingServer}
                         <div
-                          class="animate-spin mr-2 h-5 w-5 border-2 border-white border-t-transparent rounded-full"
+                          class="animate-spin mr-2 h-5 w-5 border-2 border-overlay-text border-t-transparent rounded-full"
                         ></div>
                         Restarting...
                       {:else}
@@ -1078,7 +1082,7 @@
           <div class="no-selection">
             <div class="no-selection-content">
               <svg
-                class="no-selection-icon"
+                class="no-selection-icon text-text-muted"
                 fill="currentColor"
                 viewBox="0 0 24 24"
               >
@@ -1086,8 +1090,10 @@
                   d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"
                 />
               </svg>
-              <h2 class="no-selection-title">Select a Setting Category</h2>
-              <p class="no-selection-description">
+              <h2 class="no-selection-title text-text-primary">
+                Select a Setting Category
+              </h2>
+              <p class="no-selection-description text-text-secondary">
                 Choose a category from the sidebar to configure your settings
               </p>
             </div>
@@ -1114,7 +1120,7 @@
   }
 
   .sidebar-item {
-    @apply w-full p-4 rounded-lg border-none bg-transparent hover:bg-accent-lighter transition-colors duration-200 text-left text-white;
+    @apply w-full p-4 rounded-lg border-none bg-transparent hover:bg-accent-lighter transition-colors duration-200 text-left text-text-primary;
   }
 
   .sidebar-item.selected {
@@ -1126,11 +1132,11 @@
   }
 
   .sidebar-item-title {
-    @apply text-lg font-archivo font-semibold text-gray-900;
+    @apply text-lg font-archivo font-semibold text-text-primary;
   }
 
   .sidebar-item-description {
-    @apply text-sm text-gray-600;
+    @apply text-sm text-text-secondary;
   }
 
   /* Main Content Styles */
@@ -1160,11 +1166,11 @@
   }
 
   .about-title {
-    @apply text-3xl font-archivo font-bold text-gray-900;
+    @apply text-3xl font-archivo font-bold text-text-primary;
   }
 
   .about-subtitle {
-    @apply text-lg text-gray-600;
+    @apply text-lg text-text-secondary;
   }
 
   .about-links {
@@ -1176,11 +1182,11 @@
   }
 
   .about-separator {
-    @apply text-gray-400;
+    @apply text-text-muted;
   }
 
   .about-version {
-    @apply text-sm text-gray-500 mt-8;
+    @apply text-sm text-text-muted mt-8;
   }
 
   /* Options Grid */
@@ -1189,15 +1195,15 @@
   }
 
   .option-item {
-    @apply bg-white p-6 rounded-lg border border-gray-200 shadow-sm;
+    @apply bg-surface p-6 rounded-lg border border-border shadow-sm;
   }
 
   .option-label {
-    @apply block text-lg font-archivo font-semibold text-gray-900 mb-1;
+    @apply block text-lg font-archivo font-semibold text-text-primary mb-1;
   }
 
   .option-description {
-    @apply text-sm text-gray-600 mb-4;
+    @apply text-sm text-text-secondary mb-4;
   }
 
   .option-input {
@@ -1208,11 +1214,15 @@
   .input-text,
   .input-number,
   .input-select {
-    @apply w-full px-4 py-2 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-accent-light focus:border-accent transition-colors text-accent-text-color;
+    @apply w-full px-4 py-2 border border-border rounded-lg bg-input-bg text-text-primary focus:ring-2 focus:ring-accent-light focus:border-accent transition-colors;
   }
 
   .input-textarea {
-    @apply w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-accent-light focus:border-accent transition-colors resize-none h-32;
+    @apply w-full px-4 py-2 border border-border rounded-lg bg-input-bg text-text-primary focus:ring-2 focus:ring-accent-light focus:border-accent transition-colors resize-none h-32;
+  }
+
+  .input-textarea {
+    @apply w-full px-4 py-2 border border-border rounded-lg focus:ring-2 focus:ring-accent-light focus:border-accent transition-colors resize-none h-32 text-text-primary bg-input-bg;
   }
 
   .file-input-group {
@@ -1224,7 +1234,7 @@
   }
 
   .browse-button {
-    @apply px-4 py-2 bg-accent text-white rounded-lg hover:bg-accent-dark transition-colors border-none font-archivo font-semibold;
+    @apply px-4 py-2 bg-accent-light rounded-lg hover:bg-accent-dark/80 transition-colors border-none font-archivo font-semibold text-accent-dark;
   }
 
   /* Checkbox Styles */
@@ -1237,7 +1247,7 @@
   }
 
   .checkbox-checkmark {
-    @apply w-5 h-5 bg-white border-2 border-gray-300 rounded flex items-center justify-center transition-colors;
+    @apply w-5 h-5 bg-surface border-2 border-border rounded flex items-center justify-center transition-colors;
   }
 
   .input-checkbox:checked + .checkbox-checkmark {
@@ -1246,21 +1256,21 @@
 
   .input-checkbox:not(:checked) + .checkbox-checkmark::after {
     content: '–';
-    @apply text-gray-400 text-sm font-archivo;
+    @apply text-text-muted text-sm font-archivo;
   }
 
   .input-checkbox:checked + .checkbox-checkmark::after {
     content: '•';
-    @apply text-white text-sm font-archivo;
+    @apply text-accent-text-color text-sm font-archivo;
   }
 
   /* Action Section */
   .action-section {
-    @apply mt-8 p-6 bg-white rounded-lg border border-gray-200;
+    @apply mt-8 p-6 bg-surface rounded-lg border border-border;
   }
 
   .action-title {
-    @apply text-xl font-archivo font-semibold text-gray-900 mb-4;
+    @apply text-xl font-archivo font-semibold text-text-primary mb-4;
   }
 
   .action-buttons {
@@ -1272,19 +1282,51 @@
   }
 
   .action-button.primary {
-    @apply bg-green-500 text-white hover:bg-green-600 disabled:bg-gray-400;
+    @apply bg-success text-overlay-text;
+  }
+
+  .action-button.primary:hover:not(:disabled) {
+    @apply bg-success-hover;
+  }
+
+  .action-button.primary:disabled {
+    @apply bg-disabled;
   }
 
   .action-button.secondary {
-    @apply bg-blue-500 text-white hover:bg-blue-600 disabled:bg-gray-400;
+    @apply bg-info text-overlay-text;
+  }
+
+  .action-button.secondary:hover:not(:disabled) {
+    @apply bg-info-hover;
+  }
+
+  .action-button.secondary:disabled {
+    @apply bg-disabled;
   }
 
   .action-button.danger {
-    @apply bg-red-500 text-white hover:bg-red-600 disabled:bg-gray-400;
+    @apply bg-error text-overlay-text;
+  }
+
+  .action-button.danger:hover:not(:disabled) {
+    @apply bg-error-hover;
+  }
+
+  .action-button.danger:disabled {
+    @apply bg-disabled;
   }
 
   .action-button.warning {
-    @apply bg-yellow-500 text-white hover:bg-yellow-600 disabled:bg-gray-400;
+    @apply bg-warning text-overlay-text;
+  }
+
+  .action-button.warning:hover:not(:disabled) {
+    @apply bg-warning-hover;
+  }
+
+  .action-button.warning:disabled {
+    @apply bg-disabled;
   }
 
   /* No Selection State */
@@ -1297,15 +1339,15 @@
   }
 
   .no-selection-icon {
-    @apply w-16 h-16 text-gray-400 mx-auto;
+    @apply w-16 h-16 text-text-muted mx-auto;
   }
 
   .no-selection-title {
-    @apply text-2xl font-archivo font-semibold text-gray-900;
+    @apply text-2xl font-archivo font-semibold text-text-primary;
   }
 
   .no-selection-description {
-    @apply text-gray-600;
+    @apply text-text-secondary;
   }
 
   /* Remove webkit number input spinners */
@@ -1315,22 +1357,8 @@
     margin: 0;
   }
 
-  /* Range Container Styles */
+  /* Range container uses shared RangeInput component */
   .range-container {
-    @apply flex items-center gap-4;
-  }
-
-  .range-container .input-number {
-    @apply flex-1;
-  }
-
-  .range-value-input {
-    @apply w-16 text-center px-3 py-1 bg-accent-lighter text-accent-dark rounded-lg font-archivo font-semibold text-lg border-none focus:ring-2 focus:ring-accent-light outline-none;
-    background-color: #e1f4f0;
-    -webkit-user-select: text;
-    -moz-user-select: text;
-    -ms-user-select: text;
-    user-select: text;
-    cursor: text;
+    @apply flex items-center gap-4 w-full;
   }
 </style>

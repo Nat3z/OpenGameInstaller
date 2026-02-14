@@ -304,7 +304,6 @@
 
     const gameID = (gameData as StoreData).appID;
 
-    console.log('Playing game with ID: ' + gameID);
     selectedView.set('library');
     viewOpenedWhenChanged.set('library');
     currentStorePageOpened.set(undefined);
@@ -316,7 +315,6 @@
   }
 
   function showSourceInfo(result: SearchResultWithAddon) {
-    console.log('Showing source info for: ' + result.addonSource);
     selectedResult = result;
   }
 
@@ -399,7 +397,6 @@
       !alreadyOwns &&
       !matchedDownload
     ) {
-      console.log('Download completed, refreshing store data...');
       // Refresh the alreadyOwns status
       alreadyOwns = window.electronAPI.fs.exists(
         './library/' + appID + '.json'
@@ -418,11 +415,6 @@
       }
     }
   });
-
-  // Debug reactive statement
-  $effect(() => {
-    console.log('Modal state changed - selectedResult:', selectedResult);
-  });
 </script>
 
 {#if gameData}
@@ -434,7 +426,7 @@
         <div class="relative w-full h-64 overflow-hidden rounded-lg">
           <div class="skeleton w-full h-full"></div>
           <div
-            class="absolute bottom-0 left-0 right-0 bg-linear-to-t from-black/70 to-transparent p-6 rounded-b-lg"
+            class="absolute bottom-0 left-0 right-0 p-6 rounded-b-lg bg-linear-to-t from-overlay-bg to-transparent"
           >
             <div class="skeleton h-10 w-64 mb-2"></div>
             <div class="skeleton h-4 w-96"></div>
@@ -493,19 +485,26 @@
           />
           <!-- Overlay with game info -->
           <div
-            class="absolute bottom-0 left-0 right-0 bg-linear-to-t from-black/70 to-transparent p-6 rounded-b-lg"
+            class="absolute bottom-0 left-0 right-0 p-6 rounded-b-lg"
+            style="background: linear-gradient(to top, var(--color-overlay-bg), transparent);"
           >
-            <h1 class="text-4xl font-archivo font-bold text-white mb-2">
+            <h1
+              class="text-4xl font-archivo font-bold mb-2"
+              style="color: var(--color-overlay-text);"
+            >
               {gameData.name}
             </h1>
-            <div class="text-sm text-gray-200">
-              <span class="text-gray-300">Publisher:</span>
+            <div
+              class="text-sm"
+              style="color: var(--color-overlay-text); opacity: 0.9;"
+            >
+              <span style="opacity: 0.7;">Publisher:</span>
               {(gameData.publishers ?? []).join(', ')}
               <span class="mx-4"></span>
-              <span class="text-gray-300">Developer:</span>
+              <span style="opacity: 0.7;">Developer:</span>
               {(gameData.developers ?? []).join(', ')}
               <br />
-              <span class="text-gray-300">Release Date:</span>
+              <span style="opacity: 0.7;">Release Date:</span>
               {gameData.releaseDate}
             </div>
           </div>
@@ -516,13 +515,13 @@
       <div class="flex flex-1 overflow-hidden gap-4">
         <!-- Left side - Description -->
         <div class="mt-4 flex-1 overflow-y-auto relative">
-          <!-- Fade gradient overlay at top -->
+          <!-- Fade gradient overlay at top (opaque at top edge, fading down) -->
           <div
-            class="sticky top-0 h-4 bg-linear-to-b from-white/80 to-transparent z-10 pointer-events-none"
+            class="sticky top-0 h-3 bg-linear-to-t from-transparent to-bg-primary/40 z-10 pointer-events-none"
           ></div>
 
           <!-- Detailed description -->
-          <div class="pb-10 -mt-4">
+          <div class="pb-10 -mt-3">
             <article
               id="g-descript"
               class="prose max-w-none text-accent-dark pt-4"
@@ -530,6 +529,10 @@
               {@html gameData.description}
             </article>
           </div>
+          <!-- Fade gradient overlay at bottom (opaque at bottom edge, fading up) -->
+          <div
+            class="sticky bottom-0 h-3 bg-linear-to-b from-transparent to-bg-primary/40 z-10 pointer-events-none"
+          ></div>
         </div>
 
         <!-- Right sidebar -->
@@ -539,7 +542,7 @@
             <div class="p-6 bg-accent-lighter rounded-lg mb-4">
               <div class="flex items-center justify-between mb-3">
                 <h3 class="font-medium text-accent-dark">Downloading</h3>
-                <span class="text-sm text-gray-600">
+                <span class="text-sm text-text-secondary">
                   {activeDownload.status === 'downloading' ||
                   activeDownload.status === 'rd-downloading'
                     ? Math.round(activeDownload.progress * 100) + '%'
@@ -590,7 +593,7 @@
                 </div>
 
                 {#if activeDownload.queuePosition && activeDownload.queuePosition > 1}
-                  <div class="text-xs text-gray-500 mt-1">
+                  <div class="text-xs text-text-muted mt-1">
                     Queue position: {activeDownload.queuePosition === 999
                       ? '-'
                       : activeDownload.queuePosition}
@@ -604,25 +607,25 @@
                   addonId={activeDownload.addonSource}
                   class="w-6 h-6 rounded"
                 />
-                <span class="text-sm text-gray-700"
+                <span class="text-sm text-text-primary"
                   >{activeDownload.addonSource}</span
                 >
               </div>
             </div>
           {:else}
             <div class="flex-1 overflow-y-auto relative">
-              <!-- Fade gradient overlay at top -->
+              <!-- Fade gradient overlay at top (opaque at top edge, fading down) -->
               <div
-                class="sticky top-0 h-4 bg-linear-to-b from-white/80 to-transparent z-10 pointer-events-none"
+                class="sticky top-0 h-3 bg-linear-to-t from-transparent to-bg-primary/40 z-10 pointer-events-none"
               ></div>
               <!-- Sources Section -->
-              <div class="-mt-4">
+              <div class="-mt-3">
                 {#if alreadyOwns}
                   <div class="p-6 bg-accent-lighter rounded-lg mb-4">
                     <button
                       class="w-full border-none {!isWin32Only
                         ? 'bg-accent-light hover:bg-accent-light/80 text-accent-dark'
-                        : 'bg-gray-300 text-gray-500 cursor-not-allowed'} font-medium py-3 px-4 rounded-lg transition-colors duration-200 {isWin32Only
+                        : 'bg-border-strong text-text-muted cursor-not-allowed'} font-medium py-3 px-4 rounded-lg transition-colors duration-200 {isWin32Only
                         ? 'mb-3'
                         : ''}"
                       class:disabled={isWin32Only}
@@ -637,7 +640,7 @@
 
                     {#if isWin32Only}
                       <button
-                        class="w-full border-none bg-red-100 hover:bg-red-200 text-red-700 font-medium py-3 px-4 rounded-lg transition-colors duration-200"
+                        class="w-full border-none bg-accent-lighter hover:bg-accent-light text-accent-dark font-medium py-3 px-4 rounded-lg transition-colors duration-200 border border-accent-light"
                         onclick={() => removeGame()}
                       >
                         Remove from Library
@@ -657,15 +660,17 @@
                       <div class="flex items-center gap-3">
                         <AddonPicture {addonId} class="w-12 h-12 rounded-lg" />
                         <div>
-                          <h3 class="font-medium text-gray-800">{addonName}</h3>
+                          <h3 class="font-medium text-text-primary">
+                            {addonName}
+                          </h3>
                           {#if isEmpty}
                             <span
-                              class="text-sm text-gray-500 font-medium italic"
+                              class="text-sm text-text-muted font-medium italic"
                               >No results found</span
                             >
                           {:else}
                             <span
-                              class="text-sm text-gray-500 font-medium italic"
+                              class="text-sm text-text-muted font-medium italic"
                               >Searching...</span
                             >
                           {/if}
@@ -673,11 +678,11 @@
                       </div>
                       {#if !isEmpty}
                         <div
-                          class="w-5 h-5 border-2 border-gray-300 border-t-accent rounded-full animate-spin"
+                          class="w-5 h-5 border-2 border-border border-t-accent rounded-full animate-spin"
                         ></div>
                       {:else}
                         <svg
-                          class="w-5 h-5 text-gray-400"
+                          class="w-5 h-5 text-text-muted"
                           viewBox="0 0 24 24"
                           fill="none"
                           stroke="currentColor"
@@ -722,10 +727,10 @@
                               class="w-10 h-10 rounded-lg"
                             />
                             <div class="text-left">
-                              <h3 class="font-medium text-gray-800 text-sm">
+                              <h3 class="font-medium text-text-primary text-sm">
                                 {addonGroup.addonName}
                               </h3>
-                              <span class="text-xs text-gray-600"
+                              <span class="text-xs text-text-secondary"
                                 >{filteredResults.length} result{filteredResults.length ===
                                 1
                                   ? ''
@@ -734,7 +739,7 @@
                             </div>
                           </div>
                           <svg
-                            class="w-4 h-4 text-gray-600 transition-transform duration-200"
+                            class="w-4 h-4 text-text-secondary transition-transform duration-200"
                             class:rotate-180={!collapsedAddons.has(
                               addonGroup.addonId
                             )}
@@ -770,14 +775,14 @@
                                   class="flex items-center justify-between mb-2"
                                 >
                                   <span
-                                    class="font-medium text-gray-800 text-sm"
+                                    class="font-medium text-text-primary text-sm"
                                     >{result.name.slice(0, 25)}{result.name
                                       .length > 25
                                       ? '...'
                                       : ''}</span
                                   >
                                   <div
-                                    class="flex items-center gap-1 text-xs text-gray-500"
+                                    class="flex items-center gap-1 text-xs text-text-muted"
                                   >
                                     {#if result.downloadType === 'magnet'}
                                       <img
@@ -808,7 +813,7 @@
                                   <button
                                     class="flex-1 text-sm border-none {activeDownload &&
                                     !alreadyOwns
-                                      ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                                      ? 'bg-border-strong text-text-muted cursor-not-allowed'
                                       : 'bg-accent-light hover:bg-accent-light/80 text-accent-dark'} font-medium py-3 px-3 rounded-lg flex items-center justify-center gap-2 transition-colors duration-200"
                                     disabled={(results.length === 0 &&
                                       !queryingSources) ||
@@ -835,7 +840,7 @@
                                       <g clip-path="url(#clip0_22_330)">
                                         <path
                                           d="M12 2C6.48 2 2 6.48 2 12C2 17.52 6.48 22 12 22C17.52 22 22 17.52 22 12C22 6.48 17.52 2 12 2ZM12 17C11.45 17 11 16.55 11 16V12C11 11.45 11.45 11 12 11C12.55 11 13 11.45 13 12V16C13 16.55 12.55 17 12 17ZM13 9H11V7H13V9Z"
-                                          fill="#2D626A"
+                                          fill="currentColor"
                                         />
                                       </g>
                                       <defs>
@@ -844,7 +849,7 @@
                                             width="24"
                                             height="24"
                                             rx="12"
-                                            fill="white"
+                                            fill="currentColor"
                                           />
                                         </clipPath>
                                       </defs>
@@ -861,13 +866,13 @@
                 {:else if queryingSources && loadingAddons.size === 0}
                   <div class="text-center py-8">
                     <div
-                      class="animate-spin w-8 h-8 border-2 border-teal-500 border-t-transparent rounded-full mx-auto mb-3"
+                      class="animate-spin w-8 h-8 border-2 border-accent border-t-transparent rounded-full mx-auto mb-3"
                     ></div>
-                    <p class="text-gray-600">Searching sources...</p>
+                    <p class="text-text-secondary">Searching sources...</p>
                   </div>
                 {:else if !queryingSources && resultsByAddon.length === 0 && loadingAddons.size === 0}
                   <div class="text-center py-8">
-                    <p class="text-gray-600">
+                    <p class="text-text-secondary">
                       {alreadyOwns
                         ? 'No tasks available'
                         : 'No sources available'}
@@ -875,6 +880,10 @@
                   </div>
                 {/if}
               </div>
+              <!-- Fade gradient overlay at bottom (opaque at bottom edge, fading up) -->
+              <div
+                class="sticky bottom-0 h-3 bg-linear-to-b from-transparent to-bg-primary/40 z-10 pointer-events-none"
+              ></div>
             </div>
           {/if}
         </div>
@@ -884,16 +893,16 @@
 {:else if !isOnline}
   <div class="flex flex-col gap-2 w-full justify-center items-center h-full">
     <img src="./favicon.png" alt="content" class="w-32 h-32" />
-    <h1 class="text-2xl text-black">You're Offline</h1>
-    <h1 class="text-lg text-gray-500 text-center">
+    <h1 class="text-2xl text-text-primary">You're Offline</h1>
+    <h1 class="text-lg text-text-secondary text-center">
       Loading Game Stores is unsupported when you're offline.
     </h1>
   </div>
 {:else if !loading}
   <div class="flex flex-col gap-2 w-full justify-center items-center h-full">
     <img src="./favicon.png" alt="content" class="w-32 h-32" />
-    <h1 class="text-2xl text-black">Game not found</h1>
-    <h1 class="text-lg text-gray-500 text-center">
+    <h1 class="text-2xl text-text-primary">Game not found</h1>
+    <h1 class="text-lg text-text-secondary text-center">
       The game you're looking for is not available.
     </h1>
   </div>
@@ -905,7 +914,8 @@
       <div class="relative w-full h-64 overflow-hidden rounded-lg">
         <div class="skeleton w-full h-full"></div>
         <div
-          class="absolute bottom-0 left-0 right-0 bg-linear-to-t from-black/70 to-transparent p-6 rounded-b-lg"
+          class="absolute bottom-0 left-0 right-0 p-6 rounded-b-lg"
+          style="background: linear-gradient(to top, var(--color-overlay-bg), transparent);"
         >
           <div class="skeleton h-10 w-64 mb-2"></div>
           <div class="skeleton h-4 w-96"></div>
@@ -973,7 +983,7 @@
               class="w-16 h-16 rounded-lg"
             />
             <div>
-              <h3 class="text-lg font-semibold">
+              <h3 class="text-lg font-semibold text-text-primary">
                 {selectedResult.addonSource}
               </h3>
               <TextModal text="Addon Source" variant="description" />
@@ -986,18 +996,18 @@
               <div class="flex items-center gap-2">
                 {#if selectedResult.downloadType === 'magnet'}
                   <img class="w-5 h-5" src="./magnet-icon.gif" alt="Magnet" />
-                  <span class="text-sm font-medium">Magnet Link</span>
+                  <span class="text-sm font-medium text-text-primary">Magnet Link</span>
                 {:else if selectedResult.downloadType === 'torrent'}
                   <img class="w-5 h-5" src="./torrent.png" alt="Torrent" />
-                  <span class="text-sm font-medium">Torrent File</span>
+                  <span class="text-sm font-medium text-text-primary">Torrent File</span>
                 {:else if selectedResult.downloadType === 'direct'}
-                  <span class="text-sm font-medium">Direct Download</span>
+                  <span class="text-sm font-medium text-text-primary">Direct Download</span>
                 {:else if selectedResult.downloadType === 'request'}
-                  <span class="text-sm font-medium">Request</span>
+                  <span class="text-sm font-medium text-text-primary">Request</span>
                 {:else if selectedResult.downloadType === 'task'}
-                  <span class="text-sm font-medium">Task</span>
+                  <span class="text-sm font-medium text-text-primary">Task</span>
                 {:else if selectedResult.downloadType === 'empty'}
-                  <span class="text-sm font-medium">Empty</span>
+                  <span class="text-sm font-medium text-text-primary">Empty</span>
                 {/if}
               </div>
             </div>
@@ -1032,69 +1042,44 @@
 
 <style global>
   @reference "../app.css";
-  #g-descript {
-    @apply text-gray-700 bg-transparent;
-  }
-
-  #g-descript img {
-    @apply w-full rounded-lg my-4;
-  }
-
-  #g-descript p {
-    @apply text-sm text-gray-700 mb-3 leading-relaxed;
-  }
-
-  #g-descript h1 {
-    @apply text-xl font-archivo font-semibold text-gray-800 mb-3;
-  }
-
-  #g-descript h2 {
-    @apply text-lg font-archivo font-medium text-gray-800 mb-2;
-  }
-
-  #g-descript strong {
-    @apply font-semibold text-gray-900;
-  }
-
-  #g-descript ul,
-  #g-descript ol {
-    @apply mb-3 ml-4;
-  }
-
-  #g-descript li {
-    @apply text-sm text-gray-700 mb-1;
-  }
-
   #g-descript-custom {
-    @apply text-gray-700 bg-transparent;
+    @apply text-text-primary bg-transparent;
   }
 
+  #g-descript img,
   #g-descript-custom img {
     @apply w-full rounded-lg my-4;
   }
 
+  #g-descript p,
   #g-descript-custom p {
-    @apply text-sm text-gray-700 mb-3 leading-relaxed;
+    @apply text-sm text-text-primary mb-3 leading-relaxed;
   }
 
+  #g-descript h1,
   #g-descript-custom h1 {
-    @apply text-xl font-archivo font-semibold text-gray-800 mb-3;
+    @apply text-xl font-archivo font-semibold text-text-primary mb-3;
   }
 
+  #g-descript h2,
   #g-descript-custom h2 {
-    @apply text-lg font-archivo font-medium text-gray-800 mb-2;
+    @apply text-lg font-archivo font-medium text-text-primary mb-2;
   }
 
+  #g-descript strong,
   #g-descript-custom strong {
-    @apply font-semibold text-gray-900;
+    @apply font-semibold text-text-primary;
   }
 
+  #g-descript ul,
+  #g-descript ol,
   #g-descript-custom ul,
   #g-descript-custom ol {
     @apply mb-3 ml-4;
   }
 
+  #g-descript li,
   #g-descript-custom li {
-    @apply text-sm text-gray-700 mb-1;
+    @apply text-sm text-text-primary mb-1;
   }
 </style>

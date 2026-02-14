@@ -42,11 +42,11 @@
     <span class="checkbox-checkmark"></span>
     <span
       class="text-accent-dark font-medium select-none"
-      class:text-gray-500={disabled}>{label}</span
+      class:text-text-muted={disabled}>{label}</span
     >
   </label>
   {#if description}
-    <p class="block text-xs text-gray-500 mt-1 pl-7">{description}</p>
+    <p class="block text-xs text-text-secondary mt-1 pl-7">{description}</p>
   {/if}
 </div>
 
@@ -58,7 +58,7 @@
   }
 
   .checkbox-checkmark {
-    @apply w-5 h-5 bg-white border-2 border-gray-300 rounded flex items-center justify-center transition-colors;
+    @apply w-5 h-5 bg-input-bg border-2 border-border rounded flex items-center justify-center transition-colors;
   }
 
   .input-checkbox:checked + .checkbox-checkmark {
@@ -67,15 +67,15 @@
 
   .input-checkbox:not(:checked) + .checkbox-checkmark::after {
     content: '–';
-    @apply text-gray-400 text-sm font-archivo;
+    @apply text-text-muted text-sm font-archivo;
   }
 
   .input-checkbox:checked + .checkbox-checkmark::after {
     content: '•';
-    @apply text-white text-sm font-archivo;
+    @apply text-accent-text-color text-sm font-archivo;
   }
 
   .input-checkbox:disabled + .checkbox-checkmark {
-    @apply bg-gray-200 border-gray-300;
+    @apply bg-border-strong border-border-strong;
   }
 </style>

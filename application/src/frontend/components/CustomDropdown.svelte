@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
   import { fly } from 'svelte/transition';
 
   let {
@@ -45,11 +44,6 @@
     return () => {
       document.removeEventListener('click', handleClickOutside);
     };
-  });
-
-  onMount(() => {
-    console.log('selectedOption', selectedOption);
-    console.log('options', options);
   });
 </script>
 
@@ -140,13 +134,13 @@
                 class="object-contain"
               />
             {/if}
-            <div class="font-medium text-gray-900">
+            <div class="font-medium text-text-primary">
               {option.name}
             </div>
           </div>
           {#if option.description}
             <div class="flex-1 text-left">
-              <div class="text-sm text-gray-600 mt-1">
+              <div class="text-sm text-text-secondary mt-1">
                 {option.description}
               </div>
             </div>
@@ -161,11 +155,11 @@
   @reference "../app.css";
 
   .custom-dropdown-button {
-    @apply w-full px-4 py-3 bg-white border border-gray-300 rounded-lg flex items-center justify-between hover:border-accent focus:ring-2 focus:ring-accent-light focus:border-accent transition-colors;
+    @apply w-full px-4 py-3 bg-surface border border-border rounded-lg flex items-center justify-between hover:border-accent focus:ring-2 focus:ring-accent-light focus:border-accent transition-colors text-text-primary;
   }
 
   .custom-dropdown-menu {
-    @apply absolute top-full left-0 right-0 mt-1 bg-white border border-gray-300 rounded-lg shadow-lg z-10 max-h-80 overflow-y-auto;
+    @apply absolute top-full left-0 right-0 mt-1 bg-surface border border-border rounded-lg shadow-lg z-10 max-h-80 overflow-y-auto;
     box-shadow:
       0 10px 25px -5px rgba(0, 0, 0, 0.1),
       0 8px 10px -6px rgba(0, 0, 0, 0.1);
@@ -181,28 +175,30 @@
   }
 
   .custom-dropdown-menu::-webkit-scrollbar-track {
-    @apply bg-gray-100 rounded-r-lg;
+    background-color: var(--color-bg-secondary);
+    border-radius: 0.5rem;
     -webkit-box-shadow: inset 0 0 1px rgba(0, 0, 0, 0.1);
   }
 
   .custom-dropdown-menu::-webkit-scrollbar-thumb {
-    @apply bg-accent rounded-full;
+    background-color: var(--color-scrollbar);
+    border-radius: 9999px;
     transition: background-color 0.2s ease;
     -webkit-box-shadow: inset 0 0 1px rgba(0, 0, 0, 0.2);
     min-height: 20px;
   }
 
   .custom-dropdown-menu::-webkit-scrollbar-thumb:hover {
-    @apply bg-accent-dark;
+    background-color: var(--color-scrollbar-hover);
   }
 
   .custom-dropdown-menu::-webkit-scrollbar-corner {
-    @apply bg-gray-100;
+    background-color: var(--color-bg-secondary);
   }
 
   .custom-dropdown-menu {
     scrollbar-width: thin;
-    scrollbar-color: #428a91 #f3f4f6; /* [[memory:3711419]] */
+    scrollbar-color: var(--color-scrollbar) var(--color-bg-secondary);
     scrollbar-gutter: stable;
   }
 
@@ -224,10 +220,10 @@
   }
 
   .custom-dropdown-option.selected {
-    @apply bg-accent-light;
+    @apply bg-accent-lighter text-accent-dark;
   }
 
   .custom-dropdown-option.selected:hover {
-    @apply bg-accent-light;
+    @apply bg-accent-lighter text-accent-dark;
   }
 </style>

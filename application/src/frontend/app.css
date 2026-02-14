@@ -1,14 +1,145 @@
 @import 'tailwindcss';
 
-/* Custom theme configuration for Tailwind v4 */
+/* Theme variables: set per data-theme; Tailwind @theme references these via var() */
+/* Status colors (shared across themes; never overridden per-theme) */
+:root {
+  --theme-success: #10b981;
+  --theme-success-hover: #059669;
+  --theme-info: #3b82f6;
+  --theme-info-hover: #2563eb;
+  --theme-error: #ef4444;
+  --theme-error-hover: #dc2626;
+  --theme-warning: #f59e0b;
+  --theme-warning-hover: #d97706;
+  --theme-disabled: #9b8fa8;
+}
+
+:root,
+[data-theme='light'] {
+  --theme-accent: #428a91;
+  --theme-accent-dark: #2d626a;
+  --theme-accent-light: #b0dfd5;
+  --theme-accent-lighter: #e1f4f0;
+  --theme-accent-text: #000000;
+  --theme-bg-primary: #f7fffd;
+  --theme-bg-secondary: #ffffff;
+  --theme-text-primary: #111827;
+  --theme-text-secondary: #4b5563;
+  --theme-text-muted: #6b7280;
+  --theme-border: #e5e7eb;
+  --theme-border-strong: #d1d5db;
+  --theme-surface: #ffffff;
+  --theme-scrollbar: #cbcbcb51;
+  --theme-scrollbar-hover: #909090;
+  --theme-input-bg: #ffffff;
+  --theme-focus-ring: rgba(66, 138, 145, 0.2);
+  --theme-overlay-bg: rgba(0, 0, 0, 0.7);
+  --theme-overlay-text: #ffffff;
+  --theme-success: #10b981;
+  --theme-success-hover: #059669;
+  --theme-info: #3b82f6;
+  --theme-info-hover: #2563eb;
+  --theme-error: #ef4444;
+  --theme-error-hover: #dc2626;
+  --theme-warning: #f59e0b;
+  --theme-warning-hover: #d97706;
+  --theme-disabled: #9b8fa8;
+}
+
+[data-theme='dark'] {
+  --theme-accent: #5ee7e0;
+  --theme-accent-dark: #4fd2bc;
+  --theme-accent-light: #0d9488;
+  --theme-accent-lighter: #134e4a;
+  --theme-accent-text: #000000;
+  --theme-bg-primary: #0f172a;
+  --theme-bg-secondary: #1e293b;
+  --theme-text-primary: #f1f5f9;
+  --theme-text-secondary: #cbd5e1;
+  --theme-text-muted: #94a3b8;
+  --theme-border: #334155;
+  --theme-border-strong: #475569;
+  --theme-surface: #1e293b;
+  --theme-scrollbar: #47556980;
+  --theme-scrollbar-hover: #64748b;
+  --theme-input-bg: #1e293b;
+  --theme-focus-ring: rgba(94, 231, 224, 0.3);
+  --theme-overlay-bg: rgba(0, 0, 0, 0.7);
+  --theme-overlay-text: #ffffff;
+  --theme-success: #10b981;
+  --theme-success-hover: #059669;
+  --theme-info: #3b82f6;
+  --theme-info-hover: #2563eb;
+  --theme-error: #ef4444;
+  --theme-error-hover: #dc2626;
+  --theme-warning: #f59e0b;
+  --theme-warning-hover: #d97706;
+  --theme-disabled: #3c6050;
+}
+
+[data-theme='synthwave'] {
+  --theme-accent: #ff7edb;
+  --theme-accent-dark: #c026d3;
+  --theme-accent-light: #f0abfc;
+  --theme-accent-lighter: #2e1065;
+  --theme-accent-text: #000000;
+  --theme-bg-primary: #1e1b4b;
+  --theme-bg-secondary: #312e81;
+  --theme-text-primary: #e9d5ff;
+  --theme-text-secondary: #c4b5fd;
+  --theme-text-muted: #a78bfa;
+  --theme-border: #5b21b6;
+  --theme-border-strong: #7c3aed;
+  --theme-surface: #312e81;
+  --theme-scrollbar: #7c3aed80;
+  --theme-scrollbar-hover: #a78bfa;
+  --theme-input-bg: #312e81;
+  --theme-focus-ring: rgba(255, 126, 219, 0.4);
+  --theme-overlay-bg: rgba(0, 0, 0, 0.7);
+  --theme-overlay-text: #ffffff;
+  --theme-success: #10b981;
+  --theme-success-hover: #059669;
+  --theme-info: #3b82f6;
+  --theme-info-hover: #2563eb;
+  --theme-error: #ef4444;
+  --theme-error-hover: #dc2626;
+  --theme-warning: #f59e0b;
+  --theme-warning-hover: #d97706;
+  --theme-disabled: #7c6b8a;
+}
+
+/* Custom theme configuration for Tailwind v4 - references themed variables */
 @theme {
-  /* Colors */
-  --color-accent: #428a91;
-  --color-accent-dark: #2d626a;
-  --color-accent-light: #b0dfd5;
-  --color-accent-lighter: #e1f4f0;
-  --color-accent-text-color: #000000;
-  --color-background-color: #f7fffd;
+  /* Colors (resolved from theme above) */
+  --color-accent: var(--theme-accent);
+  --color-accent-dark: var(--theme-accent-dark);
+  --color-accent-light: var(--theme-accent-light);
+  --color-accent-lighter: var(--theme-accent-lighter);
+  --color-accent-text-color: var(--theme-accent-text);
+  --color-background-color: var(--theme-bg-primary);
+  --color-bg-primary: var(--theme-bg-primary);
+  --color-bg-secondary: var(--theme-bg-secondary);
+  --color-text-primary: var(--theme-text-primary);
+  --color-text-secondary: var(--theme-text-secondary);
+  --color-text-muted: var(--theme-text-muted);
+  --color-border: var(--theme-border);
+  --color-border-strong: var(--theme-border-strong);
+  --color-scrollbar: var(--theme-scrollbar);
+  --color-scrollbar-hover: var(--theme-scrollbar-hover);
+  --color-input-bg: var(--theme-input-bg);
+  --color-focus-ring: var(--theme-focus-ring);
+  --color-surface: var(--theme-surface);
+  --color-overlay-bg: var(--theme-overlay-bg);
+  --color-overlay-text: var(--theme-overlay-text);
+  --color-success: var(--theme-success);
+  --color-success-hover: var(--theme-success-hover);
+  --color-info: var(--theme-info);
+  --color-info-hover: var(--theme-info-hover);
+  --color-error: var(--theme-error);
+  --color-error-hover: var(--theme-error-hover);
+  --color-warning: var(--theme-warning);
+  --color-warning-hover: var(--theme-warning-hover);
+  --color-disabled: var(--theme-disabled);
 
   /* Font families */
   --font-archivo: 'Archivo', sans-serif;
@@ -180,7 +311,7 @@ h2 {
   border-radius: 9999px;
   animation: spin 1s linear infinite;
   margin-bottom: 1rem;
-  filter: drop-shadow(0 2px 4px rgba(66, 138, 145, 0.1));
+  filter: drop-shadow(0 2px 4px var(--theme-focus-ring));
 }
 
 @keyframes spin {

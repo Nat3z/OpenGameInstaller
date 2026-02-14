@@ -114,6 +114,21 @@
     }
   }
 
+  function getNotificationIconColor(type: Notification['type']): string {
+    switch (type) {
+      case 'success':
+        return 'var(--theme-success)';
+      case 'error':
+        return 'var(--theme-error)';
+      case 'warning':
+        return 'var(--theme-warning)';
+      case 'info':
+        return 'var(--theme-info)';
+      default:
+        return 'var(--theme-accent-dark)';
+    }
+  }
+
   function isCustomEvent(event: Event): event is CustomEvent<Notification> {
     return (
       event instanceof CustomEvent &&
@@ -161,13 +176,12 @@
       on:mouseleave={() => resumeNotificationTimer(notification.id)}
     >
       <div class="flex items-center gap-3 pb-3">
-        <div class="shrink-0">
-          <img
-            src={`./${notification.type}.svg`}
-            alt={notification.type}
-            class="w-5 h-5 notification-icon"
-          />
-        </div>
+        <div
+          class="notification-icon w-5 h-5 shrink-0"
+          style="background-color: {getNotificationIconColor(notification.type)}; -webkit-mask-image: url('./{notification.type}.svg'); -webkit-mask-size: contain; -webkit-mask-position: center; -webkit-mask-repeat: no-repeat; mask-image: url('./{notification.type}.svg'); mask-size: contain; mask-position: center; mask-repeat: no-repeat;"
+          role="img"
+          aria-label={notification.type}
+        ></div>
         <p
           class="notification-text font-open-sans text-sm font-medium leading-relaxed flex-1"
         >
@@ -185,6 +199,8 @@
 </div>
 
 <style>
+  @reference "../app.css";
+
   .fly-in-accent {
     animation: flyInAccent 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94);
   }
@@ -193,28 +209,25 @@
     0% {
       opacity: 0;
       transform: translateX(100%) scale(0.9);
-      border-left: 4px solid #428a91;
     }
     40% {
       opacity: 0.9;
       transform: translateX(-5px) scale(1.02);
-      border-left: 4px solid #428a91;
     }
     100% {
       opacity: 1;
       transform: translateX(0) scale(1);
-      border-left: 4px solid #428a91;
     }
   }
 
   .notification-card {
-    background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+    background: var(--theme-surface);
     box-shadow:
       0 4px 6px -1px rgba(0, 0, 0, 0.1),
       0 2px 4px -1px rgba(0, 0, 0, 0.06),
-      0 0 0 1px rgba(66, 138, 145, 0.1);
+      0 0 0 1px var(--theme-focus-ring);
     backdrop-filter: blur(8px);
-    border: 1px solid rgba(66, 138, 145, 0.15);
+    border: 1px solid var(--theme-border);
     transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
   }
 
@@ -223,20 +236,20 @@
     box-shadow:
       0 8px 25px -1px rgba(0, 0, 0, 0.15),
       0 4px 10px -1px rgba(0, 0, 0, 0.1),
-      0 0 0 1px rgba(66, 138, 145, 0.2);
+      0 0 0 1px var(--theme-focus-ring);
   }
 
   .notification-icon {
     filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.1));
+    /* Mask uses SVG asset; background provides theme color (matches tasks icon fill-accent-dark) */
   }
 
   .notification-text {
-    color: #1e293b;
-    text-shadow: 0 1px 2px rgba(255, 255, 255, 0.8);
+    color: var(--theme-text-primary);
   }
 
   .progress-bar {
-    background: rgba(66, 138, 145, 0.2);
+    background: var(--theme-focus-ring);
     border-radius: 0 0 12px 12px;
     overflow: hidden;
     margin: 0 -16px -16px -16px;
@@ -244,7 +257,11 @@
   }
 
   .progress-fill {
-    background: linear-gradient(90deg, #428a91, #2d626a);
+    background: linear-gradient(
+      90deg,
+      var(--theme-accent),
+      var(--theme-accent-dark)
+    );
     height: 100%;
     border-radius: 0 0 12px 12px;
     transition: width 0.016s linear;

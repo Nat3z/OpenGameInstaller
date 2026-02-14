@@ -20,6 +20,7 @@
   import ButtonModal from '../components/modal/ButtonModal.svelte';
   import DeleteAddonWarningModal from '../components/built/DeleteAddonWarningModal.svelte';
   import CustomDropdown from '../components/CustomDropdown.svelte';
+  import RangeInput from '../components/RangeInput.svelte';
 
   const fs = window.electronAPI.fs;
 
@@ -277,14 +278,6 @@
     setTimeout(() => {
       contextual.style.display = 'none';
     }, 150);
-  }
-
-  function updateInputNum(element: HTMLInputElement) {
-    if (element.type === 'range') {
-      (element.parentElement!!.querySelector(
-        '.range-value'
-      ) as HTMLInputElement)!!.value = element.value;
-    }
   }
 
   async function deleteAddon() {
@@ -567,34 +560,28 @@
               {/if}
               {#if isNumberOption(selectedAddon.configTemplate[key])}
                 {@const option = selectedAddon.configTemplate[key]}
-                <input
-                  data-input
-                  type={option.inputType}
-                  id={key}
-                  oninput={(event) =>
-                    updateInputNum(event.target as HTMLInputElement)}
-                  onchange={updateConfig}
-                  value={getStoredOrDefaultValue(key)}
-                  max={option.max}
-                  min={option.min}
-                  class="config-input"
-                />
                 {#if option.inputType === 'range'}
-                  <input
-                    type="number"
-                    class="range-value min-w-12 text-center px-3 py-1 bg-accent-light text-accent-dark rounded-lg font-archivo font-semibold text-lg"
+                  <RangeInput
+                    id={key}
                     value={getStoredOrDefaultValue(key)}
                     min={option.min}
                     max={option.max}
+                    editableValue={true}
+                    showValue={true}
+                    class="pl-14"
+                    dataInput={true}
                     onchange={updateConfig}
-                    oninput={(event) => {
-                      const element = document.getElementById(
-                        key
-                      ) as HTMLInputElement;
-                      if (element && event.target instanceof HTMLInputElement) {
-                        element.value = event.target.value;
-                      }
-                    }}
+                  />
+                {:else}
+                  <input
+                    data-input
+                    type="number"
+                    id={key}
+                    onchange={updateConfig}
+                    value={getStoredOrDefaultValue(key)}
+                    max={option.max}
+                    min={option.min}
+                    class="config-input"
                   />
                 {/if}
               {/if}
@@ -633,7 +620,7 @@
               <div
                 data-contextual
                 style="display: none"
-                class="absolute flex flex-row gap-3 justify-start items-center z-30 top-12 left-0 bg-white border border-red-200 text-sm p-4 rounded-lg shadow-lg w-full"
+                class="absolute flex flex-row gap-3 justify-start items-center z-30 top-12 left-0 bg-surface border border-red-200 text-sm p-4 rounded-lg shadow-lg w-full"
               >
                 <img
                   src="./error.svg"
@@ -645,7 +632,7 @@
               <div
                 data-description
                 style="display: none"
-                class="absolute flex flex-row gap-3 justify-start items-center z-30 top-12 left-0 bg-white border border-blue-200 text-sm p-4 rounded-lg shadow-lg w-full"
+                class="absolute flex flex-row gap-3 justify-start items-center z-30 top-12 left-0 bg-surface border border-blue-200 text-sm p-4 rounded-lg shadow-lg w-full"
               >
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
@@ -696,14 +683,14 @@
   }
 
   .addon-title {
-    @apply font-semibold text-gray-900 font-archivo;
+    @apply font-semibold text-text-primary font-archivo;
     font-size: 1.25rem;
     margin-bottom: 0.25rem;
     line-height: 1.2;
   }
 
   .addon-description {
-    @apply text-gray-600;
+    @apply text-text-secondary;
     font-size: 0.95rem;
     line-height: 1.4;
     margin-bottom: 0;
@@ -719,11 +706,15 @@
   }
 
   .config-label {
-    @apply text-lg font-medium text-gray-700 min-w-48 font-archivo;
+    @apply text-lg font-medium text-text-secondary font-archivo min-w-fit;
   }
 
   .config-input {
-    @apply px-3 py-2 bg-white rounded-lg border border-gray-300 text-base min-w-64 ml-auto;
+    @apply px-3 py-2 bg-surface rounded-lg border border-border text-base min-w-64 ml-auto text-text-primary;
+  }
+
+  .config-input::placeholder {
+    @apply text-text-muted;
   }
 
   .config-input-container {
@@ -737,14 +728,14 @@
     @apply sr-only;
   }
   .checkbox-checkmark {
-    @apply w-5 h-5 bg-white border-2 border-gray-300 rounded flex items-center justify-center transition-colors;
+    @apply w-5 h-5 bg-surface border-2 border-border rounded flex items-center justify-center transition-colors;
   }
   .input-checkbox:checked + .checkbox-checkmark {
     @apply bg-accent border-accent;
   }
   .input-checkbox:not(:checked) + .checkbox-checkmark::after {
     content: '–';
-    @apply text-gray-400 text-sm font-archivo;
+    @apply text-text-muted text-sm font-archivo;
   }
   .input-checkbox:checked + .checkbox-checkmark::after {
     content: '•';

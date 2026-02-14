@@ -220,7 +220,9 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
       join(__dirname, 'public'),
       join(__dirname, 'config'),
       // for each addon, add the basedir of the addon to the allowed dirs
-      ...Array.from(clients.values()).map((client) => client.filePath + '/'),
+      ...Array.from(clients.values())
+        .filter((client) => client.filePath)
+        .map((client) => client.filePath + '/'),
     ];
 
     let realPath: string;

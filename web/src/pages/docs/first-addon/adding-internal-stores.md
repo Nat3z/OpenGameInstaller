@@ -80,3 +80,7 @@ addon.on('game-details', ({ appID, storefront }, event) => {
 ```
 
 The `description` property can be used to provide rich content about the game in html.
+
+## Related: Discover Catalogs
+
+To make your games show up in the Discover tab (including the hero carousel), continue with [Adding Discover Catalogs & Carousel](/docs/first-addon/adding-discover-catalogs).

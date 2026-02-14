@@ -14,7 +14,18 @@ To create a setup handler, create an event handler for the `setup` event.
 addon.on(
   'setup',
   (
-    { path, type, name, usedRealDebrid, appID, storefront, multiPartFiles },
+    {
+      path,
+      type,
+      name,
+      usedRealDebrid,
+      appID,
+      storefront,
+      multiPartFiles,
+      manifest,
+      for: setupFor,
+      currentLibraryInfo,
+    },
     event
   ) => {
     // resolve a LibraryInfo object
@@ -40,37 +51,51 @@ await event.askForInput(name, description, config);
 **Example:**
 
 ```typescript
-event
-  .askForInput(
-    'Please enter the code',
-    'code',
-    new ConfigurationBuilder().addNumberOption((option) =>
-      option
-        .setDisplayName('Code')
-        .setName('code')
-        .setDescription('Enter the code')
-        .setMin(1)
-        .setMax(100)
-    )
+const input = await event.askForInput(
+  'Please enter the code',
+  'code',
+  new ConfigurationBuilder().addNumberOption((option) =>
+    option
+      .setDisplayName('Code')
+      .setName('code')
+      .setDescription('Enter the code')
+      .setMin(1)
+      .setMax(100)
   )
-  .then((input) => {
-    /* do what you want with the input! */
-  });
+);
+
+// do what you want with input.code
 ```
 
 # Important about async functions
 
-If you want your event handler to be async, you must use `new Promise` to make it async.
+You can make setup handlers `async` directly. You do not need to wrap them in `new Promise`.
 
 **Example:**
 
 ```typescript
-addon.on('setup', ({ text, type }, event) => {
-  event.defer(); // IMPORTANT!!!!! This MUST be before your Promise.
-  new Promise<void>(async (resolve, reject) => {
-    // your async code here...
-    event.resolve(/* your resolution here */);
-    resolve();
-  });
-});
+addon.on(
+  'setup',
+  async ({ path, appID, storefront, for: setupFor, currentLibraryInfo }, event) => {
+    event.defer();
+
+    const latestVersion =
+      (await addon.getAppDetails(appID, storefront))?.latestVersion ?? '1.0.0';
+
+    event.resolve({
+      cwd: path,
+      launchExecutable: 'game.exe',
+      launchArguments: '',
+      version: latestVersion,
+    });
+  }
+);
 ```
+
+Use `event.defer()` whenever your setup performs async work like extraction, network requests, or scanning files.
+
+## Related: Action tasks and task input
+
+For user-triggered tasks outside setup (including `task.askForInput(...)`), see [Action Buttons & Tasks](/docs/first-addon/action-buttons-and-tasks).
+
+For update-specific setup (`for: 'update'` with `currentLibraryInfo`), see [Adding Game Update Support](/docs/first-addon/adding-game-updates).

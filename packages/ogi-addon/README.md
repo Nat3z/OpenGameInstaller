@@ -2,21 +2,31 @@
 
 A library to interface with OpenGameInstaller's addon system.
 
-# Installation
+## Installation
 
 ```bash
-$ npm install ogi-addon
+bun add ogi-addon
 ```
 
-# Examples
+## Documentation
 
-Check out the [test-addon](https://github.com/Nat3z/OpenGameInstaller/tree/main/test-addon) folder to see how to use the addon library.
+- [First addon guide](https://ogi.nat3z.com/docs/first-addon)
+- [Configuration setup](https://ogi.nat3z.com/docs/first-addon/adding-configs)
+- [Discover catalogs and carousel](https://ogi.nat3z.com/docs/first-addon/adding-discover-catalogs)
+- [Action buttons and tasks](https://ogi.nat3z.com/docs/first-addon/action-buttons-and-tasks)
+- [Game update support](https://ogi.nat3z.com/docs/first-addon/adding-game-updates)
+- [Migration guide (v2.0.x to v2.1)](https://ogi.nat3z.com/docs/updates/2.0-to-2.1)
 
-# Boilerplate
+## Example Addon
 
-Your addon should include an `addon.json` file which describes how to setup your addon. It should always include a `run` script so OpenGameInstaller will know how to start your addon.
+See `test-addon` for an end-to-end example:
+[test-addon](https://github.com/Nat3z/OpenGameInstaller/tree/main/test-addon)
 
-```typescript
+## `addon.json` Boilerplate
+
+Your addon should include an `addon.json` file that describes setup and runtime scripts.
+
+```ts
 interface AddonFileConfigurationSchema {
   author: string;
   scripts: {
@@ -28,22 +38,20 @@ interface AddonFileConfigurationSchema {
 }
 ```
 
-## How to Develop
+## Local Development in OGI
 
-In OpenGameInstaller, go to `Settings > General` and use the **local:** prefix to define that your addon is hosted locally instead of through a remote git repository.
+In OpenGameInstaller, go to `Settings > General` and use the `local:` prefix to point to your addon path.
 
-For Example:
+Example:
 
-```
+```text
 local:C:\Users\[you]\Documents\Addon\
 ```
 
-This will allow OpenGameInstaller to launch your addon securely instead of opening up the addon server for unsigned connections.
+### Disable Signature Requirement (Debug Only)
 
-### Disable Signature Requirement for Addons
+If you need to debug outside normal launch flow, you can disable signature checks.
 
-If you want to debug your addon without relying on OpenGameInstaller to launch it, you can disable the signature requirement.
+Warning: this is unsafe and allows unsigned programs to connect to the addon server.
 
-⚠️ **WARNING** This is VERY unsafe to do, as it allows for any malicious program to connect to the addon server without needing to provide the addon secret. We recommend enabling this temporarily for debugging purposes and disabling it once you can.
-
-To disable the signature requirement, go to `Settings > Developer` and select **Disable Server Secret Check**. Restart OpenGameInstaller.
+To disable, go to `Settings > Developer`, select `Disable Server Secret Check`, and restart OGI.

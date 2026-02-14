@@ -336,37 +336,62 @@ addon.on('catalog', (event) => {
   new Promise(async (resolve) => {
     const details = (await addon.getAppDetails(1, 'test-front'))!;
     event.resolve({
-      x: {
-        name: 'Test Catalog',
-        description: 'A test catalog',
-        listings: [
-          {
-            appID: details.appID,
-            name: details.name,
-            capsuleImage: details.capsuleImage,
-            storefront: 'test-front',
-          },
-          {
-            appID: 945360,
-            name: 'Among Us',
-            capsuleImage:
-              'https://steamcdn-a.akamaihd.net/steam/apps/945360/library_600x900_2x.jpg',
-            storefront: 'steam',
-          },
-        ],
+      sections: {
+        x: {
+          name: 'Test Catalog',
+          description: 'A test catalog',
+          listings: [
+            {
+              appID: details.appID,
+              name: details.name,
+              capsuleImage: details.capsuleImage,
+              storefront: 'test-front',
+            },
+            {
+              appID: 945360,
+              name: 'Among Us',
+              capsuleImage:
+                'https://steamcdn-a.akamaihd.net/steam/apps/945360/library_600x900_2x.jpg',
+              storefront: 'steam',
+            },
+          ],
+        },
+        cat: {
+          name: 'Among Us',
+          description: 'The best Among Us',
+          listings: [
+            {
+              appID: 945360,
+              name: 'Among Us',
+              capsuleImage:
+                'https://steamcdn-a.akamaihd.net/steam/apps/945360/library_600x900_2x.jpg',
+              storefront: 'steam',
+            },
+          ],
+        },
       },
-      cat: {
-        name: 'Among Us',
-        description: 'The best Among Us',
-        listings: [
-          {
-            appID: 945360,
-            name: 'Among Us',
-            capsuleImage:
-              'https://steamcdn-a.akamaihd.net/steam/apps/945360/library_600x900_2x.jpg',
-            storefront: 'steam',
-          },
-        ],
+      carousel: {
+        featuredTestApp: {
+          name: details.name,
+          description: 'Featured from the test storefront catalog.',
+          carouselImage: details.coverImage,
+          fullBannerImage: details.headerImage,
+          appID: details.appID,
+          storefront: 'test-front',
+          capsuleImage: details.capsuleImage,
+        },
+        featuredAmongUs: {
+          name: 'Among Us',
+          description: 'Sus out your friends in this party classic.',
+          carouselImage:
+            'https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/945360/library_hero.jpg',
+          fullBannerImage:
+            'https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/945360/header.jpg',
+          appID: 945360,
+          storefront: 'steam',
+          capsuleImage:
+            'https://steamcdn-a.akamaihd.net/steam/apps/945360/library_600x900_2x.jpg',
+        },
       },
     });
   });

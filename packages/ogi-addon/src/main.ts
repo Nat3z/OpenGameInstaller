@@ -101,6 +101,29 @@ export type BasicLibraryInfo = {
   storefront: string;
 };
 
+export interface CatalogSection {
+  name: string;
+  description: string;
+  listings: BasicLibraryInfo[];
+}
+
+export interface CatalogCarouselItem {
+  name: string;
+  description: string;
+  carouselImage: string;
+  fullBannerImage?: string;
+  appID?: number;
+  storefront?: string;
+  capsuleImage?: string;
+}
+
+export interface CatalogWithCarousel {
+  sections: Record<string, CatalogSection>;
+  carousel?: Record<string, CatalogCarouselItem> | CatalogCarouselItem[];
+}
+
+export type CatalogResponse = Record<string, CatalogSection> | CatalogWithCarousel;
+
 export type SetupEventResponse = Omit<
   LibraryInfo,
   | 'capsuleImage'
@@ -250,13 +273,7 @@ export interface EventListenerTypes {
    */
   catalog: (
     event: Omit<
-      EventResponse<{
-        [key: string]: {
-          name: string;
-          description: string;
-          listings: BasicLibraryInfo[];
-        };
-      }>,
+      EventResponse<CatalogResponse>,
       'askForInput'
     >
   ) => void;
@@ -1113,13 +1130,7 @@ class OGIAddonWSListener {
           );
           break;
         case 'catalog':
-          let catalogEvent = new EventResponse<{
-            [key: string]: {
-              name: string;
-              description: string;
-              listings: BasicLibraryInfo[];
-            };
-          }>();
+          let catalogEvent = new EventResponse<CatalogResponse>();
           this.eventEmitter.emit('catalog', catalogEvent);
           const catalogResult = await this.waitForEventToRespond(catalogEvent);
           this.respondToMessage(message.id!!, catalogResult.data, catalogEvent);

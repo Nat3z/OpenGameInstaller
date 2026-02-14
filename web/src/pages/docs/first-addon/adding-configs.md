@@ -55,3 +55,7 @@ To get the values of your config, you can use the functions:
 `addon.config.getBooleanValue`
 
 The `key` should be the same string you provided to `option.setName(string)` when making the option.
+
+## Related: Action Buttons
+
+If you want clickable buttons in config screens (instead of only static values), use the dedicated [Action Buttons & Tasks](/docs/first-addon/action-buttons-and-tasks) page.

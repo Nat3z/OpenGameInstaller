@@ -2,7 +2,7 @@
 layout: ../../../layouts/BlogLayout.astro
 title: Publish your Addon
 description: A guide on how to make your first addon for OpenGameInstaller.
-part: 7
+part: 10
 section: Your First Addon
 ---
 

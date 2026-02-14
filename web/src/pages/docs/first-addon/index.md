@@ -44,3 +44,11 @@ node_modules/
 ```
 
 Follow the next guide to learn how to create an `addon.json` file, which is essential for OpenGameInstaller to get metadata about your addon.
+
+## New in v2.1
+
+This guide now includes dedicated pages for new addon APIs:
+
+- [Adding Discover Catalogs & Carousel](/docs/first-addon/adding-discover-catalogs)
+- [Action Buttons & Tasks](/docs/first-addon/action-buttons-and-tasks)
+- [Adding Game Update Support](/docs/first-addon/adding-game-updates)

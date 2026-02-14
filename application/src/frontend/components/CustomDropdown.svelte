@@ -220,10 +220,10 @@
   }
 
   .custom-dropdown-option.selected {
-    @apply bg-accent-light;
+    @apply bg-accent-lighter text-accent-dark;
   }
 
   .custom-dropdown-option.selected:hover {
-    @apply bg-accent-light;
+    @apply bg-accent-lighter text-accent-dark;
   }
 </style>

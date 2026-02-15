@@ -19,6 +19,7 @@ function llmsBuildIntegration() {
 
 // https://astro.build/config
 export default defineConfig({
+  site: 'https://ogi.nat3z.com',
   integrations: [tailwind(), llmsBuildIntegration()],
   markdown: {
     remarkPlugins: [remarkGfm, remarkCallouts],

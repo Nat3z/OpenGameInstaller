@@ -5,10 +5,45 @@ const { frontmatter } = Astro.props;
 const sectionName = frontmatter.section;
 const part: number = frontmatter.part;
 
-function hasExactlyTwoSlashes(str: string) {
-  const regex = /^[^/]*\/[^/]*\/[^/]*$/;
-  return regex.test(str) || str === "/docs";
-}
+const sectionEmbedConfig: Record<string, { tagline: string; image: string; imageAlt: string }> = {
+  "What is OpenGameInstaller?": {
+    tagline: "Get the big-picture overview of OGI's architecture and addon-first approach.",
+    image: "/librarypage.png",
+    imageAlt: "OpenGameInstaller library interface with a polished game collection grid.",
+  },
+  "Your First Addon": {
+    tagline: "Follow practical, step-by-step docs to build and publish addons with confidence.",
+    image: "/code-snippet.png",
+    imageAlt: "Code snippet for OpenGameInstaller addon development in TypeScript.",
+  },
+  "User's Guide": {
+    tagline: "Learn installation, downloading, launching, and troubleshooting for day-to-day use.",
+    image: "/deck.png",
+    imageAlt: "OpenGameInstaller shown on a Steam Deck-compatible workflow preview.",
+  },
+  "Updates and Migrations": {
+    tagline: "Upgrade addons safely with API migration notes and version-specific upgrade guides.",
+    image: "/playpage.png",
+    imageAlt: "OpenGameInstaller gameplay view used for update and migration docs preview.",
+  },
+  "Resources": {
+    tagline: "Find quick setup references, community contribution guides, and support resources.",
+    image: "/storepage.png",
+    imageAlt: "OpenGameInstaller store view previewing resource-centric documentation.",
+  },
+};
+
+const sectionEmbed = sectionEmbedConfig[sectionName] ?? {
+  tagline: "Browse detailed OpenGameInstaller documentation and implementation guides.",
+  image: "/librarypage.png",
+  imageAlt: "OpenGameInstaller documentation preview image.",
+};
+
+const frontmatterDescription = typeof frontmatter.description === "string" ? frontmatter.description.trim() : "";
+const baseDescription = frontmatterDescription.length > 0
+  ? frontmatterDescription
+  : `${frontmatter.title} in the ${sectionName} documentation section.`;
+const embedDescription = `${baseDescription.replace(/\.+$/, "")}. ${sectionEmbed.tagline}`;
 // now read each part of the section
 // read every document in the docs folder, and get the basename of the file
 let docsInSection = await Astro.glob(`../pages/docs/**/*.{md,mdx}`);
@@ -47,10 +82,15 @@ for (let section of sections) {
 const previousSection = part - 1 >= 0 ? docsConnectedToSections.get(sectionName)!![part - 1] : null;
 const nextSection = part + 1 < docsConnectedToSections.get(sectionName)!!.length ? docsConnectedToSections.get(sectionName)!![part + 1] : null;
 const selectedSection = docsConnectedToSections.get(sectionName)!![part];
-console.log(part)
 ---
 
-<Layout title={frontmatter.title}>
+<Layout
+  title={frontmatter.title}
+  description={embedDescription}
+  image={sectionEmbed.image}
+  imageAlt={sectionEmbed.imageAlt}
+  type="article"
+>
   <Header context="docs" />
 
   <main class="flex flex-col-reverse lg:flex-row justify-start items-start">

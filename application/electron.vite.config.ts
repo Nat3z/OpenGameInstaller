@@ -5,7 +5,7 @@ import tailwindcss from '@tailwindcss/vite';
 
 export default defineConfig({
   main: {
-    plugins: [externalizeDepsPlugin({ exclude: ['ogi-addon', 'webtorrent'] })],
+    plugins: [externalizeDepsPlugin({ exclude: ['ogi-addon'] })],
     build: {
       rollupOptions: {
         input: {

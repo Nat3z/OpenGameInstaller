@@ -1,6 +1,6 @@
 {
   "name": "opengameinstaller-gui",
-  "version": "2.8.0",
+  "version": "2.8.1",
   "description": "The front-facing GUI for OpenGameInstaller and the addon-server.",
   "type": "module",
   "private": false,
@@ -13,7 +13,8 @@
     "extends": null,
     "files": [
       "public/**/*",
-      "out/**/*"
+      "out/**/*",
+      "node_modules/**/*"
     ],
     "win": {},
     "linux": {

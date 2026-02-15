@@ -487,9 +487,11 @@ async function launchApp(online) {
         path.join(__dirname, 'update', 'latest.log'),
         'a'
       );
+
+      // --no-sandbox is needed to run the appimage in Steam Deck Game Mode
       const spawned = spawn(
         './OpenGameInstaller.AppImage',
-        ['--online=' + online],
+        ['--online=' + online, '--no-sandbox'],
         {
           cwd: path.join(__dirname, 'update'),
           detached: true,

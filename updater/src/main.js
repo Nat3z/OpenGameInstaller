@@ -5,7 +5,7 @@ import path, { join } from 'path';
 import yauzl from 'yauzl';
 import { spawn, exec } from 'child_process';
 let mainWindow;
-import pjson from '../package.json' assert { type: 'json' };
+import pjson from '../package.json' with { type: 'json' };
 
 function isDev() {
   return !app.isPackaged;
@@ -487,9 +487,11 @@ async function launchApp(online) {
         path.join(__dirname, 'update', 'latest.log'),
         'a'
       );
+
+      // --no-sandbox is needed to run the appimage in Steam Deck Game Mode
       const spawned = spawn(
         './OpenGameInstaller.AppImage',
-        ['--online=' + online],
+        ['--online=' + online, '--no-sandbox'],
         {
           cwd: path.join(__dirname, 'update'),
           detached: true,

@@ -375,7 +375,7 @@
           <!-- Skeleton Games Carousel -->
           <div class="relative flex items-center w-full">
             <div
-              class="flex flex-row gap-3 w-full justify-center overflow-hidden px-10"
+              class="flex flex-row gap-3 w-full justify-center overflow-hidden px-7"
               style="min-height: 200px;"
             >
               {#each [1, 2, 3, 4, 5] as gameIndex}
@@ -703,7 +703,7 @@
     min-height: 200px;
     overflow: hidden;
     width: 100%;
-    padding: 0 clamp(3rem, 6vw, 4.25rem);
+    padding: 0 clamp(1.75rem, 4vw, 3rem);
   }
 
   .discover-games-carousel-track {

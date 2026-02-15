@@ -1,20 +1,55 @@
 ---
 interface Props {
 	title: string;
+	description?: string;
+	image?: string;
+	imageAlt?: string;
+	type?: 'website' | 'article';
+	noindex?: boolean;
 }
 
-const { title } = Astro.props;
+const {
+	title,
+	description = 'OpenGameInstaller is a next-generation game manager built around an addon ecosystem for installing, organizing, and launching games.',
+	image = '/librarypage.png',
+	imageAlt = 'OpenGameInstaller library view preview.',
+	type = 'website',
+	noindex = false,
+} = Astro.props;
+
+const siteBaseUrl = Astro.site ?? new URL('https://ogi.nat3z.com');
+const canonicalUrl = new URL(Astro.url.pathname, siteBaseUrl).toString();
+const normalizedTitle = title.includes('OpenGameInstaller') ? title : `${title} | OpenGameInstaller`;
+const imagePath = image.startsWith('/') ? image : `/${image}`;
+const socialImageUrl = image.startsWith('http://') || image.startsWith('https://')
+	? image
+	: new URL(imagePath, siteBaseUrl).toString();
 ---
 
 <!doctype html>
 <html lang="en">
 	<head>
 		<meta charset="UTF-8" />
-		<meta name="description" content="Astro description" />
+		<meta name="description" content={description} />
 		<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 		<link rel="icon" type="image/svg+xml" href="/favicon.png" />
+		<link rel="canonical" href={canonicalUrl} />
 		<meta name="generator" content={Astro.generator} />
-		<title>{title}</title>
+		<meta name="theme-color" content="#f3f7ff" />
+		<meta property="og:type" content={type} />
+		<meta property="og:site_name" content="OpenGameInstaller" />
+		<meta property="og:url" content={canonicalUrl} />
+		<meta property="og:title" content={normalizedTitle} />
+		<meta property="og:description" content={description} />
+		<meta property="og:image" content={socialImageUrl} />
+		<meta property="og:image:alt" content={imageAlt} />
+		<meta name="twitter:card" content="summary_large_image" />
+		<meta name="twitter:title" content={normalizedTitle} />
+		<meta name="twitter:description" content={description} />
+		<meta name="twitter:image" content={socialImageUrl} />
+		<meta name="twitter:image:alt" content={imageAlt} />
+		<meta name="robots" content={noindex ? 'noindex, nofollow' : 'index, follow'} />
+		<title>{normalizedTitle}</title>
 		<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" />
 	</head>
 	<body class="min-h-screen w-full scroll-smooth overflow-x-hidden">

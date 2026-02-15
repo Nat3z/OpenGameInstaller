@@ -1,5 +1,4 @@
 ---
-import { Image } from "astro:assets";
 import Layout from "../layouts/Layout.astro";
 import Header from "../components/Header.astro";
 let addons = await Astro.glob(`../../community/*.{md,mdx}`);
@@ -7,7 +6,12 @@ addons = addons.filter((addon) => addon.frontmatter.name !== 'YOUR ADDON NAME');
 addons = addons.sort((a, b) => a.frontmatter.name.localeCompare(b.frontmatter.name));
 ---
 
-<Layout title="Community Addons">
+<Layout
+  title="Community Addons | OpenGameInstaller"
+  description="Browse, search, and share community-built OpenGameInstaller addons from independent developers."
+  image="/storepage.png"
+  imageAlt="OpenGameInstaller storefront view used as preview for community addon listings."
+>
   <Header context="site" />
   <main class="mt-8">
     <div class="mx-auto max-w-7xl w-full px-4 lg:px-8 flex flex-col gap-6 items-center">

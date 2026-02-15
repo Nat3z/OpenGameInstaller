@@ -298,6 +298,37 @@ a {
   cursor: pointer;
 }
 
+/* Visible selection ring for controller navigation, including click-gated text inputs. */
+.gamepad-focus {
+  outline: 3px solid var(--color-accent);
+  outline-offset: 4px;
+  box-shadow:
+    0 0 0 2px var(--color-surface),
+    0 0 0 7px var(--color-focus-ring),
+    0 10px 24px -10px var(--color-accent-dark);
+  transform: translateY(-1px);
+  transition:
+    outline-color 120ms ease,
+    box-shadow 120ms ease,
+    transform 120ms ease;
+  z-index: 2;
+}
+
+button.gamepad-focus,
+a.gamepad-focus,
+[role='button'].gamepad-focus {
+  filter: brightness(1.06);
+}
+
+input.gamepad-focus,
+textarea.gamepad-focus,
+select.gamepad-focus {
+  box-shadow:
+    0 0 0 2px var(--color-surface),
+    0 0 0 7px var(--color-focus-ring),
+    0 0 0 10px var(--color-accent-lighter);
+}
+
 h2 {
   font-family: var(--font-archivo);
 }

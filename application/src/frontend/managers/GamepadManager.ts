@@ -18,6 +18,22 @@ export class GamepadNavigator {
   perpendicularWeight: number = 2;
   // Bonus multiplier for elements that overlap on perpendicular axis
   overlapBonus: number = 0.5;
+  inputMode: 'gamepad' | 'pointer' = 'gamepad';
+  focusIntentWindowMs: number = 700;
+  lastPointerDownAt: number = 0;
+  lastKeyboardNavAt: number = 0;
+  allowProgrammaticTextFocusUntil: number = 0;
+  lastPointerDownTarget: HTMLElement | null = null;
+  mutationObserver: MutationObserver | null = null;
+  boundExternalFocusHandler: (event: FocusEvent) => void;
+  boundPointerDownHandler: (event: PointerEvent) => void;
+  boundKeyboardNavHandler: (event: KeyboardEvent) => void;
+
+  constructor() {
+    this.boundExternalFocusHandler = this.handleExternalFocus.bind(this);
+    this.boundPointerDownHandler = this.handlePointerDown.bind(this);
+    this.boundKeyboardNavHandler = this.handleKeyboardNavigation.bind(this);
+  }
 
   init() {
     // Poll for gamepad input (Gamepad API uses polling model)
@@ -27,23 +43,120 @@ export class GamepadNavigator {
     this.refreshFocusableElements();
 
     // Listen for DOM changes
-    const observer = new MutationObserver(() =>
+    this.mutationObserver = new MutationObserver(() =>
       this.refreshFocusableElements()
     );
-    observer.observe(document.body, { childList: true, subtree: true });
+    this.mutationObserver.observe(document.body, {
+      childList: true,
+      subtree: true,
+    });
 
     // Sync with external focus changes (e.g., mouse clicks, tab key)
-    document.addEventListener('focusin', this.handleExternalFocus.bind(this));
+    document.addEventListener('focusin', this.boundExternalFocusHandler);
+    document.addEventListener('pointerdown', this.boundPointerDownHandler);
+    document.addEventListener('keydown', this.boundKeyboardNavHandler);
     console.log('GamepadManager initialized');
+  }
+
+  setInputMode(mode: 'gamepad' | 'pointer') {
+    if (this.inputMode === mode) return;
+    this.inputMode = mode;
+
+    if (mode === 'pointer') {
+      this.removeFocusHighlight();
+      return;
+    }
+
+    // Leaving text-input mode when gamepad resumes avoids sticky Steam keyboard behavior.
+    const activeElement = document.activeElement;
+    if (activeElement instanceof HTMLElement && this.isTextEntryElement(activeElement)) {
+      activeElement.blur();
+    }
+
+    if (this.currentElement) {
+      this.addFocusHighlight(this.currentElement);
+    }
+  }
+
+  handlePointerDown(event: PointerEvent) {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+
+    this.setInputMode('pointer');
+    this.lastPointerDownAt = Date.now();
+    this.lastPointerDownTarget = target;
+
+    const focusableTarget = this.getFocusableTarget(target);
+    if (focusableTarget && this.focusableElements.includes(focusableTarget)) {
+      this.currentElement = focusableTarget;
+    }
+
+    // Clicking away from a text field should collapse focused text mode cleanly.
+    const activeElement = document.activeElement;
+    if (
+      activeElement instanceof HTMLElement &&
+      this.isTextEntryElement(activeElement) &&
+      activeElement !== target &&
+      !activeElement.contains(target)
+    ) {
+      activeElement.blur();
+    }
+  }
+
+  handleKeyboardNavigation(event: KeyboardEvent) {
+    if (
+      event.key === 'Tab' ||
+      event.key === 'ArrowUp' ||
+      event.key === 'ArrowDown' ||
+      event.key === 'ArrowLeft' ||
+      event.key === 'ArrowRight'
+    ) {
+      this.lastKeyboardNavAt = Date.now();
+    }
+  }
+
+  wasRecentPointerFocusIntent(target: HTMLElement): boolean {
+    if (!this.lastPointerDownTarget) return false;
+    if (Date.now() - this.lastPointerDownAt > this.focusIntentWindowMs) {
+      return false;
+    }
+
+    return (
+      target === this.lastPointerDownTarget ||
+      target.contains(this.lastPointerDownTarget) ||
+      this.lastPointerDownTarget.contains(target)
+    );
+  }
+
+  wasRecentKeyboardNavigation(): boolean {
+    return Date.now() - this.lastKeyboardNavAt <= this.focusIntentWindowMs;
+  }
+
+  allowProgrammaticTextFocus() {
+    this.allowProgrammaticTextFocusUntil =
+      Date.now() + this.focusIntentWindowMs;
   }
 
   handleExternalFocus(event: FocusEvent) {
     const target = event.target;
-    if (
-      target instanceof HTMLElement &&
-      this.focusableElements.includes(target)
-    ) {
-      this.currentElement = target;
+    if (!(target instanceof HTMLElement)) return;
+    if (!this.focusableElements.includes(target)) return;
+
+    // Text fields require an explicit click/tap (or keyboard tab-nav) before they can be focused.
+    if (this.isTextEntryElement(target)) {
+      const allowProgrammaticFocus =
+        Date.now() <= this.allowProgrammaticTextFocusUntil;
+      const hasPointerIntent = this.wasRecentPointerFocusIntent(target);
+      const hasKeyboardIntent = this.wasRecentKeyboardNavigation();
+
+      if (!allowProgrammaticFocus && !hasPointerIntent && !hasKeyboardIntent) {
+        target.blur();
+        return;
+      }
+    }
+
+    this.currentElement = target;
+    if (this.inputMode === 'gamepad') {
       this.addFocusHighlight(target);
     }
   }
@@ -78,7 +191,10 @@ export class GamepadNavigator {
 
     // Apply focus to first element in top layer if none focused
     if (!this.currentElement && topLayerElements.length > 0) {
-      this.focusElement(topLayerElements[0]);
+      this.currentElement = topLayerElements[0];
+      if (this.inputMode === 'gamepad') {
+        this.focusElement(topLayerElements[0]);
+      }
     }
   }
 
@@ -114,6 +230,18 @@ export class GamepadNavigator {
       }
     }
 
+    const aPressed = gamepad.buttons[0]?.pressed ?? false;
+    const bPressed = gamepad.buttons[1]?.pressed ?? false;
+    const rightStickX = gamepad.axes[2] ?? 0;
+    const rightStickY = gamepad.axes[3] ?? 0;
+    const hasRightStickInput =
+      Math.abs(rightStickX) > this.deadzone ||
+      Math.abs(rightStickY) > this.deadzone;
+
+    if (direction || aPressed || bPressed || hasRightStickInput) {
+      this.setInputMode('gamepad');
+    }
+
     // Handle navigation with proper debouncing
     if (direction) {
       const timeSinceLastNav = now - this.lastNavigationTime;
@@ -145,10 +273,6 @@ export class GamepadNavigator {
       }
     }
 
-    // Button presses (A and B) - edge detection to prevent repeat triggers
-    const aPressed = gamepad.buttons[0]?.pressed ?? false;
-    const bPressed = gamepad.buttons[1]?.pressed ?? false;
-
     if (aPressed && !this.aButtonWasPressed) {
       // A button / Cross - only on initial press
       this.activateCurrentElement();
@@ -163,13 +287,7 @@ export class GamepadNavigator {
     this.bButtonWasPressed = bPressed;
 
     // Right stick scrolling (axes 2 and 3)
-    const rightStickX = gamepad.axes[2] ?? 0;
-    const rightStickY = gamepad.axes[3] ?? 0;
-
-    if (
-      Math.abs(rightStickX) > this.deadzone ||
-      Math.abs(rightStickY) > this.deadzone
-    ) {
+    if (hasRightStickInput) {
       const scrollContainer = this.findScrollableAncestor(
         this.getCurrentElement()
       );
@@ -473,19 +591,28 @@ export class GamepadNavigator {
       // Update explicit tracking first
       this.currentElement = element;
 
-      element.focus();
+      // For gamepad navigation, text fields are selectable but only focus after explicit click.
+      if (!this.shouldRequireExplicitTextFocus(element)) {
+        element.focus();
+      }
       element.scrollIntoView({ behavior: 'smooth', block: 'center' });
 
       // Visual feedback
-      this.addFocusHighlight(element);
+      if (this.inputMode === 'gamepad') {
+        this.addFocusHighlight(element);
+      }
     }
+  }
+
+  removeFocusHighlight() {
+    document.querySelectorAll('.gamepad-focus').forEach((el) => {
+      el.classList.remove('gamepad-focus');
+    });
   }
 
   addFocusHighlight(element: HTMLElement) {
     // Remove previous highlights
-    document.querySelectorAll('.gamepad-focus').forEach((el) => {
-      el.classList.remove('gamepad-focus');
-    });
+    this.removeFocusHighlight();
 
     element.classList.add('gamepad-focus');
   }
@@ -502,15 +629,56 @@ export class GamepadNavigator {
       if (input.type === 'checkbox' || input.type === 'radio') {
         element.click();
       } else if (this.isTextInput(input.type)) {
+        if (
+          this.inputMode === 'gamepad' &&
+          document.activeElement !== input
+        ) {
+          // Require an explicit click/tap before text fields can be truly focused.
+          this.addFocusHighlight(input);
+          return;
+        }
+
         // Open Steam keyboard for text inputs
         this.openSteamKeyboard(input);
       } else {
         element.focus();
       }
     } else if (element.tagName === 'TEXTAREA') {
+      if (
+        this.inputMode === 'gamepad' &&
+        document.activeElement !== element
+      ) {
+        this.addFocusHighlight(element);
+        return;
+      }
+
       // Open Steam keyboard for textareas
       this.openSteamKeyboard(element as HTMLTextAreaElement);
     }
+  }
+
+  getFocusableTarget(target: HTMLElement): HTMLElement | null {
+    return target.closest(
+      'button, [role="button"], a, input, select, textarea, [tabindex]:not([tabindex="-1"])'
+    ) as HTMLElement | null;
+  }
+
+  isTextEntryElement(
+    element: HTMLElement
+  ): element is HTMLInputElement | HTMLTextAreaElement {
+    if (element instanceof HTMLTextAreaElement) {
+      return !element.disabled;
+    }
+
+    if (element instanceof HTMLInputElement) {
+      return !element.disabled && this.isTextInput(element.type);
+    }
+
+    return false;
+  }
+
+  shouldRequireExplicitTextFocus(element: HTMLElement): boolean {
+    return this.inputMode === 'gamepad' && this.isTextEntryElement(element);
   }
 
   /**
@@ -537,6 +705,7 @@ export class GamepadNavigator {
     element: HTMLInputElement | HTMLTextAreaElement
   ): Promise<void> {
     // Focus the element first - Steam keyboard will inject text here
+    this.allowProgrammaticTextFocus();
     element.focus();
 
     try {
@@ -567,9 +736,10 @@ export class GamepadNavigator {
 
   destroy() {
     clearInterval(this.gamepadLoop as NodeJS.Timeout);
-    document.removeEventListener(
-      'focusin',
-      this.handleExternalFocus.bind(this)
-    );
+    document.removeEventListener('focusin', this.boundExternalFocusHandler);
+    document.removeEventListener('pointerdown', this.boundPointerDownHandler);
+    document.removeEventListener('keydown', this.boundKeyboardNavHandler);
+    this.mutationObserver?.disconnect();
+    this.mutationObserver = null;
   }
 }

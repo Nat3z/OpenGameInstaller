@@ -1,3 +1,6 @@
+const FOCUSABLE_SELECTOR =
+  'button, [role="button"], a, input, select, textarea, [tabindex]:not([tabindex="-1"])';
+
 export class GamepadNavigator {
   focusableElements: HTMLElement[] = [];
   currentElement: HTMLElement | null = null; // Explicit tracking
@@ -24,6 +27,9 @@ export class GamepadNavigator {
   lastKeyboardNavAt: number = 0;
   allowProgrammaticTextFocusUntil: number = 0;
   lastPointerDownTarget: HTMLElement | null = null;
+  /** When set, first A press on this text element only highlights; second A opens Steam keyboard. */
+  pendingTextActivation: HTMLElement | null = null;
+  private refreshScheduled = false;
   mutationObserver: MutationObserver | null = null;
   boundExternalFocusHandler: (event: FocusEvent) => void;
   boundPointerDownHandler: (event: PointerEvent) => void;
@@ -42,10 +48,16 @@ export class GamepadNavigator {
     // Build initial focusable element list
     this.refreshFocusableElements();
 
-    // Listen for DOM changes
-    this.mutationObserver = new MutationObserver(() =>
-      this.refreshFocusableElements()
-    );
+    // Listen for DOM changes (debounced to avoid jank on frequent mutations)
+    this.mutationObserver = new MutationObserver(() => {
+      if (!this.refreshScheduled) {
+        this.refreshScheduled = true;
+        requestAnimationFrame(() => {
+          this.refreshFocusableElements();
+          this.refreshScheduled = false;
+        });
+      }
+    });
     this.mutationObserver.observe(document.body, {
       childList: true,
       subtree: true,
@@ -61,6 +73,7 @@ export class GamepadNavigator {
   setInputMode(mode: 'gamepad' | 'pointer') {
     if (this.inputMode === mode) return;
     this.inputMode = mode;
+    this.pendingTextActivation = null;
 
     if (mode === 'pointer') {
       this.removeFocusHighlight();
@@ -163,9 +176,7 @@ export class GamepadNavigator {
 
   refreshFocusableElements() {
     this.focusableElements = Array.from(
-      document.querySelectorAll(
-        'button, [role="button"], a, input, select, textarea, [tabindex]:not([tabindex="-1"])'
-      )
+      document.querySelectorAll(FOCUSABLE_SELECTOR)
     ).filter((el) => {
       if (
         el instanceof HTMLButtonElement ||
@@ -238,7 +249,8 @@ export class GamepadNavigator {
       Math.abs(rightStickX) > this.deadzone ||
       Math.abs(rightStickY) > this.deadzone;
 
-    if (direction || aPressed || bPressed || hasRightStickInput) {
+    // Only switch to gamepad mode on directional/button input so right-stick scroll doesn't blur text fields.
+    if (direction || aPressed || bPressed) {
       this.setInputMode('gamepad');
     }
 
@@ -578,6 +590,7 @@ export class GamepadNavigator {
 
   navigate(direction: 'down' | 'up' | 'left' | 'right') {
     if (this.focusableElements.length === 0) return;
+    this.pendingTextActivation = null;
 
     const nextElement = this.findNearestElement(direction);
     if (nextElement) {
@@ -631,13 +644,14 @@ export class GamepadNavigator {
       } else if (this.isTextInput(input.type)) {
         if (
           this.inputMode === 'gamepad' &&
-          document.activeElement !== input &&
-          !input.classList.contains('gamepad-focus')
+          this.pendingTextActivation !== input
         ) {
-          // First press highlights; second press opens Steam keyboard.
+          // First press marks pending and highlights; second press opens Steam keyboard.
+          this.pendingTextActivation = input;
           this.addFocusHighlight(input);
           return;
         }
+        this.pendingTextActivation = null;
 
         // Open Steam keyboard for text inputs
         this.openSteamKeyboard(input);
@@ -647,12 +661,13 @@ export class GamepadNavigator {
     } else if (element.tagName === 'TEXTAREA') {
       if (
         this.inputMode === 'gamepad' &&
-        document.activeElement !== element &&
-        !element.classList.contains('gamepad-focus')
+        this.pendingTextActivation !== element
       ) {
+        this.pendingTextActivation = element;
         this.addFocusHighlight(element);
         return;
       }
+      this.pendingTextActivation = null;
 
       // Open Steam keyboard for textareas
       this.openSteamKeyboard(element as HTMLTextAreaElement);
@@ -660,9 +675,7 @@ export class GamepadNavigator {
   }
 
   getFocusableTarget(target: HTMLElement): HTMLElement | null {
-    return target.closest(
-      'button, [role="button"], a, input, select, textarea, [tabindex]:not([tabindex="-1"])'
-    ) as HTMLElement | null;
+    return target.closest(FOCUSABLE_SELECTOR) as HTMLElement | null;
   }
 
   isTextEntryElement(

@@ -61,7 +61,7 @@ jobs:
         if: steps.check_changes.outputs.has_application_changes == 'true'
         shell: bash
         run: |
-          bun install --frozen-lockfile --linker=hoisted
+          bun install --frozen-lockfile --linker=hoisted && cp -r ./node_modules/electron ./application/node_modules/electron && mkdir -p ./updater/node_modules && cp -r ./node_modules/electron ./updater/node_modules/electron
 
       - name: Build Release Client
         if: steps.check_changes.outputs.has_application_changes == 'true'

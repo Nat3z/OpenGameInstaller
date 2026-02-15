@@ -1071,6 +1071,8 @@
     -ms-user-select: none; /* Internet Explorer/Edge */
     user-select: none; /* Non-prefixed version, currently
 																		supported by Chrome, Edge, Opera and Firefox */
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-scrollbar) var(--color-bg-secondary);
   }
 
   body {
@@ -1080,6 +1082,10 @@
 
   ::-webkit-scrollbar {
     width: 5px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background-color: var(--color-bg-secondary);
   }
 
   ::-webkit-scrollbar-thumb {

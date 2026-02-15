@@ -631,9 +631,10 @@ export class GamepadNavigator {
       } else if (this.isTextInput(input.type)) {
         if (
           this.inputMode === 'gamepad' &&
-          document.activeElement !== input
+          document.activeElement !== input &&
+          !input.classList.contains('gamepad-focus')
         ) {
-          // Require an explicit click/tap before text fields can be truly focused.
+          // First press highlights; second press opens Steam keyboard.
           this.addFocusHighlight(input);
           return;
         }
@@ -646,7 +647,8 @@ export class GamepadNavigator {
     } else if (element.tagName === 'TEXTAREA') {
       if (
         this.inputMode === 'gamepad' &&
-        document.activeElement !== element
+        document.activeElement !== element &&
+        !element.classList.contains('gamepad-focus')
       ) {
         this.addFocusHighlight(element);
         return;

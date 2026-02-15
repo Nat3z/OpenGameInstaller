@@ -5,7 +5,7 @@ import path, { join } from 'path';
 import yauzl from 'yauzl';
 import { spawn, exec } from 'child_process';
 let mainWindow;
-import pjson from '../package.json' assert { type: 'json' };
+import pjson from '../package.json' with { type: 'json' };
 
 function isDev() {
   return !app.isPackaged;

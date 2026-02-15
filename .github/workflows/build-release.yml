@@ -65,7 +65,7 @@ jobs:
 
       - name: Build Release Client
         if: steps.check_changes.outputs.has_application_changes == 'true'
-        run: cd application && bun run preelectron-pack && bun run electron-pack
+        run: cd application && bun run electron-pack
 
       - name: Build Release Updater
         if: steps.check_changes.outputs.has_application_changes == 'true'

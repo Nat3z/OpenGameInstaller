@@ -76,6 +76,7 @@
     "@types/webtorrent": "^0.110.1",
     "@types/ws": "^8.18.1",
     "concurrently": "^7.6.0",
+    "debug": "^4.4.3",
     "electron": "^40.1.0",
     "electron-builder": "^23.6.0",
     "electron-vite": "^5.0.0",

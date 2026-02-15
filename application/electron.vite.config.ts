@@ -5,13 +5,13 @@ import tailwindcss from '@tailwindcss/vite';
 
 export default defineConfig({
   main: {
-    plugins: [externalizeDepsPlugin({ exclude: ['ogi-addon'] })],
+    plugins: [externalizeDepsPlugin({ exclude: ['ogi-addon', 'webtorrent'] })],
     build: {
       rollupOptions: {
         input: {
           index: resolve(__dirname, 'src/electron/main.ts'),
         },
-        external: ['original-fs'],
+        external: ['original-fs', 'node-datachannel', 'utp-native'],
       },
     },
   },

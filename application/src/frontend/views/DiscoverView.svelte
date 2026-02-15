@@ -1,6 +1,5 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { fade, fly } from 'svelte/transition';
   import { safeFetch } from '../utils';
   import type {
     BasicLibraryInfo,
@@ -49,9 +48,8 @@
   let allSections = $state<AllSections[]>([]);
   let featuredCarouselItems = $state<DiscoverCarouselItem[]>([]);
   let featuredCarouselIndex = $state(0);
-  let featuredCarouselDirection = $state(1);
   let carouselIndices = $state<Record<string, number>>({});
-  let carouselDirections = $state<Record<string, number>>({});
+  const CAROUSEL_PAGE_SIZE = 5;
 
   function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -142,32 +140,57 @@
     const nextIndex = Math.max(0, Math.min(currentIndex + direction, maxPage));
     if (nextIndex === currentIndex) return;
 
-    carouselDirections = { ...carouselDirections, [sectionKey]: direction };
     carouselIndices = {
       ...carouselIndices,
       [sectionKey]: nextIndex,
     };
   }
 
-  function setFeaturedCarouselIndex(index: number, direction: number) {
+  function getCarouselPages(
+    listings: BasicLibraryInfo[]
+  ): BasicLibraryInfo[][] {
+    const pages: BasicLibraryInfo[][] = [];
+    for (let start = 0; start < listings.length; start += CAROUSEL_PAGE_SIZE) {
+      pages.push(listings.slice(start, start + CAROUSEL_PAGE_SIZE));
+    }
+    return pages;
+  }
+
+  function getCarouselMaxPage(totalItems: number) {
+    return Math.max(0, Math.ceil(totalItems / CAROUSEL_PAGE_SIZE) - 1);
+  }
+
+  function setFeaturedCarouselIndex(index: number) {
     const count = featuredCarouselItems.length;
     if (count === 0) return;
-    featuredCarouselDirection = direction >= 0 ? 1 : -1;
     featuredCarouselIndex = (index + count) % count;
   }
 
   function handleFeaturedCarouselNav(direction: number) {
     const count = featuredCarouselItems.length;
     if (count < 2) return;
-    setFeaturedCarouselIndex(
-      featuredCarouselIndex + direction + count,
-      direction
-    );
+    setFeaturedCarouselIndex(featuredCarouselIndex + direction + count);
   }
 
   function goToFeaturedCarouselIndex(index: number) {
     if (index === featuredCarouselIndex) return;
-    setFeaturedCarouselIndex(index, index > featuredCarouselIndex ? 1 : -1);
+    setFeaturedCarouselIndex(index);
+  }
+
+  function shouldPrioritizeFeaturedImage(slideIndex: number) {
+    const count = featuredCarouselItems.length;
+    if (count <= 1) return true;
+    const distance = Math.abs(slideIndex - featuredCarouselIndex);
+    return distance <= 1 || distance >= count - 1;
+  }
+
+  function shouldPrioritizeSectionPage(
+    sectionKey: string,
+    pageIndex: number,
+    pageCount: number
+  ) {
+    const activePage = carouselIndices[sectionKey] || 0;
+    return pageCount <= 2 || Math.abs(pageIndex - activePage) <= 1;
   }
 
   function openGameStorePage(game: BasicLibraryInfo) {
@@ -282,13 +305,10 @@
 
   $effect(() => {
     const indices: Record<string, number> = {};
-    const directions: Record<string, number> = {};
     allSections.forEach((section) => {
       indices[section.sectionKey] = 0;
-      directions[section.sectionKey] = 0;
     });
     carouselIndices = indices;
-    carouselDirections = directions;
   });
 
   onMount(() => {
@@ -384,33 +404,29 @@
     <!-- Catalog Content -->
     <div class="space-y-6">
       {#if featuredCarouselItems.length > 0}
-        {@const activeItem = featuredCarouselItems[featuredCarouselIndex]}
-        {@const canOpenFeaturedItem =
-          typeof activeItem.appID === 'number' &&
-          typeof activeItem.storefront === 'string'}
-        <div class="px-4">
+        <div
+          class="relative overflow-hidden rounded-xl bg-accent-lighter h-52 sm:h-60 md:h-72"
+        >
           <div
-            class="relative overflow-hidden rounded-xl bg-accent-lighter h-52 sm:h-60 md:h-72"
+            class="featured-carousel-track"
+            style={`--featured-index: ${featuredCarouselIndex};`}
           >
-            {#key `featured-${featuredCarouselIndex}`}
+            {#each featuredCarouselItems as item, index (`featured-${item.addonId}-${item.appID ?? index}`)}
+              {@const isActive = index === featuredCarouselIndex}
+              {@const canOpenFeaturedItem =
+                typeof item.appID === 'number' &&
+                typeof item.storefront === 'string'}
               <div
-                class="absolute inset-0"
-                in:fly={{
-                  x: featuredCarouselDirection * 72,
-                  duration: 340,
-                }}
-                out:fly={{
-                  x: featuredCarouselDirection * -72,
-                  duration: 300,
-                }}
+                class={`featured-carousel-slide ${isActive ? 'is-active' : ''}`}
+                aria-hidden={!isActive}
               >
                 <img
-                  src={getFeaturedImage(activeItem)}
-                  alt={activeItem.name}
+                  src={getFeaturedImage(item)}
+                  alt={item.name}
                   class="w-full h-full object-cover"
-                  loading="lazy"
-                  in:fade={{ duration: 300 }}
-                  out:fade={{ duration: 240 }}
+                  loading={shouldPrioritizeFeaturedImage(index)
+                    ? 'eager'
+                    : 'lazy'}
                   onerror={(e) => {
                     const fallback = './favicon.png';
                     const img = e.currentTarget as HTMLImageElement;
@@ -422,101 +438,97 @@
                 />
 
                 <div
-                  class="absolute inset-0 py-8 px-16 flex flex-col justify-end"
+                  class="featured-carousel-overlay absolute inset-0 py-8 px-16 flex flex-col justify-end"
                   style="background: linear-gradient(to top, rgba(0, 0, 0, 0.85), rgba(0, 0, 0, 0.15));"
                 >
                   <div class="flex items-center gap-2 mb-2">
                     <div class="w-6 h-6 rounded overflow-hidden">
-                      <AddonPicture
-                        addonId={activeItem.addonId}
-                        class="rounded"
-                      />
+                      <AddonPicture addonId={item.addonId} class="rounded" />
                     </div>
                     <p class="text-white/90 text-xs uppercase tracking-wide">
-                      {activeItem.addonName}
+                      {item.addonName}
                     </p>
                   </div>
                   <h2
                     class="text-white text-2xl md:text-3xl font-semibold mb-1"
                   >
-                    {activeItem.name}
+                    {item.name}
                   </h2>
                   <p
                     class="text-white/90 text-sm md:text-base line-clamp-2 max-w-3xl"
                   >
-                    {activeItem.description}
+                    {item.description}
                   </p>
                   {#if canOpenFeaturedItem}
                     <button
                       class="mt-4 w-fit bg-white/95 hover:bg-white text-black text-sm font-medium px-3 py-1.5 rounded-md border-none transition-colors"
-                      onclick={() => openFeaturedCarouselItem(activeItem)}
+                      tabindex={isActive ? 0 : -1}
+                      onclick={() => openFeaturedCarouselItem(item)}
                     >
                       View Store Page
                     </button>
                   {/if}
                 </div>
               </div>
-            {/key}
-
-            {#if featuredCarouselItems.length > 1}
-              <button
-                class="absolute left-3 top-1/2 -translate-y-1/2 z-10 bg-black/45 hover:bg-black/65 text-white rounded-full w-8 h-8 flex items-center justify-center transition-colors border-none"
-                onclick={() => handleFeaturedCarouselNav(-1)}
-                aria-label="Previous featured game"
-              >
-                <svg
-                  class="w-5 h-5"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2"
-                  viewBox="0 0 24 24"
-                  ><path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    d="M15 19l-7-7 7-7"
-                  /></svg
-                >
-              </button>
-              <button
-                class="absolute right-3 top-1/2 -translate-y-1/2 z-10 bg-black/45 hover:bg-black/65 text-white rounded-full w-8 h-8 flex items-center justify-center transition-colors border-none"
-                onclick={() => handleFeaturedCarouselNav(1)}
-                aria-label="Next featured game"
-              >
-                <svg
-                  class="w-5 h-5"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2"
-                  viewBox="0 0 24 24"
-                  ><path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    d="M9 5l7 7-7 7"
-                  /></svg
-                >
-              </button>
-              <div
-                class="absolute right-4 bottom-4 z-10 flex items-center gap-2 px-3 py-2 rounded-full bg-black/45 backdrop-blur-sm"
-              >
-                {#each featuredCarouselItems as _, index (`featured-${index}`)}
-                  <button
-                    class={`w-2.5 h-2.5 rounded-full border-none transition-colors ${
-                      index === featuredCarouselIndex
-                        ? 'bg-white'
-                        : 'bg-white/45'
-                    }`}
-                    onclick={() => goToFeaturedCarouselIndex(index)}
-                    aria-label={`Go to featured item ${index + 1}`}
-                  ></button>
-                {/each}
-              </div>
-            {/if}
+            {/each}
           </div>
+
+          {#if featuredCarouselItems.length > 1}
+            <button
+              class="absolute left-3 top-1/2 -translate-y-1/2 z-10 bg-black/45 hover:bg-black/65 text-white rounded-full w-8 h-8 flex items-center justify-center transition-colors border-none"
+              onclick={() => handleFeaturedCarouselNav(-1)}
+              aria-label="Previous featured game"
+            >
+              <svg
+                class="w-5 h-5"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                viewBox="0 0 24 24"
+                ><path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  d="M15 19l-7-7 7-7"
+                /></svg
+              >
+            </button>
+            <button
+              class="absolute right-3 top-1/2 -translate-y-1/2 z-10 bg-black/45 hover:bg-black/65 text-white rounded-full w-8 h-8 flex items-center justify-center transition-colors border-none"
+              onclick={() => handleFeaturedCarouselNav(1)}
+              aria-label="Next featured game"
+            >
+              <svg
+                class="w-5 h-5"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                viewBox="0 0 24 24"
+                ><path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  d="M9 5l7 7-7 7"
+                /></svg
+              >
+            </button>
+            <div
+              class="absolute right-4 bottom-4 z-10 flex items-center gap-2 px-3 py-2 rounded-full bg-black/45 backdrop-blur-sm"
+            >
+              {#each featuredCarouselItems as _, index (`featured-${index}`)}
+                <button
+                  class={`w-2.5 h-2.5 rounded-full border-none transition-colors ${
+                    index === featuredCarouselIndex ? 'bg-white' : 'bg-white/45'
+                  }`}
+                  onclick={() => goToFeaturedCarouselIndex(index)}
+                  aria-label={`Go to featured item ${index + 1}`}
+                ></button>
+              {/each}
+            </div>
+          {/if}
         </div>
       {/if}
 
       {#each allSections as sectionItem (sectionItem.sectionKey)}
-        <div class="space-y-3 px-4">
+        <div class="space-y-3">
           <!-- Section Header with Addon Info -->
           <div class="bg-accent-lighter px-4 py-3 rounded-lg">
             <div class="flex items-center gap-3 mb-2">
@@ -546,18 +558,21 @@
 
           <!-- Games Carousel -->
           {#if sectionItem.section.listings.length > 0}
+            {@const sectionPages = getCarouselPages(
+              sectionItem.section.listings
+            )}
+            {@const currentPage = carouselIndices[sectionItem.sectionKey] || 0}
+            {@const maxPage = getCarouselMaxPage(
+              sectionItem.section.listings.length
+            )}
             <div class="relative flex items-center w-full">
               <!-- Left Arrow -->
               <button
                 class="absolute left-0 z-10 bg-accent-lighter hover:bg-accent-light text-accent-dark rounded-full w-8 h-8 flex items-center justify-center shadow transition-colors disabled:opacity-40 disabled:cursor-not-allowed border-none"
                 style="top: 50%; transform: translateY(-50%);"
                 onclick={() =>
-                  handleCarouselNav(
-                    sectionItem.sectionKey,
-                    -1,
-                    Math.floor((sectionItem.section.listings.length - 1) / 5)
-                  )}
-                disabled={carouselIndices[sectionItem.sectionKey] === 0}
+                  handleCarouselNav(sectionItem.sectionKey, -1, maxPage)}
+                disabled={currentPage === 0}
                 aria-label="Previous games"
               >
                 <svg
@@ -575,60 +590,60 @@
               </button>
 
               <!-- Carousel Items -->
-              <div
-                class="flex flex-row gap-3 w-full justify-center overflow-hidden px-10"
-                style="min-height: 200px;"
-              >
-                {#key `${sectionItem.sectionKey}-${carouselIndices[sectionItem.sectionKey] || 0}`}
-                  <div
-                    class="flex flex-row gap-3 w-full"
-                    in:fly={{
-                      x: (carouselDirections[sectionItem.sectionKey] || 1) * 36,
-                      duration: 220,
-                    }}
-                    out:fly={{
-                      x:
-                        (carouselDirections[sectionItem.sectionKey] || 1) * -36,
-                      duration: 180,
-                    }}
-                  >
-                    {#each sectionItem.section.listings.slice(carouselIndices[sectionItem.sectionKey] * 5, carouselIndices[sectionItem.sectionKey] * 5 + 5) as game (game.appID)}
-                      <button
-                        class="discover-game-card group w-32 h-48 relative border-none transition-all duration-200 shadow-md hover:shadow-lg rounded-lg overflow-hidden bg-surface transform hover:scale-102 hover:-translate-y-0.5"
-                        onclick={() => openGameStorePage(game)}
-                        aria-label={game.name}
-                      >
-                        <div class="relative">
-                          <img
-                            src={game.capsuleImage}
-                            alt={game.name}
-                            class="w-32 h-48 object-cover"
-                            loading="lazy"
-                            onerror={(e) => {
-                              const fallback = './favicon.png';
-                              const img = e.currentTarget as HTMLImageElement;
-                              if (img.src !== fallback) {
-                                img.src = fallback;
-                                img.style.opacity = '0.5';
-                              }
-                            }}
-                          />
-                          <!-- Overlay with game info -->
-                          <div
-                            class="absolute inset-x-0 bottom-0 p-1.5"
-                            style="background: linear-gradient(to top, var(--color-overlay-bg), transparent);"
-                          >
-                            <h4
-                              class="text-white text-xs font-medium truncate leading-tight"
+              <div class="discover-games-carousel-window">
+                <div
+                  class="discover-games-carousel-track"
+                  style={`--carousel-index: ${currentPage};`}
+                >
+                  {#each sectionPages as page, pageIndex (`${sectionItem.sectionKey}-page-${pageIndex}`)}
+                    {@const prioritizePage = shouldPrioritizeSectionPage(
+                      sectionItem.sectionKey,
+                      pageIndex,
+                      sectionPages.length
+                    )}
+                    <div
+                      class="discover-games-carousel-page"
+                      aria-hidden={pageIndex !== currentPage}
+                    >
+                      {#each page as game (game.appID)}
+                        <button
+                          class="discover-game-card group w-32 h-48 relative border-none transition-all duration-200 shadow-md hover:shadow-lg rounded-lg overflow-hidden bg-surface transform hover:scale-102 hover:-translate-y-0.5"
+                          onclick={() => openGameStorePage(game)}
+                          aria-label={game.name}
+                          tabindex={pageIndex === currentPage ? 0 : -1}
+                        >
+                          <div class="relative">
+                            <img
+                              src={game.capsuleImage}
+                              alt={game.name}
+                              class="w-32 h-48 object-cover"
+                              loading={prioritizePage ? 'eager' : 'lazy'}
+                              onerror={(e) => {
+                                const fallback = './favicon.png';
+                                const img = e.currentTarget as HTMLImageElement;
+                                if (img.src !== fallback) {
+                                  img.src = fallback;
+                                  img.style.opacity = '0.5';
+                                }
+                              }}
+                            />
+                            <!-- Overlay with game info -->
+                            <div
+                              class="absolute inset-x-0 bottom-0 p-1.5"
+                              style="background: linear-gradient(to top, var(--color-overlay-bg), transparent);"
                             >
-                              {game.name}
-                            </h4>
+                              <h4
+                                class="text-white text-xs font-medium truncate leading-tight"
+                              >
+                                {game.name}
+                              </h4>
+                            </div>
                           </div>
-                        </div>
-                      </button>
-                    {/each}
-                  </div>
-                {/key}
+                        </button>
+                      {/each}
+                    </div>
+                  {/each}
+                </div>
               </div>
 
               <!-- Right Arrow -->
@@ -636,13 +651,8 @@
                 class="absolute right-0 z-10 bg-accent-lighter hover:bg-accent-light text-accent-dark rounded-full w-8 h-8 flex items-center justify-center shadow transition-colors disabled:opacity-40 disabled:cursor-not-allowed border-none"
                 style="top: 50%; transform: translateY(-50%);"
                 onclick={() =>
-                  handleCarouselNav(
-                    sectionItem.sectionKey,
-                    1,
-                    Math.floor((sectionItem.section.listings.length - 1) / 5)
-                  )}
-                disabled={carouselIndices[sectionItem.sectionKey] >=
-                  Math.floor((sectionItem.section.listings.length - 1) / 5)}
+                  handleCarouselNav(sectionItem.sectionKey, 1, maxPage)}
+                disabled={currentPage >= maxPage}
                 aria-label="Next games"
               >
                 <svg
@@ -671,6 +681,45 @@
 </div>
 
 <style>
+  .featured-carousel-track {
+    display: flex;
+    height: 100%;
+    transform: translate3d(calc(var(--featured-index, 0) * -100%), 0, 0);
+    transition: transform 460ms cubic-bezier(0.22, 1, 0.36, 1);
+    will-change: transform;
+  }
+
+  .featured-carousel-slide {
+    position: relative;
+    flex: 0 0 100%;
+    height: 100%;
+  }
+
+  .featured-carousel-slide:not(.is-active) {
+    pointer-events: none;
+  }
+
+  .discover-games-carousel-window {
+    min-height: 200px;
+    overflow: hidden;
+    width: 100%;
+    padding: 0 clamp(3rem, 6vw, 4.25rem);
+  }
+
+  .discover-games-carousel-track {
+    display: flex;
+    transform: translate3d(calc(var(--carousel-index, 0) * -100%), 0, 0);
+    transition: transform 360ms cubic-bezier(0.22, 1, 0.36, 1);
+    will-change: transform;
+  }
+
+  .discover-games-carousel-page {
+    flex: 0 0 100%;
+    display: flex;
+    justify-content: center;
+    gap: 0.75rem;
+  }
+
   .discover-game-card:hover {
     box-shadow:
       0 20px 40px 0 rgba(0, 0, 0, 0.15),

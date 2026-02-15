@@ -126,7 +126,7 @@
   .terminal-content {
     @apply p-4 max-h-48 overflow-y-auto;
     scrollbar-width: thin;
-    scrollbar-color: var(--color-accent) #1f2937;
+    scrollbar-color: var(--color-scrollbar) var(--color-bg-secondary);
   }
 
   .terminal-content::-webkit-scrollbar {
@@ -134,16 +134,16 @@
   }
 
   .terminal-content::-webkit-scrollbar-track {
-    background: #1f2937;
+    background: var(--color-bg-secondary);
   }
 
   .terminal-content::-webkit-scrollbar-thumb {
-    background: var(--color-accent);
+    background: var(--color-scrollbar);
     border-radius: 3px;
   }
 
   .terminal-content::-webkit-scrollbar-thumb:hover {
-    background: var(--color-accent-dark);
+    background: var(--color-scrollbar-hover);
   }
 
   .terminal-line {

@@ -1023,12 +1023,12 @@
   }
 
   .terminal-content::-webkit-scrollbar-thumb {
-    background: var(--color-accent);
+    background: var(--color-scrollbar);
     border-radius: 3px;
   }
 
   .terminal-content::-webkit-scrollbar-thumb:hover {
-    background: var(--color-accent-dark);
+    background: var(--color-scrollbar-hover);
   }
 
   .terminal-line {

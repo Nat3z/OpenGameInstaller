@@ -43,6 +43,7 @@ export function createSetupPayload(
     type: downloadedItem.downloadType,
     name: downloadedItem.name,
     usedRealDebrid: downloadedItem.usedDebridService !== undefined,
+    clearOldFilesBeforeUpdate: downloadedItem.clearOldFilesBeforeUpdate,
     appID: downloadedItem.appID,
     storefront: downloadedItem.storefront,
     for: forType,
@@ -110,6 +111,7 @@ export function handleSetupError(
     type: downloadedItem.downloadType as 'direct' | 'torrent' | 'magnet',
     name: downloadedItem.name,
     usedRealDebrid: downloadedItem.usedDebridService !== undefined,
+    clearOldFilesBeforeUpdate: downloadedItem.clearOldFilesBeforeUpdate,
     appID: downloadedItem.appID,
     storefront: downloadedItem.storefront,
     multiPartFiles:

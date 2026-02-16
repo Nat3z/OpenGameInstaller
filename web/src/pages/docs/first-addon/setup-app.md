@@ -19,6 +19,7 @@ addon.on(
       type,
       name,
       usedRealDebrid,
+      clearOldFilesBeforeUpdate,
       appID,
       storefront,
       multiPartFiles,

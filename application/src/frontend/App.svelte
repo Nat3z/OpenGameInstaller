@@ -780,7 +780,7 @@
                   </div>
                 {/if}
                 <div class="flex flex-col gap-2">
-                  <h2 class="text-2xl font-archivo font-bold mb-2">
+                  <h2 class="text-2xl font-archivo font-bold mb-2 text-text-primary">
                     Search Results
                   </h2>
                   <p class="text-text-secondary">
@@ -809,16 +809,16 @@
                 {#if addons.length === 0}
                   <div class="no-addons-message" in:fade={{ duration: 300 }}>
                     <h3
-                      class="text-xl font-bold mb-2 text-accent-dark font-archivo"
+                      class="text-xl font-bold mb-2 text-text-primary font-archivo"
                     >
                       No Addons Installed
                     </h3>
-                    <p class="text-accent-dark font-archivo mx-8">
+                    <p class="text-text-secondary font-archivo mx-8">
                       You can still view store pages, but won't be able to
                       download/install your games.
                     </p>
                     <button
-                      class="border-none bg-accent-light mt-4 hover:bg-accent-light/75 transition-colors text-accent-dark font-archivo font-semibold px-4 py-2 rounded-lg"
+                      class="border-none bg-accent mt-4 hover:bg-accent-dark transition-colors text-accent-text-color font-archivo font-semibold px-4 py-2 rounded-lg"
                       onclick={() => setView('config')}
                     >
                       Get Addons
@@ -1163,6 +1163,10 @@
     @apply flex flex-col gap-4;
   }
 
+  .search-results-container {
+    color: var(--color-text-primary);
+  }
+
   .addon-section {
     @apply mb-4;
   }
@@ -1252,7 +1256,7 @@
   }
 
   .result-button {
-    @apply self-start px-4 py-2 bg-accent-dark text-white rounded-lg hover:bg-accent transition-colors;
+    @apply self-start px-4 py-2 bg-accent-dark text-overlay-text rounded-lg hover:bg-accent transition-colors;
   }
 
   .no-results {

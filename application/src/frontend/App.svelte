@@ -578,7 +578,7 @@
               ? 'Search for games...'
               : 'Search unavailable (offline)'}
             disabled={!$isOnline}
-            class="w-full h-(--header-button-size) pl-12 pr-4 text-lg bg-accent-lighter rounded-lg border-none focus:outline-none font-archivo placeholder-accent-dark disabled:opacity-50 transition-all duration-300 ease-out focus:bg-surface focus:shadow-md"
+            class="w-full h-(--header-button-size) pl-12 pr-4 text-lg bg-accent-lighter rounded-lg border-none focus:outline-none font-archivo text-text-primary placeholder-accent-dark caret-accent-dark disabled:text-text-muted disabled:opacity-50 transition-all duration-300 ease-out focus:bg-surface focus:shadow-md"
             value={$searchQuery}
             oninput={handleSearchInput}
           />

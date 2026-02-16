@@ -3,9 +3,15 @@ type RequiredReadd = {
   steamAppId: number;
 };
 
+type DismissedUpdate = {
+  appID: number;
+  updateVersion: string;
+};
+
 // Load persisted update state from filesystem
 export function loadPersistedUpdateState(): {
   requiredReadds: RequiredReadd[];
+  dismissedUpdates: DismissedUpdate[];
 } {
   try {
     if (typeof window !== 'undefined' && window.electronAPI?.fs) {
@@ -19,26 +25,36 @@ export function loadPersistedUpdateState(): {
         const stored = window.electronAPI.fs.read(statePath);
         if (stored) {
           const parsed = JSON.parse(stored);
-          if (Array.isArray(parsed.requiredReadds)) {
-            const requiredReadds = parsed.requiredReadds.filter(
-              (v: unknown): v is RequiredReadd => {
+          const requiredReadds = Array.isArray(parsed.requiredReadds)
+            ? parsed.requiredReadds.filter((v: unknown): v is RequiredReadd => {
                 return (
                   typeof v === 'object' &&
                   v !== null &&
                   typeof (v as any).appID === 'number' &&
                   typeof (v as any).steamAppId === 'number'
                 );
-              }
-            );
-            return { requiredReadds };
-          }
+              })
+            : [];
+          const dismissedUpdates = Array.isArray(parsed.dismissedUpdates)
+            ? parsed.dismissedUpdates.filter(
+                (v: unknown): v is DismissedUpdate => {
+                  return (
+                    typeof v === 'object' &&
+                    v !== null &&
+                    typeof (v as any).appID === 'number' &&
+                    typeof (v as any).updateVersion === 'string'
+                  );
+                }
+              )
+            : [];
+          return { requiredReadds, dismissedUpdates };
         }
       }
     }
   } catch (e) {
     console.error('Failed to load persisted update state:', e);
   }
-  return { requiredReadds: [] };
+  return { requiredReadds: [], dismissedUpdates: [] };
 }
 
 export let appUpdates = $state({
@@ -49,6 +65,7 @@ export let appUpdates = $state({
     updateVersion: string;
   }[],
   requiredReadds: [] as RequiredReadd[],
+  dismissedUpdates: [] as DismissedUpdate[],
 });
 
 let initTimeout = true;
@@ -56,6 +73,7 @@ $effect.root(() => {
   $effect(() => {
     // Track the value to persist
     const requiredReadds = appUpdates.requiredReadds;
+    const dismissedUpdates = appUpdates.dismissedUpdates;
 
     // Handle async work with proper cleanup
     let timeoutId: ReturnType<typeof setTimeout> | null = null;
@@ -84,6 +102,7 @@ $effect.root(() => {
 
           const stateToSave = {
             requiredReadds,
+            dismissedUpdates,
           };
           window.electronAPI.fs.write(
             './internals/update-state.json',
@@ -123,13 +142,49 @@ export const updatesManager = {
     updateAvailable: boolean;
     updateVersion: string;
   }) => {
-    appUpdates.apps.push({ appID, name, updateAvailable, updateVersion });
+    appUpdates.apps = [
+      ...appUpdates.apps.filter((app) => app.appID !== appID),
+      { appID, name, updateAvailable, updateVersion },
+    ];
+    appUpdates.dismissedUpdates = appUpdates.dismissedUpdates.filter(
+      (dismissed) =>
+        dismissed.appID !== appID || dismissed.updateVersion === updateVersion
+    );
   },
   removeAppUpdate: (appID: number) => {
     appUpdates.apps = appUpdates.apps.filter((app) => app.appID !== appID);
+    appUpdates.dismissedUpdates = appUpdates.dismissedUpdates.filter(
+      (dismissed) => dismissed.appID !== appID
+    );
   },
   getAppUpdate: (appID: number) => {
     return appUpdates.apps.find((app) => app.appID === appID);
+  },
+  dismissAppUpdate: (appID: number, updateVersion: string) => {
+    if (
+      appUpdates.dismissedUpdates.some(
+        (dismissed) =>
+          dismissed.appID === appID &&
+          dismissed.updateVersion === updateVersion
+      )
+    ) {
+      return;
+    }
+    appUpdates.dismissedUpdates = [
+      ...appUpdates.dismissedUpdates,
+      { appID, updateVersion },
+    ];
+  },
+  clearDismissedAppUpdate: (appID: number) => {
+    appUpdates.dismissedUpdates = appUpdates.dismissedUpdates.filter(
+      (dismissed) => dismissed.appID !== appID
+    );
+  },
+  isAppUpdateDismissed: (appID: number, updateVersion: string) => {
+    return appUpdates.dismissedUpdates.some(
+      (dismissed) =>
+        dismissed.appID === appID && dismissed.updateVersion === updateVersion
+    );
   },
 };
 

@@ -203,6 +203,7 @@ const procedures: Record<string, Procedure<any>> = {
         name: z.string(),
         appID: z.unknown(),
         usedRealDebrid: z.boolean(),
+        clearOldFilesBeforeUpdate: z.boolean().optional(),
         storefront: z.string(),
         multiPartFiles: z
           .array(
@@ -239,6 +240,7 @@ const procedures: Record<string, Procedure<any>> = {
             appID: input.appID,
             type: input.type,
             usedRealDebrid: input.usedRealDebrid,
+            clearOldFilesBeforeUpdate: input.clearOldFilesBeforeUpdate,
             storefront: input.storefront,
             name: input.name,
             multiPartFiles: input.multiPartFiles,

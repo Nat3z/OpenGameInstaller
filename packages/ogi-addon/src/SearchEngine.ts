@@ -1,6 +1,12 @@
 type BaseRequiredFields = {
   name: string;
   manifest?: Record<string, any>;
+  /**
+   * Update-only hint for OGI's setup stage.
+   * When false, OGI keeps existing files in place instead of moving them to `old_files`
+   * before running update setup. Defaults to true/undefined behavior.
+   */
+  clearOldFilesBeforeUpdate?: boolean;
 };
 
 export type SearchResult = BaseRequiredFields &

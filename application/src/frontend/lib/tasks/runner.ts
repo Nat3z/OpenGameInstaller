@@ -11,6 +11,7 @@ export type SearchResultWithAddon = SearchResult & {
   // Update-specific optional fields
   isUpdate?: boolean;
   updateVersion?: string;
+  clearOldFilesBeforeUpdate?: boolean;
 } & (
     | {
         downloadType: 'task';

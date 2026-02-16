@@ -50,7 +50,12 @@
 
     let originalOutputDir = outputDir;
 
-    // move all files in current directory to a folder called "old_files" that's not the downloaded/extracted directory or the downloaded file itself
+    const shouldStageOldFiles =
+      downloadedItem.isUpdate !== true ||
+      downloadedItem.clearOldFilesBeforeUpdate !== false;
+    let stagedOldFiles = false;
+
+    // Move existing files into old_files before setup unless this update opted out.
     const currentFiles = await window.electronAPI.fs.getFilesInDir(outputDir);
     const filesNotToMove = [
       ...(downloadedItem.files ?? []).map((file) => file.name),
@@ -63,9 +68,10 @@
     console.log('originalOutputDir: ', originalOutputDir);
     console.log('downloadedItem.downloadPath: ', downloadedItem.downloadPath);
 
-    if (currentFiles.length > 0) {
+    if (shouldStageOldFiles && currentFiles.length > 0) {
       dispatchSetupEvent('log', downloadID, ['Moving all files to old_files']);
-      window.electronAPI.fs.mkdir(outputDir + '/old_files');
+      await window.electronAPI.fs.mkdir(outputDir + '/old_files');
+      stagedOldFiles = true;
 
       console.log('Files not to move: ', filesNotToMove);
       for (const file of currentFiles) {
@@ -79,13 +85,20 @@
           }
         }
       }
+      dispatchSetupEvent('log', downloadID, ['Moved all files']);
+      console.log('Moved all files to old_files');
+    } else if (downloadedItem.isUpdate && !shouldStageOldFiles) {
+      dispatchSetupEvent('log', downloadID, [
+        'Addon requested in-place update: skipping old_files backup',
+      ]);
+      console.log('Skipping old_files staging for update');
     }
-    dispatchSetupEvent('log', downloadID, ['Moved all files']);
-    console.log('Moved all files to old_files');
     let additionalData: any = {};
     console.log('Downloaded Item: ', downloadedItem);
 
     async function revertOldFiles() {
+      if (!stagedOldFiles) return;
+      if (!window.electronAPI.fs.exists(originalOutputDir + '/old_files')) return;
       const oldFiles = await window.electronAPI.fs.getFilesInDir(
         originalOutputDir + '/old_files'
       );
@@ -186,6 +199,8 @@
               | 'magnet',
             name: downloadedItem.name,
             usedRealDebrid: downloadedItem.usedDebridService !== undefined,
+            clearOldFilesBeforeUpdate:
+              downloadedItem.clearOldFilesBeforeUpdate,
             appID: downloadedItem.appID,
             multiPartFiles: downloadedItem.files || [],
             storefront: downloadedItem.storefront,
@@ -281,6 +296,8 @@
               | 'magnet',
             name: downloadedItem.name,
             usedRealDebrid: downloadedItem.usedDebridService !== undefined,
+            clearOldFilesBeforeUpdate:
+              downloadedItem.clearOldFilesBeforeUpdate,
             appID: downloadedItem.appID,
             multiPartFiles: downloadedItem.files || [],
             storefront: downloadedItem.storefront,
@@ -326,6 +343,7 @@
 
       // delete the old_files directory
       try {
+        if (!stagedOldFiles) return;
         if (!window.electronAPI.fs.exists(originalOutputDir + '/old_files'))
           return;
 

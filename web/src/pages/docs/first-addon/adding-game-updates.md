@@ -73,6 +73,8 @@ addon.on('search', async (query, event) => {
           targetVersion: '1.2.0',
           patchType: 'incremental',
         },
+        // Keep existing files in place for incremental patchers.
+        clearOldFilesBeforeUpdate: false,
       },
     ]);
     return;
@@ -92,10 +94,11 @@ addon.on('setup', async (data, event) => {
   event.defer();
 
   if (data.for === 'update') {
-    const { path, currentLibraryInfo, manifest } = data;
+    const { path, currentLibraryInfo, manifest, clearOldFilesBeforeUpdate } = data;
 
     // Apply patch/update files in `path`...
     // You can use currentLibraryInfo + manifest to decide strategy.
+    // clearOldFilesBeforeUpdate reflects the selected source option.
 
     event.resolve({
       version: String(manifest?.targetVersion ?? '1.2.0'),
@@ -117,6 +120,10 @@ addon.on('setup', async (data, event) => {
 ```
 
 ## Important behavior to know
+
+- Control whether OGI stages files into `old_files` before update setup:
+  - Set `clearOldFilesBeforeUpdate: false` in your update `search` result when you need in-place patching.
+  - OGI defaults to staging existing files when the property is omitted.
 
 - Return the exact target version in update setup:
   - OGI validates the version returned by `setup` against the selected update target.

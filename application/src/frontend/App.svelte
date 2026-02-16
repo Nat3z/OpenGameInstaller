@@ -107,7 +107,9 @@
       // Initialize search-related data
       initializeSearch();
       initDownloadPersistence();
-      appUpdates.requiredReadds = loadPersistedUpdateState().requiredReadds;
+      const persistedUpdateState = loadPersistedUpdateState();
+      appUpdates.requiredReadds = persistedUpdateState.requiredReadds;
+      appUpdates.dismissedUpdates = persistedUpdateState.dismissedUpdates;
     }, 200);
   });
 

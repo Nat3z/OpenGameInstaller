@@ -26,6 +26,25 @@
     return updatesManager.getAppUpdate(libraryInfo.appID);
   });
 
+  let hasActiveUpdateDownload = $derived(
+    !!$currentDownloads.find(
+      (download) =>
+        download.appID === libraryInfo.appID &&
+        download.status !== 'error' &&
+        download.status !== 'completed' &&
+        download.status !== 'seeding' &&
+        download.status !== 'setup-complete'
+    )
+  );
+
+  let isUpdateDismissed = $derived.by(() => {
+    if (!updateInfo?.updateVersion) return false;
+    return updatesManager.isAppUpdateDismissed(
+      libraryInfo.appID,
+      updateInfo.updateVersion
+    );
+  });
+
   let showUpdateModal = $state(false);
 
   interface Props {
@@ -278,7 +297,7 @@
 
   <!-- Action Buttons at Top -->
   <div class="bg-accent-lighter px-6 py-4 flex items-center gap-3 rounded-b-lg">
-    {#if updateInfo && !$currentDownloads.find((download) => download.appID === libraryInfo.appID && download.status !== 'error' && download.status !== 'completed' && download.status !== 'seeding' && download.status !== 'setup-complete')}
+    {#if updateInfo && !hasActiveUpdateDownload && !isUpdateDismissed}
       <button
         class="px-6 py-3 flex border-none rounded-lg justify-center bg-success hover:bg-success-hover items-center gap-2 disabled:bg-disabled disabled:cursor-not-allowed transition-colors duration-200 text-overlay-text"
         onclick={() => (showUpdateModal = true)}
@@ -291,7 +310,11 @@
       <button
         aria-label="Ignore update"
         onclick={() => {
-          updatesManager.removeAppUpdate(libraryInfo.appID);
+          if (!updateInfo?.updateVersion) return;
+          updatesManager.dismissAppUpdate(
+            libraryInfo.appID,
+            updateInfo.updateVersion
+          );
         }}
         class="px-3 py-3 flex border-none rounded-lg justify-center bg-error hover:bg-error-hover items-center gap-2 disabled:bg-disabled disabled:cursor-not-allowed transition-colors duration-200 text-overlay-text"
       >
@@ -307,7 +330,7 @@
           />
         </svg>
       </button>
-    {:else if $currentDownloads.find((download) => download.appID === libraryInfo.appID && download.status !== 'error' && download.status !== 'completed' && download.status !== 'seeding' && download.status !== 'setup-complete')}
+    {:else if hasActiveUpdateDownload}
       <button
         class="px-6 py-3 flex border-none rounded-lg justify-center bg-success items-center gap-2 cursor-not-allowed transition-colors duration-200 text-overlay-text"
         disabled
@@ -348,6 +371,17 @@
           </button>
         {/if}
       {/await}
+    {/if}
+
+    {#if updateInfo && !hasActiveUpdateDownload && isUpdateDismissed}
+      <button
+        aria-label="Open update options"
+        title="Open update options"
+        class="px-3 py-3 flex border-none rounded-lg justify-center bg-success hover:bg-success-hover items-center transition-colors duration-200 text-overlay-text"
+        onclick={() => (showUpdateModal = true)}
+      >
+        <UpdateIcon fill="var(--color-overlay-text)" width="20px" height="20px" />
+      </button>
     {/if}
 
     <button

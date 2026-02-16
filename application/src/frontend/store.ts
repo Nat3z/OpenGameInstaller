@@ -43,6 +43,7 @@ export type DownloadStatusAndInfo = SearchResult & {
   // Update-specific properties
   isUpdate?: boolean;
   updateVersion?: string;
+  clearOldFilesBeforeUpdate?: boolean;
   // Manifest data from the search result, passed to the setup handler
   manifest?: Record<string, unknown>;
 };

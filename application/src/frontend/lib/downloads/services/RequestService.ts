@@ -105,6 +105,7 @@ export class RequestService extends BaseService {
       name: result.name,
       isUpdate: result.isUpdate,
       updateVersion: result.updateVersion,
+      clearOldFilesBeforeUpdate: result.clearOldFilesBeforeUpdate,
     };
 
     // Remove the temporary requesting download

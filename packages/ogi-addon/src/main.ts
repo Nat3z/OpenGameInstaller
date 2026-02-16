@@ -206,6 +206,7 @@ export interface EventListenerTypes {
       type: 'direct' | 'torrent' | 'magnet' | 'empty';
       name: string;
       usedRealDebrid: boolean;
+      clearOldFilesBeforeUpdate?: boolean;
       multiPartFiles?: {
         name: string;
         downloadURL: string;

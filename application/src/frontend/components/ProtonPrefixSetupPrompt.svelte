@@ -21,6 +21,38 @@
   let isInstallingRedist = $state(false);
   let pollInterval: ReturnType<typeof setInterval> | null = null;
 
+  function updatePersistedSetup(patch: Partial<ProtonPrefixSetup>) {
+    protonPrefixSetups.update((setups) => {
+      const existing = setups[downloadId];
+      if (!existing) return setups;
+      return {
+        ...setups,
+        [downloadId]: {
+          ...existing,
+          ...patch,
+        },
+      };
+    });
+  }
+
+  function applyStepState(
+    step: ProtonPrefixSetup['step'],
+    persistedPrefixExists: boolean
+  ) {
+    steamKilled =
+      step === 'kill-steam' ||
+      step === 'start-steam' ||
+      step === 'launch-game' ||
+      step === 'waiting-prefix' ||
+      step === 'ready';
+    steamStarted =
+      step === 'start-steam' ||
+      step === 'launch-game' ||
+      step === 'waiting-prefix' ||
+      step === 'ready';
+    prefixExists = persistedPrefixExists || step === 'ready';
+  }
+
   function getDisplayStep(): number {
     // Returns 1-4 for display purposes
     if (prefixExists) return 4;
@@ -29,11 +61,17 @@
     return 1;
   }
 
-  async function killSteam() {
+  async function killSteam(shouldPersistStep = true) {
     try {
       const result = await window.electronAPI.app.killSteam();
       if (result.success) {
         steamKilled = true;
+        if (shouldPersistStep && !prefixExists) {
+          updatePersistedSetup({
+            step: 'kill-steam',
+            prefixExists: false,
+          });
+        }
         createNotification({
           id: Math.random().toString(36).substring(7),
           message: 'Steam process terminated',
@@ -61,6 +99,10 @@
       const result = await window.electronAPI.app.startSteam();
       if (result.success) {
         steamStarted = true;
+        updatePersistedSetup({
+          step: 'waiting-prefix',
+          prefixExists: false,
+        });
         createNotification({
           id: Math.random().toString(36).substring(7),
           message: 'Steam is starting...',
@@ -100,11 +142,19 @@
   function startPolling() {
     if (pollInterval) return;
     isPolling = true;
+    updatePersistedSetup({
+      step: 'waiting-prefix',
+      prefixExists: false,
+    });
 
     pollInterval = setInterval(async () => {
       const exists = await checkPrefixExists();
       if (exists) {
         prefixExists = true;
+        updatePersistedSetup({
+          step: 'ready',
+          prefixExists: true,
+        });
         stopPolling();
         createNotification({
           id: Math.random().toString(36).substring(7),
@@ -114,7 +164,7 @@
 
         // now kill steam and relaunch it
         setTimeout(() => {
-          killSteam().then(() => {
+          killSteam(false).then(() => {
             setTimeout(() => {
               window.electronAPI.app.startSteam();
             }, 5000);
@@ -187,14 +237,19 @@
   }
 
   onMount(() => {
+    applyStepState(setup.step, setup.prefixExists);
+    isInstallingRedist = settingUpPrefix.appIds.includes(setup.appID);
+
     // Check if prefix already exists on mount
     checkPrefixExists().then((exists) => {
       if (exists) {
-        prefixExists = true;
-        // set the stage to 4
-        steamKilled = true;
-        steamStarted = true;
-        isInstallingRedist = settingUpPrefix.appIds.includes(setup.appID);
+        applyStepState('ready', true);
+        updatePersistedSetup({
+          step: 'ready',
+          prefixExists: true,
+        });
+      } else if (steamStarted && !prefixExists) {
+        startPolling();
       }
     });
   });
@@ -274,7 +329,7 @@
         class="step-button flex-1 py-2 px-4 rounded-lg text-sm font-medium transition-all {steamKilled
           ? 'bg-accent/20 text-accent-dark cursor-default'
           : 'bg-accent text-white hover:bg-accent-dark'}"
-        onclick={killSteam}
+        onclick={() => killSteam()}
         disabled={steamKilled}
       >
         {steamKilled ? 'Steam Killed ✓' : 'Kill Steam'}

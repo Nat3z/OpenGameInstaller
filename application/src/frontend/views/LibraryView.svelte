@@ -183,7 +183,7 @@
                   type="text"
                   bind:value={searchQuery}
                   placeholder="Search games..."
-                  class="block w-64 pl-9 pr-3 py-2 border border-accent rounded-md text-sm bg-surface placeholder-accent focus:outline-none focus:ring-1 focus:ring-accent-dark focus:border-accent-dark transition-colors"
+                  class="block w-64 pl-9 pr-3 py-2 border border-accent rounded-md text-sm bg-surface text-text-primary placeholder-accent caret-accent-dark focus:outline-none focus:ring-1 focus:ring-accent-dark focus:border-accent-dark transition-colors"
                 />
               </div>
             </div>

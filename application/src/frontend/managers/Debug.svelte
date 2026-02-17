@@ -24,6 +24,7 @@
   let showNotificationSideView = $state(false);
   let showInsertAppModal = $state(false);
   // Build test config with real StringOption instances (matches production shape)
+  let isDev = window.electronAPI.isDev();
   const optionConfig: {
     config: ConfigurationFile;
     id: string;
@@ -43,11 +44,7 @@
           .setName('test-option-2')
           .setDisplayName('Test Options')
           .setDescription('This is a test options modal')
-          .setAllowedValues([
-            'test-option-1',
-            'test-option-2',
-            'test-option-3',
-          ])
+          .setAllowedValues(['test-option-1', 'test-option-2', 'test-option-3'])
       )
       .build(false),
     id: 'test-options',
@@ -90,6 +87,25 @@
     document.addEventListener('dbg:insert-app-modal-trigger', () => {
       showInsertAppModal = true;
     });
+
+    if (import.meta.hot) {
+      import.meta.hot.on('vite:afterUpdate', (payload) => {
+        console.debug('[HMR] afterUpdate', payload);
+        createNotification({
+          id: `hmr-after-${Math.random().toString(36).substring(2, 9)}`,
+          type: 'warning',
+          message: `HMR: Events are now deduplicated for a bunch of components now. Please refresh the page on the banner for proper functionality.`,
+        });
+      });
+      import.meta.hot.on('vite:beforeFullReload', () => {
+        console.debug('[HMR] beforeFullReload');
+        createNotification({
+          id: `hmr-fullreload-${Math.random().toString(36).substring(2, 9)}`,
+          type: 'warning',
+          message: 'HMR: full reload',
+        });
+      });
+    }
   });
 </script>
 
@@ -346,3 +362,74 @@
     {/if}
   </div>
 {/if}
+
+{#if isDev}
+  <div
+    class="dev-mode-banner"
+    aria-label="Application is running in developer mode"
+  >
+    <span class="dev-mode-banner__text">IN DEVELOPER MODE</span>
+    <button
+      type="button"
+      class="dev-mode-banner__refresh"
+      onclick={() => window.location.reload()}
+      aria-label="Refresh app"
+    >
+      Refresh
+    </button>
+  </div>
+{/if}
+
+<style>
+  .dev-mode-banner {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 9999;
+    padding: 0.2rem 1rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    background: repeating-linear-gradient(
+      -45deg,
+      #e6b800,
+      #e6b800 12px,
+      #000 12px,
+      #000 24px
+    );
+    box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.4);
+  }
+
+  .dev-mode-banner__text {
+    font-weight: 800;
+    font-size: 0.75rem;
+    letter-spacing: 0.15em;
+    color: #fff;
+    text-shadow:
+      -1px -1px 0 #000,
+      1px -1px 0 #000,
+      -1px 1px 0 #000,
+      1px 1px 0 #000,
+      0 0 3px #000;
+  }
+
+  .dev-mode-banner__refresh {
+    pointer-events: auto;
+    margin-left: 1rem;
+    padding: 0.15rem 0.5rem;
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    color: #000;
+    background: #fff;
+    border: 1px solid #000;
+    border-radius: 3px;
+    cursor: pointer;
+  }
+
+  .dev-mode-banner__refresh:hover {
+    background: #eee;
+  }
+</style>

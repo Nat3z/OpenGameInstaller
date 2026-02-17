@@ -317,6 +317,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   installAddons: wrap((addons: string[]) =>
     ipcRenderer.invoke('install-addons', addons)
   ),
+  isDev: wrap(() => ipcRenderer.sendSync('is-dev')),
   restartAddonServer: wrap(() => ipcRenderer.invoke('restart-addon-server')),
   cleanAddons: wrap(() => ipcRenderer.invoke('clean-addons')),
   downloadTorrentInto: wrap((link: string) =>

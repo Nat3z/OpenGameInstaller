@@ -1,4 +1,5 @@
 /// <reference types="svelte" />
+/// <reference path="../../typings/vite-hmr.d.ts" />
 
 type AxiosResponse = import('axios').AxiosResponse;
 type AxiosRequestConfig = import('axios').AxiosRequestConfig;
@@ -216,6 +217,7 @@ interface Window {
     getVersion: () => string;
     getTheme: () => 'light' | 'dark' | 'synthwave';
     installAddons: (addons: string[]) => Promise<void>;
+    isDev: () => boolean;
     restartAddonServer: () => Promise<void>;
     cleanAddons: () => Promise<void>;
     downloadTorrentInto: (link: string) => Promise<Uint8Array>;

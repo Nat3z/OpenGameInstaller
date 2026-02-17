@@ -20,7 +20,11 @@ export async function safeFetch(
     delete fetchOptions.onProgress;
     delete fetchOptions.onLogs;
     delete fetchOptions.onFailed;
-    window.electronAPI.app.request(method, params).then((response) => {
+
+    // stringify then parse the params object to get rid of any bad json props
+    const stringifiedParams = JSON.stringify(params);
+    const parsedParams = JSON.parse(stringifiedParams);
+    window.electronAPI.app.request(method, parsedParams).then((response) => {
       if (response.error) {
         if (!settled) {
           settled = true;

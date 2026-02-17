@@ -63,12 +63,11 @@ ipcMain.on('get-initial-theme', (event) => {
   try {
     const configPath = join(__dirname, 'config/option/general.json');
     if (existsSync(configPath)) {
-      const data = JSON.parse(
-        readFileSync(configPath, 'utf-8')
-      ) as { theme?: string };
+      const data = JSON.parse(readFileSync(configPath, 'utf-8')) as {
+        theme?: string;
+      };
       const t = data.theme;
-      event.returnValue =
-        t === 'dark' || t === 'synthwave' ? t : 'light';
+      event.returnValue = t === 'dark' || t === 'synthwave' ? t : 'light';
     } else {
       event.returnValue = 'light';
     }
@@ -169,6 +168,10 @@ function onMainAppReady() {
 
     ipcMain.on('get-version', async (event) => {
       event.returnValue = VERSION;
+    });
+
+    ipcMain.on('is-dev', async (event) => {
+      event.returnValue = isDev();
     });
 
     app.on('browser-window-focus', function () {

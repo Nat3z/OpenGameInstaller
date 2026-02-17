@@ -9,9 +9,9 @@ import { createReadStream, createWriteStream } from 'fs';
 import { isDev } from '../manager/manager.paths.js';
 import { __dirname } from '../manager/manager.paths.js';
 import { clients } from '../server/addon-server.js';
-import { registerSteamHandlers } from './steam-handlers.js';
-import { registerLibraryHandlers } from './library-handlers.js';
-import { registerRedistributableHandlers } from './redistributable-handlers.js';
+import { registerSteamHandlers } from './handler.steam.js';
+import { registerLibraryHandlers } from './handler.library.js';
+import { registerRedistributableHandlers } from './handler.redists.js';
 
 /**
  * Escapes a string for safe use in shell commands by escaping special characters

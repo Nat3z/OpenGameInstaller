@@ -425,3 +425,28 @@ addon.on(
     }
   }
 );
+
+addon.on('launch-app', async ({ libraryInfo, launchType }, event) => {
+  event.defer();
+  if (launchType === 'pre') {
+    event.log('Pre-launch task');
+    addon.notify({
+      type: 'info',
+      message: 'Pre-launch task',
+      id: 'launch-app',
+    });
+    setTimeout(() => {
+      event.resolve();
+    }, 10000);
+  } else {
+    event.log('Post-launch task');
+    addon.notify({
+      type: 'info',
+      message: 'Post-launch task',
+      id: 'launch-app',
+    });
+    setTimeout(() => {
+      event.resolve();
+    }, 10000);
+  }
+});

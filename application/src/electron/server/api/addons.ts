@@ -464,6 +464,41 @@ const procedures: Record<string, Procedure<any>> = {
       }, client.addonInfo.id);
       return new ProcedureDeferTask(200, deferrableTask);
     }),
+
+  launchApp: procedure()
+    .input(
+      z.object({
+        libraryInfo: ZodLibraryInfo,
+        launchType: z.enum(['pre', 'post']),
+      })
+    )
+    .handler(async (input) => {
+      const clientsWithStorefront = Array.from(clients.values()).filter(
+        (client) =>
+          client.addonInfo?.storefronts.includes(input.libraryInfo.storefront)
+      );
+      if (clientsWithStorefront.length === 0) {
+        return new ProcedureError(
+          404,
+          'No clients found to serve this storefront'
+        );
+      }
+
+      // Fire off the event to all clients, and wait for all to finish
+      const results = await Promise.all(
+        clientsWithStorefront.map((client) =>
+          client.sendEventMessage({
+            event: 'launch-app',
+            args: {
+              libraryInfo: input.libraryInfo,
+              launchType: input.launchType,
+            },
+          })
+        )
+      );
+
+      return new ProcedureJSON(200, { success: true, results });
+    }),
 };
 
 export default procedures;

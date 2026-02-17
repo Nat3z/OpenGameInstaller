@@ -19,6 +19,7 @@
     | '' = $state('webtorrent');
   let fulfilledRequirements = $state(false);
   let addons = '';
+  let addonSearch = $state('');
   let selectedAddons = $state<string[]>([
     'https://github.com/Nat3z/steam-integration',
   ]);
@@ -233,15 +234,12 @@
     stage = 4;
   }
 
-  function updateAddons(event: Event) {
-    const textarea = event.target as HTMLTextAreaElement;
-    addons = textarea.value;
-  }
   let completedSetup = false;
   async function finishSetup() {
     const customAddons = addons
       .split('\n')
-      .filter((addon) => addon.trim() !== '');
+      .map((addon) => addon.trim())
+      .filter((addon) => addon !== '');
     const allAddons = [...new Set([...selectedAddons, ...customAddons])];
 
     let generalConfig = {
@@ -288,6 +286,17 @@
     } else {
       selectedAddons.push(addon.source);
     }
+  }
+
+  function getFilteredAddons(list: CommunityAddon[]) {
+    const query = addonSearch.trim().toLowerCase();
+    if (!query) return list;
+
+    return list.filter((addon) => {
+      const content =
+        `${addon.name} ${addon.author} ${addon.description}`.toLowerCase();
+      return content.includes(query);
+    });
   }
 
   // Event listener for OOBE logs
@@ -771,7 +780,7 @@
         <input
           data-dwloc
           type="text"
-          class="flex-1 p-3 bg-surface border border-accent-light rounded-lg focus:outline-none focus:ring-2 focus:ring-accent"
+          class="flex-1 p-3 bg-surface text-text-primary border border-accent-light rounded-lg focus:outline-none focus:ring-2 focus:ring-accent"
           placeholder="Select download location..."
         />
         <button
@@ -788,73 +797,100 @@
       >
     </div>
   {:else if stage === 4}
-    <div
-      class="animate-fade-in-pop flex justify-start items-center h-full flex-col gap-6 p-10 w-full max-w-4xl"
-    >
-      <h1 class="text-3xl font-archivo font-semibold text-text-primary mt-2">
-        Addons
-      </h1>
-      <h2 class="font-open-sans text-text-primary">
-        Kickstart OpenGameInstaller and download some addons!
-      </h2>
-      <h2 class="font-open-sans text-text-secondary text-center -mt-2">
-        Select from our community addons, or add your own below.
-      </h2>
-      <div
-        class="w-full max-w-3xl h-64 overflow-y-auto border border-accent-light rounded-lg p-4 bg-surface"
-      >
-        {#if communityList}
-          {#await communityList}
-            <div class="flex items-center justify-center h-full">
-              <p class="text-text-secondary">Loading community addons...</p>
+    <div class="animate-fade-in-pop oobe-community-stage">
+      <div class="oobe-community-header">
+        <h1 class="oobe-community-title">Community Addons</h1>
+        <p class="oobe-community-subtitle">
+          Pick your core addons from the community list to jump straight into
+          discovery.
+        </p>
+      </div>
+
+      {#if communityList}
+        {#await communityList}
+          <div class="oobe-community-loading">
+            <p class="text-text-secondary">Loading community addons...</p>
+          </div>
+        {:then list}
+          {@const selectedCount = list.filter((addon) =>
+            selectedAddons.includes(addon.source)
+          ).length}
+          <div class="oobe-community-toolbar">
+            <input
+              type="search"
+              bind:value={addonSearch}
+              placeholder="Search addons by name, author, or description"
+              class="oobe-community-search"
+            />
+            <p class="oobe-community-count">
+              <span>{selectedCount} selected</span>
+              <span class="oobe-community-count-separator">•</span>
+              <span>{list.length} total</span>
+            </p>
+          </div>
+
+          {#if getFilteredAddons(list).length === 0}
+            <div class="oobe-community-empty">
+              <p class="text-text-secondary">No addons match your search.</p>
             </div>
-          {:then list}
-            <div class="flex flex-col gap-3">
-              {#each list as addon}
-                <div
-                  class="flex flex-row gap-4 items-center p-3 rounded-lg hover:bg-accent-lighter transition-colors duration-200 border border-transparent hover:border-accent-light"
+          {:else}
+            <div class="oobe-community-grid">
+              {#each getFilteredAddons(list) as addon}
+                <article
+                  class="oobe-addon-card {selectedAddons.includes(addon.source)
+                    ? 'is-selected'
+                    : ''}"
                 >
-                  <img
-                    src={addon.img}
-                    alt={addon.name}
-                    class="w-12 h-12 rounded-lg object-cover"
-                  />
-                  <div class="flex flex-col flex-1">
-                    <h3 class="font-open-sans font-semibold text-text-primary">
-                      {addon.name}
-                    </h3>
-                    <p class="text-sm text-text-secondary">
-                      {addon.description}
-                    </p>
+                  <div class="oobe-addon-card-header">
+                    <img
+                      src={addon.img}
+                      alt={addon.name}
+                      class="oobe-addon-image"
+                    />
+                    <div class="oobe-addon-meta">
+                      <h3 class="oobe-addon-title">{addon.name}</h3>
+                      <p class="oobe-addon-author">by {addon.author}</p>
+                    </div>
                   </div>
-                  <button
-                    onclick={() => toggleAddon(addon)}
-                    class="px-4 py-2 rounded-lg font-open-sans font-medium transition-colors duration-200 border-none {selectedAddons.includes(
-                      addon.source
-                    )
-                      ? 'bg-accent hover:bg-accent-dark text-white'
-                      : 'bg-accent-light hover:bg-accent text-accent-dark hover:text-white'}"
-                  >
-                    {selectedAddons.includes(addon.source)
-                      ? 'Selected'
-                      : 'Select'}
-                  </button>
-                </div>
+
+                  <p class="oobe-addon-description">{addon.description}</p>
+
+                  <div class="oobe-addon-footer">
+                    <p class="oobe-addon-source" title={addon.source}>
+                      {addon.source}
+                    </p>
+                    <button
+                      onclick={() => toggleAddon(addon)}
+                      class="oobe-addon-select {selectedAddons.includes(
+                        addon.source
+                      )
+                        ? 'selected'
+                        : ''}"
+                    >
+                      {selectedAddons.includes(addon.source)
+                        ? 'Selected'
+                        : 'Select'}
+                    </button>
+                  </div>
+                </article>
               {/each}
             </div>
-          {/await}
-        {/if}
-      </div>
-      <h2 class="font-open-sans text-text-secondary text-center max-w-2xl">
-        Insert the Github/Git Repo link of your addons to download them. Split
-        each addon by new line.
-      </h2>
-      <textarea
-        onchange={updateAddons}
-        class="w-full max-w-3xl h-24 p-3 bg-surface border border-accent-light rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-accent"
-        placeholder="https://github.com/user/my-custom-addon"
-        value=""
-      ></textarea>
+          {/if}
+        {/await}
+      {/if}
+
+      <details class="oobe-custom-addon-panel">
+        <summary>Add a custom addon repo (optional)</summary>
+        <p class="oobe-custom-addon-help">
+          Paste one GitHub/Git repository URL per line.
+        </p>
+        <textarea
+          bind:value={addons}
+          class="oobe-custom-addon-input"
+          placeholder="https://github.com/user/my-custom-addon"
+        ></textarea>
+      </details>
+
       <button
         onclick={async () => {
           // check if the user is on windows or linux
@@ -1039,5 +1075,155 @@
 
   .terminal-cursor {
     @apply mt-2;
+  }
+
+  .oobe-community-stage {
+    @apply flex justify-start items-center h-full flex-col gap-4 p-6 w-full max-w-6xl;
+  }
+
+  .oobe-community-header {
+    @apply flex flex-col items-center text-center gap-2;
+  }
+
+  .oobe-community-title {
+    @apply text-4xl font-archivo font-bold text-text-primary;
+  }
+
+  .oobe-community-subtitle {
+    @apply font-open-sans text-text-secondary max-w-3xl;
+  }
+
+  .oobe-community-loading,
+  .oobe-community-empty {
+    @apply flex items-center justify-center w-full rounded-xl border border-accent-light bg-surface p-8;
+  }
+
+  .oobe-community-toolbar {
+    @apply w-full flex items-center gap-3;
+  }
+
+  .oobe-community-count {
+    @apply text-xs font-open-sans bg-surface border border-accent-light text-text-secondary px-3 py-2 rounded-xl flex items-center justify-center whitespace-nowrap h-full;
+  }
+
+  .oobe-community-count-separator {
+    @apply mx-2 text-text-muted;
+  }
+
+  .oobe-community-search {
+    @apply flex-1 px-4 py-2.5 rounded-xl border border-accent-light bg-surface text-text-primary font-open-sans;
+  }
+
+  .oobe-community-search:focus {
+    outline: none;
+    box-shadow: 0 0 0 3px var(--color-focus-ring);
+    border-color: var(--color-accent);
+  }
+
+  .oobe-community-grid {
+    @apply w-full grid gap-4 rounded-2xl border border-accent-light bg-surface p-4 overflow-y-auto;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    max-height: min(50vh, 470px);
+  }
+
+  .oobe-addon-card {
+    @apply flex flex-col gap-2.5 rounded-xl border border-accent-light bg-accent-lighter/50 p-3 transition-all duration-200;
+  }
+
+  .oobe-addon-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 22px rgba(0, 0, 0, 0.08);
+    border-color: var(--color-accent);
+  }
+
+  .oobe-addon-card.is-selected {
+    background: var(--color-accent-lighter);
+    border-color: var(--color-accent);
+    box-shadow: 0 0 0 1px var(--color-accent);
+  }
+
+  .oobe-addon-card-header {
+    @apply flex items-center gap-3;
+  }
+
+  .oobe-addon-image {
+    @apply w-11 h-11 rounded-lg object-cover;
+  }
+
+  .oobe-addon-meta {
+    @apply min-w-0;
+  }
+
+  .oobe-addon-title {
+    @apply font-archivo text-lg text-text-primary leading-tight;
+  }
+
+  .oobe-addon-author {
+    @apply font-open-sans text-xs text-text-secondary truncate;
+  }
+
+  .oobe-addon-description {
+    @apply font-open-sans text-xs text-text-secondary leading-relaxed;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .oobe-addon-footer {
+    @apply flex items-end justify-between gap-2 mt-auto;
+  }
+
+  .oobe-addon-source {
+    @apply text-xs font-open-sans text-text-muted truncate;
+    max-width: calc(100% - 86px);
+  }
+
+  .oobe-addon-select {
+    @apply px-2.5 py-1.5 rounded-lg border border-accent-light bg-accent-light text-accent-dark font-open-sans text-xs font-semibold transition-colors duration-200 cursor-pointer;
+  }
+
+  .oobe-addon-select:hover {
+    @apply bg-accent text-white border-accent;
+  }
+
+  .oobe-addon-select.selected {
+    @apply bg-accent border-accent text-white;
+  }
+
+  .oobe-custom-addon-panel {
+    @apply w-full rounded-xl border border-border bg-surface px-4 py-3;
+  }
+
+  .oobe-custom-addon-panel summary {
+    @apply font-open-sans text-sm text-text-secondary cursor-pointer select-none;
+  }
+
+  .oobe-community-multi-note {
+    @apply w-full -mt-2 text-xs font-open-sans text-text-muted;
+  }
+
+  .oobe-custom-addon-help {
+    @apply mt-3 mb-2 text-sm font-open-sans text-text-muted;
+  }
+
+  .oobe-custom-addon-input {
+    @apply w-full h-24 p-3 rounded-lg border border-accent-light bg-surface resize-none font-open-sans text-text-primary;
+  }
+
+  .oobe-custom-addon-input:focus {
+    outline: none;
+    box-shadow: 0 0 0 3px var(--color-focus-ring);
+    border-color: var(--color-accent);
+  }
+
+  @media (max-width: 720px) {
+    .oobe-community-toolbar {
+      @apply flex-col items-start;
+    }
+
+    .oobe-community-count {
+      @apply self-end;
+    }
   }
 </style>

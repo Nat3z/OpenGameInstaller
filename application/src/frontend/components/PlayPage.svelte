@@ -75,16 +75,43 @@
 
   async function launchGame() {
     if ($gamesLaunched[libraryInfo.appID] === 'launched') return;
+    if (!playButton) return;
     console.log('Launching game with appID: ' + libraryInfo.appID);
-    await window.electronAPI.app.launchGame('' + libraryInfo.appID);
+    playButton.setAttribute('data-error', 'false');
+
+    // Fire of the addon launch-app event first
+    playButton.disabled = true;
+    playButton.querySelector('svg')!!.style.display = 'none';
+    playButton.querySelector('p')!!.textContent = 'WAITING';
+
     gamesLaunched.update((games) => {
       games[libraryInfo.appID] = 'launched';
       return games;
     });
-    if (!playButton) return;
-    playButton.disabled = true;
+
+    try {
+      await safeFetch('launchApp', {
+        libraryInfo: libraryInfo,
+        launchType: 'pre',
+      });
+    } catch (error) {
+      console.error(error);
+      playButton.disabled = false;
+      playButton.setAttribute('data-error', 'true');
+      playButton.querySelector('p')!!.textContent = 'ERROR';
+      playButton.querySelector('svg')!!.style.display = 'none';
+
+      // remove the game from the gamesLaunched state
+      gamesLaunched.update((games) => {
+        delete games[libraryInfo.appID];
+        return games;
+      });
+      return;
+    }
+
+    await window.electronAPI.app.launchGame('' + libraryInfo.appID);
+
     playButton.querySelector('p')!!.textContent = 'PLAYING';
-    playButton.querySelector('svg')!!.style.display = 'none';
     if (!window.electronAPI.fs.exists('./internals')) {
       window.electronAPI.fs.mkdir('./internals');
       window.electronAPI.fs.write(
@@ -92,6 +119,8 @@
         JSON.stringify([], null, 2)
       );
     }
+
+    // reorders the recent launched apps to the front of the list
     if (window.electronAPI.fs.exists('./internals/apps.json')) {
       let appsOrdered: number[] = JSON.parse(
         window.electronAPI.fs.read('./internals/apps.json')
@@ -109,12 +138,10 @@
 
   const unsubscribe2 = launchGameTrigger.subscribe((game) => {
     console.log('launchGameTrigger', libraryInfo.appID);
-    setTimeout(() => {
-      if (game === libraryInfo.appID) {
-        launchGame();
-        launchGameTrigger.set(undefined);
-      }
-    }, 100);
+    if (game === libraryInfo.appID) {
+      launchGame();
+      launchGameTrigger.set(undefined);
+    }
   });
 
   const unsubscribe = gamesLaunched.subscribe((games) => {
@@ -363,7 +390,7 @@
         {:else}
           <button
             bind:this={playButton}
-            class="px-6 py-3 flex border-none rounded-lg justify-center bg-success hover:bg-success-hover items-center gap-2 disabled:bg-disabled disabled:cursor-not-allowed transition-colors duration-200 text-overlay-text"
+            class="px-6 py-3 flex border-none rounded-lg justify-center bg-success hover:bg-success-hover items-center gap-2 disabled:bg-disabled disabled:cursor-not-allowed transition-colors duration-200 text-overlay-text data-[error=true]:bg-error data-[error=true]:hover:bg-error-hover/50"
             onclick={() => launchGameTrigger.set(libraryInfo.appID)}
           >
             <PlayIcon fill="var(--color-overlay-text)" />
@@ -380,7 +407,11 @@
         class="px-3 py-3 flex border-none rounded-lg justify-center bg-success hover:bg-success-hover items-center transition-colors duration-200 text-overlay-text"
         onclick={() => (showUpdateModal = true)}
       >
-        <UpdateIcon fill="var(--color-overlay-text)" width="20px" height="20px" />
+        <UpdateIcon
+          fill="var(--color-overlay-text)"
+          width="20px"
+          height="20px"
+        />
       </button>
     {/if}
 

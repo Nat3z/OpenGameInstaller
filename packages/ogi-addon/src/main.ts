@@ -7,6 +7,9 @@ import EventResponse from './EventResponse';
 import type { SearchResult } from './SearchEngine';
 import Fuse, { IFuseOptions } from 'fuse.js';
 
+/**
+ * Exposed events that the programmer can use to listen to and emit events.
+ */
 export type OGIAddonEvent =
   | 'connect'
   | 'disconnect'
@@ -19,8 +22,12 @@ export type OGIAddonEvent =
   | 'exit'
   | 'check-for-updates'
   | 'request-dl'
-  | 'catalog';
+  | 'catalog'
+  | 'launch-app';
 
+/**
+ * The events that the client can send to the server and are handled by the server.
+ */
 export type OGIAddonClientSentEvent =
   | 'response'
   | 'authenticate'
@@ -33,10 +40,15 @@ export type OGIAddonClientSentEvent =
   | 'flag'
   | 'task-update';
 
+/**
+ * The events that the server sends to the client
+ * This is the events that the server can send to the client and are handled by the client.
+ */
 export type OGIAddonServerSentEvent =
   | 'authenticate'
   | 'configure'
   | 'config-update'
+  | 'launch-app'
   | 'search'
   | 'setup'
   | 'response'
@@ -122,7 +134,9 @@ export interface CatalogWithCarousel {
   carousel?: Record<string, CatalogCarouselItem> | CatalogCarouselItem[];
 }
 
-export type CatalogResponse = Record<string, CatalogSection> | CatalogWithCarousel;
+export type CatalogResponse =
+  | Record<string, CatalogSection>
+  | CatalogWithCarousel;
 
 export type SetupEventResponse = Omit<
   LibraryInfo,
@@ -272,12 +286,7 @@ export interface EventListenerTypes {
    * @param event
    * @returns
    */
-  catalog: (
-    event: Omit<
-      EventResponse<CatalogResponse>,
-      'askForInput'
-    >
-  ) => void;
+  catalog: (event: Omit<EventResponse<CatalogResponse>, 'askForInput'>) => void;
 
   /**
    * This event is emitted when the client requests for an addon to check for updates. Addon should resolve the event with the update information.
@@ -296,6 +305,17 @@ export interface EventListenerTypes {
           available: false;
         }
     >
+  ) => void;
+
+  /**
+   * This event is emitted when the client is going to launch an app. Addon should use this to perform any pre or post launch tasks.
+   * @param data {LibraryInfo} The library information for the app to be launched.
+   * @param launchType { 'pre' | 'post' } The type of launch task to perform.
+   * @param event {EventResponse<void>} The event response from the server.
+   */
+  'launch-app': (
+    data: { libraryInfo: LibraryInfo; launchType: 'pre' | 'post' },
+    event: EventResponse<void>
   ) => void;
 }
 
@@ -963,6 +983,9 @@ class OGIAddonWSListener {
     return await this.waitForResponseFromServer<U>(id);
   }
 
+  /**
+   * Registers the message receiver for the socket. This is used to receive messages from the server and handle them.
+   */
   private registerMessageReceiver() {
     this.socket.on('message', async (data: string) => {
       const message: WebsocketMessageServer = JSON.parse(data);
@@ -983,17 +1006,8 @@ class OGIAddonWSListener {
           }
           break;
         case 'search':
-          let searchResultEvent = new EventResponse<SearchResult[]>(
-            (screen, name, description) =>
-              this.userInputAsked(screen, name, description, this.socket)
-          );
-          this.eventEmitter.emit('search', message.args, searchResultEvent);
-          const searchResult =
-            await this.waitForEventToRespond(searchResultEvent);
-          this.respondToMessage(
-            message.id!!,
-            searchResult.data,
-            searchResultEvent
+          await this.handleEventWithResponse<SearchResult[]>(message, (event) =>
+            this.eventEmitter.emit('search', message.args, event)
           );
           break;
         case 'setup': {
@@ -1019,74 +1033,28 @@ class OGIAddonWSListener {
           break;
         }
         case 'library-search':
-          let librarySearchEvent = new EventResponse<BasicLibraryInfo[]>(
-            (screen, name, description) =>
-              this.userInputAsked(screen, name, description, this.socket)
-          );
-          this.eventEmitter.emit(
-            'library-search',
-            message.args,
-            librarySearchEvent
-          );
-          const librarySearchResult =
-            await this.waitForEventToRespond(librarySearchEvent);
-          this.respondToMessage(
-            message.id!!,
-            librarySearchResult.data,
-            librarySearchEvent
+          await this.handleEventWithResponse<BasicLibraryInfo[]>(
+            message,
+            (event) =>
+              this.eventEmitter.emit('library-search', message.args, event)
           );
           break;
         case 'game-details':
-          let gameDetailsEvent = new EventResponse<StoreData | undefined>(
-            (screen, name, description) =>
-              this.userInputAsked(screen, name, description, this.socket)
-          );
-          if (this.eventEmitter.listenerCount('game-details') === 0) {
-            this.respondToMessage(
-              message.id!!,
-              {
-                error: 'No event listener for game-details',
-              },
-              gameDetailsEvent
-            );
-            break;
-          }
-          this.eventEmitter.emit(
-            'game-details',
-            message.args,
-            gameDetailsEvent
-          );
-          const gameDetailsResult =
-            await this.waitForEventToRespond(gameDetailsEvent);
-          this.respondToMessage(
-            message.id!!,
-            gameDetailsResult.data,
-            gameDetailsEvent
+          await this.handleEventWithResponse<StoreData | undefined>(
+            message,
+            (event) =>
+              this.eventEmitter.emit('game-details', message.args, event),
+            {
+              requireListener: 'game-details',
+              noListenerError: 'No event listener for game-details',
+            }
           );
           break;
         case 'check-for-updates':
-          let checkForUpdatesEvent = new EventResponse<
-            | {
-                available: true;
-                version: string;
-              }
-            | {
-                available: false;
-              }
-          >((screen, name, description) =>
-            this.userInputAsked(screen, name, description, this.socket)
-          );
-          this.eventEmitter.emit(
-            'check-for-updates',
-            message.args,
-            checkForUpdatesEvent
-          );
-          const checkForUpdatesResult =
-            await this.waitForEventToRespond(checkForUpdatesEvent);
-          this.respondToMessage(
-            message.id!!,
-            checkForUpdatesResult.data,
-            checkForUpdatesEvent
+          await this.handleEventWithResponse<
+            { available: true; version: string } | { available: false }
+          >(message, (event) =>
+            this.eventEmitter.emit('check-for-updates', message.args, event)
           );
           break;
         case 'request-dl':
@@ -1131,10 +1099,10 @@ class OGIAddonWSListener {
           );
           break;
         case 'catalog':
-          let catalogEvent = new EventResponse<CatalogResponse>();
-          this.eventEmitter.emit('catalog', catalogEvent);
-          const catalogResult = await this.waitForEventToRespond(catalogEvent);
-          this.respondToMessage(message.id!!, catalogResult.data, catalogEvent);
+          await this.handleEventWithResponseNoInput<CatalogResponse>(
+            message,
+            (event) => this.eventEmitter.emit('catalog', event)
+          );
           break;
         case 'task-run': {
           let taskRunEvent = new EventResponse<void>(
@@ -1202,6 +1170,11 @@ class OGIAddonWSListener {
           this.respondToMessage(message.id!!, taskRunResult.data, taskRunEvent);
           break;
         }
+        case 'launch-app':
+          await this.handleEventWithResponse<void>(message, (event) =>
+            this.eventEmitter.emit('launch-app', message.args, event)
+          );
+          break;
       }
     });
   }
@@ -1232,6 +1205,47 @@ class OGIAddonWSListener {
         }
       }, 5000);
     });
+  }
+
+  /**
+   * Common flow for events that use EventResponse with userInputAsked: create event, emit via callback, wait, respond.
+   * If options.requireListener is set and that event has no listeners, responds with options.noListenerError and returns.
+   */
+  private async handleEventWithResponse<T>(
+    message: WebsocketMessageServer,
+    emit: (event: EventResponse<T>) => void,
+    options?: { requireListener: string; noListenerError: string }
+  ): Promise<void> {
+    const event = new EventResponse<T>((screen, name, description) =>
+      this.userInputAsked(screen, name, description, this.socket)
+    );
+    if (
+      options &&
+      this.eventEmitter.listenerCount(options.requireListener) === 0
+    ) {
+      this.respondToMessage(
+        message.id!!,
+        { error: options.noListenerError },
+        event
+      );
+      return;
+    }
+    emit(event);
+    const result = await this.waitForEventToRespond(event);
+    this.respondToMessage(message.id!!, result.data, event);
+  }
+
+  /**
+   * Same as handleEventWithResponse but for events that don't need userInputAsked (e.g. catalog).
+   */
+  private async handleEventWithResponseNoInput<T>(
+    message: WebsocketMessageServer,
+    emit: (event: EventResponse<T>) => void
+  ): Promise<void> {
+    const event = new EventResponse<T>();
+    emit(event);
+    const result = await this.waitForEventToRespond(event);
+    this.respondToMessage(message.id!!, result.data, event);
   }
 
   public respondToMessage(

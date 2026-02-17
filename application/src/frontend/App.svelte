@@ -782,7 +782,9 @@
                   </div>
                 {/if}
                 <div class="flex flex-col gap-2">
-                  <h2 class="text-2xl font-archivo font-bold mb-2 text-text-primary">
+                  <h2
+                    class="text-2xl font-archivo font-bold mb-2 text-text-primary"
+                  >
                     Search Results
                   </h2>
                   <p class="text-text-secondary">

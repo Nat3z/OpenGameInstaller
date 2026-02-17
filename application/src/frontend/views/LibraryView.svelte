@@ -33,9 +33,14 @@
   // Avoid infinite update loop by only assigning exitPlayPage once on mount
   onMount(() => {
     if (exitPlayPage) {
-      exitPlayPage = async () => {
+      exitPlayPage = () => {
         $selectedApp = undefined;
-        await reloadLibrary();
+        void reloadLibrary().catch((err) => {
+          console.error(
+            'Failed to reload library when exiting play page:',
+            err
+          );
+        });
       };
     }
   });
@@ -126,7 +131,7 @@
 </script>
 
 {#key library}
-  <div class="relative w-full h-full">
+  <div class="relative w-full h-full overflow-x-hidden">
     {#if $selectedApp}
       <PlayPage libraryInfo={$selectedApp} {exitPlayPage} />
     {:else if osLoading}
@@ -146,10 +151,10 @@
               </h2>
             </div>
             <div
-              class="flex gap-4 flex-row overflow-x-hidden pt-8 -mt-8 pb-6 -mb-6 overflow-y-hidden"
+              class="flex gap-4 flex-row overflow-x-auto pt-8 -mt-8 pb-6 -mb-6 overflow-y-hidden px-4"
             >
               {#each recentlyPlayed as app, index}
-                <div class="library-entry-shell ml-4 shrink-0">
+                <div class="library-entry-shell shrink-0">
                   <button
                     data-library-item
                     class="library-entry border-none relative transition-all shadow-lg hover:shadow-xl rounded-lg overflow-hidden bg-surface"

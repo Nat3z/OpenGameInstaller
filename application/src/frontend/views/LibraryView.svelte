@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { LibraryInfo } from 'ogi-addon';
-  import { onDestroy, onMount } from 'svelte';
+  import { onDestroy, onMount, tick } from 'svelte';
   import PlayPage from '../components/PlayPage.svelte';
   import { gameFocused } from '../store';
   import { writable, type Writable } from 'svelte/store';
@@ -22,15 +22,20 @@
   let selectedApp: Writable<LibraryInfo | undefined> = writable(undefined);
   let loading = $state(true);
   let searchQuery = $state('');
+  let os: string | undefined = $state(undefined);
+  let osLoading = $state(true);
+  let revealLibraryEntries = $state(false);
+  let revealLibraryDelayActive = $state(false);
+  let revealLibraryTimer: ReturnType<typeof setTimeout> | undefined;
 
   let { exitPlayPage = $bindable() } = $props();
 
   // Avoid infinite update loop by only assigning exitPlayPage once on mount
   onMount(() => {
     if (exitPlayPage) {
-      exitPlayPage = () => {
+      exitPlayPage = async () => {
         $selectedApp = undefined;
-        reloadLibrary();
+        await reloadLibrary();
       };
     }
   });
@@ -50,13 +55,55 @@
     loading = false;
   }
 
+  async function runInitialLibraryReveal() {
+    revealLibraryEntries = false;
+    revealLibraryDelayActive = false;
+    if (revealLibraryTimer) {
+      clearTimeout(revealLibraryTimer);
+      revealLibraryTimer = undefined;
+    }
+
+    await tick();
+    await new Promise<void>((resolve) => {
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => resolve());
+      });
+    });
+    revealLibraryDelayActive = true;
+    revealLibraryEntries = true;
+    revealLibraryTimer = setTimeout(() => {
+      revealLibraryDelayActive = false;
+    }, 1400);
+  }
+
+  function getLibraryEntryDelay(index: number): string {
+    const delay = revealLibraryDelayActive ? Math.min(index * 45, 900) : 0;
+    return `--library-entry-delay: ${delay}ms;`;
+  }
+
   // Update filtered games when search query changes
   $effect(() => {
     filteredGames = filterLibrary(allGamesAlphabetical, searchQuery);
   });
 
+  let wasPlayPageOpen = false;
+  $effect(() => {
+    const isPlayPageOpen = $selectedApp !== undefined;
+    if (wasPlayPageOpen && !isPlayPageOpen && !osLoading) {
+      void runInitialLibraryReveal();
+    }
+    wasPlayPageOpen = isPlayPageOpen;
+  });
+
   onMount(async () => {
-    await reloadLibrary();
+    const [resolvedOs] = await Promise.all([
+      window.electronAPI.app.getOS(),
+      reloadLibrary(),
+    ]);
+
+    os = resolvedOs;
+    osLoading = false;
+    await runInitialLibraryReveal();
   });
 
   const unsubscribe = gameFocused.subscribe((game) => {
@@ -69,6 +116,9 @@
   });
 
   onDestroy(() => {
+    if (revealLibraryTimer) {
+      clearTimeout(revealLibraryTimer);
+    }
     unsubscribe();
   });
 
@@ -79,30 +129,33 @@
   <div class="relative w-full h-full">
     {#if $selectedApp}
       <PlayPage libraryInfo={$selectedApp} {exitPlayPage} />
-    {/if}
-
-    {#await window.electronAPI.app.getOS()}
+    {:else if osLoading}
       <div class="flex justify-center items-center w-full h-full">
         <div
           class="animate-spin rounded-full h-8 w-8 border-b-2 border-accent-dark"
         ></div>
       </div>
-    {:then os}
-      {#if os === 'win32' || os === 'darwin' || os === 'linux'}
-        <div class="flex flex-col w-full h-full overflow-y-auto gap-4 pb-8">
-          <!-- Recently Played Section -->
-          {#if recentlyPlayed.length > 0}
-            <div class="space-y-6">
-              <div class="bg-accent-lighter px-4 py-2 rounded-lg">
-                <h2 class="text-xl font-semibold text-accent-dark">
-                  Recently Played
-                </h2>
-              </div>
-              <div class="flex gap-4 flex-row overflow-x-auto">
-                {#each recentlyPlayed as app}
+    {:else if os === 'win32' || os === 'darwin' || os === 'linux'}
+      <div class="flex flex-col w-full h-full overflow-y-auto gap-4 pb-8">
+        <!-- Recently Played Section -->
+        {#if recentlyPlayed.length > 0}
+          <div class="space-y-6">
+            <div class="bg-accent-lighter px-4 py-2 rounded-lg">
+              <h2 class="text-xl font-semibold text-accent-dark">
+                Recently Played
+              </h2>
+            </div>
+            <div
+              class="flex gap-4 flex-row overflow-x-hidden pt-8 -mt-8 pb-6 -mb-6 overflow-y-hidden"
+            >
+              {#each recentlyPlayed as app, index}
+                <div class="library-entry-shell ml-4 shrink-0">
                   <button
                     data-library-item
-                    class="ml-4 shrink-0 border-none relative transition-all shadow-lg hover:shadow-xl rounded-lg overflow-hidden bg-surface"
+                    class="library-entry border-none relative transition-all shadow-lg hover:shadow-xl rounded-lg overflow-hidden bg-surface"
+                    class:library-entry-visible={revealLibraryEntries}
+                    class:library-entry-revealing={revealLibraryDelayActive}
+                    style={getLibraryEntryDelay(index)}
                     onclick={() => ($selectedApp = app)}
                   >
                     {#if updatesManager.getAppUpdate(app.appID)?.updateAvailable}
@@ -150,72 +203,77 @@
                       </p>
                     </div>
                   </button>
-                {/each}
-              </div>
-            </div>
-          {/if}
-
-          <!-- All Games Section -->
-          <div class="space-y-6">
-            <div
-              class="bg-accent-lighter px-4 py-2 rounded-lg flex items-center justify-between"
-            >
-              <h2 class="text-xl font-semibold text-accent-dark">All Games</h2>
-              <div class="relative">
-                <div
-                  class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"
-                >
-                  <svg
-                    class="h-4 w-4 text-accent"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                      stroke-width="2"
-                      d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-                    ></path>
-                  </svg>
                 </div>
-                <input
-                  type="text"
-                  bind:value={searchQuery}
-                  placeholder="Search games..."
-                  class="block w-64 pl-9 pr-3 py-2 border border-accent rounded-md text-sm bg-surface text-text-primary placeholder-accent caret-accent-dark focus:outline-none focus:ring-1 focus:ring-accent-dark focus:border-accent-dark transition-colors"
-                />
-              </div>
+              {/each}
             </div>
+          </div>
+        {/if}
 
-            {#if filteredGames.length === 0 && !loading}
+        <!-- All Games Section -->
+        <div class="space-y-6">
+          <div
+            class="bg-accent-lighter px-4 py-2 rounded-lg flex items-center justify-between"
+          >
+            <h2 class="text-xl font-semibold text-accent-dark">All Games</h2>
+            <div class="relative">
               <div
-                class="flex flex-col gap-4 w-full justify-center items-center py-16"
+                class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"
               >
-                <img
-                  src="./favicon.png"
-                  alt="content"
-                  class="w-24 h-24 opacity-50"
-                />
-                <div class="text-center">
-                  <h1 class="text-xl text-text-secondary mb-2">
-                    {searchQuery ? 'No games found' : 'No games in library'}
-                  </h1>
-                  {#if searchQuery}
-                    <p class="text-text-muted">
-                      Try adjusting your search terms
-                    </p>
-                  {/if}
-                </div>
+                <svg
+                  class="h-4 w-4 text-accent"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                  ></path>
+                </svg>
               </div>
-            {:else}
-              <div class="space-y-4">
-                {#each allGamesChunks as chunk}
-                  <div class="flex gap-4 flex-wrap">
-                    {#each chunk as app}
+              <input
+                type="text"
+                bind:value={searchQuery}
+                placeholder="Search games..."
+                class="block w-64 pl-9 pr-3 py-2 border border-accent rounded-md text-sm bg-surface text-text-primary placeholder-accent caret-accent-dark focus:outline-none focus:ring-1 focus:ring-accent-dark focus:border-accent-dark transition-colors"
+              />
+            </div>
+          </div>
+
+          {#if filteredGames.length === 0 && !loading}
+            <div
+              class="flex flex-col gap-4 w-full justify-center items-center py-16"
+            >
+              <img
+                src="./favicon.png"
+                alt="content"
+                class="w-24 h-24 opacity-50"
+              />
+              <div class="text-center">
+                <h1 class="text-xl text-text-secondary mb-2">
+                  {searchQuery ? 'No games found' : 'No games in library'}
+                </h1>
+                {#if searchQuery}
+                  <p class="text-text-muted">Try adjusting your search terms</p>
+                {/if}
+              </div>
+            </div>
+          {:else}
+            <div class="space-y-4">
+              {#each allGamesChunks as chunk, chunkIndex}
+                <div class="flex gap-4 flex-wrap">
+                  {#each chunk as app, appIndex}
+                    <div class="library-entry-shell ml-4">
                       <button
                         data-library-item
-                        class="ml-4 border-none relative transition-all shadow-lg hover:shadow-xl rounded-lg overflow-hidden bg-white"
+                        class="library-entry border-none relative transition-all shadow-lg hover:shadow-xl rounded-lg overflow-hidden bg-white"
+                        class:library-entry-visible={revealLibraryEntries}
+                        class:library-entry-revealing={revealLibraryDelayActive}
+                        style={getLibraryEntryDelay(
+                          recentlyPlayed.length + chunkIndex * 5 + appIndex
+                        )}
                         onclick={() => ($selectedApp = app)}
                       >
                         {#if updatesManager.getAppUpdate(app.appID)?.updateAvailable}
@@ -262,47 +320,99 @@
                           </p>
                         </div>
                       </button>
-                    {/each}
-                  </div>
-                {/each}
-              </div>
-            {/if}
-          </div>
-
-          {#if loading}
-            <div class="flex justify-center items-center py-16">
-              <div
-                class="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"
-              ></div>
+                    </div>
+                  {/each}
+                </div>
+              {/each}
             </div>
           {/if}
         </div>
-      {:else}
-        <div
-          class="flex flex-col gap-4 w-full justify-center items-center h-full bg-background-color"
-        >
-          <img src="./favicon.png" alt="content" class="w-32 h-32 opacity-50" />
-          <div class="text-center">
-            <h1 class="text-2xl font-semibold text-accent-dark mb-2">
-              Library Unsupported
-            </h1>
-            <p class="text-accent max-w-md">
-              We're sorry, but library is currently unsupported for {os}. Use
-              Steam + Proton to launch games, we already configure it for you!
-            </p>
+
+        {#if loading}
+          <div class="flex justify-center items-center py-16">
+            <div
+              class="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"
+            ></div>
           </div>
+        {/if}
+      </div>
+    {:else}
+      <div
+        class="flex flex-col gap-4 w-full justify-center items-center h-full bg-background-color"
+      >
+        <img src="./favicon.png" alt="content" class="w-32 h-32 opacity-50" />
+        <div class="text-center">
+          <h1 class="text-2xl font-semibold text-accent-dark mb-2">
+            Library Unsupported
+          </h1>
+          <p class="text-accent max-w-md">
+            We're sorry, but library is currently unsupported for {os}. Use
+            Steam + Proton to launch games, we already configure it for you!
+          </p>
         </div>
-      {/if}
-    {/await}
+      </div>
+    {/if}
   </div>
 {/key}
 
 <style>
-  [data-library-item]:hover {
-    transform: perspective(600px) rotateX(4deg) scale(1.03) translateY(-6px);
+  .library-entry-shell {
+    position: relative;
+    padding: 20px 10px 18px;
+    margin: -20px -10px -18px;
+    isolation: isolate;
+  }
+
+  .library-entry-shell:hover,
+  .library-entry-shell:focus-within {
+    z-index: 12;
+  }
+
+  .library-entry-shell [data-library-item].library-entry {
+    transform-origin: center top;
+  }
+
+  [data-library-item].library-entry {
+    opacity: 0;
+    transform: translateY(20px);
+    transition:
+      opacity 420ms cubic-bezier(0.22, 1, 0.36, 1),
+      transform 420ms cubic-bezier(0.22, 1, 0.36, 1);
+    transition-delay: 0ms;
+    will-change: transform, opacity;
+  }
+
+  [data-library-item].library-entry.library-entry-visible {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  [data-library-item].library-entry.library-entry-visible.library-entry-revealing {
+    transition-delay: var(--library-entry-delay, 0ms);
+  }
+
+  [data-library-item].library-entry:hover {
+    opacity: 1;
+    transform: perspective(1000px) rotateX(5deg) scale(1.1) translateY(-12px)
+      translateZ(44px);
     box-shadow:
-      0 16px 36px 0 rgba(0, 0, 0, 0.2),
-      0 2px 8px 0 rgba(0, 0, 0, 0.12);
-    z-index: 1;
+      0 28px 42px 0 rgba(0, 0, 0, 0.24),
+      0 10px 16px 0 rgba(0, 0, 0, 0.16);
+    z-index: 8;
+  }
+
+  [data-library-item].library-entry:focus-visible {
+    opacity: 1;
+    transform: perspective(1000px) rotateX(3deg) scale(1.05) translateY(-8px)
+      translateZ(28px);
+    z-index: 8;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    [data-library-item].library-entry {
+      opacity: 1;
+      transform: none;
+      transition: none;
+    }
   }
 </style>

@@ -405,7 +405,8 @@
     <div class="space-y-6">
       {#if featuredCarouselItems.length > 0}
         <div
-          class="relative overflow-hidden rounded-xl bg-accent-lighter h-52 sm:h-60 md:h-72"
+          class="discover-load-in relative overflow-hidden rounded-xl bg-accent-lighter h-52 sm:h-60 md:h-72"
+          style="--load-delay: 80ms;"
         >
           <div
             class="featured-carousel-track"
@@ -527,8 +528,11 @@
         </div>
       {/if}
 
-      {#each allSections as sectionItem (sectionItem.sectionKey)}
-        <div class="space-y-3">
+      {#each allSections as sectionItem, sectionIndex (sectionItem.sectionKey)}
+        <div
+          class="discover-load-in space-y-3"
+          style={`--load-delay: ${Math.min(120 + sectionIndex * 70, 480)}ms;`}
+        >
           <!-- Section Header with Addon Info -->
           <div class="bg-accent-lighter px-4 py-3 rounded-lg">
             <div class="flex items-center gap-3 mb-2">
@@ -681,6 +685,34 @@
 </div>
 
 <style>
+  .discover-load-in {
+    opacity: 0;
+    transform: translate3d(0, 18px, 0);
+    animation: discover-load-in 520ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+    animation-delay: var(--load-delay, 0ms);
+    will-change: transform, opacity;
+  }
+
+  @keyframes discover-load-in {
+    0% {
+      opacity: 0;
+      transform: translate3d(0, 18px, 0);
+    }
+
+    100% {
+      opacity: 1;
+      transform: translate3d(0, 0, 0);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .discover-load-in {
+      animation: none;
+      opacity: 1;
+      transform: none;
+    }
+  }
+
   .featured-carousel-track {
     display: flex;
     height: 100%;

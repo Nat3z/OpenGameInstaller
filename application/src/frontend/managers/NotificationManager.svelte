@@ -170,7 +170,7 @@
   {#each $notifications as notification (notification.id)}
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div
-      class="notification-card flex flex-col rounded-xl p-4 w-7/12 relative items-stretch h-fit fly-in-accent pointer-events-auto overflow-hidden"
+      class="notification-card flex flex-col rounded-xl p-4 w-7/12 relative items-stretch h-fit fly-in-accent pointer-events-auto overflow-hidden cursor-pointer"
       id={'notification-' + notification.id}
       on:mouseenter={() => pauseNotificationTimer(notification.id)}
       on:mouseleave={() => resumeNotificationTimer(notification.id)}
@@ -178,7 +178,9 @@
       <div class="flex items-center gap-3 pb-3">
         <div
           class="notification-icon w-5 h-5 shrink-0"
-          style="background-color: {getNotificationIconColor(notification.type)}; -webkit-mask-image: url('./{notification.type}.svg'); -webkit-mask-size: contain; -webkit-mask-position: center; -webkit-mask-repeat: no-repeat; mask-image: url('./{notification.type}.svg'); mask-size: contain; mask-position: center; mask-repeat: no-repeat;"
+          style="background-color: {getNotificationIconColor(
+            notification.type
+          )}; -webkit-mask-image: url('./{notification.type}.svg'); -webkit-mask-size: contain; -webkit-mask-position: center; -webkit-mask-repeat: no-repeat; mask-image: url('./{notification.type}.svg'); mask-size: contain; mask-position: center; mask-repeat: no-repeat;"
           role="img"
           aria-label={notification.type}
         ></div>

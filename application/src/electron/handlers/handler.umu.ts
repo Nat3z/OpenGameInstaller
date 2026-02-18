@@ -226,7 +226,11 @@ export async function launchWithUmu(
     WINEPREFIX: winePrefix,
   };
 
-  env.PROTONPATH = protonVersion || 'UMU-Proton';
+  if (protonVersion) {
+    env.PROTONPATH = protonVersion;
+  } else {
+    env.PROTONPATH = 'UMU-Latest';
+  }
 
   if (store) {
     env.STORE = store;
@@ -242,7 +246,7 @@ export async function launchWithUmu(
 
   // Build launch arguments
   const launchArgs = libraryInfo.launchArguments || '';
-  const exePath = path.join(libraryInfo.cwd, libraryInfo.launchExecutable);
+  const exePath = libraryInfo.launchExecutable;
   const parsedLaunchArgs =
     launchArgs
       .match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g)

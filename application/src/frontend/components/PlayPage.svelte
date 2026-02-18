@@ -80,16 +80,17 @@
     playButton.setAttribute('data-error', 'false');
 
     // Fire of the addon launch-app event first
-    playButton.disabled = true;
-    playButton.querySelector('svg')!!.style.display = 'none';
-    playButton.querySelector('p')!!.textContent = 'WAITING';
 
     gamesLaunched.update((games) => {
       games[libraryInfo.appID] = 'launched';
       return games;
     });
 
+    playButton.disabled = true;
+    playButton.querySelector('svg')!!.style.display = 'none';
+    playButton.querySelector('p')!!.textContent = 'WAITING';
     try {
+      console.log('launching pre-launch');
       console.log('launchApp', libraryInfo);
       await safeFetch('launchApp', {
         libraryInfo: libraryInfo,

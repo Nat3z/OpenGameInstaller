@@ -477,6 +477,11 @@ const procedures: Record<string, Procedure<any>> = {
         client.eventsAvailable.includes('launch-app')
       );
 
+      console.log(
+        'clientsWithEvent',
+        clientsWithEvent.map((client) => client.addonInfo?.name)
+      );
+
       if (clientsWithEvent.length === 0) {
         return new ProcedureJSON(200, { success: true, results: [] });
       }

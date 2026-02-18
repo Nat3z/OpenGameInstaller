@@ -196,6 +196,9 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
               id: generateNotificationId(),
               type: 'error',
             });
+            // Abort UMU setup: fall back to legacy and do not persist UMU config
+            data.legacyMode = true;
+            data.umu = undefined;
             return 'setup-failed';
           }
         }
@@ -215,22 +218,12 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
           saveLibraryInfo(data.appID, data);
           addToInternalsApps(data.appID);
 
-          // Handle redistributables
-          const hasRedistributables =
-            data.redistributables && data.redistributables.length > 0;
-
-          if (hasRedistributables) {
-            console.log(
-              '[setup] Redistributables detected. Returning setup-prefix-required for UMU.'
-            );
-            return 'setup-prefix-required';
-          }
-
+          // umu now does all redistributable installation, so no need for that whole step anymore :)
           return 'setup-success';
         }
       }
 
-      // Legacy mode setup (original behavior)
+      // Linux if not using UMU
       data.legacyMode = true;
       saveLibraryInfo(data.appID, data);
       addToInternalsApps(data.appID);
@@ -241,9 +234,6 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
         data.launchExecutable = data.launchExecutable.replace(/\\/g, '/');
 
         // Determine if we need to set up wine prefix for redistributables
-        const hasRedistributables =
-          data.redistributables && data.redistributables.length > 0;
-
         // Add game to Steam first via steamtinkerlaunch
         const launchOptions = data.launchArguments ?? '';
 
@@ -272,21 +262,8 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
           return 'setup-failed';
         }
 
-        // If there are redistributables, we need to wait for the user to create the Proton prefix
-        // by launching the game through Steam. Return a special status to trigger the UI flow.
-        if (hasRedistributables) {
-          console.log(
-            '[setup] Redistributables detected. Returning setup-prefix-required status.'
-          );
-          console.log(
-            '[setup] User needs to restart Steam and launch the game to create Proton prefix.'
-          );
-
-          // Re-save the data with redistributables preserved for later installation
-          saveLibraryInfo(data.appID, data);
-
-          return 'setup-prefix-required';
-        }
+        // we no longer support redistributables on linux unless the game is using UMU
+        return 'setup-success';
       } else if (process.platform === 'win32') {
         // if there are redistributables, we need to install them
         if (data.redistributables && data.redistributables.length > 0) {

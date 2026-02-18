@@ -263,6 +263,10 @@ export async function launchWithUmu(
   });
 
   return new Promise((resolve) => {
+    console.log("[umu] command i'm running: ", umuRunExecutable, [
+      exePath,
+      ...parsedLaunchArgs.join(' '),
+    ]);
     const child = spawn(
       umuRunExecutable,
       [exePath, ...parsedLaunchArgs.join(' ')],

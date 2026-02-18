@@ -415,13 +415,7 @@ export async function installRedistributablesWithUmu(
           // Use winetricks verb
           child = spawn(
             umuRunExecutable,
-            [
-              'winetricks',
-              redistributable.name,
-              '--force',
-              '--unattended',
-              '-q',
-            ],
+            ['winetricks', redistributable.name],
             {
               env: {
                 UMU_LOG: 'debug',

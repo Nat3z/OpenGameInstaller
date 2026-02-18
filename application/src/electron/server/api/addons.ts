@@ -473,20 +473,17 @@ const procedures: Record<string, Procedure<any>> = {
       })
     )
     .handler(async (input) => {
-      const clientsWithStorefront = Array.from(clients.values()).filter(
-        (client) =>
-          client.addonInfo?.storefronts.includes(input.libraryInfo.storefront)
+      const clientsWithEvent = Array.from(clients.values()).filter((client) =>
+        client.eventsAvailable.includes('launch-app')
       );
-      if (clientsWithStorefront.length === 0) {
-        return new ProcedureError(
-          404,
-          'No clients found to serve this storefront'
-        );
+
+      if (clientsWithEvent.length === 0) {
+        return new ProcedureJSON(200, { success: true, results: [] });
       }
 
       // Fire off the event to all clients, and wait for all to finish
       const results = await Promise.all(
-        clientsWithStorefront.map((client) =>
+        clientsWithEvent.map((client) =>
           client.sendEventMessage({
             event: 'launch-app',
             args: {

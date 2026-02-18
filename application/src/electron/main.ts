@@ -431,14 +431,6 @@ app.on('window-all-closed', async function () {
     console.log('Stopping torrent client...');
     await stopClient();
 
-    // stop the server
-    console.log('Stopping server...');
-    await new Promise<void>((resolve) => {
-      server.close(() => {
-        resolve();
-      });
-    });
-
     // stop all of the addons
     for (const process of Object.keys(processes)) {
       console.log(`Killing process ${process}`);
@@ -449,6 +441,14 @@ app.on('window-all-closed', async function () {
     for (const interval of torrentIntervals) {
       clearInterval(interval);
     }
+
+    // stop the server
+    console.log('Stopping server...');
+    await new Promise<void>((resolve) => {
+      server.close(() => {
+        resolve();
+      });
+    });
   } catch (error) {
     console.error('Error during cleanup:', error);
   }

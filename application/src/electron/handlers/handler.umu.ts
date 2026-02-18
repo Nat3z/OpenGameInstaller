@@ -259,6 +259,7 @@ export async function launchWithUmu(
     protonVersion: protonVersion,
     store: store || 'none',
     hasDllOverrides: !!dllOverrides && dllOverrides.length > 0,
+    environment: env,
   });
 
   return new Promise((resolve) => {

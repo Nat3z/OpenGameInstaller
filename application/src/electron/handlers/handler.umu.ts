@@ -244,8 +244,11 @@ export async function launchWithUmu(
     }
   }
 
-  // Build launch arguments
-  const launchArgs = libraryInfo.launchArguments || '';
+  // Build launch arguments. Remove the %command% placeholder as we handle everything now for exe.
+  const launchArgs = (libraryInfo.launchArguments || '').replace(
+    '%command%',
+    ''
+  );
   const exePath = libraryInfo.launchExecutable;
   const parsedLaunchArgs =
     launchArgs

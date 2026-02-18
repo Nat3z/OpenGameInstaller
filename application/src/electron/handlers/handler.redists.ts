@@ -14,7 +14,7 @@ import { loadLibraryInfo, saveLibraryInfo } from './helpers.app/library.js';
 import { generateNotificationId } from './helpers.app/notifications.js';
 import { sendNotification } from '../main.js';
 import { __dirname } from '../manager/manager.paths.js';
-import { installRedistributablesWithUmu, isUmuInstalled } from './handler.umu.js';
+import { installRedistributablesWithUmu } from './handler.umu.js';
 
 const getSilentInstallFlags = (
   filePath: string,

@@ -229,7 +229,6 @@ export async function launchWithUmu(
         resolve({
           success: false,
           error: 'Failed to get game process ID',
-          stderr,
         });
       }
     }, 1000);

@@ -27,14 +27,11 @@ import { sendNotification } from '../main.js';
 import { getProtonPrefixPath } from './helpers.app/platform.js';
 import { spawnSync } from 'child_process';
 import * as fs from 'fs';
-import * as path from 'path';
 import {
   launchWithUmu,
-  installRedistributablesWithUmu,
   isUmuInstalled,
   installUmu,
   migrateToUmu,
-  convertUmuId,
   getUmuWinePrefix,
 } from './handler.umu.js';
 

@@ -220,7 +220,13 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
           saveLibraryInfo(data.appID, data);
           addToInternalsApps(data.appID);
 
-          // umu now does all redistributable installation, so no need for that whole step anymore :)
+          if (data.redistributables && data.redistributables.length > 0) {
+            console.log(
+              '[setup] Redistributables detected, need to install them for:',
+              data.name
+            );
+            return 'setup-prefix-required';
+          }
           return 'setup-success';
         }
       }

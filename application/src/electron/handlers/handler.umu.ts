@@ -281,6 +281,7 @@ export async function launchWithUmu(
           PROTONPATH: protonVersion || 'UMU-Latest',
           STORE: store || 'none',
           WINEDLLOVERRIDES: buildDllOverrides(dllOverrides || []),
+          PROTON_DISABLE_LSTEAMCLIENT: '1',
           PWD: libraryInfo.cwd,
           UMU_LOG: 'debug',
         },
@@ -401,6 +402,7 @@ export async function installRedistributablesWithUmu(
           ...process.env,
           GAMEID: gameId,
           WINEPREFIX: winePrefix,
+          UMU_LOG: 'debug',
         };
 
         if (protonVersion) {
@@ -421,7 +423,13 @@ export async function installRedistributablesWithUmu(
               '-q',
             ],
             {
-              env,
+              env: {
+                UMU_LOG: 'debug',
+                GAMEID: gameId,
+                WINEPREFIX: winePrefix,
+                PROTONPATH: protonVersion || 'UMU-Latest',
+                PWD: libraryInfo.cwd,
+              },
               stdio: ['ignore', 'pipe', 'pipe'],
             }
           );
@@ -450,7 +458,14 @@ export async function installRedistributablesWithUmu(
           const silentFlags = getSilentInstallFlags(redistFile);
 
           child = spawn(umuRunExecutable, [redistFile, ...silentFlags], {
-            env,
+            env: {
+              ...env,
+              GAMEID: gameId,
+              WINEPREFIX: winePrefix,
+              PROTONPATH: protonVersion || 'UMU-Latest',
+              PWD: libraryInfo.cwd,
+              UMU_LOG: 'debug',
+            },
             cwd: redistDir,
             stdio: ['ignore', 'pipe', 'pipe'],
           });

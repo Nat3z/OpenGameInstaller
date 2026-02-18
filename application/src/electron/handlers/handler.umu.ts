@@ -268,7 +268,14 @@ export async function launchWithUmu(
       [exePath, ...parsedLaunchArgs.join(' ')],
       {
         cwd: libraryInfo.cwd,
-        env,
+        env: {
+          GAMEID: gameId,
+          WINEPREFIX: winePrefix,
+          PROTONPATH: protonVersion || 'UMU-Latest',
+          STORE: store || 'none',
+          WINEDLLOVERRIDES: buildDllOverrides(dllOverrides || []),
+          PWD: libraryInfo.cwd,
+        },
         detached: true,
         stdio: ['ignore', 'pipe', 'pipe'],
       }

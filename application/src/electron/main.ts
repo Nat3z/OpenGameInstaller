@@ -23,10 +23,7 @@ import {
 import AddonManagerHandler, { startAddons } from './handlers/handler.addon.js';
 import OOBEHandler from './handlers/handler.oobe.js';
 import { runStartupTasks, closeSplashWindow } from './startup-runner.js';
-import { registerLibraryHandlers } from './handlers/handler.library.js';
-import { registerSteamHandlers } from './handlers/handler.steam.js';
 import { registerUmuHandlers } from './handlers/handler.umu.js';
-import { registerRedistributableHandlers } from './handlers/handler.redists.js';
 // import steamworks from 'steamworks.js';
 
 /**
@@ -142,6 +139,14 @@ ipcMain.on('get-initial-theme', (event) => {
   }
 });
 
+/* Sync IPC used by renderer during load; must be registered before any window loads */
+ipcMain.on('is-dev', (event) => {
+  event.returnValue = isDev();
+});
+ipcMain.on('get-version', (event) => {
+  event.returnValue = VERSION;
+});
+
 export let torrentIntervals: NodeJS.Timeout[] = [];
 
 let mainWindow: BrowserWindow | null;
@@ -231,24 +236,12 @@ function onMainAppReady() {
     AddonRestHandler();
     AddonManagerHandler(mainWindow);
     OOBEHandler();
-    // Register new UMU and updated handlers
-    registerLibraryHandlers(mainWindow);
-    registerSteamHandlers();
     registerUmuHandlers();
-    registerRedistributableHandlers();
   }
 
   // Register process-wide listeners only once
   if (!listenersRegistered) {
     listenersRegistered = true;
-
-    ipcMain.on('get-version', async (event) => {
-      event.returnValue = VERSION;
-    });
-
-    ipcMain.on('is-dev', async (event) => {
-      event.returnValue = isDev();
-    });
 
     app.on('browser-window-focus', function () {
       globalShortcut.register('CommandOrControl+R', () => {

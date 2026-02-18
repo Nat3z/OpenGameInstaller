@@ -2,7 +2,7 @@
   import { onMount, onDestroy } from 'svelte';
   import { fade, fly } from 'svelte/transition';
   import { quintOut } from 'svelte/easing';
-  import { gamesLaunched } from '../store';
+  import { selectedView, gameFocused, launchGameTrigger } from '../store';
 
   interface Props {
     gameId: number;
@@ -15,7 +15,6 @@
   let gameName = $state('Please wait');
   let status = $state<'loading' | 'launching' | 'success' | 'error'>('loading');
   let errorMessage = $state('');
-  let progress = $state(0);
 
   onMount(async () => {
     try {
@@ -34,14 +33,14 @@
 
       // Check if this is a UMU game
       if (libraryInfo.umu) {
-        // Launch the game
-        await window.electronAPI.app.launchGame('' + gameId);
+        // Open the play page in the background and trigger the play button
+        // so that the full PlayPage launch flow (addon pre-launch, etc.) runs
+        selectedView.set('library');
+        gameFocused.set(gameId);
 
-        // Update store
-        gamesLaunched.update((games) => {
-          games[gameId] = 'launched';
-          return games;
-        });
+        // Wait for LibraryView to load and open PlayPage, then trigger play
+        await new Promise((r) => setTimeout(r, 800));
+        launchGameTrigger.set(gameId);
 
         status = 'success';
 

@@ -116,14 +116,35 @@ export class AllDebridService extends BaseService {
         : null);
 
     const debridResult = result as AllDebridSearchResult;
-    if (result.downloadType === 'magnet') {
-      await this.handleAllDebridDownload(debridResult, appID, tempId, () =>
-        this.getTorrentIdFromMagnet(debridResult)
-      );
-    } else if (result.downloadType === 'torrent') {
-      await this.handleAllDebridDownload(debridResult, appID, tempId, () =>
-        this.getTorrentIdFromTorrent(debridResult, resolvedButton)
-      );
+    try {
+      if (result.downloadType === 'magnet') {
+        await this.handleAllDebridDownload(debridResult, appID, tempId, () =>
+          this.getTorrentIdFromMagnet(debridResult)
+        );
+      } else if (result.downloadType === 'torrent') {
+        await this.handleAllDebridDownload(debridResult, appID, tempId, () =>
+          this.getTorrentIdFromTorrent(debridResult, resolvedButton)
+        );
+      }
+    } catch (err) {
+      console.error('Failed to start AllDebrid download:', err);
+      // set the download as failed
+      currentDownloads.update((downloads) => {
+        const matchingDownload = downloads.find((d) => d.id === tempId);
+        if (!matchingDownload) return downloads;
+        matchingDownload.status = 'error';
+        matchingDownload.error =
+          err instanceof Error
+            ? err.message
+            : 'Failed to start AllDebrid download.';
+        downloads[downloads.indexOf(matchingDownload)] = matchingDownload;
+        return downloads;
+      });
+      if (resolvedButton) {
+        resolvedButton.textContent = 'Download';
+        resolvedButton.disabled = false;
+      }
+      throw err;
     }
   }
 

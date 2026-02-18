@@ -33,15 +33,27 @@ export class RealDebridService extends BaseService {
     const hosts = await window.electronAPI.realdebrid.getHosts();
     const tempId = this.queueRequestDownload(result, appID, 'realdebrid');
 
-    if (result.downloadType === 'magnet') {
-      await this.handleMagnetDownload(
-        result,
-        appID,
-        tempId,
-        hosts[0]
-      );
-    } else if (result.downloadType === 'torrent') {
-      await this.handleTorrentDownload(result, appID, tempId);
+    try {
+      if (result.downloadType === 'magnet') {
+        await this.handleMagnetDownload(result, appID, tempId, hosts[0]);
+      } else if (result.downloadType === 'torrent') {
+        await this.handleTorrentDownload(result, appID, tempId);
+      }
+    } catch (err) {
+      console.error('Failed to start Real-Debrid download:', err);
+      // set the download as failed
+      currentDownloads.update((downloads) => {
+        const matchingDownload = downloads.find((d) => d.id === tempId);
+        if (!matchingDownload) return downloads;
+        matchingDownload.status = 'error';
+        matchingDownload.error =
+          err instanceof Error
+            ? err.message
+            : 'Failed to start Real-Debrid download.';
+        downloads[downloads.indexOf(matchingDownload)] = matchingDownload;
+        return downloads;
+      });
+      throw err;
     }
   }
 

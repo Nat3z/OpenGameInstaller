@@ -370,7 +370,7 @@
       {#await window.electronAPI.app.getOS()}
         <div class="flex justify-center items-center w-full h-full"></div>
       {:then os}
-        {#if (os === 'linux' || os === 'darwin') && libraryInfo.launchExecutable.endsWith('.exe')}
+        {#if (os === 'linux' || os === 'darwin') && libraryInfo.launchExecutable.endsWith('.exe') && libraryInfo.umu === undefined}
           <div class="relative group">
             <button
               class="px-6 py-3 flex border-none rounded-lg justify-center bg-disabled items-center gap-2 disabled:bg-disabled disabled:cursor-not-allowed transition-colors duration-200"
@@ -384,7 +384,8 @@
             >
               <img src="./error.svg" alt="error" class="w-4 h-4" />
               <p class="font-archivo font-semibold text-accent-dark pr-4">
-                You can only play Windows games through Steam using Proton
+                You can only play Windows games through Steam using Proton or
+                UMU
               </p>
             </div>
           </div>

@@ -13,14 +13,22 @@ import {
   loadLibraryInfo,
   saveLibraryInfo,
 } from './helpers.app/library.js';
+import { getSilentInstallFlags } from './helpers.app/install-flags.js';
 import { generateNotificationId } from './helpers.app/notifications.js';
 import { sendNotification } from '../main.js';
 
 const execAsync = promisify(exec);
 
-// UMU constants
-const UMU_PREFIX_BASE = path.join(getHomeDir() || '~', '.ogi-wine-prefixes');
-const UMU_INSTALL_SCRIPT_URL = 'https://raw.githubusercontent.com/Open-Wine-Components/umu-launcher/main/install.sh';
+// UMU install script. Downloaded to temp file then executed (no curl|bash). For production, pin to a specific commit SHA and verify checksum/signature before execution.
+const UMU_INSTALL_SCRIPT_URL = 'https://raw.githubusercontent.com/Open-Wine-Components/umu-launcher/refs/heads/main/install.sh';
+
+function getUmuPrefixBase(): string {
+  const home = getHomeDir();
+  if (!home) {
+    throw new Error('Cannot determine home directory for UMU prefix base');
+  }
+  return path.join(home, '.ogi-wine-prefixes');
+}
 
 /**
  * Check if UMU is installed on the system
@@ -41,9 +49,19 @@ export async function installUmu(): Promise<{ success: boolean; error?: string }
   console.log('[umu] Installing UMU launcher...');
 
   try {
-    // Download and run the install script
-    const installCmd = `curl -L ${UMU_INSTALL_SCRIPT_URL} | bash`;
-    await execAsync(installCmd, { timeout: 120000 });
+    const os = await import('os');
+    const tmpDir = os.tmpdir();
+    const scriptPath = path.join(tmpDir, `umu-install-${Date.now()}.sh`);
+    await execAsync(`curl -L -o "${scriptPath}" "${UMU_INSTALL_SCRIPT_URL}"`, { timeout: 60000 });
+    try {
+      await execAsync(`bash "${scriptPath}"`, { timeout: 120000 });
+    } finally {
+      try {
+        fs.unlinkSync(scriptPath);
+      } catch {
+        // ignore cleanup errors
+      }
+    }
 
     // Verify installation
     const installed = await isUmuInstalled();
@@ -83,15 +101,16 @@ export function convertUmuId(umuId: string): string {
  */
 export function getUmuWinePrefix(gameId: string): string {
   const gameIdClean = convertUmuId(gameId).replace('umu-', '');
-  return path.join(UMU_PREFIX_BASE, `umu-${gameIdClean}`);
+  return path.join(getUmuPrefixBase(), `umu-${gameIdClean}`);
 }
 
 /**
  * Ensure UMU prefix base directory exists
  */
 export function ensureUmuPrefixBase(): void {
-  if (!fs.existsSync(UMU_PREFIX_BASE)) {
-    fs.mkdirSync(UMU_PREFIX_BASE, { recursive: true });
+  const base = getUmuPrefixBase();
+  if (!fs.existsSync(base)) {
+    fs.mkdirSync(base, { recursive: true });
   }
 }
 
@@ -158,9 +177,11 @@ export async function launchWithUmu(
   const gameId = convertUmuId(umuId);
   const winePrefix = getUmuWinePrefix(umuId);
 
-  // Build environment variables
+  const envEntries = Object.entries(process.env).filter(
+    (entry): entry is [string, string] => entry[1] !== undefined
+  );
   const env: Record<string, string> = {
-    ...process.env,
+    ...Object.fromEntries(envEntries),
     GAMEID: gameId,
     WINEPREFIX: winePrefix,
   };
@@ -195,6 +216,16 @@ export async function launchWithUmu(
   });
 
   return new Promise((resolve) => {
+    let settled = false;
+    let timeoutId: ReturnType<typeof setTimeout>;
+
+    const settle = (result: { success: boolean; error?: string; pid?: number }) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeoutId);
+      resolve(result);
+    };
+
     const child = spawn('umu-run', [exePath, ...launchArgs.split(' ').filter(Boolean)], {
       cwd: libraryInfo.cwd,
       env,
@@ -202,14 +233,10 @@ export async function launchWithUmu(
       stdio: ['ignore', 'pipe', 'pipe'],
     });
 
-    let stdout = '';
     let stderr = '';
-
     child.stdout?.on('data', (data) => {
-      stdout += data.toString();
       console.log(`[umu stdout] ${data}`);
     });
-
     child.stderr?.on('data', (data) => {
       stderr += data.toString();
       console.error(`[umu stderr] ${data}`);
@@ -217,21 +244,29 @@ export async function launchWithUmu(
 
     child.on('error', (error) => {
       console.error('[umu] Failed to launch game:', error);
-      resolve({ success: false, error: error.message });
+      settle({ success: false, error: error.message });
     });
 
-    // Give it a moment to start
-    setTimeout(() => {
-      if (child.pid && !child.killed) {
-        console.log(`[umu] Game launched with PID ${child.pid}`);
-        resolve({ success: true, pid: child.pid });
-      } else {
-        resolve({
+    child.on('close', (code) => {
+      if (code !== null && code !== 0) {
+        settle({
           success: false,
-          error: 'Failed to get game process ID',
+          error: stderr ? `Process exited: ${stderr.trim()}` : `Process exited with code ${code}`,
         });
       }
-    }, 1000);
+    });
+
+    timeoutId = setTimeout(() => {
+      if (child.pid && !child.killed) {
+        console.log(`[umu] Game launched with PID ${child.pid}`);
+        settle({ success: true, pid: child.pid });
+      } else {
+        settle({
+          success: false,
+          error: stderr ? `Failed to start: ${stderr.trim()}` : 'Failed to get game process ID',
+        });
+      }
+    }, 1500);
 
     child.unref();
   });
@@ -276,7 +311,7 @@ export async function installRedistributablesWithUmu(
 
   const { umuId, protonVersion } = libraryInfo.umu || {};
   const gameId = umuId ? convertUmuId(umuId) : 'umu-default';
-  const winePrefix = umuId ? getUmuWinePrefix(umuId) : path.join(UMU_PREFIX_BASE, 'umu-default');
+  const winePrefix = umuId ? getUmuWinePrefix(umuId) : path.join(getUmuPrefixBase(), 'umu-default');
 
   const redistributables = libraryInfo.redistributables || [];
 
@@ -300,8 +335,11 @@ export async function installRedistributablesWithUmu(
           resolve(result);
         };
 
+        const envEntries = Object.entries(process.env).filter(
+          (entry): entry is [string, string] => entry[1] !== undefined
+        );
         const env: Record<string, string> = {
-          ...process.env,
+          ...Object.fromEntries(envEntries),
           GAMEID: gameId,
           WINEPREFIX: winePrefix,
         };
@@ -310,7 +348,7 @@ export async function installRedistributablesWithUmu(
           env.PROTONPATH = protonVersion;
         }
 
-        let child;
+        let child: ReturnType<typeof spawn> | undefined;
 
         if (redistributable.path === 'winetricks') {
           // Use winetricks verb
@@ -337,7 +375,7 @@ export async function installRedistributablesWithUmu(
           const redistFile = path.basename(redistPath);
 
           // Determine silent install flags
-          const silentFlags = getSilentInstallFlags(redistFile);
+          const silentFlags = getSilentInstallFlags(redistFile, redistPath);
 
           child = spawn('umu-run', [redistFile, ...silentFlags], {
             env,
@@ -346,23 +384,26 @@ export async function installRedistributablesWithUmu(
           });
         }
 
-        const timeout = setTimeout(() => {
-          if (child.pid) {
-            child.kill('SIGTERM');
-          }
-          finalize(false);
-        }, 10 * 60 * 1000); // 10 minute timeout
+        if (child) {
+          const proc = child;
+          const timeout = setTimeout(() => {
+            if (proc.pid) {
+              proc.kill('SIGTERM');
+            }
+            finalize(false);
+          }, 10 * 60 * 1000); // 10 minute timeout
 
-        child.on('close', (code) => {
-          clearTimeout(timeout);
-          finalize(code === 0);
-        });
+          proc.on('close', (code) => {
+            clearTimeout(timeout);
+            finalize(code === 0);
+          });
 
-        child.on('error', (error) => {
-          clearTimeout(timeout);
-          console.error('[umu] Redistributable error:', error);
-          finalize(false);
-        });
+          proc.on('error', (error) => {
+            clearTimeout(timeout);
+            console.error('[umu] Redistributable error:', error);
+            finalize(false);
+          });
+        }
       });
 
       if (success) {
@@ -402,46 +443,6 @@ export async function installRedistributablesWithUmu(
   });
 
   return 'success';
-}
-
-/**
- * Get silent install flags for redistributable files
- */
-function getSilentInstallFlags(fileName: string): string[] {
-  const lowerFileName = fileName.toLowerCase();
-
-  if (lowerFileName.includes('vcredist') || lowerFileName.includes('vc_redist')) {
-    return ['/S', '/v/qn'];
-  }
-
-  if (lowerFileName.includes('directx') || lowerFileName.includes('dxwebsetup')) {
-    return ['/S'];
-  }
-
-  if (lowerFileName.includes('dotnet') || lowerFileName.includes('netfx')) {
-    if (lowerFileName.includes('netfxrepairtool')) {
-      return ['/p'];
-    }
-    return ['/S', '/v/qn'];
-  }
-
-  if (lowerFileName.endsWith('.msi')) {
-    return ['/S', '/qn'];
-  }
-
-  if (lowerFileName.includes('nsis') || lowerFileName.includes('setup')) {
-    return ['/S'];
-  }
-
-  if (lowerFileName.includes('inno')) {
-    return ['/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART'];
-  }
-
-  if (lowerFileName.includes('installshield')) {
-    return ['/S', '/v/qn'];
-  }
-
-  return ['/S'];
 }
 
 /**
@@ -519,7 +520,7 @@ export async function migrateToUmu(
 }
 
 /**
- * Copy directory recursively
+ * Copy directory recursively, preserving symlinks (required for Wine prefixes)
  */
 async function copyDirectory(src: string, dest: string): Promise<void> {
   if (!fs.existsSync(dest)) {
@@ -532,7 +533,10 @@ async function copyDirectory(src: string, dest: string): Promise<void> {
     const srcPath = path.join(src, entry.name);
     const destPath = path.join(dest, entry.name);
 
-    if (entry.isDirectory()) {
+    if (entry.isSymbolicLink()) {
+      const target = fs.readlinkSync(srcPath);
+      fs.symlinkSync(target, destPath);
+    } else if (entry.isDirectory()) {
       await copyDirectory(srcPath, destPath);
     } else {
       fs.copyFileSync(srcPath, destPath);

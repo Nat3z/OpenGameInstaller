@@ -5,7 +5,7 @@
 import { ipcMain } from 'electron';
 import { exec } from 'child_process';
 import type { LibraryInfo } from 'ogi-addon';
-import { isLinux } from './helpers.app/platform.js';
+import { isLinux, getProtonPrefixPath } from './helpers.app/platform.js';
 import {
   getSteamAppIdWithFallback,
   getNonSteamGameAppID,
@@ -24,7 +24,6 @@ import {
 } from './helpers.app/library.js';
 import { generateNotificationId } from './helpers.app/notifications.js';
 import { sendNotification } from '../main.js';
-import { getProtonPrefixPath } from './helpers.app/platform.js';
 import { spawnSync } from 'child_process';
 import * as fs from 'fs';
 import {
@@ -95,9 +94,8 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
       }
 
       mainWindow?.webContents.send('game:launch', { id: appInfo.appID });
-
-      // Note: We don't wait for game exit with UMU since it's detached
-      // The game process is managed by UMU/Proton
+      // UMU detaches the process; clear running state so UI does not stay stuck
+      mainWindow?.webContents.send('game:exit', { id: appInfo.appID });
       return;
     }
 
@@ -172,18 +170,16 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
       ensureLibraryDir();
       ensureInternalsDir();
 
-      // Check if UMU is available and should be used
-      const umuAvailable = isLinux() && (await isUmuInstalled());
+      // Check if UMU is available and should be used (Linux only; install checked below)
+      const umuAvailable = isLinux();
 
       if (umuAvailable && data.umu) {
         console.log('[setup] Using UMU mode for new game');
 
-        // Ensure UMU is installed
         if (!(await isUmuInstalled())) {
           const installResult = await installUmu();
           if (!installResult.success) {
             console.error('[setup] UMU auto-install failed:', installResult.error);
-            // Fall back to legacy mode
             data.legacyMode = true;
           }
         }
@@ -337,6 +333,7 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
         appData.addonsource = data.addonSource;
       }
 
+      const oldVersion = appData.version;
       appData.version = data.version;
       appData.cwd = data.cwd;
       appData.launchExecutable = data.launchExecutable;
@@ -351,10 +348,10 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
         if (appData.legacyMode) {
           console.log('[update] Migrating game from legacy to UMU mode');
 
-          // Get the old Steam app ID for migration
+          // Get the old Steam app ID for migration (use version before update)
           const { success, appId: oldSteamAppId } = await getSteamAppIdWithFallback(
             appData.name,
-            appData.version,
+            oldVersion,
             'migration'
           );
 

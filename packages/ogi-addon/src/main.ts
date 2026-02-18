@@ -183,6 +183,10 @@ export type SetupEventResponse = Omit<
      * Optional store identifier for protonfixes (e.g., 'gog', 'egs', 'none')
      */
     store?: string;
+    /**
+     * Cached Steam shortcut app ID after adding UMU game to Steam (avoids re-adding on each launch)
+     */
+    steamShortcutId?: number;
   };
 };
 
@@ -892,11 +896,14 @@ export const ZodLibraryInfo = z.object({
    */
   umu: z
     .object({
-      umuId: z.string(), // 'steam:${number}' or 'umu:${number}'
+      umuId: z
+        .string()
+        .regex(/^(steam|umu):\d+$/, 'Must be in format steam:{number} or umu:{number}'),
       dllOverrides: z.array(z.string()).optional(),
       protonVersion: z.string().optional(),
       store: z.string().optional(),
       winePrefixPath: z.string().optional(),
+      steamShortcutId: z.number().optional(),
     })
     .optional(),
   /**

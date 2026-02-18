@@ -10,67 +10,12 @@ import * as fs from 'fs';
 import type { LibraryInfo } from 'ogi-addon';
 import { isLinux } from './helpers.app/platform.js';
 import { getSteamAppIdWithFallback } from './helpers.app/steam.js';
+import { getSilentInstallFlags } from './helpers.app/install-flags.js';
 import { loadLibraryInfo, saveLibraryInfo } from './helpers.app/library.js';
 import { generateNotificationId } from './helpers.app/notifications.js';
 import { sendNotification } from '../main.js';
 import { __dirname } from '../manager/manager.paths.js';
 import { installRedistributablesWithUmu } from './handler.umu.js';
-
-const getSilentInstallFlags = (
-  filePath: string,
-  fileName: string
-): string[] => {
-  const lowerFileName = fileName.toLowerCase();
-  const lowerFilePath = filePath.toLowerCase();
-
-  // Microsoft Visual C++ Redistributables
-  if (
-    lowerFileName.includes('vcredist') ||
-    lowerFileName.includes('vc_redist')
-  ) {
-    return ['/S', '/v/qn']; // /S for silent, /v/qn for very quiet
-  }
-
-  // DirectX redistributables
-  if (
-    lowerFileName.includes('directx') ||
-    lowerFileName.includes('dxwebsetup')
-  ) {
-    return ['/S'];
-  }
-
-  // .NET Framework redistributables
-  if (lowerFileName.includes('dotnet') || lowerFileName.includes('netfx')) {
-    // Special case for .NET Framework Repair Tool
-    if (lowerFileName.includes('netfxrepairtool')) {
-      return ['/p']; // Use /p flag for repair tool as requested
-    }
-    return ['/S', '/v/qn'];
-  }
-
-  // MSI installers
-  if (lowerFileName.endsWith('.msi')) {
-    return ['/S', '/qn']; // /qn = quiet no UI
-  }
-
-  // NSIS installers
-  if (lowerFilePath.includes('nsis') || lowerFileName.includes('setup')) {
-    return ['/S'];
-  }
-
-  // Inno Setup installers
-  if (lowerFileName.includes('inno')) {
-    return ['/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART'];
-  }
-
-  // InstallShield installers
-  if (lowerFileName.includes('installshield')) {
-    return ['/S', '/v/qn'];
-  }
-
-  // Default fallback - try multiple common flags
-  return ['/S'];
-};
 
 export function registerRedistributableHandlers() {
   ipcMain.handle(
@@ -340,8 +285,8 @@ export function registerRedistributableHandlers() {
                   const redistributableFilename = basename(redistributablePath);
 
                   const silentFlags = getSilentInstallFlags(
-                    redistributablePath,
-                    redistributableFilename
+                    redistributableFilename,
+                    redistributablePath
                   );
 
                   const child = spawn(

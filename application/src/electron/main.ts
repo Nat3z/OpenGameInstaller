@@ -1,7 +1,7 @@
 import { join } from 'path';
 import { server, port } from './server/addon-server.js';
 import { applicationAddonSecret } from './server/constants.js';
-import { app, BrowserWindow, globalShortcut, ipcMain, shell } from 'electron';
+import { app, BrowserWindow, dialog, globalShortcut, ipcMain, shell } from 'electron';
 import fs, { existsSync, readFileSync } from 'fs';
 import { processes } from './manager/manager.addon.js';
 import { stopClient } from './manager/manager.webtorrent.js';
@@ -124,14 +124,9 @@ async function launchGameById(gameId: number) {
 
   launchWindow.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(launchingHtml));
 
-  launchWindow.once('ready-to-show', () => {
+  launchWindow.once('ready-to-show', async () => {
     launchWindow.show();
-  });
-
-  // Wait a moment for the window to show, then launch the game
-  setTimeout(async () => {
     try {
-      // Import the library handler function
       const { loadLibraryInfo } = await import('./handlers/helpers.app/library.js');
       const { launchWithUmu } = await import('./handlers/handler.umu.js');
 
@@ -139,39 +134,43 @@ async function launchGameById(gameId: number) {
 
       if (!libraryInfo) {
         console.error(`[launch] Game not found: ${gameId}`);
+        dialog.showErrorBox('Launch failed', `Game not found (ID: ${gameId}).`);
         launchWindow.close();
         app.quit();
         return;
       }
 
-      // Update the UI with the game name
       launchWindow.webContents.executeJavaScript(`
         document.getElementById('gameName').textContent = ${JSON.stringify(libraryInfo.name)};
       `);
 
-      // Check if this is a UMU game
       if (libraryInfo.umu) {
         const result = await launchWithUmu(libraryInfo);
         if (!result.success) {
           console.error('[launch] Failed to launch game:', result.error);
+          dialog.showErrorBox(
+            'Launch failed',
+            `${libraryInfo.name} (ID: ${gameId}): ${result.error ?? 'Unknown error'}`
+          );
         }
       } else {
-        // Legacy mode - need to launch through the library handler
-        // This shouldn't happen for Steam shortcuts, but handle it anyway
         console.warn('[launch] Game is not in UMU mode, cannot launch from Steam shortcut');
+        dialog.showErrorBox(
+          'Launch failed',
+          `${libraryInfo.name} (ID: ${gameId}) is not configured for UMU. Launch from the app instead.`
+        );
       }
-
-      // Close the launch window after a short delay
-      setTimeout(() => {
-        launchWindow.close();
-        app.quit();
-      }, 2000);
     } catch (error) {
       console.error('[launch] Error launching game:', error);
+      dialog.showErrorBox(
+        'Launch failed',
+        error instanceof Error ? error.message : String(error)
+      );
+    } finally {
       launchWindow.close();
       app.quit();
     }
-  }, 500);
+  });
 }
 
 export const VERSION = app.getVersion();
@@ -246,6 +245,10 @@ let isReadyForEvents = false;
 let readyForEventWaiters: (() => void)[] = [];
 
 export async function sendIPCMessage(channel: string, ...args: any[]) {
+  // Short-circuit when no main window (e.g. --game-id launch path); avoids deadlock if installUmu/sendNotification run before createWindow()
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return;
+  }
   if (!isReadyForEvents) {
     await new Promise<void>((resolve) => {
       console.log('waiting for events');

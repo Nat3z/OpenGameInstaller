@@ -275,22 +275,12 @@ export async function launchWithUmu(
           STORE: store || 'none',
           WINEDLLOVERRIDES: buildDllOverrides(dllOverrides || []),
           PWD: libraryInfo.cwd,
+          UMU_LOG: 'debug',
         },
         detached: true,
         stdio: ['ignore', 'pipe', 'pipe'],
       }
     );
-
-    let settled = false;
-    const finish = (result: {
-      success: boolean;
-      error?: string;
-      pid?: number;
-    }) => {
-      if (settled) return;
-      settled = true;
-      resolve(result);
-    };
 
     child.stdout?.on('data', (data) => {
       console.log(`[umu stdout] ${data}`);
@@ -300,30 +290,37 @@ export async function launchWithUmu(
       console.error(`[umu stderr] ${data}`);
     });
 
+    let processExited = false;
+
     child.on('error', (error) => {
-      console.error('[umu] Failed to launch game:', error);
-      finish({ success: false, error: error.message });
+      if (!processExited) {
+        processExited = true;
+        console.error('[umu] Failed to launch game:', error);
+        resolve({ success: false, error: error.message });
+      }
     });
 
-    // UMU/Proton first-run can take longer; use a longer readiness window
-    const readinessTimeout = setTimeout(() => {
-      if (child.pid && !child.killed) {
-        console.log(`[umu] Game launch command started with PID ${child.pid}`);
-        finish({ success: true, pid: child.pid });
-      } else {
-        finish({ success: false, error: 'Failed to get game process ID' });
-      }
-    }, 5000);
-
-    child.on('spawn', () => {
-      // Spawned successfully; resolve immediately with PID
-      if (child.pid) {
-        clearTimeout(readinessTimeout);
-        finish({ success: true, pid: child.pid });
+    child.on('exit', (code, signal) => {
+      if (!processExited) {
+        processExited = true;
+        if (code === 0) {
+          console.log(`[umu] Game process exited normally with code ${code}`);
+          resolve({ success: true, pid: child.pid });
+        } else {
+          console.error(
+            `[umu] Game process exited abnormally, code: ${code}, signal: ${signal}`
+          );
+          resolve({
+            success: false,
+            error: `Exited with code ${code}, signal ${signal}`,
+            pid: child.pid,
+          });
+        }
       }
     });
 
     child.unref();
+    // The promise will now ONLY resolve after the process exits or if there is an error
   });
 }
 

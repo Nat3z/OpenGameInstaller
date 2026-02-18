@@ -139,11 +139,11 @@ export type CatalogResponse =
   | CatalogWithCarousel;
 
 /**
- * UMU ID format: 'steam:${number}' or 'umu:${number}'
+ * UMU ID format: 'steam:${number}' or 'umu:${string | number}'
  * - steam:${number} → maps to umu-${number} for Steam games
- * - umu:${number} → maps to umu-${number} for non-Steam games
+ * - umu:${string | number} → maps to umu-${string | number} for non-Steam games
  */
-export type UmuId = `steam:${number}` | `umu:${number}`;
+export type UmuId = `steam:${number}` | `umu:${string | number}`;
 
 export type SetupEventResponse = Omit<
   LibraryInfo,
@@ -898,7 +898,10 @@ export const ZodLibraryInfo = z.object({
     .object({
       umuId: z
         .string()
-        .regex(/^(steam|umu):\d+$/, 'Must be in format steam:{number} or umu:{number}'),
+        .regex(
+          /^(steam|umu):[\d\w]+$/,
+          'Must be in format steam:{number} or umu:{number | string}'
+        ),
       dllOverrides: z.array(z.string()).optional(),
       protonVersion: z.string().optional(),
       store: z.string().optional(),

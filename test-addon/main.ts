@@ -298,6 +298,12 @@ manifest: ${manifest}
             version:
               (await addon.getAppDetails(appID, storefront))?.latestVersion ??
               '1.0.0',
+            umu: {
+              umuId: 'umu:genshin',
+              protonVersion: 'proton:7.0',
+              store: 'store:1',
+              winePrefixPath: '/home/user/.local/share/umu/1',
+            },
           });
         });
       }, 5000);

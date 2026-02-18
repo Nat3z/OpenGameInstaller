@@ -90,6 +90,7 @@
     });
 
     try {
+      console.log('launchApp', libraryInfo);
       await safeFetch('launchApp', {
         libraryInfo: libraryInfo,
         launchType: 'pre',

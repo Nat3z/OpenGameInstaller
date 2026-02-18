@@ -53,7 +53,7 @@ function escapeShellArg(arg: string): string {
  * - Otherwise, use UMU if available on Linux
  */
 async function shouldUseUmuMode(libraryInfo: LibraryInfo): Promise<boolean> {
-  if (!isLinux()) return false;
+  if (!isLinux() && process.platform !== 'darwin') return false;
 
   // Explicit UMU config
   if (libraryInfo.umu) return true;
@@ -173,7 +173,7 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
       ensureInternalsDir();
 
       // Check if UMU is available and should be used
-      const umuAvailable = isLinux();
+      const umuAvailable = isLinux() || process.platform === 'darwin';
 
       if (umuAvailable && data.umu) {
         console.log('[setup] Using UMU mode for new game');

@@ -226,9 +226,7 @@ export async function launchWithUmu(
     WINEPREFIX: winePrefix,
   };
 
-  if (protonVersion) {
-    env.PROTONPATH = protonVersion;
-  }
+  env.PROTONPATH = protonVersion || 'UMU-Proton';
 
   if (store) {
     env.STORE = store;
@@ -254,7 +252,7 @@ export async function launchWithUmu(
     name: libraryInfo.name,
     gameId,
     winePrefix,
-    protonVersion: protonVersion || 'UMU-Proton (latest)',
+    protonVersion: protonVersion,
     store: store || 'none',
     hasDllOverrides: !!dllOverrides && dllOverrides.length > 0,
   });

@@ -78,13 +78,36 @@ export async function addUmuGameToSteam(params: {
   }
 
   // Get the Steam app ID
-  const { success, appId: steamAppId } = await getNonSteamGameAppID(versionedGameName);
+  const { success, appId: steamAppId } =
+    await getNonSteamGameAppID(versionedGameName);
 
   if (!success || !steamAppId) {
     return { success: true }; // Game was added but we couldn't get the ID
   }
 
   return { success: true, steamAppId };
+}
+
+/**
+ * Launch a Steam game by app ID via xdg-open. Returns a Promise with
+ * { success, shortcutId?, error? } for use by both UMU and legacy launch paths.
+ */
+function launchViaSteam(appId: number): Promise<{
+  success: boolean;
+  shortcutId?: number;
+  error?: string;
+}> {
+  return new Promise((resolve) => {
+    exec(`xdg-open steam://rungameid/${appId}`, (error) => {
+      if (error) {
+        console.error('[steam] Failed to launch app via Steam:', error);
+        resolve({ success: false, error: error.message });
+      } else {
+        console.log('[steam] Steam app launch command executed');
+        resolve({ success: true, shortcutId: appId });
+      }
+    });
+  });
 }
 
 /**
@@ -289,21 +312,7 @@ export function registerSteamHandlers() {
         return { success: false, error: 'Failed to get Steam shortcut ID' };
       }
 
-      return new Promise<{
-        success: boolean;
-        shortcutId?: number;
-        error?: string;
-      }>((resolve) => {
-        exec(`xdg-open steam://rungameid/${appId}`, (error) => {
-          if (error) {
-            console.error('[steam] Failed to launch app via Steam:', error);
-            resolve({ success: false, error: error.message });
-          } else {
-            console.log('[steam] Steam app launch command executed');
-            resolve({ success: true, shortcutId: appId });
-          }
-        });
-      });
+      return launchViaSteam(appId);
     }
 
     // Legacy mode
@@ -313,7 +322,7 @@ export function registerSteamHandlers() {
       'steam'
     );
 
-    if (!success) {
+    if (!success || appId == null) {
       return { success: false, error: 'Failed to get Steam shortcut ID' };
     }
 
@@ -321,21 +330,7 @@ export function registerSteamHandlers() {
       `[steam] Launching app via Steam: ${appInfo.name} (shortcut ID: ${appId})`
     );
 
-    return new Promise<{
-      success: boolean;
-      shortcutId?: number;
-      error?: string;
-    }>((resolve) => {
-      exec(`xdg-open steam://rungameid/${appId}`, (error) => {
-        if (error) {
-          console.error('[steam] Failed to launch app via Steam:', error);
-          resolve({ success: false, error: error.message });
-        } else {
-          console.log('[steam] Steam app launch command executed');
-          resolve({ success: true, shortcutId: appId });
-        }
-      });
-    });
+    return launchViaSteam(appId);
   });
 
   // Check if prefix exists (legacy - for backward compatibility)
@@ -510,12 +505,17 @@ export function registerSteamHandlers() {
                   console.log(
                     `[add-to-steam] Rename failed (possibly cross-filesystem), using copy instead`
                   );
-                  // Copy recursively
+                  // Copy recursively, preserving symlinks (lstat + readlink/symlink)
                   const copyRecursiveSync = (src: string, dest: string) => {
                     const exists = fs.existsSync(src);
-                    const stats = exists ? fs.statSync(src) : null;
-                    const isDirectory = stats?.isDirectory() ?? false;
-                    if (isDirectory) {
+                    if (!exists) return;
+                    const stats = fs.lstatSync(src);
+                    if (stats.isSymbolicLink()) {
+                      const target = fs.readlinkSync(src);
+                      fs.symlinkSync(target, dest);
+                      return;
+                    }
+                    if (stats.isDirectory()) {
                       if (!fs.existsSync(dest)) {
                         fs.mkdirSync(dest, { recursive: true });
                       }

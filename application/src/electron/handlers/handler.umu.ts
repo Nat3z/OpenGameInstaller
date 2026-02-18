@@ -9,17 +9,11 @@ import * as path from 'path';
 import { promisify } from 'util';
 import type { LibraryInfo } from 'ogi-addon';
 import { isLinux, getHomeDir } from './helpers.app/platform.js';
-import {
-  loadLibraryInfo,
-  saveLibraryInfo,
-} from './helpers.app/library.js';
+import { loadLibraryInfo, saveLibraryInfo } from './helpers.app/library.js';
 import { generateNotificationId } from './helpers.app/notifications.js';
 import { sendNotification } from '../main.js';
-
+import { __dirname } from '../manager/manager.paths.js';
 const execAsync = promisify(exec);
-
-// UMU constants
-const UMU_INSTALL_SCRIPT_URL = 'https://raw.githubusercontent.com/Open-Wine-Components/umu-launcher/8ed817f83a49eefade7c8af9e59b01d24f4317c/install.sh';
 
 /**
  * Get the UMU prefix base directory
@@ -33,83 +27,108 @@ function getUmuPrefixBase(): string {
   return path.join(home, '.ogi-wine-prefixes');
 }
 
+const umuRunExecutable = path.join(__dirname, 'bin', 'umu', 'umu-run');
 /**
  * Check if UMU is installed on the system
  */
 export async function isUmuInstalled(): Promise<boolean> {
   try {
-    await execAsync('which umu-run');
-    return true;
+    if (fs.existsSync(umuRunExecutable)) {
+      return true;
+    }
+    return false;
   } catch {
     return false;
   }
 }
 
+const UMU_RELEASES_URL =
+  'https://api.github.com/repos/Open-Wine-Components/umu-launcher/releases/latest';
+const UMU_BIN_DIR = path.join(__dirname, 'bin', 'umu');
+
 /**
- * Auto-install UMU launcher
- * Downloads install script to temp file, verifies basic sanity, then executes
+ * Auto-install UMU launcher.
+ * Fetches the latest release from GitHub, downloads the zipapp tarball,
+ * extracts it to bin/umu/, then verifies umu-run exists.
  */
-export async function installUmu(): Promise<{ success: boolean; error?: string }> {
+export async function installUmu(): Promise<{
+  success: boolean;
+  error?: string;
+}> {
   console.log('[umu] Installing UMU launcher...');
 
-  const tmpDir = '/tmp';
-  const installScriptPath = path.join(tmpDir, 'umu-install.sh');
+  let zipappPath: string | null = null;
 
   try {
-    // Download the install script
-    console.log('[umu] Downloading install script...');
-    await execAsync(
-      `curl -L -o ${installScriptPath} ${UMU_INSTALL_SCRIPT_URL}`,
-      { timeout: 60000 }
-    );
-
-    // Basic sanity check: script should exist and not be empty
-    const stats = fs.statSync(installScriptPath);
-    if (stats.size < 100) {
-      throw new Error('Downloaded script appears to be empty or corrupted');
+    // 1. Fetch latest release and find zipapp asset
+    const releaseRes = await fetch(UMU_RELEASES_URL);
+    if (!releaseRes.ok) {
+      return {
+        success: false,
+        error: `GitHub API failed: ${releaseRes.status} ${releaseRes.statusText}`,
+      };
     }
-
-    // Verify it's a shell script (basic check)
-    const firstLine = fs.readFileSync(installScriptPath, 'utf8').split('\n')[0];
-    if (!firstLine.includes('bash') && !firstLine.includes('sh')) {
-      throw new Error('Downloaded file does not appear to be a shell script');
-    }
-
-    // Make executable and run
-    fs.chmodSync(installScriptPath, '755');
-    console.log('[umu] Running install script...');
-    await execAsync(`bash ${installScriptPath}`, { timeout: 120000 });
-
-    // Clean up
-    try {
-      fs.unlinkSync(installScriptPath);
-    } catch {
-      // Ignore cleanup errors
-    }
-
-    // Verify installation
-    const installed = await isUmuInstalled();
-    if (!installed) {
-      throw new Error('UMU installation verification failed');
-    }
-
-    console.log('[umu] UMU installed successfully');
-    return { success: true };
-  } catch (error) {
-    console.error('[umu] Failed to install UMU:', error);
-    // Clean up on failure
-    try {
-      if (fs.existsSync(installScriptPath)) {
-        fs.unlinkSync(installScriptPath);
-      }
-    } catch {
-      // Ignore cleanup errors
-    }
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : String(error),
+    const release = (await releaseRes.json()) as {
+      assets?: Array<{ name: string; browser_download_url: string }>;
     };
+    const assets = release?.assets ?? [];
+    const zipappAsset = assets.find((a) => a.name.includes('-zipapp.tar'));
+    if (!zipappAsset?.browser_download_url) {
+      return {
+        success: false,
+        error: 'No zipapp tarball found in latest release',
+      };
+    }
+
+    // 2. Ensure bin/umu exists and resolve tar path
+    if (!fs.existsSync(UMU_BIN_DIR)) {
+      fs.mkdirSync(UMU_BIN_DIR, { recursive: true });
+    }
+    zipappPath = path.join(UMU_BIN_DIR, 'umu-launcher-zipapp.tar');
+
+    // 3. Download zipapp tarball
+    const downloadRes = await fetch(zipappAsset.browser_download_url);
+    if (!downloadRes.ok) {
+      return {
+        success: false,
+        error: `Download failed: ${downloadRes.status} ${downloadRes.statusText}`,
+      };
+    }
+    const arrayBuffer = await downloadRes.arrayBuffer();
+    fs.writeFileSync(zipappPath, Buffer.from(arrayBuffer));
+
+    // 4. Extract tarball into bin/umu
+    await execAsync(`tar -xvf ${zipappPath} -C ${UMU_BIN_DIR}`);
+
+    // 5. Flatten: tarball may have a single top-level dir (e.g. "umu") — move contents up
+    const entries = fs.readdirSync(UMU_BIN_DIR, { withFileTypes: true });
+    const dirs = entries.filter((e) => e.isDirectory());
+    if (dirs.length === 1) {
+      const innerDir = path.join(UMU_BIN_DIR, dirs[0].name);
+      for (const e of fs.readdirSync(innerDir, { withFileTypes: true })) {
+        const src = path.join(innerDir, e.name);
+        const dest = path.join(UMU_BIN_DIR, e.name);
+        fs.renameSync(src, dest);
+      }
+      fs.rmdirSync(innerDir);
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return { success: false, error: message };
+  } finally {
+    if (zipappPath != null && fs.existsSync(zipappPath)) {
+      try {
+        fs.unlinkSync(zipappPath);
+      } catch {
+        // ignore cleanup failure
+      }
+    }
   }
+
+  if (!fs.existsSync(umuRunExecutable)) {
+    return { success: false, error: 'UMU run binary not found after extract' };
+  }
+  return { success: true };
 }
 
 /**
@@ -150,9 +169,7 @@ export function ensureUmuPrefixBase(): void {
  * Build WINEDLLOVERRIDES string from dllOverrides array
  * Wine expects DLL names without the .dll extension (e.g., "dinput8=n,b")
  */
-export function buildDllOverrides(
-  dllOverrides: string[]
-): string {
+export function buildDllOverrides(dllOverrides: string[]): string {
   if (!dllOverrides || dllOverrides.length === 0) {
     return '';
   }
@@ -229,9 +246,9 @@ export async function launchWithUmu(
   const launchArgs = libraryInfo.launchArguments || '';
   const exePath = path.join(libraryInfo.cwd, libraryInfo.launchExecutable);
   const parsedLaunchArgs =
-    launchArgs.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g)?.map((arg) =>
-      arg.replace(/^['"]|['"]$/g, '')
-    ) ?? [];
+    launchArgs
+      .match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g)
+      ?.map((arg) => arg.replace(/^['"]|['"]$/g, '')) ?? [];
 
   console.log('[umu] Launching game:', {
     name: libraryInfo.name,
@@ -243,15 +260,23 @@ export async function launchWithUmu(
   });
 
   return new Promise((resolve) => {
-    const child = spawn('umu-run', [exePath, ...parsedLaunchArgs], {
-      cwd: libraryInfo.cwd,
-      env,
-      detached: true,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
+    const child = spawn(
+      umuRunExecutable,
+      [exePath, ...parsedLaunchArgs.join(' ')],
+      {
+        cwd: libraryInfo.cwd,
+        env,
+        detached: true,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      }
+    );
 
     let settled = false;
-    const finish = (result: { success: boolean; error?: string; pid?: number }) => {
+    const finish = (result: {
+      success: boolean;
+      error?: string;
+      pid?: number;
+    }) => {
       if (settled) return;
       settled = true;
       resolve(result);
@@ -331,7 +356,9 @@ export async function installRedistributablesWithUmu(
 
   const { umuId, protonVersion } = libraryInfo.umu || {};
   const gameId = umuId ? convertUmuId(umuId) : 'umu-default';
-  const winePrefix = umuId ? getUmuWinePrefix(umuId) : path.join(getUmuPrefixBase(), 'umu-default');
+  const winePrefix = umuId
+    ? getUmuWinePrefix(umuId)
+    : path.join(getUmuPrefixBase(), 'umu-default');
 
   const redistributables = libraryInfo.redistributables || [];
 
@@ -370,11 +397,24 @@ export async function installRedistributablesWithUmu(
 
         if (redistributable.path === 'winetricks') {
           // Use winetricks verb
-          child = spawn('umu-run', ['winetricks', redistributable.name, '--force', '--unattended', '-q'], {
-            env,
-            stdio: ['ignore', 'pipe', 'pipe'],
-          });
-        } else if (redistributable.path === 'microsoft' && redistributable.name === 'dotnet-repair') {
+          child = spawn(
+            umuRunExecutable,
+            [
+              'winetricks',
+              redistributable.name,
+              '--force',
+              '--unattended',
+              '-q',
+            ],
+            {
+              env,
+              stdio: ['ignore', 'pipe', 'pipe'],
+            }
+          );
+        } else if (
+          redistributable.path === 'microsoft' &&
+          redistributable.name === 'dotnet-repair'
+        ) {
           // Special case for .NET repair tool
           // This would need to be downloaded and run
           console.log('[umu] .NET repair tool not yet implemented for UMU');
@@ -395,24 +435,36 @@ export async function installRedistributablesWithUmu(
           // Determine silent install flags
           const silentFlags = getSilentInstallFlags(redistFile);
 
-          child = spawn('umu-run', [redistFile, ...silentFlags], {
+          child = spawn(umuRunExecutable, [redistFile, ...silentFlags], {
             env,
             cwd: redistDir,
             stdio: ['ignore', 'pipe', 'pipe'],
           });
         }
 
-        const timeout = setTimeout(() => {
-          if (child.pid) {
-            child.kill('SIGTERM');
-          }
-          finalize(false);
-        }, 10 * 60 * 1000); // 10 minute timeout
+        const timeout = setTimeout(
+          () => {
+            if (child.pid) {
+              child.kill('SIGTERM');
+            }
+            finalize(false);
+          },
+          10 * 60 * 1000
+        ); // 10 minute timeout
 
-        child.on('close', (code) => {
-          clearTimeout(timeout);
-          finalize(code === 0);
-        });
+        child.on(
+          'close',
+          (code: number | null, signal: NodeJS.Signals | null) => {
+            clearTimeout(timeout);
+            const success = code === 0 && signal == null && !!child.pid;
+            if (!success && signal != null) {
+              console.error(
+                `[umu] Redistributable process killed by signal: ${signal}`
+              );
+            }
+            finalize(success);
+          }
+        );
 
         child.on('error', (error) => {
           clearTimeout(timeout);
@@ -446,11 +498,13 @@ export async function installRedistributablesWithUmu(
     }
   }
 
-  // Clear redistributables from the library file after installation
-  const updatedInfo = loadLibraryInfo(appID);
-  if (updatedInfo) {
-    delete updatedInfo.redistributables;
-    saveLibraryInfo(appID, updatedInfo);
+  // Clear redistributables from the library file only when all succeeded (so retries remain possible on failure)
+  if (!anyFailed) {
+    const updatedInfo = loadLibraryInfo(appID);
+    if (updatedInfo) {
+      delete updatedInfo.redistributables;
+      saveLibraryInfo(appID, updatedInfo);
+    }
   }
 
   sendNotification({
@@ -470,11 +524,17 @@ export async function installRedistributablesWithUmu(
 function getSilentInstallFlags(fileName: string): string[] {
   const lowerFileName = fileName.toLowerCase();
 
-  if (lowerFileName.includes('vcredist') || lowerFileName.includes('vc_redist')) {
+  if (
+    lowerFileName.includes('vcredist') ||
+    lowerFileName.includes('vc_redist')
+  ) {
     return ['/S', '/v/qn'];
   }
 
-  if (lowerFileName.includes('directx') || lowerFileName.includes('dxwebsetup')) {
+  if (
+    lowerFileName.includes('directx') ||
+    lowerFileName.includes('dxwebsetup')
+  ) {
     return ['/S'];
   }
 
@@ -512,7 +572,9 @@ export async function migrateToUmu(
   appID: number,
   oldSteamAppId: number
 ): Promise<{ success: boolean; error?: string }> {
-  console.log(`[umu] Migrating game ${appID} from legacy Steam prefix to UMU...`);
+  console.log(
+    `[umu] Migrating game ${appID} from legacy Steam prefix to UMU...`
+  );
 
   const libraryInfo = loadLibraryInfo(appID);
   if (!libraryInfo) {
@@ -556,7 +618,9 @@ export async function migrateToUmu(
     }
 
     // Copy the prefix
-    console.log(`[umu] Copying prefix from ${oldPrefixPath} to ${newPrefixPath}`);
+    console.log(
+      `[umu] Copying prefix from ${oldPrefixPath} to ${newPrefixPath}`
+    );
     await copyDirectory(oldPrefixPath, newPrefixPath);
 
     // Update library info
@@ -637,12 +701,18 @@ export function registerUmuHandlers() {
   });
 
   // Install redistributables with UMU
-  ipcMain.handle('app:install-redistributables-umu', async (_, appID: number) => {
-    return await installRedistributablesWithUmu(appID);
-  });
+  ipcMain.handle(
+    'app:install-redistributables-umu',
+    async (_, appID: number) => {
+      return await installRedistributablesWithUmu(appID);
+    }
+  );
 
   // Migrate game to UMU
-  ipcMain.handle('app:migrate-to-umu', async (_, appID: number, oldSteamAppId: number) => {
-    return await migrateToUmu(appID, oldSteamAppId);
-  });
+  ipcMain.handle(
+    'app:migrate-to-umu',
+    async (_, appID: number, oldSteamAppId: number) => {
+      return await migrateToUmu(appID, oldSteamAppId);
+    }
+  );
 }

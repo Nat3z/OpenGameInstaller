@@ -180,43 +180,54 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
 
         // Ensure UMU is installed (if not, try to install)
         if (!(await isUmuInstalled())) {
+          sendNotification({
+            message: 'Installing UMU...',
+            id: generateNotificationId(),
+            type: 'info',
+          });
           const installResult = await installUmu();
           if (!installResult.success) {
             console.error(
               '[setup] UMU auto-install failed:',
               installResult.error
             );
-            // Fall back to legacy mode
-            data.legacyMode = true;
+            sendNotification({
+              message: 'Failed to install UMU',
+              id: generateNotificationId(),
+              type: 'error',
+            });
+            return 'setup-failed';
           }
         }
 
-        // Set up UMU-specific paths
-        const { umuId } = data.umu;
-        const winePrefixPath = getUmuWinePrefix(umuId);
-        data.umu.winePrefixPath = winePrefixPath;
+        // Set up UMU-specific paths only when UMU is still configured (install succeeded or was already present)
+        if (data.umu) {
+          const { umuId } = data.umu;
+          const winePrefixPath = getUmuWinePrefix(umuId);
+          data.umu.winePrefixPath = winePrefixPath;
 
-        // Ensure prefix directory exists
-        if (!fs.existsSync(winePrefixPath)) {
-          fs.mkdirSync(winePrefixPath, { recursive: true });
+          // Ensure prefix directory exists
+          if (!fs.existsSync(winePrefixPath)) {
+            fs.mkdirSync(winePrefixPath, { recursive: true });
+          }
+
+          // Save the library info with UMU config
+          saveLibraryInfo(data.appID, data);
+          addToInternalsApps(data.appID);
+
+          // Handle redistributables
+          const hasRedistributables =
+            data.redistributables && data.redistributables.length > 0;
+
+          if (hasRedistributables) {
+            console.log(
+              '[setup] Redistributables detected. Returning setup-prefix-required for UMU.'
+            );
+            return 'setup-prefix-required';
+          }
+
+          return 'setup-success';
         }
-
-        // Save the library info with UMU config
-        saveLibraryInfo(data.appID, data);
-        addToInternalsApps(data.appID);
-
-        // Handle redistributables
-        const hasRedistributables =
-          data.redistributables && data.redistributables.length > 0;
-
-        if (hasRedistributables) {
-          console.log(
-            '[setup] Redistributables detected. Returning setup-prefix-required for UMU.'
-          );
-          return 'setup-prefix-required';
-        }
-
-        return 'setup-success';
       }
 
       // Legacy mode setup (original behavior)

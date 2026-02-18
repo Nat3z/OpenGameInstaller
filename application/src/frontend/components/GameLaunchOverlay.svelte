@@ -17,6 +17,8 @@
   let errorMessage = $state('');
 
   onMount(async () => {
+    // wait 200 ms for the events to register
+    await new Promise((r) => setTimeout(r, 200));
     try {
       // Load library info
       const libraryInfo = await window.electronAPI.app.getLibraryInfo(gameId);

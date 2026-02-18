@@ -53,7 +53,7 @@ function escapeShellArg(arg: string): string {
  * - Otherwise, use UMU if available on Linux
  */
 async function shouldUseUmuMode(libraryInfo: LibraryInfo): Promise<boolean> {
-  if (!isLinux() && process.platform !== 'darwin') return false;
+  if (!isLinux()) return false;
 
   // Explicit UMU config
   if (libraryInfo.umu) return true;
@@ -64,12 +64,14 @@ async function shouldUseUmuMode(libraryInfo: LibraryInfo): Promise<boolean> {
 
 export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
   ipcMain.handle('app:launch-game', async (_, appid) => {
+    console.log('[launch] Launching game', appid);
     ensureLibraryDir();
     ensureInternalsDir();
 
     const appInfo = loadLibraryInfo(appid);
     if (!appInfo) {
-      return;
+      console.log('[launch] Game not found');
+      throw new Error('Game not found');
     }
 
     // Check if we should use UMU mode

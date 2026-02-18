@@ -110,7 +110,11 @@
       return;
     }
 
+    console.log('pre-launch complete');
+
     await window.electronAPI.app.launchGame('' + libraryInfo.appID);
+
+    console.log('launchGame complete');
 
     playButton.querySelector('p')!!.textContent = 'PLAYING';
     if (!window.electronAPI.fs.exists('./internals')) {

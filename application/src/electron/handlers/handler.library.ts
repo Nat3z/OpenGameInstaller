@@ -1,5 +1,6 @@
 /**
  * Library CRUD IPC handlers
+ * Updated to support UMU (Unified Launcher for Windows Games on Linux)
  */
 import { ipcMain } from 'electron';
 import { exec } from 'child_process';
@@ -26,6 +27,16 @@ import { sendNotification } from '../main.js';
 import { getProtonPrefixPath } from './helpers.app/platform.js';
 import { spawnSync } from 'child_process';
 import * as fs from 'fs';
+import * as path from 'path';
+import {
+  launchWithUmu,
+  installRedistributablesWithUmu,
+  isUmuInstalled,
+  installUmu,
+  migrateToUmu,
+  convertUmuId,
+  getUmuWinePrefix,
+} from './handler.umu.js';
 
 /**
  * Escapes a string for safe use in shell commands by escaping special characters
@@ -38,6 +49,25 @@ function escapeShellArg(arg: string): string {
     .replace(/`/g, '\\`');
 }
 
+/**
+ * Determine if a game should use UMU mode
+ * - If game has `umu` config → use UMU
+ * - If game has `legacyMode: true` → use legacy
+ * - Otherwise, use UMU if available on Linux
+ */
+async function shouldUseUmuMode(libraryInfo: LibraryInfo): Promise<boolean> {
+  if (!isLinux()) return false;
+
+  // Explicit UMU config
+  if (libraryInfo.umu) return true;
+
+  // Explicit legacy mode
+  if (libraryInfo.legacyMode) return false;
+
+  // Default: use UMU if installed
+  return await isUmuInstalled();
+}
+
 export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
   ipcMain.handle('app:launch-game', async (_, appid) => {
     ensureLibraryDir();
@@ -48,6 +78,33 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
       return;
     }
 
+    // Check if we should use UMU mode
+    const useUmu = await shouldUseUmuMode(appInfo);
+
+    if (useUmu) {
+      console.log(`[launch] Using UMU mode for ${appInfo.name}`);
+
+      const result = await launchWithUmu(appInfo);
+
+      if (!result.success) {
+        console.error('[launch] UMU launch failed:', result.error);
+        sendNotification({
+          message: `Failed to launch game: ${result.error}`,
+          id: generateNotificationId(),
+          type: 'error',
+        });
+        mainWindow?.webContents.send('game:exit', { id: appInfo.appID });
+        return;
+      }
+
+      mainWindow?.webContents.send('game:launch', { id: appInfo.appID });
+
+      // Note: We don't wait for game exit with UMU since it's detached
+      // The game process is managed by UMU/Proton
+      return;
+    }
+
+    // Legacy mode (original behavior)
     let args = appInfo.launchArguments || '%command%';
     // replace %command% with the launch executable
     args = args.replace(
@@ -118,10 +175,56 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
       ensureLibraryDir();
       ensureInternalsDir();
 
+      // Check if UMU is available and should be used
+      const umuAvailable = isLinux() && (await isUmuInstalled());
+
+      if (umuAvailable && data.umu) {
+        console.log('[setup] Using UMU mode for new game');
+
+        // Ensure UMU is installed
+        if (!(await isUmuInstalled())) {
+          const installResult = await installUmu();
+          if (!installResult.success) {
+            console.error('[setup] UMU auto-install failed:', installResult.error);
+            // Fall back to legacy mode
+            data.legacyMode = true;
+          }
+        }
+
+        // Set up UMU-specific paths
+        const { umuId } = data.umu;
+        const winePrefixPath = getUmuWinePrefix(umuId);
+        data.umu.winePrefixPath = winePrefixPath;
+
+        // Ensure prefix directory exists
+        if (!fs.existsSync(winePrefixPath)) {
+          fs.mkdirSync(winePrefixPath, { recursive: true });
+        }
+
+        // Save the library info with UMU config
+        saveLibraryInfo(data.appID, data);
+        addToInternalsApps(data.appID);
+
+        // Handle redistributables
+        const hasRedistributables =
+          data.redistributables && data.redistributables.length > 0;
+
+        if (hasRedistributables) {
+          console.log(
+            '[setup] Redistributables detected. Returning setup-prefix-required for UMU.'
+          );
+          return 'setup-prefix-required';
+        }
+
+        return 'setup-success';
+      }
+
+      // Legacy mode setup (original behavior)
+      data.legacyMode = true;
       saveLibraryInfo(data.appID, data);
       addToInternalsApps(data.appID);
 
-      // linux case
+      // linux case (legacy)
       if (isLinux()) {
         // make the launch executable use / instead of \
         data.launchExecutable = data.launchExecutable.replace(/\\/g, '/');
@@ -225,6 +328,7 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
         launchExecutable: string;
         launchArguments?: string;
         addonSource?: string;
+        umu?: LibraryInfo['umu'];
       }
     ) => {
       const appData = loadLibraryInfo(data.appID);
@@ -240,8 +344,37 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
       appData.cwd = data.cwd;
       appData.launchExecutable = data.launchExecutable;
 
-      // On Linux, add WINEPREFIX prefix to launchArguments if not already present
-      if (isLinux()) {
+      // Handle UMU config if provided
+      if (data.umu) {
+        appData.umu = data.umu;
+        // Update wine prefix path
+        appData.umu.winePrefixPath = getUmuWinePrefix(data.umu.umuId);
+
+        // Check if we need to migrate from legacy mode
+        if (appData.legacyMode) {
+          console.log('[update] Migrating game from legacy to UMU mode');
+
+          // Get the old Steam app ID for migration
+          const { success, appId: oldSteamAppId } = await getSteamAppIdWithFallback(
+            appData.name,
+            appData.version,
+            'migration'
+          );
+
+          if (success && oldSteamAppId) {
+            const migrationResult = await migrateToUmu(data.appID, oldSteamAppId);
+            if (!migrationResult.success) {
+              console.warn('[update] Migration failed:', migrationResult.error);
+              // Continue anyway - UMU will create a fresh prefix
+            }
+          }
+
+          appData.legacyMode = false;
+        }
+      }
+
+      // On Linux, handle legacy mode updates
+      if (isLinux() && appData.legacyMode) {
         // Preserve the original launch arguments before any modifications
         // Prefer incoming update over existing appData to avoid discarding newly provided edits
         const originalLaunchArguments =

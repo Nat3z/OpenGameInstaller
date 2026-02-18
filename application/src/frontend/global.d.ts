@@ -172,7 +172,8 @@ interface Window {
         cwd: string,
         launchExecutable: string,
         launchArguments?: string,
-        addonSource?: string
+        addonSource?: string,
+        umu?: LibraryInfo['umu']
       ) => Promise<'success' | 'app-not-found'>;
       addToSteam: (
         appID: number,
@@ -212,6 +213,23 @@ interface Window {
         path?: string;
         error?: string;
       }>;
+      /**
+       * UMU (Unified Launcher for Windows Games on Linux) handlers
+       */
+      checkUmuInstalled: () => Promise<boolean>;
+      installUmu: () => Promise<{ success: boolean; error?: string }>;
+      launchWithUmu: (appID: number) => Promise<{
+        success: boolean;
+        error?: string;
+        pid?: number;
+      }>;
+      installRedistributablesUmu: (
+        appID: number
+      ) => Promise<'success' | 'failed' | 'not-found'>;
+      migrateToUmu: (
+        appID: number,
+        oldSteamAppId: number
+      ) => Promise<{ success: boolean; error?: string }>;
     };
     updateAddons: () => Promise<void>;
     getVersion: () => string;

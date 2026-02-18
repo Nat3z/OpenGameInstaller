@@ -23,7 +23,156 @@ import {
 import AddonManagerHandler, { startAddons } from './handlers/handler.addon.js';
 import OOBEHandler from './handlers/handler.oobe.js';
 import { runStartupTasks, closeSplashWindow } from './startup-runner.js';
+import { registerLibraryHandlers } from './handlers/handler.library.js';
+import { registerSteamHandlers } from './handlers/handler.steam.js';
+import { registerUmuHandlers } from './handlers/handler.umu.js';
+import { registerRedistributableHandlers } from './handlers/handler.redists.js';
 // import steamworks from 'steamworks.js';
+
+/**
+ * Parse command line arguments for --game-id flag
+ * This is used when launching from Steam shortcuts
+ */
+function parseGameIdArg(): number | null {
+  const gameIdArg = process.argv.find((arg) => arg.startsWith('--game-id='));
+  if (gameIdArg) {
+    const gameId = parseInt(gameIdArg.split('=')[1], 10);
+    if (!isNaN(gameId)) {
+      return gameId;
+    }
+  }
+  return null;
+}
+
+/**
+ * Launch a game directly by ID (used from Steam shortcuts)
+ */
+async function launchGameById(gameId: number) {
+  console.log(`[launch] Launching game by ID: ${gameId}`);
+
+  // Create a minimal window showing "Launching..."
+  const launchWindow = new BrowserWindow({
+    width: 400,
+    height: 200,
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+    },
+    title: 'Launching...',
+    fullscreenable: false,
+    resizable: false,
+    frame: false,
+    alwaysOnTop: true,
+    center: true,
+    show: false,
+  });
+
+  // Load a simple HTML page showing launching status
+  const launchingHtml = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      background: #1a1a1a;
+      color: #fff;
+      font-family: system-ui, -apple-system, sans-serif;
+    }
+    .spinner {
+      width: 40px;
+      height: 40px;
+      border: 3px solid #333;
+      border-top-color: #4CAF50;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin-bottom: 20px;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    .text {
+      font-size: 16px;
+      opacity: 0.9;
+    }
+    .game-name {
+      font-size: 14px;
+      opacity: 0.6;
+      margin-top: 8px;
+    }
+  </style>
+</head>
+<body>
+  <div class="spinner"></div>
+  <div class="text">Launching game...</div>
+  <div class="game-name" id="gameName">Please wait</div>
+  <script>
+    // Auto-close after 5 seconds (game should be launching by then)
+    setTimeout(() => {
+      window.close();
+    }, 5000);
+  </script>
+</body>
+</html>`;
+
+  launchWindow.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(launchingHtml));
+
+  launchWindow.once('ready-to-show', () => {
+    launchWindow.show();
+  });
+
+  // Wait a moment for the window to show, then launch the game
+  setTimeout(async () => {
+    try {
+      // Import the library handler function
+      const { loadLibraryInfo } = await import('./handlers/helpers.app/library.js');
+      const { launchWithUmu } = await import('./handlers/handler.umu.js');
+
+      const libraryInfo = loadLibraryInfo(gameId);
+
+      if (!libraryInfo) {
+        console.error(`[launch] Game not found: ${gameId}`);
+        launchWindow.close();
+        app.quit();
+        return;
+      }
+
+      // Update the UI with the game name
+      launchWindow.webContents.executeJavaScript(`
+        document.getElementById('gameName').textContent = ${JSON.stringify(libraryInfo.name)};
+      `);
+
+      // Check if this is a UMU game
+      if (libraryInfo.umu) {
+        const result = await launchWithUmu(libraryInfo);
+        if (!result.success) {
+          console.error('[launch] Failed to launch game:', result.error);
+        }
+      } else {
+        // Legacy mode - need to launch through the library handler
+        // This shouldn't happen for Steam shortcuts, but handle it anyway
+        console.warn('[launch] Game is not in UMU mode, cannot launch from Steam shortcut');
+      }
+
+      // Close the launch window after a short delay
+      setTimeout(() => {
+        launchWindow.close();
+        app.quit();
+      }, 2000);
+    } catch (error) {
+      console.error('[launch] Error launching game:', error);
+      launchWindow.close();
+      app.quit();
+    }
+  }, 500);
+}
 
 export const VERSION = app.getVersion();
 
@@ -160,6 +309,11 @@ function onMainAppReady() {
     AddonRestHandler();
     AddonManagerHandler(mainWindow);
     OOBEHandler();
+    // Register new UMU and updated handlers
+    registerLibraryHandlers(mainWindow);
+    registerSteamHandlers();
+    registerUmuHandlers();
+    registerRedistributableHandlers();
   }
 
   // Register process-wide listeners only once
@@ -317,6 +471,14 @@ async function startAppFlow(win: BrowserWindow) {
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
 app.on('ready', async () => {
+  // Check if we're launching a specific game (--game-id flag from Steam)
+  const gameIdToLaunch = parseGameIdArg();
+  if (gameIdToLaunch !== null) {
+    console.log(`[app] Steam shortcut launch detected for game ${gameIdToLaunch}`);
+    await launchGameById(gameIdToLaunch);
+    return;
+  }
+
   // Single window: create it and show splash first so Steam Deck / Game Mode keeps focus
   createWindow();
 

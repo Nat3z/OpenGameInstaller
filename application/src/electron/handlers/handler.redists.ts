@@ -1,5 +1,6 @@
 /**
  * Redistributable installation handlers
+ * Updated to support UMU (Unified Launcher for Windows Games on Linux)
  */
 import { ipcMain } from 'electron';
 import { spawn } from 'child_process';
@@ -7,12 +8,13 @@ import axios from 'axios';
 import { join, dirname, basename } from 'path';
 import * as fs from 'fs';
 import type { LibraryInfo } from 'ogi-addon';
-import { isLinux, getProtonPrefixPath } from './helpers.app/platform.js';
+import { isLinux } from './helpers.app/platform.js';
 import { getSteamAppIdWithFallback } from './helpers.app/steam.js';
 import { loadLibraryInfo, saveLibraryInfo } from './helpers.app/library.js';
 import { generateNotificationId } from './helpers.app/notifications.js';
 import { sendNotification } from '../main.js';
 import { __dirname } from '../manager/manager.paths.js';
+import { installRedistributablesWithUmu, isUmuInstalled } from './handler.umu.js';
 
 const getSilentInstallFlags = (
   filePath: string,
@@ -88,6 +90,13 @@ export function registerRedistributableHandlers() {
         return 'not-found';
       }
 
+      // Check if this is a UMU game
+      if (appInfo.umu) {
+        console.log('[redistributables] Using UMU mode for redistributables');
+        return await installRedistributablesWithUmu(appID);
+      }
+
+      // Legacy mode (original behavior with flatpak wine)
       if (!appInfo.redistributables || appInfo.redistributables.length === 0) {
         console.log('[redistributable] No redistributables to install');
         return 'success';
@@ -105,7 +114,11 @@ export function registerRedistributableHandlers() {
 
       let protonPath: string;
       try {
-        protonPath = getProtonPrefixPath(appId);
+        const homeDir = process.env.HOME;
+        if (!homeDir) {
+          throw new Error('HOME directory not found');
+        }
+        protonPath = `${homeDir}/.steam/steam/steamapps/compatdata/${appId}`;
       } catch (error) {
         console.error(
           '[redistributable] Error getting Proton prefix path:',
@@ -136,7 +149,7 @@ export function registerRedistributableHandlers() {
       }
 
       console.log(
-        `[redistributable] Installing ${appInfo.redistributables.length} redistributables for ${appInfo.name}`
+        `[redistributable] Installing ${appInfo.redistributables.length} redistributables for ${appInfo.name} (legacy mode)`
       );
 
       // Install redistributables using winetricks/flatpak wine

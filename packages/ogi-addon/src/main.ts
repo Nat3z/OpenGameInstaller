@@ -138,6 +138,13 @@ export type CatalogResponse =
   | Record<string, CatalogSection>
   | CatalogWithCarousel;
 
+/**
+ * UMU ID format: 'steam:${number}' or 'umu:${number}'
+ * - steam:${number} → maps to umu-${number} for Steam games
+ * - umu:${number} → maps to umu-${number} for non-Steam games
+ */
+export type UmuId = `steam:${number}` | `umu:${number}`;
+
 export type SetupEventResponse = Omit<
   LibraryInfo,
   | 'capsuleImage'
@@ -152,6 +159,31 @@ export type SetupEventResponse = Omit<
     name: string;
     path: string;
   }[];
+  /**
+   * UMU Proton integration configuration
+   */
+  umu?: {
+    /**
+     * UMU ID for the game. Format: 'steam:${number}' or 'umu:${number}'
+     * - steam:${number} → maps to umu-${number} for Steam games
+     * - umu:${number} → maps to umu-${number} for non-Steam games
+     */
+    umuId: UmuId;
+    /**
+     * Optional DLL overrides. These are relative to the game's cwd.
+     * System automatically prepends cwd and sets WINEDLLOVERRIDES="dll=n,b"
+     */
+    dllOverrides?: string[];
+    /**
+     * Optional Proton version to use (e.g., 'GE-Proton9-5', 'GE-Proton')
+     * If not specified, uses latest UMU-Proton
+     */
+    protonVersion?: string;
+    /**
+     * Optional store identifier for protonfixes (e.g., 'gog', 'egs', 'none')
+     */
+    store?: string;
+  };
 };
 
 export interface EventListenerTypes {
@@ -855,6 +887,33 @@ export const ZodLibraryInfo = z.object({
   addonsource: z.string(),
   coverImage: z.string(),
   titleImage: z.string().optional(),
+  /**
+   * UMU Proton integration configuration (Linux only)
+   */
+  umu: z
+    .object({
+      umuId: z.string(), // 'steam:${number}' or 'umu:${number}'
+      dllOverrides: z.array(z.string()).optional(),
+      protonVersion: z.string().optional(),
+      store: z.string().optional(),
+      winePrefixPath: z.string().optional(),
+    })
+    .optional(),
+  /**
+   * Legacy mode flag for games using old Steam/flatpak wine system
+   */
+  legacyMode: z.boolean().optional(),
+  /**
+   * Redistributables to install (for backward compatibility)
+   */
+  redistributables: z
+    .array(
+      z.object({
+        name: z.string(),
+        path: z.string(),
+      })
+    )
+    .optional(),
 });
 export type LibraryInfo = z.infer<typeof ZodLibraryInfo>;
 interface Notification {

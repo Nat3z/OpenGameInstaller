@@ -5,7 +5,7 @@
 import { ipcMain } from 'electron';
 import { exec } from 'child_process';
 import type { LibraryInfo } from 'ogi-addon';
-import { isLinux, getProtonPrefixPath } from './helpers.app/platform.js';
+import { isLinux } from './helpers.app/platform.js';
 import {
   getSteamAppIdWithFallback,
   getNonSteamGameAppID,
@@ -24,6 +24,7 @@ import {
 } from './helpers.app/library.js';
 import { generateNotificationId } from './helpers.app/notifications.js';
 import { sendNotification } from '../main.js';
+import { getProtonPrefixPath } from './helpers.app/platform.js';
 import { spawnSync } from 'child_process';
 import * as fs from 'fs';
 import {
@@ -57,11 +58,8 @@ async function shouldUseUmuMode(libraryInfo: LibraryInfo): Promise<boolean> {
   // Explicit UMU config
   if (libraryInfo.umu) return true;
 
-  // Explicit legacy mode
-  if (libraryInfo.legacyMode) return false;
-
-  // Default: use UMU if installed
-  return await isUmuInstalled();
+  // No UMU config → use legacy mode (for backward compatibility)
+  return false;
 }
 
 export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
@@ -94,8 +92,12 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
       }
 
       mainWindow?.webContents.send('game:launch', { id: appInfo.appID });
-      // UMU detaches the process; clear running state so UI does not stay stuck
-      mainWindow?.webContents.send('game:exit', { id: appInfo.appID });
+
+      // UMU detaches the process, so we can't wait for it to exit
+      // Send game:exit after a short delay so the UI doesn't get stuck
+      setTimeout(() => {
+        mainWindow?.webContents.send('game:exit', { id: appInfo.appID });
+      }, 5000);
       return;
     }
 
@@ -170,16 +172,18 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
       ensureLibraryDir();
       ensureInternalsDir();
 
-      // Check if UMU is available and should be used (Linux only; install checked below)
+      // Check if UMU is available and should be used
       const umuAvailable = isLinux();
 
       if (umuAvailable && data.umu) {
         console.log('[setup] Using UMU mode for new game');
 
+        // Ensure UMU is installed (if not, try to install)
         if (!(await isUmuInstalled())) {
           const installResult = await installUmu();
           if (!installResult.success) {
             console.error('[setup] UMU auto-install failed:', installResult.error);
+            // Fall back to legacy mode
             data.legacyMode = true;
           }
         }
@@ -333,7 +337,9 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
         appData.addonsource = data.addonSource;
       }
 
+      // Capture old version before updating for migration lookup
       const oldVersion = appData.version;
+
       appData.version = data.version;
       appData.cwd = data.cwd;
       appData.launchExecutable = data.launchExecutable;
@@ -348,7 +354,7 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
         if (appData.legacyMode) {
           console.log('[update] Migrating game from legacy to UMU mode');
 
-          // Get the old Steam app ID for migration (use version before update)
+          // Get the old Steam app ID for migration (use old version)
           const { success, appId: oldSteamAppId } = await getSteamAppIdWithFallback(
             appData.name,
             oldVersion,

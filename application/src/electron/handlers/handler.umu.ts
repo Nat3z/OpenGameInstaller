@@ -13,15 +13,18 @@ import {
   loadLibraryInfo,
   saveLibraryInfo,
 } from './helpers.app/library.js';
-import { getSilentInstallFlags } from './helpers.app/install-flags.js';
 import { generateNotificationId } from './helpers.app/notifications.js';
 import { sendNotification } from '../main.js';
 
 const execAsync = promisify(exec);
 
-// UMU install script. Downloaded to temp file then executed (no curl|bash). For production, pin to a specific commit SHA and verify checksum/signature before execution.
-const UMU_INSTALL_SCRIPT_URL = 'https://raw.githubusercontent.com/Open-Wine-Components/umu-launcher/refs/heads/main/install.sh';
+// UMU constants
+const UMU_INSTALL_SCRIPT_URL = 'https://raw.githubusercontent.com/Open-Wine-Components/umu-launcher/8ed817f83a49eefade7c8af9e59b01d24f4317c/install.sh';
 
+/**
+ * Get the UMU prefix base directory
+ * Throws an error if home directory cannot be determined
+ */
 function getUmuPrefixBase(): string {
   const home = getHomeDir();
   if (!home) {
@@ -44,23 +47,44 @@ export async function isUmuInstalled(): Promise<boolean> {
 
 /**
  * Auto-install UMU launcher
+ * Downloads install script to temp file, verifies basic sanity, then executes
  */
 export async function installUmu(): Promise<{ success: boolean; error?: string }> {
   console.log('[umu] Installing UMU launcher...');
 
+  const tmpDir = '/tmp';
+  const installScriptPath = path.join(tmpDir, 'umu-install.sh');
+
   try {
-    const os = await import('os');
-    const tmpDir = os.tmpdir();
-    const scriptPath = path.join(tmpDir, `umu-install-${Date.now()}.sh`);
-    await execAsync(`curl -L -o "${scriptPath}" "${UMU_INSTALL_SCRIPT_URL}"`, { timeout: 60000 });
+    // Download the install script
+    console.log('[umu] Downloading install script...');
+    await execAsync(
+      `curl -L -o ${installScriptPath} ${UMU_INSTALL_SCRIPT_URL}`,
+      { timeout: 60000 }
+    );
+
+    // Basic sanity check: script should exist and not be empty
+    const stats = fs.statSync(installScriptPath);
+    if (stats.size < 100) {
+      throw new Error('Downloaded script appears to be empty or corrupted');
+    }
+
+    // Verify it's a shell script (basic check)
+    const firstLine = fs.readFileSync(installScriptPath, 'utf8').split('\n')[0];
+    if (!firstLine.includes('bash') && !firstLine.includes('sh')) {
+      throw new Error('Downloaded file does not appear to be a shell script');
+    }
+
+    // Make executable and run
+    fs.chmodSync(installScriptPath, '755');
+    console.log('[umu] Running install script...');
+    await execAsync(`bash ${installScriptPath}`, { timeout: 120000 });
+
+    // Clean up
     try {
-      await execAsync(`bash "${scriptPath}"`, { timeout: 120000 });
-    } finally {
-      try {
-        fs.unlinkSync(scriptPath);
-      } catch {
-        // ignore cleanup errors
-      }
+      fs.unlinkSync(installScriptPath);
+    } catch {
+      // Ignore cleanup errors
     }
 
     // Verify installation
@@ -73,6 +97,14 @@ export async function installUmu(): Promise<{ success: boolean; error?: string }
     return { success: true };
   } catch (error) {
     console.error('[umu] Failed to install UMU:', error);
+    // Clean up on failure
+    try {
+      if (fs.existsSync(installScriptPath)) {
+        fs.unlinkSync(installScriptPath);
+      }
+    } catch {
+      // Ignore cleanup errors
+    }
     return {
       success: false,
       error: error instanceof Error ? error.message : String(error),
@@ -108,37 +140,30 @@ export function getUmuWinePrefix(gameId: string): string {
  * Ensure UMU prefix base directory exists
  */
 export function ensureUmuPrefixBase(): void {
-  const base = getUmuPrefixBase();
-  if (!fs.existsSync(base)) {
-    fs.mkdirSync(base, { recursive: true });
+  const prefixBase = getUmuPrefixBase();
+  if (!fs.existsSync(prefixBase)) {
+    fs.mkdirSync(prefixBase, { recursive: true });
   }
 }
 
 /**
  * Build WINEDLLOVERRIDES string from dllOverrides array
- * System prepends cwd and sets "dll=n,b" for each
+ * Wine expects DLL names without the .dll extension (e.g., "dinput8=n,b")
  */
 export function buildDllOverrides(
-  dllOverrides: string[],
-  cwd: string
+  dllOverrides: string[]
 ): string {
   if (!dllOverrides || dllOverrides.length === 0) {
     return '';
   }
 
-  // Normalize cwd path
-  const normalizedCwd = path.resolve(cwd);
-
   // Build the override string: "dll1=n,b;dll2=n,b"
   // Each DLL gets "n,b" (native first, then builtin)
+  // Wine expects DLL names without the .dll extension
   const overrides = dllOverrides.map((dll) => {
-    // If DLL has path separators, it's a relative path - convert to absolute
-    if (dll.includes('/') || dll.includes('\\')) {
-      const absolutePath = path.join(normalizedCwd, dll);
-      return `${absolutePath}=n,b`;
-    }
-    // Just the DLL name
-    return `${dll}=n,b`;
+    // Get basename and strip .dll extension
+    const dllName = path.basename(dll).replace(/\.dll$/i, '');
+    return `${dllName}=n,b`;
   });
 
   return overrides.join(';');
@@ -177,11 +202,9 @@ export async function launchWithUmu(
   const gameId = convertUmuId(umuId);
   const winePrefix = getUmuWinePrefix(umuId);
 
-  const envEntries = Object.entries(process.env).filter(
-    (entry): entry is [string, string] => entry[1] !== undefined
-  );
-  const env: Record<string, string> = {
-    ...Object.fromEntries(envEntries),
+  // Build environment variables
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
     GAMEID: gameId,
     WINEPREFIX: winePrefix,
   };
@@ -196,7 +219,7 @@ export async function launchWithUmu(
 
   // Build DLL overrides
   if (dllOverrides && dllOverrides.length > 0) {
-    const dllOverrideStr = buildDllOverrides(dllOverrides, libraryInfo.cwd);
+    const dllOverrideStr = buildDllOverrides(dllOverrides);
     if (dllOverrideStr) {
       env.WINEDLLOVERRIDES = dllOverrideStr;
     }
@@ -205,6 +228,10 @@ export async function launchWithUmu(
   // Build launch arguments
   const launchArgs = libraryInfo.launchArguments || '';
   const exePath = path.join(libraryInfo.cwd, libraryInfo.launchExecutable);
+  const parsedLaunchArgs =
+    launchArgs.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g)?.map((arg) =>
+      arg.replace(/^['"]|['"]$/g, '')
+    ) ?? [];
 
   console.log('[umu] Launching game:', {
     name: libraryInfo.name,
@@ -216,57 +243,50 @@ export async function launchWithUmu(
   });
 
   return new Promise((resolve) => {
-    let settled = false;
-    let timeoutId: ReturnType<typeof setTimeout>;
-
-    const settle = (result: { success: boolean; error?: string; pid?: number }) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timeoutId);
-      resolve(result);
-    };
-
-    const child = spawn('umu-run', [exePath, ...launchArgs.split(' ').filter(Boolean)], {
+    const child = spawn('umu-run', [exePath, ...parsedLaunchArgs], {
       cwd: libraryInfo.cwd,
       env,
       detached: true,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
 
-    let stderr = '';
+    let settled = false;
+    const finish = (result: { success: boolean; error?: string; pid?: number }) => {
+      if (settled) return;
+      settled = true;
+      resolve(result);
+    };
+
     child.stdout?.on('data', (data) => {
       console.log(`[umu stdout] ${data}`);
     });
+
     child.stderr?.on('data', (data) => {
-      stderr += data.toString();
       console.error(`[umu stderr] ${data}`);
     });
 
     child.on('error', (error) => {
       console.error('[umu] Failed to launch game:', error);
-      settle({ success: false, error: error.message });
+      finish({ success: false, error: error.message });
     });
 
-    child.on('close', (code) => {
-      if (code !== null && code !== 0) {
-        settle({
-          success: false,
-          error: stderr ? `Process exited: ${stderr.trim()}` : `Process exited with code ${code}`,
-        });
-      }
-    });
-
-    timeoutId = setTimeout(() => {
+    // UMU/Proton first-run can take longer; use a longer readiness window
+    const readinessTimeout = setTimeout(() => {
       if (child.pid && !child.killed) {
-        console.log(`[umu] Game launched with PID ${child.pid}`);
-        settle({ success: true, pid: child.pid });
+        console.log(`[umu] Game launch command started with PID ${child.pid}`);
+        finish({ success: true, pid: child.pid });
       } else {
-        settle({
-          success: false,
-          error: stderr ? `Failed to start: ${stderr.trim()}` : 'Failed to get game process ID',
-        });
+        finish({ success: false, error: 'Failed to get game process ID' });
       }
-    }, 1500);
+    }, 5000);
+
+    child.on('spawn', () => {
+      // Spawned successfully; resolve immediately with PID
+      if (child.pid) {
+        clearTimeout(readinessTimeout);
+        finish({ success: true, pid: child.pid });
+      }
+    });
 
     child.unref();
   });
@@ -319,6 +339,7 @@ export async function installRedistributablesWithUmu(
     `[umu] Installing ${redistributables.length} redistributables for ${libraryInfo.name}`
   );
 
+  let anyFailed = false;
   for (const redistributable of redistributables) {
     try {
       sendNotification({
@@ -335,11 +356,8 @@ export async function installRedistributablesWithUmu(
           resolve(result);
         };
 
-        const envEntries = Object.entries(process.env).filter(
-          (entry): entry is [string, string] => entry[1] !== undefined
-        );
-        const env: Record<string, string> = {
-          ...Object.fromEntries(envEntries),
+        const env: NodeJS.ProcessEnv = {
+          ...process.env,
           GAMEID: gameId,
           WINEPREFIX: winePrefix,
         };
@@ -348,7 +366,7 @@ export async function installRedistributablesWithUmu(
           env.PROTONPATH = protonVersion;
         }
 
-        let child: ReturnType<typeof spawn> | undefined;
+        let child;
 
         if (redistributable.path === 'winetricks') {
           // Use winetricks verb
@@ -375,7 +393,7 @@ export async function installRedistributablesWithUmu(
           const redistFile = path.basename(redistPath);
 
           // Determine silent install flags
-          const silentFlags = getSilentInstallFlags(redistFile, redistPath);
+          const silentFlags = getSilentInstallFlags(redistFile);
 
           child = spawn('umu-run', [redistFile, ...silentFlags], {
             env,
@@ -384,26 +402,23 @@ export async function installRedistributablesWithUmu(
           });
         }
 
-        if (child) {
-          const proc = child;
-          const timeout = setTimeout(() => {
-            if (proc.pid) {
-              proc.kill('SIGTERM');
-            }
-            finalize(false);
-          }, 10 * 60 * 1000); // 10 minute timeout
+        const timeout = setTimeout(() => {
+          if (child.pid) {
+            child.kill('SIGTERM');
+          }
+          finalize(false);
+        }, 10 * 60 * 1000); // 10 minute timeout
 
-          proc.on('close', (code) => {
-            clearTimeout(timeout);
-            finalize(code === 0);
-          });
+        child.on('close', (code) => {
+          clearTimeout(timeout);
+          finalize(code === 0);
+        });
 
-          proc.on('error', (error) => {
-            clearTimeout(timeout);
-            console.error('[umu] Redistributable error:', error);
-            finalize(false);
-          });
-        }
+        child.on('error', (error) => {
+          clearTimeout(timeout);
+          console.error('[umu] Redistributable error:', error);
+          finalize(false);
+        });
       });
 
       if (success) {
@@ -413,6 +428,7 @@ export async function installRedistributablesWithUmu(
           type: 'success',
         });
       } else {
+        anyFailed = true;
         sendNotification({
           message: `Failed to install ${redistributable.name} for ${libraryInfo.name}`,
           id: generateNotificationId(),
@@ -420,6 +436,7 @@ export async function installRedistributablesWithUmu(
         });
       }
     } catch (error) {
+      anyFailed = true;
       console.error(`[umu] Error installing ${redistributable.name}:`, error);
       sendNotification({
         message: `Failed to install ${redistributable.name} for ${libraryInfo.name}`,
@@ -437,12 +454,54 @@ export async function installRedistributablesWithUmu(
   }
 
   sendNotification({
-    message: `Finished installing redistributables for ${libraryInfo.name}`,
+    message: anyFailed
+      ? `Finished installing redistributables for ${libraryInfo.name} (some failed)`
+      : `Finished installing redistributables for ${libraryInfo.name}`,
     id: generateNotificationId(),
-    type: 'success',
+    type: anyFailed ? 'warning' : 'success',
   });
 
-  return 'success';
+  return anyFailed ? 'failed' : 'success';
+}
+
+/**
+ * Get silent install flags for redistributable files
+ */
+function getSilentInstallFlags(fileName: string): string[] {
+  const lowerFileName = fileName.toLowerCase();
+
+  if (lowerFileName.includes('vcredist') || lowerFileName.includes('vc_redist')) {
+    return ['/S', '/v/qn'];
+  }
+
+  if (lowerFileName.includes('directx') || lowerFileName.includes('dxwebsetup')) {
+    return ['/S'];
+  }
+
+  if (lowerFileName.includes('dotnet') || lowerFileName.includes('netfx')) {
+    if (lowerFileName.includes('netfxrepairtool')) {
+      return ['/p'];
+    }
+    return ['/S', '/v/qn'];
+  }
+
+  if (lowerFileName.endsWith('.msi')) {
+    return ['/S', '/qn'];
+  }
+
+  if (lowerFileName.includes('nsis') || lowerFileName.includes('setup')) {
+    return ['/S'];
+  }
+
+  if (lowerFileName.includes('inno')) {
+    return ['/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART'];
+  }
+
+  if (lowerFileName.includes('installshield')) {
+    return ['/S', '/v/qn'];
+  }
+
+  return ['/S'];
 }
 
 /**
@@ -520,7 +579,7 @@ export async function migrateToUmu(
 }
 
 /**
- * Copy directory recursively, preserving symlinks (required for Wine prefixes)
+ * Copy directory recursively
  */
 async function copyDirectory(src: string, dest: string): Promise<void> {
   if (!fs.existsSync(dest)) {
@@ -534,8 +593,8 @@ async function copyDirectory(src: string, dest: string): Promise<void> {
     const destPath = path.join(dest, entry.name);
 
     if (entry.isSymbolicLink()) {
-      const target = fs.readlinkSync(srcPath);
-      fs.symlinkSync(target, destPath);
+      const linkTarget = fs.readlinkSync(srcPath);
+      fs.symlinkSync(linkTarget, destPath);
     } else if (entry.isDirectory()) {
       await copyDirectory(srcPath, destPath);
     } else {

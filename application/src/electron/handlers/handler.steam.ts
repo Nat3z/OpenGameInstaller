@@ -88,35 +88,6 @@ export async function addUmuGameToSteam(params: {
 }
 
 /**
- * Sanitize game name for use in .desktop and other config files (prevents field injection)
- */
-function sanitizeGameNameForDesktop(name: string): string {
-  return name
-    .replace(/\r|\n|\x00-\x1F|=/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-/**
- * Launch an app via Steam's rungameid protocol
- */
-function launchViaSteam(
-  appId: number
-): Promise<{ success: boolean; shortcutId?: number; error?: string }> {
-  return new Promise((resolve) => {
-    exec(`xdg-open steam://rungameid/${appId}`, (error) => {
-      if (error) {
-        console.error('[steam] Failed to launch app via Steam:', error);
-        resolve({ success: false, error: error.message });
-      } else {
-        console.log('[steam] Steam app launch command executed');
-        resolve({ success: true, shortcutId: appId });
-      }
-    });
-  });
-}
-
-/**
  * Create a .desktop entry for Steam shortcut that launches OGI with --game-id
  * This is an alternative to steamtinkerlaunch
  */
@@ -135,10 +106,13 @@ export async function createSteamShortcutDesktop(params: {
   }
 
   const versionedGameName = getVersionedGameName(params.name, params.version);
-  const sanitizedGameName = sanitizeGameNameForDesktop(versionedGameName);
+  const sanitizedGameName = versionedGameName
+    .replace(/[\r\n\x00-\x1F=]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
   const ogiPath = getOgiExecutablePath();
 
-  // Create .desktop file for Steam (use sanitized name to prevent field injection)
+  // Create .desktop file for Steam
   const desktopEntry = `[Desktop Entry]
 Name=${sanitizedGameName}
 Exec="${ogiPath}" --game-id=${params.appID}
@@ -284,37 +258,52 @@ export function registerSteamHandlers() {
 
     // Check if this is a UMU game
     if (appInfo.umu) {
-      // Use cached Steam shortcut ID if we have it; otherwise look up or add
-      let appId: number | undefined = appInfo.umu.steamShortcutId;
-      if (appId === undefined) {
-        const existing = await getSteamAppIdWithFallback(
+      // For UMU games, only add shortcut if it doesn't already exist
+      let { success, appId } = await getSteamAppIdWithFallback(
+        appInfo.name,
+        appInfo.version,
+        'steam'
+      );
+
+      if (!success || !appId) {
+        const result = await addUmuGameToSteam({
+          appID,
+          name: appInfo.name,
+          version: appInfo.version,
+        });
+        if (!result.success) {
+          return result;
+        }
+        const lookup = await getSteamAppIdWithFallback(
           appInfo.name,
           appInfo.version,
           'steam'
         );
-        if (existing.success && existing.appId) {
-          appId = existing.appId;
-          // Persist so we skip lookup next time
-          appInfo.umu.steamShortcutId = appId;
-          saveLibraryInfo(appID, appInfo);
-        } else {
-          const result = await addUmuGameToSteam({
-            appID,
-            name: appInfo.name,
-            version: appInfo.version,
-          });
-          if (!result.success) return result;
-          appId = result.steamAppId;
-          if (appId !== undefined) {
-            appInfo.umu.steamShortcutId = appId;
-            saveLibraryInfo(appID, appInfo);
-          }
-        }
+        success = lookup.success;
+        appId = lookup.appId;
       }
-      if (!appId) {
+
+      // Launch via Steam
+
+      if (!success || !appId) {
         return { success: false, error: 'Failed to get Steam shortcut ID' };
       }
-      return launchViaSteam(appId);
+
+      return new Promise<{
+        success: boolean;
+        shortcutId?: number;
+        error?: string;
+      }>((resolve) => {
+        exec(`xdg-open steam://rungameid/${appId}`, (error) => {
+          if (error) {
+            console.error('[steam] Failed to launch app via Steam:', error);
+            resolve({ success: false, error: error.message });
+          } else {
+            console.log('[steam] Steam app launch command executed');
+            resolve({ success: true, shortcutId: appId });
+          }
+        });
+      });
     }
 
     // Legacy mode
@@ -324,14 +313,29 @@ export function registerSteamHandlers() {
       'steam'
     );
 
-    if (!success || !appId) {
+    if (!success) {
       return { success: false, error: 'Failed to get Steam shortcut ID' };
     }
 
     console.log(
       `[steam] Launching app via Steam: ${appInfo.name} (shortcut ID: ${appId})`
     );
-    return launchViaSteam(appId);
+
+    return new Promise<{
+      success: boolean;
+      shortcutId?: number;
+      error?: string;
+    }>((resolve) => {
+      exec(`xdg-open steam://rungameid/${appId}`, (error) => {
+        if (error) {
+          console.error('[steam] Failed to launch app via Steam:', error);
+          resolve({ success: false, error: error.message });
+        } else {
+          console.log('[steam] Steam app launch command executed');
+          resolve({ success: true, shortcutId: appId });
+        }
+      });
+    });
   });
 
   // Check if prefix exists (legacy - for backward compatibility)

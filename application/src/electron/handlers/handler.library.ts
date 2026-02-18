@@ -182,7 +182,10 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
         if (!(await isUmuInstalled())) {
           const installResult = await installUmu();
           if (!installResult.success) {
-            console.error('[setup] UMU auto-install failed:', installResult.error);
+            console.error(
+              '[setup] UMU auto-install failed:',
+              installResult.error
+            );
             // Fall back to legacy mode
             data.legacyMode = true;
           }
@@ -355,14 +358,18 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
           console.log('[update] Migrating game from legacy to UMU mode');
 
           // Get the old Steam app ID for migration (use old version)
-          const { success, appId: oldSteamAppId } = await getSteamAppIdWithFallback(
-            appData.name,
-            oldVersion,
-            'migration'
-          );
+          const { success, appId: oldSteamAppId } =
+            await getSteamAppIdWithFallback(
+              appData.name,
+              oldVersion,
+              'migration'
+            );
 
           if (success && oldSteamAppId) {
-            const migrationResult = await migrateToUmu(data.appID, oldSteamAppId);
+            const migrationResult = await migrateToUmu(
+              data.appID,
+              oldSteamAppId
+            );
             if (!migrationResult.success) {
               console.warn('[update] Migration failed:', migrationResult.error);
               // Continue anyway - UMU will create a fresh prefix
@@ -415,4 +422,8 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
       return 'success';
     }
   );
+
+  ipcMain.handle('app:get-library-info', async (_, appID: number) => {
+    return loadLibraryInfo(appID);
+  });
 }

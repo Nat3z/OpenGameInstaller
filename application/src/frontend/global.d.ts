@@ -214,6 +214,10 @@ interface Window {
         error?: string;
       }>;
       /**
+       * Get library info for a specific game
+       */
+      getLibraryInfo: (appID: number) => Promise<LibraryInfo | null>;
+      /**
        * UMU (Unified Launcher for Windows Games on Linux) handlers
        */
       checkUmuInstalled: () => Promise<boolean>;

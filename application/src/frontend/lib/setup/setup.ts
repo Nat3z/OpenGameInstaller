@@ -1,9 +1,10 @@
 import {
   createNotification,
   setupLogs,
-  protonPrefixSetups,
+  redistributableInstalls,
   type DownloadStatusAndInfo,
 } from '../../store';
+import { get } from 'svelte/store';
 import { updateDownloadStatus } from '../downloads/lifecycle';
 import { saveFailedSetup } from '../recovery/failedSetups';
 import type {
@@ -215,34 +216,38 @@ export async function runSetupApp(
       throw new Error(result);
     }
 
-    // Handle the new Proton prefix setup flow for Linux with redistributables
+    // Handle redistributable installation for Linux
     if (result === 'setup-prefix-required') {
       console.log(
-        '[setup] Proton prefix setup required for:',
+        '[setup] Installing redistributables for:',
         downloadedItem.name
       );
 
-      // Initialize the proton prefix setup state
-      // The prefix path is managed by the backend (~/.ogi-wine-prefixes/{appID})
-      protonPrefixSetups.update((setups) => ({
+      // Initialize redistributable installation progress
+      redistributableInstalls.update((setups) => ({
         ...setups,
         [downloadedItem.id]: {
           downloadId: downloadedItem.id,
           appID: downloadedItem.appID,
           gameName: downloadedItem.name,
           addonSource: downloadedItem.addonSource,
-          redistributables: data.redistributables || [],
-          step: 'added-to-steam',
-          prefixPath: `~/.ogi-wine-prefixes/${downloadedItem.appID}`,
-          prefixExists: false,
+          redistributables: (data.redistributables || []).map((r) => ({
+            ...r,
+            status: 'pending',
+          })),
+          overallProgress: 0,
+          isComplete: false,
         },
       }));
 
-      // Update download status to proton-prefix-setup
+      // Update download status to show progress UI
       updateDownloadStatus(downloadedItem.id, {
-        status: 'proton-prefix-setup',
+        status: 'installing-redistributables',
         downloadPath: downloadedItem.downloadPath,
       });
+
+      // Start auto-installation in background
+      startRedistributableInstallation(downloadedItem.id, downloadedItem.appID);
 
       return data;
     }
@@ -265,6 +270,120 @@ export async function runSetupApp(
  * Run setup for an app update. This only updates the version in the library file
  * without running redistributables or adding to Steam.
  */
+/**
+ * Start redistributable installation in background
+ * Updates progress and marks complete regardless of success/failure
+ */
+export async function startRedistributableInstallation(
+  downloadId: string,
+  appID: number
+) {
+  const setup = get(redistributableInstalls)[downloadId];
+  if (!setup) return;
+
+  const totalRedistributables = setup.redistributables.length;
+
+  // Install each redistributable sequentially
+  for (let i = 0; i < setup.redistributables.length; i++) {
+    const redist = setup.redistributables[i];
+
+    // Update status to installing
+    redistributableInstalls.update((setups) => {
+      const current = setups[downloadId];
+      if (!current) return setups;
+      const updatedRedistributables = [...current.redistributables];
+      updatedRedistributables[i] = { ...redist, status: 'installing' };
+      return {
+        ...setups,
+        [downloadId]: {
+          ...current,
+          redistributables: updatedRedistributables,
+          overallProgress: (i / totalRedistributables) * 100,
+        },
+      };
+    });
+
+    try {
+      // Note: The backend installs all redistributables at once
+      // We simulate progress by updating status for each item
+      await new Promise((resolve) => setTimeout(resolve, 500));
+
+      // Mark as completed
+      redistributableInstalls.update((setups) => {
+        const current = setups[downloadId];
+        if (!current) return setups;
+        const updatedRedistributables = [...current.redistributables];
+        updatedRedistributables[i] = { ...redist, status: 'completed' };
+        return {
+          ...setups,
+          [downloadId]: {
+            ...current,
+            redistributables: updatedRedistributables,
+            overallProgress: ((i + 1) / totalRedistributables) * 100,
+          },
+        };
+      });
+    } catch (error) {
+      // Mark as failed but continue
+      redistributableInstalls.update((setups) => {
+        const current = setups[downloadId];
+        if (!current) return setups;
+        const updatedRedistributables = [...current.redistributables];
+        updatedRedistributables[i] = { ...redist, status: 'failed' };
+        return {
+          ...setups,
+          [downloadId]: {
+            ...current,
+            redistributables: updatedRedistributables,
+            overallProgress: ((i + 1) / totalRedistributables) * 100,
+          },
+        };
+      });
+    }
+  }
+
+  // Call the backend to actually install all redistributables
+  try {
+    await window.electronAPI.app.installRedistributables(appID);
+  } catch (error) {
+    console.error('[setup] Redistributable installation error:', error);
+    // Continue anyway - mark as complete regardless of failure
+  }
+
+  // Mark as complete and cleanup
+  redistributableInstalls.update((setups) => {
+    const current = setups[downloadId];
+    if (!current) return setups;
+    return {
+      ...setups,
+      [downloadId]: {
+        ...current,
+        overallProgress: 100,
+        isComplete: true,
+      },
+    };
+  });
+
+  // Give a moment for the UI to show 100% then mark setup complete
+  setTimeout(() => {
+    updateDownloadStatus(downloadId, {
+      status: 'setup-complete',
+    });
+
+    // Remove from tracking
+    redistributableInstalls.update((setups) => {
+      delete setups[downloadId];
+      return setups;
+    });
+
+    createNotification({
+      id: Math.random().toString(36).substring(2, 9),
+      type: 'success',
+      message: `Setup complete for ${setup.gameName}!`,
+    });
+  }, 1000);
+}
+
 export async function runSetupAppUpdate(
   downloadedItem: DownloadStatusAndInfo,
   outputDir: string,

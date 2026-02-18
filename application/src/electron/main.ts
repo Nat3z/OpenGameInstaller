@@ -1,7 +1,7 @@
 import { join } from 'path';
 import { server, port } from './server/addon-server.js';
 import { applicationAddonSecret } from './server/constants.js';
-import { app, BrowserWindow, dialog, globalShortcut, ipcMain, shell } from 'electron';
+import { app, BrowserWindow, globalShortcut, ipcMain, shell } from 'electron';
 import fs, { existsSync, readFileSync } from 'fs';
 import { processes } from './manager/manager.addon.js';
 import { stopClient } from './manager/manager.webtorrent.js';
@@ -46,132 +46,49 @@ function parseGameIdArg(): number | null {
 
 /**
  * Launch a game directly by ID (used from Steam shortcuts)
+ * Now integrated into the main Svelte UI via query parameters
  */
 async function launchGameById(gameId: number) {
-  console.log(`[launch] Launching game by ID: ${gameId}`);
+  console.log(
+    `[launch] Steam shortcut launch detected for game ${gameId}, loading into main UI`
+  );
 
-  // Create a minimal window showing "Launching..."
-  const launchWindow = new BrowserWindow({
-    width: 400,
-    height: 200,
-    webPreferences: {
-      nodeIntegration: false,
-      contextIsolation: true,
-    },
-    title: 'Launching...',
-    fullscreenable: false,
-    resizable: false,
-    frame: false,
-    alwaysOnTop: true,
-    center: true,
-    show: false,
+  // Single window: create main window and pass game ID via query param
+  createWindow();
+
+  if (mainWindow) {
+    // Run startup tasks first
+    await runStartupTasks(mainWindow);
+
+    // Load the main app with the game ID in the query params
+    // The Svelte frontend will detect this and show the GameLaunchOverlay
+    const baseUrl = isDev()
+      ? `http://localhost:8080/?secret=${applicationAddonSecret}`
+      : `file://${join(app.getAppPath(), 'out', 'renderer', 'index.html')}?secret=${applicationAddonSecret}`;
+
+    const launchUrl = `${baseUrl}&launchGameId=${gameId}`;
+
+    await mainWindow.loadURL(launchUrl);
+
+    mainWindow.once('ready-to-show', () => {
+      mainWindow?.show();
+      onMainAppReady();
+    });
+  }
+
+  // Start the addon server
+  server.listen(port, () => {
+    console.log(`Addon Server is running on http://localhost:${port}`);
+    console.log(`Server is being executed by electron!`);
   });
 
-  // Load a simple HTML page showing launching status
-  const launchingHtml = `
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8">
-  <style>
-    body {
-      margin: 0;
-      padding: 0;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      height: 100vh;
-      background: #1a1a1a;
-      color: #fff;
-      font-family: system-ui, -apple-system, sans-serif;
-    }
-    .spinner {
-      width: 40px;
-      height: 40px;
-      border: 3px solid #333;
-      border-top-color: #4CAF50;
-      border-radius: 50%;
-      animation: spin 1s linear infinite;
-      margin-bottom: 20px;
-    }
-    @keyframes spin {
-      to { transform: rotate(360deg); }
-    }
-    .text {
-      font-size: 16px;
-      opacity: 0.9;
-    }
-    .game-name {
-      font-size: 14px;
-      opacity: 0.6;
-      margin-top: 8px;
-    }
-  </style>
-</head>
-<body>
-  <div class="spinner"></div>
-  <div class="text">Launching game...</div>
-  <div class="game-name" id="gameName">Please wait</div>
-  <script>
-    // Auto-close after 5 seconds (game should be launching by then)
-    setTimeout(() => {
-      window.close();
-    }, 5000);
-  </script>
-</body>
-</html>`;
-
-  launchWindow.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(launchingHtml));
-
-  launchWindow.once('ready-to-show', () => {
-    launchWindow.show();
+  sendNotification({
+    message: 'Addons Starting...',
+    id: Math.random().toString(36).substring(7),
+    type: 'success',
   });
 
-  // Wait a moment for the window to show, then launch the game
-  setTimeout(async () => {
-    try {
-      // Import the library handler function
-      const { loadLibraryInfo } = await import('./handlers/helpers.app/library.js');
-      const { launchWithUmu } = await import('./handlers/handler.umu.js');
-
-      const libraryInfo = loadLibraryInfo(gameId);
-
-      if (!libraryInfo) {
-        console.error(`[launch] Game not found: ${gameId}`);
-        launchWindow.close();
-        app.quit();
-        return;
-      }
-
-      // Update the UI with the game name
-      launchWindow.webContents.executeJavaScript(`
-        document.getElementById('gameName').textContent = ${JSON.stringify(libraryInfo.name)};
-      `);
-
-      // Check if this is a UMU game
-      if (libraryInfo.umu) {
-        const result = await launchWithUmu(libraryInfo);
-        if (!result.success) {
-          console.error('[launch] Failed to launch game:', result.error);
-        }
-      } else {
-        const msg = `[launch] Game is not in UMU mode, cannot launch from Steam shortcut: ${libraryInfo.name}`;
-        console.error(msg);
-        dialog.showErrorBox('Launch Failed', `${libraryInfo.name} is not configured for UMU Steam shortcut launching.`);
-      }
-
-      // Close the launch window after a short delay
-      setTimeout(() => {
-        launchWindow.close();
-        app.quit();
-      }, 2000);
-    } catch (error) {
-      console.error('[launch] Error launching game:', error);
-      launchWindow.close();
-      app.quit();
-    }
-  }, 500);
+  startAddons();
 }
 
 export const VERSION = app.getVersion();
@@ -479,7 +396,9 @@ app.on('ready', async () => {
   // Check if we're launching a specific game (--game-id flag from Steam)
   const gameIdToLaunch = parseGameIdArg();
   if (gameIdToLaunch !== null) {
-    console.log(`[app] Steam shortcut launch detected for game ${gameIdToLaunch}`);
+    console.log(
+      `[app] Steam shortcut launch detected for game ${gameIdToLaunch}`
+    );
     await launchGameById(gameIdToLaunch);
     return;
   }

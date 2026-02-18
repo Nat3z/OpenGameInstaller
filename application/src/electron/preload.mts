@@ -310,6 +310,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('app:get-steam-app-id', appID)
     ),
     addToDesktop: wrap(() => ipcRenderer.invoke('app:add-to-desktop')),
+    getLibraryInfo: wrap((appID: number) =>
+      ipcRenderer.invoke('app:get-library-info', appID)
+    ),
   },
   getVersion: wrap(() => ipcRenderer.sendSync('get-version')),
   getTheme: wrap(() => ipcRenderer.sendSync('get-initial-theme')),

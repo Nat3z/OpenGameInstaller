@@ -4,7 +4,7 @@
     currentDownloads,
     failedSetups,
     setupLogs,
-    protonPrefixSetups,
+    redistributableInstalls,
     type FailedSetup,
   } from '../store';
   import {
@@ -17,7 +17,7 @@
   } from '../utils';
   import * as d3 from 'd3';
   import SetupPrompt from '../components/SetupPrompt.svelte';
-  import ProtonPrefixSetupPrompt from '../components/ProtonPrefixSetupPrompt.svelte';
+  import RedistributablesProgress from '../components/RedistributablesProgress.svelte';
 
   let chartContainer: HTMLDivElement | null = $state(null);
   let speedData: { time: Date; speed: number; downloadId: string }[] = $state(
@@ -238,8 +238,10 @@
     // Color scale from theme (accent and accent-dark)
     const style = getComputedStyle(document.documentElement);
     const accent = style.getPropertyValue('--theme-accent').trim() || '#428a91';
-    const accentDark = style.getPropertyValue('--theme-accent-dark').trim() || '#2d626a';
-    const borderColor = style.getPropertyValue('--theme-border').trim() || '#e5e7eb';
+    const accentDark =
+      style.getPropertyValue('--theme-accent-dark').trim() || '#2d626a';
+    const borderColor =
+      style.getPropertyValue('--theme-border').trim() || '#e5e7eb';
     const accentPalette = [accentDark, accent, accentDark, accent];
     const colorScale = d3
       .scaleOrdinal()
@@ -588,10 +590,10 @@
                   <div class="spinner"></div>
                   Downloading Redistributables
                 </div>
-              {:else if download.status === 'proton-prefix-setup'}
-                <div class="status-badge proton-setup">
+              {:else if download.status === 'installing-redistributables'}
+                <div class="status-badge installing-redistributables">
                   <div class="spinner"></div>
-                  Proton Prefix Setup
+                  Installing Dependencies
                 </div>
               {:else if download.status === 'setup-complete'}
                 <div class="status-badge complete">
@@ -778,11 +780,10 @@
             />
           </div>
         {/if}
-        {#if download.status === 'proton-prefix-setup' && $protonPrefixSetups[download.id]}
-          <div class="mt-3 w-full">
-            <ProtonPrefixSetupPrompt
-              setup={$protonPrefixSetups[download.id]}
-              downloadId={download.id}
+        {#if download.status === 'installing-redistributables' && $redistributableInstalls[download.id]}
+          <div class="mt-4">
+            <RedistributablesProgress
+              setup={$redistributableInstalls[download.id]}
             />
           </div>
         {/if}
@@ -948,7 +949,11 @@
 
   .download-image {
     @apply relative w-16 h-16 overflow-hidden rounded-lg flex-shrink-0;
-    background: linear-gradient(to bottom right, var(--theme-border), var(--theme-border-strong));
+    background: linear-gradient(
+      to bottom right,
+      var(--theme-border),
+      var(--theme-border-strong)
+    );
   }
 
   .game-cover {
@@ -1112,7 +1117,11 @@
 
   .failed-setup-image {
     @apply relative w-12 h-12 overflow-hidden rounded-lg flex-shrink-0;
-    background: linear-gradient(to bottom right, var(--theme-border), var(--theme-border-strong));
+    background: linear-gradient(
+      to bottom right,
+      var(--theme-border),
+      var(--theme-border-strong)
+    );
   }
 
   .failed-setup-info {

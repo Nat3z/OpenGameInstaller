@@ -557,8 +557,9 @@
                             ? 'Requesting...'
                             : activeDownload.status === 'setup-complete'
                               ? 'Setup Complete'
-                              : activeDownload.status === 'proton-prefix-setup'
-                                ? 'Setting up Proton...'
+                              : activeDownload.status ===
+                                  'installing-redistributables'
+                                ? 'Installing Dependencies...'
                                 : activeDownload.status}
                 </span>
               </div>
@@ -996,18 +997,29 @@
               <div class="flex items-center gap-2">
                 {#if selectedResult.downloadType === 'magnet'}
                   <img class="w-5 h-5" src="./magnet-icon.gif" alt="Magnet" />
-                  <span class="text-sm font-medium text-text-primary">Magnet Link</span>
+                  <span class="text-sm font-medium text-text-primary"
+                    >Magnet Link</span
+                  >
                 {:else if selectedResult.downloadType === 'torrent'}
                   <img class="w-5 h-5" src="./torrent.png" alt="Torrent" />
-                  <span class="text-sm font-medium text-text-primary">Torrent File</span>
+                  <span class="text-sm font-medium text-text-primary"
+                    >Torrent File</span
+                  >
                 {:else if selectedResult.downloadType === 'direct'}
-                  <span class="text-sm font-medium text-text-primary">Direct Download</span>
+                  <span class="text-sm font-medium text-text-primary"
+                    >Direct Download</span
+                  >
                 {:else if selectedResult.downloadType === 'request'}
-                  <span class="text-sm font-medium text-text-primary">Request</span>
+                  <span class="text-sm font-medium text-text-primary"
+                    >Request</span
+                  >
                 {:else if selectedResult.downloadType === 'task'}
-                  <span class="text-sm font-medium text-text-primary">Task</span>
+                  <span class="text-sm font-medium text-text-primary">Task</span
+                  >
                 {:else if selectedResult.downloadType === 'empty'}
-                  <span class="text-sm font-medium text-text-primary">Empty</span>
+                  <span class="text-sm font-medium text-text-primary"
+                    >Empty</span
+                  >
                 {/if}
               </div>
             </div>

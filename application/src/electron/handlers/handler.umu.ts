@@ -276,6 +276,7 @@ export async function launchWithUmu(
       {
         cwd: libraryInfo.cwd,
         env: {
+          ...env,
           GAMEID: gameId,
           WINEPREFIX: winePrefix,
           PROTONPATH: protonVersion || 'UMU-Latest',

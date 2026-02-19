@@ -234,6 +234,10 @@ interface Window {
         appID: number,
         oldSteamAppId: number
       ) => Promise<{ success: boolean; error?: string }>;
+      /**
+       * Quit the application entirely
+       */
+      quit: () => Promise<void>;
     };
     updateAddons: () => Promise<void>;
     getVersion: () => string;

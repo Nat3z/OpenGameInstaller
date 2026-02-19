@@ -42,6 +42,73 @@ function parseGameIdArg(): number | null {
 }
 
 /**
+ * Parse command line arguments for launch hook flags
+ * --no-launch: Don't actually launch the game
+ * --pre: Run pre-launch hooks
+ * --post: Run post-launch hooks
+ */
+function parseLaunchHookArgs(): {
+  noLaunch: boolean;
+  runPre: boolean;
+  runPost: boolean;
+} {
+  return {
+    noLaunch: process.argv.includes('--no-launch'),
+    runPre: process.argv.includes('--pre'),
+    runPost: process.argv.includes('--post'),
+  };
+}
+
+/**
+ * Handle launch hooks (pre/post) for games
+ * This runs addon events without actually launching the game
+ * Used for save backup/restore and other addon-managed tasks
+ */
+async function handleLaunchHooks(
+  gameId: number,
+  hookType: 'pre' | 'post'
+): Promise<void> {
+  console.log(
+    `[launch-hooks] Running ${hookType}-launch hooks for game ${gameId}`
+  );
+
+  // Create main window to show the launch screen
+  createWindow();
+
+  if (mainWindow) {
+    await runStartupTasks(mainWindow);
+
+    // Load the main app with game ID and hook flags
+    const baseUrl = isDev()
+      ? `http://localhost:8080/?secret=${applicationAddonSecret}`
+      : `file://${join(app.getAppPath(), 'out', 'renderer', 'index.html')}?secret=${applicationAddonSecret}`;
+
+    // Add flags to indicate this is a hook-only launch
+    const launchUrl = `${baseUrl}&launchGameId=${gameId}&hookType=${hookType}&noLaunch=true`;
+
+    await mainWindow.loadURL(launchUrl);
+
+    mainWindow.once('ready-to-show', () => {
+      mainWindow?.show();
+      onMainAppReady();
+    });
+  }
+
+  // Start the addon server
+  server.listen(port, () => {
+    console.log(`Addon Server is running on http://localhost:${port}`);
+  });
+
+  sendNotification({
+    message: 'Addons Starting...',
+    id: Math.random().toString(36).substring(7),
+    type: 'success',
+  });
+
+  startAddons();
+}
+
+/**
  * Launch a game directly by ID (used from Steam shortcuts)
  * Now integrated into the main Svelte UI via query parameters
  */
@@ -388,10 +455,23 @@ async function startAppFlow(win: BrowserWindow) {
 app.on('ready', async () => {
   // Check if we're launching a specific game (--game-id flag from Steam)
   const gameIdToLaunch = parseGameIdArg();
+  const hookArgs = parseLaunchHookArgs();
+
   if (gameIdToLaunch !== null) {
     console.log(
       `[app] Steam shortcut launch detected for game ${gameIdToLaunch}`
     );
+
+    // Check if this is a hook-only launch (--no-launch with --pre or --post)
+    if (hookArgs.noLaunch && (hookArgs.runPre || hookArgs.runPost)) {
+      const hookType = hookArgs.runPre ? 'pre' : 'post';
+      console.log(
+        `[app] Hook-only launch detected (${hookType}-launch), running hooks for game ${gameIdToLaunch}`
+      );
+      await handleLaunchHooks(gameIdToLaunch, hookType);
+      return;
+    }
+
     await launchGameById(gameIdToLaunch);
     return;
   }

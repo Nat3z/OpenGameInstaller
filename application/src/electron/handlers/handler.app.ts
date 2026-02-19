@@ -133,6 +133,9 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
   ipcMain.handle('app:minimize', () => {
     mainWindow?.minimize();
   });
+  ipcMain.handle('app:quit', () => {
+    app.quit();
+  });
 
   // Utilities
   ipcMain.handle('app:axios', async (_, options) => {

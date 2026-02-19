@@ -542,6 +542,266 @@ export async function installRedistributablesWithUmu(
 }
 
 /**
+ * Install redistributables for legacy games using UMU with Steam prefix
+ * This creates the prefix at the Steam compatdata location using UMU
+ */
+export async function installRedistributablesWithUmuForLegacy(
+  appID: number,
+  steamAppId: number
+): Promise<'success' | 'failed' | 'not-found'> {
+  if (!isLinux()) {
+    return 'failed';
+  }
+
+  const libraryInfo = loadLibraryInfo(appID);
+  if (!libraryInfo) {
+    return 'not-found';
+  }
+
+  if (
+    !libraryInfo.redistributables ||
+    libraryInfo.redistributables.length === 0
+  ) {
+    console.log('[umu-legacy] No redistributables to install');
+    return 'success';
+  }
+
+  // Ensure UMU is installed
+  const umuInstalled = await isUmuInstalled();
+  if (!umuInstalled) {
+    console.log('[umu-legacy] UMU not found, attempting auto-install...');
+    const installResult = await installUmu();
+    if (!installResult.success) {
+      console.error(
+        '[umu-legacy] UMU auto-install failed:',
+        installResult.error
+      );
+      return 'failed';
+    }
+  }
+
+  // Get the Steam compatdata prefix path
+  const homeDir = getHomeDir();
+  if (!homeDir) {
+    console.error('[umu-legacy] Cannot determine home directory');
+    return 'failed';
+  }
+
+  const winePrefix = path.join(
+    homeDir,
+    '.steam',
+    'steam',
+    'steamapps',
+    'compatdata',
+    steamAppId.toString()
+  );
+
+  // Create the prefix directory if it doesn't exist
+  if (!fs.existsSync(winePrefix)) {
+    console.log('[umu-legacy] Creating Steam prefix directory:', winePrefix);
+    fs.mkdirSync(winePrefix, { recursive: true });
+  }
+
+  // Use UMU to initialize the prefix first
+  console.log('[umu-legacy] Initializing prefix with UMU:', winePrefix);
+  sendNotification({
+    message: `Initializing Wine prefix for ${libraryInfo.name}`,
+    id: generateNotificationId(),
+    type: 'info',
+  });
+
+  const initSuccess = await new Promise<boolean>((resolve) => {
+    const initChild = spawn(
+      umuRunExecutable,
+      ['wine', 'cmd', '/c', 'echo', 'Prefix initialized'],
+      {
+        env: {
+          UMU_LOG: 'debug',
+          GAMEID: `umu-${steamAppId}`,
+          WINEPREFIX: winePrefix,
+          PROTONPATH: 'UMU-Latest',
+          PWD: libraryInfo.cwd,
+        },
+        stdio: ['ignore', 'pipe', 'pipe'],
+      }
+    );
+
+    const timeout = setTimeout(
+      () => {
+        if (initChild.pid) {
+          initChild.kill('SIGTERM');
+        }
+        resolve(false);
+      },
+      5 * 60 * 1000
+    ); // 5 minute timeout for prefix init
+
+    initChild.on('close', (code: number | null) => {
+      clearTimeout(timeout);
+      resolve(code === 0);
+    });
+
+    initChild.on('error', (error) => {
+      clearTimeout(timeout);
+      console.error('[umu-legacy] Prefix init error:', error);
+      resolve(false);
+    });
+  });
+
+  if (!initSuccess) {
+    console.error('[umu-legacy] Failed to initialize prefix');
+    return 'failed';
+  }
+
+  console.log('[umu-legacy] Prefix initialized successfully');
+
+  // Now install redistributables using UMU winetricks
+  const redistributables = libraryInfo.redistributables;
+  let anyFailed = false;
+
+  for (const redistributable of redistributables) {
+    try {
+      sendNotification({
+        message: `Installing ${redistributable.name} for ${libraryInfo.name}`,
+        id: generateNotificationId(),
+        type: 'info',
+      });
+
+      console.log('[umu-legacy] Installing:', redistributable.name);
+
+      const success = await new Promise<boolean>((resolve) => {
+        let resolved = false;
+        const finalize = (result: boolean) => {
+          if (resolved) return;
+          resolved = true;
+          resolve(result);
+        };
+
+        let child;
+
+        if (redistributable.path === 'winetricks') {
+          // Use winetricks verb via UMU
+          child = spawn(
+            umuRunExecutable,
+            ['winetricks', redistributable.name],
+            {
+              env: {
+                UMU_LOG: 'debug',
+                GAMEID: `umu-${steamAppId}`,
+                WINEPREFIX: winePrefix,
+                PROTONPATH: 'UMU-Latest',
+                PWD: libraryInfo.cwd,
+              },
+              stdio: ['ignore', 'pipe', 'pipe'],
+            }
+          );
+        } else {
+          // Regular redistributable file - run with UMU
+          const redistPath = path.resolve(redistributable.path);
+          if (!fs.existsSync(redistPath)) {
+            console.error(
+              '[umu-legacy] Redistributable not found:',
+              redistPath
+            );
+            finalize(false);
+            return;
+          }
+
+          const redistDir = path.dirname(redistPath);
+          const redistFile = path.basename(redistPath);
+          const silentFlags = getSilentInstallFlags(redistFile);
+
+          child = spawn(umuRunExecutable, [redistFile, ...silentFlags], {
+            env: {
+              UMU_LOG: 'debug',
+              GAMEID: `umu-${steamAppId}`,
+              WINEPREFIX: winePrefix,
+              PROTONPATH: 'UMU-Latest',
+              PWD: libraryInfo.cwd,
+            },
+            cwd: redistDir,
+            stdio: ['ignore', 'pipe', 'pipe'],
+          });
+        }
+
+        const timeout = setTimeout(
+          () => {
+            if (child.pid) {
+              child.kill('SIGTERM');
+            }
+            finalize(false);
+          },
+          10 * 60 * 1000
+        ); // 10 minute timeout
+
+        child.on(
+          'close',
+          (code: number | null, signal: NodeJS.Signals | null) => {
+            clearTimeout(timeout);
+            const success = code === 0 && signal == null && !!child.pid;
+            if (!success && signal != null) {
+              console.error(`[umu-legacy] Process killed by signal: ${signal}`);
+            }
+            finalize(success);
+          }
+        );
+
+        child.on('error', (error) => {
+          clearTimeout(timeout);
+          console.error('[umu-legacy] Redistributable error:', error);
+          finalize(false);
+        });
+      });
+
+      if (success) {
+        sendNotification({
+          message: `Installed ${redistributable.name} for ${libraryInfo.name}`,
+          id: generateNotificationId(),
+          type: 'success',
+        });
+      } else {
+        anyFailed = true;
+        sendNotification({
+          message: `Failed to install ${redistributable.name} for ${libraryInfo.name}`,
+          id: generateNotificationId(),
+          type: 'error',
+        });
+      }
+    } catch (error) {
+      anyFailed = true;
+      console.error(
+        `[umu-legacy] Error installing ${redistributable.name}:`,
+        error
+      );
+      sendNotification({
+        message: `Failed to install ${redistributable.name} for ${libraryInfo.name}`,
+        id: generateNotificationId(),
+        type: 'error',
+      });
+    }
+  }
+
+  // Clear redistributables from the library file
+  if (!anyFailed) {
+    const updatedInfo = loadLibraryInfo(appID);
+    if (updatedInfo) {
+      delete updatedInfo.redistributables;
+      saveLibraryInfo(appID, updatedInfo);
+    }
+  }
+
+  sendNotification({
+    message: anyFailed
+      ? `Finished installing dependencies for ${libraryInfo.name} (some failed)`
+      : `Finished installing dependencies for ${libraryInfo.name}`,
+    id: generateNotificationId(),
+    type: anyFailed ? 'warning' : 'success',
+  });
+
+  return anyFailed ? 'failed' : 'success';
+}
+
+/**
  * Get silent install flags for redistributable files
  */
 function getSilentInstallFlags(fileName: string): string[] {

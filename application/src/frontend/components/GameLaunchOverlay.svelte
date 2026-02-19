@@ -3,6 +3,7 @@
   import { fade, fly } from 'svelte/transition';
   import { quintOut } from 'svelte/easing';
   import { selectedView, gameFocused, launchGameTrigger } from '../store';
+  import { safeFetch } from '../utils';
 
   interface Props {
     gameId: number;
@@ -13,12 +14,25 @@
   let { gameId, onComplete, onError }: Props = $props();
 
   let gameName = $state('Please wait');
-  let status = $state<'loading' | 'launching' | 'success' | 'error'>('loading');
+  let status = $state<'loading' | 'running' | 'success' | 'error'>('loading');
   let errorMessage = $state('');
+  let hookType: 'pre' | 'post' | null = $state(null);
+  let isHookOnly = $state(false);
 
   onMount(async () => {
+    // Parse query parameters
+    const urlParams = new URLSearchParams(window.location.search);
+    const hookTypeParam = urlParams.get('hookType');
+    const noLaunchParam = urlParams.get('noLaunch');
+
+    isHookOnly =
+      noLaunchParam === 'true' &&
+      (hookTypeParam === 'pre' || hookTypeParam === 'post');
+    hookType = hookTypeParam as 'pre' | 'post' | null;
+
     // wait 200 ms for the events to register
     await new Promise((r) => setTimeout(r, 200));
+
     try {
       // Load library info
       const libraryInfo = await window.electronAPI.app.getLibraryInfo(gameId);
@@ -31,10 +45,45 @@
       }
 
       gameName = libraryInfo.name;
-      status = 'launching';
+      status = 'running';
 
-      // Check if this is a UMU game
-      if (libraryInfo.umu) {
+      if (isHookOnly && hookType) {
+        // Hook-only mode: run addon event without launching game
+        console.log(
+          `[GameLaunchOverlay] Running ${hookType}-launch hooks for ${gameName}`
+        );
+
+        try {
+          await safeFetch('launchApp', {
+            libraryInfo: libraryInfo,
+            launchType: hookType,
+          });
+
+          status = 'success';
+          console.log(`[GameLaunchOverlay] ${hookType}-launch hooks completed`);
+
+          // Wait a moment then close the app
+          setTimeout(() => {
+            onComplete();
+            // Close the app entirely
+            window.electronAPI.app.quit();
+          }, 2000);
+        } catch (error) {
+          console.error(
+            `[GameLaunchOverlay] ${hookType}-launch hooks failed:`,
+            error
+          );
+          status = 'error';
+          errorMessage =
+            error instanceof Error ? error.message : 'Hook execution failed';
+          onError(errorMessage);
+
+          // Still close the app after showing error for a bit
+          setTimeout(() => {
+            window.electronAPI.app.quit();
+          }, 5000);
+        }
+      } else if (libraryInfo.umu) {
         // Open the play page in the background and trigger the play button
         // so that the full PlayPage launch flow (addon pre-launch, etc.) runs
         selectedView.set('library');
@@ -79,7 +128,7 @@
     class="flex flex-col items-center gap-6 p-8"
     in:fly={{ y: 20, duration: 500, easing: quintOut }}
   >
-    {#if status === 'loading' || status === 'launching'}
+    {#if status === 'loading' || status === 'running'}
       <!-- Spinner -->
       <div class="relative">
         <div
@@ -126,12 +175,24 @@
       <h2 class="text-2xl font-semibold mb-2">
         {#if status === 'loading'}
           Loading game info...
-        {:else if status === 'launching'}
-          Launching game...
+        {:else if status === 'running'}
+          {#if isHookOnly}
+            Running {hookType}-launch hooks...
+          {:else}
+            Launching game...
+          {/if}
         {:else if status === 'success'}
-          Game launched!
+          {#if isHookOnly}
+            {hookType === 'pre' ? 'Pre-launch' : 'Post-launch'} hooks complete!
+          {:else}
+            Game launched!
+          {/if}
         {:else if status === 'error'}
-          Launch failed
+          {#if isHookOnly}
+            {hookType === 'pre' ? 'Pre-launch' : 'Post-launch'} hooks failed
+          {:else}
+            Launch failed
+          {/if}
         {/if}
       </h2>
 
@@ -141,6 +202,10 @@
         <p class="text-sm text-red-400 mt-4 max-w-md opacity-70">
           {errorMessage}
         </p>
+      {/if}
+
+      {#if isHookOnly && status === 'success'}
+        <p class="text-sm text-gray-400 mt-4">Closing application...</p>
       {/if}
     </div>
 
@@ -155,7 +220,7 @@
   </div>
 
   <!-- Progress bar for visual feedback -->
-  {#if status === 'launching'}
+  {#if status === 'running'}
     <div class="absolute bottom-0 left-0 w-full h-1 bg-[#333]">
       <div class="h-full bg-[#4CAF50] animate-pulse" style="width: 100%"></div>
     </div>

@@ -231,7 +231,7 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
         }
       }
 
-      // Linux if not using UMU
+      // Linux if not using UMU (legacy mode)
       data.legacyMode = true;
       saveLibraryInfo(data.appID, data);
       addToInternalsApps(data.appID);
@@ -241,7 +241,6 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
         // make the launch executable use / instead of \
         data.launchExecutable = data.launchExecutable.replace(/\\/g, '/');
 
-        // Determine if we need to set up wine prefix for redistributables
         // Add game to Steam first via steamtinkerlaunch
         const launchOptions = data.launchArguments ?? '';
 
@@ -254,6 +253,8 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
           launchExecutable: data.launchExecutable,
           cwd: data.cwd,
           launchOptions,
+          appID: data.appID,
+          isLegacyMode: true,
         });
 
         // add to the {appid}.json file the launch options
@@ -264,14 +265,40 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
         }
         const protonPath = getProtonPrefixPath(steamAppId!);
         data.launchArguments = 'WINEPREFIX=' + protonPath + ' ' + launchOptions;
+
         saveLibraryInfo(data.appID, data);
 
         if (!result) {
           return 'setup-failed';
         }
 
-        // we no longer support redistributables on linux unless the game is using UMU
-        return 'setup-success';
+        // Check if this is a Windows executable (.exe)
+        // If so, UMU will automatically create the prefix and handle redistributables
+        const isWindowsExecutable = data.launchExecutable
+          .toLowerCase()
+          .endsWith('.exe');
+
+        if (isWindowsExecutable) {
+          console.log(
+            '[setup] Windows executable (.exe) detected. UMU will create the prefix using Steam App ID from steamtinkerlaunch.'
+          );
+
+          if (data.redistributables && data.redistributables.length > 0) {
+            console.log(
+              '[setup] Redistributables also detected. Returning setup-prefix-required status.'
+            );
+
+            // Re-save the data with redistributables preserved for later installation
+            saveLibraryInfo(data.appID, data);
+
+            return 'setup-prefix-required';
+          }
+
+          // Even without redistributables, the prefix will be created on first launch
+          console.log(
+            '[setup] Prefix will be created automatically on first game launch via UMU.'
+          );
+        }
       } else if (process.platform === 'win32') {
         // if there are redistributables, we need to install them
         if (data.redistributables && data.redistributables.length > 0) {

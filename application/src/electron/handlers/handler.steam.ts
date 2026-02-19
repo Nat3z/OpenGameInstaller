@@ -62,7 +62,7 @@ export async function addUmuGameToSteam(params: {
   const ogiPath = getOgiExecutablePath();
 
   // Build launch options: launch OGI with --game-id flag
-  const launchOptions = `--game-id=${params.appID}`;
+  const launchOptions = `--game-id=${params.appID} --no-sandbox`;
 
   // Add to Steam via steamtinkerlaunch
   const result = await addGameToSteam({

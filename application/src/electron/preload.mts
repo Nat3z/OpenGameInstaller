@@ -229,6 +229,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   app: {
     close: wrap(() => ipcRenderer.invoke('app:close')),
     minimize: wrap(() => ipcRenderer.invoke('app:minimize')),
+    quit: wrap(() => ipcRenderer.invoke('app:quit')),
     axios: wrap((options: AxiosRequestConfig) =>
       ipcRenderer.invoke('app:axios', options)
     ),

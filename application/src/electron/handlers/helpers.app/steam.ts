@@ -2,6 +2,8 @@
  * Steam/Proton helper functions
  */
 import { exec, execFile } from 'child_process';
+import * as fs from 'fs';
+import { join } from 'path';
 import { __dirname } from '../../manager/manager.paths.js';
 import { STEAMTINKERLAUNCH_PATH } from '../../startup.js';
 import { notifyError, notifySuccess } from './notifications.js';
@@ -120,7 +122,27 @@ export async function getSteamAppIdWithFallback(
 }
 
 /**
+ * Get the path to the OGI executable for hook-based launches
+ */
+function getOgiExecutablePath(): string {
+  // Check if running as AppImage
+  if (process.env.APPIMAGE) {
+    return process.env.APPIMAGE;
+  }
+
+  // Check for packaged electron app
+  const packagedPath = join(__dirname, '../../OpenGameInstaller.AppImage');
+  if (fs.existsSync(packagedPath)) {
+    return packagedPath;
+  }
+
+  // Fallback: return the current process executable
+  return process.execPath;
+}
+
+/**
  * Add game to Steam via SteamTinkerLaunch
+ * For legacy mode, creates a chained command that runs pre-launch hooks, game, then post-launch hooks
  */
 export async function addGameToSteam(params: {
   name: string;
@@ -128,12 +150,33 @@ export async function addGameToSteam(params: {
   launchExecutable: string;
   cwd: string;
   launchOptions: string;
+  appID?: number;
+  isLegacyMode?: boolean;
 }): Promise<boolean> {
   const versionedGameName = getVersionedGameName(params.name, params.version);
 
+  let launchOptions = params.launchOptions;
+  let launchExecutable = params.launchExecutable;
+
+  // For legacy mode, chain pre-launch, game, and post-launch using &&
+  if (params.isLegacyMode && params.appID) {
+    const ogiPath = getOgiExecutablePath();
+
+    // Build chained command:
+    // OGI pre-launch && game launch && OGI post-launch
+    const preLaunchCmd = `"${ogiPath}" --game-id=${params.appID} --no-launch --pre`;
+    const postLaunchCmd = `"${ogiPath}" --game-id=${params.appID} --no-launch --post`;
+
+    // Use bash -c to chain the commands
+    // The game will run through Proton, and the post-launch will run after it exits
+    launchOptions = `bash -c '${preLaunchCmd}' && ${launchOptions} ${launchExecutable} && bash -c '${postLaunchCmd}'`;
+
+    console.log('[steam] Legacy mode: Creating chained launch command');
+  }
+
   return new Promise<boolean>((resolve) =>
     exec(
-      `${STEAMTINKERLAUNCH_PATH} addnonsteamgame --appname="${escapeShellArg(versionedGameName)}" --exepath="${escapeShellArg(params.launchExecutable)}" --startdir="${escapeShellArg(params.cwd)}" --launchoptions="${escapeShellArg(params.launchOptions)}" --compatibilitytool="proton_experimental" --use-steamgriddb`,
+      `${STEAMTINKERLAUNCH_PATH} addnonsteamgame --appname="${escapeShellArg(versionedGameName)}" --exepath="${escapeShellArg(launchExecutable)}" --startdir="${escapeShellArg(params.cwd)}" --launchoptions="${escapeShellArg(launchOptions)}" --compatibilitytool="proton_experimental" --use-steamgriddb`,
       {
         cwd: __dirname,
       },

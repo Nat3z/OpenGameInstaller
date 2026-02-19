@@ -167,9 +167,8 @@ export async function addGameToSteam(params: {
     const preLaunchCmd = `"${ogiPath}" --game-id=${params.appID} --no-launch --pre`;
     const postLaunchCmd = `"${ogiPath}" --game-id=${params.appID} --no-launch --post`;
 
-    // Use bash -c to chain the commands
     // The game will run through Proton, and the post-launch will run after it exits
-    launchOptions = `bash -c '${preLaunchCmd}' && ${launchOptions} ${launchExecutable} && bash -c '${postLaunchCmd}'`;
+    launchOptions = `${preLaunchCmd} && ${launchOptions} && ${postLaunchCmd}`;
 
     console.log('[steam] Legacy mode: Creating chained launch command');
   }

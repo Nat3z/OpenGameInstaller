@@ -268,11 +268,11 @@ export async function launchWithUmu(
   return new Promise((resolve) => {
     console.log("[umu] command i'm running: ", umuRunExecutable, [
       exePath,
-      ...parsedLaunchArgs.join(' '),
+      ...parsedLaunchArgs,
     ]);
     const child = spawn(
       umuRunExecutable,
-      [exePath, ...parsedLaunchArgs.join(' ')],
+      [exePath, ...parsedLaunchArgs],
       {
         cwd: libraryInfo.cwd,
         env: {
@@ -282,13 +282,8 @@ export async function launchWithUmu(
           PROTONPATH: protonVersion || 'UMU-Latest',
           STORE: store || 'none',
           WINEDLLOVERRIDES: buildDllOverrides(dllOverrides || []),
-          PROTON_DISABLE_LSTEAMCLIENT: '1',
           PWD: libraryInfo.cwd,
           UMU_LOG: 'debug',
-          // target steam game mode
-          DISPLAY: ':0',
-          WAYLAND_DISPLAY: 'wayland-0',
-          XDG_RUNTIME_DIR: '/run/user/1000',
         },
         detached: true,
         stdio: ['ignore', 'pipe', 'pipe'],

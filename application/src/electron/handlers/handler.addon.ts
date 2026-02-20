@@ -9,7 +9,7 @@ import { sendIPCMessage, sendNotification } from '../main.js';
 import axios from 'axios';
 import { AddonConnection } from '../server/AddonConnection.js';
 
-export function startAddons() {
+export async function startAddons(): Promise<void> {
   // start all of the addons
   if (!fs.existsSync(join(__dirname, 'config/option/general.json'))) {
     return;
@@ -46,13 +46,12 @@ export function startAddons() {
     console.log(`Starting addon ${addonPath}`);
     promises.push(startAddon(addonPath, addon));
   }
-  Promise.all(promises).finally(async () => {
-    console.log('All addons started');
-    await sendIPCMessage('all-addons-started');
-  });
+  await Promise.allSettled(promises);
+  console.log('All addons started');
+  await sendIPCMessage('all-addons-started');
 }
 
-export function restartAddonServer() {
+export async function restartAddonServer() {
   // stop the server
   console.log('Stopping server...');
   server.close();
@@ -68,7 +67,7 @@ export function restartAddonServer() {
     console.log(`Addon Server is running on http://localhost:${port}`);
     console.log(`Server is being executed by electron!`);
   });
-  startAddons();
+  await startAddons();
 
   sendNotification({
     message: 'Addon server restarted successfully.',
@@ -193,12 +192,12 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
         });
       }
     }
-    restartAddonServer();
+    await restartAddonServer();
     return;
   });
 
   ipcMain.handle('restart-addon-server', async (_) => {
-    restartAddonServer();
+    await restartAddonServer();
   });
 
   ipcMain.handle('clean-addons', async (_) => {
@@ -362,7 +361,7 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
     }
 
     // restart all of the addons
-    restartAddonServer();
+    await restartAddonServer();
 
     sendNotification({
       message: 'Successfully updated addons.',

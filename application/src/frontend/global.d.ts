@@ -128,6 +128,8 @@ interface Window {
     };
     app: {
       close: () => Promise<void>;
+      hideWindow: () => Promise<void>;
+      showWindow: () => Promise<void>;
       minimize: () => Promise<void>;
       axios: <T>(
         options: AxiosRequestConfig

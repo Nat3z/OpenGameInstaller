@@ -76,6 +76,8 @@ async function handleLaunchHooks(
   createWindow();
 
   if (mainWindow) {
+    registerMainHandlers(mainWindow);
+    await startAddonRuntime();
     await runStartupTasks(mainWindow);
 
     // Load the main app with game ID and hook flags
@@ -93,19 +95,6 @@ async function handleLaunchHooks(
       onMainAppReady();
     });
   }
-
-  // Start the addon server
-  server.listen(port, () => {
-    console.log(`Addon Server is running on http://localhost:${port}`);
-  });
-
-  sendNotification({
-    message: 'Addons Starting...',
-    id: Math.random().toString(36).substring(7),
-    type: 'success',
-  });
-
-  startAddons();
 }
 
 /**
@@ -121,6 +110,8 @@ async function launchGameById(gameId: number) {
   createWindow();
 
   if (mainWindow) {
+    registerMainHandlers(mainWindow);
+    await startAddonRuntime();
     // Run startup tasks first
     await runStartupTasks(mainWindow);
 
@@ -139,20 +130,6 @@ async function launchGameById(gameId: number) {
       onMainAppReady();
     });
   }
-
-  // Start the addon server
-  server.listen(port, () => {
-    console.log(`Addon Server is running on http://localhost:${port}`);
-    console.log(`Server is being executed by electron!`);
-  });
-
-  sendNotification({
-    message: 'Addons Starting...',
-    id: Math.random().toString(36).substring(7),
-    type: 'success',
-  });
-
-  startAddons();
 }
 
 export const VERSION = app.getVersion();
@@ -233,6 +210,7 @@ export function sendNotification(notification: Notification) {
 let isReadyForEvents = false;
 
 let readyForEventWaiters: (() => void)[] = [];
+let clientReadyListenerRegistered = false;
 
 export async function sendIPCMessage(channel: string, ...args: any[]) {
   // If no renderer window is available (e.g., --game-id launch path), skip IPC dispatch
@@ -287,24 +265,73 @@ const ogiDebug = () => (process.env.OGI_DEBUG ?? 'false') === 'true';
  */
 let handlersRegistered = false;
 
+function registerMainHandlers(win: BrowserWindow) {
+  if (handlersRegistered) return;
+  handlersRegistered = true;
+
+  AppEventHandler(win);
+  FSEventHandler();
+  RealdDebridHandler(win);
+  AllDebridHandler(win);
+  TorrentHandler(win);
+  DirectDownloadHandler(win);
+  AddonRestHandler();
+  AddonManagerHandler(win);
+  OOBEHandler();
+  registerUmuHandlers();
+}
+
+function registerClientReadyListener() {
+  if (clientReadyListenerRegistered) return;
+  clientReadyListenerRegistered = true;
+
+  ipcMain.on('client-ready-for-events', async () => {
+    isReadyForEvents = true;
+    for (const waiter of readyForEventWaiters) {
+      waiter();
+    }
+    readyForEventWaiters = [];
+  });
+}
+
+async function ensureAddonServerRunning() {
+  if (server.listening) return;
+
+  await new Promise<void>((resolve, reject) => {
+    const onError = (error: NodeJS.ErrnoException) => {
+      if (error.code === 'EADDRINUSE') {
+        console.warn(
+          `[addon-server] Port ${port} is already in use, continuing startup`
+        );
+        resolve();
+        return;
+      }
+      reject(error);
+    };
+
+    server.once('error', onError);
+    server.listen(port, () => {
+      server.removeListener('error', onError);
+      console.log(`Addon Server is running on http://localhost:${port}`);
+      console.log(`Server is being executed by electron!`);
+      resolve();
+    });
+  });
+}
+
+async function startAddonRuntime() {
+  await ensureAddonServerRunning();
+  sendNotification({
+    message: 'Addons Starting...',
+    id: Math.random().toString(36).substring(7),
+    type: 'success',
+  });
+  await startAddons();
+}
+
 function onMainAppReady() {
   closeSplashWindow();
   if (!mainWindow || mainWindow.isDestroyed()) return;
-
-  // Guard handler registrations to run only once
-  if (!handlersRegistered) {
-    handlersRegistered = true;
-    AppEventHandler(mainWindow);
-    FSEventHandler();
-    RealdDebridHandler(mainWindow);
-    AllDebridHandler(mainWindow);
-    TorrentHandler(mainWindow);
-    DirectDownloadHandler(mainWindow);
-    AddonRestHandler();
-    AddonManagerHandler(mainWindow);
-    OOBEHandler();
-    registerUmuHandlers();
-  }
 
   // Register process-wide listeners only once
   if (!listenersRegistered) {
@@ -399,14 +426,6 @@ function createWindow() {
 
   if (!isDev() && !ogiDebug()) mainWindow.removeMenu();
 
-  ipcMain.on('client-ready-for-events', async () => {
-    isReadyForEvents = true;
-    for (const waiter of readyForEventWaiters) {
-      waiter();
-    }
-    readyForEventWaiters = [];
-  });
-
   app.commandLine.appendSwitch('disable-features', 'HardwareMediaKeyHandling');
 
   // Load splash first so there is only one window (fixes Steam Deck Game Mode black screen)
@@ -453,6 +472,8 @@ async function startAppFlow(win: BrowserWindow) {
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
 app.on('ready', async () => {
+  registerClientReadyListener();
+
   // Check if we're launching a specific game (--game-id flag from Steam)
   const gameIdToLaunch = parseGameIdArg();
   const hookArgs = parseLaunchHookArgs();
@@ -480,21 +501,10 @@ app.on('ready', async () => {
   createWindow();
 
   if (mainWindow) {
+    registerMainHandlers(mainWindow);
+    await startAddonRuntime();
     await startAppFlow(mainWindow);
   }
-
-  server.listen(port, () => {
-    console.log(`Addon Server is running on http://localhost:${port}`);
-    console.log(`Server is being executed by electron!`);
-  });
-
-  sendNotification({
-    message: 'Addons Starting...',
-    id: Math.random().toString(36).substring(7),
-    type: 'success',
-  });
-
-  startAddons();
 });
 
 // Quit when all windows are closed.

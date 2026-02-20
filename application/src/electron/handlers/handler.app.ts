@@ -130,6 +130,14 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
   ipcMain.handle('app:close', () => {
     mainWindow?.close();
   });
+  ipcMain.handle('app:hide-window', () => {
+    mainWindow?.hide();
+  });
+  ipcMain.handle('app:show-window', () => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    mainWindow.show();
+    mainWindow.focus();
+  });
   ipcMain.handle('app:minimize', () => {
     mainWindow?.minimize();
   });

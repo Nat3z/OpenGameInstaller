@@ -89,10 +89,6 @@
 
   function handleLaunchComplete() {
     showLaunchOverlay = false;
-    // Quit the app after successful launch (Steam shortcut behavior)
-    setTimeout(() => {
-      window.electronAPI.app.close();
-    }, 500);
   }
 
   function handleLaunchError(error: string) {

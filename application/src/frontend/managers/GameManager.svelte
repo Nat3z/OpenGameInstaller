@@ -2,12 +2,28 @@
   import { getAllApps } from '../lib/core/library';
   import { gamesLaunched } from '../store';
   import { safeFetch } from '../utils';
+
+  const launchParams = new URLSearchParams(window.location.search);
+  const shortcutLaunchGameId = (() => {
+    const launchGameId = launchParams.get('launchGameId');
+    if (!launchGameId) return null;
+    const parsed = parseInt(launchGameId, 10);
+    return Number.isNaN(parsed) ? null : parsed;
+  })();
+
+  const isShortcutLaunchForGame = (appID: number) =>
+    shortcutLaunchGameId !== null && shortcutLaunchGameId === appID;
+
   document.addEventListener('game:launch', (event: Event) => {
     const appID = (event as CustomEvent).detail.id;
     gamesLaunched.update((games) => {
       games[appID] = 'launched';
       return games;
     });
+
+    if (isShortcutLaunchForGame(appID)) {
+      window.electronAPI.app.hideWindow();
+    }
   });
 
   document.addEventListener('game:launch-error', (event: Event) => {
@@ -19,15 +35,13 @@
   });
 
   document.addEventListener('game:exit', async (event: Event) => {
+    const appID = (event as CustomEvent).detail.id;
+
     // run the addon launch-app event with launchType 'post'
     let library = await getAllApps();
-    const libraryInfo = library.find(
-      (app) => app.appID === (event as CustomEvent).detail.id
-    );
+    const libraryInfo = library.find((app) => app.appID === appID);
     if (!libraryInfo) {
-      console.error(
-        'Library info not found for appID: ' + (event as CustomEvent).detail.id
-      );
+      console.error('Library info not found for appID: ' + appID);
       return;
     }
 
@@ -38,6 +52,11 @@
       });
     } catch (error) {
       console.error(error);
+    } finally {
+      if (isShortcutLaunchForGame(appID)) {
+        await window.electronAPI.app.showWindow();
+        await window.electronAPI.app.close();
+      }
     }
 
     // remove the game from the gamesLaunched state

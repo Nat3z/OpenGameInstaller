@@ -285,11 +285,16 @@ export async function launchWithUmu(
           PROTON_DISABLE_LSTEAMCLIENT: '1',
           PWD: libraryInfo.cwd,
           UMU_LOG: 'debug',
+          // target steam game mode
+          DISPLAY: ':0',
+          WAYLAND_DISPLAY: 'wayland-0',
+          XDG_RUNTIME_DIR: '/run/user/1000',
         },
         detached: true,
         stdio: ['ignore', 'pipe', 'pipe'],
       }
     );
+    child.unref();
 
     child.stdout?.on('data', (data) => {
       console.log(`[umu stdout] ${data}`);
@@ -327,9 +332,6 @@ export async function launchWithUmu(
         }
       }
     });
-
-    child.unref();
-    // The promise will now ONLY resolve after the process exits or if there is an error
   });
 }
 

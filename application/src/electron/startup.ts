@@ -408,30 +408,37 @@ export async function convertLibrary() {
 async function checkForGitUpdates(repoPath: string): Promise<boolean> {
   // Change the directory to the repository path and run 'git fetch --dry-run'
   return new Promise((resolve, _) => {
-    exec('git fetch --dry-run', { cwd: repoPath }, (error, stdout, stderr) => {
-      if (error) {
-        sendNotification({
-          message: 'Failed to check for updates',
-          id: Math.random().toString(36).substring(7),
-          type: 'error',
-        });
-        console.log(error);
-        resolve(false);
-        return;
-      }
+    exec(
+      'git fetch --dry-run',
+      {
+        cwd: repoPath,
+        env: { ...process.env, LANG: 'en_US.UTF-8', LD_PRELOAD: '' },
+      },
+      (error, stdout, stderr) => {
+        if (error) {
+          sendNotification({
+            message: 'Failed to check for updates',
+            id: Math.random().toString(36).substring(7),
+            type: 'error',
+          });
+          console.log(error);
+          resolve(false);
+          return;
+        }
 
-      // If stdout is not empty, it means there are updates
-      // auto remove the warning:
-      const output = stdout + stderr;
-      const cleanedOutput = output.replace(/warning: redirecting to .*/, '');
-      console.log(cleanedOutput);
+        // If stdout is not empty, it means there are updates
+        // auto remove the warning:
+        const output = stdout + stderr;
+        const cleanedOutput = output.replace(/warning: redirecting to .*/, '');
+        console.log(cleanedOutput);
 
-      if (cleanedOutput.trim()) {
-        resolve(true);
-      } else {
-        resolve(false);
+        if (cleanedOutput.trim()) {
+          resolve(true);
+        } else {
+          resolve(false);
+        }
       }
-    });
+    );
   });
 }
 
@@ -500,7 +507,10 @@ export async function removeCachedAppUpdates() {
   });
 
   // remove all but the newest 3 cached updates (keep the last 3)
-  const toRemove = sortedUpdates.slice(0, Math.max(0, sortedUpdates.length - 3));
+  const toRemove = sortedUpdates.slice(
+    0,
+    Math.max(0, sortedUpdates.length - 3)
+  );
   for (const update of toRemove) {
     await fsPromises.rm(join(tempFolder, update), {
       recursive: true,

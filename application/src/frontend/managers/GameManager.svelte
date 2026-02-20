@@ -36,16 +36,22 @@
 
   document.addEventListener('game:exit', async (event: Event) => {
     const appID = (event as CustomEvent).detail.id;
+    const isShortcutLaunch = isShortcutLaunchForGame(appID);
 
-    // run the addon launch-app event with launchType 'post'
-    let library = await getAllApps();
-    const libraryInfo = library.find((app) => app.appID === appID);
-    if (!libraryInfo) {
-      console.error('Library info not found for appID: ' + appID);
-      return;
+    // For Steam shortcut launches, unhide first so post-launch UI is visible.
+    if (isShortcutLaunch) {
+      await window.electronAPI.app.showWindow();
     }
 
     try {
+      // run the addon launch-app event with launchType 'post'
+      let library = await getAllApps();
+      const libraryInfo = library.find((app) => app.appID === appID);
+      if (!libraryInfo) {
+        console.error('Library info not found for appID: ' + appID);
+        return;
+      }
+
       await safeFetch('launchApp', {
         libraryInfo: libraryInfo,
         launchType: 'post',
@@ -53,16 +59,14 @@
     } catch (error) {
       console.error(error);
     } finally {
-      if (isShortcutLaunchForGame(appID)) {
-        await window.electronAPI.app.showWindow();
+      gamesLaunched.update((games) => {
+        delete games[appID];
+        return games;
+      });
+
+      if (isShortcutLaunch) {
         await window.electronAPI.app.close();
       }
     }
-
-    // remove the game from the gamesLaunched state
-    gamesLaunched.update((games) => {
-      delete games[libraryInfo.appID];
-      return games;
-    });
   });
 </script>

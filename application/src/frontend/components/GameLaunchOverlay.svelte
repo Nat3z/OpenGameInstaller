@@ -1,7 +1,5 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { fade, fly } from 'svelte/transition';
-  import { quintOut } from 'svelte/easing';
   import { selectedView, gameFocused, launchGameTrigger } from '../store';
   import { safeFetch } from '../utils';
 
@@ -93,12 +91,9 @@
         await new Promise((r) => setTimeout(r, 800));
         launchGameTrigger.set(gameId);
 
-        status = 'success';
-
-        // Wait a moment then complete
-        setTimeout(() => {
-          onComplete();
-        }, 2000);
+        // Keep this overlay mounted for Steam shortcut launches.
+        // The window will be hidden on game:launch and shown again on game:exit.
+        status = 'running';
       } else {
         status = 'error';
         errorMessage =
@@ -121,12 +116,9 @@
 
 <div
   class="fixed inset-0 z-50 flex flex-col items-center justify-center bg-[#1a1a1a] text-white"
-  in:fade={{ duration: 300 }}
-  out:fade={{ duration: 300 }}
 >
   <div
     class="flex flex-col items-center gap-6 p-8"
-    in:fly={{ y: 20, duration: 500, easing: quintOut }}
   >
     {#if status === 'loading' || status === 'running'}
       <!-- Spinner -->

@@ -25,7 +25,6 @@ import {
 } from './helpers.app/library.js';
 import { generateNotificationId } from './helpers.app/notifications.js';
 import { sendNotification } from '../main.js';
-import { buildUmuWrapperCommandTemplate } from './handler.umu.js';
 
 /**
  * Get the path to the OGI AppImage or executable
@@ -63,22 +62,13 @@ export async function addUmuGameToSteam(params: {
     return { success: false, error: 'Game is not configured for UMU mode' };
   }
 
-  let wrapperCommand: string;
-  try {
-    wrapperCommand = buildUmuWrapperCommandTemplate(appInfo);
-  } catch (error) {
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : String(error),
-    };
-  }
-
   const result = await addGameToSteam({
     name: params.name,
     version: params.version,
     launchExecutable: appInfo.launchExecutable,
     cwd: appInfo.cwd,
-    wrapperCommand,
+    // %command% is intentionally the only thing in the wrapper command.
+    wrapperCommand: '%command%',
     appID: params.appID,
     compatibilityTool: 'proton_experimental',
   });

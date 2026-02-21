@@ -51,26 +51,21 @@ export function getUmuRunExecutablePath(): string {
  * `%command%` is intentionally left in place so Steam resolves it to the
  * shortcut executable command at launch time.
  */
-export function buildUmuWrapperCommandTemplate(libraryInfo: LibraryInfo): string {
+export function buildUmuWrapperCommandTemplate(
+  libraryInfo: LibraryInfo
+): string {
   if (!libraryInfo.umu) {
     throw new Error('No UMU configuration found');
   }
 
-  const { umuId, dllOverrides, protonVersion, store } = libraryInfo.umu;
-  const gameId = convertUmuId(umuId);
+  const { umuId, dllOverrides } = libraryInfo.umu;
   const winePrefix = getUmuWinePrefix(umuId);
   const parsedLaunchArgs = parseLaunchArguments(libraryInfo.launchArguments);
 
   const parts = [
-    `GAMEID=${shellQuote(gameId)}`,
-    `WINEPREFIX=${shellQuote(winePrefix)}`,
-    `PROTONPATH=${shellQuote(protonVersion || 'UMU-Latest')}`,
-    `STORE=${shellQuote(store || 'none')}`,
+    `PROTON_COMPAT_DATA_PATH=${shellQuote(winePrefix)}`,
     `WINEDLLOVERRIDES=${shellQuote(buildDllOverrides(dllOverrides || []))}`,
-    `PWD=${shellQuote(libraryInfo.cwd)}`,
-    `UMU_LOG=${shellQuote('debug')}`,
     '%command%',
-    shellQuote(libraryInfo.launchExecutable),
     ...parsedLaunchArgs.map((arg) => shellQuote(arg)),
   ];
 
@@ -310,25 +305,21 @@ export async function launchWithUmu(
       exePath,
       ...parsedLaunchArgs,
     ]);
-    const child = spawn(
-      umuRunExecutable,
-      [exePath, ...parsedLaunchArgs],
-      {
-        cwd: libraryInfo.cwd,
-        env: {
-          ...env,
-          GAMEID: gameId,
-          WINEPREFIX: winePrefix,
-          PROTONPATH: protonVersion || 'UMU-Latest',
-          STORE: store || 'none',
-          WINEDLLOVERRIDES: buildDllOverrides(dllOverrides || []),
-          PWD: libraryInfo.cwd,
-          UMU_LOG: 'debug',
-        },
-        detached: true,
-        stdio: ['ignore', 'pipe', 'pipe'],
-      }
-    );
+    const child = spawn(umuRunExecutable, [exePath, ...parsedLaunchArgs], {
+      cwd: libraryInfo.cwd,
+      env: {
+        ...env,
+        GAMEID: gameId,
+        WINEPREFIX: winePrefix,
+        PROTONPATH: protonVersion || 'UMU-Latest',
+        STORE: store || 'none',
+        WINEDLLOVERRIDES: buildDllOverrides(dllOverrides || []),
+        PWD: libraryInfo.cwd,
+        UMU_LOG: 'debug',
+      },
+      detached: true,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
     child.unref();
 
     child.stdout?.on('data', (data) => {

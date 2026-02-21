@@ -32,6 +32,7 @@ import {
   installUmu,
   migrateToUmu,
   getUmuWinePrefix,
+  buildDllOverrides,
 } from './handler.umu.js';
 
 /**
@@ -175,7 +176,13 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
         const wrappedChild = spawn(resolvedWrapperCommand, {
           cwd: appInfo.cwd,
           shell: true,
-          env: { ...process.env },
+          env: {
+            ...process.env,
+            PROTON_COMPAT_DATA_PATH: getProtonPrefixPath(appInfo.appID),
+            WINEDLLOVERRIDES: buildDllOverrides(
+              appInfo.umu!.dllOverrides || []
+            ),
+          },
           stdio: ['ignore', 'pipe', 'pipe'],
         });
 

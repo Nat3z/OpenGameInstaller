@@ -60,21 +60,24 @@ function parseLaunchHookArgs(): {
 }
 
 /**
- * Parse command line argument for wrapper command.
- * Expected form: --wrapper="<command>"
+ * Parse wrapper command from the last positional argument.
+ * Wrapper launches now pass the command as the final argument, not a flag.
  */
-function parseWrapperArg(): string | null {
-  const wrapperArg = process.argv.find((arg) => arg.startsWith('--wrapper='));
-  if (wrapperArg) {
-    return wrapperArg.slice('--wrapper='.length);
+function parseTrailingWrapperArg(): string | null {
+  const lastArg = process.argv.at(-1);
+  if (!lastArg) return null;
+
+  if (
+    lastArg.startsWith('--game-id=') ||
+    lastArg === '--no-sandbox' ||
+    lastArg === '--no-launch' ||
+    lastArg === '--pre' ||
+    lastArg === '--post'
+  ) {
+    return null;
   }
 
-  const wrapperIndex = process.argv.findIndex((arg) => arg === '--wrapper');
-  if (wrapperIndex !== -1 && process.argv[wrapperIndex + 1]) {
-    return process.argv[wrapperIndex + 1];
-  }
-
-  return null;
+  return lastArg;
 }
 
 /**
@@ -505,7 +508,7 @@ app.on('ready', async () => {
   // Check if we're launching a specific game (--game-id flag from Steam)
   const gameIdToLaunch = parseGameIdArg();
   const hookArgs = parseLaunchHookArgs();
-  const wrapperCommand = parseWrapperArg();
+  const wrapperCommand = parseTrailingWrapperArg();
 
   if (gameIdToLaunch !== null) {
     console.log(

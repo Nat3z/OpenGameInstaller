@@ -160,13 +160,13 @@ export async function addGameToSteam(params: {
   appID: number;
   compatibilityTool?: string;
 }): Promise<boolean> {
-  const gameName = params.name;
+  const gameName = getVersionedGameName(params.name, params.version);
   const ogiPath = getOgiExecutablePath();
   const wrapperCommand =
     params.wrapperCommand && params.wrapperCommand.length > 0
       ? params.wrapperCommand
       : '%command%';
-  const launchOptions = `"${ogiPath}" --game-id=${params.appID} --wrapper="${escapeDoubleQuotedValue(wrapperCommand)}" --no-sandbox`;
+  const launchOptions = `"${ogiPath}" --game-id=${params.appID} --no-sandbox ${escapeDoubleQuotedValue(wrapperCommand)}`;
   const compatibilityToolArg = params.compatibilityTool
     ? ` --compatibilitytool="${escapeShellArg(params.compatibilityTool)}"`
     : '';

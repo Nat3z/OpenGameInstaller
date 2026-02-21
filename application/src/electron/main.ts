@@ -1,4 +1,5 @@
 import { join } from 'path';
+import { quote as shellQuote } from 'shell-quote';
 import { server, port } from './server/addon-server.js';
 import { applicationAddonSecret } from './server/constants.js';
 import { app, BrowserWindow, globalShortcut, ipcMain, shell } from 'electron';
@@ -62,6 +63,8 @@ function parseLaunchHookArgs(): {
 /**
  * Parse wrapper command from args after a `--` separator.
  * Everything after `--` is treated as the wrapper command payload.
+ * Each argument is shell-quoted so paths with spaces survive round-trip
+ * when the string is later parsed in the library handler.
  */
 function parseWrapperAfterSeparator(): string | null {
   const separatorIndex = process.argv.indexOf('--');
@@ -69,7 +72,8 @@ function parseWrapperAfterSeparator(): string | null {
     return null;
   }
 
-  return process.argv.slice(separatorIndex + 1).join(' ');
+  const args = process.argv.slice(separatorIndex + 1);
+  return args.map((arg) => shellQuote([arg])).join(' ');
 }
 
 /**

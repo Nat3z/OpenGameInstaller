@@ -173,23 +173,45 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
       console.log(
         `[wrapper] Executing wrapper command for ${appInfo.name}: ${wrapperCommand}`
       );
-      const parsedWrapperCommand = shellQuoteParse(wrapperCommand);
-      console.log('Parsed wrapper command: ');
-      console.log(parsedWrapperCommand);
+
+      // Parse so paths with spaces aren't broken: split on the known verb first,
+      // parse only the prefix (which may contain quoted paths), and treat
+      // everything after the verb as a single path argument we replace with
+      // appInfo.launchExecutable.
+      const verb = 'waitforexitandrun';
+      const verbWithSpaces = ` ${verb} `;
+      const verbIndexInString = wrapperCommand.indexOf(verbWithSpaces);
+      let parsed: ReturnType<typeof shellQuoteParse>;
+      if (verbIndexInString !== -1) {
+        const prefix = wrapperCommand.slice(0, verbIndexInString).trimEnd();
+        parsed = shellQuoteParse(prefix);
+        parsed.push(verb);
+        // Everything after " waitforexitandrun " is the exe path (may contain spaces);
+        // we replace it with the canonical path, so we don't parse the suffix.
+      } else {
+        parsed = shellQuoteParse(wrapperCommand);
+      }
+
+      const verbIndex = parsed.findIndex((x) => x === verb);
+      const fixedArgs = [...parsed.slice(0, verbIndex + 1), appInfo.launchExecutable];
 
       return await new Promise((resolve) => {
-        const wrappedChild = spawn('/bin/bash', ['-lc', wrapperCommand], {
-          env: {
-            ...process.env,
-            STEAM_COMPAT_DATA_PATH: getOgiPrefixPath(appInfo.appID),
-            WINEPREFIX: getOgiPrefixPath(appInfo.appID) + '/pfx',
-            WINEDLLOVERRIDES: buildDllOverrides(
-              appInfo.umu!.dllOverrides || []
-            ),
-            PROTON_LOG: '1',
-          },
-          stdio: 'inherit',
-        });
+        const wrappedChild = spawn(
+          parsed[0].toString(),
+          fixedArgs.slice(1).map((x) => x.toString()),
+          {
+            env: {
+              ...process.env,
+              STEAM_COMPAT_DATA_PATH: getOgiPrefixPath(appInfo.appID),
+              WINEPREFIX: getOgiPrefixPath(appInfo.appID) + '/pfx',
+              WINEDLLOVERRIDES: buildDllOverrides(
+                appInfo.umu!.dllOverrides || []
+              ),
+              PROTON_LOG: '1',
+            },
+            stdio: 'inherit',
+          }
+        );
 
         wrappedChild.stdout?.on('data', (data) => {
           console.log(`[wrapper stdout] ${data}`);

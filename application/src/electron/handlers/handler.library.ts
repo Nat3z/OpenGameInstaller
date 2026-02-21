@@ -12,6 +12,7 @@ import {
   getVersionedGameName,
   addGameToSteam,
 } from './helpers.app/steam.js';
+import { parse as shellQuoteParse } from 'shell-quote';
 import {
   loadLibraryInfo,
   saveLibraryInfo,
@@ -172,20 +173,25 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
       console.log(
         `[wrapper] Executing wrapper command for ${appInfo.name}: ${wrapperCommand}`
       );
+      const parsedWrapperCommand = shellQuoteParse(wrapperCommand);
 
       return await new Promise((resolve) => {
-        const wrappedChild = spawn(wrapperCommand, {
-          cwd: appInfo.cwd,
-          env: {
-            ...process.env,
-            PROTON_COMPAT_DATA_PATH: getOgiPrefixPath(appInfo.appID),
-            WINEDLLOVERRIDES: buildDllOverrides(
-              appInfo.umu!.dllOverrides || []
-            ),
-            PROTON_LOG: '1',
-          },
-          stdio: 'inherit',
-        });
+        const wrappedChild = spawn(
+          parsedWrapperCommand[0].toString(),
+          parsedWrapperCommand.slice(1).map((arg) => arg.toString()),
+          {
+            cwd: appInfo.cwd,
+            env: {
+              ...process.env,
+              PROTON_COMPAT_DATA_PATH: getOgiPrefixPath(appInfo.appID),
+              WINEDLLOVERRIDES: buildDllOverrides(
+                appInfo.umu!.dllOverrides || []
+              ),
+              PROTON_LOG: '1',
+            },
+            stdio: 'inherit',
+          }
+        );
 
         wrappedChild.stdout?.on('data', (data) => {
           console.log(`[wrapper stdout] ${data}`);

@@ -39,6 +39,17 @@ jobs:
         uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.3.8
+
+      - name: Cache Bun dependencies
+        if: steps.check_changes.outputs.has_application_changes == 'true'
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.bun/install/cache
+          key: bun-deps-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          restore-keys: |
+            bun-deps-${{ runner.os }}-
+
       - name: Install Dependencies
         if: steps.check_changes.outputs.has_application_changes == 'true'
         shell: bash

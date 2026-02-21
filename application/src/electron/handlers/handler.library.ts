@@ -173,7 +173,7 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
       );
 
       return await new Promise((resolve) => {
-        const wrappedChild = spawn(resolvedWrapperCommand, {
+        const wrappedChild = spawn(`'${resolvedWrapperCommand}'`, {
           cwd: appInfo.cwd,
           shell: true,
           env: {

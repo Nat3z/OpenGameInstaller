@@ -28,5 +28,5 @@ export function getOgiPrefixPath(appId: number): string {
   if (!homeDir) {
     throw new Error('Home directory not found');
   }
-  return `${homeDir}/.ogi-wine-prefixes/${appId}`;
+  return `${homeDir}/.ogi-wine-prefixes/umu-${appId}`;
 }

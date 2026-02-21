@@ -24,7 +24,10 @@ import {
 } from './helpers.app/library.js';
 import { generateNotificationId } from './helpers.app/notifications.js';
 import { sendNotification } from '../main.js';
-import { getProtonPrefixPath } from './helpers.app/platform.js';
+import {
+  getOgiPrefixPath,
+  getProtonPrefixPath,
+} from './helpers.app/platform.js';
 import * as fs from 'fs';
 import {
   launchWithUmu,
@@ -176,12 +179,12 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
           shell: true,
           env: {
             ...process.env,
-            // PROTON_COMPAT_DATA_PATH: getProtonPrefixPath(appInfo.appID),
+            PROTON_COMPAT_DATA_PATH: getOgiPrefixPath(appInfo.appID),
             WINEDLLOVERRIDES: buildDllOverrides(
               appInfo.umu!.dllOverrides || []
             ),
           },
-          stdio: ['pipe', 'pipe', 'pipe'],
+          stdio: ['ignore', 'pipe', 'pipe'],
         });
 
         wrappedChild.stdout?.on('data', (data) => {

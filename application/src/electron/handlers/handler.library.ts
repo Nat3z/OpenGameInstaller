@@ -174,9 +174,8 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
       );
 
       return await new Promise((resolve) => {
-        const wrappedChild = spawn(`${wrapperCommand}`, {
+        const wrappedChild = spawn(wrapperCommand, {
           cwd: appInfo.cwd,
-          shell: true,
           env: {
             ...process.env,
             PROTON_COMPAT_DATA_PATH: getOgiPrefixPath(appInfo.appID),

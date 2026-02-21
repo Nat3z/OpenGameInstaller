@@ -174,16 +174,18 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
         `[wrapper] Executing wrapper command for ${appInfo.name}: ${wrapperCommand}`
       );
       const parsedWrapperCommand = shellQuoteParse(wrapperCommand);
+      console.log('Parsed wrapper command: ');
+      console.log(parsedWrapperCommand);
 
       return await new Promise((resolve) => {
         const wrappedChild = spawn(
           parsedWrapperCommand[0].toString(),
           parsedWrapperCommand.slice(1).map((arg) => arg.toString()),
           {
-            cwd: appInfo.cwd,
             env: {
               ...process.env,
-              PROTON_COMPAT_DATA_PATH: getOgiPrefixPath(appInfo.appID),
+              STEAM_COMPAT_DATA_PATH: getOgiPrefixPath(appInfo.appID),
+              WINEPREFIX: getOgiPrefixPath(appInfo.appID) + '/pfx',
               WINEDLLOVERRIDES: buildDllOverrides(
                 appInfo.umu!.dllOverrides || []
               ),

@@ -178,22 +178,18 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
       console.log(parsedWrapperCommand);
 
       return await new Promise((resolve) => {
-        const wrappedChild = spawn(
-          parsedWrapperCommand[0].toString(),
-          parsedWrapperCommand.slice(1).map((arg) => arg.toString()),
-          {
-            env: {
-              ...process.env,
-              STEAM_COMPAT_DATA_PATH: getOgiPrefixPath(appInfo.appID),
-              WINEPREFIX: getOgiPrefixPath(appInfo.appID) + '/pfx',
-              WINEDLLOVERRIDES: buildDllOverrides(
-                appInfo.umu!.dllOverrides || []
-              ),
-              PROTON_LOG: '1',
-            },
-            stdio: 'inherit',
-          }
-        );
+        const wrappedChild = spawn('/bin/bash', ['-lc', wrapperCommand], {
+          env: {
+            ...process.env,
+            STEAM_COMPAT_DATA_PATH: getOgiPrefixPath(appInfo.appID),
+            WINEPREFIX: getOgiPrefixPath(appInfo.appID) + '/pfx',
+            WINEDLLOVERRIDES: buildDllOverrides(
+              appInfo.umu!.dllOverrides || []
+            ),
+            PROTON_LOG: '1',
+          },
+          stdio: 'inherit',
+        });
 
         wrappedChild.stdout?.on('data', (data) => {
           console.log(`[wrapper stdout] ${data}`);

@@ -176,12 +176,12 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
           shell: true,
           env: {
             ...process.env,
-            PROTON_COMPAT_DATA_PATH: getProtonPrefixPath(appInfo.appID),
+            // PROTON_COMPAT_DATA_PATH: getProtonPrefixPath(appInfo.appID),
             WINEDLLOVERRIDES: buildDllOverrides(
               appInfo.umu!.dllOverrides || []
             ),
           },
-          stdio: ['ignore', 'pipe', 'pipe'],
+          stdio: ['pipe', 'pipe', 'pipe'],
         });
 
         wrappedChild.stdout?.on('data', (data) => {

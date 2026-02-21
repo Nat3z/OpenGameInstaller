@@ -166,14 +166,12 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
         return { success: false, error: 'Wrapper command is empty' };
       }
 
-      const resolvedWrapperCommand = wrapperCommand;
-
       console.log(
-        `[wrapper] Executing wrapper command for ${appInfo.name}: ${resolvedWrapperCommand}`
+        `[wrapper] Executing wrapper command for ${appInfo.name}: ${wrapperCommand}`
       );
 
       return await new Promise((resolve) => {
-        const wrappedChild = spawn(`'${resolvedWrapperCommand}'`, {
+        const wrappedChild = spawn(`"${wrapperCommand}"`, {
           cwd: appInfo.cwd,
           shell: true,
           env: {

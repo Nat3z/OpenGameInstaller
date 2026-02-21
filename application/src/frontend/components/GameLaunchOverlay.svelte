@@ -184,7 +184,7 @@
 </script>
 
 <div
-  class="fixed inset-0 z-50 flex flex-col items-center justify-center bg-[#1a1a1a] text-white"
+  class="fixed inset-0 z-10 flex flex-col items-center justify-center bg-[#1a1a1a] text-white"
 >
   <div class="flex flex-col items-center gap-6 p-8">
     {#if status === 'loading' || status === 'running'}
@@ -269,19 +269,10 @@
         </p>
       {/if}
 
-      {#if (isHookOnly || isWrapperLaunch) && status === 'success'}
+      {#if isHookOnly || isWrapperLaunch}
         <p class="text-sm text-gray-400 mt-4">Closing application...</p>
       {/if}
     </div>
-
-    {#if status === 'error'}
-      <button
-        class="mt-6 px-6 py-3 bg-[#333] hover:bg-[#444] rounded-lg transition-colors border-none text-white cursor-pointer"
-        onclick={onComplete}
-      >
-        Close
-      </button>
-    {/if}
   </div>
 
   <!-- Progress bar for visual feedback -->

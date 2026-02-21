@@ -142,6 +142,8 @@ async function launchGameById(gameId: number, wrapperCommand?: string | null) {
       ? `http://localhost:8080/?secret=${applicationAddonSecret}`
       : `file://${join(app.getAppPath(), 'out', 'renderer', 'index.html')}?secret=${applicationAddonSecret}`;
 
+    console.log('Direct wrapper command: ' + wrapperCommand);
+
     const wrapperQuery = wrapperCommand
       ? `&wrapperCommand=${encodeURIComponent(wrapperCommand)}`
       : '';

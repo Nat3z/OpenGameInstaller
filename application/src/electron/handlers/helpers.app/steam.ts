@@ -166,7 +166,7 @@ export async function addGameToSteam(params: {
     params.wrapperCommand && params.wrapperCommand.length > 0
       ? params.wrapperCommand
       : '%command%';
-  const launchOptions = `"${ogiPath}" --game-id=${params.appID} --no-sandbox ${escapeDoubleQuotedValue(wrapperCommand)}`;
+  const launchOptions = `"${ogiPath}" --game-id=${params.appID} --no-sandbox -- "${escapeDoubleQuotedValue(wrapperCommand)}"`;
   const compatibilityToolArg = params.compatibilityTool
     ? ` --compatibilitytool="${escapeShellArg(params.compatibilityTool)}"`
     : '';

@@ -183,8 +183,9 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
             WINEDLLOVERRIDES: buildDllOverrides(
               appInfo.umu!.dllOverrides || []
             ),
+            PROTON_LOG: '1',
           },
-          stdio: 'pipe',
+          stdio: 'inherit',
         });
 
         wrappedChild.stdout?.on('data', (data) => {

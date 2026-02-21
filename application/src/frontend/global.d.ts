@@ -220,6 +220,18 @@ interface Window {
        */
       getLibraryInfo: (appID: number) => Promise<LibraryInfo | null>;
       /**
+       * Execute a wrapped Steam command exactly as provided
+       */
+      executeWrapperCommand: (
+        appID: number,
+        wrapperCommand: string
+      ) => Promise<{
+        success: boolean;
+        exitCode?: number;
+        signal?: string;
+        error?: string;
+      }>;
+      /**
        * UMU (Unified Launcher for Windows Games on Linux) handlers
        */
       checkUmuInstalled: () => Promise<boolean>;

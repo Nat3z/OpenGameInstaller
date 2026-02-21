@@ -28,6 +28,54 @@ function getUmuPrefixBase(): string {
 }
 
 const umuRunExecutable = path.join(__dirname, 'bin', 'umu', 'umu-run');
+
+function shellQuote(arg: string): string {
+  return `'${arg.replace(/'/g, `'\\''`)}'`;
+}
+
+function parseLaunchArguments(launchArguments?: string): string[] {
+  const launchArgs = (launchArguments || '').replace('%command%', '');
+  return (
+    launchArgs
+      .match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g)
+      ?.map((arg) => arg.replace(/^['"]|['"]$/g, '')) ?? []
+  );
+}
+
+export function getUmuRunExecutablePath(): string {
+  return umuRunExecutable;
+}
+
+/**
+ * Builds a wrapper template for Steam shortcut launches.
+ * `%command%` is intentionally left in place so Steam resolves it to the
+ * shortcut executable command at launch time.
+ */
+export function buildUmuWrapperCommandTemplate(libraryInfo: LibraryInfo): string {
+  if (!libraryInfo.umu) {
+    throw new Error('No UMU configuration found');
+  }
+
+  const { umuId, dllOverrides, protonVersion, store } = libraryInfo.umu;
+  const gameId = convertUmuId(umuId);
+  const winePrefix = getUmuWinePrefix(umuId);
+  const parsedLaunchArgs = parseLaunchArguments(libraryInfo.launchArguments);
+
+  const parts = [
+    `GAMEID=${shellQuote(gameId)}`,
+    `WINEPREFIX=${shellQuote(winePrefix)}`,
+    `PROTONPATH=${shellQuote(protonVersion || 'UMU-Latest')}`,
+    `STORE=${shellQuote(store || 'none')}`,
+    `WINEDLLOVERRIDES=${shellQuote(buildDllOverrides(dllOverrides || []))}`,
+    `PWD=${shellQuote(libraryInfo.cwd)}`,
+    `UMU_LOG=${shellQuote('debug')}`,
+    '%command%',
+    shellQuote(libraryInfo.launchExecutable),
+    ...parsedLaunchArgs.map((arg) => shellQuote(arg)),
+  ];
+
+  return parts.join(' ');
+}
 /**
  * Check if UMU is installed on the system
  */
@@ -244,16 +292,8 @@ export async function launchWithUmu(
     }
   }
 
-  // Build launch arguments. Remove the %command% placeholder as we handle everything now for exe.
-  const launchArgs = (libraryInfo.launchArguments || '').replace(
-    '%command%',
-    ''
-  );
   const exePath = libraryInfo.launchExecutable;
-  const parsedLaunchArgs =
-    launchArgs
-      .match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g)
-      ?.map((arg) => arg.replace(/^['"]|['"]$/g, '')) ?? [];
+  const parsedLaunchArgs = parseLaunchArguments(libraryInfo.launchArguments);
 
   console.log('[umu] Launching game:', {
     name: libraryInfo.name,

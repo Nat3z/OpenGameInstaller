@@ -16,12 +16,16 @@
   let errorMessage = $state('');
   let hookType: 'pre' | 'post' | null = $state(null);
   let isHookOnly = $state(false);
+  let wrapperCommand: string | null = $state(null);
+  let isWrapperLaunch = $state(false);
 
   onMount(async () => {
     // Parse query parameters
     const urlParams = new URLSearchParams(window.location.search);
     const hookTypeParam = urlParams.get('hookType');
     const noLaunchParam = urlParams.get('noLaunch');
+    wrapperCommand = urlParams.get('wrapperCommand');
+    isWrapperLaunch = !!wrapperCommand;
 
     isHookOnly =
       noLaunchParam === 'true' &&
@@ -81,6 +85,71 @@
             window.electronAPI.app.quit();
           }, 5000);
         }
+      } else if (isWrapperLaunch && wrapperCommand) {
+        // Wrapper mode: run pre-launch hooks, execute wrapper command exactly, then run post-launch hooks
+        console.log(
+          `[GameLaunchOverlay] Running wrapped launch for ${gameName}: ${wrapperCommand}`
+        );
+
+        try {
+          await safeFetch('launchApp', {
+            libraryInfo: libraryInfo,
+            launchType: 'pre',
+          });
+        } catch (error) {
+          console.error('[GameLaunchOverlay] Pre-launch hooks failed:', error);
+          status = 'error';
+          errorMessage =
+            error instanceof Error ? error.message : 'Pre-launch failed';
+          onError(errorMessage);
+          setTimeout(() => {
+            window.electronAPI.app.quit();
+          }, 5000);
+          return;
+        }
+
+        let wrapperError: string | null = null;
+        await window.electronAPI.app.hideWindow();
+        const wrapperResult =
+          await window.electronAPI.app.executeWrapperCommand(
+            gameId,
+            wrapperCommand
+          );
+        if (!wrapperResult.success) {
+          wrapperError = wrapperResult.error || 'Wrapped command failed';
+        }
+        await window.electronAPI.app.showWindow();
+
+        let postLaunchError: string | null = null;
+        try {
+          await safeFetch('launchApp', {
+            libraryInfo: libraryInfo,
+            launchType: 'post',
+          });
+        } catch (error) {
+          console.error('[GameLaunchOverlay] Post-launch hooks failed:', error);
+          postLaunchError =
+            error instanceof Error ? error.message : 'Post-launch failed';
+        }
+
+        if (wrapperError || postLaunchError) {
+          status = 'error';
+          errorMessage =
+            wrapperError && postLaunchError
+              ? `${wrapperError}\n${postLaunchError}`
+              : (wrapperError ?? postLaunchError ?? 'Wrapped launch failed');
+          onError(errorMessage);
+          setTimeout(() => {
+            window.electronAPI.app.quit();
+          }, 5000);
+          return;
+        }
+
+        status = 'success';
+        setTimeout(() => {
+          onComplete();
+          window.electronAPI.app.quit();
+        }, 2000);
       } else if (libraryInfo.umu) {
         // Open the play page in the background and trigger the play button
         // so that the full PlayPage launch flow (addon pre-launch, etc.) runs
@@ -117,9 +186,7 @@
 <div
   class="fixed inset-0 z-50 flex flex-col items-center justify-center bg-[#1a1a1a] text-white"
 >
-  <div
-    class="flex flex-col items-center gap-6 p-8"
-  >
+  <div class="flex flex-col items-center gap-6 p-8">
     {#if status === 'loading' || status === 'running'}
       <!-- Spinner -->
       <div class="relative">
@@ -170,18 +237,24 @@
         {:else if status === 'running'}
           {#if isHookOnly}
             Running {hookType}-launch hooks...
+          {:else if isWrapperLaunch}
+            Running wrapped launch...
           {:else}
             Launching game...
           {/if}
         {:else if status === 'success'}
           {#if isHookOnly}
             {hookType === 'pre' ? 'Pre-launch' : 'Post-launch'} hooks complete!
+          {:else if isWrapperLaunch}
+            Wrapped launch complete!
           {:else}
             Game launched!
           {/if}
         {:else if status === 'error'}
           {#if isHookOnly}
             {hookType === 'pre' ? 'Pre-launch' : 'Post-launch'} hooks failed
+          {:else if isWrapperLaunch}
+            Wrapped launch failed
           {:else}
             Launch failed
           {/if}
@@ -196,7 +269,7 @@
         </p>
       {/if}
 
-      {#if isHookOnly && status === 'success'}
+      {#if (isHookOnly || isWrapperLaunch) && status === 'success'}
         <p class="text-sm text-gray-400 mt-4">Closing application...</p>
       {/if}
     </div>

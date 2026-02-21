@@ -25,6 +25,7 @@ import {
 } from './helpers.app/library.js';
 import { generateNotificationId } from './helpers.app/notifications.js';
 import { sendNotification } from '../main.js';
+import { buildUmuWrapperCommandTemplate } from './handler.umu.js';
 
 /**
  * Get the path to the OGI AppImage or executable
@@ -46,8 +47,7 @@ function getOgiExecutablePath(): string {
 }
 
 /**
- * Add game to Steam as a shortcut that launches OGI with --game-id
- * This replaces the old steamtinkerlaunch-based integration
+ * Add a UMU game to Steam using OGI wrapper launches.
  */
 export async function addUmuGameToSteam(params: {
   appID: number;
@@ -58,19 +58,29 @@ export async function addUmuGameToSteam(params: {
     return { success: false, error: 'Only available on Linux' };
   }
 
-  const versionedGameName = getVersionedGameName(params.name, params.version);
-  const ogiPath = getOgiExecutablePath();
+  const appInfo = loadLibraryInfo(params.appID);
+  if (!appInfo || !appInfo.umu) {
+    return { success: false, error: 'Game is not configured for UMU mode' };
+  }
 
-  // Build launch options: launch OGI with --game-id flag
-  const launchOptions = `--game-id=${params.appID} --no-sandbox`;
+  let wrapperCommand: string;
+  try {
+    wrapperCommand = buildUmuWrapperCommandTemplate(appInfo);
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
 
-  // Add to Steam via steamtinkerlaunch
   const result = await addGameToSteam({
     name: params.name,
     version: params.version,
-    launchExecutable: ogiPath,
-    cwd: __dirname,
-    launchOptions,
+    launchExecutable: appInfo.launchExecutable,
+    cwd: appInfo.cwd,
+    wrapperCommand,
+    appID: params.appID,
+    compatibilityTool: 'proton_experimental',
   });
 
   if (!result) {
@@ -78,8 +88,9 @@ export async function addUmuGameToSteam(params: {
   }
 
   // Get the Steam app ID
-  const { success, appId: steamAppId } =
-    await getNonSteamGameAppID(versionedGameName);
+  const { success, appId: steamAppId } = await getNonSteamGameAppID(
+    params.name
+  );
 
   if (!success || !steamAppId) {
     return { success: true }; // Game was added but we couldn't get the ID
@@ -430,7 +441,9 @@ export function registerSteamHandlers() {
         version: appInfo.version,
         launchExecutable: appInfo.launchExecutable,
         cwd: appInfo.cwd,
-        launchOptions,
+        wrapperCommand: launchOptions || '%command%',
+        appID,
+        compatibilityTool: 'proton_experimental',
       });
 
       if (!result) {
@@ -579,8 +592,9 @@ export function registerSteamHandlers() {
       // Update the library JSON with the new WINEPREFIX path only if migration succeeded or not needed
       if (shouldUpdateLaunchArguments) {
         const protonPath = getProtonPrefixPath(newSteamAppId);
+        const normalizedLaunchOptions = launchOptions || '%command%';
         appInfo.launchArguments =
-          'WINEPREFIX=' + protonPath + ' ' + launchOptions;
+          'WINEPREFIX=' + protonPath + ' ' + normalizedLaunchOptions;
       }
       saveLibraryInfo(appID, appInfo);
 

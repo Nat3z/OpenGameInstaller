@@ -60,6 +60,24 @@ function parseLaunchHookArgs(): {
 }
 
 /**
+ * Parse command line argument for wrapper command.
+ * Expected form: --wrapper="<command>"
+ */
+function parseWrapperArg(): string | null {
+  const wrapperArg = process.argv.find((arg) => arg.startsWith('--wrapper='));
+  if (wrapperArg) {
+    return wrapperArg.slice('--wrapper='.length);
+  }
+
+  const wrapperIndex = process.argv.findIndex((arg) => arg === '--wrapper');
+  if (wrapperIndex !== -1 && process.argv[wrapperIndex + 1]) {
+    return process.argv[wrapperIndex + 1];
+  }
+
+  return null;
+}
+
+/**
  * Handle launch hooks (pre/post) for games
  * This runs addon events without actually launching the game
  * Used for save backup/restore and other addon-managed tasks
@@ -73,7 +91,7 @@ async function handleLaunchHooks(
   );
 
   // Create main window to show the launch screen
-  createWindow();
+  createWindow({ gameLaunchMode: true });
 
   if (mainWindow) {
     registerMainHandlers(mainWindow);
@@ -101,13 +119,13 @@ async function handleLaunchHooks(
  * Launch a game directly by ID (used from Steam shortcuts)
  * Now integrated into the main Svelte UI via query parameters
  */
-async function launchGameById(gameId: number) {
+async function launchGameById(gameId: number, wrapperCommand?: string | null) {
   console.log(
     `[launch] Steam shortcut launch detected for game ${gameId}, loading into main UI`
   );
 
   // Single window: create main window and pass game ID via query param
-  createWindow();
+  createWindow({ gameLaunchMode: true });
 
   if (mainWindow) {
     registerMainHandlers(mainWindow);
@@ -121,7 +139,10 @@ async function launchGameById(gameId: number) {
       ? `http://localhost:8080/?secret=${applicationAddonSecret}`
       : `file://${join(app.getAppPath(), 'out', 'renderer', 'index.html')}?secret=${applicationAddonSecret}`;
 
-    const launchUrl = `${baseUrl}&launchGameId=${gameId}`;
+    const wrapperQuery = wrapperCommand
+      ? `&wrapperCommand=${encodeURIComponent(wrapperCommand)}`
+      : '';
+    const launchUrl = `${baseUrl}&launchGameId=${gameId}${wrapperQuery}`;
 
     await mainWindow.loadURL(launchUrl);
 
@@ -387,10 +408,12 @@ function onMainAppReady() {
  * Creates the main BrowserWindow, loads splash first, then caller loads the app and registers onMainAppReady.
  * Single-window flow so Steam Deck / Game Mode keeps focus on the same window.
  */
-function createWindow() {
+function createWindow(options: { gameLaunchMode?: boolean } = {}) {
+  const gameLaunchMode = options.gameLaunchMode === true;
+
   mainWindow = new BrowserWindow({
-    width: 1000,
-    height: 700,
+    width: gameLaunchMode ? 1280 : 1000,
+    height: gameLaunchMode ? 720 : 700,
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: true,
@@ -398,8 +421,9 @@ function createWindow() {
       preload: join(app.getAppPath(), 'out/preload/index.mjs'),
     },
     title: 'OpenGameInstaller',
-    fullscreenable: false,
-    resizable: false,
+    fullscreen: gameLaunchMode,
+    fullscreenable: gameLaunchMode,
+    resizable: gameLaunchMode,
     icon: join(app.getAppPath(), 'public/favicon.ico'),
     autoHideMenuBar: true,
     show: false,
@@ -441,6 +465,10 @@ function createWindow() {
 
   // First ready-to-show: splash is ready; show window so user sees loading
   mainWindow.once('ready-to-show', () => {
+    if (gameLaunchMode && mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.setResizable(true);
+      mainWindow.setFullScreen(true);
+    }
     mainWindow?.show();
   });
 }
@@ -477,11 +505,20 @@ app.on('ready', async () => {
   // Check if we're launching a specific game (--game-id flag from Steam)
   const gameIdToLaunch = parseGameIdArg();
   const hookArgs = parseLaunchHookArgs();
+  const wrapperCommand = parseWrapperArg();
 
   if (gameIdToLaunch !== null) {
     console.log(
       `[app] Steam shortcut launch detected for game ${gameIdToLaunch}`
     );
+
+    if (wrapperCommand) {
+      console.log(
+        `[app] Wrapper launch detected for game ${gameIdToLaunch}: ${wrapperCommand}`
+      );
+      await launchGameById(gameIdToLaunch, wrapperCommand);
+      return;
+    }
 
     // Check if this is a hook-only launch (--no-launch with --pre or --post)
     if (hookArgs.noLaunch && (hookArgs.runPre || hookArgs.runPost)) {

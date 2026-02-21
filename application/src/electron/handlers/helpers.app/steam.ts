@@ -21,6 +21,13 @@ function escapeShellArg(arg: string): string {
     .replace(/`/g, '\\`');
 }
 
+/**
+ * Escapes a value so it can be safely embedded inside a double-quoted argument
+ */
+function escapeDoubleQuotedValue(value: string): string {
+  return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+}
+
 const cachedAppIds: Record<string, number> = {};
 
 /**
@@ -141,41 +148,32 @@ function getOgiExecutablePath(): string {
 }
 
 /**
- * Add game to Steam via SteamTinkerLaunch
- * For legacy mode, creates a chained command that runs pre-launch hooks, game, then post-launch hooks
+ * Add game to Steam via SteamTinkerLaunch using OGI wrapper mode.
+ * Steam launches OGI, then OGI executes the wrapper command.
  */
 export async function addGameToSteam(params: {
   name: string;
   version?: string;
   launchExecutable: string;
   cwd: string;
-  launchOptions: string;
-  appID?: number;
-  isLegacyMode?: boolean;
+  wrapperCommand?: string;
+  appID: number;
+  compatibilityTool?: string;
 }): Promise<boolean> {
-  const versionedGameName = getVersionedGameName(params.name, params.version);
-
-  let launchOptions = params.launchOptions;
-  let launchExecutable = params.launchExecutable;
-
-  // For legacy mode, chain pre-launch, game, and post-launch using &&
-  if (params.isLegacyMode && params.appID) {
-    const ogiPath = getOgiExecutablePath();
-
-    // Build chained command:
-    // OGI pre-launch && game launch && OGI post-launch
-    const preLaunchCmd = `"${ogiPath}" --game-id=${params.appID} --no-launch --pre`;
-    const postLaunchCmd = `"${ogiPath}" --game-id=${params.appID} --no-launch --post`;
-
-    // The game will run through Proton, and the post-launch will run after it exits
-    launchOptions = `${preLaunchCmd} && ${launchOptions} && ${postLaunchCmd}`;
-
-    console.log('[steam] Legacy mode: Creating chained launch command');
-  }
+  const gameName = params.name;
+  const ogiPath = getOgiExecutablePath();
+  const wrapperCommand =
+    params.wrapperCommand && params.wrapperCommand.length > 0
+      ? params.wrapperCommand
+      : '%command%';
+  const launchOptions = `"${ogiPath}" --game-id=${params.appID} --wrapper="${escapeDoubleQuotedValue(wrapperCommand)}" --no-sandbox`;
+  const compatibilityToolArg = params.compatibilityTool
+    ? ` --compatibilitytool="${escapeShellArg(params.compatibilityTool)}"`
+    : '';
 
   return new Promise<boolean>((resolve) =>
     exec(
-      `${STEAMTINKERLAUNCH_PATH} addnonsteamgame --appname="${escapeShellArg(versionedGameName)}" --exepath="${escapeShellArg(launchExecutable)}" --startdir="${escapeShellArg(params.cwd)}" --launchoptions="${escapeShellArg(launchOptions)}" --compatibilitytool="proton_experimental" --use-steamgriddb`,
+      `${STEAMTINKERLAUNCH_PATH} addnonsteamgame --appname="${escapeShellArg(gameName)}" --exepath="${escapeShellArg(params.launchExecutable)}" --startdir="${escapeShellArg(params.cwd)}" --launchoptions="${escapeShellArg(launchOptions)}"${compatibilityToolArg} --use-steamgriddb`,
       {
         cwd: __dirname,
       },

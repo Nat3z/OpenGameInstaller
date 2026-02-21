@@ -316,6 +316,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getLibraryInfo: wrap((appID: number) =>
       ipcRenderer.invoke('app:get-library-info', appID)
     ),
+    executeWrapperCommand: wrap((appID: number, wrapperCommand: string) =>
+      ipcRenderer.invoke('app:execute-wrapper-command', appID, wrapperCommand)
+    ),
   },
   getVersion: wrap(() => ipcRenderer.sendSync('get-version')),
   getTheme: wrap(() => ipcRenderer.sendSync('get-initial-theme')),
@@ -465,9 +468,18 @@ ipcRenderer.on(
 );
 
 ipcRenderer.on(
+  'game:launch',
+  wrap((_, arg) => {
+    document.dispatchEvent(new CustomEvent('game:launch', { detail: arg }));
+  })
+);
+
+ipcRenderer.on(
   'game:launch-error',
   wrap((_, arg) => {
-    document.dispatchEvent(new CustomEvent('game:launched', { detail: arg }));
+    document.dispatchEvent(
+      new CustomEvent('game:launch-error', { detail: arg })
+    );
   })
 );
 ipcRenderer.on(

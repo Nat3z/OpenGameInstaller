@@ -3,7 +3,7 @@
  * Updated to support UMU (Unified Launcher for Windows Games on Linux)
  */
 import { ipcMain } from 'electron';
-import { exec } from 'child_process';
+import { exec, spawn, spawnSync } from 'child_process';
 import type { LibraryInfo } from 'ogi-addon';
 import { isLinux } from './helpers.app/platform.js';
 import {
@@ -25,7 +25,6 @@ import {
 import { generateNotificationId } from './helpers.app/notifications.js';
 import { sendNotification } from '../main.js';
 import { getProtonPrefixPath } from './helpers.app/platform.js';
-import { spawnSync } from 'child_process';
 import * as fs from 'fs';
 import {
   launchWithUmu,
@@ -143,6 +142,75 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
     mainWindow?.webContents.send('game:launch', { id: appInfo.appID });
   });
 
+  ipcMain.handle(
+    'app:execute-wrapper-command',
+    async (
+      _,
+      appid: number,
+      wrapperCommand: string
+    ): Promise<{
+      success: boolean;
+      exitCode?: number;
+      signal?: string;
+      error?: string;
+    }> => {
+      ensureLibraryDir();
+
+      const appInfo = loadLibraryInfo(appid);
+      if (!appInfo) {
+        return { success: false, error: 'Game not found' };
+      }
+
+      if (!wrapperCommand || wrapperCommand.trim().length === 0) {
+        return { success: false, error: 'Wrapper command is empty' };
+      }
+
+      const resolvedWrapperCommand = wrapperCommand;
+
+      console.log(
+        `[wrapper] Executing wrapper command for ${appInfo.name}: ${resolvedWrapperCommand}`
+      );
+
+      return await new Promise((resolve) => {
+        const wrappedChild = spawn(resolvedWrapperCommand, {
+          cwd: appInfo.cwd,
+          shell: true,
+          env: { ...process.env },
+          stdio: ['ignore', 'pipe', 'pipe'],
+        });
+
+        wrappedChild.stdout?.on('data', (data) => {
+          console.log(`[wrapper stdout] ${data}`);
+        });
+
+        wrappedChild.stderr?.on('data', (data) => {
+          console.error(`[wrapper stderr] ${data}`);
+        });
+
+        wrappedChild.on('error', (error) => {
+          console.error('[wrapper] Failed to execute wrapper command:', error);
+          resolve({ success: false, error: error.message });
+        });
+
+        wrappedChild.on('close', (code, signal) => {
+          if (code === 0) {
+            resolve({ success: true, exitCode: 0 });
+            return;
+          }
+
+          const error = `Wrapped command exited with code ${code ?? 'null'}${signal ? ` (signal: ${signal})` : ''}`;
+          console.error(`[wrapper] ${error}`);
+          resolve({
+            success: false,
+            error,
+            exitCode: code ?? undefined,
+            signal: signal ?? undefined,
+          });
+        });
+      });
+    }
+  );
+
   ipcMain.handle('app:remove-app', async (_, appid: number) => {
     ensureLibraryDir();
     ensureInternalsDir();
@@ -252,9 +320,9 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
           version: data.version,
           launchExecutable: data.launchExecutable,
           cwd: data.cwd,
-          launchOptions,
+          wrapperCommand: launchOptions || '%command%',
           appID: data.appID,
-          isLegacyMode: true,
+          compatibilityTool: 'proton_experimental',
         });
 
         // add to the {appid}.json file the launch options
@@ -264,7 +332,9 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
           return 'setup-failed';
         }
         const protonPath = getProtonPrefixPath(steamAppId!);
-        data.launchArguments = 'WINEPREFIX=' + protonPath + ' ' + launchOptions;
+        const normalizedLaunchOptions = launchOptions || '%command%';
+        data.launchArguments =
+          'WINEPREFIX=' + protonPath + ' ' + normalizedLaunchOptions;
 
         saveLibraryInfo(data.appID, data);
 

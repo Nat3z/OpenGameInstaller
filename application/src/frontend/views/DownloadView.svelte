@@ -1214,4 +1214,9 @@
       @apply text-xs px-1.5 py-0.5;
     }
   }
+
+  .installing-redistributables {
+    background: color-mix(in srgb, var(--theme-warning) 18%, transparent);
+    color: var(--theme-warning-hover);
+  }
 </style>

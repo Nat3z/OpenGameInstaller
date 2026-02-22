@@ -479,7 +479,7 @@ export async function installRedistributablesWithUmu(
           // Use winetricks verb
           child = spawn(
             umuRunExecutable,
-            ['winetricks', redistributable.name],
+            ['winetricks', '-q', redistributable.name],
             {
               env: {
                 ...env,
@@ -877,7 +877,7 @@ export async function installRedistributablesWithUmuForLegacy(
           // Use winetricks verb via UMU
           child = spawn(
             umuRunExecutable,
-            ['winetricks', redistributable.name],
+            ['winetricks', '-q', redistributable.name],
             {
               env: {
                 ...process.env,
@@ -887,7 +887,7 @@ export async function installRedistributablesWithUmuForLegacy(
                 PROTONPATH: 'UMU-Latest',
                 PWD: libraryInfo.cwd,
               },
-              stdio: 'inherit',
+              stdio: ['ignore', 'pipe', 'pipe'],
             }
           );
         } else {
@@ -916,7 +916,7 @@ export async function installRedistributablesWithUmuForLegacy(
               PWD: libraryInfo.cwd,
             },
             cwd: redistDir,
-            stdio: 'inherit',
+            stdio: ['ignore', 'pipe', 'pipe'],
           });
         }
 

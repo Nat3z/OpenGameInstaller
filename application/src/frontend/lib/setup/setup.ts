@@ -522,7 +522,9 @@ export async function runSetupAppUpdate(
       data.cwd,
       data.launchExecutable,
       data.launchArguments,
-      downloadedItem.addonSource
+      downloadedItem.addonSource,
+      data.umu,
+      data.launchEnv
     );
 
     if (result === 'app-not-found') {

@@ -886,6 +886,7 @@ export const ZodLibraryInfo = z.object({
   appID: z.number(),
   launchExecutable: z.string(),
   launchArguments: z.string().optional(),
+  launchEnv: z.record(z.string(), z.string()).optional(),
   capsuleImage: z.string(),
   storefront: z.string(),
   addonsource: z.string(),

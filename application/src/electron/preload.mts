@@ -284,7 +284,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
         cwd: string,
         launchExecutable: string,
         launchArguments?: string,
-        addonSource?: string
+        addonSource?: string,
+        umu?: LibraryInfo['umu'],
+        launchEnv?: LibraryInfo['launchEnv']
       ) =>
         ipcRenderer.invoke('app:update-app-version', {
           appID,
@@ -293,6 +295,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
           launchExecutable,
           launchArguments,
           addonSource,
+          umu,
+          launchEnv,
         })
     ),
     addToSteam: wrap((appID: number, oldSteamAppId?: number) =>
@@ -318,6 +322,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ),
     executeWrapperCommand: wrap((appID: number, wrapperCommand: string) =>
       ipcRenderer.invoke('app:execute-wrapper-command', appID, wrapperCommand)
+    ),
+    checkUmuInstalled: wrap(() => ipcRenderer.invoke('app:check-umu-installed')),
+    installUmu: wrap(() => ipcRenderer.invoke('app:install-umu')),
+    launchWithUmu: wrap((appID: number) =>
+      ipcRenderer.invoke('app:launch-with-umu', appID)
+    ),
+    installRedistributablesUmu: wrap((appID: number) =>
+      ipcRenderer.invoke('app:install-redistributables-umu', appID)
+    ),
+    migrateToUmu: wrap((appID: number, oldSteamAppId?: number) =>
+      ipcRenderer.invoke('app:migrate-to-umu', appID, oldSteamAppId)
     ),
   },
   getVersion: wrap(() => ipcRenderer.sendSync('get-version')),

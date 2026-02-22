@@ -34,6 +34,8 @@ import {
   migrateToUmu,
   getUmuWinePrefix,
   buildDllOverrides,
+  getEffectiveDllOverrides,
+  getEffectiveLaunchEnv,
 } from './handler.umu.js';
 
 /**
@@ -111,9 +113,14 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
       '%command%',
       `"${escapeShellArg(appInfo.launchExecutable)}"`
     );
+    const effectiveLaunchEnv = getEffectiveLaunchEnv(appInfo);
     console.log('Launching game with args: ' + args, 'in cwd: ' + appInfo.cwd);
     const spawnedItem = exec(args, {
       cwd: appInfo.cwd,
+      env: {
+        ...process.env,
+        ...effectiveLaunchEnv,
+      },
     });
     spawnedItem.on('error', (error) => {
       console.error(error);
@@ -196,6 +203,9 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
       ];
 
       return await new Promise((resolve) => {
+        const effectiveLaunchEnv = getEffectiveLaunchEnv(appInfo);
+        const effectiveDllOverrides = getEffectiveDllOverrides(appInfo);
+        const dllOverrideString = buildDllOverrides(effectiveDllOverrides);
         const wrappedChild = spawn(
           parsed[0].toString(),
           fixedArgs.slice(1).map((x) => x.toString()),
@@ -203,11 +213,12 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
             cwd: appInfo.cwd,
             env: {
               ...process.env,
+              ...effectiveLaunchEnv,
               STEAM_COMPAT_DATA_PATH: getUmuWinePrefix(appInfo.umu!.umuId),
               WINEPREFIX: getUmuWinePrefix(appInfo.umu!.umuId),
-              WINEDLLOVERRIDES: buildDllOverrides(
-                appInfo.umu!.dllOverrides || []
-              ),
+              ...(dllOverrideString
+                ? { WINEDLLOVERRIDES: dllOverrideString }
+                : {}),
               PROTON_LOG: '1',
             },
             stdio: 'inherit',
@@ -457,6 +468,7 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
         launchArguments?: string;
         addonSource?: string;
         umu?: LibraryInfo['umu'];
+        launchEnv?: LibraryInfo['launchEnv'];
       }
     ) => {
       const appData = loadLibraryInfo(data.appID);
@@ -474,6 +486,9 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
       appData.version = data.version;
       appData.cwd = data.cwd;
       appData.launchExecutable = data.launchExecutable;
+      if (data.launchEnv !== undefined) {
+        appData.launchEnv = data.launchEnv;
+      }
 
       // Handle UMU config if provided
       if (data.umu) {
@@ -482,7 +497,7 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
         appData.umu.winePrefixPath = getUmuWinePrefix(data.umu.umuId);
 
         // Check if we need to migrate from legacy mode
-        if (appData.legacyMode) {
+        if (appData.legacyMode || appData.umu === undefined) {
           console.log('[update] Migrating game from legacy to UMU mode');
 
           // Get the old Steam app ID for migration (use old version)

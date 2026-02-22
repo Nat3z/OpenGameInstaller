@@ -27,18 +27,172 @@ function getUmuPrefixBase(): string {
 }
 
 const umuRunExecutable = path.join(__dirname, 'bin', 'umu', 'umu-run');
+const KNOWN_LAUNCH_ENV_VARS = new Set([
+  'WINEPREFIX',
+  'WINEDLLOVERRIDES',
+  'STEAM_COMPAT_DATA_PATH',
+  'PROTONPATH',
+  'GAMEID',
+  'STORE',
+]);
+const ENV_ASSIGNMENT_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*=/;
 
 function shellQuote(arg: string): string {
   return `'${arg.replace(/'/g, `'\\''`)}'`;
 }
 
-function parseLaunchArguments(launchArguments?: string): string[] {
+function parseLaunchArgumentTokens(launchArguments?: string): string[] {
   const launchArgs = (launchArguments || '').replace('%command%', '');
   return (
     launchArgs
       .match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g)
-      ?.map((arg) => arg.replace(/^['"]|['"]$/g, '')) ?? []
+      ?.map((arg) => {
+        const trimmed = arg.trim();
+        if (
+          (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+          (trimmed.startsWith("'") && trimmed.endsWith("'"))
+        ) {
+          return trimmed.slice(1, -1);
+        }
+        return trimmed;
+      }) ?? []
   );
+}
+
+function isKnownLaunchEnvAssignment(token: string): boolean {
+  const separatorIndex = token.indexOf('=');
+  if (separatorIndex <= 0) return false;
+  const key = token.slice(0, separatorIndex);
+  return KNOWN_LAUNCH_ENV_VARS.has(key);
+}
+
+function parseLeadingLaunchEnvFromArguments(
+  launchArguments?: string
+): Record<string, string> {
+  const env: Record<string, string> = {};
+  const tokens = parseLaunchArgumentTokens(launchArguments);
+  for (const token of tokens) {
+    if (!ENV_ASSIGNMENT_PATTERN.test(token)) break;
+    const separatorIndex = token.indexOf('=');
+    if (separatorIndex <= 0) continue;
+    const key = token.slice(0, separatorIndex).trim();
+    const value = token.slice(separatorIndex + 1).trim();
+    if (!key) continue;
+    env[key] = value;
+  }
+  return env;
+}
+
+function parseLaunchArguments(launchArguments?: string): string[] {
+  const tokens = parseLaunchArgumentTokens(launchArguments);
+  let start = 0;
+  while (start < tokens.length && ENV_ASSIGNMENT_PATTERN.test(tokens[start])) {
+    start++;
+  }
+  return tokens.slice(start).filter(
+    (token) => !isKnownLaunchEnvAssignment(token)
+  );
+}
+
+function uniqueCaseInsensitive(values: string[]): string[] {
+  const result: string[] = [];
+  const seen = new Set<string>();
+  for (const value of values) {
+    const trimmed = value.trim();
+    if (!trimmed) continue;
+    const normalized = trimmed.toLowerCase();
+    if (seen.has(normalized)) continue;
+    seen.add(normalized);
+    result.push(trimmed);
+  }
+  return result;
+}
+
+function parseDllOverridesValue(rawValue: string): string[] {
+  const trimmedValue = rawValue.trim();
+  if (!trimmedValue) return [];
+
+  const unquotedValue =
+    (trimmedValue.startsWith('"') && trimmedValue.endsWith('"')) ||
+    (trimmedValue.startsWith("'") && trimmedValue.endsWith("'"))
+      ? trimmedValue.slice(1, -1)
+      : trimmedValue;
+  const normalizedValue =
+    (unquotedValue.startsWith('\\"') && unquotedValue.endsWith('\\"')) ||
+    (unquotedValue.startsWith("\\'") && unquotedValue.endsWith("\\'"))
+      ? unquotedValue.slice(2, -2)
+      : unquotedValue;
+
+  const dllNames: string[] = [];
+  for (const segment of normalizedValue.split(';')) {
+    const trimmedSegment = segment.trim();
+    if (!trimmedSegment) continue;
+    const [leftSide] = trimmedSegment.split('=');
+    if (!leftSide) continue;
+    for (const dllName of leftSide.split(',')) {
+      const normalizedDllName = dllName
+        .trim()
+        .replace(/^\\?['"]/, '')
+        .replace(/\\?['"]$/, '');
+      if (!normalizedDllName) continue;
+      dllNames.push(normalizedDllName);
+    }
+  }
+  return uniqueCaseInsensitive(dllNames);
+}
+
+/**
+ * Extract DLL overrides from launch arguments such as:
+ * WINEDLLOVERRIDES=dinput8=n,b;dxgi=n,b %command%
+ */
+export function inferDllOverridesFromLaunchArguments(
+  launchArguments?: string
+): string[] {
+  const tokens = parseLaunchArgumentTokens(launchArguments);
+  const dllOverrideAssignment = tokens.find((token) =>
+    token.startsWith('WINEDLLOVERRIDES=')
+  );
+  if (!dllOverrideAssignment) {
+    return [];
+  }
+
+  const rawValue = dllOverrideAssignment.slice('WINEDLLOVERRIDES='.length);
+  return parseDllOverridesValue(rawValue);
+}
+
+function inferDllOverridesFromLaunchEnv(launchEnv?: Record<string, string>) {
+  const rawValue = launchEnv?.WINEDLLOVERRIDES;
+  if (!rawValue) return [];
+  return parseDllOverridesValue(rawValue);
+}
+
+export function getEffectiveLaunchEnv(
+  libraryInfo: Pick<LibraryInfo, 'launchArguments' | 'launchEnv'>
+): Record<string, string> {
+  const fromLaunchArguments = parseLeadingLaunchEnvFromArguments(
+    libraryInfo.launchArguments
+  );
+  const fromLibraryInfo = libraryInfo.launchEnv || {};
+  const merged = { ...fromLaunchArguments, ...fromLibraryInfo };
+  const sanitized: Record<string, string> = {};
+  for (const [key, value] of Object.entries(merged)) {
+    const normalizedKey = key.trim();
+    if (!normalizedKey) continue;
+    if (value === undefined || value === null) continue;
+    sanitized[normalizedKey] = String(value);
+  }
+  return sanitized;
+}
+
+export function getEffectiveDllOverrides(
+  libraryInfo: Pick<LibraryInfo, 'launchArguments' | 'launchEnv' | 'umu'>
+): string[] {
+  const effectiveLaunchEnv = getEffectiveLaunchEnv(libraryInfo);
+  return uniqueCaseInsensitive([
+    ...(libraryInfo.umu?.dllOverrides || []),
+    ...inferDllOverridesFromLaunchArguments(libraryInfo.launchArguments),
+    ...inferDllOverridesFromLaunchEnv(effectiveLaunchEnv),
+  ]);
 }
 
 export type RedistributableInstallProgress = {
@@ -94,16 +248,17 @@ export function buildUmuWrapperCommandTemplate(
     throw new Error('No UMU configuration found');
   }
 
-  const { umuId, dllOverrides } = libraryInfo.umu;
+  const { umuId } = libraryInfo.umu;
   const winePrefix = getUmuWinePrefix(umuId);
+  const dllOverrides = getEffectiveDllOverrides(libraryInfo);
+  const dllOverrideString = buildDllOverrides(dllOverrides);
   const parsedLaunchArgs = parseLaunchArguments(libraryInfo.launchArguments);
 
-  const parts = [
-    `PROTON_COMPAT_DATA_PATH=${shellQuote(winePrefix)}`,
-    `WINEDLLOVERRIDES=${shellQuote(buildDllOverrides(dllOverrides || []))}`,
-    '%command%',
-    ...parsedLaunchArgs.map((arg) => shellQuote(arg)),
-  ];
+  const parts = [`PROTON_COMPAT_DATA_PATH=${shellQuote(winePrefix)}`];
+  if (dllOverrideString) {
+    parts.push(`WINEDLLOVERRIDES=${shellQuote(dllOverrideString)}`);
+  }
+  parts.push('%command%', ...parsedLaunchArgs.map((arg) => shellQuote(arg)));
 
   return parts.join(' ');
 }
@@ -230,13 +385,17 @@ export async function launchWithUmu(
 
   ensureUmuPrefixBase();
 
-  const { umuId, dllOverrides, protonVersion, store } = libraryInfo.umu;
+  const { umuId, protonVersion, store } = libraryInfo.umu;
   const gameId = convertUmuId(umuId);
   const winePrefix = getUmuWinePrefix(umuId);
+  const launchEnv = getEffectiveLaunchEnv(libraryInfo);
+  const dllOverrides = getEffectiveDllOverrides(libraryInfo);
+  const dllOverrideStr = buildDllOverrides(dllOverrides);
 
   // Build environment variables
   const env: NodeJS.ProcessEnv = {
     ...process.env,
+    ...launchEnv,
     GAMEID: gameId,
     WINEPREFIX: winePrefix,
   };
@@ -252,11 +411,8 @@ export async function launchWithUmu(
   }
 
   // Build DLL overrides
-  if (dllOverrides && dllOverrides.length > 0) {
-    const dllOverrideStr = buildDllOverrides(dllOverrides);
-    if (dllOverrideStr) {
-      env.WINEDLLOVERRIDES = dllOverrideStr;
-    }
+  if (dllOverrideStr) {
+    env.WINEDLLOVERRIDES = dllOverrideStr;
   }
 
   const exePath = libraryInfo.launchExecutable;
@@ -268,7 +424,7 @@ export async function launchWithUmu(
     winePrefix,
     protonVersion: protonVersion,
     store: store || 'none',
-    hasDllOverrides: !!dllOverrides && dllOverrides.length > 0,
+    hasDllOverrides: dllOverrides.length > 0,
     environment: env,
   });
 
@@ -284,8 +440,8 @@ export async function launchWithUmu(
         GAMEID: gameId,
         WINEPREFIX: winePrefix,
         PROTONPATH: protonVersion || 'UMU-Latest',
-        STORE: store || 'none',
-        WINEDLLOVERRIDES: buildDllOverrides(dllOverrides || []),
+        ...(store ? { STORE: store } : {}),
+        ...(dllOverrideStr ? { WINEDLLOVERRIDES: dllOverrideStr } : {}),
         PWD: libraryInfo.cwd,
         UMU_LOG: 'debug',
       },
@@ -1113,11 +1269,15 @@ function getSilentInstallFlags(fileName: string): string[] {
  */
 export async function migrateToUmu(
   appID: number,
-  oldSteamAppId: number
+  oldSteamAppId?: number
 ): Promise<{ success: boolean; error?: string }> {
   console.log(
     `[umu] Migrating game ${appID} from legacy Steam prefix to UMU...`
   );
+
+  if (!isLinux()) {
+    return { success: false, error: 'Only available on Linux' };
+  }
 
   const libraryInfo = loadLibraryInfo(appID);
   if (!libraryInfo) {
@@ -1125,7 +1285,23 @@ export async function migrateToUmu(
   }
 
   if (!libraryInfo.umu) {
-    return { success: false, error: 'No UMU configuration found' };
+    const fallbackUmuId = oldSteamAppId
+      ? (`steam:${oldSteamAppId}` as const)
+      : (`umu:${appID}` as const);
+    libraryInfo.umu = {
+      umuId: fallbackUmuId,
+      winePrefixPath: getUmuWinePrefix(fallbackUmuId),
+    };
+    console.log(
+      `[umu] No UMU configuration found for ${appID}, created fallback config with umuId=${fallbackUmuId}`
+    );
+  }
+  const effectiveDllOverrides = getEffectiveDllOverrides(libraryInfo);
+  if (effectiveDllOverrides.length > 0) {
+    libraryInfo.umu = {
+      ...libraryInfo.umu,
+      dllOverrides: effectiveDllOverrides,
+    };
   }
 
   const homeDir = getHomeDir();
@@ -1133,22 +1309,40 @@ export async function migrateToUmu(
     return { success: false, error: 'Home directory not found' };
   }
 
-  const oldPrefixPath = path.join(
-    homeDir,
-    '.steam',
-    'steam',
-    'steamapps',
-    'compatdata',
-    oldSteamAppId.toString()
-  );
-
   const { umuId } = libraryInfo.umu;
   const newPrefixPath = getUmuWinePrefix(umuId);
+  let oldPrefixPath: string | undefined;
+
+  if (oldSteamAppId) {
+    oldPrefixPath = path.join(
+      homeDir,
+      '.steam',
+      'steam',
+      'steamapps',
+      'compatdata',
+      oldSteamAppId.toString()
+    );
+  }
+
+  if (!oldPrefixPath) {
+    console.log('[umu] Old Steam app ID not provided, skipping prefix copy');
+    libraryInfo.legacyMode = false;
+    libraryInfo.umu = {
+      ...libraryInfo.umu,
+      winePrefixPath: newPrefixPath,
+    };
+    saveLibraryInfo(appID, libraryInfo);
+    return { success: true };
+  }
 
   if (!fs.existsSync(oldPrefixPath)) {
     console.log('[umu] Old prefix not found, skipping migration');
     // Still mark as migrated, just start fresh
     libraryInfo.legacyMode = false;
+    libraryInfo.umu = {
+      ...libraryInfo.umu,
+      winePrefixPath: newPrefixPath,
+    };
     saveLibraryInfo(appID, libraryInfo);
     return { success: true };
   }
@@ -1254,7 +1448,7 @@ export function registerUmuHandlers() {
   // Migrate game to UMU
   ipcMain.handle(
     'app:migrate-to-umu',
-    async (_, appID: number, oldSteamAppId: number) => {
+    async (_, appID: number, oldSteamAppId?: number) => {
       return await migrateToUmu(appID, oldSteamAppId);
     }
   );

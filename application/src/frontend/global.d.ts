@@ -175,7 +175,8 @@ interface Window {
         launchExecutable: string,
         launchArguments?: string,
         addonSource?: string,
-        umu?: LibraryInfo['umu']
+        umu?: LibraryInfo['umu'],
+        launchEnv?: LibraryInfo['launchEnv']
       ) => Promise<'success' | 'app-not-found'>;
       addToSteam: (
         appID: number,
@@ -247,7 +248,7 @@ interface Window {
       ) => Promise<'success' | 'failed' | 'not-found'>;
       migrateToUmu: (
         appID: number,
-        oldSteamAppId: number
+        oldSteamAppId?: number
       ) => Promise<{ success: boolean; error?: string }>;
       /**
        * Quit the application entirely

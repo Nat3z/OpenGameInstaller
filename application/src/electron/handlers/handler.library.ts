@@ -40,17 +40,6 @@ import {
 } from './handler.umu.js';
 
 /**
- * Escapes a string for safe use in shell commands by escaping special characters
- */
-function escapeShellArg(arg: string): string {
-  return arg
-    .replace(/\\/g, '\\\\')
-    .replace(/"/g, '\\"')
-    .replace(/\$/g, '\\$')
-    .replace(/`/g, '\\`');
-}
-
-/**
  * Determine if a game should use UMU mode
  * - If game has `umu` config → use UMU
  * - If game has `legacyMode: true` → use legacy

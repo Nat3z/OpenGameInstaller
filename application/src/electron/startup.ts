@@ -59,7 +59,8 @@ async function execAsync(
       },
       (error, stdout, stderr) => {
         if (error) {
-          if (options?.timeout && (error as NodeJS.ErrnoException).killed) {
+          const execErr = error as NodeJS.ErrnoException & { killed?: boolean };
+          if (options?.timeout && execErr.killed) {
             reject(
               new Error(
                 `Command timed out after ${options.timeout}ms: ${command}`
@@ -67,10 +68,7 @@ async function execAsync(
             );
             return;
           }
-          if (
-            options?.maxBuffer &&
-            (error as NodeJS.ErrnoException).code === 'ENOBUFS'
-          ) {
+          if (options?.maxBuffer && execErr.code === 'ENOBUFS') {
             reject(
               new Error(
                 `Command output exceeded maxBuffer (${options.maxBuffer} bytes): ${command}`

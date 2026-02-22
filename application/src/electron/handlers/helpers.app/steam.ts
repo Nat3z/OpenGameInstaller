@@ -2,8 +2,6 @@
  * Steam/Proton helper functions
  */
 import { exec, execFile } from 'child_process';
-import * as fs from 'fs';
-import { join } from 'path';
 import { __dirname } from '../../manager/manager.paths.js';
 import { getOgiExecutablePath } from './platform.js';
 import { STEAMTINKERLAUNCH_PATH } from '../../startup.js';

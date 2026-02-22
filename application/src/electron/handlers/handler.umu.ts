@@ -44,18 +44,16 @@ function shellQuote(arg: string): string {
 function parseLaunchArgumentTokens(launchArguments?: string): string[] {
   const launchArgs = (launchArguments || '').replace('%command%', '');
   return (
-    launchArgs
-      .match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g)
-      ?.map((arg) => {
-        const trimmed = arg.trim();
-        if (
-          (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
-          (trimmed.startsWith("'") && trimmed.endsWith("'"))
-        ) {
-          return trimmed.slice(1, -1);
-        }
-        return trimmed;
-      }) ?? []
+    launchArgs.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g)?.map((arg) => {
+      const trimmed = arg.trim();
+      if (
+        (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+        (trimmed.startsWith("'") && trimmed.endsWith("'"))
+      ) {
+        return trimmed.slice(1, -1);
+      }
+      return trimmed;
+    }) ?? []
   );
 }
 
@@ -89,9 +87,9 @@ function parseLaunchArguments(launchArguments?: string): string[] {
   while (start < tokens.length && ENV_ASSIGNMENT_PATTERN.test(tokens[start])) {
     start++;
   }
-  return tokens.slice(start).filter(
-    (token) => !isKnownLaunchEnvAssignment(token)
-  );
+  return tokens
+    .slice(start)
+    .filter((token) => !isKnownLaunchEnvAssignment(token));
 }
 
 function uniqueCaseInsensitive(values: string[]): string[] {
@@ -1286,7 +1284,7 @@ export async function migrateToUmu(
 
   if (!libraryInfo.umu) {
     const fallbackUmuId = oldSteamAppId
-      ? (`steam:${oldSteamAppId}` as const)
+      ? (`steam:${appID}` as const)
       : (`umu:${appID}` as const);
     libraryInfo.umu = {
       umuId: fallbackUmuId,

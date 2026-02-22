@@ -69,7 +69,7 @@
     const isLegacy = libraryInfo.legacyMode === true || !libraryInfo.umu;
     return isLinuxOrMac && isWindowsExecutable && isLegacy;
   });
-  let needsUmuMigration = $derived(os === 'linux' && isLegacyWindowsGame);
+  let needsUmuMigration = $derived(isLegacyWindowsGame);
 
   async function doesLinkExist(url: string | undefined) {
     if (!url) return false;

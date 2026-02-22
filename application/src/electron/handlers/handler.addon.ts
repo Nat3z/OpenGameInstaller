@@ -48,6 +48,8 @@ export async function startAddons(): Promise<void> {
   }
   await Promise.allSettled(promises);
   console.log('All addons started');
+  // wait 2 seconds as the client needs to be ready to receive the event
+  await new Promise((resolve) => setTimeout(resolve, 2000));
   await sendIPCMessage('all-addons-started');
 }
 

@@ -170,8 +170,8 @@ export type SetupEventResponse = Omit<
      */
     umuId: UmuId;
     /**
-     * Optional DLL overrides. These are relative to the game's cwd.
-     * System automatically prepends cwd and sets WINEDLLOVERRIDES="dll=n,b"
+     * Optional DLL overrides. Can be WINEDLLOVERRIDES-style (e.g. "dinput8=n,b") or bare DLL names.
+     * Bare names get "=n,b" inferred; entries that already include "=..." are used as-is.
      */
     dllOverrides?: string[];
     /**

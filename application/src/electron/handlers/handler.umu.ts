@@ -107,6 +107,11 @@ function uniqueCaseInsensitive(values: string[]): string[] {
   return result;
 }
 
+/**
+ * Parse WINEDLLOVERRIDES value into an array of override entries.
+ * Preserves full override spec when present (e.g. "dinput8=n,b" stays "dinput8=n,b").
+ * Entries without "=" (bare DLL names) are left as-is; buildDllOverrides will infer "=n,b".
+ */
 function parseDllOverridesValue(rawValue: string): string[] {
   const trimmedValue = rawValue.trim();
   if (!trimmedValue) return [];
@@ -122,22 +127,32 @@ function parseDllOverridesValue(rawValue: string): string[] {
       ? unquotedValue.slice(2, -2)
       : unquotedValue;
 
-  const dllNames: string[] = [];
+  const entries: string[] = [];
   for (const segment of normalizedValue.split(';')) {
     const trimmedSegment = segment.trim();
     if (!trimmedSegment) continue;
-    const [leftSide] = trimmedSegment.split('=');
-    if (!leftSide) continue;
-    for (const dllName of leftSide.split(',')) {
-      const normalizedDllName = dllName
-        .trim()
+    const eqIndex = trimmedSegment.indexOf('=');
+    if (eqIndex >= 0) {
+      const leftSide = trimmedSegment.slice(0, eqIndex).trim();
+      const value = trimmedSegment.slice(eqIndex + 1).trim();
+      if (!leftSide) continue;
+      for (const dllName of leftSide.split(',')) {
+        const normalizedDllName = dllName
+          .trim()
+          .replace(/^\\?['"]/, '')
+          .replace(/\\?['"]$/, '');
+        if (!normalizedDllName) continue;
+        entries.push(`${normalizedDllName}=${value}`);
+      }
+    } else {
+      const normalizedDllName = trimmedSegment
         .replace(/^\\?['"]/, '')
         .replace(/\\?['"]$/, '');
       if (!normalizedDllName) continue;
-      dllNames.push(normalizedDllName);
+      entries.push(normalizedDllName);
     }
   }
-  return uniqueCaseInsensitive(dllNames);
+  return uniqueCaseInsensitive(entries);
 }
 
 /**
@@ -335,24 +350,28 @@ export function ensureUmuPrefixBase(): void {
 }
 
 /**
- * Build WINEDLLOVERRIDES string from dllOverrides array
- * Wine expects DLL names without the .dll extension (e.g., "dinput8=n,b")
+ * Build WINEDLLOVERRIDES string from dllOverrides array.
+ * Wine expects DLL names without the .dll extension (e.g., "dinput8=n,b").
+ * Only appends "=n,b" when an entry has no override spec (bare DLL name); otherwise preserves the existing spec.
  */
 export function buildDllOverrides(dllOverrides: string[]): string {
   if (!dllOverrides || dllOverrides.length === 0) {
     return '';
   }
 
-  // Build the override string: "dll1=n,b;dll2=n,b"
-  // Each DLL gets "n,b" (native first, then builtin)
-  // Wine expects DLL names without the .dll extension
-  const overrides = dllOverrides.map((dll) => {
-    // Get basename and strip .dll extension
-    const dllName = path.basename(dll).replace(/\.dll$/i, '');
+  const overrides = dllOverrides.map((entry) => {
+    const eqIndex = entry.indexOf('=');
+    const dllPart = eqIndex >= 0 ? entry.slice(0, eqIndex).trim() : entry.trim();
+    const dllName = path.basename(dllPart).replace(/\.dll$/i, '');
+    if (!dllName) return '';
+    if (eqIndex >= 0) {
+      const value = entry.slice(eqIndex + 1).trim();
+      return value ? `${dllName}=${value}` : `${dllName}=n,b`;
+    }
     return `${dllName}=n,b`;
   });
 
-  return overrides.join(';');
+  return overrides.filter(Boolean).join(';');
 }
 
 /**

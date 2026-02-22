@@ -17,6 +17,110 @@ import { sendNotification } from './main.js';
 import semver from 'semver';
 import { setupAddon } from './manager/manager.addon.js';
 
+const UMU_RELEASES_URL =
+  'https://api.github.com/repos/Open-Wine-Components/umu-launcher/releases/latest';
+const UMU_BIN_DIR = join(__dirname, 'bin', 'umu');
+const UMU_RUN_EXECUTABLE = join(UMU_BIN_DIR, 'umu-run');
+const UMU_TARBALL_PATH = join(UMU_BIN_DIR, 'umu-launcher-zipapp.tar');
+const UMU_VERSION_FILE = join(UMU_BIN_DIR, '.version');
+
+type UmuReleaseResponse = {
+  tag_name?: string;
+  assets?: Array<{ name: string; browser_download_url: string }>;
+};
+
+type DownloadLatestUmuResult = {
+  success: boolean;
+  updated: boolean;
+  currentVersion?: string;
+  latestVersion?: string;
+  error?: string;
+};
+
+function quoteForShell(value: string): string {
+  return `"${value.replace(/(["\\$`])/g, '\\$1')}"`;
+}
+
+function parseVersionFromText(text: string): string | null {
+  const match = text.match(/v?\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?/);
+  return match?.[0] ?? null;
+}
+
+async function execAsync(command: string): Promise<string> {
+  return new Promise<string>((resolve, reject) => {
+    exec(command, (error, stdout, stderr) => {
+      if (error) {
+        reject(error);
+        return;
+      }
+      resolve(`${stdout}\n${stderr}`.trim());
+    });
+  });
+}
+
+async function readInstalledUmuVersion(): Promise<string | null> {
+  if (fs.existsSync(UMU_VERSION_FILE)) {
+    const savedVersion = fs.readFileSync(UMU_VERSION_FILE, 'utf-8').trim();
+    if (savedVersion) {
+      return savedVersion;
+    }
+  }
+
+  if (!fs.existsSync(UMU_RUN_EXECUTABLE)) {
+    return null;
+  }
+
+  const versionCommands = ['--version', '-V'];
+  for (const flag of versionCommands) {
+    try {
+      const output = await execAsync(
+        `${quoteForShell(UMU_RUN_EXECUTABLE)} ${flag}`
+      );
+      const version = parseVersionFromText(output);
+      if (version) {
+        return version;
+      }
+    } catch {
+      // Try the next flag.
+    }
+  }
+
+  return null;
+}
+
+async function extractUmuTarball(tarballPath: string): Promise<void> {
+  await execAsync(
+    `tar -xvf ${quoteForShell(tarballPath)} -C ${quoteForShell(UMU_BIN_DIR)}`
+  );
+
+  const extractedEntries = fs.readdirSync(UMU_BIN_DIR, { withFileTypes: true });
+  const extractedDirectories = extractedEntries.filter((entry) =>
+    entry.isDirectory()
+  );
+  const nestedRootWithBinary = extractedDirectories.find((entry) =>
+    fs.existsSync(join(UMU_BIN_DIR, entry.name, 'umu-run'))
+  );
+  const nestedRoot = nestedRootWithBinary
+    ? join(UMU_BIN_DIR, nestedRootWithBinary.name)
+    : extractedDirectories.length === 1
+      ? join(UMU_BIN_DIR, extractedDirectories[0].name)
+      : null;
+
+  // Match current behavior: some archives contain one nested top-level directory.
+  if (nestedRoot) {
+    const nestedEntries = fs.readdirSync(nestedRoot, { withFileTypes: true });
+
+    for (const entry of nestedEntries) {
+      const src = join(nestedRoot, entry.name);
+      const dest = join(UMU_BIN_DIR, entry.name);
+      fs.rmSync(dest, { recursive: true, force: true });
+      fs.renameSync(src, dest);
+    }
+
+    fs.rmSync(nestedRoot, { recursive: true, force: true });
+  }
+}
+
 // check if NixOS using command -v nixos-rebuild
 export const IS_NIXOS = await (() => {
   return new Promise<boolean>((resolve) => {
@@ -538,4 +642,137 @@ export async function removeCachedAppUpdates() {
   }
 
   console.log('[chore] Removed cached app updates');
+}
+
+export async function downloadLatestUmu(): Promise<DownloadLatestUmuResult> {
+  console.log('[umu] Checking local UMU version against latest release');
+
+  let latestVersion = '';
+  let installedVersion: string | null = null;
+
+  try {
+    const releaseRes = await fetch(UMU_RELEASES_URL, {
+      headers: {
+        Accept: 'application/vnd.github+json',
+        'User-Agent': 'OpenGameInstaller',
+      },
+    });
+
+    if (!releaseRes.ok) {
+      return {
+        success: false,
+        updated: false,
+        error: `GitHub API failed: ${releaseRes.status} ${releaseRes.statusText}`,
+      };
+    }
+
+    const release = (await releaseRes.json()) as UmuReleaseResponse;
+    latestVersion = release.tag_name?.trim() ?? '';
+    if (!latestVersion) {
+      return {
+        success: false,
+        updated: false,
+        error: 'Latest release did not include a tag_name',
+      };
+    }
+
+    const zipappAsset = (release.assets ?? []).find((asset) =>
+      asset.name.includes('-zipapp.tar')
+    );
+    if (!zipappAsset?.browser_download_url) {
+      return {
+        success: false,
+        updated: false,
+        latestVersion,
+        error: 'No zipapp tarball found in latest release',
+      };
+    }
+
+    installedVersion = await readInstalledUmuVersion();
+    const normalizedInstalled = installedVersion
+      ? semver.coerce(installedVersion)?.version
+      : null;
+    const normalizedLatest = semver.coerce(latestVersion)?.version;
+
+    if (
+      normalizedInstalled &&
+      normalizedLatest &&
+      semver.gte(normalizedInstalled, normalizedLatest)
+    ) {
+      return {
+        success: true,
+        updated: false,
+        currentVersion: installedVersion ?? undefined,
+        latestVersion,
+      };
+    }
+
+    if (
+      !normalizedInstalled &&
+      installedVersion &&
+      installedVersion === latestVersion
+    ) {
+      return {
+        success: true,
+        updated: false,
+        currentVersion: installedVersion,
+        latestVersion,
+      };
+    }
+
+    if (!fs.existsSync(UMU_BIN_DIR)) {
+      fs.mkdirSync(UMU_BIN_DIR, { recursive: true });
+    }
+
+    const downloadRes = await fetch(zipappAsset.browser_download_url);
+    if (!downloadRes.ok) {
+      return {
+        success: false,
+        updated: false,
+        currentVersion: installedVersion ?? undefined,
+        latestVersion,
+        error: `Download failed: ${downloadRes.status} ${downloadRes.statusText}`,
+      };
+    }
+
+    const tarballData = Buffer.from(await downloadRes.arrayBuffer());
+    fs.writeFileSync(UMU_TARBALL_PATH, tarballData);
+
+    await extractUmuTarball(UMU_TARBALL_PATH);
+
+    if (!fs.existsSync(UMU_RUN_EXECUTABLE)) {
+      return {
+        success: false,
+        updated: false,
+        currentVersion: installedVersion ?? undefined,
+        latestVersion,
+        error: 'UMU run binary not found after extract',
+      };
+    }
+
+    fs.writeFileSync(UMU_VERSION_FILE, `${latestVersion}\n`);
+
+    return {
+      success: true,
+      updated: true,
+      currentVersion: installedVersion ?? undefined,
+      latestVersion,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      updated: false,
+      currentVersion: installedVersion ?? undefined,
+      latestVersion: latestVersion || undefined,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  } finally {
+    if (fs.existsSync(UMU_TARBALL_PATH)) {
+      try {
+        fs.unlinkSync(UMU_TARBALL_PATH);
+      } catch {
+        // Ignore cleanup errors.
+      }
+    }
+  }
 }

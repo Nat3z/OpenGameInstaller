@@ -193,7 +193,10 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
       }
 
       const verbIndex = parsed.findIndex((x) => x === verb);
-      const fixedArgs = [...parsed.slice(0, verbIndex + 1), appInfo.launchExecutable];
+      const fixedArgs = [
+        ...parsed.slice(0, verbIndex + 1),
+        appInfo.launchExecutable,
+      ];
 
       return await new Promise((resolve) => {
         const wrappedChild = spawn(

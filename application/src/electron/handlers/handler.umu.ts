@@ -3,17 +3,16 @@
  * Replaces the legacy Steam/flatpak wine system with UMU Launcher
  */
 import { ipcMain } from 'electron';
-import { exec, spawn } from 'child_process';
+import { spawn } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
-import { promisify } from 'util';
 import type { LibraryInfo } from 'ogi-addon';
 import { isLinux, getHomeDir } from './helpers.app/platform.js';
 import { loadLibraryInfo, saveLibraryInfo } from './helpers.app/library.js';
 import { generateNotificationId } from './helpers.app/notifications.js';
 import { sendNotification } from '../main.js';
 import { __dirname } from '../manager/manager.paths.js';
-const execAsync = promisify(exec);
+import { downloadLatestUmu } from '../startup.js';
 
 /**
  * Get the UMU prefix base directory
@@ -85,91 +84,27 @@ export async function isUmuInstalled(): Promise<boolean> {
   }
 }
 
-const UMU_RELEASES_URL =
-  'https://api.github.com/repos/Open-Wine-Components/umu-launcher/releases/latest';
-const UMU_BIN_DIR = path.join(__dirname, 'bin', 'umu');
-
 /**
  * Auto-install UMU launcher.
- * Fetches the latest release from GitHub, downloads the zipapp tarball,
- * extracts it to bin/umu/, then verifies umu-run exists.
+ * Uses startup updater flow, which compares local and latest GitHub versions
+ * before downloading/extracting.
  */
 export async function installUmu(): Promise<{
   success: boolean;
   error?: string;
 }> {
-  console.log('[umu] Installing UMU launcher...');
-
-  let zipappPath: string | null = null;
-
-  try {
-    // 1. Fetch latest release and find zipapp asset
-    const releaseRes = await fetch(UMU_RELEASES_URL);
-    if (!releaseRes.ok) {
-      return {
-        success: false,
-        error: `GitHub API failed: ${releaseRes.status} ${releaseRes.statusText}`,
-      };
-    }
-    const release = (await releaseRes.json()) as {
-      assets?: Array<{ name: string; browser_download_url: string }>;
-    };
-    const assets = release?.assets ?? [];
-    const zipappAsset = assets.find((a) => a.name.includes('-zipapp.tar'));
-    if (!zipappAsset?.browser_download_url) {
-      return {
-        success: false,
-        error: 'No zipapp tarball found in latest release',
-      };
-    }
-
-    // 2. Ensure bin/umu exists and resolve tar path
-    if (!fs.existsSync(UMU_BIN_DIR)) {
-      fs.mkdirSync(UMU_BIN_DIR, { recursive: true });
-    }
-    zipappPath = path.join(UMU_BIN_DIR, 'umu-launcher-zipapp.tar');
-
-    // 3. Download zipapp tarball
-    const downloadRes = await fetch(zipappAsset.browser_download_url);
-    if (!downloadRes.ok) {
-      return {
-        success: false,
-        error: `Download failed: ${downloadRes.status} ${downloadRes.statusText}`,
-      };
-    }
-    const arrayBuffer = await downloadRes.arrayBuffer();
-    fs.writeFileSync(zipappPath, Buffer.from(arrayBuffer));
-
-    // 4. Extract tarball into bin/umu
-    await execAsync(`tar -xvf ${zipappPath} -C ${UMU_BIN_DIR}`);
-
-    // 5. Flatten: tarball may have a single top-level dir (e.g. "umu") — move contents up
-    const entries = fs.readdirSync(UMU_BIN_DIR, { withFileTypes: true });
-    const dirs = entries.filter((e) => e.isDirectory());
-    if (dirs.length === 1) {
-      const innerDir = path.join(UMU_BIN_DIR, dirs[0].name);
-      for (const e of fs.readdirSync(innerDir, { withFileTypes: true })) {
-        const src = path.join(innerDir, e.name);
-        const dest = path.join(UMU_BIN_DIR, e.name);
-        fs.renameSync(src, dest);
-      }
-      fs.rmdirSync(innerDir);
-    }
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    return { success: false, error: message };
-  } finally {
-    if (zipappPath != null && fs.existsSync(zipappPath)) {
-      try {
-        fs.unlinkSync(zipappPath);
-      } catch {
-        // ignore cleanup failure
-      }
-    }
+  const result = await downloadLatestUmu();
+  if (!result.success) {
+    return { success: false, error: result.error ?? 'Unknown UMU error' };
   }
-
-  if (!fs.existsSync(umuRunExecutable)) {
-    return { success: false, error: 'UMU run binary not found after extract' };
+  if (result.updated) {
+    console.log(
+      `[umu] Updated UMU from ${result.currentVersion ?? 'none'} to ${result.latestVersion ?? 'latest'}`
+    );
+  } else {
+    console.log(
+      `[umu] UMU already up to date (${result.latestVersion ?? result.currentVersion ?? 'unknown'})`
+    );
   }
   return { success: true };
 }

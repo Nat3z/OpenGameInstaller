@@ -164,9 +164,9 @@ export type SetupEventResponse = Omit<
    */
   umu?: {
     /**
-     * UMU ID for the game. Format: 'steam:${number}' or 'umu:${number}'
+     * UMU ID for the game. Format: 'steam:${number}' or 'umu:${string | number}'
      * - steam:${number} → maps to umu-${number} for Steam games
-     * - umu:${number} → maps to umu-${number} for non-Steam games
+     * - umu:${string | number} → maps to umu-${string | number} for non-Steam games
      */
     umuId: UmuId;
     /**
@@ -900,8 +900,8 @@ export const ZodLibraryInfo = z.object({
       umuId: z
         .string()
         .regex(
-          /^(steam|umu):[\d\w]+$/,
-          'Must be in format steam:{number} or umu:{number | string}'
+          /^(steam|umu):\S+$/,
+          'Must be in format steam:{number} or umu:{string | number}'
         ),
       dllOverrides: z.array(z.string()).optional(),
       protonVersion: z.string().optional(),

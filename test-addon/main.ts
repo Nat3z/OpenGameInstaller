@@ -300,8 +300,8 @@ manifest: ${manifest}
               '1.0.0',
             umu: {
               umuId: 'umu:genshin',
-              protonVersion: 'proton:7.0',
-              store: 'store:1',
+              protonVersion: 'GE-Proton9-5',
+              store: 'gog',
               winePrefixPath: '/home/user/.local/share/umu/1',
             },
           });

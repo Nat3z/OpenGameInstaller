@@ -5,7 +5,10 @@
 import { ipcMain } from 'electron';
 import type { LibraryInfo } from 'ogi-addon';
 import { isLinux } from './helpers.app/platform.js';
-import { getNonSteamGameAppID } from './helpers.app/steam.js';
+import {
+  getNonSteamGameAppID,
+  getVersionedGameName,
+} from './helpers.app/steam.js';
 import { loadLibraryInfo } from './helpers.app/library.js';
 import {
   installRedistributablesWithUmu,
@@ -74,7 +77,7 @@ export function registerRedistributableHandlers() {
         );
 
         // Look up Steam App ID dynamically using steamtinkerlaunch nonsteamgame system
-        const versionedGameName = `${appInfo.name} (${appInfo.version})`;
+        const versionedGameName = getVersionedGameName(appInfo.name, appInfo.version);
         const { success, appId: steamAppId } =
           await getNonSteamGameAppID(versionedGameName);
 

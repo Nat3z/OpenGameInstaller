@@ -210,29 +210,38 @@ export async function executeWrapperCommandForApp(
   }
 
   const verbIndex = parsed.findIndex((x) => x === verb);
-  const fixedArgs = [
-    ...parsed.slice(0, verbIndex + 1),
-    appInfo.launchExecutable,
-  ];
+  const fixedArgs =
+    verbIndex === -1
+      ? [...parsed, appInfo.launchExecutable]
+      : [
+          ...parsed.slice(0, verbIndex + 1),
+          appInfo.launchExecutable,
+        ];
 
   return await new Promise((resolve) => {
     const effectiveLaunchEnv = getEffectiveLaunchEnv(appInfo);
     const effectiveDllOverrides = getEffectiveDllOverrides(appInfo);
     const dllOverrideString = buildDllOverrides(effectiveDllOverrides);
+    const baseEnv = {
+      ...process.env,
+      ...effectiveLaunchEnv,
+      PROTON_LOG: '1',
+    };
+    const env = appInfo.umu
+      ? {
+          ...baseEnv,
+          STEAM_COMPAT_DATA_PATH: getUmuWinePrefix(appInfo.umu.umuId),
+          WINEPREFIX: getUmuWinePrefix(appInfo.umu.umuId),
+          ...(dllOverrideString ? { WINEDLLOVERRIDES: dllOverrideString } : {}),
+        }
+      : baseEnv;
     const wrappedChild = spawn(
       parsed[0].toString(),
       fixedArgs.slice(1).map((x) => x.toString()),
       {
         cwd: appInfo.cwd,
-        env: {
-          ...process.env,
-          ...effectiveLaunchEnv,
-          STEAM_COMPAT_DATA_PATH: getUmuWinePrefix(appInfo.umu!.umuId),
-          WINEPREFIX: getUmuWinePrefix(appInfo.umu!.umuId),
-          ...(dllOverrideString ? { WINEDLLOVERRIDES: dllOverrideString } : {}),
-          PROTON_LOG: '1',
-        },
-        stdio: 'inherit',
+        env,
+        stdio: ['ignore', 'pipe', 'pipe'],
       }
     );
 
@@ -316,8 +325,8 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
       ensureLibraryDir();
       ensureInternalsDir();
 
-      // Check if UMU is available and should be used
-      const umuAvailable = isLinux() || process.platform === 'darwin';
+      // Check if UMU is available and should be used (Linux only; macOS uses legacy)
+      const umuAvailable = isLinux();
 
       if (umuAvailable && data.umu) {
         console.log('[setup] Using UMU mode for new game');

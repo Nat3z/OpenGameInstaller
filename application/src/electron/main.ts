@@ -318,6 +318,8 @@ let isReadyForEvents = false;
 let readyForEventWaiters: (() => void)[] = [];
 let clientReadyListenerRegistered = false;
 
+const IPC_READY_TIMEOUT_MS = 15000;
+
 export async function sendIPCMessage(channel: string, ...args: any[]) {
   // If no renderer window is available (e.g., --game-id launch path), skip IPC dispatch
   if (!mainWindow || mainWindow.isDestroyed()) {
@@ -325,11 +327,21 @@ export async function sendIPCMessage(channel: string, ...args: any[]) {
   }
 
   if (!isReadyForEvents) {
-    await new Promise<void>((resolve) => {
-      console.log('waiting for events');
-      readyForEventWaiters.push(resolve);
-    });
-    console.log('events ready');
+    await Promise.race([
+      new Promise<void>((resolve) => {
+        console.log('waiting for events');
+        readyForEventWaiters.push(resolve);
+      }),
+      new Promise<void>((resolve) => {
+        setTimeout(() => {
+          console.warn(
+            '[sendIPCMessage] client-ready-for-events not received within timeout, proceeding'
+          );
+          resolve();
+        }, IPC_READY_TIMEOUT_MS);
+      }),
+    ]);
+    if (isReadyForEvents) console.log('events ready');
   }
   mainWindow?.webContents.send(channel, ...args);
 }
@@ -764,11 +776,19 @@ app.on('ready', async () => {
 
     // Check if this is a hook-only launch (--no-launch with --pre or --post)
     if (hookArgs.noLaunch && (hookArgs.runPre || hookArgs.runPost)) {
-      const hookType = hookArgs.runPre ? 'pre' : 'post';
-      console.log(
-        `[app] Hook-only launch detected (${hookType}-launch), running hooks for game ${gameIdToLaunch}`
-      );
-      await handleLaunchHooks(gameIdToLaunch, hookType);
+      if (hookArgs.runPre && hookArgs.runPost) {
+        console.log(
+          `[app] Hook-only launch detected (pre+post), running both hooks for game ${gameIdToLaunch}`
+        );
+        await handleLaunchHooks(gameIdToLaunch, 'pre');
+        await handleLaunchHooks(gameIdToLaunch, 'post');
+      } else {
+        const hookType = hookArgs.runPre ? 'pre' : 'post';
+        console.log(
+          `[app] Hook-only launch detected (${hookType}-launch), running hooks for game ${gameIdToLaunch}`
+        );
+        await handleLaunchHooks(gameIdToLaunch, hookType);
+      }
       return;
     }
 
@@ -811,13 +831,15 @@ app.on('window-all-closed', async function () {
       clearInterval(interval);
     }
 
-    // stop the server
-    console.log('Stopping server...');
-    await new Promise<void>((resolve) => {
-      server.close(() => {
-        resolve();
+    // stop the server (only if it was listening to avoid hang)
+    if (server.listening) {
+      console.log('Stopping server...');
+      await new Promise<void>((resolve) => {
+        server.close(() => {
+          resolve();
+        });
       });
-    });
+    }
   } catch (error) {
     console.error('Error during cleanup:', error);
   }

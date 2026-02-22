@@ -149,6 +149,9 @@ export const currentStorePageOpened: Writable<number | undefined> = writable();
 export const currentStorePageOpenedStorefront: Writable<string | undefined> =
   writable();
 export const gameFocused: Writable<number | undefined> = writable();
+/** Set by PlayPage onMount when opened from GameLaunchOverlay; overlay waits for this before firing launchGameTrigger */
+export const launchOverlayPlayPageReady: Writable<number | undefined> =
+  writable(undefined);
 export const launchGameTrigger: Writable<number | undefined> =
   writable(undefined);
 export const gamesLaunched: Writable<Record<string, 'launched' | 'error'>> =

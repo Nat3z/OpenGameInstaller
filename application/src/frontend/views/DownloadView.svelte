@@ -1050,7 +1050,7 @@
     color: var(--theme-warning-hover);
   }
 
-  .status-badge.proton-setup {
+  .status-badge.installing-redistributables {
     @apply bg-accent-lighter text-accent-dark;
   }
 
@@ -1215,7 +1215,7 @@
     }
   }
 
-  .installing-redistributables {
+  .status-badge.installing-redistributables {
     background: color-mix(in srgb, var(--theme-warning) 18%, transparent);
     color: var(--theme-warning-hover);
   }

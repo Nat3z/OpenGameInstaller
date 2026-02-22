@@ -48,8 +48,24 @@ export async function startAddons(): Promise<void> {
   }
   await Promise.allSettled(promises);
   console.log('All addons started');
-  // wait 2 seconds as the client needs to be ready to receive the event
-  await new Promise((resolve) => setTimeout(resolve, 2000));
+
+  // Wait for addons to send events-available so per-app update checks (checkForUpdates) can find them.
+  // Addons send events-available after authenticate; without this wait, the frontend's
+  // checkForAppUpdates can run before eventsAvailable is set and return 404 for every app.
+  const expectedAddonCount = promises.length;
+  if (expectedAddonCount > 0) {
+    const deadline = Date.now() + 5000;
+    while (Date.now() < deadline) {
+      const clientList = Array.from(clients.values());
+      const allReady =
+        clientList.length > 0 &&
+        clientList.every((c) => c.eventsAvailable.length > 0);
+      if (allReady) break;
+      await new Promise((r) => setTimeout(r, 50));
+    }
+  }
+
+  // sendIPCMessage waits for client-ready-for-events (with timeout) before sending
   await sendIPCMessage('all-addons-started');
 }
 
@@ -64,10 +80,15 @@ export async function restartAddonServer() {
     const killed = processes[process].kill('SIGKILL');
     console.log(`Killed process ${process}: ${killed}`);
   }
-  // start the server
-  server.listen(port, () => {
-    console.log(`Addon Server is running on http://localhost:${port}`);
-    console.log(`Server is being executed by electron!`);
+  // start the server and wait for it to be listening before starting addons
+  await new Promise<void>((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(port, () => {
+      server.removeListener('error', reject);
+      console.log(`Addon Server is running on http://localhost:${port}`);
+      console.log(`Server is being executed by electron!`);
+      resolve();
+    });
   });
   await startAddons();
 

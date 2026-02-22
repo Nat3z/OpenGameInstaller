@@ -77,9 +77,11 @@ export async function addUmuGameToSteam(params: {
     return { success: false, error: 'Failed to add game to Steam' };
   }
 
-  // Get the Steam app ID
-  const { success, appId: steamAppId } = await getNonSteamGameAppID(
-    params.name
+  // Get the Steam app ID (try versioned shortcut name first, then plain name)
+  const { success, appId: steamAppId } = await getSteamAppIdWithFallback(
+    params.name,
+    params.version,
+    'addGameToSteam'
   );
 
   if (!success || !steamAppId) {

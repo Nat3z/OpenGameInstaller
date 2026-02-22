@@ -246,8 +246,10 @@ export async function runSetupApp(
         downloadPath: downloadedItem.downloadPath,
       });
 
-      // Start auto-installation in background
-      startRedistributableInstallation(downloadedItem.id, downloadedItem.appID);
+      // Start auto-installation in background (guard against unhandled rejections)
+      startRedistributableInstallation(downloadedItem.id, downloadedItem.appID).catch(
+        (err) => console.error('[setup] startRedistributableInstallation failed:', err)
+      );
 
       return data;
     }

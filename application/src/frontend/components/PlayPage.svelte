@@ -8,6 +8,7 @@
     currentStorePageOpenedStorefront,
     gamesLaunched,
     launchGameTrigger,
+    launchOverlayPlayPageReady,
     setHeaderBackButton,
     clearHeaderBackButton,
     createNotification,
@@ -154,6 +155,10 @@
       );
     }
   }
+
+  onMount(() => {
+    launchOverlayPlayPageReady.set(libraryInfo.appID);
+  });
 
   const unsubscribe2 = launchGameTrigger.subscribe((game) => {
     console.log('launchGameTrigger', libraryInfo.appID);

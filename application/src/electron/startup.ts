@@ -650,13 +650,36 @@ export async function downloadLatestUmu(): Promise<DownloadLatestUmuResult> {
   let latestVersion = '';
   let installedVersion: string | null = null;
 
+  const FETCH_TIMEOUT_MS = 15000;
+
   try {
-    const releaseRes = await fetch(UMU_RELEASES_URL, {
-      headers: {
-        Accept: 'application/vnd.github+json',
-        'User-Agent': 'OpenGameInstaller',
-      },
-    });
+    const releaseController = new AbortController();
+    const releaseTimeout = setTimeout(
+      () => releaseController.abort(),
+      FETCH_TIMEOUT_MS
+    );
+    let releaseRes: Response;
+    try {
+      releaseRes = await fetch(UMU_RELEASES_URL, {
+        headers: {
+          Accept: 'application/vnd.github+json',
+          'User-Agent': 'OpenGameInstaller',
+        },
+        signal: releaseController.signal,
+      });
+    } catch (err) {
+      if (err instanceof Error && err.name === 'AbortError') {
+        clearTimeout(releaseTimeout);
+        return {
+          success: false,
+          updated: false,
+          error: 'Request timed out while fetching UMU release info',
+        };
+      }
+      throw err;
+    } finally {
+      clearTimeout(releaseTimeout);
+    }
 
     if (!releaseRes.ok) {
       return {
@@ -724,7 +747,32 @@ export async function downloadLatestUmu(): Promise<DownloadLatestUmuResult> {
       fs.mkdirSync(UMU_BIN_DIR, { recursive: true });
     }
 
-    const downloadRes = await fetch(zipappAsset.browser_download_url);
+    const downloadController = new AbortController();
+    const downloadTimeout = setTimeout(
+      () => downloadController.abort(),
+      FETCH_TIMEOUT_MS
+    );
+    let downloadRes: Response;
+    try {
+      downloadRes = await fetch(zipappAsset.browser_download_url, {
+        signal: downloadController.signal,
+      });
+    } catch (err) {
+      if (err instanceof Error && err.name === 'AbortError') {
+        clearTimeout(downloadTimeout);
+        return {
+          success: false,
+          updated: false,
+          currentVersion: installedVersion ?? undefined,
+          latestVersion,
+          error: 'Request timed out while downloading UMU zipapp',
+        };
+      }
+      throw err;
+    } finally {
+      clearTimeout(downloadTimeout);
+    }
+
     if (!downloadRes.ok) {
       return {
         success: false,

@@ -100,10 +100,10 @@ export class AddonServer {
 
     const inputSafe = inputSchema.safeParse(request.params);
     if (!inputSafe.success) {
-      return new ProcedureError(
-        400,
-        'Invalid input: ' + JSON.stringify(inputSafe.error)
-      );
+      const message =
+        inputSafe.error.message ||
+        'Invalid input: ' + JSON.stringify(inputSafe.error.issues);
+      return new ProcedureError(400, message);
     }
 
     const handler = proc.getHandler();

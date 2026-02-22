@@ -10,6 +10,7 @@ import type { LibraryInfo } from 'ogi-addon';
 import { isLinux, getHomeDir } from './helpers.app/platform.js';
 import { loadLibraryInfo, saveLibraryInfo } from './helpers.app/library.js';
 import { generateNotificationId } from './helpers.app/notifications.js';
+import { getSilentInstallFlags } from './helpers.app/install-flags.js';
 import { sendNotification } from '../main.js';
 import { __dirname } from '../manager/manager.paths.js';
 import { downloadLatestUmu } from '../startup.js';
@@ -416,6 +417,12 @@ export async function launchWithUmu(
   const exePath = libraryInfo.launchExecutable;
   const parsedLaunchArgs = parseLaunchArguments(libraryInfo.launchArguments);
 
+  // Log launch info without leaking full env (may contain secrets)
+  const envSummary = {
+    keyCount: Object.keys(env).length,
+    hasWINEPREFIX: 'WINEPREFIX' in env,
+    hasPROTONPATH: 'PROTONPATH' in env,
+  };
   console.log('[umu] Launching game:', {
     name: libraryInfo.name,
     gameId,
@@ -423,7 +430,7 @@ export async function launchWithUmu(
     protonVersion: protonVersion,
     store: store || 'none',
     hasDllOverrides: dllOverrides.length > 0,
-    environment: env,
+    environment: envSummary,
   });
 
   return new Promise((resolve) => {
@@ -640,7 +647,7 @@ export async function installRedistributablesWithUmu(
                 PROTONPATH: protonVersion || 'UMU-Latest',
                 PWD: libraryInfo.cwd,
               },
-              stdio: 'inherit',
+              stdio: ['ignore', 'pipe', 'pipe'],
             }
           );
         } else if (
@@ -653,8 +660,8 @@ export async function installRedistributablesWithUmu(
           finalize(false);
           return;
         } else {
-          // Regular redistributable file
-          const redistPath = path.resolve(redistributable.path);
+          // Regular redistributable file (resolve relative to game cwd)
+          const redistPath = path.resolve(libraryInfo.cwd, redistributable.path);
           if (!fs.existsSync(redistPath)) {
             console.error('[umu] Redistributable not found:', redistPath);
             finalize(false);
@@ -674,7 +681,7 @@ export async function installRedistributablesWithUmu(
               PWD: libraryInfo.cwd,
             },
             cwd: redistDir,
-            stdio: 'inherit',
+            stdio: ['ignore', 'pipe', 'pipe'],
           });
         }
 
@@ -1045,8 +1052,8 @@ export async function installRedistributablesWithUmuForLegacy(
             }
           );
         } else {
-          // Regular redistributable file - run with UMU
-          const redistPath = path.resolve(redistributable.path);
+          // Regular redistributable file - run with UMU (resolve relative to game cwd)
+          const redistPath = path.resolve(libraryInfo.cwd, redistributable.path);
           if (!fs.existsSync(redistPath)) {
             console.error(
               '[umu-legacy] Redistributable not found:',
@@ -1216,52 +1223,6 @@ export async function installRedistributablesWithUmuForLegacy(
 }
 
 /**
- * Get silent install flags for redistributable files
- */
-function getSilentInstallFlags(fileName: string): string[] {
-  const lowerFileName = fileName.toLowerCase();
-
-  if (
-    lowerFileName.includes('vcredist') ||
-    lowerFileName.includes('vc_redist')
-  ) {
-    return ['/S', '/v/qn'];
-  }
-
-  if (
-    lowerFileName.includes('directx') ||
-    lowerFileName.includes('dxwebsetup')
-  ) {
-    return ['/S'];
-  }
-
-  if (lowerFileName.includes('dotnet') || lowerFileName.includes('netfx')) {
-    if (lowerFileName.includes('netfxrepairtool')) {
-      return ['/p'];
-    }
-    return ['/S', '/v/qn'];
-  }
-
-  if (lowerFileName.endsWith('.msi')) {
-    return ['/S', '/qn'];
-  }
-
-  if (lowerFileName.includes('nsis') || lowerFileName.includes('setup')) {
-    return ['/S'];
-  }
-
-  if (lowerFileName.includes('inno')) {
-    return ['/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART'];
-  }
-
-  if (lowerFileName.includes('installshield')) {
-    return ['/S', '/v/qn'];
-  }
-
-  return ['/S'];
-}
-
-/**
  * Migrate an existing game from legacy mode to UMU
  * This copies the existing Steam prefix to the new UMU location
  */
@@ -1284,7 +1245,7 @@ export async function migrateToUmu(
 
   if (!libraryInfo.umu) {
     const fallbackUmuId = oldSteamAppId
-      ? (`steam:${appID}` as const)
+      ? (`steam:${oldSteamAppId}` as const)
       : (`umu:${appID}` as const);
     libraryInfo.umu = {
       umuId: fallbackUmuId,

@@ -38,12 +38,11 @@
     const appID = (event as CustomEvent).detail.id;
     const isShortcutLaunch = isShortcutLaunchForGame(appID);
 
-    // For Steam shortcut launches, unhide first so post-launch UI is visible.
-    if (isShortcutLaunch) {
-      await window.electronAPI.app.showWindow();
-    }
-
     try {
+      // For Steam shortcut launches, unhide first so post-launch UI is visible.
+      if (isShortcutLaunch) {
+        await window.electronAPI.app.showWindow();
+      }
       // run the addon launch-app event with launchType 'post'
       let library = await getAllApps();
       const libraryInfo = library.find((app) => app.appID === appID);

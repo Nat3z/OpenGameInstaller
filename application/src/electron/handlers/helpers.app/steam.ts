@@ -22,10 +22,15 @@ function escapeShellArg(arg: string): string {
 }
 
 /**
- * Escapes a value so it can be safely embedded inside a double-quoted argument
+ * Escapes a value so it can be safely embedded inside a double-quoted argument.
+ * Escapes backslashes, double quotes, $ and backticks to prevent shell expansion.
  */
 function escapeDoubleQuotedValue(value: string): string {
-  return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+  return value
+    .replace(/\\/g, '\\\\')
+    .replace(/"/g, '\\"')
+    .replace(/\$/g, '\\$')
+    .replace(/`/g, '\\`');
 }
 
 const cachedAppIds: Record<string, number> = {};

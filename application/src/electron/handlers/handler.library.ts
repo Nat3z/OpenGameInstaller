@@ -25,10 +25,7 @@ import {
 } from './helpers.app/library.js';
 import { generateNotificationId } from './helpers.app/notifications.js';
 import { sendNotification } from '../main.js';
-import {
-  getOgiPrefixPath,
-  getProtonPrefixPath,
-} from './helpers.app/platform.js';
+import { getProtonPrefixPath } from './helpers.app/platform.js';
 import * as fs from 'fs';
 import {
   launchWithUmu,
@@ -203,10 +200,11 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
           parsed[0].toString(),
           fixedArgs.slice(1).map((x) => x.toString()),
           {
+            cwd: appInfo.cwd,
             env: {
               ...process.env,
-              STEAM_COMPAT_DATA_PATH: getOgiPrefixPath(appInfo.appID),
-              WINEPREFIX: getOgiPrefixPath(appInfo.appID) + '/pfx',
+              STEAM_COMPAT_DATA_PATH: getUmuWinePrefix(appInfo.umu!.umuId),
+              WINEPREFIX: getUmuWinePrefix(appInfo.umu!.umuId),
               WINEDLLOVERRIDES: buildDllOverrides(
                 appInfo.umu!.dllOverrides || []
               ),

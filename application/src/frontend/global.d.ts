@@ -208,7 +208,8 @@ interface Window {
         error?: string;
       }>;
       installRedistributables: (
-        appID: number
+        appID: number,
+        downloadId?: string
       ) => Promise<'success' | 'failed' | 'not-found'>;
       addToDesktop: () => Promise<{
         success: boolean;

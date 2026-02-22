@@ -266,13 +266,82 @@ export async function runSetupApp(
   }
 }
 
-/**
- * Run setup for an app update. This only updates the version in the library file
- * without running redistributables or adding to Steam.
- */
+type RedistributableProgressDetail = {
+  appID: number;
+  downloadId?: string;
+  kind: 'item' | 'done';
+  total: number;
+  completedCount: number;
+  failedCount: number;
+  overallProgress: number;
+  redistributableName?: string;
+  redistributablePath?: string;
+  index?: number;
+  status?: 'installing' | 'completed' | 'failed';
+  result?: 'success' | 'failed' | 'not-found';
+  error?: string;
+};
+
+function applyRedistributableProgress(
+  downloadId: string,
+  progress: RedistributableProgressDetail
+) {
+  redistributableInstalls.update((setups) => {
+    const current = setups[downloadId];
+    if (!current) return setups;
+
+    const overallProgress = Number.isFinite(progress.overallProgress)
+      ? Math.max(0, Math.min(100, progress.overallProgress))
+      : current.overallProgress;
+    const updatedRedistributables = [...current.redistributables];
+
+    if (progress.kind === 'item') {
+      let targetIndex =
+        typeof progress.index === 'number' ? progress.index : -1;
+      if (targetIndex < 0 || targetIndex >= updatedRedistributables.length) {
+        targetIndex = updatedRedistributables.findIndex(
+          (redist) =>
+            redist.name === progress.redistributableName &&
+            redist.path === progress.redistributablePath
+        );
+      }
+
+      if (targetIndex >= 0 && progress.status) {
+        updatedRedistributables[targetIndex] = {
+          ...updatedRedistributables[targetIndex],
+          status: progress.status,
+        };
+      }
+
+      return {
+        ...setups,
+        [downloadId]: {
+          ...current,
+          redistributables: updatedRedistributables,
+          overallProgress,
+          isComplete: false,
+        },
+      };
+    }
+
+    return {
+      ...setups,
+      [downloadId]: {
+        ...current,
+        overallProgress: 100,
+        isComplete: true,
+        error:
+          progress.result === 'success'
+            ? undefined
+            : progress.error || 'Redistributable installation failed',
+      },
+    };
+  });
+}
+
 /**
  * Start redistributable installation in background
- * Updates progress and marks complete regardless of success/failure
+ * Progress is driven by backend UMU events.
  */
 export async function startRedistributableInstallation(
   downloadId: string,
@@ -281,96 +350,71 @@ export async function startRedistributableInstallation(
   const setup = get(redistributableInstalls)[downloadId];
   if (!setup) return;
 
-  const totalRedistributables = setup.redistributables.length;
+  let sawBackendProgress = false;
 
-  // Install each redistributable sequentially
-  for (let i = 0; i < setup.redistributables.length; i++) {
-    const redist = setup.redistributables[i];
+  const onRedistributableProgress = (event: Event) => {
+    const detail = (event as CustomEvent<RedistributableProgressDetail>).detail;
+    if (!detail || detail.appID !== appID) return;
+    if (detail.downloadId && detail.downloadId !== downloadId) return;
 
-    // Update status to installing
+    sawBackendProgress = true;
+    applyRedistributableProgress(downloadId, detail);
+  };
+
+  document.addEventListener(
+    'app:redistributable-progress',
+    onRedistributableProgress
+  );
+
+  let result: 'success' | 'failed' | 'not-found' = 'failed';
+  try {
+    result = await window.electronAPI.app.installRedistributables(
+      appID,
+      downloadId
+    );
+  } catch (error) {
+    console.error('[setup] Redistributable installation error:', error);
+    result = 'failed';
+  } finally {
+    document.removeEventListener(
+      'app:redistributable-progress',
+      onRedistributableProgress
+    );
+  }
+
+  if (!sawBackendProgress) {
+    const fallbackStatus = result === 'success' ? 'completed' : 'failed';
+    const fallbackError =
+      result === 'success'
+        ? undefined
+        : result === 'not-found'
+          ? 'Game not found while installing redistributables'
+          : 'Redistributable installation failed';
+
     redistributableInstalls.update((setups) => {
       const current = setups[downloadId];
       if (!current) return setups;
-      const updatedRedistributables = [...current.redistributables];
-      updatedRedistributables[i] = { ...redist, status: 'installing' };
       return {
         ...setups,
         [downloadId]: {
           ...current,
-          redistributables: updatedRedistributables,
-          overallProgress: (i / totalRedistributables) * 100,
+          redistributables: current.redistributables.map((redist) => ({
+            ...redist,
+            status: fallbackStatus,
+          })),
+          overallProgress: 100,
+          isComplete: true,
+          error: fallbackError,
         },
       };
     });
-
-    try {
-      // Note: The backend installs all redistributables at once
-      // We simulate progress by updating status for each item
-      await new Promise((resolve) => setTimeout(resolve, 500));
-
-      // Mark as completed
-      redistributableInstalls.update((setups) => {
-        const current = setups[downloadId];
-        if (!current) return setups;
-        const updatedRedistributables = [...current.redistributables];
-        updatedRedistributables[i] = { ...redist, status: 'completed' };
-        return {
-          ...setups,
-          [downloadId]: {
-            ...current,
-            redistributables: updatedRedistributables,
-            overallProgress: ((i + 1) / totalRedistributables) * 100,
-          },
-        };
-      });
-    } catch (error) {
-      // Mark as failed but continue
-      redistributableInstalls.update((setups) => {
-        const current = setups[downloadId];
-        if (!current) return setups;
-        const updatedRedistributables = [...current.redistributables];
-        updatedRedistributables[i] = { ...redist, status: 'failed' };
-        return {
-          ...setups,
-          [downloadId]: {
-            ...current,
-            redistributables: updatedRedistributables,
-            overallProgress: ((i + 1) / totalRedistributables) * 100,
-          },
-        };
-      });
-    }
   }
 
-  // Call the backend to actually install all redistributables
-  try {
-    await window.electronAPI.app.installRedistributables(appID);
-  } catch (error) {
-    console.error('[setup] Redistributable installation error:', error);
-    // Continue anyway - mark as complete regardless of failure
-  }
-
-  // Mark as complete and cleanup
-  redistributableInstalls.update((setups) => {
-    const current = setups[downloadId];
-    if (!current) return setups;
-    return {
-      ...setups,
-      [downloadId]: {
-        ...current,
-        overallProgress: 100,
-        isComplete: true,
-      },
-    };
-  });
-
-  // Give a moment for the UI to show 100% then mark setup complete
-  setTimeout(() => {
+  if (result === 'success') {
     updateDownloadStatus(downloadId, {
       status: 'setup-complete',
     });
 
-    // Remove from tracking
     redistributableInstalls.update((setups) => {
       delete setups[downloadId];
       return setups;
@@ -381,9 +425,46 @@ export async function startRedistributableInstallation(
       type: 'success',
       message: `Setup complete for ${setup.gameName}!`,
     });
-  }, 1000);
+    return;
+  }
+
+  updateDownloadStatus(downloadId, {
+    status: 'error',
+    error:
+      result === 'not-found'
+        ? 'redistributables-app-not-found'
+        : 'setup-redistributables-failed',
+  });
+
+  redistributableInstalls.update((setups) => {
+    const current = setups[downloadId];
+    if (!current) return setups;
+    return {
+      ...setups,
+      [downloadId]: {
+        ...current,
+        isComplete: true,
+        overallProgress: 100,
+        error:
+          current.error ||
+          (result === 'not-found'
+            ? 'Game not found while installing redistributables'
+            : 'Redistributable installation failed'),
+      },
+    };
+  });
+
+  createNotification({
+    id: Math.random().toString(36).substring(2, 9),
+    type: 'error',
+    message: `Redistributable install failed for ${setup.gameName}.`,
+  });
 }
 
+/**
+ * Run setup for an app update. This only updates the version in the library file
+ * without running redistributables or adding to Steam.
+ */
 export async function runSetupAppUpdate(
   downloadedItem: DownloadStatusAndInfo,
   outputDir: string,

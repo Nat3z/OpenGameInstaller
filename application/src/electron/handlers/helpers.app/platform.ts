@@ -22,11 +22,3 @@ export function getProtonPrefixPath(steamAppId: number): string {
   const compatDataDir = getCompatDataDir();
   return `${compatDataDir}/${steamAppId}/pfx`;
 }
-
-export function getOgiPrefixPath(appId: number): string {
-  const homeDir = getHomeDir();
-  if (!homeDir) {
-    throw new Error('Home directory not found');
-  }
-  return `${homeDir}/.ogi-wine-prefixes/umu-${appId}`;
-}

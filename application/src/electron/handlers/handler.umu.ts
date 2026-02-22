@@ -41,6 +41,43 @@ function parseLaunchArguments(launchArguments?: string): string[] {
   );
 }
 
+export type RedistributableInstallProgress = {
+  kind: 'item' | 'done';
+  total: number;
+  completedCount: number;
+  failedCount: number;
+  overallProgress: number;
+  redistributableName?: string;
+  redistributablePath?: string;
+  index?: number;
+  status?: 'installing' | 'completed' | 'failed';
+  result?: 'success' | 'failed' | 'not-found';
+  error?: string;
+};
+
+type RedistributableProgressReporter = (
+  progress: RedistributableInstallProgress
+) => void;
+
+function streamChildProcessOutput(
+  child: ReturnType<typeof spawn>,
+  prefix: string
+): void {
+  child.stdout?.on('data', (chunk) => {
+    const lines = chunk.toString().split(/\r?\n/).filter(Boolean);
+    for (const line of lines) {
+      console.log(`${prefix} ${line}`);
+    }
+  });
+
+  child.stderr?.on('data', (chunk) => {
+    const lines = chunk.toString().split(/\r?\n/).filter(Boolean);
+    for (const line of lines) {
+      console.error(`${prefix} ${line}`);
+    }
+  });
+}
+
 export function getUmuRunExecutablePath(): string {
   return umuRunExecutable;
 }
@@ -300,25 +337,61 @@ export async function launchWithUmu(
  * Install redistributables using UMU winetricks
  */
 export async function installRedistributablesWithUmu(
-  appID: number
+  appID: number,
+  reportProgress?: RedistributableProgressReporter
 ): Promise<'success' | 'failed' | 'not-found'> {
   if (!isLinux()) {
+    reportProgress?.({
+      kind: 'done',
+      total: 0,
+      completedCount: 0,
+      failedCount: 0,
+      overallProgress: 100,
+      result: 'failed',
+      error: 'UMU redistributables are only available on Linux',
+    });
     return 'failed';
   }
 
   const libraryInfo = loadLibraryInfo(appID);
   if (!libraryInfo) {
+    reportProgress?.({
+      kind: 'done',
+      total: 0,
+      completedCount: 0,
+      failedCount: 0,
+      overallProgress: 100,
+      result: 'not-found',
+      error: `Game not found for appID ${appID}`,
+    });
     return 'not-found';
   }
 
   // Check if this is a legacy game
   if (libraryInfo.legacyMode) {
     console.log('[umu] Legacy mode game, skipping UMU redistributables');
+    reportProgress?.({
+      kind: 'done',
+      total: libraryInfo.redistributables?.length ?? 0,
+      completedCount: 0,
+      failedCount: libraryInfo.redistributables?.length ?? 0,
+      overallProgress: 100,
+      result: 'failed',
+      error: 'Game is in legacy mode and cannot use UMU redistributable flow',
+    });
     return 'failed';
   }
 
   if (!libraryInfo.umu && !libraryInfo.redistributables) {
     console.log('[umu] No redistributables to install');
+    reportProgress?.({
+      kind: 'done',
+      total: 0,
+      completedCount: 0,
+      failedCount: 0,
+      overallProgress: 100,
+      result: 'success',
+    });
     return 'success';
   }
 
@@ -327,6 +400,15 @@ export async function installRedistributablesWithUmu(
   if (!umuInstalled) {
     const installResult = await installUmu();
     if (!installResult.success) {
+      reportProgress?.({
+        kind: 'done',
+        total: libraryInfo.redistributables?.length ?? 0,
+        completedCount: 0,
+        failedCount: libraryInfo.redistributables?.length ?? 0,
+        overallProgress: 100,
+        result: 'failed',
+        error: installResult.error ?? 'Failed to install UMU',
+      });
       return 'failed';
     }
   }
@@ -340,13 +422,31 @@ export async function installRedistributablesWithUmu(
     : path.join(getUmuPrefixBase(), 'umu-default');
 
   const redistributables = libraryInfo.redistributables || [];
+  const totalRedistributables = redistributables.length;
 
   console.log(
     `[umu] Installing ${redistributables.length} redistributables for ${libraryInfo.name}`
   );
 
   let anyFailed = false;
-  for (const redistributable of redistributables) {
+  let completedCount = 0;
+  let failedCount = 0;
+  for (const [index, redistributable] of redistributables.entries()) {
+    reportProgress?.({
+      kind: 'item',
+      total: totalRedistributables,
+      completedCount,
+      failedCount,
+      overallProgress:
+        totalRedistributables === 0
+          ? 100
+          : ((completedCount + failedCount) / totalRedistributables) * 100,
+      redistributableName: redistributable.name,
+      redistributablePath: redistributable.path,
+      index,
+      status: 'installing',
+    });
+
     try {
       sendNotification({
         message: `Installing ${redistributable.name} for ${libraryInfo.name}`,
@@ -373,7 +473,7 @@ export async function installRedistributablesWithUmu(
           env.PROTONPATH = protonVersion;
         }
 
-        let child;
+        let child: ReturnType<typeof spawn>;
 
         if (redistributable.path === 'winetricks') {
           // Use winetricks verb
@@ -382,9 +482,7 @@ export async function installRedistributablesWithUmu(
             ['winetricks', redistributable.name],
             {
               env: {
-                UMU_LOG: 'debug',
-                GAMEID: gameId,
-                WINEPREFIX: winePrefix,
+                ...env,
                 PROTONPATH: protonVersion || 'UMU-Latest',
                 PWD: libraryInfo.cwd,
               },
@@ -418,16 +516,15 @@ export async function installRedistributablesWithUmu(
           child = spawn(umuRunExecutable, [redistFile, ...silentFlags], {
             env: {
               ...env,
-              GAMEID: gameId,
-              WINEPREFIX: winePrefix,
               PROTONPATH: protonVersion || 'UMU-Latest',
               PWD: libraryInfo.cwd,
-              UMU_LOG: 'debug',
             },
             cwd: redistDir,
             stdio: ['ignore', 'pipe', 'pipe'],
           });
         }
+
+        streamChildProcessOutput(child, `[umu redist:${redistributable.name}]`);
 
         const timeout = setTimeout(
           () => {
@@ -461,26 +558,72 @@ export async function installRedistributablesWithUmu(
       });
 
       if (success) {
+        completedCount++;
         sendNotification({
           message: `Installed ${redistributable.name} for ${libraryInfo.name}`,
           id: generateNotificationId(),
           type: 'success',
         });
+        reportProgress?.({
+          kind: 'item',
+          total: totalRedistributables,
+          completedCount,
+          failedCount,
+          overallProgress:
+            totalRedistributables === 0
+              ? 100
+              : ((completedCount + failedCount) / totalRedistributables) * 100,
+          redistributableName: redistributable.name,
+          redistributablePath: redistributable.path,
+          index,
+          status: 'completed',
+        });
       } else {
         anyFailed = true;
+        failedCount++;
         sendNotification({
           message: `Failed to install ${redistributable.name} for ${libraryInfo.name}`,
           id: generateNotificationId(),
           type: 'error',
         });
+        reportProgress?.({
+          kind: 'item',
+          total: totalRedistributables,
+          completedCount,
+          failedCount,
+          overallProgress:
+            totalRedistributables === 0
+              ? 100
+              : ((completedCount + failedCount) / totalRedistributables) * 100,
+          redistributableName: redistributable.name,
+          redistributablePath: redistributable.path,
+          index,
+          status: 'failed',
+        });
       }
     } catch (error) {
       anyFailed = true;
+      failedCount++;
       console.error(`[umu] Error installing ${redistributable.name}:`, error);
       sendNotification({
         message: `Failed to install ${redistributable.name} for ${libraryInfo.name}`,
         id: generateNotificationId(),
         type: 'error',
+      });
+      reportProgress?.({
+        kind: 'item',
+        total: totalRedistributables,
+        completedCount,
+        failedCount,
+        overallProgress:
+          totalRedistributables === 0
+            ? 100
+            : ((completedCount + failedCount) / totalRedistributables) * 100,
+        redistributableName: redistributable.name,
+        redistributablePath: redistributable.path,
+        index,
+        status: 'failed',
+        error: error instanceof Error ? error.message : String(error),
       });
     }
   }
@@ -502,6 +645,19 @@ export async function installRedistributablesWithUmu(
     type: anyFailed ? 'warning' : 'success',
   });
 
+  const unresolvedCount = Math.max(
+    0,
+    totalRedistributables - completedCount - failedCount
+  );
+  reportProgress?.({
+    kind: 'done',
+    total: totalRedistributables,
+    completedCount,
+    failedCount: anyFailed ? failedCount + unresolvedCount : failedCount,
+    overallProgress: 100,
+    result: anyFailed ? 'failed' : 'success',
+  });
+
   return anyFailed ? 'failed' : 'success';
 }
 
@@ -511,14 +667,33 @@ export async function installRedistributablesWithUmu(
  */
 export async function installRedistributablesWithUmuForLegacy(
   appID: number,
-  steamAppId: number
+  steamAppId: number,
+  reportProgress?: RedistributableProgressReporter
 ): Promise<'success' | 'failed' | 'not-found'> {
   if (!isLinux()) {
+    reportProgress?.({
+      kind: 'done',
+      total: 0,
+      completedCount: 0,
+      failedCount: 0,
+      overallProgress: 100,
+      result: 'failed',
+      error: 'UMU redistributables are only available on Linux',
+    });
     return 'failed';
   }
 
   const libraryInfo = loadLibraryInfo(appID);
   if (!libraryInfo) {
+    reportProgress?.({
+      kind: 'done',
+      total: 0,
+      completedCount: 0,
+      failedCount: 0,
+      overallProgress: 100,
+      result: 'not-found',
+      error: `Game not found for appID ${appID}`,
+    });
     return 'not-found';
   }
 
@@ -527,6 +702,14 @@ export async function installRedistributablesWithUmuForLegacy(
     libraryInfo.redistributables.length === 0
   ) {
     console.log('[umu-legacy] No redistributables to install');
+    reportProgress?.({
+      kind: 'done',
+      total: 0,
+      completedCount: 0,
+      failedCount: 0,
+      overallProgress: 100,
+      result: 'success',
+    });
     return 'success';
   }
 
@@ -540,6 +723,15 @@ export async function installRedistributablesWithUmuForLegacy(
         '[umu-legacy] UMU auto-install failed:',
         installResult.error
       );
+      reportProgress?.({
+        kind: 'done',
+        total: libraryInfo.redistributables.length,
+        completedCount: 0,
+        failedCount: libraryInfo.redistributables.length,
+        overallProgress: 100,
+        result: 'failed',
+        error: installResult.error ?? 'Failed to install UMU',
+      });
       return 'failed';
     }
   }
@@ -548,6 +740,15 @@ export async function installRedistributablesWithUmuForLegacy(
   const homeDir = getHomeDir();
   if (!homeDir) {
     console.error('[umu-legacy] Cannot determine home directory');
+    reportProgress?.({
+      kind: 'done',
+      total: libraryInfo.redistributables.length,
+      completedCount: 0,
+      failedCount: libraryInfo.redistributables.length,
+      overallProgress: 100,
+      result: 'failed',
+      error: 'Cannot determine home directory',
+    });
     return 'failed';
   }
 
@@ -580,6 +781,7 @@ export async function installRedistributablesWithUmuForLegacy(
       ['wine', 'cmd', '/c', 'echo', 'Prefix initialized'],
       {
         env: {
+          ...process.env,
           UMU_LOG: 'debug',
           GAMEID: `umu-${steamAppId}`,
           WINEPREFIX: winePrefix,
@@ -589,6 +791,7 @@ export async function installRedistributablesWithUmuForLegacy(
         stdio: ['ignore', 'pipe', 'pipe'],
       }
     );
+    streamChildProcessOutput(initChild, '[umu-legacy prefix-init]');
 
     const timeout = setTimeout(
       () => {
@@ -614,6 +817,15 @@ export async function installRedistributablesWithUmuForLegacy(
 
   if (!initSuccess) {
     console.error('[umu-legacy] Failed to initialize prefix');
+    reportProgress?.({
+      kind: 'done',
+      total: libraryInfo.redistributables.length,
+      completedCount: 0,
+      failedCount: libraryInfo.redistributables.length,
+      overallProgress: 100,
+      result: 'failed',
+      error: 'Failed to initialize Wine prefix with UMU',
+    });
     return 'failed';
   }
 
@@ -621,9 +833,27 @@ export async function installRedistributablesWithUmuForLegacy(
 
   // Now install redistributables using UMU winetricks
   const redistributables = libraryInfo.redistributables;
+  const totalRedistributables = redistributables.length;
   let anyFailed = false;
+  let completedCount = 0;
+  let failedCount = 0;
 
-  for (const redistributable of redistributables) {
+  for (const [index, redistributable] of redistributables.entries()) {
+    reportProgress?.({
+      kind: 'item',
+      total: totalRedistributables,
+      completedCount,
+      failedCount,
+      overallProgress:
+        totalRedistributables === 0
+          ? 100
+          : ((completedCount + failedCount) / totalRedistributables) * 100,
+      redistributableName: redistributable.name,
+      redistributablePath: redistributable.path,
+      index,
+      status: 'installing',
+    });
+
     try {
       sendNotification({
         message: `Installing ${redistributable.name} for ${libraryInfo.name}`,
@@ -641,7 +871,7 @@ export async function installRedistributablesWithUmuForLegacy(
           resolve(result);
         };
 
-        let child;
+        let child: ReturnType<typeof spawn>;
 
         if (redistributable.path === 'winetricks') {
           // Use winetricks verb via UMU
@@ -650,6 +880,7 @@ export async function installRedistributablesWithUmuForLegacy(
             ['winetricks', redistributable.name],
             {
               env: {
+                ...process.env,
                 UMU_LOG: 'debug',
                 GAMEID: `umu-${steamAppId}`,
                 WINEPREFIX: winePrefix,
@@ -677,6 +908,7 @@ export async function installRedistributablesWithUmuForLegacy(
 
           child = spawn(umuRunExecutable, [redistFile, ...silentFlags], {
             env: {
+              ...process.env,
               UMU_LOG: 'debug',
               GAMEID: `umu-${steamAppId}`,
               WINEPREFIX: winePrefix,
@@ -687,6 +919,11 @@ export async function installRedistributablesWithUmuForLegacy(
             stdio: ['ignore', 'pipe', 'pipe'],
           });
         }
+
+        streamChildProcessOutput(
+          child,
+          `[umu-legacy redist:${redistributable.name}]`
+        );
 
         const timeout = setTimeout(
           () => {
@@ -718,21 +955,52 @@ export async function installRedistributablesWithUmuForLegacy(
       });
 
       if (success) {
+        completedCount++;
         sendNotification({
           message: `Installed ${redistributable.name} for ${libraryInfo.name}`,
           id: generateNotificationId(),
           type: 'success',
         });
+        reportProgress?.({
+          kind: 'item',
+          total: totalRedistributables,
+          completedCount,
+          failedCount,
+          overallProgress:
+            totalRedistributables === 0
+              ? 100
+              : ((completedCount + failedCount) / totalRedistributables) * 100,
+          redistributableName: redistributable.name,
+          redistributablePath: redistributable.path,
+          index,
+          status: 'completed',
+        });
       } else {
         anyFailed = true;
+        failedCount++;
         sendNotification({
           message: `Failed to install ${redistributable.name} for ${libraryInfo.name}`,
           id: generateNotificationId(),
           type: 'error',
         });
+        reportProgress?.({
+          kind: 'item',
+          total: totalRedistributables,
+          completedCount,
+          failedCount,
+          overallProgress:
+            totalRedistributables === 0
+              ? 100
+              : ((completedCount + failedCount) / totalRedistributables) * 100,
+          redistributableName: redistributable.name,
+          redistributablePath: redistributable.path,
+          index,
+          status: 'failed',
+        });
       }
     } catch (error) {
       anyFailed = true;
+      failedCount++;
       console.error(
         `[umu-legacy] Error installing ${redistributable.name}:`,
         error
@@ -741,6 +1009,21 @@ export async function installRedistributablesWithUmuForLegacy(
         message: `Failed to install ${redistributable.name} for ${libraryInfo.name}`,
         id: generateNotificationId(),
         type: 'error',
+      });
+      reportProgress?.({
+        kind: 'item',
+        total: totalRedistributables,
+        completedCount,
+        failedCount,
+        overallProgress:
+          totalRedistributables === 0
+            ? 100
+            : ((completedCount + failedCount) / totalRedistributables) * 100,
+        redistributableName: redistributable.name,
+        redistributablePath: redistributable.path,
+        index,
+        status: 'failed',
+        error: error instanceof Error ? error.message : String(error),
       });
     }
   }
@@ -760,6 +1043,19 @@ export async function installRedistributablesWithUmuForLegacy(
       : `Finished installing dependencies for ${libraryInfo.name}`,
     id: generateNotificationId(),
     type: anyFailed ? 'warning' : 'success',
+  });
+
+  const unresolvedCount = Math.max(
+    0,
+    totalRedistributables - completedCount - failedCount
+  );
+  reportProgress?.({
+    kind: 'done',
+    total: totalRedistributables,
+    completedCount,
+    failedCount: anyFailed ? failedCount + unresolvedCount : failedCount,
+    overallProgress: 100,
+    result: anyFailed ? 'failed' : 'success',
   });
 
   return anyFailed ? 'failed' : 'success';

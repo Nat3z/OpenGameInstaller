@@ -306,8 +306,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     checkPrefixExists: wrap((appID: number) =>
       ipcRenderer.invoke('app:check-prefix-exists', appID)
     ),
-    installRedistributables: wrap((appID: number) =>
-      ipcRenderer.invoke('app:install-redistributables', appID)
+    installRedistributables: wrap((appID: number, downloadId?: string) =>
+      ipcRenderer.invoke('app:install-redistributables', appID, downloadId)
     ),
     getSteamAppId: wrap((appID: number) =>
       ipcRenderer.invoke('app:get-steam-app-id', appID)
@@ -395,6 +395,15 @@ ipcRenderer.on(
   wrap((_, arg) => {
     document.dispatchEvent(
       new CustomEvent('new-notification', { detail: arg })
+    );
+  })
+);
+
+ipcRenderer.on(
+  'app:redistributable-progress',
+  wrap((_, arg) => {
+    document.dispatchEvent(
+      new CustomEvent('app:redistributable-progress', { detail: arg })
     );
   })
 );

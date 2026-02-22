@@ -160,7 +160,6 @@ export async function addGameToSteam(params: {
   appID: number;
   compatibilityTool?: string;
 }): Promise<boolean> {
-  const gameName = getVersionedGameName(params.name, params.version);
   const ogiPath = getOgiExecutablePath();
   const wrapperCommand =
     params.wrapperCommand && params.wrapperCommand.length > 0
@@ -173,7 +172,7 @@ export async function addGameToSteam(params: {
 
   return new Promise<boolean>((resolve) =>
     exec(
-      `${STEAMTINKERLAUNCH_PATH} addnonsteamgame --appname="${escapeShellArg(gameName)}" --exepath="${escapeShellArg(params.launchExecutable)}" --startdir="${escapeShellArg(params.cwd)}" --launchoptions="${escapeShellArg(launchOptions)}"${compatibilityToolArg} --use-steamgriddb`,
+      `${STEAMTINKERLAUNCH_PATH} addnonsteamgame --appname="${escapeShellArg(params.name)}" --exepath="${escapeShellArg(params.launchExecutable)}" --startdir="${escapeShellArg(params.cwd)}" --launchoptions="${escapeShellArg(launchOptions)}"${compatibilityToolArg} --use-steamgriddb`,
       {
         cwd: __dirname,
       },

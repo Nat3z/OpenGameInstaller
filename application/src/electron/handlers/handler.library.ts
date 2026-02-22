@@ -351,7 +351,7 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
         const versionedGameName = getVersionedGameName(data.name, data.version);
 
         const result = await addGameToSteam({
-          name: data.name,
+          name: versionedGameName,
           version: data.version,
           launchExecutable: data.launchExecutable,
           cwd: data.cwd,

@@ -250,6 +250,16 @@
         libraryInfo = updatedLibraryInfo;
       }
 
+      // Queue Steam re-add requirement so the existing banner appears
+      // and persistence writes update-state.json automatically.
+      appUpdates.requiredReadds = [
+        ...appUpdates.requiredReadds.filter((r) => r.appID !== libraryInfo.appID),
+        {
+          appID: libraryInfo.appID,
+          steamAppId: oldSteamAppId ?? 0,
+        },
+      ];
+
       createNotification({
         id: Math.random().toString(36).substring(7),
         type: 'success',

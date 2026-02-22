@@ -1,6 +1,12 @@
 import { join } from 'path';
 import { quote as shellQuote } from 'shell-quote';
-import { server, port } from './server/addon-server.js';
+import {
+  addonServer,
+  registerInstanceBridgeHandlers,
+  server,
+  port,
+  type LaunchForwardPayload,
+} from './server/addon-server.js';
 import { applicationAddonSecret } from './server/constants.js';
 import { app, BrowserWindow, globalShortcut, ipcMain, shell } from 'electron';
 import fs, { existsSync, readFileSync } from 'fs';
@@ -25,6 +31,11 @@ import AddonManagerHandler, { startAddons } from './handlers/handler.addon.js';
 import OOBEHandler from './handlers/handler.oobe.js';
 import { runStartupTasks, closeSplashWindow } from './startup-runner.js';
 import { registerUmuHandlers } from './handlers/handler.umu.js';
+import {
+  executeWrapperCommandForApp,
+  launchGameFromLibrary,
+} from './handlers/handler.library.js';
+import { loadLibraryInfo } from './handlers/helpers.app/library.js';
 // import steamworks from 'steamworks.js';
 
 /**
@@ -74,6 +85,79 @@ function parseWrapperAfterSeparator(): string | null {
 
   const args = process.argv.slice(separatorIndex + 1);
   return args.map((arg) => shellQuote([arg])).join(' ');
+}
+
+const INSTANCE_BRIDGE_BASE_URL = `http://127.0.0.1:${port}/internal`;
+const INSTANCE_BRIDGE_TIMEOUT_MS = 1500;
+
+function buildLaunchForwardPayload(
+  gameId: number,
+  hookArgs: ReturnType<typeof parseLaunchHookArgs>,
+  wrapperCommand: string | null
+): LaunchForwardPayload {
+  return {
+    gameId,
+    noLaunch: hookArgs.noLaunch,
+    runPre: hookArgs.runPre,
+    runPost: hookArgs.runPost,
+    wrapperCommand,
+    originalArgv: process.argv.slice(1),
+  };
+}
+
+async function requestRunningInstance(
+  path: string,
+  init: RequestInit = {}
+): Promise<Response | null> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => {
+    controller.abort();
+  }, INSTANCE_BRIDGE_TIMEOUT_MS);
+
+  try {
+    return await fetch(`${INSTANCE_BRIDGE_BASE_URL}${path}`, {
+      ...init,
+      signal: controller.signal,
+    });
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+async function isRunningInstanceAvailable(): Promise<boolean> {
+  const response = await requestRunningInstance('/ping');
+  if (!response?.ok) {
+    return false;
+  }
+
+  try {
+    const body = (await response.json()) as { ok?: boolean };
+    return body.ok === true;
+  } catch {
+    return false;
+  }
+}
+
+async function requestRunningInstanceFocus(): Promise<boolean> {
+  const response = await requestRunningInstance('/focus', {
+    method: 'POST',
+  });
+  return response?.ok === true;
+}
+
+async function forwardLaunchToRunningInstance(
+  payload: LaunchForwardPayload
+): Promise<boolean> {
+  const response = await requestRunningInstance('/launch', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
+  return response?.ok === true;
 }
 
 /**
@@ -497,6 +581,124 @@ async function startAppFlow(win: BrowserWindow) {
   }
 }
 
+function focusMainWindow(): boolean {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return false;
+  }
+
+  if (mainWindow.isMinimized()) {
+    mainWindow.restore();
+  }
+
+  mainWindow.show();
+  mainWindow.focus();
+  return true;
+}
+
+async function runAddonLaunchEvent(
+  gameId: number,
+  launchType: 'pre' | 'post'
+): Promise<{ success: boolean; error?: string }> {
+  const libraryInfo = loadLibraryInfo(gameId);
+  if (!libraryInfo) {
+    return { success: false, error: 'Game not found in library' };
+  }
+
+  const response = await addonServer.handleRequest({
+    method: 'launchApp',
+    params: {
+      libraryInfo,
+      launchType,
+    },
+  });
+
+  if (response.tag === 'error') {
+    return { success: false, error: response.error };
+  }
+
+  return { success: true };
+}
+
+async function handleRemoteLaunchRequest(
+  payload: LaunchForwardPayload
+): Promise<{ success: boolean; error?: string }> {
+  console.log(
+    `[instance-bridge] Remote launch requested for game ${payload.gameId}`,
+    payload
+  );
+
+  focusMainWindow();
+
+  if (payload.noLaunch) {
+    if (!payload.runPre && !payload.runPost) {
+      return {
+        success: false,
+        error: 'No hook stage specified for no-launch request',
+      };
+    }
+
+    if (payload.runPre) {
+      const preResult = await runAddonLaunchEvent(payload.gameId, 'pre');
+      if (!preResult.success) {
+        return preResult;
+      }
+    }
+
+    if (payload.runPost) {
+      const postResult = await runAddonLaunchEvent(payload.gameId, 'post');
+      if (!postResult.success) {
+        return postResult;
+      }
+    }
+
+    return { success: true };
+  }
+
+  if (payload.wrapperCommand && payload.wrapperCommand.trim().length > 0) {
+    const preResult = await runAddonLaunchEvent(payload.gameId, 'pre');
+    if (!preResult.success) {
+      return preResult;
+    }
+
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.hide();
+    }
+
+    const wrapperResult = await executeWrapperCommandForApp(
+      payload.gameId,
+      payload.wrapperCommand
+    );
+
+    focusMainWindow();
+
+    if (!wrapperResult.success) {
+      return {
+        success: false,
+        error: wrapperResult.error ?? 'Wrapped launch failed',
+      };
+    }
+
+    const postResult = await runAddonLaunchEvent(payload.gameId, 'post');
+    if (!postResult.success) {
+      return postResult;
+    }
+
+    return { success: true };
+  }
+
+  const preResult = await runAddonLaunchEvent(payload.gameId, 'pre');
+  if (!preResult.success) {
+    return preResult;
+  }
+
+  return await launchGameFromLibrary(payload.gameId, mainWindow);
+}
+
+registerInstanceBridgeHandlers({
+  onFocus: () => focusMainWindow(),
+  onLaunch: (payload) => handleRemoteLaunchRequest(payload),
+});
+
 // This method will be called when Electron has finished
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
@@ -507,6 +709,45 @@ app.on('ready', async () => {
   const gameIdToLaunch = parseGameIdArg();
   const hookArgs = parseLaunchHookArgs();
   const wrapperCommand = parseWrapperAfterSeparator();
+  const launchForwardPayload =
+    gameIdToLaunch !== null
+      ? buildLaunchForwardPayload(gameIdToLaunch, hookArgs, wrapperCommand)
+      : null;
+
+  // Before creating any window or starting runtime, check if another OGI instance
+  // is already serving the local port and forward launch/focus requests to it.
+  const runningInstanceAvailable = await isRunningInstanceAvailable();
+  if (runningInstanceAvailable) {
+    console.log('[instance-bridge] Existing instance detected on local port');
+
+    if (launchForwardPayload) {
+      const forwarded = await forwardLaunchToRunningInstance(
+        launchForwardPayload
+      );
+      if (forwarded) {
+        console.log(
+          '[instance-bridge] Forwarded launch request to existing instance. Exiting this instance.'
+        );
+        app.quit();
+        return;
+      }
+      console.warn(
+        '[instance-bridge] Failed to forward launch request to existing instance.'
+      );
+      await requestRunningInstanceFocus();
+      app.quit();
+      return;
+    } else {
+      const focused = await requestRunningInstanceFocus();
+      if (!focused) {
+        console.warn(
+          '[instance-bridge] Existing instance found, but focus handoff failed.'
+        );
+      }
+      app.quit();
+      return;
+    }
+  }
 
   if (gameIdToLaunch !== null) {
     console.log(

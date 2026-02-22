@@ -13,7 +13,7 @@ import type {
   SetupEventResponse,
 } from 'ogi-addon';
 import { safeFetch } from '../core/ipc';
-import { appUpdates, updatesManager } from '../../states.svelte';
+import { updatesManager } from '../../states.svelte';
 import { getApp } from '../core/library';
 
 function dispatchSetupEvent(
@@ -515,7 +515,6 @@ export async function runSetupAppUpdate(
     });
 
     // For updates, only update the version - don't run insertApp
-    let beforeLibraryApp = getApp(downloadedItem.appID);
     const result = await window.electronAPI.app.updateAppVersion(
       downloadedItem.appID,
       data.version,
@@ -544,44 +543,6 @@ export async function runSetupAppUpdate(
         type: 'success',
         message: `Updated ${downloadedItem.name} to version ${data.version}`,
       });
-
-      if (
-        (await window.electronAPI.app.getOS()) === 'linux' &&
-        (beforeLibraryApp?.launchExecutable !== data.launchExecutable ||
-          beforeLibraryApp?.launchArguments !== data.launchArguments ||
-          beforeLibraryApp?.cwd !== data.cwd)
-      ) {
-        createNotification({
-          id: Math.random().toString(36).substring(2, 9),
-          type: 'success',
-          message: `Game configuration changed, go to the play page to re-add the game to Steam or else the game will not launch.`,
-        });
-
-        // Get the current Steam app ID before marking for re-add
-        const steamAppIdResult = await window.electronAPI.app.getSteamAppId(
-          downloadedItem.appID
-        );
-        const steamAppId = steamAppIdResult.success
-          ? steamAppIdResult.appId
-          : undefined;
-
-        // Only add to requiredReadds if we successfully got the Steam app ID
-        if (steamAppId !== undefined) {
-          appUpdates.requiredReadds = [
-            ...appUpdates.requiredReadds.filter(
-              (r) => r.appID !== downloadedItem.appID
-            ),
-            { appID: downloadedItem.appID, steamAppId },
-          ];
-        } else {
-          console.warn(
-            `[setup] Failed to get Steam app ID for app ${downloadedItem.appID}, skipping prefix migration tracking`
-          );
-          appUpdates.requiredReadds = appUpdates.requiredReadds.filter(
-            (r) => r.appID !== downloadedItem.appID
-          );
-        }
-      }
     } else {
       createNotification({
         id: Math.random().toString(36).substring(2, 9),

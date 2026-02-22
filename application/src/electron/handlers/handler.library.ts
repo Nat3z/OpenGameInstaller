@@ -65,90 +65,214 @@ async function shouldUseUmuMode(libraryInfo: LibraryInfo): Promise<boolean> {
   return false;
 }
 
-export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
-  ipcMain.handle('app:launch-game', async (_, appid) => {
-    console.log('[launch] Launching game', appid);
-    ensureLibraryDir();
-    ensureInternalsDir();
+export type LaunchGameResult = {
+  success: boolean;
+  error?: string;
+};
 
-    const appInfo = loadLibraryInfo(appid);
-    if (!appInfo) {
-      console.log('[launch] Game not found');
-      throw new Error('Game not found');
-    }
+export type ExecuteWrapperResult = {
+  success: boolean;
+  exitCode?: number;
+  signal?: string;
+  error?: string;
+};
 
-    // Check if we should use UMU mode
-    const useUmu = await shouldUseUmuMode(appInfo);
+export async function launchGameFromLibrary(
+  appid: number | string,
+  mainWindow?: Electron.BrowserWindow | null
+): Promise<LaunchGameResult> {
+  console.log('[launch] Launching game', appid);
+  ensureLibraryDir();
+  ensureInternalsDir();
 
-    if (useUmu) {
-      console.log(`[launch] Using UMU mode for ${appInfo.name}`);
+  const parsedAppId =
+    typeof appid === 'number' ? appid : parseInt(String(appid), 10);
+  if (Number.isNaN(parsedAppId)) {
+    return { success: false, error: 'Invalid app ID' };
+  }
 
-      const result = await launchWithUmu(appInfo);
+  const appInfo = loadLibraryInfo(parsedAppId);
+  if (!appInfo) {
+    console.log('[launch] Game not found');
+    return { success: false, error: 'Game not found' };
+  }
 
-      if (!result.success) {
-        console.error('[launch] UMU launch failed:', result.error);
-        sendNotification({
-          message: `Failed to launch game: ${result.error}`,
-          id: generateNotificationId(),
-          type: 'error',
-        });
-        mainWindow?.webContents.send('game:exit', { id: appInfo.appID });
-        return;
-      }
+  // Check if we should use UMU mode
+  const useUmu = await shouldUseUmuMode(appInfo);
 
-      mainWindow?.webContents.send('game:launch', { id: appInfo.appID });
+  if (useUmu) {
+    console.log(`[launch] Using UMU mode for ${appInfo.name}`);
 
-      // UMU detaches the process, so we can't wait for it to exit
-      // Send game:exit after a short delay so the UI doesn't get stuck
-      setTimeout(() => {
-        mainWindow?.webContents.send('game:exit', { id: appInfo.appID });
-      }, 5000);
-      return;
-    }
+    const result = await launchWithUmu(appInfo);
 
-    // Legacy mode (original behavior)
-    let args = appInfo.launchArguments || '%command%';
-    // replace %command% with the launch executable
-    args = args.replace(
-      '%command%',
-      `"${escapeShellArg(appInfo.launchExecutable)}"`
-    );
-    const effectiveLaunchEnv = getEffectiveLaunchEnv(appInfo);
-    console.log('Launching game with args: ' + args, 'in cwd: ' + appInfo.cwd);
-    const spawnedItem = exec(args, {
-      cwd: appInfo.cwd,
-      env: {
-        ...process.env,
-        ...effectiveLaunchEnv,
-      },
-    });
-    spawnedItem.on('error', (error) => {
-      console.error(error);
+    if (!result.success) {
+      console.error('[launch] UMU launch failed:', result.error);
       sendNotification({
-        message: 'Failed to launch game',
+        message: `Failed to launch game: ${result.error}`,
         id: generateNotificationId(),
         type: 'error',
       });
-      console.error('Failed to launch game');
       mainWindow?.webContents.send('game:exit', { id: appInfo.appID });
-    });
-    spawnedItem.on('exit', (exit) => {
-      console.log('Game exited with code: ' + exit);
-      if (exit !== 0) {
-        sendNotification({
-          message: 'Game Crashed',
-          id: generateNotificationId(),
-          type: 'error',
-        });
+      return {
+        success: false,
+        error: result.error ?? 'Failed to launch game with UMU',
+      };
+    }
 
-        mainWindow?.webContents.send('game:exit', { id: appInfo.appID });
+    mainWindow?.webContents.send('game:launch', { id: appInfo.appID });
+
+    // UMU detaches the process, so we can't wait for it to exit
+    // Send game:exit after a short delay so the UI doesn't get stuck
+    setTimeout(() => {
+      mainWindow?.webContents.send('game:exit', { id: appInfo.appID });
+    }, 5000);
+    return { success: true };
+  }
+
+  // Legacy mode (original behavior)
+  let args = appInfo.launchArguments || '%command%';
+  // replace %command% with the launch executable
+  args = args.replace('%command%', `"${escapeShellArg(appInfo.launchExecutable)}"`);
+  const effectiveLaunchEnv = getEffectiveLaunchEnv(appInfo);
+  console.log('Launching game with args: ' + args, 'in cwd: ' + appInfo.cwd);
+  const spawnedItem = exec(args, {
+    cwd: appInfo.cwd,
+    env: {
+      ...process.env,
+      ...effectiveLaunchEnv,
+    },
+  });
+  spawnedItem.on('error', (error) => {
+    console.error(error);
+    sendNotification({
+      message: 'Failed to launch game',
+      id: generateNotificationId(),
+      type: 'error',
+    });
+    console.error('Failed to launch game');
+    mainWindow?.webContents.send('game:exit', { id: appInfo.appID });
+  });
+  spawnedItem.on('exit', (exit) => {
+    console.log('Game exited with code: ' + exit);
+    if (exit !== 0) {
+      sendNotification({
+        message: 'Game Crashed',
+        id: generateNotificationId(),
+        type: 'error',
+      });
+
+      mainWindow?.webContents.send('game:exit', { id: appInfo.appID });
+      return;
+    }
+
+    mainWindow?.webContents.send('game:exit', { id: appInfo.appID });
+  });
+
+  mainWindow?.webContents.send('game:launch', { id: appInfo.appID });
+  return { success: true };
+}
+
+export async function executeWrapperCommandForApp(
+  appid: number,
+  wrapperCommand: string
+): Promise<ExecuteWrapperResult> {
+  ensureLibraryDir();
+
+  const appInfo = loadLibraryInfo(appid);
+  if (!appInfo) {
+    return { success: false, error: 'Game not found' };
+  }
+
+  if (!wrapperCommand || wrapperCommand.trim().length === 0) {
+    return { success: false, error: 'Wrapper command is empty' };
+  }
+
+  console.log(
+    `[wrapper] Executing wrapper command for ${appInfo.name}: ${wrapperCommand}`
+  );
+
+  // Parse so paths with spaces aren't broken: split on the known verb first,
+  // parse only the prefix (which may contain quoted paths), and treat
+  // everything after the verb as a single path argument we replace with
+  // appInfo.launchExecutable.
+  const verb = 'waitforexitandrun';
+  const verbWithSpaces = ` ${verb} `;
+  const verbIndexInString = wrapperCommand.indexOf(verbWithSpaces);
+  let parsed: ReturnType<typeof shellQuoteParse>;
+  if (verbIndexInString !== -1) {
+    const prefix = wrapperCommand.slice(0, verbIndexInString).trimEnd();
+    parsed = shellQuoteParse(prefix);
+    parsed.push(verb);
+    // Everything after " waitforexitandrun " is the exe path (may contain spaces);
+    // we replace it with the canonical path, so we don't parse the suffix.
+  } else {
+    parsed = shellQuoteParse(wrapperCommand);
+  }
+
+  const verbIndex = parsed.findIndex((x) => x === verb);
+  const fixedArgs = [
+    ...parsed.slice(0, verbIndex + 1),
+    appInfo.launchExecutable,
+  ];
+
+  return await new Promise((resolve) => {
+    const effectiveLaunchEnv = getEffectiveLaunchEnv(appInfo);
+    const effectiveDllOverrides = getEffectiveDllOverrides(appInfo);
+    const dllOverrideString = buildDllOverrides(effectiveDllOverrides);
+    const wrappedChild = spawn(
+      parsed[0].toString(),
+      fixedArgs.slice(1).map((x) => x.toString()),
+      {
+        cwd: appInfo.cwd,
+        env: {
+          ...process.env,
+          ...effectiveLaunchEnv,
+          STEAM_COMPAT_DATA_PATH: getUmuWinePrefix(appInfo.umu!.umuId),
+          WINEPREFIX: getUmuWinePrefix(appInfo.umu!.umuId),
+          ...(dllOverrideString ? { WINEDLLOVERRIDES: dllOverrideString } : {}),
+          PROTON_LOG: '1',
+        },
+        stdio: 'inherit',
+      }
+    );
+
+    wrappedChild.stdout?.on('data', (data) => {
+      console.log(`[wrapper stdout] ${data}`);
+    });
+
+    wrappedChild.stderr?.on('data', (data) => {
+      console.error(`[wrapper stderr] ${data}`);
+    });
+
+    wrappedChild.on('error', (error) => {
+      console.error('[wrapper] Failed to execute wrapper command:', error);
+      resolve({ success: false, error: error.message });
+    });
+
+    wrappedChild.on('close', (code, signal) => {
+      if (code === 0) {
+        resolve({ success: true, exitCode: 0 });
         return;
       }
 
-      mainWindow?.webContents.send('game:exit', { id: appInfo.appID });
+      const error = `Wrapped command exited with code ${code ?? 'null'}${signal ? ` (signal: ${signal})` : ''}`;
+      console.error(`[wrapper] ${error}`);
+      resolve({
+        success: false,
+        error,
+        exitCode: code ?? undefined,
+        signal: signal ?? undefined,
+      });
     });
+  });
+}
 
-    mainWindow?.webContents.send('game:launch', { id: appInfo.appID });
+export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
+  ipcMain.handle('app:launch-game', async (_, appid) => {
+    const result = await launchGameFromLibrary(appid, mainWindow);
+    if (!result.success) {
+      throw new Error(result.error ?? 'Failed to launch game');
+    }
   });
 
   ipcMain.handle(
@@ -157,104 +281,8 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
       _,
       appid: number,
       wrapperCommand: string
-    ): Promise<{
-      success: boolean;
-      exitCode?: number;
-      signal?: string;
-      error?: string;
-    }> => {
-      ensureLibraryDir();
-
-      const appInfo = loadLibraryInfo(appid);
-      if (!appInfo) {
-        return { success: false, error: 'Game not found' };
-      }
-
-      if (!wrapperCommand || wrapperCommand.trim().length === 0) {
-        return { success: false, error: 'Wrapper command is empty' };
-      }
-
-      console.log(
-        `[wrapper] Executing wrapper command for ${appInfo.name}: ${wrapperCommand}`
-      );
-
-      // Parse so paths with spaces aren't broken: split on the known verb first,
-      // parse only the prefix (which may contain quoted paths), and treat
-      // everything after the verb as a single path argument we replace with
-      // appInfo.launchExecutable.
-      const verb = 'waitforexitandrun';
-      const verbWithSpaces = ` ${verb} `;
-      const verbIndexInString = wrapperCommand.indexOf(verbWithSpaces);
-      let parsed: ReturnType<typeof shellQuoteParse>;
-      if (verbIndexInString !== -1) {
-        const prefix = wrapperCommand.slice(0, verbIndexInString).trimEnd();
-        parsed = shellQuoteParse(prefix);
-        parsed.push(verb);
-        // Everything after " waitforexitandrun " is the exe path (may contain spaces);
-        // we replace it with the canonical path, so we don't parse the suffix.
-      } else {
-        parsed = shellQuoteParse(wrapperCommand);
-      }
-
-      const verbIndex = parsed.findIndex((x) => x === verb);
-      const fixedArgs = [
-        ...parsed.slice(0, verbIndex + 1),
-        appInfo.launchExecutable,
-      ];
-
-      return await new Promise((resolve) => {
-        const effectiveLaunchEnv = getEffectiveLaunchEnv(appInfo);
-        const effectiveDllOverrides = getEffectiveDllOverrides(appInfo);
-        const dllOverrideString = buildDllOverrides(effectiveDllOverrides);
-        const wrappedChild = spawn(
-          parsed[0].toString(),
-          fixedArgs.slice(1).map((x) => x.toString()),
-          {
-            cwd: appInfo.cwd,
-            env: {
-              ...process.env,
-              ...effectiveLaunchEnv,
-              STEAM_COMPAT_DATA_PATH: getUmuWinePrefix(appInfo.umu!.umuId),
-              WINEPREFIX: getUmuWinePrefix(appInfo.umu!.umuId),
-              ...(dllOverrideString
-                ? { WINEDLLOVERRIDES: dllOverrideString }
-                : {}),
-              PROTON_LOG: '1',
-            },
-            stdio: 'inherit',
-          }
-        );
-
-        wrappedChild.stdout?.on('data', (data) => {
-          console.log(`[wrapper stdout] ${data}`);
-        });
-
-        wrappedChild.stderr?.on('data', (data) => {
-          console.error(`[wrapper stderr] ${data}`);
-        });
-
-        wrappedChild.on('error', (error) => {
-          console.error('[wrapper] Failed to execute wrapper command:', error);
-          resolve({ success: false, error: error.message });
-        });
-
-        wrappedChild.on('close', (code, signal) => {
-          if (code === 0) {
-            resolve({ success: true, exitCode: 0 });
-            return;
-          }
-
-          const error = `Wrapped command exited with code ${code ?? 'null'}${signal ? ` (signal: ${signal})` : ''}`;
-          console.error(`[wrapper] ${error}`);
-          resolve({
-            success: false,
-            error,
-            exitCode: code ?? undefined,
-            signal: signal ?? undefined,
-          });
-        });
-      });
-    }
+    ): Promise<ExecuteWrapperResult> =>
+      executeWrapperCommandForApp(appid, wrapperCommand)
   );
 
   ipcMain.handle('app:remove-app', async (_, appid: number) => {

@@ -6,11 +6,11 @@ import { ipcMain } from 'electron';
 import { exec, spawn } from 'child_process';
 import * as fs from 'fs';
 import { join } from 'path';
-import { __dirname } from '../manager/manager.paths.js';
 import {
   isLinux,
   getHomeDir,
   getProtonPrefixPath,
+  getOgiExecutablePath,
 } from './helpers.app/platform.js';
 import {
   getSteamAppIdWithFallback,
@@ -25,25 +25,6 @@ import {
 } from './helpers.app/library.js';
 import { generateNotificationId } from './helpers.app/notifications.js';
 import { sendNotification } from '../main.js';
-
-/**
- * Get the path to the OGI AppImage or executable
- */
-function getOgiExecutablePath(): string {
-  // Check if running as AppImage
-  if (process.env.APPIMAGE) {
-    return process.env.APPIMAGE;
-  }
-
-  // Check for packaged electron app
-  const packagedPath = join(__dirname, '../../OpenGameInstaller.AppImage');
-  if (fs.existsSync(packagedPath)) {
-    return packagedPath;
-  }
-
-  // Fallback: return the current process executable
-  return process.execPath;
-}
 
 /**
  * Add a UMU game to Steam using OGI wrapper launches.

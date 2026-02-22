@@ -3,7 +3,7 @@
  * Updated to support UMU (Unified Launcher for Windows Games on Linux)
  */
 import { ipcMain } from 'electron';
-import { exec, spawn, spawnSync } from 'child_process';
+import { spawn, spawnSync } from 'child_process';
 import type { LibraryInfo } from 'ogi-addon';
 import { isLinux } from './helpers.app/platform.js';
 import {
@@ -36,6 +36,7 @@ import {
   buildDllOverrides,
   getEffectiveDllOverrides,
   getEffectiveLaunchEnv,
+  parseLaunchArguments,
 } from './handler.umu.js';
 
 /**
@@ -103,7 +104,12 @@ export async function launchGameFromLibrary(
   if (useUmu) {
     console.log(`[launch] Using UMU mode for ${appInfo.name}`);
 
-    const result = await launchWithUmu(appInfo);
+    const appID = appInfo.appID;
+    const result = await launchWithUmu(appInfo, {
+      onExit: () => {
+        mainWindow?.webContents.send('game:exit', { id: appID });
+      },
+    });
 
     if (!result.success) {
       console.error('[launch] UMU launch failed:', result.error);
@@ -120,22 +126,20 @@ export async function launchGameFromLibrary(
     }
 
     mainWindow?.webContents.send('game:launch', { id: appInfo.appID });
-
-    // UMU detaches the process, so we can't wait for it to exit
-    // Send game:exit after a short delay so the UI doesn't get stuck
-    setTimeout(() => {
-      mainWindow?.webContents.send('game:exit', { id: appInfo.appID });
-    }, 5000);
     return { success: true };
   }
 
-  // Legacy mode (original behavior)
-  let args = appInfo.launchArguments || '%command%';
-  // replace %command% with the launch executable
-  args = args.replace('%command%', `"${escapeShellArg(appInfo.launchExecutable)}"`);
+  // Legacy mode: spawn without shell so no shell metacharacter interpretation
   const effectiveLaunchEnv = getEffectiveLaunchEnv(appInfo);
-  console.log('Launching game with args: ' + args, 'in cwd: ' + appInfo.cwd);
-  const spawnedItem = exec(args, {
+  const parsedArgs = parseLaunchArguments(appInfo.launchArguments);
+  console.log(
+    'Launching game:',
+    appInfo.launchExecutable,
+    parsedArgs,
+    'in cwd:',
+    appInfo.cwd
+  );
+  const spawnedItem = spawn(appInfo.launchExecutable, parsedArgs, {
     cwd: appInfo.cwd,
     env: {
       ...process.env,
@@ -149,22 +153,17 @@ export async function launchGameFromLibrary(
       id: generateNotificationId(),
       type: 'error',
     });
-    console.error('Failed to launch game');
     mainWindow?.webContents.send('game:exit', { id: appInfo.appID });
   });
-  spawnedItem.on('exit', (exit) => {
-    console.log('Game exited with code: ' + exit);
-    if (exit !== 0) {
+  spawnedItem.on('exit', (exitCode, signal) => {
+    console.log('Game exited with code: ' + exitCode + (signal ? ` signal: ${signal}` : ''));
+    if (exitCode !== 0 && exitCode != null) {
       sendNotification({
         message: 'Game Crashed',
         id: generateNotificationId(),
         type: 'error',
       });
-
-      mainWindow?.webContents.send('game:exit', { id: appInfo.appID });
-      return;
     }
-
     mainWindow?.webContents.send('game:exit', { id: appInfo.appID });
   });
 
@@ -528,13 +527,14 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
       }
 
       // Handle UMU config if provided
+      const prevUmu = appData.umu;
       if (data.umu) {
         appData.umu = data.umu;
         // Update wine prefix path
         appData.umu.winePrefixPath = getUmuWinePrefix(data.umu.umuId);
 
-        // Check if we need to migrate from legacy mode
-        if (appData.legacyMode || appData.umu === undefined) {
+        // Check if we need to migrate from legacy mode (first-time UMU or coming from legacy)
+        if (appData.legacyMode || prevUmu === undefined) {
           console.log('[update] Migrating game from legacy to UMU mode');
 
           // Get the old Steam app ID for migration (use old version)

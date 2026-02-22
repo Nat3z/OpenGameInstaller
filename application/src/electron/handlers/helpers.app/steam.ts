@@ -5,6 +5,7 @@ import { exec, execFile } from 'child_process';
 import * as fs from 'fs';
 import { join } from 'path';
 import { __dirname } from '../../manager/manager.paths.js';
+import { getOgiExecutablePath } from './platform.js';
 import { STEAMTINKERLAUNCH_PATH } from '../../startup.js';
 import { notifyError, notifySuccess } from './notifications.js';
 
@@ -131,25 +132,6 @@ export async function getSteamAppIdWithFallback(
     appId,
     error: success ? undefined : 'Failed to get Steam app ID',
   };
-}
-
-/**
- * Get the path to the OGI executable for hook-based launches
- */
-function getOgiExecutablePath(): string {
-  // Check if running as AppImage
-  if (process.env.APPIMAGE) {
-    return process.env.APPIMAGE;
-  }
-
-  // Check for packaged electron app
-  const packagedPath = join(__dirname, '../../OpenGameInstaller.AppImage');
-  if (fs.existsSync(packagedPath)) {
-    return packagedPath;
-  }
-
-  // Fallback: return the current process executable
-  return process.execPath;
 }
 
 /**

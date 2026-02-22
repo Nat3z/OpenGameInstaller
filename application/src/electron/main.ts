@@ -327,13 +327,19 @@ export async function sendIPCMessage(channel: string, ...args: any[]) {
   }
 
   if (!isReadyForEvents) {
+    let resolverRef: (() => void) | null = null;
     await Promise.race([
       new Promise<void>((resolve) => {
         console.log('waiting for events');
+        resolverRef = resolve;
         readyForEventWaiters.push(resolve);
       }),
       new Promise<void>((resolve) => {
         setTimeout(() => {
+          if (resolverRef !== null) {
+            const idx = readyForEventWaiters.indexOf(resolverRef);
+            if (idx !== -1) readyForEventWaiters.splice(idx, 1);
+          }
           console.warn(
             '[sendIPCMessage] client-ready-for-events not received within timeout, proceeding'
           );

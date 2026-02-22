@@ -46,15 +46,44 @@ function parseVersionFromText(text: string): string | null {
   return match?.[0] ?? null;
 }
 
-async function execAsync(command: string): Promise<string> {
+async function execAsync(
+  command: string,
+  options?: { maxBuffer?: number; timeout?: number }
+): Promise<string> {
   return new Promise<string>((resolve, reject) => {
-    exec(command, (error, stdout, stderr) => {
-      if (error) {
-        reject(error);
-        return;
+    exec(
+      command,
+      {
+        maxBuffer: options?.maxBuffer,
+        timeout: options?.timeout,
+      },
+      (error, stdout, stderr) => {
+        if (error) {
+          if (options?.timeout && (error as NodeJS.ErrnoException).killed) {
+            reject(
+              new Error(
+                `Command timed out after ${options.timeout}ms: ${command}`
+              )
+            );
+            return;
+          }
+          if (
+            options?.maxBuffer &&
+            (error as NodeJS.ErrnoException).code === 'ENOBUFS'
+          ) {
+            reject(
+              new Error(
+                `Command output exceeded maxBuffer (${options.maxBuffer} bytes): ${command}`
+              )
+            );
+            return;
+          }
+          reject(error);
+          return;
+        }
+        resolve(`${stdout}\n${stderr}`.trim());
       }
-      resolve(`${stdout}\n${stderr}`.trim());
-    });
+    );
   });
 }
 

@@ -63,12 +63,12 @@
   let os = $state('');
   let isMigratingToUmu = $state(false);
   let isLegacyWindowsGame = $derived.by(() => {
-    const isLinuxOrMac = os === 'linux' || os === 'darwin';
+    const isLinux = os === 'linux';
     const isWindowsExecutable = libraryInfo.launchExecutable
       .toLowerCase()
       .endsWith('.exe');
     const isLegacy = libraryInfo.legacyMode === true || !libraryInfo.umu;
-    return isLinuxOrMac && isWindowsExecutable && isLegacy;
+    return isLinux && isWindowsExecutable && isLegacy;
   });
   let needsUmuMigration = $derived(isLegacyWindowsGame);
 

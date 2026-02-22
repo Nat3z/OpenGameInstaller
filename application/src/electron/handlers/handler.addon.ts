@@ -58,7 +58,7 @@ export async function startAddons(): Promise<void> {
     while (Date.now() < deadline) {
       const clientList = Array.from(clients.values());
       const allReady =
-        clientList.length > 0 &&
+        clientList.length >= expectedAddonCount &&
         clientList.every((c) => c.eventsAvailable.length > 0);
       if (allReady) break;
       await new Promise((r) => setTimeout(r, 50));
@@ -69,7 +69,7 @@ export async function startAddons(): Promise<void> {
   await sendIPCMessage('all-addons-started');
 }
 
-export async function restartAddonServer() {
+export async function restartAddonServer(): Promise<void> {
   // stop the server
   console.log('Stopping server...');
   server.close();

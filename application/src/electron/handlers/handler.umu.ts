@@ -82,7 +82,7 @@ function parseLeadingLaunchEnvFromArguments(
   return env;
 }
 
-function parseLaunchArguments(launchArguments?: string): string[] {
+export function parseLaunchArguments(launchArguments?: string): string[] {
   const tokens = parseLaunchArgumentTokens(launchArguments);
   let start = 0;
   while (start < tokens.length && ENV_ASSIGNMENT_PATTERN.test(tokens[start])) {
@@ -357,9 +357,12 @@ export function buildDllOverrides(dllOverrides: string[]): string {
 
 /**
  * Launch a game using UMU
+ * @param libraryInfo - Game library entry
+ * @param options.onExit - Optional callback when the game process exits (for UI lifecycle events)
  */
 export async function launchWithUmu(
-  libraryInfo: LibraryInfo
+  libraryInfo: LibraryInfo,
+  options?: { onExit?: (code: number | null, signal: NodeJS.Signals | null) => void }
 ): Promise<{ success: boolean; error?: string; pid?: number }> {
   if (!isLinux()) {
     return { success: false, error: 'UMU is only available on Linux' };
@@ -442,11 +445,6 @@ export async function launchWithUmu(
       cwd: libraryInfo.cwd,
       env: {
         ...env,
-        GAMEID: gameId,
-        WINEPREFIX: winePrefix,
-        PROTONPATH: protonVersion || 'UMU-Latest',
-        ...(store ? { STORE: store } : {}),
-        ...(dllOverrideStr ? { WINEDLLOVERRIDES: dllOverrideStr } : {}),
         PWD: libraryInfo.cwd,
         UMU_LOG: 'debug',
       },
@@ -463,34 +461,26 @@ export async function launchWithUmu(
       console.error(`[umu stderr] ${data}`);
     });
 
-    let processExited = false;
+    const onExitCallback = options?.onExit;
 
     child.on('error', (error) => {
-      if (!processExited) {
-        processExited = true;
-        console.error('[umu] Failed to launch game:', error);
-        resolve({ success: false, error: error.message });
-      }
+      console.error('[umu] Failed to launch game:', error);
+      resolve({ success: false, error: error.message });
     });
 
     child.on('exit', (code, signal) => {
-      if (!processExited) {
-        processExited = true;
-        if (code === 0) {
-          console.log(`[umu] Game process exited normally with code ${code}`);
-          resolve({ success: true, pid: child.pid });
-        } else {
-          console.error(
-            `[umu] Game process exited abnormally, code: ${code}, signal: ${signal}`
-          );
-          resolve({
-            success: false,
-            error: `Exited with code ${code}, signal ${signal}`,
-            pid: child.pid,
-          });
-        }
+      onExitCallback?.(code, signal ?? null);
+      if (code === 0) {
+        console.log(`[umu] Game process exited normally with code ${code}`);
+      } else {
+        console.error(
+          `[umu] Game process exited abnormally, code: ${code}, signal: ${signal}`
+        );
       }
     });
+
+    // Resolve immediately after successful spawn so caller can return; onExit runs when process exits
+    resolve({ success: true, pid: child.pid });
   });
 }
 

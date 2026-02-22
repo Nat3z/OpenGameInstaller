@@ -2,7 +2,7 @@
  * Platform-related utility functions
  */
 import * as fs from 'fs';
-import { join } from 'path';
+import { join, basename } from 'path';
 import { __dirname } from '../../manager/manager.paths.js';
 
 export function isLinux(): boolean {
@@ -11,6 +11,13 @@ export function isLinux(): boolean {
 
 export function getHomeDir(): string | null {
   return process.env.HOME || process.env.USERPROFILE || null;
+}
+
+/** Current OS username (e.g. "deck" on Steam Deck). */
+export function getCurrentUsername(): string | null {
+  if (process.env.USER) return process.env.USER;
+  const home = getHomeDir();
+  return home ? basename(home) : null;
 }
 
 export function getCompatDataDir(): string {

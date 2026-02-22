@@ -25,7 +25,10 @@ import {
 } from './helpers.app/library.js';
 import { generateNotificationId } from './helpers.app/notifications.js';
 import { sendNotification } from '../main.js';
-import { getProtonPrefixPath } from './helpers.app/platform.js';
+import {
+  getProtonPrefixPath,
+  getCurrentUsername,
+} from './helpers.app/platform.js';
 import * as fs from 'fs';
 import {
   launchWithUmu,
@@ -38,6 +41,7 @@ import {
   getEffectiveLaunchEnv,
   parseLaunchArguments,
 } from './handler.umu.js';
+import { addUmuGameToSteam } from './handler.steam.js';
 
 /**
  * Determine if a game should use UMU mode
@@ -315,6 +319,8 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
 
       // Check if UMU is available and should be used (Linux only; macOS uses legacy)
       const umuAvailable = isLinux();
+      const isDeckUser =
+        isLinux() && getCurrentUsername()?.toLowerCase() === 'deck';
 
       if (umuAvailable && data.umu) {
         console.log('[setup] Using UMU mode for new game');
@@ -337,7 +343,6 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
               id: generateNotificationId(),
               type: 'error',
             });
-            // Abort UMU setup: fall back to legacy and do not persist UMU config
             data.legacyMode = true;
             data.umu = undefined;
             return 'setup-failed';
@@ -358,6 +363,21 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
           // Save the library info with UMU config
           saveLibraryInfo(data.appID, data);
           addToInternalsApps(data.appID);
+
+          // On Steam Deck (user "deck"), add a Steam shortcut so the game appears in Game Mode
+          if (isDeckUser) {
+            const steamResult = await addUmuGameToSteam({
+              appID: data.appID,
+              name: data.name,
+              version: data.version,
+            });
+            if (!steamResult.success) {
+              console.warn(
+                '[setup] Failed to add UMU game to Steam for Deck:',
+                steamResult.error
+              );
+            }
+          }
 
           if (data.redistributables && data.redistributables.length > 0) {
             console.log(

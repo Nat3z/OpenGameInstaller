@@ -6,7 +6,9 @@ part: 6
 section: Your First Addon
 ---
 
-**Setup handlers are required by OpenGameInstaller in order for games to be properly added to the library.** Setup handlers are called once a download is finished, and the addon must provide the **library info** for the app. **Keep In Mind** that only the addon whom the user chose to download from will be able to setup the app.
+**Setup handlers are required by OpenGameInstaller in order for games to be properly added to the library.** Setup handlers are called once a download is finished, and the addon must provide the **library info** for the app. **Keep in mind** that only the addon the user chose to download from will be able to set up the app.
+
+On **Linux**, the resolved library info can include an optional **`umu`** object so the game uses [UMU](/docs/guide/umu) and launches from the in-app library instead of Steam. See [UMU and LibraryInfo (Linux)](/docs/first-addon/umu-libraryinfo) for the `umu` shape and examples.
 
 To create a setup handler, create an event handler for the `setup` event.
 
@@ -99,4 +101,4 @@ Use `event.defer()` whenever your setup performs async work like extraction, net
 
 For user-triggered tasks outside setup (including `task.askForInput(...)`), see [Action Buttons & Tasks](/docs/first-addon/action-buttons-and-tasks).
 
-For update-specific setup (`for: 'update'` with `currentLibraryInfo`), see [Adding Game Update Support](/docs/first-addon/adding-game-updates).
+For update-specific setup (`for: 'update'` with `currentLibraryInfo`), see [Adding Game Update Support](/docs/first-addon/adding-game-updates). For Linux and in-app library launch, see [UMU and LibraryInfo (Linux)](/docs/first-addon/umu-libraryinfo).

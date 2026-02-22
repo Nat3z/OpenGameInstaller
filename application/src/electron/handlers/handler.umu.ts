@@ -486,7 +486,7 @@ export async function installRedistributablesWithUmu(
                 PROTONPATH: protonVersion || 'UMU-Latest',
                 PWD: libraryInfo.cwd,
               },
-              stdio: ['ignore', 'pipe', 'pipe'],
+              stdio: 'inherit',
             }
           );
         } else if (
@@ -520,7 +520,7 @@ export async function installRedistributablesWithUmu(
               PWD: libraryInfo.cwd,
             },
             cwd: redistDir,
-            stdio: ['ignore', 'pipe', 'pipe'],
+            stdio: 'inherit',
           });
         }
 
@@ -887,7 +887,7 @@ export async function installRedistributablesWithUmuForLegacy(
                 PROTONPATH: 'UMU-Latest',
                 PWD: libraryInfo.cwd,
               },
-              stdio: ['ignore', 'pipe', 'pipe'],
+              stdio: 'inherit',
             }
           );
         } else {
@@ -916,7 +916,7 @@ export async function installRedistributablesWithUmuForLegacy(
               PWD: libraryInfo.cwd,
             },
             cwd: redistDir,
-            stdio: ['ignore', 'pipe', 'pipe'],
+            stdio: 'inherit',
           });
         }
 

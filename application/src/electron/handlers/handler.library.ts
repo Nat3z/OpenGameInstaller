@@ -73,7 +73,8 @@ export type ExecuteWrapperResult = {
 
 export async function launchGameFromLibrary(
   appid: number | string,
-  mainWindow?: Electron.BrowserWindow | null
+  mainWindow?: Electron.BrowserWindow | null,
+  launchEnv?: Record<string, string>
 ): Promise<LaunchGameResult> {
   console.log('[launch] Launching game', appid);
   ensureLibraryDir();
@@ -136,6 +137,7 @@ export async function launchGameFromLibrary(
     cwd: appInfo.cwd,
     env: {
       ...process.env,
+      ...(launchEnv ?? {}),
       ...effectiveLaunchEnv,
     },
   });
@@ -166,7 +168,8 @@ export async function launchGameFromLibrary(
 
 export async function executeWrapperCommandForApp(
   appid: number,
-  wrapperCommand: string
+  wrapperCommand: string,
+  launchEnv?: Record<string, string>
 ): Promise<ExecuteWrapperResult> {
   ensureLibraryDir();
 
@@ -216,6 +219,7 @@ export async function executeWrapperCommandForApp(
     const dllOverrideString = buildDllOverrides(effectiveDllOverrides);
     const baseEnv = {
       ...process.env,
+      ...(launchEnv ?? {}),
       ...effectiveLaunchEnv,
       PROTON_LOG: '1',
     };

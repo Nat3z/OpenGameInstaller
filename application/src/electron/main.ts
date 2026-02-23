@@ -95,6 +95,12 @@ function buildLaunchForwardPayload(
   hookArgs: ReturnType<typeof parseLaunchHookArgs>,
   wrapperCommand: string | null
 ): LaunchForwardPayload {
+  const launchEnv = Object.fromEntries(
+    Object.entries(process.env).filter(
+      (entry): entry is [string, string] => typeof entry[1] === 'string'
+    )
+  );
+
   return {
     gameId,
     noLaunch: hookArgs.noLaunch,
@@ -102,6 +108,7 @@ function buildLaunchForwardPayload(
     runPost: hookArgs.runPost,
     wrapperCommand,
     originalArgv: process.argv.slice(1),
+    launchEnv,
   };
 }
 
@@ -684,7 +691,8 @@ async function handleRemoteLaunchRequest(
 
     const wrapperResult = await executeWrapperCommandForApp(
       payload.gameId,
-      payload.wrapperCommand
+      payload.wrapperCommand,
+      payload.launchEnv
     );
 
     focusMainWindow();
@@ -709,7 +717,7 @@ async function handleRemoteLaunchRequest(
     return preResult;
   }
 
-  return await launchGameFromLibrary(payload.gameId, mainWindow);
+  return await launchGameFromLibrary(payload.gameId, mainWindow, payload.launchEnv);
 }
 
 registerInstanceBridgeHandlers({

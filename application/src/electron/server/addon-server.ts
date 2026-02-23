@@ -21,6 +21,7 @@ export const launchForwardPayloadSchema = z.object({
   runPost: z.boolean().default(false),
   wrapperCommand: z.string().nullable().optional(),
   originalArgv: z.array(z.string()).optional(),
+  launchEnv: z.record(z.string(), z.string()).optional(),
 });
 
 export type LaunchForwardPayload = z.infer<typeof launchForwardPayloadSchema>;

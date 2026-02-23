@@ -781,7 +781,7 @@
           </div>
         {/if}
         {#if download.status === 'installing-redistributables' && $redistributableInstalls[download.id]}
-          <div class="mt-4">
+          <div class="mt-4 w-full">
             <RedistributablesProgress
               setup={$redistributableInstalls[download.id]}
             />

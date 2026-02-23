@@ -28,7 +28,7 @@
 </script>
 
 <div
-  class="redistributables-progress bg-surface rounded-lg border border-border shadow-sm p-4 space-y-4"
+  class="redistributables-progress bg-surface rounded-lg border border-border shadow-sm p-4 space-y-4 w-full"
   in:fade={{ duration: 200 }}
   out:fade={{ duration: 200 }}
 >

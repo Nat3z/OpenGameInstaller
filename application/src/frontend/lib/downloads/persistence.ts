@@ -5,7 +5,6 @@ import {
   type RedistributableInstall,
 } from '../../store';
 import { get } from 'svelte/store';
-import { restartDownload } from './restart';
 
 type PersistableStatus =
   | 'downloading'
@@ -22,19 +21,6 @@ interface PersistedRecord {
 }
 
 const lastSavedAtById: Map<string, number> = new Map();
-const restoredIds: Set<string> = new Set();
-let hasEnqueuedRestoredAfterAnyStart = false;
-
-// Local minimal type to interop with restartDownload
-interface PausedDownloadStateLike {
-  id: string;
-  downloadInfo: DownloadStatusAndInfo;
-  pausedAt: number;
-  originalDownloadURL?: string;
-  files?: any[];
-}
-
-const localPausedMap = new Map<string, PausedDownloadStateLike>();
 
 function ensureDir() {
   try {
@@ -190,11 +176,6 @@ export async function initDownloadPersistence() {
   try {
     const restoredState = await loadPersistedDownloads();
     if (restoredState.downloads.length > 0) {
-      restoredState.downloads.forEach((r) => {
-        if (r.status === 'paused') {
-          restoredIds.add(r.id);
-        }
-      });
       currentDownloads.update((downloads) => {
         const byId = new Map(downloads.map((d) => [d.id, d] as const));
         restoredState.downloads.forEach((r) => {
@@ -248,47 +229,6 @@ export async function initDownloadPersistence() {
   currentDownloads.subscribe((downloads) => {
     try {
       latestDownloads = downloads;
-      // If a new download has started anywhere and we still have restored paused items,
-      // rebuild the queue by enqueuing those paused items behind the active one.
-      if (!hasEnqueuedRestoredAfterAnyStart && restoredIds.size > 0) {
-        const hasActive = downloads.some((d) => d.status === 'downloading');
-        if (hasActive) {
-          hasEnqueuedRestoredAfterAnyStart = true;
-          // Enqueue asynchronously to avoid blocking the subscriber
-          (async () => {
-            const toEnqueue = downloads.filter(
-              (d) => d.status === 'paused' && restoredIds.has(d.id)
-            );
-            for (const item of toEnqueue) {
-              try {
-                const state: PausedDownloadStateLike = {
-                  id: item.id,
-                  downloadInfo: { ...item },
-                  pausedAt: Date.now(),
-                  originalDownloadURL:
-                    item.originalDownloadURL ||
-                    (item.downloadType === 'torrent' ||
-                    item.downloadType === 'magnet'
-                      ? item.downloadURL
-                      : undefined),
-                  files:
-                    item.downloadType === 'direct' ? item.files : undefined,
-                };
-                localPausedMap.set(item.id, state);
-                const ok = await restartDownload(state, localPausedMap);
-                if (ok) restoredIds.delete(item.id);
-              } catch (err) {
-                console.error(
-                  'Failed to enqueue restored paused download:',
-                  item.id,
-                  err
-                );
-              }
-            }
-          })();
-        }
-      }
-
       const nextSnapshot: Record<string, string> = {};
       downloads.forEach((d) => {
         if (isPersistableStatus(d.status)) {

@@ -62,15 +62,15 @@
   );
   let os = $state('');
   let isMigratingToUmu = $state(false);
-  let isLegacyWindowsGame = $derived.by(() => {
+  let needsUmuSetup = $derived.by(() => {
     const isLinux = os === 'linux';
     const isWindowsExecutable = libraryInfo.launchExecutable
       .toLowerCase()
       .endsWith('.exe');
-    const isLegacy = libraryInfo.legacyMode === true || !libraryInfo.umu;
-    return isLinux && isWindowsExecutable && isLegacy;
+    const needsUmu = !libraryInfo.umu;
+    return isLinux && isWindowsExecutable && needsUmu;
   });
-  let needsUmuMigration = $derived(isLegacyWindowsGame);
+  let needsUmuMigration = $derived(needsUmuSetup && libraryInfo.umu);
 
   async function doesLinkExist(url: string | undefined) {
     if (!url) return false;
@@ -258,7 +258,9 @@
       // Queue Steam re-add requirement so the existing banner appears
       // and persistence writes update-state.json automatically.
       appUpdates.requiredReadds = [
-        ...appUpdates.requiredReadds.filter((r) => r.appID !== libraryInfo.appID),
+        ...appUpdates.requiredReadds.filter(
+          (r) => r.appID !== libraryInfo.appID
+        ),
         {
           appID: libraryInfo.appID,
           steamAppId: oldSteamAppId ?? 0,
@@ -464,7 +466,7 @@
       </button>
     {:else if os === ''}
       <div class="flex justify-center items-center w-full h-full"></div>
-    {:else if isLegacyWindowsGame}
+    {:else if needsUmuSetup}
       <div class="relative group">
         <button
           class="px-6 py-3 flex border-none rounded-lg justify-center bg-disabled items-center gap-2 disabled:bg-disabled disabled:cursor-not-allowed transition-colors duration-200"

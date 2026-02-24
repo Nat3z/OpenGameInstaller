@@ -46,8 +46,6 @@ import { addUmuGameToSteam } from './handler.steam.js';
 /**
  * Determine if a game should use UMU mode
  * - If game has `umu` config → use UMU
- * - If game has `legacyMode: true` → use legacy
- * - Otherwise, use UMU if available on Linux
  */
 async function shouldUseUmuMode(libraryInfo: LibraryInfo): Promise<boolean> {
   if (!isLinux()) return false;
@@ -123,7 +121,7 @@ export async function launchGameFromLibrary(
     return { success: true };
   }
 
-  // Legacy mode: spawn without shell so no shell metacharacter interpretation
+  // Legacy mode
   const effectiveLaunchEnv = getEffectiveLaunchEnv(appInfo);
   const parsedArgs = parseLaunchArguments(appInfo.launchArguments);
   console.log(
@@ -135,6 +133,7 @@ export async function launchGameFromLibrary(
   );
   const spawnedItem = spawn(appInfo.launchExecutable, parsedArgs, {
     cwd: appInfo.cwd,
+    shell: true,
     env: {
       ...process.env,
       ...(launchEnv ?? {}),
@@ -151,7 +150,11 @@ export async function launchGameFromLibrary(
     mainWindow?.webContents.send('game:exit', { id: appInfo.appID });
   });
   spawnedItem.on('exit', (exitCode, signal) => {
-    console.log('Game exited with code: ' + exitCode + (signal ? ` signal: ${signal}` : ''));
+    console.log(
+      'Game exited with code: ' +
+        exitCode +
+        (signal ? ` signal: ${signal}` : '')
+    );
     if (exitCode !== 0 && exitCode != null) {
       sendNotification({
         message: 'Game Crashed',
@@ -169,6 +172,18 @@ export async function launchGameFromLibrary(
 export async function executeWrapperCommandForApp(
   appid: number,
   wrapperCommand: string,
+  type: 'steam-proton' | 'unknown',
+  launchEnv?: Record<string, string>
+): Promise<ExecuteWrapperResult> {
+  if (type === 'steam-proton') {
+    return executeWrapperCommandForAppSteam(appid, wrapperCommand, launchEnv);
+  }
+  return { success: false, error: 'Unsupported wrapper command type' };
+}
+
+async function executeWrapperCommandForAppSteam(
+  appid: number,
+  wrapperCommand: string,
   launchEnv?: Record<string, string>
 ): Promise<ExecuteWrapperResult> {
   ensureLibraryDir();
@@ -181,6 +196,8 @@ export async function executeWrapperCommandForApp(
   if (!wrapperCommand || wrapperCommand.trim().length === 0) {
     return { success: false, error: 'Wrapper command is empty' };
   }
+
+  /* Built for Proton Steam */
 
   console.log(
     `[wrapper] Executing wrapper command for ${appInfo.name}: ${wrapperCommand}`
@@ -208,10 +225,7 @@ export async function executeWrapperCommandForApp(
   const fixedArgs =
     verbIndex === -1
       ? [...parsed, appInfo.launchExecutable]
-      : [
-          ...parsed.slice(0, verbIndex + 1),
-          appInfo.launchExecutable,
-        ];
+      : [...parsed.slice(0, verbIndex + 1), appInfo.launchExecutable];
 
   return await new Promise((resolve) => {
     const effectiveLaunchEnv = getEffectiveLaunchEnv(appInfo);
@@ -287,7 +301,7 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
       appid: number,
       wrapperCommand: string
     ): Promise<ExecuteWrapperResult> =>
-      executeWrapperCommandForApp(appid, wrapperCommand)
+      executeWrapperCommandForAppSteam(appid, wrapperCommand)
   );
 
   ipcMain.handle('app:remove-app', async (_, appid: number) => {
@@ -347,7 +361,6 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
               id: generateNotificationId(),
               type: 'error',
             });
-            data.legacyMode = true;
             data.umu = undefined;
             return 'setup-failed';
           }
@@ -395,7 +408,6 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
       }
 
       // Linux if not using UMU (legacy mode)
-      data.legacyMode = true;
       saveLibraryInfo(data.appID, data);
       addToInternalsApps(data.appID);
 
@@ -547,7 +559,7 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
         appData.umu.winePrefixPath = getUmuWinePrefix(data.umu.umuId);
 
         // Check if we need to migrate from legacy mode (first-time UMU or coming from legacy)
-        if (appData.legacyMode || prevUmu === undefined) {
+        if (prevUmu === undefined) {
           console.log('[update] Migrating game from legacy to UMU mode');
 
           // Get the old Steam app ID for migration (use old version)
@@ -568,13 +580,11 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
               // Continue anyway - UMU will create a fresh prefix
             }
           }
-
-          appData.legacyMode = false;
         }
       }
 
       // On Linux, handle legacy mode updates
-      if (isLinux() && appData.legacyMode) {
+      if (isLinux() && prevUmu === undefined) {
         // Preserve the original launch arguments before any modifications
         // Prefer incoming update over existing appData to avoid discarding newly provided edits
         const originalLaunchArguments =

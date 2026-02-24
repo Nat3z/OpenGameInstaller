@@ -361,7 +361,8 @@ export function buildDllOverrides(dllOverrides: string[]): string {
 
   const overrides = dllOverrides.map((entry) => {
     const eqIndex = entry.indexOf('=');
-    const dllPart = eqIndex >= 0 ? entry.slice(0, eqIndex).trim() : entry.trim();
+    const dllPart =
+      eqIndex >= 0 ? entry.slice(0, eqIndex).trim() : entry.trim();
     const dllName = path.basename(dllPart).replace(/\.dll$/i, '');
     if (!dllName) return '';
     if (eqIndex >= 0) {
@@ -381,7 +382,9 @@ export function buildDllOverrides(dllOverrides: string[]): string {
  */
 export async function launchWithUmu(
   libraryInfo: LibraryInfo,
-  options?: { onExit?: (code: number | null, signal: NodeJS.Signals | null) => void }
+  options?: {
+    onExit?: (code: number | null, signal: NodeJS.Signals | null) => void;
+  }
 ): Promise<{ success: boolean; error?: string; pid?: number }> {
   if (!isLinux()) {
     return { success: false, error: 'UMU is only available on Linux' };
@@ -538,8 +541,10 @@ export async function installRedistributablesWithUmu(
   }
 
   // Check if this is a legacy game
-  if (libraryInfo.legacyMode) {
-    console.log('[umu] Legacy mode game, skipping UMU redistributables');
+  if (!libraryInfo.umu) {
+    console.log(
+      '[umu] No UMU configuration found, skipping UMU redistributables'
+    );
     reportProgress?.({
       kind: 'done',
       total: libraryInfo.redistributables?.length ?? 0,
@@ -547,12 +552,12 @@ export async function installRedistributablesWithUmu(
       failedCount: libraryInfo.redistributables?.length ?? 0,
       overallProgress: 100,
       result: 'failed',
-      error: 'Game is in legacy mode and cannot use UMU redistributable flow',
+      error: 'No UMU configuration found, cannot use UMU redistributable flow',
     });
     return 'failed';
   }
 
-  if (!libraryInfo.umu && !libraryInfo.redistributables) {
+  if (!libraryInfo.redistributables) {
     console.log('[umu] No redistributables to install');
     reportProgress?.({
       kind: 'done',
@@ -670,7 +675,10 @@ export async function installRedistributablesWithUmu(
           return;
         } else {
           // Regular redistributable file (resolve relative to game cwd)
-          const redistPath = path.resolve(libraryInfo.cwd, redistributable.path);
+          const redistPath = path.resolve(
+            libraryInfo.cwd,
+            redistributable.path
+          );
           if (!fs.existsSync(redistPath)) {
             console.error('[umu] Redistributable not found:', redistPath);
             finalize(false);
@@ -1062,7 +1070,10 @@ export async function installRedistributablesWithUmuForLegacy(
           );
         } else {
           // Regular redistributable file - run with UMU (resolve relative to game cwd)
-          const redistPath = path.resolve(libraryInfo.cwd, redistributable.path);
+          const redistPath = path.resolve(
+            libraryInfo.cwd,
+            redistributable.path
+          );
           if (!fs.existsSync(redistPath)) {
             console.error(
               '[umu-legacy] Redistributable not found:',
@@ -1294,7 +1305,6 @@ export async function migrateToUmu(
 
   if (!oldPrefixPath) {
     console.log('[umu] Old Steam app ID not provided, skipping prefix copy');
-    libraryInfo.legacyMode = false;
     libraryInfo.umu = {
       ...libraryInfo.umu,
       winePrefixPath: newPrefixPath,
@@ -1306,7 +1316,6 @@ export async function migrateToUmu(
   if (!fs.existsSync(oldPrefixPath)) {
     console.log('[umu] Old prefix not found, skipping migration');
     // Still mark as migrated, just start fresh
-    libraryInfo.legacyMode = false;
     libraryInfo.umu = {
       ...libraryInfo.umu,
       winePrefixPath: newPrefixPath,
@@ -1329,7 +1338,6 @@ export async function migrateToUmu(
     await copyDirectory(oldPrefixPath, newPrefixPath);
 
     // Update library info
-    libraryInfo.legacyMode = false;
     libraryInfo.umu = {
       ...libraryInfo.umu,
       winePrefixPath: newPrefixPath,
@@ -1394,11 +1402,11 @@ export function registerUmuHandlers() {
     }
 
     // Check if migration is needed
-    if (libraryInfo.legacyMode) {
-      console.log('[umu] Game is in legacy mode, cannot launch with UMU');
+    if (!libraryInfo.umu) {
+      console.log('[umu] No UMU configuration found, cannot launch with UMU');
       return {
         success: false,
-        error: 'Game is in legacy mode. Please migrate to UMU first.',
+        error: 'No UMU configuration found, cannot launch with UMU',
       };
     }
 

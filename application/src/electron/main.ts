@@ -34,6 +34,7 @@ import { registerUmuHandlers } from './handlers/handler.umu.js';
 import {
   executeWrapperCommandForApp,
   launchGameFromLibrary,
+  type ExecuteWrapperResult,
 } from './handlers/handler.library.js';
 import { loadLibraryInfo } from './handlers/helpers.app/library.js';
 // import steamworks from 'steamworks.js';
@@ -689,11 +690,22 @@ async function handleRemoteLaunchRequest(
       mainWindow.hide();
     }
 
-    const wrapperResult = await executeWrapperCommandForApp(
-      payload.gameId,
-      payload.wrapperCommand,
-      payload.launchEnv
-    );
+    let wrapperResult: ExecuteWrapperResult | null = null;
+    if (payload.wrapperCommand.includes('steam-launch-wrapper')) {
+      wrapperResult = await executeWrapperCommandForApp(
+        payload.gameId,
+        payload.wrapperCommand,
+        'steam-proton',
+        payload.launchEnv
+      );
+    } else {
+      wrapperResult = await executeWrapperCommandForApp(
+        payload.gameId,
+        payload.wrapperCommand,
+        'unknown',
+        payload.launchEnv
+      );
+    }
 
     focusMainWindow();
 
@@ -717,7 +729,11 @@ async function handleRemoteLaunchRequest(
     return preResult;
   }
 
-  return await launchGameFromLibrary(payload.gameId, mainWindow, payload.launchEnv);
+  return await launchGameFromLibrary(
+    payload.gameId,
+    mainWindow,
+    payload.launchEnv
+  );
 }
 
 registerInstanceBridgeHandlers({
@@ -747,9 +763,8 @@ app.on('ready', async () => {
     console.log('[instance-bridge] Existing instance detected on local port');
 
     if (launchForwardPayload) {
-      const forwarded = await forwardLaunchToRunningInstance(
-        launchForwardPayload
-      );
+      const forwarded =
+        await forwardLaunchToRunningInstance(launchForwardPayload);
       if (forwarded) {
         console.log(
           '[instance-bridge] Forwarded launch request to existing instance. Exiting this instance.'

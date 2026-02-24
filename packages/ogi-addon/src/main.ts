@@ -911,10 +911,6 @@ export const ZodLibraryInfo = z.object({
     })
     .optional(),
   /**
-   * Legacy mode flag for games using old Steam/flatpak wine system
-   */
-  legacyMode: z.boolean().optional(),
-  /**
    * Redistributables to install (for backward compatibility)
    */
   redistributables: z

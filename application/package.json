@@ -1,6 +1,6 @@
 {
   "name": "opengameinstaller-gui",
-  "version": "2.8.2",
+  "version": "3.0.0",
   "description": "The front-facing GUI for OpenGameInstaller and the addon-server.",
   "type": "module",
   "private": false,
@@ -64,6 +64,7 @@
     "real-debrid-js": "*",
     "sanitize-html": "^2.17.0",
     "semver": "^7.7.3",
+    "shell-quote": "^1.8.3",
     "utp-native": "^2.5.3",
     "webtorrent": "^2.8.5",
     "ws": "^8.19.0",
@@ -78,6 +79,7 @@
     "@types/parse-torrent": "^5.8.8",
     "@types/sanitize-html": "^2.16.0",
     "@types/semver": "^7.7.1",
+    "@types/shell-quote": "^1.7.5",
     "@types/webtorrent": "^0.110.1",
     "@types/ws": "^8.18.1",
     "concurrently": "^7.6.0",

@@ -228,9 +228,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   app: {
     close: wrap(() => ipcRenderer.invoke('app:close')),
+    hideWindow: wrap(() => ipcRenderer.invoke('app:hide-window')),
+    showWindow: wrap(() => ipcRenderer.invoke('app:show-window')),
     minimize: wrap(() => ipcRenderer.invoke('app:minimize')),
+    quit: wrap(() => ipcRenderer.invoke('app:quit')),
     axios: wrap((options: AxiosRequestConfig) =>
       ipcRenderer.invoke('app:axios', options)
+    ),
+    clientReadyForEvents: wrap(() =>
+      ipcRenderer.send('client-ready-for-events')
     ),
     inputSend: wrap((id: string, data: any) =>
       ipcRenderer.invoke('app:screen-input', { id, data })
@@ -281,7 +287,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
         cwd: string,
         launchExecutable: string,
         launchArguments?: string,
-        addonSource?: string
+        addonSource?: string,
+        umu?: LibraryInfo['umu'],
+        launchEnv?: LibraryInfo['launchEnv']
       ) =>
         ipcRenderer.invoke('app:update-app-version', {
           appID,
@@ -290,6 +298,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
           launchExecutable,
           launchArguments,
           addonSource,
+          umu,
+          launchEnv,
         })
     ),
     addToSteam: wrap((appID: number, oldSteamAppId?: number) =>
@@ -303,13 +313,32 @@ contextBridge.exposeInMainWorld('electronAPI', {
     checkPrefixExists: wrap((appID: number) =>
       ipcRenderer.invoke('app:check-prefix-exists', appID)
     ),
-    installRedistributables: wrap((appID: number) =>
-      ipcRenderer.invoke('app:install-redistributables', appID)
+    installRedistributables: wrap((appID: number, downloadId?: string) =>
+      ipcRenderer.invoke('app:install-redistributables', appID, downloadId)
     ),
     getSteamAppId: wrap((appID: number) =>
       ipcRenderer.invoke('app:get-steam-app-id', appID)
     ),
     addToDesktop: wrap(() => ipcRenderer.invoke('app:add-to-desktop')),
+    getLibraryInfo: wrap((appID: number) =>
+      ipcRenderer.invoke('app:get-library-info', appID)
+    ),
+    executeWrapperCommand: wrap((appID: number, wrapperCommand: string) =>
+      ipcRenderer.invoke('app:execute-wrapper-command', appID, wrapperCommand)
+    ),
+    checkUmuInstalled: wrap(() =>
+      ipcRenderer.invoke('app:check-umu-installed')
+    ),
+    installUmu: wrap(() => ipcRenderer.invoke('app:install-umu')),
+    launchWithUmu: wrap((appID: number) =>
+      ipcRenderer.invoke('app:launch-with-umu', appID)
+    ),
+    installRedistributablesUmu: wrap((appID: number) =>
+      ipcRenderer.invoke('app:install-redistributables-umu', appID)
+    ),
+    migrateToUmu: wrap((appID: number, oldSteamAppId?: number) =>
+      ipcRenderer.invoke('app:migrate-to-umu', appID, oldSteamAppId)
+    ),
   },
   getVersion: wrap(() => ipcRenderer.sendSync('get-version')),
   getTheme: wrap(() => ipcRenderer.sendSync('get-initial-theme')),
@@ -391,6 +420,15 @@ ipcRenderer.on(
 );
 
 ipcRenderer.on(
+  'app:redistributable-progress',
+  wrap((_, arg) => {
+    document.dispatchEvent(
+      new CustomEvent('app:redistributable-progress', { detail: arg })
+    );
+  })
+);
+
+ipcRenderer.on(
   'oobe:log',
   wrap((_, arg) => {
     document.dispatchEvent(new CustomEvent('oobe:log', { detail: arg }));
@@ -459,9 +497,18 @@ ipcRenderer.on(
 );
 
 ipcRenderer.on(
+  'game:launch',
+  wrap((_, arg) => {
+    document.dispatchEvent(new CustomEvent('game:launch', { detail: arg }));
+  })
+);
+
+ipcRenderer.on(
   'game:launch-error',
   wrap((_, arg) => {
-    document.dispatchEvent(new CustomEvent('game:launched', { detail: arg }));
+    document.dispatchEvent(
+      new CustomEvent('game:launch-error', { detail: arg })
+    );
   })
 );
 ipcRenderer.on(
@@ -562,5 +609,3 @@ ipcRenderer.on(
     );
   })
 );
-
-wrap(() => ipcRenderer.send('client-ready-for-events'))();

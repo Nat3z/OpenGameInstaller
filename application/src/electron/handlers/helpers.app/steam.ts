@@ -3,6 +3,7 @@
  */
 import { exec, execFile } from 'child_process';
 import { __dirname } from '../../manager/manager.paths.js';
+import { getOgiExecutablePath } from './platform.js';
 import { STEAMTINKERLAUNCH_PATH } from '../../startup.js';
 import { notifyError, notifySuccess } from './notifications.js';
 
@@ -13,6 +14,18 @@ function escapeShellArg(arg: string): string {
   // Replace any backslashes first (to avoid double-escaping)
   // Then escape double quotes, dollar signs, backticks, and backslashes
   return arg
+    .replace(/\\/g, '\\\\')
+    .replace(/"/g, '\\"')
+    .replace(/\$/g, '\\$')
+    .replace(/`/g, '\\`');
+}
+
+/**
+ * Escapes a value so it can be safely embedded inside a double-quoted argument.
+ * Escapes backslashes, double quotes, $ and backticks to prevent shell expansion.
+ */
+function escapeDoubleQuotedValue(value: string): string {
+  return value
     .replace(/\\/g, '\\\\')
     .replace(/"/g, '\\"')
     .replace(/\$/g, '\\$')
@@ -120,20 +133,31 @@ export async function getSteamAppIdWithFallback(
 }
 
 /**
- * Add game to Steam via SteamTinkerLaunch
+ * Add game to Steam via SteamTinkerLaunch using OGI wrapper mode.
+ * Steam launches OGI, then OGI executes the wrapper command.
  */
 export async function addGameToSteam(params: {
   name: string;
   version?: string;
   launchExecutable: string;
   cwd: string;
-  launchOptions: string;
+  wrapperCommand?: string;
+  appID: number;
+  compatibilityTool?: string;
 }): Promise<boolean> {
-  const versionedGameName = getVersionedGameName(params.name, params.version);
+  const ogiPath = getOgiExecutablePath();
+  const wrapperCommand =
+    params.wrapperCommand && params.wrapperCommand.length > 0
+      ? params.wrapperCommand
+      : '%command%';
+  const launchOptions = `"${ogiPath}" --game-id=${params.appID} --no-sandbox -- "${escapeDoubleQuotedValue(wrapperCommand)}"`;
+  const compatibilityToolArg = params.compatibilityTool
+    ? ` --compatibilitytool="${escapeShellArg(params.compatibilityTool)}"`
+    : '';
 
   return new Promise<boolean>((resolve) =>
     exec(
-      `${STEAMTINKERLAUNCH_PATH} addnonsteamgame --appname="${escapeShellArg(versionedGameName)}" --exepath="${escapeShellArg(params.launchExecutable)}" --startdir="${escapeShellArg(params.cwd)}" --launchoptions="${escapeShellArg(params.launchOptions)}" --compatibilitytool="proton_experimental" --use-steamgriddb`,
+      `${STEAMTINKERLAUNCH_PATH} addnonsteamgame --appname="${escapeShellArg(params.name)}" --exepath="${escapeShellArg(params.launchExecutable)}" --startdir="${escapeShellArg(params.cwd)}" --launchoptions="${escapeShellArg(launchOptions)}"${compatibilityToolArg} --use-steamgriddb`,
       {
         cwd: __dirname,
       },

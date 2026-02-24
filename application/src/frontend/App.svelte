@@ -50,6 +50,7 @@
   import AppUpdateManager from './managers/AppUpdateManager.svelte';
   import ChangelogManager from './managers/ChangelogManager.svelte';
   import { appUpdates, loadPersistedUpdateState } from './states.svelte';
+  import GameLaunchOverlay from './components/GameLaunchOverlay.svelte';
 
   interface ConfigTemplateAndInfo extends OGIAddonConfiguration {
     configTemplate: ConfigurationFile;
@@ -67,6 +68,33 @@
   let emptyAddons: Set<string> = $state(new Set());
 
   let recentlyLaunchedApps: LibraryInfo[] = $state([]);
+
+  // Steam shortcut launch mode detection
+  let launchGameId: number | null = $state(null);
+  let showLaunchOverlay = $state(false);
+
+  // Parse query params on mount to detect launch mode
+  function parseLaunchParams() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const gameIdParam = urlParams.get('launchGameId');
+    if (gameIdParam) {
+      const gameId = parseInt(gameIdParam, 10);
+      if (!isNaN(gameId)) {
+        launchGameId = gameId;
+        showLaunchOverlay = true;
+        console.log('[App] Launch mode detected for game:', gameId);
+      }
+    }
+  }
+
+  function handleLaunchComplete() {
+    showLaunchOverlay = false;
+  }
+
+  function handleLaunchError(error: string) {
+    console.error('[App] Game launch failed:', error);
+    // Keep the overlay visible to show the error, user can close it
+  }
 
   // Count active downloads (status 'downloading')
   const activeDownloadsCount = derived(
@@ -87,6 +115,9 @@
   );
 
   onMount(() => {
+    // Parse launch params first (before other initialization)
+    parseLaunchParams();
+
     // Initialize notification side view state
     console.log('App mounted, initializing stores');
     showNotificationSideView.set(false);
@@ -110,6 +141,10 @@
       const persistedUpdateState = loadPersistedUpdateState();
       appUpdates.requiredReadds = persistedUpdateState.requiredReadds;
       appUpdates.dismissedUpdates = persistedUpdateState.dismissedUpdates;
+      // send client-ready-for-events
+      window.electronAPI.app.clientReadyForEvents().then(() => {
+        console.log('client-ready-for-events sent');
+      });
     }, 200);
   });
 
@@ -491,6 +526,14 @@
         }
       }
     }}
+  />
+{/if}
+
+{#if showLaunchOverlay && launchGameId}
+  <GameLaunchOverlay
+    gameId={launchGameId}
+    onComplete={handleLaunchComplete}
+    onError={handleLaunchError}
   />
 {/if}
 

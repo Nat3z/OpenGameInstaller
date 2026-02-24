@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { LibraryInfo, SearchResult } from 'ogi-addon';
+  import { ConfigurationBuilder } from 'ogi-addon/config';
   import PlayIcon from '../Icons/PlayIcon.svelte';
   import {
     currentDownloads,
@@ -7,8 +8,10 @@
     currentStorePageOpenedStorefront,
     gamesLaunched,
     launchGameTrigger,
+    launchOverlayPlayPageReady,
     setHeaderBackButton,
     clearHeaderBackButton,
+    createNotification,
   } from '../store';
   import { onDestroy, onMount } from 'svelte';
   import SettingsFilled from '../Icons/SettingsFilled.svelte';
@@ -57,6 +60,17 @@
   let requiresSteamReadd = $derived(
     appUpdates.requiredReadds.some((r) => r.appID === libraryInfo.appID)
   );
+  let os = $state('');
+  let isMigratingToUmu = $state(false);
+  let needsUmuSetup = $derived.by(() => {
+    const isLinux = os === 'linux';
+    const isWindowsExecutable = libraryInfo.launchExecutable
+      .toLowerCase()
+      .endsWith('.exe');
+    const needsUmu = !libraryInfo.umu;
+    return isLinux && isWindowsExecutable && needsUmu;
+  });
+  let needsUmuMigration = $derived(needsUmuSetup && libraryInfo.umu);
 
   async function doesLinkExist(url: string | undefined) {
     if (!url) return false;
@@ -80,16 +94,18 @@
     playButton.setAttribute('data-error', 'false');
 
     // Fire of the addon launch-app event first
-    playButton.disabled = true;
-    playButton.querySelector('svg')!!.style.display = 'none';
-    playButton.querySelector('p')!!.textContent = 'WAITING';
 
     gamesLaunched.update((games) => {
       games[libraryInfo.appID] = 'launched';
       return games;
     });
 
+    playButton.disabled = true;
+    playButton.querySelector('svg')!!.style.display = 'none';
+    playButton.querySelector('p')!!.textContent = 'WAITING';
     try {
+      console.log('launching pre-launch');
+      console.log('launchApp', libraryInfo);
       await safeFetch('launchApp', {
         libraryInfo: libraryInfo,
         launchType: 'pre',
@@ -109,7 +125,11 @@
       return;
     }
 
+    console.log('pre-launch complete');
+
     await window.electronAPI.app.launchGame('' + libraryInfo.appID);
+
+    console.log('launchGame complete');
 
     playButton.querySelector('p')!!.textContent = 'PLAYING';
     if (!window.electronAPI.fs.exists('./internals')) {
@@ -136,6 +156,10 @@
     }
   }
 
+  onMount(() => {
+    launchOverlayPlayPageReady.set(libraryInfo.appID);
+  });
+
   const unsubscribe2 = launchGameTrigger.subscribe((game) => {
     console.log('launchGameTrigger', libraryInfo.appID);
     if (game === libraryInfo.appID) {
@@ -153,11 +177,7 @@
       playButton.querySelector('svg')!!.style.display = 'block';
       return;
     }
-    if (games[libraryInfo.appID] === 'launched') {
-      playButton.disabled = true;
-      playButton.querySelector('p')!!.textContent = 'PLAYING';
-      playButton.querySelector('svg')!!.style.display = 'none';
-    } else if (games[libraryInfo.appID] === 'error') {
+    if (games[libraryInfo.appID] === 'error') {
       console.log('Error launching game');
       playButton.disabled = false;
       playButton.querySelector('p')!!.textContent = 'ERROR';
@@ -188,6 +208,83 @@
     clearHeaderBackButton();
   });
 
+  function showUmuMigrationCompletePrompt() {
+    document.dispatchEvent(
+      new CustomEvent('input-asked', {
+        detail: {
+          config: new ConfigurationBuilder().build(false),
+          id: `umu-migration-complete-${libraryInfo.appID}`,
+          name: 'UMU Migration Complete',
+          description:
+            "Prefix migration is complete. Remove this game's existing Steam shortcut, then use Add to Steam in OpenGameInstaller so it can be re-added with UMU launch compatibility.",
+        },
+      })
+    );
+  }
+
+  async function migrateToUmu() {
+    if (isMigratingToUmu) return;
+    isMigratingToUmu = true;
+
+    try {
+      const steamAppIdResult = await window.electronAPI.app.getSteamAppId(
+        libraryInfo.appID
+      );
+      const oldSteamAppId = steamAppIdResult.success
+        ? steamAppIdResult.appId
+        : undefined;
+
+      const migrationResult = await window.electronAPI.app.migrateToUmu(
+        libraryInfo.appID,
+        oldSteamAppId
+      );
+
+      if (!migrationResult.success) {
+        createNotification({
+          id: Math.random().toString(36).substring(7),
+          type: 'error',
+          message: migrationResult.error || 'Failed to migrate game to UMU',
+        });
+        return;
+      }
+
+      const updatedLibraryInfo = await window.electronAPI.app.getLibraryInfo(
+        libraryInfo.appID
+      );
+      if (updatedLibraryInfo) {
+        libraryInfo = updatedLibraryInfo;
+      }
+
+      // Queue Steam re-add requirement so the existing banner appears
+      // and persistence writes update-state.json automatically.
+      appUpdates.requiredReadds = [
+        ...appUpdates.requiredReadds.filter(
+          (r) => r.appID !== libraryInfo.appID
+        ),
+        {
+          appID: libraryInfo.appID,
+          steamAppId: oldSteamAppId ?? 0,
+        },
+      ];
+
+      createNotification({
+        id: Math.random().toString(36).substring(7),
+        type: 'success',
+        message: 'Successfully migrated game prefix to UMU',
+      });
+      showUmuMigrationCompletePrompt();
+    } catch (error) {
+      console.error(error);
+      createNotification({
+        id: Math.random().toString(36).substring(7),
+        type: 'error',
+        message: 'Failed to migrate game to UMU',
+      });
+    } finally {
+      isMigratingToUmu = false;
+    }
+  }
+
   let searchingAddons: { [key: string]: SearchResult[] | undefined } = $state(
     {}
   );
@@ -205,6 +302,8 @@
   });
 
   onMount(async () => {
+    os = await window.electronAPI.app.getOS();
+
     // Set up the header back button
     console.log('PlayPage mounted, setting header back button');
     setHeaderBackButton(() => {
@@ -365,39 +464,42 @@
         <UpdateIcon fill="var(--color-overlay-text)" />
         <p class="font-archivo font-semibold text-overlay-text">Updating</p>
       </button>
+    {:else if os === ''}
+      <div class="flex justify-center items-center w-full h-full"></div>
+    {:else if needsUmuSetup}
+      <div class="relative group">
+        <button
+          class="px-6 py-3 flex border-none rounded-lg justify-center bg-disabled items-center gap-2 disabled:bg-disabled disabled:cursor-not-allowed transition-colors duration-200"
+          disabled
+        >
+          <PlayIcon fill="var(--color-overlay-text)" />
+          <p class="font-archivo font-semibold text-white">Play</p>
+        </button>
+        <div
+          class="absolute top-full left-0 mt-2 px-3 py-2 bg-accent-lighter drop-shadow-md border border-accent-dark flex flex-row gap-2 items-center text-accent-dark text-sm rounded-lg whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-10"
+        >
+          <img src="./error.svg" alt="error" class="w-4 h-4" />
+          <p class="font-archivo font-semibold text-accent-dark pr-4">
+            You can only play Windows games through Steam using Proton or UMU
+          </p>
+        </div>
+      </div>
+    {:else if $gamesLaunched[libraryInfo.appID] === 'launched'}
+      <button
+        class="px-6 py-3 flex border-none rounded-lg justify-center bg-success items-center gap-2 cursor-not-allowed transition-colors duration-200 text-overlay-text"
+        disabled
+      >
+        <p class="font-archivo font-semibold text-overlay-text">PLAYING</p>
+      </button>
     {:else}
-      {#await window.electronAPI.app.getOS()}
-        <div class="flex justify-center items-center w-full h-full"></div>
-      {:then os}
-        {#if (os === 'linux' || os === 'darwin') && libraryInfo.launchExecutable.endsWith('.exe')}
-          <div class="relative group">
-            <button
-              class="px-6 py-3 flex border-none rounded-lg justify-center bg-disabled items-center gap-2 disabled:bg-disabled disabled:cursor-not-allowed transition-colors duration-200"
-              disabled
-            >
-              <PlayIcon fill="var(--color-overlay-text)" />
-              <p class="font-archivo font-semibold text-white">Play</p>
-            </button>
-            <div
-              class="absolute top-full left-0 mt-2 px-3 py-2 bg-accent-lighter drop-shadow-md border border-accent-dark flex flex-row gap-2 items-center text-accent-dark text-sm rounded-lg whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-10"
-            >
-              <img src="./error.svg" alt="error" class="w-4 h-4" />
-              <p class="font-archivo font-semibold text-accent-dark pr-4">
-                You can only play Windows games through Steam using Proton
-              </p>
-            </div>
-          </div>
-        {:else}
-          <button
-            bind:this={playButton}
-            class="px-6 py-3 flex border-none rounded-lg justify-center bg-success hover:bg-success-hover items-center gap-2 disabled:bg-disabled disabled:cursor-not-allowed transition-colors duration-200 text-overlay-text data-[error=true]:bg-error data-[error=true]:hover:bg-error-hover/50"
-            onclick={() => launchGameTrigger.set(libraryInfo.appID)}
-          >
-            <PlayIcon fill="var(--color-overlay-text)" />
-            <p class="font-archivo font-semibold text-overlay-text">PLAY</p>
-          </button>
-        {/if}
-      {/await}
+      <button
+        bind:this={playButton}
+        class="px-6 py-3 flex border-none rounded-lg justify-center bg-success hover:bg-success-hover items-center gap-2 disabled:bg-disabled disabled:cursor-not-allowed transition-colors duration-200 text-overlay-text data-[error=true]:bg-error data-[error=true]:hover:bg-error-hover/50"
+        onclick={() => launchGameTrigger.set(libraryInfo.appID)}
+      >
+        <PlayIcon fill="var(--color-overlay-text)" />
+        <p class="font-archivo font-semibold text-overlay-text">PLAY</p>
+      </button>
     {/if}
 
     {#if updateInfo && !hasActiveUpdateDownload && isUpdateDismissed}
@@ -442,6 +544,51 @@
       <span class="font-medium">More Info</span>
     </button>
   </div>
+
+  {#if needsUmuMigration}
+    <div
+      class="bg-accent-lighter rounded-lg p-5 mx-0 mt-6 flex flex-col gap-3"
+      in:fly={{ y: -20, duration: 300 }}
+    >
+      <div class="flex items-start gap-3">
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          viewBox="0 0 24 24"
+          class="w-6 h-6 fill-accent-dark shrink-0 mt-0.5"
+        >
+          <path
+            d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"
+          />
+        </svg>
+        <div>
+          <h3 class="text-base font-archivo font-bold text-accent-dark">
+            UMU Migration Recommended
+          </h3>
+          <p class="text-accent-dark text-sm">
+            This game is still using legacy Proton prefix mode. Migrate it to
+            UMU for native OGI launch compatibility, including pre/post launch
+            events support.
+          </p>
+        </div>
+      </div>
+      <div class="flex gap-3">
+        <button
+          class="px-4 py-2 bg-accent-light hover:bg-accent-light/80 text-accent-dark font-archivo font-semibold rounded-lg border-none flex items-center justify-center gap-2 transition-colors duration-200 flex-1 disabled:bg-disabled/50 disabled:cursor-not-allowed"
+          onclick={migrateToUmu}
+          disabled={isMigratingToUmu}
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 24 24"
+            class="w-5 h-5 fill-accent-dark"
+          >
+            <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
+          </svg>
+          {isMigratingToUmu ? 'Migrating...' : 'Migrate to UMU'}
+        </button>
+      </div>
+    </div>
+  {/if}
 
   <!-- Steam Re-add Banner -->
   {#if requiresSteamReadd}

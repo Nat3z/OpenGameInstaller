@@ -20,60 +20,78 @@ interface PausedDownloadState {
 
 const pausedDownloadStates: Map<string, PausedDownloadState> = new Map();
 
-// Track which resume operations have already triggered bulk queueing to avoid duplicates
-const queuedAfterResume: Set<string> = new Set();
+// Rebuild restored queues once per app session and avoid concurrent rebuild races.
+let hasBulkQueuedRestoredDownloads = false;
+let bulkQueuePromise: Promise<void> | null = null;
+const resumeInFlight: Set<string> = new Set();
 
 async function enqueueRemainingPausedDownloads(
   resumedId: string,
   pausedStates: Map<string, PausedDownloadState>
 ) {
-  if (queuedAfterResume.has(resumedId)) return;
-  queuedAfterResume.add(resumedId);
+  if (hasBulkQueuedRestoredDownloads) return;
+  if (bulkQueuePromise) {
+    await bulkQueuePromise;
+    return;
+  }
 
-  // Build an ordered list of other paused items to enqueue behind the active one
-  let downloadsSnapshot: DownloadStatusAndInfo[] = [] as any;
-  currentDownloads.subscribe((d) => (downloadsSnapshot = d))();
-  const toQueue = downloadsSnapshot.filter(
-    (d) => d.id !== resumedId && d.status === 'paused'
-  );
+  bulkQueuePromise = (async () => {
+    // Build an ordered list of other paused items to enqueue behind the active one
+    let downloadsSnapshot: DownloadStatusAndInfo[] = [] as any;
+    currentDownloads.subscribe((d) => (downloadsSnapshot = d))();
+    const toQueue = downloadsSnapshot.filter(
+      (d) => d.id !== resumedId && d.status === 'paused'
+    );
 
-  // Enqueue sequentially to preserve order
-  for (const item of toQueue) {
-    try {
-      // Skip if we lack the data needed to restart
-      const itemDownloadURL =
-        item.downloadType === 'torrent' || item.downloadType === 'magnet'
-          ? item.downloadURL
-          : undefined;
-      const effectiveUrl = (item as any).usedDebridService
-        ? itemDownloadURL || item.originalDownloadURL
-        : item.originalDownloadURL || itemDownloadURL;
-      const hasFiles =
-        item.downloadType === 'direct' &&
-        Array.isArray(item.files) &&
-        item.files.length > 0;
-      if (!effectiveUrl && !hasFiles) {
-        continue;
+    // Enqueue sequentially to preserve order
+    for (const item of toQueue) {
+      try {
+        // Re-read each item before restart to avoid stale-snapshot duplicate restarts
+        const latest = getDownloadItem(item.id);
+        if (!latest || latest.status !== 'paused') {
+          continue;
+        }
+
+        const itemDownloadURL =
+          latest.downloadType === 'torrent' || latest.downloadType === 'magnet'
+            ? latest.downloadURL
+            : undefined;
+        const effectiveUrl = latest.usedDebridService
+          ? itemDownloadURL || latest.originalDownloadURL
+          : latest.originalDownloadURL || itemDownloadURL;
+        const hasFiles =
+          latest.downloadType === 'direct' &&
+          Array.isArray(latest.files) &&
+          latest.files.length > 0;
+        if (!effectiveUrl && !hasFiles) {
+          continue;
+        }
+
+        const state: PausedDownloadState = {
+          id: latest.id,
+          downloadInfo: { ...latest },
+          pausedAt: Date.now(),
+          originalDownloadURL: latest.originalDownloadURL || itemDownloadURL,
+          files: latest.downloadType === 'direct' ? latest.files : undefined,
+        };
+        pausedStates.set(latest.id, state);
+        // Restart to join the Electron queue; this will mark as 'downloading' and assign queue positions
+        await restartDownload(state, pausedStates);
+      } catch (e) {
+        console.error(
+          'Failed to enqueue paused download after resume:',
+          item.id,
+          e
+        );
       }
-
-      // Construct a paused state for restart
-      const state: PausedDownloadState = {
-        id: item.id,
-        downloadInfo: { ...item },
-        pausedAt: Date.now(),
-        originalDownloadURL: item.originalDownloadURL || itemDownloadURL,
-        files: item.downloadType === 'direct' ? item.files : undefined,
-      };
-      pausedStates.set(item.id, state);
-      // Restart to join the Electron queue; this will mark as 'downloading' and assign queue positions
-      await restartDownload(state, pausedStates);
-    } catch (e) {
-      console.error(
-        'Failed to enqueue paused download after resume:',
-        item.id,
-        e
-      );
     }
+  })();
+
+  try {
+    await bulkQueuePromise;
+    hasBulkQueuedRestoredDownloads = true;
+  } finally {
+    bulkQueuePromise = null;
   }
 }
 
@@ -149,6 +167,12 @@ export async function pauseDownload(downloadId: string): Promise<boolean> {
 }
 
 export async function resumeDownload(downloadId: string): Promise<boolean> {
+  if (resumeInFlight.has(downloadId)) {
+    console.log('Resume already in progress for', downloadId);
+    return false;
+  }
+  resumeInFlight.add(downloadId);
+
   try {
     console.log('Attempting to resume download:', downloadId);
 
@@ -259,6 +283,8 @@ export async function resumeDownload(downloadId: string): Promise<boolean> {
         error instanceof Error ? error.message : 'Failed to resume download',
     });
     return false;
+  } finally {
+    resumeInFlight.delete(downloadId);
   }
 }
 

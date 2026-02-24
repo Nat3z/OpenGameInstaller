@@ -1,9 +1,10 @@
 import {
   createNotification,
   setupLogs,
-  protonPrefixSetups,
+  redistributableInstalls,
   type DownloadStatusAndInfo,
 } from '../../store';
+import { get } from 'svelte/store';
 import { updateDownloadStatus } from '../downloads/lifecycle';
 import { saveFailedSetup } from '../recovery/failedSetups';
 import type {
@@ -12,7 +13,7 @@ import type {
   SetupEventResponse,
 } from 'ogi-addon';
 import { safeFetch } from '../core/ipc';
-import { appUpdates, updatesManager } from '../../states.svelte';
+import { updatesManager } from '../../states.svelte';
 import { getApp } from '../core/library';
 
 function dispatchSetupEvent(
@@ -215,34 +216,40 @@ export async function runSetupApp(
       throw new Error(result);
     }
 
-    // Handle the new Proton prefix setup flow for Linux with redistributables
+    // Handle redistributable installation for Linux
     if (result === 'setup-prefix-required') {
       console.log(
-        '[setup] Proton prefix setup required for:',
+        '[setup] Installing redistributables for:',
         downloadedItem.name
       );
 
-      // Initialize the proton prefix setup state
-      // The prefix path is managed by the backend (~/.ogi-wine-prefixes/{appID})
-      protonPrefixSetups.update((setups) => ({
+      // Initialize redistributable installation progress
+      redistributableInstalls.update((setups) => ({
         ...setups,
         [downloadedItem.id]: {
           downloadId: downloadedItem.id,
           appID: downloadedItem.appID,
           gameName: downloadedItem.name,
           addonSource: downloadedItem.addonSource,
-          redistributables: data.redistributables || [],
-          step: 'added-to-steam',
-          prefixPath: `~/.ogi-wine-prefixes/${downloadedItem.appID}`,
-          prefixExists: false,
+          redistributables: (data.redistributables || []).map((r) => ({
+            ...r,
+            status: 'pending',
+          })),
+          overallProgress: 0,
+          isComplete: false,
         },
       }));
 
-      // Update download status to proton-prefix-setup
+      // Update download status to show progress UI
       updateDownloadStatus(downloadedItem.id, {
-        status: 'proton-prefix-setup',
+        status: 'installing-redistributables',
         downloadPath: downloadedItem.downloadPath,
       });
+
+      // Start auto-installation in background (guard against unhandled rejections)
+      startRedistributableInstallation(downloadedItem.id, downloadedItem.appID).catch(
+        (err) => console.error('[setup] startRedistributableInstallation failed:', err)
+      );
 
       return data;
     }
@@ -259,6 +266,201 @@ export async function runSetupApp(
     console.error('Error setting up app: ', error);
     throw error;
   }
+}
+
+type RedistributableProgressDetail = {
+  appID: number;
+  downloadId?: string;
+  kind: 'item' | 'done';
+  total: number;
+  completedCount: number;
+  failedCount: number;
+  overallProgress: number;
+  redistributableName?: string;
+  redistributablePath?: string;
+  index?: number;
+  status?: 'installing' | 'completed' | 'failed';
+  result?: 'success' | 'failed' | 'not-found';
+  error?: string;
+};
+
+function applyRedistributableProgress(
+  downloadId: string,
+  progress: RedistributableProgressDetail
+) {
+  redistributableInstalls.update((setups) => {
+    const current = setups[downloadId];
+    if (!current) return setups;
+
+    const overallProgress = Number.isFinite(progress.overallProgress)
+      ? Math.max(0, Math.min(100, progress.overallProgress))
+      : current.overallProgress;
+    const updatedRedistributables = [...current.redistributables];
+
+    if (progress.kind === 'item') {
+      let targetIndex =
+        typeof progress.index === 'number' ? progress.index : -1;
+      if (targetIndex < 0 || targetIndex >= updatedRedistributables.length) {
+        targetIndex = updatedRedistributables.findIndex(
+          (redist) =>
+            redist.name === progress.redistributableName &&
+            redist.path === progress.redistributablePath
+        );
+      }
+
+      if (targetIndex >= 0 && progress.status) {
+        updatedRedistributables[targetIndex] = {
+          ...updatedRedistributables[targetIndex],
+          status: progress.status,
+        };
+      }
+
+      return {
+        ...setups,
+        [downloadId]: {
+          ...current,
+          redistributables: updatedRedistributables,
+          overallProgress,
+          isComplete: false,
+        },
+      };
+    }
+
+    return {
+      ...setups,
+      [downloadId]: {
+        ...current,
+        overallProgress: 100,
+        isComplete: true,
+        error:
+          progress.result === 'success'
+            ? undefined
+            : progress.error || 'Redistributable installation failed',
+      },
+    };
+  });
+}
+
+/**
+ * Start redistributable installation in background
+ * Progress is driven by backend UMU events.
+ */
+export async function startRedistributableInstallation(
+  downloadId: string,
+  appID: number
+) {
+  const setup = get(redistributableInstalls)[downloadId];
+  if (!setup) return;
+
+  let sawBackendProgress = false;
+
+  const onRedistributableProgress = (event: Event) => {
+    const detail = (event as CustomEvent<RedistributableProgressDetail>).detail;
+    if (!detail || detail.appID !== appID) return;
+    if (detail.downloadId && detail.downloadId !== downloadId) return;
+
+    sawBackendProgress = true;
+    applyRedistributableProgress(downloadId, detail);
+  };
+
+  document.addEventListener(
+    'app:redistributable-progress',
+    onRedistributableProgress
+  );
+
+  let result: 'success' | 'failed' | 'not-found' = 'failed';
+  try {
+    result = await window.electronAPI.app.installRedistributables(
+      appID,
+      downloadId
+    );
+  } catch (error) {
+    console.error('[setup] Redistributable installation error:', error);
+    result = 'failed';
+  } finally {
+    document.removeEventListener(
+      'app:redistributable-progress',
+      onRedistributableProgress
+    );
+  }
+
+  if (!sawBackendProgress) {
+    const fallbackStatus = result === 'success' ? 'completed' : 'failed';
+    const fallbackError =
+      result === 'success'
+        ? undefined
+        : result === 'not-found'
+          ? 'Game not found while installing redistributables'
+          : 'Redistributable installation failed';
+
+    redistributableInstalls.update((setups) => {
+      const current = setups[downloadId];
+      if (!current) return setups;
+      return {
+        ...setups,
+        [downloadId]: {
+          ...current,
+          redistributables: current.redistributables.map((redist) => ({
+            ...redist,
+            status: fallbackStatus,
+          })),
+          overallProgress: 100,
+          isComplete: true,
+          error: fallbackError,
+        },
+      };
+    });
+  }
+
+  if (result === 'success') {
+    updateDownloadStatus(downloadId, {
+      status: 'setup-complete',
+    });
+
+    redistributableInstalls.update((setups) => {
+      delete setups[downloadId];
+      return setups;
+    });
+
+    createNotification({
+      id: Math.random().toString(36).substring(2, 9),
+      type: 'success',
+      message: `Setup complete for ${setup.gameName}!`,
+    });
+    return;
+  }
+
+  updateDownloadStatus(downloadId, {
+    status: 'error',
+    error:
+      result === 'not-found'
+        ? 'redistributables-app-not-found'
+        : 'setup-redistributables-failed',
+  });
+
+  redistributableInstalls.update((setups) => {
+    const current = setups[downloadId];
+    if (!current) return setups;
+    return {
+      ...setups,
+      [downloadId]: {
+        ...current,
+        isComplete: true,
+        overallProgress: 100,
+        error:
+          current.error ||
+          (result === 'not-found'
+            ? 'Game not found while installing redistributables'
+            : 'Redistributable installation failed'),
+      },
+    };
+  });
+
+  createNotification({
+    id: Math.random().toString(36).substring(2, 9),
+    type: 'error',
+    message: `Redistributable install failed for ${setup.gameName}.`,
+  });
 }
 
 /**
@@ -315,14 +517,15 @@ export async function runSetupAppUpdate(
     });
 
     // For updates, only update the version - don't run insertApp
-    let beforeLibraryApp = getApp(downloadedItem.appID);
     const result = await window.electronAPI.app.updateAppVersion(
       downloadedItem.appID,
       data.version,
       data.cwd,
       data.launchExecutable,
       data.launchArguments,
-      downloadedItem.addonSource
+      downloadedItem.addonSource,
+      data.umu,
+      data.launchEnv
     );
 
     if (result === 'app-not-found') {
@@ -342,44 +545,6 @@ export async function runSetupAppUpdate(
         type: 'success',
         message: `Updated ${downloadedItem.name} to version ${data.version}`,
       });
-
-      if (
-        (await window.electronAPI.app.getOS()) === 'linux' &&
-        (beforeLibraryApp?.launchExecutable !== data.launchExecutable ||
-          beforeLibraryApp?.launchArguments !== data.launchArguments ||
-          beforeLibraryApp?.cwd !== data.cwd)
-      ) {
-        createNotification({
-          id: Math.random().toString(36).substring(2, 9),
-          type: 'success',
-          message: `Game configuration changed, go to the play page to re-add the game to Steam or else the game will not launch.`,
-        });
-
-        // Get the current Steam app ID before marking for re-add
-        const steamAppIdResult = await window.electronAPI.app.getSteamAppId(
-          downloadedItem.appID
-        );
-        const steamAppId = steamAppIdResult.success
-          ? steamAppIdResult.appId
-          : undefined;
-
-        // Only add to requiredReadds if we successfully got the Steam app ID
-        if (steamAppId !== undefined) {
-          appUpdates.requiredReadds = [
-            ...appUpdates.requiredReadds.filter(
-              (r) => r.appID !== downloadedItem.appID
-            ),
-            { appID: downloadedItem.appID, steamAppId },
-          ];
-        } else {
-          console.warn(
-            `[setup] Failed to get Steam app ID for app ${downloadedItem.appID}, skipping prefix migration tracking`
-          );
-          appUpdates.requiredReadds = appUpdates.requiredReadds.filter(
-            (r) => r.appID !== downloadedItem.appID
-          );
-        }
-      }
     } else {
       createNotification({
         id: Math.random().toString(36).substring(2, 9),

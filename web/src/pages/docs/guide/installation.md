@@ -56,18 +56,21 @@ at the top on [bun.sh](https://bun.sh).
 If there are any issues with installing Bun through this script, please don't go to us for support. Resort to GitHub discussions
 or issues on the [Bun GitHub repository](https://github.com/oven-sh/bun) instead.
 
-### Installing Wine (LINUX ONLY)
+### Installing Wine (LINUX ONLY – legacy / optional)
 
-Wine must be installed through the Flatpak package to work. If issues arise from downloading the Flatpak through OGI, run
+New games on Linux use **UMU**, which OGI downloads automatically. You do **not** need to install Wine or SteamTinkerLaunch for UMU-based games. See [UMU Launcher (Linux)](/docs/guide/umu).
+
+If you use or support the **legacy** Steam + Proton workflow, Wine must be installed via Flatpak. If OGI’s automatic download fails, run:
 
 ```sh
 flatpak install --system flathub org.winehq.Wine
 ```
 
-### Installing SteamTinkerLaunch (LINUX ONLY)
+### Installing SteamTinkerLaunch (LINUX ONLY – legacy / optional)
 
-To install steamtinkerlaunch, go to the folder `~/.local/share/OpenGameInstaller/bin/` (create the folder if it does not exist).
-Then, in the `bin` folder, run
+Only needed for the **legacy** Steam/Proton flow. For UMU-based games, skip this.
+
+To install SteamTinkerLaunch manually, go to `~/.local/share/OpenGameInstaller/bin/` (create the folder if it does not exist), then run:
 
 ```sh
 git clone https://github.com/sonic2kk/steamtinkerlaunch
@@ -76,4 +79,4 @@ chmod +x ./steamtinkerlaunch
 ./steamtinkerlaunch
 ```
 
-If you get notifications, steamtinkerlaunch installed successfully.
+If you get notifications, SteamTinkerLaunch installed successfully.

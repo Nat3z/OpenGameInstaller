@@ -8,7 +8,7 @@ section: User's Guide
 
 Addons are the key for running code, providing sources, and creating setup scripts for games in OpenGameInstaller. OGI addons are written in JavaScript/TypeScript and are stored in the `addons` folder of the OGI installation directory. They are automatically loaded by the OGI Addon Server on startup.
 
-When installing addons, you will usually need to have a '**catalog**' addon and a '**source search**' addon. The catalog addon provides the list of games and their metadata, while the source search addon is responsible for finding, serving, and setting up the game files. Once the source search addon has setup the game, OpenGameInstaller then becomes responsible for additional setup, such as installing dependencies, configuring the game to work on Steam, and launching.
+When installing addons, you will usually need to have a '**catalog**' addon and a '**source search**' addon. The catalog addon provides the list of games and their metadata, while the source search addon is responsible for finding, serving, and setting up the game files. Once the source search addon has set up the game, OpenGameInstaller handles the rest: installing dependencies, configuring the game (on Linux, via [UMU](/docs/guide/umu) or the legacy Steam flow), and launching from the library or Steam.
 
 ## Troubleshooting
 

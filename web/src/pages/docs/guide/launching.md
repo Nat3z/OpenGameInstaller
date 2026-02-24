@@ -6,18 +6,24 @@ part: 4
 section: User's Guide
 ---
 
-Games when installed on OpenGameInstaller are automatically configured to work with the library system. If you are on Linux, games installed will be set up to work with Steam and Proton and will not be accessible through the library feature.
+Games installed on OpenGameInstaller are automatically configured to work with the library. You can launch them from the built-in library in the app.
+
+## Linux: UMU vs legacy
+
+On **Linux**, new games use **UMU** (Unified Launcher for Windows Games on Linux). They are **launched directly from the OpenGameInstaller library**—no need to add them to Steam or use Game Mode for the library. For details, see [UMU Launcher (Linux)](/docs/guide/umu).
+
+Older games that were set up with the legacy Steam + Proton flow still launch from Steam. If you don’t see a game in the library on Linux, it may be a legacy Steam game; check Steam (and Game Mode if you use it) and ensure the client has been restarted if needed.
 
 ## Troubleshooting
 
 ### My game isn't launching
 
-If you are playing on Linux, games are automatically setup and configured to work on Steam with Proton. The built-in library feature is currently not supported for Linux. If you don't see the game on Steam, make sure that you either entered into Game Mode or fully restarted the Steam client.
-
-If you are on Windows, make sure that the game is installed in the correct directory and that the game's executable is set correctly in the settings. If the game is still not launching, try to reinstall the game or check the game's installation directory for any issues.
+- **Linux (UMU games)**: Confirm the game’s executable and working directory in the game settings. Ensure [UMU](/docs/guide/umu) is installed (OGI installs it automatically on first use). Check that any required redistributables (e.g. vcredist, .NET) are installed via the game’s setup or settings.
+- **Linux (legacy Steam games)**: Make sure the game appears in Steam and that you’ve entered Game Mode or fully restarted the Steam client if needed.
+- **Windows**: Make sure the game is installed in the correct directory and the game’s executable is set correctly in the settings. If it still doesn’t launch, try reinstalling or checking the game’s installation directory.
 
 ### My game is crashing
 
-Check if all dependencies are installed correctly. If you are on Linux, make sure that the game is compatible with Proton and that you have the correct version of Proton selected in the game's properties on Steam and that the Wine Prefix created has the Common Redistributables installed (ex. vcredist, dotnet, etc.). If you are on Windows, ensure that all required libraries and frameworks are installed locally.
+Check that all dependencies are installed. On **Linux with UMU**, ensure the game’s Wine prefix has the required redistributables (vcredist, dotnet, etc.); you can run setup again or use the game’s settings to install them. On **Linux with legacy Steam/Proton**, ensure the game is compatible with Proton, the correct Proton version is selected in Steam, and the Wine prefix has the needed redistributables. On **Windows**, ensure all required libraries and frameworks are installed.
 
-If you are still having issues on Linux, try to adjust the game's settings on Steam by clicking on the settings cog in the game launch page and changing the launch arguments to not have a `STEAM_COMPAT_DATA_PATH` (delete the line that starts with `STEAM_COMPAT_DATA_PATH=....`).
+If you still have issues on Linux with a **legacy** Steam game, try editing the game’s launch options in Steam and removing the line that sets `STEAM_COMPAT_DATA_PATH=...`.

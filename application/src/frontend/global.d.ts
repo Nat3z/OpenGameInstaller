@@ -128,7 +128,10 @@ interface Window {
     };
     app: {
       close: () => Promise<void>;
+      hideWindow: () => Promise<void>;
+      showWindow: () => Promise<void>;
       minimize: () => Promise<void>;
+      clientReadyForEvents: () => Promise<void>;
       axios: <T>(
         options: AxiosRequestConfig
       ) => Promise<{ status: number; success: boolean; data: T }>;
@@ -172,7 +175,9 @@ interface Window {
         cwd: string,
         launchExecutable: string,
         launchArguments?: string,
-        addonSource?: string
+        addonSource?: string,
+        umu?: LibraryInfo['umu'],
+        launchEnv?: LibraryInfo['launchEnv']
       ) => Promise<'success' | 'app-not-found'>;
       addToSteam: (
         appID: number,
@@ -205,13 +210,51 @@ interface Window {
         error?: string;
       }>;
       installRedistributables: (
-        appID: number
+        appID: number,
+        downloadId?: string
       ) => Promise<'success' | 'failed' | 'not-found'>;
       addToDesktop: () => Promise<{
         success: boolean;
         path?: string;
         error?: string;
       }>;
+      /**
+       * Get library info for a specific game
+       */
+      getLibraryInfo: (appID: number) => Promise<LibraryInfo | null>;
+      /**
+       * Execute a wrapped Steam command exactly as provided
+       */
+      executeWrapperCommand: (
+        appID: number,
+        wrapperCommand: string
+      ) => Promise<{
+        success: boolean;
+        exitCode?: number;
+        signal?: string;
+        error?: string;
+      }>;
+      /**
+       * UMU (Unified Launcher for Windows Games on Linux) handlers
+       */
+      checkUmuInstalled: () => Promise<boolean>;
+      installUmu: () => Promise<{ success: boolean; error?: string }>;
+      launchWithUmu: (appID: number) => Promise<{
+        success: boolean;
+        error?: string;
+        pid?: number;
+      }>;
+      installRedistributablesUmu: (
+        appID: number
+      ) => Promise<'success' | 'failed' | 'not-found'>;
+      migrateToUmu: (
+        appID: number,
+        oldSteamAppId?: number
+      ) => Promise<{ success: boolean; error?: string }>;
+      /**
+       * Quit the application entirely
+       */
+      quit: () => Promise<void>;
     };
     updateAddons: () => Promise<void>;
     getVersion: () => string;

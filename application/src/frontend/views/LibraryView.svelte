@@ -10,7 +10,6 @@
     getRecentlyPlayed,
     sortLibraryAlphabetically,
     filterLibrary,
-    chunkArray,
   } from '../lib/core/library';
   import { updatesManager } from '../states.svelte';
   import UpdateIcon from '../Icons/UpdateIcon.svelte';
@@ -127,7 +126,6 @@
     unsubscribe();
   });
 
-  let allGamesChunks = $derived(chunkArray(filteredGames, 5));
 </script>
 
 {#key library}
@@ -266,67 +264,57 @@
               </div>
             </div>
           {:else}
-            <div class="space-y-4">
-              {#each allGamesChunks as chunk, chunkIndex}
-                <div class="flex gap-4 flex-wrap">
-                  {#each chunk as app, appIndex}
-                    <div class="library-entry-shell ml-4">
-                      <button
-                        data-library-item
-                        class="library-entry border-none relative transition-all shadow-lg hover:shadow-xl rounded-lg overflow-hidden bg-white"
-                        class:library-entry-visible={revealLibraryEntries}
-                        class:library-entry-revealing={revealLibraryDelayActive}
-                        style={getLibraryEntryDelay(
-                          recentlyPlayed.length + chunkIndex * 5 + appIndex
-                        )}
-                        onclick={() => ($selectedApp = app)}
+            <div class="grid grid-cols-5 gap-4 w-full">
+              {#each filteredGames as app, appIndex}
+                <div class="library-entry-shell">
+                  <button
+                    data-library-item
+                    class="library-entry w-full border-none relative transition-all shadow-lg hover:shadow-xl rounded-lg overflow-hidden bg-white"
+                    class:library-entry-visible={revealLibraryEntries}
+                    class:library-entry-revealing={revealLibraryDelayActive}
+                    style={getLibraryEntryDelay(recentlyPlayed.length + appIndex)}
+                    onclick={() => ($selectedApp = app)}
+                  >
+                    {#if updatesManager.getAppUpdate(app.appID)?.updateAvailable}
+                      <div
+                        class="absolute shadow-md top-2 right-2 h-6 z-2 flex items-center bg-yellow-500 rounded-lg flex-row justify-end gap-1 px-2"
                       >
-                        {#if updatesManager.getAppUpdate(app.appID)?.updateAvailable}
-                          <div
-                            class="absolute shadow-md top-2 right-2 h-6 z-2 flex items-center bg-yellow-500 rounded-lg flex-row justify-end gap-1 px-2"
-                          >
-                            <UpdateIcon
-                              fill="#ffffff"
-                              width="16px"
-                              height="16px"
-                            />
-                          </div>
-                        {/if}
-                        <Image
-                          src={app.capsuleImage}
-                          alt={app.name}
-                          classifier={app.appID.toString() + '-capsule'}
-                          onerror={(e) => {
-                            const fallback = './favicon.png';
-                            const img = e.currentTarget as HTMLImageElement;
-                            if (img.src !== fallback) {
-                              img.src = fallback;
-                              img.style.opacity = '0.5';
-                              (
-                                (img.parentElement as HTMLElement)
-                                  .children[1]! as HTMLElement
-                              ).dataset.backup = 'enabled';
-                            }
-                          }}
-                          class="w-32 object-cover"
-                        />
-                        <div
-                          data-backup="disabled"
-                          class="absolute inset-0 flex items-end justify-center data-[backup=disabled]:hidden"
-                        >
-                          <div
-                            class="absolute inset-x-0 bottom-0 w-full h-1/2 pointer-events-none"
-                            style="background: linear-gradient(to top, rgba(0,0,0,0.7), transparent);"
-                          ></div>
-                          <p
-                            class="text-white text-base py-4 text-center font-archivo z-1"
-                          >
-                            {app.name}
-                          </p>
-                        </div>
-                      </button>
+                        <UpdateIcon fill="#ffffff" width="16px" height="16px" />
+                      </div>
+                    {/if}
+                    <Image
+                      src={app.capsuleImage}
+                      alt={app.name}
+                      classifier={app.appID.toString() + '-capsule'}
+                      onerror={(e) => {
+                        const fallback = './favicon.png';
+                        const img = e.currentTarget as HTMLImageElement;
+                        if (img.src !== fallback) {
+                          img.src = fallback;
+                          img.style.opacity = '0.5';
+                          (
+                            (img.parentElement as HTMLElement)
+                              .children[1]! as HTMLElement
+                          ).dataset.backup = 'enabled';
+                        }
+                      }}
+                      class="w-full object-cover"
+                    />
+                    <div
+                      data-backup="disabled"
+                      class="absolute inset-0 flex items-end justify-center data-[backup=disabled]:hidden"
+                    >
+                      <div
+                        class="absolute inset-x-0 bottom-0 w-full h-1/2 pointer-events-none"
+                        style="background: linear-gradient(to top, rgba(0,0,0,0.7), transparent);"
+                      ></div>
+                      <p
+                        class="text-white text-base py-4 text-center font-archivo z-1"
+                      >
+                        {app.name}
+                      </p>
                     </div>
-                  {/each}
+                  </button>
                 </div>
               {/each}
             </div>

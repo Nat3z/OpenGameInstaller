@@ -1,13 +1,15 @@
 import {
   currentDownloads,
-  protonPrefixSetups,
+  redistributableInstalls,
   type DownloadStatusAndInfo,
-  type ProtonPrefixSetup,
+  type RedistributableInstall,
 } from '../../store';
 import { get } from 'svelte/store';
-import { restartDownload } from './restart';
 
-type PersistableStatus = 'downloading' | 'paused' | 'proton-prefix-setup';
+type PersistableStatus =
+  | 'downloading'
+  | 'paused'
+  | 'installing-redistributables';
 
 const PERSIST_DIR = './in-progress-downloads';
 
@@ -15,23 +17,10 @@ interface PersistedRecord {
   id: string;
   updatedAt: number;
   downloadInfo: DownloadStatusAndInfo;
-  protonPrefixSetup?: ProtonPrefixSetup;
+  redistributableInstall?: RedistributableInstall;
 }
 
 const lastSavedAtById: Map<string, number> = new Map();
-const restoredIds: Set<string> = new Set();
-let hasEnqueuedRestoredAfterAnyStart = false;
-
-// Local minimal type to interop with restartDownload
-interface PausedDownloadStateLike {
-  id: string;
-  downloadInfo: DownloadStatusAndInfo;
-  pausedAt: number;
-  originalDownloadURL?: string;
-  files?: any[];
-}
-
-const localPausedMap = new Map<string, PausedDownloadStateLike>();
 
 function ensureDir() {
   try {
@@ -49,7 +38,7 @@ function isPersistableStatus(
   return (
     status === 'downloading' ||
     status === 'paused' ||
-    status === 'proton-prefix-setup'
+    status === 'installing-redistributables'
   );
 }
 
@@ -64,17 +53,17 @@ function saveRecord(download: DownloadStatusAndInfo, force = false) {
     if (!force && now - last < 1000) return; // throttle per ID (1s)
     lastSavedAtById.set(download.id, now);
 
-    const maybeProtonPrefixSetup =
-      download.status === 'proton-prefix-setup'
-        ? get(protonPrefixSetups)[download.id]
+    const maybeRedistributableInstall =
+      download.status === 'installing-redistributables'
+        ? get(redistributableInstalls)[download.id]
         : undefined;
 
     const record: PersistedRecord = {
       id: download.id,
       updatedAt: now,
       downloadInfo: download,
-      ...(maybeProtonPrefixSetup
-        ? { protonPrefixSetup: maybeProtonPrefixSetup }
+      ...(maybeRedistributableInstall
+        ? { redistributableInstall: maybeRedistributableInstall }
         : {}),
     };
     window.electronAPI.fs.write(
@@ -89,25 +78,17 @@ function saveRecord(download: DownloadStatusAndInfo, force = false) {
 function removeRecord(id: string) {
   try {
     const path = recordPath(id);
-    // if (window.electronAPI.fs.exists(path)) {
     window.electronAPI.fs.delete(path);
-    // }
   } catch (e) {
     console.error('Failed to remove persisted download:', id, e);
   }
 }
 
-function isProtonPrefixSetup(value: unknown): value is ProtonPrefixSetup {
+function isRedistributableInstall(
+  value: unknown
+): value is RedistributableInstall {
   if (typeof value !== 'object' || value === null) return false;
-  const setup = value as ProtonPrefixSetup;
-  const validSteps: ProtonPrefixSetup['step'][] = [
-    'added-to-steam',
-    'kill-steam',
-    'start-steam',
-    'launch-game',
-    'waiting-prefix',
-    'ready',
-  ];
+  const setup = value as RedistributableInstall;
   return (
     typeof setup.downloadId === 'string' &&
     typeof setup.appID === 'number' &&
@@ -119,20 +100,18 @@ function isProtonPrefixSetup(value: unknown): value is ProtonPrefixSetup {
         typeof item === 'object' &&
         item !== null &&
         typeof item.name === 'string' &&
-        typeof item.path === 'string'
+        typeof item.path === 'string' &&
+        ['pending', 'installing', 'completed', 'failed'].includes(item.status)
     ) &&
-    typeof setup.prefixPath === 'string' &&
-    typeof setup.prefixExists === 'boolean' &&
-    validSteps.includes(setup.step)
+    typeof setup.overallProgress === 'number' &&
+    typeof setup.isComplete === 'boolean'
   );
 }
 
-export async function loadPersistedDownloads(): Promise<
-  {
-    downloads: DownloadStatusAndInfo[];
-    protonPrefixSetupByDownloadId: Record<string, ProtonPrefixSetup>;
-  }
-> {
+export async function loadPersistedDownloads(): Promise<{
+  downloads: DownloadStatusAndInfo[];
+  redistributableInstallByDownloadId: Record<string, RedistributableInstall>;
+}> {
   try {
     ensureDir();
     // Do not pre-assign queue positions on restore. All items will be paused
@@ -140,7 +119,11 @@ export async function loadPersistedDownloads(): Promise<
     const files: string[] =
       (await window.electronAPI.fs.getFilesInDir(PERSIST_DIR)) || [];
     const restored: DownloadStatusAndInfo[] = [];
-    const protonPrefixSetupByDownloadId: Record<string, ProtonPrefixSetup> = {};
+    const redistributableInstallByDownloadId: Record<
+      string,
+      RedistributableInstall
+    > = {};
+
     for (const file of files) {
       if (!file.endsWith('.json')) continue;
       try {
@@ -149,13 +132,18 @@ export async function loadPersistedDownloads(): Promise<
         if (!parsed || !parsed.downloadInfo) continue;
         const info = parsed.downloadInfo;
         if (!isPersistableStatus(info.status)) continue;
-        if (info.status === 'proton-prefix-setup') {
-          if (isProtonPrefixSetup(parsed.protonPrefixSetup)) {
-            protonPrefixSetupByDownloadId[info.id] = parsed.protonPrefixSetup;
+
+        if (info.status === 'installing-redistributables') {
+          if (isRedistributableInstall(parsed.redistributableInstall)) {
+            redistributableInstallByDownloadId[info.id] =
+              parsed.redistributableInstall;
           }
+          // Mark as paused on restore - will auto-resume installation
+          info.status = 'paused';
           restored.push(info);
           continue;
         }
+
         // If this was a Debrid job but we never captured a resolved link, skip restoring it
         if (
           info.usedDebridService &&
@@ -174,10 +162,10 @@ export async function loadPersistedDownloads(): Promise<
         console.error('Failed to parse persisted download:', file, e);
       }
     }
-    return { downloads: restored, protonPrefixSetupByDownloadId };
+    return { downloads: restored, redistributableInstallByDownloadId };
   } catch (e) {
     console.error('Failed to load persisted downloads:', e);
-    return { downloads: [], protonPrefixSetupByDownloadId: {} };
+    return { downloads: [], redistributableInstallByDownloadId: {} };
   }
 }
 
@@ -188,11 +176,6 @@ export async function initDownloadPersistence() {
   try {
     const restoredState = await loadPersistedDownloads();
     if (restoredState.downloads.length > 0) {
-      restoredState.downloads.forEach((r) => {
-        if (r.status === 'paused') {
-          restoredIds.add(r.id);
-        }
-      });
       currentDownloads.update((downloads) => {
         const byId = new Map(downloads.map((d) => [d.id, d] as const));
         restoredState.downloads.forEach((r) => {
@@ -207,14 +190,32 @@ export async function initDownloadPersistence() {
       });
     }
 
-    const restoredPrefixSetupIds = Object.keys(
-      restoredState.protonPrefixSetupByDownloadId
+    // Restore redistributable install states
+    const restoredRedistributableIds = Object.keys(
+      restoredState.redistributableInstallByDownloadId
     );
-    if (restoredPrefixSetupIds.length > 0) {
-      protonPrefixSetups.update((setups) => ({
+    if (restoredRedistributableIds.length > 0) {
+      redistributableInstalls.update((setups) => ({
         ...setups,
-        ...restoredState.protonPrefixSetupByDownloadId,
+        ...restoredState.redistributableInstallByDownloadId,
       }));
+
+      // Auto-resume redistributable installations that were in progress
+      // Mark downloads as complete since installation state is restored
+      for (const downloadId of restoredRedistributableIds) {
+        const install =
+          restoredState.redistributableInstallByDownloadId[downloadId];
+        if (install.isComplete) {
+          // Already complete, mark download as setup-complete
+          currentDownloads.update((downloads) => {
+            const download = downloads.find((d) => d.id === downloadId);
+            if (download && download.status === 'paused') {
+              download.status = 'setup-complete';
+            }
+            return downloads;
+          });
+        }
+      }
     }
   } catch (e) {
     console.error('Failed to hydrate persisted downloads:', e);
@@ -222,52 +223,12 @@ export async function initDownloadPersistence() {
 
   // 2) Subscribe to store and persist relevant states, cleanup completed/errored
   let lastSnapshot: Record<string, string> = {};
-  let lastPrefixSetupSnapshotById: Record<string, string> = {};
+  let lastRedistributableSnapshotById: Record<string, string> = {};
   let latestDownloads: DownloadStatusAndInfo[] = [];
+
   currentDownloads.subscribe((downloads) => {
     try {
       latestDownloads = downloads;
-      // If a new download has started anywhere and we still have restored paused items,
-      // rebuild the queue by enqueuing those paused items behind the active one.
-      if (!hasEnqueuedRestoredAfterAnyStart && restoredIds.size > 0) {
-        const hasActive = downloads.some((d) => d.status === 'downloading');
-        if (hasActive) {
-          hasEnqueuedRestoredAfterAnyStart = true;
-          // Enqueue asynchronously to avoid blocking the subscriber
-          (async () => {
-            const toEnqueue = downloads.filter(
-              (d) => d.status === 'paused' && restoredIds.has(d.id)
-            );
-            for (const item of toEnqueue) {
-              try {
-                const state: PausedDownloadStateLike = {
-                  id: item.id,
-                  downloadInfo: { ...item },
-                  pausedAt: Date.now(),
-                  originalDownloadURL:
-                    item.originalDownloadURL ||
-                    (item.downloadType === 'torrent' ||
-                    item.downloadType === 'magnet'
-                      ? item.downloadURL
-                      : undefined),
-                  files:
-                    item.downloadType === 'direct' ? item.files : undefined,
-                };
-                localPausedMap.set(item.id, state);
-                const ok = await restartDownload(state, localPausedMap);
-                if (ok) restoredIds.delete(item.id);
-              } catch (err) {
-                console.error(
-                  'Failed to enqueue restored paused download:',
-                  item.id,
-                  err
-                );
-              }
-            }
-          })();
-        }
-      }
-
       const nextSnapshot: Record<string, string> = {};
       downloads.forEach((d) => {
         if (isPersistableStatus(d.status)) {
@@ -283,7 +244,7 @@ export async function initDownloadPersistence() {
         if (!(prevId in nextSnapshot)) {
           console.log('[persistence] Removing record for download:', prevId);
           removeRecord(prevId);
-          delete lastPrefixSetupSnapshotById[prevId];
+          delete lastRedistributableSnapshotById[prevId];
         }
       });
       lastSnapshot = nextSnapshot;
@@ -292,29 +253,30 @@ export async function initDownloadPersistence() {
     }
   });
 
-  protonPrefixSetups.subscribe((setups) => {
+  redistributableInstalls.subscribe((setups) => {
     try {
       const downloadsById = new Map(
         latestDownloads.map((download) => [download.id, download] as const)
       );
       Object.entries(setups).forEach(([downloadId, setup]) => {
         const download = downloadsById.get(downloadId);
-        if (!download || download.status !== 'proton-prefix-setup') return;
+        if (!download || download.status !== 'installing-redistributables')
+          return;
 
         const serialized = JSON.stringify(setup);
-        if (lastPrefixSetupSnapshotById[downloadId] !== serialized) {
+        if (lastRedistributableSnapshotById[downloadId] !== serialized) {
           saveRecord(download, true);
-          lastPrefixSetupSnapshotById[downloadId] = serialized;
+          lastRedistributableSnapshotById[downloadId] = serialized;
         }
       });
 
-      Object.keys(lastPrefixSetupSnapshotById).forEach((downloadId) => {
+      Object.keys(lastRedistributableSnapshotById).forEach((downloadId) => {
         if (!setups[downloadId]) {
-          delete lastPrefixSetupSnapshotById[downloadId];
+          delete lastRedistributableSnapshotById[downloadId];
         }
       });
     } catch (e) {
-      console.error('Error while persisting proton prefix setup state:', e);
+      console.error('Error while persisting redistributable install state:', e);
     }
   });
 }
@@ -325,21 +287,24 @@ export async function deleteDownloadedItems(id: string) {
   const content = window.electronAPI.fs.read(record);
   const parsed = JSON.parse(content) as PersistedRecord;
   const downloadInfo = parsed.downloadInfo;
-  
+
   // Normalize and resolve the path correctly
   let downloadFolder = downloadInfo.downloadPath;
   // Remove trailing slashes
   downloadFolder = downloadFolder.replace(/[/\\]+$/, '');
   // Get directory name (parent directory)
-  const lastSlash = Math.max(downloadFolder.lastIndexOf('/'), downloadFolder.lastIndexOf('\\'));
+  const lastSlash = Math.max(
+    downloadFolder.lastIndexOf('/'),
+    downloadFolder.lastIndexOf('\\')
+  );
   if (lastSlash !== -1) {
     downloadFolder = downloadFolder.slice(0, lastSlash);
   }
-  
+
   // Only delete files that belong to this specific download
   // Derive exact file paths from downloadInfo
   const filesToDelete: string[] = [];
-  
+
   if (downloadInfo.files && Array.isArray(downloadInfo.files)) {
     // Multi-part download - delete specific files
     for (const file of downloadInfo.files) {
@@ -351,7 +316,7 @@ export async function deleteDownloadedItems(id: string) {
     // Single file download - delete the specific file
     filesToDelete.push(downloadFolder + '/' + downloadInfo.filename);
   }
-  
+
   // Delete only the validated files
   for (const filePath of filesToDelete) {
     try {
@@ -361,6 +326,7 @@ export async function deleteDownloadedItems(id: string) {
     }
   }
 }
+
 export function deletePersistedDownload(id: string) {
   removeRecord(id);
 }

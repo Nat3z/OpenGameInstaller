@@ -12,7 +12,7 @@ addons system works, and what you can do to troubleshoot common issues.
 
 This guide is recommended for all users of OpenGameInstaller, as knowing
 the underlying architecture of this software benefits you in understanding
-errors and troubleshoot them effectively.
+errors and troubleshoot them effectively. **Linux users**: we use [UMU](/docs/guide/umu) to run Windows games from the library—no Steam required for new installations.
 
 ## What is OpenGameInstaller?
 

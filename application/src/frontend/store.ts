@@ -16,10 +16,15 @@ export type DownloadStatusAndInfo = SearchResult & {
     | 'seeding'
     | 'redistr-downloading'
     | 'requesting'
-    | 'proton-prefix-setup';
+    | 'installing-redistributables';
   progress: number;
   error?: string;
-  usedDebridService?: 'realdebrid' | 'alldebrid' | 'torbox' | 'premiumize' | 'none';
+  usedDebridService?:
+    | 'realdebrid'
+    | 'alldebrid'
+    | 'torbox'
+    | 'premiumize'
+    | 'none';
   downloadPath: string;
   files: {
     name: string;
@@ -109,26 +114,25 @@ export type SetupLog = {
 
 export const setupLogs: Writable<Record<string, SetupLog>> = writable({});
 
-// Proton prefix setup state for redistributable installation flow
-export type ProtonPrefixSetup = {
+// Redistributable installation progress tracking
+export type RedistributableInstall = {
   downloadId: string;
   appID: number;
   gameName: string;
   addonSource: string;
-  redistributables: { name: string; path: string }[];
-  step:
-    | 'added-to-steam'
-    | 'kill-steam'
-    | 'start-steam'
-    | 'launch-game'
-    | 'waiting-prefix'
-    | 'ready';
-  prefixPath: string;
-  prefixExists: boolean;
+  redistributables: Array<{
+    name: string;
+    path: string;
+    status: 'pending' | 'installing' | 'completed' | 'failed';
+  }>;
+  overallProgress: number;
+  isComplete: boolean;
+  error?: string;
 };
 
-export const protonPrefixSetups: Writable<Record<string, ProtonPrefixSetup>> =
-  writable({});
+export const redistributableInstalls: Writable<
+  Record<string, RedistributableInstall>
+> = writable({});
 
 // OOBE logs for the out-of-box experience
 export type OOBELog = {
@@ -145,6 +149,9 @@ export const currentStorePageOpened: Writable<number | undefined> = writable();
 export const currentStorePageOpenedStorefront: Writable<string | undefined> =
   writable();
 export const gameFocused: Writable<number | undefined> = writable();
+/** Set by PlayPage onMount when opened from GameLaunchOverlay; overlay waits for this before firing launchGameTrigger */
+export const launchOverlayPlayPageReady: Writable<number | undefined> =
+  writable(undefined);
 export const launchGameTrigger: Writable<number | undefined> =
   writable(undefined);
 export const gamesLaunched: Writable<Record<string, 'launched' | 'error'>> =

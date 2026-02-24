@@ -1,15 +1,16 @@
 /**
  * Steam-related IPC handlers
+ * Updated to support UMU shortcuts and --game-id launch
  */
 import { ipcMain } from 'electron';
 import { exec, spawn } from 'child_process';
 import * as fs from 'fs';
 import { join } from 'path';
-import { __dirname } from '../manager/manager.paths.js';
 import {
   isLinux,
   getHomeDir,
   getProtonPrefixPath,
+  getOgiExecutablePath,
 } from './helpers.app/platform.js';
 import {
   getSteamAppIdWithFallback,
@@ -25,7 +26,130 @@ import {
 import { generateNotificationId } from './helpers.app/notifications.js';
 import { sendNotification } from '../main.js';
 
+/**
+ * Add a UMU game to Steam using OGI wrapper launches.
+ */
+export async function addUmuGameToSteam(params: {
+  appID: number;
+  name: string;
+  version?: string;
+}): Promise<{ success: boolean; error?: string; steamAppId?: number }> {
+  if (!isLinux()) {
+    return { success: false, error: 'Only available on Linux' };
+  }
+
+  const appInfo = loadLibraryInfo(params.appID);
+  if (!appInfo || !appInfo.umu) {
+    return { success: false, error: 'Game is not configured for UMU mode' };
+  }
+
+  const result = await addGameToSteam({
+    name: params.name,
+    version: params.version,
+    launchExecutable: appInfo.launchExecutable,
+    cwd: appInfo.cwd,
+    // %command% is intentionally the only thing in the wrapper command.
+    wrapperCommand: '%command%',
+    appID: params.appID,
+    compatibilityTool: 'proton_experimental',
+  });
+
+  if (!result) {
+    return { success: false, error: 'Failed to add game to Steam' };
+  }
+
+  // Get the Steam app ID (try versioned shortcut name first, then plain name)
+  const { success, appId: steamAppId } = await getSteamAppIdWithFallback(
+    params.name,
+    params.version,
+    'addGameToSteam'
+  );
+
+  if (!success || !steamAppId) {
+    return { success: true }; // Game was added but we couldn't get the ID
+  }
+
+  return { success: true, steamAppId };
+}
+
+/**
+ * Launch a Steam game by app ID via xdg-open. Returns a Promise with
+ * { success, shortcutId?, error? } for use by both UMU and legacy launch paths.
+ */
+function launchViaSteam(appId: number): Promise<{
+  success: boolean;
+  shortcutId?: number;
+  error?: string;
+}> {
+  return new Promise((resolve) => {
+    exec(`xdg-open steam://rungameid/${appId}`, (error) => {
+      if (error) {
+        console.error('[steam] Failed to launch app via Steam:', error);
+        resolve({ success: false, error: error.message });
+      } else {
+        console.log('[steam] Steam app launch command executed');
+        resolve({ success: true, shortcutId: appId });
+      }
+    });
+  });
+}
+
+/**
+ * Create a .desktop entry for Steam shortcut that launches OGI with --game-id
+ * This is an alternative to steamtinkerlaunch
+ */
+export async function createSteamShortcutDesktop(params: {
+  appID: number;
+  name: string;
+  version?: string;
+}): Promise<{ success: boolean; error?: string }> {
+  if (!isLinux()) {
+    return { success: false, error: 'Only available on Linux' };
+  }
+
+  const homeDir = getHomeDir();
+  if (!homeDir) {
+    return { success: false, error: 'Home directory not found' };
+  }
+
+  const versionedGameName = getVersionedGameName(params.name, params.version);
+  const sanitizedGameName = versionedGameName
+    .replace(/[\r\n\x00-\x1F=]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const ogiPath = getOgiExecutablePath();
+
+  // Create .desktop file for Steam
+  const desktopEntry = `[Desktop Entry]
+Name=${sanitizedGameName}
+Exec="${ogiPath}" --game-id=${params.appID}
+Type=Application
+Categories=Game;
+Icon=steam_icon_${params.appID}
+`;
+
+  try {
+    const desktopDir = join(homeDir, '.local', 'share', 'applications');
+    if (!fs.existsSync(desktopDir)) {
+      fs.mkdirSync(desktopDir, { recursive: true });
+    }
+
+    const desktopFile = join(desktopDir, `ogi-${params.appID}.desktop`);
+    fs.writeFileSync(desktopFile, desktopEntry);
+    fs.chmodSync(desktopFile, '755');
+
+    return { success: true };
+  } catch (error) {
+    console.error('[steam] Failed to create desktop entry:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
 export function registerSteamHandlers() {
+  // Get Steam app ID (legacy - for backward compatibility)
   ipcMain.handle(
     'app:get-steam-app-id',
     async (
@@ -49,6 +173,7 @@ export function registerSteamHandlers() {
     }
   );
 
+  // Kill Steam process
   ipcMain.handle('app:kill-steam', async () => {
     if (!isLinux()) {
       return { success: false, error: 'Only available on Linux' };
@@ -57,7 +182,7 @@ export function registerSteamHandlers() {
     console.log('[steam] Attempting to kill Steam process...');
 
     return new Promise<{ success: boolean; error?: string }>((resolve) => {
-      // Try pkill first, then killall as fallback
+      // Try steam -shutdown first, then killall as fallback
       exec('steam -shutdown', (error) => {
         if (error) {
           // pkill returns non-zero if no process found, try killall
@@ -79,6 +204,7 @@ export function registerSteamHandlers() {
     });
   });
 
+  // Start Steam
   ipcMain.handle('app:start-steam', async () => {
     if (!isLinux()) {
       return { success: false, error: 'Only available on Linux' };
@@ -126,6 +252,7 @@ export function registerSteamHandlers() {
     });
   });
 
+  // Launch Steam app (legacy - for backward compatibility)
   ipcMain.handle('app:launch-steam-app', async (_, appID: number) => {
     if (!isLinux()) {
       return { success: false, error: 'Only available on Linux' };
@@ -136,14 +263,50 @@ export function registerSteamHandlers() {
       return { success: false, error: 'Game not found' };
     }
 
-    // Get the Steam shortcut ID
+    // Check if this is a UMU game
+    if (appInfo.umu) {
+      // For UMU games, only add shortcut if it doesn't already exist
+      let { success, appId } = await getSteamAppIdWithFallback(
+        appInfo.name,
+        appInfo.version,
+        'steam'
+      );
+
+      if (!success || !appId) {
+        const result = await addUmuGameToSteam({
+          appID,
+          name: appInfo.name,
+          version: appInfo.version,
+        });
+        if (!result.success) {
+          return result;
+        }
+        const lookup = await getSteamAppIdWithFallback(
+          appInfo.name,
+          appInfo.version,
+          'steam'
+        );
+        success = lookup.success;
+        appId = lookup.appId;
+      }
+
+      // Launch via Steam
+
+      if (!success || !appId) {
+        return { success: false, error: 'Failed to get Steam shortcut ID' };
+      }
+
+      return launchViaSteam(appId);
+    }
+
+    // Legacy mode
     const { success, appId } = await getSteamAppIdWithFallback(
       appInfo.name,
       appInfo.version,
       'steam'
     );
 
-    if (!success) {
+    if (!success || appId == null) {
       return { success: false, error: 'Failed to get Steam shortcut ID' };
     }
 
@@ -151,24 +314,10 @@ export function registerSteamHandlers() {
       `[steam] Launching app via Steam: ${appInfo.name} (shortcut ID: ${appId})`
     );
 
-    return new Promise<{
-      success: boolean;
-      shortcutId?: number;
-      error?: string;
-    }>((resolve) => {
-      // Use xdg-open to open the steam:// URL
-      exec(`xdg-open steam://rungameid/${appId}`, (error) => {
-        if (error) {
-          console.error('[steam] Failed to launch app via Steam:', error);
-          resolve({ success: false, error: error.message });
-        } else {
-          console.log('[steam] Steam app launch command executed');
-          resolve({ success: true, shortcutId: appId });
-        }
-      });
-    });
+    return launchViaSteam(appId);
   });
 
+  // Check if prefix exists (legacy - for backward compatibility)
   ipcMain.handle('app:check-prefix-exists', async (_, appID: number) => {
     if (!isLinux()) {
       return { exists: false, error: 'Only available on Linux' };
@@ -179,6 +328,16 @@ export function registerSteamHandlers() {
       return { exists: false, error: 'Game not found' };
     }
 
+    // Check if this is a UMU game
+    if (libraryInfo.umu?.winePrefixPath) {
+      const exists = fs.existsSync(libraryInfo.umu.winePrefixPath);
+      return {
+        exists,
+        prefixPath: libraryInfo.umu.winePrefixPath,
+      };
+    }
+
+    // Legacy mode
     const { success, appId } = await getSteamAppIdWithFallback(
       libraryInfo.name,
       libraryInfo.version,
@@ -203,6 +362,7 @@ export function registerSteamHandlers() {
     return { exists, prefixPath };
   });
 
+  // Add to Steam (updated to support UMU)
   ipcMain.handle(
     'app:add-to-steam',
     async (_, appID: number, oldSteamAppId: number | undefined) => {
@@ -217,6 +377,26 @@ export function registerSteamHandlers() {
         return { success: false, error: 'Game not found' };
       }
 
+      // If this is a UMU game, use the new shortcut method
+      if (appInfo.umu) {
+        const result = await addUmuGameToSteam({
+          appID,
+          name: appInfo.name,
+          version: appInfo.version,
+        });
+
+        if (result.success && result.steamAppId) {
+          sendNotification({
+            message: `Added ${appInfo.name} to Steam (UMU mode)`,
+            id: generateNotificationId(),
+            type: 'success',
+          });
+        }
+
+        return result;
+      }
+
+      // Legacy mode (original behavior)
       let launchOptions = appInfo.launchArguments ?? '';
 
       // remove any wineprefix=..... from the launch options
@@ -234,7 +414,9 @@ export function registerSteamHandlers() {
         version: appInfo.version,
         launchExecutable: appInfo.launchExecutable,
         cwd: appInfo.cwd,
-        launchOptions,
+        wrapperCommand: launchOptions || '%command%',
+        appID,
+        compatibilityTool: 'proton_experimental',
       });
 
       if (!result) {
@@ -309,12 +491,17 @@ export function registerSteamHandlers() {
                   console.log(
                     `[add-to-steam] Rename failed (possibly cross-filesystem), using copy instead`
                   );
-                  // Copy recursively
+                  // Copy recursively, preserving symlinks (lstat + readlink/symlink)
                   const copyRecursiveSync = (src: string, dest: string) => {
                     const exists = fs.existsSync(src);
-                    const stats = exists ? fs.statSync(src) : null;
-                    const isDirectory = stats?.isDirectory() ?? false;
-                    if (isDirectory) {
+                    if (!exists) return;
+                    const stats = fs.lstatSync(src);
+                    if (stats.isSymbolicLink()) {
+                      const target = fs.readlinkSync(src);
+                      fs.symlinkSync(target, dest);
+                      return;
+                    }
+                    if (stats.isDirectory()) {
                       if (!fs.existsSync(dest)) {
                         fs.mkdirSync(dest, { recursive: true });
                       }
@@ -378,8 +565,9 @@ export function registerSteamHandlers() {
       // Update the library JSON with the new WINEPREFIX path only if migration succeeded or not needed
       if (shouldUpdateLaunchArguments) {
         const protonPath = getProtonPrefixPath(newSteamAppId);
+        const normalizedLaunchOptions = launchOptions || '%command%';
         appInfo.launchArguments =
-          'WINEPREFIX=' + protonPath + ' ' + launchOptions;
+          'WINEPREFIX=' + protonPath + ' ' + normalizedLaunchOptions;
       }
       saveLibraryInfo(appID, appInfo);
 

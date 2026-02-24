@@ -1,5 +1,12 @@
 import { join } from 'path';
-import { server, port } from './server/addon-server.js';
+import { quote as shellQuote } from 'shell-quote';
+import {
+  addonServer,
+  registerInstanceBridgeHandlers,
+  server,
+  port,
+  type LaunchForwardPayload,
+} from './server/addon-server.js';
 import { applicationAddonSecret } from './server/constants.js';
 import { app, BrowserWindow, globalShortcut, ipcMain, shell } from 'electron';
 import fs, { existsSync, readFileSync } from 'fs';
@@ -23,7 +30,221 @@ import {
 import AddonManagerHandler, { startAddons } from './handlers/handler.addon.js';
 import OOBEHandler from './handlers/handler.oobe.js';
 import { runStartupTasks, closeSplashWindow } from './startup-runner.js';
+import { registerUmuHandlers } from './handlers/handler.umu.js';
+import {
+  executeWrapperCommandForApp,
+  launchGameFromLibrary,
+  type ExecuteWrapperResult,
+} from './handlers/handler.library.js';
+import { loadLibraryInfo } from './handlers/helpers.app/library.js';
 // import steamworks from 'steamworks.js';
+
+/**
+ * Parse command line arguments for --game-id flag
+ * This is used when launching from Steam shortcuts
+ */
+function parseGameIdArg(): number | null {
+  const gameIdArg = process.argv.find((arg) => arg.startsWith('--game-id='));
+  if (gameIdArg) {
+    const gameId = parseInt(gameIdArg.split('=')[1], 10);
+    if (!isNaN(gameId)) {
+      return gameId;
+    }
+  }
+  return null;
+}
+
+/**
+ * Parse command line arguments for launch hook flags
+ * --no-launch: Don't actually launch the game
+ * --pre: Run pre-launch hooks
+ * --post: Run post-launch hooks
+ */
+function parseLaunchHookArgs(): {
+  noLaunch: boolean;
+  runPre: boolean;
+  runPost: boolean;
+} {
+  return {
+    noLaunch: process.argv.includes('--no-launch'),
+    runPre: process.argv.includes('--pre'),
+    runPost: process.argv.includes('--post'),
+  };
+}
+
+/**
+ * Parse wrapper command from args after a `--` separator.
+ * Everything after `--` is treated as the wrapper command payload.
+ * Each argument is shell-quoted so paths with spaces survive round-trip
+ * when the string is later parsed in the library handler.
+ */
+function parseWrapperAfterSeparator(): string | null {
+  const separatorIndex = process.argv.indexOf('--');
+  if (separatorIndex === -1 || separatorIndex >= process.argv.length - 1) {
+    return null;
+  }
+
+  const args = process.argv.slice(separatorIndex + 1);
+  return args.map((arg) => shellQuote([arg])).join(' ');
+}
+
+const INSTANCE_BRIDGE_BASE_URL = `http://127.0.0.1:${port}/internal`;
+const INSTANCE_BRIDGE_TIMEOUT_MS = 1500;
+
+function buildLaunchForwardPayload(
+  gameId: number,
+  hookArgs: ReturnType<typeof parseLaunchHookArgs>,
+  wrapperCommand: string | null
+): LaunchForwardPayload {
+  const launchEnv = Object.fromEntries(
+    Object.entries(process.env).filter(
+      (entry): entry is [string, string] => typeof entry[1] === 'string'
+    )
+  );
+
+  return {
+    gameId,
+    noLaunch: hookArgs.noLaunch,
+    runPre: hookArgs.runPre,
+    runPost: hookArgs.runPost,
+    wrapperCommand,
+    originalArgv: process.argv.slice(1),
+    launchEnv,
+  };
+}
+
+async function requestRunningInstance(
+  path: string,
+  init: RequestInit = {}
+): Promise<Response | null> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => {
+    controller.abort();
+  }, INSTANCE_BRIDGE_TIMEOUT_MS);
+
+  try {
+    return await fetch(`${INSTANCE_BRIDGE_BASE_URL}${path}`, {
+      ...init,
+      signal: controller.signal,
+    });
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+async function isRunningInstanceAvailable(): Promise<boolean> {
+  const response = await requestRunningInstance('/ping');
+  if (!response?.ok) {
+    return false;
+  }
+
+  try {
+    const body = (await response.json()) as { ok?: boolean };
+    return body.ok === true;
+  } catch {
+    return false;
+  }
+}
+
+async function requestRunningInstanceFocus(): Promise<boolean> {
+  const response = await requestRunningInstance('/focus', {
+    method: 'POST',
+  });
+  return response?.ok === true;
+}
+
+async function forwardLaunchToRunningInstance(
+  payload: LaunchForwardPayload
+): Promise<boolean> {
+  const response = await requestRunningInstance('/launch', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
+  return response?.ok === true;
+}
+
+/**
+ * Handle launch hooks (pre/post) for games
+ * This runs addon events without actually launching the game
+ * Used for save backup/restore and other addon-managed tasks
+ */
+async function handleLaunchHooks(
+  gameId: number,
+  hookType: 'pre' | 'post'
+): Promise<void> {
+  console.log(
+    `[launch-hooks] Running ${hookType}-launch hooks for game ${gameId}`
+  );
+
+  // Create main window to show the launch screen
+  createWindow({ gameLaunchMode: true });
+
+  if (mainWindow) {
+    registerMainHandlers(mainWindow);
+    await startAddonRuntime();
+    await runStartupTasks(mainWindow);
+
+    // Load the main app with game ID and hook flags
+    const baseUrl = isDev()
+      ? `http://localhost:8080/?secret=${applicationAddonSecret}`
+      : `file://${join(app.getAppPath(), 'out', 'renderer', 'index.html')}?secret=${applicationAddonSecret}`;
+
+    // Add flags to indicate this is a hook-only launch
+    const launchUrl = `${baseUrl}&launchGameId=${gameId}&hookType=${hookType}&noLaunch=true`;
+
+    await mainWindow.loadURL(launchUrl);
+
+    mainWindow.once('ready-to-show', () => {
+      mainWindow?.show();
+      onMainAppReady();
+    });
+  }
+}
+
+/**
+ * Launch a game directly by ID (used from Steam shortcuts)
+ * Now integrated into the main Svelte UI via query parameters
+ */
+async function launchGameById(gameId: number, wrapperCommand?: string | null) {
+  console.log(
+    `[launch] Steam shortcut launch detected for game ${gameId}, loading into main UI`
+  );
+
+  // Single window: create main window and pass game ID via query param
+  createWindow({ gameLaunchMode: true });
+
+  if (mainWindow) {
+    registerMainHandlers(mainWindow);
+    await startAddonRuntime();
+    // Run startup tasks first
+    await runStartupTasks(mainWindow);
+
+    // Load the main app with the game ID in the query params
+    // The Svelte frontend will detect this and show the GameLaunchOverlay
+    const baseUrl = isDev()
+      ? `http://localhost:8080/?secret=${applicationAddonSecret}`
+      : `file://${join(app.getAppPath(), 'out', 'renderer', 'index.html')}?secret=${applicationAddonSecret}`;
+
+    console.log('Direct wrapper command: ' + wrapperCommand);
+
+    const wrapperQuery = wrapperCommand
+      ? `&wrapperCommand=${encodeURIComponent(wrapperCommand)}`
+      : '';
+    const launchUrl = `${baseUrl}&launchGameId=${gameId}${wrapperQuery}`;
+
+    await mainWindow.loadURL(launchUrl);
+
+    mainWindow.once('ready-to-show', () => {
+      mainWindow?.show();
+      onMainAppReady();
+    });
+  }
+}
 
 export const VERSION = app.getVersion();
 
@@ -76,6 +297,14 @@ ipcMain.on('get-initial-theme', (event) => {
   }
 });
 
+/* Sync IPC used by renderer during load; must be registered before any window loads */
+ipcMain.on('is-dev', (event) => {
+  event.returnValue = isDev();
+});
+ipcMain.on('get-version', (event) => {
+  event.returnValue = VERSION;
+});
+
 export let torrentIntervals: NodeJS.Timeout[] = [];
 
 let mainWindow: BrowserWindow | null;
@@ -95,14 +324,38 @@ export function sendNotification(notification: Notification) {
 let isReadyForEvents = false;
 
 let readyForEventWaiters: (() => void)[] = [];
+let clientReadyListenerRegistered = false;
+
+const IPC_READY_TIMEOUT_MS = 15000;
 
 export async function sendIPCMessage(channel: string, ...args: any[]) {
+  // If no renderer window is available (e.g., --game-id launch path), skip IPC dispatch
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return;
+  }
+
   if (!isReadyForEvents) {
-    await new Promise<void>((resolve) => {
-      console.log('waiting for events');
-      readyForEventWaiters.push(resolve);
-    });
-    console.log('events ready');
+    let resolverRef: (() => void) | null = null;
+    await Promise.race([
+      new Promise<void>((resolve) => {
+        console.log('waiting for events');
+        resolverRef = resolve;
+        readyForEventWaiters.push(resolve);
+      }),
+      new Promise<void>((resolve) => {
+        setTimeout(() => {
+          if (resolverRef !== null) {
+            const idx = readyForEventWaiters.indexOf(resolverRef);
+            if (idx !== -1) readyForEventWaiters.splice(idx, 1);
+          }
+          console.warn(
+            '[sendIPCMessage] client-ready-for-events not received within timeout, proceeding'
+          );
+          resolve();
+        }, IPC_READY_TIMEOUT_MS);
+      }),
+    ]);
+    if (isReadyForEvents) console.log('events ready');
   }
   mainWindow?.webContents.send(channel, ...args);
 }
@@ -144,35 +397,77 @@ const ogiDebug = () => (process.env.OGI_DEBUG ?? 'false') === 'true';
  */
 let handlersRegistered = false;
 
+function registerMainHandlers(win: BrowserWindow) {
+  if (handlersRegistered) return;
+  handlersRegistered = true;
+
+  AppEventHandler(win);
+  FSEventHandler();
+  RealdDebridHandler(win);
+  AllDebridHandler(win);
+  TorrentHandler(win);
+  DirectDownloadHandler(win);
+  AddonRestHandler();
+  AddonManagerHandler(win);
+  OOBEHandler();
+  registerUmuHandlers();
+}
+
+function registerClientReadyListener() {
+  if (clientReadyListenerRegistered) return;
+  clientReadyListenerRegistered = true;
+
+  ipcMain.on('client-ready-for-events', async () => {
+    isReadyForEvents = true;
+    for (const waiter of readyForEventWaiters) {
+      waiter();
+    }
+    readyForEventWaiters = [];
+  });
+}
+
+async function ensureAddonServerRunning() {
+  if (server.listening) return;
+
+  await new Promise<void>((resolve, reject) => {
+    const onError = (error: NodeJS.ErrnoException) => {
+      if (error.code === 'EADDRINUSE') {
+        console.warn(
+          `[addon-server] Port ${port} is already in use, continuing startup`
+        );
+        resolve();
+        return;
+      }
+      reject(error);
+    };
+
+    server.once('error', onError);
+    server.listen(port, () => {
+      server.removeListener('error', onError);
+      console.log(`Addon Server is running on http://localhost:${port}`);
+      console.log(`Server is being executed by electron!`);
+      resolve();
+    });
+  });
+}
+
+async function startAddonRuntime() {
+  await ensureAddonServerRunning();
+  sendNotification({
+    message: 'Addons Starting...',
+    id: Math.random().toString(36).substring(7),
+    type: 'success',
+  });
+  await startAddons();
+}
+
 function onMainAppReady() {
   closeSplashWindow();
   if (!mainWindow || mainWindow.isDestroyed()) return;
 
-  // Guard handler registrations to run only once
-  if (!handlersRegistered) {
-    handlersRegistered = true;
-    AppEventHandler(mainWindow);
-    FSEventHandler();
-    RealdDebridHandler(mainWindow);
-    AllDebridHandler(mainWindow);
-    TorrentHandler(mainWindow);
-    DirectDownloadHandler(mainWindow);
-    AddonRestHandler();
-    AddonManagerHandler(mainWindow);
-    OOBEHandler();
-  }
-
   // Register process-wide listeners only once
   if (!listenersRegistered) {
     listenersRegistered = true;
-
-    ipcMain.on('get-version', async (event) => {
-      event.returnValue = VERSION;
-    });
-
-    ipcMain.on('is-dev', async (event) => {
-      event.returnValue = isDev();
-    });
 
     app.on('browser-window-focus', function () {
       globalShortcut.register('CommandOrControl+R', () => {
@@ -224,10 +519,12 @@ function onMainAppReady() {
  * Creates the main BrowserWindow, loads splash first, then caller loads the app and registers onMainAppReady.
  * Single-window flow so Steam Deck / Game Mode keeps focus on the same window.
  */
-function createWindow() {
+function createWindow(options: { gameLaunchMode?: boolean } = {}) {
+  const gameLaunchMode = options.gameLaunchMode === true;
+
   mainWindow = new BrowserWindow({
-    width: 1000,
-    height: 700,
+    width: gameLaunchMode ? 1280 : 1000,
+    height: gameLaunchMode ? 720 : 700,
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: true,
@@ -235,8 +532,9 @@ function createWindow() {
       preload: join(app.getAppPath(), 'out/preload/index.mjs'),
     },
     title: 'OpenGameInstaller',
-    fullscreenable: false,
-    resizable: false,
+    fullscreen: gameLaunchMode,
+    fullscreenable: gameLaunchMode,
+    resizable: gameLaunchMode,
     icon: join(app.getAppPath(), 'public/favicon.ico'),
     autoHideMenuBar: true,
     show: false,
@@ -263,14 +561,6 @@ function createWindow() {
 
   if (!isDev() && !ogiDebug()) mainWindow.removeMenu();
 
-  ipcMain.on('client-ready-for-events', async () => {
-    isReadyForEvents = true;
-    for (const waiter of readyForEventWaiters) {
-      waiter();
-    }
-    readyForEventWaiters = [];
-  });
-
   app.commandLine.appendSwitch('disable-features', 'HardwareMediaKeyHandling');
 
   // Load splash first so there is only one window (fixes Steam Deck Game Mode black screen)
@@ -286,6 +576,10 @@ function createWindow() {
 
   // First ready-to-show: splash is ready; show window so user sees loading
   mainWindow.once('ready-to-show', () => {
+    if (gameLaunchMode && mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.setResizable(true);
+      mainWindow.setFullScreen(true);
+    }
     mainWindow?.show();
   });
 }
@@ -313,29 +607,232 @@ async function startAppFlow(win: BrowserWindow) {
   }
 }
 
+function focusMainWindow(): boolean {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return false;
+  }
+
+  if (mainWindow.isMinimized()) {
+    mainWindow.restore();
+  }
+
+  mainWindow.show();
+  mainWindow.focus();
+  return true;
+}
+
+async function runAddonLaunchEvent(
+  gameId: number,
+  launchType: 'pre' | 'post'
+): Promise<{ success: boolean; error?: string }> {
+  const libraryInfo = loadLibraryInfo(gameId);
+  if (!libraryInfo) {
+    return { success: false, error: 'Game not found in library' };
+  }
+
+  const response = await addonServer.handleRequest({
+    method: 'launchApp',
+    params: {
+      libraryInfo,
+      launchType,
+    },
+  });
+
+  if (response.tag === 'error') {
+    return { success: false, error: response.error };
+  }
+
+  return { success: true };
+}
+
+async function handleRemoteLaunchRequest(
+  payload: LaunchForwardPayload
+): Promise<{ success: boolean; error?: string }> {
+  console.log(
+    `[instance-bridge] Remote launch requested for game ${payload.gameId}`,
+    payload
+  );
+
+  focusMainWindow();
+
+  if (payload.noLaunch) {
+    if (!payload.runPre && !payload.runPost) {
+      return {
+        success: false,
+        error: 'No hook stage specified for no-launch request',
+      };
+    }
+
+    if (payload.runPre) {
+      const preResult = await runAddonLaunchEvent(payload.gameId, 'pre');
+      if (!preResult.success) {
+        return preResult;
+      }
+    }
+
+    if (payload.runPost) {
+      const postResult = await runAddonLaunchEvent(payload.gameId, 'post');
+      if (!postResult.success) {
+        return postResult;
+      }
+    }
+
+    return { success: true };
+  }
+
+  if (payload.wrapperCommand && payload.wrapperCommand.trim().length > 0) {
+    const preResult = await runAddonLaunchEvent(payload.gameId, 'pre');
+    if (!preResult.success) {
+      return preResult;
+    }
+
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.hide();
+    }
+
+    let wrapperResult: ExecuteWrapperResult | null = null;
+    if (payload.wrapperCommand.includes('steam-launch-wrapper')) {
+      wrapperResult = await executeWrapperCommandForApp(
+        payload.gameId,
+        payload.wrapperCommand,
+        'steam-proton',
+        payload.launchEnv
+      );
+    } else {
+      wrapperResult = await executeWrapperCommandForApp(
+        payload.gameId,
+        payload.wrapperCommand,
+        'unknown',
+        payload.launchEnv
+      );
+    }
+
+    focusMainWindow();
+
+    if (!wrapperResult.success) {
+      return {
+        success: false,
+        error: wrapperResult.error ?? 'Wrapped launch failed',
+      };
+    }
+
+    const postResult = await runAddonLaunchEvent(payload.gameId, 'post');
+    if (!postResult.success) {
+      return postResult;
+    }
+
+    return { success: true };
+  }
+
+  const preResult = await runAddonLaunchEvent(payload.gameId, 'pre');
+  if (!preResult.success) {
+    return preResult;
+  }
+
+  return await launchGameFromLibrary(
+    payload.gameId,
+    mainWindow,
+    payload.launchEnv
+  );
+}
+
+registerInstanceBridgeHandlers({
+  onFocus: () => focusMainWindow(),
+  onLaunch: (payload) => handleRemoteLaunchRequest(payload),
+});
+
 // This method will be called when Electron has finished
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
 app.on('ready', async () => {
+  registerClientReadyListener();
+
+  // Check if we're launching a specific game (--game-id flag from Steam)
+  const gameIdToLaunch = parseGameIdArg();
+  const hookArgs = parseLaunchHookArgs();
+  const wrapperCommand = parseWrapperAfterSeparator();
+  const launchForwardPayload =
+    gameIdToLaunch !== null
+      ? buildLaunchForwardPayload(gameIdToLaunch, hookArgs, wrapperCommand)
+      : null;
+
+  // Before creating any window or starting runtime, check if another OGI instance
+  // is already serving the local port and forward launch/focus requests to it.
+  const runningInstanceAvailable = await isRunningInstanceAvailable();
+  if (runningInstanceAvailable) {
+    console.log('[instance-bridge] Existing instance detected on local port');
+
+    if (launchForwardPayload) {
+      const forwarded =
+        await forwardLaunchToRunningInstance(launchForwardPayload);
+      if (forwarded) {
+        console.log(
+          '[instance-bridge] Forwarded launch request to existing instance. Exiting this instance.'
+        );
+        app.quit();
+        return;
+      }
+      console.warn(
+        '[instance-bridge] Failed to forward launch request to existing instance.'
+      );
+      await requestRunningInstanceFocus();
+      app.quit();
+      return;
+    } else {
+      const focused = await requestRunningInstanceFocus();
+      if (!focused) {
+        console.warn(
+          '[instance-bridge] Existing instance found, but focus handoff failed.'
+        );
+      }
+      app.quit();
+      return;
+    }
+  }
+
+  if (gameIdToLaunch !== null) {
+    console.log(
+      `[app] Steam shortcut launch detected for game ${gameIdToLaunch}`
+    );
+
+    if (wrapperCommand) {
+      console.log(
+        `[app] Wrapper launch detected for game ${gameIdToLaunch}: ${wrapperCommand}`
+      );
+      await launchGameById(gameIdToLaunch, wrapperCommand);
+      return;
+    }
+
+    // Check if this is a hook-only launch (--no-launch with --pre or --post)
+    if (hookArgs.noLaunch && (hookArgs.runPre || hookArgs.runPost)) {
+      if (hookArgs.runPre && hookArgs.runPost) {
+        console.log(
+          `[app] Hook-only launch detected (pre+post), running both hooks for game ${gameIdToLaunch}`
+        );
+        await handleLaunchHooks(gameIdToLaunch, 'pre');
+        await handleLaunchHooks(gameIdToLaunch, 'post');
+      } else {
+        const hookType = hookArgs.runPre ? 'pre' : 'post';
+        console.log(
+          `[app] Hook-only launch detected (${hookType}-launch), running hooks for game ${gameIdToLaunch}`
+        );
+        await handleLaunchHooks(gameIdToLaunch, hookType);
+      }
+      return;
+    }
+
+    await launchGameById(gameIdToLaunch);
+    return;
+  }
+
   // Single window: create it and show splash first so Steam Deck / Game Mode keeps focus
   createWindow();
 
   if (mainWindow) {
+    registerMainHandlers(mainWindow);
+    await startAddonRuntime();
     await startAppFlow(mainWindow);
   }
-
-  server.listen(port, () => {
-    console.log(`Addon Server is running on http://localhost:${port}`);
-    console.log(`Server is being executed by electron!`);
-  });
-
-  sendNotification({
-    message: 'Addons Starting...',
-    id: Math.random().toString(36).substring(7),
-    type: 'success',
-  });
-
-  startAddons();
 });
 
 // Quit when all windows are closed.
@@ -352,14 +849,6 @@ app.on('window-all-closed', async function () {
     console.log('Stopping torrent client...');
     await stopClient();
 
-    // stop the server
-    console.log('Stopping server...');
-    await new Promise<void>((resolve) => {
-      server.close(() => {
-        resolve();
-      });
-    });
-
     // stop all of the addons
     for (const process of Object.keys(processes)) {
       console.log(`Killing process ${process}`);
@@ -369,6 +858,16 @@ app.on('window-all-closed', async function () {
     // stopping all of the torrent intervals
     for (const interval of torrentIntervals) {
       clearInterval(interval);
+    }
+
+    // stop the server (only if it was listening to avoid hang)
+    if (server.listening) {
+      console.log('Stopping server...');
+      await new Promise<void>((resolve) => {
+        server.close(() => {
+          resolve();
+        });
+      });
     }
   } catch (error) {
     console.error('Error during cleanup:', error);

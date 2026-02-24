@@ -138,6 +138,13 @@ export type CatalogResponse =
   | Record<string, CatalogSection>
   | CatalogWithCarousel;
 
+/**
+ * UMU ID format: 'steam:${number}' or 'umu:${string | number}'
+ * - steam:${number} → maps to umu-${number} for Steam games
+ * - umu:${string | number} → maps to umu-${string | number} for non-Steam games
+ */
+export type UmuId = `steam:${number}` | `umu:${string | number}`;
+
 export type SetupEventResponse = Omit<
   LibraryInfo,
   | 'capsuleImage'
@@ -152,6 +159,35 @@ export type SetupEventResponse = Omit<
     name: string;
     path: string;
   }[];
+  /**
+   * UMU Proton integration configuration
+   */
+  umu?: {
+    /**
+     * UMU ID for the game. Format: 'steam:${number}' or 'umu:${string | number}'
+     * - steam:${number} → maps to umu-${number} for Steam games
+     * - umu:${string | number} → maps to umu-${string | number} for non-Steam games
+     */
+    umuId: UmuId;
+    /**
+     * Optional DLL overrides. Can be WINEDLLOVERRIDES-style (e.g. "dinput8=n,b") or bare DLL names.
+     * Bare names get "=n,b" inferred; entries that already include "=..." are used as-is.
+     */
+    dllOverrides?: string[];
+    /**
+     * Optional Proton version to use (e.g., 'GE-Proton9-5', 'GE-Proton')
+     * If not specified, uses latest UMU-Proton
+     */
+    protonVersion?: string;
+    /**
+     * Optional store identifier for protonfixes (e.g., 'gog', 'egs', 'none')
+     */
+    store?: string;
+    /**
+     * Cached Steam shortcut app ID after adding UMU game to Steam (avoids re-adding on each launch)
+     */
+    steamShortcutId?: number;
+  };
 };
 
 export interface EventListenerTypes {
@@ -850,11 +886,41 @@ export const ZodLibraryInfo = z.object({
   appID: z.number(),
   launchExecutable: z.string(),
   launchArguments: z.string().optional(),
+  launchEnv: z.record(z.string(), z.string()).optional(),
   capsuleImage: z.string(),
   storefront: z.string(),
   addonsource: z.string(),
   coverImage: z.string(),
   titleImage: z.string().optional(),
+  /**
+   * UMU Proton integration configuration (Linux only)
+   */
+  umu: z
+    .object({
+      umuId: z
+        .string()
+        .regex(
+          /^(steam|umu):\S+$/,
+          'Must be in format steam:{number} or umu:{string | number}'
+        ),
+      dllOverrides: z.array(z.string()).optional(),
+      protonVersion: z.string().optional(),
+      store: z.string().optional(),
+      winePrefixPath: z.string().optional(),
+      steamShortcutId: z.number().optional(),
+    })
+    .optional(),
+  /**
+   * Redistributables to install (for backward compatibility)
+   */
+  redistributables: z
+    .array(
+      z.object({
+        name: z.string(),
+        path: z.string(),
+      })
+    )
+    .optional(),
 });
 export type LibraryInfo = z.infer<typeof ZodLibraryInfo>;
 interface Notification {

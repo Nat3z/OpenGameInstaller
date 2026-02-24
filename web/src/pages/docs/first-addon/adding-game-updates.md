@@ -131,6 +131,7 @@ addon.on('setup', async (data, event) => {
 - Update setup updates existing library metadata:
   - This flow updates version/launch metadata for an existing entry.
   - It is not the same as first-time install setup.
+- **Linux / UMU:** If the game uses UMU, preserve the existing config by including `umu: currentLibraryInfo.umu` in the object you pass to `event.resolve(...)`. Otherwise the game may lose its UMU association. See [UMU and LibraryInfo (Linux)](/docs/first-addon/umu-libraryinfo).
 - Keep version strings consistent:
   - Use a stable format in both `check-for-updates` and `setup`.
 

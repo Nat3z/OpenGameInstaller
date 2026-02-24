@@ -1,6 +1,6 @@
 import { createNotification, type DownloadStatusAndInfo } from '../../store';
 import { getDownloadPath } from '../core/fs';
-import { updateDownloadStatus } from './lifecycle';
+import { getDownloadItem, updateDownloadStatus } from './lifecycle';
 
 interface PausedDownloadState {
   id: string;
@@ -168,7 +168,16 @@ export async function restartDownload(
 ): Promise<boolean> {
   let newDownloadId = '';
   try {
-    const download = pausedState.downloadInfo;
+    const latestDownload = getDownloadItem(pausedState.id);
+    if (!latestDownload) {
+      console.warn(
+        'Skipping restart for missing download state:',
+        pausedState.id
+      );
+      return false;
+    }
+
+    const download = { ...pausedState.downloadInfo, ...latestDownload };
     console.log('Restarting download:', download.name);
 
     // Generate new download ID to avoid conflicts

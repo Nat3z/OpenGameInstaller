@@ -49,24 +49,8 @@ export async function startAddons(): Promise<void> {
   await Promise.allSettled(promises);
   console.log('All addons started');
 
-  // Wait for addons to send events-available so per-app update checks (checkForUpdates) can find them.
-  // Addons send events-available after authenticate; without this wait, the frontend's
-  // checkForAppUpdates can run before eventsAvailable is set and return 404 for every app.
-  const expectedAddonCount = promises.length;
-  if (expectedAddonCount > 0) {
-    const deadline = Date.now() + 5000;
-    while (Date.now() < deadline) {
-      const clientList = Array.from(clients.values());
-      const allReady =
-        clientList.length >= expectedAddonCount &&
-        clientList.every((c) => c.eventsAvailable.length > 0);
-      if (allReady) break;
-      await new Promise((r) => setTimeout(r, 50));
-    }
-  }
-
   // sendIPCMessage waits for client-ready-for-events (with timeout) before sending
-  await sendIPCMessage('all-addons-started');
+  sendIPCMessage('all-addons-started');
 }
 
 export async function restartAddonServer(): Promise<void> {

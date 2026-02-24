@@ -235,6 +235,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     axios: wrap((options: AxiosRequestConfig) =>
       ipcRenderer.invoke('app:axios', options)
     ),
+    clientReadyForEvents: wrap(() =>
+      ipcRenderer.send('client-ready-for-events')
+    ),
     inputSend: wrap((id: string, data: any) =>
       ipcRenderer.invoke('app:screen-input', { id, data })
     ),
@@ -323,7 +326,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     executeWrapperCommand: wrap((appID: number, wrapperCommand: string) =>
       ipcRenderer.invoke('app:execute-wrapper-command', appID, wrapperCommand)
     ),
-    checkUmuInstalled: wrap(() => ipcRenderer.invoke('app:check-umu-installed')),
+    checkUmuInstalled: wrap(() =>
+      ipcRenderer.invoke('app:check-umu-installed')
+    ),
     installUmu: wrap(() => ipcRenderer.invoke('app:install-umu')),
     launchWithUmu: wrap((appID: number) =>
       ipcRenderer.invoke('app:launch-with-umu', appID)
@@ -604,5 +609,3 @@ ipcRenderer.on(
     );
   })
 );
-
-wrap(() => ipcRenderer.send('client-ready-for-events'))();

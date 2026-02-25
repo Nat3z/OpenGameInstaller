@@ -154,8 +154,9 @@ export const launchOverlayPlayPageReady: Writable<number | undefined> =
   writable(undefined);
 export const launchGameTrigger: Writable<number | undefined> =
   writable(undefined);
-export const gamesLaunched: Writable<Record<string, 'launched' | 'error'>> =
-  writable({});
+export const gamesLaunched: Writable<
+  Record<string, 'launching' | 'launched' | 'error'>
+> = writable({});
 export type Views =
   | 'config'
   | 'clientoptions'

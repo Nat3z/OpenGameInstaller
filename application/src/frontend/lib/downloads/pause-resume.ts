@@ -1,14 +1,17 @@
 import {
   createNotification,
   currentDownloads,
+  redistributableInstalls,
   type DownloadStatusAndInfo,
 } from '../../store';
+import { get } from 'svelte/store';
 import { getDownloadItem, updateDownloadStatus } from './lifecycle';
 import { restartDownload } from '../downloads/restart';
 import {
   deleteDownloadedItems,
   deletePersistedDownload,
 } from '../downloads/persistence';
+import { startRedistributableInstallation } from '../setup/setup';
 
 interface PausedDownloadState {
   id: string;
@@ -207,6 +210,32 @@ export async function resumeDownload(downloadId: string): Promise<boolean> {
       'Type:',
       download.downloadType
     );
+
+    const redistributableInstall = get(redistributableInstalls)[downloadId];
+    if (redistributableInstall && !redistributableInstall.isComplete) {
+      updateDownloadStatus(downloadId, {
+        status: 'installing-redistributables',
+      });
+      pausedDownloadStates.delete(downloadId);
+
+      createNotification({
+        id: Math.random().toString(36).substring(2, 9),
+        type: 'info',
+        message: `Resuming dependency installation: ${download.name}`,
+      });
+
+      startRedistributableInstallation(
+        downloadId,
+        redistributableInstall.appID
+      ).catch((error) => {
+        console.error(
+          '[resume] Failed to restart redistributable installation:',
+          error
+        );
+      });
+
+      return true;
+    }
 
     updateDownloadStatus(downloadId, { status: 'downloading' });
 

@@ -1,6 +1,4 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
-
   interface Props {
     src: string;
     alt: string;
@@ -20,6 +18,7 @@
   let imageData: string | undefined = $state();
   let loading = $state(true);
   let error = $state<string | null>(null);
+  let requestVersion = 0;
 
   function getMimeTypeFromUrl(url: string): string {
     const ext = url.split('.').pop()?.toLowerCase();
@@ -39,21 +38,29 @@
     }
   }
 
-  onMount(async () => {
+  async function loadImage(currentSrc: string, currentClassifier: string) {
+    const version = ++requestVersion;
+    loading = true;
+    error = null;
+    imageData = undefined;
+
     try {
-      const cachePath = './images/' + classifier + '.cached';
+      const cachePath = './images/' + currentClassifier + '.cached';
       if (window.electronAPI.fs.exists(cachePath)) {
-        imageData = window.electronAPI.fs.read(cachePath);
+        const cachedImage = window.electronAPI.fs.read(cachePath);
+        if (version !== requestVersion) return;
+        imageData = cachedImage;
         loading = false;
         return;
       }
+
       // Fetch as arraybuffer
       const response = await window.electronAPI.app.axios<ArrayBuffer>({
         method: 'get',
-        url: src,
+        url: currentSrc,
         responseType: 'arraybuffer',
       });
-      const mimeType = getMimeTypeFromUrl(src);
+      const mimeType = getMimeTypeFromUrl(currentSrc);
       // Convert to base64
       const base64 = btoa(
         new Uint8Array(response.data).reduce(
@@ -61,17 +68,24 @@
           ''
         )
       );
-      imageData = `data:${mimeType};base64,${base64}`;
+      const resolvedImageData = `data:${mimeType};base64,${base64}`;
+      if (version !== requestVersion) return;
+      imageData = resolvedImageData;
       // Ensure cache dir exists
       if (!window.electronAPI.fs.exists('./images')) {
         window.electronAPI.fs.mkdir('./images');
       }
-      window.electronAPI.fs.write(cachePath, imageData);
+      window.electronAPI.fs.write(cachePath, resolvedImageData);
       loading = false;
     } catch (e) {
+      if (version !== requestVersion) return;
       error = 'Failed to load image';
       loading = false;
     }
+  }
+
+  $effect(() => {
+    void loadImage(src, classifier);
   });
 </script>
 

@@ -139,7 +139,9 @@
         ></div>
       </div>
     {:else if os === 'win32' || os === 'darwin' || os === 'linux'}
-      <div class="flex flex-col w-full h-full overflow-y-auto gap-4 pb-8">
+      <div
+        class="flex flex-col w-full h-full overflow-y-auto overflow-x-hidden gap-4 pb-8"
+      >
         <!-- Recently Played Section -->
         {#if recentlyPlayed.length > 0}
           <div class="space-y-6">
@@ -149,13 +151,13 @@
               </h2>
             </div>
             <div
-              class="flex gap-4 flex-row overflow-x-auto pt-8 -mt-8 pb-6 -mb-6 overflow-y-hidden px-4"
+              class="flex gap-4 flex-row flex-nowrap overflow-x-hidden pt-8 -mt-8 pb-6 -mb-6 overflow-y-hidden px-4"
             >
               {#each recentlyPlayed as app, index}
-                <div class="library-entry-shell shrink-0">
+                <div class="library-entry-shell grow basis-0 min-w-0">
                   <button
                     data-library-item
-                    class="library-entry border-none relative transition-all shadow-lg hover:shadow-xl rounded-lg overflow-hidden bg-surface"
+                    class="library-entry w-full border-none relative transition-all shadow-lg hover:shadow-xl rounded-lg overflow-hidden bg-surface"
                     class:library-entry-visible={revealLibraryEntries}
                     class:library-entry-revealing={revealLibraryDelayActive}
                     style={getLibraryEntryDelay(index)}
@@ -189,7 +191,7 @@
                           ).dataset.backup = 'enabled';
                         }
                       }}
-                      class="w-48 h-72 object-cover"
+                      class="w-full aspect-[2/3] object-cover"
                     />
                     <div
                       data-backup="disabled"
@@ -215,10 +217,10 @@
         <!-- All Games Section -->
         <div class="space-y-6">
           <div
-            class="bg-accent-lighter px-4 py-2 rounded-lg flex items-center justify-between"
+            class="bg-accent-lighter px-4 py-2 rounded-lg flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
           >
             <h2 class="text-xl font-semibold text-accent-dark">All Games</h2>
-            <div class="relative">
+            <div class="relative w-full sm:w-auto">
               <div
                 class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"
               >
@@ -240,7 +242,7 @@
                 type="text"
                 bind:value={searchQuery}
                 placeholder="Search games..."
-                class="block w-64 pl-9 pr-3 py-2 border border-accent rounded-md text-sm bg-surface text-text-primary placeholder-accent caret-accent-dark focus:outline-none focus:ring-1 focus:ring-accent-dark focus:border-accent-dark transition-colors"
+                class="block w-full sm:w-64 pl-9 pr-3 py-2 border border-accent rounded-md text-sm bg-surface text-text-primary placeholder-accent caret-accent-dark focus:outline-none focus:ring-1 focus:ring-accent-dark focus:border-accent-dark transition-colors"
               />
             </div>
           </div>
@@ -264,7 +266,7 @@
               </div>
             </div>
           {:else}
-            <div class="grid grid-cols-5 gap-4 w-full">
+            <div class="grid grid-cols-5 gap-4 w-full overflow-x-hidden">
               {#each filteredGames as app, appIndex}
                 <div class="library-entry-shell">
                   <button

@@ -497,6 +497,15 @@ ipcRenderer.on(
 );
 
 ipcRenderer.on(
+  'game:launch-requested',
+  wrap((_, arg) => {
+    document.dispatchEvent(
+      new CustomEvent('game:launch-requested', { detail: arg })
+    );
+  })
+);
+
+ipcRenderer.on(
   'game:launch',
   wrap((_, arg) => {
     document.dispatchEvent(new CustomEvent('game:launch', { detail: arg }));

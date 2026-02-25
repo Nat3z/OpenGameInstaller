@@ -88,7 +88,7 @@
   let openedGameConfiguration = $state(false);
 
   async function launchGame() {
-    if ($gamesLaunched[libraryInfo.appID] === 'launched') return;
+    if ($gamesLaunched[libraryInfo.appID]) return;
     if (!playButton) return;
     console.log('Launching game with appID: ' + libraryInfo.appID);
     playButton.setAttribute('data-error', 'false');
@@ -96,7 +96,7 @@
     // Fire of the addon launch-app event first
 
     gamesLaunched.update((games) => {
-      games[libraryInfo.appID] = 'launched';
+      games[libraryInfo.appID] = 'launching';
       return games;
     });
 
@@ -181,6 +181,18 @@
       console.log('Error launching game');
       playButton.disabled = false;
       playButton.querySelector('p')!!.textContent = 'ERROR';
+      playButton.querySelector('svg')!!.style.display = 'none';
+      return;
+    }
+    if (games[libraryInfo.appID] === 'launching') {
+      playButton.disabled = true;
+      playButton.querySelector('p')!!.textContent = 'WAITING';
+      playButton.querySelector('svg')!!.style.display = 'none';
+      return;
+    }
+    if (games[libraryInfo.appID] === 'launched') {
+      playButton.disabled = true;
+      playButton.querySelector('p')!!.textContent = 'PLAYING';
       playButton.querySelector('svg')!!.style.display = 'none';
     }
   });
@@ -484,6 +496,13 @@
           </p>
         </div>
       </div>
+    {:else if $gamesLaunched[libraryInfo.appID] === 'launching'}
+      <button
+        class="px-6 py-3 flex border-none rounded-lg justify-center bg-success items-center gap-2 cursor-not-allowed transition-colors duration-200 text-overlay-text"
+        disabled
+      >
+        <p class="font-archivo font-semibold text-overlay-text">WAITING</p>
+      </button>
     {:else if $gamesLaunched[libraryInfo.appID] === 'launched'}
       <button
         class="px-6 py-3 flex border-none rounded-lg justify-center bg-success items-center gap-2 cursor-not-allowed transition-colors duration-200 text-overlay-text"

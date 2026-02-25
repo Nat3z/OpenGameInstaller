@@ -14,6 +14,14 @@
   const isShortcutLaunchForGame = (appID: number) =>
     shortcutLaunchGameId !== null && shortcutLaunchGameId === appID;
 
+  document.addEventListener('game:launch-requested', (event: Event) => {
+    const appID = (event as CustomEvent).detail.id;
+    gamesLaunched.update((games) => {
+      games[appID] = 'launching';
+      return games;
+    });
+  });
+
   document.addEventListener('game:launch', (event: Event) => {
     const appID = (event as CustomEvent).detail.id;
     gamesLaunched.update((games) => {

@@ -135,6 +135,10 @@ jobs:
             TAGLINE=$(echo "$COMMIT_MESSAGE" | head -n 1)
             echo "TAGLINE: $TAGLINE"
           fi
+          # Convert HTML header tags in body to markdown so GitHub release renders them
+          COMMIT_BODY=$(echo "$COMMIT_BODY" | sed -e 's/<\/h6>//g' -e 's/<\/h5>//g' -e 's/<\/h4>//g' -e 's/<\/h3>//g' -e 's/<\/h2>//g' -e 's/<\/h1>//g' -e 's/<h6>/###### /g' -e 's/<h5>/##### /g' -e 's/<h4>/#### /g' -e 's/<h3>/### /g' -e 's/<h2>/## /g' -e 's/<h1>/# /g')
+          # Strip HTML tags from tagline for plain-text release name
+          TAGLINE=$(echo "$TAGLINE" | sed 's/<[^>]*>//g')
           echo "body<<EOF" >> $GITHUB_OUTPUT
           echo "$COMMIT_BODY" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT

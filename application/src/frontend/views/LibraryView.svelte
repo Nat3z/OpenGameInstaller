@@ -13,6 +13,7 @@
   } from '../lib/core/library';
   import { updatesManager } from '../states.svelte';
   import UpdateIcon from '../Icons/UpdateIcon.svelte';
+  import MigrateIcon from '../Icons/MigrateIcon.svelte';
 
   let library: LibraryInfo[] = $state([]);
   let recentlyPlayed: LibraryInfo[] = $state([]);
@@ -84,6 +85,14 @@
   function getLibraryEntryDelay(index: number): string {
     const delay = revealLibraryDelayActive ? Math.min(index * 45, 900) : 0;
     return `--library-entry-delay: ${delay}ms;`;
+  }
+
+  function needsUmuMigration(app: LibraryInfo): boolean {
+    return (
+      os === 'linux' &&
+      app.launchExecutable.toLowerCase().endsWith('.exe') &&
+      !app.umu
+    );
   }
 
   // Update filtered games when search query changes
@@ -163,16 +172,42 @@
                     style={getLibraryEntryDelay(index)}
                     onclick={() => ($selectedApp = app)}
                   >
-                    {#if updatesManager.getAppUpdate(app.appID)?.updateAvailable}
+                    {#if updatesManager.getAppUpdate(app.appID)?.updateAvailable || needsUmuMigration(app)}
                       <div
-                        class="absolute shadow-md top-2 right-2 h-6 z-2 flex items-center bg-yellow-500 rounded-lg flex-row justify-end gap-1 px-2"
+                        class="absolute top-2 right-2 z-2 flex flex-col items-end gap-1"
                       >
-                        <UpdateIcon fill="#ffffff" width="16px" height="16px" />
-                        <p
-                          class="text-white text-sm font-open-sans font-semibold"
-                        >
-                          Update
-                        </p>
+                        {#if updatesManager.getAppUpdate(app.appID)?.updateAvailable}
+                          <div
+                            class="shadow-md h-6 flex items-center bg-yellow-500 rounded-lg flex-row justify-end gap-1 px-2"
+                          >
+                            <UpdateIcon
+                              fill="#ffffff"
+                              width="16px"
+                              height="16px"
+                            />
+                            <p
+                              class="text-white text-sm font-open-sans font-semibold"
+                            >
+                              Update
+                            </p>
+                          </div>
+                        {/if}
+                        {#if needsUmuMigration(app)}
+                          <div
+                            class="shadow-md h-6 flex items-center bg-blue-500 rounded-lg flex-row justify-end gap-1 px-2"
+                          >
+                            <MigrateIcon
+                              fill="#ffffff"
+                              width="16px"
+                              height="16px"
+                            />
+                            <p
+                              class="text-white text-sm font-open-sans font-semibold"
+                            >
+                              Migrate
+                            </p>
+                          </div>
+                        {/if}
                       </div>
                     {/if}
                     <Image
@@ -191,7 +226,7 @@
                           ).dataset.backup = 'enabled';
                         }
                       }}
-                      class="w-full aspect-[2/3] object-cover"
+                      class="w-full aspect-2/3 object-cover"
                     />
                     <div
                       data-backup="disabled"
@@ -279,11 +314,32 @@
                     )}
                     onclick={() => ($selectedApp = app)}
                   >
-                    {#if updatesManager.getAppUpdate(app.appID)?.updateAvailable}
+                    {#if updatesManager.getAppUpdate(app.appID)?.updateAvailable || needsUmuMigration(app)}
                       <div
-                        class="absolute shadow-md top-2 right-2 h-6 z-2 flex items-center bg-yellow-500 rounded-lg flex-row justify-end gap-1 px-2"
+                        class="absolute top-2 right-2 z-2 flex flex-col items-end gap-1"
                       >
-                        <UpdateIcon fill="#ffffff" width="16px" height="16px" />
+                        {#if updatesManager.getAppUpdate(app.appID)?.updateAvailable}
+                          <div
+                            class="shadow-md h-6 flex items-center bg-yellow-500 rounded-lg flex-row justify-end gap-1 px-2"
+                          >
+                            <UpdateIcon
+                              fill="#ffffff"
+                              width="16px"
+                              height="16px"
+                            />
+                          </div>
+                        {/if}
+                        {#if needsUmuMigration(app)}
+                          <div
+                            class="shadow-md h-6 flex items-center bg-blue-500 rounded-lg flex-row justify-end gap-1 px-2"
+                          >
+                            <MigrateIcon
+                              fill="#ffffff"
+                              width="16px"
+                              height="16px"
+                            />
+                          </div>
+                        {/if}
                       </div>
                     {/if}
                     <Image
@@ -302,7 +358,7 @@
                           ).dataset.backup = 'enabled';
                         }
                       }}
-                      class="w-full aspect-[2/3] object-cover"
+                      class="w-full aspect-2/3 object-cover"
                     />
                     <div
                       data-backup="disabled"

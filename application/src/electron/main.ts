@@ -621,6 +621,27 @@ function focusMainWindow(): boolean {
   return true;
 }
 
+function sendLaunchRequestedToRenderer(gameId: number) {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return;
+  }
+  mainWindow.webContents.send('game:launch-requested', { id: gameId });
+}
+
+function sendLaunchErrorToRenderer(gameId: number) {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return;
+  }
+  mainWindow.webContents.send('game:launch-error', { id: gameId });
+}
+
+function sendGameExitToRenderer(gameId: number) {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return;
+  }
+  mainWindow.webContents.send('game:exit', { id: gameId });
+}
+
 async function runAddonLaunchEvent(
   gameId: number,
   launchType: 'pre' | 'post'
@@ -681,8 +702,11 @@ async function handleRemoteLaunchRequest(
   }
 
   if (payload.wrapperCommand && payload.wrapperCommand.trim().length > 0) {
+    sendLaunchRequestedToRenderer(payload.gameId);
+
     const preResult = await runAddonLaunchEvent(payload.gameId, 'pre');
     if (!preResult.success) {
+      sendLaunchErrorToRenderer(payload.gameId);
       return preResult;
     }
 
@@ -710,6 +734,7 @@ async function handleRemoteLaunchRequest(
     focusMainWindow();
 
     if (!wrapperResult.success) {
+      sendLaunchErrorToRenderer(payload.gameId);
       return {
         success: false,
         error: wrapperResult.error ?? 'Wrapped launch failed',
@@ -718,22 +743,33 @@ async function handleRemoteLaunchRequest(
 
     const postResult = await runAddonLaunchEvent(payload.gameId, 'post');
     if (!postResult.success) {
+      sendLaunchErrorToRenderer(payload.gameId);
       return postResult;
     }
 
+    sendGameExitToRenderer(payload.gameId);
     return { success: true };
   }
 
+  sendLaunchRequestedToRenderer(payload.gameId);
+
   const preResult = await runAddonLaunchEvent(payload.gameId, 'pre');
   if (!preResult.success) {
+    sendLaunchErrorToRenderer(payload.gameId);
     return preResult;
   }
 
-  return await launchGameFromLibrary(
+  const launchResult = await launchGameFromLibrary(
     payload.gameId,
     mainWindow,
     payload.launchEnv
   );
+
+  if (!launchResult.success) {
+    sendLaunchErrorToRenderer(payload.gameId);
+  }
+
+  return launchResult;
 }
 
 registerInstanceBridgeHandlers({

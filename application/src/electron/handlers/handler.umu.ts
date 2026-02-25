@@ -1242,6 +1242,85 @@ export async function installRedistributablesWithUmuForLegacy(
   return anyFailed ? 'failed' : 'success';
 }
 
+async function initializePrefixWithUmuRun(
+  libraryInfo: LibraryInfo,
+  umuId: string,
+  winePrefix: string,
+  logPrefix: string
+): Promise<{ success: boolean; error?: string }> {
+  const umuInstalled = await isUmuInstalled();
+  if (!umuInstalled) {
+    console.log(
+      '[umu] UMU not found during prefix init, attempting auto-install'
+    );
+    const installResult = await installUmu();
+    if (!installResult.success) {
+      return {
+        success: false,
+        error: installResult.error ?? 'Failed to install UMU',
+      };
+    }
+  }
+
+  ensureUmuPrefixBase();
+  if (!fs.existsSync(winePrefix)) {
+    fs.mkdirSync(winePrefix, { recursive: true });
+  }
+
+  const gameId = convertUmuId(umuId);
+  const cwd = libraryInfo.cwd || process.cwd();
+  const protonPath = libraryInfo.umu?.protonVersion || 'UMU-Latest';
+
+  const initSuccess = await new Promise<boolean>((resolve) => {
+    let resolved = false;
+    const finalize = (result: boolean) => {
+      if (resolved) return;
+      resolved = true;
+      resolve(result);
+    };
+
+    const initChild = spawn(umuRunExecutable, [''], {
+      cwd,
+      env: {
+        ...process.env,
+        UMU_LOG: 'debug',
+        GAMEID: gameId,
+        WINEPREFIX: winePrefix,
+        PROTONPATH: protonPath,
+        PWD: cwd,
+      },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    streamChildProcessOutput(initChild, logPrefix);
+
+    const timeout = setTimeout(
+      () => {
+        if (initChild.pid) {
+          initChild.kill('SIGTERM');
+        }
+        finalize(false);
+      },
+      5 * 60 * 1000
+    );
+
+    initChild.on(
+      'close',
+      (code: number | null, signal: NodeJS.Signals | null) => {
+        clearTimeout(timeout);
+        finalize(code === 0 && signal == null);
+      }
+    );
+
+    initChild.on('error', (error) => {
+      clearTimeout(timeout);
+      console.error('[umu] Prefix init error:', error);
+      finalize(false);
+    });
+  });
+
+  return { success: true };
+}
+
 /**
  * Migrate an existing game from legacy mode to UMU
  * This copies the existing Steam prefix to the new UMU location
@@ -1312,7 +1391,18 @@ export async function migrateToUmu(
   }
 
   if (!oldPrefixPath) {
-    console.log('[umu] Old Steam app ID not provided, skipping prefix copy');
+    console.log(
+      '[umu] Old Steam app ID not provided, initializing fresh UMU prefix with umu-run'
+    );
+    const initResult = await initializePrefixWithUmuRun(
+      libraryInfo,
+      umuId,
+      newPrefixPath,
+      '[umu migration prefix-init]'
+    );
+    if (!initResult.success) {
+      return { success: false, error: initResult.error };
+    }
     libraryInfo.umu = {
       ...libraryInfo.umu,
       winePrefixPath: newPrefixPath,
@@ -1322,8 +1412,18 @@ export async function migrateToUmu(
   }
 
   if (!fs.existsSync(oldPrefixPath)) {
-    console.log('[umu] Old prefix not found, skipping migration');
-    // Still mark as migrated, just start fresh
+    console.log(
+      '[umu] Old prefix not found, initializing fresh UMU prefix with umu-run'
+    );
+    const initResult = await initializePrefixWithUmuRun(
+      libraryInfo,
+      umuId,
+      newPrefixPath,
+      '[umu migration prefix-init]'
+    );
+    if (!initResult.success) {
+      return { success: false, error: initResult.error };
+    }
     libraryInfo.umu = {
       ...libraryInfo.umu,
       winePrefixPath: newPrefixPath,

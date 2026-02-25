@@ -570,15 +570,16 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
               'migration'
             );
 
-          if (success && oldSteamAppId) {
-            const migrationResult = await migrateToUmu(
-              data.appID,
-              oldSteamAppId
+          if (!success || !oldSteamAppId) {
+            console.warn(
+              '[update] Could not detect old Steam app ID during migration. Falling back to UMU prefix initialization.'
             );
-            if (!migrationResult.success) {
-              console.warn('[update] Migration failed:', migrationResult.error);
-              // Continue anyway - UMU will create a fresh prefix
-            }
+          }
+
+          const migrationResult = await migrateToUmu(data.appID, oldSteamAppId);
+          if (!migrationResult.success) {
+            console.warn('[update] Migration failed:', migrationResult.error);
+            // Continue anyway - UMU will create a fresh prefix
           }
         }
       }

@@ -87,8 +87,14 @@ export function getApp(appID: number): LibraryInfo | undefined {
 export function sortLibraryAlphabetically(
   library: LibraryInfo[]
 ): LibraryInfo[] {
+  const collator = new Intl.Collator(undefined, {
+    sensitivity: 'base',
+    numeric: true,
+    ignorePunctuation: true,
+  });
+
   return [...library].sort((a, b) =>
-    a.name.toLowerCase().localeCompare(b.name.toLowerCase())
+    collator.compare(a.name.trim(), b.name.trim())
   );
 }
 
@@ -104,11 +110,12 @@ export function filterLibrary(
   library: LibraryInfo[],
   searchQuery: string
 ): LibraryInfo[] {
-  if (searchQuery.trim() === '') {
-    return library;
+  const normalizedQuery = searchQuery.trim().toLowerCase();
+  if (normalizedQuery === '') {
+    return sortLibraryAlphabetically(library);
   } else {
-    return library.filter((app) =>
-      app.name.toLowerCase().includes(searchQuery.toLowerCase())
+    return sortLibraryAlphabetically(
+      library.filter((app) => app.name.toLowerCase().includes(normalizedQuery))
     );
   }
 }

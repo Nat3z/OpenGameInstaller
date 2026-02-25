@@ -21,6 +21,7 @@
   let selectedApp: Writable<LibraryInfo | undefined> = writable(undefined);
   let loading = $state(true);
   let searchQuery = $state('');
+  let isSearching = $derived(searchQuery.trim().length > 0);
   let os: string | undefined = $state(undefined);
   let osLoading = $state(true);
   let revealLibraryEntries = $state(false);
@@ -142,7 +143,7 @@
         class="flex flex-col w-full h-full overflow-y-auto overflow-x-hidden gap-4 pb-8"
       >
         <!-- Recently Played Section -->
-        {#if recentlyPlayed.length > 0}
+        {#if !isSearching && recentlyPlayed.length > 0}
           <div class="space-y-6">
             <div class="bg-accent-lighter px-4 py-2 rounded-lg">
               <h2 class="text-xl font-semibold text-accent-dark">
@@ -152,7 +153,7 @@
             <div
               class="flex gap-4 flex-row flex-nowrap overflow-x-hidden pt-8 -mt-8 pb-6 -mb-6 overflow-y-hidden px-4"
             >
-              {#each recentlyPlayed as app, index}
+              {#each recentlyPlayed as app, index (app.appID)}
                 <div class="library-entry-shell grow basis-0 min-w-0">
                   <button
                     data-library-item
@@ -265,10 +266,8 @@
               </div>
             </div>
           {:else}
-            <div
-              class="grid grid-cols-5 gap-4 overflow-y-hidden w-full overflow-x-hidden"
-            >
-              {#each filteredGames as app, appIndex}
+            <div class="grid grid-cols-5 gap-4 overflow-hidden w-full">
+              {#each filteredGames as app, appIndex (app.appID)}
                 <div class="library-entry-shell">
                   <button
                     data-library-item
@@ -276,7 +275,7 @@
                     class:library-entry-visible={revealLibraryEntries}
                     class:library-entry-revealing={revealLibraryDelayActive}
                     style={getLibraryEntryDelay(
-                      recentlyPlayed.length + appIndex
+                      (isSearching ? 0 : recentlyPlayed.length) + appIndex
                     )}
                     onclick={() => ($selectedApp = app)}
                   >
@@ -303,7 +302,7 @@
                           ).dataset.backup = 'enabled';
                         }
                       }}
-                      class="w-full object-cover"
+                      class="w-full aspect-[2/3] object-cover"
                     />
                     <div
                       data-backup="disabled"

@@ -1265,7 +1265,7 @@ export async function migrateToUmu(
 
   if (!libraryInfo.umu) {
     const fallbackUmuId = oldSteamAppId
-      ? (`steam:${oldSteamAppId}` as const)
+      ? (`steam:${appID}` as const)
       : (`umu:${appID}` as const);
     libraryInfo.umu = {
       umuId: fallbackUmuId,
@@ -1281,6 +1281,14 @@ export async function migrateToUmu(
       ...libraryInfo.umu,
       dllOverrides: effectiveDllOverrides,
     };
+  }
+
+  // Remove any wineprefix=... from launch arguments (UMU uses its own prefix)
+  if (libraryInfo.launchArguments) {
+    libraryInfo.launchArguments = libraryInfo.launchArguments
+      .replace(/WINEPREFIX=\S*\s?/gi, '')
+      .replace(/\s+/g, ' ')
+      .trim();
   }
 
   const homeDir = getHomeDir();

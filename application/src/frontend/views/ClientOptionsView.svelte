@@ -140,9 +140,9 @@
       },
     },
     {
-      name: 'Torrent Clients',
+      name: 'Debrid Services',
       id: 'realdebrid',
-      description: 'Configure Torrent Clients',
+      description: 'Configure Debrid Services',
       options: {
         debridApiKey: {
           displayName: 'Real Debrid API Key',

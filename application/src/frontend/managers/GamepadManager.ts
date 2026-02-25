@@ -745,8 +745,7 @@ export class GamepadNavigator {
   }
 
   goBack() {
-    // Implement your back navigation logic
-    window.history.back();
+    // Intentionally no-op: B should not trigger browser history navigation.
   }
 
   destroy() {

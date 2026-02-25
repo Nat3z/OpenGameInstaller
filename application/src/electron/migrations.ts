@@ -270,7 +270,7 @@ let migrations: {
   },
   'migrate-update-state-format': {
     from: '0.0.0',
-    to: '2.6.0',
+    to: '3.0.0',
     description:
       'Migrates update-state.json from old format (array of numbers) to new format (array of objects with appID and steamAppId)',
     platform: 'all',

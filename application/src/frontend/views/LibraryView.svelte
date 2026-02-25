@@ -125,7 +125,6 @@
     }
     unsubscribe();
   });
-
 </script>
 
 {#key library}
@@ -266,7 +265,9 @@
               </div>
             </div>
           {:else}
-            <div class="grid grid-cols-5 gap-4 w-full overflow-x-hidden">
+            <div
+              class="grid grid-cols-5 gap-4 overflow-y-hidden w-full overflow-x-hidden"
+            >
               {#each filteredGames as app, appIndex}
                 <div class="library-entry-shell">
                   <button
@@ -274,7 +275,9 @@
                     class="library-entry w-full border-none relative transition-all shadow-lg hover:shadow-xl rounded-lg overflow-hidden bg-white"
                     class:library-entry-visible={revealLibraryEntries}
                     class:library-entry-revealing={revealLibraryDelayActive}
-                    style={getLibraryEntryDelay(recentlyPlayed.length + appIndex)}
+                    style={getLibraryEntryDelay(
+                      recentlyPlayed.length + appIndex
+                    )}
                     onclick={() => ($selectedApp = app)}
                   >
                     {#if updatesManager.getAppUpdate(app.appID)?.updateAvailable}

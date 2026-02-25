@@ -25,6 +25,8 @@ import {
   checkForAddonUpdates,
   convertLibrary,
   IS_NIXOS,
+  startUmuBackgroundUpdater,
+  stopUmuBackgroundUpdater,
   STEAMTINKERLAUNCH_PATH,
 } from './startup.js';
 import AddonManagerHandler, { startAddons } from './handlers/handler.addon.js';
@@ -826,6 +828,8 @@ app.on('ready', async () => {
     }
   }
 
+  startUmuBackgroundUpdater();
+
   if (gameIdToLaunch !== null) {
     console.log(
       `[app] Steam shortcut launch detected for game ${gameIdToLaunch}`
@@ -881,6 +885,8 @@ app.on('window-all-closed', async function () {
 
   // Perform cleanup before quitting
   try {
+    stopUmuBackgroundUpdater();
+
     // stop torrenting
     console.log('Stopping torrent client...');
     await stopClient();

@@ -23,6 +23,12 @@ const UMU_BIN_DIR = join(__dirname, 'bin', 'umu');
 const UMU_RUN_EXECUTABLE = join(UMU_BIN_DIR, 'umu-run');
 const UMU_TARBALL_PATH = join(UMU_BIN_DIR, 'umu-launcher-zipapp.tar');
 const UMU_VERSION_FILE = join(UMU_BIN_DIR, '.version');
+const UMU_LAST_CHECK_FILE = join(UMU_BIN_DIR, '.last-check');
+const UMU_BACKGROUND_CHECK_INTERVAL_MS = 3 * 24 * 60 * 60 * 1000;
+
+let umuBackgroundCheckTimeout: NodeJS.Timeout | null = null;
+let umuBackgroundCheckInterval: NodeJS.Timeout | null = null;
+let umuBackgroundCheckInProgress = false;
 
 type UmuReleaseResponse = {
   tag_name?: string;
@@ -145,6 +151,133 @@ async function extractUmuTarball(tarballPath: string): Promise<void> {
     }
 
     fs.rmSync(nestedRoot, { recursive: true, force: true });
+  }
+}
+
+function readUmuLastCheckTimestamp(): number | null {
+  if (!fs.existsSync(UMU_LAST_CHECK_FILE)) {
+    return null;
+  }
+
+  try {
+    const rawValue = fs.readFileSync(UMU_LAST_CHECK_FILE, 'utf-8').trim();
+    if (!rawValue) return null;
+    const parsedValue = Number.parseInt(rawValue, 10);
+    if (!Number.isFinite(parsedValue) || parsedValue <= 0) return null;
+    return parsedValue;
+  } catch {
+    return null;
+  }
+}
+
+function writeUmuLastCheckTimestamp(timestamp = Date.now()): void {
+  try {
+    if (!fs.existsSync(UMU_BIN_DIR)) {
+      fs.mkdirSync(UMU_BIN_DIR, { recursive: true });
+    }
+    fs.writeFileSync(UMU_LAST_CHECK_FILE, `${timestamp}\n`);
+  } catch (error) {
+    console.warn('[umu] Failed to persist last background check timestamp', {
+      error,
+    });
+  }
+}
+
+function getUmuDelayUntilNextCheck(): number {
+  const now = Date.now();
+  const lastCheck = readUmuLastCheckTimestamp();
+  if (!lastCheck) return 0;
+
+  const elapsed = now - lastCheck;
+  if (elapsed >= UMU_BACKGROUND_CHECK_INTERVAL_MS) {
+    return 0;
+  }
+
+  return UMU_BACKGROUND_CHECK_INTERVAL_MS - elapsed;
+}
+
+async function runUmuBackgroundCheck(reason: 'startup' | 'scheduled') {
+  if (umuBackgroundCheckInProgress) {
+    console.log('[umu] Background check already in progress, skipping trigger');
+    return;
+  }
+
+  umuBackgroundCheckInProgress = true;
+  try {
+    console.log(`[umu] Running background UMU update check (${reason})`);
+    const result = await downloadLatestUmu();
+    if (!result.success) {
+      console.warn('[umu] Background UMU update check failed:', result.error);
+      return;
+    }
+
+    if (result.updated) {
+      console.log(
+        `[umu] Background update applied (${result.currentVersion ?? 'none'} -> ${result.latestVersion ?? 'unknown'})`
+      );
+      return;
+    }
+
+    console.log(
+      `[umu] Background check complete: already up to date (${result.latestVersion ?? result.currentVersion ?? 'unknown'})`
+    );
+  } finally {
+    writeUmuLastCheckTimestamp();
+    umuBackgroundCheckInProgress = false;
+  }
+}
+
+function startUmuRecurringInterval() {
+  if (umuBackgroundCheckInterval) {
+    return;
+  }
+
+  umuBackgroundCheckInterval = setInterval(() => {
+    void runUmuBackgroundCheck('scheduled');
+  }, UMU_BACKGROUND_CHECK_INTERVAL_MS);
+  umuBackgroundCheckInterval.unref?.();
+}
+
+export function startUmuBackgroundUpdater() {
+  if (process.platform !== 'linux') {
+    return;
+  }
+
+  if (umuBackgroundCheckTimeout || umuBackgroundCheckInterval) {
+    return;
+  }
+
+  const delayMs = getUmuDelayUntilNextCheck();
+  if (delayMs === 0) {
+    void runUmuBackgroundCheck('startup');
+    startUmuRecurringInterval();
+    console.log('[umu] Background updater started (3 day cadence)');
+    return;
+  }
+
+  umuBackgroundCheckTimeout = setTimeout(() => {
+    umuBackgroundCheckTimeout = null;
+    void runUmuBackgroundCheck('startup');
+    startUmuRecurringInterval();
+  }, delayMs);
+  umuBackgroundCheckTimeout.unref?.();
+
+  console.log(
+    `[umu] Background updater scheduled to run in ${Math.ceil(
+      delayMs / (1000 * 60)
+    )} minute(s), then every 3 days`
+  );
+}
+
+export function stopUmuBackgroundUpdater() {
+  if (umuBackgroundCheckTimeout) {
+    clearTimeout(umuBackgroundCheckTimeout);
+    umuBackgroundCheckTimeout = null;
+  }
+
+  if (umuBackgroundCheckInterval) {
+    clearInterval(umuBackgroundCheckInterval);
+    umuBackgroundCheckInterval = null;
   }
 }
 

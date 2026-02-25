@@ -226,7 +226,7 @@
                           ).dataset.backup = 'enabled';
                         }
                       }}
-                      class="w-full aspect-[2/3] object-cover"
+                      class="w-full aspect-2/3 object-cover"
                     />
                     <div
                       data-backup="disabled"
@@ -338,11 +338,6 @@
                               width="16px"
                               height="16px"
                             />
-                            <p
-                              class="text-white text-sm font-open-sans font-semibold"
-                            >
-                              Migrate
-                            </p>
                           </div>
                         {/if}
                       </div>
@@ -363,7 +358,7 @@
                           ).dataset.backup = 'enabled';
                         }
                       }}
-                      class="w-full aspect-[2/3] object-cover"
+                      class="w-full aspect-2/3 object-cover"
                     />
                     <div
                       data-backup="disabled"

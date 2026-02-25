@@ -655,14 +655,33 @@
                   </div>
                 </div>
               {:else if download.status === 'paused'}
-                <div class="status-badge paused">
-                  <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                    <path
-                      d="M6 4a1 1 0 011 1v10a1 1 0 11-2 0V5a1 1 0 011-1zM14 4a1 1 0 011 1v10a1 1 0 11-2 0V5a1 1 0 011-1z"
-                    ></path>
-                  </svg>
-                  Paused
-                </div>
+                {#if $redistributableInstalls[download.id] && !$redistributableInstalls[download.id].isComplete}
+                  <div class="status-badge installing-redistributables">
+                    <svg
+                      class="w-4 h-4"
+                      fill="currentColor"
+                      viewBox="0 0 20 20"
+                    >
+                      <path
+                        d="M6 4a1 1 0 011 1v10a1 1 0 11-2 0V5a1 1 0 011-1zM14 4a1 1 0 011 1v10a1 1 0 11-2 0V5a1 1 0 011-1z"
+                      ></path>
+                    </svg>
+                    Paused Installing Dependencies
+                  </div>
+                {:else}
+                  <div class="status-badge paused">
+                    <svg
+                      class="w-4 h-4"
+                      fill="currentColor"
+                      viewBox="0 0 20 20"
+                    >
+                      <path
+                        d="M6 4a1 1 0 011 1v10a1 1 0 11-2 0V5a1 1 0 011-1zM14 4a1 1 0 011 1v10a1 1 0 11-2 0V5a1 1 0 011-1z"
+                      ></path>
+                    </svg>
+                    Paused
+                  </div>
+                {/if}
               {/if}
             </div>
 
@@ -780,7 +799,7 @@
             />
           </div>
         {/if}
-        {#if download.status === 'installing-redistributables' && $redistributableInstalls[download.id]}
+        {#if (download.status === 'installing-redistributables' || (download.status === 'paused' && $redistributableInstalls[download.id] && !$redistributableInstalls[download.id].isComplete)) && $redistributableInstalls[download.id]}
           <div class="mt-4 w-full">
             <RedistributablesProgress
               setup={$redistributableInstalls[download.id]}

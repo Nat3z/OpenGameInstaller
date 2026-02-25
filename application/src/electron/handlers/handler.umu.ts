@@ -1271,7 +1271,7 @@ async function initializePrefixWithUmuRun(
   const cwd = libraryInfo.cwd || process.cwd();
   const protonPath = libraryInfo.umu?.protonVersion || 'UMU-Latest';
 
-  const initSuccess = await new Promise<boolean>((resolve) => {
+  await new Promise<boolean>((resolve) => {
     let resolved = false;
     const finalize = (result: boolean) => {
       if (resolved) return;

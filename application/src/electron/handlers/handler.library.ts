@@ -292,6 +292,12 @@ async function executeWrapperCommandForAppSteam(
     verbIndex === -1
       ? [...parsed, appInfo.launchExecutable]
       : [...parsed.slice(0, verbIndex + 1), appInfo.launchExecutable];
+  const wrappedCommand = parsed[0].toString();
+  const wrappedArgv = fixedArgs.slice(1).map((x) => x.toString());
+
+  console.log(
+    `[wrapper] Resolved exec for ${appInfo.name}: command=${wrappedCommand} args=${JSON.stringify(wrappedArgv)}`
+  );
 
   return await new Promise((resolve) => {
     const effectiveLaunchEnv = getEffectiveLaunchEnv(appInfo);
@@ -312,16 +318,11 @@ async function executeWrapperCommandForAppSteam(
         }
       : baseEnv;
 
-    const wrappedChild = spawn(
-      parsed[0].toString(),
-      fixedArgs.slice(1).map((x) => x.toString()),
-      {
-        shell: true,
-        cwd: appInfo.cwd,
-        env,
-        stdio: ['ignore', 'pipe', 'pipe'],
-      }
-    );
+    const wrappedChild = spawn(wrappedCommand, wrappedArgv, {
+      cwd: appInfo.cwd,
+      env,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
 
     wrappedChild.stdout?.on('data', (data) => {
       console.log(`[wrapper stdout] ${data}`);

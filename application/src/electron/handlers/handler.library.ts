@@ -209,6 +209,7 @@ async function executeWrapperCommandForAppSteam(
   // appInfo.launchExecutable.
   const verb = 'waitforexitandrun';
   const verbWithSpaces = ` ${verb} `;
+  const steamArgSeparator = ' -- ';
   const verbIndexInString = wrapperCommand.indexOf(verbWithSpaces);
   let parsed: ReturnType<typeof shellQuoteParse>;
   if (verbIndexInString !== -1) {
@@ -219,13 +220,84 @@ async function executeWrapperCommandForAppSteam(
     // we replace it with the canonical path, so we don't parse the suffix.
   } else {
     parsed = shellQuoteParse(wrapperCommand);
+
+    const firstToken =
+      parsed.length > 0 && typeof parsed[0] === 'string' ? parsed[0] : '';
+    const looksLikeCollapsedLauncher =
+      firstToken.includes('steam-launch-wrapper') &&
+      firstToken.includes(steamArgSeparator);
+    if (looksLikeCollapsedLauncher) {
+      const lastSeparatorInString =
+        wrapperCommand.lastIndexOf(steamArgSeparator);
+      if (lastSeparatorInString !== -1) {
+        const prefix = wrapperCommand.slice(0, lastSeparatorInString).trimEnd();
+        parsed = shellQuoteParse(prefix);
+        parsed.push('--');
+      }
+    }
   }
 
+  // Some Steam wrapper payloads arrive with a Proton executable path split
+  // across tokens (for example: ".../common/Proton", "-", "Experimental/proton").
+  // Recombine those segments so the wrapped launcher gets a valid executable path.
+  const normalizeSplitProtonExecutable = (
+    tokens: ReturnType<typeof shellQuoteParse>
+  ): ReturnType<typeof shellQuoteParse> => {
+    const normalized: ReturnType<typeof shellQuoteParse> = [];
+    for (let i = 0; i < tokens.length; i += 1) {
+      const token = tokens[i];
+      if (typeof token !== 'string') {
+        normalized.push(token);
+        continue;
+      }
+
+      const isSplitProtonStart =
+        token.includes('/steamapps/common/Proton') &&
+        !token.includes('/proton') &&
+        !token.endsWith('/proton');
+
+      if (!isSplitProtonStart) {
+        normalized.push(token);
+        continue;
+      }
+
+      let merged = token;
+      let j = i + 1;
+      while (j < tokens.length) {
+        const next = tokens[j];
+        if (typeof next !== 'string' || next === '--' || next === verb) {
+          break;
+        }
+        merged += ` ${next}`;
+        j += 1;
+        if (merged.includes('/proton') || merged.endsWith('/proton')) {
+          break;
+        }
+      }
+
+      normalized.push(merged);
+      i = j - 1;
+    }
+
+    return normalized;
+  };
+
+  parsed = normalizeSplitProtonExecutable(parsed);
+
+  if (parsed.length === 0) {
+    return { success: false, error: 'Wrapper command could not be parsed' };
+  }
   const verbIndex = parsed.findIndex((x) => x === verb);
   const fixedArgs =
     verbIndex === -1
       ? [...parsed, appInfo.launchExecutable]
       : [...parsed.slice(0, verbIndex + 1), appInfo.launchExecutable];
+  const wrappedCommand = parsed[0].toString();
+  const wrappedArgv = fixedArgs.slice(1).map((x) => x.toString());
+
+  console.log(
+    `[wrapper] Resolved exec for ${appInfo.name}: command=${wrappedCommand} args=${JSON.stringify(wrappedArgv)}`
+  );
 
   return await new Promise((resolve) => {
     const effectiveLaunchEnv = getEffectiveLaunchEnv(appInfo);
@@ -245,15 +317,12 @@ async function executeWrapperCommandForAppSteam(
           ...(dllOverrideString ? { WINEDLLOVERRIDES: dllOverrideString } : {}),
         }
       : baseEnv;
-    const wrappedChild = spawn(
-      parsed[0].toString(),
-      fixedArgs.slice(1).map((x) => x.toString()),
-      {
-        cwd: appInfo.cwd,
-        env,
-        stdio: ['ignore', 'pipe', 'pipe'],
-      }
-    );
+
+    const wrappedChild = spawn(wrappedCommand, wrappedArgv, {
+      cwd: appInfo.cwd,
+      env,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
 
     wrappedChild.stdout?.on('data', (data) => {
       console.log(`[wrapper stdout] ${data}`);

@@ -203,9 +203,10 @@ async function executeWrapperCommandForAppSteam(
     `[wrapper] Executing wrapper command for ${appInfo.name}: ${wrapperCommand}`
   );
 
-  // Parse so paths with spaces aren't broken. We only parse the launcher
-  // prefix and always replace the wrapped executable segment with the
-  // canonical appInfo.launchExecutable.
+  // Parse so paths with spaces aren't broken: split on the known verb first,
+  // parse only the prefix (which may contain quoted paths), and treat
+  // everything after the verb as a single path argument we replace with
+  // appInfo.launchExecutable.
   const verb = 'waitforexitandrun';
   const verbWithSpaces = ` ${verb} `;
   const steamArgSeparator = ' -- ';
@@ -218,22 +219,32 @@ async function executeWrapperCommandForAppSteam(
     // Everything after " waitforexitandrun " is the exe path (may contain spaces);
     // we replace it with the canonical path, so we don't parse the suffix.
   } else {
-    // Non-Proton command variants usually end with " -- <exe>".
-    // Parse only the prefix up to the last separator, then replace <exe>.
-    const lastSeparatorInString = wrapperCommand.lastIndexOf(steamArgSeparator);
-    if (lastSeparatorInString !== -1) {
-      const prefix = wrapperCommand.slice(0, lastSeparatorInString).trimEnd();
-      parsed = shellQuoteParse(prefix);
-      parsed.push('--');
-    } else {
-      parsed = shellQuoteParse(wrapperCommand);
+    parsed = shellQuoteParse(wrapperCommand);
+
+    const firstToken =
+      parsed.length > 0 && typeof parsed[0] === 'string' ? parsed[0] : '';
+    const looksLikeCollapsedLauncher =
+      firstToken.includes('steam-launch-wrapper') &&
+      firstToken.includes(steamArgSeparator);
+    if (looksLikeCollapsedLauncher) {
+      const lastSeparatorInString =
+        wrapperCommand.lastIndexOf(steamArgSeparator);
+      if (lastSeparatorInString !== -1) {
+        const prefix = wrapperCommand.slice(0, lastSeparatorInString).trimEnd();
+        parsed = shellQuoteParse(prefix);
+        parsed.push('--');
+      }
     }
   }
 
   if (parsed.length === 0) {
     return { success: false, error: 'Wrapper command could not be parsed' };
   }
-  const fixedArgs = [...parsed, appInfo.launchExecutable];
+  const verbIndex = parsed.findIndex((x) => x === verb);
+  const fixedArgs =
+    verbIndex === -1
+      ? [...parsed, appInfo.launchExecutable]
+      : [...parsed.slice(0, verbIndex + 1), appInfo.launchExecutable];
 
   return await new Promise((resolve) => {
     const effectiveLaunchEnv = getEffectiveLaunchEnv(appInfo);

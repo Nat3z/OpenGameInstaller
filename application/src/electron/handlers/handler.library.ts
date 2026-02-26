@@ -237,6 +237,53 @@ async function executeWrapperCommandForAppSteam(
     }
   }
 
+  // Some Steam wrapper payloads arrive with a Proton executable path split
+  // across tokens (for example: ".../common/Proton", "-", "Experimental/proton").
+  // Recombine those segments so the wrapped launcher gets a valid executable path.
+  const normalizeSplitProtonExecutable = (
+    tokens: ReturnType<typeof shellQuoteParse>
+  ): ReturnType<typeof shellQuoteParse> => {
+    const normalized: ReturnType<typeof shellQuoteParse> = [];
+    for (let i = 0; i < tokens.length; i += 1) {
+      const token = tokens[i];
+      if (typeof token !== 'string') {
+        normalized.push(token);
+        continue;
+      }
+
+      const isSplitProtonStart =
+        token.includes('/steamapps/common/Proton') &&
+        !token.includes('/proton') &&
+        !token.endsWith('/proton');
+
+      if (!isSplitProtonStart) {
+        normalized.push(token);
+        continue;
+      }
+
+      let merged = token;
+      let j = i + 1;
+      while (j < tokens.length) {
+        const next = tokens[j];
+        if (typeof next !== 'string' || next === '--' || next === verb) {
+          break;
+        }
+        merged += ` ${next}`;
+        j += 1;
+        if (merged.includes('/proton') || merged.endsWith('/proton')) {
+          break;
+        }
+      }
+
+      normalized.push(merged);
+      i = j - 1;
+    }
+
+    return normalized;
+  };
+
+  parsed = normalizeSplitProtonExecutable(parsed);
+
   if (parsed.length === 0) {
     return { success: false, error: 'Wrapper command could not be parsed' };
   }

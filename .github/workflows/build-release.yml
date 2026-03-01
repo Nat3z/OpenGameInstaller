@@ -69,12 +69,6 @@ jobs:
         run: |
           Compress-Archive -Path application/dist/win-unpacked/* -Destination application/dist/OpenGameInstaller-Portable.zip
 
-      - name: Generate Portable ZIP blockmap
-        if: matrix.os == 'windows-latest' && steps.check_changes.outputs.has_application_changes == 'true'
-        run: |
-          $appBuilder = node -p "require('app-builder-bin').appBuilderPath"
-          & $appBuilder blockmap --input "application/dist/OpenGameInstaller-Portable.zip" --output "application/dist/OpenGameInstaller-Portable.zip.blockmap"
-
       - name: Upload Windows Assets as Artifacts
         if: matrix.os == 'windows-latest' && steps.check_changes.outputs.has_application_changes == 'true'
         uses: actions/upload-artifact@v4

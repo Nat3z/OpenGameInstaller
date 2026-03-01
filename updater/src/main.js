@@ -5,6 +5,7 @@ import path, { join } from 'path';
 import yauzl from 'yauzl';
 import zlib from 'zlib';
 import { spawn, exec } from 'child_process';
+import { createHash } from 'crypto';
 let mainWindow;
 import pjson from '../package.json' with { type: 'json' };
 
@@ -212,6 +213,23 @@ function getVersionCache(tagName) {
   );
 }
 
+function getPersistentArtifactDir() {
+  return path.join(__dirname, 'update', 'artifacts');
+}
+
+function getPersistentArtifactPath(assetName) {
+  return path.join(getPersistentArtifactDir(), assetName);
+}
+
+function persistSourceArtifact(assetName, sourcePath) {
+  if (process.platform !== 'win32') {
+    return;
+  }
+  const persistentPath = getPersistentArtifactPath(assetName);
+  fs.mkdirSync(path.dirname(persistentPath), { recursive: true });
+  fs.copyFileSync(sourcePath, persistentPath);
+}
+
 function getPlatformAsset(release) {
   if (process.platform === 'win32') {
     return release.assets.find(
@@ -256,12 +274,27 @@ async function ensureCachedSourceArtifact(cacheDir, release, asset) {
       return sourceArtifactPath;
     }
   }
+  if (process.platform === 'win32') {
+    const persistentArtifact = getPersistentArtifactPath(asset.name);
+    if (fs.existsSync(persistentArtifact)) {
+      fs.copyFileSync(persistentArtifact, sourceArtifactPath);
+      return sourceArtifactPath;
+    }
+    // Compatibility with older updater versions that may have copied archives
+    // into ./update directly.
+    const legacyArtifact = path.join(__dirname, 'update', asset.name);
+    if (fs.existsSync(legacyArtifact)) {
+      fs.copyFileSync(legacyArtifact, sourceArtifactPath);
+      return sourceArtifactPath;
+    }
+  }
 
   await downloadToFile(
     asset.browser_download_url,
     sourceArtifactPath,
     `Downloading base artifact ${release.tag_name}`
   );
+  persistSourceArtifact(asset.name, sourceArtifactPath);
   return sourceArtifactPath;
 }
 
@@ -315,6 +348,16 @@ function copyCacheToUpdate(cacheDir) {
   const destRoot = path.join(__dirname, 'update');
   fs.mkdirSync(destRoot, { recursive: true });
   for (const file of files) {
+    const lowerName = file.toLowerCase();
+    if (lowerName.endsWith('.blockmap')) {
+      continue;
+    }
+    if (
+      process.platform === 'win32' &&
+      lowerName.endsWith('.zip')
+    ) {
+      continue;
+    }
     fs.cpSync(path.join(cacheDir, file), path.join(destRoot, file), {
       force: true,
       recursive: true,
@@ -354,6 +397,7 @@ async function downloadFullRelease(release) {
   mainWindow.webContents.send('text', 'Download Complete');
 
   if (process.platform === 'win32') {
+    persistSourceArtifact(assetWithPortable.name, './update.zip');
     mainWindow.webContents.send('text', 'Extracting Update');
     await unzip(`./update.zip`, localCache);
     mainWindow.webContents.send('text', 'Copying Update Files');
@@ -422,10 +466,12 @@ async function applyBlockmapPath(releasePath, releases) {
       oldBlockmapPath,
       outputArtifact,
       newBlockmapPath,
-      nextAsset.browser_download_url
+      nextAsset.browser_download_url,
+      { digest: nextAsset.digest, size: nextAsset.size }
     );
 
     if (process.platform === 'win32') {
+      persistSourceArtifact(nextAsset.name, outputArtifact);
       await unzip(outputArtifact, nextCache);
     } else {
       fs.copyFileSync(
@@ -448,7 +494,8 @@ async function applyBlockmapPatch(
   oldBlockmapPath,
   outputArtifact,
   newBlockmapPath,
-  targetUrl
+  targetUrl,
+  expectedArtifact = {}
 ) {
   const oldMap = JSON.parse(zlib.gunzipSync(fs.readFileSync(oldBlockmapPath)));
   const newMap = JSON.parse(zlib.gunzipSync(fs.readFileSync(newBlockmapPath)));
@@ -478,13 +525,24 @@ async function applyBlockmapPatch(
     let writeOffset = newFile.offset || 0;
     const misses = [];
 
+    if (writeOffset > 0) {
+      const headerChunk = await downloadRangeChunk(targetUrl, 0, writeOffset - 1);
+      fs.writeSync(outFd, headerChunk, 0, headerChunk.length, 0);
+    }
+
     for (let i = 0; i < newFile.checksums.length; i++) {
       const size = newFile.sizes[i];
       const blocks = checksumToBlocks.get(newFile.checksums[i]);
-      const matched = blocks?.shift();
+      // Consume one old block at most once to avoid reusing source data.
+      const matched = takeMatchingBlock(blocks, size);
       if (matched) {
         const buffer = Buffer.alloc(size);
-        fs.readSync(sourceFd, buffer, 0, size, matched.offset);
+        const bytesRead = fs.readSync(sourceFd, buffer, 0, size, matched.offset);
+        if (bytesRead !== size) {
+          throw new Error(
+            `Short read from source artifact at ${matched.offset}: expected ${size}, got ${bytesRead}`
+          );
+        }
         fs.writeSync(outFd, buffer, 0, size, writeOffset);
       } else {
         misses.push({ offset: writeOffset, size });
@@ -504,39 +562,7 @@ async function applyBlockmapPatch(
 
     for (const miss of mergedMisses) {
       const end = miss.offset + miss.size - 1;
-      const requestedRange = `bytes=${miss.offset}-${end}`;
-      const rangeResponse = await axios({
-        url: targetUrl,
-        method: 'GET',
-        responseType: 'arraybuffer',
-        headers: { Range: requestedRange },
-      });
-
-      const expectedSize = end - miss.offset + 1;
-      const actualSize = Buffer.byteLength(rangeResponse.data);
-      const contentRange = rangeResponse.headers['content-range'];
-      const expectedContentRangePrefix = `bytes ${miss.offset}-${end}/`;
-
-      if (rangeResponse.status !== 206) {
-        throw new Error(
-          `Invalid range response status ${rangeResponse.status} for ${requestedRange}`
-        );
-      }
-      if (actualSize !== expectedSize || actualSize !== miss.size) {
-        throw new Error(
-          `Invalid range response length ${actualSize} for ${requestedRange}; expected ${expectedSize}`
-        );
-      }
-      if (
-        typeof contentRange !== 'string' ||
-        !contentRange.startsWith(expectedContentRangePrefix)
-      ) {
-        throw new Error(
-          `Invalid content-range header for ${requestedRange}: ${contentRange}`
-        );
-      }
-
-      const chunk = Buffer.from(rangeResponse.data);
+      const chunk = await downloadRangeChunk(targetUrl, miss.offset, end);
       fs.writeSync(outFd, chunk, 0, chunk.length, miss.offset);
     }
   } finally {
@@ -560,6 +586,111 @@ async function applyBlockmapPatch(
     fs.statSync(outputArtifact).size === 0
   ) {
     throw new Error('Patched artifact is empty');
+  }
+  await verifyPatchedArtifact(outputArtifact, newFile, expectedArtifact);
+}
+
+function takeMatchingBlock(blocks, expectedSize) {
+  if (!Array.isArray(blocks) || blocks.length === 0) {
+    return null;
+  }
+  const index = blocks.findIndex((block) => block.size === expectedSize);
+  if (index === -1) {
+    return null;
+  }
+  return blocks.splice(index, 1)[0];
+}
+
+async function downloadRangeChunk(url, start, end) {
+  const requestedRange = `bytes=${start}-${end}`;
+  const rangeResponse = await axios({
+    url,
+    method: 'GET',
+    responseType: 'arraybuffer',
+    headers: { Range: requestedRange },
+  });
+  const expectedSize = end - start + 1;
+  const actualSize = Buffer.byteLength(rangeResponse.data);
+  const contentRange = rangeResponse.headers['content-range'];
+  const expectedContentRangePrefix = `bytes ${start}-${end}/`;
+  if (rangeResponse.status !== 206) {
+    throw new Error(
+      `Invalid range response status ${rangeResponse.status} for ${requestedRange}`
+    );
+  }
+  if (actualSize !== expectedSize) {
+    throw new Error(
+      `Invalid range response length ${actualSize} for ${requestedRange}; expected ${expectedSize}`
+    );
+  }
+  if (
+    typeof contentRange !== 'string' ||
+    !contentRange.startsWith(expectedContentRangePrefix)
+  ) {
+    throw new Error(
+      `Invalid content-range header for ${requestedRange}: ${contentRange}`
+    );
+  }
+  return Buffer.from(rangeResponse.data);
+}
+
+function parseDigest(digest) {
+  if (typeof digest !== 'string') {
+    return null;
+  }
+  const [algorithm, value] = digest.split(':', 2);
+  if (!algorithm || !value) {
+    return null;
+  }
+  const normalizedAlgorithm = algorithm.toLowerCase();
+  if (
+    normalizedAlgorithm !== 'sha256' &&
+    normalizedAlgorithm !== 'sha384' &&
+    normalizedAlgorithm !== 'sha512'
+  ) {
+    return null;
+  }
+  return { algorithm: normalizedAlgorithm, value: value.toLowerCase() };
+}
+
+async function hashFile(filePath, algorithm) {
+  return await new Promise((resolve, reject) => {
+    const hash = createHash(algorithm);
+    const stream = fs.createReadStream(filePath);
+    stream.on('error', reject);
+    stream.on('data', (chunk) => hash.update(chunk));
+    stream.on('end', () => resolve(hash.digest('hex')));
+  });
+}
+
+async function verifyPatchedArtifact(outputArtifact, newFile, expectedArtifact) {
+  const stat = fs.statSync(outputArtifact);
+  const expectedByBlockmap =
+    (newFile.offset || 0) +
+    newFile.sizes.reduce((total, size) => total + size, 0);
+  if (stat.size !== expectedByBlockmap) {
+    throw new Error(
+      `Patched artifact size mismatch: expected ${expectedByBlockmap}, got ${stat.size}`
+    );
+  }
+  if (
+    Number.isFinite(expectedArtifact.size) &&
+    expectedArtifact.size > 0 &&
+    stat.size !== expectedArtifact.size
+  ) {
+    throw new Error(
+      `Patched artifact does not match expected release size ${expectedArtifact.size}`
+    );
+  }
+  const parsedDigest = parseDigest(expectedArtifact.digest);
+  if (!parsedDigest) {
+    return;
+  }
+  const actualDigest = await hashFile(outputArtifact, parsedDigest.algorithm);
+  if (actualDigest !== parsedDigest.value) {
+    throw new Error(
+      `Patched artifact digest mismatch for ${parsedDigest.algorithm}`
+    );
   }
 }
 

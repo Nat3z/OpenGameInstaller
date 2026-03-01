@@ -31,7 +31,11 @@ function checkApplicationChanges() {
       file.startsWith('application/')
     );
 
-    if (hasChanges) {
+    const hasWorkflowChanges = changedFiles.some((file) =>
+      file.startsWith('.github/workflows/')
+    );
+
+    if (hasChanges || hasWorkflowChanges) {
       setOutput('has_application_changes', 'true');
       console.log('Found changes in application directory');
     } else {

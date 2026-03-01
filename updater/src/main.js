@@ -3,6 +3,7 @@ import axios from 'axios';
 import fs from 'fs';
 import path, { join } from 'path';
 import yauzl from 'yauzl';
+import zlib from 'zlib';
 import { spawn, exec } from 'child_process';
 let mainWindow;
 import pjson from '../package.json' with { type: 'json' };
@@ -124,273 +125,64 @@ async function createWindow() {
       { timeout: 10000 } // 10 second timeout for update check
     );
     mainWindow.webContents.send('text', 'Checking for Updates');
-    // if the version is different, download the new version
-    let release;
-    for (const rel of response.data) {
-      console.log(rel.tag_name, localVersion);
-      if (rel.tag_name === localVersion) {
-        break;
-      }
-      if (
-        rel.prerelease &&
-        usingBleedingEdge &&
-        rel.tag_name !== localVersion
-      ) {
-        release = rel;
-        break;
-      } else if (!rel.prerelease && rel.tag_name !== localVersion) {
-        release = rel;
-        break;
-      }
-    }
-    let updating = release !== undefined;
-    if (release) {
-      // check if a local cache of the update exists in temp
-      const localCache = path.join(
-        app.getPath('temp'),
-        'ogi-' + release.tag_name.replace('v', '') + '-cache'
+    const releases = response.data
+      .filter((rel) => (usingBleedingEdge ? rel.prerelease : !rel.prerelease))
+      .sort(
+        (a, b) =>
+          new Date(b.published_at || b.created_at || 0).getTime() -
+          new Date(a.published_at || a.created_at || 0).getTime()
       );
-      if (fs.existsSync(localCache)) {
-        const files = fs.readdirSync(localCache);
+    const localIndex = releases.findIndex(
+      (rel) => rel.tag_name === localVersion
+    );
+    const targetRelease = releases[0];
+    let updating = Boolean(targetRelease) && localIndex !== 0;
+    if (targetRelease && updating) {
+      const releasePath =
+        localIndex > 0
+          ? releases.slice(0, localIndex).reverse()
+          : [targetRelease];
+      const gap =
+        localIndex > 0 ? releasePath.length : Number.POSITIVE_INFINITY;
+      let updateApplied = false;
 
-        // Check if the expected executable exists in the cache
-        const expectedExecutable =
-          process.platform === 'win32'
-            ? 'OpenGameInstaller.exe'
-            : 'OpenGameInstaller.AppImage';
-        const executablePath = path.join(localCache, expectedExecutable);
-
-        if (!fs.existsSync(executablePath)) {
-          console.log('Executable not found in cache, redownloading...');
-          // Remove the incomplete cache and proceed with download
-          fs.rmSync(localCache, { recursive: true, force: true });
-        } else {
-          mainWindow.webContents.send('text', 'Copying Cached Version...');
-          for (const file of files) {
-            const sourcePath = path.join(localCache, file);
-            const destPath = path.join(__dirname, 'update', file);
-
-            // On Windows, if the destination file exists and is locked, try to rename it first
-            if (process.platform === 'win32' && fs.existsSync(destPath)) {
-              try {
-                const backupPath = destPath + '.backup';
-                if (fs.existsSync(backupPath)) {
-                  fs.unlinkSync(backupPath);
-                }
-                fs.renameSync(destPath, backupPath);
-              } catch (renameErr) {
-                console.log(
-                  'Could not backup existing file during cache copy:',
-                  renameErr.message
-                );
-                // Continue anyway, cpSync might still work
-              }
-            }
-
-            fs.cpSync(sourcePath, destPath, { force: true, recursive: true });
-          }
-          // update the version file
-          fs.writeFileSync(`./version.txt`, release.tag_name);
-          if (process.platform === 'linux') {
-            fs.chmodSync(`./update/OpenGameInstaller.AppImage`, '755');
-          }
-
-          mainWindow.webContents.send('text', 'Launching OpenGameInstaller');
-          launchApp(true);
-          return;
-        }
-      }
-
-      // download the new version usinng axios stream
-      if (process.platform === 'win32') {
-        const writer = fs.createWriteStream(`./update.zip`);
-        mainWindow.webContents.send('text', 'Downloading Update');
-        const assetWithPortable = release.assets.find(
-          (asset) =>
-            asset.name.toLowerCase().includes('portable') ||
-            asset.name.toLowerCase().includes('portrable')
+      if (Number.isFinite(gap) && gap > 0 && gap <= 3) {
+        mainWindow.webContents.send(
+          'text',
+          'Preparing incremental update path'
         );
-        if (!assetWithPortable) {
-          mainWindow.webContents.send('text', 'No Portable Version Found');
-          setTimeout(() => {
-            launchApp(net.isOnline());
-          }, 2000);
-          return;
-        }
-        const response = await axios({
-          url: assetWithPortable.browser_download_url,
-          method: 'GET',
-          responseType: 'stream',
-        });
-        response.data.pipe(writer);
-        const startTime = Date.now();
-        const fileSize = response.headers['content-length'];
-        response.data.on('data', () => {
-          const elapsedTime = (Date.now() - startTime) / 1000; // in seconds
-          const downloadSpeed = response.data.socket.bytesRead / elapsedTime;
+        try {
+          await applyBlockmapPath(releasePath, releases);
+          updateApplied = true;
+        } catch (patchErr) {
+          console.error('Incremental patching failed, falling back:', patchErr);
           mainWindow.webContents.send(
             'text',
-            'Downloading Update',
-            writer.bytesWritten,
-            fileSize,
-            correctParsingSize(downloadSpeed) + '/s'
+            'Falling back to full download',
+            patchErr.message
           );
-        });
-        response.data.on('end', async () => {
-          mainWindow.webContents.send('text', 'Download Complete');
-          // extract the zip file
-          const prefix = __dirname + '/update';
-          if (!fs.existsSync(prefix)) {
-            fs.mkdirSync(prefix, { recursive: true });
-          }
-
-          try {
-            await new Promise(async (resolve, reject) => {
-              mainWindow.webContents.send('text', 'Extracting Update');
-              // unzip files to the cache folder
-              if (!fs.existsSync(localCache)) {
-                fs.mkdirSync(localCache, { recursive: true });
-              }
-              console.log('Unzipping to', localCache);
-
-              try {
-                await unzip(`./update.zip`, localCache);
-
-                // Wait a bit to ensure all files are fully written
-                await new Promise((resolve) => setTimeout(resolve, 1000));
-
-                mainWindow.webContents.send('text', 'Copying Update Files');
-
-                // copy the files to the update folder with better error handling
-                const files = fs.readdirSync(localCache);
-                for (const file of files) {
-                  const sourcePath = path.join(localCache, file);
-                  const destPath = path.join(prefix, file);
-
-                  // On Windows, if the destination file exists and is locked, try to rename it first
-                  if (process.platform === 'win32' && fs.existsSync(destPath)) {
-                    try {
-                      const backupPath = destPath + '.backup';
-                      if (fs.existsSync(backupPath)) {
-                        fs.unlinkSync(backupPath);
-                      }
-                      fs.renameSync(destPath, backupPath);
-                    } catch (renameErr) {
-                      console.log(
-                        'Could not backup existing file:',
-                        renameErr.message
-                      );
-                      // Continue anyway, cpSync might still work
-                    }
-                  }
-
-                  try {
-                    fs.cpSync(sourcePath, destPath, {
-                      force: true,
-                      recursive: true,
-                    });
-                  } catch (copyErr) {
-                    console.error(
-                      'Failed to copy file:',
-                      file,
-                      copyErr.message
-                    );
-                    reject(copyErr);
-                    return;
-                  }
-                }
-                resolve();
-              } catch (unzipErr) {
-                console.error('Unzip failed:', unzipErr);
-                reject(unzipErr);
-              }
-            });
-
-            // delete the zip file
-            fs.unlinkSync(`./update.zip`);
-            // update the version file
-            fs.writeFileSync(`./version.txt`, release.tag_name);
-            // restart the app
-            console.log('App Ready.');
-
-            mainWindow.webContents.send('text', 'Launching OpenGameInstaller');
-            // Add a small delay before launching to ensure all file operations are complete
-            setTimeout(() => {
-              launchApp(true);
-            }, 500);
-          } catch (updateErr) {
-            console.error('Update failed:', updateErr);
-            mainWindow.webContents.send(
-              'text',
-              'Update Failed',
-              updateErr.message
-            );
-            // Try to launch the existing version
-            setTimeout(() => {
-              launchApp(true);
-            }, 2000);
-          }
-        });
-      } else if (process.platform === 'linux') {
-        if (!fs.existsSync(`./update`)) {
-          fs.mkdirSync(`./update`);
         }
-        const writer = fs.createWriteStream(
-          `./update/OpenGameInstaller.AppImage`
+      } else if (!Number.isFinite(gap)) {
+        mainWindow.webContents.send(
+          'text',
+          'Falling back to full download',
+          'Local version missing from release feed'
         );
-        mainWindow.webContents.send('text', 'Downloading Update');
-        const assetWithPortable = release.assets.find((asset) =>
-          asset.name.toLowerCase().includes('linux-pt.appimage')
+      } else {
+        mainWindow.webContents.send(
+          'text',
+          'Falling back to full download',
+          'Version too old for incremental update'
         );
-
-        if (!assetWithPortable) {
-          mainWindow.webContents.send('text', 'No Portable Version Found');
-          setTimeout(() => {
-            launchApp(net.isOnline());
-          }, 2000);
-          return;
-        }
-
-        const response = await axios({
-          url: assetWithPortable.browser_download_url,
-          method: 'GET',
-          responseType: 'stream',
-        });
-        response.data.pipe(writer);
-        const startTime = Date.now();
-        const fileSize = response.headers['content-length'];
-        response.data.on('data', () => {
-          const elapsedTime = (Date.now() - startTime) / 1000; // in seconds
-          const downloadSpeed = response.data.socket.bytesRead / elapsedTime;
-          mainWindow.webContents.send(
-            'text',
-            'Downloading Update',
-            writer.bytesWritten,
-            fileSize,
-            correctParsingSize(downloadSpeed) + '/s'
-          );
-        });
-        response.data.on('end', async () => {
-          mainWindow.webContents.send('text', 'Download Complete');
-          fs.writeFileSync(`./version.txt`, release.tag_name);
-          console.log('App Ready.');
-
-          // copy the file to the cache folder
-          const item = __dirname + '/update/OpenGameInstaller.AppImage';
-          if (!fs.existsSync(localCache)) {
-            fs.mkdirSync(localCache);
-          }
-          fs.copyFileSync(
-            item,
-            path.join(localCache, 'OpenGameInstaller.AppImage')
-          );
-          mainWindow.webContents.send('text', 'Launching OpenGameInstaller');
-          // make the file executable
-          fs.chmodSync(`./update/OpenGameInstaller.AppImage`, '755');
-          writer.close();
-          launchApp(true);
-        });
       }
+
+      if (!updateApplied) {
+        await downloadFullRelease(targetRelease);
+      }
+      fs.writeFileSync(`./version.txt`, targetRelease.tag_name);
+      mainWindow.webContents.send('text', 'Launching OpenGameInstaller');
+      launchApp(true);
+      return;
     }
     if (!updating) {
       mainWindow.webContents.send(
@@ -410,6 +202,364 @@ async function createWindow() {
     );
     // check if the user is offline
     launchApp(net.isOnline());
+  }
+}
+
+function getVersionCache(tagName) {
+  return path.join(
+    app.getPath('temp'),
+    `ogi-${tagName.replace('v', '')}-cache`
+  );
+}
+
+function getPlatformAsset(release) {
+  if (process.platform === 'win32') {
+    return release.assets.find(
+      (asset) =>
+        asset.name.toLowerCase().includes('portable') ||
+        asset.name.toLowerCase().includes('portrable')
+    );
+  }
+  return release.assets.find((asset) =>
+    asset.name.toLowerCase().includes('linux-pt.appimage')
+  );
+}
+
+function getBlockmapAsset(release, targetAsset) {
+  return release.assets.find(
+    (asset) =>
+      asset.name.toLowerCase() === `${targetAsset.name.toLowerCase()}.blockmap`
+  );
+}
+
+function getReleaseByTag(releases, tagName) {
+  return releases.find((release) => release.tag_name === tagName);
+}
+
+async function ensureCachedSourceArtifact(cacheDir, release, asset) {
+  const sourceArtifactPath = path.join(cacheDir, asset.name);
+  if (fs.existsSync(sourceArtifactPath)) {
+    return sourceArtifactPath;
+  }
+
+  fs.mkdirSync(cacheDir, { recursive: true });
+
+  // On Linux we usually have the currently installed AppImage available locally.
+  if (process.platform === 'linux') {
+    const installedAppImage = path.join(
+      __dirname,
+      'update',
+      'OpenGameInstaller.AppImage'
+    );
+    if (fs.existsSync(installedAppImage)) {
+      fs.copyFileSync(installedAppImage, sourceArtifactPath);
+      return sourceArtifactPath;
+    }
+  }
+
+  await downloadToFile(
+    asset.browser_download_url,
+    sourceArtifactPath,
+    `Downloading base artifact ${release.tag_name}`
+  );
+  return sourceArtifactPath;
+}
+
+async function ensureCachedBlockmap(cacheDir, release, asset) {
+  const blockmapAsset = getBlockmapAsset(release, asset);
+  if (!blockmapAsset) {
+    throw new Error(`Blockmap missing for ${release.tag_name}`);
+  }
+
+  const blockmapPath = path.join(cacheDir, `${asset.name}.blockmap`);
+  if (fs.existsSync(blockmapPath)) {
+    return blockmapPath;
+  }
+
+  fs.mkdirSync(cacheDir, { recursive: true });
+  await downloadToFile(
+    blockmapAsset.browser_download_url,
+    blockmapPath,
+    `Downloading blockmap ${release.tag_name}`
+  );
+  return blockmapPath;
+}
+
+async function downloadToFile(url, destination, status) {
+  const writer = fs.createWriteStream(destination);
+  const response = await axios({ url, method: 'GET', responseType: 'stream' });
+  response.data.pipe(writer);
+  const startTime = Date.now();
+  const fileSize = response.headers['content-length'];
+  response.data.on('data', () => {
+    const elapsedTime = (Date.now() - startTime) / 1000;
+    const downloadSpeed =
+      response.data.socket.bytesRead / Math.max(elapsedTime, 1);
+    mainWindow.webContents.send(
+      'text',
+      status,
+      writer.bytesWritten,
+      fileSize,
+      correctParsingSize(downloadSpeed) + '/s'
+    );
+  });
+  await new Promise((resolve, reject) => {
+    writer.on('finish', resolve);
+    writer.on('error', reject);
+    response.data.on('error', reject);
+  });
+}
+
+function copyCacheToUpdate(cacheDir) {
+  const files = fs.readdirSync(cacheDir);
+  const destRoot = path.join(__dirname, 'update');
+  fs.mkdirSync(destRoot, { recursive: true });
+  for (const file of files) {
+    fs.cpSync(path.join(cacheDir, file), path.join(destRoot, file), {
+      force: true,
+      recursive: true,
+    });
+  }
+}
+
+async function downloadFullRelease(release) {
+  const assetWithPortable = getPlatformAsset(release);
+  if (!assetWithPortable) {
+    throw new Error('No portable asset found for this platform');
+  }
+  const localCache = getVersionCache(release.tag_name);
+  fs.mkdirSync(localCache, { recursive: true });
+  const blockmapAsset = getBlockmapAsset(release, assetWithPortable);
+
+  mainWindow.webContents.send('text', 'Downloading Update');
+  const downloadPath =
+    process.platform === 'win32'
+      ? './update.zip'
+      : './update/OpenGameInstaller.AppImage';
+  if (process.platform === 'linux') {
+    fs.mkdirSync('./update', { recursive: true });
+  }
+  await downloadToFile(
+    assetWithPortable.browser_download_url,
+    downloadPath,
+    'Downloading Update'
+  );
+  if (blockmapAsset) {
+    await downloadToFile(
+      blockmapAsset.browser_download_url,
+      path.join(localCache, `${assetWithPortable.name}.blockmap`),
+      'Downloading blockmap'
+    );
+  }
+  mainWindow.webContents.send('text', 'Download Complete');
+
+  if (process.platform === 'win32') {
+    mainWindow.webContents.send('text', 'Extracting Update');
+    await unzip(`./update.zip`, localCache);
+    mainWindow.webContents.send('text', 'Copying Update Files');
+    copyCacheToUpdate(localCache);
+    fs.copyFileSync(
+      './update.zip',
+      path.join(localCache, assetWithPortable.name)
+    );
+    fs.unlinkSync('./update.zip');
+  } else {
+    const item = path.join(__dirname, 'update', 'OpenGameInstaller.AppImage');
+    fs.copyFileSync(item, path.join(localCache, 'OpenGameInstaller.AppImage'));
+    fs.copyFileSync(item, path.join(localCache, assetWithPortable.name));
+    fs.chmodSync(item, '755');
+  }
+}
+
+async function applyBlockmapPath(releasePath, releases) {
+  let currentTag = localVersion;
+  for (let i = 0; i < releasePath.length; i++) {
+    const currentRelease = getReleaseByTag(releases, currentTag);
+    const nextRelease = releasePath[i];
+    mainWindow.webContents.send(
+      'text',
+      `Applying patch ${i + 1} of ${releasePath.length}`
+    );
+    if (!currentRelease) {
+      throw new Error(`Release metadata missing for ${currentTag}`);
+    }
+    const fromCache = getVersionCache(currentTag);
+    const nextCache = getVersionCache(nextRelease.tag_name);
+    const currentAsset = getPlatformAsset(currentRelease);
+    if (!currentAsset) {
+      throw new Error(`Portable asset missing for ${currentTag}`);
+    }
+    const nextAsset = getPlatformAsset(nextRelease);
+    if (!nextAsset) {
+      throw new Error(`Portable asset missing for ${nextRelease.tag_name}`);
+    }
+    const newBlockmapAsset = getBlockmapAsset(nextRelease, nextAsset);
+    if (!newBlockmapAsset) {
+      throw new Error(`Blockmap missing for ${nextRelease.tag_name}`);
+    }
+    const sourceArtifact = await ensureCachedSourceArtifact(
+      fromCache,
+      currentRelease,
+      currentAsset
+    );
+    const oldBlockmapPath = await ensureCachedBlockmap(
+      fromCache,
+      currentRelease,
+      currentAsset
+    );
+    fs.mkdirSync(nextCache, { recursive: true });
+    const newBlockmapPath = path.join(nextCache, `${nextAsset.name}.blockmap`);
+    if (!fs.existsSync(newBlockmapPath)) {
+      await downloadToFile(
+        newBlockmapAsset.browser_download_url,
+        newBlockmapPath,
+        'Downloading blockmap'
+      );
+    }
+    const outputArtifact = path.join(nextCache, nextAsset.name);
+    await applyBlockmapPatch(
+      sourceArtifact,
+      oldBlockmapPath,
+      outputArtifact,
+      newBlockmapPath,
+      nextAsset.browser_download_url
+    );
+
+    if (process.platform === 'win32') {
+      await unzip(outputArtifact, nextCache);
+    } else {
+      fs.copyFileSync(
+        outputArtifact,
+        path.join(nextCache, 'OpenGameInstaller.AppImage')
+      );
+    }
+    currentTag = nextRelease.tag_name;
+  }
+  copyCacheToUpdate(
+    getVersionCache(releasePath[releasePath.length - 1].tag_name)
+  );
+  if (process.platform === 'linux') {
+    fs.chmodSync('./update/OpenGameInstaller.AppImage', '755');
+  }
+}
+
+async function applyBlockmapPatch(
+  sourceArtifact,
+  oldBlockmapPath,
+  outputArtifact,
+  newBlockmapPath,
+  targetUrl
+) {
+  const oldMap = JSON.parse(zlib.gunzipSync(fs.readFileSync(oldBlockmapPath)));
+  const newMap = JSON.parse(zlib.gunzipSync(fs.readFileSync(newBlockmapPath)));
+  const oldFile = oldMap.files?.[0];
+  const newFile = newMap.files?.[0];
+  if (!oldFile || !newFile) {
+    throw new Error('Invalid blockmap payload');
+  }
+  const checksumToBlocks = new Map();
+  let oldOffset = oldFile.offset || 0;
+  for (let i = 0; i < oldFile.checksums.length; i++) {
+    const key = oldFile.checksums[i];
+    const block = { offset: oldOffset, size: oldFile.sizes[i] };
+    const current = checksumToBlocks.get(key) || [];
+    current.push(block);
+    checksumToBlocks.set(key, current);
+    oldOffset += oldFile.sizes[i];
+  }
+
+  fs.mkdirSync(path.dirname(outputArtifact), { recursive: true });
+  let sourceFd;
+  let outFd;
+
+  try {
+    sourceFd = fs.openSync(sourceArtifact, 'r');
+    outFd = fs.openSync(outputArtifact, 'w');
+    let writeOffset = newFile.offset || 0;
+    const misses = [];
+
+    for (let i = 0; i < newFile.checksums.length; i++) {
+      const size = newFile.sizes[i];
+      const blocks = checksumToBlocks.get(newFile.checksums[i]);
+      const matched = blocks?.shift();
+      if (matched) {
+        const buffer = Buffer.alloc(size);
+        fs.readSync(sourceFd, buffer, 0, size, matched.offset);
+        fs.writeSync(outFd, buffer, 0, size, writeOffset);
+      } else {
+        misses.push({ offset: writeOffset, size });
+      }
+      writeOffset += size;
+    }
+
+    const mergedMisses = [];
+    for (const miss of misses) {
+      const last = mergedMisses[mergedMisses.length - 1];
+      if (last && last.offset + last.size === miss.offset) {
+        last.size += miss.size;
+      } else {
+        mergedMisses.push({ ...miss });
+      }
+    }
+
+    for (const miss of mergedMisses) {
+      const end = miss.offset + miss.size - 1;
+      const requestedRange = `bytes=${miss.offset}-${end}`;
+      const rangeResponse = await axios({
+        url: targetUrl,
+        method: 'GET',
+        responseType: 'arraybuffer',
+        headers: { Range: requestedRange },
+      });
+
+      const expectedSize = end - miss.offset + 1;
+      const actualSize = Buffer.byteLength(rangeResponse.data);
+      const contentRange = rangeResponse.headers['content-range'];
+      const expectedContentRangePrefix = `bytes ${miss.offset}-${end}/`;
+
+      if (rangeResponse.status !== 206) {
+        throw new Error(
+          `Invalid range response status ${rangeResponse.status} for ${requestedRange}`
+        );
+      }
+      if (actualSize !== expectedSize || actualSize !== miss.size) {
+        throw new Error(
+          `Invalid range response length ${actualSize} for ${requestedRange}; expected ${expectedSize}`
+        );
+      }
+      if (
+        typeof contentRange !== 'string' ||
+        !contentRange.startsWith(expectedContentRangePrefix)
+      ) {
+        throw new Error(
+          `Invalid content-range header for ${requestedRange}: ${contentRange}`
+        );
+      }
+
+      const chunk = Buffer.from(rangeResponse.data);
+      fs.writeSync(outFd, chunk, 0, chunk.length, miss.offset);
+    }
+  } finally {
+    if (typeof sourceFd === 'number') {
+      try {
+        fs.closeSync(sourceFd);
+      } catch (closeErr) {
+        console.error('Failed to close source file descriptor:', closeErr);
+      }
+    }
+    if (typeof outFd === 'number') {
+      try {
+        fs.closeSync(outFd);
+      } catch (closeErr) {
+        console.error('Failed to close output file descriptor:', closeErr);
+      }
+    }
+  }
+  if (
+    !fs.existsSync(outputArtifact) ||
+    fs.statSync(outputArtifact).size === 0
+  ) {
+    throw new Error('Patched artifact is empty');
   }
 }
 

@@ -213,6 +213,26 @@ function getVersionCache(tagName) {
   );
 }
 
+function cleanOldVersionCaches(currentTag) {
+  const tempRoot = app.getPath('temp');
+  if (!fs.existsSync(tempRoot)) {
+    return;
+  }
+  const keepCacheName =
+    typeof currentTag === 'string' && currentTag.length > 0
+      ? path.basename(getVersionCache(currentTag))
+      : null;
+  for (const entry of fs.readdirSync(tempRoot)) {
+    if (!entry.startsWith('ogi-') || !entry.endsWith('-cache')) {
+      continue;
+    }
+    if (keepCacheName && entry === keepCacheName) {
+      continue;
+    }
+    fs.rmSync(path.join(tempRoot, entry), { recursive: true, force: true });
+  }
+}
+
 function getPersistentArtifactDir() {
   return path.join(__dirname, 'update', 'artifacts');
 }
@@ -228,6 +248,35 @@ function persistSourceArtifact(assetName, sourcePath) {
   const persistentPath = getPersistentArtifactPath(assetName);
   fs.mkdirSync(path.dirname(persistentPath), { recursive: true });
   fs.copyFileSync(sourcePath, persistentPath);
+}
+
+function cleanOldArtifacts(currentAssetName) {
+  if (process.platform !== 'win32') {
+    return;
+  }
+  const dir = getPersistentArtifactDir();
+  if (!fs.existsSync(dir)) {
+    return;
+  }
+  for (const file of fs.readdirSync(dir)) {
+    if (file === currentAssetName) {
+      continue;
+    }
+    fs.rmSync(path.join(dir, file), { recursive: true, force: true });
+  }
+}
+
+function cleanupAfterUpdate(currentTag, currentAssetName) {
+  try {
+    cleanOldArtifacts(currentAssetName);
+  } catch (err) {
+    console.error('Failed to clean old persistent artifacts:', err);
+  }
+  try {
+    cleanOldVersionCaches(currentTag);
+  } catch (err) {
+    console.error('Failed to clean old temp caches:', err);
+  }
 }
 
 function getPlatformAsset(release) {
@@ -326,8 +375,7 @@ async function downloadToFile(url, destination, status) {
   const fileSize = response.headers['content-length'];
   response.data.on('data', () => {
     const elapsedTime = (Date.now() - startTime) / 1000;
-    const downloadSpeed =
-      response.data.socket.bytesRead / Math.max(elapsedTime, 1);
+    const downloadSpeed = writer.bytesWritten / Math.max(elapsedTime, 1);
     mainWindow.webContents.send(
       'text',
       status,
@@ -355,6 +403,13 @@ function copyCacheToUpdate(cacheDir) {
     if (
       process.platform === 'win32' &&
       lowerName.endsWith('.zip')
+    ) {
+      continue;
+    }
+    if (
+      process.platform === 'linux' &&
+      lowerName.endsWith('.appimage') &&
+      lowerName !== 'opengameinstaller.appimage'
     ) {
       continue;
     }
@@ -413,10 +468,12 @@ async function downloadFullRelease(release) {
     fs.copyFileSync(item, path.join(localCache, assetWithPortable.name));
     fs.chmodSync(item, '755');
   }
+  cleanupAfterUpdate(release.tag_name, assetWithPortable.name);
 }
 
 async function applyBlockmapPath(releasePath, releases) {
   let currentTag = localVersion;
+  let latestAssetName = null;
   for (let i = 0; i < releasePath.length; i++) {
     const currentRelease = getReleaseByTag(releases, currentTag);
     const nextRelease = releasePath[i];
@@ -437,6 +494,7 @@ async function applyBlockmapPath(releasePath, releases) {
     if (!nextAsset) {
       throw new Error(`Portable asset missing for ${nextRelease.tag_name}`);
     }
+    latestAssetName = nextAsset.name;
     const newBlockmapAsset = getBlockmapAsset(nextRelease, nextAsset);
     if (!newBlockmapAsset) {
       throw new Error(`Blockmap missing for ${nextRelease.tag_name}`);
@@ -467,7 +525,7 @@ async function applyBlockmapPath(releasePath, releases) {
       outputArtifact,
       newBlockmapPath,
       nextAsset.browser_download_url,
-      { digest: nextAsset.digest, size: nextAsset.size }
+      { size: nextAsset.size }
     );
 
     if (process.platform === 'win32') {
@@ -487,6 +545,10 @@ async function applyBlockmapPath(releasePath, releases) {
   if (process.platform === 'linux') {
     fs.chmodSync('./update/OpenGameInstaller.AppImage', '755');
   }
+  cleanupAfterUpdate(
+    releasePath[releasePath.length - 1].tag_name,
+    latestAssetName
+  );
 }
 
 async function applyBlockmapPatch(
@@ -665,6 +727,13 @@ async function hashFile(filePath, algorithm) {
 
 async function verifyPatchedArtifact(outputArtifact, newFile, expectedArtifact) {
   const stat = fs.statSync(outputArtifact);
+  if (
+    !Array.isArray(newFile.sizes) ||
+    !Array.isArray(newFile.checksums) ||
+    newFile.sizes.length !== newFile.checksums.length
+  ) {
+    throw new Error('Invalid blockmap payload for patched artifact');
+  }
   const expectedByBlockmap =
     (newFile.offset || 0) +
     newFile.sizes.reduce((total, size) => total + size, 0);
@@ -682,6 +751,44 @@ async function verifyPatchedArtifact(outputArtifact, newFile, expectedArtifact) 
       `Patched artifact does not match expected release size ${expectedArtifact.size}`
     );
   }
+
+  const fd = fs.openSync(outputArtifact, 'r');
+  try {
+    let readOffset = newFile.offset || 0;
+    for (let i = 0; i < newFile.checksums.length; i++) {
+      const size = newFile.sizes[i];
+      if (!Number.isInteger(size) || size < 0) {
+        throw new Error(`Invalid block size at index ${i}: ${size}`);
+      }
+      const buffer = Buffer.alloc(size);
+      const bytesRead = fs.readSync(fd, buffer, 0, size, readOffset);
+      if (bytesRead !== size) {
+        throw new Error(
+          `Short read from patched artifact at ${readOffset}: expected ${size}, got ${bytesRead}`
+        );
+      }
+      const expectedChecksum = newFile.checksums[i];
+      const digestBytes = createHash('sha256').update(buffer).digest();
+      const actualBase64 = digestBytes.toString('base64');
+      const actualHex = digestBytes.toString('hex');
+      const normalizedExpected =
+        typeof expectedChecksum === 'string'
+          ? expectedChecksum.replace(/=+$/, '')
+          : '';
+      const normalizedBase64 = actualBase64.replace(/=+$/, '');
+      if (
+        expectedChecksum !== actualBase64 &&
+        expectedChecksum !== actualHex &&
+        normalizedExpected !== normalizedBase64
+      ) {
+        throw new Error(`Block ${i} checksum mismatch at offset ${readOffset}`);
+      }
+      readOffset += size;
+    }
+  } finally {
+    fs.closeSync(fd);
+  }
+
   const parsedDigest = parseDigest(expectedArtifact.digest);
   if (!parsedDigest) {
     return;

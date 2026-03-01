@@ -260,6 +260,11 @@ async function downloadFullRelease(release) {
   }
   const localCache = getVersionCache(release.tag_name);
   fs.mkdirSync(localCache, { recursive: true });
+  const blockmapAsset = getBlockmapAsset(release, assetWithPortable);
+  if (!blockmapAsset) {
+    throw new Error(`Blockmap missing for ${release.tag_name}`);
+  }
+
   mainWindow.webContents.send('text', 'Downloading Update');
   const downloadPath =
     process.platform === 'win32' ? './update.zip' : './update/OpenGameInstaller.AppImage';
@@ -267,6 +272,11 @@ async function downloadFullRelease(release) {
     fs.mkdirSync('./update', { recursive: true });
   }
   await downloadToFile(assetWithPortable.browser_download_url, downloadPath, 'Downloading Update');
+  await downloadToFile(
+    blockmapAsset.browser_download_url,
+    path.join(localCache, `${assetWithPortable.name}.blockmap`),
+    'Downloading blockmap'
+  );
   mainWindow.webContents.send('text', 'Download Complete');
 
   if (process.platform === 'win32') {
@@ -352,49 +362,92 @@ async function applyBlockmapPatch(
   }
 
   fs.mkdirSync(path.dirname(outputArtifact), { recursive: true });
-  const sourceFd = fs.openSync(sourceArtifact, 'r');
-  const outFd = fs.openSync(outputArtifact, 'w');
-  let writeOffset = newFile.offset || 0;
-  const misses = [];
+  let sourceFd;
+  let outFd;
 
-  for (let i = 0; i < newFile.checksums.length; i++) {
-    const size = newFile.sizes[i];
-    const blocks = checksumToBlocks.get(newFile.checksums[i]);
-    const matched = blocks?.shift();
-    if (matched) {
-      const buffer = Buffer.alloc(size);
-      fs.readSync(sourceFd, buffer, 0, size, matched.offset);
-      fs.writeSync(outFd, buffer, 0, size, writeOffset);
-    } else {
-      misses.push({ offset: writeOffset, size });
+  try {
+    sourceFd = fs.openSync(sourceArtifact, 'r');
+    outFd = fs.openSync(outputArtifact, 'w');
+    let writeOffset = newFile.offset || 0;
+    const misses = [];
+
+    for (let i = 0; i < newFile.checksums.length; i++) {
+      const size = newFile.sizes[i];
+      const blocks = checksumToBlocks.get(newFile.checksums[i]);
+      const matched = blocks?.shift();
+      if (matched) {
+        const buffer = Buffer.alloc(size);
+        fs.readSync(sourceFd, buffer, 0, size, matched.offset);
+        fs.writeSync(outFd, buffer, 0, size, writeOffset);
+      } else {
+        misses.push({ offset: writeOffset, size });
+      }
+      writeOffset += size;
     }
-    writeOffset += size;
-  }
 
-  const mergedMisses = [];
-  for (const miss of misses) {
-    const last = mergedMisses[mergedMisses.length - 1];
-    if (last && last.offset + last.size === miss.offset) {
-      last.size += miss.size;
-    } else {
-      mergedMisses.push({ ...miss });
+    const mergedMisses = [];
+    for (const miss of misses) {
+      const last = mergedMisses[mergedMisses.length - 1];
+      if (last && last.offset + last.size === miss.offset) {
+        last.size += miss.size;
+      } else {
+        mergedMisses.push({ ...miss });
+      }
+    }
+
+    for (const miss of mergedMisses) {
+      const end = miss.offset + miss.size - 1;
+      const requestedRange = `bytes=${miss.offset}-${end}`;
+      const rangeResponse = await axios({
+        url: targetUrl,
+        method: 'GET',
+        responseType: 'arraybuffer',
+        headers: { Range: requestedRange },
+      });
+
+      const expectedSize = end - miss.offset + 1;
+      const actualSize = Buffer.byteLength(rangeResponse.data);
+      const contentRange = rangeResponse.headers['content-range'];
+      const expectedContentRangePrefix = `bytes ${miss.offset}-${end}/`;
+
+      if (rangeResponse.status !== 206) {
+        throw new Error(
+          `Invalid range response status ${rangeResponse.status} for ${requestedRange}`
+        );
+      }
+      if (actualSize !== expectedSize || actualSize !== miss.size) {
+        throw new Error(
+          `Invalid range response length ${actualSize} for ${requestedRange}; expected ${expectedSize}`
+        );
+      }
+      if (
+        typeof contentRange !== 'string' ||
+        !contentRange.startsWith(expectedContentRangePrefix)
+      ) {
+        throw new Error(
+          `Invalid content-range header for ${requestedRange}: ${contentRange}`
+        );
+      }
+
+      const chunk = Buffer.from(rangeResponse.data);
+      fs.writeSync(outFd, chunk, 0, chunk.length, miss.offset);
+    }
+  } finally {
+    if (typeof sourceFd === 'number') {
+      try {
+        fs.closeSync(sourceFd);
+      } catch (closeErr) {
+        console.error('Failed to close source file descriptor:', closeErr);
+      }
+    }
+    if (typeof outFd === 'number') {
+      try {
+        fs.closeSync(outFd);
+      } catch (closeErr) {
+        console.error('Failed to close output file descriptor:', closeErr);
+      }
     }
   }
-
-  for (const miss of mergedMisses) {
-    const end = miss.offset + miss.size - 1;
-    const rangeResponse = await axios({
-      url: targetUrl,
-      method: 'GET',
-      responseType: 'arraybuffer',
-      headers: { Range: `bytes=${miss.offset}-${end}` },
-    });
-    const chunk = Buffer.from(rangeResponse.data);
-    fs.writeSync(outFd, chunk, 0, chunk.length, miss.offset);
-  }
-
-  fs.closeSync(sourceFd);
-  fs.closeSync(outFd);
   if (!fs.existsSync(outputArtifact) || fs.statSync(outputArtifact).size === 0) {
     throw new Error('Patched artifact is empty');
   }

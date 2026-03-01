@@ -132,17 +132,25 @@ async function createWindow() {
           new Date(b.published_at || b.created_at || 0).getTime() -
           new Date(a.published_at || a.created_at || 0).getTime()
       );
-    const localIndex = releases.findIndex((rel) => rel.tag_name === localVersion);
+    const localIndex = releases.findIndex(
+      (rel) => rel.tag_name === localVersion
+    );
     const targetRelease = releases[0];
     let updating = Boolean(targetRelease) && localIndex !== 0;
     if (targetRelease && updating) {
       const releasePath =
-        localIndex > 0 ? releases.slice(0, localIndex).reverse() : [targetRelease];
-      const gap = localIndex > 0 ? releasePath.length : Number.POSITIVE_INFINITY;
+        localIndex > 0
+          ? releases.slice(0, localIndex).reverse()
+          : [targetRelease];
+      const gap =
+        localIndex > 0 ? releasePath.length : Number.POSITIVE_INFINITY;
       let updateApplied = false;
 
       if (Number.isFinite(gap) && gap > 0 && gap <= 3) {
-        mainWindow.webContents.send('text', 'Preparing incremental update path');
+        mainWindow.webContents.send(
+          'text',
+          'Preparing incremental update path'
+        );
         try {
           await applyBlockmapPath(releasePath);
           updateApplied = true;
@@ -198,7 +206,10 @@ async function createWindow() {
 }
 
 function getVersionCache(tagName) {
-  return path.join(app.getPath('temp'), `ogi-${tagName.replace('v', '')}-cache`);
+  return path.join(
+    app.getPath('temp'),
+    `ogi-${tagName.replace('v', '')}-cache`
+  );
 }
 
 function getPlatformAsset(release) {
@@ -229,7 +240,8 @@ async function downloadToFile(url, destination, status) {
   const fileSize = response.headers['content-length'];
   response.data.on('data', () => {
     const elapsedTime = (Date.now() - startTime) / 1000;
-    const downloadSpeed = response.data.socket.bytesRead / Math.max(elapsedTime, 1);
+    const downloadSpeed =
+      response.data.socket.bytesRead / Math.max(elapsedTime, 1);
     mainWindow.webContents.send(
       'text',
       status,
@@ -265,22 +277,27 @@ async function downloadFullRelease(release) {
   const localCache = getVersionCache(release.tag_name);
   fs.mkdirSync(localCache, { recursive: true });
   const blockmapAsset = getBlockmapAsset(release, assetWithPortable);
-  if (!blockmapAsset) {
-    throw new Error(`Blockmap missing for ${release.tag_name}`);
-  }
 
   mainWindow.webContents.send('text', 'Downloading Update');
   const downloadPath =
-    process.platform === 'win32' ? './update.zip' : './update/OpenGameInstaller.AppImage';
+    process.platform === 'win32'
+      ? './update.zip'
+      : './update/OpenGameInstaller.AppImage';
   if (process.platform === 'linux') {
     fs.mkdirSync('./update', { recursive: true });
   }
-  await downloadToFile(assetWithPortable.browser_download_url, downloadPath, 'Downloading Update');
   await downloadToFile(
-    blockmapAsset.browser_download_url,
-    path.join(localCache, `${assetWithPortable.name}.blockmap`),
-    'Downloading blockmap'
+    assetWithPortable.browser_download_url,
+    downloadPath,
+    'Downloading Update'
   );
+  if (blockmapAsset) {
+    await downloadToFile(
+      blockmapAsset.browser_download_url,
+      path.join(localCache, `${assetWithPortable.name}.blockmap`),
+      'Downloading blockmap'
+    );
+  }
   mainWindow.webContents.send('text', 'Download Complete');
 
   if (process.platform === 'win32') {
@@ -288,7 +305,10 @@ async function downloadFullRelease(release) {
     await unzip(`./update.zip`, localCache);
     mainWindow.webContents.send('text', 'Copying Update Files');
     copyCacheToUpdate(localCache);
-    fs.copyFileSync('./update.zip', path.join(localCache, assetWithPortable.name));
+    fs.copyFileSync(
+      './update.zip',
+      path.join(localCache, assetWithPortable.name)
+    );
     fs.unlinkSync('./update.zip');
   } else {
     const item = path.join(__dirname, 'update', 'OpenGameInstaller.AppImage');
@@ -302,7 +322,10 @@ async function applyBlockmapPath(releasePath) {
   let currentTag = localVersion;
   for (let i = 0; i < releasePath.length; i++) {
     const nextRelease = releasePath[i];
-    mainWindow.webContents.send('text', `Applying patch ${i + 1} of ${releasePath.length}`);
+    mainWindow.webContents.send(
+      'text',
+      `Applying patch ${i + 1} of ${releasePath.length}`
+    );
     const fromCache = getVersionCache(currentTag);
     const nextCache = getVersionCache(nextRelease.tag_name);
     const targetAsset = getPlatformAsset(nextRelease);
@@ -318,23 +341,44 @@ async function applyBlockmapPath(releasePath) {
       throw new Error(`Missing local source artifact for ${currentTag}`);
     }
     fs.mkdirSync(nextCache, { recursive: true });
-    const newBlockmapPath = path.join(nextCache, `${targetAsset.name}.blockmap`);
-    await downloadToFile(newBlockmapAsset.browser_download_url, newBlockmapPath, 'Downloading blockmap');
-    const oldBlockmapPath = path.join(fromCache, `${targetAsset.name}.blockmap`);
+    const newBlockmapPath = path.join(
+      nextCache,
+      `${targetAsset.name}.blockmap`
+    );
+    await downloadToFile(
+      newBlockmapAsset.browser_download_url,
+      newBlockmapPath,
+      'Downloading blockmap'
+    );
+    const oldBlockmapPath = path.join(
+      fromCache,
+      `${targetAsset.name}.blockmap`
+    );
     if (!fs.existsSync(oldBlockmapPath)) {
       throw new Error(`Missing old blockmap for ${currentTag}`);
     }
     const outputArtifact = path.join(nextCache, targetAsset.name);
-    await applyBlockmapPatch(sourceArtifact, oldBlockmapPath, outputArtifact, newBlockmapPath, targetAsset.browser_download_url);
+    await applyBlockmapPatch(
+      sourceArtifact,
+      oldBlockmapPath,
+      outputArtifact,
+      newBlockmapPath,
+      targetAsset.browser_download_url
+    );
 
     if (process.platform === 'win32') {
       await unzip(outputArtifact, nextCache);
     } else {
-      fs.copyFileSync(outputArtifact, path.join(nextCache, 'OpenGameInstaller.AppImage'));
+      fs.copyFileSync(
+        outputArtifact,
+        path.join(nextCache, 'OpenGameInstaller.AppImage')
+      );
     }
     currentTag = nextRelease.tag_name;
   }
-  copyCacheToUpdate(getVersionCache(releasePath[releasePath.length - 1].tag_name));
+  copyCacheToUpdate(
+    getVersionCache(releasePath[releasePath.length - 1].tag_name)
+  );
   if (process.platform === 'linux') {
     fs.chmodSync('./update/OpenGameInstaller.AppImage', '755');
   }
@@ -452,7 +496,10 @@ async function applyBlockmapPatch(
       }
     }
   }
-  if (!fs.existsSync(outputArtifact) || fs.statSync(outputArtifact).size === 0) {
+  if (
+    !fs.existsSync(outputArtifact) ||
+    fs.statSync(outputArtifact).size === 0
+  ) {
     throw new Error('Patched artifact is empty');
   }
 }

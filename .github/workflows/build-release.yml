@@ -69,9 +69,22 @@ jobs:
         run: |
           Compress-Archive -Path application/dist/win-unpacked/* -Destination application/dist/OpenGameInstaller-Portable.zip
 
+      - name: Generate Windows blockmaps
+        if: matrix.os == 'windows-latest' && steps.check_changes.outputs.has_application_changes == 'true'
+        run: |
+          bun run .github/workflows/js/generate-blockmaps.mjs application/dist/OpenGameInstaller-Portable.zip updater/dist/OpenGameInstaller-Setup.exe
+
+      - name: Generate Linux blockmaps
+        if: matrix.os == 'ubuntu-latest' && steps.check_changes.outputs.has_application_changes == 'true'
+        run: |
+          bun run .github/workflows/js/generate-blockmaps.mjs updater/dist/OpenGameInstaller-Setup.AppImage application/dist/OpenGameInstaller-linux-pt.AppImage
+
       - name: What's in the folders? (Windows)
         if: steps.check_changes.outputs.has_application_changes == 'true'
-        run: ls -la application/dist/
+        shell: bash
+        run: |
+          ls -la application/dist/
+          ls -la updater/dist/
 
       - name: Upload Windows Assets as Artifacts
         if: matrix.os == 'windows-latest' && steps.check_changes.outputs.has_application_changes == 'true'

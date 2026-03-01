@@ -152,7 +152,7 @@ async function createWindow() {
           'Preparing incremental update path'
         );
         try {
-          await applyBlockmapPath(releasePath);
+          await applyBlockmapPath(releasePath, releases);
           updateApplied = true;
         } catch (patchErr) {
           console.error('Incremental patching failed, falling back:', patchErr);
@@ -230,6 +230,59 @@ function getBlockmapAsset(release, targetAsset) {
     (asset) =>
       asset.name.toLowerCase() === `${targetAsset.name.toLowerCase()}.blockmap`
   );
+}
+
+function getReleaseByTag(releases, tagName) {
+  return releases.find((release) => release.tag_name === tagName);
+}
+
+async function ensureCachedSourceArtifact(cacheDir, release, asset) {
+  const sourceArtifactPath = path.join(cacheDir, asset.name);
+  if (fs.existsSync(sourceArtifactPath)) {
+    return sourceArtifactPath;
+  }
+
+  fs.mkdirSync(cacheDir, { recursive: true });
+
+  // On Linux we usually have the currently installed AppImage available locally.
+  if (process.platform === 'linux') {
+    const installedAppImage = path.join(
+      __dirname,
+      'update',
+      'OpenGameInstaller.AppImage'
+    );
+    if (fs.existsSync(installedAppImage)) {
+      fs.copyFileSync(installedAppImage, sourceArtifactPath);
+      return sourceArtifactPath;
+    }
+  }
+
+  await downloadToFile(
+    asset.browser_download_url,
+    sourceArtifactPath,
+    `Downloading base artifact ${release.tag_name}`
+  );
+  return sourceArtifactPath;
+}
+
+async function ensureCachedBlockmap(cacheDir, release, asset) {
+  const blockmapAsset = getBlockmapAsset(release, asset);
+  if (!blockmapAsset) {
+    throw new Error(`Blockmap missing for ${release.tag_name}`);
+  }
+
+  const blockmapPath = path.join(cacheDir, `${asset.name}.blockmap`);
+  if (fs.existsSync(blockmapPath)) {
+    return blockmapPath;
+  }
+
+  fs.mkdirSync(cacheDir, { recursive: true });
+  await downloadToFile(
+    blockmapAsset.browser_download_url,
+    blockmapPath,
+    `Downloading blockmap ${release.tag_name}`
+  );
+  return blockmapPath;
 }
 
 async function downloadToFile(url, destination, status) {
@@ -318,52 +371,58 @@ async function downloadFullRelease(release) {
   }
 }
 
-async function applyBlockmapPath(releasePath) {
+async function applyBlockmapPath(releasePath, releases) {
   let currentTag = localVersion;
   for (let i = 0; i < releasePath.length; i++) {
+    const currentRelease = getReleaseByTag(releases, currentTag);
     const nextRelease = releasePath[i];
     mainWindow.webContents.send(
       'text',
       `Applying patch ${i + 1} of ${releasePath.length}`
     );
+    if (!currentRelease) {
+      throw new Error(`Release metadata missing for ${currentTag}`);
+    }
     const fromCache = getVersionCache(currentTag);
     const nextCache = getVersionCache(nextRelease.tag_name);
-    const targetAsset = getPlatformAsset(nextRelease);
-    if (!targetAsset) {
+    const currentAsset = getPlatformAsset(currentRelease);
+    if (!currentAsset) {
+      throw new Error(`Portable asset missing for ${currentTag}`);
+    }
+    const nextAsset = getPlatformAsset(nextRelease);
+    if (!nextAsset) {
       throw new Error(`Portable asset missing for ${nextRelease.tag_name}`);
     }
-    const newBlockmapAsset = getBlockmapAsset(nextRelease, targetAsset);
+    const newBlockmapAsset = getBlockmapAsset(nextRelease, nextAsset);
     if (!newBlockmapAsset) {
       throw new Error(`Blockmap missing for ${nextRelease.tag_name}`);
     }
-    const sourceArtifact = path.join(fromCache, targetAsset.name);
-    if (!fs.existsSync(sourceArtifact)) {
-      throw new Error(`Missing local source artifact for ${currentTag}`);
-    }
-    fs.mkdirSync(nextCache, { recursive: true });
-    const newBlockmapPath = path.join(
-      nextCache,
-      `${targetAsset.name}.blockmap`
-    );
-    await downloadToFile(
-      newBlockmapAsset.browser_download_url,
-      newBlockmapPath,
-      'Downloading blockmap'
-    );
-    const oldBlockmapPath = path.join(
+    const sourceArtifact = await ensureCachedSourceArtifact(
       fromCache,
-      `${targetAsset.name}.blockmap`
+      currentRelease,
+      currentAsset
     );
-    if (!fs.existsSync(oldBlockmapPath)) {
-      throw new Error(`Missing old blockmap for ${currentTag}`);
+    const oldBlockmapPath = await ensureCachedBlockmap(
+      fromCache,
+      currentRelease,
+      currentAsset
+    );
+    fs.mkdirSync(nextCache, { recursive: true });
+    const newBlockmapPath = path.join(nextCache, `${nextAsset.name}.blockmap`);
+    if (!fs.existsSync(newBlockmapPath)) {
+      await downloadToFile(
+        newBlockmapAsset.browser_download_url,
+        newBlockmapPath,
+        'Downloading blockmap'
+      );
     }
-    const outputArtifact = path.join(nextCache, targetAsset.name);
+    const outputArtifact = path.join(nextCache, nextAsset.name);
     await applyBlockmapPatch(
       sourceArtifact,
       oldBlockmapPath,
       outputArtifact,
       newBlockmapPath,
-      targetAsset.browser_download_url
+      nextAsset.browser_download_url
     );
 
     if (process.platform === 'win32') {

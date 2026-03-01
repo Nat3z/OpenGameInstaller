@@ -69,6 +69,13 @@ jobs:
         run: |
           Compress-Archive -Path application/dist/win-unpacked/* -Destination application/dist/OpenGameInstaller-Portable.zip
 
+      - name: Generate Windows blockmaps
+        if: matrix.os == 'windows-latest' && steps.check_changes.outputs.has_application_changes == 'true'
+        shell: bash
+        run: |
+          bunx --bun app-builder-bin blockmap --input "application/dist/OpenGameInstaller-Portable.zip" --output "application/dist/OpenGameInstaller-Portable.zip.blockmap"
+          bunx --bun app-builder-bin blockmap --input "updater/dist/OpenGameInstaller-Setup.exe" --output "updater/dist/OpenGameInstaller-Setup.exe.blockmap"
+
       - name: Upload Windows Assets as Artifacts
         if: matrix.os == 'windows-latest' && steps.check_changes.outputs.has_application_changes == 'true'
         uses: actions/upload-artifact@v4
@@ -76,7 +83,16 @@ jobs:
           name: windows-assets
           path: |
             application/dist/OpenGameInstaller-Portable.zip
+            application/dist/OpenGameInstaller-Portable.zip.blockmap
             updater/dist/OpenGameInstaller-Setup.exe
+            updater/dist/OpenGameInstaller-Setup.exe.blockmap
+
+      - name: Generate Linux blockmaps
+        if: matrix.os == 'ubuntu-latest' && steps.check_changes.outputs.has_application_changes == 'true'
+        shell: bash
+        run: |
+          bunx --bun app-builder-bin blockmap --input "application/dist/OpenGameInstaller-linux-pt.AppImage" --output "application/dist/OpenGameInstaller-linux-pt.AppImage.blockmap"
+          bunx --bun app-builder-bin blockmap --input "updater/dist/OpenGameInstaller-Setup.AppImage" --output "updater/dist/OpenGameInstaller-Setup.AppImage.blockmap"
 
       - name: Upload Linux Assets as Artifacts
         if: matrix.os == 'ubuntu-latest' && steps.check_changes.outputs.has_application_changes == 'true'
@@ -85,7 +101,9 @@ jobs:
           name: linux-assets
           path: |
             updater/dist/OpenGameInstaller-Setup.AppImage
+            updater/dist/OpenGameInstaller-Setup.AppImage.blockmap
             application/dist/OpenGameInstaller-linux-pt.AppImage
+            application/dist/OpenGameInstaller-linux-pt.AppImage.blockmap
   release:
     permissions:
       contents: write
@@ -169,6 +187,7 @@ jobs:
         run: |
           mkdir -p assets-flat
           find assets -type f -name "*.zip" -exec cp {} assets-flat/ \;
+          find assets -type f -name "*.blockmap" -exec cp {} assets-flat/ \;
           find assets -type f -name "*.exe" -exec cp {} assets-flat/ \;
           find assets -type f -name "*.AppImage" -exec cp {} assets-flat/ \;
           ls -la assets-flat/
@@ -197,6 +216,10 @@ jobs:
           prerelease: true
           files: |
             assets-flat/OpenGameInstaller-Portable.zip
+            assets-flat/OpenGameInstaller-Portable.zip.blockmap
             assets-flat/OpenGameInstaller-Setup.exe
+            assets-flat/OpenGameInstaller-Setup.exe.blockmap
             assets-flat/OpenGameInstaller-Setup.AppImage
+            assets-flat/OpenGameInstaller-Setup.AppImage.blockmap
             assets-flat/OpenGameInstaller-linux-pt.AppImage
+            assets-flat/OpenGameInstaller-linux-pt.AppImage.blockmap

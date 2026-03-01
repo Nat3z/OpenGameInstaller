@@ -125,9 +125,13 @@ async function createWindow() {
       { timeout: 10000 } // 10 second timeout for update check
     );
     mainWindow.webContents.send('text', 'Checking for Updates');
-    const releases = response.data.filter((rel) =>
-      usingBleedingEdge ? rel.prerelease : !rel.prerelease
-    );
+    const releases = response.data
+      .filter((rel) => (usingBleedingEdge ? rel.prerelease : !rel.prerelease))
+      .sort(
+        (a, b) =>
+          new Date(b.published_at || b.created_at || 0).getTime() -
+          new Date(a.published_at || a.created_at || 0).getTime()
+      );
     const localIndex = releases.findIndex((rel) => rel.tag_name === localVersion);
     const targetRelease = releases[0];
     let updating = Boolean(targetRelease) && localIndex !== 0;

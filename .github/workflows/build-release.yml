@@ -69,6 +69,10 @@ jobs:
         run: |
           Compress-Archive -Path application/dist/win-unpacked/* -Destination application/dist/OpenGameInstaller-Portable.zip
 
+      - name: What's in the folders? (Windows)
+        if: steps.check_changes.outputs.has_application_changes == 'true'
+        run: ls -la application/dist/
+
       - name: Upload Windows Assets as Artifacts
         if: matrix.os == 'windows-latest' && steps.check_changes.outputs.has_application_changes == 'true'
         uses: actions/upload-artifact@v4

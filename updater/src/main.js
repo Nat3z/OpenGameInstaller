@@ -432,7 +432,7 @@ async function downloadFullRelease(release) {
   mainWindow.webContents.send('text', 'Downloading Update');
   const downloadPath =
     process.platform === 'win32'
-      ? './update.zip'
+      ? path.join(__dirname, 'update.zip')
       : './update/OpenGameInstaller.AppImage';
   if (process.platform === 'linux') {
     fs.mkdirSync('./update', { recursive: true });
@@ -452,16 +452,17 @@ async function downloadFullRelease(release) {
   mainWindow.webContents.send('text', 'Download Complete');
 
   if (process.platform === 'win32') {
-    persistSourceArtifact(assetWithPortable.name, './update.zip');
+    const zipPath = path.join(__dirname, 'update.zip');
+    persistSourceArtifact(assetWithPortable.name, zipPath);
     mainWindow.webContents.send('text', 'Extracting Update');
-    await unzip(`./update.zip`, localCache);
+    await unzip(zipPath, localCache);
     mainWindow.webContents.send('text', 'Copying Update Files');
     copyCacheToUpdate(localCache);
     fs.copyFileSync(
-      './update.zip',
+      zipPath,
       path.join(localCache, assetWithPortable.name)
     );
-    fs.unlinkSync('./update.zip');
+    fs.unlinkSync(zipPath);
   } else {
     const item = path.join(__dirname, 'update', 'OpenGameInstaller.AppImage');
     fs.copyFileSync(item, path.join(localCache, 'OpenGameInstaller.AppImage'));
@@ -605,7 +606,13 @@ async function applyBlockmapPatch(
             `Short read from source artifact at ${matched.offset}: expected ${size}, got ${bytesRead}`
           );
         }
-        fs.writeSync(outFd, buffer, 0, size, writeOffset);
+        const actualChecksum = createHash('sha256').update(buffer).digest('base64').replace(/=+$/, '');
+        const expectedChecksum = (newFile.checksums[i] || '').replace(/=+$/, '');
+        if (actualChecksum !== expectedChecksum) {
+          misses.push({ offset: writeOffset, size });
+        } else {
+          fs.writeSync(outFd, buffer, 0, size, writeOffset);
+        }
       } else {
         misses.push({ offset: writeOffset, size });
       }

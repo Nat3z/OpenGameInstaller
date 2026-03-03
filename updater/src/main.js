@@ -606,9 +606,20 @@ async function applyBlockmapPatch(
             `Short read from source artifact at ${matched.offset}: expected ${size}, got ${bytesRead}`
           );
         }
-        const actualChecksum = createHash('sha256').update(buffer).digest('base64').replace(/=+$/, '');
-        const expectedChecksum = (newFile.checksums[i] || '').replace(/=+$/, '');
-        if (actualChecksum !== expectedChecksum) {
+        const expectedChecksum = newFile.checksums[i];
+        const digestBytes = createHash('sha256').update(buffer).digest();
+        const actualBase64 = digestBytes.toString('base64');
+        const actualHex = digestBytes.toString('hex');
+        const normalizedExpected =
+          typeof expectedChecksum === 'string'
+            ? expectedChecksum.replace(/=+$/, '')
+            : '';
+        const normalizedBase64 = actualBase64.replace(/=+$/, '');
+        if (
+          expectedChecksum !== actualBase64 &&
+          expectedChecksum !== actualHex &&
+          normalizedExpected !== normalizedBase64
+        ) {
           misses.push({ offset: writeOffset, size });
         } else {
           fs.writeSync(outFd, buffer, 0, size, writeOffset);

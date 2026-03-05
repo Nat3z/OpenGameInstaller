@@ -5,7 +5,7 @@ import { sendNotification } from '../main.js';
 import axios, { AxiosError, type AxiosResponse } from 'axios';
 import { dirname } from 'path';
 import { DOWNLOAD_QUEUE } from '../manager/manager.queue.js';
-import { Readable } from 'stream';
+import { Readable, Transform, type TransformCallback } from 'stream';
 import * as http from 'http';
 import * as https from 'https';
 import { getStoredValue, refreshCached } from '../manager/manager.config.js';
@@ -13,6 +13,51 @@ import { getStoredValue, refreshCached } from '../manager/manager.config.js';
 // Parallel download configuration
 const PARALLEL_DOWNLOAD_THRESHOLD = 100 * 1024 * 1024; // 100MB in bytes
 let PARALLEL_CHUNK_COUNT: number = 0;
+
+// Bandwidth throttling
+let BANDWIDTH_LIMIT_BYTES_PER_SEC: number = 0;
+
+class GlobalTokenBucket {
+  private tokens: number;
+  private lastRefillTime: number = Date.now();
+
+  constructor(private bytesPerSec: number) {
+    this.tokens = bytesPerSec;
+  }
+
+  update(bytesPerSec: number) {
+    this.bytesPerSec = bytesPerSec;
+    if (this.tokens > bytesPerSec) this.tokens = bytesPerSec;
+  }
+
+  async consume(bytes: number): Promise<void> {
+    if (this.bytesPerSec === 0) return;
+    const now = Date.now();
+    const elapsed = (now - this.lastRefillTime) / 1000;
+    this.lastRefillTime = now;
+    this.tokens = Math.min(this.bytesPerSec, this.tokens + elapsed * this.bytesPerSec);
+    this.tokens -= bytes;
+    if (this.tokens < 0) {
+      const waitMs = (-this.tokens / this.bytesPerSec) * 1000;
+      await new Promise<void>((resolve) => setTimeout(resolve, waitMs));
+    }
+  }
+}
+
+const globalTokenBucket = new GlobalTokenBucket(0);
+
+class ThrottleStream extends Transform {
+  _transform(chunk: Buffer, _encoding: string, callback: TransformCallback) {
+    if (this.destroyed) {
+      callback();
+      return;
+    }
+    globalTokenBucket.consume(chunk.length).then(() => {
+      if (!this.destroyed) this.push(chunk);
+      callback();
+    });
+  }
+}
 
 interface DownloadJob {
   link: string;
@@ -644,7 +689,15 @@ class Download {
           flags: chunk.currentBytes > 0 ? 'a' : 'w',
         });
 
-        const stream = chunk.response.data.pipe(chunk.fileStream);
+        let _chunkThrottle: ThrottleStream | undefined;
+        if (BANDWIDTH_LIMIT_BYTES_PER_SEC > 0) {
+          _chunkThrottle = new ThrottleStream();
+          chunk.response.data.pipe(_chunkThrottle);
+          _chunkThrottle.pipe(chunk.fileStream);
+        } else {
+          chunk.response.data.pipe(chunk.fileStream);
+        }
+        const stream = chunk.fileStream;
 
         stream.on('finish', () => {
           chunk.completed = true;
@@ -652,6 +705,7 @@ class Download {
         });
 
         chunk.abortController.signal.addEventListener('abort', () => {
+          if (_chunkThrottle) _chunkThrottle.destroy();
           stream.destroy();
           reject(new Error('Aborted'));
         });
@@ -797,7 +851,15 @@ class Download {
         part.totalBytes = startByte + contentLength;
         this.updateMultiPartTotalBytes();
 
-        const stream = part.response.data.pipe(part.fileStream);
+        let _partThrottle: ThrottleStream | undefined;
+        if (BANDWIDTH_LIMIT_BYTES_PER_SEC > 0) {
+          _partThrottle = new ThrottleStream();
+          part.response.data.pipe(_partThrottle);
+          _partThrottle.pipe(part.fileStream);
+        } else {
+          part.response.data.pipe(part.fileStream);
+        }
+        const stream = part.fileStream;
 
         stream.on('finish', () => {
           if (part.fileStream) {
@@ -809,6 +871,7 @@ class Download {
         });
 
         part.abortController.signal.addEventListener('abort', () => {
+          if (_partThrottle) _partThrottle.destroy();
           stream.destroy();
           reject(new Error('Aborted'));
         });
@@ -1223,7 +1286,15 @@ class Download {
         this.startTime = Date.now();
         this.startProgressTracker();
 
-        const stream = this.response.data.pipe(this.fileStream);
+        let _throttle: ThrottleStream | undefined;
+        if (BANDWIDTH_LIMIT_BYTES_PER_SEC > 0) {
+          _throttle = new ThrottleStream();
+          this.response.data.pipe(_throttle);
+          _throttle.pipe(this.fileStream);
+        } else {
+          this.response.data.pipe(this.fileStream);
+        }
+        const stream = this.fileStream;
 
         stream.on('finish', () => {
           this.cleanupPart();
@@ -1235,6 +1306,7 @@ class Download {
         });
 
         this.abortController.signal.addEventListener('abort', () => {
+          if (_throttle) _throttle.destroy();
           stream.destroy();
           console.log('[direct] Aborted');
           reject(new Error('Aborted'));
@@ -1603,7 +1675,15 @@ class Download {
           flags: chunk.currentBytes > 0 ? 'a' : 'w',
         });
 
-        const stream = chunk.response.data.pipe(chunk.fileStream);
+        let _chunkThrottle: ThrottleStream | undefined;
+        if (BANDWIDTH_LIMIT_BYTES_PER_SEC > 0) {
+          _chunkThrottle = new ThrottleStream();
+          chunk.response.data.pipe(_chunkThrottle);
+          _chunkThrottle.pipe(chunk.fileStream);
+        } else {
+          chunk.response.data.pipe(chunk.fileStream);
+        }
+        const stream = chunk.fileStream;
 
         stream.on('finish', () => {
           chunk.completed = true;
@@ -1612,6 +1692,7 @@ class Download {
         });
 
         chunk.abortController.signal.addEventListener('abort', () => {
+          if (_chunkThrottle) _chunkThrottle.destroy();
           stream.destroy();
           console.log(`[direct] Chunk ${chunk.index} aborted`);
           reject(new Error('Aborted'));
@@ -1859,6 +1940,12 @@ async function checkParallelChunkCount() {
       download.cancel();
     }
   }
+
+  const bwVal = Number(await getStoredValue('general', 'bandwidthLimit'));
+  BANDWIDTH_LIMIT_BYTES_PER_SEC =
+    Number.isFinite(bwVal) && bwVal > 0 ? Math.round(bwVal * 1024 * 1024) : 0;
+  globalTokenBucket.update(BANDWIDTH_LIMIT_BYTES_PER_SEC);
+  console.log('[direct] bandwidth limit (bytes/s):', BANDWIDTH_LIMIT_BYTES_PER_SEC);
 }
 
 export default function handler(mainWindow: BrowserWindow) {

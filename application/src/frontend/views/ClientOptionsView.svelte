@@ -90,9 +90,9 @@
           min: 1,
         },
         bandwidthLimit: {
-          displayName: 'Bandwidth Limit (MB/s)',
+          displayName: 'Bandwidth Limit (MiB/s)',
           description:
-            'Maximum download speed for direct downloads in MB/s. Set to 0 for unlimited.',
+            'Maximum download speed for direct downloads in MiB/s. Set to 0 for unlimited.',
           defaultValue: 0,
           value: 0,
           type: 'number',

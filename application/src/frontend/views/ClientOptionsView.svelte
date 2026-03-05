@@ -89,6 +89,16 @@
           max: 32,
           min: 1,
         },
+        bandwidthLimit: {
+          displayName: 'Bandwidth Limit (MiB/s)',
+          description:
+            'Maximum download speed for direct downloads in MiB/s. Set to 0 for unlimited.',
+          defaultValue: 0,
+          value: 0,
+          type: 'number',
+          min: 0,
+          max: 100,
+        },
         reconfigurSteamGridDb: {
           displayName: 'Change SteamGridDB API Key',
           description: 'Reconfigure your SteamGridDB API Key',

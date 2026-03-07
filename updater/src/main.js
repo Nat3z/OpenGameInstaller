@@ -48,6 +48,57 @@ if (fs.existsSync(`./bleeding-edge.txt`)) {
   usingBleedingEdge = true;
 }
 
+const PATCH_PROGRESS_INTERVAL = 128;
+const VERIFY_PROGRESS_INTERVAL = 128;
+const RANGE_DOWNLOAD_CHUNK_SIZE = 4 * 1024 * 1024;
+const HTTP_RETRY_ATTEMPTS = 4;
+const HTTP_RETRY_BASE_DELAY_MS = 1500;
+const HTTP_REQUEST_TIMEOUT_MS = 60000;
+
+function sendUpdaterStatus(text, progress, max, subtext) {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return;
+  }
+  mainWindow.webContents.send('text', text, progress, max, subtext);
+}
+
+function nextUiTick() {
+  return new Promise((resolve) => setImmediate(resolve));
+}
+
+function logUpdater(message, ...args) {
+  console.log(`[updater] ${message}`, ...args);
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function getRetryDelay(attempt) {
+  return HTTP_RETRY_BASE_DELAY_MS * attempt;
+}
+
+function shouldRetryHttpError(error) {
+  const code = error?.code;
+  const message =
+    typeof error?.message === 'string' ? error.message.toLowerCase() : '';
+  const status = error?.response?.status;
+
+  if ([408, 409, 425, 429, 500, 502, 503, 504].includes(status)) {
+    return true;
+  }
+
+  return (
+    code === 'ECONNRESET' ||
+    code === 'ECONNABORTED' ||
+    code === 'ETIMEDOUT' ||
+    code === 'EPIPE' ||
+    message.includes('socket hang up') ||
+    message.includes('network error') ||
+    message.includes('timeout')
+  );
+}
+
 /**
  * Create and display the updater window, ensure no other instance is running, and handle update checking, download, installation, and app launch.
  *
@@ -368,27 +419,70 @@ async function ensureCachedBlockmap(cacheDir, release, asset) {
 }
 
 async function downloadToFile(url, destination, status) {
-  const writer = fs.createWriteStream(destination);
-  const response = await axios({ url, method: 'GET', responseType: 'stream' });
-  response.data.pipe(writer);
-  const startTime = Date.now();
-  const fileSize = response.headers['content-length'];
-  response.data.on('data', () => {
-    const elapsedTime = (Date.now() - startTime) / 1000;
-    const downloadSpeed = writer.bytesWritten / Math.max(elapsedTime, 1);
-    mainWindow.webContents.send(
-      'text',
-      status,
-      writer.bytesWritten,
-      fileSize,
-      correctParsingSize(downloadSpeed) + '/s'
-    );
-  });
-  await new Promise((resolve, reject) => {
-    writer.on('finish', resolve);
-    writer.on('error', reject);
-    response.data.on('error', reject);
-  });
+  logUpdater(`Starting download: ${status}`, { url, destination });
+  for (let attempt = 1; attempt <= HTTP_RETRY_ATTEMPTS; attempt++) {
+    let writer;
+    let response;
+    try {
+      fs.rmSync(destination, { force: true });
+      writer = fs.createWriteStream(destination);
+      response = await axios({
+        url,
+        method: 'GET',
+        responseType: 'stream',
+        timeout: HTTP_REQUEST_TIMEOUT_MS,
+      });
+      response.data.pipe(writer);
+      const startTime = Date.now();
+      const fileSize = response.headers['content-length'];
+      response.data.on('data', () => {
+        const elapsedTime = (Date.now() - startTime) / 1000;
+        const downloadSpeed = writer.bytesWritten / Math.max(elapsedTime, 1);
+        sendUpdaterStatus(
+          status,
+          writer.bytesWritten,
+          fileSize,
+          correctParsingSize(downloadSpeed) + '/s'
+        );
+      });
+      await new Promise((resolve, reject) => {
+        writer.on('finish', resolve);
+        writer.on('error', reject);
+        response.data.on('error', reject);
+      });
+      logUpdater(`Finished download: ${status}`, {
+        destination,
+        bytesWritten: writer.bytesWritten,
+        attempt,
+      });
+      return;
+    } catch (error) {
+      writer?.destroy();
+      response?.data?.destroy?.();
+      fs.rmSync(destination, { force: true });
+
+      const retryable = shouldRetryHttpError(error);
+      logUpdater(`Download attempt failed: ${status}`, {
+        destination,
+        attempt,
+        retryable,
+        error: error?.message,
+        code: error?.code,
+        statusCode: error?.response?.status,
+      });
+      if (!retryable || attempt === HTTP_RETRY_ATTEMPTS) {
+        throw error;
+      }
+      const delayMs = getRetryDelay(attempt);
+      sendUpdaterStatus(
+        status,
+        undefined,
+        undefined,
+        `Retrying (${attempt + 1}/${HTTP_RETRY_ATTEMPTS})`
+      );
+      await sleep(delayMs);
+    }
+  }
 }
 
 function copyCacheToUpdate(cacheDir) {
@@ -400,10 +494,7 @@ function copyCacheToUpdate(cacheDir) {
     if (lowerName.endsWith('.blockmap')) {
       continue;
     }
-    if (
-      process.platform === 'win32' &&
-      lowerName.endsWith('.zip')
-    ) {
+    if (process.platform === 'win32' && lowerName.endsWith('.zip')) {
       continue;
     }
     if (
@@ -429,7 +520,7 @@ async function downloadFullRelease(release) {
   fs.mkdirSync(localCache, { recursive: true });
   const blockmapAsset = getBlockmapAsset(release, assetWithPortable);
 
-  mainWindow.webContents.send('text', 'Downloading Update');
+  sendUpdaterStatus('Downloading Update');
   const downloadPath =
     process.platform === 'win32'
       ? path.join(__dirname, 'update.zip')
@@ -449,19 +540,16 @@ async function downloadFullRelease(release) {
       'Downloading blockmap'
     );
   }
-  mainWindow.webContents.send('text', 'Download Complete');
+  sendUpdaterStatus('Download Complete');
 
   if (process.platform === 'win32') {
     const zipPath = path.join(__dirname, 'update.zip');
     persistSourceArtifact(assetWithPortable.name, zipPath);
-    mainWindow.webContents.send('text', 'Extracting Update');
+    sendUpdaterStatus('Extracting Update');
     await unzip(zipPath, localCache);
-    mainWindow.webContents.send('text', 'Copying Update Files');
+    sendUpdaterStatus('Copying Update Files');
     copyCacheToUpdate(localCache);
-    fs.copyFileSync(
-      zipPath,
-      path.join(localCache, assetWithPortable.name)
-    );
+    fs.copyFileSync(zipPath, path.join(localCache, assetWithPortable.name));
     fs.unlinkSync(zipPath);
   } else {
     const item = path.join(__dirname, 'update', 'OpenGameInstaller.AppImage');
@@ -475,13 +563,20 @@ async function downloadFullRelease(release) {
 async function applyBlockmapPath(releasePath, releases) {
   let currentTag = localVersion;
   let latestAssetName = null;
+  logUpdater('Starting incremental update path', {
+    from: currentTag,
+    steps: releasePath.map((release) => release.tag_name),
+  });
   for (let i = 0; i < releasePath.length; i++) {
     const currentRelease = getReleaseByTag(releases, currentTag);
     const nextRelease = releasePath[i];
-    mainWindow.webContents.send(
-      'text',
-      `Applying patch ${i + 1} of ${releasePath.length}`
-    );
+    logUpdater('Applying incremental patch step', {
+      step: i + 1,
+      totalSteps: releasePath.length,
+      from: currentTag,
+      to: nextRelease.tag_name,
+    });
+    sendUpdaterStatus(`Applying patch ${i + 1} of ${releasePath.length}`);
     if (!currentRelease) {
       throw new Error(`Release metadata missing for ${currentTag}`);
     }
@@ -520,32 +615,84 @@ async function applyBlockmapPath(releasePath, releases) {
       );
     }
     const outputArtifact = path.join(nextCache, nextAsset.name);
+    logUpdater('Prepared patch inputs', {
+      sourceArtifact,
+      oldBlockmapPath,
+      newBlockmapPath,
+      outputArtifact,
+    });
+    sendUpdaterStatus(
+      `Building patch ${i + 1} of ${releasePath.length}`,
+      0,
+      1,
+      nextRelease.tag_name
+    );
+    await nextUiTick();
     await applyBlockmapPatch(
       sourceArtifact,
       oldBlockmapPath,
       outputArtifact,
       newBlockmapPath,
       nextAsset.browser_download_url,
-      { size: nextAsset.size }
+      { size: nextAsset.size },
+      {
+        patchLabel: `Building patch ${i + 1} of ${releasePath.length}`,
+        verifyLabel: `Verifying patch ${i + 1} of ${releasePath.length}`,
+        releaseTag: nextRelease.tag_name,
+      }
     );
 
     if (process.platform === 'win32') {
       persistSourceArtifact(nextAsset.name, outputArtifact);
+      logUpdater('Extracting patched Windows artifact', {
+        artifact: outputArtifact,
+        destination: nextCache,
+      });
+      sendUpdaterStatus(
+        `Extracting patch ${i + 1} of ${releasePath.length}`,
+        0,
+        1,
+        nextRelease.tag_name
+      );
+      await nextUiTick();
       await unzip(outputArtifact, nextCache);
     } else {
+      logUpdater('Finalizing patched Linux artifact', {
+        artifact: outputArtifact,
+        destination: path.join(nextCache, 'OpenGameInstaller.AppImage'),
+      });
+      sendUpdaterStatus(
+        `Finalizing patch ${i + 1} of ${releasePath.length}`,
+        0,
+        1,
+        nextRelease.tag_name
+      );
       fs.copyFileSync(
         outputArtifact,
         path.join(nextCache, 'OpenGameInstaller.AppImage')
       );
     }
     currentTag = nextRelease.tag_name;
+    logUpdater('Completed incremental patch step', {
+      step: i + 1,
+      currentTag,
+    });
   }
+  sendUpdaterStatus('Copying Update Files');
+  logUpdater('Copying patched cache into update directory', {
+    cache: getVersionCache(releasePath[releasePath.length - 1].tag_name),
+  });
   copyCacheToUpdate(
     getVersionCache(releasePath[releasePath.length - 1].tag_name)
   );
   if (process.platform === 'linux') {
+    sendUpdaterStatus('Finishing Update');
     fs.chmodSync('./update/OpenGameInstaller.AppImage', '755');
   }
+  logUpdater('Incremental update path complete', {
+    finalTag: releasePath[releasePath.length - 1].tag_name,
+    latestAssetName,
+  });
   cleanupAfterUpdate(
     releasePath[releasePath.length - 1].tag_name,
     latestAssetName
@@ -558,8 +705,19 @@ async function applyBlockmapPatch(
   outputArtifact,
   newBlockmapPath,
   targetUrl,
-  expectedArtifact = {}
+  expectedArtifact = {},
+  statusLabels = {}
 ) {
+  const patchLabel = statusLabels.patchLabel || 'Building patch';
+  const verifyLabel = statusLabels.verifyLabel || 'Verifying patch';
+  const releaseTag = statusLabels.releaseTag;
+  logUpdater('Starting blockmap patch', {
+    sourceArtifact,
+    oldBlockmapPath,
+    newBlockmapPath,
+    outputArtifact,
+    releaseTag,
+  });
   const oldMap = JSON.parse(zlib.gunzipSync(fs.readFileSync(oldBlockmapPath)));
   const newMap = JSON.parse(zlib.gunzipSync(fs.readFileSync(newBlockmapPath)));
   const oldFile = oldMap.files?.[0];
@@ -589,7 +747,13 @@ async function applyBlockmapPatch(
     const misses = [];
 
     if (writeOffset > 0) {
-      const headerChunk = await downloadRangeChunk(targetUrl, 0, writeOffset - 1);
+      sendUpdaterStatus(patchLabel, 0, newFile.checksums.length, releaseTag);
+      await nextUiTick();
+      const headerChunk = await downloadRangeChunk(
+        targetUrl,
+        0,
+        writeOffset - 1
+      );
       fs.writeSync(outFd, headerChunk, 0, headerChunk.length, 0);
     }
 
@@ -600,7 +764,13 @@ async function applyBlockmapPatch(
       const matched = takeMatchingBlock(blocks, size);
       if (matched) {
         const buffer = Buffer.alloc(size);
-        const bytesRead = fs.readSync(sourceFd, buffer, 0, size, matched.offset);
+        const bytesRead = fs.readSync(
+          sourceFd,
+          buffer,
+          0,
+          size,
+          matched.offset
+        );
         if (bytesRead !== size) {
           throw new Error(
             `Short read from source artifact at ${matched.offset}: expected ${size}, got ${bytesRead}`
@@ -628,6 +798,18 @@ async function applyBlockmapPatch(
         misses.push({ offset: writeOffset, size });
       }
       writeOffset += size;
+      if (
+        i === newFile.checksums.length - 1 ||
+        (i + 1) % PATCH_PROGRESS_INTERVAL === 0
+      ) {
+        sendUpdaterStatus(
+          patchLabel,
+          i + 1,
+          newFile.checksums.length,
+          releaseTag
+        );
+        await nextUiTick();
+      }
     }
 
     const mergedMisses = [];
@@ -640,11 +822,61 @@ async function applyBlockmapPatch(
       }
     }
 
+    const totalMissBytes = mergedMisses.reduce(
+      (total, miss) => total + miss.size,
+      0
+    );
+    const reusedBytes =
+      newFile.sizes.reduce((total, size) => total + size, 0) - totalMissBytes;
+    logUpdater('Patch block analysis complete', {
+      releaseTag,
+      blockCount: newFile.checksums.length,
+      missingRanges: mergedMisses.length,
+      totalMissBytes,
+      reusedBytes,
+    });
+    let downloadedMissBytes = 0;
     for (const miss of mergedMisses) {
-      const end = miss.offset + miss.size - 1;
-      const chunk = await downloadRangeChunk(targetUrl, miss.offset, end);
-      fs.writeSync(outFd, chunk, 0, chunk.length, miss.offset);
+      let rangeStart = miss.offset;
+      const missEnd = miss.offset + miss.size - 1;
+      logUpdater('Downloading missing patch range', {
+        releaseTag,
+        start: miss.offset,
+        end: missEnd,
+        size: miss.size,
+      });
+      while (rangeStart <= missEnd) {
+        const rangeEnd = Math.min(
+          rangeStart + RANGE_DOWNLOAD_CHUNK_SIZE - 1,
+          missEnd
+        );
+        sendUpdaterStatus(
+          'Downloading patch data',
+          downloadedMissBytes,
+          totalMissBytes || 1,
+          releaseTag
+        );
+        await nextUiTick();
+        const chunk = await downloadRangeChunk(targetUrl, rangeStart, rangeEnd);
+        fs.writeSync(outFd, chunk, 0, chunk.length, rangeStart);
+        downloadedMissBytes += chunk.length;
+        logUpdater('Downloaded patch chunk', {
+          releaseTag,
+          start: rangeStart,
+          end: rangeEnd,
+          chunkSize: chunk.length,
+          downloadedMissBytes,
+          totalMissBytes,
+        });
+        rangeStart = rangeEnd + 1;
+      }
     }
+    sendUpdaterStatus(
+      'Downloading patch data',
+      downloadedMissBytes,
+      totalMissBytes || 1,
+      releaseTag
+    );
   } finally {
     if (typeof sourceFd === 'number') {
       try {
@@ -667,7 +899,23 @@ async function applyBlockmapPatch(
   ) {
     throw new Error('Patched artifact is empty');
   }
-  await verifyPatchedArtifact(outputArtifact, newFile, expectedArtifact);
+  sendUpdaterStatus(verifyLabel, 0, newFile.checksums.length, releaseTag);
+  await nextUiTick();
+  logUpdater('Starting patched artifact verification', {
+    outputArtifact,
+    releaseTag,
+  });
+  await verifyPatchedArtifact(
+    outputArtifact,
+    newFile,
+    expectedArtifact,
+    verifyLabel,
+    releaseTag
+  );
+  logUpdater('Completed blockmap patch', {
+    outputArtifact,
+    releaseTag,
+  });
 }
 
 function takeMatchingBlock(blocks, expectedSize) {
@@ -683,35 +931,61 @@ function takeMatchingBlock(blocks, expectedSize) {
 
 async function downloadRangeChunk(url, start, end) {
   const requestedRange = `bytes=${start}-${end}`;
-  const rangeResponse = await axios({
-    url,
-    method: 'GET',
-    responseType: 'arraybuffer',
-    headers: { Range: requestedRange },
-  });
-  const expectedSize = end - start + 1;
-  const actualSize = Buffer.byteLength(rangeResponse.data);
-  const contentRange = rangeResponse.headers['content-range'];
-  const expectedContentRangePrefix = `bytes ${start}-${end}/`;
-  if (rangeResponse.status !== 206) {
-    throw new Error(
-      `Invalid range response status ${rangeResponse.status} for ${requestedRange}`
-    );
+  for (let attempt = 1; attempt <= HTTP_RETRY_ATTEMPTS; attempt++) {
+    try {
+      logUpdater('Requesting HTTP range', { url, requestedRange, attempt });
+      const rangeResponse = await axios({
+        url,
+        method: 'GET',
+        responseType: 'arraybuffer',
+        headers: { Range: requestedRange },
+        timeout: HTTP_REQUEST_TIMEOUT_MS,
+      });
+      const expectedSize = end - start + 1;
+      const actualSize = Buffer.byteLength(rangeResponse.data);
+      const contentRange = rangeResponse.headers['content-range'];
+      const expectedContentRangePrefix = `bytes ${start}-${end}/`;
+      if (rangeResponse.status !== 206) {
+        throw new Error(
+          `Invalid range response status ${rangeResponse.status} for ${requestedRange}`
+        );
+      }
+      if (actualSize !== expectedSize) {
+        throw new Error(
+          `Invalid range response length ${actualSize} for ${requestedRange}; expected ${expectedSize}`
+        );
+      }
+      if (
+        typeof contentRange !== 'string' ||
+        !contentRange.startsWith(expectedContentRangePrefix)
+      ) {
+        throw new Error(
+          `Invalid content-range header for ${requestedRange}: ${contentRange}`
+        );
+      }
+      logUpdater('Received HTTP range', {
+        requestedRange,
+        actualSize,
+        contentRange,
+        attempt,
+      });
+      return Buffer.from(rangeResponse.data);
+    } catch (error) {
+      const retryable = shouldRetryHttpError(error);
+      logUpdater('HTTP range request failed', {
+        requestedRange,
+        attempt,
+        retryable,
+        error: error?.message,
+        code: error?.code,
+        statusCode: error?.response?.status,
+      });
+      if (!retryable || attempt === HTTP_RETRY_ATTEMPTS) {
+        throw error;
+      }
+      await sleep(getRetryDelay(attempt));
+    }
   }
-  if (actualSize !== expectedSize) {
-    throw new Error(
-      `Invalid range response length ${actualSize} for ${requestedRange}; expected ${expectedSize}`
-    );
-  }
-  if (
-    typeof contentRange !== 'string' ||
-    !contentRange.startsWith(expectedContentRangePrefix)
-  ) {
-    throw new Error(
-      `Invalid content-range header for ${requestedRange}: ${contentRange}`
-    );
-  }
-  return Buffer.from(rangeResponse.data);
 }
 
 function parseDigest(digest) {
@@ -743,7 +1017,17 @@ async function hashFile(filePath, algorithm) {
   });
 }
 
-async function verifyPatchedArtifact(outputArtifact, newFile, expectedArtifact) {
+async function verifyPatchedArtifact(
+  outputArtifact,
+  newFile,
+  expectedArtifact,
+  verifyLabel = 'Verifying patch',
+  releaseTag
+) {
+  logUpdater('Verifying patched artifact metadata', {
+    outputArtifact,
+    releaseTag,
+  });
   const stat = fs.statSync(outputArtifact);
   if (
     !Array.isArray(newFile.sizes) ||
@@ -802,13 +1086,34 @@ async function verifyPatchedArtifact(outputArtifact, newFile, expectedArtifact) 
         throw new Error(`Block ${i} checksum mismatch at offset ${readOffset}`);
       }
       readOffset += size;
+      if (
+        i === newFile.checksums.length - 1 ||
+        (i + 1) % VERIFY_PROGRESS_INTERVAL === 0
+      ) {
+        sendUpdaterStatus(
+          verifyLabel,
+          i + 1,
+          newFile.checksums.length,
+          releaseTag
+        );
+        await nextUiTick();
+      }
     }
   } finally {
     fs.closeSync(fd);
   }
+  logUpdater('Completed block-level verification', {
+    outputArtifact,
+    releaseTag,
+    blocks: newFile.checksums.length,
+  });
 
   const parsedDigest = parseDigest(expectedArtifact.digest);
   if (!parsedDigest) {
+    logUpdater('No release digest available for final artifact verification', {
+      outputArtifact,
+      releaseTag,
+    });
     return;
   }
   const actualDigest = await hashFile(outputArtifact, parsedDigest.algorithm);
@@ -817,6 +1122,11 @@ async function verifyPatchedArtifact(outputArtifact, newFile, expectedArtifact) 
       `Patched artifact digest mismatch for ${parsedDigest.algorithm}`
     );
   }
+  logUpdater('Completed final artifact digest verification', {
+    outputArtifact,
+    releaseTag,
+    algorithm: parsedDigest.algorithm,
+  });
 }
 
 /**
@@ -916,6 +1226,7 @@ const unzip = (zipPath, unzipToDir) => {
     let zipFile = null;
     let filesProcessed = 0;
     let totalFiles = 0;
+    logUpdater('Starting unzip', { zipPath, unzipToDir });
 
     try {
       // Create folder if not exists
@@ -930,6 +1241,7 @@ const unzip = (zipPath, unzipToDir) => {
 
         zipFile = zip;
         totalFiles = zipFile.entryCount;
+        logUpdater('Opened zip archive', { zipPath, totalFiles });
 
         // This is the key. We start by reading the first entry.
         zipFile.readEntry();
@@ -939,6 +1251,7 @@ const unzip = (zipPath, unzipToDir) => {
         // trigger the next cycle.
         zipFile.on('entry', (entry) => {
           try {
+            sendUpdaterStatus('Extracting Update', filesProcessed, totalFiles);
             // Normalize path separators for Windows
             const normalizedFileName = entry.fileName.replace(/\//g, path.sep);
             const fullPath = path.join(unzipToDir, normalizedFileName);
@@ -952,7 +1265,17 @@ const unzip = (zipPath, unzipToDir) => {
             // check if entry is a directory
             if (/\/$/.test(entry.fileName)) {
               filesProcessed++;
+              sendUpdaterStatus(
+                'Extracting Update',
+                filesProcessed,
+                totalFiles
+              );
               if (filesProcessed >= totalFiles) {
+                logUpdater('Completed unzip', {
+                  zipPath,
+                  unzipToDir,
+                  totalFiles,
+                });
                 zipFile.close();
                 resolve();
                 return;
@@ -982,7 +1305,17 @@ const unzip = (zipPath, unzipToDir) => {
                   }
 
                   filesProcessed++;
+                  sendUpdaterStatus(
+                    'Extracting Update',
+                    filesProcessed,
+                    totalFiles
+                  );
                   if (filesProcessed >= totalFiles) {
+                    logUpdater('Completed unzip', {
+                      zipPath,
+                      unzipToDir,
+                      totalFiles,
+                    });
                     zipFile.close();
                     resolve();
                     return;

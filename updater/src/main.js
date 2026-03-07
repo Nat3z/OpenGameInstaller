@@ -50,6 +50,7 @@ if (fs.existsSync(`./bleeding-edge.txt`)) {
 
 const PATCH_PROGRESS_INTERVAL = 128;
 const VERIFY_PROGRESS_INTERVAL = 128;
+const RANGE_DOWNLOAD_CHUNK_SIZE = 4 * 1024 * 1024;
 
 function sendUpdaterStatus(text, progress, max, subtext) {
   if (!mainWindow || mainWindow.isDestroyed()) {
@@ -60,6 +61,10 @@ function sendUpdaterStatus(text, progress, max, subtext) {
 
 function nextUiTick() {
   return new Promise((resolve) => setImmediate(resolve));
+}
+
+function logUpdater(message, ...args) {
+  console.log(`[updater] ${message}`, ...args);
 }
 
 /**
@@ -382,6 +387,7 @@ async function ensureCachedBlockmap(cacheDir, release, asset) {
 }
 
 async function downloadToFile(url, destination, status) {
+  logUpdater(`Starting download: ${status}`, { url, destination });
   const writer = fs.createWriteStream(destination);
   const response = await axios({ url, method: 'GET', responseType: 'stream' });
   response.data.pipe(writer);
@@ -401,6 +407,10 @@ async function downloadToFile(url, destination, status) {
     writer.on('finish', resolve);
     writer.on('error', reject);
     response.data.on('error', reject);
+  });
+  logUpdater(`Finished download: ${status}`, {
+    destination,
+    bytesWritten: writer.bytesWritten,
   });
 }
 
@@ -482,9 +492,19 @@ async function downloadFullRelease(release) {
 async function applyBlockmapPath(releasePath, releases) {
   let currentTag = localVersion;
   let latestAssetName = null;
+  logUpdater('Starting incremental update path', {
+    from: currentTag,
+    steps: releasePath.map((release) => release.tag_name),
+  });
   for (let i = 0; i < releasePath.length; i++) {
     const currentRelease = getReleaseByTag(releases, currentTag);
     const nextRelease = releasePath[i];
+    logUpdater('Applying incremental patch step', {
+      step: i + 1,
+      totalSteps: releasePath.length,
+      from: currentTag,
+      to: nextRelease.tag_name,
+    });
     sendUpdaterStatus(`Applying patch ${i + 1} of ${releasePath.length}`);
     if (!currentRelease) {
       throw new Error(`Release metadata missing for ${currentTag}`);
@@ -524,6 +544,12 @@ async function applyBlockmapPath(releasePath, releases) {
       );
     }
     const outputArtifact = path.join(nextCache, nextAsset.name);
+    logUpdater('Prepared patch inputs', {
+      sourceArtifact,
+      oldBlockmapPath,
+      newBlockmapPath,
+      outputArtifact,
+    });
     sendUpdaterStatus(
       `Building patch ${i + 1} of ${releasePath.length}`,
       0,
@@ -547,6 +573,10 @@ async function applyBlockmapPath(releasePath, releases) {
 
     if (process.platform === 'win32') {
       persistSourceArtifact(nextAsset.name, outputArtifact);
+      logUpdater('Extracting patched Windows artifact', {
+        artifact: outputArtifact,
+        destination: nextCache,
+      });
       sendUpdaterStatus(
         `Extracting patch ${i + 1} of ${releasePath.length}`,
         0,
@@ -556,6 +586,10 @@ async function applyBlockmapPath(releasePath, releases) {
       await nextUiTick();
       await unzip(outputArtifact, nextCache);
     } else {
+      logUpdater('Finalizing patched Linux artifact', {
+        artifact: outputArtifact,
+        destination: path.join(nextCache, 'OpenGameInstaller.AppImage'),
+      });
       sendUpdaterStatus(
         `Finalizing patch ${i + 1} of ${releasePath.length}`,
         0,
@@ -568,8 +602,15 @@ async function applyBlockmapPath(releasePath, releases) {
       );
     }
     currentTag = nextRelease.tag_name;
+    logUpdater('Completed incremental patch step', {
+      step: i + 1,
+      currentTag,
+    });
   }
   sendUpdaterStatus('Copying Update Files');
+  logUpdater('Copying patched cache into update directory', {
+    cache: getVersionCache(releasePath[releasePath.length - 1].tag_name),
+  });
   copyCacheToUpdate(
     getVersionCache(releasePath[releasePath.length - 1].tag_name)
   );
@@ -577,6 +618,10 @@ async function applyBlockmapPath(releasePath, releases) {
     sendUpdaterStatus('Finishing Update');
     fs.chmodSync('./update/OpenGameInstaller.AppImage', '755');
   }
+  logUpdater('Incremental update path complete', {
+    finalTag: releasePath[releasePath.length - 1].tag_name,
+    latestAssetName,
+  });
   cleanupAfterUpdate(
     releasePath[releasePath.length - 1].tag_name,
     latestAssetName
@@ -595,6 +640,13 @@ async function applyBlockmapPatch(
   const patchLabel = statusLabels.patchLabel || 'Building patch';
   const verifyLabel = statusLabels.verifyLabel || 'Verifying patch';
   const releaseTag = statusLabels.releaseTag;
+  logUpdater('Starting blockmap patch', {
+    sourceArtifact,
+    oldBlockmapPath,
+    newBlockmapPath,
+    outputArtifact,
+    releaseTag,
+  });
   const oldMap = JSON.parse(zlib.gunzipSync(fs.readFileSync(oldBlockmapPath)));
   const newMap = JSON.parse(zlib.gunzipSync(fs.readFileSync(newBlockmapPath)));
   const oldFile = oldMap.files?.[0];
@@ -703,20 +755,57 @@ async function applyBlockmapPatch(
       (total, miss) => total + miss.size,
       0
     );
+    const reusedBytes =
+      newFile.sizes.reduce((total, size) => total + size, 0) - totalMissBytes;
+    logUpdater('Patch block analysis complete', {
+      releaseTag,
+      blockCount: newFile.checksums.length,
+      missingRanges: mergedMisses.length,
+      totalMissBytes,
+      reusedBytes,
+    });
     let downloadedMissBytes = 0;
     for (const miss of mergedMisses) {
-      const end = miss.offset + miss.size - 1;
-      sendUpdaterStatus(
-        'Downloading patch data',
-        downloadedMissBytes,
-        totalMissBytes || 1,
-        releaseTag
-      );
-      await nextUiTick();
-      const chunk = await downloadRangeChunk(targetUrl, miss.offset, end);
-      fs.writeSync(outFd, chunk, 0, chunk.length, miss.offset);
-      downloadedMissBytes += miss.size;
+      let rangeStart = miss.offset;
+      const missEnd = miss.offset + miss.size - 1;
+      logUpdater('Downloading missing patch range', {
+        releaseTag,
+        start: miss.offset,
+        end: missEnd,
+        size: miss.size,
+      });
+      while (rangeStart <= missEnd) {
+        const rangeEnd = Math.min(
+          rangeStart + RANGE_DOWNLOAD_CHUNK_SIZE - 1,
+          missEnd
+        );
+        sendUpdaterStatus(
+          'Downloading patch data',
+          downloadedMissBytes,
+          totalMissBytes || 1,
+          releaseTag
+        );
+        await nextUiTick();
+        const chunk = await downloadRangeChunk(targetUrl, rangeStart, rangeEnd);
+        fs.writeSync(outFd, chunk, 0, chunk.length, rangeStart);
+        downloadedMissBytes += chunk.length;
+        logUpdater('Downloaded patch chunk', {
+          releaseTag,
+          start: rangeStart,
+          end: rangeEnd,
+          chunkSize: chunk.length,
+          downloadedMissBytes,
+          totalMissBytes,
+        });
+        rangeStart = rangeEnd + 1;
+      }
     }
+    sendUpdaterStatus(
+      'Downloading patch data',
+      downloadedMissBytes,
+      totalMissBytes || 1,
+      releaseTag
+    );
   } finally {
     if (typeof sourceFd === 'number') {
       try {
@@ -741,6 +830,10 @@ async function applyBlockmapPatch(
   }
   sendUpdaterStatus(verifyLabel, 0, newFile.checksums.length, releaseTag);
   await nextUiTick();
+  logUpdater('Starting patched artifact verification', {
+    outputArtifact,
+    releaseTag,
+  });
   await verifyPatchedArtifact(
     outputArtifact,
     newFile,
@@ -748,6 +841,10 @@ async function applyBlockmapPatch(
     verifyLabel,
     releaseTag
   );
+  logUpdater('Completed blockmap patch', {
+    outputArtifact,
+    releaseTag,
+  });
 }
 
 function takeMatchingBlock(blocks, expectedSize) {
@@ -763,6 +860,7 @@ function takeMatchingBlock(blocks, expectedSize) {
 
 async function downloadRangeChunk(url, start, end) {
   const requestedRange = `bytes=${start}-${end}`;
+  logUpdater('Requesting HTTP range', { url, requestedRange });
   const rangeResponse = await axios({
     url,
     method: 'GET',
@@ -791,6 +889,11 @@ async function downloadRangeChunk(url, start, end) {
       `Invalid content-range header for ${requestedRange}: ${contentRange}`
     );
   }
+  logUpdater('Received HTTP range', {
+    requestedRange,
+    actualSize,
+    contentRange,
+  });
   return Buffer.from(rangeResponse.data);
 }
 
@@ -830,6 +933,10 @@ async function verifyPatchedArtifact(
   verifyLabel = 'Verifying patch',
   releaseTag
 ) {
+  logUpdater('Verifying patched artifact metadata', {
+    outputArtifact,
+    releaseTag,
+  });
   const stat = fs.statSync(outputArtifact);
   if (
     !Array.isArray(newFile.sizes) ||
@@ -904,9 +1011,18 @@ async function verifyPatchedArtifact(
   } finally {
     fs.closeSync(fd);
   }
+  logUpdater('Completed block-level verification', {
+    outputArtifact,
+    releaseTag,
+    blocks: newFile.checksums.length,
+  });
 
   const parsedDigest = parseDigest(expectedArtifact.digest);
   if (!parsedDigest) {
+    logUpdater('No release digest available for final artifact verification', {
+      outputArtifact,
+      releaseTag,
+    });
     return;
   }
   const actualDigest = await hashFile(outputArtifact, parsedDigest.algorithm);
@@ -915,6 +1031,11 @@ async function verifyPatchedArtifact(
       `Patched artifact digest mismatch for ${parsedDigest.algorithm}`
     );
   }
+  logUpdater('Completed final artifact digest verification', {
+    outputArtifact,
+    releaseTag,
+    algorithm: parsedDigest.algorithm,
+  });
 }
 
 /**
@@ -1014,6 +1135,7 @@ const unzip = (zipPath, unzipToDir) => {
     let zipFile = null;
     let filesProcessed = 0;
     let totalFiles = 0;
+    logUpdater('Starting unzip', { zipPath, unzipToDir });
 
     try {
       // Create folder if not exists
@@ -1028,6 +1150,7 @@ const unzip = (zipPath, unzipToDir) => {
 
         zipFile = zip;
         totalFiles = zipFile.entryCount;
+        logUpdater('Opened zip archive', { zipPath, totalFiles });
 
         // This is the key. We start by reading the first entry.
         zipFile.readEntry();
@@ -1057,6 +1180,11 @@ const unzip = (zipPath, unzipToDir) => {
                 totalFiles
               );
               if (filesProcessed >= totalFiles) {
+                logUpdater('Completed unzip', {
+                  zipPath,
+                  unzipToDir,
+                  totalFiles,
+                });
                 zipFile.close();
                 resolve();
                 return;
@@ -1092,6 +1220,11 @@ const unzip = (zipPath, unzipToDir) => {
                     totalFiles
                   );
                   if (filesProcessed >= totalFiles) {
+                    logUpdater('Completed unzip', {
+                      zipPath,
+                      unzipToDir,
+                      totalFiles,
+                    });
                     zipFile.close();
                     resolve();
                     return;

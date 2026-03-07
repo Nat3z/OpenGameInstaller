@@ -294,7 +294,14 @@ async function executeWrapperCommandForAppSteam(
       ? [...parsed, appInfo.launchExecutable]
       : [...parsed.slice(0, verbIndex + 1), appInfo.launchExecutable];
   const wrappedCommand = parsed[0].toString();
-  const wrappedArgv = fixedArgs.slice(1).map((x) => x.toString());
+  // for launch arguments, get everything after the %command% to include. not just replacing
+  const launchArguments =
+    appInfo.launchArguments?.split('%command%')[1]?.split(' ') || [];
+
+  const wrappedArgv = [
+    ...fixedArgs.slice(1).map((x) => x.toString()),
+    ...launchArguments,
+  ];
 
   console.log(
     `[wrapper] Resolved exec for ${
@@ -507,9 +514,8 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
         });
 
         // add to the {appid}.json file the launch options
-        const { success, appId: steamAppId } = await getNonSteamGameAppID(
-          versionedGameName
-        );
+        const { success, appId: steamAppId } =
+          await getNonSteamGameAppID(versionedGameName);
         if (!success) {
           return 'setup-failed';
         }

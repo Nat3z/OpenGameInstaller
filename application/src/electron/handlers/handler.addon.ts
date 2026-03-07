@@ -5,7 +5,7 @@ import { exec, spawn } from 'child_process';
 import { processes, setupAddon, startAddon } from '../manager/manager.addon.js';
 import { __dirname } from '../manager/manager.paths.js';
 import { server, clients, port } from '../server/addon-server.js';
-import { sendIPCMessage, sendNotification } from '../main.js';
+import { sendNotification } from '../main.js';
 import axios from 'axios';
 import { AddonConnection } from '../server/AddonConnection.js';
 
@@ -48,9 +48,6 @@ export async function startAddons(): Promise<void> {
   }
   await Promise.allSettled(promises);
   console.log('All addons started');
-
-  // sendIPCMessage waits for client-ready-for-events (with timeout) before sending
-  sendIPCMessage('all-addons-started');
 }
 
 export async function restartAddonServer(): Promise<void> {

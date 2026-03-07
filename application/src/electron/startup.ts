@@ -706,17 +706,18 @@ async function checkForGitUpdates(repoPath: string): Promise<boolean> {
   });
 }
 
-export function checkForAddonUpdates(mainWindow: BrowserWindow) {
+export async function checkForAddonUpdates(mainWindow: BrowserWindow): Promise<void> {
   if (!fs.existsSync(join(__dirname, 'addons'))) {
     return;
   }
   const generalConfig = JSON.parse(
     fs.readFileSync(join(__dirname, 'config/option/general.json'), 'utf-8')
   );
-  const addons = generalConfig.addons;
+  const addons = generalConfig.addons as string[];
+  const promises: Promise<void>[] = [];
   for (const addon of addons) {
     let addonPath = '';
-    let addonName = addon.split(/\/|\\/).pop()!!;
+    const addonName = addon.split(/\/|\\/).pop()!!;
     if (addon.startsWith('local:')) {
       addonPath = addon.split('local:')[1];
     } else {
@@ -728,22 +729,24 @@ export function checkForAddonUpdates(mainWindow: BrowserWindow) {
       continue;
     }
 
-    new Promise<void>(async (resolve, _) => {
-      const isUpdate = await checkForGitUpdates(addonPath);
-      if (isUpdate) {
-        sendNotification({
-          message: `Addon ${addonName} has updates.`,
-          id: Math.random().toString(36).substring(7),
-          type: 'info',
-        });
-        mainWindow!!.webContents.send('addon:update-available', addon);
-        console.log(`Addon ${addonName} has updates.`);
-        resolve();
-      }
-      console.log(`Addon ${addonName} is up to date.`);
-      resolve();
-    });
+    promises.push(
+      (async () => {
+        const isUpdate = await checkForGitUpdates(addonPath);
+        if (isUpdate) {
+          sendNotification({
+            message: `Addon ${addonName} has updates.`,
+            id: Math.random().toString(36).substring(7),
+            type: 'info',
+          });
+          mainWindow?.webContents.send('addon:update-available', addon);
+          console.log(`Addon ${addonName} has updates.`);
+        } else {
+          console.log(`Addon ${addonName} is up to date.`);
+        }
+      })()
+    );
   }
+  await Promise.all(promises);
 }
 
 export async function removeCachedAppUpdates() {

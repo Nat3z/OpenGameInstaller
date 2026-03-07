@@ -463,9 +463,16 @@ async function startAddonRuntime() {
   await startAddons();
 }
 
-function onMainAppReady() {
+async function onMainAppReady() {
   closeSplashWindow();
   if (!mainWindow || mainWindow.isDestroyed()) return;
+
+  // Run addon update check first so addon:update-available is sent before all-addons-started.
+  // That way the frontend receives updates in addonUpdates before the handler runs and can auto-update.
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    await checkForAddonUpdates(mainWindow);
+  }
+  sendIPCMessage('all-addons-started');
 
   // Register process-wide listeners only once
   if (!listenersRegistered) {
@@ -490,9 +497,6 @@ function onMainAppReady() {
   mainWindow?.show();
   mainWindow?.focus();
 
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    checkForAddonUpdates(mainWindow);
-  }
   if (ogiDebug()) {
     mainWindow?.webContents?.openDevTools();
   }

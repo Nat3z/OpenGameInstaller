@@ -295,8 +295,11 @@ async function executeWrapperCommandForAppSteam(
       : [...parsed.slice(0, verbIndex + 1), appInfo.launchExecutable];
   const wrappedCommand = parsed[0].toString();
   // for launch arguments, get everything after the %command% to include. not just replacing
-  const launchArguments =
-    appInfo.launchArguments?.split('%command%')[1]?.split(' ') || [];
+  const pastCommandArgs = appInfo.launchArguments?.split('%command%');
+  let launchArguments: string[] = [];
+  if (pastCommandArgs && pastCommandArgs.length > 1) {
+    launchArguments = pastCommandArgs[1].split(' ');
+  }
 
   const wrappedArgv = [
     ...fixedArgs.slice(1).map((x) => x.toString()),

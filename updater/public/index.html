@@ -28,7 +28,7 @@
     const progressHTML = document.querySelector('progress');
     const subTextHTML = document.querySelector('p');
     document.querySelector('h1').textContent = text;
-    if (progress) {
+    if (progress !== undefined && progress !== null && max) {
       progressHTML.value = progress;
       progressHTML.max = max;
       progressHTML.style.display = 'block';

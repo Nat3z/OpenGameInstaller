@@ -3,4 +3,8 @@ version = 1
 name = "OpenGameInstaller"
 
 [setup]
-script = "bun install"
+script = '''
+git -C "$(.codex/environments/git-main-worktree)" pull
+git pull origin main --force
+bun install
+'''

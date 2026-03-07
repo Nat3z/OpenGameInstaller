@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# Prints the root of the main (original) git working directory,
+# even when run from inside a linked worktree.
+
+set -euo pipefail
+
+common_git_dir="$(git rev-parse --git-common-dir 2>/dev/null)" || {
+  echo "error: not inside a git repository" >&2
+  exit 1
+}
+
+# --git-common-dir can return a relative path; resolve it
+common_git_dir="$(cd "$(git rev-parse --show-toplevel)" && realpath "$common_git_dir")"
+
+# The common git dir is the .git directory of the main worktree.
+# Its parent is the main working directory.
+dirname "$common_git_dir"

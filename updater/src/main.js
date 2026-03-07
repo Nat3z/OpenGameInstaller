@@ -51,6 +51,9 @@ if (fs.existsSync(`./bleeding-edge.txt`)) {
 const PATCH_PROGRESS_INTERVAL = 128;
 const VERIFY_PROGRESS_INTERVAL = 128;
 const RANGE_DOWNLOAD_CHUNK_SIZE = 4 * 1024 * 1024;
+const HTTP_RETRY_ATTEMPTS = 4;
+const HTTP_RETRY_BASE_DELAY_MS = 1500;
+const HTTP_REQUEST_TIMEOUT_MS = 60000;
 
 function sendUpdaterStatus(text, progress, max, subtext) {
   if (!mainWindow || mainWindow.isDestroyed()) {
@@ -65,6 +68,35 @@ function nextUiTick() {
 
 function logUpdater(message, ...args) {
   console.log(`[updater] ${message}`, ...args);
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function getRetryDelay(attempt) {
+  return HTTP_RETRY_BASE_DELAY_MS * attempt;
+}
+
+function shouldRetryHttpError(error) {
+  const code = error?.code;
+  const message =
+    typeof error?.message === 'string' ? error.message.toLowerCase() : '';
+  const status = error?.response?.status;
+
+  if ([408, 409, 425, 429, 500, 502, 503, 504].includes(status)) {
+    return true;
+  }
+
+  return (
+    code === 'ECONNRESET' ||
+    code === 'ECONNABORTED' ||
+    code === 'ETIMEDOUT' ||
+    code === 'EPIPE' ||
+    message.includes('socket hang up') ||
+    message.includes('network error') ||
+    message.includes('timeout')
+  );
 }
 
 /**
@@ -388,30 +420,69 @@ async function ensureCachedBlockmap(cacheDir, release, asset) {
 
 async function downloadToFile(url, destination, status) {
   logUpdater(`Starting download: ${status}`, { url, destination });
-  const writer = fs.createWriteStream(destination);
-  const response = await axios({ url, method: 'GET', responseType: 'stream' });
-  response.data.pipe(writer);
-  const startTime = Date.now();
-  const fileSize = response.headers['content-length'];
-  response.data.on('data', () => {
-    const elapsedTime = (Date.now() - startTime) / 1000;
-    const downloadSpeed = writer.bytesWritten / Math.max(elapsedTime, 1);
-    sendUpdaterStatus(
-      status,
-      writer.bytesWritten,
-      fileSize,
-      correctParsingSize(downloadSpeed) + '/s'
-    );
-  });
-  await new Promise((resolve, reject) => {
-    writer.on('finish', resolve);
-    writer.on('error', reject);
-    response.data.on('error', reject);
-  });
-  logUpdater(`Finished download: ${status}`, {
-    destination,
-    bytesWritten: writer.bytesWritten,
-  });
+  for (let attempt = 1; attempt <= HTTP_RETRY_ATTEMPTS; attempt++) {
+    let writer;
+    let response;
+    try {
+      fs.rmSync(destination, { force: true });
+      writer = fs.createWriteStream(destination);
+      response = await axios({
+        url,
+        method: 'GET',
+        responseType: 'stream',
+        timeout: HTTP_REQUEST_TIMEOUT_MS,
+      });
+      response.data.pipe(writer);
+      const startTime = Date.now();
+      const fileSize = response.headers['content-length'];
+      response.data.on('data', () => {
+        const elapsedTime = (Date.now() - startTime) / 1000;
+        const downloadSpeed = writer.bytesWritten / Math.max(elapsedTime, 1);
+        sendUpdaterStatus(
+          status,
+          writer.bytesWritten,
+          fileSize,
+          correctParsingSize(downloadSpeed) + '/s'
+        );
+      });
+      await new Promise((resolve, reject) => {
+        writer.on('finish', resolve);
+        writer.on('error', reject);
+        response.data.on('error', reject);
+      });
+      logUpdater(`Finished download: ${status}`, {
+        destination,
+        bytesWritten: writer.bytesWritten,
+        attempt,
+      });
+      return;
+    } catch (error) {
+      writer?.destroy();
+      response?.data?.destroy?.();
+      fs.rmSync(destination, { force: true });
+
+      const retryable = shouldRetryHttpError(error);
+      logUpdater(`Download attempt failed: ${status}`, {
+        destination,
+        attempt,
+        retryable,
+        error: error?.message,
+        code: error?.code,
+        statusCode: error?.response?.status,
+      });
+      if (!retryable || attempt === HTTP_RETRY_ATTEMPTS) {
+        throw error;
+      }
+      const delayMs = getRetryDelay(attempt);
+      sendUpdaterStatus(
+        status,
+        undefined,
+        undefined,
+        `Retrying (${attempt + 1}/${HTTP_RETRY_ATTEMPTS})`
+      );
+      await sleep(delayMs);
+    }
+  }
 }
 
 function copyCacheToUpdate(cacheDir) {
@@ -860,41 +931,61 @@ function takeMatchingBlock(blocks, expectedSize) {
 
 async function downloadRangeChunk(url, start, end) {
   const requestedRange = `bytes=${start}-${end}`;
-  logUpdater('Requesting HTTP range', { url, requestedRange });
-  const rangeResponse = await axios({
-    url,
-    method: 'GET',
-    responseType: 'arraybuffer',
-    headers: { Range: requestedRange },
-  });
-  const expectedSize = end - start + 1;
-  const actualSize = Buffer.byteLength(rangeResponse.data);
-  const contentRange = rangeResponse.headers['content-range'];
-  const expectedContentRangePrefix = `bytes ${start}-${end}/`;
-  if (rangeResponse.status !== 206) {
-    throw new Error(
-      `Invalid range response status ${rangeResponse.status} for ${requestedRange}`
-    );
+  for (let attempt = 1; attempt <= HTTP_RETRY_ATTEMPTS; attempt++) {
+    try {
+      logUpdater('Requesting HTTP range', { url, requestedRange, attempt });
+      const rangeResponse = await axios({
+        url,
+        method: 'GET',
+        responseType: 'arraybuffer',
+        headers: { Range: requestedRange },
+        timeout: HTTP_REQUEST_TIMEOUT_MS,
+      });
+      const expectedSize = end - start + 1;
+      const actualSize = Buffer.byteLength(rangeResponse.data);
+      const contentRange = rangeResponse.headers['content-range'];
+      const expectedContentRangePrefix = `bytes ${start}-${end}/`;
+      if (rangeResponse.status !== 206) {
+        throw new Error(
+          `Invalid range response status ${rangeResponse.status} for ${requestedRange}`
+        );
+      }
+      if (actualSize !== expectedSize) {
+        throw new Error(
+          `Invalid range response length ${actualSize} for ${requestedRange}; expected ${expectedSize}`
+        );
+      }
+      if (
+        typeof contentRange !== 'string' ||
+        !contentRange.startsWith(expectedContentRangePrefix)
+      ) {
+        throw new Error(
+          `Invalid content-range header for ${requestedRange}: ${contentRange}`
+        );
+      }
+      logUpdater('Received HTTP range', {
+        requestedRange,
+        actualSize,
+        contentRange,
+        attempt,
+      });
+      return Buffer.from(rangeResponse.data);
+    } catch (error) {
+      const retryable = shouldRetryHttpError(error);
+      logUpdater('HTTP range request failed', {
+        requestedRange,
+        attempt,
+        retryable,
+        error: error?.message,
+        code: error?.code,
+        statusCode: error?.response?.status,
+      });
+      if (!retryable || attempt === HTTP_RETRY_ATTEMPTS) {
+        throw error;
+      }
+      await sleep(getRetryDelay(attempt));
+    }
   }
-  if (actualSize !== expectedSize) {
-    throw new Error(
-      `Invalid range response length ${actualSize} for ${requestedRange}; expected ${expectedSize}`
-    );
-  }
-  if (
-    typeof contentRange !== 'string' ||
-    !contentRange.startsWith(expectedContentRangePrefix)
-  ) {
-    throw new Error(
-      `Invalid content-range header for ${requestedRange}: ${contentRange}`
-    );
-  }
-  logUpdater('Received HTTP range', {
-    requestedRange,
-    actualSize,
-    contentRange,
-  });
-  return Buffer.from(rangeResponse.data);
 }
 
 function parseDigest(digest) {

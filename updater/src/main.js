@@ -443,11 +443,15 @@ async function downloadFullRelease(release) {
     'Downloading Update'
   );
   if (blockmapAsset) {
-    await downloadToFile(
-      blockmapAsset.browser_download_url,
-      path.join(localCache, `${assetWithPortable.name}.blockmap`),
-      'Downloading blockmap'
-    );
+    try {
+      await downloadToFile(
+        blockmapAsset.browser_download_url,
+        path.join(localCache, `${assetWithPortable.name}.blockmap`),
+        'Downloading blockmap'
+      );
+    } catch (err) {
+      console.error('Failed to download blockmap (incremental updates may not work next time):', err);
+    }
   }
   mainWindow.webContents.send('text', 'Download Complete');
 
@@ -560,6 +564,11 @@ async function applyBlockmapPatch(
   targetUrl,
   expectedArtifact = {}
 ) {
+  // Resolve the GitHub browser_download_url redirect once so that all byte-range
+  // requests go directly to the storage server. This prevents the Range header
+  // from being silently dropped when the CDN processes the redirect.
+  const resolvedUrl = await resolveDownloadUrl(targetUrl);
+
   const oldMap = JSON.parse(zlib.gunzipSync(fs.readFileSync(oldBlockmapPath)));
   const newMap = JSON.parse(zlib.gunzipSync(fs.readFileSync(newBlockmapPath)));
   const oldFile = oldMap.files?.[0];
@@ -589,7 +598,7 @@ async function applyBlockmapPatch(
     const misses = [];
 
     if (writeOffset > 0) {
-      const headerChunk = await downloadRangeChunk(targetUrl, 0, writeOffset - 1);
+      const headerChunk = await downloadRangeChunk(resolvedUrl, 0, writeOffset - 1);
       fs.writeSync(outFd, headerChunk, 0, headerChunk.length, 0);
     }
 
@@ -642,7 +651,7 @@ async function applyBlockmapPatch(
 
     for (const miss of mergedMisses) {
       const end = miss.offset + miss.size - 1;
-      const chunk = await downloadRangeChunk(targetUrl, miss.offset, end);
+      const chunk = await downloadRangeChunk(resolvedUrl, miss.offset, end);
       fs.writeSync(outFd, chunk, 0, chunk.length, miss.offset);
     }
   } finally {
@@ -679,6 +688,36 @@ function takeMatchingBlock(blocks, expectedSize) {
     return null;
   }
   return blocks.splice(index, 1)[0];
+}
+
+/**
+ * Resolves a potentially redirecting URL (e.g. a GitHub browser_download_url)
+ * to its final destination by following up to one redirect. This lets
+ * subsequent byte-range requests bypass the redirect hop so that the Range
+ * header reaches the actual storage server rather than being silently dropped
+ * by an intermediate CDN.
+ */
+async function resolveDownloadUrl(url) {
+  try {
+    const response = await axios({
+      url,
+      method: 'HEAD',
+      maxRedirects: 0,
+      validateStatus: (status) => status >= 200 && status < 400,
+    });
+    if (response.status >= 300 && response.status < 400 && response.headers.location) {
+      return response.headers.location;
+    }
+    return url;
+  } catch (err) {
+    // axios may throw for redirect responses even with validateStatus — extract location if present.
+    if (err.response && err.response.status >= 300 && err.response.status < 400 && err.response.headers?.location) {
+      return err.response.headers.location;
+    }
+    // Fall back to the original URL so callers can still attempt the download.
+    console.warn('Could not resolve download URL, using original:', err.message);
+    return url;
+  }
 }
 
 async function downloadRangeChunk(url, start, end) {

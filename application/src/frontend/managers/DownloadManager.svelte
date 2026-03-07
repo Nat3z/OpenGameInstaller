@@ -102,7 +102,11 @@
       const oldFiles = await window.electronAPI.fs.getFilesInDir(
         originalOutputDir + '/old_files'
       );
-      if (oldFiles.length === 0) return;
+      if (oldFiles.length === 0) {
+        window.electronAPI.fs.delete(originalOutputDir + '/old_files');
+        return;
+      }
+      let allMoved = true;
       for (const file of oldFiles) {
         const result = await window.electronAPI.fs.move({
           source: originalOutputDir + '/old_files/' + file,
@@ -110,6 +114,7 @@
         });
         if (result !== 'success') {
           console.error('Failed to move file: ', file);
+          allMoved = false;
         }
       }
       createNotification({
@@ -117,6 +122,10 @@
         type: 'error',
         message: 'Moved files back to original directory',
       });
+      // Delete the backup directory after applying it back
+      if (allMoved) {
+        window.electronAPI.fs.delete(originalOutputDir + '/old_files');
+      }
     }
 
     // Handle torrent-specific logic

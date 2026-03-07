@@ -131,9 +131,10 @@ export async function launchGameFromLibrary(
     'in cwd:',
     appInfo.cwd
   );
+  const needsShellOnWindows = /\.(bat|cmd)$/i.test(appInfo.launchExecutable);
   const spawnedItem = spawn(appInfo.launchExecutable, parsedArgs, {
     cwd: appInfo.cwd,
-    shell: true,
+    shell: process.platform === 'win32' ? needsShellOnWindows : true,
     env: {
       ...process.env,
       ...(launchEnv ?? {}),
@@ -296,7 +297,9 @@ async function executeWrapperCommandForAppSteam(
   const wrappedArgv = fixedArgs.slice(1).map((x) => x.toString());
 
   console.log(
-    `[wrapper] Resolved exec for ${appInfo.name}: command=${wrappedCommand} args=${JSON.stringify(wrappedArgv)}`
+    `[wrapper] Resolved exec for ${
+      appInfo.name
+    }: command=${wrappedCommand} args=${JSON.stringify(wrappedArgv)}`
   );
 
   return await new Promise((resolve) => {
@@ -343,7 +346,9 @@ async function executeWrapperCommandForAppSteam(
         return;
       }
 
-      const error = `Wrapped command exited with code ${code ?? 'null'}${signal ? ` (signal: ${signal})` : ''}`;
+      const error = `Wrapped command exited with code ${code ?? 'null'}${
+        signal ? ` (signal: ${signal})` : ''
+      }`;
       console.error(`[wrapper] ${error}`);
       resolve({
         success: false,
@@ -502,8 +507,9 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
         });
 
         // add to the {appid}.json file the launch options
-        const { success, appId: steamAppId } =
-          await getNonSteamGameAppID(versionedGameName);
+        const { success, appId: steamAppId } = await getNonSteamGameAppID(
+          versionedGameName
+        );
         if (!success) {
           return 'setup-failed';
         }
@@ -684,7 +690,12 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
           // If we can't get the Steam app ID, preserve the original launch arguments unchanged
           appData.launchArguments = originalLaunchArguments;
           console.warn(
-            `[app:update-app-version] Failed to get Steam app ID for "${getVersionedGameName(appData.name, appData.version)}"${appData.version ? ` and fallback "${appData.name}"` : ''}. Preserving original launch arguments (including any existing WINEPREFIX).`
+            `[app:update-app-version] Failed to get Steam app ID for "${getVersionedGameName(
+              appData.name,
+              appData.version
+            )}"${
+              appData.version ? ` and fallback "${appData.name}"` : ''
+            }. Preserving original launch arguments (including any existing WINEPREFIX).`
           );
         }
       } else {

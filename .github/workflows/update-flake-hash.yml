@@ -1,0 +1,80 @@
+name: Update flake.nix hash
+
+# Runs automatically after a release is published (including pre-releases).
+# Downloads the Linux AppImage, computes its sha256, and patches flake.nix so
+# that `nix build` / `nix run` always reflect the latest release.
+on:
+  release:
+    types: [published, prereleased]
+
+permissions:
+  contents: write
+
+jobs:
+  update-flake:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository (main branch)
+        uses: actions/checkout@v4
+        with:
+          ref: master
+          fetch-depth: 0
+
+      - name: Extract version from release tag
+        id: version
+        run: |
+          TAG="${{ github.event.release.tag_name }}"
+          VERSION="${TAG#v}"   # strip leading 'v'
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for AppImage asset to be available
+        run: |
+          URL="https://github.com/Nat3z/OpenGameInstaller/releases/download/${{ steps.version.outputs.tag }}/OpenGameInstaller-linux-pt.AppImage"
+          echo "Waiting for: $URL"
+          for i in $(seq 1 20); do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" -L --head "$URL")
+            if [ "$STATUS" = "200" ] || [ "$STATUS" = "302" ]; then
+              echo "AppImage is available (HTTP $STATUS)"
+              break
+            fi
+            echo "Attempt $i/20 — HTTP $STATUS, retrying in 30s..."
+            sleep 30
+          done
+
+      - name: Download AppImage and compute sha256 hash
+        id: hash
+        run: |
+          URL="https://github.com/Nat3z/OpenGameInstaller/releases/download/${{ steps.version.outputs.tag }}/OpenGameInstaller-linux-pt.AppImage"
+          curl -fSL -o appimage.AppImage "$URL"
+          # Compute sha256 in nix SRI format: sha256-<base64>
+          HASH_B64=$(openssl dgst -sha256 -binary appimage.AppImage | base64 -w0)
+          echo "hash=sha256-${HASH_B64}" >> "$GITHUB_OUTPUT"
+          echo "Computed hash: sha256-${HASH_B64}"
+
+      - name: Patch flake.nix
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          HASH="${{ steps.hash.outputs.hash }}"
+
+          # Update appVersion
+          sed -i "s/appVersion = \"[^\"]*\"/appVersion = \"${VERSION}\"/" flake.nix
+
+          # Update the hash line (handles both placeholder and real hashes)
+          sed -i "s|hash = \"sha256-[^\"]*\"|hash = \"${HASH}\"|" flake.nix
+
+          echo "--- flake.nix diff ---"
+          git diff flake.nix
+
+      - name: Commit and push if changed
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add flake.nix
+          if git diff --staged --quiet; then
+            echo "flake.nix is already up to date — nothing to commit."
+          else
+            git commit -m "chore: update flake.nix to v${{ steps.version.outputs.version }}"
+            git push origin master
+          fi

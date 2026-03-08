@@ -6,6 +6,7 @@ import exec from 'child_process';
 import { addonSecret } from '../server/constants.js';
 import { clients } from '../server/addon-server.js';
 import { AddonConnection } from '../server/AddonConnection.js';
+import { IS_NIXOS } from '../startup.js';
 
 export let processes: {
   [key: string]: exec.ChildProcess;
@@ -247,6 +248,7 @@ async function executeScript(
   return new Promise((resolve, reject) => {
     let bunPath = '';
     // if on windows, then use C:\Users\username\.bun\bin\bun.exe
+    // if on nixos, bun is a system package on PATH — use it directly
     // if on linux, then use ~/.bun/bin/bun
     if (process.platform === 'win32') {
       if (!process.env.USERPROFILE) {
@@ -258,6 +260,8 @@ async function executeScript(
         return reject();
       }
       bunPath = join(process.env.USERPROFILE || '', '.bun', 'bin', 'bun.exe');
+    } else if (IS_NIXOS) {
+      bunPath = 'bun';
     } else {
       if (!process.env.HOME) {
         sendNotification({

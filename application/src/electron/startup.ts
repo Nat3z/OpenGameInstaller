@@ -440,6 +440,26 @@ export async function restoreBackup(
     return { needsAddonReinstall: false };
   }
 
+  // If restoration was already completed on a previous launch but deletion failed
+  // (e.g. Windows EPERM/EBUSY with locked files), skip re-restoring and just
+  // retry the deletion.
+  const restoreCompleteFlagPath = join(backupDir, 'restore-complete.flag');
+  if (existsSync(restoreCompleteFlagPath)) {
+    console.log(
+      '[backup] Restore already completed, retrying backup directory cleanup...'
+    );
+    try {
+      rmSync(backupDir, { recursive: true, force: true });
+      console.log('[backup] Backup directory cleaned up successfully.');
+    } catch (deleteError: any) {
+      console.warn(
+        '[backup] Could not delete backup directory:',
+        deleteError.message
+      );
+    }
+    return { needsAddonReinstall: false };
+  }
+
   // Check for addon reinstall flag (works for both Windows and Linux)
   const flagPath = join(backupDir, 'needs-addon-reinstall.flag');
   if (existsSync(flagPath)) {
@@ -523,16 +543,26 @@ export async function restoreBackup(
       );
     }
 
+    // Write a marker so that if deletion fails below (e.g. Windows locks files),
+    // the next launch knows restoration is already done and won't re-apply it.
+    try {
+      fs.writeFileSync(restoreCompleteFlagPath, new Date().toISOString());
+    } catch {
+      // Non-critical — worst case we re-restore on next launch
+    }
+
     // Remove the backup directory
     // On Windows, files may still be locked after copying, so we need to handle permission errors
     try {
       rmSync(backupDir, { recursive: true, force: true });
       console.log('[backup] Backup restored successfully!');
     } catch (deleteError: any) {
-      // If deletion fails due to permissions (common on Windows), log a warning but don't fail
+      // If deletion fails due to permissions (common on Windows), log a warning but don't fail.
+      // The restore-complete.flag written above ensures the next launch will only retry
+      // deletion rather than re-applying the backup.
       if (deleteError.code === 'EPERM' || deleteError.code === 'EBUSY') {
         console.warn(
-          '[backup] Could not delete backup directory immediately (files may be locked). Backup will be cleaned up on next run.',
+          '[backup] Could not delete backup directory immediately (files may be locked). Will retry cleanup on next launch.',
           deleteError.message
         );
       } else {

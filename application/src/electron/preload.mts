@@ -252,6 +252,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('app:remove-app', appid)
     ),
     getOS: wrap(() => ipcRenderer.invoke('app:get-os')),
+    isNixOS: wrap(() => ipcRenderer.invoke('app:is-nixos')),
     isOnline: wrap(() => ipcRenderer.invoke('app:is-online')),
     request: wrap(
       (

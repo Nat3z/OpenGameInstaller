@@ -33,16 +33,38 @@
                 {
                   # https://devenv.sh/reference/options/
                   packages = with pkgs; [
-                    hello
-                    libglibutil
+                    # Runtime dependencies for the app on NixOS
                     electron
+                    bun
+                    git
+                    libglibutil
+
+                    # Wine for running Windows redistributables
+                    wineWowPackages.stable
+
+                    # SteamTinkerLaunch (used for Steam shortcut management on non-NixOS)
+                    # On NixOS we skip "Add to Steam" so this is only for dev reference
+                    steamtinkerlaunch
+
+                    # UMU launcher — preferred over the bundled auto-download on NixOS
+                    umu-launcher
+
+                    # Native build tools
+                    pkg-config
+                    gcc
                   ];
 
                   enterShell = ''
-                    hello
+                    echo "OpenGameInstaller dev shell"
+                    echo "  bun:              $(bun --version)"
+                    echo "  git:              $(git --version)"
+                    echo "  electron:         available via ELECTRON_OVERRIDE_DIST_PATH"
+                    echo "  umu-run:          $(which umu-run 2>/dev/null || echo 'not found')"
+                    echo "  wine:             $(wine --version 2>/dev/null || echo 'not found')"
+                    echo ""
+                    echo "NixOS users: 'Add to Steam' is disabled — use umu-run for game compatibility."
                   '';
 
-                  processes.hello.exec = "hello";
                   env.ELECTRON_OVERRIDE_DIST_PATH = "${pkgs.electron}/bin/";
                 }
               ];

@@ -61,6 +61,7 @@
     appUpdates.requiredReadds.some((r) => r.appID === libraryInfo.appID)
   );
   let os = $state('');
+  let isNixOS = $state(false);
   let isMigratingToUmu = $state(false);
   let needsUmuSetup = $derived.by(() => {
     const isLinux = os === 'linux';
@@ -313,6 +314,7 @@
 
   onMount(async () => {
     os = await window.electronAPI.app.getOS();
+    isNixOS = await window.electronAPI.app.isNixOS();
 
     // Set up the header back button
     console.log('PlayPage mounted, setting header back button');
@@ -607,8 +609,8 @@
     </div>
   {/if}
 
-  <!-- Steam Re-add Banner -->
-  {#if requiresSteamReadd}
+  <!-- Steam Re-add Banner (not shown on NixOS since Add to Steam is unsupported) -->
+  {#if requiresSteamReadd && !isNixOS}
     <div
       class="bg-accent-lighter rounded-lg p-5 mx-0 mt-6 flex flex-col gap-3"
       in:fly={{ y: -20, duration: 300 }}

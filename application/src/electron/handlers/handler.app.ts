@@ -12,6 +12,7 @@ import { clients } from '../server/addon-server.js';
 import { registerSteamHandlers } from './handler.steam.js';
 import { registerLibraryHandlers } from './handler.library.js';
 import { registerRedistributableHandlers } from './handler.redists.js';
+import { IS_NIXOS } from '../startup.js';
 
 /**
  * Escapes a string for safe use in shell commands by escaping special characters
@@ -178,6 +179,9 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
 
   ipcMain.handle('app:get-os', () => {
     return process.platform;
+  });
+  ipcMain.handle('app:is-nixos', () => {
+    return IS_NIXOS;
   });
   ipcMain.handle('app:screen-input', async (_, data) => {
     currentScreens.set(data.id, data.data);

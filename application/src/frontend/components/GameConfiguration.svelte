@@ -26,11 +26,15 @@
   let { exitPlayPage, gameInfo, onFinish }: Props = $props();
 
   let platform = $state<string>('');
+  let isNixOS = $state(false);
 
   // Get OS platform
   $effect(() => {
     window.electronAPI.app.getOS().then((os) => {
       platform = os;
+    });
+    window.electronAPI.app.isNixOS().then((nix) => {
+      isNixOS = nix;
     });
   });
 
@@ -215,7 +219,7 @@
     <SectionModal class="mt-4">
       <div class="flex gap-3 flex-row">
         <ButtonModal text="Save" variant="primary" onclick={pushChanges} />
-        {#if platform === 'linux' || platform === 'darwin'}
+        {#if (platform === 'linux' || platform === 'darwin') && !isNixOS}
           <ButtonModal
             text="Add to Steam"
             variant="secondary"

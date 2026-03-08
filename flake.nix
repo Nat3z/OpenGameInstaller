@@ -105,7 +105,7 @@
                   electron
                   bun
                   git
-                  libglibutil
+                  libglibutil # provides GLib utilities required by Electron's GLib bindings at runtime
 
                   # Wine for running Windows redistributables
                   wineWowPackages.stable

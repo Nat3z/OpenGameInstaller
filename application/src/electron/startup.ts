@@ -333,9 +333,9 @@ export let STEAMTINKERLAUNCH_PATH = join(
 // On NixOS, prefer the system-installed umu-run over the bundled one
 export let SYSTEM_UMU_PATH: string | null = null;
 
-async function fetch_STLPath() {
+async function fetchStlPath() {
   return new Promise<void>((resolve) => {
-    exec('which steamtinkerlaunch', (error, stdout) => {
+    exec('command -v steamtinkerlaunch', (error, stdout) => {
       if (error) {
         console.error(`exec error: ${error}`);
         resolve();
@@ -354,7 +354,7 @@ async function fetch_STLPath() {
 
 async function fetchSystemUmuPath() {
   return new Promise<void>((resolve) => {
-    exec('which umu-run', (error, stdout) => {
+    exec('command -v umu-run', (error, stdout) => {
       if (!error && stdout.trim()) {
         SYSTEM_UMU_PATH = stdout.trim();
         console.log('[umu] Found system umu-run at: ' + SYSTEM_UMU_PATH);
@@ -366,7 +366,7 @@ async function fetchSystemUmuPath() {
 
 console.log('NIXOS: ' + IS_NIXOS);
 if (IS_NIXOS) {
-  await fetch_STLPath();
+  await fetchStlPath();
   await fetchSystemUmuPath();
 }
 if (STEAMTINKERLAUNCH_PATH === '') {

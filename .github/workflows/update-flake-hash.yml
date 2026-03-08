@@ -33,21 +33,31 @@ jobs:
         run: |
           URL="https://github.com/Nat3z/OpenGameInstaller/releases/download/${{ steps.version.outputs.tag }}/OpenGameInstaller-linux-pt.AppImage"
           echo "Waiting for: $URL"
+          FOUND=0
           for i in $(seq 1 20); do
             STATUS=$(curl -s -o /dev/null -w "%{http_code}" -L --head "$URL")
             if [ "$STATUS" = "200" ] || [ "$STATUS" = "302" ]; then
               echo "AppImage is available (HTTP $STATUS)"
+              FOUND=1
               break
             fi
             echo "Attempt $i/20 — HTTP $STATUS, retrying in 30s..."
             sleep 30
           done
+          if [ "$FOUND" = "0" ]; then
+            echo "ERROR: AppImage asset was not available after 20 attempts. Aborting."
+            exit 1
+          fi
 
       - name: Download AppImage and compute sha256 hash
         id: hash
         run: |
           URL="https://github.com/Nat3z/OpenGameInstaller/releases/download/${{ steps.version.outputs.tag }}/OpenGameInstaller-linux-pt.AppImage"
           curl -fSL -o appimage.AppImage "$URL"
+          if [ ! -s appimage.AppImage ]; then
+            echo "ERROR: Downloaded AppImage is missing or empty. Aborting."
+            exit 1
+          fi
           # Compute sha256 in nix SRI format: sha256-<base64>
           HASH_B64=$(openssl dgst -sha256 -binary appimage.AppImage | base64 -w0)
           echo "hash=sha256-${HASH_B64}" >> "$GITHUB_OUTPUT"

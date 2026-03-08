@@ -30,10 +30,11 @@
 
   // Get OS platform
   $effect(() => {
-    window.electronAPI.app.getOS().then((os) => {
+    Promise.all([
+      window.electronAPI.app.getOS(),
+      window.electronAPI.app.isNixOS(),
+    ]).then(([os, nix]) => {
       platform = os;
-    });
-    window.electronAPI.app.isNixOS().then((nix) => {
       isNixOS = nix;
     });
   });

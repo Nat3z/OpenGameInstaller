@@ -36,7 +36,7 @@
           };
           # Make the system umu-run visible inside the AppImage sandbox so OGI's
           # NixOS detection can find it without downloading a bundled copy.
-          extraPkgs = pkgs: [ pkgs.umu-launcher ];
+          extraPkgs = pkgs: [ pkgs.umu-launcher pkgs.bun ];
         };
     in
     {
@@ -86,6 +86,8 @@
             # umu-launcher is used directly by OGI on NixOS for Wine/Proton
             # compatibility; declaring it here ensures it survives GC.
             pkgs.umu-launcher
+            # bun is required at runtime for OGI's JS execution layer
+            pkgs.bun
           ];
         };
       };

@@ -18,7 +18,7 @@ jobs:
       - name: Check out repository (main branch)
         uses: actions/checkout@v4
         with:
-          ref: master
+          ref: main
           fetch-depth: 0
 
       - name: Extract version from release tag
@@ -76,5 +76,5 @@ jobs:
             echo "flake.nix is already up to date — nothing to commit."
           else
             git commit -m "chore: update flake.nix to v${{ steps.version.outputs.version }}"
-            git push origin master
+            git push origin main
           fi

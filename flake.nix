@@ -36,7 +36,7 @@
           };
           # Make the system umu-run visible inside the AppImage sandbox so OGI's
           # NixOS detection can find it without downloading a bundled copy.
-          extraPkgs = pkgs: [ pkgs.umu-launcher pkgs.bun ];
+          extraPkgs = pkgs: [ pkgs.umu-launcher pkgs.bun pkgs.unzip pkgs.unrar ];
         };
     in
     {
@@ -88,6 +88,9 @@
             pkgs.umu-launcher
             # bun is required at runtime for OGI's JS execution layer
             pkgs.bun
+            # archive extraction tools used by addons
+            pkgs.unzip
+            pkgs.unrar
           ];
         };
       };
@@ -118,6 +121,10 @@
 
                   # UMU launcher — OGI prefers the system binary on NixOS
                   umu-launcher
+
+                  # Archive extraction tools used by addons
+                  unzip
+                  unrar
 
                   # Native build toolchain
                   pkg-config

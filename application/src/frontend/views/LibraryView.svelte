@@ -163,7 +163,7 @@
               class="flex gap-4 flex-row flex-nowrap overflow-x-hidden pt-8 -mt-8 pb-6 -mb-6 overflow-y-hidden px-4"
             >
               {#each recentlyPlayed as app, index (app.appID)}
-                <div class="library-entry-shell w-1/5 shrink-0">
+                <div class="library-entry-shell w-3/12 shrink-0">
                   <button
                     data-library-item
                     class="library-entry w-full border-none relative transition-all shadow-lg hover:shadow-xl rounded-lg overflow-hidden bg-surface"

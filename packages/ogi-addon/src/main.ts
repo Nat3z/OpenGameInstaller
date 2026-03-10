@@ -921,6 +921,14 @@ export const ZodLibraryInfo = z.object({
       })
     )
     .optional(),
+  /**
+   * Total time played in seconds (accumulated across all sessions)
+   */
+  playtime: z.number().optional(),
+  /**
+   * Unix timestamp (ms) of the last time the game was played
+   */
+  lastPlayedAt: z.number().optional(),
 });
 export type LibraryInfo = z.infer<typeof ZodLibraryInfo>;
 interface Notification {

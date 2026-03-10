@@ -57,6 +57,45 @@ async function shouldUseUmuMode(libraryInfo: LibraryInfo): Promise<boolean> {
   return false;
 }
 
+/**
+ * Tracks session start timestamps (ms) keyed by appID.
+ * Used to calculate elapsed play time when a game exits.
+ */
+const sessionStartTimes = new Map<number, number>();
+
+/**
+ * Records the start of a play session for the given appID.
+ */
+function recordSessionStart(appID: number): void {
+  sessionStartTimes.set(appID, Date.now());
+}
+
+/**
+ * Finalises a play session: calculates elapsed seconds, persists the updated
+ * playtime and lastPlayedAt values into the library JSON file, then removes
+ * the entry from the tracking map.
+ */
+function finaliseSession(appID: number): void {
+  const startTime = sessionStartTimes.get(appID);
+  if (startTime === undefined) return;
+
+  const elapsedSeconds = Math.round((Date.now() - startTime) / 1000);
+  sessionStartTimes.delete(appID);
+
+  // Skip sessions shorter than 1 second (e.g. immediate crashes)
+  if (elapsedSeconds < 1) return;
+
+  const currentInfo = loadLibraryInfo(appID);
+  if (!currentInfo) return;
+
+  currentInfo.playtime = (currentInfo.playtime ?? 0) + elapsedSeconds;
+  currentInfo.lastPlayedAt = Date.now();
+  saveLibraryInfo(appID, currentInfo);
+  console.log(
+    `[playtime] Session ended for ${currentInfo.name}: +${elapsedSeconds}s (total: ${currentInfo.playtime}s)`
+  );
+}
+
 export type LaunchGameResult = {
   success: boolean;
   error?: string;
@@ -99,6 +138,7 @@ export async function launchGameFromLibrary(
     const appID = appInfo.appID;
     const result = await launchWithUmu(appInfo, {
       onExit: () => {
+        finaliseSession(appID);
         mainWindow?.webContents.send('game:exit', { id: appID });
       },
     });
@@ -117,6 +157,7 @@ export async function launchGameFromLibrary(
       };
     }
 
+    recordSessionStart(appInfo.appID);
     mainWindow?.webContents.send('game:launch', { id: appInfo.appID });
     return { success: true };
   }
@@ -143,6 +184,7 @@ export async function launchGameFromLibrary(
   });
   spawnedItem.on('error', (error) => {
     console.error(error);
+    finaliseSession(parsedAppId);
     sendNotification({
       message: 'Failed to launch game',
       id: generateNotificationId(),
@@ -156,6 +198,7 @@ export async function launchGameFromLibrary(
         exitCode +
         (signal ? ` signal: ${signal}` : '')
     );
+    finaliseSession(parsedAppId);
     if (exitCode !== 0 && exitCode != null) {
       sendNotification({
         message: 'Game Crashed',
@@ -166,6 +209,7 @@ export async function launchGameFromLibrary(
     mainWindow?.webContents.send('game:exit', { id: appInfo.appID });
   });
 
+  recordSessionStart(parsedAppId);
   mainWindow?.webContents.send('game:launch', { id: appInfo.appID });
   return { success: true };
 }

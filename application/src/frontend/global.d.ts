@@ -149,6 +149,7 @@ interface Window {
       launchGame: (appid: string) => Promise<void>;
       removeApp: (appid: number) => Promise<void>;
       getOS: () => Promise<string>;
+      isNixOS: () => Promise<boolean>;
       isOnline: () => Promise<boolean>;
       request: (
         method: string,

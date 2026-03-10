@@ -243,6 +243,13 @@ export function startUmuBackgroundUpdater() {
     return;
   }
 
+  // On NixOS with system umu-run, skip the background updater entirely.
+  // The system package manager (nix) is responsible for keeping it updated.
+  if (IS_NIXOS && SYSTEM_UMU_PATH) {
+    console.log('[umu] NixOS with system umu-run detected, skipping background updater');
+    return;
+  }
+
   if (umuBackgroundCheckTimeout || umuBackgroundCheckInterval) {
     return;
   }
@@ -281,24 +288,38 @@ export function stopUmuBackgroundUpdater() {
   }
 }
 
-// check if NixOS using command -v nixos-rebuild
+// Detect NixOS by checking /etc/os-release, /run/current-system, and nixos-rebuild in PATH
 export const IS_NIXOS = await (() => {
   return new Promise<boolean>((resolve) => {
+    // First: check /etc/os-release for ID=nixos (fast, no subprocess)
     try {
-      exec('command -v nixos-rebuild', (error, stderr) => {
-        if (error) {
-          console.error(`exec error: ${error}`);
-          resolve(false);
-          return;
-        }
-        if (stderr.includes('nixos-rebuild')) {
+      if (fs.existsSync('/etc/os-release')) {
+        const osRelease = fs.readFileSync('/etc/os-release', 'utf-8');
+        if (/^ID\s*=\s*"?nixos"?/m.test(osRelease)) {
           resolve(true);
           return;
         }
-        resolve(false);
+      }
+    } catch {
+      // Fall through to next check
+    }
+
+    // Second: check /run/current-system which is NixOS-specific
+    if (fs.existsSync('/run/current-system')) {
+      resolve(true);
+      return;
+    }
+
+    // Third: fall back to subprocess check
+    try {
+      exec('command -v nixos-rebuild', (error, stdout) => {
+        if (error) {
+          resolve(false);
+          return;
+        }
+        resolve(stdout.trim().length > 0);
       });
-    } catch (error) {
-      console.error(`exec error: ${error}`);
+    } catch {
       resolve(false);
     }
   });
@@ -308,29 +329,46 @@ export let STEAMTINKERLAUNCH_PATH = join(
   __dirname,
   'bin/steamtinkerlaunch/steamtinkerlaunch'
 );
-async function fetch_STLPath() {
+
+// On NixOS, prefer the system-installed umu-run over the bundled one
+export let SYSTEM_UMU_PATH: string | null = null;
+
+async function fetchStlPath() {
   return new Promise<void>((resolve) => {
-    exec('which steamtinkerlaunch', (error, stdout, stderr) => {
+    exec('command -v steamtinkerlaunch', (error, stdout) => {
       if (error) {
         console.error(`exec error: ${error}`);
-        resolve();
-        return;
-      }
-      if (stderr) {
-        console.error(`stderr: ${stderr}`);
         resolve();
         return;
       }
 
       // The path will be returned as a string in stdout.
       const path = stdout.trim(); // Remove any extra newlines or spaces.
-      STEAMTINKERLAUNCH_PATH = path;
+      if (path) {
+        STEAMTINKERLAUNCH_PATH = path;
+      }
       resolve();
     });
   });
 }
+
+async function fetchSystemUmuPath() {
+  return new Promise<void>((resolve) => {
+    exec('command -v umu-run', (error, stdout) => {
+      if (!error && stdout.trim()) {
+        SYSTEM_UMU_PATH = stdout.trim();
+        console.log('[umu] Found system umu-run at: ' + SYSTEM_UMU_PATH);
+      }
+      resolve();
+    });
+  });
+}
+
 console.log('NIXOS: ' + IS_NIXOS);
-if (IS_NIXOS) await fetch_STLPath();
+if (IS_NIXOS) {
+  await fetchStlPath();
+  await fetchSystemUmuPath();
+}
 if (STEAMTINKERLAUNCH_PATH === '') {
   STEAMTINKERLAUNCH_PATH = join(
     __dirname,

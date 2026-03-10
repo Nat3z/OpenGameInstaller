@@ -13,7 +13,7 @@ import { generateNotificationId } from './helpers.app/notifications.js';
 import { getSilentInstallFlags } from './helpers.app/install-flags.js';
 import { sendNotification } from '../main.js';
 import { __dirname } from '../manager/manager.paths.js';
-import { downloadLatestUmu } from '../startup.js';
+import { downloadLatestUmu, SYSTEM_UMU_PATH } from '../startup.js';
 
 /**
  * Get the UMU prefix base directory
@@ -27,7 +27,17 @@ function getUmuPrefixBase(): string {
   return path.join(home, '.ogi-wine-prefixes');
 }
 
-const umuRunExecutable = path.join(__dirname, 'bin', 'umu', 'umu-run');
+/**
+ * Get the umu-run executable path.
+ * On NixOS (or any system where umu-run is in PATH), prefer the system-provided binary.
+ * Falls back to the bundled binary managed by the built-in updater.
+ */
+function getUmuRunExecutable(): string {
+  if (SYSTEM_UMU_PATH) {
+    return SYSTEM_UMU_PATH;
+  }
+  return path.join(__dirname, 'bin', 'umu', 'umu-run');
+}
 const KNOWN_LAUNCH_ENV_VARS = new Set([
   'WINEPREFIX',
   'WINEDLLOVERRIDES',
@@ -247,7 +257,7 @@ function streamChildProcessOutput(
 }
 
 export function getUmuRunExecutablePath(): string {
-  return umuRunExecutable;
+  return getUmuRunExecutable();
 }
 
 /**
@@ -281,7 +291,7 @@ export function buildUmuWrapperCommandTemplate(
  */
 export async function isUmuInstalled(): Promise<boolean> {
   try {
-    if (fs.existsSync(umuRunExecutable)) {
+    if (fs.existsSync(getUmuRunExecutable())) {
       return true;
     }
     return false;
@@ -459,11 +469,11 @@ export async function launchWithUmu(
   });
 
   return new Promise((resolve) => {
-    console.log("[umu] command i'm running: ", umuRunExecutable, [
+    console.log("[umu] command i'm running: ", getUmuRunExecutable(), [
       exePath,
       ...parsedLaunchArgs,
     ]);
-    const child = spawn(umuRunExecutable, [exePath, ...parsedLaunchArgs], {
+    const child = spawn(getUmuRunExecutable(), [exePath, ...parsedLaunchArgs], {
       cwd: libraryInfo.cwd,
       env: {
         ...env,
@@ -653,7 +663,7 @@ export async function installRedistributablesWithUmu(
         if (redistributable.path === 'winetricks') {
           // Use winetricks verb
           child = spawn(
-            umuRunExecutable,
+            getUmuRunExecutable(),
             ['winetricks', '-q', redistributable.name],
             {
               env: {
@@ -691,7 +701,7 @@ export async function installRedistributablesWithUmu(
           // Determine silent install flags
           const silentFlags = getSilentInstallFlags(redistFile);
 
-          child = spawn(umuRunExecutable, [redistFile, ...silentFlags], {
+          child = spawn(getUmuRunExecutable(), [redistFile, ...silentFlags], {
             env: {
               ...env,
               PROTONPATH: protonVersion || 'UMU-Latest',
@@ -955,7 +965,7 @@ export async function installRedistributablesWithUmuForLegacy(
 
   const initSuccess = await new Promise<boolean>((resolve) => {
     const initChild = spawn(
-      umuRunExecutable,
+      getUmuRunExecutable(),
       ['wine', 'cmd', '/c', 'echo', 'Prefix initialized'],
       {
         env: {
@@ -1054,7 +1064,7 @@ export async function installRedistributablesWithUmuForLegacy(
         if (redistributable.path === 'winetricks') {
           // Use winetricks verb via UMU
           child = spawn(
-            umuRunExecutable,
+            getUmuRunExecutable(),
             ['winetricks', '-q', redistributable.name],
             {
               env: {
@@ -1087,7 +1097,7 @@ export async function installRedistributablesWithUmuForLegacy(
           const redistFile = path.basename(redistPath);
           const silentFlags = getSilentInstallFlags(redistFile);
 
-          child = spawn(umuRunExecutable, [redistFile, ...silentFlags], {
+          child = spawn(getUmuRunExecutable(), [redistFile, ...silentFlags], {
             env: {
               ...process.env,
               UMU_LOG: 'debug',
@@ -1279,7 +1289,7 @@ async function initializePrefixWithUmuRun(
       resolve(result);
     };
 
-    const initChild = spawn(umuRunExecutable, [''], {
+    const initChild = spawn(getUmuRunExecutable(), [''], {
       cwd,
       env: {
         ...process.env,

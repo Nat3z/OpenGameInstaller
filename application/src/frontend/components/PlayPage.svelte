@@ -89,7 +89,9 @@
 
   /** Refresh playtime from disk after a game session ends. */
   async function refreshPlaytime() {
-    const updated = await window.electronAPI.app.getLibraryInfo(libraryInfo.appID);
+    const updated = await window.electronAPI.app.getLibraryInfo(
+      libraryInfo.appID
+    );
     if (updated) {
       localPlaytime = updated.playtime;
       localLastPlayedAt = updated.lastPlayedAt;
@@ -201,6 +203,7 @@
   }
 
   onMount(() => {
+    refreshPlaytime();
     launchOverlayPlayPageReady.set(libraryInfo.appID);
     document.addEventListener('game:exit', onGameExit);
   });

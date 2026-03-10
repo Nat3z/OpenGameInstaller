@@ -13,7 +13,7 @@
     clearHeaderBackButton,
     createNotification,
   } from '../store';
-  import { onDestroy, onMount } from 'svelte';
+  import { onDestroy, onMount, tick } from 'svelte';
   import SettingsFilled from '../Icons/SettingsFilled.svelte';
   import GameConfiguration from './GameConfiguration.svelte';
 
@@ -158,16 +158,16 @@
       });
     } catch (error) {
       console.error(error);
-      playButton.disabled = false;
-      playButton.setAttribute('data-error', 'true');
-      playButton.querySelector('p')!!.textContent = 'ERROR';
-      playButton.querySelector('svg')!!.style.display = 'none';
-
-      // remove the game from the gamesLaunched state
+      // remove the game from the gamesLaunched state first so the play button is restored
       gamesLaunched.update((games) => {
         delete games[libraryInfo.appID];
         return games;
       });
+      // wait for the DOM to update so playButton is restored
+      await tick();
+      if (playButton) {
+        playButton.setAttribute('data-error', 'true');
+      }
       return;
     }
 
@@ -176,8 +176,6 @@
     await window.electronAPI.app.launchGame('' + libraryInfo.appID);
 
     console.log('launchGame complete');
-
-    playButton.querySelector('p')!!.textContent = 'PLAYING';
     if (!window.electronAPI.fs.exists('./internals')) {
       window.electronAPI.fs.mkdir('./internals');
       window.electronAPI.fs.write(

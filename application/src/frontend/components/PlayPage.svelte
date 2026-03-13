@@ -206,6 +206,13 @@
     libraryInfo.cwd = data.cwd;
     libraryInfo.launchExecutable = data.launchExecutable;
     libraryInfo.launchArguments = data.launchArguments;
+    if (libraryInfo.umu && Array.isArray(data.dllOverrides)) {
+      libraryInfo.umu = {
+        ...libraryInfo.umu,
+        dllOverrides:
+          data.dllOverrides.length > 0 ? data.dllOverrides : undefined,
+      };
+    }
     window.electronAPI.fs.write(
       './library/' + libraryInfo.appID + '.json',
       JSON.stringify(libraryInfo, null, 2)

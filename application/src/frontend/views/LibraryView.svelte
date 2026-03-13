@@ -95,6 +95,26 @@
     );
   }
 
+  async function openPlayPage(app: LibraryInfo) {
+    const freshLibraryInfo = await window.electronAPI.app.getLibraryInfo(
+      app.appID
+    );
+    $selectedApp = freshLibraryInfo ?? app;
+  }
+
+  async function openPlayPageByAppID(appID: number) {
+    const existingApp = library.find((app) => app.appID === appID);
+    if (existingApp) {
+      await openPlayPage(existingApp);
+      return;
+    }
+
+    const freshLibraryInfo = await window.electronAPI.app.getLibraryInfo(appID);
+    if (freshLibraryInfo) {
+      $selectedApp = freshLibraryInfo;
+    }
+  }
+
   // Update filtered games when search query changes
   $effect(() => {
     filteredGames = filterLibrary(allGamesAlphabetical, searchQuery);
@@ -123,7 +143,7 @@
   const unsubscribe = gameFocused.subscribe((game) => {
     if (game !== undefined) {
       setTimeout(() => {
-        selectedApp.set(library.find((app) => app.appID === game));
+        void openPlayPageByAppID(game);
         gameFocused.set(undefined);
       }, 100);
     }
@@ -170,7 +190,7 @@
                     class:library-entry-visible={revealLibraryEntries}
                     class:library-entry-revealing={revealLibraryDelayActive}
                     style={getLibraryEntryDelay(index)}
-                    onclick={() => ($selectedApp = app)}
+                    onclick={() => void openPlayPage(app)}
                   >
                     {#if updatesManager.getAppUpdate(app.appID)?.updateAvailable || needsUmuMigration(app)}
                       <div
@@ -312,7 +332,7 @@
                     style={getLibraryEntryDelay(
                       (isSearching ? 0 : recentlyPlayed.length) + appIndex
                     )}
-                    onclick={() => ($selectedApp = app)}
+                    onclick={() => void openPlayPage(app)}
                   >
                     {#if updatesManager.getAppUpdate(app.appID)?.updateAvailable || needsUmuMigration(app)}
                       <div

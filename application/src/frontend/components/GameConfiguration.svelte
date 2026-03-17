@@ -12,10 +12,10 @@
   import { appUpdates } from '../states.svelte';
   import Modal from './modal/Modal.svelte';
   import TitleModal from './modal/TitleModal.svelte';
-  import SectionModal from './modal/SectionModal.svelte';
   import ButtonModal from './modal/ButtonModal.svelte';
   import InputModal from './modal/InputModal.svelte';
   import CheckboxModal from './modal/CheckboxModal.svelte';
+  import WineDllOverridesModal from './modal/WineDllOverridesModal.svelte';
 
   interface Props {
     exitPlayPage: () => void;
@@ -26,6 +26,7 @@
   let { exitPlayPage, gameInfo, onFinish }: Props = $props();
 
   let platform = $state<string>('');
+  let showDllOverridesModal = $state(false);
 
   // Get OS platform
   $effect(() => {
@@ -93,6 +94,8 @@
         }
       }
     });
+
+    formData.dllOverrides = [...(gameInfo.umu?.dllOverrides ?? [])];
   });
 
   function handleInputChange(id: string, value: string | number | boolean) {
@@ -106,6 +109,22 @@
   function closeModal() {
     onFinish(undefined);
   }
+
+  function openDllOverridesModal() {
+    showDllOverridesModal = true;
+  }
+
+  function handleDllOverridesSave(dllOverrides: string[]) {
+    formData.dllOverrides = dllOverrides;
+  }
+
+  let canEditDllOverrides = $derived(platform === 'linux' && !!gameInfo.umu);
+  let dllOverridesCount = $derived.by(() => {
+    const dllOverrides = Array.isArray(formData.dllOverrides)
+      ? formData.dllOverrides
+      : [];
+    return dllOverrides.length;
+  });
 
   async function removeFromList() {
     await window.electronAPI.app.removeApp(gameInfo.appID);
@@ -206,31 +225,48 @@
             id: value,
             name: value,
           }))}
-          class="mb-4"
+          class="mb-4 {key === 'launchArguments' ? 'inline' : ''}"
           onchange={handleInputChange}
         />
+        {#if key === 'launchArguments'}
+          {#if platform === 'linux'}
+            <ButtonModal
+              text={dllOverridesCount > 0
+                ? `DLL Overrides (${dllOverridesCount})`
+                : 'DLL Overrides'}
+              variant="secondary"
+              onclick={openDllOverridesModal}
+              disabled={!canEditDllOverrides}
+            />
+          {/if}
+        {/if}
       {/if}
     {/each}
 
-    <SectionModal class="mt-4">
-      <div class="flex gap-3 flex-row">
-        <ButtonModal text="Save" variant="primary" onclick={pushChanges} />
-        {#if platform === 'linux' || platform === 'darwin'}
-          <ButtonModal
-            text="Add to Steam"
-            variant="secondary"
-            onclick={(event) => {
-              addToSteam(event.currentTarget as HTMLButtonElement);
-            }}
-          />
-        {/if}
+    <div class="pt-4 flex flex-row flex-wrap gap-3">
+      <ButtonModal text="Save" variant="primary" onclick={pushChanges} />
+      {#if platform === 'linux' || platform === 'darwin'}
         <ButtonModal
-          text="Remove Game"
-          variant="danger"
-          onclick={removeFromList}
+          text="Add to Steam"
+          variant="secondary"
+          onclick={(event) => {
+            addToSteam(event.currentTarget as HTMLButtonElement);
+          }}
         />
-        <ButtonModal text="Cancel" variant="secondary" onclick={closeModal} />
-      </div>
-    </SectionModal>
+      {/if}
+      <ButtonModal
+        text="Remove Game"
+        variant="danger"
+        onclick={removeFromList}
+      />
+      <ButtonModal text="Cancel" variant="secondary" onclick={closeModal} />
+    </div>
   </Modal>
+
+  <WineDllOverridesModal
+    open={showDllOverridesModal}
+    initialOverrides={formData.dllOverrides ?? []}
+    onSave={handleDllOverridesSave}
+    onClose={() => (showDllOverridesModal = false)}
+  />
 {/if}

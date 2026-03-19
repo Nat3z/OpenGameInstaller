@@ -195,34 +195,39 @@ jobs:
           find assets -type f -name "*.AppImage" -exec cp {} assets-flat/ \;
           ls -la assets-flat/
 
+      - name: Write release notes
+        run: |
+          cat <<'EOF' > release-notes.md
+          # Release ${{ github.ref_name }}
+          ${{ steps.commit_body.outputs.body }}
+
+          **Full Changelog:** https://github.com/Nat3z/OpenGameInstaller/commits/${{ github.ref_name }}
+          # How To Install
+
+          For the simplest installation, download the OpenGameInstaller-Setup.exe file and run it. **If you're on Steam Deck, download the OpenGameInstaller-Setup.AppImage file.** It includes an auto-updater to keep OpenGameInstaller up-to-date.
+
+          ### Release Details
+
+          Setup Version: ${{ steps.updater_version.outputs.version }}
+          Application Version: ${{ github.ref_name }}
+          EOF
+
       - name: Create Release and Upload Assets
-        uses: softprops/action-gh-release@v2
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: ${{ github.ref_name }}
-          name: ${{ format('{0} - {1}', github.ref_name, steps.commit_body.outputs.tagline) }}
-          body: |
-            # Release ${{ github.ref_name }}
-            ${{ steps.commit_body.outputs.body }}
-
-            **Full Changelog:** https://github.com/Nat3z/OpenGameInstaller/commits/${{ github.ref_name }}
-            # How To Install
-
-            For the simplest installation, download the OpenGameInstaller-Setup.exe file and run it. **If you're on Steam Deck, download the OpenGameInstaller-Setup.AppImage file.** It includes an auto-updater to keep OpenGameInstaller up-to-date.
-
-            ### Release Details
-
-            Setup Version: ${{ steps.updater_version.outputs.version }}
-            Application Version: ${{ github.ref_name }}
-          draft: false
-          prerelease: true
-          files: |
-            assets-flat/OpenGameInstaller-Portable.zip
-            assets-flat/OpenGameInstaller-Portable.zip.blockmap
-            assets-flat/OpenGameInstaller-Setup.exe
-            assets-flat/OpenGameInstaller-Setup.exe.blockmap
-            assets-flat/OpenGameInstaller-Setup.AppImage
-            assets-flat/OpenGameInstaller-Setup.AppImage.blockmap
-            assets-flat/OpenGameInstaller-linux-pt.AppImage
-            assets-flat/OpenGameInstaller-linux-pt.AppImage.blockmap
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_TITLE: ${{ format('{0} - {1}', github.ref_name, steps.commit_body.outputs.tagline) }}
+        run: |
+          gh release create "$RELEASE_TAG" \
+            assets-flat/OpenGameInstaller-Portable.zip \
+            assets-flat/OpenGameInstaller-Portable.zip.blockmap \
+            assets-flat/OpenGameInstaller-Setup.exe \
+            assets-flat/OpenGameInstaller-Setup.exe.blockmap \
+            assets-flat/OpenGameInstaller-Setup.AppImage \
+            assets-flat/OpenGameInstaller-Setup.AppImage.blockmap \
+            assets-flat/OpenGameInstaller-linux-pt.AppImage \
+            assets-flat/OpenGameInstaller-linux-pt.AppImage.blockmap \
+            --title "$RELEASE_TITLE" \
+            --notes-file release-notes.md \
+            --prerelease \
+            --verify-tag

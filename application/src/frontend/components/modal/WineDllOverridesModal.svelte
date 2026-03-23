@@ -180,7 +180,7 @@
   @reference "../../app.css";
 
   .dll-table {
-    @apply w-full border border-border rounded-lg overflow-hidden;
+    @apply w-full border border-border rounded-lg overflow-hidden overflow-y-auto max-h-64;
   }
 
   .dll-table-header {

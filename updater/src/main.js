@@ -6,6 +6,8 @@ import yauzl from 'yauzl';
 import zlib from 'zlib';
 import { spawn, exec } from 'child_process';
 import { createHash } from 'crypto';
+import http from 'node:http';
+import https from 'node:https';
 let mainWindow;
 import pjson from '../package.json' with { type: 'json' };
 
@@ -50,10 +52,23 @@ if (fs.existsSync(`./bleeding-edge.txt`)) {
 
 const PATCH_PROGRESS_INTERVAL = 128;
 const VERIFY_PROGRESS_INTERVAL = 128;
-const RANGE_DOWNLOAD_CHUNK_SIZE = 4 * 1024 * 1024;
+const RANGE_DOWNLOAD_CHUNK_SIZE = 16 * 1024 * 1024;
+const RANGE_DOWNLOAD_CONCURRENCY = 6;
+const RANGE_DOWNLOAD_COALESCE_GAP = 512 * 1024;
+const PATCH_DOWNLOAD_PROGRESS_INTERVAL_MS = 100;
 const HTTP_RETRY_ATTEMPTS = 4;
 const HTTP_RETRY_BASE_DELAY_MS = 1500;
 const HTTP_REQUEST_TIMEOUT_MS = 60000;
+const HTTP_RANGE_AGENTS = {
+  http: new http.Agent({
+    keepAlive: true,
+    maxSockets: RANGE_DOWNLOAD_CONCURRENCY,
+  }),
+  https: new https.Agent({
+    keepAlive: true,
+    maxSockets: RANGE_DOWNLOAD_CONCURRENCY,
+  }),
+};
 
 function sendUpdaterStatus(text, progress, max, subtext) {
   if (!mainWindow || mainWindow.isDestroyed()) {
@@ -97,6 +112,19 @@ function shouldRetryHttpError(error) {
     message.includes('network error') ||
     message.includes('timeout')
   );
+}
+
+function getAxiosTransportOptions(url) {
+  if (typeof url !== 'string') {
+    return {};
+  }
+  if (url.startsWith('https://')) {
+    return { httpsAgent: HTTP_RANGE_AGENTS.https };
+  }
+  if (url.startsWith('http://')) {
+    return { httpAgent: HTTP_RANGE_AGENTS.http };
+  }
+  return {};
 }
 
 /**
@@ -431,6 +459,7 @@ async function downloadToFile(url, destination, status) {
         method: 'GET',
         responseType: 'stream',
         timeout: HTTP_REQUEST_TIMEOUT_MS,
+        ...getAxiosTransportOptions(url),
       });
       response.data.pipe(writer);
       const startTime = Date.now();
@@ -828,53 +857,24 @@ async function applyBlockmapPatch(
     );
     const reusedBytes =
       newFile.sizes.reduce((total, size) => total + size, 0) - totalMissBytes;
+    const downloadTasks = createRangeDownloadTasks(mergedMisses);
+    const totalScheduledDownloadBytes = downloadTasks.reduce(
+      (total, task) => total + task.size,
+      0
+    );
     logUpdater('Patch block analysis complete', {
       releaseTag,
       blockCount: newFile.checksums.length,
       missingRanges: mergedMisses.length,
+      downloadTasks: downloadTasks.length,
       totalMissBytes,
+      totalScheduledDownloadBytes,
       reusedBytes,
     });
-    let downloadedMissBytes = 0;
-    for (const miss of mergedMisses) {
-      let rangeStart = miss.offset;
-      const missEnd = miss.offset + miss.size - 1;
-      logUpdater('Downloading missing patch range', {
-        releaseTag,
-        start: miss.offset,
-        end: missEnd,
-        size: miss.size,
-      });
-      while (rangeStart <= missEnd) {
-        const rangeEnd = Math.min(
-          rangeStart + RANGE_DOWNLOAD_CHUNK_SIZE - 1,
-          missEnd
-        );
-        sendUpdaterStatus(
-          'Downloading patch data',
-          downloadedMissBytes,
-          totalMissBytes || 1,
-          releaseTag
-        );
-        await nextUiTick();
-        const chunk = await downloadRangeChunk(targetUrl, rangeStart, rangeEnd);
-        fs.writeSync(outFd, chunk, 0, chunk.length, rangeStart);
-        downloadedMissBytes += chunk.length;
-        logUpdater('Downloaded patch chunk', {
-          releaseTag,
-          start: rangeStart,
-          end: rangeEnd,
-          chunkSize: chunk.length,
-          downloadedMissBytes,
-          totalMissBytes,
-        });
-        rangeStart = rangeEnd + 1;
-      }
-    }
-    sendUpdaterStatus(
-      'Downloading patch data',
-      downloadedMissBytes,
-      totalMissBytes || 1,
+    await downloadMissingPatchRanges(
+      targetUrl,
+      outFd,
+      downloadTasks,
       releaseTag
     );
   } finally {
@@ -929,6 +929,113 @@ function takeMatchingBlock(blocks, expectedSize) {
   return blocks.splice(index, 1)[0];
 }
 
+function createRangeDownloadTasks(misses) {
+  if (!Array.isArray(misses) || misses.length === 0) {
+    return [];
+  }
+
+  const coalescedRanges = [];
+  for (const miss of misses) {
+    const lastRange = coalescedRanges[coalescedRanges.length - 1];
+    const missEnd = miss.offset + miss.size;
+    if (!lastRange) {
+      coalescedRanges.push({ offset: miss.offset, size: miss.size });
+      continue;
+    }
+
+    const lastEnd = lastRange.offset + lastRange.size;
+    const gap = miss.offset - lastEnd;
+    if (gap >= 0 && gap <= RANGE_DOWNLOAD_COALESCE_GAP) {
+      lastRange.size = missEnd - lastRange.offset;
+      continue;
+    }
+
+    coalescedRanges.push({ offset: miss.offset, size: miss.size });
+  }
+
+  const tasks = [];
+  for (const range of coalescedRanges) {
+    let start = range.offset;
+    const end = range.offset + range.size - 1;
+    while (start <= end) {
+      const chunkEnd = Math.min(start + RANGE_DOWNLOAD_CHUNK_SIZE - 1, end);
+      tasks.push({
+        start,
+        end: chunkEnd,
+        size: chunkEnd - start + 1,
+      });
+      start = chunkEnd + 1;
+    }
+  }
+  return tasks;
+}
+
+async function downloadMissingPatchRanges(targetUrl, outFd, tasks, releaseTag) {
+  const totalBytes = tasks.reduce((total, task) => total + task.size, 0);
+  if (totalBytes <= 0) {
+    sendUpdaterStatus('Downloading patch data', 0, 1, releaseTag);
+    return;
+  }
+
+  let downloadedBytes = 0;
+  let nextTaskIndex = 0;
+  let lastProgressAt = 0;
+
+  const reportProgress = (force = false) => {
+    const now = Date.now();
+    if (!force && now - lastProgressAt < PATCH_DOWNLOAD_PROGRESS_INTERVAL_MS) {
+      return;
+    }
+    lastProgressAt = now;
+    sendUpdaterStatus(
+      'Downloading patch data',
+      downloadedBytes,
+      totalBytes,
+      releaseTag
+    );
+  };
+
+  reportProgress(true);
+
+  const workerCount = Math.min(RANGE_DOWNLOAD_CONCURRENCY, tasks.length);
+  await Promise.all(
+    Array.from({ length: workerCount }, async () => {
+      while (true) {
+        const taskIndex = nextTaskIndex++;
+        if (taskIndex >= tasks.length) {
+          return;
+        }
+
+        const task = tasks[taskIndex];
+        logUpdater('Downloading patch data range', {
+          releaseTag,
+          start: task.start,
+          end: task.end,
+          size: task.size,
+          task: taskIndex + 1,
+          totalTasks: tasks.length,
+        });
+
+        const chunk = await downloadRangeChunk(targetUrl, task.start, task.end);
+        fs.writeSync(outFd, chunk, 0, chunk.length, task.start);
+        downloadedBytes += chunk.length;
+
+        logUpdater('Downloaded patch data range', {
+          releaseTag,
+          start: task.start,
+          end: task.end,
+          chunkSize: chunk.length,
+          downloadedBytes,
+          totalBytes,
+        });
+        reportProgress();
+      }
+    })
+  );
+
+  reportProgress(true);
+}
+
 async function downloadRangeChunk(url, start, end) {
   const requestedRange = `bytes=${start}-${end}`;
   for (let attempt = 1; attempt <= HTTP_RETRY_ATTEMPTS; attempt++) {
@@ -938,8 +1045,12 @@ async function downloadRangeChunk(url, start, end) {
         url,
         method: 'GET',
         responseType: 'arraybuffer',
-        headers: { Range: requestedRange },
+        headers: {
+          Range: requestedRange,
+          'Accept-Encoding': 'identity',
+        },
         timeout: HTTP_REQUEST_TIMEOUT_MS,
+        ...getAxiosTransportOptions(url),
       });
       const expectedSize = end - start + 1;
       const actualSize = Buffer.byteLength(rangeResponse.data);

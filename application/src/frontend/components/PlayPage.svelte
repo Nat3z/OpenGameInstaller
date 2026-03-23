@@ -16,6 +16,32 @@
   import { onDestroy, onMount, tick } from 'svelte';
   import SettingsFilled from '../Icons/SettingsFilled.svelte';
   import GameConfiguration from './GameConfiguration.svelte';
+
+  /**
+   * Formats total seconds into a human-readable play-time string.
+   * e.g. 0 → "Never played", 45 → "< 1 min played", 3720 → "1h 2m played"
+   */
+  function formatPlaytime(seconds: number | undefined): string {
+    if (!seconds || seconds < 1) return 'Never played';
+    if (seconds < 60) return '< 1 min played';
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    if (hours > 0) return `${hours}h ${minutes}m played`;
+    return `${minutes}m played`;
+  }
+
+  /**
+   * Returns a relative or absolute label for a Unix ms timestamp.
+   */
+  function formatLastPlayed(timestamp: number | undefined): string {
+    if (!timestamp) return '';
+    const diffMs = Date.now() - timestamp;
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    if (diffDays === 0) return 'Last played today';
+    if (diffDays === 1) return 'Last played yesterday';
+    if (diffDays < 7) return `Last played ${diffDays} days ago`;
+    return `Last played ${new Date(timestamp).toLocaleDateString()}`;
+  }
   import { fly } from 'svelte/transition';
   import { quintOut } from 'svelte/easing';
   import Image from './Image.svelte';
@@ -56,6 +82,28 @@
   }
 
   let { libraryInfo = $bindable(), exitPlayPage }: Props = $props();
+
+  /** Local reactive copy of playtime so it updates after a session ends. */
+  let localPlaytime = $state(libraryInfo.playtime);
+  let localLastPlayedAt = $state(libraryInfo.lastPlayedAt);
+
+  /** Refresh playtime from disk after a game session ends. */
+  async function refreshPlaytime() {
+    const updated = await window.electronAPI.app.getLibraryInfo(
+      libraryInfo.appID
+    );
+    if (updated) {
+      localPlaytime = updated.playtime;
+      localLastPlayedAt = updated.lastPlayedAt;
+    }
+  }
+
+  function onGameExit(event: Event) {
+    const id = (event as CustomEvent).detail?.id;
+    if (id === libraryInfo.appID) {
+      refreshPlaytime();
+    }
+  }
 
   let requiresSteamReadd = $derived(
     appUpdates.requiredReadds.some((r) => r.appID === libraryInfo.appID)
@@ -155,7 +203,9 @@
   }
 
   onMount(() => {
+    refreshPlaytime();
     launchOverlayPlayPageReady.set(libraryInfo.appID);
+    document.addEventListener('game:exit', onGameExit);
   });
 
   const unsubscribe2 = launchGameTrigger.subscribe((game) => {
@@ -223,6 +273,7 @@
     unsubscribe();
     unsubscribe2();
     clearHeaderBackButton();
+    document.removeEventListener('game:exit', onGameExit);
   });
 
   function showUmuMigrationCompletePrompt() {
@@ -567,6 +618,29 @@
       </svg>
       <span class="font-medium">More Info</span>
     </button>
+
+    <!-- Playtime stats — right-aligned in the action bar -->
+    <div class="ml-auto flex flex-col items-end shrink-0 gap-0.5">
+      <div class="flex items-center gap-1.5">
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          viewBox="0 0 24 24"
+          class="w-4 h-4 fill-accent-dark opacity-70"
+        >
+          <path
+            d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm.5 5v5.25l4.5 2.67-.75 1.23L11 13V7h1.5z"
+          />
+        </svg>
+        <span class="text-sm font-archivo font-semibold text-accent-dark">
+          {formatPlaytime(localPlaytime)}
+        </span>
+      </div>
+      {#if localLastPlayedAt}
+        <span class="text-xs text-accent-dark opacity-60">
+          {formatLastPlayed(localLastPlayedAt)}
+        </span>
+      {/if}
+    </div>
   </div>
 
   {#if needsUmuMigration}

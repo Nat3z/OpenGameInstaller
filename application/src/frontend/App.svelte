@@ -142,9 +142,8 @@
       appUpdates.requiredReadds = persistedUpdateState.requiredReadds;
       appUpdates.dismissedUpdates = persistedUpdateState.dismissedUpdates;
       // send client-ready-for-events
-      window.electronAPI.app.clientReadyForEvents().then(() => {
-        console.log('client-ready-for-events sent');
-      });
+      window.electronAPI.app.clientReadyForEvents();
+      console.log('client-ready-for-events sent');
     }, 200);
   });
 

@@ -131,7 +131,7 @@ interface Window {
       hideWindow: () => Promise<void>;
       showWindow: () => Promise<void>;
       minimize: () => Promise<void>;
-      clientReadyForEvents: () => Promise<void>;
+      clientReadyForEvents: () => void;
       axios: <T>(
         options: AxiosRequestConfig
       ) => Promise<{ status: number; success: boolean; data: T }>;

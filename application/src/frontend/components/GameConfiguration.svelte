@@ -118,7 +118,9 @@
     formData.dllOverrides = dllOverrides;
   }
 
-  let canEditDllOverrides = $derived(platform === 'linux' && !!gameInfo.umu);
+  let canEditDllOverrides = $derived(
+    (platform === 'linux' || platform === 'darwin') && !!gameInfo.umu
+  );
   let dllOverridesCount = $derived.by(() => {
     const dllOverrides = Array.isArray(formData.dllOverrides)
       ? formData.dllOverrides
@@ -229,7 +231,7 @@
           onchange={handleInputChange}
         />
         {#if key === 'launchArguments'}
-          {#if platform === 'linux'}
+          {#if platform === 'linux' || platform === 'darwin'}
             <ButtonModal
               text={dllOverridesCount > 0
                 ? `DLL Overrides (${dllOverridesCount})`

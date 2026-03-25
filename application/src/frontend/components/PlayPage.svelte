@@ -16,7 +16,7 @@
   import { onDestroy, onMount, tick } from 'svelte';
   import SettingsFilled from '../Icons/SettingsFilled.svelte';
   import GameConfiguration from './GameConfiguration.svelte';
-  import { fly } from 'svelte/transition';
+  import { fly, slide } from 'svelte/transition';
   import { quintOut } from 'svelte/easing';
   import Image from './Image.svelte';
   import { fetchAddonsWithConfigure, runTask, safeFetch } from '../utils';
@@ -306,6 +306,16 @@
     {}
   );
   let addonsMap: Map<string, { id: string; name: string }> = $state(new Map());
+  let collapsedAddons: Set<string> = $state(new Set());
+
+  function toggleAddonCollapse(addonId: string) {
+    if (collapsedAddons.has(addonId)) {
+      collapsedAddons.delete(addonId);
+    } else {
+      collapsedAddons.add(addonId);
+    }
+    collapsedAddons = new Set(collapsedAddons);
+  }
   let settledAddons = $derived.by(() => {
     return (
       Object.values(searchingAddons).filter((task) => task !== undefined)
@@ -682,41 +692,60 @@
     </div>
   {/if}
 
-  <!-- Addon Task Grid -->
-  <div class="grid grid-cols-3 gap-4 mt-6">
-    {#if settledAddons}
-      {#each Object.keys(searchingAddons) as addonID, index}
-        {#each searchingAddons[addonID]!!.filter((task) => task.downloadType === 'task') as task, taskIndex}
-          <div
-            class="bg-accent-lighter rounded-lg p-4 flex flex-col gap-2"
-            in:fly={{ y: 30, duration: 400, delay: 50 * (index + taskIndex) }}
+  <!-- Addon Task Table -->
+  {#if settledAddons}
+    {#each Object.keys(searchingAddons) as addonID, index}
+      {@const tasks = searchingAddons[addonID]!!.filter((task) => task.downloadType === 'task')}
+      {#if tasks.length > 0}
+        <div class="mt-6" in:fly={{ y: 30, duration: 400, delay: 50 * index }}>
+          <button
+            class="w-full flex items-center justify-between px-3 py-2 bg-transparent hover:bg-accent-lighter active:bg-accent-light/80 border-none cursor-pointer rounded-lg transition-colors duration-200 mb-2"
+            onclick={() => toggleAddonCollapse(addonID)}
           >
-            <div class="flex flex-row gap-2 items-center mb-2">
-              <AddonPicture addonId={addonID} class="w-12 h-12 rounded-lg" />
-              <h3 class="text-lg font-semibold text-accent-dark">
-                {task.name}
-              </h3>
+            <div class="flex items-center gap-2">
+              <AddonPicture addonId={addonID} class="w-6 h-6 rounded" />
+              <span class="font-medium text-accent-dark text-sm">{addonsMap.get(addonID)?.name ?? addonID}</span>
             </div>
-
-            <button
-              class="px-4 py-2 bg-accent-light rounded-lg border-none text-accent-dark hover:bg-accent-light/80 transition-colors duration-200"
-              onclick={() => handleRunTask(task, addonID)}>Run Task</button
+            <svg
+              class="w-3.5 h-3.5 text-accent-dark/60 transition-transform duration-200"
+              class:rotate-180={!collapsedAddons.has(addonID)}
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
             >
-          </div>
-        {/each}
-      {/each}
-    {:else}
-      {#each Array(3) as _}
-        <div
-          class="bg-accent-lighter rounded-lg p-4 flex flex-col gap-2 animate-pulse"
-        >
-          <div class="flex flex-row gap-2 items-center mb-2">
-            <div class="w-12 h-12 bg-accent-light rounded-lg"></div>
-            <div class="h-6 bg-accent-light rounded w-32"></div>
-          </div>
-          <div class="h-10 bg-accent-light rounded-lg"></div>
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+
+          {#if !collapsedAddons.has(addonID)}
+            <div
+              class="bg-accent-lighter rounded-lg overflow-hidden"
+              transition:slide={{ duration: 300 }}
+            >
+              {#each tasks as task, taskIndex}
+                <div
+                  class="flex flex-row items-center justify-between px-4 py-3 {taskIndex < tasks.length - 1 ? 'border-b border-accent-light/40' : ''}"
+                >
+                  <span class="text-accent-dark font-medium">{task.name}</span>
+                  <button
+                    class="px-4 py-1.5 bg-accent-light rounded-lg border-none text-accent-dark text-sm hover:bg-accent-light/80 transition-colors duration-200"
+                    onclick={() => handleRunTask(task, addonID)}>Run</button
+                  >
+                </div>
+              {/each}
+            </div>
+          {/if}
+        </div>
+      {/if}
+    {/each}
+  {:else}
+    <div class="mt-6 bg-accent-lighter rounded-lg overflow-hidden animate-pulse">
+      {#each Array(3) as _, i}
+        <div class="flex flex-row items-center justify-between px-4 py-3 {i < 2 ? 'border-b border-accent-light/40' : ''}">
+          <div class="h-5 bg-accent-light rounded w-40"></div>
+          <div class="h-8 bg-accent-light rounded-lg w-16"></div>
         </div>
       {/each}
-    {/if}
-  </div>
+    </div>
+  {/if}
 </div>

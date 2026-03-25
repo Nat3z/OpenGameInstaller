@@ -35,9 +35,7 @@
           ? trimmedEntry.slice(0, equalsIndex).trim()
           : trimmedEntry,
       override:
-        equalsIndex >= 0
-          ? trimmedEntry.slice(equalsIndex + 1).trim()
-          : '',
+        equalsIndex >= 0 ? trimmedEntry.slice(equalsIndex + 1).trim() : '',
     };
   }
 
@@ -89,7 +87,7 @@
 </script>
 
 {#if open}
-  <Modal open={true} size="large" priority="urgent" onClose={onClose}>
+  <Modal open={true} size="large" priority="urgent" {onClose}>
     <TitleModal title="Wine DLL Overrides" />
     <TextModal
       text="Edit WINEDLLOVERRIDES entries for this game. Leave Override blank to keep Wine's default n,b fallback."
@@ -124,7 +122,9 @@
           </div>
 
           <div class="override-col">
-            <label class="sr-only" for={`dll-override-${row.id}`}>Override value</label>
+            <label class="sr-only" for={`dll-override-${row.id}`}
+              >Override value</label
+            >
             <input
               id={`dll-override-${row.id}`}
               class="input-text"
@@ -155,22 +155,15 @@
     </div>
 
     <div class="mt-3 flex items-center justify-between gap-3">
-      <ButtonModal
-        text="Add DLL"
-        variant="secondary"
-        onclick={addRow}
-      />
+      <ButtonModal text="Add DLL" variant="secondary" onclick={addRow} />
       <p class="hint-text">
-        e.g. <code>dinput8=n,b</code>, <code>winmm=b</code>, <code>xinput1_3=n</code>
+        e.g. <code>dinput8=n,b</code>, <code>winmm=b</code>,
+        <code>xinput1_3=n</code>
       </p>
     </div>
 
     <div class="pt-4 flex flex-row gap-3">
-      <ButtonModal
-        text="Save & Close"
-        variant="primary"
-        onclick={handleSave}
-      />
+      <ButtonModal text="Save & Close" variant="primary" onclick={handleSave} />
       <ButtonModal text="Cancel" variant="secondary" onclick={onClose} />
     </div>
   </Modal>
@@ -180,7 +173,7 @@
   @reference "../../app.css";
 
   .dll-table {
-    @apply w-full border border-border rounded-lg overflow-hidden overflow-y-auto max-h-64;
+    @apply w-full border border-border rounded-lg overflow-hidden max-h-64 overflow-y-visible;
   }
 
   .dll-table-header {

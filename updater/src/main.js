@@ -59,6 +59,7 @@ const PATCH_DOWNLOAD_PROGRESS_INTERVAL_MS = 100;
 const HTTP_RETRY_ATTEMPTS = 4;
 const HTTP_RETRY_BASE_DELAY_MS = 1500;
 const HTTP_REQUEST_TIMEOUT_MS = 60000;
+const PRESERVED_UPDATE_ENTRIES = new Set(['artifacts', 'latest.log', 'logs']);
 const HTTP_RANGE_AGENTS = {
   http: new http.Agent({
     keepAlive: true,
@@ -75,6 +76,16 @@ function sendUpdaterStatus(text, progress, max, subtext) {
     return;
   }
   mainWindow.webContents.send('text', text, progress, max, subtext);
+}
+
+function prepareUpdateDestination(destRoot) {
+  fs.mkdirSync(destRoot, { recursive: true });
+  for (const entry of fs.readdirSync(destRoot)) {
+    if (PRESERVED_UPDATE_ENTRIES.has(entry)) {
+      continue;
+    }
+    fs.rmSync(path.join(destRoot, entry), { recursive: true, force: true });
+  }
 }
 
 function nextUiTick() {
@@ -206,7 +217,7 @@ async function createWindow() {
     );
     mainWindow.webContents.send('text', 'Checking for Updates');
     const releases = response.data
-      .filter((rel) => (usingBleedingEdge ? rel.prerelease : !rel.prerelease))
+      .filter((rel) => usingBleedingEdge || !rel.prerelease)
       .sort(
         (a, b) =>
           new Date(b.published_at || b.created_at || 0).getTime() -
@@ -517,7 +528,7 @@ async function downloadToFile(url, destination, status) {
 function copyCacheToUpdate(cacheDir) {
   const files = fs.readdirSync(cacheDir);
   const destRoot = path.join(__dirname, 'update');
-  fs.mkdirSync(destRoot, { recursive: true });
+  prepareUpdateDestination(destRoot);
   for (const file of files) {
     const lowerName = file.toLowerCase();
     if (lowerName.endsWith('.blockmap')) {
@@ -1330,6 +1341,24 @@ async function launchApp(online) {
     }, 200);
   }
 }
+
+function resolveZipEntryPath(unzipToDir, entryName) {
+  const root = path.resolve(unzipToDir);
+  const normalizedEntryName = entryName.replace(/\//g, path.sep);
+  const fullPath = path.resolve(root, normalizedEntryName);
+  const relativePath = path.relative(root, fullPath);
+
+  if (
+    relativePath.startsWith('..') ||
+    path.isAbsolute(relativePath) ||
+    relativePath === ''
+  ) {
+    throw new Error(`Unsafe zip entry path: ${entryName}`);
+  }
+
+  return fullPath;
+}
+
 app.on('ready', createWindow);
 // taken from https://stackoverflow.com/questions/63932027/how-to-unzip-to-a-folder-using-yauzl
 const unzip = (zipPath, unzipToDir) => {
@@ -1363,9 +1392,7 @@ const unzip = (zipPath, unzipToDir) => {
         zipFile.on('entry', (entry) => {
           try {
             sendUpdaterStatus('Extracting Update', filesProcessed, totalFiles);
-            // Normalize path separators for Windows
-            const normalizedFileName = entry.fileName.replace(/\//g, path.sep);
-            const fullPath = path.join(unzipToDir, normalizedFileName);
+            const fullPath = resolveZipEntryPath(unzipToDir, entry.fileName);
 
             // Ensure the directory exists
             const dir = path.dirname(fullPath);

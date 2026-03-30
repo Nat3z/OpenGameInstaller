@@ -3,6 +3,7 @@ import { __dirname } from './manager/manager.paths.js';
 import { join } from 'path';
 import * as fs from 'fs';
 import * as fsPromises from 'fs/promises';
+import path from 'path';
 import {
   existsSync,
   readdirSync,
@@ -393,6 +394,7 @@ async function* copyDirectoryAsyncRestore(
   if (!stat.isDirectory()) {
     // It's a file, copy it
     try {
+      mkdirSync(path.dirname(destination), { recursive: true });
       copyFileSync(source, destination);
       yield { file: source, success: true };
     } catch (error: any) {
@@ -440,6 +442,9 @@ export async function restoreBackup(
     return { needsAddonReinstall: false };
   }
 
+  const flagPath = join(backupDir, 'needs-addon-reinstall.flag');
+  needsAddonReinstall = existsSync(flagPath);
+
   // If restoration was already completed on a previous launch but deletion failed
   // (e.g. Windows EPERM/EBUSY with locked files), skip re-restoring and just
   // retry the deletion.
@@ -457,12 +462,11 @@ export async function restoreBackup(
         deleteError.message
       );
     }
-    return { needsAddonReinstall: false };
+    return { needsAddonReinstall };
   }
 
   // Check for addon reinstall flag (works for both Windows and Linux)
-  const flagPath = join(backupDir, 'needs-addon-reinstall.flag');
-  if (existsSync(flagPath)) {
+  if (needsAddonReinstall) {
     needsAddonReinstall = true;
     console.log('[backup] Addon reinstall flag found');
     try {
@@ -736,7 +740,9 @@ async function checkForGitUpdates(repoPath: string): Promise<boolean> {
   });
 }
 
-export async function checkForAddonUpdates(mainWindow: BrowserWindow): Promise<void> {
+export async function checkForAddonUpdates(
+  mainWindow: BrowserWindow
+): Promise<void> {
   if (!fs.existsSync(join(__dirname, 'addons'))) {
     return;
   }

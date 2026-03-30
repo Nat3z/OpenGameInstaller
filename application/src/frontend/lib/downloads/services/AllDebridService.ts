@@ -25,6 +25,77 @@ function sanitizePathSegment(segment: string | undefined | null): string {
   return last.replace(/[\0<>:"|?*]/g, '_').substring(0, 255) || 'download';
 }
 
+function urlBasename(link: string): string {
+  const raw = link.split('/').pop()?.split('?')[0] ?? 'download';
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(raw);
+  } catch {
+    decoded = raw;
+  }
+  return sanitizePathSegment(decoded);
+}
+
+/** Ensures unique basenames so multi-file torrents do not overwrite each other. */
+function dedupeFileNames(names: string[]): string[] {
+  const seen = new Map<string, number>();
+  const outputs = new Set<string>();
+  return names.map((name) => {
+    const count = seen.get(name) ?? 0;
+    seen.set(name, count + 1);
+    if (count === 0 && !outputs.has(name)) {
+      outputs.add(name);
+      return name;
+    }
+    const dot = name.lastIndexOf('.');
+    let candidate: string;
+    let suffix = count + 1;
+    while (true) {
+      if (dot > 0) {
+        candidate = `${name.slice(0, dot)}_${suffix}${name.slice(dot)}`;
+      } else {
+        candidate = `${name}_${suffix}`;
+      }
+      if (!outputs.has(candidate)) {
+        outputs.add(candidate);
+        break;
+      }
+      suffix++;
+    }
+    return candidate;
+  });
+}
+
+/**
+ * Prefers AllDebrid torrent file names from the API, optional single-file
+ * addon filename, then URL basename. Deduplicates collisions.
+ */
+function localNamesForLinks(
+  links: string[],
+  fileMeta: { name: string; size?: number }[] | undefined,
+  addonFilename: string | undefined
+): string[] {
+  const raw = links.map((link, i) => {
+    if (links.length === 1 && addonFilename?.trim()) {
+      const sanitized = sanitizePathSegment(addonFilename);
+      // Preserve archive extension from fileMeta if addonFilename lacks it
+      if (fileMeta?.[0]?.name) {
+        const metaName = fileMeta[0].name;
+        const archiveExtMatch = metaName.match(/\.(rar|part\d*|r\d+)$/i);
+        if (archiveExtMatch && !sanitized.match(/\.(rar|part\d*|r\d+)$/i)) {
+          return sanitized + archiveExtMatch[0];
+        }
+      }
+      return sanitized;
+    }
+    if (fileMeta?.[i]?.name) {
+      return sanitizePathSegment(fileMeta[i].name);
+    }
+    return urlBasename(link);
+  });
+  return dedupeFileNames(raw);
+}
+
 /**
  * Polls until the torrent is ready or timeout/cancel. Clears interval on resolve/reject.
  */
@@ -248,6 +319,7 @@ export class AllDebridService extends BaseService {
     console.log('torrentInfo', torrentInfo, 'options', options);
 
     const links = torrentInfo.links;
+    const metaFiles = torrentInfo.files;
     let resolvedLinks: string[] = [];
     createNotification({
       id: Math.random().toString(36).substring(7),
@@ -265,42 +337,40 @@ export class AllDebridService extends BaseService {
     }
     const safePath =
       getDownloadPath() + '/' + sanitizePathSegment(result.name) + '/';
+    const localNames = localNamesForLinks(
+      resolvedLinks,
+      metaFiles,
+      result.filename
+    );
     const { flush } = listenUntilDownloadReady();
-    console.log('resolvedLinks', resolvedLinks);
+    console.log('resolvedLinks count:', resolvedLinks.length, 'localNames', localNames);
     const downloadID = await window.electronAPI.ddl.download(
-      resolvedLinks.map((link) => {
-        const filename = decodeURIComponent(
-          link.split('/').pop()?.split('?')[0] ?? 'download'
-        );
-        return {
-          link,
-          path: safePath + filename,
-          headers: { 'OGI-Parallel-Limit': '1' },
-        };
-      })
+      resolvedLinks.map((link, i) => ({
+        link,
+        path: safePath + localNames[i],
+        headers: { 'OGI-Parallel-Limit': '1' },
+      }))
     );
     const updatedState = flush();
     if (downloadID === null) {
       markError();
       throw new Error('Download failed to start.');
     }
+    const fileEntries = resolvedLinks.map((link, i) => ({
+      name: localNames[i],
+      downloadURL: link,
+      headers: { 'OGI-Parallel-Limit': '1' },
+    }));
+    const downloadPathForItem =
+      resolvedLinks.length === 1 ? safePath + localNames[0] : safePath;
     updateDownloadStatus(tempId, {
       id: downloadID,
       status: 'downloading',
       usedDebridService: 'alldebrid',
       appID: appID,
-      downloadPath: safePath,
+      downloadPath: downloadPathForItem,
       queuePosition: updatedState[downloadID]?.queuePosition,
-      files: resolvedLinks.map((link) => {
-        const name = decodeURIComponent(
-          link.split('/').pop()?.split('?')[0] ?? 'download'
-        );
-        return {
-          name,
-          downloadURL: link,
-          headers: { 'OGI-Parallel-Limit': '1' },
-        };
-      }),
+      files: fileEntries,
     });
   }
 }

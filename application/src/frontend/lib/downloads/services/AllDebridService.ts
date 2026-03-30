@@ -26,23 +26,43 @@ function sanitizePathSegment(segment: string | undefined | null): string {
 }
 
 function urlBasename(link: string): string {
-  return sanitizePathSegment(
-    decodeURIComponent(link.split('/').pop()?.split('?')[0] ?? 'download')
-  );
+  const raw = link.split('/').pop()?.split('?')[0] ?? 'download';
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(raw);
+  } catch {
+    decoded = raw;
+  }
+  return sanitizePathSegment(decoded);
 }
 
 /** Ensures unique basenames so multi-file torrents do not overwrite each other. */
 function dedupeFileNames(names: string[]): string[] {
   const seen = new Map<string, number>();
+  const outputs = new Set<string>();
   return names.map((name) => {
     const count = seen.get(name) ?? 0;
     seen.set(name, count + 1);
-    if (count === 0) return name;
-    const dot = name.lastIndexOf('.');
-    if (dot > 0) {
-      return `${name.slice(0, dot)}_${count + 1}${name.slice(dot)}`;
+    if (count === 0 && !outputs.has(name)) {
+      outputs.add(name);
+      return name;
     }
-    return `${name}_${count + 1}`;
+    const dot = name.lastIndexOf('.');
+    let candidate: string;
+    let suffix = count + 1;
+    while (true) {
+      if (dot > 0) {
+        candidate = `${name.slice(0, dot)}_${suffix}${name.slice(dot)}`;
+      } else {
+        candidate = `${name}_${suffix}`;
+      }
+      if (!outputs.has(candidate)) {
+        outputs.add(candidate);
+        break;
+      }
+      suffix++;
+    }
+    return candidate;
   });
 }
 
@@ -57,7 +77,16 @@ function localNamesForLinks(
 ): string[] {
   const raw = links.map((link, i) => {
     if (links.length === 1 && addonFilename?.trim()) {
-      return sanitizePathSegment(addonFilename);
+      const sanitized = sanitizePathSegment(addonFilename);
+      // Preserve archive extension from fileMeta if addonFilename lacks it
+      if (fileMeta?.[0]?.name) {
+        const metaName = fileMeta[0].name;
+        const archiveExtMatch = metaName.match(/\.(rar|part\d*|r\d+)$/i);
+        if (archiveExtMatch && !sanitized.match(/\.(rar|part\d*|r\d+)$/i)) {
+          return sanitized + archiveExtMatch[0];
+        }
+      }
+      return sanitized;
     }
     if (fileMeta?.[i]?.name) {
       return sanitizePathSegment(fileMeta[i].name);
@@ -314,7 +343,7 @@ export class AllDebridService extends BaseService {
       result.filename
     );
     const { flush } = listenUntilDownloadReady();
-    console.log('resolvedLinks', resolvedLinks, 'localNames', localNames);
+    console.log('resolvedLinks count:', resolvedLinks.length, 'localNames', localNames);
     const downloadID = await window.electronAPI.ddl.download(
       resolvedLinks.map((link, i) => ({
         link,

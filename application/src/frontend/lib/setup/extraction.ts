@@ -1,3 +1,30 @@
+import { basename } from '../core/fs';
+
+/**
+ * Resolves the path to a RAR archive for debrid DDL flows. Handles a direct
+ * file path, or a download directory (multi-file) by scanning the folder.
+ */
+export async function resolveRarArchivePath(
+  downloadPath: string,
+  filesMeta?: { name: string }[]
+): Promise<string | null> {
+  const trimmed = downloadPath.replace(/[\/\\]+$/, '');
+  const base = basename(trimmed);
+  if (/\.rar$/i.test(base)) {
+    return trimmed;
+  }
+  try {
+    const list = await window.electronAPI.fs.getFilesInDir(trimmed);
+    const rar = list.find((f) => /\.rar$/i.test(f));
+    if (rar) return trimmed + '/' + rar;
+  } catch {
+    // not a directory or unreadable
+  }
+  const fromMeta = filesMeta?.find((f) => /\.rar$/i.test(f.name));
+  if (fromMeta) return trimmed + '/' + fromMeta.name;
+  return null;
+}
+
 export async function drillDownSingleDirectories(
   startDir: string,
   maxDepth: number = 10

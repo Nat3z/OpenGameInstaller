@@ -10,6 +10,7 @@
   import {
     unrarAndReturnOutputDir,
     unzipAndReturnOutputDir,
+    resolveRarArchivePath,
   } from '../lib/setup/extraction';
   import { saveFailedSetup } from '../lib/recovery/failedSetups';
   import { runSetupApp, runSetupAppUpdate } from '../lib/setup/setup';
@@ -145,8 +146,18 @@
       });
     }
 
-    // Handle RealDebrid extraction for DDL (same RAR flow)
-    if (!isTorrent && downloadedItem.usedDebridService === 'realdebrid') {
+    // Real-Debrid / AllDebrid: extract RAR when present (skip if DDL was a non-RAR file)
+    const rarArchivePath =
+      !isTorrent &&
+      (downloadedItem.usedDebridService === 'realdebrid' ||
+        downloadedItem.usedDebridService === 'alldebrid')
+        ? await resolveRarArchivePath(
+            downloadedItem.downloadPath,
+            downloadedItem.files
+          )
+        : null;
+
+    if (rarArchivePath) {
       // Initialize setup logs for this download
       setupLogs.update((logs) => ({
         ...logs,
@@ -164,10 +175,9 @@
 
       const attemptUnrar = async () => {
         try {
-          const rarFilePath = downloadedItem.downloadPath;
-          const outputBase = dirname(downloadedItem.downloadPath);
+          const outputBase = dirname(rarArchivePath);
           const extractedDir = await unrarAndReturnOutputDir({
-            rarFilePath,
+            rarFilePath: rarArchivePath,
             outputBaseDir: outputBase,
             downloadId: downloadedItem.id,
           });

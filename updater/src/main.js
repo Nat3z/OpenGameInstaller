@@ -71,6 +71,95 @@ const HTTP_RANGE_AGENTS = {
   }),
 };
 
+function parseReleaseVersion(tagName) {
+  if (typeof tagName !== 'string') {
+    return null;
+  }
+
+  const match = tagName
+    .trim()
+    .replace(/^v/i, '')
+    .match(
+      /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+[0-9A-Za-z.-]+)?$/
+    );
+  if (!match) {
+    return null;
+  }
+
+  return {
+    major: Number.parseInt(match[1], 10),
+    minor: Number.parseInt(match[2], 10),
+    patch: Number.parseInt(match[3], 10),
+    prerelease: match[4] ? match[4].split('.') : [],
+  };
+}
+
+function comparePrereleaseIdentifier(a, b) {
+  const aIsNumeric = /^\d+$/.test(a);
+  const bIsNumeric = /^\d+$/.test(b);
+
+  if (aIsNumeric && bIsNumeric) {
+    const aNumber = Number.parseInt(a, 10);
+    const bNumber = Number.parseInt(b, 10);
+    if (aNumber > bNumber) return 1;
+    if (aNumber < bNumber) return -1;
+    return 0;
+  }
+
+  if (aIsNumeric) return -1;
+  if (bIsNumeric) return 1;
+  if (a > b) return 1;
+  if (a < b) return -1;
+  return 0;
+}
+
+function compareParsedReleaseVersion(a, b) {
+  if (a.major !== b.major) return a.major > b.major ? 1 : -1;
+  if (a.minor !== b.minor) return a.minor > b.minor ? 1 : -1;
+  if (a.patch !== b.patch) return a.patch > b.patch ? 1 : -1;
+
+  const aHasPrerelease = a.prerelease.length > 0;
+  const bHasPrerelease = b.prerelease.length > 0;
+  if (!aHasPrerelease && !bHasPrerelease) return 0;
+  if (!aHasPrerelease) return 1;
+  if (!bHasPrerelease) return -1;
+
+  const maxLength = Math.max(a.prerelease.length, b.prerelease.length);
+  for (let i = 0; i < maxLength; i++) {
+    const aIdentifier = a.prerelease[i];
+    const bIdentifier = b.prerelease[i];
+    if (aIdentifier === undefined) return -1;
+    if (bIdentifier === undefined) return 1;
+
+    const identifierOrder = comparePrereleaseIdentifier(
+      aIdentifier,
+      bIdentifier
+    );
+    if (identifierOrder !== 0) {
+      return identifierOrder;
+    }
+  }
+
+  return 0;
+}
+
+function compareReleaseOrder(a, b) {
+  const parsedA = parseReleaseVersion(a?.tag_name);
+  const parsedB = parseReleaseVersion(b?.tag_name);
+
+  if (parsedA && parsedB) {
+    const semanticOrder = compareParsedReleaseVersion(parsedB, parsedA);
+    if (semanticOrder !== 0) {
+      return semanticOrder;
+    }
+  }
+
+  return (
+    new Date(b?.published_at || b?.created_at || 0).getTime() -
+    new Date(a?.published_at || a?.created_at || 0).getTime()
+  );
+}
+
 function sendUpdaterStatus(text, progress, max, subtext) {
   if (!mainWindow || mainWindow.isDestroyed()) {
     return;
@@ -218,11 +307,7 @@ async function createWindow() {
     mainWindow.webContents.send('text', 'Checking for Updates');
     const releases = response.data
       .filter((rel) => usingBleedingEdge || !rel.prerelease)
-      .sort(
-        (a, b) =>
-          new Date(b.published_at || b.created_at || 0).getTime() -
-          new Date(a.published_at || a.created_at || 0).getTime()
-      );
+      .sort(compareReleaseOrder);
     const localIndex = releases.findIndex(
       (rel) => rel.tag_name === localVersion
     );

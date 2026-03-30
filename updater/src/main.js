@@ -59,6 +59,7 @@ const PATCH_DOWNLOAD_PROGRESS_INTERVAL_MS = 100;
 const HTTP_RETRY_ATTEMPTS = 4;
 const HTTP_RETRY_BASE_DELAY_MS = 1500;
 const HTTP_REQUEST_TIMEOUT_MS = 60000;
+const PRESERVED_UPDATE_ENTRIES = new Set(['artifacts', 'latest.log', 'logs']);
 const HTTP_RANGE_AGENTS = {
   http: new http.Agent({
     keepAlive: true,
@@ -70,11 +71,110 @@ const HTTP_RANGE_AGENTS = {
   }),
 };
 
+function parseReleaseVersion(tagName) {
+  if (typeof tagName !== 'string') {
+    return null;
+  }
+
+  const match = tagName
+    .trim()
+    .replace(/^v/i, '')
+    .match(
+      /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+[0-9A-Za-z.-]+)?$/
+    );
+  if (!match) {
+    return null;
+  }
+
+  return {
+    major: Number.parseInt(match[1], 10),
+    minor: Number.parseInt(match[2], 10),
+    patch: Number.parseInt(match[3], 10),
+    prerelease: match[4] ? match[4].split('.') : [],
+  };
+}
+
+function comparePrereleaseIdentifier(a, b) {
+  const aIsNumeric = /^\d+$/.test(a);
+  const bIsNumeric = /^\d+$/.test(b);
+
+  if (aIsNumeric && bIsNumeric) {
+    const aNumber = Number.parseInt(a, 10);
+    const bNumber = Number.parseInt(b, 10);
+    if (aNumber > bNumber) return 1;
+    if (aNumber < bNumber) return -1;
+    return 0;
+  }
+
+  if (aIsNumeric) return -1;
+  if (bIsNumeric) return 1;
+  if (a > b) return 1;
+  if (a < b) return -1;
+  return 0;
+}
+
+function compareParsedReleaseVersion(a, b) {
+  if (a.major !== b.major) return a.major > b.major ? 1 : -1;
+  if (a.minor !== b.minor) return a.minor > b.minor ? 1 : -1;
+  if (a.patch !== b.patch) return a.patch > b.patch ? 1 : -1;
+
+  const aHasPrerelease = a.prerelease.length > 0;
+  const bHasPrerelease = b.prerelease.length > 0;
+  if (!aHasPrerelease && !bHasPrerelease) return 0;
+  if (!aHasPrerelease) return 1;
+  if (!bHasPrerelease) return -1;
+
+  const maxLength = Math.max(a.prerelease.length, b.prerelease.length);
+  for (let i = 0; i < maxLength; i++) {
+    const aIdentifier = a.prerelease[i];
+    const bIdentifier = b.prerelease[i];
+    if (aIdentifier === undefined) return -1;
+    if (bIdentifier === undefined) return 1;
+
+    const identifierOrder = comparePrereleaseIdentifier(
+      aIdentifier,
+      bIdentifier
+    );
+    if (identifierOrder !== 0) {
+      return identifierOrder;
+    }
+  }
+
+  return 0;
+}
+
+function compareReleaseOrder(a, b) {
+  const parsedA = parseReleaseVersion(a?.tag_name);
+  const parsedB = parseReleaseVersion(b?.tag_name);
+
+  if (parsedA && parsedB) {
+    const semanticOrder = compareParsedReleaseVersion(parsedB, parsedA);
+    if (semanticOrder !== 0) {
+      return semanticOrder;
+    }
+  }
+
+  return (
+    new Date(b?.published_at || b?.created_at || 0).getTime() -
+    new Date(a?.published_at || a?.created_at || 0).getTime()
+  );
+}
+
 function sendUpdaterStatus(text, progress, max, subtext) {
   if (!mainWindow || mainWindow.isDestroyed()) {
     return;
   }
   mainWindow.webContents.send('text', text, progress, max, subtext);
+}
+
+function prepareUpdateDestination(destRoot) {
+  fs.mkdirSync(destRoot, { recursive: true });
+  for (const entry of fs.readdirSync(destRoot)) {
+    if (PRESERVED_UPDATE_ENTRIES.has(entry)) {
+      continue;
+    }
+    fs.rmSync(path.join(destRoot, entry), { recursive: true, force: true });
+  }
 }
 
 function nextUiTick() {
@@ -206,12 +306,8 @@ async function createWindow() {
     );
     mainWindow.webContents.send('text', 'Checking for Updates');
     const releases = response.data
-      .filter((rel) => (usingBleedingEdge ? rel.prerelease : !rel.prerelease))
-      .sort(
-        (a, b) =>
-          new Date(b.published_at || b.created_at || 0).getTime() -
-          new Date(a.published_at || a.created_at || 0).getTime()
-      );
+      .filter((rel) => usingBleedingEdge || !rel.prerelease)
+      .sort(compareReleaseOrder);
     const localIndex = releases.findIndex(
       (rel) => rel.tag_name === localVersion
     );
@@ -517,7 +613,7 @@ async function downloadToFile(url, destination, status) {
 function copyCacheToUpdate(cacheDir) {
   const files = fs.readdirSync(cacheDir);
   const destRoot = path.join(__dirname, 'update');
-  fs.mkdirSync(destRoot, { recursive: true });
+  prepareUpdateDestination(destRoot);
   for (const file of files) {
     const lowerName = file.toLowerCase();
     if (lowerName.endsWith('.blockmap')) {
@@ -1330,6 +1426,24 @@ async function launchApp(online) {
     }, 200);
   }
 }
+
+function resolveZipEntryPath(unzipToDir, entryName) {
+  const root = path.resolve(unzipToDir);
+  const normalizedEntryName = entryName.replace(/\//g, path.sep);
+  const fullPath = path.resolve(root, normalizedEntryName);
+  const relativePath = path.relative(root, fullPath);
+
+  if (
+    relativePath.startsWith('..') ||
+    path.isAbsolute(relativePath) ||
+    relativePath === ''
+  ) {
+    throw new Error(`Unsafe zip entry path: ${entryName}`);
+  }
+
+  return fullPath;
+}
+
 app.on('ready', createWindow);
 // taken from https://stackoverflow.com/questions/63932027/how-to-unzip-to-a-folder-using-yauzl
 const unzip = (zipPath, unzipToDir) => {
@@ -1363,9 +1477,7 @@ const unzip = (zipPath, unzipToDir) => {
         zipFile.on('entry', (entry) => {
           try {
             sendUpdaterStatus('Extracting Update', filesProcessed, totalFiles);
-            // Normalize path separators for Windows
-            const normalizedFileName = entry.fileName.replace(/\//g, path.sep);
-            const fullPath = path.join(unzipToDir, normalizedFileName);
+            const fullPath = resolveZipEntryPath(unzipToDir, entry.fileName);
 
             // Ensure the directory exists
             const dir = path.dirname(fullPath);

@@ -12,10 +12,11 @@ import {
   copyFileSync,
   writeFileSync,
 } from 'original-fs';
-import { basename, join } from 'path';
+import { basename, dirname, join } from 'path';
 import { setTimeout as setTimeoutPromise } from 'timers/promises';
 import { spawn, exec } from 'child_process';
 import * as path from 'path';
+import { __dirname as persistentDataDir } from './manager/manager.paths.js';
 
 function isDev() {
   return !app.isPackaged;
@@ -35,6 +36,10 @@ let __dirname = isDev()
 if (process.platform === 'linux') {
   // it's most likely sandboxed, so just use ./
   __dirname = './';
+}
+
+function getBackupSourceRoot() {
+  return process.platform === 'linux' ? persistentDataDir : __dirname;
 }
 
 /**
@@ -86,6 +91,7 @@ async function* copyDirectoryAsync(
   if (!stat.isDirectory()) {
     // It's a file, copy it
     try {
+      mkdirSync(dirname(destination), { recursive: true });
       copyFileSync(source, destination);
       yield { file: source, success: true };
     } catch (error: any) {
@@ -131,25 +137,28 @@ async function backupFilesAsync(
   updateStatus: (text: string, subtext?: string) => void,
   updateProgress: (current: number, total: number, speed: string) => void
 ): Promise<{ success: boolean; needsAddonReinstall: boolean }> {
+  const sourceRoot = getBackupSourceRoot();
+
   // First, count total files to backup
   let totalFiles = 0;
   for (const file of filesToBackup) {
-    const source = join(__dirname, file);
+    const source = join(sourceRoot, file);
     totalFiles += countFilesToBackup(source);
   }
 
-  console.log(`[updater] Total files to backup: ${totalFiles}`);
+  console.log(
+    `[updater] Total files to backup: ${totalFiles} from ${sourceRoot}`
+  );
 
-  if (!existsSync(tempFolder)) {
-    mkdirSync(tempFolder, { recursive: true });
-  }
+  rmSync(tempFolder, { recursive: true, force: true });
+  mkdirSync(tempFolder, { recursive: true });
 
   let copiedFiles = 0;
   let failedFiles: string[] = [];
   let needsAddonReinstall = false;
 
   for (const file of filesToBackup) {
-    const source = join(__dirname, file);
+    const source = join(sourceRoot, file);
     const destination = join(tempFolder, file);
 
     if (!existsSync(source)) {
@@ -198,6 +207,93 @@ async function backupFilesAsync(
     success: totalFiles === 0 || failedFiles.length <= totalFiles * 0.1,
     needsAddonReinstall,
   }; // Allow up to 10% failure (inclusive), handle zero files
+}
+
+async function downloadFileWithProgress(
+  url: string,
+  destination: string,
+  updateStatus: (text: string, subtext?: string) => void,
+  updateProgress: (current: number, total: number, speed: string) => void
+) {
+  const response = await axios.get(url, {
+    responseType: 'stream',
+    timeout: 60000,
+  });
+  const writer = createWriteStream(destination);
+  const startTime = Date.now();
+  const fileSize = Number.parseInt(
+    response.headers['content-length'] || '0',
+    10
+  );
+
+  response.data.on('data', () => {
+    const elapsedTime = Math.max((Date.now() - startTime) / 1000, 1);
+    const downloadSpeed = writer.bytesWritten / elapsedTime;
+    const formattedSpeed = `${correctParsingSize(downloadSpeed)}/s`;
+    updateStatus('Downloading Latest Setup', formattedSpeed);
+    updateProgress(writer.bytesWritten, fileSize, formattedSpeed);
+  });
+
+  await new Promise<void>((resolve, reject) => {
+    let settled = false;
+    const finish = (error?: Error) => {
+      if (settled) return;
+      settled = true;
+      if (error) {
+        writer.destroy();
+        response.data.destroy(error);
+        rmSync(destination, { force: true });
+        reject(error);
+        return;
+      }
+      resolve();
+    };
+
+    writer.on('finish', () => finish());
+    writer.on('error', (error) => finish(error));
+    response.data.on('error', (error: Error) => finish(error));
+    response.data.pipe(writer);
+  });
+}
+
+async function backupStateForSetupReplacement(
+  updateStatus: (text: string, subtext?: string) => void,
+  updateProgress: (current: number, total: number, speed: string) => void
+) {
+  const tempFolder = join(app.getPath('temp'), 'ogi-update-backup');
+  updateStatus('Backing up Files', 'Calculating...');
+
+  try {
+    const backupResult = await backupFilesAsync(
+      tempFolder,
+      updateStatus,
+      updateProgress
+    );
+
+    if (backupResult.needsAddonReinstall) {
+      try {
+        writeFileSync(
+          join(tempFolder, 'needs-addon-reinstall.flag'),
+          new Date().toISOString()
+        );
+        console.log('[updater] Created addon reinstall flag');
+      } catch (flagError: any) {
+        console.warn(
+          '[updater] Failed to create reinstall flag:',
+          flagError.message
+        );
+      }
+    }
+
+    if (!backupResult.success) {
+      console.warn(
+        '[updater] Backup completed with some failures, but continuing...'
+      );
+    }
+  } catch (backupError: any) {
+    console.error('[updater] Backup failed:', backupError.message);
+    // Continue anyway - better to update with potential data loss than to leave broken
+  }
 }
 
 /**
@@ -394,182 +490,87 @@ export function checkIfInstallerUpdateAvailable(callbacks?: UpdaterCallbacks) {
         await killUpdaterProcesses();
 
         updateStatus('Downloading latest Setup...');
-        // download the latest setup
-        const response = await axios.get(latestSetupVersionUrl, {
-          responseType: 'stream',
-        });
         if (process.platform === 'win32') {
           const directory = app.getPath('temp') + '\\ogi-setup.exe';
-          const writer = createWriteStream(directory);
-          response.data.pipe(writer);
-          const startTime = Date.now();
-          const fileSize = parseInt(response.headers['content-length'] || '0');
-          response.data.on('data', () => {
-            const elapsedTime = (Date.now() - startTime) / 1000; // in seconds
-            const downloadSpeed = response.data.socket.bytesRead / elapsedTime;
-            updateStatus(
-              'Downloading Latest Setup',
-              correctParsingSize(downloadSpeed) + '/s'
-            );
-            updateProgress(
-              writer.bytesWritten,
-              fileSize,
-              correctParsingSize(downloadSpeed) + '/s'
-            );
-          });
-          writer.on('finish', async () => {
-            console.log(`[updater] Setup downloaded successfully.`);
-            console.log(`[updater] Backing up files in update.`);
-            writer.close();
+          await downloadFileWithProgress(
+            latestSetupVersionUrl,
+            directory,
+            updateStatus,
+            updateProgress
+          );
+          console.log(`[updater] Setup downloaded successfully.`);
+          console.log(`[updater] Backing up files in update.`);
+          await backupStateForSetupReplacement(updateStatus, updateProgress);
 
-            // Backup files asynchronously with progress
-            const tempFolder = app.getPath('temp') + '/ogi-update-backup';
+          updateStatus('Starting Setup');
+
+          setTimeout(() => {
             try {
-              updateStatus('Backing up Files', 'Calculating...');
-              const backupResult = await backupFilesAsync(
-                tempFolder,
-                updateStatus,
-                updateProgress
-              );
-
-              if (backupResult.needsAddonReinstall) {
-                // Create a flag file to trigger addon reinstall on next launch
-                try {
-                  const flagPath = join(
-                    tempFolder,
-                    'needs-addon-reinstall.flag'
-                  );
-                  writeFileSync(flagPath, new Date().toISOString());
-                  console.log('[updater] Created addon reinstall flag');
-                } catch (flagError: any) {
-                  console.warn(
-                    '[updater] Failed to create reinstall flag:',
-                    flagError.message
-                  );
-                }
-              }
-
-              if (!backupResult.success) {
-                console.warn(
-                  '[updater] Backup completed with some failures, but continuing...'
-                );
-              }
-            } catch (backupError: any) {
-              console.error('[updater] Backup failed:', backupError.message);
-              // Continue anyway - better to update with potential data loss than to leave broken
-            }
-
-            updateStatus('Starting Setup');
-
-            setTimeout(() => {
               spawn(directory, {
                 detached: true,
                 stdio: 'ignore',
               }).unref();
               process.exit(0);
-            }, 500);
-          });
+            } catch (spawnError: any) {
+              console.error(
+                '[updater] Failed to launch setup:',
+                spawnError.message
+              );
+              updateStatus('Update Failed', 'Please try again later');
+              process.exit(1);
+            }
+          }, 500);
         } else if (process.platform === 'linux') {
           await setTimeoutPromise(3000);
-          const writer = createWriteStream('../temp-setup-OGI.AppImage');
-          response.data.pipe(writer);
-          const startTime = Date.now();
-          const fileSize = parseInt(response.headers['content-length'] || '0');
-          response.data.on('data', () => {
-            const elapsedTime = (Date.now() - startTime) / 1000; // in seconds
-            const downloadSpeed = response.data.socket.bytesRead / elapsedTime;
-            updateStatus(
-              'Downloading Latest Setup',
-              correctParsingSize(downloadSpeed) + '/s'
-            );
-            updateProgress(
-              writer.bytesWritten,
-              fileSize,
-              correctParsingSize(downloadSpeed) + '/s'
-            );
-          });
-          writer.on('finish', async () => {
-            console.log(`[updater] Setup downloaded successfully.`);
-            console.log(`[updater] Backing up files in update.`);
-            writer.close();
+          await downloadFileWithProgress(
+            latestSetupVersionUrl,
+            '../temp-setup-OGI.AppImage',
+            updateStatus,
+            updateProgress
+          );
+          console.log(`[updater] Setup downloaded successfully.`);
+          console.log(`[updater] Backing up files in update.`);
+          await backupStateForSetupReplacement(updateStatus, updateProgress);
 
-            // Backup files asynchronously with progress
-            const tempFolder = app.getPath('temp') + '/ogi-update-backup';
+          updateStatus('Starting Setup');
+
+          setTimeout(async () => {
             try {
-              updateStatus('Backing up Files', 'Calculating...');
-              const backupResult = await backupFilesAsync(
-                tempFolder,
-                updateStatus,
-                updateProgress
+              // rename the temp-setup-OGI.AppImage to the OpenGameInstaller-Setup.AppImage
+              console.log(
+                `[updater] Renaming setup to OpenGameInstaller-Setup.AppImage`
+              );
+              rmSync('../OpenGameInstaller-Setup.AppImage', { force: true });
+              console.log(
+                `[updater] Moving over setup to OpenGameInstaller-Setup.AppImage`
+              );
+              copyFileSync(
+                '../temp-setup-OGI.AppImage',
+                '../OpenGameInstaller-Setup.AppImage'
+              );
+              rmSync('../temp-setup-OGI.AppImage', { force: true });
+              console.log(
+                `[updater] Copied setup to OpenGameInstaller-Setup.AppImage`
               );
 
-              if (backupResult.needsAddonReinstall) {
-                // Create a flag file to trigger addon reinstall on next launch
-                try {
-                  const flagPath = join(
-                    tempFolder,
-                    'needs-addon-reinstall.flag'
-                  );
-                  writeFileSync(flagPath, new Date().toISOString());
-                  console.log('[updater] Created addon reinstall flag');
-                } catch (flagError: any) {
-                  console.warn(
-                    '[updater] Failed to create reinstall flag:',
-                    flagError.message
-                  );
-                }
-              }
-
-              if (!backupResult.success) {
-                console.warn(
-                  '[updater] Backup completed with some failures, but continuing...'
-                );
-              }
-            } catch (backupError: any) {
-              console.error('[updater] Backup failed:', backupError.message);
-              // Continue anyway - better to update with potential data loss than to leave broken
-            }
-
-            updateStatus('Starting Setup');
-
-            setTimeout(async () => {
-              try {
-                // rename the temp-setup-OGI.AppImage to the OpenGameInstaller-Setup.AppImage
-                console.log(
-                  `[updater] Renaming setup to OpenGameInstaller-Setup.AppImage`
-                );
-                rmSync('../OpenGameInstaller-Setup.AppImage', { force: true });
-                console.log(
-                  `[updater] Moving over setup to OpenGameInstaller-Setup.AppImage`
-                );
-                copyFileSync(
-                  '../temp-setup-OGI.AppImage',
-                  '../OpenGameInstaller-Setup.AppImage'
-                );
-                rmSync('../temp-setup-OGI.AppImage', { force: true });
-                console.log(
-                  `[updater] Copied setup to OpenGameInstaller-Setup.AppImage`
-                );
-
-                // set item +x permissions
-                chmodSync('../OpenGameInstaller-Setup.AppImage', 0o755);
-              } catch (moveError: any) {
-                console.error(
-                  '[updater] Failed to move setup:',
-                  moveError.message
-                );
-                updateStatus('Update Failed', 'Please try again later');
-                await setTimeoutPromise(3000);
-                process.exit(1);
-              }
-              updateStatus(
-                'Shutting Down OpenGameInstaller',
-                'Please open OpenGameInstaller again'
+              // set item +x permissions
+              chmodSync('../OpenGameInstaller-Setup.AppImage', 0o755);
+            } catch (moveError: any) {
+              console.error(
+                '[updater] Failed to move setup:',
+                moveError.message
               );
+              updateStatus('Update Failed', 'Please try again later');
               await setTimeoutPromise(3000);
-              process.exit(0);
-            }, 500);
-          });
+              process.exit(1);
+            }
+            updateStatus(
+              'Shutting Down OpenGameInstaller',
+              'Please open OpenGameInstaller again'
+            );
+            await setTimeoutPromise(3000);
+            process.exit(0);
+          }, 500);
         }
       } else {
         console.log(`[updater] No new version available.`);

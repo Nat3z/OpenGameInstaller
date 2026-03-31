@@ -3,8 +3,6 @@
   import { fade } from 'svelte/transition';
 
   import { onMount, onDestroy } from 'svelte';
-  // @ts-ignore
-  import WineIcon from '../Icons/WineIcon.svelte';
   import { createNotification, oobeLog } from '../store';
 
   let stage = $state(0);
@@ -235,6 +233,69 @@
   }
 
   let completedSetup = false;
+  let currentOS = $state('');
+
+  type OOBETool = {
+    id: string;
+    shortLabel: string;
+    name: string;
+    purpose: string;
+    status: string;
+    icon: 'image' | 'text';
+    iconSrc?: string;
+  };
+
+  function getRequiredTools(osName: string): OOBETool[] {
+    const platformTools: OOBETool[] =
+      osName === 'win32'
+        ? [
+            {
+              id: '7zip',
+              shortLabel: '7z',
+              name: '7-Zip',
+              purpose: 'Extracts archived installers and repacks.',
+              status: 'Auto-install',
+              icon: 'text',
+            },
+          ]
+        : osName === 'linux'
+          ? [
+              {
+                id: 'steamtinkerlaunch',
+                shortLabel: 'stl',
+                name: 'SteamTinkerLaunch',
+                purpose: 'Handles Steam-side integration for legacy flows.',
+                status: 'Managed',
+                icon: 'text',
+              },
+            ]
+          : [];
+
+    return [
+      ...platformTools,
+      {
+        id: 'bun',
+        shortLabel: 'Bun',
+        name: 'Bun',
+        purpose: 'Runs addons and related setup scripts.',
+        status: 'Auto-install',
+        icon: 'image',
+        iconSrc: './bun.svg',
+      },
+      {
+        id: 'git',
+        shortLabel: 'Git',
+        name: 'Git',
+        purpose: 'Downloads and updates addon repositories.',
+        status: 'Auto-install',
+        icon: 'image',
+        iconSrc: './git.svg',
+      },
+    ];
+  }
+
+  const requiredTools = $derived(getRequiredTools(currentOS));
+
   async function finishSetup() {
     const customAddons = addons
       .split('\n')
@@ -317,6 +378,7 @@
 
     // Initialize previous log length
     previousLogLength = $oobeLog.logs.length;
+    currentOS = await window.electronAPI.app.getOS();
 
     if (window.electronAPI.fs.exists('./config/option/installed.json')) {
       const installed = JSON.parse(
@@ -344,7 +406,7 @@
 </script>
 
 <main
-  class="flex items-center flex-col justify-center w-full h-full p-8 bg-background-color fixed top-0 left-0 z-5"
+  class="flex items-center flex-col justify-center w-full h-full p-8 bg-background-color fixed top-0 left-0 z-5 overflow-y-auto overflow-x-visible"
   id="oobe"
 >
   {#if stage > 0}
@@ -375,9 +437,7 @@
       </div>
     </div>
   {:else if stage === 1}
-    <div
-      class="animate-fade-in-pop flex justify-start items-center h-full flex-col gap-6 p-10 w-full max-w-4xl"
-    >
+    <div class="animate-fade-in-pop oobe-tools-stage">
       <h1 class="text-3xl font-archivo font-semibold text-text-primary mt-2">
         Install Tools
       </h1>
@@ -386,99 +446,44 @@
         services.
       </h2>
       {#if !$oobeLog.isActive}
-        <div
-          class="w-full justify center items-center flex flex-col gap-4 mb-6"
-        >
-          {#await window.electronAPI.app.getOS() then result}
-            {#if result === 'win32'}
-              <div
-                class="flex justify-start p-4 gap-4 items-center flex-row w-full max-w-2xl h-20 bg-accent-lighter rounded-lg"
-              >
-                <div class="flex justify-center items-center w-16">
-                  <h4
-                    class="font-archivo font-extrabold text-accent-dark text-xl"
-                  >
-                    7z
-                  </h4>
+        <div class="oobe-tools-shell">
+          <div class="oobe-tools-table" role="table" aria-label="Required tools">
+            <div class="oobe-tool-row oobe-tool-row-header" role="row">
+              <span class="oobe-tool-header">Tool</span>
+              <span class="oobe-tool-header">Purpose</span>
+              <span class="oobe-tool-header oobe-tool-status-cell">Status</span>
+            </div>
+
+            {#each requiredTools as tool}
+              <div class="oobe-tool-row" role="row">
+                <div class="oobe-tool-name">
+                  <span class="oobe-tool-mark" aria-hidden="true">
+                    {#if tool.icon === 'image' && tool.iconSrc}
+                      <img src={tool.iconSrc} alt="" class="oobe-tool-icon" />
+                    {:else}
+                      <span class="oobe-tool-monogram">{tool.shortLabel}</span>
+                    {/if}
+                  </span>
+                  <span class="oobe-tool-label">{tool.name}</span>
                 </div>
-                <span class="flex flex-col justify-start items-start">
-                  <span class="font-open-sans font-semibold text-text-primary"
-                    >7zip</span
-                  >
-                  <span class="font-open-sans text-sm text-text-secondary"
-                    >Required for unzipping .rar file extensions</span
-                  >
-                </span>
+                <span class="oobe-tool-purpose">{tool.purpose}</span>
+                <span class="oobe-tool-status">{tool.status}</span>
               </div>
-            {:else if result === 'linux'}
-              <div
-                class="flex justify-start p-4 gap-4 items-center flex-row w-full max-w-2xl h-20 bg-accent-lighter rounded-lg"
-              >
-                <div class="flex justify-center items-center w-16">
-                  <h4
-                    class="font-archivo font-extrabold text-accent-dark text-lg"
-                  >
-                    stl
-                  </h4>
-                </div>
-                <span class="flex flex-col justify-start items-start">
-                  <span class="font-open-sans font-semibold text-text-primary"
-                    >Steamtinkerlaunch</span
-                  >
-                  <span class="font-open-sans text-sm text-text-secondary"
-                    >Required for adding games to Steam</span
-                  >
-                </span>
-              </div>
-              <div
-                class="flex justify-start p-4 gap-4 items-center flex-row w-full max-w-2xl h-20 bg-accent-lighter rounded-lg"
-              >
-                <div class="p-2 w-16 h-16 flex justify-center items-center">
-                  <WineIcon />
-                </div>
-                <span class="flex flex-col justify-start items-start">
-                  <span class="font-open-sans font-semibold text-text-primary"
-                    >Wine</span
-                  >
-                  <span class="font-open-sans text-sm text-text-secondary"
-                    >Required for launching games/installer.</span
-                  >
-                </span>
-              </div>
-            {/if}
-          {/await}
-          <div
-            class="flex justify-start p-4 gap-4 items-center flex-row w-full max-w-2xl h-20 bg-accent-lighter rounded-lg"
-          >
-            <img class="w-12 h-12" src="./bun.svg" alt="Bun" />
-            <span class="flex flex-col justify-start items-start">
-              <span class="font-open-sans font-semibold text-text-primary"
-                >Bun</span
-              >
-              <span class="font-open-sans text-sm text-text-secondary"
-                >Required for executing addons</span
-              >
-            </span>
+            {/each}
           </div>
-          <div
-            class="flex justify-start p-4 gap-4 items-center flex-row w-full max-w-2xl h-20 bg-accent-lighter rounded-lg"
-          >
-            <img class="w-12 h-12" src="./git.svg" alt="Git" />
-            <span class="flex flex-col justify-start items-start">
-              <span class="font-open-sans font-semibold text-text-primary"
-                >Git</span
-              >
-              <span class="font-open-sans text-sm text-text-secondary"
-                >Required for downloading addons</span
-              >
-            </span>
+
+          <div class="oobe-tools-footer">
+            <p class="oobe-tools-note">
+              Only core tooling is included here so the first-run setup stays
+              compact on smaller screens.
+            </p>
+            <button
+              onclick={downloadTools}
+              class="bg-accent hover:bg-accent-dark text-white disabled:text-white disabled:bg-yellow-500 font-open-sans font-semibold py-3 px-6 rounded-lg transition-colors duration-200"
+              >Install</button
+            >
           </div>
         </div>
-        <button
-          onclick={downloadTools}
-          class="bg-accent hover:bg-accent-dark text-white disabled:text-white disabled:bg-yellow-500 font-open-sans font-semibold py-3 px-6 rounded-lg transition-colors duration-200"
-          >Install</button
-        >
       {/if}
 
       <!-- OOBE Terminal Log Display -->
@@ -1081,6 +1086,88 @@
     @apply flex justify-start items-center h-full flex-col gap-4 p-6 w-full max-w-6xl;
   }
 
+  .oobe-tools-stage {
+    @apply flex justify-start items-center min-h-full flex-col gap-5 px-4 py-10 w-full max-w-5xl overflow-visible;
+  }
+
+  .oobe-tools-shell {
+    @apply w-full max-w-3xl flex flex-col gap-5;
+  }
+
+  .oobe-tools-table {
+    @apply w-full rounded-2xl border border-accent-light bg-surface overflow-x-auto;
+  }
+
+  .oobe-tool-row {
+    display: grid;
+    grid-template-columns: minmax(180px, 1.1fr) minmax(220px, 1.8fr) minmax(110px, auto);
+    gap: 1rem;
+    align-items: center;
+    padding: 0.95rem 1rem;
+    border-bottom: 1px solid var(--color-accent-light);
+  }
+
+  .oobe-tool-row:last-child {
+    border-bottom: none;
+  }
+
+  .oobe-tool-row-header {
+    background: color-mix(
+      in srgb,
+      var(--color-accent-lighter) 72%,
+      var(--color-surface) 28%
+    );
+    min-width: 620px;
+  }
+
+  .oobe-tool-header {
+    @apply text-[0.72rem] font-open-sans font-bold uppercase tracking-[0.18em] text-text-muted;
+  }
+
+  .oobe-tool-name {
+    @apply flex items-center gap-3 min-w-0;
+    min-width: 180px;
+  }
+
+  .oobe-tool-mark {
+    @apply flex items-center justify-center w-11 h-11 rounded-xl border border-accent-light bg-accent-lighter shrink-0;
+  }
+
+  .oobe-tool-icon {
+    @apply w-6 h-6;
+  }
+
+  .oobe-tool-monogram {
+    @apply font-archivo font-extrabold text-accent-dark text-sm uppercase;
+    letter-spacing: 0.08em;
+  }
+
+  .oobe-tool-label {
+    @apply font-open-sans font-semibold text-text-primary truncate;
+  }
+
+  .oobe-tool-purpose {
+    @apply font-open-sans text-sm text-text-secondary leading-snug;
+    min-width: 220px;
+  }
+
+  .oobe-tool-status-cell {
+    @apply text-right;
+  }
+
+  .oobe-tool-status {
+    @apply justify-self-end rounded-full border border-accent-light bg-accent-lighter px-3 py-1 text-xs font-open-sans font-semibold text-accent-dark whitespace-nowrap;
+  }
+
+  .oobe-tools-footer {
+    @apply flex items-center justify-between gap-4 flex-wrap;
+  }
+
+  .oobe-tools-note {
+    @apply font-open-sans text-sm text-text-muted;
+    max-width: 34rem;
+  }
+
   .oobe-community-header {
     @apply flex flex-col items-center text-center gap-2;
   }
@@ -1218,6 +1305,25 @@
   }
 
   @media (max-width: 720px) {
+    .oobe-tools-stage {
+      @apply px-2 py-8;
+    }
+
+    .oobe-tool-row {
+      grid-template-columns: minmax(150px, 1fr) minmax(180px, 1.35fr);
+      min-width: 0;
+    }
+
+    .oobe-tool-row-header {
+      min-width: 0;
+    }
+
+    .oobe-tool-status-cell,
+    .oobe-tool-status {
+      grid-column: 1 / -1;
+      justify-self: start;
+    }
+
     .oobe-community-toolbar {
       @apply flex-col items-start;
     }

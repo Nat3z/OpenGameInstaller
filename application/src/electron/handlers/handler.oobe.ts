@@ -7,67 +7,10 @@ import axios from 'axios';
 import { sendNotification, sendIPCMessage } from '../main.js';
 import { IS_NIXOS, STEAMTINKERLAUNCH_PATH } from '../startup.js';
 import os from 'os';
-import { spawn } from 'child_process';
 
 function sendOOBELog(content: string) {
   sendIPCMessage('oobe:log', content);
   console.log('[oobe]' + content);
-}
-
-function spawnAndHook(
-  options: {
-    stdout?: (data: string) => void;
-    stderr?: (data: string) => void;
-    onClose?: (code: number) => void;
-    onError?: (err: Error) => void;
-    cwd?: string;
-  },
-  command: Parameters<typeof spawn>[0],
-  args: Parameters<typeof spawn>[1]
-) {
-  const spawnOptions = options.cwd ? { cwd: options.cwd } : {};
-  sendOOBELog('running: ' + command + ' ' + args.join(' '));
-  const childProcess = spawn(command, args, spawnOptions);
-  let stdout = '';
-  let stderr = '';
-
-  if (childProcess.stdout) {
-    childProcess.stdout.on('data', (data: Buffer) => {
-      const dataStr = data.toString();
-      stdout += dataStr;
-      if (options.stdout) {
-        options.stdout(dataStr);
-      }
-    });
-  }
-
-  if (childProcess.stderr) {
-    childProcess.stderr.on('data', (data: Buffer) => {
-      const dataStr = data.toString();
-      stderr += dataStr;
-      if (options.stderr) {
-        options.stderr(dataStr);
-      }
-    });
-  }
-
-  if (options.onClose) {
-    childProcess.on('close', (code: number) => {
-      options.onClose?.(code);
-    });
-  }
-
-  if (options.onError) {
-    childProcess.on('error', (err: Error) => {
-      options.onError?.(err);
-    });
-  }
-
-  return {
-    process: childProcess,
-    stdout,
-    stderr,
-  };
 }
 
 export default function OOBEHandler() {
@@ -471,105 +414,6 @@ export default function OOBEHandler() {
       );
     }
 
-    // if on linux, check if flatpak is installed and wine is installed
-    if (process.platform === 'linux') {
-      const flatpakInstalled = await new Promise<boolean>((resolve, _) => {
-        exec('flatpak --version', (err, stdout, _) => {
-          if (err) {
-            resolve(false);
-          }
-          sendOOBELog(stdout);
-          resolve(true);
-        });
-      });
-      if (!flatpakInstalled) {
-        sendNotification({
-          message:
-            'Flatpak is not installed. Please install Wine through Flatpak for redistributables to work.',
-          id: Math.random().toString(36).substring(7),
-          type: 'error',
-        });
-        cleanlyDownloadedAll = false;
-      } else {
-        const wineInstalled = await new Promise<boolean>((resolve, _) => {
-          exec('flatpak run org.winehq.Wine --help', (err, stdout, _) => {
-            if (err) {
-              resolve(false);
-            }
-            sendOOBELog(stdout);
-            resolve(true);
-          });
-        });
-        if (!wineInstalled) {
-          // install wine through flatpak
-          const result = await new Promise<boolean>((resolve) =>
-            spawnAndHook(
-              {
-                stdout: (data) => {
-                  sendOOBELog(data);
-                },
-                stderr: (data) => {
-                  sendOOBELog(data);
-                },
-                onClose: (code) => {
-                  sendOOBELog('wine process exited with code ' + code);
-                  if (code !== 0) {
-                    resolve(false);
-                    return;
-                  }
-                  resolve(true);
-                },
-                onError: (err) => {
-                  sendOOBELog(`Error: ${err}`);
-                },
-                cwd: __dirname,
-              },
-              'flatpak',
-              [
-                'install',
-                '--system',
-                '-y',
-                'flathub',
-                'org.winehq.Wine/x86_64/stable-25.08',
-              ]
-            )
-          );
-          if (!result) {
-            sendNotification({
-              message: 'Failed to install wine through flatpak.',
-              id: Math.random().toString(36).substring(7),
-              type: 'error',
-            });
-            cleanlyDownloadedAll = false;
-          } else {
-            // run flatpak run org.winehq.Wine --help to see if it works
-            const wineInstalled = await new Promise<boolean>((resolve, _) => {
-              exec('flatpak run org.winehq.Wine --help', (err, stdout, _) => {
-                if (err) {
-                  resolve(false);
-                }
-                sendOOBELog(stdout);
-                resolve(true);
-              });
-            });
-            if (!wineInstalled) {
-              sendNotification({
-                message: 'Failed to install wine through flatpak.',
-                id: Math.random().toString(36).substring(7),
-                type: 'error',
-              });
-              cleanlyDownloadedAll = false;
-            } else {
-              sendNotification({
-                message: 'Successfully installed wine through flatpak.',
-                id: Math.random().toString(36).substring(7),
-                type: 'info',
-              });
-            }
-          }
-        }
-      }
-    }
     return [cleanlyDownloadedAll, requireRestart];
   });
 

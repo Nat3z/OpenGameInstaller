@@ -252,6 +252,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('app:remove-app', appid)
     ),
     getOS: wrap(() => ipcRenderer.invoke('app:get-os')),
+    isSteamDeck: wrap(() => ipcRenderer.invoke('app:is-steam-deck')),
     isOnline: wrap(() => ipcRenderer.invoke('app:is-online')),
     request: wrap(
       (

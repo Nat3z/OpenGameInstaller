@@ -234,13 +234,12 @@
 
   let completedSetup = false;
   let currentOS = $state('');
+  let isSteamDeck = $state(false);
 
   type OOBETool = {
-    id: string;
     shortLabel: string;
     name: string;
     purpose: string;
-    status: string;
     icon: 'image' | 'text';
     iconSrc?: string;
   };
@@ -250,22 +249,18 @@
       osName === 'win32'
         ? [
             {
-              id: '7zip',
               shortLabel: '7z',
               name: '7-Zip',
               purpose: 'Extracts archived installers and repacks.',
-              status: 'Auto-install',
               icon: 'text',
             },
           ]
         : osName === 'linux'
           ? [
               {
-                id: 'steamtinkerlaunch',
                 shortLabel: 'stl',
                 name: 'SteamTinkerLaunch',
                 purpose: 'Handles Steam-side integration for legacy flows.',
-                status: 'Managed',
                 icon: 'text',
               },
             ]
@@ -274,20 +269,16 @@
     return [
       ...platformTools,
       {
-        id: 'bun',
         shortLabel: 'Bun',
         name: 'Bun',
         purpose: 'Runs addons and related setup scripts.',
-        status: 'Auto-install',
         icon: 'image',
         iconSrc: './bun.svg',
       },
       {
-        id: 'git',
         shortLabel: 'Git',
         name: 'Git',
         purpose: 'Downloads and updates addon repositories.',
-        status: 'Auto-install',
         icon: 'image',
         iconSrc: './git.svg',
       },
@@ -379,6 +370,7 @@
     // Initialize previous log length
     previousLogLength = $oobeLog.logs.length;
     currentOS = await window.electronAPI.app.getOS();
+    isSteamDeck = await window.electronAPI.app.isSteamDeck();
 
     if (window.electronAPI.fs.exists('./config/option/installed.json')) {
       const installed = JSON.parse(
@@ -448,12 +440,6 @@
       {#if !$oobeLog.isActive}
         <div class="oobe-tools-shell">
           <div class="oobe-tools-table" role="table" aria-label="Required tools">
-            <div class="oobe-tool-row oobe-tool-row-header" role="row">
-              <span class="oobe-tool-header">Tool</span>
-              <span class="oobe-tool-header">Purpose</span>
-              <span class="oobe-tool-header oobe-tool-status-cell">Status</span>
-            </div>
-
             {#each requiredTools as tool}
               <div class="oobe-tool-row" role="row">
                 <div class="oobe-tool-name">
@@ -467,16 +453,19 @@
                   <span class="oobe-tool-label">{tool.name}</span>
                 </div>
                 <span class="oobe-tool-purpose">{tool.purpose}</span>
-                <span class="oobe-tool-status">{tool.status}</span>
               </div>
             {/each}
           </div>
 
           <div class="oobe-tools-footer">
-            <p class="oobe-tools-note">
-              Only core tooling is included here so the first-run setup stays
-              compact on smaller screens.
-            </p>
+            {#if currentOS === 'linux' && !isSteamDeck}
+              <p class="oobe-tools-note">
+                Install <code>unrar-nonfree</code> and <code>unzip</code> with
+                your package manager. These are CLI utilities, and
+                OpenGameInstaller will not check whether they are already
+                installed.
+              </p>
+            {/if}
             <button
               onclick={downloadTools}
               class="bg-accent hover:bg-accent-dark text-white disabled:text-white disabled:bg-yellow-500 font-open-sans font-semibold py-3 px-6 rounded-lg transition-colors duration-200"
@@ -1100,28 +1089,15 @@
 
   .oobe-tool-row {
     display: grid;
-    grid-template-columns: minmax(180px, 1.1fr) minmax(220px, 1.8fr) minmax(110px, auto);
+    grid-template-columns: minmax(180px, 1.1fr) minmax(220px, 1.8fr);
     gap: 1rem;
     align-items: center;
     padding: 0.95rem 1rem;
     border-bottom: 1px solid var(--color-accent-light);
   }
 
-  .oobe-tool-row:last-child {
+  .oobe-tools-table .oobe-tool-row:last-child {
     border-bottom: none;
-  }
-
-  .oobe-tool-row-header {
-    background: color-mix(
-      in srgb,
-      var(--color-accent-lighter) 72%,
-      var(--color-surface) 28%
-    );
-    min-width: 620px;
-  }
-
-  .oobe-tool-header {
-    @apply text-[0.72rem] font-open-sans font-bold uppercase tracking-[0.18em] text-text-muted;
   }
 
   .oobe-tool-name {
@@ -1149,14 +1125,6 @@
   .oobe-tool-purpose {
     @apply font-open-sans text-sm text-text-secondary leading-snug;
     min-width: 220px;
-  }
-
-  .oobe-tool-status-cell {
-    @apply text-right;
-  }
-
-  .oobe-tool-status {
-    @apply justify-self-end rounded-full border border-accent-light bg-accent-lighter px-3 py-1 text-xs font-open-sans font-semibold text-accent-dark whitespace-nowrap;
   }
 
   .oobe-tools-footer {
@@ -1312,16 +1280,6 @@
     .oobe-tool-row {
       grid-template-columns: minmax(150px, 1fr) minmax(180px, 1.35fr);
       min-width: 0;
-    }
-
-    .oobe-tool-row-header {
-      min-width: 0;
-    }
-
-    .oobe-tool-status-cell,
-    .oobe-tool-status {
-      grid-column: 1 / -1;
-      justify-self: start;
     }
 
     .oobe-community-toolbar {

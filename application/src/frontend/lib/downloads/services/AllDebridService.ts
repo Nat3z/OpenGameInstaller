@@ -343,7 +343,12 @@ export class AllDebridService extends BaseService {
       result.filename
     );
     const { flush } = listenUntilDownloadReady();
-    console.log('resolvedLinks count:', resolvedLinks.length, 'localNames', localNames);
+    console.log(
+      'resolvedLinks count:',
+      resolvedLinks.length,
+      'localNames',
+      localNames
+    );
     const downloadID = await window.electronAPI.ddl.download(
       resolvedLinks.map((link, i) => ({
         link,

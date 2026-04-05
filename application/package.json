@@ -44,7 +44,8 @@
     "typecheck:svelte": "svelte-check --tsconfig ./tsconfig.svelte.json",
     "typecheck:electron": "tsc -p tsconfig.electron.json --noEmit",
     "typecheck:addonserver": "tsc -p tsconfig.addonserver.json --noEmit",
-    "rebuild": "npm rebuild"
+    "rebuild": "npm rebuild",
+    "test": "node --experimental-strip-types --test src/electron/lib/processes.test.ts"
   },
   "dependencies": {
     "@ctrl/qbittorrent": "^9.11.0",

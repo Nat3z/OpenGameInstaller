@@ -71,6 +71,52 @@ const HTTP_RANGE_AGENTS = {
   }),
 };
 
+function getRequestedOnlineState(argv = process.argv) {
+  const onlineArg = argv.find((arg) => arg.startsWith('--online='));
+  if (!onlineArg) {
+    return null;
+  }
+
+  const value = onlineArg.slice('--online='.length).trim().toLowerCase();
+  if (value === 'true') {
+    return true;
+  }
+  if (value === 'false') {
+    return false;
+  }
+
+  return null;
+}
+
+function getEffectiveOnlineState(requestedOnline = getRequestedOnlineState()) {
+  const networkOnline = net.isOnline();
+
+  if (!networkOnline) {
+    return {
+      requestedOnline,
+      networkOnline,
+      effectiveOnline: false,
+      reason: 'network-offline',
+    };
+  }
+
+  if (requestedOnline === false) {
+    return {
+      requestedOnline,
+      networkOnline,
+      effectiveOnline: false,
+      reason: 'cli-offline',
+    };
+  }
+
+  return {
+    requestedOnline,
+    networkOnline,
+    effectiveOnline: true,
+    reason: 'online',
+  };
+}
+
 function parseReleaseVersion(tagName) {
   if (typeof tagName !== 'string') {
     return null;
@@ -283,9 +329,13 @@ async function createWindow() {
     mainWindow.webContents.closeDevTools();
   });
 
-  // Check if device is offline - skip update check entirely if offline
-  if (!net.isOnline()) {
-    console.log('Device is offline, skipping update check');
+  const initialOnlineState = getEffectiveOnlineState();
+  if (!initialOnlineState.effectiveOnline) {
+    console.log(
+      initialOnlineState.reason === 'cli-offline'
+        ? 'Updater requested offline mode, skipping update check'
+        : 'Device is offline, skipping update check'
+    );
     mainWindow.webContents.send(
       'text',
       'Launching OpenGameInstaller',
@@ -366,18 +416,26 @@ async function createWindow() {
         'Launching OpenGameInstaller',
         'No Updates Found'
       );
-      // check if the user is offline
-      launchApp(net.isOnline());
+      launchApp(true);
     }
   } catch (e) {
     console.error(e);
+    const onlineState = getEffectiveOnlineState();
+    if (!onlineState.effectiveOnline) {
+      mainWindow.webContents.send(
+        'text',
+        'Launching OpenGameInstaller',
+        'Offline Mode'
+      );
+      launchApp(false);
+      return;
+    }
     mainWindow.webContents.send(
       'text',
       'Launching OpenGameInstaller',
       'Failed to check for updates'
     );
-    // check if the user is offline
-    launchApp(net.isOnline());
+    launchApp(true);
   }
 }
 
@@ -1343,7 +1401,10 @@ async function verifyPatchedArtifact(
  * @param {boolean} online - If true, start the application in online mode; otherwise start in offline mode.
  */
 async function launchApp(online) {
-  console.log('Launching in ' + (online ? 'online' : 'offline') + ' mode');
+  const effectiveOnline = getEffectiveOnlineState(online).effectiveOnline;
+  console.log(
+    'Launching in ' + (effectiveOnline ? 'online' : 'offline') + ' mode'
+  );
   mainWindow.webContents.send('text', 'Launching OpenGameInstaller');
   if (process.platform === 'win32') {
     if (
@@ -1373,11 +1434,15 @@ async function launchApp(online) {
       path.join(__dirname, 'update', 'latest.log'),
       'a'
     );
-    const spawned = spawn('./OpenGameInstaller.exe', ['--online=' + online], {
-      cwd: path.join(__dirname, 'update'),
-      detached: true,
-      stdio: ['ignore', logStream, logStream],
-    });
+    const spawned = spawn(
+      './OpenGameInstaller.exe',
+      ['--online=' + effectiveOnline],
+      {
+        cwd: path.join(__dirname, 'update'),
+        detached: true,
+        stdio: ['ignore', logStream, logStream],
+      }
+    );
     spawned.unref();
     app.exit(0);
   } else if (process.platform === 'linux') {
@@ -1414,7 +1479,7 @@ async function launchApp(online) {
       // --no-sandbox is needed to run the appimage in Steam Deck Game Mode
       const spawned = spawn(
         './OpenGameInstaller.AppImage',
-        ['--online=' + online, '--no-sandbox'],
+        ['--online=' + effectiveOnline, '--no-sandbox'],
         {
           cwd: path.join(__dirname, 'update'),
           detached: true,

@@ -8,6 +8,14 @@ import { server, clients, port } from '../server/addon-server.js';
 import { sendNotification } from '../main.js';
 import axios from 'axios';
 import { AddonConnection } from '../server/AddonConnection.js';
+import { terminateProcessTree } from '../lib/processes.js';
+
+async function stopAddonProcesses(): Promise<void> {
+  for (const processPath of Object.keys(processes)) {
+    await terminateProcessTree(processes[processPath], processPath);
+    delete processes[processPath];
+  }
+}
 
 export async function startAddons(): Promise<void> {
   // start all of the addons
@@ -56,11 +64,7 @@ export async function restartAddonServer(): Promise<void> {
   server.close();
   clients.clear();
   // stop all of the addons
-  for (const process of Object.keys(processes)) {
-    console.log(`Killing process ${process}`);
-    const killed = processes[process].kill('SIGKILL');
-    console.log(`Killed process ${process}: ${killed}`);
-  }
+  await stopAddonProcesses();
   // start the server and wait for it to be listening before starting addons
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject);
@@ -206,10 +210,7 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
 
   ipcMain.handle('clean-addons', async (_) => {
     // stop all of the addons
-    for (const process of Object.keys(processes)) {
-      console.log(`Killing process ${process}`);
-      processes[process].kill('SIGKILL');
-    }
+    await stopAddonProcesses();
 
     // delete all of the addons
     fs.rmSync(join(__dirname, 'addons/'), { recursive: true, force: true });
@@ -240,10 +241,7 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
     }
 
     // stop all of the addons
-    for (const process of Object.keys(processes)) {
-      console.log(`Killing process ${process}`);
-      processes[process].kill('SIGKILL');
-    }
+    await stopAddonProcesses();
 
     // pull all of the addons
     if (!fs.existsSync(join(__dirname, 'addons/'))) {

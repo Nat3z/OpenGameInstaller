@@ -300,6 +300,7 @@ async function executeScript(
     });
 
     child.on('close', (code: number) => {
+      delete processes[addonPath];
       if (code !== 0) {
         // write the error to a log file
         console.error(
@@ -316,6 +317,7 @@ async function executeScript(
     });
 
     child.on('error', (err: Error) => {
+      delete processes[addonPath];
       console.error(err);
       reject(err);
     });

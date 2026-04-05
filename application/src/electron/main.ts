@@ -10,7 +10,6 @@ import {
 import { applicationAddonSecret } from './server/constants.js';
 import { app, BrowserWindow, globalShortcut, ipcMain, shell } from 'electron';
 import fs, { existsSync, readFileSync } from 'fs';
-import { processes } from './manager/manager.addon.js';
 import { stopClient } from './manager/manager.webtorrent.js';
 import type { ConfigurationFile } from 'ogi-addon/config';
 import AppEventHandler from './handlers/handler.app.js';
@@ -39,6 +38,7 @@ import {
   type ExecuteWrapperResult,
 } from './handlers/handler.library.js';
 import { loadLibraryInfo } from './handlers/helpers.app/library.js';
+import { terminateCurrentProcessChildren } from './lib/processes.js';
 // import steamworks from 'steamworks.js';
 
 /**
@@ -310,6 +310,9 @@ ipcMain.on('get-version', (event) => {
 export let torrentIntervals: NodeJS.Timeout[] = [];
 
 let mainWindow: BrowserWindow | null;
+let shutdownCleanupPromise: Promise<void> | null = null;
+let shutdownCleanupCompleted = false;
+let quittingAfterCleanup = false;
 
 // Flag to ensure process-wide listeners are registered only once
 let listenersRegistered = false;
@@ -613,6 +616,47 @@ async function startAppFlow(win: BrowserWindow) {
   }
 }
 
+async function performAppShutdownCleanup(): Promise<void> {
+  if (shutdownCleanupCompleted) {
+    return;
+  }
+
+  if (shutdownCleanupPromise) {
+    return shutdownCleanupPromise;
+  }
+
+  shutdownCleanupPromise = (async () => {
+    try {
+      stopUmuBackgroundUpdater();
+
+      console.log('Stopping torrent client...');
+      await stopClient();
+
+      console.log('Terminating child processes...');
+      await terminateCurrentProcessChildren();
+
+      for (const interval of torrentIntervals) {
+        clearInterval(interval);
+      }
+
+      if (server.listening) {
+        console.log('Stopping server...');
+        await new Promise<void>((resolve) => {
+          server.close(() => {
+            resolve();
+          });
+        });
+      }
+    } catch (error) {
+      console.error('Error during cleanup:', error);
+    } finally {
+      shutdownCleanupCompleted = true;
+    }
+  })();
+
+  return shutdownCleanupPromise;
+}
+
 function focusMainWindow(): boolean {
   if (!mainWindow || mainWindow.isDestroyed()) {
     return false;
@@ -880,46 +924,24 @@ app.on('ready', async () => {
 });
 
 // Quit when all windows are closed.
-app.on('window-all-closed', async function () {
+app.on('window-all-closed', function () {
   // On macOS it is common for applications and their menu bar
   // to stay active until the user quits explicitly with Cmd + Q
   if (process.platform === 'darwin') {
     return;
   }
 
-  // Perform cleanup before quitting
-  try {
-    stopUmuBackgroundUpdater();
+  app.quit();
+});
 
-    // stop torrenting
-    console.log('Stopping torrent client...');
-    await stopClient();
-
-    // stop all of the addons
-    for (const process of Object.keys(processes)) {
-      console.log(`Killing process ${process}`);
-      processes[process].kill('SIGKILL');
-    }
-
-    // stopping all of the torrent intervals
-    for (const interval of torrentIntervals) {
-      clearInterval(interval);
-    }
-
-    // stop the server (only if it was listening to avoid hang)
-    if (server.listening) {
-      console.log('Stopping server...');
-      await new Promise<void>((resolve) => {
-        server.close(() => {
-          resolve();
-        });
-      });
-    }
-  } catch (error) {
-    console.error('Error during cleanup:', error);
+app.on('before-quit', async (event) => {
+  if (shutdownCleanupCompleted || quittingAfterCleanup) {
+    return;
   }
 
-  // Now quit the application
+  event.preventDefault();
+  await performAppShutdownCleanup();
+  quittingAfterCleanup = true;
   app.quit();
 });
 

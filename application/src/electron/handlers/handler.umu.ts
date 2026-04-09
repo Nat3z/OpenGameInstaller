@@ -426,8 +426,6 @@ export async function launchWithUmu(
 
   if (protonVersion) {
     env.PROTONPATH = protonVersion;
-  } else {
-    env.PROTONPATH = 'UMU-Latest';
   }
 
   if (store) {

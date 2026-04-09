@@ -2,9 +2,9 @@ import { dialog, ipcMain, shell } from 'electron';
 import { __dirname } from '../manager/manager.paths.js';
 import { join } from 'path';
 import * as fs from 'fs';
-import { exec, spawn } from 'child_process';
 import { sendIPCMessage } from '../main.js';
 import * as fsAsync from 'fs/promises';
+import { extraction } from 'ogi-addon';
 
 export default function handler() {
   ipcMain.on('fs:read', (event, arg) => {
@@ -144,7 +144,6 @@ export default function handler() {
       fs.mkdirSync(outputDir, { recursive: true });
     }
 
-    // use 7zip to extract the rar file or unrar if on linux
     console.log('Extracting RAR file: ', rarFilePath);
     console.log('Output directory: ', outputDir);
 
@@ -155,109 +154,32 @@ export default function handler() {
         log: ['Starting RAR extraction...'],
       });
     }
-    if (process.platform === 'win32') {
-      console.log('isWin32');
-      if (downloadId) {
-        sendIPCMessage('setup:log', {
-          id: downloadId,
-          log: ['Using 7-Zip to extract RAR files...'],
-        });
-      }
-      let s7ZipPath = '"C:\\Program Files\\7-Zip\\7z.exe"';
-      await new Promise<void>((resolve, reject) =>
-        exec(
-          `${s7ZipPath} x "${rarFilePath}" -o"${outputDir}"`,
-          (err, stdout, stderr) => {
-            if (err) {
-              console.error(err);
-              console.log(stderr);
-              if (downloadId) {
-                sendIPCMessage('setup:log', {
-                  id: downloadId,
-                  log: [`RAR extraction failed: ${err.message}`],
-                });
-              }
-              reject(new Error('Failed to extract RAR file'));
-              return;
-            }
-            console.log(stdout);
-            console.log(stderr);
-            if (downloadId) {
-              sendIPCMessage('setup:log', {
-                id: downloadId,
-                log: ['RAR extraction completed successfully'],
-              });
-            }
-            resolve();
-          }
-        )
-      );
+    if (downloadId) {
+      sendIPCMessage('setup:log', {
+        id: downloadId,
+        log: ['Using ogi-addon extraction helper...'],
+      });
     }
 
-    if (process.platform === 'linux' || process.platform === 'darwin') {
-      console.log('isLinuxOrDarwin');
+    try {
+      await extraction(rarFilePath, outputDir);
       if (downloadId) {
         sendIPCMessage('setup:log', {
           id: downloadId,
-          log: ['Using unrar to extract RAR files...'],
+          log: ['RAR extraction completed successfully'],
         });
       }
-      await new Promise<void>((resolve, reject) => {
-        const unrarProcess = spawn('unrar', [
-          'x',
-          '-y',
-          rarFilePath,
-          outputDir,
-        ]);
-
-        unrarProcess.stdout.on('data', (data) => {
-          console.log(`[unrar stdout]: ${data}`);
-          if (downloadId) {
-            const logMessage = data.toString().trim();
-            if (logMessage) {
-              sendIPCMessage('setup:log', {
-                id: downloadId,
-                log: [logMessage],
-              });
-            }
-          }
+    } catch (error) {
+      console.error(error);
+      if (downloadId) {
+        const message =
+          error instanceof Error ? error.message : 'Unknown extraction error';
+        sendIPCMessage('setup:log', {
+          id: downloadId,
+          log: [`RAR extraction failed: ${message}`],
         });
-
-        unrarProcess.stderr.on('data', (data) => {
-          console.error(`[unrar stderr]: ${data}`);
-          if (downloadId) {
-            const logMessage = data.toString().trim();
-            if (logMessage) {
-              sendIPCMessage('setup:log', {
-                id: downloadId,
-                log: [logMessage],
-              });
-            }
-          }
-        });
-
-        unrarProcess.on('close', (code) => {
-          if (code !== 0) {
-            console.error(`unrar process exited with code ${code}`);
-            if (downloadId) {
-              sendIPCMessage('setup:log', {
-                id: downloadId,
-                log: [`Unrar process failed with exit code ${code}`],
-              });
-            }
-            reject(new Error(`Unrar process failed with exit code ${code}`));
-            return;
-          }
-          if (downloadId) {
-            sendIPCMessage('setup:log', {
-              id: downloadId,
-              log: ['RAR extraction completed successfully'],
-            });
-          }
-          resolve();
-        });
-      });
-      console.log('done');
+      }
+      throw error;
     }
 
     return outputDir;
@@ -293,7 +215,6 @@ export default function handler() {
           fs.mkdirSync(outputDir, { recursive: true });
         }
 
-        // use 7zip to extract the zip file or unzip if on linux/mac
         console.log('Extracting ZIP file: ', zipFilePath);
         console.log('Output directory: ', outputDir);
 
@@ -305,123 +226,19 @@ export default function handler() {
           });
         }
 
-        if (process.platform === 'win32') {
-          console.log('isWin32');
-          if (downloadId) {
-            sendIPCMessage('setup:log', {
-              id: downloadId,
-              log: ['Using 7-Zip to extract files...'],
-            });
-          }
-          let s7ZipPath = '"C:\\Program Files\\7-Zip\\7z.exe"';
-          await new Promise<void>((resolve, reject) =>
-            exec(
-              `${s7ZipPath} x "${zipFilePath}" -o"${outputDir}"`,
-              (err, stdout, stderr) => {
-                if (err) {
-                  console.error(err);
-                  console.log(stderr);
-                  if (downloadId) {
-                    sendIPCMessage('setup:log', {
-                      id: downloadId,
-                      log: [`Extraction failed: ${err.message}`],
-                    });
-                  }
-                  reject(new Error('Failed to extract ZIP file'));
-                  return;
-                }
-                console.log(stdout);
-                console.log(stderr);
-                if (downloadId) {
-                  sendIPCMessage('setup:log', {
-                    id: downloadId,
-                    log: ['ZIP extraction completed successfully'],
-                  });
-                }
-                resolve();
-              }
-            )
-          );
+        if (downloadId) {
+          sendIPCMessage('setup:log', {
+            id: downloadId,
+            log: ['Using ogi-addon extraction helper...'],
+          });
         }
 
-        if (process.platform === 'linux' || process.platform === 'darwin') {
-          console.log('isLinuxOrDarwin');
-          if (downloadId) {
-            sendIPCMessage('setup:log', {
-              id: downloadId,
-              log: ['Using unzip to extract files...'],
-            });
-          }
-          await new Promise<void>((resolve, reject) => {
-            // create the output directory if it doesn't exist
-            if (!fs.existsSync(outputDir)) {
-              fs.mkdirSync(outputDir, { recursive: true });
-            }
-
-            const unzipProcess = spawn(
-              'unzip',
-              [
-                '-o', // overwrite files without prompting
-                zipFilePath,
-                '-d', // specify output directory
-                outputDir,
-              ],
-              {
-                env: {
-                  ...process.env,
-                  UNZIP_DISABLE_ZIPBOMB_DETECTION: 'TRUE',
-                },
-              }
-            );
-
-            unzipProcess.stdout.on('data', (data) => {
-              console.log(`[unzip stdout]: ${data}`);
-              if (downloadId) {
-                const logMessage = data.toString().trim();
-                if (logMessage) {
-                  sendIPCMessage('setup:log', {
-                    id: downloadId,
-                    log: [logMessage],
-                  });
-                }
-              }
-            });
-
-            unzipProcess.stderr.on('data', (data) => {
-              console.error(`[unzip stderr]: ${data}`);
-              if (downloadId) {
-                const logMessage = data.toString().trim();
-                if (logMessage) {
-                  sendIPCMessage('setup:log', {
-                    id: downloadId,
-                    log: [logMessage],
-                  });
-                }
-              }
-            });
-
-            unzipProcess.on('close', (code) => {
-              if (code !== 0) {
-                console.error(`unzip process exited with code ${code}`);
-                if (downloadId) {
-                  sendIPCMessage('setup:log', {
-                    id: downloadId,
-                    log: [`Unzip process failed with exit code ${code}`],
-                  });
-                }
-                reject(new Error('Failed to extract ZIP file'));
-                return;
-              }
-              if (downloadId) {
-                sendIPCMessage('setup:log', {
-                  id: downloadId,
-                  log: ['ZIP extraction completed successfully'],
-                });
-              }
-              resolve();
-            });
+        await extraction(zipFilePath, outputDir);
+        if (downloadId) {
+          sendIPCMessage('setup:log', {
+            id: downloadId,
+            log: ['ZIP extraction completed successfully'],
           });
-          console.log('done');
         }
 
         return outputDir;

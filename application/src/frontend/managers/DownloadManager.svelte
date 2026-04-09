@@ -44,7 +44,7 @@
     const downloadedItem = getDownloadItem(downloadID);
     if (!downloadedItem || downloadedItem.status === 'completed') return;
 
-    updateDownloadStatus(downloadID, { status: 'completed' });
+    updateDownloadStatus(downloadID, { status: 'merging' });
 
     let outputDir = dirname(downloadedItem.downloadPath);
     // make sure that
@@ -99,7 +99,8 @@
 
     async function revertOldFiles() {
       if (!stagedOldFiles) return;
-      if (!window.electronAPI.fs.exists(originalOutputDir + '/old_files')) return;
+      if (!window.electronAPI.fs.exists(originalOutputDir + '/old_files'))
+        return;
       const oldFiles = await window.electronAPI.fs.getFilesInDir(
         originalOutputDir + '/old_files'
       );
@@ -218,8 +219,7 @@
               | 'magnet',
             name: downloadedItem.name,
             usedRealDebrid: downloadedItem.usedDebridService !== undefined,
-            clearOldFilesBeforeUpdate:
-              downloadedItem.clearOldFilesBeforeUpdate,
+            clearOldFilesBeforeUpdate: downloadedItem.clearOldFilesBeforeUpdate,
             appID: downloadedItem.appID,
             multiPartFiles: downloadedItem.files || [],
             storefront: downloadedItem.storefront,
@@ -315,8 +315,7 @@
               | 'magnet',
             name: downloadedItem.name,
             usedRealDebrid: downloadedItem.usedDebridService !== undefined,
-            clearOldFilesBeforeUpdate:
-              downloadedItem.clearOldFilesBeforeUpdate,
+            clearOldFilesBeforeUpdate: downloadedItem.clearOldFilesBeforeUpdate,
             appID: downloadedItem.appID,
             multiPartFiles: downloadedItem.files || [],
             storefront: downloadedItem.storefront,
@@ -348,7 +347,7 @@
 
     try {
       // Check if this is an update download and route to appropriate setup function
-
+      updateDownloadStatus(downloadedItem.id, { status: 'completed' });
       if (downloadedItem.isUpdate) {
         await runSetupAppUpdate(
           downloadedItem,

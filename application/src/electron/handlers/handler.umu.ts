@@ -43,6 +43,7 @@ const KNOWN_LAUNCH_ENV_VARS = new Set([
   'STORE',
 ]);
 const ENV_ASSIGNMENT_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*=/;
+const UMU_PROTON_PLACEHOLDER = 'umu-proton';
 
 function shellQuote(arg: string): string {
   return `'${arg.replace(/'/g, `'\\''`)}'`;
@@ -69,6 +70,18 @@ function isKnownLaunchEnvAssignment(token: string): boolean {
   if (separatorIndex <= 0) return false;
   const key = token.slice(0, separatorIndex);
   return KNOWN_LAUNCH_ENV_VARS.has(key);
+}
+
+function normalizeProtonPathValue(
+  value?: string | null
+): string | undefined {
+  if (value == null) return undefined;
+  const normalized = value.trim();
+  if (!normalized) return undefined;
+  if (normalized.toLowerCase() === UMU_PROTON_PLACEHOLDER) {
+    return undefined;
+  }
+  return normalized;
 }
 
 function parseLeadingLaunchEnvFromArguments(
@@ -199,6 +212,12 @@ export function getEffectiveLaunchEnv(
     const normalizedKey = key.trim();
     if (!normalizedKey) continue;
     if (value === undefined || value === null) continue;
+    if (normalizedKey === 'PROTONPATH') {
+      const protonPath = normalizeProtonPathValue(String(value));
+      if (!protonPath) continue;
+      sanitized[normalizedKey] = protonPath;
+      continue;
+    }
     sanitized[normalizedKey] = String(value);
   }
   return sanitized;
@@ -416,6 +435,7 @@ export async function launchWithUmu(
   ensureUmuPrefixBase();
 
   const { umuId, protonVersion, store } = libraryInfo.umu;
+  const protonPath = normalizeProtonPathValue(protonVersion);
   const gameId = convertUmuId(umuId);
   const winePrefix = getUmuWinePrefix(umuId);
   const launchEnv = getEffectiveLaunchEnv(libraryInfo);
@@ -430,8 +450,8 @@ export async function launchWithUmu(
     WINEPREFIX: winePrefix,
   };
 
-  if (protonVersion) {
-    env.PROTONPATH = protonVersion;
+  if (protonPath) {
+    env.PROTONPATH = protonPath;
   }
 
   if (store) {
@@ -456,7 +476,7 @@ export async function launchWithUmu(
     name: libraryInfo.name,
     gameId,
     winePrefix,
-    protonVersion: protonVersion,
+    protonVersion: protonPath,
     store: store || 'none',
     hasDllOverrides: dllOverrides.length > 0,
     environment: envSummary,
@@ -595,6 +615,7 @@ export async function installRedistributablesWithUmu(
   ensureUmuPrefixBase();
 
   const { umuId, protonVersion } = libraryInfo.umu || {};
+  const protonPath = normalizeProtonPathValue(protonVersion);
   const gameId = umuId ? convertUmuId(umuId) : 'umu-default';
   const winePrefix = umuId
     ? getUmuWinePrefix(umuId)
@@ -648,8 +669,8 @@ export async function installRedistributablesWithUmu(
           UMU_LOG: 'debug',
         };
 
-        if (protonVersion) {
-          env.PROTONPATH = protonVersion;
+        if (protonPath) {
+          env.PROTONPATH = protonPath;
         }
 
         let child: ReturnType<typeof spawn>;
@@ -662,7 +683,6 @@ export async function installRedistributablesWithUmu(
             {
               env: {
                 ...env,
-                PROTONPATH: protonVersion || 'UMU-Proton',
                 PWD: libraryInfo.cwd,
               },
               stdio: ['ignore', 'pipe', 'pipe'],
@@ -698,7 +718,6 @@ export async function installRedistributablesWithUmu(
           child = spawn(umuRunExecutable, [redistFile, ...silentFlags], {
             env: {
               ...env,
-              PROTONPATH: protonVersion || 'UMU-Proton',
               PWD: libraryInfo.cwd,
             },
             cwd: redistDir,
@@ -967,7 +986,6 @@ export async function installRedistributablesWithUmuForLegacy(
           UMU_LOG: 'debug',
           GAMEID: `umu-${steamAppId}`,
           WINEPREFIX: winePrefix,
-          PROTONPATH: 'UMU-Proton',
           PWD: libraryInfo.cwd,
         },
         stdio: ['ignore', 'pipe', 'pipe'],
@@ -1066,7 +1084,6 @@ export async function installRedistributablesWithUmuForLegacy(
                 UMU_LOG: 'debug',
                 GAMEID: `umu-${steamAppId}`,
                 WINEPREFIX: winePrefix,
-                PROTONPATH: 'UMU-Proton',
                 PWD: libraryInfo.cwd,
               },
               stdio: ['ignore', 'pipe', 'pipe'],
@@ -1097,7 +1114,6 @@ export async function installRedistributablesWithUmuForLegacy(
               UMU_LOG: 'debug',
               GAMEID: `umu-${steamAppId}`,
               WINEPREFIX: winePrefix,
-              PROTONPATH: 'UMU-Proton',
               PWD: libraryInfo.cwd,
             },
             cwd: redistDir,
@@ -1273,7 +1289,7 @@ async function initializePrefixWithUmuRun(
 
   const gameId = convertUmuId(umuId);
   const cwd = libraryInfo.cwd || process.cwd();
-  const protonPath = libraryInfo.umu?.protonVersion || 'UMU-Proton';
+  const protonPath = normalizeProtonPathValue(libraryInfo.umu?.protonVersion);
 
   await new Promise<boolean>((resolve) => {
     let resolved = false;
@@ -1283,16 +1299,20 @@ async function initializePrefixWithUmuRun(
       resolve(result);
     };
 
+    const initChildEnv: NodeJS.ProcessEnv = {
+      ...process.env,
+      UMU_LOG: 'debug',
+      GAMEID: gameId,
+      WINEPREFIX: winePrefix,
+      PWD: cwd,
+    };
+    if (protonPath) {
+      initChildEnv.PROTONPATH = protonPath;
+    }
+
     const initChild = spawn(umuRunExecutable, [''], {
       cwd,
-      env: {
-        ...process.env,
-        UMU_LOG: 'debug',
-        GAMEID: gameId,
-        WINEPREFIX: winePrefix,
-        PROTONPATH: protonPath,
-        PWD: cwd,
-      },
+      env: initChildEnv,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     streamChildProcessOutput(initChild, logPrefix);

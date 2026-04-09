@@ -22,7 +22,7 @@ The `umu` field in `LibraryInfo` (from `ogi-addon`) has this shape:
 | Field | Type | Required | Description |
 | ----- | ---- | -------- | ----------- |
 | `umuId` | `string` | Yes | Unique ID for the game’s Wine prefix. Format: `steam:${number}` or `umu:${string \| number}`. |
-| `protonVersion` | `string` | No | Proton build to use (e.g. `UMU-Proton`). OGI default is `UMU-Proton` if omitted. |
+| `protonVersion` | `string` | No | Optional `PROTONPATH` override for UMU. Omit this unless you absolutely need a specific Proton build or path. |
 | `store` | `string` | No | Store identifier for UMU. |
 | `dllOverrides` | `string[]` | No | WINEDLLOVERRIDES-style overrides (e.g. `d3d11=n,b`). |
 | `winePrefixPath` | `string` | No | Set by OGI; do not set in addon. |
@@ -55,7 +55,6 @@ addon.on('setup', async (data, event) => {
     ...(isLinux && {
       umu: {
         umuId: `umu:${data.appID}` as const,
-        protonVersion: 'UMU-Proton', // optional
         store: data.storefront ?? 'unknown',
       },
     }),
@@ -64,6 +63,8 @@ addon.on('setup', async (data, event) => {
 ```
 
 If your catalog is Steam-based and you have a Steam app ID, you can use `umuId: \`steam:${steamAppId}\`` so the prefix aligns with Steam’s compat data naming.
+
+In most addons, do not set `protonVersion` at all. Let UMU handle its normal Proton selection unless your game only works with a specific override and you know the target environment provides it.
 
 ## Legacy mode
 
@@ -97,7 +98,7 @@ If your game needs Visual C++ runtimes, .NET, or other redistributables, you can
 
 ## Summary
 
-- **Linux + want library launch:** Return `umu: { umuId: 'steam:...' | 'umu:...' }` (and optionally `protonVersion`, `store`, `dllOverrides`) from `setup`.
+- **Linux + want library launch:** Return `umu: { umuId: 'steam:...' | 'umu:...' }` from `setup`, plus optional `store` and `dllOverrides`. Only add `protonVersion` when you truly need a specific override.
 - **Linux + Steam launch (legacy):** Omit `umu` (or set `legacyMode: true`).
 - **Windows / native:** Omit `umu`; it is ignored on non-Linux.
 - **Update setup:** Preserve `currentLibraryInfo.umu` when resolving so the game stays on UMU.

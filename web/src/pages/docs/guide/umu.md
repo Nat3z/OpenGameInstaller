@@ -17,7 +17,7 @@ UMU is an open-source launcher from [Open-Wine-Components](https://github.com/Op
 - **First-time setup**: When you install a Windows game on Linux, OGI configures it to use UMU. If UMU isn’t installed yet, OGI will download it the first time you launch a game or run setup.
 - **Per-game prefixes**: Each game gets its own Wine prefix under `~/.ogi-wine-prefixes/`. This keeps game data and dependencies separate and avoids conflicts.
 - **In-app library**: You can launch UMU-backed games from the OpenGameInstaller library. No need to add them to Steam or use Game Mode for the library.
-- **Proton**: UMU uses Proton (e.g. **UMU-Proton**) to run the game. OGI sets the prefix and environment for you.
+- **Proton**: UMU handles the Proton runtime. Addons should usually avoid forcing a `PROTONPATH` override unless a game truly requires one.
 
 ## Do I need Steam or SteamTinkerLaunch?
 

@@ -150,6 +150,7 @@ interface Window {
       launchGame: (appid: string) => Promise<void>;
       removeApp: (appid: number) => Promise<void>;
       getOS: () => Promise<string>;
+      isSteamDeck: () => Promise<boolean>;
       isOnline: () => Promise<boolean>;
       request: (
         method: string,

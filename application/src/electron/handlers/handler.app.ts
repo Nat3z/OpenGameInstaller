@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { net, ipcMain, app } from 'electron';
+import { ipcMain, app } from 'electron';
 import { currentScreens } from '@/electron/main.js';
 import * as fs from 'fs';
 import { join } from 'path';
@@ -12,6 +12,8 @@ import { clients } from '@/electron/server/addon-server.js';
 import { registerSteamHandlers } from '@/electron/handlers/handler.steam.js';
 import { registerLibraryHandlers } from '@/electron/handlers/handler.library.js';
 import { registerRedistributableHandlers } from '@/electron/handlers/handler.redists.js';
+import { getCurrentUsername } from './helpers.app/platform.js';
+import { getEffectiveOnlineState } from '@/electron/lib/online.js';
 
 /**
  * Escapes a string for safe use in shell commands by escaping special characters
@@ -179,13 +181,19 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
   ipcMain.handle('app:get-os', () => {
     return process.platform;
   });
+  ipcMain.handle('app:is-steam-deck', () => {
+    return (
+      process.platform === 'linux' &&
+      getCurrentUsername()?.toLowerCase() === 'deck'
+    );
+  });
   ipcMain.handle('app:screen-input', async (_, data) => {
     currentScreens.set(data.id, data.data);
     return;
   });
 
   ipcMain.handle('app:is-online', async () => {
-    return net.isOnline();
+    return getEffectiveOnlineState().effectiveOnline;
   });
 
   // Addon helpers

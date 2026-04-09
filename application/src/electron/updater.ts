@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { app, net } from 'electron';
+import { app } from 'electron';
 import {
   chmodSync,
   createWriteStream,
@@ -17,6 +17,7 @@ import { setTimeout as setTimeoutPromise } from 'timers/promises';
 import { spawn, exec } from 'child_process';
 import * as path from 'path';
 import { __dirname as persistentDataDir } from '@/electron/manager/manager.paths.js';
+import { getEffectiveOnlineState } from '@/electron/lib/online.js';
 
 function isDev() {
   return !app.isPackaged;
@@ -370,16 +371,13 @@ export function checkIfInstallerUpdateAvailable(callbacks?: UpdaterCallbacks) {
       }
     };
 
-    // Check if launched in offline mode via command line argument from updater
-    const isOfflineArg = process.argv.some((arg) => arg === '--online=false');
-    if (isOfflineArg) {
-      console.log('[updater] Launched in offline mode, skipping update check.');
-      resolve();
-      return;
-    }
-
-    if (!net.isOnline()) {
-      console.error('[updater] No internet connection available.');
+    const onlineState = getEffectiveOnlineState();
+    if (!onlineState.effectiveOnline) {
+      if (onlineState.reason === 'cli-offline') {
+        console.log('[updater] Launched in offline mode, skipping update check.');
+      } else {
+        console.error('[updater] No internet connection available.');
+      }
       resolve();
       return;
     }

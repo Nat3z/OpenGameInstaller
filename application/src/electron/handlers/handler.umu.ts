@@ -656,7 +656,7 @@ export async function installRedistributablesWithUmu(
             {
               env: {
                 ...env,
-                PROTONPATH: protonVersion || 'UMU-Latest',
+                PROTONPATH: protonVersion || 'UMU-Proton',
                 PWD: libraryInfo.cwd,
               },
               stdio: ['ignore', 'pipe', 'pipe'],
@@ -692,7 +692,7 @@ export async function installRedistributablesWithUmu(
           child = spawn(umuRunExecutable, [redistFile, ...silentFlags], {
             env: {
               ...env,
-              PROTONPATH: protonVersion || 'UMU-Latest',
+              PROTONPATH: protonVersion || 'UMU-Proton',
               PWD: libraryInfo.cwd,
             },
             cwd: redistDir,
@@ -961,7 +961,7 @@ export async function installRedistributablesWithUmuForLegacy(
           UMU_LOG: 'debug',
           GAMEID: `umu-${steamAppId}`,
           WINEPREFIX: winePrefix,
-          PROTONPATH: 'UMU-Latest',
+          PROTONPATH: 'UMU-Proton',
           PWD: libraryInfo.cwd,
         },
         stdio: ['ignore', 'pipe', 'pipe'],
@@ -1060,7 +1060,7 @@ export async function installRedistributablesWithUmuForLegacy(
                 UMU_LOG: 'debug',
                 GAMEID: `umu-${steamAppId}`,
                 WINEPREFIX: winePrefix,
-                PROTONPATH: 'UMU-Latest',
+                PROTONPATH: 'UMU-Proton',
                 PWD: libraryInfo.cwd,
               },
               stdio: ['ignore', 'pipe', 'pipe'],
@@ -1091,7 +1091,7 @@ export async function installRedistributablesWithUmuForLegacy(
               UMU_LOG: 'debug',
               GAMEID: `umu-${steamAppId}`,
               WINEPREFIX: winePrefix,
-              PROTONPATH: 'UMU-Latest',
+              PROTONPATH: 'UMU-Proton',
               PWD: libraryInfo.cwd,
             },
             cwd: redistDir,
@@ -1267,7 +1267,7 @@ async function initializePrefixWithUmuRun(
 
   const gameId = convertUmuId(umuId);
   const cwd = libraryInfo.cwd || process.cwd();
-  const protonPath = libraryInfo.umu?.protonVersion || 'UMU-Latest';
+  const protonPath = libraryInfo.umu?.protonVersion || 'UMU-Proton';
 
   await new Promise<boolean>((resolve) => {
     let resolved = false;

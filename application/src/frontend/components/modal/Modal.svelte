@@ -1,6 +1,10 @@
 <script lang="ts">
   import { onDestroy, onMount, setContext, type Snippet } from 'svelte';
-  import { modalQueue, priorityToNumber, type QueuedModal } from '../../store';
+  import {
+    modalQueue,
+    priorityToNumber,
+    type QueuedModal,
+  } from '@/frontend/store';
 
   let {
     open = false,

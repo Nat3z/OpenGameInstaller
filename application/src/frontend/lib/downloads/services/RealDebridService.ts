@@ -1,8 +1,8 @@
-import { BaseService } from './BaseService';
-import type { SearchResultWithAddon } from '../../tasks/runner';
-import { currentDownloads } from '../../../store';
-import { getDownloadPath } from '../../core/fs';
-import { listenUntilDownloadReady } from '../events';
+import { BaseService } from '@/frontend/lib/downloads/services/BaseService';
+import type { SearchResultWithAddon } from '@/frontend/lib/tasks/runner';
+import { currentDownloads } from '@/frontend/store';
+import { getDownloadPath } from '@/frontend/lib/core/fs';
+import { listenUntilDownloadReady } from '@/frontend/lib/downloads/events';
 import type { $Hosts } from 'real-debrid-js';
 
 /**

@@ -38,6 +38,7 @@
     "dev:server": "nodemon --watch server --ext ts,json --exec \"tsc --p tsconfig.addonserver.json && bun run --bun build-addons/dev-server.js\"",
     "preelectron-pack": "bun run build:ogiaddon && bun run build",
     "electron-pack": "electron-builder",
+    "format": "prettier --write \"src/**/*.{ts,svelte,json}\"",
     "electron-pack:linux": "electron-builder -l",
     "check": "bun run build:ogiaddon && svelte-check --tsconfig ./tsconfig.svelte.json",
     "typecheck": "bun run typecheck:svelte && bun run typecheck:electron && bun run typecheck:addonserver",

@@ -8,16 +8,19 @@ import type {
   WebsocketMessageServer,
 } from 'ogi-addon';
 import type { ConfigurationFile } from 'ogi-addon/config';
-import { clients } from './addon-server.js';
-import { addonSecret } from './constants.js';
+import { clients } from '@/electron/server/addon-server.js';
+import { addonSecret } from '@/electron/server/constants.js';
 import {
   currentScreens,
   isSecurityCheckEnabled,
   sendAskForInput,
   sendIPCMessage,
   sendNotification,
-} from '../main.js';
-import { DeferrableTask, DeferredTasks } from './DeferrableTask.js';
+} from '@/electron/main.js';
+import {
+  DeferrableTask,
+  DeferredTasks,
+} from '@/electron/server/DeferrableTask.js';
 
 export class AddonConnection {
   public addonInfo: OGIAddonConfiguration | undefined;
@@ -26,7 +29,13 @@ export class AddonConnection {
   public filePath: string | undefined;
   public addonLink: string | undefined;
   public eventsAvailable: OGIAddonEvent[] = [];
-  private pendingResponses: Map<string, { resolve: (value: WebsocketMessageClient) => void; reject: (reason?: any) => void }> = new Map();
+  private pendingResponses: Map<
+    string,
+    {
+      resolve: (value: WebsocketMessageClient) => void;
+      reject: (reason?: any) => void;
+    }
+  > = new Map();
   private messageHandler: ((message: string | Buffer) => void) | null = null;
   constructor(ws: InstanceType<typeof wsLib>) {
     this.ws = ws;
@@ -50,9 +59,13 @@ export class AddonConnection {
           this.ws.close(1008, 'Invalid JSON message');
           return;
         }
-        
+
         // Check if this is a response to a pending request
-        if (data.event === 'response' && data.id && this.pendingResponses.has(data.id)) {
+        if (
+          data.event === 'response' &&
+          data.id &&
+          this.pendingResponses.has(data.id)
+        ) {
           const pending = this.pendingResponses.get(data.id)!;
           this.pendingResponses.delete(data.id);
           if (!data.args || data.statusError) {
@@ -70,7 +83,7 @@ export class AddonConnection {
           pending.resolve(data);
           return;
         }
-        
+
         // Handle other message types
         switch (data.event) {
           case 'notification': {
@@ -440,9 +453,9 @@ export class AddonConnection {
           }
         }
       };
-      
+
       this.ws.on('message', this.messageHandler);
-      
+
       // Clean up pending responses on close/error
       this.ws.on('close', () => {
         for (const [_, pending] of this.pendingResponses.entries()) {
@@ -450,7 +463,7 @@ export class AddonConnection {
         }
         this.pendingResponses.clear();
       });
-      
+
       this.ws.on('error', () => {
         for (const [_, pending] of this.pendingResponses.entries()) {
           pending.reject(new Error('Websocket error'));
@@ -472,14 +485,14 @@ export class AddonConnection {
         reject(new Error('Websocket closed'));
         return;
       }
-      
+
       this.ws.send(JSON.stringify(message), (err: Error | null | undefined) => {
         if (err) {
           reject(err);
           return;
         }
       });
-      
+
       if (expectResponse && message.id) {
         // Store the pending response handler
         this.pendingResponses.set(message.id, { resolve, reject });

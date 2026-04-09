@@ -8,8 +8,8 @@
     deferredTasks,
     type Notification,
     removedTasks,
-  } from '../store';
-  import { loadDeferredTasks, clearAllTasks } from '../utils';
+  } from '@/frontend/store';
+  import { loadDeferredTasks, clearAllTasks } from '@/frontend/utils';
 
   let sideViewElement: HTMLElement | null = $state(null);
   let currentTab: 'notifications' | 'tasks' = $state('notifications');

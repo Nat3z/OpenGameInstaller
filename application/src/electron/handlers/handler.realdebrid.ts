@@ -1,11 +1,11 @@
 import axios from 'axios';
 import { ipcMain } from 'electron';
-import { sendNotification } from '../main.js';
+import { sendNotification } from '@/electron/main.js';
 import { join } from 'path';
 import * as fs from 'fs';
 import RealDebrid from 'real-debrid-js';
 import { ReadStream } from 'original-fs';
-import { __dirname } from '../manager/manager.paths.js';
+import { __dirname } from '@/electron/manager/manager.paths.js';
 
 let realDebridClient = new RealDebrid({
   apiKey: 'UNSET',

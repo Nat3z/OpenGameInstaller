@@ -1,5 +1,8 @@
 import { z } from 'zod';
-import { DeferrableTask, DeferredTasks } from './DeferrableTask.js';
+import {
+  DeferrableTask,
+  DeferredTasks,
+} from '@/electron/server/DeferrableTask.js';
 
 export class ProcedureReturnType<tag = string> {
   public tag: tag;

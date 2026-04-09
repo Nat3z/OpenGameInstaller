@@ -1,6 +1,6 @@
 <script lang="ts">
   import { getContext } from 'svelte';
-  import CloseModal from './CloseModal.svelte';
+  import CloseModal from '@/frontend/components/modal/CloseModal.svelte';
 
   let {
     header,

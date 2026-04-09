@@ -1,6 +1,6 @@
-import { currentDownloads, type DownloadStatusAndInfo } from '../../../store';
-import { getDownloadPath, updateDownloadStatus } from '../../../utils';
-import type { SearchResultWithAddon } from '../../tasks/runner';
+import { currentDownloads, type DownloadStatusAndInfo } from '@/frontend/store';
+import { getDownloadPath, updateDownloadStatus } from '@/frontend/utils';
+import type { SearchResultWithAddon } from '@/frontend/lib/tasks/runner';
 
 /**
  * Base class that all concrete download services should extend. It defines a

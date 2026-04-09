@@ -1,20 +1,24 @@
 <script lang="ts">
-  import { createNotification, currentDownloads, setupLogs } from '../store';
+  import {
+    createNotification,
+    currentDownloads,
+    setupLogs,
+  } from '@/frontend/store';
   import {
     updateDownloadStatus,
     getDownloadItem,
     dirname,
     basename,
-  } from '../utils';
+  } from '@/frontend/utils';
   // no direct use of EventListenerTypes in this module anymore
   import {
     unrarAndReturnOutputDir,
     unzipAndReturnOutputDir,
     resolveRarArchivePath,
-  } from '../lib/setup/extraction';
-  import { saveFailedSetup } from '../lib/recovery/failedSetups';
-  import { runSetupApp, runSetupAppUpdate } from '../lib/setup/setup';
-  import { getApp } from '../lib/core/library';
+  } from '@/frontend/lib/setup/extraction';
+  import { saveFailedSetup } from '@/frontend/lib/recovery/failedSetups';
+  import { runSetupApp, runSetupAppUpdate } from '@/frontend/lib/setup/setup';
+  import { getApp } from '@/frontend/lib/core/library';
   import type { LibraryInfo } from 'ogi-addon';
   function isCustomEvent(event: Event): event is CustomEvent {
     return event instanceof CustomEvent;

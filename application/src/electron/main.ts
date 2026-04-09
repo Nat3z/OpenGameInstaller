@@ -6,21 +6,21 @@ import {
   server,
   port,
   type LaunchForwardPayload,
-} from './server/addon-server.js';
-import { applicationAddonSecret } from './server/constants.js';
+} from '@/electron/server/addon-server.js';
+import { applicationAddonSecret } from '@/electron/server/constants.js';
 import { app, BrowserWindow, globalShortcut, ipcMain, shell } from 'electron';
 import fs, { existsSync, readFileSync } from 'fs';
-import { processes } from './manager/manager.addon.js';
-import { stopClient } from './manager/manager.webtorrent.js';
+import { processes } from '@/electron/manager/manager.addon.js';
+import { stopClient } from '@/electron/manager/manager.webtorrent.js';
 import type { ConfigurationFile } from 'ogi-addon/config';
-import AppEventHandler from './handlers/handler.app.js';
-import FSEventHandler from './handlers/handler.fs.js';
-import RealdDebridHandler from './handlers/handler.realdebrid.js';
-import AllDebridHandler from './handlers/handler.alldebrid.js';
-import TorrentHandler from './handlers/handler.torrent.js';
-import DirectDownloadHandler from './handlers/handler.ddl.js';
-import AddonRestHandler from './handlers/handler.rest.js';
-import { __dirname, isDev } from './manager/manager.paths.js';
+import AppEventHandler from '@/electron/handlers/handler.app.js';
+import FSEventHandler from '@/electron/handlers/handler.fs.js';
+import RealdDebridHandler from '@/electron/handlers/handler.realdebrid.js';
+import AllDebridHandler from '@/electron/handlers/handler.alldebrid.js';
+import TorrentHandler from '@/electron/handlers/handler.torrent.js';
+import DirectDownloadHandler from '@/electron/handlers/handler.ddl.js';
+import AddonRestHandler from '@/electron/handlers/handler.rest.js';
+import { __dirname, isDev } from '@/electron/manager/manager.paths.js';
 import {
   checkForAddonUpdates,
   convertLibrary,
@@ -28,17 +28,22 @@ import {
   startUmuBackgroundUpdater,
   stopUmuBackgroundUpdater,
   STEAMTINKERLAUNCH_PATH,
-} from './startup.js';
-import AddonManagerHandler, { startAddons } from './handlers/handler.addon.js';
-import OOBEHandler from './handlers/handler.oobe.js';
-import { runStartupTasks, closeSplashWindow } from './startup-runner.js';
-import { registerUmuHandlers } from './handlers/handler.umu.js';
+} from '@/electron/startup.js';
+import AddonManagerHandler, {
+  startAddons,
+} from '@/electron/handlers/handler.addon.js';
+import OOBEHandler from '@/electron/handlers/handler.oobe.js';
+import {
+  runStartupTasks,
+  closeSplashWindow,
+} from '@/electron/startup-runner.js';
+import { registerUmuHandlers } from '@/electron/handlers/handler.umu.js';
 import {
   executeWrapperCommandForApp,
   launchGameFromLibrary,
   type ExecuteWrapperResult,
-} from './handlers/handler.library.js';
-import { loadLibraryInfo } from './handlers/helpers.app/library.js';
+} from '@/electron/handlers/handler.library.js';
+import { loadLibraryInfo } from '@/electron/handlers/helpers.app/library.js';
 // import steamworks from 'steamworks.js';
 
 /**

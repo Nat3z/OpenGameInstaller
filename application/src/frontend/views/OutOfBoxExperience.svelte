@@ -4,8 +4,8 @@
 
   import { onMount, onDestroy } from 'svelte';
   // @ts-ignore
-  import WineIcon from '../Icons/WineIcon.svelte';
-  import { createNotification, oobeLog } from '../store';
+  import WineIcon from '@/frontend/Icons/WineIcon.svelte';
+  import { createNotification, oobeLog } from '@/frontend/store';
 
   let stage = $state(0);
 

@@ -4,7 +4,7 @@
 import { join } from 'path';
 import * as fs from 'fs';
 import type { LibraryInfo } from 'ogi-addon';
-import { __dirname } from '../../manager/manager.paths.js';
+import { __dirname } from '@/electron/manager/manager.paths.js';
 
 export function getLibraryPath(appID: number): string {
   return join(__dirname, `library/${appID}.json`);

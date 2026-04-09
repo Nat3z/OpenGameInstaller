@@ -6,7 +6,7 @@
     setupLogs,
     redistributableInstalls,
     type FailedSetup,
-  } from '../store';
+  } from '@/frontend/store';
   import {
     loadFailedSetups,
     removeFailedSetup,
@@ -14,10 +14,10 @@
     pauseDownload,
     resumeDownload,
     cancelPausedDownload,
-  } from '../utils';
+  } from '@/frontend/utils';
   import * as d3 from 'd3';
-  import SetupPrompt from '../components/SetupPrompt.svelte';
-  import RedistributablesProgress from '../components/RedistributablesProgress.svelte';
+  import SetupPrompt from '@/frontend/components/SetupPrompt.svelte';
+  import RedistributablesProgress from '@/frontend/components/RedistributablesProgress.svelte';
 
   let chartContainer: HTMLDivElement | null = $state(null);
   let speedData: { time: Date; speed: number; downloadId: string }[] = $state(

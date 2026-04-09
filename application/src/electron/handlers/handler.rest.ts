@@ -1,6 +1,6 @@
 import { ipcMain } from 'electron';
-import { addonServer } from '../server/addon-server.js';
-import { requestSchema } from '../server/serve.js';
+import { addonServer } from '@/electron/server/addon-server.js';
+import { requestSchema } from '@/electron/server/serve.js';
 
 export default function handler() {
   ipcMain.handle('addon:request', async (_, request) => {

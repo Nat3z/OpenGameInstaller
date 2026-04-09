@@ -1,17 +1,17 @@
 import axios from 'axios';
 import { net, ipcMain, app } from 'electron';
-import { currentScreens } from '../main.js';
+import { currentScreens } from '@/electron/main.js';
 import * as fs from 'fs';
 import { join } from 'path';
 import * as os from 'os';
 import * as path from 'path';
 import { createReadStream, createWriteStream } from 'fs';
-import { isDev } from '../manager/manager.paths.js';
-import { __dirname } from '../manager/manager.paths.js';
-import { clients } from '../server/addon-server.js';
-import { registerSteamHandlers } from './handler.steam.js';
-import { registerLibraryHandlers } from './handler.library.js';
-import { registerRedistributableHandlers } from './handler.redists.js';
+import { isDev } from '@/electron/manager/manager.paths.js';
+import { __dirname } from '@/electron/manager/manager.paths.js';
+import { clients } from '@/electron/server/addon-server.js';
+import { registerSteamHandlers } from '@/electron/handlers/handler.steam.js';
+import { registerLibraryHandlers } from '@/electron/handlers/handler.library.js';
+import { registerRedistributableHandlers } from '@/electron/handlers/handler.redists.js';
 
 /**
  * Escapes a string for safe use in shell commands by escaping special characters

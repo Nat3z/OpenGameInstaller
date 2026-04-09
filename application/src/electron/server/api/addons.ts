@@ -1,6 +1,6 @@
 import { z } from 'zod';
-import { clients } from '../addon-server.js';
-import { DeferrableTask } from '../DeferrableTask.js';
+import { clients } from '@/electron/server/addon-server.js';
+import { DeferrableTask } from '@/electron/server/DeferrableTask.js';
 
 // Invariant: clients only contains connections with addonInfo set (added in AddonConnection.authenticate).
 // We still guard below for robustness in case the map is accessed before auth or after disconnect.
@@ -11,11 +11,11 @@ import {
   ProcedureError,
   ProcedureJSON,
   ProcedureDeferTask,
-} from '../serve.js';
+} from '@/electron/server/serve.js';
 import * as fs from 'fs/promises';
 import { join } from 'path';
-import { restartAddonServer } from '../../handlers/handler.addon.js';
-import { __dirname } from '../../manager/manager.paths.js';
+import { restartAddonServer } from '@/electron/handlers/handler.addon.js';
+import { __dirname } from '@/electron/manager/manager.paths.js';
 import type { StoreData } from 'ogi-addon';
 import { ZodLibraryInfo } from 'ogi-addon';
 

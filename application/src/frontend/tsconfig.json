@@ -1,6 +1,10 @@
 {
   "extends": "@tsconfig/svelte/tsconfig.json",
   "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["../*"]
+    },
     "types": ["node", "svelte", "ogi-addon"],
     "sourceMap": true,
     "target": "ESNext",

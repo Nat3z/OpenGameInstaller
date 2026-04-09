@@ -1,8 +1,8 @@
-import { currentDownloads } from '../../../store';
-import { getDownloadPath, listenUntilDownloadReady } from '../../../utils';
-import { getConfigClientOption } from '../../config/client';
-import type { SearchResultWithAddon } from '../../tasks/runner';
-import { BaseService } from './BaseService';
+import { currentDownloads } from '@/frontend/store';
+import { getDownloadPath, listenUntilDownloadReady } from '@/frontend/utils';
+import { getConfigClientOption } from '@/frontend/lib/config/client';
+import type { SearchResultWithAddon } from '@/frontend/lib/tasks/runner';
+import { BaseService } from '@/frontend/lib/downloads/services/BaseService';
 
 const BASE_URL = 'https://api.torbox.app/v1';
 
@@ -232,13 +232,15 @@ export class TorboxService extends BaseService {
                 }
 
                 const torrentInfo =
-                  await window.electronAPI.app.axios<TorboxTorrentListResponse>({
-                    url: `${BASE_URL}/api/torrents/mylist?bypass_cache=true`,
-                    method: 'get',
-                    headers: {
-                      Authorization: `Bearer ${torboxApiKey}`,
-                    },
-                  });
+                  await window.electronAPI.app.axios<TorboxTorrentListResponse>(
+                    {
+                      url: `${BASE_URL}/api/torrents/mylist?bypass_cache=true`,
+                      method: 'get',
+                      headers: {
+                        Authorization: `Bearer ${torboxApiKey}`,
+                      },
+                    }
+                  );
 
                 if (!torrentInfo.data.success) {
                   return;
@@ -308,7 +310,12 @@ export class TorboxService extends BaseService {
           downloadID,
           tempId,
           downloadUrl,
-          getDownloadPath() + '/' + result.name + '/' + result.filename + '.zip',
+          getDownloadPath() +
+            '/' +
+            result.name +
+            '/' +
+            result.filename +
+            '.zip',
           'torbox',
           updatedState,
           result

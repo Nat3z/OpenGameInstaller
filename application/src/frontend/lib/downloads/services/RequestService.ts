@@ -1,10 +1,10 @@
-import { BaseService } from './BaseService';
-import type { SearchResultWithAddon } from '../../tasks/runner';
+import { BaseService } from '@/frontend/lib/downloads/services/BaseService';
+import type { SearchResultWithAddon } from '@/frontend/lib/tasks/runner';
 import type { SearchResult } from 'ogi-addon';
-import { createNotification, currentDownloads } from '../../../store';
-import { getDownloadPath } from '../../core/fs';
-import { safeFetch } from '../../core/ipc';
-import { startDownload } from '../lifecycle';
+import { createNotification, currentDownloads } from '@/frontend/store';
+import { getDownloadPath } from '@/frontend/lib/core/fs';
+import { safeFetch } from '@/frontend/lib/core/ipc';
+import { startDownload } from '@/frontend/lib/downloads/lifecycle';
 
 /**
  * Handles the initial "request" downloadType where we first need to ask the
@@ -19,8 +19,9 @@ export class RequestService extends BaseService {
     event: MouseEvent | null,
     htmlButton?: HTMLButtonElement
   ): Promise<void> {
-    const button = htmlButton ?? (event?.currentTarget ?? null);
-    const resolvedButton = button instanceof HTMLButtonElement ? button : undefined;
+    const button = htmlButton ?? event?.currentTarget ?? null;
+    const resolvedButton =
+      button instanceof HTMLButtonElement ? button : undefined;
 
     // Create a local ID for tracking, similar to real-debrid cases
     const localID = Math.floor(Math.random() * 1000000);
@@ -75,9 +76,7 @@ export class RequestService extends BaseService {
     // Check if response is null/undefined
     if (response === null || response === undefined) {
       currentDownloads.update((downloads) => {
-        const matchingDownload = downloads.find(
-          (d) => d.id === localID + ''
-        );
+        const matchingDownload = downloads.find((d) => d.id === localID + '');
         if (!matchingDownload) return downloads;
         matchingDownload.status = 'error';
         matchingDownload.error = 'Failed to get download response';

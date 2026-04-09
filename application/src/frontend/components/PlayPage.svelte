@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { LibraryInfo, SearchResult } from 'ogi-addon';
   import { ConfigurationBuilder } from 'ogi-addon/config';
-  import PlayIcon from '../Icons/PlayIcon.svelte';
+  import PlayIcon from '@/frontend/Icons/PlayIcon.svelte';
   import {
     currentDownloads,
     currentStorePageOpened,
@@ -12,18 +12,22 @@
     setHeaderBackButton,
     clearHeaderBackButton,
     createNotification,
-  } from '../store';
+  } from '@/frontend/store';
   import { onDestroy, onMount, tick } from 'svelte';
-  import SettingsFilled from '../Icons/SettingsFilled.svelte';
-  import GameConfiguration from './GameConfiguration.svelte';
+  import SettingsFilled from '@/frontend/Icons/SettingsFilled.svelte';
+  import GameConfiguration from '@/frontend/components/GameConfiguration.svelte';
   import { fly, slide } from 'svelte/transition';
   import { quintOut } from 'svelte/easing';
-  import Image from './Image.svelte';
-  import { fetchAddonsWithConfigure, runTask, safeFetch } from '../utils';
-  import AddonPicture from './AddonPicture.svelte';
-  import { updatesManager, appUpdates } from '../states.svelte';
-  import UpdateIcon from '../Icons/UpdateIcon.svelte';
-  import UpdateAppModal from './built/UpdateAppModal.svelte';
+  import Image from '@/frontend/components/Image.svelte';
+  import {
+    fetchAddonsWithConfigure,
+    runTask,
+    safeFetch,
+  } from '@/frontend/utils';
+  import AddonPicture from '@/frontend/components/AddonPicture.svelte';
+  import { updatesManager, appUpdates } from '@/frontend/states.svelte';
+  import UpdateIcon from '@/frontend/Icons/UpdateIcon.svelte';
+  import UpdateAppModal from '@/frontend/components/built/UpdateAppModal.svelte';
 
   let updateInfo = $derived.by(() => {
     return updatesManager.getAppUpdate(libraryInfo.appID);
@@ -695,7 +699,9 @@
   <!-- Addon Task Table -->
   {#if settledAddons}
     {#each Object.keys(searchingAddons) as addonID, index}
-      {@const tasks = searchingAddons[addonID]!!.filter((task) => task.downloadType === 'task')}
+      {@const tasks = searchingAddons[addonID]!!.filter(
+        (task) => task.downloadType === 'task'
+      )}
       {#if tasks.length > 0}
         <div class="mt-6" in:fly={{ y: 30, duration: 400, delay: 50 * index }}>
           <button
@@ -704,7 +710,9 @@
           >
             <div class="flex items-center gap-2">
               <AddonPicture addonId={addonID} class="w-6 h-6 rounded" />
-              <span class="font-medium text-accent-dark text-sm">{addonsMap.get(addonID)?.name ?? addonID}</span>
+              <span class="font-medium text-accent-dark text-sm"
+                >{addonsMap.get(addonID)?.name ?? addonID}</span
+              >
             </div>
             <svg
               class="w-3.5 h-3.5 text-accent-dark/60 transition-transform duration-200"
@@ -713,7 +721,12 @@
               fill="none"
               stroke="currentColor"
             >
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M19 9l-7 7-7-7"
+              />
             </svg>
           </button>
 
@@ -724,7 +737,10 @@
             >
               {#each tasks as task, taskIndex}
                 <div
-                  class="flex flex-row items-center justify-between px-4 py-3 {taskIndex < tasks.length - 1 ? 'border-b border-accent-light/40' : ''}"
+                  class="flex flex-row items-center justify-between px-4 py-3 {taskIndex <
+                  tasks.length - 1
+                    ? 'border-b border-accent-light/40'
+                    : ''}"
                 >
                   <span class="text-accent-dark font-medium">{task.name}</span>
                   <button
@@ -739,9 +755,15 @@
       {/if}
     {/each}
   {:else}
-    <div class="mt-6 bg-accent-lighter rounded-lg overflow-hidden animate-pulse">
+    <div
+      class="mt-6 bg-accent-lighter rounded-lg overflow-hidden animate-pulse"
+    >
       {#each Array(3) as _, i}
-        <div class="flex flex-row items-center justify-between px-4 py-3 {i < 2 ? 'border-b border-accent-light/40' : ''}">
+        <div
+          class="flex flex-row items-center justify-between px-4 py-3 {i < 2
+            ? 'border-b border-accent-light/40'
+            : ''}"
+        >
           <div class="h-5 bg-accent-light rounded w-40"></div>
           <div class="h-8 bg-accent-light rounded-lg w-16"></div>
         </div>

@@ -1,11 +1,11 @@
-import { currentDownloads } from '../../../store';
+import { currentDownloads } from '@/frontend/store';
 import {
   getConfigClientOption,
   getDownloadPath,
   listenUntilDownloadReady,
-} from '../../../utils';
-import type { SearchResultWithAddon } from '../../tasks/runner';
-import { BaseService } from './BaseService';
+} from '@/frontend/utils';
+import type { SearchResultWithAddon } from '@/frontend/lib/tasks/runner';
+import { BaseService } from '@/frontend/lib/downloads/services/BaseService';
 
 const BASE_URL = 'https://www.premiumize.me/api';
 

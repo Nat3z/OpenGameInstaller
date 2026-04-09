@@ -8,14 +8,14 @@
     type NumberOption,
     type StringOption,
   } from 'ogi-addon/config';
-  import { createNotification, currentDownloads } from '../store';
-  import { appUpdates } from '../states.svelte';
-  import Modal from './modal/Modal.svelte';
-  import TitleModal from './modal/TitleModal.svelte';
-  import ButtonModal from './modal/ButtonModal.svelte';
-  import InputModal from './modal/InputModal.svelte';
-  import CheckboxModal from './modal/CheckboxModal.svelte';
-  import WineDllOverridesModal from './modal/WineDllOverridesModal.svelte';
+  import { createNotification, currentDownloads } from '@/frontend/store';
+  import { appUpdates } from '@/frontend/states.svelte';
+  import Modal from '@/frontend/components/modal/Modal.svelte';
+  import TitleModal from '@/frontend/components/modal/TitleModal.svelte';
+  import ButtonModal from '@/frontend/components/modal/ButtonModal.svelte';
+  import InputModal from '@/frontend/components/modal/InputModal.svelte';
+  import CheckboxModal from '@/frontend/components/modal/CheckboxModal.svelte';
+  import WineDllOverridesModal from '@/frontend/components/modal/WineDllOverridesModal.svelte';
 
   interface Props {
     exitPlayPage: () => void;

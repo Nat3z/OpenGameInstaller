@@ -5,8 +5,8 @@
     gameFocused,
     launchGameTrigger,
     launchOverlayPlayPageReady,
-  } from '../store';
-  import { safeFetch } from '../utils';
+  } from '@/frontend/store';
+  import { safeFetch } from '@/frontend/utils';
 
   interface Props {
     gameId: number;
@@ -41,8 +41,7 @@
         : hookTypeParam === 'post'
           ? 'post'
           : null;
-    isHookOnly =
-      noLaunchParam === 'true' && hookType !== null;
+    isHookOnly = noLaunchParam === 'true' && hookType !== null;
 
     // wait 200 ms for the events to register
     await new Promise((r) => setTimeout(r, 200));

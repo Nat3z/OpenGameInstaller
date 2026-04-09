@@ -1,13 +1,13 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
-  import DeleteAddonWarningModal from '../components/built/DeleteAddonWarningModal.svelte';
-  import ButtonModal from '../components/modal/ButtonModal.svelte';
-  import CloseModal from '../components/modal/CloseModal.svelte';
-  import HeaderModal from '../components/modal/HeaderModal.svelte';
-  import Modal from '../components/modal/Modal.svelte';
-  import TextModal from '../components/modal/TextModal.svelte';
-  import TitleModal from '../components/modal/TitleModal.svelte';
-  import { type CommunityAddon, communityAddonsLocal } from '../store';
+  import DeleteAddonWarningModal from '@/frontend/components/built/DeleteAddonWarningModal.svelte';
+  import ButtonModal from '@/frontend/components/modal/ButtonModal.svelte';
+  import CloseModal from '@/frontend/components/modal/CloseModal.svelte';
+  import HeaderModal from '@/frontend/components/modal/HeaderModal.svelte';
+  import Modal from '@/frontend/components/modal/Modal.svelte';
+  import TextModal from '@/frontend/components/modal/TextModal.svelte';
+  import TitleModal from '@/frontend/components/modal/TitleModal.svelte';
+  import { type CommunityAddon, communityAddonsLocal } from '@/frontend/store';
   import { fade } from 'svelte/transition';
 
   let communityList: CommunityAddon[] = $state([]);

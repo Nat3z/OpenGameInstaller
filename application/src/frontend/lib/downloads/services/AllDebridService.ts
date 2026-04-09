@@ -1,9 +1,9 @@
-import { BaseService } from './BaseService';
-import type { SearchResultWithAddon } from '../../tasks/runner';
-import { currentDownloads, createNotification } from '../../../store';
-import { getDownloadPath } from '../../core/fs';
-import { listenUntilDownloadReady } from '../events';
-import { updateDownloadStatus } from '../lifecycle';
+import { BaseService } from '@/frontend/lib/downloads/services/BaseService';
+import type { SearchResultWithAddon } from '@/frontend/lib/tasks/runner';
+import { currentDownloads, createNotification } from '@/frontend/store';
+import { getDownloadPath } from '@/frontend/lib/core/fs';
+import { listenUntilDownloadReady } from '@/frontend/lib/downloads/events';
+import { updateDownloadStatus } from '@/frontend/lib/downloads/lifecycle';
 
 /** Result shape required for AllDebrid (magnet/torrent); caller ensures these exist. */
 type AllDebridSearchResult = SearchResultWithAddon & {

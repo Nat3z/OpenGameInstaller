@@ -2,12 +2,16 @@ import { BrowserWindow, ipcMain } from 'electron';
 import fs from 'fs';
 import { join } from 'path';
 import { exec, spawn } from 'child_process';
-import { processes, setupAddon, startAddon } from '../manager/manager.addon.js';
-import { __dirname } from '../manager/manager.paths.js';
-import { server, clients, port } from '../server/addon-server.js';
-import { sendNotification } from '../main.js';
+import {
+  processes,
+  setupAddon,
+  startAddon,
+} from '@/electron/manager/manager.addon.js';
+import { __dirname } from '@/electron/manager/manager.paths.js';
+import { server, clients, port } from '@/electron/server/addon-server.js';
+import { sendNotification } from '@/electron/main.js';
 import axios from 'axios';
-import { AddonConnection } from '../server/AddonConnection.js';
+import { AddonConnection } from '@/electron/server/AddonConnection.js';
 
 export async function startAddons(): Promise<void> {
   // start all of the addons

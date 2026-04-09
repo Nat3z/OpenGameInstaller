@@ -1,13 +1,13 @@
 import * as fs from 'fs/promises';
 import * as fsSync from 'fs';
 import { join } from 'path';
-import { __dirname } from './manager/manager.paths.js';
+import { __dirname } from '@/electron/manager/manager.paths.js';
 import semver from 'semver';
-import { sendNotification, VERSION } from './main.js';
-import { sendIPCMessage } from './main.js';
+import { sendNotification, VERSION } from '@/electron/main.js';
+import { sendIPCMessage } from '@/electron/main.js';
 import { exec } from 'child_process';
 import { spawn } from 'child_process';
-import { addToDesktop } from './handlers/handler.app.js';
+import { addToDesktop } from '@/electron/handlers/handler.app.js';
 
 let migrations: {
   [key: string]: {

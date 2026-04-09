@@ -1,22 +1,22 @@
-import { RequestService } from './RequestService';
-import { DirectService } from './DirectService';
-import { TorrentService } from './TorrentService';
-import { RealDebridService } from './RealDebridService';
-import { AllDebridService } from './AllDebridService';
-import { TorboxService } from './TorboxService';
-import { PremiumizeService } from './PremiumizeService';
-import { EmptyService } from './EmptyService';
-import type { BaseService } from './BaseService';
+import { RequestService } from '@/frontend/lib/downloads/services/RequestService';
+import { DirectService } from '@/frontend/lib/downloads/services/DirectService';
+import { TorrentService } from '@/frontend/lib/downloads/services/TorrentService';
+import { RealDebridService } from '@/frontend/lib/downloads/services/RealDebridService';
+import { AllDebridService } from '@/frontend/lib/downloads/services/AllDebridService';
+import { TorboxService } from '@/frontend/lib/downloads/services/TorboxService';
+import { PremiumizeService } from '@/frontend/lib/downloads/services/PremiumizeService';
+import { EmptyService } from '@/frontend/lib/downloads/services/EmptyService';
+import type { BaseService } from '@/frontend/lib/downloads/services/BaseService';
 
-export { BaseService } from './BaseService';
-export { RequestService } from './RequestService';
-export { DirectService } from './DirectService';
-export { TorrentService } from './TorrentService';
-export { RealDebridService } from './RealDebridService';
-export { AllDebridService } from './AllDebridService';
-export { TorboxService } from './TorboxService';
-export { PremiumizeService } from './PremiumizeService';
-export { EmptyService } from './EmptyService';
+export { BaseService } from '@/frontend/lib/downloads/services/BaseService';
+export { RequestService } from '@/frontend/lib/downloads/services/RequestService';
+export { DirectService } from '@/frontend/lib/downloads/services/DirectService';
+export { TorrentService } from '@/frontend/lib/downloads/services/TorrentService';
+export { RealDebridService } from '@/frontend/lib/downloads/services/RealDebridService';
+export { AllDebridService } from '@/frontend/lib/downloads/services/AllDebridService';
+export { TorboxService } from '@/frontend/lib/downloads/services/TorboxService';
+export { PremiumizeService } from '@/frontend/lib/downloads/services/PremiumizeService';
+export { EmptyService } from '@/frontend/lib/downloads/services/EmptyService';
 
 /**
  * Array of all available service instances. You can iterate over this list to find the

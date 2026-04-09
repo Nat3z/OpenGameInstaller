@@ -1,8 +1,8 @@
 import { dialog, ipcMain, shell } from 'electron';
-import { __dirname } from '../manager/manager.paths.js';
+import { __dirname } from '@/electron/manager/manager.paths.js';
 import { join } from 'path';
 import * as fs from 'fs';
-import { sendIPCMessage } from '../main.js';
+import { sendIPCMessage } from '@/electron/main.js';
 import * as fsAsync from 'fs/promises';
 import { extraction } from 'ogi-addon';
 

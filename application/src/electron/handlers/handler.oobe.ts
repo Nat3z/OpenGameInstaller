@@ -1,11 +1,11 @@
 import { ipcMain } from 'electron';
 import { exec } from 'child_process';
-import { __dirname } from '../manager/manager.paths.js';
+import { __dirname } from '@/electron/manager/manager.paths.js';
 import fs from 'fs';
 import { join } from 'path';
 import axios from 'axios';
-import { sendNotification, sendIPCMessage } from '../main.js';
-import { IS_NIXOS, STEAMTINKERLAUNCH_PATH } from '../startup.js';
+import { sendNotification, sendIPCMessage } from '@/electron/main.js';
+import { IS_NIXOS, STEAMTINKERLAUNCH_PATH } from '@/electron/startup.js';
 import os from 'os';
 import { spawn } from 'child_process';
 

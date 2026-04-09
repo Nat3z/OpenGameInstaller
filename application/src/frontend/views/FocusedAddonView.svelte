@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { safeFetch, runTask } from '../utils';
+  import { safeFetch, runTask } from '@/frontend/utils';
   import type {
     BooleanOption,
     ConfigurationFile,
@@ -11,16 +11,16 @@
   } from 'ogi-addon/config';
   import { isActionOption } from 'ogi-addon/config';
   import type { OGIAddonConfiguration } from 'ogi-addon';
-  import { notifications } from '../store';
-  import AddonPicture from '../components/AddonPicture.svelte';
-  import Modal from '../components/modal/Modal.svelte';
-  import HeaderModal from '../components/modal/HeaderModal.svelte';
-  import TitleModal from '../components/modal/TitleModal.svelte';
-  import TextModal from '../components/modal/TextModal.svelte';
-  import ButtonModal from '../components/modal/ButtonModal.svelte';
-  import DeleteAddonWarningModal from '../components/built/DeleteAddonWarningModal.svelte';
-  import CustomDropdown from '../components/CustomDropdown.svelte';
-  import RangeInput from '../components/RangeInput.svelte';
+  import { notifications } from '@/frontend/store';
+  import AddonPicture from '@/frontend/components/AddonPicture.svelte';
+  import Modal from '@/frontend/components/modal/Modal.svelte';
+  import HeaderModal from '@/frontend/components/modal/HeaderModal.svelte';
+  import TitleModal from '@/frontend/components/modal/TitleModal.svelte';
+  import TextModal from '@/frontend/components/modal/TextModal.svelte';
+  import ButtonModal from '@/frontend/components/modal/ButtonModal.svelte';
+  import DeleteAddonWarningModal from '@/frontend/components/built/DeleteAddonWarningModal.svelte';
+  import CustomDropdown from '@/frontend/components/CustomDropdown.svelte';
+  import RangeInput from '@/frontend/components/RangeInput.svelte';
 
   const fs = window.electronAPI.fs;
 

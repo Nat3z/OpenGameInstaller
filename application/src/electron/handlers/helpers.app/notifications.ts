@@ -1,7 +1,7 @@
 /**
  * Notification utility functions
  */
-import { sendNotification } from '../../main.js';
+import { sendNotification } from '@/electron/main.js';
 
 export function generateNotificationId(): string {
   return Math.random().toString(36).substring(7);

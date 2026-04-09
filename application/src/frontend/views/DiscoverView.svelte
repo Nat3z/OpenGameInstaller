@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { safeFetch } from '../utils';
+  import { safeFetch } from '@/frontend/utils';
   import type {
     BasicLibraryInfo,
     CatalogCarouselItem,
@@ -15,8 +15,8 @@
     viewOpenedWhenChanged,
     selectedView,
     createNotification,
-  } from '../store';
-  import AddonPicture from '../components/AddonPicture.svelte';
+  } from '@/frontend/store';
+  import AddonPicture from '@/frontend/components/AddonPicture.svelte';
 
   interface ConfigTemplateAndInfo extends OGIAddonConfiguration {
     configTemplate: ConfigurationFile;

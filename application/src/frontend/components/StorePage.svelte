@@ -6,7 +6,7 @@
     safeFetch,
     startDownload,
     type SearchResultWithAddon,
-  } from '../utils';
+  } from '@/frontend/utils';
   import {
     createNotification,
     currentStorePageOpened,
@@ -16,14 +16,14 @@
     selectedView,
     viewOpenedWhenChanged,
     currentDownloads,
-  } from '../store';
+  } from '@/frontend/store';
   import type { SearchResult, StoreData, LibraryInfo } from 'ogi-addon';
-  import AddonPicture from './AddonPicture.svelte';
-  import Modal from './modal/Modal.svelte';
-  import TitleModal from './modal/TitleModal.svelte';
-  import HeaderModal from './modal/HeaderModal.svelte';
-  import SectionModal from './modal/SectionModal.svelte';
-  import TextModal from './modal/TextModal.svelte';
+  import AddonPicture from '@/frontend/components/AddonPicture.svelte';
+  import Modal from '@/frontend/components/modal/Modal.svelte';
+  import TitleModal from '@/frontend/components/modal/TitleModal.svelte';
+  import HeaderModal from '@/frontend/components/modal/HeaderModal.svelte';
+  import SectionModal from '@/frontend/components/modal/SectionModal.svelte';
+  import TextModal from '@/frontend/components/modal/TextModal.svelte';
   import { fly, slide } from 'svelte/transition';
 
   interface Props {

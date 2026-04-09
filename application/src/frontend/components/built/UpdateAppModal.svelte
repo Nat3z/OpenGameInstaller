@@ -5,13 +5,13 @@
     safeFetch,
     startDownload,
     type SearchResultWithAddon,
-  } from '../../utils';
-  import { createNotification } from '../../store';
+  } from '@/frontend/utils';
+  import { createNotification } from '@/frontend/store';
   import type { SearchResult, StoreData } from 'ogi-addon';
-  import AddonPicture from '../AddonPicture.svelte';
-  import Modal from '../modal/Modal.svelte';
-  import TitleModal from '../modal/TitleModal.svelte';
-  import SectionModal from '../modal/SectionModal.svelte';
+  import AddonPicture from '@/frontend/components/AddonPicture.svelte';
+  import Modal from '@/frontend/components/modal/Modal.svelte';
+  import TitleModal from '@/frontend/components/modal/TitleModal.svelte';
+  import SectionModal from '@/frontend/components/modal/SectionModal.svelte';
   import { fly, slide } from 'svelte/transition';
 
   interface Props {

@@ -1,16 +1,16 @@
 <script lang="ts">
   import { fly } from 'svelte/transition';
-  import { createNotification } from '../store';
-  import Modal from '../components/modal/Modal.svelte';
-  import TitleModal from '../components/modal/TitleModal.svelte';
-  import InputModal from '../components/modal/InputModal.svelte';
-  import ButtonModal from '../components/modal/ButtonModal.svelte';
+  import { createNotification } from '@/frontend/store';
+  import Modal from '@/frontend/components/modal/Modal.svelte';
+  import TitleModal from '@/frontend/components/modal/TitleModal.svelte';
+  import InputModal from '@/frontend/components/modal/InputModal.svelte';
+  import ButtonModal from '@/frontend/components/modal/ButtonModal.svelte';
   import { onMount } from 'svelte';
-  import TextModal from '../components/modal/TextModal.svelte';
-  import SectionModal from '../components/modal/SectionModal.svelte';
-  import CustomDropdown from '../components/CustomDropdown.svelte';
-  import RangeInput from '../components/RangeInput.svelte';
-  import { fetchAddonsWithConfigure } from '../utils';
+  import TextModal from '@/frontend/components/modal/TextModal.svelte';
+  import SectionModal from '@/frontend/components/modal/SectionModal.svelte';
+  import CustomDropdown from '@/frontend/components/CustomDropdown.svelte';
+  import RangeInput from '@/frontend/components/RangeInput.svelte';
+  import { fetchAddonsWithConfigure } from '@/frontend/utils';
 
   const fs = window.electronAPI.fs;
   interface OptionsCategory {

@@ -1,8 +1,8 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import ChangelogModal from '../components/modal/ChangelogModal.svelte';
-  import type { Changelog } from '../lib/changelog/types';
-  import { getChangelogByVersion } from '../lib/changelog/changelogs';
+  import ChangelogModal from '@/frontend/components/modal/ChangelogModal.svelte';
+  import type { Changelog } from '@/frontend/lib/changelog/types';
+  import { getChangelogByVersion } from '@/frontend/lib/changelog/changelogs';
 
   let showChangelog = $state(false);
   let currentChangelog = $state<Changelog | undefined>(undefined);

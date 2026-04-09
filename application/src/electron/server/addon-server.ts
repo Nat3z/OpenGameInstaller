@@ -3,10 +3,10 @@ import cors from 'cors';
 const port = 7654;
 import http from 'http';
 import { WebSocketServer } from 'ws';
-import addonProcedures from './api/addons.js';
-import deferProcedures from './api/defer.js';
-import { AddonConnection } from './AddonConnection.js';
-import { AddonServer } from './serve.js';
+import addonProcedures from '@/electron/server/api/addons.js';
+import deferProcedures from '@/electron/server/api/defer.js';
+import { AddonConnection } from '@/electron/server/AddonConnection.js';
+import { AddonServer } from '@/electron/server/serve.js';
 import { z } from 'zod';
 const app = express();
 const server = http.createServer(app);
@@ -29,7 +29,9 @@ export type LaunchForwardPayload = z.infer<typeof launchForwardPayloadSchema>;
 type FocusRequestHandler = () => boolean | Promise<boolean>;
 type LaunchRequestHandler = (
   payload: LaunchForwardPayload
-) => { success: boolean; error?: string } | Promise<{ success: boolean; error?: string }>;
+) =>
+  | { success: boolean; error?: string }
+  | Promise<{ success: boolean; error?: string }>;
 
 let focusRequestHandler: FocusRequestHandler | null = null;
 let launchRequestHandler: LaunchRequestHandler | null = null;
@@ -105,14 +107,18 @@ app.get('/internal/ping', (_, res) => {
 
 app.post('/internal/focus', async (_, res) => {
   if (!focusRequestHandler) {
-    res.status(503).json({ success: false, error: 'Focus handler unavailable' });
+    res
+      .status(503)
+      .json({ success: false, error: 'Focus handler unavailable' });
     return;
   }
 
   try {
     const focused = await focusRequestHandler();
     if (!focused) {
-      res.status(409).json({ success: false, error: 'No active window to focus' });
+      res
+        .status(409)
+        .json({ success: false, error: 'No active window to focus' });
       return;
     }
     res.json({ success: true });
@@ -126,7 +132,9 @@ app.post('/internal/focus', async (_, res) => {
 
 app.post('/internal/launch', async (req, res) => {
   if (!launchRequestHandler) {
-    res.status(503).json({ success: false, error: 'Launch handler unavailable' });
+    res
+      .status(503)
+      .json({ success: false, error: 'Launch handler unavailable' });
     return;
   }
 

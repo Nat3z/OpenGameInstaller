@@ -12,7 +12,10 @@
     "lib": ["ES2022", "dom"],
     "moduleResolution": "bundler",
     "paths": {
-      "ogi-addon/config": ["../../node_modules/ogi-addon/build/config/Configuration.d.mts"],
+      "@/*": ["../*"],
+      "ogi-addon/config": [
+        "../../node_modules/ogi-addon/build/config/Configuration.d.mts"
+      ],
       "ogi-addon": ["../../node_modules/ogi-addon/build/main.d.mts"]
     },
     "noImplicitAny": true,

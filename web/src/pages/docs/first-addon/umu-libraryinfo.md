@@ -22,7 +22,7 @@ The `umu` field in `LibraryInfo` (from `ogi-addon`) has this shape:
 | Field | Type | Required | Description |
 | ----- | ---- | -------- | ----------- |
 | `umuId` | `string` | Yes | Unique ID for the game’s Wine prefix. Format: `steam:${number}` or `umu:${string \| number}`. |
-| `protonVersion` | `string` | No | Proton build to use (e.g. `UMU-Latest`). OGI default is `UMU-Latest` if omitted. |
+| `protonVersion` | `string` | No | Proton build to use (e.g. `UMU-Proton`). OGI default is `UMU-Proton` if omitted. |
 | `store` | `string` | No | Store identifier for UMU. |
 | `dllOverrides` | `string[]` | No | WINEDLLOVERRIDES-style overrides (e.g. `d3d11=n,b`). |
 | `winePrefixPath` | `string` | No | Set by OGI; do not set in addon. |
@@ -55,7 +55,7 @@ addon.on('setup', async (data, event) => {
     ...(isLinux && {
       umu: {
         umuId: `umu:${data.appID}` as const,
-        protonVersion: 'UMU-Latest', // optional
+        protonVersion: 'UMU-Proton', // optional
         store: data.storefront ?? 'unknown',
       },
     }),

@@ -175,8 +175,8 @@ export type SetupEventResponse = Omit<
      */
     dllOverrides?: string[];
     /**
-     * Optional Proton version to use (e.g., 'GE-Proton9-5', 'GE-Proton')
-     * If not specified, uses latest UMU-Proton
+     * Optional PROTONPATH override to use for UMU launches.
+     * Omit this unless you absolutely need a specific Proton build/path.
      */
     protonVersion?: string;
     /**

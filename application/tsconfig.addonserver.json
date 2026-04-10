@@ -10,6 +10,7 @@
     "lib": ["es2022", "esnext", "dom"],
     "moduleResolution": "bundler",
     "paths": {
+      "@/*": ["./src/*"],
       "ogi-addon/config": [
         "./node_modules/ogi-addon/build/config/Configuration.d.mts"
       ],

@@ -1,14 +1,17 @@
 import axios from 'axios';
 import { ipcMain, BrowserWindow } from 'electron';
-import { sendNotification } from '../main.js';
+import { sendNotification } from '@/electron/main.js';
 import { join } from 'path';
 import * as fs from 'fs';
 import { rm as rmAsync, readFile } from 'fs/promises';
-import { getStoredValue, refreshCached } from '../manager/manager.config.js';
+import {
+  getStoredValue,
+  refreshCached,
+} from '@/electron/manager/manager.config.js';
 import { QBittorrent } from '@ctrl/qbittorrent';
-import { torrent as wtConnect } from '../manager/manager.webtorrent.js';
-import { __dirname } from '../manager/manager.paths.js';
-import { DOWNLOAD_QUEUE } from '../manager/manager.queue.js';
+import { torrent as wtConnect } from '@/electron/manager/manager.webtorrent.js';
+import { __dirname } from '@/electron/manager/manager.paths.js';
+import { DOWNLOAD_QUEUE } from '@/electron/manager/manager.queue.js';
 import ParseTorrent from 'parse-torrent';
 
 let qbitClient: QBittorrent | undefined = undefined;

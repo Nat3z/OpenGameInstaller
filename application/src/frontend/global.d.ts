@@ -14,7 +14,8 @@ type $AllDebridTorrentInfo = import('all-debrid-js').$AllDebridTorrentInfo;
 type $AllDebridUserInfo = import('all-debrid-js').$UserInfo;
 type $AllDebridHosts = import('all-debrid-js').$Hosts;
 type $AddMagnetOrTorrent = import('all-debrid-js').$AddMagnetOrTorrent;
-type $GamepadNavigator = import('./managers/GamepadManager').GamepadNavigator;
+type $GamepadNavigator =
+  import('@/frontend/managers/GamepadManager').GamepadNavigator;
 
 /** Shared type for app insertion (insertApp) to avoid duplicating LibraryInfo + redistributables. */
 type InsertAppInfo = LibraryInfo & {

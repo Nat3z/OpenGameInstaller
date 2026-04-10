@@ -1,9 +1,9 @@
 <script lang="ts">
-  import Modal from '../modal/Modal.svelte';
-  import TitleModal from '../modal/TitleModal.svelte';
-  import HeaderModal from '../modal/HeaderModal.svelte';
-  import TextModal from '../modal/TextModal.svelte';
-  import ButtonModal from '../modal/ButtonModal.svelte';
+  import Modal from '@/frontend/components/modal/Modal.svelte';
+  import TitleModal from '@/frontend/components/modal/TitleModal.svelte';
+  import HeaderModal from '@/frontend/components/modal/HeaderModal.svelte';
+  import TextModal from '@/frontend/components/modal/TextModal.svelte';
+  import ButtonModal from '@/frontend/components/modal/ButtonModal.svelte';
 
   let {
     open,

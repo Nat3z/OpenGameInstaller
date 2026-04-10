@@ -1,7 +1,7 @@
-import { BaseService } from './BaseService';
-import type { SearchResultWithAddon } from '../../tasks/runner';
-import { currentDownloads } from '../../../store';
-import { getDownloadPath } from '../../core/fs';
+import { BaseService } from '@/frontend/lib/downloads/services/BaseService';
+import type { SearchResultWithAddon } from '@/frontend/lib/tasks/runner';
+import { currentDownloads } from '@/frontend/store';
+import { getDownloadPath } from '@/frontend/lib/core/fs';
 
 /**
  * Handles standard magnet and torrent downloads via the configured torrent
@@ -16,7 +16,8 @@ export class TorrentService extends BaseService {
     event: MouseEvent | null,
     htmlButton?: HTMLButtonElement
   ): Promise<void> {
-    const button = htmlButton ?? (event?.currentTarget as HTMLButtonElement | null);
+    const button =
+      htmlButton ?? (event?.currentTarget as HTMLButtonElement | null);
     const resolvedButton = button instanceof HTMLButtonElement ? button : null;
 
     if (result.downloadType !== 'magnet' && result.downloadType !== 'torrent')

@@ -1,11 +1,11 @@
 import { readFile, writeFile } from 'fs/promises';
 import { join } from 'path';
-import { sendNotification } from '../main.js';
+import { sendNotification } from '@/electron/main.js';
 import z from 'zod';
 import exec from 'child_process';
-import { addonSecret } from '../server/constants.js';
-import { clients } from '../server/addon-server.js';
-import { AddonConnection } from '../server/AddonConnection.js';
+import { addonSecret } from '@/electron/server/constants.js';
+import { clients } from '@/electron/server/addon-server.js';
+import { AddonConnection } from '@/electron/server/AddonConnection.js';
 
 export let processes: {
   [key: string]: exec.ChildProcess;

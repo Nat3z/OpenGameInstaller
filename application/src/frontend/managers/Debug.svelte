@@ -1,18 +1,18 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import Modal from '../components/modal/Modal.svelte';
-  import CloseModal from '../components/modal/CloseModal.svelte';
-  import TitleModal from '../components/modal/TitleModal.svelte';
-  import TextModal from '../components/modal/TextModal.svelte';
-  import SectionModal from '../components/modal/SectionModal.svelte';
-  import ButtonModal from '../components/modal/ButtonModal.svelte';
-  import { createNotification, notificationHistory } from '../store';
-  import CheckboxModal from '../components/modal/CheckboxModal.svelte';
+  import Modal from '@/frontend/components/modal/Modal.svelte';
+  import CloseModal from '@/frontend/components/modal/CloseModal.svelte';
+  import TitleModal from '@/frontend/components/modal/TitleModal.svelte';
+  import TextModal from '@/frontend/components/modal/TextModal.svelte';
+  import SectionModal from '@/frontend/components/modal/SectionModal.svelte';
+  import ButtonModal from '@/frontend/components/modal/ButtonModal.svelte';
+  import { createNotification, notificationHistory } from '@/frontend/store';
+  import CheckboxModal from '@/frontend/components/modal/CheckboxModal.svelte';
   import {
     ConfigurationBuilder,
     type ConfigurationFile,
   } from 'ogi-addon/config';
-  import HeaderModal from '../components/modal/HeaderModal.svelte';
+  import HeaderModal from '@/frontend/components/modal/HeaderModal.svelte';
 
   let showDebugModal = $state(false);
   let priorityModals = $state({

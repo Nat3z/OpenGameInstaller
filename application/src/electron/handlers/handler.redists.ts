@@ -4,18 +4,18 @@
  */
 import { ipcMain } from 'electron';
 import type { LibraryInfo } from 'ogi-addon';
-import { isLinux } from './helpers.app/platform.js';
+import { isLinux } from '@/electron/handlers/helpers.app/platform.js';
 import {
   getNonSteamGameAppID,
   getVersionedGameName,
-} from './helpers.app/steam.js';
-import { loadLibraryInfo } from './helpers.app/library.js';
+} from '@/electron/handlers/helpers.app/steam.js';
+import { loadLibraryInfo } from '@/electron/handlers/helpers.app/library.js';
 import {
   installRedistributablesWithUmu,
   installRedistributablesWithUmuForLegacy,
   type RedistributableInstallProgress,
-} from './handler.umu.js';
-import { sendIPCMessage } from '../main.js';
+} from '@/electron/handlers/handler.umu.js';
+import { sendIPCMessage } from '@/electron/main.js';
 
 export function registerRedistributableHandlers() {
   ipcMain.handle(
@@ -77,7 +77,10 @@ export function registerRedistributableHandlers() {
         );
 
         // Look up Steam App ID dynamically using steamtinkerlaunch nonsteamgame system
-        const versionedGameName = getVersionedGameName(appInfo.name, appInfo.version);
+        const versionedGameName = getVersionedGameName(
+          appInfo.name,
+          appInfo.version
+        );
         const { success, appId: steamAppId } =
           await getNonSteamGameAppID(versionedGameName);
 

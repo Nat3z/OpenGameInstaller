@@ -1,7 +1,7 @@
 <script lang="ts">
-  import core from '../lib/core';
-  import { tryCatch } from '../lib/core/tryCatch';
-  import { updatesManager } from '../states.svelte';
+  import core from '@/frontend/lib/core';
+  import { tryCatch } from '@/frontend/lib/core/tryCatch';
+  import { updatesManager } from '@/frontend/states.svelte';
 
   document.addEventListener('all-addons-started', () => {
     // clear the app updates

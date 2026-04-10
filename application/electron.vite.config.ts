@@ -5,6 +5,11 @@ import tailwindcss from '@tailwindcss/vite';
 
 export default defineConfig({
   main: {
+    resolve: {
+      alias: {
+        '@': resolve(__dirname, 'src'),
+      },
+    },
     plugins: [externalizeDepsPlugin({ exclude: ['ogi-addon', 'webtorrent'] })],
     build: {
       rollupOptions: {
@@ -16,6 +21,11 @@ export default defineConfig({
     },
   },
   preload: {
+    resolve: {
+      alias: {
+        '@': resolve(__dirname, 'src'),
+      },
+    },
     plugins: [externalizeDepsPlugin({ exclude: ['ogi-addon'] })],
     build: {
       rollupOptions: {
@@ -28,6 +38,11 @@ export default defineConfig({
     },
   },
   renderer: {
+    resolve: {
+      alias: {
+        '@': resolve(__dirname, 'src'),
+      },
+    },
     root: '.',
     publicDir: 'public',
     build: {

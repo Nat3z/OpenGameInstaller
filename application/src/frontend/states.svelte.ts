@@ -164,8 +164,7 @@ export const updatesManager = {
     if (
       appUpdates.dismissedUpdates.some(
         (dismissed) =>
-          dismissed.appID === appID &&
-          dismissed.updateVersion === updateVersion
+          dismissed.appID === appID && dismissed.updateVersion === updateVersion
       )
     ) {
       return;

@@ -1,4 +1,4 @@
-import { createNotification } from '../../store';
+import { createNotification } from '@/frontend/store';
 
 export function getDownloadPath(): string {
   if (!window.electronAPI.fs.exists('./config/option/general.json')) {

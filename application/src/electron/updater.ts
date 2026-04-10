@@ -16,8 +16,8 @@ import { basename, dirname, join } from 'path';
 import { setTimeout as setTimeoutPromise } from 'timers/promises';
 import { spawn, exec } from 'child_process';
 import * as path from 'path';
-import { __dirname as persistentDataDir } from './manager/manager.paths.js';
-import { getEffectiveOnlineState } from './lib/online.js';
+import { __dirname as persistentDataDir } from '@/electron/manager/manager.paths.js';
+import { getEffectiveOnlineState } from '@/electron/lib/online.js';
 
 function isDev() {
   return !app.isPackaged;

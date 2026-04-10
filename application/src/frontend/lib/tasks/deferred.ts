@@ -1,5 +1,9 @@
-import type { ResponseDeferredTask } from '../../../electron/server/api/defer';
-import { deferredTasks, removedTasks, type DeferredTask } from '../../store';
+import type { ResponseDeferredTask } from '@/electron/server/api/defer';
+import {
+  deferredTasks,
+  removedTasks,
+  type DeferredTask,
+} from '@/frontend/store';
 
 export async function loadDeferredTasks(tasksToRemove: string[] = []) {
   try {

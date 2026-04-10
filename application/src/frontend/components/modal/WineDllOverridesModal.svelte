@@ -1,8 +1,8 @@
 <script lang="ts">
-  import Modal from './Modal.svelte';
-  import TitleModal from './TitleModal.svelte';
-  import TextModal from './TextModal.svelte';
-  import ButtonModal from './ButtonModal.svelte';
+  import Modal from '@/frontend/components/modal/Modal.svelte';
+  import TitleModal from '@/frontend/components/modal/TitleModal.svelte';
+  import TextModal from '@/frontend/components/modal/TextModal.svelte';
+  import ButtonModal from '@/frontend/components/modal/ButtonModal.svelte';
 
   type DllOverrideRow = {
     id: string;

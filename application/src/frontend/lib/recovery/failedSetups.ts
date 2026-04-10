@@ -5,14 +5,14 @@ import {
   setupLogs,
   type FailedSetup,
   type DownloadStatusAndInfo,
-} from '../../store';
+} from '@/frontend/store';
 // safeFetch not used here; setup is executed via runSetupApp
 import type { EventListenerTypes } from 'ogi-addon';
 import {
   unrarAndReturnOutputDir,
   unzipAndReturnOutputDir,
-} from '../setup/extraction';
-import { runSetupApp } from '../setup/setup';
+} from '@/frontend/lib/setup/extraction';
+import { runSetupApp } from '@/frontend/lib/setup/setup';
 
 export async function loadFailedSetups() {
   try {

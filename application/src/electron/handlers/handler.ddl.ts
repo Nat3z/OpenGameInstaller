@@ -1,14 +1,17 @@
 import { ipcMain, BrowserWindow } from 'electron';
 import * as fs from 'fs';
 import { rm as rmAsync } from 'fs/promises';
-import { sendNotification } from '../main.js';
+import { sendNotification } from '@/electron/main.js';
 import axios, { AxiosError, type AxiosResponse } from 'axios';
 import { dirname } from 'path';
-import { DOWNLOAD_QUEUE } from '../manager/manager.queue.js';
+import { DOWNLOAD_QUEUE } from '@/electron/manager/manager.queue.js';
 import { Readable, Transform, type TransformCallback } from 'stream';
 import * as http from 'http';
 import * as https from 'https';
-import { getStoredValue, refreshCached } from '../manager/manager.config.js';
+import {
+  getStoredValue,
+  refreshCached,
+} from '@/electron/manager/manager.config.js';
 
 // Parallel download configuration
 const PARALLEL_DOWNLOAD_THRESHOLD = 100 * 1024 * 1024; // 100MB in bytes
@@ -35,7 +38,10 @@ class GlobalTokenBucket {
     const now = Date.now();
     const elapsed = (now - this.lastRefillTime) / 1000;
     this.lastRefillTime = now;
-    this.tokens = Math.min(this.bytesPerSec, this.tokens + elapsed * this.bytesPerSec);
+    this.tokens = Math.min(
+      this.bytesPerSec,
+      this.tokens + elapsed * this.bytesPerSec
+    );
     this.tokens -= bytes;
     if (this.tokens < 0) {
       const waitMs = (-this.tokens / this.bytesPerSec) * 1000;
@@ -1945,7 +1951,10 @@ async function checkParallelChunkCount() {
   BANDWIDTH_LIMIT_BYTES_PER_SEC =
     Number.isFinite(bwVal) && bwVal > 0 ? Math.round(bwVal * 1024 * 1024) : 0;
   globalTokenBucket.update(BANDWIDTH_LIMIT_BYTES_PER_SEC);
-  console.log('[direct] bandwidth limit (bytes/s):', BANDWIDTH_LIMIT_BYTES_PER_SEC);
+  console.log(
+    '[direct] bandwidth limit (bytes/s):',
+    BANDWIDTH_LIMIT_BYTES_PER_SEC
+  );
 }
 
 export default function handler(mainWindow: BrowserWindow) {

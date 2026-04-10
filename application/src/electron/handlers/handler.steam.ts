@@ -11,20 +11,20 @@ import {
   getHomeDir,
   getProtonPrefixPath,
   getOgiExecutablePath,
-} from './helpers.app/platform.js';
+} from '@/electron/handlers/helpers.app/platform.js';
 import {
   getSteamAppIdWithFallback,
   getNonSteamGameAppID,
   getVersionedGameName,
   addGameToSteam,
-} from './helpers.app/steam.js';
+} from '@/electron/handlers/helpers.app/steam.js';
 import {
   loadLibraryInfo,
   saveLibraryInfo,
   ensureLibraryDir,
-} from './helpers.app/library.js';
-import { generateNotificationId } from './helpers.app/notifications.js';
-import { sendNotification } from '../main.js';
+} from '@/electron/handlers/helpers.app/library.js';
+import { generateNotificationId } from '@/electron/handlers/helpers.app/notifications.js';
+import { sendNotification } from '@/electron/main.js';
 
 /**
  * Add a UMU game to Steam using OGI wrapper launches.

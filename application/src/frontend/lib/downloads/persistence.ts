@@ -3,7 +3,7 @@ import {
   redistributableInstalls,
   type DownloadStatusAndInfo,
   type RedistributableInstall,
-} from '../../store';
+} from '@/frontend/store';
 import { get } from 'svelte/store';
 
 type PersistableStatus =

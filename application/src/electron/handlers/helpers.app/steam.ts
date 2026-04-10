@@ -2,10 +2,13 @@
  * Steam/Proton helper functions
  */
 import { exec, execFile } from 'child_process';
-import { __dirname } from '../../manager/manager.paths.js';
-import { getOgiExecutablePath } from './platform.js';
-import { STEAMTINKERLAUNCH_PATH } from '../../startup.js';
-import { notifyError, notifySuccess } from './notifications.js';
+import { __dirname } from '@/electron/manager/manager.paths.js';
+import { getOgiExecutablePath } from '@/electron/handlers/helpers.app/platform.js';
+import { STEAMTINKERLAUNCH_PATH } from '@/electron/startup.js';
+import {
+  notifyError,
+  notifySuccess,
+} from '@/electron/handlers/helpers.app/notifications.js';
 
 /**
  * Escapes a string for safe use in shell commands by escaping special characters

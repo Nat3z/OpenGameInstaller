@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { getAllApps } from '../lib/core/library';
-  import { gamesLaunched } from '../store';
-  import { safeFetch } from '../utils';
+  import { getAllApps } from '@/frontend/lib/core/library';
+  import { gamesLaunched } from '@/frontend/store';
+  import { safeFetch } from '@/frontend/utils';
 
   const launchParams = new URLSearchParams(window.location.search);
   const shortcutLaunchGameId = (() => {

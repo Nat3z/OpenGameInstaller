@@ -7,13 +7,19 @@ import { spawn } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import type { LibraryInfo } from 'ogi-addon';
-import { isLinux, getHomeDir } from './helpers.app/platform.js';
-import { loadLibraryInfo, saveLibraryInfo } from './helpers.app/library.js';
-import { generateNotificationId } from './helpers.app/notifications.js';
-import { getSilentInstallFlags } from './helpers.app/install-flags.js';
-import { sendNotification } from '../main.js';
-import { __dirname } from '../manager/manager.paths.js';
-import { downloadLatestUmu } from '../startup.js';
+import {
+  isLinux,
+  getHomeDir,
+} from '@/electron/handlers/helpers.app/platform.js';
+import {
+  loadLibraryInfo,
+  saveLibraryInfo,
+} from '@/electron/handlers/helpers.app/library.js';
+import { generateNotificationId } from '@/electron/handlers/helpers.app/notifications.js';
+import { getSilentInstallFlags } from '@/electron/handlers/helpers.app/install-flags.js';
+import { sendNotification } from '@/electron/main.js';
+import { __dirname } from '@/electron/manager/manager.paths.js';
+import { downloadLatestUmu } from '@/electron/startup.js';
 
 /**
  * Get the UMU prefix base directory

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { fade } from 'svelte/transition';
-  import type { SetupLog } from '../store';
+  import type { SetupLog } from '@/frontend/store';
 
   let {
     setupLog,

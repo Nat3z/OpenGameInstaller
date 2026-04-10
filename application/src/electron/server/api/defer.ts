@@ -1,12 +1,12 @@
 import { z } from 'zod';
-import { clients } from '../addon-server.js';
-import { DeferredTasks } from '../DeferrableTask.js';
+import { clients } from '@/electron/server/addon-server.js';
+import { DeferredTasks } from '@/electron/server/DeferrableTask.js';
 import {
   type Procedure,
   procedure,
   ProcedureError,
   ProcedureJSON,
-} from '../serve.js';
+} from '@/electron/server/serve.js';
 
 export type ResponseDeferredTask = {
   id: string;

@@ -1,6 +1,6 @@
 import type { OGIAddonConfiguration } from 'ogi-addon';
 import type { ConfigurationFile } from 'ogi-addon/config';
-import { safeFetch } from '../core/ipc';
+import { safeFetch } from '@/frontend/lib/core/ipc';
 
 export interface ConfigTemplateAndInfo extends OGIAddonConfiguration {
   configTemplate: ConfigurationFile;

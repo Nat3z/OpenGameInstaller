@@ -1,5 +1,5 @@
 import { exec } from 'child_process';
-import { __dirname } from './manager/manager.paths.js';
+import { __dirname } from '@/electron/manager/manager.paths.js';
 import { join } from 'path';
 import * as fs from 'fs';
 import * as fsPromises from 'fs/promises';
@@ -14,9 +14,9 @@ import {
 } from 'original-fs';
 import type { LibraryInfo } from 'ogi-addon';
 import { app, BrowserWindow } from 'electron';
-import { sendNotification } from './main.js';
+import { sendNotification } from '@/electron/main.js';
 import semver from 'semver';
-import { setupAddon } from './manager/manager.addon.js';
+import { setupAddon } from '@/electron/manager/manager.addon.js';
 
 const UMU_RELEASES_URL =
   'https://api.github.com/repos/Open-Wine-Components/umu-launcher/releases/latest';

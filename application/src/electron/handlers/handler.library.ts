@@ -5,13 +5,13 @@
 import { ipcMain } from 'electron';
 import { spawn, spawnSync } from 'child_process';
 import type { LibraryInfo } from 'ogi-addon';
-import { isLinux } from './helpers.app/platform.js';
+import { isLinux } from '@/electron/handlers/helpers.app/platform.js';
 import {
   getSteamAppIdWithFallback,
   getNonSteamGameAppID,
   getVersionedGameName,
   addGameToSteam,
-} from './helpers.app/steam.js';
+} from '@/electron/handlers/helpers.app/steam.js';
 import { parse as shellQuoteParse } from 'shell-quote';
 import {
   loadLibraryInfo,
@@ -22,13 +22,13 @@ import {
   removeLibraryFile,
   addToInternalsApps,
   removeFromInternalsApps,
-} from './helpers.app/library.js';
-import { generateNotificationId } from './helpers.app/notifications.js';
-import { sendNotification } from '../main.js';
+} from '@/electron/handlers/helpers.app/library.js';
+import { generateNotificationId } from '@/electron/handlers/helpers.app/notifications.js';
+import { sendNotification } from '@/electron/main.js';
 import {
   getProtonPrefixPath,
   getCurrentUsername,
-} from './helpers.app/platform.js';
+} from '@/electron/handlers/helpers.app/platform.js';
 import * as fs from 'fs';
 import {
   launchWithUmu,
@@ -40,8 +40,8 @@ import {
   getEffectiveDllOverrides,
   getEffectiveLaunchEnv,
   parseLaunchArguments,
-} from './handler.umu.js';
-import { addUmuGameToSteam } from './handler.steam.js';
+} from '@/electron/handlers/handler.umu.js';
+import { addUmuGameToSteam } from '@/electron/handlers/handler.steam.js';
 
 /**
  * Determine if a game should use UMU mode

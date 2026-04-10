@@ -38,11 +38,11 @@ export function isActionOption<N extends string = string>(
  * A builder for creating configuration screens. The generic type T accumulates
  * the types of all options added to the builder, enabling type-safe access to
  * the configuration values.
- * 
+ *
  * @template T - The accumulated type of all configuration options
  */
 export class ConfigurationBuilder<
-  T extends Record<string, string | number | boolean> = {}
+  T extends Record<string, string | number | boolean> = {},
 > {
   private options: ConfigurationOption<string>[] = [];
 
@@ -89,7 +89,7 @@ export class ConfigurationBuilder<
   }
 
   /**
-   * Add an action option to the configuration builder and return the builder for chaining. 
+   * Add an action option to the configuration builder and return the builder for chaining.
    * Action options contribute a boolean to the return type (true if clicked, false if not).
    * You must provide a name, display name, and description for the option.
    * @param option { (option: ActionOption) => ActionOption<K> }
@@ -175,7 +175,9 @@ export class ConfigurationOption<N extends string = string> {
   }
 }
 
-export class StringOption<N extends string = string> extends ConfigurationOption<N> {
+export class StringOption<
+  N extends string = string,
+> extends ConfigurationOption<N> {
   public allowedValues: string[] = [];
   public minTextLength: number = 0;
   public maxTextLength: number = Number.MAX_SAFE_INTEGER;
@@ -266,7 +268,9 @@ export class StringOption<N extends string = string> extends ConfigurationOption
   }
 }
 
-export class NumberOption<N extends string = string> extends ConfigurationOption<N> {
+export class NumberOption<
+  N extends string = string,
+> extends ConfigurationOption<N> {
   public min: number = 0;
   public max: number = Number.MAX_SAFE_INTEGER;
   public defaultValue: number = 0;
@@ -332,7 +336,9 @@ export class NumberOption<N extends string = string> extends ConfigurationOption
   }
 }
 
-export class BooleanOption<N extends string = string> extends ConfigurationOption<N> {
+export class BooleanOption<
+  N extends string = string,
+> extends ConfigurationOption<N> {
   public type: ConfigurationOptionType = 'boolean';
   public defaultValue: boolean = false;
 
@@ -362,7 +368,9 @@ export class BooleanOption<N extends string = string> extends ConfigurationOptio
   }
 }
 
-export class ActionOption<N extends string = string> extends ConfigurationOption<N> {
+export class ActionOption<
+  N extends string = string,
+> extends ConfigurationOption<N> {
   public type: ConfigurationOptionType = 'action';
   public manifest: Record<string, unknown> = {};
   public buttonText: string = 'Run';

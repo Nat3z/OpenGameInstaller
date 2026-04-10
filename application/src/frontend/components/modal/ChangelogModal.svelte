@@ -1,8 +1,8 @@
 <script lang="ts">
   import { fly } from 'svelte/transition';
   import { cubicOut } from 'svelte/easing';
-  import Modal from './Modal.svelte';
-  import type { Changelog } from '../../lib/changelog/types';
+  import Modal from '@/frontend/components/modal/Modal.svelte';
+  import type { Changelog } from '@/frontend/lib/changelog/types';
 
   let {
     changelog,

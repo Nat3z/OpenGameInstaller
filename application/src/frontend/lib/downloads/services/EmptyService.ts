@@ -1,9 +1,9 @@
-import { BaseService } from './BaseService';
-import type { SearchResultWithAddon } from '../../tasks/runner';
-import { currentDownloads, type DownloadStatusAndInfo } from '../../../store';
-import { getDownloadPath } from '../../core/fs';
-import { runSetupApp, runSetupAppUpdate } from '../../setup/setup';
-import { updateDownloadStatus } from '../lifecycle';
+import { BaseService } from '@/frontend/lib/downloads/services/BaseService';
+import type { SearchResultWithAddon } from '@/frontend/lib/tasks/runner';
+import { currentDownloads, type DownloadStatusAndInfo } from '@/frontend/store';
+import { getDownloadPath } from '@/frontend/lib/core/fs';
+import { runSetupApp, runSetupAppUpdate } from '@/frontend/lib/setup/setup';
+import { updateDownloadStatus } from '@/frontend/lib/downloads/lifecycle';
 
 /**
  * Handles "empty" downloads that skip directly to the setup phase.

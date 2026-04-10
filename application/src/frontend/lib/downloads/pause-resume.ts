@@ -3,15 +3,18 @@ import {
   currentDownloads,
   redistributableInstalls,
   type DownloadStatusAndInfo,
-} from '../../store';
+} from '@/frontend/store';
 import { get } from 'svelte/store';
-import { getDownloadItem, updateDownloadStatus } from './lifecycle';
-import { restartDownload } from '../downloads/restart';
+import {
+  getDownloadItem,
+  updateDownloadStatus,
+} from '@/frontend/lib/downloads/lifecycle';
+import { restartDownload } from '@/frontend/lib/downloads/restart';
 import {
   deleteDownloadedItems,
   deletePersistedDownload,
-} from '../downloads/persistence';
-import { startRedistributableInstallation } from '../setup/setup';
+} from '@/frontend/lib/downloads/persistence';
+import { startRedistributableInstallation } from '@/frontend/lib/setup/setup';
 
 interface PausedDownloadState {
   id: string;

@@ -1,4 +1,4 @@
-import type { DownloadStatusAndInfo } from '../../store';
+import type { DownloadStatusAndInfo } from '@/frontend/store';
 
 export function listenUntilDownloadReady() {
   let state: { [id: string]: Partial<DownloadStatusAndInfo> } = {};

@@ -3,13 +3,13 @@ import { join } from 'path';
 import {
   checkIfInstallerUpdateAvailable,
   type UpdaterCallbacks,
-} from './updater.js';
+} from '@/electron/updater.js';
 import {
   restoreBackup,
   removeCachedAppUpdates,
   reinstallAddonDependencies,
-} from './startup.js';
-import { execute as executeMigrations } from './migrations.js';
+} from '@/electron/startup.js';
+import { execute as executeMigrations } from '@/electron/migrations.js';
 
 let splashWindow: BrowserWindow | null = null;
 
@@ -69,7 +69,12 @@ function updateSplashStatus(text: string, subtext?: string) {
  */
 function updateSplashProgress(current: number, total: number, speed?: string) {
   if (splashTargetWindow && !splashTargetWindow.isDestroyed()) {
-    splashTargetWindow.webContents.send('splash-progress', current, total, speed);
+    splashTargetWindow.webContents.send(
+      'splash-progress',
+      current,
+      total,
+      speed
+    );
   }
   if (splashWindow && !splashWindow.isDestroyed()) {
     splashWindow.webContents.send('splash-progress', current, total, speed);

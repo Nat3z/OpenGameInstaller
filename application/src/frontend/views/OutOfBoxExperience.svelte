@@ -3,7 +3,7 @@
   import { fade } from 'svelte/transition';
 
   import { onMount, onDestroy } from 'svelte';
-  import { createNotification, oobeLog } from '../store';
+  import { createNotification, oobeLog } from '@/frontend/store';
 
   let stage = $state(0);
 

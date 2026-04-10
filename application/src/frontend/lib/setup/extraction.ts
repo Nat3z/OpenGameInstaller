@@ -1,4 +1,4 @@
-import { basename } from '../core/fs';
+import { basename } from '@/frontend/lib/core/fs';
 
 /**
  * Resolves the path to a RAR archive for debrid DDL flows. Handles a direct

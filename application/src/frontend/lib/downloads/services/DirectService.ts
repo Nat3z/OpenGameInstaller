@@ -1,8 +1,8 @@
-import { BaseService } from './BaseService';
-import type { SearchResultWithAddon } from '../../tasks/runner';
-import { currentDownloads } from '../../../store';
-import { getDownloadPath } from '../../core/fs';
-import { listenUntilDownloadReady } from '../events';
+import { BaseService } from '@/frontend/lib/downloads/services/BaseService';
+import type { SearchResultWithAddon } from '@/frontend/lib/tasks/runner';
+import { currentDownloads } from '@/frontend/store';
+import { getDownloadPath } from '@/frontend/lib/core/fs';
+import { listenUntilDownloadReady } from '@/frontend/lib/downloads/events';
 
 /**
  * Sanitizes a path segment (e.g. result.name or result.filename) to prevent path traversal
@@ -30,7 +30,7 @@ export class DirectService extends BaseService {
     htmlButton?: HTMLButtonElement
   ): Promise<void> {
     if (result.downloadType !== 'direct') return;
-    const button = htmlButton ?? (event?.currentTarget ?? null);
+    const button = htmlButton ?? event?.currentTarget ?? null;
     if (button === null || !(button instanceof HTMLButtonElement)) return;
 
     if (!result.files || result.files.length === 0) {

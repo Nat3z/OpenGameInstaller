@@ -1,6 +1,12 @@
-import { createNotification, type DownloadStatusAndInfo } from '../../store';
-import { getDownloadPath } from '../core/fs';
-import { getDownloadItem, updateDownloadStatus } from './lifecycle';
+import {
+  createNotification,
+  type DownloadStatusAndInfo,
+} from '@/frontend/store';
+import { getDownloadPath } from '@/frontend/lib/core/fs';
+import {
+  getDownloadItem,
+  updateDownloadStatus,
+} from '@/frontend/lib/downloads/lifecycle';
 
 interface PausedDownloadState {
   id: string;

@@ -3,7 +3,7 @@
  */
 import * as fs from 'fs';
 import { join, basename } from 'path';
-import { __dirname } from '../../manager/manager.paths.js';
+import { __dirname } from '@/electron/manager/manager.paths.js';
 
 export function isLinux(): boolean {
   return process.platform === 'linux';

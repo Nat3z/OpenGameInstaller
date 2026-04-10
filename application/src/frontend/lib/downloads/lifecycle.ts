@@ -3,11 +3,11 @@ import {
   currentDownloads,
   setupLogs,
   type DownloadStatusAndInfo,
-} from '../../store';
+} from '@/frontend/store';
 import { get } from 'svelte/store';
-import { getConfigClientOption } from '../config/client';
-import { ALL_SERVICES } from './services';
-import type { SearchResultWithAddon } from '../tasks/runner';
+import { getConfigClientOption } from '@/frontend/lib/config/client';
+import { ALL_SERVICES } from '@/frontend/lib/downloads/services';
+import type { SearchResultWithAddon } from '@/frontend/lib/tasks/runner';
 
 /**
  * Resolves download handler from config, finds the matching service, and starts the download.

@@ -10,12 +10,12 @@
   } from 'ogi-addon/config';
   import { writable, type Writable } from 'svelte/store';
 
-  import Modal from './Modal.svelte';
-  import TitleModal from './TitleModal.svelte';
-  import HeaderModal from './HeaderModal.svelte';
-  import InputModal from './InputModal.svelte';
-  import CheckboxModal from './CheckboxModal.svelte';
-  import ButtonModal from './ButtonModal.svelte';
+  import Modal from '@/frontend/components/modal/Modal.svelte';
+  import TitleModal from '@/frontend/components/modal/TitleModal.svelte';
+  import HeaderModal from '@/frontend/components/modal/HeaderModal.svelte';
+  import InputModal from '@/frontend/components/modal/InputModal.svelte';
+  import CheckboxModal from '@/frontend/components/modal/CheckboxModal.svelte';
+  import ButtonModal from '@/frontend/components/modal/ButtonModal.svelte';
 
   // Type guard functions
   function isStringOption(option: ConfigurationOption): option is StringOption {

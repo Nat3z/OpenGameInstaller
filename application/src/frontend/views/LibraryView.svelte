@@ -1,19 +1,19 @@
 <script lang="ts">
   import type { LibraryInfo } from 'ogi-addon';
   import { onDestroy, onMount, tick } from 'svelte';
-  import PlayPage from '../components/PlayPage.svelte';
-  import { gameFocused } from '../store';
+  import PlayPage from '@/frontend/components/PlayPage.svelte';
+  import { gameFocused } from '@/frontend/store';
   import { writable, type Writable } from 'svelte/store';
-  import Image from '../components/Image.svelte';
+  import Image from '@/frontend/components/Image.svelte';
   import {
     getAllApps,
     getRecentlyPlayed,
     sortLibraryAlphabetically,
     filterLibrary,
-  } from '../lib/core/library';
-  import { updatesManager } from '../states.svelte';
-  import UpdateIcon from '../Icons/UpdateIcon.svelte';
-  import MigrateIcon from '../Icons/MigrateIcon.svelte';
+  } from '@/frontend/lib/core/library';
+  import { updatesManager } from '@/frontend/states.svelte';
+  import UpdateIcon from '@/frontend/Icons/UpdateIcon.svelte';
+  import MigrateIcon from '@/frontend/Icons/MigrateIcon.svelte';
 
   let library: LibraryInfo[] = $state([]);
   let recentlyPlayed: LibraryInfo[] = $state([]);

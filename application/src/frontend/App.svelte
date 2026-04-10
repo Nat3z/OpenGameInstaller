@@ -3,20 +3,20 @@
   import { fade, fly, slide } from 'svelte/transition';
   import { quintOut } from 'svelte/easing';
   import { derived } from 'svelte/store';
-  import ConfigView from './views/ConfigView.svelte';
-  import ClientOptionsView from './views/ClientOptionsView.svelte';
-  import DownloadView from './views/DownloadView.svelte';
-  import DownloadManager from './managers/DownloadManager.svelte';
-  import OOBE from './views/OutOfBoxExperience.svelte';
-  import { GamepadNavigator } from './managers/GamepadManager';
+  import ConfigView from '@/frontend/views/ConfigView.svelte';
+  import ClientOptionsView from '@/frontend/views/ClientOptionsView.svelte';
+  import DownloadView from '@/frontend/views/DownloadView.svelte';
+  import DownloadManager from '@/frontend/managers/DownloadManager.svelte';
+  import OOBE from '@/frontend/views/OutOfBoxExperience.svelte';
+  import { GamepadNavigator } from '@/frontend/managers/GamepadManager';
 
   import {
     fetchAddonsWithConfigure,
     getConfigClientOption,
     safeFetch,
-  } from './utils';
-  import Notifications from './managers/NotificationManager.svelte';
-  import NotificationSideView from './components/NotificationSideView.svelte';
+  } from '@/frontend/utils';
+  import Notifications from '@/frontend/managers/NotificationManager.svelte';
+  import NotificationSideView from '@/frontend/components/NotificationSideView.svelte';
   import {
     addonUpdates,
     currentStorePageOpened,
@@ -36,21 +36,24 @@
     showNotificationSideView,
     currentDownloads,
     headerBackButton,
-  } from './store';
-  import StorePage from './components/StorePage.svelte';
-  import ConfigurationModal from './components/modal/ConfigurationModal.svelte';
-  import LibraryView from './views/LibraryView.svelte';
-  import GameManager from './managers/GameManager.svelte';
+  } from '@/frontend/store';
+  import StorePage from '@/frontend/components/StorePage.svelte';
+  import ConfigurationModal from '@/frontend/components/modal/ConfigurationModal.svelte';
+  import LibraryView from '@/frontend/views/LibraryView.svelte';
+  import GameManager from '@/frontend/managers/GameManager.svelte';
   import type { BasicLibraryInfo, OGIAddonConfiguration } from 'ogi-addon';
   import type { ConfigurationFile } from 'ogi-addon/config';
-  import Debug from './managers/Debug.svelte';
-  import DiscoverView from './views/DiscoverView.svelte';
-  import RootPasswordGranter from './managers/RootPasswordGranter.svelte';
-  import { initDownloadPersistence } from './utils';
-  import AppUpdateManager from './managers/AppUpdateManager.svelte';
-  import ChangelogManager from './managers/ChangelogManager.svelte';
-  import { appUpdates, loadPersistedUpdateState } from './states.svelte';
-  import GameLaunchOverlay from './components/GameLaunchOverlay.svelte';
+  import Debug from '@/frontend/managers/Debug.svelte';
+  import DiscoverView from '@/frontend/views/DiscoverView.svelte';
+  import RootPasswordGranter from '@/frontend/managers/RootPasswordGranter.svelte';
+  import { initDownloadPersistence } from '@/frontend/utils';
+  import AppUpdateManager from '@/frontend/managers/AppUpdateManager.svelte';
+  import ChangelogManager from '@/frontend/managers/ChangelogManager.svelte';
+  import {
+    appUpdates,
+    loadPersistedUpdateState,
+  } from '@/frontend/states.svelte';
+  import GameLaunchOverlay from '@/frontend/components/GameLaunchOverlay.svelte';
 
   interface ConfigTemplateAndInfo extends OGIAddonConfiguration {
     configTemplate: ConfigurationFile;

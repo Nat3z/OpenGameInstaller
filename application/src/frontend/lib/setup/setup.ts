@@ -3,18 +3,18 @@ import {
   setupLogs,
   redistributableInstalls,
   type DownloadStatusAndInfo,
-} from '../../store';
+} from '@/frontend/store';
 import { get } from 'svelte/store';
-import { updateDownloadStatus } from '../downloads/lifecycle';
-import { saveFailedSetup } from '../recovery/failedSetups';
+import { updateDownloadStatus } from '@/frontend/lib/downloads/lifecycle';
+import { saveFailedSetup } from '@/frontend/lib/recovery/failedSetups';
 import type {
   EventListenerTypes,
   LibraryInfo,
   SetupEventResponse,
 } from 'ogi-addon';
-import { safeFetch } from '../core/ipc';
-import { updatesManager } from '../../states.svelte';
-import { getApp } from '../core/library';
+import { safeFetch } from '@/frontend/lib/core/ipc';
+import { updatesManager } from '@/frontend/states.svelte';
+import { getApp } from '@/frontend/lib/core/library';
 
 function dispatchSetupEvent(
   eventType: 'log' | 'progress',
@@ -247,8 +247,11 @@ export async function runSetupApp(
       });
 
       // Start auto-installation in background (guard against unhandled rejections)
-      startRedistributableInstallation(downloadedItem.id, downloadedItem.appID).catch(
-        (err) => console.error('[setup] startRedistributableInstallation failed:', err)
+      startRedistributableInstallation(
+        downloadedItem.id,
+        downloadedItem.appID
+      ).catch((err) =>
+        console.error('[setup] startRedistributableInstallation failed:', err)
       );
 
       return data;

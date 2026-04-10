@@ -1,6 +1,6 @@
 import type { SearchResult, LibraryInfo } from 'ogi-addon';
-import { createNotification, deferredTasks } from '../../store';
-import { safeFetch } from '../core/ipc';
+import { createNotification, deferredTasks } from '@/frontend/store';
+import { safeFetch } from '@/frontend/lib/core/ipc';
 
 export type SearchResultWithAddon = SearchResult & {
   addonSource: string;

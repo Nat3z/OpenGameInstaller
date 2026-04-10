@@ -1,9 +1,9 @@
 <script lang="ts">
-  import ButtonModal from '../components/modal/ButtonModal.svelte';
-  import HeaderModal from '../components/modal/HeaderModal.svelte';
-  import InputModal from '../components/modal/InputModal.svelte';
-  import Modal from '../components/modal/Modal.svelte';
-  import TitleModal from '../components/modal/TitleModal.svelte';
+  import ButtonModal from '@/frontend/components/modal/ButtonModal.svelte';
+  import HeaderModal from '@/frontend/components/modal/HeaderModal.svelte';
+  import InputModal from '@/frontend/components/modal/InputModal.svelte';
+  import Modal from '@/frontend/components/modal/Modal.svelte';
+  import TitleModal from '@/frontend/components/modal/TitleModal.svelte';
 
   let openRootPasswordModal = $state(false);
   document.addEventListener('app:ask-root-password', () => {

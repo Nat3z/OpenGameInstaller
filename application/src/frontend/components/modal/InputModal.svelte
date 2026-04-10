@@ -1,7 +1,7 @@
 <script lang="ts">
-  import TextModal from './TextModal.svelte';
-  import CustomDropdown from '../CustomDropdown.svelte';
-  import RangeInput from '../RangeInput.svelte';
+  import TextModal from '@/frontend/components/modal/TextModal.svelte';
+  import CustomDropdown from '@/frontend/components/CustomDropdown.svelte';
+  import RangeInput from '@/frontend/components/RangeInput.svelte';
 
   let {
     id,
@@ -67,7 +67,6 @@
       onchange(id, selectedId);
     }
   }
-
 
   function browseForPath(browseType: 'file' | 'folder') {
     const dialog = window.electronAPI.fs.dialog;

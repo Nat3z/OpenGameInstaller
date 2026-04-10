@@ -82,7 +82,10 @@ export class GamepadNavigator {
 
     // Leaving text-input mode when gamepad resumes avoids sticky Steam keyboard behavior.
     const activeElement = document.activeElement;
-    if (activeElement instanceof HTMLElement && this.isTextEntryElement(activeElement)) {
+    if (
+      activeElement instanceof HTMLElement &&
+      this.isTextEntryElement(activeElement)
+    ) {
       activeElement.blur();
     }
 

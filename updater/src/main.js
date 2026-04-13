@@ -796,6 +796,15 @@ async function applyBlockmapPath(releasePath, releases) {
       currentRelease,
       currentAsset
     );
+    sendUpdaterStatus('Verifying base artifact');
+    await verifyReleaseArtifact(
+      sourceArtifact,
+      {
+        size: currentAsset.size,
+        digest: currentAsset.digest,
+      },
+      'base artifact'
+    );
     const oldBlockmapPath = await ensureCachedBlockmap(
       fromCache,
       currentRelease,
@@ -1291,6 +1300,16 @@ async function verifyReleaseArtifact(
   }
 
   const parsedDigest = parseDigest(expectedArtifact.digest);
+  if (expectedArtifact.digest && !parsedDigest) {
+    logUpdater('Invalid digest format, aborting verification', {
+      artifactPath,
+      logLabel,
+      digest: expectedArtifact.digest,
+    });
+    throw new Error(
+      `${logLabel} has invalid digest format: ${expectedArtifact.digest}`
+    );
+  }
   if (!parsedDigest) {
     logUpdater('No release digest available for artifact verification', {
       artifactPath,

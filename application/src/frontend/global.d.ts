@@ -70,8 +70,14 @@ interface Window {
       getUserInfo: () => Promise<$UserInfo>;
       unrestrictLink: (link: string) => Promise<$UnrestrictLink>;
       getHosts: () => Promise<$Hosts[]>;
-      addMagnet: (url: string, host: $Hosts) => Promise<$AddTorrentOrMagnet>;
-      addTorrent: (torrent: string) => Promise<$AddTorrentOrMagnet>;
+      addMagnet: (
+        url: string,
+        host?: string
+      ) => Promise<$AddTorrentOrMagnet>;
+      addTorrent: (
+        torrent: string,
+        host?: string
+      ) => Promise<$AddTorrentOrMagnet>;
       selectTorrent: (torrent: string) => Promise<boolean>;
       isTorrentReady: (id: string) => Promise<boolean>;
       getTorrentInfo: (id: string) => Promise<$TorrentInfo>;

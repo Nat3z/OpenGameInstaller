@@ -3,8 +3,6 @@ import type { SearchResultWithAddon } from '@/frontend/lib/tasks/runner';
 import { currentDownloads } from '@/frontend/store';
 import { getDownloadPath } from '@/frontend/lib/core/fs';
 import { listenUntilDownloadReady } from '@/frontend/lib/downloads/events';
-import type { $Hosts } from 'real-debrid-js';
-
 /**
  * Handles magnet/torrent downloads that should be routed through Real-Debrid.
  */
@@ -34,10 +32,12 @@ export class RealDebridService extends BaseService {
     const tempId = this.queueRequestDownload(result, appID, 'realdebrid');
 
     try {
+      const preferredHost = hosts[0]?.host;
+
       if (result.downloadType === 'magnet') {
-        await this.handleMagnetDownload(result, appID, tempId, hosts[0]);
+        await this.handleMagnetDownload(result, appID, tempId, preferredHost);
       } else if (result.downloadType === 'torrent') {
-        await this.handleTorrentDownload(result, appID, tempId);
+        await this.handleTorrentDownload(result, appID, tempId, preferredHost);
       }
     } catch (err) {
       console.error('Failed to start Real-Debrid download:', err);
@@ -61,7 +61,7 @@ export class RealDebridService extends BaseService {
     result: SearchResultWithAddon,
     appID: number,
     tempId: string,
-    host: $Hosts
+    host?: string
   ): Promise<void> {
     if (result.downloadType !== 'magnet') return;
 
@@ -152,7 +152,8 @@ export class RealDebridService extends BaseService {
   private async handleTorrentDownload(
     result: SearchResultWithAddon,
     appID: number,
-    tempId: string
+    tempId: string,
+    host?: string
   ): Promise<void> {
     if (result.downloadType !== 'torrent') return;
 
@@ -167,7 +168,8 @@ export class RealDebridService extends BaseService {
 
     // add torrent link
     const torrent = await window.electronAPI.realdebrid.addTorrent(
-      result.downloadURL
+      result.downloadURL,
+      host
     );
     const isReady = await window.electronAPI.realdebrid.isTorrentReady(
       torrent.id

@@ -10,6 +10,24 @@ import { __dirname } from '@/electron/manager/manager.paths.js';
 let realDebridClient = new RealDebrid({
   apiKey: 'UNSET',
 });
+
+function getRealDebridHost(host: unknown): string | undefined {
+  if (typeof host === 'string') {
+    return host;
+  }
+
+  if (
+    host &&
+    typeof host === 'object' &&
+    'host' in host &&
+    typeof host.host === 'string'
+  ) {
+    return host.host;
+  }
+
+  return undefined;
+}
+
 export default function handler(mainWindow: Electron.BrowserWindow) {
   ipcMain.handle('real-debrid:set-key', async (_, arg) => {
     realDebridClient = new RealDebrid({
@@ -34,7 +52,10 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
   });
 
   ipcMain.handle('real-debrid:add-magnet', async (_, arg) => {
-    const torrentAdded = await realDebridClient.addMagnet(arg.url, arg.host);
+    const torrentAdded = await realDebridClient.addMagnet(
+      arg.url,
+      getRealDebridHost(arg.host)
+    );
     return torrentAdded;
   });
 
@@ -148,7 +169,10 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
       }
       console.log('Downloaded torrent! Now adding to readDebrid');
 
-      const data = await realDebridClient.addTorrent(torrentData as ReadStream);
+      const data = await realDebridClient.addTorrent(
+        torrentData as ReadStream,
+        getRealDebridHost(arg.host)
+      );
       console.log('Added torrent to real-debrid!');
       return data;
     } catch (except) {

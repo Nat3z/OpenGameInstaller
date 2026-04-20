@@ -536,6 +536,10 @@ function getReleaseByTag(releases, tagName) {
   return releases.find((release) => release.tag_name === tagName);
 }
 
+function getBlockKey(checksum, size) {
+  return `${checksum}:${size}`;
+}
+
 async function ensureCachedSourceArtifact(cacheDir, release, asset) {
   const sourceArtifactPath = path.join(cacheDir, asset.name);
   if (fs.existsSync(sourceArtifactPath)) {
@@ -716,6 +720,15 @@ async function downloadFullRelease(release) {
     downloadPath,
     'Downloading Update'
   );
+  sendUpdaterStatus('Verifying Download');
+  await verifyReleaseArtifact(
+    downloadPath,
+    {
+      size: assetWithPortable.size,
+      digest: assetWithPortable.digest,
+    },
+    'downloaded release artifact'
+  );
   if (blockmapAsset) {
     await downloadToFile(
       blockmapAsset.browser_download_url,
@@ -783,6 +796,15 @@ async function applyBlockmapPath(releasePath, releases) {
       currentRelease,
       currentAsset
     );
+    sendUpdaterStatus('Verifying base artifact');
+    await verifyReleaseArtifact(
+      sourceArtifact,
+      {
+        size: currentAsset.size,
+        digest: currentAsset.digest,
+      },
+      'base artifact'
+    );
     const oldBlockmapPath = await ensureCachedBlockmap(
       fromCache,
       currentRelease,
@@ -817,7 +839,7 @@ async function applyBlockmapPath(releasePath, releases) {
       outputArtifact,
       newBlockmapPath,
       nextAsset.browser_download_url,
-      { size: nextAsset.size },
+      { size: nextAsset.size, digest: nextAsset.digest },
       {
         patchLabel: `Building patch ${i + 1} of ${releasePath.length}`,
         verifyLabel: `Verifying patch ${i + 1} of ${releasePath.length}`,
@@ -911,7 +933,7 @@ async function applyBlockmapPatch(
   const checksumToBlocks = new Map();
   let oldOffset = oldFile.offset || 0;
   for (let i = 0; i < oldFile.checksums.length; i++) {
-    const key = oldFile.checksums[i];
+    const key = getBlockKey(oldFile.checksums[i], oldFile.sizes[i]);
     const block = { offset: oldOffset, size: oldFile.sizes[i] };
     const current = checksumToBlocks.get(key) || [];
     current.push(block);
@@ -942,9 +964,9 @@ async function applyBlockmapPatch(
 
     for (let i = 0; i < newFile.checksums.length; i++) {
       const size = newFile.sizes[i];
-      const blocks = checksumToBlocks.get(newFile.checksums[i]);
+      const blocks = checksumToBlocks.get(getBlockKey(newFile.checksums[i], size));
       // Consume one old block at most once to avoid reusing source data.
-      const matched = takeMatchingBlock(blocks, size);
+      const matched = takeMatchingBlock(blocks);
       if (matched) {
         const buffer = Buffer.alloc(size);
         const bytesRead = fs.readSync(
@@ -959,24 +981,7 @@ async function applyBlockmapPatch(
             `Short read from source artifact at ${matched.offset}: expected ${size}, got ${bytesRead}`
           );
         }
-        const expectedChecksum = newFile.checksums[i];
-        const digestBytes = createHash('sha256').update(buffer).digest();
-        const actualBase64 = digestBytes.toString('base64');
-        const actualHex = digestBytes.toString('hex');
-        const normalizedExpected =
-          typeof expectedChecksum === 'string'
-            ? expectedChecksum.replace(/=+$/, '')
-            : '';
-        const normalizedBase64 = actualBase64.replace(/=+$/, '');
-        if (
-          expectedChecksum !== actualBase64 &&
-          expectedChecksum !== actualHex &&
-          normalizedExpected !== normalizedBase64
-        ) {
-          misses.push({ offset: writeOffset, size });
-        } else {
-          fs.writeSync(outFd, buffer, 0, size, writeOffset);
-        }
+        fs.writeSync(outFd, buffer, 0, size, writeOffset);
       } else {
         misses.push({ offset: writeOffset, size });
       }
@@ -1072,15 +1077,11 @@ async function applyBlockmapPatch(
   });
 }
 
-function takeMatchingBlock(blocks, expectedSize) {
+function takeMatchingBlock(blocks) {
   if (!Array.isArray(blocks) || blocks.length === 0) {
     return null;
   }
-  const index = blocks.findIndex((block) => block.size === expectedSize);
-  if (index === -1) {
-    return null;
-  }
-  return blocks.splice(index, 1)[0];
+  return blocks.pop();
 }
 
 function createRangeDownloadTasks(misses) {
@@ -1282,6 +1283,47 @@ async function hashFile(filePath, algorithm) {
   });
 }
 
+async function verifyReleaseArtifact(
+  artifactPath,
+  expectedArtifact,
+  logLabel = 'release artifact'
+) {
+  const stat = fs.statSync(artifactPath);
+  if (
+    Number.isFinite(expectedArtifact.size) &&
+    expectedArtifact.size > 0 &&
+    stat.size !== expectedArtifact.size
+  ) {
+    throw new Error(
+      `${logLabel} size mismatch: expected ${expectedArtifact.size}, got ${stat.size}`
+    );
+  }
+
+  const parsedDigest = parseDigest(expectedArtifact.digest);
+  if (expectedArtifact.digest && !parsedDigest) {
+    logUpdater('Invalid digest format, aborting verification', {
+      artifactPath,
+      logLabel,
+      digest: expectedArtifact.digest,
+    });
+    throw new Error(
+      `${logLabel} has invalid digest format: ${expectedArtifact.digest}`
+    );
+  }
+  if (!parsedDigest) {
+    logUpdater('No release digest available for artifact verification', {
+      artifactPath,
+      logLabel,
+    });
+    return;
+  }
+
+  const actualDigest = await hashFile(artifactPath, parsedDigest.algorithm);
+  if (actualDigest !== parsedDigest.value) {
+    throw new Error(`${logLabel} digest mismatch for ${parsedDigest.algorithm}`);
+  }
+}
+
 async function verifyPatchedArtifact(
   outputArtifact,
   newFile,
@@ -1333,22 +1375,6 @@ async function verifyPatchedArtifact(
         throw new Error(
           `Short read from patched artifact at ${readOffset}: expected ${size}, got ${bytesRead}`
         );
-      }
-      const expectedChecksum = newFile.checksums[i];
-      const digestBytes = createHash('sha256').update(buffer).digest();
-      const actualBase64 = digestBytes.toString('base64');
-      const actualHex = digestBytes.toString('hex');
-      const normalizedExpected =
-        typeof expectedChecksum === 'string'
-          ? expectedChecksum.replace(/=+$/, '')
-          : '';
-      const normalizedBase64 = actualBase64.replace(/=+$/, '');
-      if (
-        expectedChecksum !== actualBase64 &&
-        expectedChecksum !== actualHex &&
-        normalizedExpected !== normalizedBase64
-      ) {
-        throw new Error(`Block ${i} checksum mismatch at offset ${readOffset}`);
       }
       readOffset += size;
       if (

@@ -74,7 +74,7 @@
     const needsUmu = !libraryInfo.umu;
     return isLinux && isWindowsExecutable && needsUmu;
   });
-  let needsUmuMigration = $derived(needsUmuSetup && libraryInfo.umu);
+  let needsUmuMigration = $derived(needsUmuSetup);
 
   async function doesLinkExist(url: string | undefined) {
     if (!url) return false;

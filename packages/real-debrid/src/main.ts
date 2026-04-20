@@ -88,6 +88,20 @@ export type $AddTorrentOrMagnet = z.infer<typeof AddTorrentOrMagnetZod>;
 export type $TorrentInfo = z.infer<typeof TorrentInfoZod>;
 
 const REAL_DEBRID_API_URL = 'https://api.real-debrid.com/rest/1.0';
+type RealDebridHostInput = string | { host: string } | undefined;
+
+function normalizeHost(host: RealDebridHostInput): string | undefined {
+  if (!host) {
+    return undefined;
+  }
+
+  if (typeof host === 'string') {
+    return host;
+  }
+
+  return typeof host.host === 'string' ? host.host : undefined;
+}
+
 export default class RealDebrid {
   constructor(public configuration: RealDebridConfiguration) {}
 
@@ -115,7 +129,9 @@ export default class RealDebrid {
   public async unrestrictLink(link: string, password: string = '') {
     const formData = new URLSearchParams();
     formData.append('link', link);
-    formData.append('password', password);
+    if (password) {
+      formData.append('password', password);
+    }
     const response = await axios(`${REAL_DEBRID_API_URL}/unrestrict/link`, {
       method: 'POST',
       headers: {
@@ -138,11 +154,12 @@ export default class RealDebrid {
     return result;
   }
 
-  public async addTorrent(torrent: ReadStream, host?: string) {
+  public async addTorrent(torrent: ReadStream, host?: RealDebridHostInput) {
     // set the type to binary
     const url = new URL(`${REAL_DEBRID_API_URL}/torrents/addTorrent`);
-    if (host) {
-      url.searchParams.append('host', host);
+    const normalizedHost = normalizeHost(host);
+    if (normalizedHost) {
+      url.searchParams.append('host', normalizedHost);
     }
     const response = await axios(url.toString(), {
       method: 'PUT',
@@ -186,11 +203,12 @@ export default class RealDebrid {
     return result;
   }
 
-  public async addMagnet(magnet: string, host?: string) {
+  public async addMagnet(magnet: string, host?: RealDebridHostInput) {
     const formData = new URLSearchParams();
     formData.append('magnet', magnet);
-    if (host) {
-      formData.append('host', host);
+    const normalizedHost = normalizeHost(host);
+    if (normalizedHost) {
+      formData.append('host', normalizedHost);
     }
     const response = await axios(`${REAL_DEBRID_API_URL}/torrents/addMagnet`, {
       method: 'POST',
@@ -228,7 +246,11 @@ export default class RealDebrid {
         validateStatus: () => true,
       }
     );
-    if (response.status === 200 || response.status === 204) {
+    if (
+      response.status === 200 ||
+      response.status === 202 ||
+      response.status === 204
+    ) {
       return true;
     }
     const errorMessage =

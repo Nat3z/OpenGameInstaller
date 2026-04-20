@@ -1,7 +1,6 @@
 import { AxiosRequestConfig } from 'axios';
 import { contextBridge, ipcRenderer } from 'electron';
 import { LibraryInfo } from 'ogi-addon';
-import type { $Hosts } from 'real-debrid-js';
 
 // === Debug: Events Processed/sec Counter ===
 let dbg_eventsProcessed = 0;
@@ -138,12 +137,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     unrestrictLink: wrap((link: string) =>
       ipcRenderer.invoke('real-debrid:unrestrict-link', link)
     ),
-    addMagnet: wrap((url: string, host: $Hosts) =>
+    addMagnet: wrap((url: string, host?: string) =>
       ipcRenderer.invoke('real-debrid:add-magnet', { url, host })
     ),
     getHosts: wrap(() => ipcRenderer.invoke('real-debrid:get-hosts')),
     updateKey: wrap(() => ipcRenderer.invoke('real-debrid:update-key')),
-    addTorrent: wrap((torrent: string, host: $Hosts) =>
+    addTorrent: wrap((torrent: string, host?: string) =>
       ipcRenderer.invoke('real-debrid:add-torrent', { torrent, host })
     ),
     selectTorrent: wrap((torrent: string) =>

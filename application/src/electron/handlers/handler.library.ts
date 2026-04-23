@@ -39,7 +39,8 @@ import {
   buildDllOverrides,
   getEffectiveDllOverrides,
   getEffectiveLaunchEnv,
-  parseLaunchArguments,
+  parseLaunchArgumentsAfterCommand,
+  resolveLaunchCommand,
 } from '@/electron/handlers/handler.umu.js';
 import { addUmuGameToSteam } from '@/electron/handlers/handler.steam.js';
 
@@ -123,16 +124,18 @@ export async function launchGameFromLibrary(
 
   // Legacy mode
   const effectiveLaunchEnv = getEffectiveLaunchEnv(appInfo);
-  const parsedArgs = parseLaunchArguments(appInfo.launchArguments);
+  const { command: launchExecutable, args: otherLaunchArguments } =
+    resolveLaunchCommand(appInfo.launchExecutable, appInfo.launchArguments);
   console.log(
     'Launching game:',
-    appInfo.launchExecutable,
-    parsedArgs,
+    launchExecutable,
+    otherLaunchArguments,
     'in cwd:',
     appInfo.cwd
   );
-  const needsShellOnWindows = /\.(bat|cmd)$/i.test(appInfo.launchExecutable);
-  const spawnedItem = spawn(appInfo.launchExecutable, parsedArgs, {
+
+  const needsShellOnWindows = /\.(bat|cmd)$/i.test(launchExecutable);
+  const spawnedItem = spawn(launchExecutable, otherLaunchArguments, {
     cwd: appInfo.cwd,
     shell: process.platform === 'win32' ? needsShellOnWindows : true,
     env: {
@@ -295,11 +298,9 @@ async function executeWrapperCommandForAppSteam(
       : [...parsed.slice(0, verbIndex + 1), appInfo.launchExecutable];
   const wrappedCommand = parsed[0].toString();
   // for launch arguments, get everything after the %command% to include. not just replacing
-  const pastCommandArgs = appInfo.launchArguments?.split('%command%');
-  let launchArguments: string[] = [];
-  if (pastCommandArgs && pastCommandArgs.length > 1) {
-    launchArguments = pastCommandArgs[1].split(' ');
-  }
+  const launchArguments = parseLaunchArgumentsAfterCommand(
+    appInfo.launchArguments
+  );
 
   const wrappedArgv = [
     ...fixedArgs.slice(1).map((x) => x.toString()),

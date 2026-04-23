@@ -49,8 +49,8 @@ function shellQuote(arg: string): string {
   return `'${arg.replace(/'/g, `'\\''`)}'`;
 }
 
-function parseLaunchArgumentTokens(launchArguments?: string): string[] {
-  const launchArgs = (launchArguments || '').replace('%command%', '');
+export function parseLaunchArgumentTokens(launchArguments?: string): string[] {
+  const launchArgs = launchArguments || '';
   return (
     launchArgs.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g)?.map((arg) => {
       const trimmed = arg.trim();
@@ -72,9 +72,15 @@ function isKnownLaunchEnvAssignment(token: string): boolean {
   return KNOWN_LAUNCH_ENV_VARS.has(key);
 }
 
-function normalizeProtonPathValue(
-  value?: string | null
-): string | undefined {
+function stripLeadingLaunchEnvTokens(tokens: string[]): string[] {
+  let start = 0;
+  while (start < tokens.length && ENV_ASSIGNMENT_PATTERN.test(tokens[start])) {
+    start++;
+  }
+  return tokens.slice(start);
+}
+
+function normalizeProtonPathValue(value?: string | null): string | undefined {
   if (value == null) return undefined;
   const normalized = value.trim();
   if (!normalized) return undefined;
@@ -102,14 +108,47 @@ function parseLeadingLaunchEnvFromArguments(
 }
 
 export function parseLaunchArguments(launchArguments?: string): string[] {
-  const tokens = parseLaunchArgumentTokens(launchArguments);
-  let start = 0;
-  while (start < tokens.length && ENV_ASSIGNMENT_PATTERN.test(tokens[start])) {
-    start++;
+  return stripLeadingLaunchEnvTokens(parseLaunchArgumentTokens(launchArguments))
+    .filter(
+      (token) => token !== '%command%' && !isKnownLaunchEnvAssignment(token)
+    );
+}
+
+export function parseLaunchArgumentsAfterCommand(
+  launchArguments?: string
+): string[] {
+  const tokens = stripLeadingLaunchEnvTokens(
+    parseLaunchArgumentTokens(launchArguments)
+  ).filter((token) => !isKnownLaunchEnvAssignment(token));
+  const commandIndex = tokens.indexOf('%command%');
+  if (commandIndex === -1) {
+    return [];
   }
-  return tokens
-    .slice(start)
-    .filter((token) => !isKnownLaunchEnvAssignment(token));
+  return tokens.slice(commandIndex + 1).filter((token) => token !== '%command%');
+}
+
+export function resolveLaunchCommand(
+  launchExecutable: string,
+  launchArguments?: string
+): { command: string; args: string[] } {
+  const tokens = stripLeadingLaunchEnvTokens(
+    parseLaunchArgumentTokens(launchArguments)
+  ).filter((token) => !isKnownLaunchEnvAssignment(token));
+  const commandIndex = tokens.indexOf('%command%');
+
+  if (commandIndex === -1) {
+    return {
+      command: launchExecutable,
+      args: tokens,
+    };
+  }
+
+  const resolvedTokens = tokens.map((token) =>
+    token === '%command%' ? launchExecutable : token
+  );
+  const [command = launchExecutable, ...args] = resolvedTokens;
+
+  return { command, args };
 }
 
 function uniqueCaseInsensitive(values: string[]): string[] {

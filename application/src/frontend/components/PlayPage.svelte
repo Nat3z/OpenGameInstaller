@@ -409,366 +409,368 @@
 {/if}
 
 <div
-  class="flex flex-col top-0 left-0 overflow-y-auto absolute w-full h-full bg-background-color z-3 animate-fade-in-pop-fast"
+  class="absolute top-0 left-0 z-3 flex h-full w-full flex-col overflow-hidden bg-background-color animate-fade-in-pop-fast"
   out:fly={{ x: 100, duration: 500, easing: quintOut }}
 >
-  <!-- Hero Banner Section -->
-  <div class="relative w-full h-64 overflow-hidden">
-    <Image
-      classifier={libraryInfo.appID.toString() + '-cover'}
-      src={libraryInfo.coverImage}
-      alt={libraryInfo.name}
-      class="w-full h-full object-cover rounded-lg"
-    />
-    <!-- Overlay with game info -->
-    <div
-      class="absolute bottom-0 left-0 right-0 p-6"
-      style="background: linear-gradient(to top, var(--color-overlay-bg), transparent);"
-    >
-      <h1 class="text-4xl font-archivo font-bold text-overlay-text mb-2">
-        {libraryInfo.name}
-      </h1>
-      <!-- <div class="text-sm text-gray-200">
-        <span class="text-gray-300">App ID:</span>
-        {libraryInfo.appID}
-        {#if libraryInfo.storefront}
-          <span class="mx-4"></span>
-          <span class="text-gray-300">Store:</span>
-          {libraryInfo.storefront}
+  <div class="min-h-0 flex-1 overflow-y-auto">
+    <!-- Hero Banner Section -->
+    <div class="relative h-64 w-full shrink-0 overflow-hidden">
+      <Image
+        classifier={libraryInfo.appID.toString() + '-cover'}
+        src={libraryInfo.coverImage}
+        alt={libraryInfo.name}
+        class="h-full w-full object-cover rounded-t-lg rounded-b-none"
+      />
+      <!-- Overlay with game info -->
+      <div
+        class="absolute bottom-0 left-0 right-0 p-6"
+        style="background: linear-gradient(to top, var(--color-overlay-bg), transparent);"
+      >
+        <h1 class="mb-2 text-4xl font-archivo font-bold text-overlay-text">
+          {libraryInfo.name}
+        </h1>
+      </div>
+
+      <!-- Title image overlay if available -->
+      {#await doesLinkExist(libraryInfo.titleImage)}
+        <div class="absolute z-2 h-full w-full"></div>
+      {:then result}
+        {#if result}
+          <img
+            src={libraryInfo.titleImage}
+            alt="logo"
+            class="absolute top-1/2 left-1/2 z-3 max-h-32 max-w-xs -translate-x-1/2 -translate-y-1/2 transform object-contain drop-shadow-lg"
+          />
         {/if}
-      </div> -->
+      {/await}
     </div>
 
-    <!-- Title image overlay if available -->
-    {#await doesLinkExist(libraryInfo.titleImage)}
-      <div class="absolute z-2 w-full h-full"></div>
-    {:then result}
-      {#if result}
-        <img
-          src={libraryInfo.titleImage}
-          alt="logo"
-          class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-3 max-w-xs max-h-32 object-contain drop-shadow-lg"
-        />
-      {/if}
-    {/await}
-  </div>
-
-  <!-- Action Buttons at Top -->
-  <div class="bg-accent-lighter px-6 py-4 flex items-center gap-3 rounded-b-lg">
-    {#if updateInfo && !hasActiveUpdateDownload && !isUpdateDismissed}
-      <button
-        class="px-6 py-3 flex border-none rounded-lg justify-center bg-success hover:bg-success-hover items-center gap-2 disabled:bg-disabled disabled:cursor-not-allowed transition-colors duration-200 text-overlay-text"
-        onclick={() => (showUpdateModal = true)}
+    <!-- Action Buttons -->
+    <div class="sticky top-0 z-10 shrink-0 pb-2">
+      <div
+        class="flex flex-wrap items-center gap-3 rounded-b-lg border border-t-0 border-accent-light/40 bg-accent-lighter/95 px-6 py-4 shadow-lg backdrop-blur-sm"
       >
-        <UpdateIcon fill="var(--color-overlay-text)" />
-        <p class="font-archivo font-semibold text-overlay-text">
-          Update to {updateInfo.updateVersion?.slice(0, 8)}
-        </p>
-      </button>
-      <button
-        aria-label="Ignore update"
-        onclick={() => {
-          if (!updateInfo?.updateVersion) return;
-          updatesManager.dismissAppUpdate(
-            libraryInfo.appID,
-            updateInfo.updateVersion
-          );
-        }}
-        class="px-3 py-3 flex border-none rounded-lg justify-center bg-error hover:bg-error-hover items-center gap-2 disabled:bg-disabled disabled:cursor-not-allowed transition-colors duration-200 text-overlay-text"
-      >
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          height="20px"
-          viewBox="0 -960 960 960"
-          width="20px"
-          fill="var(--color-overlay-text)"
-        >
-          <path
-            d="M480-424 284-228q-17 17-44 17t-44-17q-17-17-17-44t17-44l196-196-196-196q-17-17-17-44t17-44q17-17 44-17t44 17l196 196 196-196q17-17 44-17t44 17q17 17 17 44t-17 44L536-480l196 196q17 17 17 44t-17 44q-17 17-44 17t-44-17L480-424Z"
-          />
-        </svg>
-      </button>
-    {:else if hasActiveUpdateDownload}
-      <button
-        class="px-6 py-3 flex border-none rounded-lg justify-center bg-success items-center gap-2 cursor-not-allowed transition-colors duration-200 text-overlay-text"
-        disabled
-      >
-        <UpdateIcon fill="var(--color-overlay-text)" />
-        <p class="font-archivo font-semibold text-overlay-text">Updating</p>
-      </button>
-    {:else if os === ''}
-      <div class="flex justify-center items-center w-full h-full"></div>
-    {:else if needsUmuSetup}
-      <div class="relative group">
-        <button
-          class="px-6 py-3 flex border-none rounded-lg justify-center bg-disabled items-center gap-2 disabled:bg-disabled disabled:cursor-not-allowed transition-colors duration-200"
-          disabled
-        >
-          <PlayIcon fill="var(--color-overlay-text)" />
-          <p class="font-archivo font-semibold text-white">Play</p>
-        </button>
-        <div
-          class="absolute top-full left-0 mt-2 px-3 py-2 bg-accent-lighter drop-shadow-md border border-accent-dark flex flex-row gap-2 items-center text-accent-dark text-sm rounded-lg whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-10"
-        >
-          <img src="./error.svg" alt="error" class="w-4 h-4" />
-          <p class="font-archivo font-semibold text-accent-dark pr-4">
-            You can only play Windows games through Steam using Proton or UMU
-          </p>
-        </div>
-      </div>
-    {:else if $gamesLaunched[libraryInfo.appID] === 'launching'}
-      <button
-        class="px-6 py-3 flex border-none rounded-lg justify-center bg-success items-center gap-2 cursor-not-allowed transition-colors duration-200 text-overlay-text"
-        disabled
-      >
-        <p class="font-archivo font-semibold text-overlay-text">WAITING</p>
-      </button>
-    {:else if $gamesLaunched[libraryInfo.appID] === 'launched'}
-      <button
-        class="px-6 py-3 flex border-none rounded-lg justify-center bg-success items-center gap-2 cursor-not-allowed transition-colors duration-200 text-overlay-text"
-        disabled
-      >
-        <p class="font-archivo font-semibold text-overlay-text">PLAYING</p>
-      </button>
-    {:else}
-      <button
-        bind:this={playButton}
-        class="px-6 py-3 flex border-none rounded-lg justify-center bg-success hover:bg-success-hover items-center gap-2 disabled:bg-disabled disabled:cursor-not-allowed transition-colors duration-200 text-overlay-text data-[error=true]:bg-error data-[error=true]:hover:bg-error-hover/50"
-        onclick={() => launchGameTrigger.set(libraryInfo.appID)}
-      >
-        <PlayIcon fill="var(--color-overlay-text)" />
-        <p class="font-archivo font-semibold text-overlay-text">PLAY</p>
-      </button>
-    {/if}
-
-    {#if updateInfo && !hasActiveUpdateDownload && isUpdateDismissed}
-      <button
-        aria-label="Open update options"
-        title="Open update options"
-        class="px-3 py-3 flex border-none rounded-lg justify-center bg-success hover:bg-success-hover items-center transition-colors duration-200 text-overlay-text"
-        onclick={() => (showUpdateModal = true)}
-      >
-        <UpdateIcon
-          fill="var(--color-overlay-text)"
-          width="20px"
-          height="20px"
-        />
-      </button>
-    {/if}
-
-    <button
-      class="px-4 py-3 flex border-none rounded-lg justify-center bg-accent-light hover:bg-accent-light/80 text-accent-dark items-center gap-2 transition-colors duration-200"
-      onclick={openGameConfiguration}
-    >
-      <SettingsFilled fill="var(--color-accent-dark)" />
-      <span class="font-medium">Settings</span>
-    </button>
-
-    <button
-      class="px-4 py-3 flex border-none rounded-lg justify-center bg-accent-light hover:bg-accent-light/80 text-accent-dark items-center gap-2 transition-colors duration-200"
-      onclick={() => {
-        currentStorePageOpened.set(libraryInfo.appID);
-        currentStorePageOpenedStorefront.set(libraryInfo.storefront);
-      }}
-    >
-      <svg
-        xmlns="http://www.w3.org/2000/svg"
-        viewBox="0 0 24 24"
-        class="w-5 h-5 fill-accent-dark"
-      >
-        <path
-          d="M12 2C6.48 2 2 6.48 2 12C2 17.52 6.48 22 12 22C17.52 22 22 17.52 22 12C22 6.48 17.52 2 12 2ZM12 17C11.45 17 11 16.55 11 16V12C11 11.45 11.45 11 12 11C12.55 11 13 11.45 13 12V16C13 16.55 12.55 17 12 17ZM13 9H11V7H13V9Z"
-        />
-      </svg>
-      <span class="font-medium">More Info</span>
-    </button>
-  </div>
-
-  {#if needsUmuMigration}
-    <div
-      class="bg-accent-lighter rounded-lg p-5 mx-0 mt-6 flex flex-col gap-3"
-      in:fly={{ y: -20, duration: 300 }}
-    >
-      <div class="flex items-start gap-3">
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          viewBox="0 0 24 24"
-          class="w-6 h-6 fill-accent-dark shrink-0 mt-0.5"
-        >
-          <path
-            d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"
-          />
-        </svg>
-        <div>
-          <h3 class="text-base font-archivo font-bold text-accent-dark">
-            UMU Migration Recommended
-          </h3>
-          <p class="text-accent-dark text-sm">
-            This game is still using legacy Proton prefix mode. Migrate it to
-            UMU for native OGI launch compatibility, including pre/post launch
-            events support.
-          </p>
-        </div>
-      </div>
-      <div class="flex gap-3">
-        <button
-          class="px-4 py-2 bg-accent-light hover:bg-accent-light/80 text-accent-dark font-archivo font-semibold rounded-lg border-none flex items-center justify-center gap-2 transition-colors duration-200 flex-1 disabled:bg-disabled/50 disabled:cursor-not-allowed"
-          onclick={migrateToUmu}
-          disabled={isMigratingToUmu}
-        >
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            viewBox="0 0 24 24"
-            class="w-5 h-5 fill-accent-dark"
+        {#if updateInfo && !hasActiveUpdateDownload && !isUpdateDismissed}
+          <button
+            class="flex items-center justify-center gap-2 rounded-lg border-none bg-success px-6 py-3 text-overlay-text transition-colors duration-200 hover:bg-success-hover disabled:cursor-not-allowed disabled:bg-disabled"
+            onclick={() => (showUpdateModal = true)}
           >
-            <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
-          </svg>
-          {isMigratingToUmu ? 'Migrating...' : 'Migrate to UMU'}
-        </button>
-      </div>
-    </div>
-  {/if}
-
-  <!-- Steam Re-add Banner -->
-  {#if requiresSteamReadd}
-    <div
-      class="bg-accent-lighter rounded-lg p-5 mx-0 mt-6 flex flex-col gap-3"
-      in:fly={{ y: -20, duration: 300 }}
-    >
-      <div class="flex items-start gap-3">
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          viewBox="0 0 24 24"
-          class="w-6 h-6 fill-accent-dark shrink-0 mt-0.5"
-        >
-          <path
-            d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"
-          />
-        </svg>
-        <div>
-          <h3 class="text-base font-archivo font-bold text-accent-dark">
-            Steam Re-add Required
-          </h3>
-          <p class="text-accent-dark text-sm">
-            This game has been updated. To continue playing, you must re-add it
-            to Steam.
-          </p>
-        </div>
-      </div>
-      <div class="flex gap-3">
-        <button
-          class="px-4 py-2 bg-accent-light hover:bg-accent-light/80 text-accent-dark font-archivo font-semibold rounded-lg border-none flex items-center justify-center gap-2 transition-colors duration-200 flex-1 disabled:bg-disabled/50 disabled:cursor-not-allowed"
-          onclick={async (event) => {
-            try {
-              (event.currentTarget as HTMLButtonElement).disabled = true;
-
-              // Get the old Steam app ID from requiredReadds if available
-              const requiredReadd = appUpdates.requiredReadds.find(
-                (r) => r.appID === libraryInfo.appID
-              );
-              const oldSteamAppId =
-                requiredReadd?.steamAppId && requiredReadd.steamAppId !== 0
-                  ? requiredReadd.steamAppId
-                  : undefined;
-
-              await window.electronAPI.app.addToSteam(
+            <UpdateIcon fill="var(--color-overlay-text)" />
+            <p class="font-archivo font-semibold text-overlay-text">
+              Update to {updateInfo.updateVersion?.slice(0, 8)}
+            </p>
+          </button>
+          <button
+            aria-label="Ignore update"
+            onclick={() => {
+              if (!updateInfo?.updateVersion) return;
+              updatesManager.dismissAppUpdate(
                 libraryInfo.appID,
-                oldSteamAppId
+                updateInfo.updateVersion
               );
+            }}
+            class="flex items-center justify-center gap-2 rounded-lg border-none bg-error px-3 py-3 text-overlay-text transition-colors duration-200 hover:bg-error-hover disabled:cursor-not-allowed disabled:bg-disabled"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              height="20px"
+              viewBox="0 -960 960 960"
+              width="20px"
+              fill="var(--color-overlay-text)"
+            >
+              <path
+                d="M480-424 284-228q-17 17-44 17t-44-17q-17-17-17-44t17-44l196-196-196-196q-17-17-17-44t17-44q17-17 44-17t44 17l196 196 196-196q17-17 44-17t44 17q17 17 17 44t-17 44L536-480l196 196q17 17 17 44t-17 44q-17 17-44 17t-44-17L480-424Z"
+              />
+            </svg>
+          </button>
+        {:else if hasActiveUpdateDownload}
+          <button
+            class="flex items-center justify-center gap-2 rounded-lg border-none bg-success px-6 py-3 text-overlay-text transition-colors duration-200 cursor-not-allowed"
+            disabled
+          >
+            <UpdateIcon fill="var(--color-overlay-text)" />
+            <p class="font-archivo font-semibold text-overlay-text">Updating</p>
+          </button>
+        {:else if os === ''}
+          <div class="flex h-full min-h-11 w-full items-center justify-center"></div>
+        {:else if needsUmuSetup}
+          <div class="relative group">
+            <button
+              class="flex items-center justify-center gap-2 rounded-lg border-none bg-disabled px-6 py-3 transition-colors duration-200 disabled:cursor-not-allowed disabled:bg-disabled"
+              disabled
+            >
+              <PlayIcon fill="var(--color-overlay-text)" />
+              <p class="font-archivo font-semibold text-white">Play</p>
+            </button>
+            <div
+              class="pointer-events-none absolute top-full left-0 z-10 mt-2 flex flex-row items-center gap-2 whitespace-nowrap rounded-lg border border-accent-dark bg-accent-lighter px-3 py-2 text-sm text-accent-dark opacity-0 drop-shadow-md transition-opacity duration-200 group-hover:opacity-100"
+            >
+              <img src="./error.svg" alt="error" class="h-4 w-4" />
+              <p class="pr-4 font-archivo font-semibold text-accent-dark">
+                You can only play Windows games through Steam using Proton or UMU
+              </p>
+            </div>
+          </div>
+        {:else if $gamesLaunched[libraryInfo.appID] === 'launching'}
+          <button
+            class="flex items-center justify-center gap-2 rounded-lg border-none bg-success px-6 py-3 text-overlay-text transition-colors duration-200 cursor-not-allowed"
+            disabled
+          >
+            <p class="font-archivo font-semibold text-overlay-text">WAITING</p>
+          </button>
+        {:else if $gamesLaunched[libraryInfo.appID] === 'launched'}
+          <button
+            class="flex items-center justify-center gap-2 rounded-lg border-none bg-success px-6 py-3 text-overlay-text transition-colors duration-200 cursor-not-allowed"
+            disabled
+          >
+            <p class="font-archivo font-semibold text-overlay-text">PLAYING</p>
+          </button>
+        {:else}
+          <button
+            bind:this={playButton}
+            class="flex items-center justify-center gap-2 rounded-lg border-none bg-success px-6 py-3 text-overlay-text transition-colors duration-200 hover:bg-success-hover data-[error=true]:bg-error data-[error=true]:hover:bg-error-hover/50 disabled:cursor-not-allowed disabled:bg-disabled"
+            onclick={() => launchGameTrigger.set(libraryInfo.appID)}
+          >
+            <PlayIcon fill="var(--color-overlay-text)" />
+            <p class="font-archivo font-semibold text-overlay-text">PLAY</p>
+          </button>
+        {/if}
 
-              appUpdates.requiredReadds = appUpdates.requiredReadds.filter(
-                (r) => r.appID !== libraryInfo.appID
-              );
-            } catch (error) {
-              console.error(error);
-            }
+        {#if updateInfo && !hasActiveUpdateDownload && isUpdateDismissed}
+          <button
+            aria-label="Open update options"
+            title="Open update options"
+            class="flex items-center justify-center rounded-lg border-none bg-success px-3 py-3 text-overlay-text transition-colors duration-200 hover:bg-success-hover"
+            onclick={() => (showUpdateModal = true)}
+          >
+            <UpdateIcon
+              fill="var(--color-overlay-text)"
+              width="20px"
+              height="20px"
+            />
+          </button>
+        {/if}
+
+        <button
+          class="flex items-center justify-center gap-2 rounded-lg border-none bg-accent-light px-4 py-3 text-accent-dark transition-colors duration-200 hover:bg-accent-light/80"
+          onclick={openGameConfiguration}
+        >
+          <SettingsFilled fill="var(--color-accent-dark)" />
+          <span class="font-medium">Settings</span>
+        </button>
+
+        <button
+          class="flex items-center justify-center gap-2 rounded-lg border-none bg-accent-light px-4 py-3 text-accent-dark transition-colors duration-200 hover:bg-accent-light/80"
+          onclick={() => {
+            currentStorePageOpened.set(libraryInfo.appID);
+            currentStorePageOpenedStorefront.set(libraryInfo.storefront);
           }}
         >
           <svg
             xmlns="http://www.w3.org/2000/svg"
             viewBox="0 0 24 24"
-            class="w-5 h-5 fill-accent-dark"
+            class="h-5 w-5 fill-accent-dark"
           >
-            <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
+            <path
+              d="M12 2C6.48 2 2 6.48 2 12C2 17.52 6.48 22 12 22C17.52 22 22 17.52 22 12C22 6.48 17.52 2 12 2ZM12 17C11.45 17 11 16.55 11 16V12C11 11.45 11.45 11 12 11C12.55 11 13 11.45 13 12V16C13 16.55 12.55 17 12 17ZM13 9H11V7H13V9Z"
+            />
           </svg>
-          Add to Steam
+          <span class="font-medium">More Info</span>
         </button>
       </div>
     </div>
-  {/if}
 
-  <!-- Addon Task Table -->
-  {#if settledAddons}
-    {#each Object.keys(searchingAddons) as addonID, index}
-      {@const tasks = searchingAddons[addonID]!!.filter(
-        (task) => task.downloadType === 'task'
-      )}
-      {#if tasks.length > 0}
-        <div class="mt-6" in:fly={{ y: 30, duration: 400, delay: 50 * index }}>
-          <button
-            class="w-full flex items-center justify-between px-3 py-2 bg-transparent hover:bg-accent-lighter active:bg-accent-light/80 border-none cursor-pointer rounded-lg transition-colors duration-200 mb-2"
-            onclick={() => toggleAddonCollapse(addonID)}
-          >
-            <div class="flex items-center gap-2">
-              <AddonPicture addonId={addonID} class="w-6 h-6 rounded" />
-              <span class="font-medium text-accent-dark text-sm"
-                >{addonsMap.get(addonID)?.name ?? addonID}</span
-              >
-            </div>
+    <div class="space-y-3 px-3 pb-6">
+      {#if needsUmuMigration}
+        <div
+          class="mx-0 flex flex-col gap-3 rounded-lg bg-accent-lighter p-5"
+          in:fly={{ y: -20, duration: 300 }}
+        >
+          <div class="flex items-start gap-3">
             <svg
-              class="w-3.5 h-3.5 text-accent-dark/60 transition-transform duration-200"
-              class:rotate-180={!collapsedAddons.has(addonID)}
+              xmlns="http://www.w3.org/2000/svg"
               viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
+              class="mt-0.5 h-6 w-6 shrink-0 fill-accent-dark"
             >
               <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M19 9l-7 7-7-7"
+                d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"
               />
             </svg>
-          </button>
-
-          {#if !collapsedAddons.has(addonID)}
-            <div
-              class="bg-accent-lighter rounded-lg overflow-hidden"
-              transition:slide={{ duration: 300 }}
-            >
-              {#each tasks as task, taskIndex}
-                <div
-                  class="flex flex-row items-center justify-between px-4 py-3 {taskIndex <
-                  tasks.length - 1
-                    ? 'border-b border-accent-light/40'
-                    : ''}"
-                >
-                  <span class="text-accent-dark font-medium">{task.name}</span>
-                  <button
-                    class="px-4 py-1.5 bg-accent-light rounded-lg border-none text-accent-dark text-sm hover:bg-accent-light/80 transition-colors duration-200"
-                    onclick={() => handleRunTask(task, addonID)}>Run</button
-                  >
-                </div>
-              {/each}
+            <div>
+              <h3 class="text-base font-archivo font-bold text-accent-dark">
+                UMU Migration Recommended
+              </h3>
+              <p class="text-sm text-accent-dark">
+                This game is still using legacy Proton prefix mode. Migrate it to
+                UMU for native OGI launch compatibility, including pre/post launch
+                events support.
+              </p>
             </div>
-          {/if}
+          </div>
+          <div class="flex gap-3">
+            <button
+              class="flex flex-1 items-center justify-center gap-2 rounded-lg border-none bg-accent-light px-4 py-2 font-archivo font-semibold text-accent-dark transition-colors duration-200 hover:bg-accent-light/80 disabled:cursor-not-allowed disabled:bg-disabled/50"
+              onclick={migrateToUmu}
+              disabled={isMigratingToUmu}
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 24 24"
+                class="h-5 w-5 fill-accent-dark"
+              >
+                <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
+              </svg>
+              {isMigratingToUmu ? 'Migrating...' : 'Migrate to UMU'}
+            </button>
+          </div>
         </div>
       {/if}
-    {/each}
-  {:else}
-    <div
-      class="mt-6 bg-accent-lighter rounded-lg overflow-hidden animate-pulse"
-    >
-      {#each Array(3) as _, i}
+
+      <!-- Steam Re-add Banner -->
+      {#if requiresSteamReadd}
         <div
-          class="flex flex-row items-center justify-between px-4 py-3 {i < 2
-            ? 'border-b border-accent-light/40'
-            : ''}"
+          class="mx-0 flex flex-col gap-3 rounded-lg bg-accent-lighter p-5"
+          in:fly={{ y: -20, duration: 300 }}
         >
-          <div class="h-5 bg-accent-light rounded w-40"></div>
-          <div class="h-8 bg-accent-light rounded-lg w-16"></div>
+          <div class="flex items-start gap-3">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 24 24"
+              class="mt-0.5 h-6 w-6 shrink-0 fill-accent-dark"
+            >
+              <path
+                d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"
+              />
+            </svg>
+            <div>
+              <h3 class="text-base font-archivo font-bold text-accent-dark">
+                Steam Re-add Required
+              </h3>
+              <p class="text-sm text-accent-dark">
+                This game has been updated. To continue playing, you must re-add it
+                to Steam.
+              </p>
+            </div>
+          </div>
+          <div class="flex gap-3">
+            <button
+              class="flex flex-1 items-center justify-center gap-2 rounded-lg border-none bg-accent-light px-4 py-2 font-archivo font-semibold text-accent-dark transition-colors duration-200 hover:bg-accent-light/80 disabled:cursor-not-allowed disabled:bg-disabled/50"
+              onclick={async (event) => {
+                try {
+                  (event.currentTarget as HTMLButtonElement).disabled = true;
+
+                  // Get the old Steam app ID from requiredReadds if available
+                  const requiredReadd = appUpdates.requiredReadds.find(
+                    (r) => r.appID === libraryInfo.appID
+                  );
+                  const oldSteamAppId =
+                    requiredReadd?.steamAppId && requiredReadd.steamAppId !== 0
+                      ? requiredReadd.steamAppId
+                      : undefined;
+
+                  await window.electronAPI.app.addToSteam(
+                    libraryInfo.appID,
+                    oldSteamAppId
+                  );
+
+                  appUpdates.requiredReadds = appUpdates.requiredReadds.filter(
+                    (r) => r.appID !== libraryInfo.appID
+                  );
+                } catch (error) {
+                  console.error(error);
+                }
+              }}
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 24 24"
+                class="h-5 w-5 fill-accent-dark"
+              >
+                <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
+              </svg>
+              Add to Steam
+            </button>
+          </div>
         </div>
-      {/each}
+      {/if}
+
+      <!-- Addon Task Table -->
+      {#if settledAddons}
+        <div class="space-y-3">
+          {#each Object.keys(searchingAddons) as addonID, index}
+            {@const tasks = searchingAddons[addonID]!!.filter(
+              (task) => task.downloadType === 'task'
+            )}
+            {#if tasks.length > 0}
+              <div in:fly={{ y: 30, duration: 400, delay: 50 * index }}>
+                <button
+                  class="mb-1 w-full cursor-pointer rounded-lg border-none bg-transparent px-3 py-2 transition-colors duration-200 hover:bg-accent-lighter active:bg-accent-light/80"
+                  onclick={() => toggleAddonCollapse(addonID)}
+                >
+                  <div class="flex items-center justify-between gap-3">
+                    <div class="flex items-center gap-2">
+                      <AddonPicture addonId={addonID} class="h-6 w-6 rounded" />
+                      <span class="text-sm font-medium text-accent-dark"
+                        >{addonsMap.get(addonID)?.name ?? addonID}</span
+                      >
+                    </div>
+                    <svg
+                      class="h-3.5 w-3.5 text-accent-dark/60 transition-transform duration-200"
+                      class:rotate-180={!collapsedAddons.has(addonID)}
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                    >
+                      <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="2"
+                        d="M19 9l-7 7-7-7"
+                      />
+                    </svg>
+                  </div>
+                </button>
+
+                {#if !collapsedAddons.has(addonID)}
+                  <div
+                    class="overflow-hidden rounded-lg bg-accent-lighter"
+                    transition:slide={{ duration: 300 }}
+                  >
+                    {#each tasks as task, taskIndex}
+                      <div
+                        class="flex flex-row items-center justify-between px-4 py-3 {taskIndex <
+                        tasks.length - 1
+                          ? 'border-b border-accent-light/40'
+                          : ''}"
+                      >
+                        <span class="font-medium text-accent-dark">{task.name}</span>
+                        <button
+                          class="rounded-lg bg-accent-light px-4 py-1.5 text-sm text-accent-dark transition-colors duration-200 hover:bg-accent-light/80 border-none"
+                          onclick={() => handleRunTask(task, addonID)}
+                          >Run</button
+                        >
+                      </div>
+                    {/each}
+                  </div>
+                {/if}
+              </div>
+            {/if}
+          {/each}
+        </div>
+      {:else}
+        <div class="overflow-hidden rounded-lg bg-accent-lighter animate-pulse">
+          {#each Array(3) as _, i}
+            <div
+              class="flex flex-row items-center justify-between px-4 py-3 {i < 2
+                ? 'border-b border-accent-light/40'
+                : ''}"
+            >
+              <div class="h-5 w-40 rounded bg-accent-light"></div>
+              <div class="h-8 w-16 rounded-lg bg-accent-light"></div>
+            </div>
+          {/each}
+        </div>
+      {/if}
     </div>
-  {/if}
+  </div>
 </div>

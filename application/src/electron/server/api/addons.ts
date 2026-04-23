@@ -18,6 +18,7 @@ import { restartAddonServer } from '@/electron/handlers/handler.addon.js';
 import { __dirname } from '@/electron/manager/manager.paths.js';
 import type { StoreData } from 'ogi-addon';
 import { ZodLibraryInfo } from 'ogi-addon';
+import { supportsStorefront } from '@/lib/storefronts.js';
 
 const procedures: Record<string, Procedure<any>> = {
   // Get all addon info
@@ -267,7 +268,7 @@ const procedures: Record<string, Procedure<any>> = {
     .handler(async (input) => {
       const clientsWithStorefront = Array.from(clients.values()).filter(
         (client) =>
-          client.addonInfo?.storefronts.includes(input.storefront) &&
+          supportsStorefront(client.addonInfo?.storefronts, input.storefront) &&
           client.eventsAvailable.includes('game-details')
       );
       if (clientsWithStorefront.length === 0)
@@ -432,7 +433,7 @@ const procedures: Record<string, Procedure<any>> = {
     .handler(async (input) => {
       const clientsWithStorefront = Array.from(clients.values()).filter(
         (client) =>
-          client.addonInfo?.storefronts.includes(input.storefront) &&
+          supportsStorefront(client.addonInfo?.storefronts, input.storefront) &&
           client.eventsAvailable.includes('check-for-updates')
       );
       if (clientsWithStorefront.length === 0)

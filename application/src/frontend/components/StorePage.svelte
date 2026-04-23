@@ -25,6 +25,7 @@
   import SectionModal from '@/frontend/components/modal/SectionModal.svelte';
   import TextModal from '@/frontend/components/modal/TextModal.svelte';
   import { fly, slide } from 'svelte/transition';
+  import { supportsStorefront } from '@/lib/storefronts';
 
   interface Props {
     appID: number;
@@ -230,10 +231,7 @@
 
     const searchPromises = [];
     for (const addon of addons) {
-      if (
-        !addon.storefronts.includes(storefront) &&
-        !addon.storefronts.includes('*')
-      ) {
+      if (!supportsStorefront(addon.storefronts, storefront)) {
         loadingAddons.delete(addon.id);
         continue;
       }

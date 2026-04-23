@@ -21,6 +21,7 @@ import {
   DeferrableTask,
   DeferredTasks,
 } from '@/electron/server/DeferrableTask.js';
+import { supportsStorefront } from '@/lib/storefronts.js';
 
 export class AddonConnection {
   public addonInfo: OGIAddonConfiguration | undefined;
@@ -352,7 +353,7 @@ export class AddonConnection {
             // query all of the clients for the app details
             const clientsWithStorefront = Array.from(clients.values()).filter(
               (client) =>
-                client.addonInfo?.storefronts.includes(storefront) &&
+                supportsStorefront(client.addonInfo?.storefronts, storefront) &&
                 client.eventsAvailable.includes('game-details')
             );
             // find a storefront that gives app details that isn't undefined
@@ -410,7 +411,7 @@ export class AddonConnection {
             }: ClientSentEventTypes['search-app-name'] = data.args;
             const clientsWithStorefront = Array.from(clients.values()).filter(
               (client) =>
-                client.addonInfo?.storefronts.includes(storefront) &&
+                supportsStorefront(client.addonInfo?.storefronts, storefront) &&
                 client.eventsAvailable.includes('library-search')
             );
             const searchResult: StoreData[] = [];

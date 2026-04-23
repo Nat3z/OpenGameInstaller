@@ -28,6 +28,7 @@
   import { updatesManager, appUpdates } from '@/frontend/states.svelte';
   import UpdateIcon from '@/frontend/Icons/UpdateIcon.svelte';
   import UpdateAppModal from '@/frontend/components/built/UpdateAppModal.svelte';
+  import { supportsStorefront } from '@/lib/storefronts';
 
   let updateInfo = $derived.by(() => {
     return updatesManager.getAppUpdate(libraryInfo.appID);
@@ -347,7 +348,7 @@
       addons.map((addon) => [addon.id, { id: addon.id, name: addon.name }])
     );
     const addonsWithStorefront = addons.filter((addon) =>
-      addon.storefronts.includes(libraryInfo.storefront)
+      supportsStorefront(addon.storefronts, libraryInfo.storefront)
     );
 
     if (addonsWithStorefront.length === 0) return;

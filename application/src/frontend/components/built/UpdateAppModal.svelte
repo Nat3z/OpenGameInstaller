@@ -13,6 +13,7 @@
   import TitleModal from '@/frontend/components/modal/TitleModal.svelte';
   import SectionModal from '@/frontend/components/modal/SectionModal.svelte';
   import { fly, slide } from 'svelte/transition';
+  import { supportsStorefront } from '@/lib/storefronts';
 
   interface Props {
     libraryInfo: LibraryInfo;
@@ -127,10 +128,7 @@
 
     const searchPromises = [];
     for (const addon of addons) {
-      if (
-        !addon.storefronts.includes(storefront) &&
-        !addon.storefronts.includes('*')
-      ) {
+      if (!supportsStorefront(addon.storefronts, storefront)) {
         loadingAddons.delete(addon.id);
         continue;
       }

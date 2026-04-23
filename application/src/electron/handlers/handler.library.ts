@@ -302,9 +302,17 @@ async function executeWrapperCommandForAppSteam(
     appInfo.launchArguments
   );
 
+  // If %command% is missing and launchArguments is empty, fall back to normal parser
+  // to preserve wrapper launch tokens like WINEPREFIX=/path --fullscreen
+  const effectiveLaunchArguments =
+    launchArguments.length === 0
+      ? resolveLaunchCommand(appInfo.launchExecutable, appInfo.launchArguments)
+          .args
+      : launchArguments;
+
   const wrappedArgv = [
     ...fixedArgs.slice(1).map((x) => x.toString()),
-    ...launchArguments,
+    ...effectiveLaunchArguments,
   ];
 
   console.log(

@@ -656,8 +656,9 @@
             <button
               class="flex flex-1 items-center justify-center gap-2 rounded-lg border-none bg-accent-light px-4 py-2 font-archivo font-semibold text-accent-dark transition-colors duration-200 hover:bg-accent-light/80 disabled:cursor-not-allowed disabled:bg-disabled/50"
               onclick={async (event) => {
+                const button = event.currentTarget as HTMLButtonElement;
                 try {
-                  (event.currentTarget as HTMLButtonElement).disabled = true;
+                  button.disabled = true;
 
                   // Get the old Steam app ID from requiredReadds if available
                   const requiredReadd = appUpdates.requiredReadds.find(
@@ -673,11 +674,14 @@
                     oldSteamAppId
                   );
 
+                  // Only remove from requiredReadds on success
                   appUpdates.requiredReadds = appUpdates.requiredReadds.filter(
                     (r) => r.appID !== libraryInfo.appID
                   );
                 } catch (error) {
                   console.error(error);
+                  // Re-enable button on error
+                  button.disabled = false;
                 }
               }}
             >

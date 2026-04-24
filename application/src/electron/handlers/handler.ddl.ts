@@ -643,6 +643,7 @@ class Download {
         );
         if (this.status !== 'downloading') throw lastError;
         if (lastError.message === 'CONNECTION_REFRESH_REQUESTED') {
+          part.abortController = new AbortController();
           continue;
         }
         await new Promise((resolve) => setTimeout(resolve, 1000 * (i + 1)));
@@ -779,7 +780,6 @@ class Download {
         }
       },
     });
-    connectionHealth.observe(part.downloadedBytes);
 
     // Download all chunks in parallel
     const chunkPromises = part.chunks.map((chunk) =>
@@ -1063,7 +1063,6 @@ class Download {
             part.abortController.abort();
           },
         });
-        connectionHealth.observe(part.downloadedBytes);
 
         let _partThrottle: ThrottleStream | undefined;
         if (BANDWIDTH_LIMIT_BYTES_PER_SEC > 0) {
@@ -1541,7 +1540,6 @@ class Download {
             this.abortController.abort();
           },
         });
-        connectionHealth.observe(this.currentBytes);
 
         let _throttle: ThrottleStream | undefined;
         if (BANDWIDTH_LIMIT_BYTES_PER_SEC > 0) {
@@ -1854,7 +1852,6 @@ class Download {
         }
       },
     });
-    connectionHealth.observe(this.currentBytes);
 
     this.startTime = Date.now();
     this.startProgressTracker();

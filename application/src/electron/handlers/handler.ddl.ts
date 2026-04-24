@@ -8,6 +8,7 @@ import { DOWNLOAD_QUEUE } from '@/electron/manager/manager.queue.js';
 import { Readable, Transform, type TransformCallback } from 'stream';
 import * as http from 'http';
 import * as https from 'https';
+import { getEffectiveOnlineState } from '@/electron/lib/online.js';
 import {
   getStoredValue,
   refreshCached,
@@ -19,6 +20,17 @@ let PARALLEL_CHUNK_COUNT: number = 0;
 
 // Bandwidth throttling
 let BANDWIDTH_LIMIT_BYTES_PER_SEC: number = 0;
+
+const CONNECTION_HEALTH_SAMPLE_INTERVAL_MS = 2000;
+const CONNECTION_HEALTH_WINDOW_SIZE = 12;
+const CONNECTION_HEALTH_MIN_TRANSFER_BYTES = 5 * 1024 * 1024;
+const CONNECTION_HEALTH_MIN_POSITIVE_SAMPLES = 4;
+const CONNECTION_HEALTH_LOW_SPEED_RATIO = 0.2;
+const CONNECTION_HEALTH_NEAR_ZERO_BYTES_PER_SEC = 64 * 1024;
+const CONNECTION_HEALTH_DECLINE_RATIO = 0.6;
+const CONNECTION_HEALTH_PERSISTENCE_MS = 12000;
+const CONNECTION_HEALTH_MAX_RECOVERIES = 2;
+const CONNECTION_HEALTH_RECONNECT_COOLDOWN_MS = 15000;
 
 class GlobalTokenBucket {
   private tokens: number;
@@ -105,6 +117,17 @@ interface PartState {
   effectiveChunkCount?: number; // Effective chunk count considering parallel limit
 }
 
+interface ConnectionHealthSnapshot {
+  baselineSpeed: number;
+  currentSpeed: number;
+  previousSpeed: number;
+}
+
+interface ConnectionHealthMonitor {
+  observe(totalBytes: number): void;
+  dispose(): void;
+}
+
 type DownloadStatus =
   | 'queued'
   | 'downloading'
@@ -115,6 +138,21 @@ type DownloadStatus =
   | 'cancelled';
 
 const downloads = new Map<string, Download>();
+
+function average(values: number[]): number {
+  if (values.length === 0) return 0;
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+function calculateBaselineSpeed(samples: number[]): number {
+  const positiveSamples = samples
+    .filter((sample) => sample > 0)
+    .sort((a, b) => b - a);
+  if (positiveSamples.length === 0) return 0;
+
+  const baselineSampleCount = Math.max(3, Math.ceil(positiveSamples.length / 3));
+  return average(positiveSamples.slice(0, baselineSampleCount));
+}
 
 class Download {
   public id: string;
@@ -168,6 +206,119 @@ class Download {
     this.currentPart = startPart || 1;
 
     downloads.set(this.id, this);
+  }
+
+  private createConnectionHealthMonitor(options: {
+    label: string;
+    initialBytes: number;
+    onReconnect: (snapshot: ConnectionHealthSnapshot) => void;
+  }): ConnectionHealthMonitor {
+    let observedBytes = options.initialBytes;
+    let lastObservedBytes = options.initialBytes;
+    let lastObservedAt = Date.now();
+    let lowSpeedSince: number | undefined;
+    let reconnectAttempts = 0;
+    let lastReconnectAt = 0;
+    const samples: number[] = [];
+
+    const interval = setInterval(() => {
+      const now = Date.now();
+      const elapsedMs = now - lastObservedAt;
+      if (elapsedMs <= 0) return;
+
+      const bytesDelta = Math.max(0, observedBytes - lastObservedBytes);
+      const speed = (bytesDelta * 1000) / elapsedMs;
+
+      lastObservedBytes = observedBytes;
+      lastObservedAt = now;
+
+      samples.push(speed);
+      if (samples.length > CONNECTION_HEALTH_WINDOW_SIZE) {
+        samples.shift();
+      }
+
+      const transferredBytes = observedBytes - options.initialBytes;
+      if (transferredBytes < CONNECTION_HEALTH_MIN_TRANSFER_BYTES) {
+        lowSpeedSince = undefined;
+        return;
+      }
+
+      const positiveSamples = samples.filter((sample) => sample > 0);
+      if (positiveSamples.length < CONNECTION_HEALTH_MIN_POSITIVE_SAMPLES) {
+        return;
+      }
+
+      const baselineSpeed = calculateBaselineSpeed(samples);
+      if (baselineSpeed <= 0) {
+        return;
+      }
+
+      const currentWindow = samples.slice(-3);
+      const previousWindow = samples.slice(-6, -3);
+      const currentSpeed = average(currentWindow);
+      const previousSpeed =
+        previousWindow.length > 0 ? average(previousWindow) : baselineSpeed;
+
+      const lowRelativeSpeed =
+        currentSpeed <= baselineSpeed * CONNECTION_HEALTH_LOW_SPEED_RATIO;
+      const trendingTowardZero =
+        currentSpeed <= CONNECTION_HEALTH_NEAR_ZERO_BYTES_PER_SEC ||
+        (previousSpeed > 0 &&
+          currentSpeed <= previousSpeed * CONNECTION_HEALTH_DECLINE_RATIO);
+
+      if (lowRelativeSpeed && trendingTowardZero) {
+        lowSpeedSince ??= now;
+      } else {
+        lowSpeedSince = undefined;
+      }
+
+      if (!lowSpeedSince) {
+        return;
+      }
+
+      if (!getEffectiveOnlineState().effectiveOnline) {
+        lowSpeedSince = undefined;
+        return;
+      }
+
+      const inCooldown =
+        now - lastReconnectAt < CONNECTION_HEALTH_RECONNECT_COOLDOWN_MS;
+      const slowLongEnough =
+        now - lowSpeedSince >= CONNECTION_HEALTH_PERSISTENCE_MS;
+
+      if (
+        reconnectAttempts >= CONNECTION_HEALTH_MAX_RECOVERIES ||
+        inCooldown ||
+        !slowLongEnough
+      ) {
+        return;
+      }
+
+      reconnectAttempts++;
+      lastReconnectAt = now;
+      lowSpeedSince = undefined;
+
+      console.log(
+        `[direct] ${options.label}: throughput collapsed, recycling connection ` +
+          `(current=${(currentSpeed / (1024 * 1024)).toFixed(2)}MB/s, ` +
+          `baseline=${(baselineSpeed / (1024 * 1024)).toFixed(2)}MB/s)`
+      );
+
+      options.onReconnect({
+        baselineSpeed,
+        currentSpeed,
+        previousSpeed,
+      });
+    }, CONNECTION_HEALTH_SAMPLE_INTERVAL_MS);
+
+    return {
+      observe(totalBytes: number) {
+        observedBytes = totalBytes;
+      },
+      dispose() {
+        clearInterval(interval);
+      },
+    };
   }
 
   public async start() {
@@ -491,6 +642,9 @@ class Download {
           lastError
         );
         if (this.status !== 'downloading') throw lastError;
+        if (lastError.message === 'CONNECTION_REFRESH_REQUESTED') {
+          continue;
+        }
         await new Promise((resolve) => setTimeout(resolve, 1000 * (i + 1)));
       }
     }
@@ -603,9 +757,35 @@ class Download {
       });
     }
 
+    part.downloadedBytes = part.chunks.reduce(
+      (sum, chunk) => sum + chunk.currentBytes,
+      0
+    );
+
+    let connectionRefreshRequested = false;
+    const connectionHealth = this.createConnectionHealthMonitor({
+      label: `Part ${part.index + 1}`,
+      initialBytes: part.downloadedBytes,
+      onReconnect: ({ currentSpeed, baselineSpeed }) => {
+        if (connectionRefreshRequested || this.status !== 'downloading') return;
+        connectionRefreshRequested = true;
+        console.log(
+          `[direct] Part ${part.index + 1}: restarting ranged chunk requests ` +
+            `after slowdown (${(currentSpeed / (1024 * 1024)).toFixed(2)}MB/s of ` +
+            `${(baselineSpeed / (1024 * 1024)).toFixed(2)}MB/s baseline)`
+        );
+        for (const activeChunk of part.chunks) {
+          activeChunk.abortController.abort();
+        }
+      },
+    });
+    connectionHealth.observe(part.downloadedBytes);
+
     // Download all chunks in parallel
     const chunkPromises = part.chunks.map((chunk) =>
-      this.downloadChunkForPart(part, chunk)
+      this.downloadChunkForPart(part, chunk, () =>
+        connectionHealth.observe(part.downloadedBytes)
+      )
     );
 
     try {
@@ -617,6 +797,8 @@ class Download {
       }
       // Re-throw other errors
       throw error;
+    } finally {
+      connectionHealth.dispose();
     }
 
     // Mark only this part as merging (don't change global status)
@@ -638,7 +820,8 @@ class Download {
    */
   private downloadChunkForPart(
     part: PartState,
-    chunk: ChunkState
+    chunk: ChunkState,
+    onProgress?: () => void
   ): Promise<void> {
     return new Promise<void>(async (resolve, reject) => {
       if (chunk.completed) {
@@ -712,6 +895,11 @@ class Download {
 
         chunk.abortController.signal.addEventListener('abort', () => {
           if (_chunkThrottle) _chunkThrottle.destroy();
+          if (chunk.fileStream) {
+            chunk.fileStream.close();
+            chunk.fileStream = undefined;
+          }
+          chunk.response = undefined;
           stream.destroy();
           reject(new Error('Aborted'));
         });
@@ -724,6 +912,7 @@ class Download {
             (sum, c) => sum + c.currentBytes,
             0
           );
+          onProgress?.();
         });
       } catch (error) {
         if (error instanceof AxiosError) {
@@ -799,6 +988,8 @@ class Download {
   private executePartDownload(part: PartState): Promise<void> {
     return new Promise<void>(async (resolve, reject) => {
       const job = part.job;
+      let connectionRefreshRequested = false;
+      let connectionHealth: ConnectionHealthMonitor | undefined;
 
       try {
         // Check for existing file (resume)
@@ -856,6 +1047,23 @@ class Download {
           : 0;
         part.totalBytes = startByte + contentLength;
         this.updateMultiPartTotalBytes();
+        connectionHealth = this.createConnectionHealthMonitor({
+          label: `Part ${part.index + 1}`,
+          initialBytes: part.downloadedBytes,
+          onReconnect: ({ currentSpeed, baselineSpeed }) => {
+            if (connectionRefreshRequested || this.status !== 'downloading') {
+              return;
+            }
+            connectionRefreshRequested = true;
+            console.log(
+              `[direct] Part ${part.index + 1}: restarting ranged stream ` +
+                `after slowdown (${(currentSpeed / (1024 * 1024)).toFixed(2)}MB/s of ` +
+                `${(baselineSpeed / (1024 * 1024)).toFixed(2)}MB/s baseline)`
+            );
+            part.abortController.abort();
+          },
+        });
+        connectionHealth.observe(part.downloadedBytes);
 
         let _partThrottle: ThrottleStream | undefined;
         if (BANDWIDTH_LIMIT_BYTES_PER_SEC > 0) {
@@ -868,6 +1076,7 @@ class Download {
         const stream = part.fileStream;
 
         stream.on('finish', () => {
+          connectionHealth?.dispose();
           if (part.fileStream) {
             part.fileStream.close();
             part.fileStream = undefined;
@@ -877,12 +1086,25 @@ class Download {
         });
 
         part.abortController.signal.addEventListener('abort', () => {
+          connectionHealth?.dispose();
           if (_partThrottle) _partThrottle.destroy();
+          if (part.fileStream) {
+            part.fileStream.close();
+            part.fileStream = undefined;
+          }
+          part.response = undefined;
           stream.destroy();
-          reject(new Error('Aborted'));
+          reject(
+            new Error(
+              connectionRefreshRequested
+                ? 'CONNECTION_REFRESH_REQUESTED'
+                : 'Aborted'
+            )
+          );
         });
 
         stream.on('error', (error) => {
+          connectionHealth?.dispose();
           if (part.fileStream) {
             part.fileStream.close();
             part.fileStream = undefined;
@@ -892,8 +1114,10 @@ class Download {
 
         part.response.data.on('data', (data: Buffer) => {
           part.downloadedBytes += data.length;
+          connectionHealth?.observe(part.downloadedBytes);
         });
       } catch (error) {
+        connectionHealth?.dispose();
         if (part.fileStream) {
           part.fileStream.close();
           part.fileStream = undefined;
@@ -1212,6 +1436,9 @@ class Download {
         lastError = error as Error;
         console.log('[direct] Error downloading part', i, lastError);
         if (this.status !== 'downloading') throw lastError;
+        if (lastError.message === 'CONNECTION_REFRESH_REQUESTED') {
+          continue;
+        }
         await new Promise((resolve) => setTimeout(resolve, 1000 * (i + 1)));
       }
     }
@@ -1221,6 +1448,8 @@ class Download {
   private _executeDownloadPart(job: DownloadJob) {
     return new Promise<void>(async (resolve, reject) => {
       this.sendProgress({ progress: 0, downloadSpeed: 0 });
+      let connectionRefreshRequested = false;
+      let connectionHealth: ConnectionHealthMonitor | undefined;
       try {
         this.abortController = new AbortController();
         // send an alive progress to say that we're starting
@@ -1291,6 +1520,28 @@ class Download {
         this.totalSize = this.startByte + contentLength;
         this.startTime = Date.now();
         this.startProgressTracker();
+        connectionHealth = this.createConnectionHealthMonitor({
+          label: `Part ${this.currentPart}`,
+          initialBytes: this.currentBytes,
+          onReconnect: ({ currentSpeed, baselineSpeed }) => {
+            if (
+              connectionRefreshRequested ||
+              !this.abortController ||
+              this.status !== 'downloading'
+            ) {
+              return;
+            }
+
+            connectionRefreshRequested = true;
+            console.log(
+              `[direct] Part ${this.currentPart}: restarting ranged stream ` +
+                `after slowdown (${(currentSpeed / (1024 * 1024)).toFixed(2)}MB/s of ` +
+                `${(baselineSpeed / (1024 * 1024)).toFixed(2)}MB/s baseline)`
+            );
+            this.abortController.abort();
+          },
+        });
+        connectionHealth.observe(this.currentBytes);
 
         let _throttle: ThrottleStream | undefined;
         if (BANDWIDTH_LIMIT_BYTES_PER_SEC > 0) {
@@ -1303,6 +1554,7 @@ class Download {
         const stream = this.fileStream;
 
         stream.on('finish', () => {
+          connectionHealth?.dispose();
           this.cleanupPart();
           console.log(
             '[direct] Stream finished (Downloaded bytes:',
@@ -1312,13 +1564,22 @@ class Download {
         });
 
         this.abortController.signal.addEventListener('abort', () => {
+          connectionHealth?.dispose();
           if (_throttle) _throttle.destroy();
+          this.cleanupPart();
           stream.destroy();
           console.log('[direct] Aborted');
-          reject(new Error('Aborted'));
+          reject(
+            new Error(
+              connectionRefreshRequested
+                ? 'CONNECTION_REFRESH_REQUESTED'
+                : 'Aborted'
+            )
+          );
         });
 
         stream.on('error', (error) => {
+          connectionHealth?.dispose();
           this.cleanupPart();
           console.log('[direct] Error', error);
           reject(error);
@@ -1326,8 +1587,10 @@ class Download {
 
         this.response.data.on('data', (chunk: Buffer) => {
           this.currentBytes += chunk.length;
+          connectionHealth?.observe(this.currentBytes);
         });
       } catch (error) {
+        connectionHealth?.dispose();
         if (!(error instanceof AxiosError)) {
           this.cleanupPart();
           reject(error);
@@ -1569,6 +1832,30 @@ class Download {
       });
     }
 
+    this.currentBytes = this.chunks.reduce(
+      (sum, chunk) => sum + chunk.currentBytes,
+      0
+    );
+
+    let connectionRefreshRequested = false;
+    const connectionHealth = this.createConnectionHealthMonitor({
+      label: `Part ${this.currentPart}`,
+      initialBytes: this.currentBytes,
+      onReconnect: ({ currentSpeed, baselineSpeed }) => {
+        if (connectionRefreshRequested || this.status !== 'downloading') return;
+        connectionRefreshRequested = true;
+        console.log(
+          `[direct] Part ${this.currentPart}: restarting ranged chunk requests ` +
+            `after slowdown (${(currentSpeed / (1024 * 1024)).toFixed(2)}MB/s of ` +
+            `${(baselineSpeed / (1024 * 1024)).toFixed(2)}MB/s baseline)`
+        );
+        for (const activeChunk of this.chunks) {
+          activeChunk.abortController.abort();
+        }
+      },
+    });
+    connectionHealth.observe(this.currentBytes);
+
     this.startTime = Date.now();
     this.startProgressTracker();
 
@@ -1580,7 +1867,9 @@ class Download {
 
     // Download all chunks in parallel
     const chunkPromises = this.chunks.map((chunk) =>
-      this.downloadChunk(job, chunk)
+      this.downloadChunk(job, chunk, () =>
+        connectionHealth.observe(this.currentBytes)
+      )
     );
 
     try {
@@ -1596,6 +1885,8 @@ class Download {
       }
 
       throw error;
+    } finally {
+      connectionHealth.dispose();
     }
 
     this.cleanupParallelChunks();
@@ -1611,7 +1902,11 @@ class Download {
   /**
    * Download a single chunk of the file to a separate chunk file.
    */
-  private downloadChunk(job: DownloadJob, chunk: ChunkState): Promise<void> {
+  private downloadChunk(
+    job: DownloadJob,
+    chunk: ChunkState,
+    onProgress?: () => void
+  ): Promise<void> {
     return new Promise<void>(async (resolve, reject) => {
       if (chunk.completed) {
         console.log(`[direct] Chunk ${chunk.index} already complete, skipping`);
@@ -1699,6 +1994,11 @@ class Download {
 
         chunk.abortController.signal.addEventListener('abort', () => {
           if (_chunkThrottle) _chunkThrottle.destroy();
+          if (chunk.fileStream) {
+            chunk.fileStream.close();
+            chunk.fileStream = undefined;
+          }
+          chunk.response = undefined;
           stream.destroy();
           console.log(`[direct] Chunk ${chunk.index} aborted`);
           reject(new Error('Aborted'));
@@ -1711,6 +2011,11 @@ class Download {
 
         chunk.response.data.on('data', (data: Buffer) => {
           chunk.currentBytes += data.length;
+          this.currentBytes = this.chunks.reduce(
+            (sum, currentChunk) => sum + currentChunk.currentBytes,
+            0
+          );
+          onProgress?.();
         });
       } catch (error) {
         if (error instanceof AxiosError) {

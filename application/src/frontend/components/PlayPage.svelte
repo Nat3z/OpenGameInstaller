@@ -448,7 +448,7 @@
     <!-- Action Buttons -->
     <div class="sticky top-0 z-10 shrink-0 pb-2">
       <div
-        class="flex flex-wrap items-center gap-3 rounded-b-lg border border-t-0 border-accent-light/40 bg-accent-lighter/95 px-6 py-4 shadow-lg backdrop-blur-sm"
+        class="flex flex-wrap items-center gap-3 rounded-b-lg bg-accent-lighter px-6 py-4 backdrop-blur-sm"
       >
         {#if updateInfo && !hasActiveUpdateDownload && !isUpdateDismissed}
           <button

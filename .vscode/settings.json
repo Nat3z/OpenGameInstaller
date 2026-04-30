@@ -25,5 +25,11 @@
   ],
   "css.validate": false,
   "tailwindCSS.validate": true,
-  "tailwindCSS.emmetCompletions": true
+  "tailwindCSS.emmetCompletions": true,
+  "typescript.preferences.autoImportSpecifierExcludeRegexes": [
+    "^server/"
+  ],
+  "javascript.preferences.autoImportSpecifierExcludeRegexes": [
+    "^server/"
+  ]
 }

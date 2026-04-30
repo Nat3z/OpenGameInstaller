@@ -1,6 +1,6 @@
 import { z } from 'zod';
-import { clients } from '@/electron/server/addon-server.js';
-import { DeferrableTask } from '@/electron/server/DeferrableTask.js';
+import { addonServer } from '@/electron/server/addon-server.js';
+import { DeferrableTask } from '@ogi-sdk/addon-server';
 
 // Invariant: clients only contains connections with addonInfo set (added in AddonConnection.authenticate).
 // We still guard below for robustness in case the map is accessed before auth or after disconnect.
@@ -11,7 +11,7 @@ import {
   ProcedureError,
   ProcedureJSON,
   ProcedureDeferTask,
-} from '@/electron/server/serve.js';
+} from '@/electron/server/ipc.js';
 import * as fs from 'fs/promises';
 import { join } from 'path';
 import { restartAddonServer } from '@/electron/handlers/handler.addon.js';
@@ -26,7 +26,7 @@ const procedures: Record<string, Procedure<any>> = {
     .input(z.object({}))
     .handler(async () => {
       let info = [];
-      for (const client of clients.values()) {
+      for (const client of addonServer.getConnections().values()) {
         if (client.addonInfo) {
           info.push({
             ...client.addonInfo,
@@ -46,7 +46,7 @@ const procedures: Record<string, Procedure<any>> = {
       })
     )
     .handler(async (input) => {
-      const client = clients.get(input.addonID);
+      const client = addonServer.getClient(input.addonID);
       if (!client) return new ProcedureError(404, 'Client not found');
       if (!client.addonInfo)
         return new ProcedureError(400, 'Client has no addon info');
@@ -78,7 +78,7 @@ const procedures: Record<string, Procedure<any>> = {
       })
     )
     .handler(async (input) => {
-      const client = clients.get(input.addonID);
+      const client = addonServer.getClient(input.addonID);
       if (!client) return new ProcedureError(404, 'Client not found');
       if (!client.addonInfo)
         return new ProcedureError(400, 'Client has no addon info');
@@ -112,7 +112,7 @@ const procedures: Record<string, Procedure<any>> = {
       })
     )
     .handler(async (input) => {
-      const client = clients.get(input.addonID);
+      const client = addonServer.getClient(input.addonID);
       if (!client) return new ProcedureError(404, 'Client not found');
       if (!client.addonInfo)
         return new ProcedureError(400, 'Client has no addon info');
@@ -145,7 +145,7 @@ const procedures: Record<string, Procedure<any>> = {
       })
     )
     .handler(async (input) => {
-      const client = clients.get(input.addonID);
+      const client = addonServer.getClient(input.addonID);
       if (!client) return new ProcedureError(404, 'Client not found');
       if (!client.addonInfo)
         return new ProcedureError(400, 'Client has no addon info');
@@ -173,7 +173,7 @@ const procedures: Record<string, Procedure<any>> = {
       })
     )
     .handler(async (input) => {
-      const client = clients.get(input.addonID);
+      const client = addonServer.getClient(input.addonID);
       if (!client) return new ProcedureError(404, 'Client not found');
       if (!client.addonInfo)
         return new ProcedureError(400, 'Client has no addon info');
@@ -220,7 +220,7 @@ const procedures: Record<string, Procedure<any>> = {
     )
     .handler(async (input) => {
       console.log('setupApp', input);
-      const client = clients.get(input.addonID);
+      const client = addonServer.getClient(input.addonID);
       if (!client) {
         console.error('Client not found');
         return new ProcedureError(404, 'Client not found');
@@ -266,7 +266,9 @@ const procedures: Record<string, Procedure<any>> = {
       })
     )
     .handler(async (input) => {
-      const clientsWithStorefront = Array.from(clients.values()).filter(
+      const clientsWithStorefront = Array.from(
+        addonServer.getConnections().values()
+      ).filter(
         (client) =>
           supportsStorefront(client.addonInfo?.storefronts, input.storefront) &&
           client.eventsAvailable.includes('game-details')
@@ -327,7 +329,7 @@ const procedures: Record<string, Procedure<any>> = {
   deleteAddon: procedure()
     .input(z.object({ addonID: z.string() }))
     .handler(async (input) => {
-      const client = clients.get(input.addonID);
+      const client = addonServer.getClient(input.addonID);
       if (!client) return new ProcedureError(404, 'Client not found');
       if (!client.addonInfo)
         return new ProcedureError(400, 'Client has no addon info');
@@ -399,7 +401,7 @@ const procedures: Record<string, Procedure<any>> = {
       })
     )
     .handler(async (input) => {
-      const client = clients.get(input.addonID);
+      const client = addonServer.getClient(input.addonID);
       if (!client) return new ProcedureError(404, 'Client not found');
       if (!client.addonInfo)
         return new ProcedureError(400, 'Client has no addon info');
@@ -431,7 +433,9 @@ const procedures: Record<string, Procedure<any>> = {
       })
     )
     .handler(async (input) => {
-      const clientsWithStorefront = Array.from(clients.values()).filter(
+      const clientsWithStorefront = Array.from(
+        addonServer.getConnections().values()
+      ).filter(
         (client) =>
           supportsStorefront(client.addonInfo?.storefronts, input.storefront) &&
           client.eventsAvailable.includes('check-for-updates')
@@ -448,8 +452,8 @@ const procedures: Record<string, Procedure<any>> = {
           'Multiple clients found to serve this storefront'
         );
       }
-
       const client = clientsWithStorefront[0];
+
       if (!client.addonInfo)
         return new ProcedureError(400, 'Client has no addon info');
       const deferrableTask = new DeferrableTask(async () => {
@@ -474,9 +478,9 @@ const procedures: Record<string, Procedure<any>> = {
       })
     )
     .handler(async (input) => {
-      const clientsWithEvent = Array.from(clients.values()).filter((client) =>
-        client.eventsAvailable.includes('launch-app')
-      );
+      const clientsWithEvent = Array.from(
+        addonServer.getConnections().values()
+      ).filter((client) => client.eventsAvailable.includes('launch-app'));
 
       console.log(
         'clientsWithEvent',

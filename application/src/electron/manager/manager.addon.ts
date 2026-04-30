@@ -3,9 +3,8 @@ import { join } from 'path';
 import { sendNotification } from '@/electron/main.js';
 import z from 'zod';
 import exec from 'child_process';
-import { addonSecret } from '@/electron/server/constants.js';
-import { clients } from '@/electron/server/addon-server.js';
-import { AddonConnection } from '@/electron/server/AddonConnection.js';
+import { AddonConnection } from '@ogi-sdk/addon-server';
+import { addonServer } from '@/electron/server/addon-server.js';
 
 export let processes: {
   [key: string]: exec.ChildProcess;
@@ -176,7 +175,7 @@ export async function startAddon(
   try {
     executeScript(
       'run',
-      addon.scripts.run + ' --addonSecret=' + addonSecret,
+      addon.scripts.run + ' --addonSecret=' + addonServer.getSecret(),
       addonPath,
       addonName
     );
@@ -194,7 +193,7 @@ export async function startAddon(
           return;
         }
 
-        if (clients.has(addonName!)) {
+        if (addonServer.getClient(addonName!)) {
           clearInterval(interval);
           resolve(true);
           return;
@@ -205,7 +204,7 @@ export async function startAddon(
     if (!success) {
       return;
     }
-    let client = clients.get(addonName!);
+    let client = addonServer.getClient(addonName!);
     if (client) {
       client.filePath = addonPath;
       client.addonLink = addonLink;

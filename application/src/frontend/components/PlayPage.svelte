@@ -492,7 +492,9 @@
             <p class="font-archivo font-semibold text-overlay-text">Updating</p>
           </button>
         {:else if os === ''}
-          <div class="flex h-full min-h-11 w-full items-center justify-center"></div>
+          <div
+            class="flex h-full min-h-11 w-full items-center justify-center"
+          ></div>
         {:else if needsUmuSetup}
           <div class="relative group">
             <button
@@ -507,7 +509,8 @@
             >
               <img src="./error.svg" alt="error" class="h-4 w-4" />
               <p class="pr-4 font-archivo font-semibold text-accent-dark">
-                You can only play Windows games through Steam using Proton or UMU
+                You can only play Windows games through Steam using Proton or
+                UMU
               </p>
             </div>
           </div>
@@ -601,9 +604,9 @@
                 UMU Migration Recommended
               </h3>
               <p class="text-sm text-accent-dark">
-                This game is still using legacy Proton prefix mode. Migrate it to
-                UMU for native OGI launch compatibility, including pre/post launch
-                events support.
+                This game is still using legacy Proton prefix mode. Migrate it
+                to UMU for native OGI launch compatibility, including pre/post
+                launch events support.
               </p>
             </div>
           </div>
@@ -647,8 +650,8 @@
                 Steam Re-add Required
               </h3>
               <p class="text-sm text-accent-dark">
-                This game has been updated. To continue playing, you must re-add it
-                to Steam.
+                This game has been updated. To continue playing, you must re-add
+                it to Steam.
               </p>
             </div>
           </div>
@@ -747,7 +750,9 @@
                           ? 'border-b border-accent-light/40'
                           : ''}"
                       >
-                        <span class="font-medium text-accent-dark">{task.name}</span>
+                        <span class="font-medium text-accent-dark"
+                          >{task.name}</span
+                        >
                         <button
                           class="rounded-lg bg-accent-light px-4 py-1.5 text-sm text-accent-dark transition-colors duration-200 hover:bg-accent-light/80 border-none"
                           onclick={() => handleRunTask(task, addonID)}

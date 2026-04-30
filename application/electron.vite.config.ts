@@ -10,7 +10,7 @@ export default defineConfig({
         '@': resolve(__dirname, 'src'),
       },
     },
-    plugins: [externalizeDepsPlugin({ exclude: ['ogi-addon', 'webtorrent'] })],
+    plugins: [externalizeDepsPlugin({ exclude: ['ogi-addon'] })],
     build: {
       rollupOptions: {
         input: {

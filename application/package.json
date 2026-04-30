@@ -42,9 +42,9 @@
     "electron-pack:linux": "electron-builder -l",
     "check": "bun run build:ogiaddon && svelte-check --tsconfig ./tsconfig.svelte.json",
     "typecheck": "bun run typecheck:svelte && bun run typecheck:electron && bun run typecheck:addonserver",
-    "typecheck:svelte": "svelte-check --tsconfig ./tsconfig.svelte.json",
-    "typecheck:electron": "tsc -p tsconfig.electron.json --noEmit",
-    "typecheck:addonserver": "tsc -p tsconfig.addonserver.json --noEmit",
+    "typecheck:svelte": "svelte-check --tsconfig ./tsconfig.svelte.json --threshold error",
+    "typecheck:electron": "tsc -p tsconfig.electron.json --noEmit --pretty false",
+    "typecheck:addonserver": "tsc -p tsconfig.addonserver.json --noEmit --pretty false",
     "rebuild": "npm rebuild"
   },
   "dependencies": {
@@ -62,7 +62,8 @@
     "node-datachannel": "^0.32.0",
     "ogi-addon": "workspace:*",
     "parse-torrent": "^11.0.19",
-    "real-debrid-js": "*",
+    "real-debrid-js": "workspace:*",
+    "@ogi-sdk/addon-server": "workspace:*",
     "sanitize-html": "^2.17.0",
     "semver": "^7.7.3",
     "shell-quote": "^1.8.3",

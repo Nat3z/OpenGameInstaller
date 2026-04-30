@@ -816,7 +816,7 @@ export const ZodLibraryInfo = z.object({
     .optional(),
 });
 export type LibraryInfo = z.infer<typeof ZodLibraryInfo>;
-interface Notification {
+export interface Notification {
   type: 'warning' | 'error' | 'info' | 'success';
   message: string;
   id: string;

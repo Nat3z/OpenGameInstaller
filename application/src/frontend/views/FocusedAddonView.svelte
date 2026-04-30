@@ -53,6 +53,7 @@
   let deleteConfirmationModalOpen: boolean = $state(false);
   let backConfirmationModalOpen: boolean = $state(false);
   let selectedValues: Record<string, string> = $state({});
+  let runningActions: Record<string, boolean> = $state({});
 
   onMount(() => {
     safeFetch('getAllAddons', {}).then((data) => {
@@ -348,6 +349,8 @@
 
   async function handleActionClick(key: string) {
     if (!selectedAddon) return;
+    if (runningActions[key]) return;
+
     const option = selectedAddon.configTemplate[key];
     if (!isActionOption(option)) return;
 
@@ -358,6 +361,7 @@
       ...actionOption.manifest,
     };
 
+    runningActions = { ...runningActions, [key]: true };
     try {
       await runTask(
         {
@@ -382,6 +386,8 @@
           message: `Failed to run action: ${error}`,
         },
       ]);
+    } finally {
+      runningActions = { ...runningActions, [key]: false };
     }
   }
 </script>
@@ -603,10 +609,16 @@
                   key
                 ] as ActionOption}
                 <button
-                  onclick={() => handleActionClick(key)}
+                  type="button"
+                  onclick={(event) => {
+                    event.stopPropagation();
+                    handleActionClick(key);
+                  }}
                   class="action-button ml-auto"
+                  disabled={runningActions[key]}
+                  aria-busy={runningActions[key]}
                 >
-                  {option.buttonText || 'Run'}
+                  {runningActions[key] ? 'Running...' : option.buttonText || 'Run'}
                 </button>
               {/if}
               <p

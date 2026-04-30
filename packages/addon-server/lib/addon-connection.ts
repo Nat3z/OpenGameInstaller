@@ -1,6 +1,7 @@
 import wsLib from 'ws';
 import type {
   ClientSentEventTypes,
+  Notification,
   OGIAddonConfiguration,
   OGIAddonEvent,
   StoreData,
@@ -8,20 +9,9 @@ import type {
   WebsocketMessageServer,
 } from 'ogi-addon';
 import type { ConfigurationFile } from 'ogi-addon/config';
-import { clients } from '@/electron/server/addon-server.js';
-import { addonSecret } from '@/electron/server/constants.js';
-import {
-  currentScreens,
-  isSecurityCheckEnabled,
-  sendAskForInput,
-  sendIPCMessage,
-  sendNotification,
-} from '@/electron/main.js';
-import {
-  DeferrableTask,
-  DeferredTasks,
-} from '@/electron/server/DeferrableTask.js';
-import { supportsStorefront } from '@/lib/storefronts.js';
+import { DeferrableTask, DeferredTasksManager } from '@/deffered';
+import type { AddonConfig, AddonServer } from './addon';
+import { supportsStorefront } from './lib';
 
 export class AddonConnection {
   public addonInfo: OGIAddonConfiguration | undefined;
@@ -38,8 +28,17 @@ export class AddonConnection {
     }
   > = new Map();
   private messageHandler: ((message: string | Buffer) => void) | null = null;
-  constructor(ws: InstanceType<typeof wsLib>) {
+  private config: AddonConfig;
+  private server: AddonServer;
+
+  constructor(
+    ws: InstanceType<typeof wsLib>,
+    config: AddonConfig,
+    server: AddonServer
+  ) {
     this.ws = ws;
+    this.config = config;
+    this.server = server;
   }
 
   public async setupWebsocket(): Promise<boolean> {
@@ -88,7 +87,7 @@ export class AddonConnection {
         // Handle other message types
         switch (data.event) {
           case 'notification': {
-            sendNotification(data.args[0]);
+            this.server.emit('notification', data.args[0] as Notification);
             break;
           }
           case 'authenticate': {
@@ -98,8 +97,8 @@ export class AddonConnection {
             const addonInfo = data.args as OGIAddonConfiguration;
             this.addonInfo = addonInfo;
             if (
-              isSecurityCheckEnabled &&
-              (!data.args.secret || data.args.secret !== addonSecret)
+              this.config.securityCheck &&
+              (!data.args.secret || data.args.secret !== this.config.secret)
             ) {
               console.error(
                 'Client attempted to authenticate with an invalid secret'
@@ -123,7 +122,7 @@ export class AddonConnection {
             //   resolve(false)
             //   break;
             // }
-            if (clients.has(addonInfo.id)) {
+            if (this.server.getClient(addonInfo.id)) {
               console.error(
                 'Client attempted to authenticate with an ID that is already in use'
               );
@@ -135,8 +134,7 @@ export class AddonConnection {
               break;
             }
             console.log('Client authenticated:', data.args.name);
-            clients.set(addonInfo.id, this);
-            sendIPCMessage('addon-connected', addonInfo.id);
+            this.server.addClient(addonInfo.id, this);
             resolve(true);
             break;
           }
@@ -177,7 +175,9 @@ export class AddonConnection {
               );
               return;
             }
-            const deferredTask = DeferredTasks.getTasks()[data.args.deferID];
+            const deferredTask = this.server
+              .getDeferredTasksManager()
+              .getTasks()[data.args.deferID];
             if (!deferredTask) {
               console.error(
                 'Client attempted to send defer-update with an invalid ID'
@@ -188,16 +188,7 @@ export class AddonConnection {
               );
               return;
             }
-            if (deferredTask.addonOwner !== this.addonInfo!.id) {
-              console.error(
-                'Client attempted to send defer-update with an ID that does not belong to them'
-              );
-              this.ws.close(
-                1008,
-                'Client attempted to send defer-update with an ID that does not belong to them'
-              );
-              return;
-            }
+            if (deferredTask.addonOwner !== this.addonInfo!.id) return;
             deferredTask.logs = data.args.logs;
             deferredTask.progress = data.args.progress;
             if (data.args.failed) {
@@ -259,18 +250,18 @@ export class AddonConnection {
               return;
             }
 
-            sendAskForInput(data.id, configurationAsked, name, description);
-            const waitForClient = setInterval(() => {
-              const screenData = currentScreens.get(data.id!!);
-              if (screenData) {
-                clearInterval(waitForClient);
-                currentScreens.delete(data.id!!);
+            this.server.emit(
+              'input-asked',
+              name,
+              description,
+              configurationAsked,
+              (reply: Record<string, string | number | boolean>) => {
                 this.sendEventMessage(
-                  { event: 'response', args: screenData, id: data.id!! },
+                  { event: 'response', args: reply, id: data.id },
                   false
                 );
               }
-            }, 100);
+            );
 
             break;
           }
@@ -296,13 +287,16 @@ export class AddonConnection {
               return;
             }
             const taskUpdate = data.args as ClientSentEventTypes['task-update'];
-            let task = DeferredTasks.getTasks()[data.args.id];
+            let task = this.server.getDeferredTasksManager().getTasks()[
+              data.args.id
+            ];
 
             if (!task) {
               task = new DeferrableTask(async () => {
                 return null;
               }, this.addonInfo!.id);
-              DeferredTasks.getTasks()[data.args.id] = task;
+              task.id = taskUpdate.id;
+              this.server.getDeferredTasksManager().addTask(task);
               // sendNotification({
               //   type: 'info',
               //   message: 'Task started by ' + this.addonInfo.name,
@@ -326,7 +320,7 @@ export class AddonConnection {
             }
 
             if (taskUpdate.finished && !taskUpdate.failed) {
-              DeferredTasks.removeTask(data.args.id);
+              this.server.getDeferredTasksManager().removeTask(data.args.id);
               // sendNotification({
               //   type: 'success',
               //   message: 'Task finished by ' + this.addonInfo.name,
@@ -351,7 +345,9 @@ export class AddonConnection {
               storefront,
             }: ClientSentEventTypes['get-app-details'] = data.args;
             // query all of the clients for the app details
-            const clientsWithStorefront = Array.from(clients.values()).filter(
+            const clientsWithStorefront = Array.from(
+              this.server.getConnections().values()
+            ).filter(
               (client) =>
                 supportsStorefront(client.addonInfo?.storefronts, storefront) &&
                 client.eventsAvailable.includes('game-details')
@@ -409,7 +405,9 @@ export class AddonConnection {
               query,
               storefront,
             }: ClientSentEventTypes['search-app-name'] = data.args;
-            const clientsWithStorefront = Array.from(clients.values()).filter(
+            const clientsWithStorefront = Array.from(
+              this.server.getConnections().values()
+            ).filter(
               (client) =>
                 supportsStorefront(client.addonInfo?.storefronts, storefront) &&
                 client.eventsAvailable.includes('library-search')

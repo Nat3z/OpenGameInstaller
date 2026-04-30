@@ -1,8 +1,6 @@
+import { DeferrableTask } from '@ogi-sdk/addon-server';
 import { z } from 'zod';
-import {
-  DeferrableTask,
-  DeferredTasks,
-} from '@/electron/server/DeferrableTask.js';
+import { addonServer } from './addon-server';
 
 export class ProcedureReturnType<tag = string> {
   public tag: tag;
@@ -80,7 +78,7 @@ export const procedure = <TInput = unknown>() => {
   return new Procedure<TInput>();
 };
 
-export class AddonServer {
+export class AddonIPC {
   private procedures: Record<string, Procedure> = {};
 
   public registerProcedure(name: string, proc: Procedure) {
@@ -115,7 +113,7 @@ export class AddonServer {
     if (result.tag === 'defer') {
       // add the task to the deferred tasks
       console.log('adding task', result.deferrableTask.id);
-      DeferredTasks.addTask(result.deferrableTask);
+      addonServer.getDeferredTasksManager().addTask(result.deferrableTask);
       result.deferrableTask.run();
       return new ProcedureDeferTask(result.status, result.deferrableTask);
     } else if (result.tag === 'json') {

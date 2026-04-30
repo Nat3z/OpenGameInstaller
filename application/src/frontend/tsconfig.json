@@ -27,5 +27,5 @@
     "forceConsistentCasingInFileNames": true,
     "skipLibCheck": true
   },
-  "include": ["."]
+  "include": [".", "../lib/storefronts.ts", "../lib/storefronts.ts"]
 }

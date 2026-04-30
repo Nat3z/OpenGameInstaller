@@ -48,18 +48,10 @@ export class DeferrableTask<T> {
 }
 
 // Singleton pattern to ensure DeferredTasks maintains state across imports
-class DeferredTasksManager {
-  private static instance: DeferredTasksManager;
+export class DeferredTasksManager {
   private tasks: Record<string, DeferrableTask<any>> = {};
 
-  private constructor() {}
-
-  public static getInstance(): DeferredTasksManager {
-    if (!DeferredTasksManager.instance) {
-      DeferredTasksManager.instance = new DeferredTasksManager();
-    }
-    return DeferredTasksManager.instance;
-  }
+  public constructor() {}
 
   public getTasks(): Record<string, DeferrableTask<any>> {
     return this.tasks;
@@ -73,9 +65,3 @@ class DeferredTasksManager {
     delete this.tasks[id];
   }
 }
-
-// Export the tasks object as a getter to maintain backward compatibility
-export const DeferredTasks = DeferredTasksManager.getInstance();
-
-// Also export with the old misspelled name for backward compatibility
-export const DefferedTasks = DeferredTasks;

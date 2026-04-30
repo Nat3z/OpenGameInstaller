@@ -1,6 +1,6 @@
 import { ipcMain } from 'electron';
-import { addonServer } from '@/electron/server/addon-server.js';
-import { requestSchema } from '@/electron/server/serve.js';
+import { addonIPC } from '@/electron/server/addon-server.js';
+import { requestSchema } from '@/electron/server/ipc.js';
 
 export default function handler() {
   ipcMain.handle('addon:request', async (_, request) => {
@@ -12,7 +12,7 @@ export default function handler() {
     }
 
     const parsedRequest = parsedRequestSafe.data;
-    const response = await addonServer.handleRequest(parsedRequest);
+    const response = await addonIPC.handleRequest(parsedRequest);
     if (response.tag === 'defer') {
       return {
         status: response.status,

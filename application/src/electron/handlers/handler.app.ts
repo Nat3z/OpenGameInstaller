@@ -1,6 +1,6 @@
 import axios from 'axios';
 import { ipcMain, app } from 'electron';
-import { currentScreens } from '@/electron/main.js';
+import { currentScreens, screenInputCallbacks } from '@/electron/main.js';
 import * as fs from 'fs';
 import { join } from 'path';
 import * as os from 'os';
@@ -8,12 +8,12 @@ import * as path from 'path';
 import { createReadStream, createWriteStream } from 'fs';
 import { isDev } from '@/electron/manager/manager.paths.js';
 import { __dirname } from '@/electron/manager/manager.paths.js';
-import { clients } from '@/electron/server/addon-server.js';
 import { registerSteamHandlers } from '@/electron/handlers/handler.steam.js';
 import { registerLibraryHandlers } from '@/electron/handlers/handler.library.js';
 import { registerRedistributableHandlers } from '@/electron/handlers/handler.redists.js';
 import { getCurrentUsername } from './helpers.app/platform.js';
 import { getEffectiveOnlineState } from '@/electron/lib/online.js';
+import { addonServer } from '@/electron/server/addon-server.js';
 
 /**
  * Escapes a string for safe use in shell commands by escaping special characters
@@ -189,6 +189,11 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
   });
   ipcMain.handle('app:screen-input', async (_, data) => {
     currentScreens.set(data.id, data.data);
+    const callback = screenInputCallbacks.get(data.id);
+    if (callback) {
+      callback(data.data);
+      screenInputCallbacks.delete(data.id);
+    }
     return;
   });
 
@@ -198,14 +203,14 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
 
   // Addon helpers
   ipcMain.handle('app:get-addon-path', async (_, addonID: string) => {
-    let client = clients.get(addonID);
+    let client = addonServer.getClient(addonID);
     if (!client || !client.filePath) {
       return null;
     }
     return client.filePath;
   });
   ipcMain.handle('app:get-addon-icon', async (_, addonID: string) => {
-    let client = clients.get(addonID);
+    let client = addonServer.getClient(addonID);
     if (!client || !client.filePath) {
       return null;
     }
@@ -239,9 +244,9 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
       join(__dirname, 'public'),
       join(__dirname, 'config'),
       // for each addon, add the basedir of the addon to the allowed dirs
-      ...Array.from(clients.values())
-        .filter((client) => client.filePath)
-        .map((client) => client.filePath + '/'),
+      ...Array.from(addonServer.getConnections().values())
+        .filter((connection) => connection.filePath)
+        .map((connection) => connection.filePath + '/'),
     ];
 
     let realPath: string;

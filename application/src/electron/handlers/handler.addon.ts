@@ -8,10 +8,14 @@ import {
   startAddon,
 } from '@/electron/manager/manager.addon.js';
 import { __dirname } from '@/electron/manager/manager.paths.js';
-import { server, clients, port } from '@/electron/server/addon-server.js';
+import {
+  addonServer,
+  port,
+  startAddonServer,
+} from '@/electron/server/addon-server.js';
 import { sendNotification } from '@/electron/main.js';
 import axios from 'axios';
-import { AddonConnection } from '@/electron/server/AddonConnection.js';
+import { AddonConnection } from '@ogi-sdk/addon-server';
 
 export async function startAddons(): Promise<void> {
   // start all of the addons
@@ -57,8 +61,7 @@ export async function startAddons(): Promise<void> {
 export async function restartAddonServer(): Promise<void> {
   // stop the server
   console.log('Stopping server...');
-  server.close();
-  clients.clear();
+  addonServer.stop();
   // stop all of the addons
   for (const process of Object.keys(processes)) {
     console.log(`Killing process ${process}`);
@@ -66,15 +69,9 @@ export async function restartAddonServer(): Promise<void> {
     console.log(`Killed process ${process}: ${killed}`);
   }
   // start the server and wait for it to be listening before starting addons
-  await new Promise<void>((resolve, reject) => {
-    server.once('error', reject);
-    server.listen(port, () => {
-      server.removeListener('error', reject);
-      console.log(`Addon Server is running on http://localhost:${port}`);
-      console.log(`Server is being executed by electron!`);
-      resolve();
-    });
-  });
+  await startAddonServer();
+  console.log(`Addon Server is running on http://localhost:${port}`);
+  console.log(`Server is being executed by electron!`);
   await startAddons();
 
   sendNotification({

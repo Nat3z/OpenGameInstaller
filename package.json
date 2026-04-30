@@ -5,7 +5,7 @@
     "release": "cd packages/ogi-addon && bun run release && cd ../real-debrid && bun run release && cd ../all-debrid && bun run release",
     "dev": "cd application && bun run dev",
     "format": "prettier --write \"packages/**/*.{ts,svelte,json}\" \"application/**/*.{ts,svelte,json}\" \"web/**/*.{ts,svelte,json}\" \"test-addon/**/*.{ts,svelte,json}\"",
-    "typecheck": "bun run build:typecheck-deps && bun run typecheck:ogi-addon && bun run typecheck:real-debrid && bun run typecheck:all-debrid && bun run typecheck:application && bun run typecheck:web && bun run typecheck:test-addon",
+    "typecheck": "bun run --silent build:typecheck-deps && bun run --silent typecheck:ogi-addon && bun run --silent typecheck:real-debrid && bun run --silent typecheck:all-debrid && bun run --silent typecheck:application && bun run --silent typecheck:web && bun run --silent typecheck:test-addon",
     "build:typecheck-deps": "cd packages/ogi-addon && bun run build && cd ../real-debrid && bun run build && cd ../all-debrid && bun run build",
     "typecheck:application": "cd application && bun run typecheck",
     "typecheck:web": "cd web && bun run typecheck",

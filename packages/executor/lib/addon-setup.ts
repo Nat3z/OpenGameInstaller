@@ -67,6 +67,79 @@ export class AddonSetup {
     return child;
   }
 
+  private spawnScriptCapture(
+    script: string,
+    scriptName: string
+  ): Promise<string> {
+    const startCommand = Addon.intoExecutor(script);
+    const [command, ...args] = parseArgsStringToArgv(startCommand);
+    const name = this.addon.config.name;
+
+    return new Promise((resolve, reject) => {
+      let stdout = '';
+      let stderr = '';
+      const child = spawn(command!, args, {
+        cwd: this.addon.config.path,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+
+      child.stdout?.on('data', (data: Buffer) => {
+        const t = data.toString();
+        console.log(`[${name}@${scriptName}] ${t}`);
+        stdout += t;
+      });
+      child.stderr?.on('data', (data: Buffer) => {
+        const t = data.toString();
+        console.error(`[${name}@${scriptName}] ${t}`);
+        stderr += t;
+      });
+
+      child.on('close', (code) => {
+        if (code !== 0) {
+          reject(
+            new Error(
+              `Addon ${name} exited with error: ${code}\n${stderr}`
+            )
+          );
+          return;
+        }
+        resolve(stdout);
+      });
+      child.on('error', reject);
+    });
+  }
+
+  /**
+   * Runs optional pre/setup/post scripts and returns combined stdout (for `installation.log`).
+   */
+  public async collectSetupLog(): Promise<string> {
+    if (!this.addon.config.scripts) {
+      const cfg = this.addon.loadAddonConfig(this.addon.config.path);
+      this.addon.config.scripts = cfg.scripts;
+    }
+    const scripts = this.addon.config.scripts;
+    const addonName = this.addon.config.name;
+    let setupLogs = '';
+
+    if (scripts.preSetup) {
+      setupLogs += `\nRunning pre-setup script for ${addonName}...\n> ${scripts.preSetup}\n`;
+      setupLogs += await this.spawnScriptCapture(scripts.preSetup, 'pre-setup');
+    }
+    if (scripts.setup) {
+      setupLogs += `\nRunning setup script for ${addonName}...\n> ${scripts.setup}\n`;
+      setupLogs += await this.spawnScriptCapture(scripts.setup, 'setup');
+    }
+    if (scripts.postSetup) {
+      setupLogs += `\nRunning post-setup script for ${addonName}...\n> ${scripts.postSetup}\n`;
+      setupLogs += await this.spawnScriptCapture(
+        scripts.postSetup,
+        'post-setup'
+      );
+    }
+
+    return setupLogs;
+  }
+
   public setup(): Promise<void> {
     if (!this.addon.config.scripts?.setup) {
       throw new Error('Setup script not found');

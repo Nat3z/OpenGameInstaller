@@ -24,6 +24,10 @@ export const AddonFileConfigurationSchema = z.object({
   }),
 });
 
+export type AddonFileConfiguration = z.infer<
+  typeof AddonFileConfigurationSchema
+>;
+
 export class Addon {
   public config: AddonConfig;
   private process: ChildProcess | null = null;
@@ -74,8 +78,8 @@ export class Addon {
       command!,
       [
         ...args,
-        '--addonSecret=' + this.config.secret,
         '--addonPort=' + this.config.port.toString(),
+        '--addonSecret=' + this.config.secret,
       ],
       {
         cwd: this.config.path,
@@ -102,13 +106,17 @@ export class Addon {
         `[${this.config.name}] Exited with code ${code} and signal ${signal}`
       );
       if (code !== 0) {
-        throw new Error(
+        console.error(
           `[${this.config.name}] Exited with code ${code} and signal ${signal}`
         );
       }
     });
 
     this.process = child;
+  }
+
+  public getChildProcess(): ChildProcess | null {
+    return this.process;
   }
 
   public stop(): void {

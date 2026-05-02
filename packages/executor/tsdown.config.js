@@ -1,7 +1,7 @@
 import { defineConfig } from 'tsdown';
 
 export default defineConfig({
-  entry: ['lib/**'],
+  entry: ['lib/index.ts'],
   splitting: false,
   sourcemap: true,
   clean: true,

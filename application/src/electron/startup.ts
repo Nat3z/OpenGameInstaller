@@ -16,7 +16,7 @@ import type { LibraryInfo } from 'ogi-addon';
 import { app, BrowserWindow } from 'electron';
 import { sendNotification } from '@/electron/main.js';
 import semver from 'semver';
-import { setupAddon } from '@/electron/manager/manager.addon.js';
+import { Addon } from '@/electron/manager/manager.addon.js';
 
 const UMU_RELEASES_URL =
   'https://api.github.com/repos/Open-Wine-Components/umu-launcher/releases/latest';
@@ -659,7 +659,8 @@ export async function reinstallAddonDependencies(
         `[startup] Running setup for addon ${addonName} (${current}/${addons.length})`
       );
       try {
-        const success = await setupAddon(addonPath);
+        const instance = await Addon.load(addonPath);
+        const success = instance ? await instance.install() : false;
         if (success) {
           console.log(`[startup] Successfully set up ${addonName}`);
         } else {

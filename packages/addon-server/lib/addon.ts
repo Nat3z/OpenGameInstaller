@@ -1,6 +1,7 @@
 import { AddonConnection } from './addon-connection';
 import { WebSocketServer } from 'ws';
-import http from 'http';
+import http, { type IncomingMessage } from 'http';
+import type { Duplex } from 'stream';
 import { EventEmitter } from 'events';
 import type { Notification } from 'ogi-addon';
 import { DeferredTasksManager } from './deffered';
@@ -37,6 +38,12 @@ export class AddonServer {
   private clients: Map<string, AddonConnection> = new Map();
 
   private server = http.createServer();
+  private wss: WebSocketServer | undefined;
+  private upgradeListener?: (
+    req: IncomingMessage,
+    socket: Duplex,
+    head: Buffer
+  ) => void;
 
   private deferredTasksManager: DeferredTasksManager =
     new DeferredTasksManager();
@@ -91,21 +98,41 @@ export class AddonServer {
   }
 
   public stop(): void {
+    if (this.upgradeListener) {
+      this.server.removeListener('upgrade', this.upgradeListener);
+      this.upgradeListener = undefined;
+    }
     this.connections.forEach((connection) => {
       connection.ws.close();
     });
     this.clients.forEach((client) => {
       client.ws.close();
     });
+    this.wss?.close();
+    this.wss = undefined;
     this.server.close();
     this.connections.clear();
     this.clients.clear();
   }
 
   public async start(): Promise<void> {
-    const wss = new WebSocketServer({ server: this.server });
+    if (this.upgradeListener) {
+      this.server.removeListener('upgrade', this.upgradeListener);
+      this.upgradeListener = undefined;
+    }
+    this.wss?.close();
+    this.wss = new WebSocketServer({ noServer: true });
 
-    wss.on('connection', (ws) => {
+    this.upgradeListener = (req, socket, head) => {
+      const wss = this.wss;
+      if (!wss) return;
+      wss.handleUpgrade(req, socket, head, (ws) => {
+        wss.emit('connection', ws, req);
+      });
+    };
+    this.server.on('upgrade', this.upgradeListener);
+
+    this.wss.on('connection', (ws) => {
       const connection = new AddonConnection(ws, this.config, this);
       this.connections.add(connection);
       connection.setupWebsocket().then((success) => {

@@ -13,7 +13,7 @@ import {
 } from '@/electron/server/addon-server.js';
 import { app, BrowserWindow, globalShortcut, ipcMain, shell } from 'electron';
 import fs, { existsSync, readFileSync } from 'fs';
-import { processes } from '@/electron/manager/manager.addon.js';
+import { Addon } from '@/electron/manager/manager.addon.js';
 import { stopClient } from '@/electron/manager/manager.webtorrent.js';
 import type { ConfigurationFile } from 'ogi-addon/config';
 import AppEventHandler from '@/electron/handlers/handler.app.js';
@@ -897,10 +897,9 @@ app.on('window-all-closed', async function () {
     console.log('Stopping torrent client...');
     await stopClient();
 
-    // stop all of the addons
-    for (const process of Object.keys(processes)) {
-      console.log(`Killing process ${process}`);
-      processes[process].kill('SIGKILL');
+    for (const instance of [...Addon.running.values()]) {
+      console.log(`Stopping addon ${instance.config.path}`);
+      instance.stop();
     }
 
     // stopping all of the torrent intervals

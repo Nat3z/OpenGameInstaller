@@ -2,7 +2,7 @@ import { AddonConnection } from './addon-connection';
 import { WebSocketServer } from 'ws';
 import http from 'http';
 import { EventEmitter } from 'events';
-import type { ConfigurationBuilder, Notification } from 'ogi-addon';
+import type { Notification } from 'ogi-addon';
 import { DeferredTasksManager } from './deffered';
 import type { ConfigurationFile } from 'ogi-addon/config';
 

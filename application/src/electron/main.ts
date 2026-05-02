@@ -9,6 +9,7 @@ import {
   addonIPC,
   isSecurityCheckEnabled,
   startAddonServer,
+  addonServer,
 } from '@/electron/server/addon-server.js';
 import { app, BrowserWindow, globalShortcut, ipcMain, shell } from 'electron';
 import fs, { existsSync, readFileSync } from 'fs';
@@ -568,7 +569,10 @@ function createWindow(options: { gameLaunchMode?: boolean } = {}) {
 
   // Load splash first so there is only one window (fixes Steam Deck Game Mode black screen)
   mainWindow.loadURL(
-    'file://' + join(app.getAppPath(), 'public', 'splash.html')
+    'file://' +
+      join(app.getAppPath(), 'public', 'splash.html') +
+      '?secret=' +
+      addonServer.getSecret()
   );
 
   mainWindow.on('closed', function () {
@@ -600,7 +604,10 @@ async function startAppFlow(win: BrowserWindow) {
       console.log('Running in development');
     } else {
       win.loadURL(
-        'file://' + join(app.getAppPath(), 'out', 'renderer', 'index.html')
+        'file://' +
+          join(app.getAppPath(), 'out', 'renderer', 'index.html') +
+          '?secret=' +
+          addonServer.getSecret()
       );
     }
     win.once('ready-to-show', onMainAppReady);

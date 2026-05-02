@@ -5,7 +5,7 @@
     "release": "bun run --filter 'packages/*' release",
     "dev": "bun run --filter 'application' dev",
     "format": "prettier --write \"packages/**/*.{ts,svelte,json}\" \"application/**/*.{ts,svelte,json}\" \"web/**/*.{ts,svelte,json}\" \"test-addon/**/*.{ts,svelte,json}\"",
-    "typecheck": "bun --filter '*' typecheck"
+    "typecheck": "bun run --filter 'packages/*' build && bun --filter '*' typecheck"
   },
   "workspaces": [
     "packages/*",

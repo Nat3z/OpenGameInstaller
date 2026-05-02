@@ -44,7 +44,7 @@
   },
   "scripts": {
     "auto-build": "tsc -w",
-    "build": "tsdown --config tsdown.config.js && bun run --filter 'addon-server' generate:event-proxy",
+    "build": "tsdown --config tsdown.config.js && bun run --filter '../../packages/addon-server' generate:event-proxy",
     "typecheck": "tsc --noEmit",
     "release": "bun run build && npm publish",
     "format": "prettier --write \"src/**/*.{ts,svelte,json}\"",

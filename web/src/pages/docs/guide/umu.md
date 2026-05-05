@@ -55,12 +55,12 @@ Some games may still be configured in **legacy mode**, which uses Steam and Prot
 
 ## Summary
 
-| Topic | Detail |
-| ----- | ------ |
-| Platform | Linux only |
-| Installation | Automatic (downloaded by OGI when needed) |
-| Game launch | From OpenGameInstaller library |
-| Prefix location | `~/.ogi-wine-prefixes/` |
-| Steam required? | No, for UMU-configured games |
+| Topic           | Detail                                    |
+| --------------- | ----------------------------------------- |
+| Platform        | Linux only                                |
+| Installation    | Automatic (downloaded by OGI when needed) |
+| Game launch     | From OpenGameInstaller library            |
+| Prefix location | `~/.ogi-wine-prefixes/`                   |
+| Steam required? | No, for UMU-configured games              |
 
 For general launch issues (e.g. wrong executable, crashes), see [Launching Games](/docs/guide/launching).

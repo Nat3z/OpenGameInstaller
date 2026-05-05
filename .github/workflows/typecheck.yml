@@ -3,9 +3,9 @@ name: Typecheck
 
 on:
   push:
-    branches: ["main"]
+    branches: ['main']
   pull_request:
-    branches: ["**"]
+    branches: ['**']
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -26,7 +26,7 @@ jobs:
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:
-          bun-version: "1"
+          bun-version: '1'
 
       - name: Cache dependencies
         uses: actions/cache@v4
@@ -56,7 +56,7 @@ jobs:
         run: |
           # Always create errors.txt (even if empty)
           touch errors.txt
-          
+
           if [ -f typecheck-output.txt ]; then
             # Improved regex to catch actual errors but ignore "0 errors"
             ERROR_REGEX='found [1-9][0-9]* error|error TS[0-9]+:|Error:'

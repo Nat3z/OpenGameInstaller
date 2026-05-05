@@ -19,13 +19,13 @@ Return `umu` only when the game is a Windows title that will run under Wine/Prot
 
 The `umu` field in `LibraryInfo` (from `ogi-addon`) has this shape:
 
-| Field | Type | Required | Description |
-| ----- | ---- | -------- | ----------- |
-| `umuId` | `string` | Yes | Unique ID for the game’s Wine prefix. Format: `steam:${number}` or `umu:${string \| number}`. |
-| `protonVersion` | `string` | No | Optional `PROTONPATH` override for UMU. Omit this unless you absolutely need a specific Proton build or path. |
-| `store` | `string` | No | Store identifier for UMU. |
-| `dllOverrides` | `string[]` | No | WINEDLLOVERRIDES-style overrides (e.g. `d3d11=n,b`). |
-| `winePrefixPath` | `string` | No | Set by OGI; do not set in addon. |
+| Field            | Type       | Required | Description                                                                                                   |
+| ---------------- | ---------- | -------- | ------------------------------------------------------------------------------------------------------------- |
+| `umuId`          | `string`   | Yes      | Unique ID for the game’s Wine prefix. Format: `steam:${number}` or `umu:${string \| number}`.                 |
+| `protonVersion`  | `string`   | No       | Optional `PROTONPATH` override for UMU. Omit this unless you absolutely need a specific Proton build or path. |
+| `store`          | `string`   | No       | Store identifier for UMU.                                                                                     |
+| `dllOverrides`   | `string[]` | No       | WINEDLLOVERRIDES-style overrides (e.g. `d3d11=n,b`).                                                          |
+| `winePrefixPath` | `string`   | No       | Set by OGI; do not set in addon.                                                                              |
 
 OGI will set `winePrefixPath` automatically from `umuId`. Prefixes are stored under `~/.ogi-wine-prefixes/`.
 

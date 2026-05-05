@@ -1,4 +1,7 @@
-import type { OGIAddonClientSentEvent, WebsocketMessageClient } from 'ogi-addon';
+import type {
+  OGIAddonClientSentEvent,
+  WebsocketMessageClient,
+} from 'ogi-addon';
 import type { AddonConnection } from '../addon-connection';
 import type { AddonConfig, AddonServer } from '../addon';
 
@@ -18,4 +21,3 @@ export type ClientMessageHandler = (
 export type ClientMessageHandlers = Partial<
   Record<OGIAddonClientSentEvent, ClientMessageHandler>
 >;
-

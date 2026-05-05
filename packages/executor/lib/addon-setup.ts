@@ -97,9 +97,7 @@ export class AddonSetup {
       child.on('close', (code) => {
         if (code !== 0) {
           reject(
-            new Error(
-              `Addon ${name} exited with error: ${code}\n${stderr}`
-            )
+            new Error(`Addon ${name} exited with error: ${code}\n${stderr}`)
           );
           return;
         }

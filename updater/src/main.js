@@ -964,7 +964,9 @@ async function applyBlockmapPatch(
 
     for (let i = 0; i < newFile.checksums.length; i++) {
       const size = newFile.sizes[i];
-      const blocks = checksumToBlocks.get(getBlockKey(newFile.checksums[i], size));
+      const blocks = checksumToBlocks.get(
+        getBlockKey(newFile.checksums[i], size)
+      );
       // Consume one old block at most once to avoid reusing source data.
       const matched = takeMatchingBlock(blocks);
       if (matched) {
@@ -1320,7 +1322,9 @@ async function verifyReleaseArtifact(
 
   const actualDigest = await hashFile(artifactPath, parsedDigest.algorithm);
   if (actualDigest !== parsedDigest.value) {
-    throw new Error(`${logLabel} digest mismatch for ${parsedDigest.algorithm}`);
+    throw new Error(
+      `${logLabel} digest mismatch for ${parsedDigest.algorithm}`
+    );
   }
 }
 

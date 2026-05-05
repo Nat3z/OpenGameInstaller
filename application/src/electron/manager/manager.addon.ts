@@ -100,7 +100,9 @@ export class Addon extends ExecutorAddon {
     }
   }
 
-  async startRegistered(addonLink: string): Promise<AddonConnection | undefined> {
+  async startRegistered(
+    addonLink: string
+  ): Promise<AddonConnection | undefined> {
     const addonName = this.config.name;
     const addonPath = this.config.path;
 

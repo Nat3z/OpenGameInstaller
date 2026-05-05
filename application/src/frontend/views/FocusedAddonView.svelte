@@ -618,7 +618,9 @@
                   disabled={runningActions[key]}
                   aria-busy={runningActions[key]}
                 >
-                  {runningActions[key] ? 'Running...' : option.buttonText || 'Run'}
+                  {runningActions[key]
+                    ? 'Running...'
+                    : option.buttonText || 'Run'}
                 </button>
               {/if}
               <p

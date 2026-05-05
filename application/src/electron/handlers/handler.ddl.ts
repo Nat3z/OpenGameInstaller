@@ -150,7 +150,10 @@ function calculateBaselineSpeed(samples: number[]): number {
     .sort((a, b) => b - a);
   if (positiveSamples.length === 0) return 0;
 
-  const baselineSampleCount = Math.max(3, Math.ceil(positiveSamples.length / 3));
+  const baselineSampleCount = Math.max(
+    3,
+    Math.ceil(positiveSamples.length / 3)
+  );
   return average(positiveSamples.slice(0, baselineSampleCount));
 }
 

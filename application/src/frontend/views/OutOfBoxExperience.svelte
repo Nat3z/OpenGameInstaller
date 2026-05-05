@@ -439,7 +439,11 @@
       </h2>
       {#if !$oobeLog.isActive}
         <div class="oobe-tools-shell">
-          <div class="oobe-tools-table" role="table" aria-label="Required tools">
+          <div
+            class="oobe-tools-table"
+            role="table"
+            aria-label="Required tools"
+          >
             {#each requiredTools as tool}
               <div class="oobe-tool-row" role="row">
                 <div class="oobe-tool-name">
@@ -460,10 +464,9 @@
           <div class="oobe-tools-footer">
             {#if currentOS === 'linux' && !isSteamDeck}
               <p class="oobe-tools-note">
-                Install <code>unrar-nonfree</code> and <code>unzip</code> with
-                your package manager. These are CLI utilities, and
-                OpenGameInstaller will not check whether they are already
-                installed.
+                Install <code>unrar-nonfree</code> and <code>unzip</code> with your
+                package manager. These are CLI utilities, and OpenGameInstaller will
+                not check whether they are already installed.
               </p>
             {/if}
             <button

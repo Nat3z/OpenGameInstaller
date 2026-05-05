@@ -14,19 +14,18 @@ Use `addActionOption(...)` with a task name and optional manifest payload:
 
 ```typescript
 addon.on('configure', (config) =>
-  config
-    .addActionOption((option) =>
-      option
-        .setName('clearCache')
-        .setDisplayName('Clear Cache')
-        .setDescription('Clear temporary addon cache files')
-        .setButtonText('Run Cleanup')
-        .setTaskName('maintenance:clear-cache')
-        .setManifest({
-          scope: 'all',
-          includeIndexes: true,
-        })
-    )
+  config.addActionOption((option) =>
+    option
+      .setName('clearCache')
+      .setDisplayName('Clear Cache')
+      .setDescription('Clear temporary addon cache files')
+      .setButtonText('Run Cleanup')
+      .setTaskName('maintenance:clear-cache')
+      .setManifest({
+        scope: 'all',
+        includeIndexes: true,
+      })
+  )
 );
 ```
 

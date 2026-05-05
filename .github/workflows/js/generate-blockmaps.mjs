@@ -50,7 +50,9 @@ function runAppBuilder(args) {
 async function main() {
   const args = process.argv.slice(2);
   if (args.length === 0) {
-    console.error('Usage: bun run .github/workflows/js/generate-blockmaps.mjs <file> [file...]');
+    console.error(
+      'Usage: bun run .github/workflows/js/generate-blockmaps.mjs <file> [file...]'
+    );
     process.exit(1);
   }
 
@@ -64,7 +66,13 @@ async function main() {
     }
 
     console.log(`Generating blockmap: ${blockmapPath}`);
-    await runAppBuilder(['blockmap', '--input', artifactPath, '--output', blockmapPath]);
+    await runAppBuilder([
+      'blockmap',
+      '--input',
+      artifactPath,
+      '--output',
+      blockmapPath,
+    ]);
   }
 }
 

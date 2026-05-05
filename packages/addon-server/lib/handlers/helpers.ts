@@ -30,7 +30,10 @@ export const requireMessageId = (
 ): id is string => {
   if (id) return true;
 
-  closeProtocolError(context, `Client attempted to send ${event} without an ID`);
+  closeProtocolError(
+    context,
+    `Client attempted to send ${event} without an ID`
+  );
   return false;
 };
 
@@ -45,4 +48,3 @@ export const getClientsSupporting = (
       client.eventsAvailable.includes(event)
   );
 };
-

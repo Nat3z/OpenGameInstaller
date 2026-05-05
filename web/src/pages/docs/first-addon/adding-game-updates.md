@@ -28,23 +28,26 @@ OpenGameInstaller supports addon-driven game updates through three events:
 ## 1) Implement `check-for-updates`
 
 ```typescript
-addon.on('check-for-updates', ({ appID, storefront, currentVersion }, event) => {
-  event.defer();
+addon.on(
+  'check-for-updates',
+  ({ appID, storefront, currentVersion }, event) => {
+    event.defer();
 
-  // Replace with your own update lookup.
-  const latestVersion = '1.2.0';
+    // Replace with your own update lookup.
+    const latestVersion = '1.2.0';
 
-  if (currentVersion !== latestVersion) {
-    event.resolve({
-      available: true,
-      version: latestVersion,
-    });
-  } else {
-    event.resolve({
-      available: false,
-    });
+    if (currentVersion !== latestVersion) {
+      event.resolve({
+        available: true,
+        version: latestVersion,
+      });
+    } else {
+      event.resolve({
+        available: false,
+      });
+    }
   }
-});
+);
 ```
 
 ## 2) Handle update source queries in `search`
@@ -94,7 +97,8 @@ addon.on('setup', async (data, event) => {
   event.defer();
 
   if (data.for === 'update') {
-    const { path, currentLibraryInfo, manifest, clearOldFilesBeforeUpdate } = data;
+    const { path, currentLibraryInfo, manifest, clearOldFilesBeforeUpdate } =
+      data;
 
     // Apply patch/update files in `path`...
     // You can use currentLibraryInfo + manifest to decide strategy.

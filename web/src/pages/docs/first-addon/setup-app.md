@@ -79,7 +79,10 @@ You can make setup handlers `async` directly. You do not need to wrap them in `n
 ```typescript
 addon.on(
   'setup',
-  async ({ path, appID, storefront, for: setupFor, currentLibraryInfo }, event) => {
+  async (
+    { path, appID, storefront, for: setupFor, currentLibraryInfo },
+    event
+  ) => {
     event.defer();
 
     const latestVersion =

@@ -374,7 +374,9 @@ export function checkIfInstallerUpdateAvailable(callbacks?: UpdaterCallbacks) {
     const onlineState = getEffectiveOnlineState();
     if (!onlineState.effectiveOnline) {
       if (onlineState.reason === 'cli-offline') {
-        console.log('[updater] Launched in offline mode, skipping update check.');
+        console.log(
+          '[updater] Launched in offline mode, skipping update check.'
+        );
       } else {
         console.error('[updater] No internet connection available.');
       }

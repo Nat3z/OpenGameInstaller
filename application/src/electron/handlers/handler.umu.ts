@@ -108,10 +108,11 @@ function parseLeadingLaunchEnvFromArguments(
 }
 
 export function parseLaunchArguments(launchArguments?: string): string[] {
-  return stripLeadingLaunchEnvTokens(parseLaunchArgumentTokens(launchArguments))
-    .filter(
-      (token) => token !== '%command%' && !isKnownLaunchEnvAssignment(token)
-    );
+  return stripLeadingLaunchEnvTokens(
+    parseLaunchArgumentTokens(launchArguments)
+  ).filter(
+    (token) => token !== '%command%' && !isKnownLaunchEnvAssignment(token)
+  );
 }
 
 export function parseLaunchArgumentsAfterCommand(
@@ -124,7 +125,9 @@ export function parseLaunchArgumentsAfterCommand(
   if (commandIndex === -1) {
     return [];
   }
-  return tokens.slice(commandIndex + 1).filter((token) => token !== '%command%');
+  return tokens
+    .slice(commandIndex + 1)
+    .filter((token) => token !== '%command%');
 }
 
 export function resolveLaunchCommand(

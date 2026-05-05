@@ -721,7 +721,7 @@ export async function installRedistributablesWithUmu(
           // Use winetricks verb
           child = spawn(
             umuRunExecutable,
-            ['winetricks', '-q', redistributable.name],
+            ['winetricks', '-q', '-f', redistributable.name],
             {
               env: {
                 ...env,
@@ -1119,7 +1119,7 @@ export async function installRedistributablesWithUmuForLegacy(
           // Use winetricks verb via UMU
           child = spawn(
             umuRunExecutable,
-            ['winetricks', '-q', redistributable.name],
+            ['winetricks', '-q', '-f', redistributable.name],
             {
               env: {
                 ...process.env,

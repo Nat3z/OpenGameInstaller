@@ -2,8 +2,6 @@ import { z } from 'zod';
 import { addonServer } from '@/electron/server/addon-server.js';
 import { DeferrableTask } from '@ogi-sdk/addon-server';
 
-// Invariant: clients only contains connections with addonInfo set (added in AddonConnection.authenticate).
-// We still guard below for robustness in case the map is accessed before auth or after disconnect.
 import sanitize from 'sanitize-html';
 import {
   type Procedure,

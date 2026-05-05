@@ -2,16 +2,16 @@ import { BrowserWindow, ipcMain } from 'electron';
 import fs from 'fs';
 import { join } from 'path';
 import { exec, spawn } from 'child_process';
-import {
-  processes,
-  setupAddon,
-  startAddon,
-} from '@/electron/manager/manager.addon.js';
+import { Addon } from '@/electron/manager/manager.addon.js';
 import { __dirname } from '@/electron/manager/manager.paths.js';
-import { server, clients, port } from '@/electron/server/addon-server.js';
+import {
+  addonServer,
+  port,
+  startAddonServer,
+} from '@/electron/server/addon-server.js';
 import { sendNotification } from '@/electron/main.js';
 import axios from 'axios';
-import { AddonConnection } from '@/electron/server/AddonConnection.js';
+import { AddonConnection } from '@ogi-sdk/addon-server';
 
 export async function startAddons(): Promise<void> {
   // start all of the addons
@@ -48,7 +48,15 @@ export async function startAddons(): Promise<void> {
     }
 
     console.log(`Starting addon ${addonPath}`);
-    promises.push(startAddon(addonPath, addon));
+    promises.push(
+      (async () => {
+        const instance = await Addon.load(addonPath);
+        if (!instance) {
+          return undefined;
+        }
+        return instance.startRegistered(addon);
+      })()
+    );
   }
   await Promise.allSettled(promises);
   console.log('All addons started');
@@ -57,24 +65,16 @@ export async function startAddons(): Promise<void> {
 export async function restartAddonServer(): Promise<void> {
   // stop the server
   console.log('Stopping server...');
-  server.close();
-  clients.clear();
+  addonServer.stop();
   // stop all of the addons
-  for (const process of Object.keys(processes)) {
-    console.log(`Killing process ${process}`);
-    const killed = processes[process].kill('SIGKILL');
-    console.log(`Killed process ${process}: ${killed}`);
+  for (const instance of [...Addon.running.values()]) {
+    console.log(`Stopping addon ${instance.config.path}`);
+    instance.stop();
   }
   // start the server and wait for it to be listening before starting addons
-  await new Promise<void>((resolve, reject) => {
-    server.once('error', reject);
-    server.listen(port, () => {
-      server.removeListener('error', reject);
-      console.log(`Addon Server is running on http://localhost:${port}`);
-      console.log(`Server is being executed by electron!`);
-      resolve();
-    });
-  });
+  await startAddonServer();
+  console.log(`Addon Server is running on http://localhost:${port}`);
+  console.log(`Server is being executed by electron!`);
   await startAddons();
 
   sendNotification({
@@ -185,7 +185,8 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
         });
       }
 
-      const hasAddonBeenSetup = await setupAddon(addonPath);
+      const instance = await Addon.load(addonPath);
+      const hasAddonBeenSetup = instance ? await instance.install() : false;
       if (!hasAddonBeenSetup) {
         sendNotification({
           message: `An error occurred when setting up ${addonName}`,
@@ -209,10 +210,9 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
   });
 
   ipcMain.handle('clean-addons', async (_) => {
-    // stop all of the addons
-    for (const process of Object.keys(processes)) {
-      console.log(`Killing process ${process}`);
-      processes[process].kill('SIGKILL');
+    for (const instance of [...Addon.running.values()]) {
+      console.log(`Stopping addon ${instance.config.path}`);
+      instance.stop();
     }
 
     // delete all of the addons
@@ -243,10 +243,9 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
       return;
     }
 
-    // stop all of the addons
-    for (const process of Object.keys(processes)) {
-      console.log(`Killing process ${process}`);
-      processes[process].kill('SIGKILL');
+    for (const instance of [...Addon.running.values()]) {
+      console.log(`Stopping addon ${instance.config.path}`);
+      instance.stop();
     }
 
     // pull all of the addons
@@ -322,9 +321,13 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
             });
 
             mainWindow!!.webContents.send('addon:updated', addon);
-            // setup the addon
-            setupAddon(addonPath)
-              .then((success) => {
+            void Addon.load(addonPath).then(async (instance) => {
+              if (!instance) {
+                reject(new Error(`Failed to load addon ${addon}`));
+                return;
+              }
+              try {
+                const success = await instance.install();
                 if (!success) {
                   sendNotification({
                     message: `An error occurred when setting up ${addon}`,
@@ -336,15 +339,15 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
                 }
                 console.log(`Addon ${addon} updated successfully.`);
                 resolve();
-              })
-              .catch((setupErr) => {
+              } catch (setupErr) {
                 sendNotification({
                   message: `An error occurred when setting up ${addon}`,
                   id: Math.random().toString(36).substring(7),
                   type: 'error',
                 });
                 reject(setupErr);
-              });
+              }
+            });
           }
         );
       });

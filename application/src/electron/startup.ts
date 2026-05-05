@@ -16,7 +16,7 @@ import type { LibraryInfo } from 'ogi-addon';
 import { app, BrowserWindow } from 'electron';
 import { sendNotification } from '@/electron/main.js';
 import semver from 'semver';
-import { setupAddon } from '@/electron/manager/manager.addon.js';
+import { Addon } from '@/electron/manager/manager.addon.js';
 
 const UMU_RELEASES_URL =
   'https://api.github.com/repos/Open-Wine-Components/umu-launcher/releases/latest';
@@ -283,32 +283,28 @@ export function stopUmuBackgroundUpdater() {
 }
 
 // check if NixOS using command -v nixos-rebuild
-export const IS_NIXOS = await (() => {
-  return new Promise<boolean>((resolve) => {
-    try {
-      exec('command -v nixos-rebuild', (error, stderr) => {
-        if (error) {
-          console.error(`exec error: ${error}`);
-          resolve(false);
-          return;
-        }
-        if (stderr.includes('nixos-rebuild')) {
-          resolve(true);
-          return;
-        }
-        resolve(false);
-      });
-    } catch (error) {
-      console.error(`exec error: ${error}`);
-      resolve(false);
-    }
-  });
-})();
-console.log('continuing launch...');
+export let IS_NIXOS = false;
 export let STEAMTINKERLAUNCH_PATH = join(
   __dirname,
   'bin/steamtinkerlaunch/steamtinkerlaunch'
 );
+
+function detectNixOS(): Promise<boolean> {
+  return new Promise<boolean>((resolve) => {
+    try {
+      exec('command -v nixos-rebuild', (error, _stdout, stderr) => {
+        if (error) {
+          resolve(false);
+          return;
+        }
+        resolve(stderr.includes('nixos-rebuild'));
+      });
+    } catch {
+      resolve(false);
+    }
+  });
+}
+
 async function fetch_STLPath() {
   return new Promise<void>((resolve) => {
     exec('which steamtinkerlaunch', (error, stdout, stderr) => {
@@ -330,17 +326,25 @@ async function fetch_STLPath() {
     });
   });
 }
-console.log('NIXOS: ' + IS_NIXOS);
-if (IS_NIXOS) await fetch_STLPath();
-if (STEAMTINKERLAUNCH_PATH === '') {
-  STEAMTINKERLAUNCH_PATH = join(
-    __dirname,
-    'bin/steamtinkerlaunch/steamtinkerlaunch'
-  );
-  console.error(
-    'STEAMTINKERLAUNCH_PATH is empty. Using default path to prevent issues.'
-  );
-}
+
+export const startupEnvironmentReady = (async () => {
+  IS_NIXOS = await detectNixOS();
+  console.log('NIXOS: ' + IS_NIXOS);
+
+  if (IS_NIXOS) {
+    await fetch_STLPath();
+  }
+
+  if (STEAMTINKERLAUNCH_PATH === '') {
+    STEAMTINKERLAUNCH_PATH = join(
+      __dirname,
+      'bin/steamtinkerlaunch/steamtinkerlaunch'
+    );
+    console.error(
+      'STEAMTINKERLAUNCH_PATH is empty. Using default path to prevent issues.'
+    );
+  }
+})();
 
 // Directories to skip during restore (same as backup - node_modules will be reinstalled)
 const dirsToSkipRestore = ['node_modules'];
@@ -655,7 +659,8 @@ export async function reinstallAddonDependencies(
         `[startup] Running setup for addon ${addonName} (${current}/${addons.length})`
       );
       try {
-        const success = await setupAddon(addonPath);
+        const instance = await Addon.load(addonPath);
+        const success = instance ? await instance.install() : false;
         if (success) {
           console.log(`[startup] Successfully set up ${addonName}`);
         } else {

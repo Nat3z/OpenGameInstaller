@@ -1,9 +1,7 @@
 import { z } from 'zod';
-import { clients } from '@/electron/server/addon-server.js';
-import { DeferrableTask } from '@/electron/server/DeferrableTask.js';
+import { addonServer } from '@/electron/server/addon-server.js';
+import { DeferrableTask } from '@ogi-sdk/addon-server';
 
-// Invariant: clients only contains connections with addonInfo set (added in AddonConnection.authenticate).
-// We still guard below for robustness in case the map is accessed before auth or after disconnect.
 import sanitize from 'sanitize-html';
 import {
   type Procedure,
@@ -11,14 +9,15 @@ import {
   ProcedureError,
   ProcedureJSON,
   ProcedureDeferTask,
-} from '@/electron/server/serve.js';
+} from '@/electron/server/ipc.js';
 import * as fs from 'fs/promises';
 import { join } from 'path';
 import { restartAddonServer } from '@/electron/handlers/handler.addon.js';
 import { __dirname } from '@/electron/manager/manager.paths.js';
-import type { StoreData } from 'ogi-addon';
+import type { LibraryInfo, SearchResult, StoreData } from 'ogi-addon';
 import { ZodLibraryInfo } from 'ogi-addon';
 import { supportsStorefront } from '@/lib/storefronts.js';
+import type { ConfigurationFile } from 'ogi-addon/config';
 
 const procedures: Record<string, Procedure<any>> = {
   // Get all addon info
@@ -26,7 +25,7 @@ const procedures: Record<string, Procedure<any>> = {
     .input(z.object({}))
     .handler(async () => {
       let info = [];
-      for (const client of clients.values()) {
+      for (const client of addonServer.getConnections().values()) {
         if (client.addonInfo) {
           info.push({
             ...client.addonInfo,
@@ -46,15 +45,14 @@ const procedures: Record<string, Procedure<any>> = {
       })
     )
     .handler(async (input) => {
-      const client = clients.get(input.addonID);
+      const client = addonServer.getClient(input.addonID);
       if (!client) return new ProcedureError(404, 'Client not found');
       if (!client.addonInfo)
         return new ProcedureError(400, 'Client has no addon info');
 
-      const response = await client.sendEventMessage({
-        event: 'config-update',
-        args: input.config,
-      });
+      const response = await client.events.configUpdate(
+        input.config as ConfigurationFile
+      );
 
       if (response.args && response.args.success) {
         return new ProcedureJSON(200, { success: true });
@@ -78,7 +76,7 @@ const procedures: Record<string, Procedure<any>> = {
       })
     )
     .handler(async (input) => {
-      const client = clients.get(input.addonID);
+      const client = addonServer.getClient(input.addonID);
       if (!client) return new ProcedureError(404, 'Client not found');
       if (!client.addonInfo)
         return new ProcedureError(400, 'Client has no addon info');
@@ -87,14 +85,11 @@ const procedures: Record<string, Procedure<any>> = {
       }
 
       const deferrableTask = new DeferrableTask(async () => {
-        const event = await client.sendEventMessage({
-          event: 'search',
-          args: {
-            appID: input.appID,
-            storefront: input.storefront,
-            for: input.for,
-            libraryInfo: input.libraryInfo,
-          },
+        const event = await client.events.search({
+          appID: input.appID,
+          storefront: input.storefront,
+          for: input.for,
+          libraryInfo: input.libraryInfo as LibraryInfo,
         });
         console.log('searchComplete', event.args);
         return event.args;
@@ -112,7 +107,7 @@ const procedures: Record<string, Procedure<any>> = {
       })
     )
     .handler(async (input) => {
-      const client = clients.get(input.addonID);
+      const client = addonServer.getClient(input.addonID);
       if (!client) return new ProcedureError(404, 'Client not found');
       if (!client.addonInfo)
         return new ProcedureError(400, 'Client has no addon info');
@@ -125,10 +120,7 @@ const procedures: Record<string, Procedure<any>> = {
       }
 
       const deferrableTask = new DeferrableTask(async () => {
-        const event = await client.sendEventMessage({
-          event: 'library-search',
-          args: input.query,
-        });
+        const event = await client.events.librarySearch(input.query);
         return event.args;
       }, client.addonInfo.id);
 
@@ -145,7 +137,7 @@ const procedures: Record<string, Procedure<any>> = {
       })
     )
     .handler(async (input) => {
-      const client = clients.get(input.addonID);
+      const client = addonServer.getClient(input.addonID);
       if (!client) return new ProcedureError(404, 'Client not found');
       if (!client.addonInfo)
         return new ProcedureError(400, 'Client has no addon info');
@@ -155,11 +147,11 @@ const procedures: Record<string, Procedure<any>> = {
       }
 
       const deferrableTask = new DeferrableTask(async () => {
-        const data = await client.sendEventMessage({
-          event: 'request-dl',
-          args: { appID: input.appID, info: input.info },
-        });
-        return data.args;
+        const data = await client.events.requestDl(
+          input.appID as number,
+          input.info as SearchResult
+        );
+        return data;
       }, client.addonInfo.id);
 
       return new ProcedureDeferTask(200, deferrableTask);
@@ -173,7 +165,7 @@ const procedures: Record<string, Procedure<any>> = {
       })
     )
     .handler(async (input) => {
-      const client = clients.get(input.addonID);
+      const client = addonServer.getClient(input.addonID);
       if (!client) return new ProcedureError(404, 'Client not found');
       if (!client.addonInfo)
         return new ProcedureError(400, 'Client has no addon info');
@@ -183,11 +175,8 @@ const procedures: Record<string, Procedure<any>> = {
       }
 
       const deferrableTask = new DeferrableTask(async () => {
-        const data = await client.sendEventMessage({
-          event: 'catalog',
-          args: {},
-        });
-        return data.args;
+        const data = await client.events.catalog();
+        return data;
       }, client.addonInfo.id);
 
       return new ProcedureDeferTask(200, deferrableTask);
@@ -220,7 +209,7 @@ const procedures: Record<string, Procedure<any>> = {
     )
     .handler(async (input) => {
       console.log('setupApp', input);
-      const client = clients.get(input.addonID);
+      const client = addonServer.getClient(input.addonID);
       if (!client) {
         console.error('Client not found');
         return new ProcedureError(404, 'Client not found');
@@ -234,22 +223,18 @@ const procedures: Record<string, Procedure<any>> = {
       }
 
       const deferrableTask = new DeferrableTask(async () => {
-        const data = await client.sendEventMessage({
-          event: 'setup',
-          args: {
-            path: input.path,
-            appID: input.appID,
-            type: input.type,
-            usedRealDebrid: input.usedRealDebrid,
-            clearOldFilesBeforeUpdate: input.clearOldFilesBeforeUpdate,
-            storefront: input.storefront,
-            name: input.name,
-            multiPartFiles: input.multiPartFiles,
-            currentLibraryInfo: input.currentLibraryInfo,
-            for: input.for,
-            deferID: deferrableTask.id!!,
-            manifest: input.manifest,
-          },
+        const data = await client.events.setup({
+          path: input.path,
+          appID: input.appID as number,
+          type: input.type as 'direct' | 'torrent' | 'magnet' | 'empty',
+          usedRealDebrid: input.usedRealDebrid,
+          clearOldFilesBeforeUpdate: input.clearOldFilesBeforeUpdate,
+          storefront: input.storefront,
+          name: input.name,
+          multiPartFiles: input.multiPartFiles,
+          currentLibraryInfo: input.currentLibraryInfo as LibraryInfo,
+          for: input.for,
+          manifest: input.manifest as Record<string, unknown>,
         });
         return data.args;
       }, client.addonInfo.id);
@@ -266,7 +251,9 @@ const procedures: Record<string, Procedure<any>> = {
       })
     )
     .handler(async (input) => {
-      const clientsWithStorefront = Array.from(clients.values()).filter(
+      const clientsWithStorefront = Array.from(
+        addonServer.getConnections().values()
+      ).filter(
         (client) =>
           supportsStorefront(client.addonInfo?.storefronts, input.storefront) &&
           client.eventsAvailable.includes('game-details')
@@ -282,9 +269,9 @@ const procedures: Record<string, Procedure<any>> = {
         // find a client that can serve this storefront
         let appDetails: StoreData | undefined;
         for (const client of clientsWithStorefront) {
-          const data = await client.sendEventMessage({
-            event: 'game-details',
-            args: { appID: gameID, storefront: input.storefront },
+          const data = await client.events.gameDetails({
+            appID: gameID,
+            storefront: input.storefront,
           });
           if (data.args) {
             appDetails = data.args;
@@ -327,7 +314,7 @@ const procedures: Record<string, Procedure<any>> = {
   deleteAddon: procedure()
     .input(z.object({ addonID: z.string() }))
     .handler(async (input) => {
-      const client = clients.get(input.addonID);
+      const client = addonServer.getClient(input.addonID);
       if (!client) return new ProcedureError(404, 'Client not found');
       if (!client.addonInfo)
         return new ProcedureError(400, 'Client has no addon info');
@@ -399,22 +386,19 @@ const procedures: Record<string, Procedure<any>> = {
       })
     )
     .handler(async (input) => {
-      const client = clients.get(input.addonID);
+      const client = addonServer.getClient(input.addonID);
       if (!client) return new ProcedureError(404, 'Client not found');
       if (!client.addonInfo)
         return new ProcedureError(400, 'Client has no addon info');
 
       const deferrableTask = new DeferrableTask(async () => {
-        const data = await client.sendEventMessage({
-          event: 'task-run',
-          args: {
-            manifest: input.manifest,
-            downloadPath: input.downloadPath,
-            name: input.name,
-            taskName: input.taskName,
-            libraryInfo: input.libraryInfo,
-            deferID: deferrableTask.id!!,
-          },
+        const data = await client.events.taskRun({
+          manifest: input.manifest as Record<string, unknown>,
+          downloadPath: input.downloadPath,
+          name: input.name,
+          taskName: input.taskName,
+          deferID: deferrableTask.id!!,
+          libraryInfo: input.libraryInfo as LibraryInfo,
         });
         return data.args;
       }, client.addonInfo.id);
@@ -431,7 +415,9 @@ const procedures: Record<string, Procedure<any>> = {
       })
     )
     .handler(async (input) => {
-      const clientsWithStorefront = Array.from(clients.values()).filter(
+      const clientsWithStorefront = Array.from(
+        addonServer.getConnections().values()
+      ).filter(
         (client) =>
           supportsStorefront(client.addonInfo?.storefronts, input.storefront) &&
           client.eventsAvailable.includes('check-for-updates')
@@ -448,18 +434,15 @@ const procedures: Record<string, Procedure<any>> = {
           'Multiple clients found to serve this storefront'
         );
       }
-
       const client = clientsWithStorefront[0];
+
       if (!client.addonInfo)
         return new ProcedureError(400, 'Client has no addon info');
       const deferrableTask = new DeferrableTask(async () => {
-        const data = await client.sendEventMessage({
-          event: 'check-for-updates',
-          args: {
-            appID: input.appID,
-            storefront: input.storefront,
-            currentVersion: input.currentVersion,
-          },
+        const data = await client.events.checkForUpdates({
+          appID: input.appID,
+          storefront: input.storefront,
+          currentVersion: input.currentVersion,
         });
         return data.args;
       }, client.addonInfo.id);
@@ -474,9 +457,9 @@ const procedures: Record<string, Procedure<any>> = {
       })
     )
     .handler(async (input) => {
-      const clientsWithEvent = Array.from(clients.values()).filter((client) =>
-        client.eventsAvailable.includes('launch-app')
-      );
+      const clientsWithEvent = Array.from(
+        addonServer.getConnections().values()
+      ).filter((client) => client.eventsAvailable.includes('launch-app'));
 
       console.log(
         'clientsWithEvent',
@@ -490,12 +473,9 @@ const procedures: Record<string, Procedure<any>> = {
       // Fire off the event to all clients, and wait for all to finish
       const results = await Promise.all(
         clientsWithEvent.map((client) =>
-          client.sendEventMessage({
-            event: 'launch-app',
-            args: {
-              libraryInfo: input.libraryInfo,
-              launchType: input.launchType,
-            },
+          client.events.launchApp({
+            libraryInfo: input.libraryInfo as LibraryInfo,
+            launchType: input.launchType,
           })
         )
       );

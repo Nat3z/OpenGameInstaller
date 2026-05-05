@@ -816,7 +816,7 @@ export const ZodLibraryInfo = z.object({
     .optional(),
 });
 export type LibraryInfo = z.infer<typeof ZodLibraryInfo>;
-interface Notification {
+export interface Notification {
   type: 'warning' | 'error' | 'info' | 'success';
   message: string;
   id: string;
@@ -827,16 +827,26 @@ class OGIAddonWSListener {
   public addon: OGIAddon;
 
   constructor(ogiAddon: OGIAddon, eventEmitter: events.EventEmitter) {
-    if (
-      process.argv[process.argv.length - 1].split('=')[0] !== '--addonSecret'
-    ) {
+    const secret = process.argv
+      .find((arg) => arg.startsWith('--addonSecret='))
+      ?.split('=')[1];
+    if (!secret) {
       throw new Error(
         'No secret provided. This usually happens because the addon was not started by the OGI Addon Server.'
       );
     }
+
+    // get the port from the arguments
+    let port = process.argv
+      .find((arg) => arg.startsWith('--addonPort='))
+      ?.split('=')[1];
+    if (!port) {
+      port = defaultPort.toString();
+    }
+
     this.addon = ogiAddon;
     this.eventEmitter = eventEmitter;
-    this.socket = new ws('ws://localhost:' + defaultPort);
+    this.socket = new ws('ws://localhost:' + port);
     this.socket.on('open', () => {
       console.log('Connected to OGI Addon Server');
       console.log('OGI Addon Server Version:', VERSION);

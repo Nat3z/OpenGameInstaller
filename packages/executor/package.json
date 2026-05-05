@@ -1,0 +1,29 @@
+{
+  "name": "@ogi-sdk/executor",
+  "version": "1.0.0",
+  "module": "./build/index.mjs",
+  "main": "./build/index.cjs",
+  "exports": {
+    ".": {
+      "import": {
+        "default": "./build/index.mjs",
+        "types": "./build/index.d.mts"
+      }
+    }
+  },
+  "type": "module",
+  "scripts": {
+    "build": "tsdown --config tsdown.config.js"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "tsdown": "^0.21.10"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "string-argv": "^0.3.2",
+    "zod": "^4.4.2"
+  }
+}

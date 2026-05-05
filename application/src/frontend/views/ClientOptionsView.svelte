@@ -466,11 +466,6 @@
     await window.electronAPI.restartAddonServer();
     isRestartingServer = false;
     fetchAddonsWithConfigure();
-    createNotification({
-      id: Math.random().toString(36).substring(7),
-      message: 'Addon server restarted',
-      type: 'success',
-    });
   }
 
   let showPassword: { [key: string]: boolean } = $state({});

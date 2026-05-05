@@ -1,12 +1,11 @@
 import { z } from 'zod';
-import { clients } from '@/electron/server/addon-server.js';
-import { DeferredTasks } from '@/electron/server/DeferrableTask.js';
+import { addonServer } from '@/electron/server/addon-server.js';
 import {
   type Procedure,
   procedure,
   ProcedureError,
   ProcedureJSON,
-} from '@/electron/server/serve.js';
+} from '@/electron/server/ipc.js';
 
 export type ResponseDeferredTask = {
   id: string;
@@ -23,7 +22,7 @@ const procedures: Record<string, Procedure<any>> = {
     .input(z.object({}))
     .handler(async () => {
       const tasks: ResponseDeferredTask[] = Object.values(
-        DeferredTasks.getTasks()
+        addonServer.getDeferredTasksManager().getTasks()
       ).map((task) => ({
         name: `Task ${task.id}`,
         description: 'Background task',
@@ -46,28 +45,32 @@ const procedures: Record<string, Procedure<any>> = {
       })
     )
     .handler(async (input) => {
-      if (DeferredTasks.getTasks()[input.taskID] === undefined) {
-        console.log('task not found @' + input.taskID + '@', DeferredTasks);
+      const deferredTasksManager = addonServer.getDeferredTasksManager();
+      if (deferredTasksManager.getTasks()[input.taskID] === undefined) {
+        console.log(
+          'task not found @' + input.taskID + '@',
+          deferredTasksManager.getTasks()
+        );
         return new ProcedureError(404, 'Task not found');
       }
 
-      const task = DeferredTasks.getTasks()[input.taskID]!!;
+      const task = deferredTasksManager.getTasks()[input.taskID]!!;
 
       // check if the addon is still running
-      const stillExists = clients.has(task.addonOwner);
+      const stillExists = addonServer.getClient(task.addonOwner) !== undefined;
       // when the addon owner is *, we don't need to check if it's still connected as it's a global task spawned by the server
       if (!stillExists && task.addonOwner !== '*') {
-        DeferredTasks.removeTask(input.taskID);
+        deferredTasksManager.removeTask(input.taskID);
         return new ProcedureError(410, 'Addon is no longer connected');
       }
 
       if (task.failed) {
-        DeferredTasks.removeTask(input.taskID);
+        deferredTasksManager.removeTask(input.taskID);
         return new ProcedureError(500, task.failed);
       }
 
       if (task.finished) {
-        DeferredTasks.removeTask(input.taskID);
+        deferredTasksManager.removeTask(input.taskID);
         // Use the getSerializedData method to ensure data is properly serialized
         return new ProcedureJSON(200, {
           data: task.getSerializedData(),

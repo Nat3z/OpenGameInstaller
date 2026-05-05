@@ -98,16 +98,6 @@
 
   let alreadyOwns = $state(false);
 
-  let platform = $state('');
-  let isWin32Only: boolean = $derived.by(() => {
-    return (
-      platform !== 'win32' &&
-      alreadyOwns &&
-      typeof originalExecutable === 'string' &&
-      originalExecutable.toLowerCase().endsWith('.exe')
-    );
-  });
-
   // Check for active downloads for this game
   let activeDownload = $derived(
     $currentDownloads.find(
@@ -140,9 +130,6 @@
   }
 
   onMount(async () => {
-    // Get platform information
-    platform = await window.electronAPI.app.getOS();
-
     isOnline = await window.electronAPI.app.isOnline();
     if (!isOnline) {
       loading = false;
@@ -349,30 +336,13 @@
     selectedResult = undefined;
   }
 
-  async function removeGame() {
+  async function viewInLibrary() {
     if (!gameData) return;
-
-    try {
-      await window.electronAPI.app.removeApp(appID);
-      createNotification({
-        id: Math.random().toString(36).substring(7),
-        message: `${gameData.name} removed from library. (Not deleted from disk)`,
-        type: 'success',
-      });
-      // reload the store page
-      // remove the download from the downloads list
-      currentDownloads.update((downloads) =>
-        downloads.filter((download) => download.appID !== appID)
-      );
-      loadCustomStoreData();
-    } catch (ex) {
-      console.error('Failed to remove game:', ex);
-      createNotification({
-        id: Math.random().toString(36).substring(7),
-        message: `Failed to remove ${gameData.name} from library`,
-        type: 'error',
-      });
-    }
+    selectedView.set('library');
+    viewOpenedWhenChanged.set('library');
+    currentStorePageOpened.set(undefined);
+    currentStorePageOpenedStorefront.set(undefined);
+    gameFocused.set(appID);
   }
 
   function toggleAddonCollapse(addonId: string) {
@@ -620,31 +590,23 @@
               <!-- Sources Section -->
               <div class="-mt-3">
                 {#if alreadyOwns}
-                  <div class="p-6 bg-accent-lighter rounded-lg mb-4">
+                  <div
+                    class="p-6 bg-accent-lighter rounded-lg mb-4 flex flex-col gap-2"
+                  >
                     <button
-                      class="w-full border-none {!isWin32Only
-                        ? 'bg-accent-light hover:bg-accent-light/80 text-accent-dark'
-                        : 'bg-border-strong text-text-muted cursor-not-allowed'} font-medium py-3 px-4 rounded-lg transition-colors duration-200 {isWin32Only
-                        ? 'mb-3'
-                        : ''}"
-                      class:disabled={isWin32Only}
-                      disabled={isWin32Only}
-                      title={isWin32Only
-                        ? ''
-                        : 'Use Steam to Launch Your Games'}
-                      onclick={() => !isWin32Only && playGame()}
+                      class="w-full border-none bg-accent-light hover:bg-accent-light/80 text-accent-dark
+                      font-medium py-3 px-4 rounded-lg transition-colors duration-200"
+                      onclick={() => playGame()}
                     >
                       Play Game
                     </button>
 
-                    {#if isWin32Only}
-                      <button
-                        class="w-full border-none bg-accent-lighter hover:bg-accent-light text-accent-dark font-medium py-3 px-4 rounded-lg transition-colors duration-200 border border-accent-light"
-                        onclick={() => removeGame()}
-                      >
-                        Remove from Library
-                      </button>
-                    {/if}
+                    <button
+                      class="w-full border-none bg-accent-lighter hover:bg-accent-light/50 text-accent-dark font-medium py-3 px-4 rounded-lg transition-colors duration-200 border border-accent-light"
+                      onclick={() => viewInLibrary()}
+                    >
+                      View in Library
+                    </button>
                   </div>
                 {/if}
                 <!-- Loading indicators for addons still searching -->

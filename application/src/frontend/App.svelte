@@ -36,6 +36,7 @@
     showNotificationSideView,
     currentDownloads,
     headerBackButton,
+    clearHeaderBackButton,
   } from '@/frontend/store';
   import StorePage from '@/frontend/components/StorePage.svelte';
   import ConfigurationModal from '@/frontend/components/modal/ConfigurationModal.svelte';
@@ -560,8 +561,11 @@
           <button
             class="header-button"
             onclick={() => {
-              if ($headerBackButton.onClick) {
-                $headerBackButton.onClick();
+              const onBack = $headerBackButton.onClick;
+              // Clear immediately so this back action does not linger on the next view.
+              clearHeaderBackButton();
+              if (onBack) {
+                onBack();
               }
             }}
             aria-label={$headerBackButton.ariaLabel || 'Go back'}

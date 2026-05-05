@@ -1,323 +1,175 @@
 import { readFile, writeFile } from 'fs/promises';
 import { join } from 'path';
 import { sendNotification } from '@/electron/main.js';
-import z from 'zod';
-import exec from 'child_process';
-import { addonSecret } from '@/electron/server/constants.js';
-import { clients } from '@/electron/server/addon-server.js';
-import { AddonConnection } from '@/electron/server/AddonConnection.js';
+import {
+  Addon as ExecutorAddon,
+  AddonFileConfigurationSchema,
+} from '@ogi-sdk/executor';
+import type { AddonConnection } from '@ogi-sdk/addon-server';
+import { addonServer, port } from '@/electron/server/addon-server.js';
 
-export let processes: {
-  [key: string]: exec.ChildProcess;
-} = {};
+export class Addon extends ExecutorAddon {
+  /** Paths of addons currently started by the host (for shutdown / restart). */
+  static readonly running = new Map<string, Addon>();
 
-export const AddonFileConfigurationSchema = z.object({
-  author: z.string(),
-  scripts: z.object({
-    setup: z.string().optional(),
-    run: z.string(),
-    preSetup: z.string().optional(),
-    postSetup: z.string().optional(),
-  }),
-});
-
-function stripAnsiCodes(input: string): string {
-  // Regular expression to match ANSI escape codes
-  const ansiRegex = /\x1b\[[0-9;]*m/g;
-  return input.replace(ansiRegex, '');
-}
-
-async function loadAddonConfig(
-  addonPath: string,
-  addonName: string
-): Promise<z.infer<typeof AddonFileConfigurationSchema> | null> {
-  let addonConfig: string;
-  try {
-    addonConfig = await readFile(join(addonPath, 'addon.json'), 'utf-8');
-  } catch (err: any) {
-    if (err.code === 'ENOENT') {
-      sendNotification({
-        type: 'error',
-        message: `Addon configuration not found for ${addonName}`,
-        id: Math.random().toString(36).substring(7),
-      });
-    } else {
-      sendNotification({
-        type: 'error',
-        message: `Error reading addon configuration for ${addonName}: ${err.message}`,
-        id: Math.random().toString(36).substring(7),
-      });
-    }
-    return null;
+  private static stripAnsi(input: string): string {
+    return input.replace(/\x1b\[[0-9;]*m/g, '');
   }
 
-  let addonJSON: any;
-  try {
-    addonJSON = JSON.parse(addonConfig);
-  } catch (err: any) {
-    sendNotification({
-      type: 'error',
-      message: `Failed to parse addon configuration JSON for ${addonName}: ${err.message}`,
-      id: Math.random().toString(36).substring(7),
-    });
-    return null;
-  }
+  static async load(addonPath: string): Promise<Addon | null> {
+    const addonName =
+      addonPath.replace(/\/$/, '').split(/[/\\]/).pop() ?? 'unknown-addon';
 
-  try {
-    return AddonFileConfigurationSchema.parse(addonJSON);
-  } catch (err: any) {
-    sendNotification({
-      type: 'error',
-      message: `Addon configuration validation failed for ${addonName}: ${err.message}`,
-      id: Math.random().toString(36).substring(7),
-    });
-    return null;
-  }
-}
-export async function setupAddon(addonPath: string): Promise<boolean> {
-  const addonName = addonPath.split(/\/|\\/).pop() ?? 'unknown-addon';
-
-  const addon = await loadAddonConfig(addonPath, addonName);
-  if (!addon) {
-    return false;
-  }
-
-  let setupLogs = '';
-  sendNotification({
-    type: 'info',
-    message: 'Setting up ' + addonName,
-    id: Math.random().toString(36).substring(7),
-  });
-  if (addon.scripts.preSetup) {
+    let addonConfig: string;
     try {
-      setupLogs += `
-Running pre-setup script for ${addonName}...
-> ${addon.scripts.preSetup}
-      `;
-      setupLogs += await executeScript(
-        'pre-setup',
-        addon.scripts.preSetup,
-        addonPath,
-        addonName
-      );
-    } catch (e) {
-      sendNotification({
-        type: 'error',
-        message: 'Error running pre-setup script for ' + addonName,
-        id: Math.random().toString(36).substring(7),
-      });
-      return false;
-    }
-  }
-
-  if (addon.scripts.setup) {
-    try {
-      setupLogs += `
-Running setup script for ${addonName}...
-> ${addon.scripts.setup}
-      `;
-      setupLogs += await executeScript(
-        'setup',
-        addon.scripts.setup,
-        addonPath,
-        addonName
-      );
-    } catch (e) {
-      sendNotification({
-        type: 'error',
-        message: 'Error running setup script for ' + addonName,
-        id: Math.random().toString(36).substring(7),
-      });
-      return false;
-    }
-  }
-
-  if (addon.scripts.postSetup) {
-    try {
-      setupLogs += `
-Running post-setup script for ${addonName}...
-> ${addon.scripts.postSetup}
-      `;
-      setupLogs += await executeScript(
-        'post-setup',
-        addon.scripts.postSetup,
-        addonPath,
-        addonName
-      );
-    } catch (e) {
-      sendNotification({
-        type: 'error',
-        message: 'Error running post-setup script for ' + addonName,
-        id: Math.random().toString(36).substring(7),
-      });
-      return false;
-    }
-  }
-
-  await writeFile(
-    join(addonPath, 'installation.log'),
-    stripAnsiCodes(setupLogs)
-  );
-  return true;
-}
-
-export async function startAddon(
-  addonPath: string,
-  addonLink: string
-): Promise<AddonConnection | undefined> {
-  // remove any trailing slashes
-  const addonName =
-    addonPath.replace(/\/$/, '').split(/\/|\\/).pop() ?? 'unknown-addon';
-
-  const addon = await loadAddonConfig(addonPath, addonName);
-  if (!addon) {
-    return;
-  }
-  try {
-    executeScript(
-      'run',
-      addon.scripts.run + ' --addonSecret=' + addonSecret,
-      addonPath,
-      addonName
-    );
-    let attempts = 0;
-    const success = await new Promise<boolean>((resolve) => {
-      const interval = setInterval(() => {
-        if (attempts > 10) {
-          clearInterval(interval);
-          console.error(
-            'Addon ' +
-              addonName +
-              ' not found in clients. Cannot attach path nor link.'
-          );
-          resolve(false);
-          return;
-        }
-
-        if (clients.has(addonName!)) {
-          clearInterval(interval);
-          resolve(true);
-          return;
-        }
-        attempts++;
-      }, 500);
-    });
-    if (!success) {
-      return;
-    }
-    let client = clients.get(addonName!);
-    if (client) {
-      client.filePath = addonPath;
-      client.addonLink = addonLink;
-      console.log(
-        'Registered addon identifier path for ' +
-          addonName +
-          ' to ' +
-          addonPath +
-          ' with link ' +
-          addonLink
-      );
-    }
-    return client;
-  } catch (e) {
-    console.error(e);
-
-    // write to the run-crash.log file
-    const errorMessage = e instanceof Error ? e.message : String(e);
-    await writeFile(
-      join(addonPath, 'run-crash.log'),
-      stripAnsiCodes(errorMessage)
-    );
-
-    sendNotification({
-      type: 'error',
-      message: 'Error running run script for ' + addonPath.split(/[/\\]/).pop(),
-      id: Math.random().toString(36).substring(7),
-    });
-    return;
-  }
-}
-
-async function executeScript(
-  scriptName: string,
-  script: string,
-  addonPath: string,
-  addonName: string
-): Promise<string> {
-  return new Promise((resolve, reject) => {
-    let bunPath = '';
-    // if on windows, then use C:\Users\username\.bun\bin\bun.exe
-    // if on linux, then use ~/.bun/bin/bun
-    if (process.platform === 'win32') {
-      if (!process.env.USERPROFILE) {
+      addonConfig = await readFile(join(addonPath, 'addon.json'), 'utf-8');
+    } catch (err: any) {
+      if (err.code === 'ENOENT') {
         sendNotification({
           type: 'error',
-          message: 'USERPROFILE is not set. Cannot run scripts.',
+          message: `Addon configuration not found for ${addonName}`,
           id: Math.random().toString(36).substring(7),
         });
-        return reject();
-      }
-      bunPath = join(process.env.USERPROFILE || '', '.bun', 'bin', 'bun.exe');
-    } else {
-      if (!process.env.HOME) {
+      } else {
         sendNotification({
           type: 'error',
-          message: 'HOME is not set. Cannot run scripts.',
+          message: `Error reading addon configuration for ${addonName}: ${err.message}`,
           id: Math.random().toString(36).substring(7),
         });
-        return reject();
       }
-      bunPath = join(process.env.HOME || '', '.bun', 'bin', 'bun');
+      return null;
     }
 
-    let finalScript = script.trim();
-    // handles bun, ./bun, .\\bun, bun.exe and replaces it with the full path to bun
-    // using quotes to handle spaces in the path
-    finalScript = finalScript.replace(
-      /^(\.?[\\/]?bun(?:.exe)?)\b/,
-      `"${bunPath}"`
-    );
+    let addonJSON: unknown;
+    try {
+      addonJSON = JSON.parse(addonConfig);
+    } catch (err: any) {
+      sendNotification({
+        type: 'error',
+        message: `Failed to parse addon configuration JSON for ${addonName}: ${err.message}`,
+        id: Math.random().toString(36).substring(7),
+      });
+      return null;
+    }
 
-    const child = exec.exec(finalScript, {
-      cwd: addonPath,
+    try {
+      const parsed = AddonFileConfigurationSchema.parse(addonJSON);
+      return new Addon({
+        port,
+        secret: addonServer.getSecret(),
+        path: addonPath,
+        name: addonName,
+        scripts: parsed.scripts,
+      });
+    } catch (err: any) {
+      sendNotification({
+        type: 'error',
+        message: `Addon configuration validation failed for ${addonName}: ${err.message}`,
+        id: Math.random().toString(36).substring(7),
+      });
+      return null;
+    }
+  }
+
+  override stop(): void {
+    super.stop();
+    Addon.running.delete(this.config.path);
+  }
+
+  async install(): Promise<boolean> {
+    sendNotification({
+      type: 'info',
+      message: 'Setting up ' + this.config.name,
+      id: Math.random().toString(36).substring(7),
     });
 
-    let stdout = '';
-    let stderr = '';
-
-    processes[addonPath] = child;
-
-    child.stdout?.on('data', (data: Buffer) => {
-      console.log('[' + addonName + '@' + scriptName + '] ' + data.toString());
-      stdout += data.toString();
-    });
-
-    child.stderr?.on('data', (data: Buffer) => {
-      console.error(
-        '[' + addonName + '@' + scriptName + '] ' + data.toString()
+    try {
+      const setupLogs = await this.setup.collectSetupLog();
+      await writeFile(
+        join(this.config.path, 'installation.log'),
+        Addon.stripAnsi(setupLogs)
       );
-      stderr += data.toString();
-    });
+      return true;
+    } catch {
+      sendNotification({
+        type: 'error',
+        message: 'Error running setup scripts for ' + this.config.name,
+        id: Math.random().toString(36).substring(7),
+      });
+      return false;
+    }
+  }
 
-    child.on('close', (code: number) => {
-      if (code !== 0) {
-        // write the error to a log file
-        console.error(
-          '[' + addonName + '@' + scriptName + '] Exited with error: ' + code
-        );
-        reject(
-          new Error(
-            'Addon ' + addonName + ' exited with error: ' + code + '\n' + stderr
-          )
-        );
+  async startRegistered(addonLink: string): Promise<AddonConnection | undefined> {
+    const addonName = this.config.name;
+    const addonPath = this.config.path;
+
+    try {
+      this.start();
+
+      const child = this.getChildProcess();
+      if (!child) {
         return;
       }
-      resolve(stdout);
-    });
+      Addon.running.set(addonPath, this);
 
-    child.on('error', (err: Error) => {
-      console.error(err);
-      reject(err);
-    });
-  });
+      let attempts = 0;
+      const success = await new Promise<boolean>((resolve) => {
+        const interval = setInterval(() => {
+          if (attempts > 10) {
+            clearInterval(interval);
+            console.error(
+              'Addon ' +
+                addonName +
+                ' not found in clients. Cannot attach path nor link.'
+            );
+            resolve(false);
+            return;
+          }
+
+          if (addonServer.getClient(addonName)) {
+            clearInterval(interval);
+            resolve(true);
+            return;
+          }
+          attempts++;
+        }, 500);
+      });
+
+      if (!success) {
+        return;
+      }
+
+      const client = addonServer.getClient(addonName);
+      if (client) {
+        client.filePath = addonPath;
+        client.addonLink = addonLink;
+        console.log(
+          'Registered addon identifier path for ' +
+            addonName +
+            ' to ' +
+            addonPath +
+            ' with link ' +
+            addonLink
+        );
+      }
+      return client;
+    } catch (e) {
+      console.error(e);
+
+      const errorMessage = e instanceof Error ? e.message : String(e);
+      await writeFile(
+        join(addonPath, 'run-crash.log'),
+        Addon.stripAnsi(errorMessage)
+      );
+
+      sendNotification({
+        type: 'error',
+        message:
+          'Error running run script for ' + addonPath.split(/[/\\]/).pop(),
+        id: Math.random().toString(36).substring(7),
+      });
+      return;
+    }
+  }
 }

@@ -1,16 +1,19 @@
 import { join } from 'path';
 import { quote as shellQuote } from 'shell-quote';
 import {
-  addonServer,
   registerInstanceBridgeHandlers,
+  registerAddonServerUIHandlers,
   server,
   port,
   type LaunchForwardPayload,
+  addonIPC,
+  isSecurityCheckEnabled,
+  startAddonServer,
+  addonServer,
 } from '@/electron/server/addon-server.js';
-import { applicationAddonSecret } from '@/electron/server/constants.js';
 import { app, BrowserWindow, globalShortcut, ipcMain, shell } from 'electron';
 import fs, { existsSync, readFileSync } from 'fs';
-import { processes } from '@/electron/manager/manager.addon.js';
+import { Addon } from '@/electron/manager/manager.addon.js';
 import { stopClient } from '@/electron/manager/manager.webtorrent.js';
 import type { ConfigurationFile } from 'ogi-addon/config';
 import AppEventHandler from '@/electron/handlers/handler.app.js';
@@ -25,6 +28,7 @@ import {
   checkForAddonUpdates,
   convertLibrary,
   IS_NIXOS,
+  startupEnvironmentReady,
   startUmuBackgroundUpdater,
   stopUmuBackgroundUpdater,
   STEAMTINKERLAUNCH_PATH,
@@ -198,8 +202,8 @@ async function handleLaunchHooks(
 
     // Load the main app with game ID and hook flags
     const baseUrl = isDev()
-      ? `http://localhost:8080/?secret=${applicationAddonSecret}`
-      : `file://${join(app.getAppPath(), 'out', 'renderer', 'index.html')}?secret=${applicationAddonSecret}`;
+      ? `http://localhost:8080`
+      : `file://${join(app.getAppPath(), 'out', 'renderer', 'index.html')}`;
 
     // Add flags to indicate this is a hook-only launch
     const launchUrl = `${baseUrl}&launchGameId=${gameId}&hookType=${hookType}&noLaunch=true`;
@@ -234,8 +238,8 @@ async function launchGameById(gameId: number, wrapperCommand?: string | null) {
     // Load the main app with the game ID in the query params
     // The Svelte frontend will detect this and show the GameLaunchOverlay
     const baseUrl = isDev()
-      ? `http://localhost:8080/?secret=${applicationAddonSecret}`
-      : `file://${join(app.getAppPath(), 'out', 'renderer', 'index.html')}?secret=${applicationAddonSecret}`;
+      ? `http://localhost:8080`
+      : `file://${join(app.getAppPath(), 'out', 'renderer', 'index.html')}`;
 
     console.log('Direct wrapper command: ' + wrapperCommand);
 
@@ -255,20 +259,6 @@ async function launchGameById(gameId: number, wrapperCommand?: string | null) {
 
 export const VERSION = app.getVersion();
 
-export let isSecurityCheckEnabled = true;
-if (existsSync(join(__dirname, 'config/option/developer.json'))) {
-  const developerConfig = JSON.parse(
-    readFileSync(join(__dirname, 'config/option/developer.json'), 'utf-8')
-  );
-  isSecurityCheckEnabled = developerConfig.disableSecretCheck !== true;
-  if (!isSecurityCheckEnabled) {
-    for (let i = 0; i < 10; i++) {
-      console.warn(
-        'WARNING Security check is disabled. THIS IS A MAJOR SECURITY RISK. PLEASE ENABLE DURING NORMAL USE.'
-      );
-    }
-  }
-}
 // check if NixOS using command -v nixos-rebuild
 console.log('continuing launch...');
 console.log('NIXOS: ' + IS_NIXOS);
@@ -372,11 +362,14 @@ export let currentScreens = new Map<
   { [key: string]: string | boolean | number } | undefined
 >();
 
+export let screenInputCallbacks = new Map<string, (result: any) => void>();
+
 export function sendAskForInput(
   id: string,
   config: ConfigurationFile,
   name: string,
-  description: string
+  description: string,
+  callback: (result: any) => void
 ) {
   if (!mainWindow) {
     console.error('Main window is not ready yet. Cannot send ask for input.');
@@ -390,7 +383,13 @@ export function sendAskForInput(
   }
   mainWindow.webContents.send('input-asked', { id, config, name, description });
   currentScreens.set(id, undefined);
+  screenInputCallbacks.set(id, callback);
 }
+
+registerAddonServerUIHandlers({
+  onInputAsked: sendAskForInput,
+  onNotification: sendNotification,
+});
 
 /**
  * Single-window flow for Steam Deck / Game Mode: one BrowserWindow shows splash first, then the main app.
@@ -436,26 +435,20 @@ function registerClientReadyListener() {
 async function ensureAddonServerRunning() {
   if (server.listening) return;
 
-  await new Promise<void>((resolve, reject) => {
-    const onError = (error: NodeJS.ErrnoException) => {
-      if (error.code === 'EADDRINUSE') {
-        console.warn(
-          `[addon-server] Port ${port} is already in use, continuing startup`
-        );
-        resolve();
-        return;
-      }
-      reject(error);
-    };
-
-    server.once('error', onError);
-    server.listen(port, () => {
-      server.removeListener('error', onError);
-      console.log(`Addon Server is running on http://localhost:${port}`);
-      console.log(`Server is being executed by electron!`);
-      resolve();
-    });
-  });
+  try {
+    await startAddonServer();
+    console.log(`Addon Server is running on http://localhost:${port}`);
+    console.log(`Server is being executed by electron!`);
+  } catch (error) {
+    const err = error as NodeJS.ErrnoException;
+    if (err.code === 'EADDRINUSE') {
+      console.warn(
+        `[addon-server] Port ${port} is already in use, continuing startup`
+      );
+      return;
+    }
+    throw error;
+  }
 }
 
 async function startAddonRuntime() {
@@ -576,7 +569,10 @@ function createWindow(options: { gameLaunchMode?: boolean } = {}) {
 
   // Load splash first so there is only one window (fixes Steam Deck Game Mode black screen)
   mainWindow.loadURL(
-    'file://' + join(app.getAppPath(), 'public', 'splash.html')
+    'file://' +
+      join(app.getAppPath(), 'public', 'splash.html') +
+      '?secret=' +
+      addonServer.getSecret()
   );
 
   mainWindow.on('closed', function () {
@@ -604,14 +600,14 @@ async function startAppFlow(win: BrowserWindow) {
   // Load the main app into the same window (replaces splash)
   if (win && !win.isDestroyed()) {
     if (isDev()) {
-      win.loadURL('http://localhost:8080/?secret=' + applicationAddonSecret);
+      win.loadURL('http://localhost:8080');
       console.log('Running in development');
     } else {
       win.loadURL(
         'file://' +
           join(app.getAppPath(), 'out', 'renderer', 'index.html') +
           '?secret=' +
-          applicationAddonSecret
+          addonServer.getSecret()
       );
     }
     win.once('ready-to-show', onMainAppReady);
@@ -662,7 +658,7 @@ async function runAddonLaunchEvent(
     return { success: false, error: 'Game not found in library' };
   }
 
-  const response = await addonServer.handleRequest({
+  const response = await addonIPC.handleRequest({
     method: 'launchApp',
     params: {
       libraryInfo,
@@ -792,6 +788,7 @@ registerInstanceBridgeHandlers({
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
 app.on('ready', async () => {
+  await startupEnvironmentReady;
   registerClientReadyListener();
 
   // Check if we're launching a specific game (--game-id flag from Steam)
@@ -900,10 +897,9 @@ app.on('window-all-closed', async function () {
     console.log('Stopping torrent client...');
     await stopClient();
 
-    // stop all of the addons
-    for (const process of Object.keys(processes)) {
-      console.log(`Killing process ${process}`);
-      processes[process].kill('SIGKILL');
+    for (const instance of [...Addon.running.values()]) {
+      console.log(`Stopping addon ${instance.config.path}`);
+      instance.stop();
     }
 
     // stopping all of the torrent intervals

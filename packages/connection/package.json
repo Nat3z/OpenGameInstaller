@@ -1,0 +1,27 @@
+{
+  "name": "@ogi-sdk/connect",
+  "module": "lib/index.ts",
+  "type": "module",
+  "exports": {
+    ".": {
+      "import": {
+        "default": "./build/index.mjs",
+        "types": "./build/index.d.mts"
+      }
+    }
+  },
+  "scripts": {
+    "build": "tsdown --config tsdown.config.js"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/ws": "^8.18.1",
+    "tsdown": "^0.21.10"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "ws": "^8.20.0"
+  }
+}

@@ -1,7 +1,5 @@
 import type {
-  ClientSentEventTypes,
-  Notification,
-  OGIAddonConfiguration,
+  ClientToServerEventArgs,
   OGIAddonEvent,
   StoreData,
 } from 'ogi-addon';
@@ -16,18 +14,22 @@ import {
 import type { ClientMessageHandler, ClientMessageHandlers } from './types';
 
 const handleNotification: ClientMessageHandler = ({ server }, message) => {
-  server.emit('notification', message.args[0] as Notification);
+  server.emit(
+    'notification',
+    message.args as ClientToServerEventArgs['notification']
+  );
 };
 
 const handleAuthenticate: ClientMessageHandler = (context, message) => {
   const { connection, config, server } = context;
   clearTimeout(context.authenticationTimeout);
 
-  const addonInfo = message.args as OGIAddonConfiguration;
-  connection.addonInfo = addonInfo;
+  const authenticateArgs =
+    message.args as ClientToServerEventArgs['authenticate'];
+  connection.addonInfo = authenticateArgs;
   if (
     config.securityCheck &&
-    (!message.args.secret || message.args.secret !== config.secret)
+    (!authenticateArgs.secret || authenticateArgs.secret !== config.secret)
   ) {
     closeProtocolError(
       context,
@@ -37,7 +39,7 @@ const handleAuthenticate: ClientMessageHandler = (context, message) => {
     return;
   }
 
-  if (server.getClient(addonInfo.id)) {
+  if (server.getClient(authenticateArgs.id)) {
     closeProtocolError(
       context,
       'Client attempted to authenticate with an ID that is already in use'
@@ -46,22 +48,25 @@ const handleAuthenticate: ClientMessageHandler = (context, message) => {
     return;
   }
 
-  console.log('Client authenticated:', message.args.name);
-  server.addClient(addonInfo.id, connection);
+  console.log('Client authenticated:', authenticateArgs.name);
+  server.addClient(authenticateArgs.id, connection);
   context.resolveAuthentication(true);
 };
 
 const handleConfigure: ClientMessageHandler = (context, message) => {
   if (!requireAuthenticated(context, 'config')) return;
 
-  context.connection.configTemplate = message.args;
+  context.connection.configTemplate =
+    message.args as ClientToServerEventArgs['configure'];
 };
 
 const handleDeferUpdate: ClientMessageHandler = (context, message) => {
   if (!requireAuthenticated(context, 'defer-update')) return;
   if (!message.args) return;
 
-  if (!message.args.deferID) {
+  const deferUpdateArgs =
+    message.args as ClientToServerEventArgs['defer-update'];
+  if (!deferUpdateArgs.deferID) {
     closeProtocolError(
       context,
       'Client attempted to send defer-update without an ID'
@@ -70,7 +75,7 @@ const handleDeferUpdate: ClientMessageHandler = (context, message) => {
   }
 
   const deferredTask = context.server.getDeferredTasksManager().getTasks()[
-    message.args.deferID
+    deferUpdateArgs.deferID
   ];
   if (!deferredTask) {
     closeProtocolError(
@@ -81,10 +86,10 @@ const handleDeferUpdate: ClientMessageHandler = (context, message) => {
   }
 
   if (deferredTask.addonOwner !== context.connection.addonInfo!.id) return;
-  deferredTask.logs = message.args.logs;
-  deferredTask.progress = message.args.progress;
-  if (message.args.failed) {
-    deferredTask.failed = message.args.failed;
+  deferredTask.logs = deferUpdateArgs.logs;
+  deferredTask.progress = deferUpdateArgs.progress;
+  if (deferUpdateArgs.failed) {
+    deferredTask.failed = deferUpdateArgs.failed;
     deferredTask.finished = true;
   }
 };
@@ -93,7 +98,12 @@ const handleInputAsked: ClientMessageHandler = (context, message) => {
   if (!requireAuthenticated(context, 'input-asked')) return;
   if (!message.args) return;
 
-  if (!message.args.config || !message.args.name || !message.args.description) {
+  const inputAskedArgs = message.args as ClientToServerEventArgs['input-asked'];
+  if (
+    !inputAskedArgs.config ||
+    !inputAskedArgs.name ||
+    !inputAskedArgs.description
+  ) {
     closeProtocolError(
       context,
       'Client attempted to send input-asked without a configuration'
@@ -103,11 +113,11 @@ const handleInputAsked: ClientMessageHandler = (context, message) => {
 
   if (!requireMessageId(context, 'input-asked', message.id)) return;
 
-  const configurationAsked = message.args.config as
+  const configurationAsked = inputAskedArgs.config as
     | ConfigurationFile
     | undefined;
-  const name = message.args.name as string;
-  const description = message.args.description as string;
+  const name = inputAskedArgs.name as string;
+  const description = inputAskedArgs.description as string;
   if (!configurationAsked || !name || !description) {
     closeProtocolError(
       context,
@@ -129,7 +139,8 @@ const handleInputAsked: ClientMessageHandler = (context, message) => {
 
 const handleTaskUpdate: ClientMessageHandler = (context, message) => {
   if (!requireAuthenticated(context, 'task-update')) return;
-  if (!message.args.id) {
+  const taskUpdateArgs = message.args as ClientToServerEventArgs['task-update'];
+  if (!taskUpdateArgs.id) {
     closeProtocolError(
       context,
       'Client attempted to send task-update without an ID'
@@ -137,31 +148,30 @@ const handleTaskUpdate: ClientMessageHandler = (context, message) => {
     return;
   }
 
-  const taskUpdate = message.args as ClientSentEventTypes['task-update'];
   let task = context.server.getDeferredTasksManager().getTasks()[
-    message.args.id
+    taskUpdateArgs.id
   ];
 
   if (!task) {
     task = new DeferrableTask(async () => {
       return null;
     }, context.connection.addonInfo!.id);
-    task.id = taskUpdate.id;
+    task.id = taskUpdateArgs.id;
     context.server.getDeferredTasksManager().addTask(task);
   }
 
-  task.progress = taskUpdate.progress;
-  task.logs = taskUpdate.logs;
-  task.finished = taskUpdate.finished;
-  task.failed = taskUpdate.failed;
+  task.progress = taskUpdateArgs.progress;
+  task.logs = taskUpdateArgs.logs;
+  task.finished = taskUpdateArgs.finished;
+  task.failed = taskUpdateArgs.failed;
 
-  if (taskUpdate.failed) {
+  if (taskUpdateArgs.failed) {
     task.finished = true;
     return;
   }
 
-  if (taskUpdate.finished && !taskUpdate.failed) {
-    context.server.getDeferredTasksManager().removeTask(message.args.id);
+  if (taskUpdateArgs.finished && !taskUpdateArgs.failed) {
+    context.server.getDeferredTasksManager().removeTask(taskUpdateArgs.id);
   }
 };
 
@@ -169,8 +179,8 @@ const handleGetAppDetails: ClientMessageHandler = async (context, message) => {
   if (!requireAuthenticated(context, 'get-app-details')) return;
   if (!requireMessageId(context, 'get-app-details', message.id)) return;
 
-  const { appID, storefront }: ClientSentEventTypes['get-app-details'] =
-    message.args;
+  const { appID, storefront }: ClientToServerEventArgs['get-app-details'] =
+    message.args as ClientToServerEventArgs['get-app-details'];
   const clientsWithStorefront = getClientsSupporting(
     context,
     storefront,
@@ -181,7 +191,7 @@ const handleGetAppDetails: ClientMessageHandler = async (context, message) => {
   for (const client of clientsWithStorefront) {
     const response = await client.events.gameDetails({ appID, storefront });
     if (response.args) {
-      appDetails = response.args;
+      appDetails = response.args as StoreData;
       break;
     }
   }
@@ -200,8 +210,8 @@ const handleSearchAppName: ClientMessageHandler = async (context, message) => {
   if (!requireAuthenticated(context, 'search-app-name')) return;
   if (!requireMessageId(context, 'search-app-name', message.id)) return;
 
-  const { query, storefront }: ClientSentEventTypes['search-app-name'] =
-    message.args;
+  const { query, storefront }: ClientToServerEventArgs['search-app-name'] =
+    message.args as ClientToServerEventArgs['search-app-name'];
   const clientsWithStorefront = getClientsSupporting(
     context,
     storefront,
@@ -212,7 +222,7 @@ const handleSearchAppName: ClientMessageHandler = async (context, message) => {
   for (const client of clientsWithStorefront) {
     const response = await client.events.librarySearch(query);
     if (response.args) {
-      searchResult.push(...response.args);
+      searchResult.push(...(response.args as StoreData[]));
     }
   }
 
@@ -222,14 +232,15 @@ const handleSearchAppName: ClientMessageHandler = async (context, message) => {
 const handleFlag: ClientMessageHandler = (context, message) => {
   if (!requireAuthenticated(context, 'flag')) return;
 
-  if (message.args.flag === 'events-available') {
+  const flagArgs = message.args as ClientToServerEventArgs['flag'];
+  if (flagArgs.flag === 'events-available') {
     console.log(
       'Setting events-available to',
-      message.args.value,
+      flagArgs.value,
       'for addon',
       context.connection.addonInfo!.id
     );
-    context.connection.eventsAvailable = message.args.value as OGIAddonEvent[];
+    context.connection.eventsAvailable = flagArgs.value as OGIAddonEvent[];
   }
 };
 

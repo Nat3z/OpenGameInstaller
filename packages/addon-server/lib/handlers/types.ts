@@ -3,7 +3,7 @@ import type {
   WebsocketMessageClient,
 } from 'ogi-addon';
 import type { AddonConnection } from '../addon-connection';
-import type { AddonConfig, AddonServer } from '../addon';
+import type { AddonConfig, AddonServer } from '../server';
 
 export type HandlerContext = {
   connection: AddonConnection;
@@ -21,3 +21,5 @@ export type ClientMessageHandler = (
 export type ClientMessageHandlers = Partial<
   Record<OGIAddonClientSentEvent, ClientMessageHandler>
 >;
+
+export type { ServerEventArgs } from '../_generated/event-proxy';

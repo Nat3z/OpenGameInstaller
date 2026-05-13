@@ -1,7 +1,10 @@
 import { AddonConnection } from './addon-connection';
-import { WebSocketServer } from 'ws';
-import http, { type IncomingMessage } from 'http';
-import type { Duplex } from 'stream';
+import {
+  WebSocketServer,
+  createWebSocketUpgradeListener,
+  type WebSocket,
+} from '@ogi-sdk/connect';
+import http from 'http';
 import { EventEmitter } from 'events';
 import type { Notification } from 'ogi-addon';
 import { DeferredTasksManager } from './deffered';
@@ -39,11 +42,7 @@ export class AddonServer {
 
   private server = http.createServer();
   private wss: WebSocketServer | undefined;
-  private upgradeListener?: (
-    req: IncomingMessage,
-    socket: Duplex,
-    head: Buffer
-  ) => void;
+  private upgradeListener?: ReturnType<typeof createWebSocketUpgradeListener>;
 
   private deferredTasksManager: DeferredTasksManager =
     new DeferredTasksManager();
@@ -122,17 +121,10 @@ export class AddonServer {
     }
     this.wss?.close();
     this.wss = new WebSocketServer({ noServer: true });
-
-    this.upgradeListener = (req, socket, head) => {
-      const wss = this.wss;
-      if (!wss) return;
-      wss.handleUpgrade(req, socket, head, (ws) => {
-        wss.emit('connection', ws, req);
-      });
-    };
+    this.upgradeListener = createWebSocketUpgradeListener(this.wss);
     this.server.on('upgrade', this.upgradeListener);
 
-    this.wss.on('connection', (ws) => {
+    this.wss.on('connection', (ws: WebSocket) => {
       const connection = new AddonConnection(ws, this.config, this);
       this.connections.add(connection);
       connection.setupWebsocket().then((success) => {

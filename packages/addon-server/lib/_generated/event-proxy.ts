@@ -28,19 +28,19 @@ export type TaskRunArgs = {
 };
 
 export type ServerEventArgs = {
-  authenticate: [config?: unknown];
-  configure: [config: ConfigurationFile];
+  'authenticate': [config?: unknown];
+  'configure': [config: ConfigurationFile];
   'config-update': [config: ConfigurationFile];
   'launch-app': ListenerEventArgs<'launch-app'>;
-  search: ListenerEventArgs<'search'>;
-  setup: ListenerEventArgs<'setup'>;
-  response: [id: string, response?: unknown, statusError?: string];
+  'search': ListenerEventArgs<'search'>;
+  'setup': ListenerEventArgs<'setup'>;
+  'response': [id: string, response?: unknown, statusError?: string];
   'library-search': ListenerEventArgs<'library-search'>;
   'check-for-updates': ListenerEventArgs<'check-for-updates'>;
   'task-run': [task: TaskRunArgs];
   'game-details': ListenerEventArgs<'game-details'>;
   'request-dl': ListenerEventArgs<'request-dl'>;
-  catalog: ListenerEventArgs<'catalog'>;
+  'catalog': ListenerEventArgs<'catalog'>;
 };
 
 type SendEventProxyMethod<Event extends OGIAddonServerSentEvent> = (
@@ -67,23 +67,19 @@ type EventMessagePackers = {
 };
 
 const eventMessagePackers: EventMessagePackers = {
-  authenticate: ([config]) => ({ args: config }),
-  configure: ([config]) => ({ args: config }),
+  'authenticate': ([config]) => ({ args: config }),
+  'configure': ([config]) => ({ args: config }),
   'config-update': ([config]) => ({ args: config }),
   'launch-app': ([data]) => ({ args: data }),
-  search: ([query]) => ({ args: query }),
-  setup: ([data]) => ({ args: data }),
-  response: ([id, response, statusError]) => ({
-    id,
-    args: response,
-    statusError,
-  }),
+  'search': ([query]) => ({ args: query }),
+  'setup': ([data]) => ({ args: data }),
+  'response': ([id, response, statusError]) => ({ id, args: response, statusError }),
   'library-search': ([query]) => ({ args: query }),
   'check-for-updates': ([data]) => ({ args: data }),
   'task-run': ([task]) => ({ args: task }),
   'game-details': ([details]) => ({ args: details }),
   'request-dl': ([appID, info]) => ({ args: { appID, info } }),
-  catalog: () => ({ args: undefined }),
+  'catalog': () => ({ args: undefined }),
 };
 
 const toCamelCaseEvent = (event: string): string => {

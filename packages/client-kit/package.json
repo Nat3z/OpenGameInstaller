@@ -1,0 +1,31 @@
+{
+  "name": "client-kit",
+  "type": "module",
+  "version": "1.0.0",
+  "exports": {
+    ".": {
+      "import": {
+        "default": "./build/index.mjs",
+        "types": "./build/index.d.mts"
+      }
+    }
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/ws": "^8.18.1",
+    "tsdown": "^0.22.0",
+    "@ogi-sdk/addon-server": "workspace:*"
+  },
+  "scripts": {
+    "build": "tsdown --config tsdown.config.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "ws": "^8.20.0",
+    "ogi-addon": "workspace:*",
+    "@ogi-sdk/connect": "workspace:*"
+  }
+}

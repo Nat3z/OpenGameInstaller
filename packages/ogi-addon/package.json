@@ -38,6 +38,7 @@
     "directory": "packages/ogi-addon"
   },
   "dependencies": {
+    "@ogi-sdk/connect": "workspace:*",
     "fuse.js": "^7.1.0",
     "ws": "^8.4.0",
     "zod": "^3.23.8"

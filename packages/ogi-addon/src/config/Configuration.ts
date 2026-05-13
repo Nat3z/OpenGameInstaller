@@ -146,3 +146,4 @@ export {
 };
 
 export type { ConfigurationFile, ConfigurationOptionType };
+export type { DefiniteConfig };

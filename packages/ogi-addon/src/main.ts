@@ -1,8 +1,10 @@
-import ws, { WebSocket } from 'ws';
+import { WebSocket, type RawData } from 'ws';
+import { EventResponseSocket, randomMessageId } from '@ogi-sdk/connect';
+import type { WebsocketMessage } from '@ogi-sdk/connect';
 import events from 'node:events';
 import { ConfigurationBuilder } from './config/ConfigurationBuilder';
 import type { ConfigurationFile } from './config/ConfigurationBuilder';
-import { Configuration } from './config/Configuration';
+import { Configuration, DefiniteConfig } from './config/Configuration';
 import EventResponse from './EventResponse';
 import type { SearchResult } from './SearchEngine';
 import Fuse, { IFuseOptions } from 'fuse.js';
@@ -67,24 +69,25 @@ import { z } from 'zod';
 import { extraction } from './extraction';
 export const VERSION = pjson.version;
 
-export interface ClientSentEventTypes {
+export interface ClientToServerEventArgs {
   response: any;
   authenticate: {
-    name: string;
-    id: string;
-    description: string;
-    version: string;
-    author: string;
-  };
+    secret: string;
+    ogiVersion: string;
+  } & OGIAddonConfiguration;
   configure: ConfigurationFile;
   'defer-update': {
     logs: string[];
     progress: number;
+    deferID: string;
+    failed: string | undefined;
   };
   notification: Notification;
-  'input-asked': ConfigurationBuilder<
-    Record<string, string | number | boolean>
-  >;
+  'input-asked': {
+    config: ConfigurationFile;
+    name: string;
+    description: string;
+  };
   'task-update': {
     id: string;
     progress: number;
@@ -368,17 +371,11 @@ export interface StoreData {
   headerImage: string;
   latestVersion: string;
 }
-export interface WebsocketMessageClient {
+export interface WebsocketMessageClient extends WebsocketMessage {
   event: OGIAddonClientSentEvent;
-  id?: string;
-  args: any;
-  statusError?: string;
 }
-export interface WebsocketMessageServer {
+export interface WebsocketMessageServer extends WebsocketMessage {
   event: OGIAddonServerSentEvent;
-  id?: string;
-  args: any;
-  statusError?: string;
 }
 
 /**
@@ -481,23 +478,23 @@ export default class OGIAddon {
    * @returns {Promise<StoreData>}
    */
   public async getAppDetails(appID: number, storefront: string) {
-    const id = this.addonWSListener.send('get-app-details', {
-      appID,
-      storefront,
-    });
-    return await this.addonWSListener.waitForResponseFromServer<
-      StoreData | undefined
-    >(id);
+    return await this.addonWSListener.requestResponse<StoreData | undefined>(
+      'get-app-details',
+      {
+        appID,
+        storefront,
+      }
+    );
   }
 
   public async searchGame(query: string, storefront: string) {
-    const id = this.addonWSListener.send('search-app-name', {
-      query,
-      storefront,
-    });
-    return await this.addonWSListener.waitForResponseFromServer<
-      BasicLibraryInfo[]
-    >(id);
+    return await this.addonWSListener.requestResponse<BasicLibraryInfo[]>(
+      'search-app-name',
+      {
+        query,
+        storefront,
+      }
+    );
   }
 
   /**
@@ -816,6 +813,17 @@ export const ZodLibraryInfo = z.object({
     .optional(),
 });
 export type LibraryInfo = z.infer<typeof ZodLibraryInfo>;
+
+/** Payload shape for server-sent `task-run` messages. */
+export type TaskRunMessageArgs = {
+  manifest?: Record<string, unknown>;
+  downloadPath?: string;
+  name?: string;
+  taskName?: string;
+  libraryInfo?: LibraryInfo;
+  deferID?: string;
+};
+
 export interface Notification {
   type: 'warning' | 'error' | 'info' | 'success';
   message: string;
@@ -823,8 +831,25 @@ export interface Notification {
 }
 class OGIAddonWSListener {
   private socket: WebSocket;
+  private transport: EventResponseSocket<
+    WebsocketMessageServer,
+    WebsocketMessageClient
+  >;
   public eventEmitter: events.EventEmitter;
   public addon: OGIAddon;
+
+  private normalizeRawData(raw: RawData): string | Buffer {
+    if (typeof raw === 'string') {
+      return raw;
+    }
+    if (Buffer.isBuffer(raw)) {
+      return raw;
+    }
+    if (Array.isArray(raw)) {
+      return Buffer.concat(raw);
+    }
+    return Buffer.from(new Uint8Array(raw));
+  }
 
   constructor(ogiAddon: OGIAddon, eventEmitter: events.EventEmitter) {
     const secret = process.argv
@@ -846,15 +871,16 @@ class OGIAddonWSListener {
 
     this.addon = ogiAddon;
     this.eventEmitter = eventEmitter;
-    this.socket = new ws('ws://localhost:' + port);
+    this.socket = new WebSocket('ws://localhost:' + port);
+    this.transport = new EventResponseSocket(this.socket);
     this.socket.on('open', () => {
       console.log('Connected to OGI Addon Server');
       console.log('OGI Addon Server Version:', VERSION);
 
       // Authenticate with OGI Addon Server
-      this.send('authenticate', {
+      this.send('authenticate' as OGIAddonClientSentEvent, {
         ...this.addon.addonInfo,
-        secret: process.argv[process.argv.length - 1].split('=')[1],
+        secret,
         ogiVersion: VERSION,
       });
 
@@ -865,35 +891,21 @@ class OGIAddonWSListener {
       this.addon.config = new Configuration(configBuilder.build(true));
 
       // wait for the config-update to be received then send connect
-      const configListener = (event: ws.MessageEvent) => {
-        if (event === undefined) return;
-        // event can be a Buffer, string, ArrayBuffer, or Buffer[]
-        let data: string;
-        if (typeof event === 'string') {
-          data = event;
-        } else if (event instanceof Buffer) {
-          data = event.toString();
-        } else if (event && typeof (event as any).data === 'string') {
-          data = (event as any).data;
-        } else if (event && (event as any).data instanceof Buffer) {
-          data = (event as any).data.toString();
-        } else {
-          // fallback for other types
-          data = event.toString();
+      const configListener = (raw: RawData) => {
+        const message = this.transport.parseMessage(this.normalizeRawData(raw));
+        if (!message) {
+          return;
         }
-        const message: WebsocketMessageServer = JSON.parse(data);
+        if (this.transport.resolveIncomingResponse(message)) {
+          return;
+        }
         if (message.event === 'config-update') {
           console.log('Config update received');
           this.socket.off('message', configListener);
           this.eventEmitter.emit(
             'connect',
             new EventResponse<void>((screen, name, description) => {
-              return this.userInputAsked(
-                screen,
-                name,
-                description,
-                this.socket
-              );
+              return this.userInputAsked(screen, name, description);
             })
           );
         }
@@ -902,6 +914,7 @@ class OGIAddonWSListener {
     });
 
     this.socket.on('error', (error) => {
+      this.transport.rejectPendingResponses('Websocket error');
       if (error.message.includes('Failed to connect')) {
         throw new Error(
           'OGI Addon Server is not running/is unreachable. Please start the server and try again.'
@@ -911,6 +924,7 @@ class OGIAddonWSListener {
     });
 
     this.socket.on('close', (code, reason) => {
+      this.transport.rejectPendingResponses('Websocket closed');
       if (code === 1008) {
         console.error('Authentication failed:', reason);
         return;
@@ -930,37 +944,40 @@ class OGIAddonWSListener {
   >(
     configBuilt: ConfigurationBuilder<U>,
     name: string,
-    description: string,
-    socket: WebSocket
+    description: string
   ): Promise<U> {
     const config = configBuilt.build(false);
-    const id = Math.random().toString(36).substring(7);
-    if (!socket) {
-      throw new Error('Socket is not connected');
-    }
-    socket.send(
-      JSON.stringify({
+    const response = await this.transport.send(
+      {
         event: 'input-asked',
         args: {
           config,
           name,
           description,
         },
-        id: id,
-      })
+      } as WebsocketMessageClient,
+      true
     );
-    return await this.waitForResponseFromServer<U>(id);
+    return response.args as U;
   }
 
   /**
    * Registers the message receiver for the socket. This is used to receive messages from the server and handle them.
    */
   private registerMessageReceiver() {
-    this.socket.on('message', async (data: string) => {
-      const message: WebsocketMessageServer = JSON.parse(data);
+    this.socket.on('message', async (raw: RawData) => {
+      const message = this.transport.parseMessage(this.normalizeRawData(raw));
+      if (!message) {
+        return;
+      }
+      if (this.transport.resolveIncomingResponse(message)) {
+        return;
+      }
       switch (message.event) {
         case 'config-update':
-          const result = this.addon.config.updateConfig(message.args);
+          const result = this.addon.config.updateConfig(
+            message.args as DefiniteConfig
+          );
           if (!result[0]) {
             this.respondToMessage(
               message.id!!,
@@ -982,7 +999,7 @@ class OGIAddonWSListener {
         case 'setup': {
           let setupEvent = new EventResponse<SetupEventResponse>(
             (screen, name, description) =>
-              this.userInputAsked(screen, name, description, this.socket)
+              this.userInputAsked(screen, name, description)
           );
           this.eventEmitter.emit('setup', message.args, setupEvent);
           const interval = setInterval(() => {
@@ -992,10 +1009,11 @@ class OGIAddonWSListener {
             }
             this.send('defer-update', {
               logs: setupEvent.logs,
-              deferID: message.args.deferID,
+              deferID:
+                message.args as ClientToServerEventArgs['defer-update']['deferID'],
               progress: setupEvent.progress,
               failed: setupEvent.failed,
-            } as ClientSentEventTypes['defer-update']);
+            } as ClientToServerEventArgs['defer-update']);
           }, 100);
           const setupResult = await this.waitForEventToRespond(setupEvent);
           this.respondToMessage(message.id!!, setupResult.data, setupEvent);
@@ -1029,7 +1047,7 @@ class OGIAddonWSListener {
         case 'request-dl':
           let requestDLEvent = new EventResponse<SearchResult>(
             (screen, name, description) =>
-              this.userInputAsked(screen, name, description, this.socket)
+              this.userInputAsked(screen, name, description)
           );
           if (this.eventEmitter.listenerCount('request-dl') === 0) {
             this.respondToMessage(
@@ -1041,11 +1059,15 @@ class OGIAddonWSListener {
             );
             break;
           }
+          const { appID, info } = message.args as {
+            appID: number;
+            info: SearchResult;
+          };
           this.eventEmitter.emit(
             'request-dl',
-            message.args.appID,
-            message.args.info,
-            requestDLEvent
+            appID,
+            info,
+            requestDLEvent as EventResponse<SearchResult>
           );
           const requestDLResult =
             await this.waitForEventToRespond(requestDLEvent);
@@ -1076,16 +1098,16 @@ class OGIAddonWSListener {
         case 'task-run': {
           let taskRunEvent = new EventResponse<void>(
             (screen, name, description) =>
-              this.userInputAsked(screen, name, description, this.socket)
+              this.userInputAsked(screen, name, description)
           );
+          const args = message.args as TaskRunMessageArgs;
 
           // Check for taskName: first from args directly (from SearchResult), then from manifest.__taskName (for ActionOption)
           const taskName =
-            message.args.taskName && typeof message.args.taskName === 'string'
-              ? message.args.taskName
-              : message.args.manifest &&
-                  typeof message.args.manifest === 'object'
-                ? (message.args.manifest as Record<string, unknown>).__taskName
+            args.taskName && typeof args.taskName === 'string'
+              ? args.taskName
+              : args.manifest && typeof args.manifest === 'object'
+                ? args.manifest.__taskName
                 : undefined;
 
           if (
@@ -1104,16 +1126,16 @@ class OGIAddonWSListener {
                 }
                 this.send('defer-update', {
                   logs: taskRunEvent.logs,
-                  deferID: message.args.deferID,
+                  deferID: args.deferID ?? '',
                   progress: taskRunEvent.progress,
                   failed: taskRunEvent.failed,
-                } as ClientSentEventTypes['defer-update']);
+                } as ClientToServerEventArgs['defer-update']);
               }, 100);
               const result = handler(task, {
-                manifest: message.args.manifest || {},
-                downloadPath: message.args.downloadPath || '',
-                name: message.args.name || '',
-                libraryInfo: message.args.libraryInfo,
+                manifest: args.manifest || {},
+                downloadPath: args.downloadPath || '',
+                name: args.name || '',
+                libraryInfo: args.libraryInfo,
               });
               // If handler returns a promise, wait for it
               if (result instanceof Promise) {
@@ -1186,7 +1208,7 @@ class OGIAddonWSListener {
     options?: { requireListener: string; noListenerError: string }
   ): Promise<void> {
     const event = new EventResponse<T>((screen, name, description) =>
-      this.userInputAsked(screen, name, description, this.socket)
+      this.userInputAsked(screen, name, description)
     );
     if (
       options &&
@@ -1222,49 +1244,41 @@ class OGIAddonWSListener {
     response: any,
     originalEvent: EventResponse<any> | undefined
   ) {
-    this.socket.send(
-      JSON.stringify({
+    void this.transport.send(
+      {
         event: 'response',
         id: messageID,
         args: response,
         statusError: originalEvent ? originalEvent.failed : undefined,
-      })
+      } as WebsocketMessageClient,
+      false
     );
     console.log('dispatched response to ' + messageID);
   }
 
-  public waitForResponseFromServer<T>(messageID: string): Promise<T> {
-    return new Promise((resolve) => {
-      const waiter = (data: string) => {
-        const message: WebsocketMessageClient = JSON.parse(data);
-        if (message.event !== 'response') {
-          this.socket.once('message', waiter);
-          return;
-        }
-        console.log('received response from ' + messageID);
-
-        if (message.id === messageID) {
-          resolve(message.args);
-        } else {
-          this.socket.once('message', waiter);
-        }
-      };
-      this.socket.once('message', waiter);
-    });
+  public async requestResponse<T>(
+    event: OGIAddonClientSentEvent,
+    args: ClientToServerEventArgs[OGIAddonClientSentEvent]
+  ): Promise<T> {
+    const response = await this.transport.send(
+      { event, args } as WebsocketMessageClient,
+      true
+    );
+    return response.args as T;
   }
 
   public send(
     event: OGIAddonClientSentEvent,
-    args: ClientSentEventTypes[OGIAddonClientSentEvent]
+    args: ClientToServerEventArgs[OGIAddonClientSentEvent]
   ): string {
-    // generate a random id
-    const id = Math.random().toString(36).substring(7);
-    this.socket.send(
-      JSON.stringify({
+    const id = randomMessageId();
+    void this.transport.send(
+      {
         event,
         args,
         id,
-      })
+      } as WebsocketMessageClient,
+      false
     );
     return id;
   }

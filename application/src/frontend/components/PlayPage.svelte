@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { LibraryInfo, SearchResult } from 'ogi-addon';
+  import type { LibraryInfo, SearchResult } from '@ogi-sdk/connect';
   import { ConfigurationBuilder } from 'ogi-addon/config';
   import PlayIcon from '@/frontend/Icons/PlayIcon.svelte';
   import {

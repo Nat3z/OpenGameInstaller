@@ -1,7 +1,6 @@
 <script lang="ts">
+  import type { ConfigurationFile, ConfigurationOptionWire } from '@ogi-sdk/connect';
   import {
-    type ConfigurationFile,
-    type ConfigurationOptionWire,
     isActionOption,
     isBooleanOption,
     isNumberOption,

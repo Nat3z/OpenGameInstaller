@@ -5,14 +5,13 @@
     queryConnectedAddons,
     runTask,
   } from '@/frontend/utils';
-  import type { ConfigurationFile } from 'ogi-addon/config';
+  import type { ConfigurationFile, OGIAddonConfiguration } from '@ogi-sdk/connect';
   import {
     isActionOption,
     isBooleanOption,
     isNumberOption,
     isStringOption,
   } from 'ogi-addon/config';
-  import type { OGIAddonConfiguration } from 'ogi-addon';
   import { notifications } from '@/frontend/store';
   import AddonPicture from '@/frontend/components/AddonPicture.svelte';
   import Modal from '@/frontend/components/modal/Modal.svelte';

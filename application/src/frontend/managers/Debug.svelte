@@ -8,10 +8,8 @@
   import ButtonModal from '@/frontend/components/modal/ButtonModal.svelte';
   import { createNotification, notificationHistory } from '@/frontend/store';
   import CheckboxModal from '@/frontend/components/modal/CheckboxModal.svelte';
-  import {
-    ConfigurationBuilder,
-    type ConfigurationFile,
-  } from 'ogi-addon/config';
+  import type { ConfigurationFile } from '@ogi-sdk/connect';
+  import { ConfigurationBuilder } from 'ogi-addon/config';
   import HeaderModal from '@/frontend/components/modal/HeaderModal.svelte';
 
   let showDebugModal = $state(false);

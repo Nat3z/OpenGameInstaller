@@ -19,7 +19,7 @@
   import { saveFailedSetup } from '@/frontend/lib/recovery/failedSetups';
   import { runSetupApp, runSetupAppUpdate } from '@/frontend/lib/setup/setup';
   import { getApp } from '@/frontend/lib/core/library';
-  import type { LibraryInfo } from 'ogi-addon';
+  import type { LibraryInfo } from '@ogi-sdk/connect';
   function isCustomEvent(event: Event): event is CustomEvent {
     return event instanceof CustomEvent;
   }

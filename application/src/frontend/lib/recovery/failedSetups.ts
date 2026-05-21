@@ -6,7 +6,7 @@ import {
   type FailedSetup,
   type DownloadStatusAndInfo,
 } from '@/frontend/store';
-import type { SetupCommandData } from 'ogi-addon';
+import type { SetupCommandData } from '@ogi-sdk/connect';
 import {
   unrarAndReturnOutputDir,
   unzipAndReturnOutputDir,

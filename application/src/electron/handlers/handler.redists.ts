@@ -3,7 +3,7 @@
  * Uses UMU (Unified Launcher for Windows Games on Linux) for all games
  */
 import { ipcMain } from 'electron';
-import type { LibraryInfo } from 'ogi-addon';
+import type { LibraryInfo } from '@ogi-sdk/connect';
 import { isLinux } from '@/electron/handlers/helpers.app/platform.js';
 import {
   getNonSteamGameAppID,

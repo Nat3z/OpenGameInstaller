@@ -3,7 +3,7 @@
  */
 import { join } from 'path';
 import * as fs from 'fs';
-import type { LibraryInfo } from 'ogi-addon';
+import type { LibraryInfo } from '@ogi-sdk/connect';
 import { __dirname } from '@/electron/manager/manager.paths.js';
 
 export function getLibraryPath(appID: number): string {

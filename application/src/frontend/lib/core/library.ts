@@ -1,4 +1,4 @@
-import type { LibraryInfo } from 'ogi-addon';
+import type { LibraryInfo } from '@ogi-sdk/connect';
 
 /**
  * Loads all apps and orders them according to the apps.json file if it exists.

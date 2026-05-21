@@ -14,7 +14,7 @@ import { app, BrowserWindow, globalShortcut, ipcMain, shell } from 'electron';
 import fs, { existsSync, readFileSync } from 'fs';
 import { Addon } from '@/electron/manager/manager.addon.js';
 import { stopClient } from '@/electron/manager/manager.webtorrent.js';
-import type { ConfigurationFile } from 'ogi-addon/config';
+import type { ConfigurationFile } from '@ogi-sdk/connect';
 import AppEventHandler from '@/electron/handlers/handler.app.js';
 import FSEventHandler from '@/electron/handlers/handler.fs.js';
 import RealdDebridHandler from '@/electron/handlers/handler.realdebrid.js';

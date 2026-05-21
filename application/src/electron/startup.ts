@@ -12,7 +12,7 @@ import {
   mkdirSync,
   rmSync,
 } from 'original-fs';
-import type { LibraryInfo } from 'ogi-addon';
+import type { LibraryInfo } from '@ogi-sdk/connect';
 import { app, BrowserWindow } from 'electron';
 import { sendNotification } from '@/electron/main.js';
 import semver from 'semver';

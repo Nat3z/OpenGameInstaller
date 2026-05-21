@@ -3,6 +3,7 @@ import { createAddonProxy } from './_generated/addon-proxy';
 import type {
   AddonClientSDKToServerIncomingMessage,
   AddonClientSDKToServerWebsocketMessage,
+  AddonForwardResponse,
   AddonServerToClientEventArgs,
   AddonServerToClientEventName,
   AddonServerToClientSDKEvent,
@@ -107,11 +108,7 @@ export class Connection {
     return createAddonProxy(
       addonId,
       this.sendToAddon.bind(this),
-      async (targetAddonId, event, args) => {
-        const taskID = await this.deferToAddon(targetAddonId, event, ...args);
-        deferredOptions.onTaskStarted?.(taskID);
-        return this.waitForDeferredTask(taskID, deferredOptions);
-      }
+      this.createDeferToAddon(deferredOptions)
     );
   }
 
@@ -327,6 +324,22 @@ export class Connection {
       this.socket.addEventListener?.('error', onError);
       this.socket.addEventListener?.('close', onClose);
     });
+  }
+
+  private createDeferToAddon(deferredOptions: DeferredTaskOptions = {}) {
+    return async <Event extends AddonServerToClientEventName>(
+      targetAddonId: string,
+      event: Event,
+      args: AddonServerToClientEventArgs[Event]
+    ): Promise<AddonForwardResponse<Event>['args']> => {
+      const taskID = await this.deferToAddon(targetAddonId, event, ...args);
+      deferredOptions.onTaskStarted?.(taskID);
+      const result = await this.waitForDeferredTask<AddonForwardResponse<Event>['args']>(
+        taskID,
+        deferredOptions as DeferredTaskOptions<AddonForwardResponse<Event>['args']>
+      );
+      return result as AddonForwardResponse<Event>['args'];
+    };
   }
 
   private getSDKUrl(url: string): string {

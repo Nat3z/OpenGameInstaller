@@ -1,4 +1,5 @@
-import { AddonConnection } from './addon-connection';
+import { AddonConnection } from './connections/addon.connection';
+import { ClientConnection } from './connections/client.connection';
 import {
   WebSocketServer,
   createWebSocketUpgradeListener,
@@ -6,9 +7,13 @@ import {
 } from '@ogi-sdk/connect';
 import http from 'http';
 import { EventEmitter } from 'events';
-import type { Notification } from 'ogi-addon';
+import type {
+  AddonNotificationMessage,
+  AddonServerHostEventListeners,
+  AddonServerHostEventName,
+  ConfigurationFile,
+} from '@ogi-sdk/connect';
 import { DeferredTasksManager } from './deffered';
-import type { ConfigurationFile } from 'ogi-addon/config';
 
 export type AddonConfig = {
   securityCheck: boolean;
@@ -16,28 +21,15 @@ export type AddonConfig = {
   secret?: string;
 };
 
-type AddonEvents =
-  | 'connect'
-  | 'disconnect'
-  | 'start'
-  | 'notification'
-  | 'input-asked';
+// If changing stuff like this, update it in packages/connection/lib/protocol.ts at the bottom of the file
+export type AddonServerEventListeners =
+  AddonServerHostEventListeners<AddonConnection>;
 
-type AddonEventListeners = {
-  connect: (connection: AddonConnection) => void;
-  disconnect: (reason: string) => void;
-  start: () => void;
-  notification: (notification: Notification) => void;
-  'input-asked': (
-    title: string,
-    description: string,
-    configuration: ConfigurationFile,
-    reply: (result: Record<string, string | number | boolean>) => void
-  ) => void | Promise<void>;
-};
+export type AddonServerEventName = AddonServerHostEventName;
 
 export class AddonServer {
   private connections: Set<AddonConnection> = new Set();
+  private sdkConnections: Set<ClientConnection> = new Set();
   private clients: Map<string, AddonConnection> = new Map();
 
   private server = http.createServer();
@@ -55,10 +47,30 @@ export class AddonServer {
 
   private eventEmitter = new EventEmitter();
 
-  public emit<T extends AddonEvents>(
+  public emit<T extends AddonServerEventName>(
     event: T,
-    ...args: Parameters<AddonEventListeners[T]>
+    ...args: Parameters<AddonServerEventListeners[T]>
   ): this {
+    if (event === 'notification') {
+      const [notification] = args as [AddonNotificationMessage];
+      this.sdkConnections.forEach((connection) => {
+        void connection.sendNotification(notification);
+      });
+    }
+
+    if (event === 'input-asked') {
+      const [name, description, config, reply] = args as [
+        string,
+        string,
+        ConfigurationFile,
+        (reply: Record<string, string | number | boolean>) => void,
+      ];
+      const [connection] = this.sdkConnections;
+      if (connection) {
+        void connection.askInput(name, description, config).then(reply);
+      }
+    }
+
     this.eventEmitter.emit(event, ...args);
     return this;
   }
@@ -79,9 +91,9 @@ export class AddonServer {
     return this.deferredTasksManager;
   }
 
-  public on<T extends AddonEvents>(
+  public on<T extends AddonServerEventName>(
     event: T,
-    listener: AddonEventListeners[T]
+    listener: AddonServerEventListeners[T]
   ): this {
     this.eventEmitter.on(event, listener);
     return this;
@@ -107,10 +119,14 @@ export class AddonServer {
     this.clients.forEach((client) => {
       client.ws.close();
     });
+    this.sdkConnections.forEach((connection) => {
+      connection.close();
+    });
     this.wss?.close();
     this.wss = undefined;
     this.server.close();
     this.connections.clear();
+    this.sdkConnections.clear();
     this.clients.clear();
   }
 
@@ -124,7 +140,14 @@ export class AddonServer {
     this.upgradeListener = createWebSocketUpgradeListener(this.wss);
     this.server.on('upgrade', this.upgradeListener);
 
-    this.wss.on('connection', (ws: WebSocket) => {
+    this.wss.on('connection', (ws: WebSocket, request) => {
+      if (request.url?.startsWith('/sdk')) {
+        const connection = new ClientConnection(ws, this);
+        this.sdkConnections.add(connection);
+        ws.on('close', () => this.sdkConnections.delete(connection));
+        return;
+      }
+
       const connection = new AddonConnection(ws, this.config, this);
       this.connections.add(connection);
       connection.setupWebsocket().then((success) => {

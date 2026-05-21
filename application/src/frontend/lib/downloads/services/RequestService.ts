@@ -3,7 +3,7 @@ import type { SearchResultWithAddon } from '@/frontend/lib/tasks/runner';
 import type { SearchResult } from 'ogi-addon';
 import { createNotification, currentDownloads } from '@/frontend/store';
 import { getDownloadPath } from '@/frontend/lib/core/fs';
-import { safeFetch } from '@/frontend/lib/core/ipc';
+import { addonServer } from '@/frontend/lib/core/ipc';
 import { startDownload } from '@/frontend/lib/downloads/lifecycle';
 
 /**
@@ -44,15 +44,8 @@ export class RequestService extends BaseService {
     });
 
     console.log('Requesting download', result);
-    const response: SearchResult = await safeFetch(
-      'requestDownload',
-      {
-        addonID: result.addonSource,
-        appID: appID,
-        info: JSON.parse(JSON.stringify(result)),
-      },
-      {
-        consume: 'json',
+    const response = (await addonServer
+      .addon(result.addonSource, {
         onFailed: (error: string) => {
           createNotification({
             id: Math.random().toString(36).substring(7),
@@ -70,8 +63,8 @@ export class RequestService extends BaseService {
             return downloads;
           });
         },
-      }
-    );
+      })
+      .requestDl(appID, JSON.parse(JSON.stringify(result)))) as SearchResult;
 
     // Check if response is null/undefined
     if (response === null || response === undefined) {

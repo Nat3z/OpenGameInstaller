@@ -1,4 +1,4 @@
-import type { EventListenerTypes, SearchResult } from 'ogi-addon';
+import type { SearchResult, SetupCommandData } from 'ogi-addon';
 import { writable, type Writable } from 'svelte/store';
 import type { BasicLibraryInfo } from 'ogi-addon';
 
@@ -80,7 +80,7 @@ export type FailedSetup = {
   timestamp: number;
   retryCount: number;
   downloadInfo: DownloadStatusAndInfo;
-  setupData: Parameters<EventListenerTypes['setup']>[0];
+  setupData: SetupCommandData;
   error: string;
   should: 'call-addon' | 'call-unrar' | 'call-unzip';
 };

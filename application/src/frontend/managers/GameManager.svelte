@@ -1,7 +1,7 @@
 <script lang="ts">
   import { getAllApps } from '@/frontend/lib/core/library';
   import { gamesLaunched } from '@/frontend/store';
-  import { safeFetch } from '@/frontend/utils';
+  import { runLaunchAppAddons } from '@/frontend/utils';
 
   const launchParams = new URLSearchParams(window.location.search);
   const shortcutLaunchGameId = (() => {
@@ -59,10 +59,7 @@
         return;
       }
 
-      await safeFetch('launchApp', {
-        libraryInfo: libraryInfo,
-        launchType: 'post',
-      });
+      await runLaunchAppAddons(libraryInfo, 'post');
     } catch (error) {
       console.error(error);
     } finally {

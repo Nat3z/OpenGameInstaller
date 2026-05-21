@@ -1,12 +1,11 @@
 <script lang="ts">
   import {
-    type BooleanOption,
     type ConfigurationFile,
-    type ConfigurationOption,
-    type NumberOption,
-    type StringOption,
-    type ActionOption,
+    type ConfigurationOptionWire,
     isActionOption,
+    isBooleanOption,
+    isNumberOption,
+    isStringOption,
   } from 'ogi-addon/config';
   import { writable, type Writable } from 'svelte/store';
 
@@ -16,21 +15,6 @@
   import InputModal from '@/frontend/components/modal/InputModal.svelte';
   import CheckboxModal from '@/frontend/components/modal/CheckboxModal.svelte';
   import ButtonModal from '@/frontend/components/modal/ButtonModal.svelte';
-
-  // Type guard functions
-  function isStringOption(option: ConfigurationOption): option is StringOption {
-    return option.type === 'string';
-  }
-
-  function isNumberOption(option: ConfigurationOption): option is NumberOption {
-    return option.type === 'number';
-  }
-
-  function isBooleanOption(
-    option: ConfigurationOption
-  ): option is BooleanOption {
-    return option.type === 'boolean';
-  }
 
   function isCustomEvent(event: Event): event is CustomEvent {
     return event instanceof CustomEvent;
@@ -49,6 +33,7 @@
       id: string;
       name: string;
       description: string;
+      reply?: (result: Record<string, string | number | boolean>) => void | Promise<void>;
     }[]
   > = writable([]);
 
@@ -61,14 +46,16 @@
       id,
       name,
       description,
+      reply,
     }: {
       config: ConfigurationFile;
       id: string;
       name: string;
       description: string;
+      reply?: (result: Record<string, string | number | boolean>) => void | Promise<void>;
     } = detail;
     listOfScreensQueued.update((screens) =>
-      screens.concat({ config, id, name, description })
+      screens.concat({ config, id, name, description, reply })
     );
     console.log('listOfScreensQueued', $listOfScreensQueued);
   });
@@ -83,6 +70,7 @@
     screenID = screen.id;
     screenName = screen.name;
     screenDescription = screen.description;
+    screenReply = screen.reply;
 
     // Initialize form data with default values
     formData = {};
@@ -93,8 +81,8 @@
       } else if (isNumberOption(option)) {
         formData[key] = option.defaultValue ?? option.min;
       } else if (isStringOption(option)) {
-        if (option.allowedValues.length > 0) {
-          formData[key] = option.defaultValue || option.allowedValues[0];
+        if ((option.allowedValues?.length ?? 0) > 0) {
+          formData[key] = option.defaultValue || option.allowedValues![0];
         } else {
           formData[key] = option.defaultValue ?? '';
         }
@@ -108,11 +96,17 @@
     formData[id] = value;
   }
 
+  let screenReply:
+    | ((result: Record<string, string | number | boolean>) => void | Promise<void>)
+    | undefined;
+
   function handleSubmit() {
-    window.electronAPI.app.inputSend(
-      screenID!!,
-      JSON.parse(JSON.stringify(formData))
-    );
+    const data = JSON.parse(JSON.stringify(formData));
+    if (screenReply) {
+      void screenReply(data);
+    } else {
+      window.electronAPI.app.inputSend(screenID!!, data);
+    }
     console.log('Submitted data:', formData);
     closeModal();
   }
@@ -132,6 +126,7 @@
     screenID = undefined;
     screenName = undefined;
     screenDescription = undefined;
+    screenReply = undefined;
     formData = {};
 
     // Process next screen if available
@@ -143,6 +138,7 @@
         screenID = screen.id;
         screenName = screen.name;
         screenDescription = screen.description;
+        screenReply = screen.reply;
 
         // Initialize form data for next screen
         formData = {};
@@ -153,8 +149,8 @@
           } else if (isNumberOption(option)) {
             formData[key] = option.defaultValue ?? option.min;
           } else if (isStringOption(option)) {
-            if (option.allowedValues.length > 0) {
-              formData[key] = option.defaultValue || option.allowedValues[0];
+            if ((option.allowedValues?.length ?? 0) > 0) {
+              formData[key] = option.defaultValue || option.allowedValues![0];
             } else {
               formData[key] = option.defaultValue ?? '';
             }
@@ -167,7 +163,7 @@
   }
 
   function getInputType(
-    option: ConfigurationOption
+    option: ConfigurationOptionWire
   ): 'text' | 'password' | 'number' | 'range' | 'select' | 'file' | 'folder' {
     if (isStringOption(option)) {
       if (option.allowedValues && option.allowedValues.length > 0)
@@ -183,17 +179,20 @@
     return 'text';
   }
 
-  function getInputValue(key: string, option: ConfigurationOption) {
+  function getInputValue(key: string, option: ConfigurationOptionWire) {
     const value = formData[key];
     if (isBooleanOption(option)) return undefined; // Handled by CheckboxModal
     return value;
   }
 
   function getInputOptions(
-    option: ConfigurationOption
+    option: ConfigurationOptionWire
   ): { id: string; name: string }[] {
     if (isStringOption(option)) {
-      return option.allowedValues.map((value) => ({ id: value, name: value }));
+      return (option.allowedValues ?? []).map((value) => ({
+        id: value,
+        name: value,
+      }));
     }
     return [];
   }
@@ -265,7 +264,7 @@
             <!-- Action buttons -->
             {#each Object.keys(screenRendering) as key}
               {#if isActionOption(screenRendering[key])}
-                {@const actionOption = screenRendering[key] as ActionOption}
+                {@const actionOption = screenRendering[key]}
                 <ButtonModal
                   text={actionOption.buttonText || 'Run'}
                   variant="secondary"

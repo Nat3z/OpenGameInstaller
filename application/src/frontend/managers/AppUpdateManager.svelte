@@ -1,30 +1,46 @@
 <script lang="ts">
   import core from '@/frontend/lib/core';
+  import { addonServer, findAddonsSupportingStorefront } from '@/frontend/utils';
   import { tryCatch } from '@/frontend/lib/core/tryCatch';
   import { updatesManager } from '@/frontend/states.svelte';
 
-  document.addEventListener('all-addons-started', () => {
-    // clear the app updates
-    updatesManager.clearAppUpdates();
+  let updateCheckRunId = 0;
+
+  document.addEventListener('addon-runtime-ready', () => {
     checkForAppUpdates();
-    console.log('checking for app updates');
   });
 
   async function checkForAppUpdates() {
+    const runId = ++updateCheckRunId;
+    // clear the app updates every time the addon runtime comes up, then repopulate
+    updatesManager.clearAppUpdates();
+    console.log('checking for app updates');
+
     const library = await core.library.getAllApps();
     for (const app of library) {
       tryCatch(async () => {
-        const update: { available: boolean; version: string } =
-          await core.ipc.safeFetch('checkForUpdates', {
+        const addons = await findAddonsSupportingStorefront(
+          app.storefront,
+          'check-for-updates'
+        );
+        if (addons.length === 0) return undefined;
+        if (addons.length > 1) {
+          throw new Error('Multiple clients found to serve this storefront');
+        }
+        const update = (await addonServer
+          .addon(addons[0].id)
+          .checkForUpdates({
             appID: app.appID,
             storefront: app.storefront,
             currentVersion: app.version,
-          });
+          })) as { available: boolean; version: string };
         if (update.available) {
           return { available: true, version: update.version };
         }
         return undefined;
       }).then((result) => {
+        if (runId !== updateCheckRunId) return;
+
         if (result.error !== null) {
           console.error(
             'Error checking for updates for app',

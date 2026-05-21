@@ -1,5 +1,5 @@
 {
-  "name": "client-kit",
+  "name": "@ogi-sdk/client-kit",
   "type": "module",
   "version": "1.0.0",
   "exports": {
@@ -13,10 +13,11 @@
   "devDependencies": {
     "@types/bun": "latest",
     "@types/ws": "^8.18.1",
-    "tsdown": "^0.22.0",
-    "@ogi-sdk/addon-server": "workspace:*"
+    "tsdown": "^0.22.0"
   },
   "scripts": {
+    "generate:addon-proxy": "bun scripts/generate-addon-proxy.ts",
+    "prebuild": "bun run generate:addon-proxy",
     "build": "tsdown --config tsdown.config.js",
     "typecheck": "tsc --noEmit"
   },

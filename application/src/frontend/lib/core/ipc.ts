@@ -1,133 +1,58 @@
-interface ConsumableRequest {
-  consume?: 'json' | 'text';
-  onProgress?: (progress: number) => void;
-  onLogs?: (logs: string[]) => void;
-  onFailed?: (error: string) => void;
-  onTaskStarted?: (taskID: string) => void;
-}
-export async function safeFetch(
-  method: string,
-  params: any,
-  options: ConsumableRequest = { consume: 'json' }
-) {
-  console.log(method, params);
-  return new Promise<any>((resolve, reject) => {
-    let settled = false;
-    let failedNotified = false;
-    // remove the functions on the options object
-    const fetchOptions = { ...options };
-    delete fetchOptions.consume;
-    delete fetchOptions.onProgress;
-    delete fetchOptions.onLogs;
-    delete fetchOptions.onFailed;
+import { Connection } from '@ogi-sdk/client-kit';
+import { getConfigClientOption } from '@/frontend/lib/config/client';
 
-    // stringify then parse the params object to get rid of any bad json props
-    const stringifiedParams = JSON.stringify(params);
-    const parsedParams = JSON.parse(stringifiedParams);
-    window.electronAPI.app.request(method, parsedParams).then((response) => {
-      if (response.error) {
-        if (!settled) {
-          settled = true;
-          reject(response.error);
+export let addonServer = connectClientSdk();
+
+export type AddonInfo = {
+  id: string;
+  name: string;
+  eventsAvailable: string[];
+  storefronts?: unknown;
+  configTemplate?: unknown;
+  [key: string]: unknown;
+};
+
+export async function queryConnectedAddons<T = AddonInfo>() {
+  const response = await addonServer.request('query-connected-addons', {
+    type: 'addons',
+  });
+  if (response.statusError) throw new Error(response.statusError);
+  return response.args.addons as T[];
+}
+export function reconnectClientSdk(): void {
+  addonServer = connectClientSdk();
+}
+export function connectClientSdk(): Connection {
+  let server = new Connection({
+    url:
+      (
+        getConfigClientOption('developer') as {
+          clientSdkUrl: string | undefined;
         }
-        return;
-      }
-      if (response.taskID) {
-        const taskID = response.taskID;
-        if (options.onTaskStarted) options.onTaskStarted(taskID);
-        // if the task is deferred, we should poll the task until it's done.
-        const deferInterval = setInterval(async () => {
-          if (settled) {
-            clearInterval(deferInterval);
-            return;
-          }
-          const taskResponse = await window.electronAPI.app.request('getTask', {
-            taskID,
-          });
-          if (taskResponse.status === 404) {
-            if (!settled) {
-              settled = true;
-              reject('Task not found when deferring.');
-            }
-            console.log('Task failed');
-            if (options.onFailed)
-              options.onFailed('Task not found when deferring.');
-            clearInterval(deferInterval);
-          } else if (taskResponse.status === 410) {
-            if (!settled) {
-              settled = true;
-              reject('Addon is no longer connected');
-            }
-            if (options.onFailed)
-              options.onFailed('Addon is no longer connected');
-            clearInterval(deferInterval);
-          } else if (taskResponse.status !== 200) {
-            console.log('Task failed', taskResponse);
-            if (options.onFailed && !failedNotified)
-              options.onFailed(taskResponse.error ?? 'Task failed');
-            failedNotified = true;
-            clearInterval(deferInterval);
-            if (!settled) {
-              settled = true;
-              reject(taskResponse.error ?? 'Task failed');
-            }
-            return;
-          }
-          if (
-            taskResponse.data.resolved ||
-            (taskResponse.data && taskResponse.data.data !== undefined)
-          ) {
-            clearInterval(deferInterval);
-            if (!settled) {
-              settled = true;
-              if (taskResponse.data.data === undefined) {
-                return resolve(undefined);
-              }
-              if (
-                (!options || !options.consume || options.consume === 'json') &&
-                taskResponse.data.data
-              )
-                return resolve(
-                  JSON.parse(JSON.stringify(taskResponse.data.data))
-                );
-              else if (options.consume === 'text')
-                return resolve(taskResponse.data.data);
-              else throw new Error('Invalid consume type');
-            }
-          }
-          if (taskResponse.data) {
-            // Task is still running
-            const taskData: {
-              progress: number;
-              logs: string[];
-              failed: string | undefined;
-            } = taskResponse.data;
-            if (options.onProgress && taskData.progress !== undefined)
-              options.onProgress(taskData.progress);
-            if (options.onLogs && taskData.logs !== undefined)
-              options.onLogs(taskData.logs);
-            if (taskData.failed) {
-              if (options.onFailed && !failedNotified) {
-                failedNotified = true;
-                options.onFailed(taskData.failed);
-              }
-              clearInterval(deferInterval);
-              if (!settled) {
-                settled = true;
-                reject(taskData.failed);
-              }
-            }
-          }
-        }, 50);
-      } else {
-        if (!settled) {
-          settled = true;
-          if (!options || !options.consume || options.consume === 'json')
-            return resolve(response.data);
-          else if (options.consume === 'text') return resolve(response.data);
-          else throw new Error('Invalid consume type');
-        }
-      }
-    });
+      ).clientSdkUrl ?? 'ws://127.0.0.1:7654',
+  });
+  initialize(server);
+  return server;
+}
+
+function initialize(server: Connection) {
+  server.on('notification', (notification) => {
+    document.dispatchEvent(
+      new CustomEvent('new-notification', { detail: notification })
+    );
+  });
+
+  server.on('input-asked', ({ config, name, description, reply }) => {
+    document.dispatchEvent(
+      new CustomEvent('input-asked', {
+        detail: {
+          id: Math.random().toString(36).substring(7),
+          config,
+          name,
+          description,
+          reply,
+        },
+      })
+    );
   });
 }

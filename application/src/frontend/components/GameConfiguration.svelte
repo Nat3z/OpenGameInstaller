@@ -2,11 +2,11 @@
   import type { LibraryInfo } from 'ogi-addon';
   import {
     ConfigurationBuilder,
-    type BooleanOption,
     type ConfigurationFile,
-    type ConfigurationOption,
-    type NumberOption,
-    type StringOption,
+    type ConfigurationOptionWire,
+    isBooleanOption,
+    isNumberOption,
+    isStringOption,
   } from 'ogi-addon/config';
   import { createNotification, currentDownloads } from '@/frontend/store';
   import { appUpdates } from '@/frontend/states.svelte';
@@ -34,20 +34,6 @@
       platform = os;
     });
   });
-
-  function isStringOption(option: ConfigurationOption): option is StringOption {
-    return option.type === 'string';
-  }
-
-  function isNumberOption(option: ConfigurationOption): option is NumberOption {
-    return option.type === 'number';
-  }
-
-  function isBooleanOption(
-    option: ConfigurationOption
-  ): option is BooleanOption {
-    return option.type === 'boolean';
-  }
 
   let screenRendering: ConfigurationFile = new ConfigurationBuilder()
     .addStringOption((option) =>
@@ -87,8 +73,8 @@
       } else if (isNumberOption(option)) {
         formData[key] = option.defaultValue ?? option.min;
       } else if (isStringOption(option)) {
-        if (option.allowedValues.length > 0) {
-          formData[key] = option.defaultValue || option.allowedValues[0];
+        if ((option.allowedValues?.length ?? 0) > 0) {
+          formData[key] = option.defaultValue || option.allowedValues![0];
         } else {
           formData[key] = option.defaultValue ?? '';
         }
@@ -172,7 +158,7 @@
   }
 
   function getInputType(
-    option: ConfigurationOption
+    option: ConfigurationOptionWire
   ): 'text' | 'password' | 'number' | 'range' | 'select' | 'file' | 'folder' {
     if (isStringOption(option)) {
       if (option.allowedValues && option.allowedValues.length > 0)
@@ -188,15 +174,15 @@
     return 'text';
   }
 
-  function getInputValue(key: string, option: ConfigurationOption) {
+  function getInputValue(key: string, option: ConfigurationOptionWire) {
     const value = formData[key];
     if (isBooleanOption(option)) return undefined; // Handled by CheckboxModal
     return value;
   }
 
-  function getInputOptions(option: ConfigurationOption): string[] {
+  function getInputOptions(option: ConfigurationOptionWire): string[] {
     if (isStringOption(option)) {
-      return option.allowedValues;
+      return option.allowedValues ?? [];
     }
     return [];
   }

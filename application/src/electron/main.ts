@@ -2,7 +2,6 @@ import { join } from 'path';
 import { quote as shellQuote } from 'shell-quote';
 import {
   registerInstanceBridgeHandlers,
-  registerAddonServerUIHandlers,
   server,
   port,
   type LaunchForwardPayload,
@@ -386,11 +385,6 @@ export function sendAskForInput(
   screenInputCallbacks.set(id, callback);
 }
 
-registerAddonServerUIHandlers({
-  onInputAsked: sendAskForInput,
-  onNotification: sendNotification,
-});
-
 /**
  * Single-window flow for Steam Deck / Game Mode: one BrowserWindow shows splash first, then the main app.
  * This avoids Steam focusing a separate splash window and leaving the main window black.
@@ -471,6 +465,7 @@ async function onMainAppReady() {
     await checkForAddonUpdates(mainWindow);
   }
   sendIPCMessage('all-addons-started');
+  sendIPCMessage('addon-runtime-ready');
 
   // Register process-wide listeners only once
   if (!listenersRegistered) {

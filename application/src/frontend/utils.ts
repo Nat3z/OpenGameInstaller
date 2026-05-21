@@ -1,6 +1,7 @@
 export * from '@/frontend/lib/config/client';
 export * from '@/frontend/lib/core/fs';
 export * from '@/frontend/lib/core/ipc';
+export * from '@/frontend/lib/core/addons';
 export * from '@/frontend/lib/downloads/events';
 export * from '@/frontend/lib/downloads/lifecycle';
 export * from '@/frontend/lib/downloads/pause-resume';

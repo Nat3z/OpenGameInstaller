@@ -1,6 +1,6 @@
 import type { SearchResult, LibraryInfo } from 'ogi-addon';
 import { createNotification, deferredTasks } from '@/frontend/store';
-import { safeFetch } from '@/frontend/lib/core/ipc';
+import { addonServer } from '@/frontend/lib/core/ipc';
 
 export type SearchResultWithAddon = SearchResult & {
   addonSource: string;
@@ -57,8 +57,7 @@ export async function runTask(
     };
   }
 
-  const response = await safeFetch('runTask', args, {
-    consume: 'json',
+  const response = await addonServer.addon(result.addonSource, {
     onTaskStarted: (newTaskId: string) => {
       taskID = newTaskId;
       deferredTasks.update((tasks) => [
@@ -106,7 +105,7 @@ export async function runTask(
         message: error,
       });
     },
-  });
+  }).taskRun(args);
 
   deferredTasks.update((tasks) => tasks.filter((t) => t.id !== taskID));
   createNotification({

@@ -6,8 +6,7 @@ import {
   type FailedSetup,
   type DownloadStatusAndInfo,
 } from '@/frontend/store';
-// safeFetch not used here; setup is executed via runSetupApp
-import type { EventListenerTypes } from 'ogi-addon';
+import type { SetupCommandData } from 'ogi-addon';
 import {
   unrarAndReturnOutputDir,
   unzipAndReturnOutputDir,
@@ -73,7 +72,7 @@ export function removeFailedSetup(setupId: string) {
 
 export function saveFailedSetup(setupInfo: {
   downloadInfo: DownloadStatusAndInfo;
-  setupData: Parameters<EventListenerTypes['setup']>[0];
+  setupData: SetupCommandData;
   error: string;
   should: 'call-addon' | 'call-unrar' | 'call-unzip';
 }) {

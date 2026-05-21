@@ -1,397 +1,86 @@
-import { WebSocket, type RawData } from 'ws';
+import { WebSocket } from 'ws';
 import { EventResponseSocket, randomMessageId } from '@ogi-sdk/connect';
-import type { WebsocketMessage } from '@ogi-sdk/connect';
+import type {
+  AddonClientToServerEventArgs,
+  AddonClientToServerEventName,
+  AddonClientToServerWebsocketMessage,
+  AddonNotificationMessage,
+  AddonProtocolEventListenerTypes,
+  AddonSDKLifecycleEventListenerTypes,
+  AddonServerToClientWebsocketMessage,
+  BasicLibraryInfo,
+  CatalogResponse,
+  LibraryInfo,
+  OGIAddonConfiguration,
+  OGIAddonSDKEventListener,
+  SearchResult,
+  SetupResponse,
+  StoreData,
+  AddonTaskRunEventArgs,
+} from '@ogi-sdk/connect';
 import events from 'node:events';
 import { ConfigurationBuilder } from './config/ConfigurationBuilder';
-import type { ConfigurationFile } from './config/ConfigurationBuilder';
 import { Configuration, DefiniteConfig } from './config/Configuration';
 import EventResponse from './EventResponse';
-import type { SearchResult } from './SearchEngine';
 import Fuse, { IFuseOptions } from 'fuse.js';
 
-/**
- * Exposed events that the programmer can use to listen to and emit events.
- */
-export type OGIAddonEvent =
-  | 'connect'
-  | 'disconnect'
-  | 'configure'
-  | 'authenticate'
-  | 'search'
-  | 'setup'
-  | 'library-search'
-  | 'game-details'
-  | 'exit'
-  | 'check-for-updates'
-  | 'request-dl'
-  | 'catalog'
-  | 'launch-app';
-
-/**
- * The events that the client can send to the server and are handled by the server.
- */
-export type OGIAddonClientSentEvent =
-  | 'response'
-  | 'authenticate'
-  | 'configure'
-  | 'defer-update'
-  | 'notification'
-  | 'input-asked'
-  | 'get-app-details'
-  | 'search-app-name'
-  | 'flag'
-  | 'task-update';
-
-/**
- * The events that the server sends to the client
- * This is the events that the server can send to the client and are handled by the client.
- */
-export type OGIAddonServerSentEvent =
-  | 'authenticate'
-  | 'configure'
-  | 'config-update'
-  | 'launch-app'
-  | 'search'
-  | 'setup'
-  | 'response'
-  | 'library-search'
-  | 'check-for-updates'
-  | 'task-run'
-  | 'game-details'
-  | 'request-dl'
-  | 'catalog';
 export { ConfigurationBuilder, Configuration, EventResponse };
 export { extraction };
-export type { SearchResult };
 const defaultPort = 7654;
 import pjson from '../package.json';
 import { z } from 'zod';
 import { extraction } from './extraction';
 export const VERSION = pjson.version;
 
-export interface ClientToServerEventArgs {
-  response: any;
-  authenticate: {
-    secret: string;
-    ogiVersion: string;
-  } & OGIAddonConfiguration;
-  configure: ConfigurationFile;
-  'defer-update': {
-    logs: string[];
-    progress: number;
-    deferID: string;
-    failed: string | undefined;
-  };
-  notification: Notification;
-  'input-asked': {
-    config: ConfigurationFile;
-    name: string;
-    description: string;
-  };
-  'task-update': {
-    id: string;
-    progress: number;
-    logs: string[];
-    finished: boolean;
-    failed: string | undefined;
-  };
-  'get-app-details': {
-    appID: number;
-    storefront: string;
-  };
-  'search-app-name': {
-    query: string;
-    storefront: string;
-  };
-  flag: {
-    flag: string;
-    value: string | string[];
-  };
-}
-
-export type BasicLibraryInfo = {
-  name: string;
-  capsuleImage: string;
-  appID: number;
-  storefront: string;
-};
-
-export interface CatalogSection {
-  name: string;
-  description: string;
-  listings: BasicLibraryInfo[];
-}
-
-export interface CatalogCarouselItem {
-  name: string;
-  description: string;
-  carouselImage: string;
-  fullBannerImage?: string;
-  appID?: number;
-  storefront?: string;
-  capsuleImage?: string;
-}
-
-export interface CatalogWithCarousel {
-  sections: Record<string, CatalogSection>;
-  carousel?: Record<string, CatalogCarouselItem> | CatalogCarouselItem[];
-}
-
-export type CatalogResponse =
-  | Record<string, CatalogSection>
-  | CatalogWithCarousel;
-
-/**
- * UMU ID format: 'steam:${number}' or 'umu:${string | number}'
- * - steam:${number} → maps to umu-${number} for Steam games
- * - umu:${string | number} → maps to umu-${string | number} for non-Steam games
- */
-export type UmuId = `steam:${number}` | `umu:${string | number}`;
-
-export type SetupEventResponse = Omit<
+export type {
+  AddonClientToServerEventArgs,
+  AddonClientToServerEventName,
+  AddonClientToServerWebsocketMessage,
+  AddonNotificationMessage,
+  AddonServerToClientEventName,
+  AddonServerToClientWebsocketMessage,
+  BasicLibraryInfo,
+  CatalogCarouselItem,
+  CatalogResponse,
+  CatalogSection,
+  CatalogWithCarousel,
+  ConfigurationFile,
+  ConfigurationOptionType,
+  ConfigurationOptionWire,
   LibraryInfo,
-  | 'capsuleImage'
-  | 'coverImage'
-  | 'name'
-  | 'appID'
-  | 'storefront'
-  | 'addonsource'
-  | 'titleImage'
-> & {
-  redistributables?: {
-    name: string;
-    path: string;
-  }[];
-  /**
-   * UMU Proton integration configuration
-   */
-  umu?: {
-    /**
-     * UMU ID for the game. Format: 'steam:${number}' or 'umu:${string | number}'
-     * - steam:${number} → maps to umu-${number} for Steam games
-     * - umu:${string | number} → maps to umu-${string | number} for non-Steam games
-     */
-    umuId: UmuId;
-    /**
-     * Optional DLL overrides. Can be WINEDLLOVERRIDES-style (e.g. "dinput8=n,b") or bare DLL names.
-     * Bare names get "=n,b" inferred; entries that already include "=..." are used as-is.
-     */
-    dllOverrides?: string[];
-    /**
-     * Optional PROTONPATH override to use for UMU launches.
-     * Omit this unless you absolutely need a specific Proton build/path.
-     */
-    protonVersion?: string;
-    /**
-     * Optional store identifier for protonfixes (e.g., 'gog', 'egs', 'none')
-     */
-    store?: string;
-    /**
-     * Cached Steam shortcut app ID after adding UMU game to Steam (avoids re-adding on each launch)
-     */
-    steamShortcutId?: number;
-  };
-};
+  OGIAddonConfiguration,
+  OGIAddonSDKEventListener,
+  SearchResult,
+  SetupResponse,
+  SetupEventResponse,
+  StoreData,
+  UmuId,
+  SetupCommandData,
+  AddonProtocolEventListenerTypes,
+  AddonSDKLifecycleEventListenerTypes,
+  AddonServerHostEventListeners,
+  AddonServerHostEventName,
+  AddonServerLifecycleEvent,
+} from '@ogi-sdk/connect';
 
-export interface EventListenerTypes {
-  /**
-   * This event is emitted when the addon connects to the OGI Addon Server. Addon does not need to resolve anything.
-   * @param event
-   * @returns
-   */
-  connect: (event: EventResponse<void>) => void;
-
-  /**
-   * This event is emitted when the client requests for the addon to disconnect. Addon does not need to resolve this event, but we recommend `process.exit(0)` so the addon can exit gracefully instead of by force by the addon server.
-   * @param reason
-   * @returns
-   */
-  disconnect: (reason: string) => void;
-  /**
-   * This event is emitted when the client requests for the addon to configure itself. Addon should resolve the event with the internal configuration. (See ConfigurationBuilder)
-   * @param config
-   * @returns
-   */
-  configure: (config: ConfigurationBuilder) => ConfigurationBuilder;
-  /**
-   * This event is called when the client provides a response to any event. This should be treated as middleware.
-   * @param response
-   * @returns
-   */
-  response: (response: any) => void;
-
-  /**
-   * This event is called when the client requests for the addon to authenticate itself. You don't need to provide any info.
-   * @param config
-   * @returns
-   */
-  authenticate: (config: any) => void;
-  /**
-   * This event is emitted when the client requests for a torrent/direct download search to be performed. Addon is given the gameID (could be a steam appID or custom store appID), along with the storefront type. Addon should resolve the event with the search results. (See SearchResult)
-   * @param query
-   * @param event
-   * @returns
-   */
-  search: (
-    query: {
-      storefront: string;
-      appID: number;
-    } & (
-      | {
-          for: 'game' | 'task' | 'all';
-        }
-      | {
-          for: 'update';
-          libraryInfo: LibraryInfo;
-        }
-    ),
-    event: EventResponse<SearchResult[]>
-  ) => void;
-  /**
-   * This event is emitted when the client requests for app setup to be performed. Addon should resolve the event with the metadata for the library entry. (See LibraryInfo)
-   * @param data
-   * @param event
-   * @returns
-   */
-  setup: (
-    data: {
-      path: string;
-      type: 'direct' | 'torrent' | 'magnet' | 'empty';
-      name: string;
-      usedRealDebrid: boolean;
-      clearOldFilesBeforeUpdate?: boolean;
-      multiPartFiles?: {
-        name: string;
-        downloadURL: string;
-      }[];
-      appID: number;
-      storefront: string;
-      manifest?: Record<string, unknown>;
-    } & (
-      | {
-          for: 'game';
-        }
-      | {
-          for: 'update';
-          currentLibraryInfo: LibraryInfo;
-        }
-    ),
-    event: EventResponse<SetupEventResponse>
-  ) => void;
-
-  /**
-   * This event is emitted when the client requires for a search to be performed. Input is the search query.
-   * @param query
-   * @param event
-   * @returns
-   */
-  'library-search': (
-    query: string,
-    event: EventResponse<BasicLibraryInfo[]>
-  ) => void;
-
-  /**
-   * This event is emitted when the client requests for a game details to be fetched. Addon should resolve the event with the game details. This is used to generate a store page for the game.
-   * @param appID
-   * @param event
-   * @returns
-   */
-  'game-details': (
-    details: { appID: number; storefront: string },
-    event: EventResponse<StoreData | undefined>
-  ) => void;
-
-  /**
-   * This event is emitted when the client requests for the addon to exit. Use this to perform any cleanup tasks, ending with a `process.exit(0)`.
-   * @returns
-   */
-  exit: () => void;
-
-  /**
-   * This event is emitted when the client requests for a download to be performed with the 'request' type. Addon should resolve the event with a SearchResult containing the actual download info.
-   * @param appID
-   * @param info
-   * @param event
-   * @returns
-   */
-  'request-dl': (
-    appID: number,
-    info: SearchResult,
-    event: EventResponse<SearchResult>
-  ) => void;
-
-  /**
-   * This event is emitted when the client requests for a catalog to be fetched. Addon should resolve the event with the catalog.
-   * @param event
-   * @returns
-   */
-  catalog: (event: Omit<EventResponse<CatalogResponse>, 'askForInput'>) => void;
-
-  /**
-   * This event is emitted when the client requests for an addon to check for updates. Addon should resolve the event with the update information.
-   * @param data
-   * @param event
-   * @returns
-   */
-  'check-for-updates': (
-    data: { appID: number; storefront: string; currentVersion: string },
-    event: EventResponse<
-      | {
-          available: true;
-          version: string;
-        }
-      | {
-          available: false;
-        }
-    >
-  ) => void;
-
-  /**
-   * This event is emitted when the client is going to launch an app. Addon should use this to perform any pre or post launch tasks.
-   * @param data {LibraryInfo} The library information for the app to be launched.
-   * @param launchType { 'pre' | 'post' } The type of launch task to perform.
-   * @param event {EventResponse<void>} The event response from the server.
-   */
-  'launch-app': (
-    data: { libraryInfo: LibraryInfo; launchType: 'pre' | 'post' },
-    event: EventResponse<void>
-  ) => void;
-}
-
-export interface StoreData {
-  name: string;
-  publishers: string[];
-  developers: string[];
-  appID: number;
-  releaseDate: string;
-  capsuleImage: string;
-  coverImage: string;
-  basicDescription: string;
-  description: string;
-  headerImage: string;
-  latestVersion: string;
-}
-export interface WebsocketMessageClient extends WebsocketMessage {
-  event: OGIAddonClientSentEvent;
-}
-export interface WebsocketMessageServer extends WebsocketMessage {
-  event: OGIAddonServerSentEvent;
-}
+/** @deprecated Use {@link AddonNotificationMessage}. */
+export type Notification = AddonNotificationMessage;
 
 /**
- * The configuration for the addon. This is used to identify the addon and provide information about it.
- * Storefronts is an array of names of stores that the addon supports.
+ * Addon SDK listener signatures. Protocol commands come from `addonProtocol` in
+ * `@ogi-sdk/connect`; lifecycle and builder-specific hooks are merged below.
  */
-export interface OGIAddonConfiguration {
-  name: string;
-  id: string;
-  description: string;
-  version: string;
-
-  author: string;
-  repository: string;
-  storefronts: string[];
-}
+export type EventListenerTypes = AddonSDKLifecycleEventListenerTypes<
+  EventResponse<unknown>
+> &
+  AddonProtocolEventListenerTypes<
+    EventResponse<unknown>,
+    'authenticate' | 'configure' | 'catalog'
+  > & {
+    authenticate: (config: unknown) => void;
+    configure: (config: ConfigurationBuilder) => ConfigurationBuilder;
+    catalog: (event: Omit<EventResponse<CatalogResponse>, 'askForInput'>) => void;
+  };
 
 /**
  * The main class for the OGI Addon. This class is used to interact with the OGI Addon Server. The OGI Addon Server provides a `--addonSecret` to the addon so it can securely connect.
@@ -413,7 +102,7 @@ export default class OGIAddon {
   public addonWSListener: OGIAddonWSListener;
   public addonInfo: OGIAddonConfiguration;
   public config: Configuration = new Configuration({});
-  private eventsAvailable: OGIAddonEvent[] = [];
+  private eventsAvailable: OGIAddonSDKEventListener[] = [];
   private registeredConnectEvent: boolean = false;
   private taskHandlers: Map<
     string,
@@ -435,10 +124,10 @@ export default class OGIAddon {
 
   /**
    * Register an event listener for the addon. (See EventListenerTypes)
-   * @param event {OGIAddonEvent}
-   * @param listener {EventListenerTypes[OGIAddonEvent]}
+   * @param event {OGIAddonSDKEventListener}
+   * @param listener {EventListenerTypes[OGIAddonSDKEventListener]}
    */
-  public on<T extends OGIAddonEvent>(
+  public on<T extends OGIAddonSDKEventListener>(
     event: T,
     listener: EventListenerTypes[T]
   ) {
@@ -456,7 +145,7 @@ export default class OGIAddon {
     }
   }
 
-  public emit<T extends OGIAddonEvent>(
+  public emit<T extends OGIAddonSDKEventListener>(
     event: T,
     ...args: Parameters<EventListenerTypes[T]>
   ) {
@@ -467,7 +156,7 @@ export default class OGIAddon {
    * Notify the client using a notification. Provide the type of notification, the message, and an ID.
    * @param notification {Notification}
    */
-  public notify(notification: Notification) {
+  public notify(notification: AddonNotificationMessage) {
     this.addonWSListener.send('notification', [notification]);
   }
 
@@ -769,7 +458,7 @@ export class SearchTool<T> {
 /**
  * Library Info is the metadata for a library entry after setting up a game.
  */
-export const ZodLibraryInfo = z.object({
+export const ZodLibraryInfo: z.ZodType<LibraryInfo> = z.object({
   name: z.string(),
   version: z.string(),
   cwd: z.string(),
@@ -812,44 +501,17 @@ export const ZodLibraryInfo = z.object({
     )
     .optional(),
 });
-export type LibraryInfo = z.infer<typeof ZodLibraryInfo>;
 
-/** Payload shape for server-sent `task-run` messages. */
-export type TaskRunMessageArgs = {
-  manifest?: Record<string, unknown>;
-  downloadPath?: string;
-  name?: string;
-  taskName?: string;
-  libraryInfo?: LibraryInfo;
-  deferID?: string;
-};
+export type { AddonTaskRunEventArgs as TaskRunMessageArgs } from '@ogi-sdk/connect';
 
-export interface Notification {
-  type: 'warning' | 'error' | 'info' | 'success';
-  message: string;
-  id: string;
-}
 class OGIAddonWSListener {
   private socket: WebSocket;
   private transport: EventResponseSocket<
-    WebsocketMessageServer,
-    WebsocketMessageClient
+    AddonServerToClientWebsocketMessage,
+    AddonClientToServerWebsocketMessage
   >;
   public eventEmitter: events.EventEmitter;
   public addon: OGIAddon;
-
-  private normalizeRawData(raw: RawData): string | Buffer {
-    if (typeof raw === 'string') {
-      return raw;
-    }
-    if (Buffer.isBuffer(raw)) {
-      return raw;
-    }
-    if (Array.isArray(raw)) {
-      return Buffer.concat(raw);
-    }
-    return Buffer.from(new Uint8Array(raw));
-  }
 
   constructor(ogiAddon: OGIAddon, eventEmitter: events.EventEmitter) {
     const secret = process.argv
@@ -878,7 +540,7 @@ class OGIAddonWSListener {
       console.log('OGI Addon Server Version:', VERSION);
 
       // Authenticate with OGI Addon Server
-      this.send('authenticate' as OGIAddonClientSentEvent, {
+      this.send('authenticate' as AddonClientToServerEventName, {
         ...this.addon.addonInfo,
         secret,
         ogiVersion: VERSION,
@@ -891,17 +553,11 @@ class OGIAddonWSListener {
       this.addon.config = new Configuration(configBuilder.build(true));
 
       // wait for the config-update to be received then send connect
-      const configListener = (raw: RawData) => {
-        const message = this.transport.parseMessage(this.normalizeRawData(raw));
-        if (!message) {
-          return;
-        }
-        if (this.transport.resolveIncomingResponse(message)) {
-          return;
-        }
-        if (message.event === 'config-update') {
+      const unsubscribeConfigListener = this.transport.on(
+        'config-update',
+        () => {
           console.log('Config update received');
-          this.socket.off('message', configListener);
+          unsubscribeConfigListener();
           this.eventEmitter.emit(
             'connect',
             new EventResponse<void>((screen, name, description) => {
@@ -909,8 +565,7 @@ class OGIAddonWSListener {
             })
           );
         }
-      };
-      this.socket.on('message', configListener);
+      );
     });
 
     this.socket.on('error', (error) => {
@@ -955,8 +610,8 @@ class OGIAddonWSListener {
           name,
           description,
         },
-      } as WebsocketMessageClient,
-      true
+      } as AddonClientToServerWebsocketMessage,
+      { expectResponse: true }
     );
     return response.args as U;
   }
@@ -965,209 +620,223 @@ class OGIAddonWSListener {
    * Registers the message receiver for the socket. This is used to receive messages from the server and handle them.
    */
   private registerMessageReceiver() {
-    this.socket.on('message', async (raw: RawData) => {
-      const message = this.transport.parseMessage(this.normalizeRawData(raw));
-      if (!message) {
-        return;
-      }
-      if (this.transport.resolveIncomingResponse(message)) {
-        return;
-      }
-      switch (message.event) {
-        case 'config-update':
-          const result = this.addon.config.updateConfig(
-            message.args as DefiniteConfig
-          );
-          if (!result[0]) {
-            this.respondToMessage(
-              message.id!!,
-              {
-                success: false,
-                error: result[1],
-              },
-              undefined
+    const events: AddonServerToClientWebsocketMessage['event'][] = [
+      'config-update',
+      'search',
+      'setup',
+      'library-search',
+      'game-details',
+      'check-for-updates',
+      'request-dl',
+      'catalog',
+      'task-run',
+      'launch-app',
+    ];
+
+    for (const event of events) {
+      this.transport.on(event, async (message) => {
+        switch (message.event) {
+          case 'config-update':
+            const result = this.addon.config.updateConfig(
+              message.args as DefiniteConfig
             );
-          } else {
-            this.respondToMessage(message.id!!, { success: true }, undefined);
+            if (!result[0]) {
+              this.respondToMessage(
+                message.id!!,
+                {
+                  success: false,
+                  error: result[1],
+                },
+                undefined
+              );
+            } else {
+              this.respondToMessage(message.id!!, { success: true }, undefined);
+            }
+            break;
+          case 'search':
+            await this.handleEventWithResponse<SearchResult[]>(
+              message,
+              (event) => this.eventEmitter.emit('search', message.args, event)
+            );
+            break;
+          case 'setup': {
+            let setupEvent = new EventResponse<SetupResponse>(
+              (screen, name, description) =>
+                this.userInputAsked(screen, name, description)
+            );
+            this.eventEmitter.emit('setup', message.args, setupEvent);
+            const interval = setInterval(() => {
+              if (setupEvent.resolved) {
+                clearInterval(interval);
+                return;
+              }
+              this.send('defer-update', {
+                logs: setupEvent.logs,
+                deferID:
+                  message.args as AddonClientToServerEventArgs['defer-update']['deferID'],
+                progress: setupEvent.progress,
+                failed: setupEvent.failed,
+              } as AddonClientToServerEventArgs['defer-update']);
+            }, 100);
+            const setupResult = await this.waitForEventToRespond(setupEvent);
+            this.respondToMessage(message.id!!, setupResult.data, setupEvent);
+            break;
           }
-          break;
-        case 'search':
-          await this.handleEventWithResponse<SearchResult[]>(message, (event) =>
-            this.eventEmitter.emit('search', message.args, event)
-          );
-          break;
-        case 'setup': {
-          let setupEvent = new EventResponse<SetupEventResponse>(
-            (screen, name, description) =>
-              this.userInputAsked(screen, name, description)
-          );
-          this.eventEmitter.emit('setup', message.args, setupEvent);
-          const interval = setInterval(() => {
-            if (setupEvent.resolved) {
-              clearInterval(interval);
-              return;
+          case 'library-search':
+            await this.handleEventWithResponse<BasicLibraryInfo[]>(
+              message,
+              (event) =>
+                this.eventEmitter.emit('library-search', message.args, event)
+            );
+            break;
+          case 'game-details':
+            await this.handleEventWithResponse<StoreData | undefined>(
+              message,
+              (event) =>
+                this.eventEmitter.emit('game-details', message.args, event),
+              {
+                requireListener: 'game-details',
+                noListenerError: 'No event listener for game-details',
+              }
+            );
+            break;
+          case 'check-for-updates':
+            await this.handleEventWithResponse<
+              { available: true; version: string } | { available: false }
+            >(message, (event) =>
+              this.eventEmitter.emit('check-for-updates', message.args, event)
+            );
+            break;
+          case 'request-dl':
+            let requestDLEvent = new EventResponse<SearchResult>(
+              (screen, name, description) =>
+                this.userInputAsked(screen, name, description)
+            );
+            if (this.eventEmitter.listenerCount('request-dl') === 0) {
+              this.respondToMessage(
+                message.id!!,
+                {
+                  error: 'No event listener for request-dl',
+                },
+                requestDLEvent
+              );
+              break;
             }
-            this.send('defer-update', {
-              logs: setupEvent.logs,
-              deferID:
-                message.args as ClientToServerEventArgs['defer-update']['deferID'],
-              progress: setupEvent.progress,
-              failed: setupEvent.failed,
-            } as ClientToServerEventArgs['defer-update']);
-          }, 100);
-          const setupResult = await this.waitForEventToRespond(setupEvent);
-          this.respondToMessage(message.id!!, setupResult.data, setupEvent);
-          break;
-        }
-        case 'library-search':
-          await this.handleEventWithResponse<BasicLibraryInfo[]>(
-            message,
-            (event) =>
-              this.eventEmitter.emit('library-search', message.args, event)
-          );
-          break;
-        case 'game-details':
-          await this.handleEventWithResponse<StoreData | undefined>(
-            message,
-            (event) =>
-              this.eventEmitter.emit('game-details', message.args, event),
-            {
-              requireListener: 'game-details',
-              noListenerError: 'No event listener for game-details',
+            const { appID, info } = message.args as {
+              appID: number;
+              info: SearchResult;
+            };
+            this.eventEmitter.emit(
+              'request-dl',
+              appID,
+              info,
+              requestDLEvent as EventResponse<SearchResult>
+            );
+            const requestDLResult =
+              await this.waitForEventToRespond(requestDLEvent);
+            if (requestDLEvent.failed) {
+              this.respondToMessage(message.id!!, undefined, requestDLEvent);
+              break;
             }
-          );
-          break;
-        case 'check-for-updates':
-          await this.handleEventWithResponse<
-            { available: true; version: string } | { available: false }
-          >(message, (event) =>
-            this.eventEmitter.emit('check-for-updates', message.args, event)
-          );
-          break;
-        case 'request-dl':
-          let requestDLEvent = new EventResponse<SearchResult>(
-            (screen, name, description) =>
-              this.userInputAsked(screen, name, description)
-          );
-          if (this.eventEmitter.listenerCount('request-dl') === 0) {
+            if (
+              requestDLEvent.data === undefined ||
+              requestDLEvent.data?.downloadType === 'request'
+            ) {
+              throw new Error(
+                'Request DL event did not return a valid result. Please ensure that the event does not resolve with another `request` download type.'
+              );
+            }
             this.respondToMessage(
               message.id!!,
-              {
-                error: 'No event listener for request-dl',
-              },
+              requestDLResult.data,
               requestDLEvent
             );
             break;
-          }
-          const { appID, info } = message.args as {
-            appID: number;
-            info: SearchResult;
-          };
-          this.eventEmitter.emit(
-            'request-dl',
-            appID,
-            info,
-            requestDLEvent as EventResponse<SearchResult>
-          );
-          const requestDLResult =
-            await this.waitForEventToRespond(requestDLEvent);
-          if (requestDLEvent.failed) {
-            this.respondToMessage(message.id!!, undefined, requestDLEvent);
-            break;
-          }
-          if (
-            requestDLEvent.data === undefined ||
-            requestDLEvent.data?.downloadType === 'request'
-          ) {
-            throw new Error(
-              'Request DL event did not return a valid result. Please ensure that the event does not resolve with another `request` download type.'
+          case 'catalog':
+            await this.handleEventWithResponseNoInput<CatalogResponse>(
+              message,
+              (event) => this.eventEmitter.emit('catalog', event)
             );
-          }
-          this.respondToMessage(
-            message.id!!,
-            requestDLResult.data,
-            requestDLEvent
-          );
-          break;
-        case 'catalog':
-          await this.handleEventWithResponseNoInput<CatalogResponse>(
-            message,
-            (event) => this.eventEmitter.emit('catalog', event)
-          );
-          break;
-        case 'task-run': {
-          let taskRunEvent = new EventResponse<void>(
-            (screen, name, description) =>
-              this.userInputAsked(screen, name, description)
-          );
-          const args = message.args as TaskRunMessageArgs;
+            break;
+          case 'task-run': {
+            let taskRunEvent = new EventResponse<void>(
+              (screen, name, description) =>
+                this.userInputAsked(screen, name, description)
+            );
+            const args = message.args as AddonTaskRunEventArgs;
 
-          // Check for taskName: first from args directly (from SearchResult), then from manifest.__taskName (for ActionOption)
-          const taskName =
-            args.taskName && typeof args.taskName === 'string'
-              ? args.taskName
-              : args.manifest && typeof args.manifest === 'object'
-                ? args.manifest.__taskName
-                : undefined;
+            // Check for taskName: first from args directly (from SearchResult), then from manifest.__taskName (for ActionOption)
+            const taskName =
+              args.taskName && typeof args.taskName === 'string'
+                ? args.taskName
+                : args.manifest && typeof args.manifest === 'object'
+                  ? args.manifest.__taskName
+                  : undefined;
 
-          if (
-            taskName &&
-            typeof taskName === 'string' &&
-            this.addon.hasTaskHandler(taskName)
-          ) {
-            // Use the registered task handler
-            const handler = this.addon.getTaskHandler(taskName)!;
-            const task = new Task(taskRunEvent);
-            try {
-              const interval = setInterval(() => {
-                if (taskRunEvent.resolved) {
-                  clearInterval(interval);
-                  return;
+            if (
+              taskName &&
+              typeof taskName === 'string' &&
+              this.addon.hasTaskHandler(taskName)
+            ) {
+              // Use the registered task handler
+              const handler = this.addon.getTaskHandler(taskName)!;
+              const task = new Task(taskRunEvent);
+              try {
+                const interval = setInterval(() => {
+                  if (taskRunEvent.resolved) {
+                    clearInterval(interval);
+                    return;
+                  }
+                  this.send('defer-update', {
+                    logs: taskRunEvent.logs,
+                    deferID: args.deferID ?? '',
+                    progress: taskRunEvent.progress,
+                    failed: taskRunEvent.failed,
+                  } as AddonClientToServerEventArgs['defer-update']);
+                }, 100);
+                const result = handler(task, {
+                  manifest: args.manifest || {},
+                  downloadPath: args.downloadPath || '',
+                  name: args.name || '',
+                  libraryInfo: args.libraryInfo,
+                });
+                // If handler returns a promise, wait for it
+                if (result instanceof Promise) {
+                  await result;
                 }
-                this.send('defer-update', {
-                  logs: taskRunEvent.logs,
-                  deferID: args.deferID ?? '',
-                  progress: taskRunEvent.progress,
-                  failed: taskRunEvent.failed,
-                } as ClientToServerEventArgs['defer-update']);
-              }, 100);
-              const result = handler(task, {
-                manifest: args.manifest || {},
-                downloadPath: args.downloadPath || '',
-                name: args.name || '',
-                libraryInfo: args.libraryInfo,
-              });
-              // If handler returns a promise, wait for it
-              if (result instanceof Promise) {
-                await result;
-              }
 
-              clearInterval(interval);
-            } catch (error) {
+                clearInterval(interval);
+              } catch (error) {
+                taskRunEvent.fail(
+                  error instanceof Error ? error.message : String(error)
+                );
+              }
+            } else {
+              // No handler found - fail the task
               taskRunEvent.fail(
-                error instanceof Error ? error.message : String(error)
+                taskName
+                  ? `No task handler registered for task name: ${taskName}`
+                  : 'No task name provided'
               );
             }
-          } else {
-            // No handler found - fail the task
-            taskRunEvent.fail(
-              taskName
-                ? `No task handler registered for task name: ${taskName}`
-                : 'No task name provided'
-            );
-          }
 
-          const taskRunResult = await this.waitForEventToRespond(taskRunEvent);
-          this.respondToMessage(message.id!!, taskRunResult.data, taskRunEvent);
-          break;
+            const taskRunResult =
+              await this.waitForEventToRespond(taskRunEvent);
+            this.respondToMessage(
+              message.id!!,
+              taskRunResult.data,
+              taskRunEvent
+            );
+            break;
+          }
+          case 'launch-app':
+            await this.handleEventWithResponse<void>(message, (event) =>
+              this.eventEmitter.emit('launch-app', message.args, event)
+            );
+            break;
         }
-        case 'launch-app':
-          await this.handleEventWithResponse<void>(message, (event) =>
-            this.eventEmitter.emit('launch-app', message.args, event)
-          );
-          break;
-      }
-    });
+      });
+    }
   }
 
   private waitForEventToRespond<T>(
@@ -1203,7 +872,7 @@ class OGIAddonWSListener {
    * If options.requireListener is set and that event has no listeners, responds with options.noListenerError and returns.
    */
   private async handleEventWithResponse<T>(
-    message: WebsocketMessageServer,
+    message: AddonServerToClientWebsocketMessage,
     emit: (event: EventResponse<T>) => void,
     options?: { requireListener: string; noListenerError: string }
   ): Promise<void> {
@@ -1230,7 +899,7 @@ class OGIAddonWSListener {
    * Same as handleEventWithResponse but for events that don't need userInputAsked (e.g. catalog).
    */
   private async handleEventWithResponseNoInput<T>(
-    message: WebsocketMessageServer,
+    message: AddonServerToClientWebsocketMessage,
     emit: (event: EventResponse<T>) => void
   ): Promise<void> {
     const event = new EventResponse<T>();
@@ -1250,26 +919,26 @@ class OGIAddonWSListener {
         id: messageID,
         args: response,
         statusError: originalEvent ? originalEvent.failed : undefined,
-      } as WebsocketMessageClient,
-      false
+      } as AddonClientToServerWebsocketMessage,
+      { expectResponse: false }
     );
     console.log('dispatched response to ' + messageID);
   }
 
   public async requestResponse<T>(
-    event: OGIAddonClientSentEvent,
-    args: ClientToServerEventArgs[OGIAddonClientSentEvent]
+    event: AddonClientToServerEventName,
+    args: AddonClientToServerEventArgs[AddonClientToServerEventName]
   ): Promise<T> {
     const response = await this.transport.send(
-      { event, args } as WebsocketMessageClient,
-      true
+      { event, args } as AddonClientToServerWebsocketMessage,
+      { expectResponse: true }
     );
     return response.args as T;
   }
 
   public send(
-    event: OGIAddonClientSentEvent,
-    args: ClientToServerEventArgs[OGIAddonClientSentEvent]
+    event: AddonClientToServerEventName,
+    args: AddonClientToServerEventArgs[AddonClientToServerEventName]
   ): string {
     const id = randomMessageId();
     void this.transport.send(
@@ -1277,8 +946,8 @@ class OGIAddonWSListener {
         event,
         args,
         id,
-      } as WebsocketMessageClient,
-      false
+      } as AddonClientToServerWebsocketMessage,
+      { expectResponse: false }
     );
     return id;
   }

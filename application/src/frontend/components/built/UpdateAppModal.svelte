@@ -1,8 +1,9 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import {
+    addonServer,
     fetchAddonsWithConfigure,
-    safeFetch,
+    findAddonsSupportingStorefront,
     startDownload,
     type SearchResultWithAddon,
   } from '@/frontend/utils';
@@ -102,14 +103,18 @@
     results = [];
 
     // Fetch game details for images
-    const response: StoreData | undefined = await safeFetch(
-      'gameDetails',
-      {
-        gameID: String(appID),
-        storefront,
-      },
-      { consume: 'json' }
+    const detailAddons = await findAddonsSupportingStorefront(
+      storefront,
+      'game-details'
     );
+    let response: StoreData | undefined;
+    for (const addon of detailAddons) {
+      response = (await addonServer.addon(addon.id).gameDetails({
+        appID,
+        storefront,
+      })) as StoreData | undefined;
+      if (response) break;
+    }
 
     gameData = response;
     loading = false;
@@ -134,18 +139,15 @@
       }
 
       searchPromises.push(
-        safeFetch(
-          'search',
-          {
+        (
+          addonServer.addon(addon.id).search({
             for: 'update',
-            addonID: addon.id,
             appID,
             storefront,
             libraryInfo: JSON.parse(JSON.stringify(libraryInfo)),
-          },
-          { consume: 'json' }
+          }) as Promise<SearchResult[]>
         )
-          .then((searchResults) => {
+          .then((searchResults = []) => {
             const mappedResults = searchResults.map((result: SearchResult) => {
               return {
                 ...result,
@@ -153,6 +155,7 @@
                 capsuleImage: gameData?.capsuleImage ?? '',
                 name: result.name,
                 addonSource: addon.id,
+                addonName: addon.name,
                 storefront: storefront,
               };
             });

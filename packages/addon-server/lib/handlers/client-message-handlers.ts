@@ -1,9 +1,8 @@
 import type {
-  ClientToServerEventArgs,
-  OGIAddonEvent,
-  StoreData,
-} from 'ogi-addon';
-import type { ConfigurationFile } from 'ogi-addon/config';
+  AddonClientToServerEventArgs,
+  OGIAddonSDKEventListener,
+} from '@ogi-sdk/connect';
+import type { ConfigurationFile, StoreData } from '@ogi-sdk/connect';
 import { DeferrableTask } from '../deffered';
 import {
   closeProtocolError,
@@ -16,7 +15,7 @@ import type { ClientMessageHandler, ClientMessageHandlers } from './types';
 const handleNotification: ClientMessageHandler = ({ server }, message) => {
   server.emit(
     'notification',
-    message.args as ClientToServerEventArgs['notification']
+    message.args as AddonClientToServerEventArgs['notification']
   );
 };
 
@@ -25,7 +24,7 @@ const handleAuthenticate: ClientMessageHandler = (context, message) => {
   clearTimeout(context.authenticationTimeout);
 
   const authenticateArgs =
-    message.args as ClientToServerEventArgs['authenticate'];
+    message.args as AddonClientToServerEventArgs['authenticate'];
   connection.addonInfo = authenticateArgs;
   if (
     config.securityCheck &&
@@ -56,8 +55,7 @@ const handleAuthenticate: ClientMessageHandler = (context, message) => {
 const handleConfigure: ClientMessageHandler = (context, message) => {
   if (!requireAuthenticated(context, 'config')) return;
 
-  context.connection.configTemplate =
-    message.args as ClientToServerEventArgs['configure'];
+  context.connection.configTemplate = message.args as ConfigurationFile;
 };
 
 const handleDeferUpdate: ClientMessageHandler = (context, message) => {
@@ -65,7 +63,7 @@ const handleDeferUpdate: ClientMessageHandler = (context, message) => {
   if (!message.args) return;
 
   const deferUpdateArgs =
-    message.args as ClientToServerEventArgs['defer-update'];
+    message.args as AddonClientToServerEventArgs['defer-update'];
   if (!deferUpdateArgs.deferID) {
     closeProtocolError(
       context,
@@ -98,7 +96,8 @@ const handleInputAsked: ClientMessageHandler = (context, message) => {
   if (!requireAuthenticated(context, 'input-asked')) return;
   if (!message.args) return;
 
-  const inputAskedArgs = message.args as ClientToServerEventArgs['input-asked'];
+  const inputAskedArgs =
+    message.args as AddonClientToServerEventArgs['input-asked'];
   if (
     !inputAskedArgs.config ||
     !inputAskedArgs.name ||
@@ -139,7 +138,8 @@ const handleInputAsked: ClientMessageHandler = (context, message) => {
 
 const handleTaskUpdate: ClientMessageHandler = (context, message) => {
   if (!requireAuthenticated(context, 'task-update')) return;
-  const taskUpdateArgs = message.args as ClientToServerEventArgs['task-update'];
+  const taskUpdateArgs =
+    message.args as AddonClientToServerEventArgs['task-update'];
   if (!taskUpdateArgs.id) {
     closeProtocolError(
       context,
@@ -179,8 +179,8 @@ const handleGetAppDetails: ClientMessageHandler = async (context, message) => {
   if (!requireAuthenticated(context, 'get-app-details')) return;
   if (!requireMessageId(context, 'get-app-details', message.id)) return;
 
-  const { appID, storefront }: ClientToServerEventArgs['get-app-details'] =
-    message.args as ClientToServerEventArgs['get-app-details'];
+  const { appID, storefront }: AddonClientToServerEventArgs['get-app-details'] =
+    message.args as AddonClientToServerEventArgs['get-app-details'];
   const clientsWithStorefront = getClientsSupporting(
     context,
     storefront,
@@ -210,8 +210,8 @@ const handleSearchAppName: ClientMessageHandler = async (context, message) => {
   if (!requireAuthenticated(context, 'search-app-name')) return;
   if (!requireMessageId(context, 'search-app-name', message.id)) return;
 
-  const { query, storefront }: ClientToServerEventArgs['search-app-name'] =
-    message.args as ClientToServerEventArgs['search-app-name'];
+  const { query, storefront }: AddonClientToServerEventArgs['search-app-name'] =
+    message.args as AddonClientToServerEventArgs['search-app-name'];
   const clientsWithStorefront = getClientsSupporting(
     context,
     storefront,
@@ -232,7 +232,7 @@ const handleSearchAppName: ClientMessageHandler = async (context, message) => {
 const handleFlag: ClientMessageHandler = (context, message) => {
   if (!requireAuthenticated(context, 'flag')) return;
 
-  const flagArgs = message.args as ClientToServerEventArgs['flag'];
+  const flagArgs = message.args as AddonClientToServerEventArgs['flag'];
   if (flagArgs.flag === 'events-available') {
     console.log(
       'Setting events-available to',
@@ -240,7 +240,8 @@ const handleFlag: ClientMessageHandler = (context, message) => {
       'for addon',
       context.connection.addonInfo!.id
     );
-    context.connection.eventsAvailable = flagArgs.value as OGIAddonEvent[];
+    context.connection.eventsAvailable =
+      flagArgs.value as OGIAddonSDKEventListener[];
   }
 };
 

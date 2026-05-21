@@ -1,4 +1,4 @@
-import type { OGIAddonEvent } from 'ogi-addon';
+import type { OGIAddonSDKEventListener } from '@ogi-sdk/connect';
 import type { HandlerContext } from './types';
 import { supportsStorefront } from '../lib';
 
@@ -40,7 +40,7 @@ export const requireMessageId = (
 export const getClientsSupporting = (
   { server }: HandlerContext,
   storefront: string,
-  event: OGIAddonEvent
+  event: OGIAddonSDKEventListener
 ) => {
   return Array.from(server.getConnections().values()).filter(
     (client) =>

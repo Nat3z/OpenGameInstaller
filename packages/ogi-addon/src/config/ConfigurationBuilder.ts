@@ -1,8 +1,23 @@
+import type {
+  ActionConfigurationOption,
+  BooleanConfigurationOption,
+  ConfigurationFile,
+  ConfigurationOptionType,
+  ConfigurationOptionWire,
+  NumberConfigurationOption,
+  StringConfigurationOption,
+} from '@ogi-sdk/connect';
 import z, { ZodError } from 'zod';
 
-export interface ConfigurationFile {
-  [key: string]: ConfigurationOption<string>;
-}
+export type {
+  ActionConfigurationOption,
+  BooleanConfigurationOption,
+  ConfigurationFile,
+  ConfigurationOptionType,
+  ConfigurationOptionWire,
+  NumberConfigurationOption,
+  StringConfigurationOption,
+} from '@ogi-sdk/connect';
 
 const configValidation = z.object({
   name: z.string().min(1),
@@ -10,27 +25,27 @@ const configValidation = z.object({
   description: z.string().min(1),
 });
 
-export function isStringOption<N extends string = string>(
-  option: ConfigurationOption<N>
-): option is StringOption<N> {
+export function isStringOption(
+  option: ConfigurationOptionWire
+): option is StringConfigurationOption {
   return option.type === 'string';
 }
 
-export function isNumberOption<N extends string = string>(
-  option: ConfigurationOption<N>
-): option is NumberOption<N> {
+export function isNumberOption(
+  option: ConfigurationOptionWire
+): option is NumberConfigurationOption {
   return option.type === 'number';
 }
 
-export function isBooleanOption<N extends string = string>(
-  option: ConfigurationOption<N>
-): option is BooleanOption<N> {
+export function isBooleanOption(
+  option: ConfigurationOptionWire
+): option is BooleanConfigurationOption {
   return option.type === 'boolean';
 }
 
-export function isActionOption<N extends string = string>(
-  option: ConfigurationOption<N>
-): option is ActionOption<N> {
+export function isActionOption(
+  option: ConfigurationOptionWire
+): option is ActionConfigurationOption {
   return option.type === 'action';
 }
 
@@ -115,21 +130,15 @@ export class ConfigurationBuilder<
           throw new ZodError(optionData.error.errors);
         }
 
-        config[option.name] = option;
+        config[option.name] = option as unknown as ConfigurationFile[string];
       } else {
-        config[option.name] = option;
+        config[option.name] = option as unknown as ConfigurationFile[string];
       }
     });
     return config;
   }
 }
 
-export type ConfigurationOptionType =
-  | 'string'
-  | 'number'
-  | 'boolean'
-  | 'action'
-  | 'unset';
 export class ConfigurationOption<N extends string = string> {
   public name: N = '' as N;
   public defaultValue: unknown = '';

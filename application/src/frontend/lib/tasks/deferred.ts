@@ -1,4 +1,5 @@
-import type { ResponseDeferredTask } from '@/electron/server/api/defer';
+import type { DeferredTaskSnapshot } from '@ogi-sdk/client-kit';
+import { addonServer } from '@/frontend/lib/core/ipc';
 import {
   deferredTasks,
   removedTasks,
@@ -7,35 +8,25 @@ import {
 
 export async function loadDeferredTasks(tasksToRemove: string[] = []) {
   try {
-    const response = await window.electronAPI.app.request('getAllTasks', {});
-
-    if (response.status === 200) {
-      const tasks = response.data as ResponseDeferredTask[];
-      deferredTasks.set(
-        tasks
-          .filter(
-            (task: ResponseDeferredTask) => !tasksToRemove.includes(task.id)
-          )
-          .map((task: ResponseDeferredTask) => ({
-            id: task.id,
-            name: `Task ${task.id}`,
-            description: 'Background task',
-            addonOwner: task.addonOwner,
-            status: task.finished
-              ? task.failed
-                ? 'error'
-                : 'completed'
-              : 'running',
-            progress: task.progress || 0,
-            failed: task.failed,
-            logs: task.logs || [],
-            timestamp: Date.now(),
-            duration: undefined,
-            error: task.failed || undefined,
-            type: 'other',
-          }))
-      );
-    }
+    const tasks = await addonServer.getDeferredTasks();
+    deferredTasks.set(
+      tasks
+        .filter((task: DeferredTaskSnapshot) => !tasksToRemove.includes(task.id))
+        .map((task: DeferredTaskSnapshot) => ({
+          id: task.id,
+          name: `Task ${task.id}`,
+          description: 'Background task',
+          addonOwner: task.addonOwner,
+          status: task.finished ? (task.failed ? 'error' : 'completed') : 'running',
+          progress: task.progress || 0,
+          failed: task.failed,
+          logs: task.logs || [],
+          timestamp: Date.now(),
+          duration: undefined,
+          error: task.failed || undefined,
+          type: 'other',
+        }))
+    );
   } catch (error) {
     console.error('Error loading deferred tasks:', error);
   }

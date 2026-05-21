@@ -65,6 +65,7 @@
     "parse-torrent": "^11.0.19",
     "real-debrid-js": "workspace:*",
     "@ogi-sdk/addon-server": "workspace:*",
+    "@ogi-sdk/client-kit": "workspace:*",
     "@ogi-sdk/executor": "workspace:*",
     "sanitize-html": "^2.17.0",
     "semver": "^7.7.3",

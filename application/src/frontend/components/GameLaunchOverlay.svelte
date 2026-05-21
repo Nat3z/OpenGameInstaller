@@ -6,7 +6,7 @@
     launchGameTrigger,
     launchOverlayPlayPageReady,
   } from '@/frontend/store';
-  import { safeFetch } from '@/frontend/utils';
+  import { runLaunchAppAddons } from '@/frontend/utils';
 
   interface Props {
     gameId: number;
@@ -67,10 +67,7 @@
         );
 
         try {
-          await safeFetch('launchApp', {
-            libraryInfo: libraryInfo,
-            launchType: hookType,
-          });
+          await runLaunchAppAddons(libraryInfo, hookType);
 
           status = 'success';
           console.log(`[GameLaunchOverlay] ${hookType}-launch hooks completed`);
@@ -104,10 +101,7 @@
         );
 
         try {
-          await safeFetch('launchApp', {
-            libraryInfo: libraryInfo,
-            launchType: 'pre',
-          });
+          await runLaunchAppAddons(libraryInfo, 'pre');
         } catch (error) {
           console.error('[GameLaunchOverlay] Pre-launch hooks failed:', error);
           status = 'error';
@@ -135,10 +129,7 @@
 
         let postLaunchError: string | null = null;
         try {
-          await safeFetch('launchApp', {
-            libraryInfo: libraryInfo,
-            launchType: 'post',
-          });
+          await runLaunchAppAddons(libraryInfo, 'post');
         } catch (error) {
           console.error('[GameLaunchOverlay] Post-launch hooks failed:', error);
           postLaunchError =

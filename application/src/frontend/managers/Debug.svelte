@@ -352,7 +352,7 @@
 
 {#if showEventsPerSec || showNotificationSideView}
   <div
-    class="fixed bottom-2 left-2 bg-black/25 text-white p-2 rounded-md pointer-events-none z-50 flex flex-col gap-0"
+    class="fixed bottom-2 left-2 bg-black/25 text-white p-2 rounded-md pointer-events-none z-10000 flex flex-col gap-0"
   >
     {#if showEventsPerSec}
       <p class="text-white">Events/sec: {Math.round(eventsPerSec)}</p>

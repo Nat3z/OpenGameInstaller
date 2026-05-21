@@ -8,10 +8,10 @@ import { get } from 'svelte/store';
 import { updateDownloadStatus } from '@/frontend/lib/downloads/lifecycle';
 import { saveFailedSetup } from '@/frontend/lib/recovery/failedSetups';
 import type {
-  SetupCommandData,
   LibraryInfo,
+  SetupCommandData,
   SetupEventResponse,
-} from 'ogi-addon';
+} from '@ogi-sdk/connect';
 import { addonServer } from '@/frontend/lib/core/ipc';
 import { updatesManager } from '@/frontend/states.svelte';
 import { getApp } from '@/frontend/lib/core/library';

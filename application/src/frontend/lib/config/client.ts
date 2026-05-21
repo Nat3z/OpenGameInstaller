@@ -1,5 +1,4 @@
-import type { OGIAddonConfiguration } from 'ogi-addon';
-import type { ConfigurationFile } from 'ogi-addon/config';
+import type { ConfigurationFile, OGIAddonConfiguration } from '@ogi-sdk/connect';
 import { addonServer, queryConnectedAddons } from '@/frontend/lib/core/ipc';
 
 export interface ConfigTemplateAndInfo extends OGIAddonConfiguration {

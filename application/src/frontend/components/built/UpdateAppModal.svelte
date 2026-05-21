@@ -8,7 +8,7 @@
     type SearchResultWithAddon,
   } from '@/frontend/utils';
   import { createNotification } from '@/frontend/store';
-  import type { SearchResult, StoreData } from 'ogi-addon';
+  import type { SearchResult, StoreData } from '@ogi-sdk/connect';
   import AddonPicture from '@/frontend/components/AddonPicture.svelte';
   import Modal from '@/frontend/components/modal/Modal.svelte';
   import TitleModal from '@/frontend/components/modal/TitleModal.svelte';

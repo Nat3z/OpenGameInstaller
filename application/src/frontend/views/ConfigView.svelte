@@ -3,8 +3,7 @@
   import { fly } from 'svelte/transition';
   import { quintOut } from 'svelte/easing';
   import { queryConnectedAddons, reconnectClientSdk } from '@/frontend/utils';
-  import type { ConfigurationFile } from 'ogi-addon/config';
-  import type { OGIAddonConfiguration } from 'ogi-addon';
+  import type { ConfigurationFile, OGIAddonConfiguration } from '@ogi-sdk/connect';
   import { addonUpdates, createNotification } from '@/frontend/store';
   import CommunityAddonsList from '@/frontend/views/CommunityAddonsList.svelte';
   import AddonPicture from '@/frontend/components/AddonPicture.svelte';

@@ -4,7 +4,7 @@
  */
 import { ipcMain } from 'electron';
 import { spawn, spawnSync } from 'child_process';
-import type { LibraryInfo } from 'ogi-addon';
+import type { LibraryInfo } from '@ogi-sdk/connect';
 import { isLinux } from '@/electron/handlers/helpers.app/platform.js';
 import {
   getSteamAppIdWithFallback,

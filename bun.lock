@@ -16,19 +16,15 @@
       "version": "3.0.12",
       "dependencies": {
         "@ctrl/qbittorrent": "^9.11.0",
-        "@electron/remote": "^2.1.3",
         "@ogi-sdk/addon-server": "workspace:*",
         "@ogi-sdk/client-kit": "workspace:*",
+        "@ogi-sdk/connect": "workspace:*",
         "@ogi-sdk/executor": "workspace:*",
-        "@types/cors": "^2.8.19",
         "@types/express": "^4.17.25",
         "all-debrid-js": "workspace:*",
         "axios": "^1.13.4",
-        "cors": "^2.8.6",
-        "create-torrent": "^6.1.0",
         "d3": "^7.9.0",
         "express": "^4.22.1",
-        "fuse.js": "^7.1.0",
         "node-datachannel": "^0.32.0",
         "ogi-addon": "workspace:*",
         "parse-torrent": "^11.0.19",
@@ -38,7 +34,6 @@
         "shell-quote": "^1.8.3",
         "utp-native": "^2.5.3",
         "webtorrent": "^2.8.5",
-        "ws": "^8.19.0",
         "zod": "^3.25.76",
       },
       "devDependencies": {
@@ -52,7 +47,6 @@
         "@types/semver": "^7.7.1",
         "@types/shell-quote": "^1.7.5",
         "@types/webtorrent": "^0.110.1",
-        "@types/ws": "^8.18.1",
         "concurrently": "^7.6.0",
         "debug": "^4.4.3",
         "electron": "^40.1.0",
@@ -126,6 +120,7 @@
     },
     "packages/connection": {
       "name": "@ogi-sdk/connect",
+      "version": "0.0.1",
       "dependencies": {
         "ws": "^8.20.0",
       },
@@ -329,8 +324,6 @@
     "@electron/notarize": ["@electron/notarize@2.2.1", "", { "dependencies": { "debug": "^4.1.1", "fs-extra": "^9.0.1", "promise-retry": "^2.0.1" } }, "sha512-aL+bFMIkpR0cmmj5Zgy0LMKEpgy43/hw5zadEArgmAMWWlKc5buwFvFT9G/o/YJkvXAJm5q3iuTuLaiaXW39sg=="],
 
     "@electron/osx-sign": ["@electron/osx-sign@1.0.5", "", { "dependencies": { "compare-version": "^0.1.2", "debug": "^4.3.4", "fs-extra": "^10.0.0", "isbinaryfile": "^4.0.8", "minimist": "^1.2.6", "plist": "^3.0.5" }, "bin": { "electron-osx-flat": "bin/electron-osx-flat.js", "electron-osx-sign": "bin/electron-osx-sign.js" } }, "sha512-k9ZzUQtamSoweGQDV2jILiRIHUu7lYlJ3c6IEmjv1hC17rclE+eb9U+f6UFlOOETo0JzY1HNlXy4YOlCvl+Lww=="],
-
-    "@electron/remote": ["@electron/remote@2.1.3", "", { "peerDependencies": { "electron": ">= 13.0.0" } }, "sha512-XlpxC8S4ttj/v2d+PKp9na/3Ev8bV7YWNL7Cw5b9MAWgTphEml7iYgbc7V0r9D6yDOfOkj06bchZgOZdlWJGNA=="],
 
     "@electron/universal": ["@electron/universal@1.5.1", "", { "dependencies": { "@electron/asar": "^3.2.1", "@malept/cross-spawn-promise": "^1.1.0", "debug": "^4.3.1", "dir-compare": "^3.0.0", "fs-extra": "^9.0.1", "minimatch": "^3.0.4", "plist": "^3.0.4" } }, "sha512-kbgXxyEauPJiQQUNG2VgUeyfQNFk6hBF11ISN2PNI6agUgPl55pv4eQmaqHzTAzchBvqZ2tQuRVaPStGf0mxGw=="],
 
@@ -747,8 +740,6 @@
     "@types/connect": ["@types/connect@3.4.38", "", { "dependencies": { "@types/node": "*" } }, "sha512-K6uROf1LD88uDQqJCktA4yzL1YYAK6NgfsI0v/mTgyPKWsX1CnJ0XPSDhViejru1GcRkLWb8RlzFYJRqGUbaug=="],
 
     "@types/cookie": ["@types/cookie@0.6.0", "", {}, "sha512-4Kh9a6B2bQciAhf7FSuMRRkUWecJgJu9nPnx3yzpsfXX/c50REIqpHY4C82bXP90qrLtXtkDxTZosYO3UpOwlA=="],
-
-    "@types/cors": ["@types/cors@2.8.19", "", { "dependencies": { "@types/node": "*" } }, "sha512-mFNylyeyqN93lfe/9CSxOGREz8cpzAhH+E93xJ4xWQf62V8sQ/24reV2nyzUWM6H6Xji+GGHpkbLe7pVoUEskg=="],
 
     "@types/d3": ["@types/d3@7.4.3", "", { "dependencies": { "@types/d3-array": "*", "@types/d3-axis": "*", "@types/d3-brush": "*", "@types/d3-chord": "*", "@types/d3-color": "*", "@types/d3-contour": "*", "@types/d3-delaunay": "*", "@types/d3-dispatch": "*", "@types/d3-drag": "*", "@types/d3-dsv": "*", "@types/d3-ease": "*", "@types/d3-fetch": "*", "@types/d3-force": "*", "@types/d3-format": "*", "@types/d3-geo": "*", "@types/d3-hierarchy": "*", "@types/d3-interpolate": "*", "@types/d3-path": "*", "@types/d3-polygon": "*", "@types/d3-quadtree": "*", "@types/d3-random": "*", "@types/d3-scale": "*", "@types/d3-scale-chromatic": "*", "@types/d3-selection": "*", "@types/d3-shape": "*", "@types/d3-time": "*", "@types/d3-time-format": "*", "@types/d3-timer": "*", "@types/d3-transition": "*", "@types/d3-zoom": "*" } }, "sha512-lZXZ9ckh5R8uiFVt8ogUNf+pIrK4EsWrx2Np75WvF/eTpJ0FMHNhjXk8CKEx/+gpHbNQyJWehbFaTvqmHWB3ww=="],
 
@@ -1191,8 +1182,6 @@
     "cookie-signature": ["cookie-signature@1.0.7", "", {}, "sha512-NXdYc3dLr47pBkpUCHtKSwIOQXLVn8dZEuywboCOJY/osA0wFSLlSawr3KN8qXJEyX66FcONTH8EIlVuK0yyFA=="],
 
     "core-util-is": ["core-util-is@1.0.2", "", {}, "sha512-3lqz5YjWTYnW6dlDa5TLaTCcShfar1e40rmcJVwCBJC6mWlFuj0eCHIElmG1g5kyuJ/GD+8Wn4FFCcz4gJPfaQ=="],
-
-    "cors": ["cors@2.8.6", "", { "dependencies": { "object-assign": "^4", "vary": "^1" } }, "sha512-tJtZBBHA6vjIAaF6EnIaq6laBBP9aq/Y3ouVJjEfoHbRBcHBAHYcMh/w8LDrk2PvIMMq8gmopa5D4V8RmbrxGw=="],
 
     "cpus": ["cpus@1.0.3", "", {}, "sha512-PXHBvGLuL69u55IkLa5e5838fLhIMHxmkV4ge42a8alGyn7BtawYgI0hQ849EedvtHIOLNNH3i6eQU1BiE9SUA=="],
 

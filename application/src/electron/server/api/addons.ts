@@ -14,10 +14,14 @@ import * as fs from 'fs/promises';
 import { join } from 'path';
 import { restartAddonServer } from '@/electron/handlers/handler.addon.js';
 import { __dirname } from '@/electron/manager/manager.paths.js';
-import type { LibraryInfo, SearchResult, StoreData } from 'ogi-addon';
+import type {
+  ConfigurationFile,
+  LibraryInfo,
+  SearchResult,
+  StoreData,
+} from '@ogi-sdk/connect';
 import { ZodLibraryInfo } from 'ogi-addon';
 import { supportsStorefront } from '@/lib/storefronts.js';
-import type { ConfigurationFile } from 'ogi-addon/config';
 
 const procedures: Record<string, Procedure<any>> = {
   // Get all addon info

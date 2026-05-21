@@ -1,4 +1,4 @@
-import type { SearchResult, LibraryInfo } from 'ogi-addon';
+import type { LibraryInfo, SearchResult } from '@ogi-sdk/connect';
 import { createNotification, deferredTasks } from '@/frontend/store';
 import { addonServer } from '@/frontend/lib/core/ipc';
 

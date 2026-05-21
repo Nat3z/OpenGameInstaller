@@ -44,8 +44,11 @@
   import ConfigurationModal from '@/frontend/components/modal/ConfigurationModal.svelte';
   import LibraryView from '@/frontend/views/LibraryView.svelte';
   import GameManager from '@/frontend/managers/GameManager.svelte';
-  import type { BasicLibraryInfo, OGIAddonConfiguration } from 'ogi-addon';
-  import type { ConfigurationFile } from 'ogi-addon/config';
+  import type {
+    BasicLibraryInfo,
+    ConfigurationFile,
+    OGIAddonConfiguration,
+  } from '@ogi-sdk/connect';
   import Debug from '@/frontend/managers/Debug.svelte';
   import DiscoverView from '@/frontend/views/DiscoverView.svelte';
   import RootPasswordGranter from '@/frontend/managers/RootPasswordGranter.svelte';

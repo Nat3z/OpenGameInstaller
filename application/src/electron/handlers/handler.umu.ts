@@ -6,7 +6,7 @@ import { ipcMain } from 'electron';
 import { spawn } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
-import type { LibraryInfo } from 'ogi-addon';
+import type { LibraryInfo } from '@ogi-sdk/connect';
 import {
   isLinux,
   getHomeDir,

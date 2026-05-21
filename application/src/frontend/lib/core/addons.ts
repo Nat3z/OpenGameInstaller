@@ -1,4 +1,4 @@
-import type { LibraryInfo } from 'ogi-addon';
+import type { LibraryInfo } from '@ogi-sdk/connect';
 import { supportsStorefront } from '@/lib/storefronts';
 import { addonServer, queryConnectedAddons, type AddonInfo } from './ipc';
 

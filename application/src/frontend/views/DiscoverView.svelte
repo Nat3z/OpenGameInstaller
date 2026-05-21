@@ -6,9 +6,9 @@
     CatalogCarouselItem,
     CatalogResponse,
     CatalogSection,
+    ConfigurationFile,
     OGIAddonConfiguration,
-  } from 'ogi-addon';
-  import type { ConfigurationFile } from 'ogi-addon/config';
+  } from '@ogi-sdk/connect';
   import {
     currentStorePageOpened,
     currentStorePageOpenedStorefront,

@@ -1,6 +1,9 @@
-import type { SearchResult, SetupCommandData } from 'ogi-addon';
+import type {
+  BasicLibraryInfo,
+  SearchResult,
+  SetupCommandData,
+} from '@ogi-sdk/connect';
 import { writable, type Writable } from 'svelte/store';
-import type { BasicLibraryInfo } from 'ogi-addon';
 
 export type DownloadStatusAndInfo = SearchResult & {
   appID: number;

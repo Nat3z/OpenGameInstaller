@@ -1,6 +1,6 @@
 import { BaseService } from '@/frontend/lib/downloads/services/BaseService';
 import type { SearchResultWithAddon } from '@/frontend/lib/tasks/runner';
-import type { SearchResult } from 'ogi-addon';
+import type { SearchResult } from '@ogi-sdk/connect';
 import { createNotification, currentDownloads } from '@/frontend/store';
 import { getDownloadPath } from '@/frontend/lib/core/fs';
 import { addonServer } from '@/frontend/lib/core/ipc';

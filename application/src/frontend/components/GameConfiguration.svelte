@@ -1,9 +1,11 @@
 <script lang="ts">
-  import type { LibraryInfo } from 'ogi-addon';
+  import type {
+    ConfigurationFile,
+    ConfigurationOptionWire,
+    LibraryInfo,
+  } from '@ogi-sdk/connect';
   import {
     ConfigurationBuilder,
-    type ConfigurationFile,
-    type ConfigurationOptionWire,
     isBooleanOption,
     isNumberOption,
     isStringOption,

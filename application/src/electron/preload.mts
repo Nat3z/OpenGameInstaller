@@ -1,6 +1,6 @@
 import { AxiosRequestConfig } from 'axios';
 import { contextBridge, ipcRenderer } from 'electron';
-import { LibraryInfo } from 'ogi-addon';
+import type { LibraryInfo } from '@ogi-sdk/connect';
 
 // === Debug: Events Processed/sec Counter ===
 let dbg_eventsProcessed = 0;

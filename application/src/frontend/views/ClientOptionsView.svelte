@@ -475,8 +475,6 @@
     isRestartingServer = true;
     await window.electronAPI.restartAddonServer();
     reconnectClientSdk();
-    isRestartingServer = false;
-    fetchAddonsWithConfigure();
   }
 
   let showPassword: { [key: string]: boolean } = $state({});
@@ -596,10 +594,21 @@
       doSteamGridDBReconfigure = true;
       reasonForSteamGridLaunch = (event as CustomEvent).detail || '';
     }
+    async function handleAddonConnected() {
+      try {
+        await fetchAddonsWithConfigure();
+      } catch (error) {
+        console.error('Failed to configure addons after reconnect:', error);
+      } finally {
+        isRestartingServer = false;
+      }
+    }
     document.addEventListener('steamgriddb-launch', steamgriddbLaunch);
+    document.addEventListener('addon-connected', handleAddonConnected);
 
     return () => {
       document.removeEventListener('steamgriddb-launch', steamgriddbLaunch);
+      document.removeEventListener('addon-connected', handleAddonConnected);
     };
   });
 </script>
@@ -1228,7 +1237,6 @@
 
   /* Input Styles */
   .input-text,
-  .input-number,
   .input-select {
     @apply w-full px-4 py-2 border border-border rounded-lg bg-input-bg text-text-primary focus:ring-2 focus:ring-accent-light focus:border-accent transition-colors;
   }
@@ -1364,13 +1372,6 @@
 
   .no-selection-description {
     @apply text-text-secondary;
-  }
-
-  /* Remove webkit number input spinners */
-  .input-number::-webkit-inner-spin-button,
-  .input-number::-webkit-outer-spin-button {
-    -webkit-appearance: none;
-    margin: 0;
   }
 
   /* Range container uses shared RangeInput component */

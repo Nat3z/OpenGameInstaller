@@ -64,6 +64,10 @@ class TinyEventEmitter {
     this.listeners.set(event, listeners);
   }
 
+  clear(): void {
+    this.listeners.clear();
+  }
+
   emit(event: string, args: unknown): void {
     this.listeners.get(event)?.forEach((listener) => listener(args));
   }
@@ -186,8 +190,10 @@ export class Connection {
 
     return new Promise<T | undefined>((resolve, reject) => {
       let settled = false;
+      let inFlight = false;
       const timer = setInterval(async () => {
-        if (settled) return;
+        if (settled || inFlight) return;
+        inFlight = true;
 
         try {
           const task = await this.getDeferredTask<T>(taskID);
@@ -220,6 +226,8 @@ export class Connection {
           const message = error instanceof Error ? error.message : String(error);
           options.onFailed?.(message);
           reject(error);
+        } finally {
+          inFlight = false;
         }
       }, interval);
     });
@@ -240,6 +248,16 @@ export class Connection {
     callback: SDKEventCallback<Event>
   ): void {
     this.eventEmitter.on(event, callback as Listener);
+  }
+
+  public close(): void {
+    this.eventEmitter.clear();
+    this.transport.rejectPendingResponses('Connection closed');
+    this.socket.close();
+  }
+
+  public dispose(): void {
+    this.close();
   }
 
   private async connect(): Promise<void> {
@@ -267,13 +285,47 @@ export class Connection {
 
     if (this.socket.readyState === 1) return;
 
-    await new Promise<void>((resolve) => {
+    await new Promise<void>((resolve, reject) => {
+      const cleanup = () => {
+        const socketWithOff = this.socket as WebSocketLike & {
+          off?: (event: string, listener: (...args: unknown[]) => void) => void;
+          removeEventListener?: (event: string, listener: (...args: unknown[]) => void) => void;
+        };
+        socketWithOff.off?.('open', onOpen);
+        socketWithOff.off?.('error', onError);
+        socketWithOff.off?.('close', onClose);
+        socketWithOff.removeEventListener?.('open', onOpen);
+        socketWithOff.removeEventListener?.('error', onError);
+        socketWithOff.removeEventListener?.('close', onClose);
+        clearTimeout(timeout);
+      };
+      const onOpen = () => {
+        cleanup();
+        resolve();
+      };
+      const onError = (error?: unknown) => {
+        cleanup();
+        reject(error instanceof Error ? error : new Error('WebSocket connection error'));
+      };
+      const onClose = () => {
+        cleanup();
+        reject(new Error('WebSocket closed before opening'));
+      };
+      const timeout = setTimeout(() => {
+        cleanup();
+        reject(new Error('WebSocket connection timed out'));
+      }, 10000);
+
       if (this.socket.on) {
-        this.socket.on('open', () => resolve());
+        this.socket.on('open', onOpen);
+        this.socket.on('error', onError);
+        this.socket.on('close', onClose);
         return;
       }
 
-      this.socket.addEventListener?.('open', () => resolve());
+      this.socket.addEventListener?.('open', onOpen);
+      this.socket.addEventListener?.('error', onError);
+      this.socket.addEventListener?.('close', onClose);
     });
   }
 

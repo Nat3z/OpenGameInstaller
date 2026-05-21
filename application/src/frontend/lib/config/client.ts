@@ -10,57 +10,33 @@ export function getConfigClientOption<T>(id: string): T | null {
   const config = window.electronAPI.fs.read(`./config/option/${id}.json`);
   return JSON.parse(config);
 }
-export function fetchAddonsWithConfigure() {
-  return new Promise<ConfigTemplateAndInfo[]>((resolve, _) => {
-    queryConnectedAddons<ConfigTemplateAndInfo>().then(
-      async (addons: ConfigTemplateAndInfo[]) => {
-        // now configure each addon
-        for (const addon of addons) {
-          // check if file exists
-          if (!window.electronAPI.fs.exists(`./config/${addon.id}.json`)) {
-            // if it doesn't exist, create it with default values
-            let defaultConfig: Record<string, number | boolean | string> = {};
-            for (const key in addon.configTemplate) {
-              defaultConfig[key] = addon.configTemplate[key].defaultValue as
-                | number
-                | boolean
-                | string;
-            }
-            window.electronAPI.fs.write(
-              `./config/${addon.id}.json`,
-              JSON.stringify(defaultConfig, null, 2)
-            );
-          }
-          const storedConfig = JSON.parse(
-            window.electronAPI.fs.read(`./config/${addon.id}.json`)
-          );
-          if (storedConfig) {
-            console.log(
-              'Posting stored config for addon',
-              addon.id,
-              storedConfig
-            );
-            addonServer.addon(addon.id).configUpdate(storedConfig as any);
-          } else {
-            // if there is no stored config, we should store and send the default config
-            let defaultConfig: Record<string, number | boolean | string> = {};
-            for (const key in addon.configTemplate) {
-              defaultConfig[key] = addon.configTemplate[key].defaultValue as
-                | number
-                | boolean
-                | string;
-            }
-            // then store with fs
-            window.electronAPI.fs.write(
-              `./config/${addon.id}.json`,
-              JSON.stringify(defaultConfig, null, 2)
-            );
-            // then post
-            addonServer.addon(addon.id).configUpdate(defaultConfig as any);
-          }
+export async function fetchAddonsWithConfigure() {
+  const addons = await queryConnectedAddons<ConfigTemplateAndInfo>();
+
+  await Promise.all(
+    addons.map(async (addon) => {
+      let config: Record<string, number | boolean | string>;
+
+      if (!window.electronAPI.fs.exists(`./config/${addon.id}.json`)) {
+        config = {};
+        for (const key in addon.configTemplate) {
+          config[key] = addon.configTemplate[key].defaultValue as
+            | number
+            | boolean
+            | string;
         }
-        resolve(addons);
+        window.electronAPI.fs.write(
+          `./config/${addon.id}.json`,
+          JSON.stringify(config, null, 2)
+        );
+      } else {
+        config = JSON.parse(window.electronAPI.fs.read(`./config/${addon.id}.json`));
       }
-    );
-  });
+
+      console.log('Posting stored config for addon', addon.id, config);
+      await addonServer.addon(addon.id).configUpdate(config as any);
+    })
+  );
+
+  return addons;
 }

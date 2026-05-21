@@ -57,13 +57,14 @@ const procedures: Record<string, Procedure<any>> = {
       const response = await client.events.configUpdate(
         input.config as ConfigurationFile
       );
+      const args = response.args as { success?: boolean; error?: unknown } | undefined;
 
-      if (response.args && response.args.success) {
+      if (args?.success) {
         return new ProcedureJSON(200, { success: true });
       } else {
         return new ProcedureJSON(400, {
           success: false,
-          errors: response.args?.error || 'Unknown error',
+          errors: args?.error || 'Unknown error',
         });
       }
     }),
@@ -278,7 +279,7 @@ const procedures: Record<string, Procedure<any>> = {
             storefront: input.storefront,
           });
           if (data.args) {
-            appDetails = data.args;
+            appDetails = data.args as StoreData;
             break;
           }
         }

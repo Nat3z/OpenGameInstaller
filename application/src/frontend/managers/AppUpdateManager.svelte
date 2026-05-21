@@ -11,12 +11,18 @@
   });
 
   async function checkForAppUpdates() {
-    const runId = ++updateCheckRunId;
-    // clear the app updates every time the addon runtime comes up, then repopulate
-    updatesManager.clearAppUpdates();
-    console.log('checking for app updates');
-
-    const library = await core.library.getAllApps();
+    let library;
+    let runId;
+    try {
+      runId = ++updateCheckRunId;
+      // clear the app updates every time the addon runtime comes up, then repopulate
+      updatesManager.clearAppUpdates();
+      console.log('checking for app updates');
+      library = await core.library.getAllApps();
+    } catch (error) {
+      console.error('Failed to initialize app update check:', error);
+      return;
+    }
     for (const app of library) {
       tryCatch(async () => {
         const addons = await findAddonsSupportingStorefront(

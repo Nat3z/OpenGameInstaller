@@ -97,7 +97,9 @@ export async function runTask(
     onFailed: (error: string) => {
       if (!taskID) return;
       deferredTasks.update((tasks) =>
-        tasks.map((t) => (t.id === taskID ? { ...t, failed: error } : t))
+        tasks.map((t) =>
+          t.id === taskID ? { ...t, failed: error, status: 'failed' } : t
+        )
       );
       createNotification({
         id: Math.random().toString(36).substring(7),

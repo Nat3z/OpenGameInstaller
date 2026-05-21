@@ -210,9 +210,11 @@ export class EventResponseSocket<
     }
 
     return new Promise((resolve, reject) => {
-      // CLOSED state is 3
-      if (this.socket.readyState === 3) {
-        reject(new Error('Websocket closed'));
+      // OPEN state is 1
+      if (this.socket.readyState !== 1) {
+        reject(
+          new Error(`Websocket is not open (readyState: ${this.socket.readyState})`)
+        );
         return;
       }
 

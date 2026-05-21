@@ -1,4 +1,3 @@
-import wsLib from 'ws';
 import { EventResponseSocket } from '@ogi-sdk/connect';
 import type {
   AddonServerToClientEventArgs,
@@ -17,9 +16,17 @@ import {
 import { createClientMessageHandlers } from '../handlers/client-message-handlers';
 import type { ClientMessageHandlers } from '../handlers/types';
 
+interface AddonWebSocket {
+  send(data: string): void;
+  close(code?: number, reason?: string): void;
+  on(event: 'message', listener: (rawMessage: unknown) => void): unknown;
+  on(event: 'close' | 'error', listener: (...args: unknown[]) => void): unknown;
+  readyState: number;
+}
+
 export class AddonConnection {
   public addonInfo: OGIAddonConfiguration | undefined;
-  public ws: InstanceType<typeof wsLib>;
+  public ws: AddonWebSocket;
   public configTemplate: ConfigurationFile | undefined;
   public filePath: string | undefined;
   public addonLink: string | undefined;
@@ -34,7 +41,7 @@ export class AddonConnection {
   private clientEventHandlers: ClientMessageHandlers;
 
   constructor(
-    ws: InstanceType<typeof wsLib>,
+    ws: AddonWebSocket,
     config: AddonConfig,
     server: AddonServer
   ) {

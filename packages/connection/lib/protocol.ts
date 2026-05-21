@@ -140,7 +140,7 @@ export const addonProtocol = defineAddonProtocol({
     >({ addonListener: true }),
     response: serverCommand<
       [id: string, response?: unknown, statusError?: string],
-      any
+      unknown
     >({
       pack: { type: 'response' },
     }),
@@ -172,7 +172,7 @@ export const addonProtocol = defineAddonProtocol({
     }),
   },
   addonToServer: {
-    response: addonMessage<any>(),
+    response: addonMessage<unknown>(),
     authenticate: addonMessage<
       OGIAddonConfiguration & {
         secret: string;
@@ -392,7 +392,7 @@ export interface AddonServerToClientWebsocketMessage<
   Event extends AddonServerToClientEventName = AddonServerToClientEventName,
 > extends WebsocketMessage {
   event: Event;
-  args: any;
+  args: unknown;
 }
 
 /** Desktop / bridge → server: “run this server→addon command for `addonId`”. */

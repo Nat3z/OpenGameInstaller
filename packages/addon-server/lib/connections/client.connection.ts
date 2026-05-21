@@ -1,4 +1,4 @@
-import { WebSocket } from 'ws';
+import { randomUUID } from 'crypto';
 import {
   EventResponseSocket,
   type AddonClientSDKToServerIncomingMessage,
@@ -17,19 +17,27 @@ import { DeferrableTask } from '../deffered';
 import type { AddonServer } from '../server';
 import type { AddonConnection } from './addon.connection';
 
+interface ClientWebSocket {
+  send(data: string): void;
+  close(code?: number, reason?: string): void;
+  on(event: 'message', listener: (rawMessage: unknown) => void): unknown;
+  on(event: 'close' | 'error' | 'open', listener: (...args: unknown[]) => void): unknown;
+  readyState: number;
+}
+
 type SDKResponseMap = {
   [Name in SDKRequestName]: SDKResponse<Name>;
 };
 
 export class ClientConnection {
-  private socket: WebSocket;
+  private socket: ClientWebSocket;
   private transport: EventResponseSocket<
     AddonClientSDKToServerIncomingMessage,
     AddonServerToClientSDKIncomingMessage
   >;
   private server: AddonServer;
 
-  constructor(socket: WebSocket, server: AddonServer) {
+  constructor(socket: ClientWebSocket, server: AddonServer) {
     this.socket = socket;
     this.server = server;
     this.transport = new EventResponseSocket(this.socket, {
@@ -107,7 +115,7 @@ export class ClientConnection {
         return;
       }
 
-      const taskID = Math.random().toString(36).substring(7);
+      const taskID = randomUUID();
       const typedEvent = event as AddonServerToClientEventName;
       const forwardedArgs = [...args];
       if (

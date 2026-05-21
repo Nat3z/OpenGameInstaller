@@ -25,7 +25,6 @@ const handleAuthenticate: ClientMessageHandler = (context, message) => {
 
   const authenticateArgs =
     message.args as AddonClientToServerEventArgs['authenticate'];
-  connection.addonInfo = authenticateArgs;
   if (
     config.securityCheck &&
     (!authenticateArgs.secret || authenticateArgs.secret !== config.secret)
@@ -47,6 +46,7 @@ const handleAuthenticate: ClientMessageHandler = (context, message) => {
     return;
   }
 
+  connection.addonInfo = authenticateArgs;
   console.log('Client authenticated:', authenticateArgs.name);
   server.addClient(authenticateArgs.id, connection);
   context.resolveAuthentication(true);
@@ -170,9 +170,6 @@ const handleTaskUpdate: ClientMessageHandler = (context, message) => {
     return;
   }
 
-  if (taskUpdateArgs.finished && !taskUpdateArgs.failed) {
-    context.server.getDeferredTasksManager().removeTask(taskUpdateArgs.id);
-  }
 };
 
 const handleGetAppDetails: ClientMessageHandler = async (context, message) => {

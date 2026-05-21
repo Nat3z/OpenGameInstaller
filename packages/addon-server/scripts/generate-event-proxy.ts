@@ -47,15 +47,19 @@ export type SendEventProxy = SendEventProxyMethods & {
   noResponse: SendEventProxyMethods;
 };
 
-type EventMessagePackers = {
+type EventMessagePackerMap = {
   [Event in AddonServerToClientEventName]: (
     args: AddonServerToClientEventArgs[Event]
-  ) => Omit<AddonServerToClientWebsocketMessage, 'event'>;
+  ) => Omit<AddonServerToClientWebsocketMessage<Event>, 'event'>;
 };
 
-const eventMessagePackers: EventMessagePackers = {
+interface EventMessagePackers extends EventMessagePackerMap {}
+
+const eventMessagePackers: EventMessagePackerMap = {
 ${entries.map(([event, spec]) => `  '${event}': ${packerForPack(spec.pack)},`).join('\n')}
 };
+const _eventMessagePackersCheck: EventMessagePackers = eventMessagePackers;
+void _eventMessagePackersCheck;
 
 const toCamelCaseEvent = (event: string): string => {
   return event.replace(/-([a-z])/g, (_, letter: string) =>
@@ -74,10 +78,13 @@ export const eventAliases = Object.keys(eventMessagePackers).reduce(
 export const buildEventMessage = <Event extends AddonServerToClientEventName>(
   event: Event,
   args: AddonServerToClientEventArgs[Event]
-): AddonServerToClientWebsocketMessage => {
+): AddonServerToClientWebsocketMessage<Event> => {
+  const packer = eventMessagePackers[event] as unknown as (
+    args: AddonServerToClientEventArgs[Event]
+  ) => Omit<AddonServerToClientWebsocketMessage<Event>, 'event'>;
   return {
     event,
-    ...eventMessagePackers[event](args),
+    ...packer(args),
   };
 };
 `;

@@ -23,7 +23,11 @@ export async function loadDeferredTasks(tasksToRemove: string[] = []) {
           logs: task.logs || [],
           timestamp: Date.now(),
           duration: undefined,
-          error: task.failed || undefined,
+          error:
+            task.failed ||
+            (task.logs && task.logs.length > 0
+              ? task.logs[task.logs.length - 1]
+              : undefined),
           type: 'other',
         }))
     );

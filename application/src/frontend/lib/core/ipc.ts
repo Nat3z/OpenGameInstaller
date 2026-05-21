@@ -20,16 +20,15 @@ export async function queryConnectedAddons<T = AddonInfo>() {
   return response.args.addons as T[];
 }
 export function reconnectClientSdk(): void {
+  addonServer.close();
   addonServer = connectClientSdk();
 }
 export function connectClientSdk(): Connection {
+  const developerConfig = getConfigClientOption('developer') as
+    | { clientSdkUrl?: string }
+    | null;
   let server = new Connection({
-    url:
-      (
-        getConfigClientOption('developer') as {
-          clientSdkUrl: string | undefined;
-        }
-      ).clientSdkUrl ?? 'ws://127.0.0.1:7654',
+    url: developerConfig?.clientSdkUrl ?? 'ws://127.0.0.1:7654',
   });
   initialize(server);
   return server;

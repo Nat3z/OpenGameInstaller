@@ -76,7 +76,7 @@
         formData[key] = option.defaultValue ?? option.min;
       } else if (isStringOption(option)) {
         if ((option.allowedValues?.length ?? 0) > 0) {
-          formData[key] = option.defaultValue || option.allowedValues![0];
+          formData[key] = option.defaultValue ?? option.allowedValues![0];
         } else {
           formData[key] = option.defaultValue ?? '';
         }

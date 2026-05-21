@@ -66,9 +66,14 @@ export class AddonServer {
         (reply: Record<string, string | number | boolean>) => void,
       ];
       const [connection] = this.sdkConnections;
-      if (connection) {
-        void connection.askInput(name, description, config).then(reply);
-      }
+      void (async () => {
+        try {
+          reply(connection ? await connection.askInput(name, description, config) : {});
+        } catch (error) {
+          console.error('Failed to ask SDK for input:', error);
+          reply({});
+        }
+      })();
     }
 
     this.eventEmitter.emit(event, ...args);
@@ -89,6 +94,13 @@ export class AddonServer {
 
   public getDeferredTasksManager(): DeferredTasksManager {
     return this.deferredTasksManager;
+  }
+
+  public removeConnection(connection: AddonConnection): void {
+    this.connections.delete(connection);
+    if (connection.addonInfo) {
+      this.clients.delete(connection.addonInfo.id);
+    }
   }
 
   public on<T extends AddonServerEventName>(
@@ -150,9 +162,13 @@ export class AddonServer {
 
       const connection = new AddonConnection(ws, this.config, this);
       this.connections.add(connection);
+      ws.on('close', () => {
+        this.removeConnection(connection);
+        this.eventEmitter.emit('disconnect', 'Addon websocket closed');
+      });
       connection.setupWebsocket().then((success) => {
         if (!success) {
-          this.connections.delete(connection);
+          this.removeConnection(connection);
           this.eventEmitter.emit('disconnect', 'Failed to setup websocket');
         } else {
           this.eventEmitter.emit('connect', connection);

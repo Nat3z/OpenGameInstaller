@@ -25,6 +25,7 @@
   let screenName: string | undefined = $state(undefined);
   let screenDescription: string | undefined = $state(undefined);
   let formData: { [key: string]: any } = $state({});
+  let submitError: string | undefined = $state(undefined);
 
   let listOfScreensQueued: Writable<
     {
@@ -81,7 +82,7 @@
         formData[key] = option.defaultValue ?? option.min;
       } else if (isStringOption(option)) {
         if ((option.allowedValues?.length ?? 0) > 0) {
-          formData[key] = option.defaultValue || option.allowedValues![0];
+          formData[key] = option.defaultValue ?? option.allowedValues![0];
         } else {
           formData[key] = option.defaultValue ?? '';
         }
@@ -99,15 +100,21 @@
     | ((result: Record<string, string | number | boolean>) => void | Promise<void>)
     | undefined;
 
-  function handleSubmit() {
+  async function handleSubmit() {
     const data = JSON.parse(JSON.stringify(formData));
-    if (screenReply) {
-      void screenReply(data);
-    } else {
-      window.electronAPI.app.inputSend(screenID!!, data);
+    submitError = undefined;
+    try {
+      if (screenReply) {
+        await screenReply(data);
+      } else {
+        await window.electronAPI.app.inputSend(screenID!!, data);
+      }
+      console.log('Submitted data:', formData);
+      closeModal();
+    } catch (error) {
+      console.error('Failed to submit configuration:', error);
+      submitError = error instanceof Error ? error.message : String(error);
     }
-    console.log('Submitted data:', formData);
-    closeModal();
   }
 
   function handleActionSubmit(key: string) {
@@ -127,6 +134,7 @@
     screenDescription = undefined;
     screenReply = undefined;
     formData = {};
+    submitError = undefined;
 
     // Process next screen if available
     if ($listOfScreensQueued.length !== 0) {
@@ -149,7 +157,7 @@
             formData[key] = option.defaultValue ?? option.min;
           } else if (isStringOption(option)) {
             if ((option.allowedValues?.length ?? 0) > 0) {
-              formData[key] = option.defaultValue || option.allowedValues![0];
+              formData[key] = option.defaultValue ?? option.allowedValues![0];
             } else {
               formData[key] = option.defaultValue ?? '';
             }
@@ -245,6 +253,10 @@
             {/if}
           {/if}
         {/each}
+
+        {#if submitError}
+          <p class="text-red-500 mt-2">{submitError}</p>
+        {/if}
 
         <!-- Action buttons and submit button in the same row -->
         {#if screenRendering}

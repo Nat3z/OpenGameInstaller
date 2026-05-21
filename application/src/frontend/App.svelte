@@ -203,18 +203,22 @@
 
       loadingResults.set(true);
       showSearchResults = true;
-      addons = await fetchAddonsWithConfigure();
+      const connectedAddonIds = new Set(addons.map((addon) => addon.id));
+      const configuredAddons = await fetchAddonsWithConfigure();
+      const searchAddons = configuredAddons.filter((addon) =>
+        connectedAddonIds.has(addon.id)
+      );
 
       // Check if search was cancelled after fetching addons
       if (signal.aborted || query !== activeQuery) return;
 
       // Reset loading states
-      loadingAddons = new Set(addons.map((addon) => addon.id));
+      loadingAddons = new Set(searchAddons.map((addon) => addon.id));
       emptyAddons = new Set();
 
       // Search through addons and organize results by addon
       let promises: Promise<void>[] = [];
-      for (const addon of addons) {
+      for (const addon of searchAddons) {
         promises.push(
           (
             addonServer.addon(addon.id).librarySearch(query) as Promise<

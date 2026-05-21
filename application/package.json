@@ -34,7 +34,7 @@
   "scripts": {
     "build": "electron-vite build",
     "build:all": "bun run --cwd .. --filter './packages/*' build",
-    "dev": "bun run build:all && ELECTRON_EXEC_PATH=\"$(node -p \"require('electron')\" )\" electron-vite dev",
+    "dev": "bun run build:all && ELECTRON_EXEC_PATH=\"$(bun -e \"console.log(require('electron'))\" )\" electron-vite dev",
     "preview": "electron-vite preview",
     "dev:server": "nodemon --watch server --ext ts,json --exec \"tsc --p tsconfig.addonserver.json && bun run --bun build-addons/dev-server.js\"",
     "preelectron-pack": "bun run build:all && bun run build && electron-rebuild",

@@ -82,7 +82,7 @@
     addonMap.forEach((results, addonId) => {
       const addonGroup: AddonGroup = {
         addonId,
-        addonName: addonId,
+        addonName: results[0]?.addonName || addonId,
         results,
       };
 
@@ -109,10 +109,15 @@
     );
     let response: StoreData | undefined;
     for (const addon of detailAddons) {
-      response = (await addonServer.addon(addon.id).gameDetails({
-        appID,
-        storefront,
-      })) as StoreData | undefined;
+      try {
+        response = (await addonServer.addon(addon.id).gameDetails({
+          appID,
+          storefront,
+        })) as StoreData | undefined;
+      } catch (error) {
+        console.error(`Failed to load game details from ${addon.id}:`, error);
+        continue;
+      }
       if (response) break;
     }
 

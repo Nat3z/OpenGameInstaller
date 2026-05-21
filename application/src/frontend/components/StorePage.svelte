@@ -196,10 +196,15 @@
     );
     let response: StoreData | undefined;
     for (const addon of detailAddons) {
-      response = (await addonServer.addon(addon.id).gameDetails({
-        appID,
-        storefront,
-      })) as StoreData | undefined;
+      try {
+        response = (await addonServer.addon(addon.id).gameDetails({
+          appID,
+          storefront,
+        })) as StoreData | undefined;
+      } catch (error) {
+        console.error(`Failed to load game details from ${addon.id}:`, error);
+        continue;
+      }
       if (response) break;
     }
 
@@ -238,8 +243,8 @@
             const mappedResults = searchResults.map((result: SearchResult) => {
               return {
                 ...result,
-                coverImage: (gameData as StoreData).coverImage,
-                capsuleImage: (gameData as StoreData).capsuleImage,
+                coverImage: gameData?.coverImage ?? '',
+                capsuleImage: gameData?.capsuleImage ?? '',
                 name: result.name,
                 addonSource: addon.id,
                 addonName: addon.name,

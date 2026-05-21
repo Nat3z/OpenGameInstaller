@@ -464,8 +464,8 @@ async function onMainAppReady() {
   if (mainWindow && !mainWindow.isDestroyed()) {
     await checkForAddonUpdates(mainWindow);
   }
-  sendIPCMessage('all-addons-started');
-  sendIPCMessage('addon-runtime-ready');
+  await sendIPCMessage('all-addons-started');
+  await sendIPCMessage('addon-runtime-ready');
 
   // Register process-wide listeners only once
   if (!listenersRegistered) {

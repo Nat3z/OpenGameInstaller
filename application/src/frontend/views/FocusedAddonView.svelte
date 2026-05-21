@@ -103,49 +103,62 @@
       }
     });
 
+    const addonId = selectedAddon.id;
     addonServer
-      .addon(selectedAddon.id)
+      .addon(addonId)
       .configUpdate(config as any)
-      .then((response) => (response ?? { success: true }) as any)
-      .then((data) => {
-      if (!data.success) {
-        for (const key in data.errors) {
-          const element = document.getElementById(key);
-          if (!element) return console.error('element not found');
-          const inputElement = element.matches('[data-input]')
-            ? element
-            : element
-                .closest('[data-input-parent]')
-                ?.querySelector('[data-input]');
+      .then((data: any) => {
+        if (data?.success !== true) {
+          for (const key in data?.errors ?? {}) {
+            const element = document.getElementById(key);
+            if (!element) return console.error('element not found');
+            const inputElement = element.matches('[data-input]')
+              ? element
+              : element
+                  .closest('[data-input-parent]')
+                  ?.querySelector('[data-input]');
 
-          if (inputElement) {
-            inputElement.classList.add(
-              'outline-red-500',
-              'outline-2',
-              'outline'
+            if (inputElement) {
+              inputElement.classList.add(
+                'outline-red-500',
+                'outline-2',
+                'outline'
+              );
+            }
+
+            const errorMessageElement = element.parentElement!!.querySelector(
+              '[data-error-message]'
             );
+            if (errorMessageElement) {
+              errorMessageElement.innerHTML = `<img src="./error.svg" alt="error" class="w-6 h-6" />`;
+              errorMessageElement.setAttribute('data-context', data.errors[key]);
+            }
           }
-
-          const errorMessageElement = element.parentElement!!.querySelector(
-            '[data-error-message]'
-          );
-          if (errorMessageElement) {
-            errorMessageElement.innerHTML = `<img src="./error.svg" alt="error" class="w-6 h-6" />`;
-            errorMessageElement.setAttribute('data-context', data.errors[key]);
-          }
+          notifications.update((update) => [
+            ...update,
+            {
+              id: Math.random().toString(36).substring(7),
+              type: 'error',
+              message:
+                'Failed to validate configuration. Configuration will not be usable.',
+            },
+          ]);
+          return;
         }
+
+        fs.write('./config/' + addonId + '.json', JSON.stringify(config));
+      })
+      .catch((error) => {
+        console.error('Failed to update addon configuration:', error);
         notifications.update((update) => [
           ...update,
           {
             id: Math.random().toString(36).substring(7),
             type: 'error',
-            message:
-              'Failed to validate configuration. Configuration will not be usable.',
+            message: 'Failed to update addon configuration.',
           },
         ]);
-      }
-    });
-    fs.write('./config/' + selectedAddon.id + '.json', JSON.stringify(config));
+      });
   }
 
   function getStoredOrDefaultValue(key: string): any {

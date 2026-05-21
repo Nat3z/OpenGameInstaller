@@ -10,7 +10,7 @@ export async function runLaunchAppAddons(
     addon.eventsAvailable.includes('launch-app')
   );
 
-  const results = await Promise.all(
+  const results = await Promise.allSettled(
     addons.map((addon) =>
       addonServer.addon(addon.id).launchApp({
         libraryInfo,

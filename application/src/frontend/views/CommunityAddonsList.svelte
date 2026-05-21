@@ -61,6 +61,7 @@
       JSON.stringify(currentAddons, null, 2)
     );
     await window.electronAPI.restartAddonServer();
+    reconnectClientSdk();
     // close the modal
     deleteConfirmationModalAddon = null;
   }

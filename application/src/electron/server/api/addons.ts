@@ -151,7 +151,7 @@ const procedures: Record<string, Procedure<any>> = {
           input.appID as number,
           input.info as SearchResult
         );
-        return data;
+        return data.args;
       }, client.addonInfo.id);
 
       return new ProcedureDeferTask(200, deferrableTask);
@@ -176,7 +176,7 @@ const procedures: Record<string, Procedure<any>> = {
 
       const deferrableTask = new DeferrableTask(async () => {
         const data = await client.events.catalog();
-        return data;
+        return data.args;
       }, client.addonInfo.id);
 
       return new ProcedureDeferTask(200, deferrableTask);
@@ -472,12 +472,13 @@ const procedures: Record<string, Procedure<any>> = {
 
       // Fire off the event to all clients, and wait for all to finish
       const results = await Promise.all(
-        clientsWithEvent.map((client) =>
-          client.events.launchApp({
+        clientsWithEvent.map(async (client) => {
+          const data = await client.events.launchApp({
             libraryInfo: input.libraryInfo as LibraryInfo,
             launchType: input.launchType,
-          })
-        )
+          });
+          return data.args;
+        })
       );
 
       return new ProcedureJSON(200, { success: true, results });

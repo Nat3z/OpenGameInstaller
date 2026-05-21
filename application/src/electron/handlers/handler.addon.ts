@@ -9,7 +9,7 @@ import {
   port,
   startAddonServer,
 } from '@/electron/server/addon-server.js';
-import { sendNotification } from '@/electron/main.js';
+import { sendIPCMessage, sendNotification } from '@/electron/main.js';
 import axios from 'axios';
 import { AddonConnection } from '@ogi-sdk/addon-server';
 
@@ -76,6 +76,7 @@ export async function restartAddonServer(): Promise<void> {
   console.log(`Addon Server is running on http://localhost:${port}`);
   console.log(`Server is being executed by electron!`);
   await startAddons();
+  await sendIPCMessage('addon-runtime-ready');
 
   sendNotification({
     message: 'Addon server restarted successfully.',

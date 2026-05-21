@@ -2,8 +2,9 @@
   import { onMount } from 'svelte';
   import {
     fetchAddonsWithConfigure,
+    addonServer,
+    findAddonsSupportingStorefront,
     runTask,
-    safeFetch,
     startDownload,
     type SearchResultWithAddon,
   } from '@/frontend/utils';
@@ -189,14 +190,18 @@
     } else {
       originalExecutable = undefined;
     }
-    const response: StoreData | undefined = await safeFetch(
-      'gameDetails',
-      {
-        gameID: String(appID),
-        storefront,
-      },
-      { consume: 'json' }
+    const detailAddons = await findAddonsSupportingStorefront(
+      storefront,
+      'game-details'
     );
+    let response: StoreData | undefined;
+    for (const addon of detailAddons) {
+      response = (await addonServer.addon(addon.id).gameDetails({
+        appID,
+        storefront,
+      })) as StoreData | undefined;
+      if (response) break;
+    }
 
     gameData = response;
     loading = false;
@@ -224,17 +229,12 @@
       }
 
       searchPromises.push(
-        safeFetch(
-          'search',
-          {
-            addonID: addon.id,
-            appID: appID,
-            storefront: storefront,
-            for: alreadyOwns ? 'task' : 'game',
-          },
-          { consume: 'json' }
-        )
-          .then((searchResults) => {
+        (addonServer.addon(addon.id).search({
+          appID: appID,
+          storefront: storefront,
+          for: alreadyOwns ? 'task' : 'game',
+        }) as Promise<SearchResult[]>)
+          .then((searchResults = []) => {
             const mappedResults = searchResults.map((result: SearchResult) => {
               return {
                 ...result,

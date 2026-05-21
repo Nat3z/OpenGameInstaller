@@ -8,6 +8,7 @@
   import TextModal from '@/frontend/components/modal/TextModal.svelte';
   import TitleModal from '@/frontend/components/modal/TitleModal.svelte';
   import { type CommunityAddon, communityAddonsLocal } from '@/frontend/store';
+  import { reconnectClientSdk } from '@/frontend/lib/core/ipc';
   import { fade } from 'svelte/transition';
 
   let communityList: CommunityAddon[] = $state([]);
@@ -42,6 +43,7 @@
     );
     setTimeout(async () => {
       await window.electronAPI.restartAddonServer();
+      reconnectClientSdk();
     }, 2500);
   }
 

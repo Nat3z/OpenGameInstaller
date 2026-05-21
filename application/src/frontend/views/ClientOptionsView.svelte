@@ -10,7 +10,10 @@
   import SectionModal from '@/frontend/components/modal/SectionModal.svelte';
   import CustomDropdown from '@/frontend/components/CustomDropdown.svelte';
   import RangeInput from '@/frontend/components/RangeInput.svelte';
-  import { fetchAddonsWithConfigure } from '@/frontend/utils';
+  import {
+    fetchAddonsWithConfigure,
+    reconnectClientSdk,
+  } from '@/frontend/utils';
 
   const fs = window.electronAPI.fs;
   interface OptionsCategory {
@@ -240,6 +243,13 @@
           value: false,
           type: 'boolean',
         },
+        clientSdkUrl: {
+          displayName: 'Client SDK URL',
+          description: 'The URL of the client SDK',
+          defaultValue: 'ws://127.0.0.1:7654',
+          value: '',
+          type: 'string',
+        },
         showEventsPerSec: {
           displayName: 'Show Events Per Sec',
           description: 'Show the number of events processed per second',
@@ -464,6 +474,7 @@
   async function restartAddonServer() {
     isRestartingServer = true;
     await window.electronAPI.restartAddonServer();
+    reconnectClientSdk();
     isRestartingServer = false;
     fetchAddonsWithConfigure();
   }
@@ -1266,7 +1277,7 @@
 
   .input-checkbox:checked + .checkbox-checkmark::after {
     content: '•';
-    @apply text-accent-text-color text-sm font-archivo;
+    @apply text-text-primary text-sm font-archivo;
   }
 
   /* Action Section */

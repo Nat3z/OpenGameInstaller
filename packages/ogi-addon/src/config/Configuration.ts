@@ -10,10 +10,7 @@ import {
   isStringOption,
   isActionOption,
 } from './ConfigurationBuilder';
-import type {
-  ConfigurationFile,
-  ConfigurationOptionType,
-} from './ConfigurationBuilder';
+import type { ConfigurationFile } from './ConfigurationBuilder';
 
 interface DefiniteConfig {
   [key: string]: string | number | boolean;
@@ -65,9 +62,9 @@ export class Configuration {
         continue;
       }
 
-      const result = this.storedConfigTemplate[key].validate(
-        this.definiteConfig[key]
-      );
+      const result = (
+        this.storedConfigTemplate[key] as unknown as ConfigurationOption<string>
+      ).validate(this.definiteConfig[key]);
       if (!result[0]) {
         erroredKeys.set(key, result[1]);
       }
@@ -145,5 +142,5 @@ export {
   isActionOption,
 };
 
-export type { ConfigurationFile, ConfigurationOptionType };
+export type { ConfigurationFile, ConfigurationOptionWire } from '@ogi-sdk/connect';
 export type { DefiniteConfig };

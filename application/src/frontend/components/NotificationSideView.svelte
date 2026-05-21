@@ -34,11 +34,11 @@
   // Load tasks when component mounts
   onMount(async () => {
     await loadDeferredTasks();
-    pollInterval = startTaskPolling();
     setTimeout(() => {
       closeTimeout = true;
       console.log('closeTimeout', closeTimeout);
     }, 5000);
+    pollInterval = startTaskPolling();
   });
 
   // Cleanup polling on destroy

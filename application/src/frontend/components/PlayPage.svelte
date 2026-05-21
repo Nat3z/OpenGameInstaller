@@ -20,9 +20,10 @@
   import { quintOut } from 'svelte/easing';
   import Image from '@/frontend/components/Image.svelte';
   import {
+    addonServer,
     fetchAddonsWithConfigure,
+    runLaunchAppAddons,
     runTask,
-    safeFetch,
   } from '@/frontend/utils';
   import AddonPicture from '@/frontend/components/AddonPicture.svelte';
   import { updatesManager, appUpdates } from '@/frontend/states.svelte';
@@ -111,10 +112,7 @@
     try {
       console.log('launching pre-launch');
       console.log('launchApp', libraryInfo);
-      await safeFetch('launchApp', {
-        libraryInfo: libraryInfo,
-        launchType: 'pre',
-      });
+      await runLaunchAppAddons(libraryInfo, 'pre');
     } catch (error) {
       console.error(error);
       // remove the game from the gamesLaunched state first so the play button is restored
@@ -354,16 +352,11 @@
     if (addonsWithStorefront.length === 0) return;
     for (const addon of addonsWithStorefront) {
       searchingAddons[addon.id] = undefined;
-      safeFetch(
-        'search',
-        {
-          addonID: addon.id,
-          appID: libraryInfo.appID,
-          storefront: libraryInfo.storefront,
-          for: 'task',
-        },
-        { consume: 'json' }
-      )
+      (addonServer.addon(addon.id).search({
+        appID: libraryInfo.appID,
+        storefront: libraryInfo.storefront,
+        for: 'task',
+      }) as Promise<SearchResult[]>)
         .then((tasks) => {
           console.log('tasks', tasks);
           searchingAddons[addon.id] = tasks;

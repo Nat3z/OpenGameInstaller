@@ -13,7 +13,9 @@
   import {
     fetchAddonsWithConfigure,
     getConfigClientOption,
-    safeFetch,
+    addonServer,
+    queryConnectedAddons,
+    reconnectClientSdk,
   } from '@/frontend/utils';
   import Notifications from '@/frontend/managers/NotificationManager.svelte';
   import NotificationSideView from '@/frontend/components/NotificationSideView.svelte';
@@ -159,7 +161,7 @@
 
   async function initializeSearch() {
     try {
-      const addonData = await safeFetch('getAllAddons', {});
+      const addonData = await queryConnectedAddons<ConfigTemplateAndInfo>();
       addons = addonData;
 
       const online = await window.electronAPI.app.isOnline();
@@ -211,15 +213,12 @@
       let promises: Promise<void>[] = [];
       for (const addon of addons) {
         promises.push(
-          safeFetch(
-            'searchQuery',
-            {
-              addonID: addon.id,
-              query: query,
-            },
-            { consume: 'json' }
+          (
+            addonServer.addon(addon.id).librarySearch(query) as Promise<
+              BasicLibraryInfo[]
+            >
           )
-            .then((response: BasicLibraryInfo[]) => {
+            .then((response: BasicLibraryInfo[] = []) => {
               // Check if search was cancelled
               if (signal.aborted || query !== activeQuery) return;
 
@@ -400,6 +399,7 @@
       addonUpdates.set([]);
       // restart the addon server
       await window.electronAPI.restartAddonServer();
+      reconnectClientSdk();
     }
   });
   document.addEventListener('addon:updated', (event) => {

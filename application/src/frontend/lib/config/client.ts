@@ -1,6 +1,6 @@
 import type { OGIAddonConfiguration } from 'ogi-addon';
 import type { ConfigurationFile } from 'ogi-addon/config';
-import { safeFetch } from '@/frontend/lib/core/ipc';
+import { addonServer, queryConnectedAddons } from '@/frontend/lib/core/ipc';
 
 export interface ConfigTemplateAndInfo extends OGIAddonConfiguration {
   configTemplate: ConfigurationFile;
@@ -13,7 +13,7 @@ export function getConfigClientOption<T>(id: string): T | null {
 }
 export function fetchAddonsWithConfigure() {
   return new Promise<ConfigTemplateAndInfo[]>((resolve, _) => {
-    safeFetch('getAllAddons', {}).then(
+    queryConnectedAddons<ConfigTemplateAndInfo>().then(
       async (addons: ConfigTemplateAndInfo[]) => {
         // now configure each addon
         for (const addon of addons) {
@@ -41,16 +41,7 @@ export function fetchAddonsWithConfigure() {
               addon.id,
               storedConfig
             );
-            safeFetch(
-              'updateConfig',
-              {
-                addonID: addon.id,
-                config: storedConfig,
-              },
-              {
-                consume: 'text',
-              }
-            );
+            addonServer.addon(addon.id).configUpdate(storedConfig as any);
           } else {
             // if there is no stored config, we should store and send the default config
             let defaultConfig: Record<string, number | boolean | string> = {};
@@ -66,16 +57,7 @@ export function fetchAddonsWithConfigure() {
               JSON.stringify(defaultConfig, null, 2)
             );
             // then post
-            safeFetch(
-              'updateConfig',
-              {
-                addonID: addon.id,
-                config: defaultConfig,
-              },
-              {
-                consume: 'text',
-              }
-            );
+            addonServer.addon(addon.id).configUpdate(defaultConfig as any);
           }
         }
         resolve(addons);

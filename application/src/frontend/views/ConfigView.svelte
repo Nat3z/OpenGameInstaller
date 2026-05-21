@@ -2,7 +2,7 @@
   import { onDestroy, onMount } from 'svelte';
   import { fly } from 'svelte/transition';
   import { quintOut } from 'svelte/easing';
-  import { safeFetch } from '@/frontend/utils';
+  import { queryConnectedAddons, reconnectClientSdk } from '@/frontend/utils';
   import type { ConfigurationFile } from 'ogi-addon/config';
   import type { OGIAddonConfiguration } from 'ogi-addon';
   import { addonUpdates, createNotification } from '@/frontend/store';
@@ -28,12 +28,12 @@
 
   onMount(() => {
     // Initial fetch
-    safeFetch('getAllAddons', {}).then((data) => {
+    queryConnectedAddons<ConfigTemplateAndInfo>().then((data) => {
       addons = data;
     });
     // Start polling every 3 seconds
     pollingInterval = setInterval(() => {
-      safeFetch('getAllAddons', {}).then((data) => {
+      queryConnectedAddons<ConfigTemplateAndInfo>().then((data) => {
         addons = data;
       });
     }, 3000);
@@ -72,6 +72,7 @@
       addonUpdates.set([]);
       // restart the addon server
       await window.electronAPI.restartAddonServer();
+      reconnectClientSdk();
       // No need to manually refresh addons, polling will handle it
     } catch (error) {
       createNotification({

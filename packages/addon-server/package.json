@@ -19,7 +19,8 @@
   "scripts": {
     "generate:event-proxy": "bun scripts/generate-event-proxy.ts",
     "prebuild": "bun run generate:event-proxy",
-    "build": "tsdown --config tsdown.config.js"
+    "build": "tsdown --config tsdown.config.js",
+    "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
     "@types/bun": "latest",

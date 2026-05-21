@@ -591,6 +591,14 @@ ipcRenderer.on(
 );
 
 ipcRenderer.on(
+  'addon-runtime-ready',
+  wrap(() => {
+    console.log('ADDON RUNTIME READY');
+    document.dispatchEvent(new CustomEvent('addon-runtime-ready'));
+  })
+);
+
+ipcRenderer.on(
   'app:show-changelog',
   wrap((_, arg) => {
     document.dispatchEvent(

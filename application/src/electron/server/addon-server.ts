@@ -6,7 +6,6 @@ import addonProcedures from '@/electron/server/api/addons.js';
 import deferProcedures from '@/electron/server/api/defer.js';
 import { AddonIPC } from '@/electron/server/ipc.js';
 import { z } from 'zod';
-import type { ConfigurationFile } from 'ogi-addon/config';
 import { join } from 'path';
 import { existsSync, readFileSync } from 'fs';
 const app = express();
@@ -33,37 +32,12 @@ type LaunchRequestHandler = (
 
 let focusRequestHandler: FocusRequestHandler | null = null;
 let launchRequestHandler: LaunchRequestHandler | null = null;
-type AddonServerNotification = {
-  message: string;
-  id: string;
-  type: 'info' | 'error' | 'success' | 'warning';
-};
-type InputAskedHandler = (
-  id: string,
-  configuration: ConfigurationFile,
-  title: string,
-  description: string,
-  callback: (result: any) => void
-) => void;
-type NotificationHandler = (notification: AddonServerNotification) => void;
-
-let inputAskedHandler: InputAskedHandler | null = null;
-let notificationHandler: NotificationHandler | null = null;
-
 export function registerInstanceBridgeHandlers(handlers: {
   onFocus?: FocusRequestHandler;
   onLaunch?: LaunchRequestHandler;
 }) {
   focusRequestHandler = handlers.onFocus ?? null;
   launchRequestHandler = handlers.onLaunch ?? null;
-}
-
-export function registerAddonServerUIHandlers(handlers: {
-  onInputAsked?: InputAskedHandler;
-  onNotification?: NotificationHandler;
-}) {
-  inputAskedHandler = handlers.onInputAsked ?? null;
-  notificationHandler = handlers.onNotification ?? null;
 }
 
 function isLoopbackAddress(address: string | undefined): boolean {
@@ -180,24 +154,8 @@ const addonServer = new AddonServer({
 
 addonServer.extend(server);
 
-addonServer.on('input-asked', (title, description, configuration, reply) => {
-  inputAskedHandler?.(
-    Math.random().toString(36).substring(7),
-    configuration,
-    title,
-    description,
-    (result) => {
-      reply(result);
-    }
-  );
-});
-
-addonServer.on('notification', (notification) => {
-  notificationHandler?.(notification);
-});
-
 addonServer.on('disconnect', (reason) => {
-  notificationHandler?.({
+  addonServer.emit('notification', {
     type: 'error',
     message: reason,
     id: 'addon-disconnect-' + Math.random().toString(36).substring(7),

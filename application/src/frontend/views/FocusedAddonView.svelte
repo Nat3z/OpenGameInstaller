@@ -1,15 +1,17 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { safeFetch, runTask } from '@/frontend/utils';
-  import type {
-    BooleanOption,
-    ConfigurationFile,
-    ConfigurationOption,
-    NumberOption,
-    StringOption,
-    ActionOption,
+  import {
+    addonServer,
+    queryConnectedAddons,
+    runTask,
+  } from '@/frontend/utils';
+  import type { ConfigurationFile } from 'ogi-addon/config';
+  import {
+    isActionOption,
+    isBooleanOption,
+    isNumberOption,
+    isStringOption,
   } from 'ogi-addon/config';
-  import { isActionOption } from 'ogi-addon/config';
   import type { OGIAddonConfiguration } from 'ogi-addon';
   import { notifications } from '@/frontend/store';
   import AddonPicture from '@/frontend/components/AddonPicture.svelte';
@@ -31,20 +33,6 @@
   }: { addonId: string; onBack: () => void; refreshAddon: () => void } =
     $props();
 
-  function isStringOption(option: ConfigurationOption): option is StringOption {
-    return option.type === 'string';
-  }
-
-  function isNumberOption(option: ConfigurationOption): option is NumberOption {
-    return option.type === 'number';
-  }
-
-  function isBooleanOption(
-    option: ConfigurationOption
-  ): option is BooleanOption {
-    return option.type === 'boolean';
-  }
-
   interface ConfigTemplateAndInfo extends OGIAddonConfiguration {
     configTemplate: ConfigurationFile;
   }
@@ -56,7 +44,7 @@
   let runningActions: Record<string, boolean> = $state({});
 
   onMount(() => {
-    safeFetch('getAllAddons', {}).then((data) => {
+    queryConnectedAddons<ConfigTemplateAndInfo>().then((data) => {
       const addon = data.find((a: ConfigTemplateAndInfo) => a.id === addonId);
       if (addon) {
         selectedAddon = addon;
@@ -64,7 +52,8 @@
           Object.keys(selectedAddon.configTemplate).forEach((key) => {
             if (
               isStringOption(selectedAddon!.configTemplate[key]) &&
-              selectedAddon!.configTemplate[key].allowedValues.length > 0
+              (selectedAddon!.configTemplate[key].allowedValues?.length ?? 0) >
+                0
             ) {
               selectedValues[key] = getStoredOrDefaultValue(key);
             }
@@ -88,7 +77,7 @@
 
       if (element) {
         if (isStringOption(option)) {
-          if (option.allowedValues.length > 0) {
+          if ((option.allowedValues?.length ?? 0) > 0) {
             config[key] = selectedValues[key];
           } else {
             config[key] = element.value;
@@ -115,14 +104,11 @@
       }
     });
 
-    safeFetch(
-      'updateConfig',
-      {
-        addonID: selectedAddon.id,
-        config: config,
-      },
-      {}
-    ).then((data) => {
+    addonServer
+      .addon(selectedAddon.id)
+      .configUpdate(config as any)
+      .then((response) => (response ?? { success: true }) as any)
+      .then((data) => {
       if (!data.success) {
         for (const key in data.errors) {
           const element = document.getElementById(key);
@@ -288,9 +274,11 @@
   async function deleteAddonGO() {
     if (!selectedAddon) return;
     try {
-      const result = await safeFetch('deleteAddon', {
+      const response = await window.electronAPI.app.request('deleteAddon', {
         addonID: selectedAddon.id,
       });
+      if (response.error) throw response.error;
+      const result = response.data;
       if (result.success) {
         notifications.update((update) => [
           ...update,
@@ -354,7 +342,7 @@
     const option = selectedAddon.configTemplate[key];
     if (!isActionOption(option)) return;
 
-    const actionOption = option as ActionOption & { taskName?: string };
+    const actionOption = option;
     const taskName = actionOption.taskName || key;
     const manifest = {
       __taskName: taskName,
@@ -515,11 +503,11 @@
               >
               {#if isStringOption(selectedAddon.configTemplate[key])}
                 {@const option = selectedAddon.configTemplate[key]}
-                {#if option.allowedValues.length > 0}
+                {#if (option.allowedValues?.length ?? 0) > 0}
                   <div class="config-input-container">
                     <CustomDropdown
                       id={key}
-                      options={option.allowedValues.map((v) => ({
+                      options={(option.allowedValues ?? []).map((v) => ({
                         id: v,
                         name: v,
                       }))}
@@ -605,9 +593,7 @@
                 </label>
               {/if}
               {#if isActionOption(selectedAddon.configTemplate[key])}
-                {@const option = selectedAddon.configTemplate[
-                  key
-                ] as ActionOption}
+                {@const option = selectedAddon.configTemplate[key]}
                 <button
                   type="button"
                   onclick={(event) => {
@@ -753,7 +739,7 @@
   }
   .input-checkbox:checked + .checkbox-checkmark::after {
     content: '•';
-    @apply text-white text-sm font-archivo;
+    @apply text-text-primary text-sm font-archivo;
   }
 
   .browse-button {

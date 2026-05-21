@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { safeFetch } from '@/frontend/utils';
+  import { addonServer, queryConnectedAddons } from '@/frontend/utils';
   import type {
     BasicLibraryInfo,
     CatalogCarouselItem,
@@ -219,13 +219,13 @@
   async function loadCatalogs() {
     try {
       loading = true;
-      addons = await safeFetch('getAllAddons', {});
+      addons = await queryConnectedAddons<ConfigTemplateAndInfo>();
 
       const catalogPromises = addons.map(async (addon) => {
         try {
-          const catalogData: CatalogResponse = await safeFetch('getCatalogs', {
-            addonID: addon.id,
-          });
+          const catalogData = (await addonServer
+            .addon(addon.id)
+            .catalog()) as CatalogResponse;
           const normalizedCatalog = normalizeCatalog(catalogData);
 
           return {

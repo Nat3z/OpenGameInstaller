@@ -10,6 +10,7 @@
   "build": {
     "icon": "public/favicon.ico",
     "productName": "OpenGameInstaller",
+    "npmRebuild": false,
     "extends": null,
     "files": [
       "public/**/*",
@@ -36,7 +37,7 @@
     "dev": "bun run build:all && ELECTRON_EXEC_PATH=\"$(node -p \"require('electron')\" )\" electron-vite dev",
     "preview": "electron-vite preview",
     "dev:server": "nodemon --watch server --ext ts,json --exec \"tsc --p tsconfig.addonserver.json && bun run --bun build-addons/dev-server.js\"",
-    "preelectron-pack": "bun run build:all && bun run build",
+    "preelectron-pack": "bun run build:all && bun run build && electron-rebuild",
     "electron-pack": "electron-builder",
     "format": "prettier --write \"src/**/*.{ts,svelte,json}\"",
     "typecheck": "tsc -p src/electron/tsconfig.json --noEmit && svelte-check --tsconfig src/frontend/tsconfig.json",
@@ -77,6 +78,7 @@
     "@types/webtorrent": "^0.110.1",
     "concurrently": "^7.6.0",
     "debug": "^4.4.3",
+    "@electron/rebuild": "^3.7.2",
     "electron": "^40.1.0",
     "electron-builder": "^23.6.0",
     "electron-vite": "^5.0.0",

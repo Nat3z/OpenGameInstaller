@@ -111,7 +111,10 @@
         if (data?.success !== true) {
           for (const key in data?.errors ?? {}) {
             const element = document.getElementById(key);
-            if (!element) return console.error('element not found');
+            if (!element) {
+              console.error('element not found for key', key);
+              continue;
+            }
             const inputElement = element.matches('[data-input]')
               ? element
               : element

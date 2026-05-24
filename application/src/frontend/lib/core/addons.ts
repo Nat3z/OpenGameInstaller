@@ -19,7 +19,10 @@ export async function runLaunchAppAddons(
     )
   );
 
-  return { success: true, results };
+  return {
+    success: results.every((result) => result.status === 'fulfilled'),
+    results,
+  };
 }
 
 export async function findAddonsSupportingStorefront(

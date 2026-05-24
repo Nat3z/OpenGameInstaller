@@ -61,13 +61,12 @@ export type DeferredTask = {
   name: string;
   description: string;
   addonOwner: string;
-  status: 'pending' | 'running' | 'completed' | 'failed' | 'error' | 'cancelled';
+  status: 'pending' | 'running' | 'completed' | 'error' | 'cancelled';
   progress: number;
   logs: string[];
   timestamp: number;
   duration?: number;
   error?: string;
-  failed?: string;
   type:
     | 'setup'
     | 'download'

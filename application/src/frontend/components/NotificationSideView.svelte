@@ -554,12 +554,12 @@
                         </div>
                       </div>
 
-                      {#if task.error || task.failed}
+                      {#if task.error}
                         <div
                           class="mt-2 p-2 bg-red-50 border border-red-200 rounded text-xs text-red-700"
                         >
                           <strong>Error:</strong>
-                          {task.error || task.failed}
+                          {task.error}
                         </div>
                       {/if}
 

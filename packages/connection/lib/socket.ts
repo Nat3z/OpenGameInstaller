@@ -1,5 +1,3 @@
-import type { RawData } from 'ws';
-
 export type EventResponseMessage = {
   event: string;
   id?: string;
@@ -183,9 +181,38 @@ export class EventResponseSocket<
       );
     }
     if (Array.isArray(rawMessage)) {
-      return rawMessage
-        .map((message) => this.normalizeRawMessageSync(message))
-        .join('');
+      const pieces = rawMessage.map((message) =>
+        this.normalizeRawMessageSync(message)
+      );
+      if (pieces.every((piece) => piece === undefined)) {
+        return undefined;
+      }
+      const hasBinaryPiece = rawMessage.some(
+        (message) =>
+          isBuffer(message) ||
+          message instanceof ArrayBuffer ||
+          ArrayBuffer.isView(message)
+      );
+      if (hasBinaryPiece) {
+        const buffers = rawMessage.map((message) => {
+          if (isBuffer(message)) return message;
+          if (message instanceof ArrayBuffer) return Buffer.from(message);
+          if (ArrayBuffer.isView(message)) {
+            return Buffer.from(
+              message.buffer,
+              message.byteOffset,
+              message.byteLength
+            );
+          }
+          if (typeof message === 'string') return Buffer.from(message);
+          const normalized = this.normalizeRawMessageSync(message);
+          return normalized === undefined
+            ? Buffer.alloc(0)
+            : Buffer.from(normalized);
+        });
+        return Buffer.concat(buffers).toString();
+      }
+      return pieces.join('');
     }
     return undefined;
   }

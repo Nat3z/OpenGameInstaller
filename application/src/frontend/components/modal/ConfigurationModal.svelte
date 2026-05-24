@@ -101,13 +101,16 @@
     | undefined;
 
   async function handleSubmit() {
-    const data = JSON.parse(JSON.stringify(formData));
+    const data = structuredClone(formData);
     submitError = undefined;
     try {
       if (screenReply) {
         await screenReply(data);
       } else {
-        await window.electronAPI.app.inputSend(screenID!!, data);
+        if (!screenID) {
+          throw new Error('No screen ID available');
+        }
+        await window.electronAPI.app.inputSend(screenID, data);
       }
       console.log('Submitted data:', formData);
       closeModal();

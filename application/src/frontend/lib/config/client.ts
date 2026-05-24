@@ -30,7 +30,27 @@ export async function fetchAddonsWithConfigure() {
           JSON.stringify(config, null, 2)
         );
       } else {
-        config = JSON.parse(window.electronAPI.fs.read(`./config/${addon.id}.json`));
+        try {
+          config = JSON.parse(
+            window.electronAPI.fs.read(`./config/${addon.id}.json`)
+          );
+        } catch (e) {
+          console.error(
+            `Failed to parse config for ${addon.id}, regenerating defaults:`,
+            e
+          );
+          config = {};
+          for (const key in addon.configTemplate) {
+            config[key] = addon.configTemplate[key].defaultValue as
+              | number
+              | boolean
+              | string;
+          }
+          window.electronAPI.fs.write(
+            `./config/${addon.id}.json`,
+            JSON.stringify(config, null, 2)
+          );
+        }
       }
 
       console.log('Posting stored config for addon', addon.id, config);

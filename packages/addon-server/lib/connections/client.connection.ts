@@ -144,7 +144,9 @@ export class ClientConnection {
       }, addonId);
       task.id = taskID;
       this.server.getDeferredTasksManager().addTask(task);
-      void task.run();
+      void task.run().catch((error) => {
+        console.error('Deferred task failed:', error);
+      });
 
       await this.sendQueryResponse(message.id, { taskID });
     });

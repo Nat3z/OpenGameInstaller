@@ -1,10 +1,7 @@
 import { AddonConnection } from './connections/addon.connection';
 import { ClientConnection } from './connections/client.connection';
-import {
-  WebSocketServer,
-  createWebSocketUpgradeListener,
-  type WebSocket,
-} from '@ogi-sdk/connect';
+import { WebSocketServer, type WebSocket } from 'ws';
+import { randomUUID } from 'crypto';
 import http from 'http';
 import { EventEmitter } from 'events';
 import type {
@@ -34,14 +31,18 @@ export class AddonServer {
 
   private server = http.createServer();
   private wss: WebSocketServer | undefined;
-  private upgradeListener?: ReturnType<typeof createWebSocketUpgradeListener>;
+  private upgradeListener?: (
+    req: http.IncomingMessage,
+    socket: import('node:stream').Duplex,
+    head: Buffer
+  ) => void;
 
   private deferredTasksManager: DeferredTasksManager =
     new DeferredTasksManager();
   public constructor(private readonly config: AddonConfig) {
     // create a random secret if not provided
     if (config.securityCheck && !config.secret) {
-      config.secret = `${Math.floor(new Date().getTime() + Math.random() * 10000)}-${Math.floor(Math.random() * 10000)}`;
+      config.secret = randomUUID();
     }
   }
 
@@ -117,7 +118,12 @@ export class AddonServer {
   }
 
   public getSecret(): string {
-    return this.config.secret!;
+    if (!this.config.secret) {
+      throw new Error(
+        'Addon server secret is not configured. Enable securityCheck and set a secret, or provide one in the server config.'
+      );
+    }
+    return this.config.secret;
   }
 
   public stop(): void {
@@ -142,6 +148,34 @@ export class AddonServer {
     this.clients.clear();
   }
 
+  private handleWebSocketConnection(
+    ws: WebSocket,
+    request: http.IncomingMessage
+  ): void {
+    if (request.url?.startsWith('/sdk')) {
+      const connection = new ClientConnection(ws, this);
+      this.sdkConnections.add(connection);
+      ws.on('close', () => this.sdkConnections.delete(connection));
+      return;
+    }
+
+    const connection = new AddonConnection(ws, this.config, this);
+    this.connections.add(connection);
+    ws.on('close', () => {
+      this.removeConnection(connection);
+      this.eventEmitter.emit('disconnect', 'Addon websocket closed');
+    });
+    void (async () => {
+      const success = await connection.setupWebsocket();
+      if (!success) {
+        this.removeConnection(connection);
+        this.eventEmitter.emit('disconnect', 'Failed to setup websocket');
+      } else {
+        this.eventEmitter.emit('connect', connection);
+      }
+    })();
+  }
+
   public async start(): Promise<void> {
     if (this.upgradeListener) {
       this.server.removeListener('upgrade', this.upgradeListener);
@@ -149,32 +183,12 @@ export class AddonServer {
     }
     this.wss?.close();
     this.wss = new WebSocketServer({ noServer: true });
-    this.upgradeListener = createWebSocketUpgradeListener(this.wss);
+    this.upgradeListener = (req, socket, head) => {
+      this.wss!.handleUpgrade(req, socket, head, (ws: WebSocket) => {
+        this.handleWebSocketConnection(ws, req);
+      });
+    };
     this.server.on('upgrade', this.upgradeListener);
-
-    this.wss.on('connection', (ws: WebSocket, request) => {
-      if (request.url?.startsWith('/sdk')) {
-        const connection = new ClientConnection(ws, this);
-        this.sdkConnections.add(connection);
-        ws.on('close', () => this.sdkConnections.delete(connection));
-        return;
-      }
-
-      const connection = new AddonConnection(ws, this.config, this);
-      this.connections.add(connection);
-      ws.on('close', () => {
-        this.removeConnection(connection);
-        this.eventEmitter.emit('disconnect', 'Addon websocket closed');
-      });
-      connection.setupWebsocket().then((success) => {
-        if (!success) {
-          this.removeConnection(connection);
-          this.eventEmitter.emit('disconnect', 'Failed to setup websocket');
-        } else {
-          this.eventEmitter.emit('connect', connection);
-        }
-      });
-    });
 
     this.server.listen(this.config.port, () => {
       this.eventEmitter.emit('start');

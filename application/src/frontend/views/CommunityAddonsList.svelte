@@ -43,7 +43,7 @@
     );
     setTimeout(async () => {
       await window.electronAPI.restartAddonServer();
-      reconnectClientSdk();
+      await reconnectClientSdk();
     }, 2500);
   }
 
@@ -61,7 +61,7 @@
       JSON.stringify(currentAddons, null, 2)
     );
     await window.electronAPI.restartAddonServer();
-    reconnectClientSdk();
+    await reconnectClientSdk();
     // close the modal
     deleteConfirmationModalAddon = null;
   }

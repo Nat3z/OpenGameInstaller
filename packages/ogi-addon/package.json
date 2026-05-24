@@ -40,7 +40,6 @@
   "dependencies": {
     "@ogi-sdk/connect": "workspace:*",
     "fuse.js": "^7.1.0",
-    "ws": "^8.4.0",
     "zod": "^3.23.8"
   },
   "scripts": {
@@ -54,7 +53,6 @@
   "devDependencies": {
     "@types/minimatch": "^6.0.0",
     "@types/node": "^20.14.12",
-    "@types/ws": "^8.4.0",
     "prettier": "^3.6.0",
     "tsdown": "^0.20.0-beta.4",
     "typescript": "^5.0.0"

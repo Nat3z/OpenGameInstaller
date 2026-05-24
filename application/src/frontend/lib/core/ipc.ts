@@ -19,10 +19,27 @@ export async function queryConnectedAddons<T = AddonInfo>() {
   if (response.statusError) throw new Error(response.statusError);
   return response.args.addons as T[];
 }
-export function reconnectClientSdk(): void {
-  addonServer.close();
-  addonServer = connectClientSdk();
+
+let reconnectInFlight: Promise<void> | null = null;
+
+export async function reconnectClientSdk(): Promise<void> {
+  if (reconnectInFlight) {
+    return reconnectInFlight;
+  }
+
+  reconnectInFlight = (async () => {
+    const old = addonServer;
+    old.close();
+    addonServer = connectClientSdk();
+  })();
+
+  try {
+    await reconnectInFlight;
+  } finally {
+    reconnectInFlight = null;
+  }
 }
+
 export function connectClientSdk(): Connection {
   const developerConfig = getConfigClientOption('developer') as
     | { clientSdkUrl?: string }

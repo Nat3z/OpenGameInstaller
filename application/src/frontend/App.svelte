@@ -406,7 +406,7 @@
       addonUpdates.set([]);
       // restart the addon server
       await window.electronAPI.restartAddonServer();
-      reconnectClientSdk();
+      await reconnectClientSdk();
     }
   });
   document.addEventListener('addon:updated', (event) => {

@@ -16,13 +16,9 @@
   },
   "devDependencies": {
     "@types/bun": "latest",
-    "@types/ws": "^8.18.1",
     "tsdown": "^0.21.10"
   },
   "peerDependencies": {
     "typescript": "^5"
-  },
-  "dependencies": {
-    "ws": "^8.20.0"
   }
 }

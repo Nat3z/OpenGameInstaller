@@ -1,4 +1,3 @@
-import { WebSocket } from 'ws';
 import { EventResponseSocket, randomMessageId } from '@ogi-sdk/connect';
 import type {
   AddonClientToServerEventArgs,
@@ -505,7 +504,7 @@ export const ZodLibraryInfo: z.ZodType<LibraryInfo> = z.object({
 export type { AddonTaskRunEventArgs as TaskRunMessageArgs } from '@ogi-sdk/connect';
 
 class OGIAddonWSListener {
-  private socket: WebSocket;
+  private socket: InstanceType<typeof globalThis.WebSocket>;
   private transport: EventResponseSocket<
     AddonServerToClientWebsocketMessage,
     AddonClientToServerWebsocketMessage
@@ -533,9 +532,13 @@ class OGIAddonWSListener {
 
     this.addon = ogiAddon;
     this.eventEmitter = eventEmitter;
-    this.socket = new WebSocket('ws://localhost:' + port);
+    const WebSocketConstructor = globalThis.WebSocket;
+    if (!WebSocketConstructor) {
+      throw new Error('WebSocket is not available in this runtime');
+    }
+    this.socket = new WebSocketConstructor('ws://localhost:' + port);
     this.transport = new EventResponseSocket(this.socket);
-    this.socket.on('open', () => {
+    this.socket.addEventListener('open', () => {
       console.log('Connected to OGI Addon Server');
       console.log('OGI Addon Server Version:', VERSION);
 
@@ -568,25 +571,29 @@ class OGIAddonWSListener {
       );
     });
 
-    this.socket.on('error', (error) => {
+    this.socket.addEventListener('error', (event) => {
       this.transport.rejectPendingResponses('Websocket error');
-      if (error.message.includes('Failed to connect')) {
+      const message =
+        event instanceof ErrorEvent
+          ? event.message
+          : event.type;
+      if (message.includes('Failed to connect')) {
         throw new Error(
           'OGI Addon Server is not running/is unreachable. Please start the server and try again.'
         );
       }
-      console.error('An error occurred:', error);
+      console.error('An error occurred:', event);
     });
 
-    this.socket.on('close', (code, reason) => {
+    this.socket.addEventListener('close', (event) => {
       this.transport.rejectPendingResponses('Websocket closed');
-      if (code === 1008) {
-        console.error('Authentication failed:', reason);
+      if (event.code === 1008) {
+        console.error('Authentication failed:', event.reason);
         return;
       }
-      this.eventEmitter.emit('disconnect', reason);
+      this.eventEmitter.emit('disconnect', event.reason);
       console.log('Disconnected from OGI Addon Server');
-      console.error(reason.toString());
+      console.error(event.reason);
       this.eventEmitter.emit('exit');
       this.socket.close();
     });
@@ -781,19 +788,19 @@ class OGIAddonWSListener {
               // Use the registered task handler
               const handler = this.addon.getTaskHandler(taskName)!;
               const task = new Task(taskRunEvent);
+              const interval = setInterval(() => {
+                if (taskRunEvent.resolved) {
+                  clearInterval(interval);
+                  return;
+                }
+                this.send('defer-update', {
+                  logs: taskRunEvent.logs,
+                  deferID: args.deferID ?? '',
+                  progress: taskRunEvent.progress,
+                  failed: taskRunEvent.failed,
+                } as AddonClientToServerEventArgs['defer-update']);
+              }, 100);
               try {
-                const interval = setInterval(() => {
-                  if (taskRunEvent.resolved) {
-                    clearInterval(interval);
-                    return;
-                  }
-                  this.send('defer-update', {
-                    logs: taskRunEvent.logs,
-                    deferID: args.deferID ?? '',
-                    progress: taskRunEvent.progress,
-                    failed: taskRunEvent.failed,
-                  } as AddonClientToServerEventArgs['defer-update']);
-                }, 100);
                 const result = handler(task, {
                   manifest: args.manifest || {},
                   downloadPath: args.downloadPath || '',
@@ -804,12 +811,12 @@ class OGIAddonWSListener {
                 if (result instanceof Promise) {
                   await result;
                 }
-
-                clearInterval(interval);
               } catch (error) {
                 taskRunEvent.fail(
                   error instanceof Error ? error.message : String(error)
                 );
+              } finally {
+                clearInterval(interval);
               }
             } else {
               // No handler found - fail the task

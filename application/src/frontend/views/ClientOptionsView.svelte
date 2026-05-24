@@ -474,7 +474,7 @@
   async function restartAddonServer() {
     isRestartingServer = true;
     await window.electronAPI.restartAddonServer();
-    reconnectClientSdk();
+    await reconnectClientSdk();
   }
 
   let showPassword: { [key: string]: boolean } = $state({});

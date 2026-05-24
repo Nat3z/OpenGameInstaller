@@ -75,7 +75,7 @@
       addonUpdates.set([]);
       // restart the addon server
       await window.electronAPI.restartAddonServer();
-      reconnectClientSdk();
+      await reconnectClientSdk();
       // No need to manually refresh addons, polling will handle it
     } catch (error) {
       createNotification({

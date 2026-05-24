@@ -19,12 +19,11 @@ export async function loadDeferredTasks(tasksToRemove: string[] = []) {
           addonOwner: task.addonOwner,
           status: task.finished ? (task.failed ? 'error' : 'completed') : 'running',
           progress: task.progress || 0,
-          failed: task.failed,
           logs: task.logs || [],
           timestamp: Date.now(),
           duration: undefined,
           error:
-            task.failed ||
+            task.failed ??
             (task.logs && task.logs.length > 0
               ? task.logs[task.logs.length - 1]
               : undefined),

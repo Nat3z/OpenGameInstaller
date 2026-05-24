@@ -1,6 +1,7 @@
 import { randomUUID } from 'crypto';
 import {
   EventResponseSocket,
+  type WebSocketLike,
   type AddonClientSDKToServerIncomingMessage,
   type AddonClientSDKToServerWebsocketMessage,
   type AddonServerToClientEventArgs,
@@ -16,28 +17,21 @@ import { buildEventMessage } from '../_generated/event-proxy';
 import { DeferrableTask } from '../deffered';
 import type { AddonServer } from '../server';
 import type { AddonConnection } from './addon.connection';
-
-interface ClientWebSocket {
-  send(data: string): void;
-  close(code?: number, reason?: string): void;
-  on(event: 'message', listener: (rawMessage: unknown) => void): unknown;
-  on(event: 'close' | 'error' | 'open', listener: (...args: unknown[]) => void): unknown;
-  readyState: number;
-}
+import { bindWebSocketLifecycle } from './websocket-lifecycle';
 
 type SDKResponseMap = {
   [Name in SDKRequestName]: SDKResponse<Name>;
 };
 
 export class ClientConnection {
-  private socket: ClientWebSocket;
+  private socket: WebSocketLike;
   private transport: EventResponseSocket<
     AddonClientSDKToServerIncomingMessage,
     AddonServerToClientSDKIncomingMessage
   >;
   private server: AddonServer;
 
-  constructor(socket: ClientWebSocket, server: AddonServer) {
+  constructor(socket: WebSocketLike, server: AddonServer) {
     this.socket = socket;
     this.server = server;
     this.transport = new EventResponseSocket(this.socket, {
@@ -277,12 +271,12 @@ export class ClientConnection {
       });
     });
 
-    this.socket.on('close', () =>
-      this.transport.rejectPendingResponses('Websocket closed')
-    );
-    this.socket.on('error', () =>
-      this.transport.rejectPendingResponses('Websocket error')
-    );
+    bindWebSocketLifecycle(this.socket, {
+      onClose: () =>
+        this.transport.rejectPendingResponses('Websocket closed'),
+      onError: () =>
+        this.transport.rejectPendingResponses('Websocket error'),
+    });
   }
 
   private sendForwardResponse(

@@ -67,16 +67,14 @@
 
     try {
       await window.electronAPI.updateAddons();
+      addonUpdates.set([]);
+      await window.electronAPI.restartAddonServer();
+      await reconnectClientSdk();
       createNotification({
         id: Math.random().toString(36).substring(7),
         message: 'Addons updated successfully',
         type: 'success',
       });
-      addonUpdates.set([]);
-      // restart the addon server
-      await window.electronAPI.restartAddonServer();
-      await reconnectClientSdk();
-      // No need to manually refresh addons, polling will handle it
     } catch (error) {
       createNotification({
         id: Math.random().toString(36).substring(7),

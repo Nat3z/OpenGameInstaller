@@ -1,4 +1,4 @@
-import { EventResponseSocket } from '@ogi-sdk/connect';
+import { EventResponseSocket, type WebSocketLike } from '@ogi-sdk/connect';
 import type {
   AddonServerToClientEventArgs,
   OGIAddonConfiguration,
@@ -15,18 +15,11 @@ import {
 } from '../_generated/event-proxy';
 import { createClientMessageHandlers } from '../handlers/client-message-handlers';
 import type { ClientMessageHandlers } from '../handlers/types';
-
-interface AddonWebSocket {
-  send(data: string): void;
-  close(code?: number, reason?: string): void;
-  on(event: 'message', listener: (rawMessage: unknown) => void): unknown;
-  on(event: 'close' | 'error', listener: (...args: unknown[]) => void): unknown;
-  readyState: number;
-}
+import { bindWebSocketLifecycle } from './websocket-lifecycle';
 
 export class AddonConnection {
   public addonInfo: OGIAddonConfiguration | undefined;
-  public ws: AddonWebSocket;
+  public ws: WebSocketLike;
   public configTemplate: ConfigurationFile | undefined;
   public filePath: string | undefined;
   public addonLink: string | undefined;
@@ -41,7 +34,7 @@ export class AddonConnection {
   private clientEventHandlers: ClientMessageHandlers;
 
   constructor(
-    ws: AddonWebSocket,
+    ws: WebSocketLike,
     config: AddonConfig,
     server: AddonServer
   ) {
@@ -88,12 +81,12 @@ export class AddonConnection {
         );
       });
 
-      this.ws.on('close', () =>
-        this.transport.rejectPendingResponses('Websocket closed')
-      );
-      this.ws.on('error', () =>
-        this.transport.rejectPendingResponses('Websocket error')
-      );
+      bindWebSocketLifecycle(this.ws, {
+        onClose: () =>
+          this.transport.rejectPendingResponses('Websocket closed'),
+        onError: () =>
+          this.transport.rejectPendingResponses('Websocket error'),
+      });
     });
   }
 

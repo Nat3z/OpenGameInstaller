@@ -1,4 +1,5 @@
 import type { LibraryInfo, SearchResult } from '@ogi-sdk/connect';
+import { get } from 'svelte/store';
 import { createNotification, deferredTasks } from '@/frontend/store';
 import { addonServer } from '@/frontend/lib/core/ipc';
 
@@ -72,7 +73,6 @@ export async function runTask(
           logs: [],
           timestamp: Date.now(),
           type: 'other',
-          failed: undefined,
         },
       ]);
       createNotification({
@@ -98,7 +98,7 @@ export async function runTask(
       if (!taskID) return;
       deferredTasks.update((tasks) =>
         tasks.map((t) =>
-          t.id === taskID ? { ...t, failed: error, status: 'failed' } : t
+          t.id === taskID ? { ...t, error, status: 'error' } : t
         )
       );
       createNotification({
@@ -109,12 +109,15 @@ export async function runTask(
     },
   }).taskRun(args);
 
-  deferredTasks.update((tasks) => tasks.filter((t) => t.id !== taskID));
-  createNotification({
-    id: Math.random().toString(36).substring(7),
-    type: 'success',
-    message: 'Task completed',
-  });
+  const finalTask = get(deferredTasks).find((t) => t.id === taskID);
+  if (finalTask?.status !== 'error') {
+    deferredTasks.update((tasks) => tasks.filter((t) => t.id !== taskID));
+    createNotification({
+      id: Math.random().toString(36).substring(7),
+      type: 'success',
+      message: 'Task completed',
+    });
+  }
 
   return response;
 }

@@ -31,16 +31,18 @@ function addonConfigPath(addonId: string): string {
 function defaultConfigValue(
   option: ConfigurationOptionWire
 ): number | boolean | string | undefined {
-  if (option.defaultValue !== undefined) {
-    return option.defaultValue;
-  }
   if (isBooleanOption(option)) {
-    return false;
+    return typeof option.defaultValue === 'boolean' ? option.defaultValue : false;
   }
   if (isNumberOption(option)) {
-    return option.min ?? 0;
+    return typeof option.defaultValue === 'number'
+      ? option.defaultValue
+      : (option.min ?? 0);
   }
   if (isStringOption(option)) {
+    if (typeof option.defaultValue === 'string') {
+      return option.defaultValue;
+    }
     if ((option.allowedValues?.length ?? 0) > 0) {
       return option.allowedValues![0];
     }

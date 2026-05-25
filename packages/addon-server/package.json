@@ -20,7 +20,9 @@
     "generate:event-proxy": "bun scripts/generate-event-proxy.ts",
     "prebuild": "bun run generate:event-proxy",
     "build": "tsdown --config tsdown.config.js",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "release": "bun run build && npm publish --access public",
+    "release-beta": "bun run build && npm publish --access public --tag future"
   },
   "devDependencies": {
     "@types/bun": "latest",
@@ -37,5 +39,22 @@
     "ogi-addon": "workspace:*",
     "websocket": "^1.0.35",
     "ws": "^8.20.0"
-  }
+  },
+  "description": "HTTP/WebSocket addon server for OpenGameInstaller addon integrations.",
+  "license": "MIT",
+  "author": {
+    "name": "Nat3z",
+    "email": "me@nat3z.com",
+    "url": "https://nat3z.com/"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Nat3z/OpenGameInstaller",
+    "directory": "packages/addon-server"
+  },
+  "files": [
+    "build",
+    "README.md",
+    "LICENSE"
+  ]
 }

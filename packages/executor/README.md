@@ -1,15 +1,40 @@
-# addon-executor
+# @ogi-sdk/executor
 
-To install dependencies:
+Execution utilities for OpenGameInstaller addons. This package contains helpers for addon setup, launch, Git-based addon loading, and addon configuration validation.
 
-```bash
+## Installation
+
+```sh
+bun add @ogi-sdk/executor
+```
+
+## Usage
+
+```ts
+import { Addon } from '@ogi-sdk/executor';
+
+const addon = new Addon({
+  name: 'my-addon',
+  path: './my-addon',
+  port: 3000,
+  secret: 'dev-secret',
+});
+
+await addon.setup.runSetup();
+```
+
+## Development
+
+```sh
 bun install
+bun run build
+bun run typecheck
 ```
 
-To run:
+## Release
 
-```bash
-bun run index.ts
+```sh
+bun run release
+# or publish a future/beta tag
+bun run release-beta
 ```
-
-This project was created using `bun init` in bun v1.3.13. [Bun](https://bun.com) is a fast all-in-one JavaScript runtime.

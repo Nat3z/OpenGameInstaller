@@ -1,15 +1,34 @@
-# addon-server
+# @ogi-sdk/addon-server
 
-To install dependencies:
+Addon server runtime for [OpenGameInstaller](https://ogi.nat3z.com/). It exposes the HTTP/WebSocket bridge used by OGI to talk to addon code and shares protocol types with the rest of the OGI SDK.
 
-```bash
+## Installation
+
+```sh
+bun add @ogi-sdk/addon-server
+```
+
+## Usage
+
+```ts
+import { AddonServer } from '@ogi-sdk/addon-server';
+
+const server = new AddonServer({ port: 3000, securityCheck: true });
+await server.start();
+```
+
+## Development
+
+```sh
 bun install
+bun run build
+bun run typecheck
 ```
 
-To run:
+## Release
 
-```bash
-bun run index.ts
+```sh
+bun run release
+# or publish a future/beta tag
+bun run release-beta
 ```
-
-This project was created using `bun init` in bun v1.3.9. [Bun](https://bun.com) is a fast all-in-one JavaScript runtime.

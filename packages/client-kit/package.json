@@ -7,6 +7,10 @@
       "import": {
         "default": "./build/index.mjs",
         "types": "./build/index.d.mts"
+      },
+      "require": {
+        "default": "./build/index.cjs",
+        "types": "./build/index.d.cts"
       }
     }
   },
@@ -19,7 +23,9 @@
     "generate:addon-proxy": "bun scripts/generate-addon-proxy.ts",
     "prebuild": "bun run generate:addon-proxy",
     "build": "tsdown --config tsdown.config.js",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "release": "bun run build && npm publish --access public",
+    "release-beta": "bun run build && npm publish --access public --tag future"
   },
   "peerDependencies": {
     "typescript": "^5"
@@ -28,5 +34,25 @@
     "ws": "^8.20.0",
     "ogi-addon": "workspace:*",
     "@ogi-sdk/connect": "workspace:*"
-  }
+  },
+  "description": "Client SDK for connecting OpenGameInstaller to addon servers.",
+  "license": "MIT",
+  "author": {
+    "name": "Nat3z",
+    "email": "me@nat3z.com",
+    "url": "https://nat3z.com/"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Nat3z/OpenGameInstaller",
+    "directory": "packages/client-kit"
+  },
+  "files": [
+    "build",
+    "README.md",
+    "LICENSE"
+  ],
+  "module": "./build/index.mjs",
+  "main": "./build/index.cjs",
+  "types": "./build/index.d.mts"
 }

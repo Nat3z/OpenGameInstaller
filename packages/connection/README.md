@@ -35,8 +35,16 @@ For HTTP upgrade paths, use `upgradeToWebSocket`/`createWebSocketUpgradeListener
 
 ```sh
 bun install
-bun test
 bun run build
+bun run typecheck
+```
+
+## Release
+
+```sh
+bun run release
+# or publish a future/beta tag
+bun run release-beta
 ```
 
 See [lib/index.ts](./lib/index.ts) and the generated TypeScript declarations for fuller API details and integration examples used by the addon server and client kit.

@@ -1,6 +1,6 @@
 {
   "name": "@ogi-sdk/connect",
-  "module": "lib/index.ts",
+  "module": "./build/index.mjs",
   "type": "module",
   "version": "0.0.1",
   "exports": {
@@ -8,11 +8,18 @@
       "import": {
         "default": "./build/index.mjs",
         "types": "./build/index.d.mts"
+      },
+      "require": {
+        "default": "./build/index.cjs",
+        "types": "./build/index.d.cts"
       }
     }
   },
   "scripts": {
-    "build": "tsdown --config tsdown.config.js"
+    "build": "tsdown --config tsdown.config.js",
+    "typecheck": "tsc --noEmit",
+    "release": "bun run build && npm publish --access public",
+    "release-beta": "bun run build && npm publish --access public --tag future"
   },
   "devDependencies": {
     "@types/bun": "latest",
@@ -20,5 +27,24 @@
   },
   "peerDependencies": {
     "typescript": "^5"
-  }
+  },
+  "description": "Typed WebSocket protocol primitives for OpenGameInstaller SDK packages.",
+  "license": "MIT",
+  "author": {
+    "name": "Nat3z",
+    "email": "me@nat3z.com",
+    "url": "https://nat3z.com/"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Nat3z/OpenGameInstaller",
+    "directory": "packages/connection"
+  },
+  "files": [
+    "build",
+    "README.md",
+    "LICENSE"
+  ],
+  "main": "./build/index.cjs",
+  "types": "./build/index.d.mts"
 }

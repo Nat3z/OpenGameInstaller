@@ -8,12 +8,19 @@
       "import": {
         "default": "./build/index.mjs",
         "types": "./build/index.d.mts"
+      },
+      "require": {
+        "default": "./build/index.cjs",
+        "types": "./build/index.d.cts"
       }
     }
   },
   "type": "module",
   "scripts": {
-    "build": "tsdown --config tsdown.config.js"
+    "build": "tsdown --config tsdown.config.js",
+    "typecheck": "tsc --noEmit",
+    "release": "bun run build && npm publish --access public",
+    "release-beta": "bun run build && npm publish --access public --tag future"
   },
   "devDependencies": {
     "@types/bun": "latest",
@@ -25,5 +32,23 @@
   "dependencies": {
     "string-argv": "^0.3.2",
     "zod": "^4.4.2"
-  }
+  },
+  "description": "Addon process execution and setup helpers for OpenGameInstaller.",
+  "license": "MIT",
+  "author": {
+    "name": "Nat3z",
+    "email": "me@nat3z.com",
+    "url": "https://nat3z.com/"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Nat3z/OpenGameInstaller",
+    "directory": "packages/executor"
+  },
+  "files": [
+    "build",
+    "README.md",
+    "LICENSE"
+  ],
+  "types": "./build/index.d.mts"
 }

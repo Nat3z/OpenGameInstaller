@@ -22,7 +22,7 @@
   "scripts": {
     "generate:addon-proxy": "bun scripts/generate-addon-proxy.ts",
     "prebuild": "bun run generate:addon-proxy",
-    "build": "tsdown --config tsdown.config.js",
+    "build": "bun run prebuild && tsdown --config tsdown.config.js",
     "typecheck": "tsc --noEmit",
     "release": "bun run build && npm publish --access public",
     "release-beta": "bun run build && npm publish --access public --tag future"

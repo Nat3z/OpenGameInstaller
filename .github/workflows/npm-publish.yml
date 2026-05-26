@@ -114,9 +114,8 @@ jobs:
         if: steps.version-check.outputs.changed == 'true'
         run: bun install --frozen-lockfile
 
-      - name: Build package
+      - name: Build all packages
         if: steps.version-check.outputs.changed == 'true'
-        working-directory: ${{ matrix.package.dir }}
         run: bun run build
 
       - name: Publish to npm

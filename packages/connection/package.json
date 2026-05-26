@@ -2,7 +2,7 @@
   "name": "@ogi-sdk/connect",
   "module": "./build/index.mjs",
   "type": "module",
-  "version": "0.0.1",
+  "version": "1.0.0",
   "exports": {
     ".": {
       "import": {

@@ -10,28 +10,52 @@ on:
       - 'packages/client-kit/package.json'
       - 'packages/connection/package.json'
       - 'packages/executor/package.json'
+  workflow_dispatch:
+    inputs:
+      package:
+        description: Package to publish
+        required: true
+        type: choice
+        options:
+          - packages/ogi-addon
+          - packages/addon-server
+          - packages/client-kit
+          - packages/connection
+          - packages/executor
 
 permissions:
   id-token: write # Required for OIDC
   contents: write
 
 jobs:
+  setup-matrix:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - id: set-matrix
+        run: |
+          MATRIX='[
+            {"dir":"packages/ogi-addon","tag-prefix":"ogi-addon"},
+            {"dir":"packages/addon-server","tag-prefix":"ogi-sdk-addon-server"},
+            {"dir":"packages/client-kit","tag-prefix":"ogi-sdk-client-kit"},
+            {"dir":"packages/connection","tag-prefix":"ogi-sdk-connect"},
+            {"dir":"packages/executor","tag-prefix":"ogi-sdk-executor"}
+          ]'
+
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            SELECTED='${{ inputs.package }}'
+            MATRIX=$(echo "$MATRIX" | jq -c "[.[] | select(.dir == \"$SELECTED\")]")
+          fi
+
+          echo "matrix={\"package\":$MATRIX}" >> "$GITHUB_OUTPUT"
+
   check-version-and-publish:
+    needs: setup-matrix
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      matrix:
-        package:
-          - dir: packages/ogi-addon
-            tag-prefix: ogi-addon
-          - dir: packages/addon-server
-            tag-prefix: ogi-sdk-addon-server
-          - dir: packages/client-kit
-            tag-prefix: ogi-sdk-client-kit
-          - dir: packages/connection
-            tag-prefix: ogi-sdk-connect
-          - dir: packages/executor
-            tag-prefix: ogi-sdk-executor
+      matrix: ${{ fromJson(needs.setup-matrix.outputs.matrix) }}
 
     steps:
       - name: Checkout repository
@@ -54,16 +78,26 @@ jobs:
         id: version-check
         env:
           PACKAGE_DIR: ${{ matrix.package.dir }}
+          MANUAL_PUBLISH: ${{ github.event_name == 'workflow_dispatch' }}
         run: |
           CURRENT_VERSION=$(node -p "require('./${PACKAGE_DIR}/package.json').version")
           PACKAGE_NAME=$(node -p "require('./${PACKAGE_DIR}/package.json').name")
+
+          echo "Package: $PACKAGE_NAME"
+          echo "Current version: $CURRENT_VERSION"
+
+          if [ "$MANUAL_PUBLISH" = "true" ]; then
+            echo "Manual publish — publishing current version"
+            echo "changed=true" >> $GITHUB_OUTPUT
+            echo "version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
+            echo "name=$PACKAGE_NAME" >> $GITHUB_OUTPUT
+            exit 0
+          fi
 
           # Get the previous version from the previous commit
           git show HEAD~1:${PACKAGE_DIR}/package.json > /tmp/prev-package.json 2>/dev/null || echo '{"version":"0.0.0"}' > /tmp/prev-package.json
           PREV_VERSION=$(node -p "require('/tmp/prev-package.json').version")
 
-          echo "Package: $PACKAGE_NAME"
-          echo "Current version: $CURRENT_VERSION"
           echo "Previous version: $PREV_VERSION"
 
           if [ "$CURRENT_VERSION" != "$PREV_VERSION" ]; then

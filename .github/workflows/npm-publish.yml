@@ -43,12 +43,14 @@ jobs:
             {"dir":"packages/executor","tag-prefix":"ogi-sdk-executor"}
           ]'
 
+          MATRIX=$(echo "$MATRIX" | jq -c .)
+
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             SELECTED='${{ inputs.package }}'
             MATRIX=$(echo "$MATRIX" | jq -c "[.[] | select(.dir == \"$SELECTED\")]")
           fi
 
-          echo "matrix={\"package\":$MATRIX}" >> "$GITHUB_OUTPUT"
+          echo "matrix={\"package\":${MATRIX}}" >> "$GITHUB_OUTPUT"
 
   check-version-and-publish:
     needs: setup-matrix

@@ -1,4 +1,4 @@
-name: Publish ogi-addon to npm
+name: Publish npm packages
 
 on:
   push:
@@ -6,6 +6,10 @@ on:
       - main
     paths:
       - 'packages/ogi-addon/package.json'
+      - 'packages/addon-server/package.json'
+      - 'packages/client-kit/package.json'
+      - 'packages/connection/package.json'
+      - 'packages/executor/package.json'
 
 permissions:
   id-token: write # Required for OIDC
@@ -14,6 +18,21 @@ permissions:
 jobs:
   check-version-and-publish:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        package:
+          - dir: packages/ogi-addon
+            tag-prefix: ogi-addon
+          - dir: packages/addon-server
+            tag-prefix: ogi-sdk-addon-server
+          - dir: packages/client-kit
+            tag-prefix: ogi-sdk-client-kit
+          - dir: packages/connection
+            tag-prefix: ogi-sdk-connect
+          - dir: packages/executor
+            tag-prefix: ogi-sdk-executor
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -33,13 +52,17 @@ jobs:
 
       - name: Check if version changed
         id: version-check
+        env:
+          PACKAGE_DIR: ${{ matrix.package.dir }}
         run: |
-          CURRENT_VERSION=$(cat packages/ogi-addon/package.json | grep '"version"' | head -1 | awk -F: '{ print $2 }' | sed 's/[",]//g' | tr -d ' ')
+          CURRENT_VERSION=$(node -p "require('./${PACKAGE_DIR}/package.json').version")
+          PACKAGE_NAME=$(node -p "require('./${PACKAGE_DIR}/package.json').name")
 
           # Get the previous version from the previous commit
-          git show HEAD~1:packages/ogi-addon/package.json > /tmp/prev-package.json 2>/dev/null || echo '{"version":"0.0.0"}' > /tmp/prev-package.json
-          PREV_VERSION=$(cat /tmp/prev-package.json | grep '"version"' | head -1 | awk -F: '{ print $2 }' | sed 's/[",]//g' | tr -d ' ')
+          git show HEAD~1:${PACKAGE_DIR}/package.json > /tmp/prev-package.json 2>/dev/null || echo '{"version":"0.0.0"}' > /tmp/prev-package.json
+          PREV_VERSION=$(node -p "require('/tmp/prev-package.json').version")
 
+          echo "Package: $PACKAGE_NAME"
           echo "Current version: $CURRENT_VERSION"
           echo "Previous version: $PREV_VERSION"
 
@@ -47,6 +70,7 @@ jobs:
             echo "Version changed from $PREV_VERSION to $CURRENT_VERSION"
             echo "changed=true" >> $GITHUB_OUTPUT
             echo "version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
+            echo "name=$PACKAGE_NAME" >> $GITHUB_OUTPUT
           else
             echo "Version unchanged"
             echo "changed=false" >> $GITHUB_OUTPUT
@@ -54,25 +78,29 @@ jobs:
 
       - name: Install dependencies
         if: steps.version-check.outputs.changed == 'true'
-        working-directory: packages/ogi-addon
-        run: bun install
+        run: bun install --frozen-lockfile
 
       - name: Build package
         if: steps.version-check.outputs.changed == 'true'
-        working-directory: packages/ogi-addon
+        working-directory: ${{ matrix.package.dir }}
         run: bun run build
 
       - name: Publish to npm
         if: steps.version-check.outputs.changed == 'true'
-        working-directory: packages/ogi-addon
-        run: npm publish
+        working-directory: ${{ matrix.package.dir }}
+        run: |
+          if [[ "${{ steps.version-check.outputs.name }}" == @* ]]; then
+            npm publish --access public
+          else
+            npm publish
+          fi
 
       - name: Create Git tag
         if: steps.version-check.outputs.changed == 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag "ogi-addon-v${{ steps.version-check.outputs.version }}"
-          git push origin "ogi-addon-v${{ steps.version-check.outputs.version }}"
+          git tag "${{ matrix.package.tag-prefix }}-v${{ steps.version-check.outputs.version }}"
+          git push origin "${{ matrix.package.tag-prefix }}-v${{ steps.version-check.outputs.version }}"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

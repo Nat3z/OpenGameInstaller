@@ -46,7 +46,12 @@
         data[key] = option.defaultValue ?? option.min ?? 0;
       } else if (isStringOption(option)) {
         if ((option.allowedValues?.length ?? 0) > 0) {
-          data[key] = option.defaultValue ?? option.allowedValues![0];
+          const allowed = option.allowedValues!;
+          const defaultValue = option.defaultValue;
+          data[key] =
+            defaultValue && allowed.includes(defaultValue)
+              ? defaultValue
+              : allowed[0];
         } else {
           data[key] = option.defaultValue ?? '';
         }
@@ -110,7 +115,17 @@
         }
       } else if (
         isStringOption(option) &&
-        (option.allowedValues?.length ?? 0) === 0 &&
+        (option.allowedValues?.length ?? 0) > 0
+      ) {
+        const allowed = option.allowedValues!;
+        const selectValue =
+          (el as HTMLSelectElement).value || String(data[key] ?? '');
+        data[key] =
+          selectValue && allowed.includes(selectValue)
+            ? selectValue
+            : allowed[0];
+      } else if (
+        isStringOption(option) &&
         option.inputType !== 'file' &&
         option.inputType !== 'folder'
       ) {

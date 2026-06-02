@@ -8,7 +8,7 @@
     label,
     description = '',
     type = 'text',
-    value = '',
+    value: displayValue = '',
     options = [],
     min,
     max,
@@ -40,14 +40,24 @@
     onchange?: (id: string, value: string | number) => void;
   } = $props();
 
-  let displayValue = $state(value);
-  let selectedId = $state(typeof value === 'string' ? value : '');
+  function resolveSelectId(
+    raw: string | number | undefined,
+    selectOptions: { id: string; name: string; description?: string }[]
+  ): string {
+    if (selectOptions.length === 0) return '';
+    const id = typeof raw === 'string' ? raw : '';
+    return id && selectOptions.some((opt) => opt.id === id)
+      ? id
+      : selectOptions[0].id;
+  }
 
-  $effect(() => {
-    displayValue = value;
-    // Clear dropdown selection when value is not a string (e.g. switched from select to number)
-    selectedId = typeof value === 'string' ? value : '';
-  });
+  let selectedId = $derived(
+    type === 'select'
+      ? resolveSelectId(displayValue, options)
+      : typeof displayValue === 'string'
+        ? displayValue
+        : ''
+  );
 
   function syncValueFromTarget(target: HTMLInputElement) {
     if (type === 'number' || type === 'range') {

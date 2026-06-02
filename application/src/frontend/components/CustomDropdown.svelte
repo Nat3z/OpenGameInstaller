@@ -1,6 +1,18 @@
 <script lang="ts">
   import { fly } from 'svelte/transition';
 
+  const MENU_MAX_HEIGHT_PX = 320;
+
+  /** Move element to document.body so fixed menus escape overflow containers. */
+  function portal(node: HTMLElement) {
+    document.body.appendChild(node);
+    return {
+      destroy() {
+        node.remove();
+      },
+    };
+  }
+
   let {
     options,
     selectedId,
@@ -21,6 +33,8 @@
   } = $props();
 
   let showDropdown = $state(false);
+  let buttonEl: HTMLButtonElement | undefined = $state();
+  let menuStyle = $state('');
 
   let selectedOption = $derived(
     options.find((opt) => opt.id === selectedId) || options[0]
@@ -32,10 +46,56 @@
     onchange({ selectedId: optionId });
   }
 
+  function updateMenuPosition() {
+    if (!buttonEl) return;
+    const rect = buttonEl.getBoundingClientRect();
+    const gap = 4;
+    const spaceBelow = window.innerHeight - rect.bottom - gap;
+    const spaceAbove = rect.top - gap;
+    const openUpward =
+      spaceBelow < MENU_MAX_HEIGHT_PX && spaceAbove > spaceBelow;
+    const maxHeight = Math.min(
+      MENU_MAX_HEIGHT_PX,
+      Math.max(0, openUpward ? spaceAbove : spaceBelow)
+    );
+
+    if (openUpward) {
+      menuStyle = `left:${rect.left}px;width:${rect.width}px;bottom:${window.innerHeight - rect.top + gap}px;max-height:${maxHeight}px;`;
+    } else {
+      menuStyle = `left:${rect.left}px;width:${rect.width}px;top:${rect.bottom + gap}px;max-height:${maxHeight}px;`;
+    }
+  }
+
+  function toggleDropdown() {
+    showDropdown = !showDropdown;
+    if (showDropdown) {
+      updateMenuPosition();
+    }
+  }
+
   $effect(() => {
+    if (!showDropdown) return;
+
+    updateMenuPosition();
+    const onScrollOrResize = () => updateMenuPosition();
+    window.addEventListener('scroll', onScrollOrResize, true);
+    window.addEventListener('resize', onScrollOrResize);
+
+    return () => {
+      window.removeEventListener('scroll', onScrollOrResize, true);
+      window.removeEventListener('resize', onScrollOrResize);
+    };
+  });
+
+  $effect(() => {
+    if (!showDropdown) return;
+
     function handleClickOutside(event: MouseEvent) {
       const target = event.target as HTMLElement;
-      if (!target.closest(`.custom-dropdown-button-${id}`)) {
+      if (
+        !target.closest(`.custom-dropdown-button-${id}`) &&
+        !target.closest(`.custom-dropdown-menu-${id}`)
+      ) {
         showDropdown = false;
       }
     }
@@ -58,12 +118,13 @@
   <!-- Custom dropdown button -->
   <button
     type="button"
+    bind:this={buttonEl}
     class="custom-dropdown-button custom-dropdown-button-{id}"
-    onclick={() => (showDropdown = !showDropdown)}
+    onclick={toggleDropdown}
     onkeydown={(e) => {
       if (e.key === 'Enter' || e.key === ' ') {
         e.preventDefault();
-        showDropdown = !showDropdown;
+        toggleDropdown();
       }
     }}
   >
@@ -96,14 +157,17 @@
       />
     </svg>
   </button>
+</div>
 
-  <!-- Custom dropdown menu -->
-  {#if showDropdown}
-    <div
-      class="custom-dropdown-menu w-full overflow-x-hidden"
-      in:fly={{ y: -10, duration: 200 }}
-      out:fly={{ y: -10, duration: 150 }}
-    >
+<!-- Portaled menu: fixed positioning escapes overflow containers (e.g. modals) -->
+{#if showDropdown}
+  <div
+    use:portal
+    class="custom-dropdown-menu custom-dropdown-menu-{id} overflow-x-hidden"
+    style={menuStyle}
+    in:fly={{ y: -10, duration: 200 }}
+    out:fly={{ y: -10, duration: 150 }}
+  >
       {#each options as option, index (option.id)}
         <button
           type="button"
@@ -147,9 +211,8 @@
           {/if}
         </button>
       {/each}
-    </div>
-  {/if}
-</div>
+  </div>
+{/if}
 
 <style>
   @reference "../app.css";
@@ -159,7 +222,7 @@
   }
 
   .custom-dropdown-menu {
-    @apply absolute top-full left-0 right-0 mt-1 bg-surface border border-border rounded-lg shadow-lg z-10 max-h-80 overflow-y-auto;
+    @apply fixed z-50 bg-surface border border-border rounded-lg shadow-lg overflow-y-auto;
     box-shadow:
       0 10px 25px -5px rgba(0, 0, 0, 0.1),
       0 8px 10px -6px rgba(0, 0, 0, 0.1);

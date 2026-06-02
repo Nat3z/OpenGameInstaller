@@ -22,11 +22,9 @@ export async function loadDeferredTasks(tasksToRemove: string[] = []) {
           logs: task.logs || [],
           timestamp: Date.now(),
           duration: undefined,
-          error:
-            task.failed ??
-            (task.logs && task.logs.length > 0
-              ? task.logs[task.logs.length - 1]
-              : undefined),
+          // Only surface an explicit failure message as the task error. Logs are
+          // shown separately and should not be promoted to errors.
+          error: task.failed || undefined,
           type: 'other',
         }))
     );

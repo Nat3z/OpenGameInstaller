@@ -12,6 +12,7 @@ import {
 import { sendIPCMessage, sendNotification } from '@/electron/main.js';
 import axios from 'axios';
 import { AddonConnection } from '@ogi-sdk/addon-server';
+import { deleteInstalledAddon } from '@/electron/server/addon-lifecycle.js';
 
 export async function startAddons(): Promise<void> {
   // start all of the addons
@@ -208,6 +209,13 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
 
   ipcMain.handle('restart-addon-server', async (_) => {
     await restartAddonServer();
+  });
+
+  ipcMain.handle('addon:delete-installed', async (_, addonID: string) => {
+    if (typeof addonID !== 'string' || addonID.trim().length === 0) {
+      return { success: false, message: 'Invalid addon ID' };
+    }
+    return deleteInstalledAddon(addonID);
   });
 
   ipcMain.handle('clean-addons', async (_) => {

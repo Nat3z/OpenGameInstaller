@@ -5,7 +5,6 @@ import {
   server,
   port,
   type LaunchForwardPayload,
-  addonIPC,
   isSecurityCheckEnabled,
   startAddonServer,
   addonServer,
@@ -21,7 +20,7 @@ import RealdDebridHandler from '@/electron/handlers/handler.realdebrid.js';
 import AllDebridHandler from '@/electron/handlers/handler.alldebrid.js';
 import TorrentHandler from '@/electron/handlers/handler.torrent.js';
 import DirectDownloadHandler from '@/electron/handlers/handler.ddl.js';
-import AddonRestHandler from '@/electron/handlers/handler.rest.js';
+import { runLaunchAppHooks } from '@/electron/server/addon-lifecycle.js';
 import { __dirname, isDev } from '@/electron/manager/manager.paths.js';
 import {
   checkForAddonUpdates,
@@ -407,7 +406,6 @@ function registerMainHandlers(win: BrowserWindow) {
   AllDebridHandler(win);
   TorrentHandler(win);
   DirectDownloadHandler(win);
-  AddonRestHandler();
   AddonManagerHandler(win);
   OOBEHandler();
   registerUmuHandlers();
@@ -653,19 +651,7 @@ async function runAddonLaunchEvent(
     return { success: false, error: 'Game not found in library' };
   }
 
-  const response = await addonIPC.handleRequest({
-    method: 'launchApp',
-    params: {
-      libraryInfo,
-      launchType,
-    },
-  });
-
-  if (response.tag === 'error') {
-    return { success: false, error: response.error };
-  }
-
-  return { success: true };
+  return runLaunchAppHooks(libraryInfo, launchType);
 }
 
 async function handleRemoteLaunchRequest(

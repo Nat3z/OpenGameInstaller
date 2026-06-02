@@ -289,11 +289,9 @@
   async function deleteAddonGO() {
     if (!selectedAddon) return;
     try {
-      const response = await window.electronAPI.app.request('deleteAddon', {
-        addonID: selectedAddon.id,
-      });
-      if (response.error) throw response.error;
-      const result = response.data;
+      const result = await window.electronAPI.deleteInstalledAddon(
+        selectedAddon.id
+      );
       if (result.success) {
         notifications.update((update) => [
           ...update,

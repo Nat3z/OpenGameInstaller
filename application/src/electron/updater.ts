@@ -11,10 +11,17 @@ import {
   statSync,
   copyFileSync,
   writeFileSync,
+  openSync,
+  closeSync,
+  readSync,
+  writeSync,
+  createReadStream,
 } from 'original-fs';
 import { basename, dirname, join } from 'path';
 import { setTimeout as setTimeoutPromise } from 'timers/promises';
 import { spawn, exec } from 'child_process';
+import { createHash } from 'crypto';
+import * as zlib from 'zlib';
 import * as path from 'path';
 import { __dirname as persistentDataDir } from '@/electron/manager/manager.paths.js';
 import { getEffectiveOnlineState } from '@/electron/lib/online.js';
@@ -257,6 +264,320 @@ async function downloadFileWithProgress(
   });
 }
 
+const PATCH_PROGRESS_INTERVAL = 128;
+const RANGE_DOWNLOAD_CHUNK_SIZE = 16 * 1024 * 1024;
+const RANGE_DOWNLOAD_COALESCE_GAP = 512 * 1024;
+
+type ReleaseAsset = {
+  name: string;
+  browser_download_url: string;
+  size?: number;
+  digest?: string;
+};
+
+type GithubRelease = {
+  tag_name: string;
+  body?: string;
+  prerelease?: boolean;
+  assets: ReleaseAsset[];
+};
+
+function getSetupVersionFromRelease(release: GithubRelease): string | null {
+  const match = release.body?.match(/Setup Version: (.*)/);
+  return match?.[1]?.trim() ?? null;
+}
+
+function getSetupAsset(release: GithubRelease): ReleaseAsset | undefined {
+  const suffix =
+    process.platform === 'win32' ? '-Setup.exe' : '-Setup.AppImage';
+  return release.assets.find((asset) => asset.name.includes(suffix));
+}
+
+function getBlockmapAsset(
+  release: GithubRelease,
+  artifact: ReleaseAsset
+): ReleaseAsset | undefined {
+  return release.assets.find(
+    (asset) =>
+      asset.name.toLowerCase() === `${artifact.name.toLowerCase()}.blockmap`
+  );
+}
+
+function getBlockKey(checksum: string, size: number): string {
+  return `${checksum}:${size}`;
+}
+
+function parseDigest(
+  digest?: string
+): { algorithm: string; value: string } | null {
+  if (!digest) return null;
+  const [algorithm, value] = digest.split(':', 2);
+  const normalized = algorithm?.toLowerCase();
+  if (!value || !['sha256', 'sha384', 'sha512'].includes(normalized)) {
+    return null;
+  }
+  return { algorithm: normalized, value: value.toLowerCase() };
+}
+
+async function hashFile(filePath: string, algorithm: string): Promise<string> {
+  return await new Promise((resolve, reject) => {
+    const hash = createHash(algorithm);
+    const stream = createReadStream(filePath);
+    stream.on('error', reject);
+    stream.on('data', (chunk) => hash.update(chunk));
+    stream.on('end', () => resolve(hash.digest('hex')));
+  });
+}
+
+async function verifyReleaseArtifact(
+  artifactPath: string,
+  expectedArtifact: ReleaseAsset
+): Promise<void> {
+  const size = statSync(artifactPath).size;
+  if (
+    Number.isFinite(expectedArtifact.size) &&
+    expectedArtifact.size &&
+    size !== expectedArtifact.size
+  ) {
+    throw new Error(
+      `Artifact size mismatch: expected ${expectedArtifact.size}, got ${size}`
+    );
+  }
+
+  const parsedDigest = parseDigest(expectedArtifact.digest);
+  if (!parsedDigest) return;
+
+  const actualDigest = await hashFile(artifactPath, parsedDigest.algorithm);
+  if (actualDigest !== parsedDigest.value) {
+    throw new Error(`Artifact digest mismatch for ${parsedDigest.algorithm}`);
+  }
+}
+
+async function downloadRangeChunk(
+  url: string,
+  start: number,
+  end: number
+): Promise<Buffer> {
+  const response = await axios({
+    url,
+    method: 'GET',
+    responseType: 'arraybuffer',
+    headers: {
+      Range: `bytes=${start}-${end}`,
+      'Accept-Encoding': 'identity',
+    },
+    timeout: 60000,
+  });
+
+  const expectedSize = end - start + 1;
+  const actualSize = Buffer.byteLength(response.data);
+  if (response.status !== 206 || actualSize !== expectedSize) {
+    throw new Error(`Invalid range response for bytes=${start}-${end}`);
+  }
+
+  return Buffer.from(response.data);
+}
+
+function createRangeDownloadTasks(
+  misses: Array<{ offset: number; size: number }>
+) {
+  const coalescedRanges: Array<{ offset: number; size: number }> = [];
+  for (const miss of misses) {
+    const last = coalescedRanges[coalescedRanges.length - 1];
+    const missEnd = miss.offset + miss.size;
+    if (
+      last &&
+      miss.offset - (last.offset + last.size) <= RANGE_DOWNLOAD_COALESCE_GAP
+    ) {
+      last.size = missEnd - last.offset;
+    } else {
+      coalescedRanges.push({ ...miss });
+    }
+  }
+
+  const tasks: Array<{ start: number; end: number; size: number }> = [];
+  for (const range of coalescedRanges) {
+    let start = range.offset;
+    const end = range.offset + range.size - 1;
+    while (start <= end) {
+      const chunkEnd = Math.min(start + RANGE_DOWNLOAD_CHUNK_SIZE - 1, end);
+      tasks.push({ start, end: chunkEnd, size: chunkEnd - start + 1 });
+      start = chunkEnd + 1;
+    }
+  }
+  return tasks;
+}
+
+async function applyBlockmapPatch(params: {
+  sourceArtifact: string;
+  oldBlockmapPath: string;
+  outputArtifact: string;
+  newBlockmapPath: string;
+  targetUrl: string;
+  expectedArtifact: ReleaseAsset;
+  updateStatus: (text: string, subtext?: string) => void;
+  updateProgress: (current: number, total: number, speed: string) => void;
+}): Promise<void> {
+  const oldMap = JSON.parse(
+    zlib.gunzipSync(readFileSync(params.oldBlockmapPath)).toString('utf8')
+  );
+  const newMap = JSON.parse(
+    zlib.gunzipSync(readFileSync(params.newBlockmapPath)).toString('utf8')
+  );
+  const oldFile = oldMap.files?.[0];
+  const newFile = newMap.files?.[0];
+  if (!oldFile || !newFile) throw new Error('Invalid blockmap payload');
+
+  const checksumToBlocks = new Map<
+    string,
+    Array<{ offset: number; size: number }>
+  >();
+  let oldOffset = oldFile.offset || 0;
+  for (let i = 0; i < oldFile.checksums.length; i++) {
+    const key = getBlockKey(oldFile.checksums[i], oldFile.sizes[i]);
+    const blocks = checksumToBlocks.get(key) ?? [];
+    blocks.push({ offset: oldOffset, size: oldFile.sizes[i] });
+    checksumToBlocks.set(key, blocks);
+    oldOffset += oldFile.sizes[i];
+  }
+
+  const sourceFd = openSync(params.sourceArtifact, 'r');
+  const outFd = openSync(params.outputArtifact, 'w');
+  try {
+    let writeOffset = newFile.offset || 0;
+    const misses: Array<{ offset: number; size: number }> = [];
+
+    if (writeOffset > 0) {
+      const header = await downloadRangeChunk(
+        params.targetUrl,
+        0,
+        writeOffset - 1
+      );
+      writeSync(outFd, header, 0, header.length, 0);
+    }
+
+    for (let i = 0; i < newFile.checksums.length; i++) {
+      const size = newFile.sizes[i];
+      const blocks = checksumToBlocks.get(
+        getBlockKey(newFile.checksums[i], size)
+      );
+      const matched = blocks?.pop();
+      if (matched) {
+        const buffer = Buffer.alloc(size);
+        const bytesRead = readSync(sourceFd, buffer, 0, size, matched.offset);
+        if (bytesRead !== size)
+          throw new Error('Short read from source artifact');
+        writeSync(outFd, buffer, 0, size, writeOffset);
+      } else {
+        misses.push({ offset: writeOffset, size });
+      }
+      writeOffset += size;
+      if (
+        i === newFile.checksums.length - 1 ||
+        (i + 1) % PATCH_PROGRESS_INTERVAL === 0
+      ) {
+        params.updateStatus('Building setup patch');
+        params.updateProgress(i + 1, newFile.checksums.length, '');
+      }
+    }
+
+    const tasks = createRangeDownloadTasks(misses);
+    let downloaded = 0;
+    const total = tasks.reduce((sum, task) => sum + task.size, 0);
+    for (const task of tasks) {
+      const chunk = await downloadRangeChunk(
+        params.targetUrl,
+        task.start,
+        task.end
+      );
+      writeSync(outFd, chunk, 0, chunk.length, task.start);
+      downloaded += chunk.length;
+      params.updateStatus('Downloading setup patch data');
+      params.updateProgress(downloaded, total, '');
+    }
+  } finally {
+    closeSync(sourceFd);
+    closeSync(outFd);
+  }
+
+  await verifyReleaseArtifact(params.outputArtifact, params.expectedArtifact);
+}
+
+async function downloadSetupAppImageWithDifferentialFallback(params: {
+  releases: GithubRelease[];
+  latestRelease: GithubRelease;
+  latestAsset: ReleaseAsset;
+  localVersion: string;
+  destination: string;
+  updateStatus: (text: string, subtext?: string) => void;
+  updateProgress: (current: number, total: number, speed: string) => void;
+}): Promise<void> {
+  const currentSetupPath = '../OpenGameInstaller-Setup.AppImage';
+  const newBlockmapAsset = getBlockmapAsset(
+    params.latestRelease,
+    params.latestAsset
+  );
+  const previousRelease = params.releases.find(
+    (release) => getSetupVersionFromRelease(release) === params.localVersion
+  );
+  const previousAsset = previousRelease
+    ? getSetupAsset(previousRelease)
+    : undefined;
+  const oldBlockmapAsset =
+    previousRelease && previousAsset
+      ? getBlockmapAsset(previousRelease, previousAsset)
+      : undefined;
+
+  if (existsSync(currentSetupPath) && newBlockmapAsset && oldBlockmapAsset) {
+    const tempDir = app.getPath('temp');
+    const oldBlockmapPath = join(tempDir, 'ogi-old-setup.blockmap');
+    const newBlockmapPath = join(tempDir, 'ogi-new-setup.blockmap');
+    try {
+      params.updateStatus('Downloading setup blockmaps...');
+      await downloadFileWithProgress(
+        oldBlockmapAsset.browser_download_url,
+        oldBlockmapPath,
+        params.updateStatus,
+        params.updateProgress
+      );
+      await downloadFileWithProgress(
+        newBlockmapAsset.browser_download_url,
+        newBlockmapPath,
+        params.updateStatus,
+        params.updateProgress
+      );
+      await applyBlockmapPatch({
+        sourceArtifact: currentSetupPath,
+        oldBlockmapPath,
+        outputArtifact: params.destination,
+        newBlockmapPath,
+        targetUrl: params.latestAsset.browser_download_url,
+        expectedArtifact: params.latestAsset,
+        updateStatus: params.updateStatus,
+        updateProgress: params.updateProgress,
+      });
+      console.log('[updater] Setup AppImage differential update succeeded');
+      return;
+    } catch (error) {
+      console.warn(
+        '[updater] Setup AppImage differential update failed, falling back to full download:',
+        error
+      );
+      rmSync(params.destination, { force: true });
+    } finally {
+      rmSync(oldBlockmapPath, { force: true });
+      rmSync(newBlockmapPath, { force: true });
+    }
+  }
+
+  await downloadFileWithProgress(
+    params.latestAsset.browser_download_url,
+    params.destination,
+    params.updateStatus,
+    params.updateProgress
+  );
+}
+
 async function backupStateForSetupReplacement(
   updateStatus: (text: string, subtext?: string) => void,
   updateProgress: (current: number, total: number, speed: string) => void
@@ -447,18 +768,10 @@ export function checkIfInstallerUpdateAvailable(callbacks?: UpdaterCallbacks) {
         resolve();
         return;
       }
-      let latestSetupVersionUrl: string | undefined = undefined;
       const latestVersion = latestRelease.tag_name;
-      if (process.platform === 'win32') {
-        latestSetupVersionUrl = latestRelease.assets.find(
-          (asset: { name: string }) => asset.name.includes('-Setup.exe')
-        )?.browser_download_url;
-      } else if (process.platform === 'linux') {
-        latestSetupVersionUrl = latestRelease.assets.find(
-          (asset: { name: string }) => asset.name.includes('-Setup.AppImage')
-        )?.browser_download_url;
-      }
-      if (!latestSetupVersionUrl) {
+      const latestSetupAsset = getSetupAsset(latestRelease);
+      const latestSetupVersionUrl = latestSetupAsset?.browser_download_url;
+      if (!latestSetupVersionUrl || !latestSetupAsset) {
         console.error(
           '[updater] No setup version found for the current platform.'
         );
@@ -522,12 +835,15 @@ export function checkIfInstallerUpdateAvailable(callbacks?: UpdaterCallbacks) {
           }, 500);
         } else if (process.platform === 'linux') {
           await setTimeoutPromise(3000);
-          await downloadFileWithProgress(
-            latestSetupVersionUrl,
-            '../temp-setup-OGI.AppImage',
+          await downloadSetupAppImageWithDifferentialFallback({
+            releases: releases.data,
+            latestRelease,
+            latestAsset: latestSetupAsset,
+            localVersion,
+            destination: '../temp-setup-OGI.AppImage',
             updateStatus,
-            updateProgress
-          );
+            updateProgress,
+          });
           console.log(`[updater] Setup downloaded successfully.`);
           console.log(`[updater] Backing up files in update.`);
           await backupStateForSetupReplacement(updateStatus, updateProgress);

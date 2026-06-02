@@ -1,9 +1,7 @@
 import { app, BrowserWindow } from 'electron';
 import { join } from 'path';
-import {
-  checkIfInstallerUpdateAvailable,
-  type UpdaterCallbacks,
-} from '@/electron/updater.js';
+import type { UpdaterCallbacks } from '@/electron/updater.js';
+import { createDefaultSystemUpdateManager } from '@/electron/system-updater.js';
 import {
   restoreBackup,
   removeCachedAppUpdates,
@@ -157,8 +155,8 @@ export async function runStartupTasks(
       }
     }
 
-    // Check for installer/setup updates with splash screen callbacks
-    updateSplashStatus('Checking for updates...');
+    // Dedicated online system update task (installer/setup, UMU, and future system updaters)
+    updateSplashStatus('Checking for system updates...');
     const updaterCallbacks: UpdaterCallbacks = {
       onStatus: (text: string, subtext?: string) => {
         updateSplashStatus(text, subtext);
@@ -167,7 +165,9 @@ export async function runStartupTasks(
         updateSplashProgress(current, total, speed);
       },
     };
-    await checkIfInstallerUpdateAvailable(updaterCallbacks);
+    await createDefaultSystemUpdateManager().updateOnlineSystem(
+      updaterCallbacks
+    );
 
     // Final status before main window loads
     updateSplashStatus('Starting application...');

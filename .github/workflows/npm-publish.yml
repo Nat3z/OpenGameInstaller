@@ -125,8 +125,10 @@ jobs:
         working-directory: ${{ matrix.package.dir }}
         run: |
           if [[ "${{ steps.version-check.outputs.name }}" == @* ]]; then
+            echo "Publishing scoped package"
             npm publish --access public
           else
+            echo "Publishing unscoped package"
             npm publish
           fi
 

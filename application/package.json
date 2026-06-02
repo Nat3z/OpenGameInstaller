@@ -38,6 +38,7 @@
     "preview": "electron-vite preview",
     "dev:server": "nodemon --watch server --ext ts,json --exec \"tsc --p tsconfig.addonserver.json && bun run --bun build-addons/dev-server.js\"",
     "preelectron-pack": "bun run build:all && bun run build && electron-rebuild",
+    "preelectron-pack:linux": "bun run build:all && bun run build && electron-rebuild",
     "electron-pack": "electron-builder",
     "format": "prettier --write \"src/**/*.{ts,svelte,json}\"",
     "typecheck": "tsc -p src/electron/tsconfig.json --noEmit && svelte-check --tsconfig src/frontend/tsconfig.json",

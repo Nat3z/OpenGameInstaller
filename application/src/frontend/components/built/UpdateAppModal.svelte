@@ -4,6 +4,7 @@
     addonServer,
     fetchAddonsWithConfigure,
     findAddonsSupportingStorefront,
+    isAddonEventAvailable,
     startDownload,
     type SearchResultWithAddon,
   } from '@/frontend/utils';
@@ -139,6 +140,11 @@
     const searchPromises = [];
     for (const addon of addons) {
       if (!supportsStorefront(addon.storefronts, storefront)) {
+        loadingAddons.delete(addon.id);
+        continue;
+      }
+
+      if (!isAddonEventAvailable(addon, 'search')) {
         loadingAddons.delete(addon.id);
         continue;
       }

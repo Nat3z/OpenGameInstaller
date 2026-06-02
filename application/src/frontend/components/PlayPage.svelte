@@ -22,6 +22,7 @@
   import {
     addonServer,
     fetchAddonsWithConfigure,
+    isAddonEventAvailable,
     runLaunchAppAddons,
     runTask,
   } from '@/frontend/utils';
@@ -345,8 +346,10 @@
     addonsMap = new Map(
       addons.map((addon) => [addon.id, { id: addon.id, name: addon.name }])
     );
-    const addonsWithStorefront = addons.filter((addon) =>
-      supportsStorefront(addon.storefronts, libraryInfo.storefront)
+    const addonsWithStorefront = addons.filter(
+      (addon) =>
+        supportsStorefront(addon.storefronts, libraryInfo.storefront) &&
+        isAddonEventAvailable(addon, 'search')
     );
 
     if (addonsWithStorefront.length === 0) return;

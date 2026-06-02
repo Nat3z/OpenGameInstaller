@@ -14,6 +14,7 @@
     fetchAddonsWithConfigure,
     getConfigClientOption,
     addonServer,
+    isAddonEventAvailable,
     queryConnectedAddons,
     reconnectClientSdk,
   } from '@/frontend/utils';
@@ -208,8 +209,10 @@
       showSearchResults = true;
       const connectedAddonIds = new Set(addons.map((addon) => addon.id));
       const configuredAddons = await fetchAddonsWithConfigure();
-      const searchAddons = configuredAddons.filter((addon) =>
-        connectedAddonIds.has(addon.id)
+      const searchAddons = configuredAddons.filter(
+        (addon) =>
+          connectedAddonIds.has(addon.id) &&
+          isAddonEventAvailable(addon, 'library-search')
       );
 
       // Check if search was cancelled after fetching addons

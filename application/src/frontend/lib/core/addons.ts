@@ -1,13 +1,29 @@
-import type { LibraryInfo } from '@ogi-sdk/connect';
+import type { LibraryInfo, OGIAddonSDKEventListener } from '@ogi-sdk/connect';
 import { supportsStorefront } from '@/lib/storefronts';
 import { addonServer, queryConnectedAddons, type AddonInfo } from './ipc';
+
+export function isAddonEventAvailable(
+  addon: Pick<AddonInfo, 'eventsAvailable'> | undefined,
+  event: OGIAddonSDKEventListener
+): boolean {
+  return addon?.eventsAvailable?.includes(event) === true;
+}
+
+export async function getAddonIfEventAvailable(
+  addonID: string,
+  event: OGIAddonSDKEventListener
+): Promise<AddonInfo | undefined> {
+  return (await queryConnectedAddons()).find(
+    (addon) => addon.id === addonID && isAddonEventAvailable(addon, event)
+  );
+}
 
 export async function runLaunchAppAddons(
   libraryInfo: LibraryInfo,
   launchType: 'pre' | 'post'
 ) {
   const addons = (await queryConnectedAddons()).filter((addon) =>
-    addon.eventsAvailable.includes('launch-app')
+    isAddonEventAvailable(addon, 'launch-app')
   );
 
   const results = await Promise.allSettled(
@@ -37,6 +53,6 @@ export async function findAddonsSupportingStorefront(
   return (await queryConnectedAddons()).filter(
     (addon) =>
       supportsStorefront(addon.storefronts as any, storefront) &&
-      addon.eventsAvailable.includes(event)
+      isAddonEventAvailable(addon, event as OGIAddonSDKEventListener)
   );
 }

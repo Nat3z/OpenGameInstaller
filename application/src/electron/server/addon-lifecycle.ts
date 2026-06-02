@@ -1,7 +1,7 @@
 import * as fs from 'fs/promises';
 import { readFileSync, writeFileSync } from 'fs';
 import { join } from 'path';
-import type { LibraryInfo } from '@ogi-sdk/connect';
+import type { LibraryInfo, OGIAddonSDKEventListener } from '@ogi-sdk/connect';
 import { restartAddonServer } from '@/electron/handlers/handler.addon.js';
 import { __dirname } from '@/electron/manager/manager.paths.js';
 import { addonServer } from '@/electron/server/addon-server.js';
@@ -15,6 +15,13 @@ export type RunLaunchAppHooksResult = {
   success: boolean;
   error?: string;
 };
+
+export function isAddonEventAvailable(
+  client: { eventsAvailable?: OGIAddonSDKEventListener[] } | undefined,
+  event: OGIAddonSDKEventListener
+): boolean {
+  return client?.eventsAvailable?.includes(event) === true;
+}
 
 export async function deleteInstalledAddon(
   addonID: string
@@ -81,9 +88,9 @@ export async function runLaunchAppHooks(
   libraryInfo: LibraryInfo,
   launchType: 'pre' | 'post'
 ): Promise<RunLaunchAppHooksResult> {
-  const clientsWithEvent = Array.from(addonServer.getConnections().values()).filter(
-    (client) => client.eventsAvailable.includes('launch-app')
-  );
+  const clientsWithEvent = Array.from(
+    addonServer.getConnections().values()
+  ).filter((client) => isAddonEventAvailable(client, 'launch-app'));
 
   if (clientsWithEvent.length === 0) {
     return { success: true };
@@ -92,6 +99,10 @@ export async function runLaunchAppHooks(
   try {
     await Promise.all(
       clientsWithEvent.map(async (client) => {
+        if (!isAddonEventAvailable(client, 'launch-app')) {
+          return;
+        }
+
         await client.events.launchApp({
           libraryInfo,
           launchType,

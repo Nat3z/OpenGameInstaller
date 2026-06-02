@@ -1,16 +1,19 @@
 import type {
   ConfigurationFile,
   ConfigurationOptionWire,
-  OGIAddonConfiguration,
 } from '@ogi-sdk/connect';
 import {
   isBooleanOption,
   isNumberOption,
   isStringOption,
 } from 'ogi-addon/config';
-import { addonServer, queryConnectedAddons } from '@/frontend/lib/core/ipc';
+import {
+  addonServer,
+  queryConnectedAddons,
+  type AddonInfo,
+} from '@/frontend/lib/core/ipc';
 
-export interface ConfigTemplateAndInfo extends OGIAddonConfiguration {
+export interface ConfigTemplateAndInfo extends AddonInfo {
   configTemplate: ConfigurationFile;
 }
 

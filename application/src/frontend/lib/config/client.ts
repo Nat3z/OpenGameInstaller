@@ -14,10 +14,8 @@ export interface ConfigTemplateAndInfo extends OGIAddonConfiguration {
   configTemplate: ConfigurationFile;
 }
 
-const SAFE_ADDON_ID = /^[A-Za-z0-9_-]+$/;
-
 export function validateAddonId(id: string): string | null {
-  if (!SAFE_ADDON_ID.test(id)) {
+  if (!/^[A-Za-z0-9_-]+$/.test(id)) {
     console.error(`Invalid addon id "${id}": rejected for path safety`);
     return null;
   }
@@ -32,7 +30,9 @@ function defaultConfigValue(
   option: ConfigurationOptionWire
 ): number | boolean | string | undefined {
   if (isBooleanOption(option)) {
-    return typeof option.defaultValue === 'boolean' ? option.defaultValue : false;
+    return typeof option.defaultValue === 'boolean'
+      ? option.defaultValue
+      : false;
   }
   if (isNumberOption(option)) {
     return typeof option.defaultValue === 'number'
@@ -67,10 +67,12 @@ function buildDefaultConfig(
 export function getConfigClientOption<T>(id: string): T | null {
   const safeId = validateAddonId(id);
   if (!safeId) return null;
-  const path = addonConfigPath(safeId);
-  if (!window.electronAPI.fs.exists(path)) return null;
-  const config = window.electronAPI.fs.read(path);
-  return JSON.parse(config);
+  if (!window.electronAPI.fs.exists('./config/option/' + safeId + '.json'))
+    return null;
+  const config = window.electronAPI.fs.read(
+    './config/option/' + safeId + '.json'
+  );
+  return JSON.parse(config) as T;
 }
 export async function fetchAddonsWithConfigure() {
   const addons = await queryConnectedAddons<ConfigTemplateAndInfo>();

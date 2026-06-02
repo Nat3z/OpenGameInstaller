@@ -41,9 +41,7 @@ export class AddonServer {
     new DeferredTasksManager();
   public constructor(private readonly config: AddonConfig) {
     // create a random secret if not provided
-    if (config.securityCheck && !config.secret) {
-      config.secret = randomUUID();
-    }
+    config.secret = randomUUID();
   }
 
   private eventEmitter = new EventEmitter();
@@ -69,7 +67,11 @@ export class AddonServer {
       const [connection] = this.sdkConnections;
       void (async () => {
         try {
-          reply(connection ? await connection.askInput(name, description, config) : {});
+          reply(
+            connection
+              ? await connection.askInput(name, description, config)
+              : {}
+          );
         } catch (error) {
           console.error('Failed to ask SDK for input:', error);
           reply({});
@@ -163,7 +165,10 @@ export class AddonServer {
     this.connections.add(connection);
     ws.on('close', () => {
       this.removeConnection(connection);
-      this.eventEmitter.emit('disconnect', 'Addon websocket closed');
+      this.eventEmitter.emit(
+        'disconnect',
+        connection.addonInfo?.name + ' websocket closed'
+      );
     });
     void (async () => {
       const success = await connection.setupWebsocket();

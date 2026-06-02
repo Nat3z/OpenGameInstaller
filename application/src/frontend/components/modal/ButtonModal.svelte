@@ -29,6 +29,7 @@
 </script>
 
 <button
+  type="button"
   class="font-archivo rounded-lg px-6 py-2.5 text-base font-semibold shadow transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-accent disabled:opacity-60 disabled:cursor-not-allowed {variantClasses[
     variant
   ]} {className}"

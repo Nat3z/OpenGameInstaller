@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { randomUUID } from 'crypto';
 import {
   EventResponseSocket,
@@ -11,6 +13,7 @@ import {
   type SDKRequestName,
   type SDKResponse,
   type AddonNotificationMessage,
+  type ConnectedAddonInfo,
   type ConfigurationFile,
 } from '@ogi-sdk/connect';
 import { buildEventMessage } from '../_generated/event-proxy';
@@ -21,6 +24,23 @@ import { bindWebSocketLifecycle } from './websocket-lifecycle';
 
 type SDKResponseMap = {
   [Name in SDKRequestName]: SDKResponse<Name>;
+};
+
+const readAddonIconPaths = (
+  client: AddonConnection | undefined
+): { icon?: string; iconPath?: string } => {
+  if (!client?.filePath) return {};
+  try {
+    const raw = readFileSync(join(client.filePath, 'addon.json'), 'utf-8');
+    const parsed = JSON.parse(raw) as { icon?: string };
+    if (typeof parsed.icon !== 'string' || !parsed.icon) return {};
+    return {
+      icon: parsed.icon,
+      iconPath: join(client.filePath, parsed.icon),
+    };
+  } catch {
+    return {};
+  }
 };
 
 export class ClientConnection {
@@ -162,7 +182,8 @@ export class ClientConnection {
               name: client?.addonInfo?.name ?? '',
               eventsAvailable: client?.eventsAvailable ?? [],
               configTemplate: client?.configTemplate,
-            };
+              ...readAddonIconPaths(client),
+            } satisfies ConnectedAddonInfo;
           }),
         });
       } catch (error) {

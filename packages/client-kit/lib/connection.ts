@@ -9,6 +9,7 @@ import type {
   AddonServerToClientSDKEvent,
   AddonServerToClientSDKEventArgs,
   AddonServerToClientSDKIncomingMessage,
+  ConnectedAddonInfo,
   SDKRequest,
   SDKRequestName,
   SDKResponseMessage,
@@ -85,6 +86,7 @@ export class Connection {
   >;
   private readonly eventEmitter = new TinyEventEmitter();
   private readonly ready: Promise<void>;
+  private readonly connectedAddonInfo = new Map<string, ConnectedAddonInfo>();
 
   constructor(options: ConnectionOptions) {
     const WebSocketConstructor =
@@ -108,7 +110,8 @@ export class Connection {
     return createAddonProxy(
       addonId,
       this.sendToAddon.bind(this),
-      this.createDeferToAddon(deferredOptions)
+      this.createDeferToAddon(deferredOptions),
+      (id) => this.connectedAddonInfo.get(id)
     );
   }
 
@@ -136,13 +139,24 @@ export class Connection {
     args: SDKRequest<Name>
   ): Promise<SDKResponseMessage<Name>> {
     await this.ready;
-    return (await this.transport.send(
+    const response = (await this.transport.send(
       {
         event: name,
         args,
       } as AddonClientSDKToServerIncomingMessage,
       { expectResponse: true, responseEvent: 'response' }
     )) as SDKResponseMessage<Name>;
+
+    if (name === 'query-connected-addons' && !response.statusError) {
+      const addons = (
+        response as SDKResponseMessage<'query-connected-addons'>
+      ).args.addons;
+      for (const addon of addons) {
+        this.connectedAddonInfo.set(addon.id, addon);
+      }
+    }
+
+    return response;
   }
 
   public async deferToAddon<Event extends AddonServerToClientEventName>(

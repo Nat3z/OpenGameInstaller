@@ -9,6 +9,7 @@ import { z } from 'zod';
 import { join } from 'path';
 import { existsSync, readFileSync } from 'fs';
 const app = express();
+import { __dirname } from '@/electron/manager/manager.paths.js';
 const server = http.createServer(app);
 
 export const launchForwardPayloadSchema = z.object({

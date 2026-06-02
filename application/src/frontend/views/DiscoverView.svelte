@@ -221,21 +221,26 @@
       loading = true;
       addons = await queryConnectedAddons<ConfigTemplateAndInfo>();
 
-      const catalogPromises = addons.map(async (addon) => {
+      const catalogPromises = addons.map(async (addonInfo) => {
+        const addon = addonServer.addon(addonInfo.id);
+        if (!addon.eventsAvailable.includes('catalog')) {
+          return null;
+        }
         try {
-          const catalogData = (await addonServer
-            .addon(addon.id)
-            .catalog()) as CatalogResponse;
+          const catalogData = (await addon.catalog()) as CatalogResponse;
           const normalizedCatalog = normalizeCatalog(catalogData);
 
           return {
-            addonId: addon.id,
-            addonName: addon.name,
+            addonId: addonInfo.id,
+            addonName: addonInfo.name,
             sections: normalizedCatalog.sections,
             carouselItems: normalizedCatalog.carouselItems,
           };
         } catch (error) {
-          console.warn(`Failed to load catalog for addon ${addon.id}:`, error);
+          console.warn(
+            `Failed to load catalog for addon ${addonInfo.id}:`,
+            error
+          );
           return null;
         }
       });

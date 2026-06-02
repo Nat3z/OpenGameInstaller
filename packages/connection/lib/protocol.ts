@@ -223,6 +223,8 @@ export const addonProtocol = defineAddonProtocol({
           name: string;
           eventsAvailable: string[];
           configTemplate?: ConfigurationFile;
+          icon?: string;
+          iconPath?: string;
         } & Partial<OGIAddonConfiguration>)[];
       }
     >('query-connected-addons'),
@@ -552,6 +554,10 @@ export type SDKResponseMessage<Name extends SDKRequestName> =
     : Omit<AddonServerToClientSDKWebsocketMessage<'response'>, 'args'> & {
         args: SDKResponse<Name>;
       };
+
+/** Metadata returned for each connected addon from `query-connected-addons`. */
+export type ConnectedAddonInfo =
+  SDKResponse<'query-connected-addons'>['addons'][number];
 
 /** Converts kebab-case event names to camelCase for JS-side listener APIs. */
 export type CamelCaseEvent<Event extends string> =

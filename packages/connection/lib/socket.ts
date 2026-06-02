@@ -245,8 +245,6 @@ export class EventResponseSocket<
         return;
       }
 
-      this.socket.send(JSON.stringify(message));
-
       const responseEvent =
         options.responseEvent ?? this.options.responseEvent ?? 'response';
 
@@ -256,6 +254,11 @@ export class EventResponseSocket<
           resolve,
           reject,
         });
+      }
+
+      this.socket.send(JSON.stringify(message));
+
+      if (expectResponse && message.id) {
         return;
       }
 

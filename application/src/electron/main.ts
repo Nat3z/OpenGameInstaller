@@ -32,6 +32,7 @@ import {
 import AddonManagerHandler, {
   startAddons,
 } from '@/electron/handlers/handler.addon.js';
+import { waitForAddonsConfigured } from '@/electron/manager/manager.addon-readiness.js';
 import OOBEHandler from '@/electron/handlers/handler.oobe.js';
 import {
   runStartupTasks,
@@ -461,6 +462,10 @@ async function onMainAppReady() {
     await checkForAddonUpdates(mainWindow);
   }
   await sendIPCMessage('all-addons-started');
+  const configuredAddons = await waitForAddonsConfigured();
+  for (const connection of configuredAddons) {
+    await sendIPCMessage('addon-connected', connection.addonInfo!.id);
+  }
   await sendIPCMessage('addon-runtime-ready');
 
   // Register process-wide listeners only once

@@ -568,13 +568,6 @@ ipcRenderer.on(
 );
 
 ipcRenderer.on(
-  'addon-connected',
-  wrap((_, arg) => {
-    document.dispatchEvent(new CustomEvent('addon-connected', { detail: arg }));
-  })
-);
-
-ipcRenderer.on(
   'all-addons-started',
   wrap(() => {
     console.log('ALL ADDONS STARTED');

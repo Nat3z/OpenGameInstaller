@@ -77,8 +77,26 @@ export function getConfigClientOption<T>(id: string): T | null {
   );
   return JSON.parse(config) as T;
 }
+async function waitForConfiguredAddons(
+  maxWaitMs = 15_000,
+  pollMs = 100
+): Promise<ConfigTemplateAndInfo[]> {
+  const deadline = Date.now() + maxWaitMs;
+  while (Date.now() < deadline) {
+    const addons = await queryConnectedAddons<ConfigTemplateAndInfo>();
+    if (addons.length === 0) {
+      return addons;
+    }
+    if (addons.every((addon) => addon.configTemplate !== undefined)) {
+      return addons;
+    }
+    await new Promise((resolve) => setTimeout(resolve, pollMs));
+  }
+  return queryConnectedAddons<ConfigTemplateAndInfo>();
+}
+
 export async function fetchAddonsWithConfigure() {
-  const addons = await queryConnectedAddons<ConfigTemplateAndInfo>();
+  const addons = await waitForConfiguredAddons();
 
   await Promise.all(
     addons.map(async (addon) => {
@@ -87,6 +105,13 @@ export async function fetchAddonsWithConfigure() {
 
       const configPath = addonConfigPath(safeId);
       let config: Record<string, number | boolean | string>;
+
+      if (!addon.configTemplate) {
+        console.warn(
+          `Skipping config update for ${safeId}: configure template not ready`
+        );
+        return;
+      }
 
       if (!window.electronAPI.fs.exists(configPath)) {
         config = buildDefaultConfig(addon.configTemplate);

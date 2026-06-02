@@ -16,6 +16,18 @@
         />
 
         <h1 style="width: 100%; text-align: center">Checking for Updates</h1>
+        <section id="channel-picker" style="display: none">
+          <div class="chips">
+            <button data-channel="stable">Stable</button>
+            <button data-channel="unstable">Unstable</button>
+            <button data-channel="bleeding-edge">Bleeding Edge</button>
+          </div>
+          <input
+            id="commit-input"
+            placeholder="Optional bleeding-edge commit, branch, or tag"
+          />
+          <div id="commit-list" style="display: none"></div>
+        </section>
         <progress value="10" max="100" style="display: none"></progress>
         <p style="display: none">hello</p>
       </main>
@@ -27,6 +39,8 @@
     const { text, progress, subtext, max } = event.detail;
     const progressHTML = document.querySelector('progress');
     const subTextHTML = document.querySelector('p');
+    const picker = document.querySelector('#channel-picker');
+    picker.style.display = 'none';
     document.querySelector('h1').textContent = text;
     if (progress !== undefined && progress !== null && max) {
       progressHTML.value = progress;
@@ -43,6 +57,68 @@
       subTextHTML.textContent = '';
       subTextHTML.style.display = 'none';
     }
+  });
+
+  document.addEventListener('show-channel-picker', () => {
+    document.querySelector('h1').textContent = 'Choose Update Channel';
+    document.querySelector('progress').style.display = 'none';
+    document.querySelector('p').style.display = 'block';
+    document.querySelector('p').textContent =
+      'Stable uses normal releases. Unstable uses pre-releases. Bleeding Edge builds from source.';
+    document.querySelector('#channel-picker').style.display = 'block';
+  });
+
+  async function loadCommitList() {
+    const list = document.querySelector('#commit-list');
+    list.style.display = 'block';
+    list.textContent = 'Loading recent commits...';
+    try {
+      const result = await window.ogiUpdater.getRecentCommits();
+      if (!result.ok || !result.commits.length) {
+        list.textContent = result.error || 'No commits found.';
+        return;
+      }
+      list.innerHTML = '';
+      result.commits.forEach((commit) => {
+        const item = document.createElement('button');
+        item.className = 'commit-item';
+        item.type = 'button';
+        item.innerHTML = `
+          <strong>${commit.shortSha}</strong>
+          <span>${commit.message}</span>
+          <small>${commit.author} • ${new Date(commit.date).toLocaleDateString()}</small>
+        `;
+        item.addEventListener('click', () => {
+          document.querySelector('#commit-input').value = commit.sha;
+          document.querySelectorAll('.commit-item').forEach((other) => {
+            other.classList.remove('selected');
+          });
+          item.classList.add('selected');
+        });
+        list.appendChild(item);
+      });
+    } catch (error) {
+      list.textContent = 'Failed to load commits.';
+    }
+  }
+
+  document.querySelectorAll('[data-channel]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      if (button.dataset.channel === 'bleeding-edge') {
+        if (!button.dataset.ready) {
+          button.dataset.ready = 'true';
+          button.textContent = 'Build Selected';
+          await loadCommitList();
+          return;
+        }
+      }
+      window.ogiUpdater.chooseChannel(
+        button.dataset.channel,
+        document.querySelector('#commit-input').value
+      );
+      document.querySelector('#channel-picker').style.display = 'none';
+      document.querySelector('h1').textContent = 'Applying Channel';
+    });
   });
 </script>
 <style>
@@ -70,6 +146,64 @@
     font-weight: 300;
     font-size: 1rem;
     color: rgb(175, 175, 175);
+    text-align: center;
+    padding: 0 1rem;
+  }
+  #channel-picker {
+    width: 90%;
+  }
+  .chips {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.5rem;
+    width: 100%;
+  }
+  .chips button {
+    border: 0;
+    border-radius: 999px;
+    background: rgb(66, 138, 145);
+    color: white;
+    font-family: 'Archivo', sans-serif;
+    padding: 0.65rem 0.25rem;
+    cursor: pointer;
+  }
+  #commit-input {
+    box-sizing: border-box;
+    margin-top: 0.75rem;
+    width: 100%;
+    border: 1px solid rgb(174, 205, 199);
+    border-radius: 0.5rem;
+    padding: 0.55rem;
+  }
+  #commit-list {
+    margin-top: 0.75rem;
+    max-height: 9rem;
+    overflow: auto;
+  }
+  .commit-item {
+    display: grid;
+    gap: 0.15rem;
+    width: 100%;
+    margin-bottom: 0.4rem;
+    border: 1px solid rgb(174, 205, 199);
+    border-radius: 0.5rem;
+    background: white;
+    color: rgb(80, 80, 80);
+    padding: 0.45rem;
+    text-align: left;
+    cursor: pointer;
+  }
+  .commit-item.selected {
+    border-color: rgb(66, 138, 145);
+    background: rgb(230, 246, 243);
+  }
+  .commit-item span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .commit-item small {
+    color: rgb(135, 135, 135);
   }
 
   * {

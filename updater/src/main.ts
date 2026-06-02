@@ -1,10 +1,10 @@
-import { BrowserWindow, app, dialog, net } from 'electron';
+import { BrowserWindow, app, dialog, ipcMain, net } from 'electron';
 import axios from 'axios';
 import fs from 'fs';
 import path, { join } from 'path';
 import yauzl from 'yauzl';
 import zlib from 'zlib';
-import { spawn, exec } from 'child_process';
+import { spawn } from 'child_process';
 import { createHash } from 'crypto';
 import http from 'node:http';
 import https from 'node:https';
@@ -43,11 +43,16 @@ function correctParsingSize(size) {
 
 let localVersion = '0.0.0';
 let usingBleedingEdge = false;
+let updateChannel = 'stable';
 if (fs.existsSync(`./version.txt`)) {
   localVersion = fs.readFileSync(`./version.txt`, 'utf8');
 }
 if (fs.existsSync(`./bleeding-edge.txt`)) {
+  updateChannel = 'unstable';
   usingBleedingEdge = true;
+}
+if (fs.existsSync(`./COMMIT_EDGE.txt`)) {
+  updateChannel = 'bleeding-edge';
 }
 
 const PATCH_PROGRESS_INTERVAL = 128;
@@ -60,6 +65,7 @@ const HTTP_RETRY_ATTEMPTS = 4;
 const HTTP_RETRY_BASE_DELAY_MS = 1500;
 const HTTP_REQUEST_TIMEOUT_MS = 60000;
 const PRESERVED_UPDATE_ENTRIES = new Set(['artifacts', 'latest.log', 'logs']);
+const OGI_REPO_URL = 'https://github.com/Nat3z/OpenGameInstaller';
 const HTTP_RANGE_AGENTS = {
   http: new http.Agent({
     keepAlive: true,
@@ -85,6 +91,113 @@ function getRequestedOnlineState(argv = process.argv) {
     return false;
   }
 
+  return null;
+}
+
+function hasArg(name, argv = process.argv) {
+  return argv.includes(name);
+}
+
+function getCommitEdgeTarget(argv = process.argv) {
+  const commitArg = argv.find((arg) => arg.startsWith('--commit='));
+  if (commitArg) return commitArg.slice('--commit='.length).trim();
+  if (fs.existsSync('./COMMIT_EDGE.txt')) {
+    return fs.readFileSync('./COMMIT_EDGE.txt', 'utf8').trim();
+  }
+  return '';
+}
+
+function getBleedingEdgeRepoDir() {
+  if (process.platform === 'win32') {
+    return path.join(app.getPath('appData'), 'ogi-repo');
+  }
+  return path.join(app.getPath('home'), '.local', 'share', 'ogi-repo');
+}
+
+function getApplicationBuildCommand() {
+  return process.platform === 'win32'
+    ? ['bun', ['run', '--cwd', 'application', 'electron-pack']]
+    : ['bun', ['run', '--cwd', 'application', 'electron-pack:linux']];
+}
+
+function runCommand(command, args, options = {}) {
+  return new Promise((resolve, reject) => {
+    logUpdater(`Running command: ${command} ${args.join(' ')}`);
+    const child = spawn(command, args, { ...options, shell: process.platform === 'win32' });
+    child.stdout?.on('data', (data) => sendUpdaterStatus('Building Bleeding Edge', undefined, undefined, data.toString().trim().slice(-80)));
+    child.stderr?.on('data', (data) => sendUpdaterStatus('Building Bleeding Edge', undefined, undefined, data.toString().trim().slice(-80)));
+    child.on('error', reject);
+    child.on('close', (code) => code === 0 ? resolve(undefined) : reject(new Error(`${command} exited with code ${code}`)));
+  });
+}
+
+async function ensureBleedingEdgeBuild(commit = '') {
+  const repoDir = getBleedingEdgeRepoDir();
+  sendUpdaterStatus('Preparing Bleeding Edge');
+  if (!fs.existsSync(path.join(repoDir, '.git'))) {
+    fs.rmSync(repoDir, { recursive: true, force: true });
+    await runCommand('git', ['clone', OGI_REPO_URL, repoDir]);
+  } else {
+    await runCommand('git', ['fetch', '--all', '--tags'], { cwd: repoDir });
+    await runCommand('git', ['pull', '--ff-only'], { cwd: repoDir });
+  }
+  if (commit) {
+    await runCommand('git', ['checkout', commit], { cwd: repoDir });
+  }
+  await runCommand('bun', ['install'], { cwd: repoDir });
+  await runCommand('bun', ['run', 'build'], { cwd: repoDir });
+  const [buildCommand, buildArgs] = getApplicationBuildCommand();
+  await runCommand(buildCommand, buildArgs, { cwd: repoDir });
+
+  const destRoot = path.join(__dirname, 'update');
+  prepareUpdateDestination(destRoot);
+  if (process.platform === 'win32') {
+    const exe = findFirstFile(path.join(repoDir, 'application', 'dist'), (name) => name.toLowerCase().endsWith('.exe') && !name.toLowerCase().includes('setup'));
+    if (!exe) throw new Error('Built Windows executable not found');
+    fs.copyFileSync(exe, path.join(destRoot, 'OpenGameInstaller.exe'));
+  } else {
+    const appImage = findFirstFile(path.join(repoDir, 'application', 'dist'), (name) => name.toLowerCase().endsWith('.appimage'));
+    if (!appImage) throw new Error('Built Linux AppImage not found');
+    fs.copyFileSync(appImage, path.join(destRoot, 'OpenGameInstaller.AppImage'));
+    fs.chmodSync(path.join(destRoot, 'OpenGameInstaller.AppImage'), '755');
+  }
+  fs.writeFileSync('./COMMIT_EDGE.txt', commit || 'HEAD');
+}
+
+async function getRecentCommits() {
+  const response = await axios.get(
+    `https://api.github.com/repos/${OGI_REPO_URL.replace('https://github.com/', '')}/commits`,
+    { params: { per_page: 12 }, timeout: 10000 }
+  );
+  return response.data.map((commit) => ({
+    sha: commit.sha,
+    shortSha: commit.sha.slice(0, 7),
+    message: commit.commit?.message?.split('\n')[0] || 'No commit message',
+    author: commit.commit?.author?.name || 'Unknown',
+    date: commit.commit?.author?.date || '',
+  }));
+}
+
+ipcMain.handle('get-recent-commits', async () => {
+  try {
+    return { ok: true, commits: await getRecentCommits() };
+  } catch (error) {
+    console.error('Failed to load recent commits:', error);
+    return { ok: false, commits: [], error: error?.message || 'Failed to load commits' };
+  }
+});
+
+function findFirstFile(root, predicate) {
+  if (!fs.existsSync(root)) return null;
+  for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
+    const fullPath = path.join(root, entry.name);
+    if (entry.isDirectory()) {
+      const found = findFirstFile(fullPath, predicate);
+      if (found) return found;
+    } else if (predicate(entry.name, fullPath)) {
+      return fullPath;
+    }
+  }
   return null;
 }
 
@@ -206,7 +319,7 @@ function compareReleaseOrder(a, b) {
   );
 }
 
-function sendUpdaterStatus(text, progress, max, subtext) {
+function sendUpdaterStatus(text, progress?, max?, subtext?) {
   if (!mainWindow || mainWindow.isDestroyed()) {
     return;
   }
@@ -314,13 +427,15 @@ async function createWindow() {
     frame: false,
     resizable: false,
     webPreferences: {
-      preload: `${app.getAppPath()}/src/preload.mjs`,
+      preload: isDev()
+        ? `${app.getAppPath()}/dist/preload.js`
+        : `${app.getAppPath()}/dist/preload.js`,
       nodeIntegration: true,
       devTools: false,
       contextIsolation: true,
     },
   });
-  mainWindow.loadURL(`file://${app.getAppPath()}/public/index.html`);
+  await mainWindow.loadURL(`file://${app.getAppPath()}/public/index.html`);
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
@@ -343,6 +458,47 @@ async function createWindow() {
     );
     launchApp(false);
     return;
+  }
+
+  if (hasArg('--gui')) {
+    mainWindow.webContents.send('show-channel-picker');
+    const choice: any = await new Promise((resolve) => {
+      ipcMain.once('choose-channel', (_event, payload) => resolve(payload));
+    });
+    const channel = choice?.channel || 'stable';
+    if (channel === 'stable') {
+      fs.rmSync('./bleeding-edge.txt', { force: true });
+      fs.rmSync('./COMMIT_EDGE.txt', { force: true });
+      usingBleedingEdge = false;
+    } else if (channel === 'unstable') {
+      fs.writeFileSync('./bleeding-edge.txt', 'true');
+      fs.rmSync('./COMMIT_EDGE.txt', { force: true });
+      usingBleedingEdge = true;
+    } else if (channel === 'bleeding-edge') {
+      try {
+        await ensureBleedingEdgeBuild((choice?.commit || '').trim());
+        mainWindow.webContents.send('text', 'Launching OpenGameInstaller');
+        launchApp(true);
+        return;
+      } catch (err) {
+        console.error(err);
+        mainWindow.webContents.send('text', 'Bleeding Edge Failed', err.message);
+        launchApp(true);
+        return;
+      }
+    }
+  } else if (updateChannel === 'bleeding-edge') {
+    try {
+      await ensureBleedingEdgeBuild(getCommitEdgeTarget());
+      mainWindow.webContents.send('text', 'Launching OpenGameInstaller');
+      launchApp(true);
+      return;
+    } catch (err) {
+      console.error(err);
+      mainWindow.webContents.send('text', 'Bleeding Edge Failed', err.message);
+      launchApp(true);
+      return;
+    }
   }
 
   // check for updates
@@ -911,7 +1067,7 @@ async function applyBlockmapPatch(
   newBlockmapPath,
   targetUrl,
   expectedArtifact = {},
-  statusLabels = {}
+  statusLabels: any = {}
 ) {
   const patchLabel = statusLabels.patchLabel || 'Building patch';
   const verifyLabel = statusLabels.verifyLabel || 'Verifying patch';
@@ -923,8 +1079,8 @@ async function applyBlockmapPatch(
     outputArtifact,
     releaseTag,
   });
-  const oldMap = JSON.parse(zlib.gunzipSync(fs.readFileSync(oldBlockmapPath)));
-  const newMap = JSON.parse(zlib.gunzipSync(fs.readFileSync(newBlockmapPath)));
+  const oldMap = JSON.parse(zlib.gunzipSync(fs.readFileSync(oldBlockmapPath)).toString('utf8'));
+  const newMap = JSON.parse(zlib.gunzipSync(fs.readFileSync(newBlockmapPath)).toString('utf8'));
   const oldFile = oldMap.files?.[0];
   const newFile = newMap.files?.[0];
   if (!oldFile || !newFile) {
@@ -1542,7 +1698,7 @@ function resolveZipEntryPath(unzipToDir, entryName) {
 app.on('ready', createWindow);
 // taken from https://stackoverflow.com/questions/63932027/how-to-unzip-to-a-folder-using-yauzl
 const unzip = (zipPath, unzipToDir) => {
-  return new Promise((resolve, reject) => {
+  return new Promise<void>((resolve, reject) => {
     let zipFile = null;
     let filesProcessed = 0;
     let totalFiles = 0;

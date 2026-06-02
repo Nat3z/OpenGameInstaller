@@ -98,13 +98,60 @@ function hasArg(name, argv = process.argv) {
   return argv.includes(name);
 }
 
-function getCommitEdgeTarget(argv = process.argv) {
-  const commitArg = argv.find((arg) => arg.startsWith('--commit='));
-  if (commitArg) return commitArg.slice('--commit='.length).trim();
-  if (fs.existsSync('./COMMIT_EDGE.txt')) {
-    return fs.readFileSync('./COMMIT_EDGE.txt', 'utf8').trim();
+const DEFAULT_BLEEDING_EDGE_BRANCH = 'main';
+
+type CommitEdgeTarget = { branch: string; commit: string };
+
+function parseCommitEdgeFile(contents: string): CommitEdgeTarget {
+  const lines = contents
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  let branch = DEFAULT_BLEEDING_EDGE_BRANCH;
+  let commit = '';
+  for (const line of lines) {
+    const branchMatch = line.match(/^branch=(.+)$/i);
+    const commitMatch = line.match(/^commit=(.*)$/i);
+    if (branchMatch) {
+      branch = branchMatch[1].trim() || DEFAULT_BLEEDING_EDGE_BRANCH;
+      continue;
+    }
+    if (commitMatch) {
+      commit = commitMatch[1].trim();
+      continue;
+    }
+    if (!commit) {
+      commit = line;
+    }
   }
-  return '';
+  return { branch, commit };
+}
+
+function writeCommitEdgeFile(branch: string, commit: string) {
+  const lines = [`branch=${branch || DEFAULT_BLEEDING_EDGE_BRANCH}`];
+  if (commit) {
+    lines.push(`commit=${commit}`);
+  }
+  fs.writeFileSync('./COMMIT_EDGE.txt', `${lines.join('\n')}\n`);
+}
+
+function getCommitEdgeTarget(argv = process.argv): CommitEdgeTarget {
+  const branchArg = argv.find((arg) => arg.startsWith('--branch='));
+  const commitArg = argv.find((arg) => arg.startsWith('--commit='));
+  const branch = branchArg
+    ? branchArg.slice('--branch='.length).trim() || DEFAULT_BLEEDING_EDGE_BRANCH
+    : '';
+  const commit = commitArg ? commitArg.slice('--commit='.length).trim() : '';
+  if (branch || commit) {
+    return {
+      branch: branch || DEFAULT_BLEEDING_EDGE_BRANCH,
+      commit,
+    };
+  }
+  if (fs.existsSync('./COMMIT_EDGE.txt')) {
+    return parseCommitEdgeFile(fs.readFileSync('./COMMIT_EDGE.txt', 'utf8'));
+  }
+  return { branch: DEFAULT_BLEEDING_EDGE_BRANCH, commit: '' };
 }
 
 function getBleedingEdgeRepoDir() {
@@ -131,15 +178,35 @@ function runCommand(command, args, options = {}) {
   });
 }
 
-async function ensureBleedingEdgeBuild(commit = '') {
+async function syncBleedingEdgeRepo(repoDir: string, branch: string) {
+  const targetBranch = branch || DEFAULT_BLEEDING_EDGE_BRANCH;
+  await runCommand('git', ['fetch', '--all', '--tags'], { cwd: repoDir });
+  await runCommand('git', ['checkout', targetBranch], { cwd: repoDir });
+  await runCommand(
+    'git',
+    ['pull', '--ff-only', 'origin', targetBranch],
+    { cwd: repoDir }
+  );
+}
+
+async function ensureBleedingEdgeBuild(
+  commit = '',
+  branch = DEFAULT_BLEEDING_EDGE_BRANCH
+) {
   const repoDir = getBleedingEdgeRepoDir();
+  const targetBranch = branch || DEFAULT_BLEEDING_EDGE_BRANCH;
   sendUpdaterStatus('Preparing Bleeding Edge');
   if (!fs.existsSync(path.join(repoDir, '.git'))) {
     fs.rmSync(repoDir, { recursive: true, force: true });
-    await runCommand('git', ['clone', OGI_REPO_URL, repoDir]);
+    await runCommand('git', [
+      'clone',
+      '--branch',
+      targetBranch,
+      OGI_REPO_URL,
+      repoDir,
+    ]);
   } else {
-    await runCommand('git', ['fetch', '--all', '--tags'], { cwd: repoDir });
-    await runCommand('git', ['pull', '--ff-only'], { cwd: repoDir });
+    await syncBleedingEdgeRepo(repoDir, targetBranch);
   }
   if (commit) {
     await runCommand('git', ['checkout', commit], { cwd: repoDir });
@@ -161,13 +228,28 @@ async function ensureBleedingEdgeBuild(commit = '') {
     fs.copyFileSync(appImage, path.join(destRoot, 'OpenGameInstaller.AppImage'));
     fs.chmodSync(path.join(destRoot, 'OpenGameInstaller.AppImage'), '755');
   }
-  fs.writeFileSync('./COMMIT_EDGE.txt', commit || 'HEAD');
+  writeCommitEdgeFile(targetBranch, commit);
 }
 
-async function getRecentCommits() {
+const GITHUB_REPO = OGI_REPO_URL.replace('https://github.com/', '');
+
+async function getBranches() {
   const response = await axios.get(
-    `https://api.github.com/repos/${OGI_REPO_URL.replace('https://github.com/', '')}/commits`,
-    { params: { per_page: 12 }, timeout: 10000 }
+    `https://api.github.com/repos/${GITHUB_REPO}/branches`,
+    { params: { per_page: 100 }, timeout: 10000 }
+  );
+  return response.data
+    .map((branch: { name: string }) => branch.name)
+    .sort((a: string, b: string) => a.localeCompare(b));
+}
+
+async function getRecentCommits(branch = DEFAULT_BLEEDING_EDGE_BRANCH) {
+  const response = await axios.get(
+    `https://api.github.com/repos/${GITHUB_REPO}/commits`,
+    {
+      params: { per_page: 12, sha: branch || DEFAULT_BLEEDING_EDGE_BRANCH },
+      timeout: 10000,
+    }
   );
   return response.data.map((commit) => ({
     sha: commit.sha,
@@ -178,9 +260,27 @@ async function getRecentCommits() {
   }));
 }
 
-ipcMain.handle('get-recent-commits', async () => {
+ipcMain.handle('get-branches', async () => {
   try {
-    return { ok: true, commits: await getRecentCommits() };
+    return { ok: true, branches: await getBranches() };
+  } catch (error) {
+    console.error('Failed to load branches:', error);
+    return {
+      ok: false,
+      branches: [DEFAULT_BLEEDING_EDGE_BRANCH],
+      error: error?.message || 'Failed to load branches',
+    };
+  }
+});
+
+ipcMain.handle('get-recent-commits', async (_event, branch) => {
+  try {
+    return {
+      ok: true,
+      commits: await getRecentCommits(
+        typeof branch === 'string' && branch ? branch : DEFAULT_BLEEDING_EDGE_BRANCH
+      ),
+    };
   } catch (error) {
     console.error('Failed to load recent commits:', error);
     return { ok: false, commits: [], error: error?.message || 'Failed to load commits' };
@@ -476,7 +576,10 @@ async function createWindow() {
       usingBleedingEdge = true;
     } else if (channel === 'bleeding-edge') {
       try {
-        await ensureBleedingEdgeBuild((choice?.commit || '').trim());
+        await ensureBleedingEdgeBuild(
+          (choice?.commit || '').trim(),
+          (choice?.branch || DEFAULT_BLEEDING_EDGE_BRANCH).trim()
+        );
         mainWindow.webContents.send('text', 'Launching OpenGameInstaller');
         launchApp(true);
         return;
@@ -489,7 +592,8 @@ async function createWindow() {
     }
   } else if (updateChannel === 'bleeding-edge') {
     try {
-      await ensureBleedingEdgeBuild(getCommitEdgeTarget());
+      const { branch, commit } = getCommitEdgeTarget();
+      await ensureBleedingEdgeBuild(commit, branch);
       mainWindow.webContents.send('text', 'Launching OpenGameInstaller');
       launchApp(true);
       return;

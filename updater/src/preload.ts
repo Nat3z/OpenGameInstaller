@@ -11,7 +11,8 @@ ipcRenderer.on('show-channel-picker', () => {
 });
 
 contextBridge.exposeInMainWorld('ogiUpdater', {
-  chooseChannel: (channel, commit) =>
-    ipcRenderer.send('choose-channel', { channel, commit }),
-  getRecentCommits: () => ipcRenderer.invoke('get-recent-commits'),
+  chooseChannel: (channel, commit, branch) =>
+    ipcRenderer.send('choose-channel', { channel, commit, branch }),
+  getBranches: () => ipcRenderer.invoke('get-branches'),
+  getRecentCommits: (branch) => ipcRenderer.invoke('get-recent-commits', branch),
 });

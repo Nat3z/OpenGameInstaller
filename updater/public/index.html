@@ -22,9 +22,14 @@
             <button data-channel="unstable">Unstable</button>
             <button data-channel="bleeding-edge">Bleeding Edge</button>
           </div>
+          <label for="branch-select" class="field-label">Branch</label>
+          <select id="branch-select" style="display: none">
+            <option value="main">main</option>
+          </select>
           <input
             id="commit-input"
-            placeholder="Optional bleeding-edge commit, branch, or tag"
+            placeholder="Optional commit SHA, branch, or tag"
+            style="display: none"
           />
           <div id="commit-list" style="display: none"></div>
         </section>
@@ -68,12 +73,41 @@
     document.querySelector('#channel-picker').style.display = 'block';
   });
 
+  function getSelectedBranch() {
+    return document.querySelector('#branch-select').value || 'main';
+  }
+
+  async function loadBranches() {
+    const select = document.querySelector('#branch-select');
+    select.style.display = 'block';
+    select.innerHTML = '<option value="">Loading branches...</option>';
+    try {
+      const result = await window.ogiUpdater.getBranches();
+      const branches =
+        result.ok && result.branches.length ? result.branches : ['main'];
+      select.innerHTML = '';
+      branches.forEach((branch) => {
+        const option = document.createElement('option');
+        option.value = branch;
+        option.textContent = branch;
+        select.appendChild(option);
+      });
+      if (!select.value) {
+        select.value = branches.includes('main') ? 'main' : branches[0];
+      }
+    } catch (error) {
+      select.innerHTML = '<option value="main">main</option>';
+      select.value = 'main';
+    }
+  }
+
   async function loadCommitList() {
     const list = document.querySelector('#commit-list');
+    const branch = getSelectedBranch();
     list.style.display = 'block';
-    list.textContent = 'Loading recent commits...';
+    list.textContent = `Loading commits for ${branch}...`;
     try {
-      const result = await window.ogiUpdater.getRecentCommits();
+      const result = await window.ogiUpdater.getRecentCommits(branch);
       if (!result.ok || !result.commits.length) {
         list.textContent = result.error || 'No commits found.';
         return;
@@ -102,19 +136,28 @@
     }
   }
 
+  document.querySelector('#branch-select').addEventListener('change', () => {
+    if (document.querySelector('#commit-list').style.display !== 'none') {
+      loadCommitList();
+    }
+  });
+
   document.querySelectorAll('[data-channel]').forEach((button) => {
     button.addEventListener('click', async () => {
       if (button.dataset.channel === 'bleeding-edge') {
         if (!button.dataset.ready) {
           button.dataset.ready = 'true';
           button.textContent = 'Build Selected';
+          document.querySelector('#commit-input').style.display = 'block';
+          await loadBranches();
           await loadCommitList();
           return;
         }
       }
       window.ogiUpdater.chooseChannel(
         button.dataset.channel,
-        document.querySelector('#commit-input').value
+        document.querySelector('#commit-input').value,
+        getSelectedBranch()
       );
       document.querySelector('#channel-picker').style.display = 'none';
       document.querySelector('h1').textContent = 'Applying Channel';
@@ -167,13 +210,24 @@
     padding: 0.65rem 0.25rem;
     cursor: pointer;
   }
+  .field-label {
+    display: block;
+    margin-top: 0.75rem;
+    margin-bottom: 0.25rem;
+    font-family: 'Archivo', sans-serif;
+    font-size: 0.85rem;
+    color: rgb(120, 120, 120);
+  }
+  #branch-select,
   #commit-input {
     box-sizing: border-box;
-    margin-top: 0.75rem;
     width: 100%;
     border: 1px solid rgb(174, 205, 199);
     border-radius: 0.5rem;
     padding: 0.55rem;
+    font-family: 'Archivo', sans-serif;
+    background: white;
+    color: rgb(80, 80, 80);
   }
   #commit-list {
     margin-top: 0.75rem;

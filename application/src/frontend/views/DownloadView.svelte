@@ -34,12 +34,22 @@
   let targetDownload = $derived(
     sortedDownloads.find(
       (download) =>
-        download.status === 'downloading' && download.queuePosition === 1
+        download.status === 'downloading' &&
+        (!download.queuePosition || download.queuePosition === 1)
     ) || undefined
   );
 
   function isCustomEvent(event: Event): event is CustomEvent {
     return event instanceof CustomEvent;
+  }
+
+  function isQueued(download: { status: string; queuePosition?: number }) {
+    return download.status === 'downloading' && !!download.queuePosition && download.queuePosition > 1;
+  }
+
+  function queuePositionLabel(position?: number) {
+    if (!position || position <= 1) return '';
+    return position >= 999 ? 'Waiting in queue' : `Queued #${position}`;
   }
   function correctParsingSize(size: number) {
     if (size < 1024) {
@@ -312,11 +322,11 @@
           alt="Game cover"
           class="rounded-lg object-cover bg-no-repeat w-full h-full min-w-0 shadow-lg"
         />
-        {#if targetDownload.queuePosition && targetDownload.queuePosition > 1}
+        {#if isQueued(targetDownload)}
           <div
             class="absolute top-2 left-2 bg-accent text-overlay-text text-xs font-bold px-2 py-1 rounded-full shadow-lg"
           >
-            Queued #{targetDownload.queuePosition}
+            {queuePositionLabel(targetDownload.queuePosition)}
           </div>
         {/if}
       </div>
@@ -501,9 +511,7 @@
       <div
         data-id={download.id}
         class="download-card"
-        class:queue-item={download.status === 'downloading' &&
-          download.queuePosition &&
-          download.queuePosition > 1}
+        class:queue-item={isQueued(download)}
       >
         <div class="flex flex-row gap-4 w-full">
           <div class="download-image">
@@ -518,12 +526,10 @@
           <div class="download-content">
             <div class="download-info">
               <h3 class="download-title">{download.name}</h3>
-              {#if download.status === 'downloading' && download.queuePosition && download.queuePosition > 1}
+              {#if isQueued(download)}
                 <div class="status-badge queued">
                   <div class="spinner"></div>
-                  Queued {download.queuePosition === 999
-                    ? '-'
-                    : download.queuePosition}
+                  {queuePositionLabel(download.queuePosition)}
                 </div>
               {:else if download.status === 'downloading'}
                 {@const stats =
@@ -556,8 +562,8 @@
                       <span class="progress-eta">
                         ETA: {formatETA(stats.eta)}
                       </span>
-                    {:else if download.queuePosition && download.queuePosition > 1}
-                      <span class="progress-eta queue-text"> Queued </span>
+                    {:else if isQueued(download)}
+                      <span class="progress-eta queue-text"> {queuePositionLabel(download.queuePosition)} </span>
                     {/if}
                   </div>
                 </div>
@@ -615,10 +621,11 @@
                       clip-rule="evenodd"
                     ></path>
                   </svg>
-                  {download.status === 'error'
-                    ? 'Download Failed'
-                    : 'Setup Failed'}
+                  Download Failed
                 </div>
+                {#if download.error}
+                  <p class="text-sm text-error mt-2 break-words">{download.error}</p>
+                {/if}
               {:else if download.status === 'rd-downloading'}
                 <div class="status-badge downloading">
                   <div class="spinner"></div>
@@ -707,7 +714,7 @@
                   </svg>
                   Open
                 </button>
-              {:else if download.status === 'downloading' && download.queuePosition && download.queuePosition > 1}
+              {:else if isQueued(download)}
                 <button
                   class="text-overlay-text border-none p-4 rounded-lg bg-accent hover:bg-accent-dark transition-colors"
                   onclick={() => window.electronAPI.queue.cancel(download.id)}
@@ -731,7 +738,7 @@
                   class="text-overlay-text border-none p-4 rounded-lg bg-accent hover:bg-accent-dark transition-colors"
                   aria-label="Pause Download"
                   onclick={async () => {
-                    if (download.queuePosition && download.queuePosition > 1) {
+                    if (isQueued(download)) {
                       window.electronAPI.queue.cancel(download.id);
                     } else {
                       await pauseDownload(download.id);

@@ -16,6 +16,35 @@ import ParseTorrent from 'parse-torrent';
 
 let qbitClient: QBittorrent | undefined = undefined;
 
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'string') return error;
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return 'Unknown error';
+  }
+}
+
+function getQbitErrorMessage(error: unknown): string {
+  const message = getErrorMessage(error);
+
+  if (message.toLowerCase().includes('unauthorized')) {
+    return 'Could not authenticate with qBittorrent. Check your qBittorrent username and password.';
+  }
+
+  if (
+    message.includes('ECONNREFUSED') ||
+    message.includes('ENOTFOUND') ||
+    message.includes('ETIMEDOUT') ||
+    message.includes('fetch failed')
+  ) {
+    return 'Could not connect to qBittorrent. Check that the WebUI is running and your host/port settings are correct.';
+  }
+
+  return `qBittorrent error: ${message}`;
+}
+
 type TorrentDownloadStatus =
   | 'queued'
   | 'downloading'
@@ -170,22 +199,26 @@ class TorrentDownload {
   }
 
   private async runQbittorrent() {
-    qbitClient = await this.setupQbitClient();
+    try {
+      qbitClient = await this.setupQbitClient();
 
-    if (this.job.type === 'torrent') {
-      const torrentData = await this.downloadTorrentFile(this.job.link);
-      // turn torrent data into a Uint8Array<ArrayBuffer>
-      const torrentDataUint8Array = new Uint8Array(torrentData);
-      await qbitClient.addTorrent(torrentDataUint8Array, {
-        savepath: this.job.path,
-      });
-    } else {
-      await qbitClient.addMagnet(this.job.link, {
-        savepath: this.job.path,
-      });
+      if (this.job.type === 'torrent') {
+        const torrentData = await this.downloadTorrentFile(this.job.link);
+        // turn torrent data into a Uint8Array<ArrayBuffer>
+        const torrentDataUint8Array = new Uint8Array(torrentData);
+        await qbitClient.addTorrent(torrentDataUint8Array, {
+          savepath: this.job.path,
+        });
+      } else {
+        await qbitClient.addMagnet(this.job.link, {
+          savepath: this.job.path,
+        });
+      }
+
+      this.startQbitProgressTracker();
+    } catch (error) {
+      throw new Error(getQbitErrorMessage(error));
     }
-
-    this.startQbitProgressTracker();
   }
 
   private async setupQbitClient() {
@@ -238,7 +271,9 @@ class TorrentDownload {
       this.torrentClientType === 'qbittorrent' &&
       this.qbitTorrentHash
     ) {
-      qbitClient?.stopTorrent(this.qbitTorrentHash);
+      qbitClient?.stopTorrent(this.qbitTorrentHash).catch((error) => {
+        this.fail(new Error(getQbitErrorMessage(error)));
+      });
     }
 
     this.sendIpc('torrent:download-paused', { id: this.id });
@@ -259,7 +294,9 @@ class TorrentDownload {
       this.torrentClientType === 'qbittorrent' &&
       this.qbitTorrentHash
     ) {
-      qbitClient?.startTorrent(this.qbitTorrentHash);
+      qbitClient?.startTorrent(this.qbitTorrentHash).catch((error) => {
+        this.fail(new Error(getQbitErrorMessage(error)));
+      });
     }
 
     this.sendIpc('torrent:download-resumed', { id: this.id });
@@ -280,7 +317,9 @@ class TorrentDownload {
       this.torrentClientType === 'qbittorrent' &&
       this.qbitTorrentHash
     ) {
-      qbitClient?.removeTorrent(this.qbitTorrentHash, true);
+      qbitClient?.removeTorrent(this.qbitTorrentHash, true).catch((error) => {
+        console.error('[torrent] Failed to remove qBittorrent torrent:', error);
+      });
     }
 
     this.cleanup();
@@ -306,13 +345,14 @@ class TorrentDownload {
   }
 
   private fail(error: Error) {
+    if (this.status === 'failed' || this.status === 'cancelled' || this.status === 'completed') return;
     this.status = 'failed';
     this.sendIpc('torrent:download-error', {
       id: this.id,
       error: error.message,
     });
     sendNotification({
-      message: 'Download failed',
+      message: error.message || 'Download failed',
       id: this.id,
       type: 'error',
     });
@@ -363,15 +403,17 @@ class TorrentDownload {
           this.downloadSpeed = torrent.downloadSpeed;
           this.progress = torrent.progress;
           this.totalSize = torrent.totalSize;
-          this.ratio = torrent.totalUploaded / torrent.totalDownloaded;
+          this.ratio = torrent.totalDownloaded
+            ? torrent.totalUploaded / torrent.totalDownloaded
+            : 0;
 
           if (torrent.isCompleted) {
             this.complete();
           }
         }
       } catch (error) {
-        console.error('[torrent] Error getting qBitTorrent data:', error);
-        this.fail(error as Error);
+        console.error('[torrent] Error getting qBittorrent data:', error);
+        this.fail(new Error(getQbitErrorMessage(error)));
       }
     }, 1000);
 

@@ -339,6 +339,7 @@ class Download {
 
     const result = await wait((queuePosition) => {
       console.log('queuePosition', queuePosition);
+      this.sendProgress({ queuePosition });
     });
 
     if (result === 'cancelled') {
@@ -2161,7 +2162,7 @@ class Download {
       part: this.currentPart,
       status: this.status,
       totalParts: this.totalParts,
-      queuePosition: 1,
+      queuePosition: data.queuePosition ?? 1,
     });
   }
 

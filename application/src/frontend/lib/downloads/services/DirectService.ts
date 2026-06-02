@@ -61,13 +61,14 @@ export class DirectService extends BaseService {
           ...downloads,
           {
             id,
-            status: 'downloading',
+            status: updatedState[id]?.error ? 'error' : 'downloading',
             downloadPath: getDownloadPath() + '/' + sanitizedName + '/',
             downloadSpeed: 0,
             progress: 0,
             appID,
             downloadSize: 0,
-            queuePosition: updatedState[id]?.queuePosition ?? 999,
+            queuePosition: updatedState[id]?.queuePosition,
+            error: updatedState[id]?.error,
             ...result,
           },
         ];

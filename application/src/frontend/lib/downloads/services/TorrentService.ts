@@ -2,6 +2,7 @@ import { BaseService } from '@/frontend/lib/downloads/services/BaseService';
 import type { SearchResultWithAddon } from '@/frontend/lib/tasks/runner';
 import { currentDownloads } from '@/frontend/store';
 import { getDownloadPath } from '@/frontend/lib/core/fs';
+import { listenUntilDownloadReady } from '@/frontend/lib/downloads/events';
 
 /**
  * Handles standard magnet and torrent downloads via the configured torrent
@@ -34,6 +35,11 @@ export class TorrentService extends BaseService {
       resolvedButton.disabled = true;
     }
 
+    const { flush } = listenUntilDownloadReady([
+      'torrent:download-progress',
+      'torrent:download-error',
+    ]);
+
     try {
       if (result.downloadType === 'torrent') {
         const id = await window.electronAPI.torrent.downloadTorrent(
@@ -43,17 +49,20 @@ export class TorrentService extends BaseService {
         if (id === null) {
           throw new Error('Failed to download torrent.');
         }
+        const updatedState = flush();
         currentDownloads.update((downloads) => {
           return [
             ...downloads,
             {
               ...result,
               id,
-              status: 'downloading',
+              status: updatedState[id]?.error ? 'error' : 'downloading',
               downloadPath: getDownloadPath() + '/' + result.name + '/',
               downloadSpeed: 0,
               files: [],
               progress: 0,
+              queuePosition: updatedState[id]?.queuePosition,
+              error: updatedState[id]?.error,
               appID,
               downloadSize: 0,
               originalDownloadURL: result.downloadURL, // Store original URL for resume
@@ -68,18 +77,20 @@ export class TorrentService extends BaseService {
         if (id === null) {
           throw new Error('Failed to download torrent.');
         }
+        const updatedState = flush();
         currentDownloads.update((downloads) => {
           return [
             ...downloads,
             {
               ...result,
               id,
-              status: 'downloading',
+              status: updatedState[id]?.error ? 'error' : 'downloading',
               downloadPath: getDownloadPath() + '/' + result.name + '/',
               downloadSpeed: 0,
               files: [],
               progress: 0,
-              queuePosition: 999,
+              queuePosition: updatedState[id]?.queuePosition,
+              error: updatedState[id]?.error,
               appID,
               downloadSize: 0,
               originalDownloadURL: result.downloadURL, // Store original URL for resume
@@ -88,6 +99,7 @@ export class TorrentService extends BaseService {
         });
       }
     } catch (err) {
+      flush();
       console.error('Torrent download error:', err);
       throw err;
     } finally {

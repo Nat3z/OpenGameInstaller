@@ -42,6 +42,11 @@
   let queryingSources = $state(false);
   let selectedResult: SearchResultWithAddon | undefined = $state();
   let isOnline = $state(true);
+  function queuePositionLabel(position?: number) {
+    if (!position || position <= 1) return '';
+    return position >= 999 ? 'Waiting in queue' : `Queue position: ${position}`;
+  }
+
   let loadingAddons: Map<string, string> = $state(new Map());
   let emptyAddons: Set<string> = $state(new Set());
   let collapsedAddons: Set<string> = $state(new Set());
@@ -574,9 +579,7 @@
 
                 {#if activeDownload.queuePosition && activeDownload.queuePosition > 1}
                   <div class="text-xs text-text-muted mt-1">
-                    Queue position: {activeDownload.queuePosition === 999
-                      ? '-'
-                      : activeDownload.queuePosition}
+                    {queuePositionLabel(activeDownload.queuePosition)}
                   </div>
                 {/if}
               {/if}

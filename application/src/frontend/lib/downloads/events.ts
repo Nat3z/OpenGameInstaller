@@ -1,6 +1,8 @@
 import type { DownloadStatusAndInfo } from '@/frontend/store';
 
-export function listenUntilDownloadReady() {
+export function listenUntilDownloadReady(
+  channels: string[] = ['ddl:download-progress', 'ddl:download-error']
+) {
   let state: { [id: string]: Partial<DownloadStatusAndInfo> } = {};
   const updateState = (e: Event) => {
     if (e instanceof CustomEvent) {
@@ -9,11 +11,15 @@ export function listenUntilDownloadReady() {
       }
     }
   };
-  document.addEventListener('ddl:download-progress', updateState);
+  channels.forEach((channel) =>
+    document.addEventListener(channel, updateState)
+  );
 
   return {
     flush: () => {
-      document.removeEventListener('ddl:download-progress', updateState);
+      channels.forEach((channel) =>
+        document.removeEventListener(channel, updateState)
+      );
       return state;
     },
   };

@@ -69,7 +69,7 @@ export abstract class BaseService {
       status: 'downloading',
       usedDebridService: usedDebridService as any,
       downloadPath: downloadPath,
-      queuePosition: flushed[tempid]?.queuePosition,
+      queuePosition: flushed[downloadId]?.queuePosition ?? flushed[tempid]?.queuePosition,
       downloadURL: downloadUrl,
       ...((result.downloadType === 'torrent' ||
         result.downloadType === 'magnet') && {

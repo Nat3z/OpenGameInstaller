@@ -480,10 +480,24 @@
 
   // -- Download Error --
 
-  document.addEventListener('ddl:download-error', (event: Event) => {
+  function handleDownloadError(event: Event) {
     if (!isCustomEvent(event)) return;
-    updateDownloadStatus(event.detail.id, { status: 'error' });
-  });
+    updateDownloadStatus(event.detail.id, {
+      status: 'error',
+      error: event.detail.error,
+    });
+
+    if (event.detail.error) {
+      createNotification({
+        id: Math.random().toString(36).substring(2, 9),
+        type: 'error',
+        message: event.detail.error,
+      });
+    }
+  }
+
+  document.addEventListener('ddl:download-error', handleDownloadError);
+  document.addEventListener('torrent:download-error', handleDownloadError);
 
   // -- Download Paused/Resumed --
   // Note: Pause/Resume status updates are now handled directly in utils.ts functions

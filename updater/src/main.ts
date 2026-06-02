@@ -348,6 +348,185 @@ async function ensureBleedingEdgeBuild(
 
 const GITHUB_REPO = OGI_REPO_URL.replace('https://github.com/', '');
 
+function shouldFallbackToGitForGitHubApi(error: unknown): boolean {
+  const response = (error as { response?: { status?: number; data?: unknown; headers?: Record<string, string> } })
+    ?.response;
+  const status = response?.status;
+  if (status === 429) {
+    return true;
+  }
+  if (status !== 403) {
+    return false;
+  }
+  const headers = response?.headers || {};
+  const remaining =
+    headers['x-ratelimit-remaining'] ?? headers['X-RateLimit-Remaining'];
+  if (remaining === '0') {
+    return true;
+  }
+  const data = response?.data;
+  const message =
+    typeof data === 'string'
+      ? data
+      : typeof data === 'object' &&
+          data !== null &&
+          'message' in data &&
+          typeof (data as { message?: unknown }).message === 'string'
+        ? (data as { message: string }).message
+        : '';
+  return /rate limit/i.test(message);
+}
+
+function parseRemoteBranchName(ref: string): string | null {
+  const headPrefix = 'refs/heads/';
+  if (ref.startsWith(headPrefix)) {
+    return ref.slice(headPrefix.length);
+  }
+  const originPrefix = 'origin/';
+  if (ref.startsWith(originPrefix)) {
+    return ref.slice(originPrefix.length);
+  }
+  return null;
+}
+
+async function getBranchesViaGit(): Promise<string[]> {
+  const repoDir = getBleedingEdgeRepoDir();
+  if (fs.existsSync(path.join(repoDir, '.git'))) {
+    try {
+      await runCommand('git', ['fetch', '--prune', 'origin'], { cwd: repoDir });
+      const { stdout } = await runCommand(
+        'git',
+        [
+          'for-each-ref',
+          'refs/remotes/origin',
+          '--format=%(refname:short)\t%(committerdate:iso8601)',
+          '--sort=-committerdate',
+        ],
+        { cwd: repoDir }
+      );
+      const datedBranches: { name: string; date: string }[] = [];
+      for (const line of stdout.split('\n')) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        const tab = trimmed.indexOf('\t');
+        const ref = tab === -1 ? trimmed : trimmed.slice(0, tab);
+        const date = tab === -1 ? '' : trimmed.slice(tab + 1);
+        const name = parseRemoteBranchName(ref);
+        if (name && name !== 'HEAD') {
+          datedBranches.push({ name, date });
+        }
+      }
+      if (datedBranches.length) {
+        const others = datedBranches
+          .filter((branch) => branch.name !== 'main')
+          .map((branch) => branch.name);
+        return datedBranches.some((branch) => branch.name === 'main')
+          ? ['main', ...others]
+          : others;
+      }
+    } catch (error) {
+      logUpdater('Local git branch listing failed, using ls-remote:', error);
+    }
+  }
+
+  const { stdout } = await runCommand('git', ['ls-remote', '--heads', OGI_REPO_URL]);
+  const names = new Set<string>();
+  for (const line of stdout.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    const tab = trimmed.lastIndexOf('\t');
+    if (tab === -1) continue;
+    const name = parseRemoteBranchName(trimmed.slice(tab + 1));
+    if (name) {
+      names.add(name);
+    }
+  }
+  const unique = [...names];
+  const others = unique
+    .filter((name) => name !== 'main')
+    .sort((a, b) => a.localeCompare(b));
+  return unique.includes('main') ? ['main', ...others] : others;
+}
+
+type RecentCommit = {
+  sha: string;
+  shortSha: string;
+  message: string;
+  author: string;
+  date: string;
+};
+
+function parseGitLogCommits(stdout: string): RecentCommit[] {
+  return stdout
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const parts = line.split('\x1f');
+      const sha = parts[0] || '';
+      const author = parts[1] || 'Unknown';
+      const date = parts[2] || '';
+      const message = parts.slice(3).join('\x1f') || 'No commit message';
+      return {
+        sha,
+        shortSha: sha.slice(0, 7),
+        message: message.split('\n')[0] || 'No commit message',
+        author,
+        date,
+      };
+    })
+    .filter((commit) => commit.sha);
+}
+
+async function getRecentCommitsViaGit(
+  branch = DEFAULT_BLEEDING_EDGE_BRANCH
+): Promise<RecentCommit[]> {
+  const targetBranch = branch || DEFAULT_BLEEDING_EDGE_BRANCH;
+  const logFormat = '%H%x1f%an%x1f%cI%x1f%s';
+  const repoDir = getBleedingEdgeRepoDir();
+
+  if (fs.existsSync(path.join(repoDir, '.git'))) {
+    await runCommand('git', ['fetch', 'origin', targetBranch, '--depth', '12'], {
+      cwd: repoDir,
+    });
+    const { stdout } = await runCommand(
+      'git',
+      ['log', `origin/${targetBranch}`, '-12', `--format=${logFormat}`],
+      { cwd: repoDir }
+    );
+    const commits = parseGitLogCommits(stdout);
+    if (commits.length) {
+      return commits;
+    }
+  }
+
+  const tmpDir = path.join(
+    app.getPath('temp'),
+    `ogi-updater-commits-${process.pid}-${Date.now()}`
+  );
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+  try {
+    await runCommand('git', [
+      'clone',
+      '--depth',
+      '12',
+      '--branch',
+      targetBranch,
+      '--single-branch',
+      OGI_REPO_URL,
+      tmpDir,
+    ]);
+    const { stdout } = await runCommand(
+      'git',
+      ['log', 'HEAD', '-12', `--format=${logFormat}`],
+      { cwd: tmpDir }
+    );
+    return parseGitLogCommits(stdout);
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+}
+
 async function getBranchTipDate(branch: string) {
   const response = await axios.get(
     `https://api.github.com/repos/${GITHUB_REPO}/commits`,
@@ -402,25 +581,47 @@ ipcMain.handle('get-branches', async () => {
     return { ok: true, branches: await getBranches() };
   } catch (error) {
     console.error('Failed to load branches:', error);
+    if (shouldFallbackToGitForGitHubApi(error)) {
+      try {
+        const branches = await getBranchesViaGit();
+        logUpdater('Loaded branches via git after GitHub API rate limit');
+        return { ok: true, branches };
+      } catch (gitError) {
+        console.error('Git branch fallback failed:', gitError);
+      }
+    }
     return {
       ok: false,
       branches: [DEFAULT_BLEEDING_EDGE_BRANCH],
-      error: error?.message || 'Failed to load branches',
+      error: (error as Error)?.message || 'Failed to load branches',
     };
   }
 });
 
 ipcMain.handle('get-recent-commits', async (_event, branch) => {
+  const targetBranch =
+    typeof branch === 'string' && branch ? branch : DEFAULT_BLEEDING_EDGE_BRANCH;
   try {
     return {
       ok: true,
-      commits: await getRecentCommits(
-        typeof branch === 'string' && branch ? branch : DEFAULT_BLEEDING_EDGE_BRANCH
-      ),
+      commits: await getRecentCommits(targetBranch),
     };
   } catch (error) {
     console.error('Failed to load recent commits:', error);
-    return { ok: false, commits: [], error: error?.message || 'Failed to load commits' };
+    if (shouldFallbackToGitForGitHubApi(error)) {
+      try {
+        const commits = await getRecentCommitsViaGit(targetBranch);
+        logUpdater('Loaded commits via git after GitHub API rate limit');
+        return { ok: true, commits };
+      } catch (gitError) {
+        console.error('Git commit fallback failed:', gitError);
+      }
+    }
+    return {
+      ok: false,
+      commits: [],
+      error: (error as Error)?.message || 'Failed to load commits',
+    };
   }
 });
 

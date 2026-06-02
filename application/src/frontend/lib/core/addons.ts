@@ -19,8 +19,13 @@ export async function runLaunchAppAddons(
     )
   );
 
+  const firstFailure = results.find((result) => result.status === 'rejected');
+  if (firstFailure?.status === 'rejected') {
+    throw firstFailure.reason;
+  }
+
   return {
-    success: results.every((result) => result.status === 'fulfilled'),
+    success: true,
     results,
   };
 }

@@ -155,15 +155,6 @@ interface Window {
       getOS: () => Promise<string>;
       isSteamDeck: () => Promise<boolean>;
       isOnline: () => Promise<boolean>;
-      request: (
-        method: string,
-        params: any
-      ) => Promise<{
-        taskID?: string;
-        data?: any;
-        status?: number;
-        error?: string;
-      }>;
       getAddonPath: (addonID: string) => Promise<string>;
       getAddonIcon: (addonID: string) => Promise<string>;
       getLocalImage: (path: string) => Promise<string>;
@@ -267,6 +258,9 @@ interface Window {
     installAddons: (addons: string[]) => Promise<void>;
     isDev: () => boolean;
     restartAddonServer: () => Promise<void>;
+    deleteInstalledAddon: (
+      addonID: string
+    ) => Promise<{ success: boolean; message?: string }>;
     cleanAddons: () => Promise<void>;
     downloadTorrentInto: (link: string) => Promise<Uint8Array>;
     getTorrentHash: (torrent: string | Buffer | Uint8Array) => Promise<string>;

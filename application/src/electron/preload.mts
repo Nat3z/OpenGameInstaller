@@ -253,17 +253,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getOS: wrap(() => ipcRenderer.invoke('app:get-os')),
     isSteamDeck: wrap(() => ipcRenderer.invoke('app:is-steam-deck')),
     isOnline: wrap(() => ipcRenderer.invoke('app:is-online')),
-    request: wrap(
-      (
-        method: string,
-        params: any
-      ): Promise<{
-        taskID?: string;
-        data?: any;
-        error?: string;
-        status?: number;
-      }> => ipcRenderer.invoke('addon:request', { method, params })
-    ),
     getAddonPath: wrap((addonID: string) =>
       ipcRenderer.invoke('app:get-addon-path', addonID)
     ),
@@ -348,6 +337,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   ),
   isDev: wrap(() => ipcRenderer.sendSync('is-dev')),
   restartAddonServer: wrap(() => ipcRenderer.invoke('restart-addon-server')),
+  deleteInstalledAddon: wrap((addonID: string) =>
+    ipcRenderer.invoke('addon:delete-installed', addonID)
+  ),
   cleanAddons: wrap(() => ipcRenderer.invoke('clean-addons')),
   downloadTorrentInto: wrap((link: string) =>
     ipcRenderer.invoke('download-torrent-into', link)

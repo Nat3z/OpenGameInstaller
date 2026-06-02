@@ -2,9 +2,6 @@ import express, { type Request } from 'express';
 const port = 7654;
 import http from 'http';
 import { AddonServer } from '@ogi-sdk/addon-server';
-import addonProcedures from '@/electron/server/api/addons.js';
-import deferProcedures from '@/electron/server/api/defer.js';
-import { AddonIPC } from '@/electron/server/ipc.js';
 import { z } from 'zod';
 import { join } from 'path';
 import { existsSync, readFileSync } from 'fs';
@@ -128,11 +125,6 @@ app.post('/internal/launch', async (req, res) => {
   }
 });
 
-const addonIPC = new AddonIPC({
-  ...addonProcedures,
-  ...deferProcedures,
-});
-
 let isSecurityCheckEnabled = true;
 if (existsSync(join(__dirname, 'config/option/developer.json'))) {
   const developerConfig = JSON.parse(
@@ -206,7 +198,6 @@ export {
   port,
   server,
   addonServer,
-  addonIPC,
   isSecurityCheckEnabled,
   startAddonServer,
 };

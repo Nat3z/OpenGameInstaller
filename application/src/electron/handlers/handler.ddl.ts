@@ -16,7 +16,37 @@ import {
 
 // Parallel download configuration
 const PARALLEL_DOWNLOAD_THRESHOLD = 100 * 1024 * 1024; // 100MB in bytes
-let PARALLEL_CHUNK_COUNT: number = 0;
+const DOWNLOADER_USER_AGENT = 'OpenGameInstaller Downloader/1.0.0';
+const DEFAULT_PARALLEL_CHUNK_COUNT = 8;
+const DOWNLOAD_RETRIES = 5;
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+class ParallelChunkPolicy {
+  constructor(private chunkCount: number) {}
+
+  get count(): number {
+    return this.chunkCount;
+  }
+
+  effectiveCount(limit?: number): number {
+    return Math.max(
+      1,
+      limit ? Math.min(this.chunkCount, limit) : this.chunkCount
+    );
+  }
+
+  /** Returns true if parallelization was reduced (was > 1). */
+  reduceOn429(): boolean {
+    if (this.chunkCount <= 1) return false;
+
+    console.log(
+      '[direct] 429 Too Many Requests, reducing download parallelization to 1 for this download'
+    );
+    this.chunkCount = 1;
+    return true;
+  }
+}
 
 // Bandwidth throttling
 let BANDWIDTH_LIMIT_BYTES_PER_SEC: number = 0;
@@ -81,6 +111,47 @@ interface DownloadJob {
   link: string;
   path: string;
   headers?: Record<string, string>;
+}
+
+type KeepAliveAgent = http.Agent | https.Agent;
+
+function createKeepAliveAgent(url: string): KeepAliveAgent {
+  return url.startsWith('https')
+    ? new https.Agent({ keepAlive: true })
+    : new http.Agent({ keepAlive: true });
+}
+
+function baseHeaders(job: DownloadJob): Record<string, string> {
+  return {
+    ...job.headers,
+    'User-Agent': DOWNLOADER_USER_AGENT,
+  };
+}
+
+function streamHeaders(
+  job: DownloadJob,
+  extraHeaders: Record<string, string> = {}
+): Record<string, string> {
+  return {
+    ...baseHeaders(job),
+    'Accept-Encoding': 'identity',
+    ...extraHeaders,
+  };
+}
+
+function parseOptionalInt(value: unknown): number | undefined {
+  const parsed = parseInt(String(value), 10);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function getResponseHeader(
+  headers: Record<string, unknown>,
+  name: string
+): unknown {
+  const lowerName = name.toLowerCase();
+  return Object.entries(headers).find(
+    ([key]) => key.toLowerCase() === lowerName
+  )?.[1];
 }
 
 interface ChunkState {
@@ -174,6 +245,7 @@ class Download {
   private totalParts: number;
   private currentPart: number = 0;
   private taskFinisher: () => void = () => {};
+  private readonly parallelChunks: ParallelChunkPolicy;
 
   private response?: AxiosResponse<Readable>;
   private fileStream?: fs.WriteStream;
@@ -200,6 +272,7 @@ class Download {
   constructor(
     mainWindow: BrowserWindow,
     jobs: DownloadJob[],
+    parallelChunkCount: number,
     startPart: number = 1
   ) {
     this.id = Math.random().toString(36).substring(7);
@@ -207,6 +280,7 @@ class Download {
     this.jobs = jobs;
     this.totalParts = jobs.length;
     this.currentPart = startPart || 1;
+    this.parallelChunks = new ParallelChunkPolicy(parallelChunkCount);
 
     downloads.set(this.id, this);
   }
@@ -378,7 +452,7 @@ class Download {
 
   /**
    * Run parallel downloads for multi-part downloads.
-   * Downloads up to PARALLEL_CHUNK_COUNT parts simultaneously.
+   * Downloads up to this download’s configured chunk count parts simultaneously.
    */
   private async runParallelParts(): Promise<void> {
     this.useParallelParts = true;
@@ -426,9 +500,9 @@ class Download {
             if (parallelInfo.useParallel) {
               // Check if all chunk files exist and merged file is correct size
               // Use stored effectiveChunkCount if available, otherwise calculate
-              const effectiveChunkCount = parallelInfo.parallelLimit
-                ? Math.min(PARALLEL_CHUNK_COUNT, parallelInfo.parallelLimit)
-                : PARALLEL_CHUNK_COUNT;
+              const effectiveChunkCount = this.parallelChunks.effectiveCount(
+                parallelInfo.parallelLimit
+              );
               const allChunksExist = Array.from(
                 { length: effectiveChunkCount },
                 (_, idx) => {
@@ -499,7 +573,7 @@ class Download {
       // Start new parts if we have capacity
       const availableSlots = Math.max(
         1,
-        PARALLEL_CHUNK_COUNT - activeParts().length
+        this.parallelChunks.count - activeParts().length
       );
       const partsToStart = this.parts
         .filter((p) => p.status === 'pending')
@@ -523,7 +597,7 @@ class Download {
       }
 
       // Wait a bit before checking again
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await sleep(100);
 
       // Check if all parts are done
       if (
@@ -556,7 +630,7 @@ class Download {
    */
   private async downloadPartWithState(
     part: PartState,
-    retries = 5
+    retries = DOWNLOAD_RETRIES
   ): Promise<void> {
     const job = part.job;
     let lastError: Error | undefined;
@@ -594,13 +668,7 @@ class Download {
             lastError
           );
 
-          // If 429 error, disable chunk parallelization and retry as standard download
           if (lastError.message === '429_TOO_MANY_REQUESTS') {
-            console.log(
-              `[direct] Part ${part.index + 1}: 429 detected, disabling chunk parallelization and retrying as standard download`
-            );
-            part.useChunks = false;
-            // Clean up any partial chunk files
             try {
               await this.deleteChunkFiles(part.job.path);
             } catch (cleanupError) {
@@ -609,12 +677,21 @@ class Download {
                 cleanupError
               );
             }
-            // Fall through to standard download
+            if (this.parallelChunks.reduceOn429()) {
+              console.log(
+                `[direct] Part ${part.index + 1}: Retrying with parallelization reduced to 1`
+              );
+              continue;
+            }
+            console.log(
+              `[direct] Part ${part.index + 1}: 429 at parallelization 1, falling back to standard download`
+            );
+            part.useChunks = false;
             break;
           }
 
           if (this.status !== 'downloading') throw lastError;
-          await new Promise((resolve) => setTimeout(resolve, 1000 * (i + 1)));
+          await sleep(1000 * (i + 1));
         }
       }
 
@@ -650,7 +727,7 @@ class Download {
           part.abortController = new AbortController();
           continue;
         }
-        await new Promise((resolve) => setTimeout(resolve, 1000 * (i + 1)));
+        await sleep(1000 * (i + 1));
       }
     }
     part.status = 'failed';
@@ -663,41 +740,47 @@ class Download {
   private async shouldUseParallelDownloadForPart(
     job: DownloadJob
   ): Promise<ParallelDownloadInfo> {
-    try {
-      const keepAliveAgent = job.link.startsWith('https')
-        ? new https.Agent({ keepAlive: true })
-        : new http.Agent({ keepAlive: true });
+    return this.inspectParallelDownload(job, { allowMultiPart: true });
+  }
 
+  private async inspectParallelDownload(
+    job: DownloadJob,
+    options: { allowMultiPart: boolean }
+  ): Promise<ParallelDownloadInfo> {
+    try {
+      const keepAliveAgent = createKeepAliveAgent(job.link);
       const headResponse = await axios.head(job.link, {
-        headers: {
-          ...job.headers,
-          'User-Agent': 'OpenGameInstaller Downloader/1.0.0',
-        },
+        headers: baseHeaders(job),
         httpAgent: keepAliveAgent,
         httpsAgent: keepAliveAgent,
         timeout: 10000,
       });
 
-      const contentLength = headResponse.headers['content-length']
-        ? parseInt(String(headResponse.headers['content-length']), 10)
-        : 0;
-      const acceptRanges = headResponse.headers['accept-ranges'];
-      const supportsRange = acceptRanges === 'bytes';
-      console.log(job.headers);
+      const contentLength =
+        parseOptionalInt(
+          getResponseHeader(headResponse.headers, 'content-length')
+        ) ?? 0;
+      const supportsRange =
+        getResponseHeader(headResponse.headers, 'accept-ranges') === 'bytes';
+      const parallelLimit = parseOptionalInt(
+        getResponseHeader(headResponse.headers, 'ogi-parallel-limit')
+      );
 
-      // Parse OGI-Parallel-Limit header from response (case-insensitive)
-      const parallelLimitHeader =
-        headResponse.headers['ogi-parallel-limit'] ||
-        headResponse.headers['OGI-Parallel-Limit'];
-      const parallelLimit = parallelLimitHeader
-        ? parseInt(parallelLimitHeader as string, 10)
-        : undefined;
-
+      const requestParallelLimit = parseOptionalInt(
+        job.headers?.['OGI-Parallel-Limit'] ??
+          job.headers?.['ogi-parallel-limit']
+      );
       const useParallel =
         supportsRange &&
         contentLength > PARALLEL_DOWNLOAD_THRESHOLD &&
-        !(job.headers && job.headers['OGI-Parallel-Limit'] === '1') && // If the link served has a parallel limit of 1, don't use it
-        !(parallelLimit === 1); // Also check response header
+        (options.allowMultiPart || this.totalParts === 1) &&
+        requestParallelLimit !== 1 &&
+        parallelLimit !== 1;
+
+      console.log(
+        `[direct] Parallel check: size=${(contentLength / (1024 * 1024 * 1024)).toFixed(2)}GB, ` +
+          `supportsRange=${supportsRange}, useParallel=${useParallel}, parallelLimit=${parallelLimit ?? 'none'}`
+      );
 
       return {
         useParallel,
@@ -707,7 +790,7 @@ class Download {
       };
     } catch (error) {
       console.log(
-        '[direct] HEAD request failed for part, falling back to standard:',
+        '[direct] HEAD request failed, falling back to standard download:',
         error
       );
       return {
@@ -716,6 +799,41 @@ class Download {
         supportsRange: false,
       };
     }
+  }
+
+  private createChunkStates(
+    job: DownloadJob,
+    fileSize: number,
+    chunkCount: number,
+    logExistingChunks = false
+  ): ChunkState[] {
+    const chunkSize = Math.ceil(fileSize / chunkCount);
+    fs.mkdirSync(dirname(job.path), { recursive: true });
+
+    return Array.from({ length: chunkCount }, (_, index) => {
+      const startByte = index * chunkSize;
+      const endByte = Math.min((index + 1) * chunkSize - 1, fileSize - 1);
+      const expectedChunkSize = endByte - startByte + 1;
+      const chunkPath = this.getChunkPath(job.path, index);
+      const currentBytes = fs.existsSync(chunkPath)
+        ? fs.statSync(chunkPath).size
+        : 0;
+
+      if (logExistingChunks && currentBytes > 0) {
+        console.log(
+          `[direct] Chunk ${index} file exists with ${currentBytes} bytes`
+        );
+      }
+
+      return {
+        index,
+        startByte,
+        endByte,
+        currentBytes,
+        abortController: new AbortController(),
+        completed: currentBytes >= expectedChunkSize,
+      };
+    });
   }
 
   /**
@@ -730,37 +848,14 @@ class Download {
 
     // Get parallel limit from the part's parallel info
     const parallelInfo = await this.shouldUseParallelDownloadForPart(job);
-    const effectiveChunkCount = parallelInfo.parallelLimit
-      ? Math.min(PARALLEL_CHUNK_COUNT, parallelInfo.parallelLimit)
-      : PARALLEL_CHUNK_COUNT;
+    const effectiveChunkCount = this.parallelChunks.effectiveCount(
+      parallelInfo.parallelLimit
+    );
 
     // Store effective chunk count in part state for later use
     part.effectiveChunkCount = effectiveChunkCount;
 
-    const chunkSize = Math.ceil(fileSize / effectiveChunkCount);
-    fs.mkdirSync(dirname(job.path), { recursive: true });
-
-    // Initialize chunks for this part
-    for (let i = 0; i < effectiveChunkCount; i++) {
-      const startByte = i * chunkSize;
-      const endByte = Math.min((i + 1) * chunkSize - 1, fileSize - 1);
-      const expectedChunkSize = endByte - startByte + 1;
-      const chunkPath = this.getChunkPath(job.path, i);
-
-      let chunkCurrentBytes = 0;
-      if (fs.existsSync(chunkPath)) {
-        chunkCurrentBytes = fs.statSync(chunkPath).size;
-      }
-
-      part.chunks.push({
-        index: i,
-        startByte,
-        endByte,
-        currentBytes: chunkCurrentBytes,
-        abortController: new AbortController(),
-        completed: chunkCurrentBytes >= expectedChunkSize,
-      });
-    }
+    part.chunks = this.createChunkStates(job, fileSize, effectiveChunkCount);
 
     part.downloadedBytes = part.chunks.reduce(
       (sum, chunk) => sum + chunk.currentBytes,
@@ -843,16 +938,10 @@ class Download {
       const chunkPath = this.getChunkPath(part.job.path, chunk.index);
 
       try {
-        const keepAliveAgent = part.job.link.startsWith('https')
-          ? new https.Agent({ keepAlive: true })
-          : new http.Agent({ keepAlive: true });
-
-        const headers = {
-          ...part.job.headers,
-          'User-Agent': 'OpenGameInstaller Downloader/1.0.0',
-          'Accept-Encoding': 'identity',
+        const keepAliveAgent = createKeepAliveAgent(part.job.link);
+        const headers = streamHeaders(part.job, {
           Range: `bytes=${actualStartByte}-${chunk.endByte}`,
-        };
+        });
 
         chunk.response = await axios.get<Readable>(part.job.link, {
           responseType: 'stream',
@@ -863,9 +952,7 @@ class Download {
         });
 
         if (chunk.response.status === 429) {
-          console.log(
-            `[direct] Part ${part.index + 1} chunk ${chunk.index}: 429 Too Many Requests, disabling chunk parallelization`
-          );
+          this.parallelChunks.reduceOn429();
           reject(new Error('429_TOO_MANY_REQUESTS'));
           return;
         }
@@ -926,10 +1013,7 @@ class Download {
             return;
           }
           if (error.response?.status === 429) {
-            // Too many requests - disable parallelization for this part
-            console.log(
-              `[direct] Part ${part.index + 1} chunk ${chunk.index}: 429 Too Many Requests, disabling chunk parallelization`
-            );
+            this.parallelChunks.reduceOn429();
             reject(new Error('429_TOO_MANY_REQUESTS'));
             return;
           }
@@ -945,9 +1029,9 @@ class Download {
   private async mergeChunkFilesForPart(part: PartState): Promise<void> {
     const finalStream = fs.createWriteStream(part.job.path, { flags: 'w' });
 
-    // Use stored effective chunk count, fallback to PARALLEL_CHUNK_COUNT if not set
+    // Use stored effective chunk count, fallback to this download’s chunk count if not set
     const effectiveChunkCount =
-      part.effectiveChunkCount ?? PARALLEL_CHUNK_COUNT;
+      part.effectiveChunkCount ?? this.parallelChunks.count;
 
     return new Promise<void>((resolve, reject) => {
       let currentChunkIndex = 0;
@@ -1015,16 +1099,11 @@ class Download {
           start: startByte,
         });
 
-        const headers = {
-          ...job.headers,
-          'User-Agent': 'OpenGameInstaller Downloader/1.0.0',
-          'Accept-Encoding': 'identity',
+        const headers = streamHeaders(job, {
           ...(startByte > 0 && { Range: `bytes=${startByte}-` }),
-        };
+        });
 
-        const keepAliveAgent = job.link.startsWith('https')
-          ? new https.Agent({ keepAlive: true })
-          : new http.Agent({ keepAlive: true });
+        const keepAliveAgent = createKeepAliveAgent(job.link);
 
         part.response = await axios.get<Readable>(job.link, {
           responseType: 'stream',
@@ -1135,10 +1214,7 @@ class Download {
             reject(error);
             return;
           } else if (error.response?.status === 429) {
-            // Too many requests - already using standard download, just retry
-            console.log(
-              `[direct] Part ${part.index + 1}: 429 Too Many Requests, will retry`
-            );
+            this.parallelChunks.reduceOn429();
             reject(error);
             return;
           }
@@ -1371,7 +1447,7 @@ class Download {
     });
   }
 
-  private async downloadPart(job: DownloadJob, retries = 5) {
+  private async downloadPart(job: DownloadJob, retries = DOWNLOAD_RETRIES) {
     let lastError: Error | undefined;
 
     // Check if we should use parallel download (only for single-part downloads)
@@ -1394,12 +1470,7 @@ class Download {
               lastError
             );
 
-            // If 429 error, disable parallelization and retry as standard download
             if (lastError.message === '429_TOO_MANY_REQUESTS') {
-              console.log(
-                '[direct] 429 detected, disabling parallelization and retrying as standard download'
-              );
-              // Clean up any partial chunk files
               try {
                 await this.deleteChunkFiles(job.path);
               } catch (cleanupError) {
@@ -1408,12 +1479,20 @@ class Download {
                   cleanupError
                 );
               }
-              // Fall through to standard download
+              if (this.parallelChunks.reduceOn429()) {
+                console.log(
+                  '[direct] Retrying with parallelization reduced to 1'
+                );
+                continue;
+              }
+              console.log(
+                '[direct] 429 at parallelization 1, falling back to standard download'
+              );
               break;
             }
 
             if (this.status !== 'downloading') throw lastError;
-            await new Promise((resolve) => setTimeout(resolve, 1000 * (i + 1)));
+            await sleep(1000 * (i + 1));
           }
         }
 
@@ -1442,7 +1521,7 @@ class Download {
         if (lastError.message === 'CONNECTION_REFRESH_REQUESTED') {
           continue;
         }
-        await new Promise((resolve) => setTimeout(resolve, 1000 * (i + 1)));
+        await sleep(1000 * (i + 1));
       }
     }
     throw lastError;
@@ -1480,16 +1559,11 @@ class Download {
         });
         console.log('[direct] Created file stream');
 
-        const headers = {
-          ...job.headers,
-          'User-Agent': 'OpenGameInstaller Downloader/1.0.0',
-          'Accept-Encoding': 'identity',
+        const headers = streamHeaders(job, {
           ...(this.startByte > 0 && { Range: `bytes=${this.startByte}-` }),
-        };
+        });
 
-        const keepAliveAgent = job.link.startsWith('https')
-          ? new https.Agent({ keepAlive: true })
-          : new http.Agent({ keepAlive: true });
+        const keepAliveAgent = createKeepAliveAgent(job.link);
 
         this.response = await axios.get<Readable>(job.link, {
           responseType: 'stream',
@@ -1619,8 +1693,7 @@ class Download {
           this.cleanupPart();
           return;
         } else if (error.response?.status === 429) {
-          // Too many requests - already using standard download, just retry
-          console.log('[direct] 429 Too Many Requests, will retry');
+          this.parallelChunks.reduceOn429();
           this.cleanupPart();
           reject(error);
           return;
@@ -1723,64 +1796,7 @@ class Download {
   private async shouldUseParallelDownload(
     job: DownloadJob
   ): Promise<ParallelDownloadInfo> {
-    try {
-      const keepAliveAgent = job.link.startsWith('https')
-        ? new https.Agent({ keepAlive: true })
-        : new http.Agent({ keepAlive: true });
-
-      const headResponse = await axios.head(job.link, {
-        headers: {
-          ...job.headers,
-          'User-Agent': 'OpenGameInstaller Downloader/1.0.0',
-        },
-        httpAgent: keepAliveAgent,
-        httpsAgent: keepAliveAgent,
-        timeout: 10000,
-      });
-
-      const contentLength = headResponse.headers['content-length']
-        ? parseInt(String(headResponse.headers['content-length']), 10)
-        : 0;
-      const acceptRanges = headResponse.headers['accept-ranges'];
-      const supportsRange = acceptRanges === 'bytes';
-
-      // Parse OGI-Parallel-Limit header from response (case-insensitive)
-      const parallelLimitHeader =
-        headResponse.headers['ogi-parallel-limit'] ||
-        headResponse.headers['OGI-Parallel-Limit'];
-      const parallelLimit = parallelLimitHeader
-        ? parseInt(parallelLimitHeader as string, 10)
-        : undefined;
-
-      const useParallel =
-        supportsRange &&
-        contentLength > PARALLEL_DOWNLOAD_THRESHOLD &&
-        this.totalParts === 1 && // Only use parallel for single-file downloads
-        !(job.headers && job.headers['OGI-Parallel-Limit'] === '1') && // If the link served has a parallel limit of 1, don't use it
-        !(parallelLimit === 1); // Also check response header
-
-      console.log(
-        `[direct] Parallel check: size=${(contentLength / (1024 * 1024 * 1024)).toFixed(2)}GB, ` +
-          `supportsRange=${supportsRange}, useParallel=${useParallel}, parallelLimit=${parallelLimit ?? 'none'}`
-      );
-
-      return {
-        useParallel,
-        fileSize: contentLength,
-        supportsRange,
-        parallelLimit,
-      };
-    } catch (error) {
-      console.log(
-        '[direct] HEAD request failed, falling back to standard download:',
-        error
-      );
-      return {
-        useParallel: false,
-        fileSize: 0,
-        supportsRange: false,
-      };
-    }
+    return this.inspectParallelDownload(job, { allowMultiPart: false });
   }
 
   /**
@@ -1798,41 +1814,19 @@ class Download {
 
     // Get parallel limit from the parallel info
     const parallelInfo = await this.shouldUseParallelDownload(job);
-    const effectiveChunkCount = parallelInfo.parallelLimit
-      ? Math.min(PARALLEL_CHUNK_COUNT, parallelInfo.parallelLimit)
-      : PARALLEL_CHUNK_COUNT;
+    const effectiveChunkCount = this.parallelChunks.effectiveCount(
+      parallelInfo.parallelLimit
+    );
 
     // Calculate chunk sizes
     const chunkSize = Math.ceil(fileSize / effectiveChunkCount);
 
-    // Create the target directory
-    fs.mkdirSync(dirname(job.path), { recursive: true });
-
-    // Initialize chunks - check each chunk file individually for resume
-    for (let i = 0; i < effectiveChunkCount; i++) {
-      const startByte = i * chunkSize;
-      const endByte = Math.min((i + 1) * chunkSize - 1, fileSize - 1);
-      const expectedChunkSize = endByte - startByte + 1;
-      const chunkPath = this.getChunkPath(job.path, i);
-
-      // Check if this chunk file exists and how much was downloaded
-      let chunkCurrentBytes = 0;
-      if (fs.existsSync(chunkPath)) {
-        chunkCurrentBytes = fs.statSync(chunkPath).size;
-        console.log(
-          `[direct] Chunk ${i} file exists with ${chunkCurrentBytes} bytes`
-        );
-      }
-
-      this.chunks.push({
-        index: i,
-        startByte,
-        endByte,
-        currentBytes: chunkCurrentBytes,
-        abortController: new AbortController(),
-        completed: chunkCurrentBytes >= expectedChunkSize,
-      });
-    }
+    this.chunks = this.createChunkStates(
+      job,
+      fileSize,
+      effectiveChunkCount,
+      true
+    );
 
     this.currentBytes = this.chunks.reduce(
       (sum, chunk) => sum + chunk.currentBytes,
@@ -1928,16 +1922,11 @@ class Download {
       const chunkPath = this.getChunkPath(job.path, chunk.index);
 
       try {
-        const keepAliveAgent = job.link.startsWith('https')
-          ? new https.Agent({ keepAlive: true })
-          : new http.Agent({ keepAlive: true });
+        const keepAliveAgent = createKeepAliveAgent(job.link);
 
-        const headers = {
-          ...job.headers,
-          'User-Agent': 'OpenGameInstaller Downloader/1.0.0',
-          'Accept-Encoding': 'identity',
+        const headers = streamHeaders(job, {
           Range: `bytes=${actualStartByte}-${chunk.endByte}`,
-        };
+        });
 
         console.log(
           `[direct] Chunk ${chunk.index}: downloading bytes ${actualStartByte}-${chunk.endByte} to ${chunkPath}`
@@ -1953,9 +1942,7 @@ class Download {
 
         // Check for 206 Partial Content response
         if (chunk.response.status === 429) {
-          console.log(
-            `[direct] Chunk ${chunk.index}: 429 Too Many Requests, disabling parallelization`
-          );
+          this.parallelChunks.reduceOn429();
           reject(new Error('429_TOO_MANY_REQUESTS'));
           return;
         }
@@ -2030,10 +2017,7 @@ class Download {
             return;
           }
           if (error.response?.status === 429) {
-            // Too many requests - disable parallelization and retry as standard download
-            console.log(
-              `[direct] Chunk ${chunk.index}: 429 Too Many Requests, disabling parallelization`
-            );
+            this.parallelChunks.reduceOn429();
             reject(new Error('429_TOO_MANY_REQUESTS'));
             return;
           }
@@ -2070,9 +2054,9 @@ class Download {
 
     // Get effective chunk count for this job
     const parallelInfo = await this.shouldUseParallelDownload(job);
-    const effectiveChunkCount = parallelInfo.parallelLimit
-      ? Math.min(PARALLEL_CHUNK_COUNT, parallelInfo.parallelLimit)
-      : PARALLEL_CHUNK_COUNT;
+    const effectiveChunkCount = this.parallelChunks.effectiveCount(
+      parallelInfo.parallelLimit
+    );
 
     // Create the final file write stream
     const finalStream = fs.createWriteStream(job.path, { flags: 'w' });
@@ -2134,11 +2118,11 @@ class Download {
    * Delete all chunk files for a job.
    */
   private async deleteChunkFiles(basePath: string): Promise<void> {
-    // We need to delete up to PARALLEL_CHUNK_COUNT chunks since we don't know
+    // We need to delete up to this download’s chunk count chunks since we don't know
     // the effective count at cleanup time. This is safe as it will just fail
     // silently for non-existent files.
     const deletePromises: Promise<void>[] = [];
-    for (let i = 0; i < PARALLEL_CHUNK_COUNT; i++) {
+    for (let i = 0; i < this.parallelChunks.count; i++) {
       const chunkPath = this.getChunkPath(basePath, i);
       deletePromises.push(
         rmAsync(chunkPath, { force: true }).catch((e) =>
@@ -2188,7 +2172,7 @@ class Download {
 
     // Delete chunk files for single-file parallel downloads
     if (this.currentJobPath) {
-      for (let i = 0; i < PARALLEL_CHUNK_COUNT; i++) {
+      for (let i = 0; i < this.parallelChunks.count; i++) {
         const chunkPath = this.getChunkPath(this.currentJobPath, i);
         cleanupPromises.push(
           rmAsync(chunkPath, { force: true }).catch((e) =>
@@ -2202,7 +2186,7 @@ class Download {
     if (this.useParallelParts || this.parts.length > 0) {
       for (const part of this.parts) {
         if (part.useChunks) {
-          for (let i = 0; i < PARALLEL_CHUNK_COUNT; i++) {
+          for (let i = 0; i < this.parallelChunks.count; i++) {
             const chunkPath = this.getChunkPath(part.job.path, i);
             cleanupPromises.push(
               rmAsync(chunkPath, { force: true }).catch((e) =>
@@ -2234,24 +2218,19 @@ class Download {
   }
 }
 
-async function checkParallelChunkCount() {
+async function loadDownloadSettings(): Promise<{ parallelChunkCount: number }> {
   await refreshCached('general');
-  let val = Number(await getStoredValue('general', 'parallelChunkCount'));
-  // Ensure minimum of 1, default to 8 if invalid
-  const chunkCount = Math.max(1, Number.isFinite(val) ? val : 8);
-  console.log('[direct] parallel chunk count:', chunkCount);
 
-  // Coerce to safe positive integer, ensuring minimum of 1
-  PARALLEL_CHUNK_COUNT = chunkCount;
-
-  if (PARALLEL_CHUNK_COUNT > 0 && PARALLEL_CHUNK_COUNT !== chunkCount) {
-    console.log(
-      '[direct] mismatched parallel chunk counts, will kill all downloads'
-    );
-    for (const download of downloads.values()) {
-      download.cancel();
-    }
-  }
+  const rawChunkCount = Number(
+    await getStoredValue('general', 'parallelChunkCount')
+  );
+  const parallelChunkCount = Math.max(
+    1,
+    Number.isFinite(rawChunkCount)
+      ? Math.floor(rawChunkCount)
+      : DEFAULT_PARALLEL_CHUNK_COUNT
+  );
+  console.log('[direct] parallel chunk count:', parallelChunkCount);
 
   const bwVal = Number(await getStoredValue('general', 'bandwidthLimit'));
   BANDWIDTH_LIMIT_BYTES_PER_SEC =
@@ -2261,6 +2240,8 @@ async function checkParallelChunkCount() {
     '[direct] bandwidth limit (bytes/s):',
     BANDWIDTH_LIMIT_BYTES_PER_SEC
   );
+
+  return { parallelChunkCount };
 }
 
 export default function handler(mainWindow: BrowserWindow) {
@@ -2271,10 +2252,10 @@ export default function handler(mainWindow: BrowserWindow) {
       args: { link: string; path: string; headers?: Record<string, string> }[],
       part?: number
     ) => {
-      await checkParallelChunkCount();
-      const download = new Download(mainWindow, args, part);
+      const { parallelChunkCount } = await loadDownloadSettings();
+      const download = new Download(mainWindow, args, parallelChunkCount, part);
       download.start();
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+      await sleep(1000);
       return download.id;
     }
   );
@@ -2285,7 +2266,7 @@ export default function handler(mainWindow: BrowserWindow) {
   });
 
   ipcMain.handle('ddl:resume', async (_, id: string) => {
-    await checkParallelChunkCount();
+    await loadDownloadSettings();
     console.log('[direct] Resuming download', id);
     downloads.get(id)?.resume();
   });

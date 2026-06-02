@@ -100,7 +100,7 @@ function hasArg(name, argv = process.argv) {
 
 const DEFAULT_BLEEDING_EDGE_BRANCH = 'main';
 
-type CommitEdgeTarget = { branch: string; commit: string };
+type CommitEdgeTarget = { branch: string; commit: string; built: string };
 
 function parseCommitEdgeFile(contents: string): CommitEdgeTarget {
   const lines = contents
@@ -109,9 +109,11 @@ function parseCommitEdgeFile(contents: string): CommitEdgeTarget {
     .filter(Boolean);
   let branch = DEFAULT_BLEEDING_EDGE_BRANCH;
   let commit = '';
+  let built = '';
   for (const line of lines) {
     const branchMatch = line.match(/^branch=(.+)$/i);
     const commitMatch = line.match(/^commit=(.*)$/i);
+    const builtMatch = line.match(/^built=(.+)$/i);
     if (branchMatch) {
       branch = branchMatch[1].trim() || DEFAULT_BLEEDING_EDGE_BRANCH;
       continue;
@@ -120,19 +122,75 @@ function parseCommitEdgeFile(contents: string): CommitEdgeTarget {
       commit = commitMatch[1].trim();
       continue;
     }
+    if (builtMatch) {
+      built = builtMatch[1].trim();
+      continue;
+    }
     if (!commit) {
       commit = line;
     }
   }
-  return { branch, commit };
+  return { branch, commit, built };
 }
 
-function writeCommitEdgeFile(branch: string, commit: string) {
+function writeCommitEdgeFile(
+  branch: string,
+  commit: string,
+  built = ''
+) {
   const lines = [`branch=${branch || DEFAULT_BLEEDING_EDGE_BRANCH}`];
   if (commit) {
     lines.push(`commit=${commit}`);
+  } else if (built) {
+    lines.push(`built=${built}`);
   }
   fs.writeFileSync('./COMMIT_EDGE.txt', `${lines.join('\n')}\n`);
+}
+
+function getBleedingEdgeArtifactPath() {
+  return process.platform === 'win32'
+    ? path.join(__dirname, 'update', 'OpenGameInstaller.exe')
+    : path.join(__dirname, 'update', 'OpenGameInstaller.AppImage');
+}
+
+function readStoredCommitEdgeTarget(): CommitEdgeTarget | null {
+  if (!fs.existsSync('./COMMIT_EDGE.txt')) {
+    return null;
+  }
+  return parseCommitEdgeFile(fs.readFileSync('./COMMIT_EDGE.txt', 'utf8'));
+}
+
+function getRepoHeadSha(repoDir: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const child = spawn('git', ['rev-parse', 'HEAD'], { cwd: repoDir });
+    let stdout = '';
+    child.stdout?.on('data', (data) => {
+      stdout += data.toString();
+    });
+    child.on('error', reject);
+    child.on('close', (code) => {
+      if (code !== 0) {
+        reject(new Error('git rev-parse HEAD failed'));
+        return;
+      }
+      resolve(stdout.trim());
+    });
+  });
+}
+
+function shouldSkipBranchOnlyBleedingEdgeBuild(
+  targetBranch: string,
+  headSha: string
+) {
+  const stored = readStoredCommitEdgeTarget();
+  const artifactPath = getBleedingEdgeArtifactPath();
+  if (!stored || stored.commit || stored.branch !== targetBranch) {
+    return false;
+  }
+  if (!stored.built || stored.built !== headSha) {
+    return false;
+  }
+  return fs.existsSync(artifactPath);
 }
 
 function getCommitEdgeTarget(argv = process.argv): CommitEdgeTarget {
@@ -146,12 +204,13 @@ function getCommitEdgeTarget(argv = process.argv): CommitEdgeTarget {
     return {
       branch: branch || DEFAULT_BLEEDING_EDGE_BRANCH,
       commit,
+      built: '',
     };
   }
   if (fs.existsSync('./COMMIT_EDGE.txt')) {
     return parseCommitEdgeFile(fs.readFileSync('./COMMIT_EDGE.txt', 'utf8'));
   }
-  return { branch: DEFAULT_BLEEDING_EDGE_BRANCH, commit: '' };
+  return { branch: DEFAULT_BLEEDING_EDGE_BRANCH, commit: '', built: '' };
 }
 
 function getBleedingEdgeRepoDir() {
@@ -211,6 +270,22 @@ async function ensureBleedingEdgeBuild(
   if (commit) {
     await runCommand('git', ['checkout', commit], { cwd: repoDir });
   }
+
+  const headSha = await getRepoHeadSha(repoDir);
+  if (
+    !commit &&
+    shouldSkipBranchOnlyBleedingEdgeBuild(targetBranch, headSha)
+  ) {
+    sendUpdaterStatus(
+      'Bleeding Edge up to date',
+      undefined,
+      undefined,
+      'Skipping build'
+    );
+    writeCommitEdgeFile(targetBranch, '', headSha);
+    return;
+  }
+
   await runCommand('bun', ['install', '--linker=hoisted'], { cwd: repoDir });
   await runCommand('bun', ['run', 'build'], { cwd: repoDir });
   const [buildCommand, buildArgs] = getApplicationBuildCommand();
@@ -228,7 +303,7 @@ async function ensureBleedingEdgeBuild(
     fs.copyFileSync(appImage, path.join(destRoot, 'OpenGameInstaller.AppImage'));
     fs.chmodSync(path.join(destRoot, 'OpenGameInstaller.AppImage'), '755');
   }
-  writeCommitEdgeFile(targetBranch, commit);
+  writeCommitEdgeFile(targetBranch, commit, commit ? '' : headSha);
 }
 
 const GITHUB_REPO = OGI_REPO_URL.replace('https://github.com/', '');

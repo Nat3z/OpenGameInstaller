@@ -10,6 +10,7 @@
   import SectionModal from '@/frontend/components/modal/SectionModal.svelte';
   import CustomDropdown from '@/frontend/components/CustomDropdown.svelte';
   import RangeInput from '@/frontend/components/RangeInput.svelte';
+  import ThemePicker from '@/frontend/components/ThemePicker.svelte';
   import {
     fetchAddonsWithConfigure,
     reconnectClientSdk,
@@ -352,6 +353,8 @@
         ) {
           if (key === 'torrentClient') {
             config[key] = selectedTorrentClientId;
+          } else if (key === 'theme') {
+            config[key] = selectedTheme;
           } else {
             config[key] = element.value;
           }
@@ -486,6 +489,7 @@
   let showPassword: { [key: string]: boolean } = $state({});
   let doSteamGridDBReconfigure: boolean = $state(false);
   let selectedTorrentClientId: string = $state('webtorrent'); // Track selection reactively
+  let selectedTheme: string = $state('light');
 
   // Loading states for addon management buttons
   let isInstallingAddons = $state(false);
@@ -564,18 +568,29 @@
     updateConfig();
   }
 
+  function handleThemeChange(detail: { selectedId: string }) {
+    selectedTheme = detail.selectedId;
+    updateConfig();
+    document.documentElement.setAttribute('data-theme', detail.selectedId);
+  }
+
   $effect(() => {
     if (mainContent && selectedOption) {
       mainContent.scrollTo({ top: 0, behavior: 'smooth' });
     }
   });
 
-  // Initialize selectedTorrentClientId with stored value
+  // Initialize selectedTorrentClientId and selectedTheme with stored values
   $effect(() => {
     if (selectedOption && selectedOption.id === 'general') {
       const storedValue = getStoredOrDefaultValue('torrentClient');
       if (storedValue && storedValue !== selectedTorrentClientId) {
         selectedTorrentClientId = storedValue as string;
+      }
+
+      const storedTheme = getStoredOrDefaultValue('theme');
+      if (storedTheme && storedTheme !== selectedTheme) {
+        selectedTheme = storedTheme as string;
       }
     }
   });
@@ -974,27 +989,11 @@
                                 onchange={handleTorrentClientChange}
                               />
                             {:else if key === 'theme'}
-                              <select
+                              <ThemePicker
                                 id={key}
-                                class="input-select"
-                                value={getStoredOrDefaultValue(key)}
-                                onchange={(e) => {
-                                  const val = (e.target as HTMLSelectElement)
-                                    .value as 'light' | 'dark' | 'synthwave';
-                                  updateConfig();
-                                  document.documentElement.setAttribute(
-                                    'data-theme',
-                                    val
-                                  );
-                                }}
-                              >
-                                {#each selectedOption.options[key].choice as choiceValue}
-                                  <option value={choiceValue}
-                                    >{choiceValue.charAt(0).toUpperCase() +
-                                      choiceValue.slice(1)}</option
-                                  >
-                                {/each}
-                              </select>
+                                selectedId={selectedTheme}
+                                onchange={handleThemeChange}
+                              />
                             {:else}
                               <!-- Regular select for other options -->
                               <select

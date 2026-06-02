@@ -672,6 +672,8 @@ class OGIAddonWSListener {
                 this.userInputAsked(screen, name, description)
             );
             this.eventEmitter.emit('setup', message.args, setupEvent);
+            const deferID =
+              message.id as AddonClientToServerEventArgs['defer-update']['deferID'];
             const interval = setInterval(() => {
               if (setupEvent.resolved) {
                 clearInterval(interval);
@@ -679,13 +681,13 @@ class OGIAddonWSListener {
               }
               this.send('defer-update', {
                 logs: setupEvent.logs,
-                deferID:
-                  message.args as AddonClientToServerEventArgs['defer-update']['deferID'],
+                deferID,
                 progress: setupEvent.progress,
                 failed: setupEvent.failed,
               } as AddonClientToServerEventArgs['defer-update']);
             }, 100);
             const setupResult = await this.waitForEventToRespond(setupEvent);
+            clearInterval(interval);
             this.respondToMessage(message.id!!, setupResult.data, setupEvent);
             break;
           }

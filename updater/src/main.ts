@@ -226,26 +226,49 @@ function getApplicationBuildCommand() {
     : ['bun', ['run', '--cwd', 'application', 'electron-pack:linux']];
 }
 
-function runCommand(command, args, options = {}) {
+type CommandResult = { stdout: string; stderr: string };
+type BleedingEdgeSyncResult = {
+  beforePullSha: string;
+  afterPullSha: string;
+  pullOutput: string;
+  pullWasNoop: boolean;
+};
+
+function runCommand(command, args, options = {}): Promise<CommandResult> {
   return new Promise((resolve, reject) => {
     logUpdater(`Running command: ${command} ${args.join(' ')}`);
     const child = spawn(command, args, { ...options, shell: process.platform === 'win32' });
-    child.stdout?.on('data', (data) => sendUpdaterStatus('Building Bleeding Edge', undefined, undefined, data.toString().trim().slice(-80)));
-    child.stderr?.on('data', (data) => sendUpdaterStatus('Building Bleeding Edge', undefined, undefined, data.toString().trim().slice(-80)));
+    let stdout = '';
+    let stderr = '';
+    child.stdout?.on('data', (data) => {
+      const text = data.toString();
+      stdout += text;
+      sendUpdaterStatus('Building Bleeding Edge', undefined, undefined, text.trim().slice(-80));
+    });
+    child.stderr?.on('data', (data) => {
+      const text = data.toString();
+      stderr += text;
+      sendUpdaterStatus('Building Bleeding Edge', undefined, undefined, text.trim().slice(-80));
+    });
     child.on('error', reject);
-    child.on('close', (code) => code === 0 ? resolve(undefined) : reject(new Error(`${command} exited with code ${code}`)));
+    child.on('close', (code) => code === 0 ? resolve({ stdout, stderr }) : reject(new Error(`${command} exited with code ${code}`)));
   });
 }
 
-async function syncBleedingEdgeRepo(repoDir: string, branch: string) {
+async function syncBleedingEdgeRepo(repoDir: string, branch: string): Promise<BleedingEdgeSyncResult> {
   const targetBranch = branch || DEFAULT_BLEEDING_EDGE_BRANCH;
   await runCommand('git', ['fetch', '--all', '--tags'], { cwd: repoDir });
   await runCommand('git', ['checkout', targetBranch], { cwd: repoDir });
-  await runCommand(
+  const beforePullSha = await getRepoHeadSha(repoDir);
+  const pullResult = await runCommand(
     'git',
     ['pull', '--ff-only', 'origin', targetBranch],
     { cwd: repoDir }
   );
+  const afterPullSha = await getRepoHeadSha(repoDir);
+  const pullOutput = `${pullResult.stdout}\n${pullResult.stderr}`;
+  const pullWasNoop = /already up[ -]to[ -]date/i.test(pullOutput) && beforePullSha === afterPullSha;
+  return { beforePullSha, afterPullSha, pullOutput, pullWasNoop };
 }
 
 /** Match .github/workflows/build-release.yml after hoisted `bun install`. */
@@ -269,6 +292,7 @@ async function ensureBleedingEdgeBuild(
   const repoDir = getBleedingEdgeRepoDir();
   const targetBranch = branch || DEFAULT_BLEEDING_EDGE_BRANCH;
   sendUpdaterStatus('Preparing Bleeding Edge');
+  let syncResult: BleedingEdgeSyncResult | null = null;
   if (!fs.existsSync(path.join(repoDir, '.git'))) {
     fs.rmSync(repoDir, { recursive: true, force: true });
     await runCommand('git', [
@@ -279,7 +303,7 @@ async function ensureBleedingEdgeBuild(
       repoDir,
     ]);
   } else {
-    await syncBleedingEdgeRepo(repoDir, targetBranch);
+    syncResult = await syncBleedingEdgeRepo(repoDir, targetBranch);
   }
   if (commit) {
     await runCommand('git', ['checkout', commit], { cwd: repoDir });
@@ -288,6 +312,7 @@ async function ensureBleedingEdgeBuild(
   const headSha = await getRepoHeadSha(repoDir);
   if (
     !commit &&
+    syncResult?.pullWasNoop &&
     shouldSkipBranchOnlyBleedingEdgeBuild(targetBranch, headSha)
   ) {
     sendUpdaterStatus(

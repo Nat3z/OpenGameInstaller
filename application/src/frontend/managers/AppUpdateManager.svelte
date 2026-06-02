@@ -1,12 +1,17 @@
 <script lang="ts">
   import core from '@/frontend/lib/core';
-  import { addonServer, findAddonsSupportingStorefront } from '@/frontend/utils';
+  import {
+    addonServer,
+    fetchAddonsWithConfigure,
+    findAddonsSupportingStorefront,
+  } from '@/frontend/utils';
   import { tryCatch } from '@/frontend/lib/core/tryCatch';
   import { updatesManager } from '@/frontend/states.svelte';
 
   let updateCheckRunId = 0;
 
   document.addEventListener('addon-runtime-ready', () => {
+    fetchAddonsWithConfigure();
     checkForAppUpdates();
   });
 

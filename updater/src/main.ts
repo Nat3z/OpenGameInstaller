@@ -248,6 +248,20 @@ async function syncBleedingEdgeRepo(repoDir: string, branch: string) {
   );
 }
 
+/** Match .github/workflows/build-release.yml after hoisted `bun install`. */
+function syncHoistedElectronPackages(repoDir: string) {
+  const rootElectron = path.join(repoDir, 'node_modules', 'electron');
+  if (!fs.existsSync(rootElectron)) {
+    throw new Error('electron not found in repo root node_modules after install');
+  }
+  for (const pkg of ['application', 'updater'] as const) {
+    const dest = path.join(repoDir, pkg, 'node_modules', 'electron');
+    fs.mkdirSync(path.dirname(dest), { recursive: true });
+    fs.rmSync(dest, { recursive: true, force: true });
+    fs.cpSync(rootElectron, dest, { recursive: true });
+  }
+}
+
 async function ensureBleedingEdgeBuild(
   commit = '',
   branch = DEFAULT_BLEEDING_EDGE_BRANCH
@@ -287,6 +301,7 @@ async function ensureBleedingEdgeBuild(
   }
 
   await runCommand('bun', ['install', '--linker=hoisted'], { cwd: repoDir });
+  syncHoistedElectronPackages(repoDir);
   await runCommand('bun', ['run', 'build'], { cwd: repoDir });
   const [buildCommand, buildArgs] = getApplicationBuildCommand();
   await runCommand(buildCommand, buildArgs, { cwd: repoDir });

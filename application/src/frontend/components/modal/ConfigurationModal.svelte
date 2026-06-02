@@ -176,9 +176,14 @@
     return 'text';
   }
 
-  function getInputValue(key: string, option: ConfigurationOptionWire) {
+  function getInputValue(
+    key: string,
+    option: ConfigurationOptionWire
+  ): string | number | undefined {
     const value = formData[key];
-    if (isBooleanOption(option)) return undefined;
+    if (isBooleanOption(option) || typeof value === 'boolean') {
+      return undefined;
+    }
     return value;
   }
 
@@ -197,22 +202,23 @@
 
 {#key activeScreen?.id}
   {#if activeScreen}
+    {@const screen = activeScreen}
     <Modal
       open={true}
       priority="addon-ask"
       size="medium"
       boundsClose={false}
     >
-      <TitleModal title={activeScreen.name} />
-      <HeaderModal header={activeScreen.description} class="mb-4" />
+      <TitleModal title={screen.name} />
+      <HeaderModal header={screen.description} class="mb-4" />
 
-      {#each Object.keys(activeScreen.config) as key}
-        {#if !isActionOption(activeScreen.config[key])}
-          {#if isBooleanOption(activeScreen.config[key])}
+      {#each Object.keys(screen.config) as key}
+        {#if !isActionOption(screen.config[key])}
+          {#if isBooleanOption(screen.config[key])}
             <CheckboxModal
               id={key}
-              label={activeScreen.config[key].displayName}
-              description={activeScreen.config[key].description}
+              label={screen.config[key].displayName}
+              description={screen.config[key].description}
               checked={Boolean(formData[key])}
               disabled={isSubmitting}
               onchange={handleInputChange}
@@ -220,22 +226,22 @@
           {:else}
             <InputModal
               id={key}
-              label={activeScreen.config[key].displayName}
-              description={activeScreen.config[key].description}
-              type={getInputType(activeScreen.config[key])}
-              value={getInputValue(key, activeScreen.config[key])}
-              options={getInputOptions(activeScreen.config[key])}
-              min={isNumberOption(activeScreen.config[key])
-                ? activeScreen.config[key].min
+              label={screen.config[key].displayName}
+              description={screen.config[key].description}
+              type={getInputType(screen.config[key])}
+              value={getInputValue(key, screen.config[key])}
+              options={getInputOptions(screen.config[key])}
+              min={isNumberOption(screen.config[key])
+                ? screen.config[key].min
                 : undefined}
-              max={isNumberOption(activeScreen.config[key])
-                ? activeScreen.config[key].max
+              max={isNumberOption(screen.config[key])
+                ? screen.config[key].max
                 : undefined}
-              maxLength={isStringOption(activeScreen.config[key])
-                ? activeScreen.config[key].maxTextLength
+              maxLength={isStringOption(screen.config[key])
+                ? screen.config[key].maxTextLength
                 : undefined}
-              minLength={isStringOption(activeScreen.config[key])
-                ? activeScreen.config[key].minTextLength
+              minLength={isStringOption(screen.config[key])
+                ? screen.config[key].minTextLength
                 : undefined}
               disabled={isSubmitting}
               onchange={handleInputChange}
@@ -249,9 +255,9 @@
       {/if}
 
       <div class="flex flex-row gap-2 mt-4">
-        {#if Object.keys(activeScreen.config).length === 0 || Object.keys(activeScreen.config).some((key) => !isActionOption(activeScreen.config[key]))}
+        {#if Object.keys(screen.config).length === 0 || Object.keys(screen.config).some((key) => !isActionOption(screen.config[key]))}
           <ButtonModal
-            text={Object.keys(activeScreen.config).length === 0
+            text={Object.keys(screen.config).length === 0
               ? 'Close'
               : 'Submit'}
             variant="primary"
@@ -260,9 +266,9 @@
             onclick={() => void handleSubmit()}
           />
         {/if}
-        {#each Object.keys(activeScreen.config) as key}
-          {#if isActionOption(activeScreen.config[key])}
-            {@const actionOption = activeScreen.config[key]}
+        {#each Object.keys(screen.config) as key}
+          {#if isActionOption(screen.config[key])}
+            {@const actionOption = screen.config[key]}
             <ButtonModal
               text={actionOption.buttonText || 'Run'}
               variant="secondary"

@@ -223,7 +223,7 @@ async function downloadFileWithProgress(
   const writer = createWriteStream(destination);
   const startTime = Date.now();
   const fileSize = Number.parseInt(
-    response.headers['content-length'] || '0',
+    String(response.headers['content-length'] ?? '0'),
     10
   );
 

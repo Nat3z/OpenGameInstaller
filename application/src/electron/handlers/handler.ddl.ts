@@ -678,7 +678,7 @@ class Download {
       });
 
       const contentLength = headResponse.headers['content-length']
-        ? parseInt(headResponse.headers['content-length'], 10)
+        ? parseInt(String(headResponse.headers['content-length']), 10)
         : 0;
       const acceptRanges = headResponse.headers['accept-ranges'];
       const supportsRange = acceptRanges === 'bytes';
@@ -1046,7 +1046,7 @@ class Download {
         }
 
         const contentLength = part.response.headers['content-length']
-          ? parseInt(part.response.headers['content-length'], 10)
+          ? parseInt(String(part.response.headers['content-length']), 10)
           : 0;
         part.totalBytes = startByte + contentLength;
         this.updateMultiPartTotalBytes();
@@ -1517,7 +1517,7 @@ class Download {
         }
 
         const contentLength = this.response.headers['content-length']
-          ? parseInt(this.response.headers['content-length'], 10)
+          ? parseInt(String(this.response.headers['content-length']), 10)
           : 0;
         this.totalSize = this.startByte + contentLength;
         this.startTime = Date.now();
@@ -1738,7 +1738,7 @@ class Download {
       });
 
       const contentLength = headResponse.headers['content-length']
-        ? parseInt(headResponse.headers['content-length'], 10)
+        ? parseInt(String(headResponse.headers['content-length']), 10)
         : 0;
       const acceptRanges = headResponse.headers['accept-ranges'];
       const supportsRange = acceptRanges === 'bytes';

@@ -1,7 +1,7 @@
 {
   "name": "@ogi-sdk/client-kit",
   "type": "module",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "exports": {
     ".": {
       "import": {
@@ -32,8 +32,8 @@
   },
   "dependencies": {
     "ws": "^8.20.0",
-    "ogi-addon": "workspace:*",
-    "@ogi-sdk/connect": "workspace:*"
+    "ogi-addon": "^4.0.1",
+    "@ogi-sdk/connect": "^1.0.1"
   },
   "description": "Client SDK for connecting OpenGameInstaller to addon servers.",
   "license": "MIT",

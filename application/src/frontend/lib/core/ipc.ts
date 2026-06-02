@@ -1,16 +1,9 @@
-import { Connection } from '@ogi-sdk/client-kit';
+import { Connection, type ConnectedAddonInfo } from '@ogi-sdk/client-kit';
 import { getConfigClientOption } from '@/frontend/lib/config/client';
 
 export let addonServer = connectClientSdk();
 
-export type AddonInfo = {
-  id: string;
-  name: string;
-  eventsAvailable: string[];
-  storefronts?: unknown;
-  configTemplate?: unknown;
-  [key: string]: unknown;
-};
+export type AddonInfo = ConnectedAddonInfo;
 
 export async function queryConnectedAddons<T = AddonInfo>() {
   const response = await addonServer.request('query-connected-addons', {
@@ -41,9 +34,9 @@ export async function reconnectClientSdk(): Promise<void> {
 }
 
 export function connectClientSdk(): Connection {
-  const developerConfig = getConfigClientOption('developer') as
-    | { clientSdkUrl?: string }
-    | null;
+  const developerConfig = getConfigClientOption('developer') as {
+    clientSdkUrl?: string;
+  } | null;
   let server = new Connection({
     url: developerConfig?.clientSdkUrl ?? 'ws://127.0.0.1:7654',
   });
@@ -53,6 +46,7 @@ export function connectClientSdk(): Connection {
 
 function initialize(server: Connection) {
   server.on('notification', (notification) => {
+    console.log('notification', notification);
     document.dispatchEvent(
       new CustomEvent('new-notification', { detail: notification })
     );

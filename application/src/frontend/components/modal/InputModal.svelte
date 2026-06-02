@@ -49,16 +49,21 @@
     selectedId = typeof value === 'string' ? value : '';
   });
 
-  function handleChange(event: Event) {
-    const target = event.target as HTMLInputElement;
+  function syncValueFromTarget(target: HTMLInputElement) {
     if (type === 'number' || type === 'range') {
       displayValue = Number(target.value);
     } else {
       displayValue = target.value;
     }
-    if (onchange) {
-      onchange(id, displayValue);
-    }
+    onchange?.(id, displayValue);
+  }
+
+  function handleChange(event: Event) {
+    syncValueFromTarget(event.target as HTMLInputElement);
+  }
+
+  function handleInput(event: Event) {
+    syncValueFromTarget(event.target as HTMLInputElement);
   }
 
   function handleDropdownChange(detail: { selectedId: string }) {
@@ -116,6 +121,7 @@
         {type}
         {id}
         value={displayValue}
+        oninput={handleInput}
         onchange={handleChange}
         maxlength={maxLength}
         minlength={minLength}
@@ -128,6 +134,7 @@
         type="number"
         {id}
         value={displayValue}
+        oninput={handleInput}
         onchange={handleChange}
         {min}
         {max}
@@ -141,6 +148,7 @@
           type="text"
           {id}
           value={displayValue}
+          oninput={handleInput}
           onchange={handleChange}
           {disabled}
           class="input-text"

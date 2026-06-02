@@ -6,7 +6,7 @@
     isNumberOption,
     isStringOption,
   } from 'ogi-addon/config';
-  import { writable, type Writable } from 'svelte/store';
+  import { get, writable, type Writable } from 'svelte/store';
 
   import Modal from '@/frontend/components/modal/Modal.svelte';
   import TitleModal from '@/frontend/components/modal/TitleModal.svelte';
@@ -15,29 +15,61 @@
   import CheckboxModal from '@/frontend/components/modal/CheckboxModal.svelte';
   import ButtonModal from '@/frontend/components/modal/ButtonModal.svelte';
 
+  type PendingInputScreen = {
+    config: ConfigurationFile;
+    id: string;
+    name: string;
+    description: string;
+    reply?: (
+      result: Record<string, string | number | boolean>
+    ) => void | Promise<void>;
+  };
+
   function isCustomEvent(event: Event): event is CustomEvent {
     return event instanceof CustomEvent;
   }
 
-  // State management
-  let screenRendering: ConfigurationFile | undefined = $state(undefined);
-  let screenID: string | undefined;
-  let screenName: string | undefined = $state(undefined);
-  let screenDescription: string | undefined = $state(undefined);
-  let formData: { [key: string]: any } = $state({});
+  let activeScreen: PendingInputScreen | undefined = $state(undefined);
+  let formData: Record<string, string | number | boolean> = $state({});
   let submitError: string | undefined = $state(undefined);
+  let isSubmitting = $state(false);
 
-  let listOfScreensQueued: Writable<
-    {
-      config: ConfigurationFile;
-      id: string;
-      name: string;
-      description: string;
-      reply?: (result: Record<string, string | number | boolean>) => void | Promise<void>;
-    }[]
-  > = writable([]);
+  const listOfScreensQueued: Writable<PendingInputScreen[]> = writable([]);
 
-  // Event listener for input requests
+  function buildInitialFormData(config: ConfigurationFile) {
+    const data: Record<string, string | number | boolean> = {};
+    Object.keys(config).forEach((key) => {
+      const option = config[key];
+      if (isBooleanOption(option)) {
+        data[key] = option.defaultValue ?? false;
+      } else if (isNumberOption(option)) {
+        data[key] = option.defaultValue ?? option.min ?? 0;
+      } else if (isStringOption(option)) {
+        if ((option.allowedValues?.length ?? 0) > 0) {
+          data[key] = option.defaultValue ?? option.allowedValues![0];
+        } else {
+          data[key] = option.defaultValue ?? '';
+        }
+      }
+    });
+    return data;
+  }
+
+  function showScreen(screen: PendingInputScreen) {
+    activeScreen = screen;
+    formData = buildInitialFormData(screen.config);
+    submitError = undefined;
+    isSubmitting = false;
+  }
+
+  function processQueue() {
+    if (activeScreen) return;
+    const screens = get(listOfScreensQueued);
+    if (screens.length === 0) return;
+    showScreen(screens[0]);
+    listOfScreensQueued.set(screens.slice(1));
+  }
+
   document.addEventListener('input-asked', (e) => {
     if (!isCustomEvent(e)) return;
     const { detail } = e;
@@ -47,129 +79,84 @@
       name,
       description,
       reply,
-    }: {
-      config: ConfigurationFile;
-      id: string;
-      name: string;
-      description: string;
-      reply?: (result: Record<string, string | number | boolean>) => void | Promise<void>;
-    } = detail;
+    }: PendingInputScreen = detail;
     listOfScreensQueued.update((screens) =>
       screens.concat({ config, id, name, description, reply })
     );
-    console.log('listOfScreensQueued', $listOfScreensQueued);
+    processQueue();
   });
 
-  // Queue subscription to process screens
-  listOfScreensQueued.subscribe((screens) => {
-    if (screens.length === 0) return;
-    if (screenRendering) return;
-
-    const screen = screens[0];
-    screenRendering = screen.config;
-    screenID = screen.id;
-    screenName = screen.name;
-    screenDescription = screen.description;
-    screenReply = screen.reply;
-
-    // Initialize form data with default values
-    formData = {};
-    Object.keys(screen.config).forEach((key) => {
-      const option = screen.config[key];
-      if (isBooleanOption(option)) {
-        formData[key] = option.defaultValue ?? false;
-      } else if (isNumberOption(option)) {
-        formData[key] = option.defaultValue ?? option.min;
-      } else if (isStringOption(option)) {
-        if ((option.allowedValues?.length ?? 0) > 0) {
-          formData[key] = option.defaultValue ?? option.allowedValues![0];
-        } else {
-          formData[key] = option.defaultValue ?? '';
-        }
-      }
-    });
-
-    listOfScreensQueued.update((screens) => screens.slice(1));
+  listOfScreensQueued.subscribe(() => {
+    processQueue();
   });
 
   function handleInputChange(id: string, value: string | number | boolean) {
-    formData[id] = value;
+    formData = { ...formData, [id]: value };
   }
 
-  let screenReply:
-    | ((result: Record<string, string | number | boolean>) => void | Promise<void>)
-    | undefined;
+  function collectFormData(): Record<string, string | number | boolean> {
+    const data = { ...formData };
+    if (!activeScreen) return data;
 
-  async function handleSubmit() {
-    const data = structuredClone(formData);
-    submitError = undefined;
-    try {
-      if (screenReply) {
-        await screenReply(data);
-      } else {
-        if (!screenID) {
-          throw new Error('No screen ID available');
+    for (const key of Object.keys(activeScreen.config)) {
+      const option = activeScreen.config[key];
+      const el = document.getElementById(key) as HTMLInputElement | null;
+      if (!el) continue;
+
+      if (isNumberOption(option)) {
+        const parsed = Number(el.value);
+        if (!Number.isNaN(parsed)) {
+          data[key] = parsed;
         }
-        await window.electronAPI.app.inputSend(screenID, data);
+      } else if (
+        isStringOption(option) &&
+        (option.allowedValues?.length ?? 0) === 0 &&
+        option.inputType !== 'file' &&
+        option.inputType !== 'folder'
+      ) {
+        data[key] = el.value;
       }
-      console.log('Submitted data:', formData);
+    }
+
+    return data;
+  }
+
+  async function handleSubmit(actionKey?: string) {
+    if (isSubmitting || !activeScreen) return;
+
+    const data = collectFormData();
+    if (actionKey) {
+      data[actionKey] = true;
+    }
+
+    isSubmitting = true;
+    submitError = undefined;
+
+    try {
+      if (activeScreen.reply) {
+        await activeScreen.reply(data);
+      } else {
+        await window.electronAPI.app.inputSend(activeScreen.id, data);
+      }
       closeModal();
     } catch (error) {
       console.error('Failed to submit configuration:', error);
       submitError = error instanceof Error ? error.message : String(error);
+    } finally {
+      isSubmitting = false;
     }
   }
 
   function handleActionSubmit(key: string) {
-    formData[key] = true;
-    handleSubmit();
+    void handleSubmit(key);
   }
 
-  $effect(() => {
-    console.log('screenRendering', screenRendering);
-    console.log('isNull', screenRendering === undefined);
-  });
-
   function closeModal() {
-    screenRendering = undefined;
-    screenID = undefined;
-    screenName = undefined;
-    screenDescription = undefined;
-    screenReply = undefined;
+    activeScreen = undefined;
     formData = {};
     submitError = undefined;
-
-    // Process next screen if available
-    if ($listOfScreensQueued.length !== 0) {
-      listOfScreensQueued.update((screens) => {
-        if (screens.length === 0) return [];
-        const screen = screens[0];
-        screenRendering = screen.config;
-        screenID = screen.id;
-        screenName = screen.name;
-        screenDescription = screen.description;
-        screenReply = screen.reply;
-
-        // Initialize form data for next screen
-        formData = {};
-        Object.keys(screen.config).forEach((key) => {
-          const option = screen.config[key];
-          if (isBooleanOption(option)) {
-            formData[key] = option.defaultValue ?? false;
-          } else if (isNumberOption(option)) {
-            formData[key] = option.defaultValue ?? option.min;
-          } else if (isStringOption(option)) {
-            if ((option.allowedValues?.length ?? 0) > 0) {
-              formData[key] = option.defaultValue ?? option.allowedValues![0];
-            } else {
-              formData[key] = option.defaultValue ?? '';
-            }
-          }
-        });
-
-        return screens.slice(1);
-      });
-    }
+    isSubmitting = false;
+    processQueue();
   }
 
   function getInputType(
@@ -191,7 +178,7 @@
 
   function getInputValue(key: string, option: ConfigurationOptionWire) {
     const value = formData[key];
-    if (isBooleanOption(option)) return undefined; // Handled by CheckboxModal
+    if (isBooleanOption(option)) return undefined;
     return value;
   }
 
@@ -208,88 +195,84 @@
   }
 </script>
 
-{#key screenRendering}
-  {#if screenRendering !== undefined}
+{#key activeScreen?.id}
+  {#if activeScreen}
     <Modal
-      open={screenRendering !== undefined}
+      open={true}
       priority="addon-ask"
       size="medium"
       boundsClose={false}
     >
-      {#if screenRendering && screenName && screenDescription}
-        <TitleModal title={screenName} />
-        <HeaderModal header={screenDescription} class="mb-4" />
+      <TitleModal title={activeScreen.name} />
+      <HeaderModal header={activeScreen.description} class="mb-4" />
 
-        <!-- Render non-action options first -->
-        {#each Object.keys(screenRendering) as key}
-          {#if !isActionOption(screenRendering[key])}
-            {#if isBooleanOption(screenRendering[key])}
-              <CheckboxModal
-                id={key}
-                label={screenRendering[key].displayName}
-                description={screenRendering[key].description}
-                checked={formData[key]}
-                onchange={handleInputChange}
-              />
-            {:else}
-              <InputModal
-                id={key}
-                label={screenRendering[key].displayName}
-                description={screenRendering[key].description}
-                type={getInputType(screenRendering[key])}
-                value={getInputValue(key, screenRendering[key])}
-                options={getInputOptions(screenRendering[key])}
-                min={isNumberOption(screenRendering[key])
-                  ? screenRendering[key].min
-                  : undefined}
-                max={isNumberOption(screenRendering[key])
-                  ? screenRendering[key].max
-                  : undefined}
-                maxLength={isStringOption(screenRendering[key])
-                  ? screenRendering[key].maxTextLength
-                  : undefined}
-                minLength={isStringOption(screenRendering[key])
-                  ? screenRendering[key].minTextLength
-                  : undefined}
-                onchange={handleInputChange}
-              />
-            {/if}
+      {#each Object.keys(activeScreen.config) as key}
+        {#if !isActionOption(activeScreen.config[key])}
+          {#if isBooleanOption(activeScreen.config[key])}
+            <CheckboxModal
+              id={key}
+              label={activeScreen.config[key].displayName}
+              description={activeScreen.config[key].description}
+              checked={Boolean(formData[key])}
+              disabled={isSubmitting}
+              onchange={handleInputChange}
+            />
+          {:else}
+            <InputModal
+              id={key}
+              label={activeScreen.config[key].displayName}
+              description={activeScreen.config[key].description}
+              type={getInputType(activeScreen.config[key])}
+              value={getInputValue(key, activeScreen.config[key])}
+              options={getInputOptions(activeScreen.config[key])}
+              min={isNumberOption(activeScreen.config[key])
+                ? activeScreen.config[key].min
+                : undefined}
+              max={isNumberOption(activeScreen.config[key])
+                ? activeScreen.config[key].max
+                : undefined}
+              maxLength={isStringOption(activeScreen.config[key])
+                ? activeScreen.config[key].maxTextLength
+                : undefined}
+              minLength={isStringOption(activeScreen.config[key])
+                ? activeScreen.config[key].minTextLength
+                : undefined}
+              disabled={isSubmitting}
+              onchange={handleInputChange}
+            />
+          {/if}
+        {/if}
+      {/each}
+
+      {#if submitError}
+        <p class="text-red-500 mt-2">{submitError}</p>
+      {/if}
+
+      <div class="flex flex-row gap-2 mt-4">
+        {#if Object.keys(activeScreen.config).length === 0 || Object.keys(activeScreen.config).some((key) => !isActionOption(activeScreen.config[key]))}
+          <ButtonModal
+            text={Object.keys(activeScreen.config).length === 0
+              ? 'Close'
+              : 'Submit'}
+            variant="primary"
+            class="w-fit"
+            disabled={isSubmitting}
+            onclick={() => void handleSubmit()}
+          />
+        {/if}
+        {#each Object.keys(activeScreen.config) as key}
+          {#if isActionOption(activeScreen.config[key])}
+            {@const actionOption = activeScreen.config[key]}
+            <ButtonModal
+              text={actionOption.buttonText || 'Run'}
+              variant="secondary"
+              class="w-fit"
+              disabled={isSubmitting}
+              onclick={() => handleActionSubmit(key)}
+            />
           {/if}
         {/each}
-
-        {#if submitError}
-          <p class="text-red-500 mt-2">{submitError}</p>
-        {/if}
-
-        <!-- Action buttons and submit button in the same row -->
-        {#if screenRendering}
-          <div class="flex flex-row gap-2 mt-4">
-            <!-- Submit button for non-action forms -->
-            {#if Object.keys(screenRendering).length === 0 || Object.keys(screenRendering).some((key) => screenRendering && !isActionOption(screenRendering[key]))}
-              <ButtonModal
-                text={Object.keys(screenRendering).length === 0
-                  ? 'Close'
-                  : 'Submit'}
-                variant="primary"
-                class="w-fit"
-                onclick={handleSubmit}
-              />
-            {/if}
-            <!-- Action buttons -->
-            {#each Object.keys(screenRendering) as key}
-              {#if isActionOption(screenRendering[key])}
-                {@const actionOption = screenRendering[key]}
-                <ButtonModal
-                  text={actionOption.buttonText || 'Run'}
-                  variant="secondary"
-                  class="w-fit"
-                  onclick={() => handleActionSubmit(key)}
-                />
-              {/if}
-            {/each}
-          </div>
-        {/if}
-      {/if}
+      </div>
     </Modal>
   {/if}
 {/key}

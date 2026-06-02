@@ -24,6 +24,8 @@ import type {
   AddonServerToClientEventName,
   AddonServerToClientEventArgs,
   AddonServerToClientSDKWebsocketMessage,
+  ConfigurationFile,
+  ConnectedAddonInfo,
 } from '@ogi-sdk/connect';
 
 export type AddonForwardResponseMessage<Event extends AddonServerToClientEventName> = Omit<
@@ -45,7 +47,21 @@ type CamelCaseEvent<Event extends string> =
     ? \`\${Head}\${Capitalize<CamelCaseEvent<Tail>>}\`
     : Event;
 
-export type AddonProxy = {
+export type AddonProxyMetadata = {
+  readonly id: string;
+  readonly name: string;
+  readonly description: string;
+  readonly version: string;
+  readonly author: string;
+  readonly repository: string;
+  readonly storefronts: string[];
+  readonly eventsAvailable: string[];
+  readonly configTemplate: ConfigurationFile | undefined;
+  readonly icon: string | undefined;
+  readonly iconPath: string | undefined;
+};
+
+export type AddonProxy = AddonProxyMetadata & {
   [Event in AddonServerToClientEventName as CamelCaseEvent<Event>]: AddonProxyMethod<Event>;
 };
 
@@ -60,6 +76,36 @@ type DeferToAddon = <Event extends AddonServerToClientEventName>(
   event: Event,
   args: AddonServerToClientEventArgs[Event]
 ) => Promise<AddonForwardResponse<Event>['args']>;
+
+type GetAddonInfo = (addonId: string) => ConnectedAddonInfo | undefined;
+
+const emptyAddonInfo = (addonId: string): ConnectedAddonInfo => ({
+  id: addonId,
+  name: '',
+  description: '',
+  version: '',
+  author: '',
+  repository: '',
+  storefronts: [],
+  eventsAvailable: [],
+});
+
+const addonMetadataGetters: Record<
+  keyof AddonProxyMetadata,
+  (info: ConnectedAddonInfo) => AddonProxyMetadata[keyof AddonProxyMetadata]
+> = {
+  id: (info) => info.id,
+  name: (info) => info.name,
+  description: (info) => info.description ?? '',
+  version: (info) => info.version ?? '',
+  author: (info) => info.author ?? '',
+  repository: (info) => info.repository ?? '',
+  storefronts: (info) => info.storefronts ?? [],
+  eventsAvailable: (info) => info.eventsAvailable,
+  configTemplate: (info) => info.configTemplate,
+  icon: (info) => info.icon,
+  iconPath: (info) => info.iconPath,
+};
 
 const toCamelCaseEvent = (event: string): string => {
   return event.replace(/-([a-z])/g, (_, letter: string) =>
@@ -84,11 +130,17 @@ ${deferredEntries.map((event) => `  '${event}',`).join('\n')}
 export const createAddonProxy = (
   addonId: string,
   sendToAddon: SendToAddon,
-  deferToAddon: DeferToAddon
+  deferToAddon: DeferToAddon,
+  getAddonInfo: GetAddonInfo
 ): AddonProxy => {
   return new Proxy({} as AddonProxy, {
     get(_target, property) {
       if (typeof property !== 'string') return undefined;
+
+      if (property in addonMetadataGetters) {
+        const info = getAddonInfo(addonId) ?? emptyAddonInfo(addonId);
+        return addonMetadataGetters[property as keyof AddonProxyMetadata](info);
+      }
 
       const event = addonEventAliases[property];
       if (!event) return undefined;

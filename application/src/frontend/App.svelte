@@ -136,7 +136,10 @@
       const installedOption = getConfigClientOption('installed') as {
         installed: boolean;
       };
+      console.log('installedOption', installedOption);
       if (!installedOption || !installedOption.installed) {
+        console.log('OOBE not finished');
+        console.log(installedOption);
         finishedOOBE = false;
       }
       loading = false;

@@ -1,7 +1,7 @@
 {
   "name": "@ogi-sdk/addon-server",
   "type": "module",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "module": "./build/index.mjs",
   "main": "./build/index.cjs",
   "exports": {
@@ -34,9 +34,9 @@
     "typescript": "^5"
   },
   "dependencies": {
-    "@ogi-sdk/connect": "workspace:*",
+    "@ogi-sdk/connect": "^1.0.1",
     "elysia": "^1.4.28",
-    "ogi-addon": "workspace:*",
+    "ogi-addon": "^4.0.1",
     "websocket": "^1.0.35",
     "ws": "^8.20.0"
   },

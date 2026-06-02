@@ -13,6 +13,7 @@ import { sendIPCMessage, sendNotification } from '@/electron/main.js';
 import axios from 'axios';
 import { AddonConnection } from '@ogi-sdk/addon-server';
 import { deleteInstalledAddon } from '@/electron/server/addon-lifecycle.js';
+import { waitForAddonsConfigured } from '@/electron/manager/manager.addon-readiness.js';
 
 export async function startAddons(): Promise<void> {
   // start all of the addons
@@ -77,6 +78,10 @@ export async function restartAddonServer(): Promise<void> {
   console.log(`Addon Server is running on http://localhost:${port}`);
   console.log(`Server is being executed by electron!`);
   await startAddons();
+  const configuredAddons = await waitForAddonsConfigured();
+  for (const connection of configuredAddons) {
+    await sendIPCMessage('addon-connected', connection.addonInfo!.id);
+  }
   await sendIPCMessage('addon-runtime-ready');
 
   sendNotification({

@@ -41,10 +41,8 @@
     await window.electronAPI.installAddons(
       JSON.parse(JSON.stringify(currentAddons.addons))
     );
-    setTimeout(async () => {
-      await window.electronAPI.restartAddonServer();
-      await reconnectClientSdk();
-    }, 2500);
+    await window.electronAPI.restartAddonServer();
+    await reconnectClientSdk();
   }
 
   async function deleteAddon(addon: CommunityAddon) {

@@ -132,32 +132,29 @@
     console.log('App mounted, initializing stores');
     showNotificationSideView.set(false);
     loading = true;
-    setTimeout(() => {
-      fetchAddonsWithConfigure();
-      const installedOption = getConfigClientOption('installed') as {
-        installed: boolean;
-      };
-      console.log('installedOption', installedOption);
-      if (!installedOption || !installedOption.installed) {
-        console.log('OOBE not finished');
-        console.log(installedOption);
-        finishedOOBE = false;
-      }
-      loading = false;
+    const installedOption = getConfigClientOption('installed') as {
+      installed: boolean;
+    };
+    console.log('installedOption', installedOption);
+    if (!installedOption || !installedOption.installed) {
+      console.log('OOBE not finished');
+      console.log(installedOption);
+      finishedOOBE = false;
+    }
+    loading = false;
 
-      // get recently launched apps
-      updateRecents();
+    // get recently launched apps
+    updateRecents();
 
-      // Initialize search-related data
-      initializeSearch();
-      initDownloadPersistence();
-      const persistedUpdateState = loadPersistedUpdateState();
-      appUpdates.requiredReadds = persistedUpdateState.requiredReadds;
-      appUpdates.dismissedUpdates = persistedUpdateState.dismissedUpdates;
-      // send client-ready-for-events
-      window.electronAPI.app.clientReadyForEvents();
-      console.log('client-ready-for-events sent');
-    }, 200);
+    // Initialize search-related data
+    initializeSearch();
+    initDownloadPersistence();
+    const persistedUpdateState = loadPersistedUpdateState();
+    appUpdates.requiredReadds = persistedUpdateState.requiredReadds;
+    appUpdates.dismissedUpdates = persistedUpdateState.dismissedUpdates;
+    // send client-ready-for-events
+    window.electronAPI.app.clientReadyForEvents();
+    console.log('client-ready-for-events sent');
   });
 
   // Initialize when DOM is ready

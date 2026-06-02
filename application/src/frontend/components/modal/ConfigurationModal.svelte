@@ -105,7 +105,10 @@
 
     for (const key of Object.keys(activeScreen.config)) {
       const option = activeScreen.config[key];
-      const el = document.getElementById(key) as HTMLInputElement | null;
+      const el = document.getElementById(key) as
+        | HTMLInputElement
+        | HTMLSelectElement
+        | null;
       if (!el) continue;
 
       if (isNumberOption(option)) {
@@ -118,8 +121,7 @@
         (option.allowedValues?.length ?? 0) > 0
       ) {
         const allowed = option.allowedValues!;
-        const selectValue =
-          (el as HTMLSelectElement).value || String(data[key] ?? '');
+        const selectValue = el.value || String(data[key] ?? '');
         data[key] =
           selectValue && allowed.includes(selectValue)
             ? selectValue

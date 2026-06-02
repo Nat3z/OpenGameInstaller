@@ -156,7 +156,7 @@ export default class OGIAddon {
    * @param notification {Notification}
    */
   public notify(notification: AddonNotificationMessage) {
-    this.addonWSListener.send('notification', [notification]);
+    this.addonWSListener.send('notification', notification);
   }
 
   /**

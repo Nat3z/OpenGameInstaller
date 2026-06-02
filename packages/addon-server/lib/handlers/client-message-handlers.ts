@@ -1,5 +1,6 @@
 import type {
   AddonClientToServerEventArgs,
+  AddonNotificationMessage,
   OGIAddonSDKEventListener,
 } from '@ogi-sdk/connect';
 import type { ConfigurationFile, StoreData } from '@ogi-sdk/connect';
@@ -13,10 +14,12 @@ import {
 import type { ClientMessageHandler, ClientMessageHandlers } from './types';
 
 const handleNotification: ClientMessageHandler = ({ server }, message) => {
-  server.emit(
-    'notification',
-    message.args as AddonClientToServerEventArgs['notification']
-  );
+  const args = message.args as AddonClientToServerEventArgs['notification'];
+  const notification: AddonNotificationMessage | undefined = Array.isArray(args)
+    ? args[0]
+    : args;
+  if (!notification?.type || !notification?.message) return;
+  server.emit('notification', notification);
 };
 
 const handleAuthenticate: ClientMessageHandler = (context, message) => {

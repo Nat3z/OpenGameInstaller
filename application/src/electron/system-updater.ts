@@ -72,8 +72,13 @@ export class SetupAppImageUpdater implements SystemUpdater {
   }
 
   async update(callbacks: UpdaterCallbacks): Promise<SystemUpdateResult> {
-    await checkIfInstallerUpdateAvailable(callbacks);
-    return { id: this.id, success: true };
+    const result = await checkIfInstallerUpdateAvailable(callbacks);
+    return {
+      id: this.id,
+      success: result.success,
+      updated: result.updated,
+      error: result.error,
+    };
   }
 }
 

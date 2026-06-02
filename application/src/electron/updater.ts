@@ -35,6 +35,12 @@ export interface UpdaterCallbacks {
   onProgress: (current: number, total: number, speed: string) => void;
 }
 
+export type InstallerUpdateResult = {
+  success: boolean;
+  updated: boolean;
+  error?: string;
+};
+
 const filesToBackup = ['config', 'addons', 'library', 'internals'];
 // Directories to skip during backup (addon dependencies will be reinstalled)
 const dirsToSkip = ['node_modules'];
@@ -441,9 +447,11 @@ async function applyBlockmapPatch(params: {
     oldOffset += oldFile.sizes[i];
   }
 
-  const sourceFd = openSync(params.sourceArtifact, 'r');
-  const outFd = openSync(params.outputArtifact, 'w');
+  let sourceFd: number | null = null;
+  let outFd: number | null = null;
   try {
+    sourceFd = openSync(params.sourceArtifact, 'r');
+    outFd = openSync(params.outputArtifact, 'w');
     let writeOffset = newFile.offset || 0;
     const misses: Array<{ offset: number; size: number }> = [];
 
@@ -496,8 +504,8 @@ async function applyBlockmapPatch(params: {
       params.updateProgress(downloaded, total, '');
     }
   } finally {
-    closeSync(sourceFd);
-    closeSync(outFd);
+    if (sourceFd !== null) closeSync(sourceFd);
+    if (outFd !== null) closeSync(outFd);
   }
 
   await verifyReleaseArtifact(params.outputArtifact, params.expectedArtifact);
@@ -678,8 +686,10 @@ function killUpdaterProcesses(): Promise<void> {
  * @param callbacks - Optional callbacks for status and progress updates (used by splash screen)
  * @returns Resolves when the update check and any initiated update workflow complete (no return value).
  */
-export function checkIfInstallerUpdateAvailable(callbacks?: UpdaterCallbacks) {
-  return new Promise<void>(async (resolve) => {
+export function checkIfInstallerUpdateAvailable(
+  callbacks?: UpdaterCallbacks
+): Promise<InstallerUpdateResult> {
+  return new Promise<InstallerUpdateResult>(async (resolve) => {
     const updateStatus = (text: string, subtext?: string) => {
       if (callbacks) {
         callbacks.onStatus(text, subtext);
@@ -701,7 +711,7 @@ export function checkIfInstallerUpdateAvailable(callbacks?: UpdaterCallbacks) {
       } else {
         console.error('[updater] No internet connection available.');
       }
-      resolve();
+      resolve({ success: true, updated: false });
       return;
     }
 
@@ -709,7 +719,7 @@ export function checkIfInstallerUpdateAvailable(callbacks?: UpdaterCallbacks) {
     if (basename(__dirname) !== 'update' && process.platform !== 'linux') {
       console.log('[updater] Running portably, skipping update check.');
       console.log(`[updater] Current directory: ${basename(__dirname)}`);
-      resolve();
+      resolve({ success: true, updated: false });
       return;
     }
 
@@ -719,7 +729,11 @@ export function checkIfInstallerUpdateAvailable(callbacks?: UpdaterCallbacks) {
       );
       if (!existsSync('../OpenGameInstaller-Setup.AppImage')) {
         console.error('[updater] No setup found, exiting.');
-        resolve();
+        resolve({
+          success: false,
+          updated: false,
+          error: 'Setup AppImage not found',
+        });
         return;
       }
 
@@ -765,7 +779,7 @@ export function checkIfInstallerUpdateAvailable(callbacks?: UpdaterCallbacks) {
       }
       if (!latestRelease) {
         console.error('[updater] No new version available.');
-        resolve();
+        resolve({ success: true, updated: false });
         return;
       }
       const latestVersion = latestRelease.tag_name;
@@ -775,7 +789,11 @@ export function checkIfInstallerUpdateAvailable(callbacks?: UpdaterCallbacks) {
         console.error(
           '[updater] No setup version found for the current platform.'
         );
-        resolve();
+        resolve({
+          success: false,
+          updated: false,
+          error: 'No setup version found for the current platform',
+        });
         return;
       }
       console.log(
@@ -788,7 +806,11 @@ export function checkIfInstallerUpdateAvailable(callbacks?: UpdaterCallbacks) {
         console.error(
           '[updater] No setup version found in the release description.'
         );
-        resolve();
+        resolve({
+          success: false,
+          updated: false,
+          error: 'No setup version found in the release description',
+        });
         return;
       }
       const latestSetupVersion = latestVersionResults[1];
@@ -833,6 +855,7 @@ export function checkIfInstallerUpdateAvailable(callbacks?: UpdaterCallbacks) {
               process.exit(1);
             }
           }, 500);
+          resolve({ success: true, updated: true });
         } else if (process.platform === 'linux') {
           await setTimeoutPromise(3000);
           await downloadSetupAppImageWithDifferentialFallback({
@@ -887,14 +910,19 @@ export function checkIfInstallerUpdateAvailable(callbacks?: UpdaterCallbacks) {
             await setTimeoutPromise(3000);
             process.exit(0);
           }, 500);
+          resolve({ success: true, updated: true });
         }
       } else {
         console.log(`[updater] No new version available.`);
-        resolve();
+        resolve({ success: true, updated: false });
       }
     } catch (ex) {
       console.error('[updater] Error while checking for updates: ', ex);
-      resolve();
+      resolve({
+        success: false,
+        updated: false,
+        error: ex instanceof Error ? ex.message : String(ex),
+      });
     }
   });
 }

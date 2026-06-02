@@ -396,24 +396,33 @@ async function getBranchesViaGit(): Promise<string[]> {
       await runCommand('git', ['fetch', '--prune', 'origin'], { cwd: repoDir });
       const { stdout } = await runCommand(
         'git',
-        ['for-each-ref', 'refs/remotes/origin', '--format=%(refname:short)'],
+        [
+          'for-each-ref',
+          'refs/remotes/origin',
+          '--format=%(refname:short)\t%(committerdate:iso8601)',
+          '--sort=-committerdate',
+        ],
         { cwd: repoDir }
       );
-      const names = new Set<string>();
+      const datedBranches: { name: string; date: string }[] = [];
       for (const line of stdout.split('\n')) {
         const trimmed = line.trim();
         if (!trimmed) continue;
-        const name = parseRemoteBranchName(trimmed);
+        const tab = trimmed.indexOf('\t');
+        const ref = tab === -1 ? trimmed : trimmed.slice(0, tab);
+        const date = tab === -1 ? '' : trimmed.slice(tab + 1);
+        const name = parseRemoteBranchName(ref);
         if (name && name !== 'HEAD') {
-          names.add(name);
+          datedBranches.push({ name, date });
         }
       }
-      if (names.size) {
-        const unique = [...names];
-        const others = unique
-          .filter((name) => name !== 'main')
-          .sort((a, b) => a.localeCompare(b));
-        return unique.includes('main') ? ['main', ...others] : others;
+      if (datedBranches.length) {
+        const others = datedBranches
+          .filter((branch) => branch.name !== 'main')
+          .map((branch) => branch.name);
+        return datedBranches.some((branch) => branch.name === 'main')
+          ? ['main', ...others]
+          : others;
       }
     } catch (error) {
       logUpdater('Local git branch listing failed, using ls-remote:', error);
@@ -476,23 +485,46 @@ async function getRecentCommitsViaGit(
   const logFormat = '%H%x1f%an%x1f%cI%x1f%s';
   const repoDir = getBleedingEdgeRepoDir();
 
-  if (!fs.existsSync(path.join(repoDir, '.git'))) {
-    throw new Error('Local ogi-repo clone not available for git commit fallback');
+  if (fs.existsSync(path.join(repoDir, '.git'))) {
+    await runCommand('git', ['fetch', 'origin', targetBranch, '--depth', '12'], {
+      cwd: repoDir,
+    });
+    const { stdout } = await runCommand(
+      'git',
+      ['log', `origin/${targetBranch}`, '-12', `--format=${logFormat}`],
+      { cwd: repoDir }
+    );
+    const commits = parseGitLogCommits(stdout);
+    if (commits.length) {
+      return commits;
+    }
   }
 
-  await runCommand('git', ['fetch', 'origin', targetBranch, '--depth', '12'], {
-    cwd: repoDir,
-  });
-  const { stdout } = await runCommand(
-    'git',
-    ['log', `origin/${targetBranch}`, '-12', `--format=${logFormat}`],
-    { cwd: repoDir }
+  const tmpDir = path.join(
+    app.getPath('temp'),
+    `ogi-updater-commits-${process.pid}-${Date.now()}`
   );
-  const commits = parseGitLogCommits(stdout);
-  if (!commits.length) {
-    throw new Error(`No commits found for branch ${targetBranch}`);
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+  try {
+    await runCommand('git', [
+      'clone',
+      '--depth',
+      '12',
+      '--branch',
+      targetBranch,
+      '--single-branch',
+      OGI_REPO_URL,
+      tmpDir,
+    ]);
+    const { stdout } = await runCommand(
+      'git',
+      ['log', 'HEAD', '-12', `--format=${logFormat}`],
+      { cwd: tmpDir }
+    );
+    return parseGitLogCommits(stdout);
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
   }
-  return commits;
 }
 
 async function getBranchTipDate(branch: string) {

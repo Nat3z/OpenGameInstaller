@@ -233,14 +233,36 @@ async function ensureBleedingEdgeBuild(
 
 const GITHUB_REPO = OGI_REPO_URL.replace('https://github.com/', '');
 
+async function getBranchTipDate(branch: string) {
+  const response = await axios.get(
+    `https://api.github.com/repos/${GITHUB_REPO}/commits`,
+    { params: { sha: branch, per_page: 1 }, timeout: 10000 }
+  );
+  return response.data[0]?.commit?.author?.date || '';
+}
+
 async function getBranches() {
   const response = await axios.get(
     `https://api.github.com/repos/${GITHUB_REPO}/branches`,
     { params: { per_page: 100 }, timeout: 10000 }
   );
-  return response.data
-    .map((branch: { name: string }) => branch.name)
-    .sort((a: string, b: string) => a.localeCompare(b));
+  const names = response.data.map(
+    (branch: { name: string }) => branch.name
+  ) as string[];
+  const datedBranches = await Promise.all(
+    names.map(async (name) => ({
+      name,
+      date: await getBranchTipDate(name).catch(() => ''),
+    }))
+  );
+  const others = datedBranches
+    .filter((branch) => branch.name !== 'main')
+    .sort(
+      (a, b) =>
+        new Date(b.date).getTime() - new Date(a.date).getTime()
+    )
+    .map((branch) => branch.name);
+  return names.includes('main') ? ['main', ...others] : others;
 }
 
 async function getRecentCommits(branch = DEFAULT_BLEEDING_EDGE_BRANCH) {

@@ -22,7 +22,13 @@
             <button data-channel="unstable">Unstable</button>
             <button data-channel="bleeding-edge">Bleeding Edge</button>
           </div>
-          <label for="branch-select" class="field-label">Branch</label>
+          <label
+            for="branch-select"
+            id="branch-label"
+            class="field-label"
+            style="display: none"
+            >Branch</label
+          >
           <select id="branch-select" style="display: none">
             <option value="main">main</option>
           </select>
@@ -64,12 +70,35 @@
     }
   });
 
+  function setBranchUiVisible(visible) {
+    document.querySelector('#branch-label').style.display = visible
+      ? 'block'
+      : 'none';
+    document.querySelector('#branch-select').style.display = visible
+      ? 'block'
+      : 'none';
+  }
+
+  function resetBleedingEdgePicker() {
+    const bleedingEdgeButton = document.querySelector(
+      '[data-channel="bleeding-edge"]'
+    );
+    delete bleedingEdgeButton.dataset.ready;
+    bleedingEdgeButton.textContent = 'Bleeding Edge';
+    setBranchUiVisible(false);
+    document.querySelector('#commit-input').style.display = 'none';
+    document.querySelector('#commit-input').value = '';
+    document.querySelector('#commit-list').style.display = 'none';
+    document.querySelector('#commit-list').innerHTML = '';
+  }
+
   document.addEventListener('show-channel-picker', () => {
     document.querySelector('h1').textContent = 'Choose Update Channel';
     document.querySelector('progress').style.display = 'none';
     document.querySelector('p').style.display = 'block';
     document.querySelector('p').textContent =
       'Stable uses normal releases. Unstable uses pre-releases. Bleeding Edge builds from source.';
+    resetBleedingEdgePicker();
     document.querySelector('#channel-picker').style.display = 'block';
   });
 
@@ -79,7 +108,7 @@
 
   async function loadBranches() {
     const select = document.querySelector('#branch-select');
-    select.style.display = 'block';
+    setBranchUiVisible(true);
     select.innerHTML = '<option value="">Loading branches...</option>';
     try {
       const result = await window.ogiUpdater.getBranches();

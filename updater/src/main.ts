@@ -211,7 +211,7 @@ async function ensureBleedingEdgeBuild(
   if (commit) {
     await runCommand('git', ['checkout', commit], { cwd: repoDir });
   }
-  await runCommand('bun', ['install'], { cwd: repoDir });
+  await runCommand('bun', ['install', '--linker=hoisted'], { cwd: repoDir });
   await runCommand('bun', ['run', 'build'], { cwd: repoDir });
   const [buildCommand, buildArgs] = getApplicationBuildCommand();
   await runCommand(buildCommand, buildArgs, { cwd: repoDir });

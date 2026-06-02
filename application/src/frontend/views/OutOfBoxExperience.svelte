@@ -4,6 +4,7 @@
 
   import { onMount, onDestroy } from 'svelte';
   import { createNotification, oobeLog } from '@/frontend/store';
+  import ThemePicker from '@/frontend/components/ThemePicker.svelte';
 
   let stage = $state(0);
 
@@ -21,6 +22,7 @@
   let selectedAddons = $state<string[]>([
     'https://github.com/Nat3z/steam-integration',
   ]);
+  let selectedTheme = $state('light');
   let isSettingKey = $state(false);
   let logContainer: HTMLDivElement | null = $state(null);
   let previousLogLength = $state(0);
@@ -287,6 +289,11 @@
 
   const requiredTools = $derived(getRequiredTools(currentOS));
 
+  function handleThemeChange(detail: { selectedId: string }) {
+    selectedTheme = detail.selectedId;
+    document.documentElement.setAttribute('data-theme', detail.selectedId);
+  }
+
   async function finishSetup() {
     const customAddons = addons
       .split('\n')
@@ -295,7 +302,7 @@
     const allAddons = [...new Set([...selectedAddons, ...customAddons])];
 
     let generalConfig = {
-      theme: 'light',
+      theme: selectedTheme,
       fileDownloadLocation: downloadLocation,
       addons: allAddons,
       torrentClient: selectedTorrenter,
@@ -401,7 +408,7 @@
   class="flex items-center flex-col justify-center w-full h-full p-8 bg-background-color fixed top-0 left-0 z-5 overflow-y-auto overflow-x-visible"
   id="oobe"
 >
-  {#if stage > 0}
+  {#if stage >= 1}
     <progress class="animate-fade-in-slow w-full" max="4" value={stage - 1}
     ></progress>
   {/if}
@@ -422,11 +429,34 @@
 
       <div class="animate-in-sub-content-slow">
         <button
-          onclick={() => (stage = 1)}
+          onclick={() => (stage = 0.5)}
           class="bg-accent hover:bg-accent-dark text-white font-open-sans font-semibold py-3 px-6 rounded-lg transition-colors duration-200"
           >Get Started</button
         >
       </div>
+    </div>
+  {:else if stage === 0.5}
+    <div
+      class="animate-fade-in-pop flex justify-center items-center h-full flex-col gap-6 p-10 w-full max-w-xl"
+    >
+      <h1 class="text-3xl font-archivo font-semibold text-text-primary mt-2">
+        Choose Your Theme
+      </h1>
+      <h2 class="font-open-sans text-text-secondary text-center mb-2">
+        Pick the look you want to use. You can change this later in settings.
+      </h2>
+      <div class="w-full max-w-md">
+        <ThemePicker
+          id="oobe-theme"
+          selectedId={selectedTheme}
+          onchange={handleThemeChange}
+        />
+      </div>
+      <button
+        onclick={() => (stage = 1)}
+        class="bg-accent hover:bg-accent-dark text-white font-open-sans font-semibold py-3 px-6 rounded-lg transition-colors duration-200"
+        >Continue</button
+      >
     </div>
   {:else if stage === 1}
     <div class="animate-fade-in-pop oobe-tools-stage">

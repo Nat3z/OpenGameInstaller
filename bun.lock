@@ -202,8 +202,11 @@
         "yauzl": "^3.2.0",
       },
       "devDependencies": {
+        "@types/node": "^22.15.0",
+        "@types/yauzl": "^2.10.3",
         "electron": "^40.1.0",
         "electron-builder": "^24.13.3",
+        "typescript": "^5.9.3",
       },
     },
     "web": {

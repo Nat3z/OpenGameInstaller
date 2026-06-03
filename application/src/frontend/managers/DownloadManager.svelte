@@ -3,7 +3,9 @@
     createNotification,
     currentDownloads,
     setupLogs,
+    type DownloadStatusAndInfo,
   } from '@/frontend/store';
+  import { get } from 'svelte/store';
   import {
     updateDownloadStatus,
     getDownloadItem,
@@ -41,12 +43,40 @@
     );
   }
 
+  function shouldSkipDownloadCompleteProcessing(
+    downloadID: string,
+    item: DownloadStatusAndInfo
+  ): boolean {
+    if (item.status === 'merging' || item.status === 'setup-complete') {
+      return true;
+    }
+
+    const setupLog = get(setupLogs)[downloadID];
+
+    // Post-setup torrents stay in 'seeding' with inactive setup logs.
+    if (item.status === 'seeding' && setupLog && !setupLog.isActive) {
+      return true;
+    }
+
+    // 'completed' means setup is running; skip only if logs prove setup started.
+    if (item.status === 'completed' && setupLog?.logs?.length) {
+      return true;
+    }
+
+    return false;
+  }
+
   async function processDownloadComplete(
     downloadID: string,
     isTorrent: boolean = false
   ) {
     const downloadedItem = getDownloadItem(downloadID);
-    if (!downloadedItem || downloadedItem.status === 'completed') return;
+    if (
+      !downloadedItem ||
+      shouldSkipDownloadCompleteProcessing(downloadID, downloadedItem)
+    ) {
+      return;
+    }
 
     updateDownloadStatus(downloadID, { status: 'merging' });
 

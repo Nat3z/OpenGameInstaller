@@ -13,7 +13,7 @@
     },
     "application": {
       "name": "opengameinstaller-gui",
-      "version": "3.0.12",
+      "version": "4.0.0",
       "dependencies": {
         "@ctrl/qbittorrent": "^9.11.0",
         "@ogi-sdk/addon-server": "workspace:*",
@@ -43,7 +43,6 @@
         "@tsconfig/svelte": "^5.0.6",
         "@types/d3": "^7.4.3",
         "@types/node": "^22.15.0",
-        "@types/parse-torrent": "^5.8.8",
         "@types/sanitize-html": "^2.16.0",
         "@types/semver": "^7.7.1",
         "@types/shell-quote": "^1.7.5",
@@ -70,11 +69,11 @@
     },
     "packages/addon-server": {
       "name": "@ogi-sdk/addon-server",
-      "version": "1.0.1",
+      "version": "1.0.2",
       "dependencies": {
-        "@ogi-sdk/connect": "^1.0.1",
+        "@ogi-sdk/connect": "^1.0.2",
         "elysia": "^1.4.28",
-        "ogi-addon": "^4.0.1",
+        "ogi-addon": "^4.1.0",
         "websocket": "^1.0.35",
         "ws": "^8.20.0",
       },
@@ -104,10 +103,10 @@
     },
     "packages/client-kit": {
       "name": "@ogi-sdk/client-kit",
-      "version": "1.0.1",
+      "version": "1.0.2",
       "dependencies": {
-        "@ogi-sdk/connect": "^1.0.1",
-        "ogi-addon": "^4.0.1",
+        "@ogi-sdk/connect": "^1.0.2",
+        "ogi-addon": "^4.1.0",
         "ws": "^8.20.0",
       },
       "devDependencies": {
@@ -121,7 +120,7 @@
     },
     "packages/connection": {
       "name": "@ogi-sdk/connect",
-      "version": "1.0.1",
+      "version": "1.0.2",
       "devDependencies": {
         "@types/bun": "latest",
         "tsdown": "^0.21.10",
@@ -155,9 +154,9 @@
     },
     "packages/ogi-addon": {
       "name": "ogi-addon",
-      "version": "4.0.1",
+      "version": "4.1.0",
       "dependencies": {
-        "@ogi-sdk/connect": "^1.0.1",
+        "@ogi-sdk/connect": "^1.0.2",
         "fuse.js": "^7.1.0",
         "zod": "^3.23.8",
       },
@@ -171,7 +170,7 @@
     },
     "packages/real-debrid": {
       "name": "real-debrid-js",
-      "version": "1.1.0",
+      "version": "1.1.1",
       "dependencies": {
         "axios": "^1.7.2",
         "zod": "^3.23.8",
@@ -196,7 +195,7 @@
     },
     "updater": {
       "name": "ogi-updater",
-      "version": "1.4.3",
+      "version": "2.0.0",
       "dependencies": {
         "axios": "^1.13.4",
         "yauzl": "^3.2.0",

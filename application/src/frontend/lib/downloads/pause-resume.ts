@@ -326,6 +326,7 @@ export function cancelPausedDownload(downloadId: string) {
     if (!pausedState) {
       // Handle persisted paused downloads after app restart (no in-memory state)
       const item = getDownloadItem(downloadId);
+      window.electronAPI.queue.cancel(downloadId);
       deleteDownloadedItems(downloadId);
       deletePersistedDownload(downloadId);
       currentDownloads.update((downloads) => {
@@ -347,7 +348,7 @@ export function cancelPausedDownload(downloadId: string) {
       return downloads.filter((d) => d.id !== downloadId);
     });
 
-    window.electronAPI.ddl.abortDownload(downloadId);
+    window.electronAPI.queue.cancel(downloadId);
     deleteDownloadedItems(downloadId);
     deletePersistedDownload(downloadId);
 

@@ -138,14 +138,17 @@ class TorrentDownload {
     });
 
     if (result === 'cancelled') {
+      this.removeCancelHandler();
       this.releaseQueueSlot();
       return;
     }
 
-    ipcMain.removeHandler(`queue:${this.id}:cancel`);
-
     console.log('[torrent] Starting download...');
     this.run();
+  }
+
+  private removeCancelHandler() {
+    ipcMain.removeHandler(`queue:${this.id}:cancel`);
   }
 
   private async run() {
@@ -193,8 +196,18 @@ class TorrentDownload {
         this.ratio = ratio;
       },
       () => {
+        if (
+          this.status === 'cancelled' ||
+          this.status === 'failed' ||
+          this.status === 'completed'
+        ) {
+          return;
+        }
         this.releaseQueueSlot();
         setTimeout(() => {
+          if (this.status === 'cancelled' || this.status === 'failed') {
+            return;
+          }
           this.status = 'seeding';
           this.progress = 1;
           this.sendProgress({ progress: 1, downloadSpeed: 0, ratio: 0 });
@@ -343,6 +356,7 @@ class TorrentDownload {
     }
 
     this.cleanup();
+    this.removeCancelHandler();
 
     this.sendIpc('torrent:download-cancelled', { id: this.id });
     console.log('[torrent] Download Cancelled', this.id);
@@ -367,6 +381,7 @@ class TorrentDownload {
       type: 'success',
     });
     this.cleanup();
+    this.removeCancelHandler();
     this.releaseQueueSlot();
     downloads.delete(this.id);
   }
@@ -391,6 +406,7 @@ class TorrentDownload {
     });
     console.error(`[torrent] Download ${this.id} failed:`, error);
     this.cleanup();
+    this.removeCancelHandler();
     this.releaseQueueSlot();
     downloads.delete(this.id);
   }

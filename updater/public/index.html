@@ -47,10 +47,13 @@
 </html>
 <script>
   document.addEventListener('text', (event) => {
+    const picker = document.querySelector('#channel-picker');
+    if (picker.style.display !== 'none') {
+      return;
+    }
     const { text, progress, subtext, max } = event.detail;
     const progressHTML = document.querySelector('progress');
     const subTextHTML = document.querySelector('p');
-    const picker = document.querySelector('#channel-picker');
     picker.style.display = 'none';
     document.querySelector('h1').textContent = text;
     if (progress !== undefined && progress !== null && max) {
@@ -109,6 +112,7 @@
   async function loadBranches() {
     const select = document.querySelector('#branch-select');
     setBranchUiVisible(true);
+    select.disabled = true;
     select.innerHTML = '<option value="">Loading branches...</option>';
     try {
       const result = await window.ogiUpdater.getBranches();
@@ -127,6 +131,8 @@
     } catch (error) {
       select.innerHTML = '<option value="main">main</option>';
       select.value = 'main';
+    } finally {
+      select.disabled = false;
     }
   }
 

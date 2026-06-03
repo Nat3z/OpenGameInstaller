@@ -234,21 +234,49 @@ type BleedingEdgeSyncResult = {
   pullWasNoop: boolean;
 };
 
-function runCommand(command, args, options = {}): Promise<CommandResult> {
+type RunCommandOptions = {
+  cwd?: string;
+  /** Skip UI status updates (e.g. git metadata for branch/commit picker). */
+  quiet?: boolean;
+};
+
+function runCommand(
+  command,
+  args,
+  options: RunCommandOptions = {}
+): Promise<CommandResult> {
+  const { quiet = false, ...spawnOptions } = options;
   return new Promise((resolve, reject) => {
     logUpdater(`Running command: ${command} ${args.join(' ')}`);
-    const child = spawn(command, args, { ...options, shell: process.platform === 'win32' });
+    const child = spawn(command, args, {
+      ...spawnOptions,
+      shell: process.platform === 'win32',
+    });
     let stdout = '';
     let stderr = '';
     child.stdout?.on('data', (data) => {
       const text = data.toString();
       stdout += text;
-      sendUpdaterStatus('Building Bleeding Edge', undefined, undefined, text.trim().slice(-80));
+      if (!quiet) {
+        sendUpdaterStatus(
+          'Building Bleeding Edge',
+          undefined,
+          undefined,
+          text.trim().slice(-80)
+        );
+      }
     });
     child.stderr?.on('data', (data) => {
       const text = data.toString();
       stderr += text;
-      sendUpdaterStatus('Building Bleeding Edge', undefined, undefined, text.trim().slice(-80));
+      if (!quiet) {
+        sendUpdaterStatus(
+          'Building Bleeding Edge',
+          undefined,
+          undefined,
+          text.trim().slice(-80)
+        );
+      }
     });
     child.on('error', reject);
     child.on('close', (code) => code === 0 ? resolve({ stdout, stderr }) : reject(new Error(`${command} exited with code ${code}`)));
@@ -393,7 +421,10 @@ async function getBranchesViaGit(): Promise<string[]> {
   const repoDir = getBleedingEdgeRepoDir();
   if (fs.existsSync(path.join(repoDir, '.git'))) {
     try {
-      await runCommand('git', ['fetch', '--prune', 'origin'], { cwd: repoDir });
+      await runCommand('git', ['fetch', '--prune', 'origin'], {
+        cwd: repoDir,
+        quiet: true,
+      });
       const { stdout } = await runCommand(
         'git',
         [
@@ -402,7 +433,7 @@ async function getBranchesViaGit(): Promise<string[]> {
           '--format=%(refname:short)\t%(committerdate:iso8601)',
           '--sort=-committerdate',
         ],
-        { cwd: repoDir }
+        { cwd: repoDir, quiet: true }
       );
       const datedBranches: { name: string; date: string }[] = [];
       for (const line of stdout.split('\n')) {
@@ -429,7 +460,9 @@ async function getBranchesViaGit(): Promise<string[]> {
     }
   }
 
-  const { stdout } = await runCommand('git', ['ls-remote', '--heads', OGI_REPO_URL]);
+  const { stdout } = await runCommand('git', ['ls-remote', '--heads', OGI_REPO_URL], {
+    quiet: true,
+  });
   const names = new Set<string>();
   for (const line of stdout.split('\n')) {
     const trimmed = line.trim();
@@ -488,11 +521,12 @@ async function getRecentCommitsViaGit(
   if (fs.existsSync(path.join(repoDir, '.git'))) {
     await runCommand('git', ['fetch', 'origin', targetBranch, '--depth', '12'], {
       cwd: repoDir,
+      quiet: true,
     });
     const { stdout } = await runCommand(
       'git',
       ['log', `origin/${targetBranch}`, '-12', `--format=${logFormat}`],
-      { cwd: repoDir }
+      { cwd: repoDir, quiet: true }
     );
     const commits = parseGitLogCommits(stdout);
     if (commits.length) {
@@ -506,20 +540,24 @@ async function getRecentCommitsViaGit(
   );
   fs.rmSync(tmpDir, { recursive: true, force: true });
   try {
-    await runCommand('git', [
-      'clone',
-      '--depth',
-      '12',
-      '--branch',
-      targetBranch,
-      '--single-branch',
-      OGI_REPO_URL,
-      tmpDir,
-    ]);
+    await runCommand(
+      'git',
+      [
+        'clone',
+        '--depth',
+        '12',
+        '--branch',
+        targetBranch,
+        '--single-branch',
+        OGI_REPO_URL,
+        tmpDir,
+      ],
+      { quiet: true }
+    );
     const { stdout } = await runCommand(
       'git',
       ['log', 'HEAD', '-12', `--format=${logFormat}`],
-      { cwd: tmpDir }
+      { cwd: tmpDir, quiet: true }
     );
     return parseGitLogCommits(stdout);
   } finally {

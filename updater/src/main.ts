@@ -374,37 +374,6 @@ async function ensureBleedingEdgeBuild(
   writeCommitEdgeFile(targetBranch, commit, commit ? '' : headSha);
 }
 
-const GITHUB_REPO = OGI_REPO_URL.replace('https://github.com/', '');
-
-function shouldFallbackToGitForGitHubApi(error: unknown): boolean {
-  const response = (error as { response?: { status?: number; data?: unknown; headers?: Record<string, string> } })
-    ?.response;
-  const status = response?.status;
-  if (status === 429) {
-    return true;
-  }
-  if (status !== 403) {
-    return false;
-  }
-  const headers = response?.headers || {};
-  const remaining =
-    headers['x-ratelimit-remaining'] ?? headers['X-RateLimit-Remaining'];
-  if (remaining === '0') {
-    return true;
-  }
-  const data = response?.data;
-  const message =
-    typeof data === 'string'
-      ? data
-      : typeof data === 'object' &&
-          data !== null &&
-          'message' in data &&
-          typeof (data as { message?: unknown }).message === 'string'
-        ? (data as { message: string }).message
-        : '';
-  return /rate limit/i.test(message);
-}
-
 function parseRemoteBranchName(ref: string): string | null {
   const headPrefix = 'refs/heads/';
   if (ref.startsWith(headPrefix)) {
@@ -417,7 +386,7 @@ function parseRemoteBranchName(ref: string): string | null {
   return null;
 }
 
-async function getBranchesViaGit(): Promise<string[]> {
+async function getBranches(): Promise<string[]> {
   const repoDir = getBleedingEdgeRepoDir();
   if (fs.existsSync(path.join(repoDir, '.git'))) {
     try {
@@ -511,7 +480,7 @@ function parseGitLogCommits(stdout: string): RecentCommit[] {
     .filter((commit) => commit.sha);
 }
 
-async function getRecentCommitsViaGit(
+async function getRecentCommits(
   branch = DEFAULT_BLEEDING_EDGE_BRANCH
 ): Promise<RecentCommit[]> {
   const targetBranch = branch || DEFAULT_BLEEDING_EDGE_BRANCH;
@@ -565,83 +534,13 @@ async function getRecentCommitsViaGit(
   }
 }
 
-async function getBranchTipDate(branch: string) {
-  const response = await axios.get(
-    `https://api.github.com/repos/${GITHUB_REPO}/commits`,
-    { params: { sha: branch, per_page: 1 }, timeout: 10000 }
-  );
-  return response.data[0]?.commit?.author?.date || '';
-}
-
-async function getBranches() {
-  const response = await axios.get(
-    `https://api.github.com/repos/${GITHUB_REPO}/branches`,
-    { params: { per_page: 100 }, timeout: 10000 }
-  );
-  const names = response.data.map(
-    (branch: { name: string }) => branch.name
-  ) as string[];
-  const datedBranches = await Promise.all(
-    names.map(async (name) => ({
-      name,
-      date: await getBranchTipDate(name).catch(() => ''),
-    }))
-  );
-  const others = datedBranches
-    .filter((branch) => branch.name !== 'main')
-    .sort(
-      (a, b) =>
-        new Date(b.date).getTime() - new Date(a.date).getTime()
-    )
-    .map((branch) => branch.name);
-  return names.includes('main') ? ['main', ...others] : others;
-}
-
-async function getRecentCommits(branch = DEFAULT_BLEEDING_EDGE_BRANCH) {
-  const response = await axios.get(
-    `https://api.github.com/repos/${GITHUB_REPO}/commits`,
-    {
-      params: { per_page: 12, sha: branch || DEFAULT_BLEEDING_EDGE_BRANCH },
-      timeout: 10000,
-    }
-  );
-  return response.data.map((commit) => ({
-    sha: commit.sha,
-    shortSha: commit.sha.slice(0, 7),
-    message: commit.commit?.message?.split('\n')[0] || 'No commit message',
-    author: commit.commit?.author?.name || 'Unknown',
-    date: commit.commit?.author?.date || '',
-  }));
-}
-
 ipcMain.handle('get-branches', async () => {
-  if (hasArg('--gui')) {
-    try {
-      const branches = await getBranchesViaGit();
-      logUpdater('Loaded branches via git (--gui)');
-      return { ok: true, branches };
-    } catch (error) {
-      console.error('Failed to load branches via git:', error);
-      return {
-        ok: false,
-        branches: [DEFAULT_BLEEDING_EDGE_BRANCH],
-        error: (error as Error)?.message || 'Failed to load branches',
-      };
-    }
-  }
   try {
-    return { ok: true, branches: await getBranches() };
+    const branches = await getBranches();
+    logUpdater('Loaded branches via git');
+    return { ok: true, branches };
   } catch (error) {
-    console.error('Failed to load branches:', error);
-    if (shouldFallbackToGitForGitHubApi(error)) {
-      try {
-        const branches = await getBranchesViaGit();
-        logUpdater('Loaded branches via git after GitHub API rate limit');
-        return { ok: true, branches };
-      } catch (gitError) {
-        console.error('Git branch fallback failed:', gitError);
-      }
-    }
+    console.error('Failed to load branches via git:', error);
     return {
       ok: false,
       branches: [DEFAULT_BLEEDING_EDGE_BRANCH],
@@ -653,36 +552,12 @@ ipcMain.handle('get-branches', async () => {
 ipcMain.handle('get-recent-commits', async (_event, branch) => {
   const targetBranch =
     typeof branch === 'string' && branch ? branch : DEFAULT_BLEEDING_EDGE_BRANCH;
-  if (hasArg('--gui')) {
-    try {
-      const commits = await getRecentCommitsViaGit(targetBranch);
-      logUpdater('Loaded commits via git (--gui)');
-      return { ok: true, commits };
-    } catch (error) {
-      console.error('Failed to load recent commits via git:', error);
-      return {
-        ok: false,
-        commits: [],
-        error: (error as Error)?.message || 'Failed to load commits',
-      };
-    }
-  }
   try {
-    return {
-      ok: true,
-      commits: await getRecentCommits(targetBranch),
-    };
+    const commits = await getRecentCommits(targetBranch);
+    logUpdater('Loaded commits via git');
+    return { ok: true, commits };
   } catch (error) {
-    console.error('Failed to load recent commits:', error);
-    if (shouldFallbackToGitForGitHubApi(error)) {
-      try {
-        const commits = await getRecentCommitsViaGit(targetBranch);
-        logUpdater('Loaded commits via git after GitHub API rate limit');
-        return { ok: true, commits };
-      } catch (gitError) {
-        console.error('Git commit fallback failed:', gitError);
-      }
-    }
+    console.error('Failed to load recent commits via git:', error);
     return {
       ok: false,
       commits: [],

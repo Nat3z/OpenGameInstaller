@@ -1299,7 +1299,9 @@ class Download {
 
   private complete() {
     console.log('[direct] Download completed');
-    this.status = 'completed';
+    // Keep status as 'downloading' (not 'completed') so the frontend does not
+    // enter the addon setup phase before ddl:download-complete fires.
+    // The frontend sets 'completed' when setup actually starts.
 
     // Clean up any remaining resources
     if (this.useParallelParts) {

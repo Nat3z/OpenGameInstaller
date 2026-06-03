@@ -53,7 +53,7 @@
   import Debug from '@/frontend/managers/Debug.svelte';
   import DiscoverView from '@/frontend/views/DiscoverView.svelte';
   import RootPasswordGranter from '@/frontend/managers/RootPasswordGranter.svelte';
-  import { initDownloadPersistence } from '@/frontend/utils';
+  import { initDownloadPersistence, initSleepLock } from '@/frontend/utils';
   import AppUpdateManager from '@/frontend/managers/AppUpdateManager.svelte';
   import ChangelogManager from '@/frontend/managers/ChangelogManager.svelte';
   import {
@@ -149,6 +149,7 @@
     // Initialize search-related data
     initializeSearch();
     initDownloadPersistence();
+    initSleepLock();
     const persistedUpdateState = loadPersistedUpdateState();
     appUpdates.requiredReadds = persistedUpdateState.requiredReadds;
     appUpdates.dismissedUpdates = persistedUpdateState.dismissedUpdates;

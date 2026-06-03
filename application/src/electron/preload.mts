@@ -347,6 +347,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getTorrentHash: wrap((torrent: string | Buffer | Uint8Array) =>
     ipcRenderer.invoke('torrent:get-hash', torrent)
   ),
+  powerSave: {
+    setActive: wrap((active: boolean) =>
+      ipcRenderer.invoke('power-save:set-active', active)
+    ),
+  },
 });
 
 ipcRenderer.on(

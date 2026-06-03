@@ -39,12 +39,14 @@ import {
   closeSplashWindow,
 } from '@/electron/startup-runner.js';
 import { registerUmuHandlers } from '@/electron/handlers/handler.umu.js';
+import { registerPowerSaveHandlers } from '@/electron/handlers/handler.power-save.js';
 import {
   executeWrapperCommandForApp,
   launchGameFromLibrary,
   type ExecuteWrapperResult,
 } from '@/electron/handlers/handler.library.js';
 import { loadLibraryInfo } from '@/electron/handlers/helpers.app/library.js';
+import { releasePowerSaveBlock } from '@/electron/lib/power-save.js';
 // import steamworks from 'steamworks.js';
 
 /**
@@ -408,6 +410,7 @@ function registerMainHandlers(win: BrowserWindow) {
   AddonManagerHandler(win);
   OOBEHandler();
   registerUmuHandlers();
+  registerPowerSaveHandlers();
 }
 
 function registerClientReadyListener() {
@@ -873,6 +876,8 @@ app.on('window-all-closed', async function () {
 
   // Perform cleanup before quitting
   try {
+    releasePowerSaveBlock();
+
     // stop torrenting
     console.log('Stopping torrent client...');
     await stopClient();

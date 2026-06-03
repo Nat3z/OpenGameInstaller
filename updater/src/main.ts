@@ -615,6 +615,20 @@ async function getRecentCommits(branch = DEFAULT_BLEEDING_EDGE_BRANCH) {
 }
 
 ipcMain.handle('get-branches', async () => {
+  if (hasArg('--gui')) {
+    try {
+      const branches = await getBranchesViaGit();
+      logUpdater('Loaded branches via git (--gui)');
+      return { ok: true, branches };
+    } catch (error) {
+      console.error('Failed to load branches via git:', error);
+      return {
+        ok: false,
+        branches: [DEFAULT_BLEEDING_EDGE_BRANCH],
+        error: (error as Error)?.message || 'Failed to load branches',
+      };
+    }
+  }
   try {
     return { ok: true, branches: await getBranches() };
   } catch (error) {
@@ -639,6 +653,20 @@ ipcMain.handle('get-branches', async () => {
 ipcMain.handle('get-recent-commits', async (_event, branch) => {
   const targetBranch =
     typeof branch === 'string' && branch ? branch : DEFAULT_BLEEDING_EDGE_BRANCH;
+  if (hasArg('--gui')) {
+    try {
+      const commits = await getRecentCommitsViaGit(targetBranch);
+      logUpdater('Loaded commits via git (--gui)');
+      return { ok: true, commits };
+    } catch (error) {
+      console.error('Failed to load recent commits via git:', error);
+      return {
+        ok: false,
+        commits: [],
+        error: (error as Error)?.message || 'Failed to load commits',
+      };
+    }
+  }
   try {
     return {
       ok: true,

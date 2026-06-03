@@ -397,20 +397,31 @@
       part,
       totalParts,
       ratio,
+      status,
     } = event.detail;
     if (queuePosition > 1) {
       console.log('Queue Position Update: ', downloadID, queuePosition);
     }
 
-    updateDownloadStatus(downloadID, {
+    const updates: Record<string, unknown> = {
       progress,
       downloadSpeed,
       downloadSize: fileSize,
-      queuePosition,
       part,
       totalParts,
       ratio,
-    });
+    };
+
+    if (status) {
+      updates.status = status;
+    }
+    if (queuePosition !== undefined) {
+      updates.queuePosition = queuePosition;
+    } else if (status && status !== 'downloading' && status !== 'queued') {
+      updates.queuePosition = undefined;
+    }
+
+    updateDownloadStatus(downloadID, updates);
   }
 
   function handleDownloadCancelled(event: Event) {
@@ -485,6 +496,7 @@
     updateDownloadStatus(event.detail.id, {
       status: 'error',
       error: event.detail.error,
+      queuePosition: undefined,
     });
 
     if (event.detail.error) {

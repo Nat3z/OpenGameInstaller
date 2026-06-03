@@ -4,6 +4,7 @@
     addonServer,
     fetchAddonsWithConfigure,
     findAddonsSupportingStorefront,
+    reconnectClientSdk,
   } from '@/frontend/utils';
   import { tryCatch } from '@/frontend/lib/core/tryCatch';
   import { updatesManager } from '@/frontend/states.svelte';
@@ -11,9 +12,21 @@
   let updateCheckRunId = 0;
 
   document.addEventListener('addon-runtime-ready', () => {
-    fetchAddonsWithConfigure();
-    checkForAppUpdates();
+    void onAddonRuntimeReady();
   });
+
+  async function onAddonRuntimeReady() {
+    try {
+      await reconnectClientSdk();
+      await fetchAddonsWithConfigure();
+      await checkForAppUpdates();
+    } catch (error) {
+      console.error(
+        'Failed to refresh addon runtime for update checks:',
+        error
+      );
+    }
+  }
 
   async function checkForAppUpdates() {
     let library;

@@ -77,6 +77,7 @@ class TorrentDownload {
   private mainWindow: BrowserWindow;
   private job: TorrentJob;
   private taskFinisher: () => void = () => {};
+  private queueReleased = false;
   private torrentClientType: 'webtorrent' | 'qbittorrent' | 'unselected' =
     'unselected';
 
@@ -90,8 +91,12 @@ class TorrentDownload {
 
   // qBittorrent specific
   private qbitTorrentHash?: string;
+  private expectedInfoHash?: string;
+  private qbitNotFoundTicks = 0;
   private qbitCheckInterval?: NodeJS.Timeout;
   private qbitProgressInterval?: NodeJS.Timeout;
+
+  private static readonly QBIT_LOOKUP_TIMEOUT_TICKS = 60;
 
   private progressInterval?: NodeJS.Timeout;
 
@@ -125,11 +130,12 @@ class TorrentDownload {
       this.sendProgress({ queuePosition });
     });
 
-    ipcMain.removeHandler(`queue:${this.id}:cancel`);
-
     if (result === 'cancelled') {
+      this.releaseQueueSlot();
       return;
     }
+
+    ipcMain.removeHandler(`queue:${this.id}:cancel`);
 
     console.log('[torrent] Starting download...');
     this.run();
@@ -180,6 +186,7 @@ class TorrentDownload {
         this.ratio = ratio;
       },
       () => {
+        this.releaseQueueSlot();
         setTimeout(() => {
           this.status = 'seeding';
           this.progress = 1;
@@ -190,9 +197,7 @@ class TorrentDownload {
             id: this.id,
             type: 'success',
           });
-          this.taskFinisher();
           this.wtInstance?.seed();
-          // Don't call task finisher until seeding is stopped (e.g., by cancellation)
         }, 1000);
       }
     );
@@ -204,12 +209,16 @@ class TorrentDownload {
 
       if (this.job.type === 'torrent') {
         const torrentData = await this.downloadTorrentFile(this.job.link);
+        const parsed = await (ParseTorrent as any)(torrentData);
+        this.expectedInfoHash = parsed.infoHash;
         // turn torrent data into a Uint8Array<ArrayBuffer>
         const torrentDataUint8Array = new Uint8Array(torrentData);
         await qbitClient.addTorrent(torrentDataUint8Array, {
           savepath: this.job.path,
         });
       } else {
+        const parsed = await (ParseTorrent as any)(this.job.link);
+        this.expectedInfoHash = parsed.infoHash;
         await qbitClient.addMagnet(this.job.link, {
           savepath: this.job.path,
         });
@@ -308,7 +317,13 @@ class TorrentDownload {
   }
 
   public cancel() {
-    if (this.status === 'cancelled' || this.status === 'completed') return;
+    if (
+      this.status === 'cancelled' ||
+      this.status === 'completed' ||
+      this.status === 'failed'
+    ) {
+      return;
+    }
     this.status = 'cancelled';
 
     if (this.torrentClientType === 'webtorrent') {
@@ -326,11 +341,18 @@ class TorrentDownload {
 
     this.sendIpc('torrent:download-cancelled', { id: this.id });
     console.log('[torrent] Download Cancelled', this.id);
-    this.taskFinisher();
+    this.releaseQueueSlot();
     downloads.delete(this.id);
   }
 
   private complete() {
+    if (
+      this.status === 'completed' ||
+      this.status === 'cancelled' ||
+      this.status === 'failed'
+    ) {
+      return;
+    }
     this.status = 'completed';
     this.sendProgress({ progress: 1, downloadSpeed: 0 });
     this.sendIpc('torrent:download-complete', { id: this.id });
@@ -340,12 +362,18 @@ class TorrentDownload {
       type: 'success',
     });
     this.cleanup();
-    this.taskFinisher();
+    this.releaseQueueSlot();
     downloads.delete(this.id);
   }
 
   private fail(error: Error) {
-    if (this.status === 'failed' || this.status === 'cancelled' || this.status === 'completed') return;
+    if (
+      this.status === 'failed' ||
+      this.status === 'cancelled' ||
+      this.status === 'completed'
+    ) {
+      return;
+    }
     this.status = 'failed';
     this.sendIpc('torrent:download-error', {
       id: this.id,
@@ -358,18 +386,30 @@ class TorrentDownload {
     });
     console.error(`[torrent] Download ${this.id} failed:`, error);
     this.cleanup();
-    this.taskFinisher();
+    this.releaseQueueSlot();
     downloads.delete(this.id);
+  }
+
+  private releaseQueueSlot() {
+    if (this.queueReleased) return;
+    this.queueReleased = true;
+    this.taskFinisher();
   }
 
   private startProgressTracker() {
     this.progressInterval = setInterval(() => {
-      if (this.status === 'downloading' || this.status === 'seeding') {
+      if (this.status === 'downloading') {
         this.sendProgress({
           progress: this.progress,
           downloadSpeed: this.downloadSpeed,
           ratio: this.ratio,
           queuePosition: 1,
+        });
+      } else if (this.status === 'seeding') {
+        this.sendProgress({
+          progress: this.progress,
+          downloadSpeed: this.downloadSpeed,
+          ratio: this.ratio,
         });
       }
     }, 500);
@@ -384,13 +424,24 @@ class TorrentDownload {
         let torrent;
 
         if (!this.qbitTorrentHash) {
-          torrent = torrents.find(
-            (t) =>
-              t.savePath === this.job.path.replace(/\//g, '\\') ||
-              t.savePath === this.job.path
-          );
+          torrent = torrents.find((t) => {
+            if (
+              this.expectedInfoHash &&
+              (t.id === this.expectedInfoHash ||
+                (t as { hash?: string }).hash === this.expectedInfoHash)
+            ) {
+              return true;
+            }
+            const normalizedJobPath = this.job.path.replace(/[/\\]+$/, '');
+            const normalizedSavePath = t.savePath.replace(/[/\\]+$/, '');
+            return (
+              normalizedSavePath === normalizedJobPath.replace(/\//g, '\\') ||
+              normalizedSavePath === normalizedJobPath
+            );
+          });
           if (torrent) {
             this.qbitTorrentHash = torrent.id;
+            this.qbitNotFoundTicks = 0;
             console.log(
               `[torrent-handler] Found torrent hash: ${this.qbitTorrentHash}`
             );
@@ -399,17 +450,31 @@ class TorrentDownload {
           torrent = torrents.find((t) => t.id === this.qbitTorrentHash);
         }
 
-        if (torrent) {
-          this.downloadSpeed = torrent.downloadSpeed;
-          this.progress = torrent.progress;
-          this.totalSize = torrent.totalSize;
-          this.ratio = torrent.totalDownloaded
-            ? torrent.totalUploaded / torrent.totalDownloaded
-            : 0;
-
-          if (torrent.isCompleted) {
-            this.complete();
+        if (!torrent) {
+          this.qbitNotFoundTicks++;
+          if (
+            this.qbitNotFoundTicks >= TorrentDownload.QBIT_LOOKUP_TIMEOUT_TICKS
+          ) {
+            this.fail(
+              new Error(
+                'Timed out waiting for qBittorrent to register the torrent.'
+              )
+            );
           }
+          return;
+        }
+
+        this.qbitNotFoundTicks = 0;
+
+        this.downloadSpeed = torrent.downloadSpeed;
+        this.progress = torrent.progress;
+        this.totalSize = torrent.totalSize;
+        this.ratio = torrent.totalDownloaded
+          ? torrent.totalUploaded / torrent.totalDownloaded
+          : 0;
+
+        if (torrent.isCompleted || torrent.progress >= 1) {
+          this.complete();
         }
       } catch (error) {
         console.error('[torrent] Error getting qBittorrent data:', error);
@@ -423,6 +488,7 @@ class TorrentDownload {
           progress: this.progress,
           downloadSpeed: this.downloadSpeed,
           ratio: this.ratio,
+          queuePosition: 1,
         });
       }
     }, 500);

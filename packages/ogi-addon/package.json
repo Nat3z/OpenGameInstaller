@@ -38,7 +38,7 @@
     "directory": "packages/ogi-addon"
   },
   "dependencies": {
-    "@ogi-sdk/connect": "^1.0.1",
+    "@ogi-sdk/connect": "^1.0.2",
     "fuse.js": "^7.1.0",
     "zod": "^3.23.8"
   },

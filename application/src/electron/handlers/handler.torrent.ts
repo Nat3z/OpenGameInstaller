@@ -12,9 +12,16 @@ import { QBittorrent } from '@ctrl/qbittorrent';
 import { torrent as wtConnect } from '@/electron/manager/manager.webtorrent.js';
 import { __dirname } from '@/electron/manager/manager.paths.js';
 import { DOWNLOAD_QUEUE } from '@/electron/manager/manager.queue.js';
-import ParseTorrent from 'parse-torrent';
+import parseTorrent from 'parse-torrent';
 
 let qbitClient: QBittorrent | undefined = undefined;
+
+async function getTorrentInfoHash(
+  input: string | Buffer | Uint8Array
+): Promise<string> {
+  const parsed = await parseTorrent(input);
+  return parsed.infoHash;
+}
 
 function getErrorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
@@ -209,16 +216,14 @@ class TorrentDownload {
 
       if (this.job.type === 'torrent') {
         const torrentData = await this.downloadTorrentFile(this.job.link);
-        const parsed = await (ParseTorrent as any)(torrentData);
-        this.expectedInfoHash = parsed.infoHash;
+        this.expectedInfoHash = await getTorrentInfoHash(torrentData);
         // turn torrent data into a Uint8Array<ArrayBuffer>
         const torrentDataUint8Array = new Uint8Array(torrentData);
         await qbitClient.addTorrent(torrentDataUint8Array, {
           savepath: this.job.path,
         });
       } else {
-        const parsed = await (ParseTorrent as any)(this.job.link);
-        this.expectedInfoHash = parsed.infoHash;
+        this.expectedInfoHash = await getTorrentInfoHash(this.job.link);
         await qbitClient.addMagnet(this.job.link, {
           savepath: this.job.path,
         });
@@ -585,8 +590,7 @@ export default function handler(mainWindow: BrowserWindow) {
   ipcMain.handle(
     'torrent:get-hash',
     async (_, item: string | Buffer | Uint8Array) => {
-      const parsed = await (ParseTorrent as any)(item);
-      return parsed.infoHash;
+      return getTorrentInfoHash(item);
     }
   );
 }

@@ -17,27 +17,32 @@
 
         <h1 style="width: 100%; text-align: center">Checking for Updates</h1>
         <section id="channel-picker" style="display: none">
-          <div class="chips">
-            <button data-channel="stable">Stable</button>
-            <button data-channel="unstable">Unstable</button>
-            <button data-channel="bleeding-edge">Bleeding Edge</button>
+          <div id="channel-screen">
+            <div class="chips">
+              <button data-channel="stable">Stable</button>
+              <button data-channel="unstable">Unstable</button>
+              <button data-channel="bleeding-edge">Bleeding Edge</button>
+            </div>
           </div>
-          <label
-            for="branch-select"
-            id="branch-label"
-            class="field-label"
-            style="display: none"
-            >Branch</label
-          >
-          <select id="branch-select" style="display: none">
-            <option value="main">main</option>
-          </select>
-          <input
-            id="commit-input"
-            placeholder="Optional commit SHA, branch, or tag"
-            style="display: none"
-          />
-          <div id="commit-list" style="display: none"></div>
+          <div id="bleeding-edge-screen" style="display: none">
+            <button type="button" id="bleeding-edge-back" class="back-button">
+              Back
+            </button>
+            <label for="branch-select" id="branch-label" class="field-label"
+              >Branch</label
+            >
+            <select id="branch-select">
+              <option value="main">main</option>
+            </select>
+            <input
+              id="commit-input"
+              placeholder="Optional commit SHA, branch, or tag"
+            />
+            <div id="commit-list" style="display: none"></div>
+            <button type="button" id="bleeding-edge-build" class="build-button">
+              Build Selected
+            </button>
+          </div>
         </section>
         <progress value="10" max="100" style="display: none"></progress>
         <p style="display: none">hello</p>
@@ -73,34 +78,36 @@
     }
   });
 
-  function setBranchUiVisible(visible) {
-    document.querySelector('#branch-label').style.display = visible
+  function showChannelScreen(screen) {
+    const isBleedingEdge = screen === 'bleeding-edge';
+    document.querySelector('#channel-screen').style.display = isBleedingEdge
+      ? 'none'
+      : 'block';
+    document.querySelector('#bleeding-edge-screen').style.display = isBleedingEdge
       ? 'block'
       : 'none';
-    document.querySelector('#branch-select').style.display = visible
-      ? 'block'
-      : 'none';
+    document.querySelector('h1').textContent = isBleedingEdge
+      ? 'Bleeding Edge Build'
+      : 'Choose Update Channel';
+    document.querySelector('p').textContent = isBleedingEdge
+      ? 'Pick a branch and optional commit, then build from source.'
+      : 'Stable uses normal releases. Unstable uses pre-releases. Bleeding Edge builds from source.';
   }
 
   function resetBleedingEdgePicker() {
-    const bleedingEdgeButton = document.querySelector(
-      '[data-channel="bleeding-edge"]'
-    );
-    delete bleedingEdgeButton.dataset.ready;
-    bleedingEdgeButton.textContent = 'Bleeding Edge';
-    setBranchUiVisible(false);
-    document.querySelector('#commit-input').style.display = 'none';
     document.querySelector('#commit-input').value = '';
     document.querySelector('#commit-list').style.display = 'none';
     document.querySelector('#commit-list').innerHTML = '';
+    const select = document.querySelector('#branch-select');
+    select.innerHTML = '<option value="main">main</option>';
+    select.value = 'main';
+    select.disabled = false;
+    showChannelScreen('channels');
   }
 
   document.addEventListener('show-channel-picker', () => {
-    document.querySelector('h1').textContent = 'Choose Update Channel';
     document.querySelector('progress').style.display = 'none';
     document.querySelector('p').style.display = 'block';
-    document.querySelector('p').textContent =
-      'Stable uses normal releases. Unstable uses pre-releases. Bleeding Edge builds from source.';
     resetBleedingEdgePicker();
     document.querySelector('#channel-picker').style.display = 'block';
   });
@@ -111,7 +118,6 @@
 
   async function loadBranches() {
     const select = document.querySelector('#branch-select');
-    setBranchUiVisible(true);
     select.disabled = true;
     select.innerHTML = '<option value="">Loading branches...</option>';
     try {
@@ -177,27 +183,39 @@
     }
   });
 
+  function applyChannel(channel) {
+    window.ogiUpdater.chooseChannel(
+      channel,
+      document.querySelector('#commit-input').value,
+      getSelectedBranch()
+    );
+    document.querySelector('#channel-picker').style.display = 'none';
+    document.querySelector('h1').textContent = 'Applying Channel';
+  }
+
   document.querySelectorAll('[data-channel]').forEach((button) => {
     button.addEventListener('click', async () => {
       if (button.dataset.channel === 'bleeding-edge') {
-        if (!button.dataset.ready) {
-          button.dataset.ready = 'true';
-          button.textContent = 'Build Selected';
-          document.querySelector('#commit-input').style.display = 'block';
-          await loadBranches();
-          await loadCommitList();
-          return;
-        }
+        showChannelScreen('bleeding-edge');
+        await loadBranches();
+        await loadCommitList();
+        return;
       }
-      window.ogiUpdater.chooseChannel(
-        button.dataset.channel,
-        document.querySelector('#commit-input').value,
-        getSelectedBranch()
-      );
-      document.querySelector('#channel-picker').style.display = 'none';
-      document.querySelector('h1').textContent = 'Applying Channel';
+      applyChannel(button.dataset.channel);
     });
   });
+
+  document
+    .querySelector('#bleeding-edge-back')
+    .addEventListener('click', () => {
+      resetBleedingEdgePicker();
+    });
+
+  document
+    .querySelector('#bleeding-edge-build')
+    .addEventListener('click', () => {
+      applyChannel('bleeding-edge');
+    });
 </script>
 <style>
   body {
@@ -229,6 +247,30 @@
   }
   #channel-picker {
     width: 90%;
+  }
+  #bleeding-edge-screen {
+    max-height: 14rem;
+    overflow-y: auto;
+  }
+  .back-button,
+  .build-button {
+    box-sizing: border-box;
+    width: 100%;
+    border: 0;
+    border-radius: 999px;
+    font-family: 'Archivo', sans-serif;
+    padding: 0.55rem 0.25rem;
+    cursor: pointer;
+  }
+  .back-button {
+    margin-bottom: 0.5rem;
+    background: rgb(200, 200, 200);
+    color: rgb(60, 60, 60);
+  }
+  .build-button {
+    margin-top: 0.75rem;
+    background: rgb(66, 138, 145);
+    color: white;
   }
   .chips {
     display: grid;

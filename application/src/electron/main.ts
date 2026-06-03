@@ -203,7 +203,7 @@ async function handleLaunchHooks(
       : `file://${join(app.getAppPath(), 'out', 'renderer', 'index.html')}`;
 
     // Add flags to indicate this is a hook-only launch
-    const launchUrl = `${baseUrl}&launchGameId=${gameId}&hookType=${hookType}&noLaunch=true`;
+    const launchUrl = `${baseUrl}?launchGameId=${gameId}&hookType=${hookType}&noLaunch=true`;
 
     await mainWindow.loadURL(launchUrl);
 
@@ -243,7 +243,7 @@ async function launchGameById(gameId: number, wrapperCommand?: string | null) {
     const wrapperQuery = wrapperCommand
       ? `&wrapperCommand=${encodeURIComponent(wrapperCommand)}`
       : '';
-    const launchUrl = `${baseUrl}&launchGameId=${gameId}${wrapperQuery}`;
+    const launchUrl = `${baseUrl}?launchGameId=${gameId}${wrapperQuery}`;
 
     await mainWindow.loadURL(launchUrl);
 

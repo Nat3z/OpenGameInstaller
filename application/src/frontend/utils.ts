@@ -7,6 +7,7 @@ export * from '@/frontend/lib/downloads/lifecycle';
 export * from '@/frontend/lib/downloads/pause-resume';
 export * from '@/frontend/lib/downloads/restart';
 export * from '@/frontend/lib/downloads/persistence';
+export * from '@/frontend/lib/downloads/sleep-lock';
 export * from '@/frontend/lib/recovery/failedSetups';
 export * from '@/frontend/lib/tasks/deferred';
 export * from '@/frontend/lib/tasks/runner';

@@ -264,6 +264,9 @@ interface Window {
     cleanAddons: () => Promise<void>;
     downloadTorrentInto: (link: string) => Promise<Uint8Array>;
     getTorrentHash: (torrent: string | Buffer | Uint8Array) => Promise<string>;
+    powerSave: {
+      setActive: (active: boolean) => Promise<void>;
+    };
   };
   gamepadNavigator: $GamepadNavigator;
 }

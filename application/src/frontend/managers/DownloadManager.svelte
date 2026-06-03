@@ -43,11 +43,16 @@
     );
   }
 
+  const processingDownloadCompletions = new Set<string>();
+
   function shouldSkipDownloadCompleteProcessing(
     downloadID: string,
     item: DownloadStatusAndInfo
   ): boolean {
-    if (item.status === 'merging' || item.status === 'setup-complete') {
+    if (
+      processingDownloadCompletions.has(downloadID) ||
+      item.status === 'setup-complete'
+    ) {
       return true;
     }
 
@@ -83,6 +88,7 @@
       return;
     }
 
+    processingDownloadCompletions.add(downloadID);
     updateDownloadStatus(downloadID, { status: 'merging' });
 
     let outputDir = dirname(downloadedItem.downloadPath);
@@ -371,6 +377,7 @@
           error: 'Failed to process ZIP file',
           should: 'call-unzip',
         });
+        processingDownloadCompletions.delete(downloadID);
         throw new Error('Failed to extract ZIP file');
       }
 
@@ -417,6 +424,8 @@
     } catch (error) {
       console.error('Error setting up app: ', error);
       await revertOldFiles();
+    } finally {
+      processingDownloadCompletions.delete(downloadID);
     }
   }
 

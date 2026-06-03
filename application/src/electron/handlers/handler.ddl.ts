@@ -1301,7 +1301,9 @@ class Download {
     console.log('[direct] Download completed');
     // Keep status as 'downloading' (not 'completed') so the frontend does not
     // enter the addon setup phase before ddl:download-complete fires.
-    // The frontend sets 'completed' when setup actually starts.
+    // The frontend sets 'completed' when setup actually starts. This also clears
+    // the temporary parallel chunk merge status before the completion event.
+    this.status = 'downloading';
 
     // Clean up any remaining resources
     if (this.useParallelParts) {

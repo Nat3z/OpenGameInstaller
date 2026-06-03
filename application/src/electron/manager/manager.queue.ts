@@ -44,6 +44,10 @@ export class Queue<T = any> {
         }),
       cancelHandler: (cancel: (handle: () => void) => void) => {
         cancel(() => {
+          if (this.processing.has(id)) {
+            this.finish(id);
+            return;
+          }
           this.queueListeners.get(id)?.(0, true);
           this.remove(id);
         });

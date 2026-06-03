@@ -343,14 +343,17 @@ class Download {
     });
 
     if (result === 'cancelled') {
+      this.removeCancelHandler();
       return;
     }
-
-    ipcMain.removeHandler(`queue:${this.id}:cancel`);
 
     console.log('[direct] Starting download...');
 
     this.run();
+  }
+
+  private removeCancelHandler() {
+    ipcMain.removeHandler(`queue:${this.id}:cancel`);
   }
 
   private async run() {
@@ -1286,6 +1289,7 @@ class Download {
     }
 
     this.cleanupAllFiles().then(() => {
+      this.removeCancelHandler();
       this.sendIpc('ddl:download-cancelled', { id: this.id });
       this.taskFinisher();
       console.log('[direct] Download Cancelled', this.id);
@@ -1324,6 +1328,7 @@ class Download {
       id: this.id,
       type: 'success',
     });
+    this.removeCancelHandler();
     this.taskFinisher();
     downloads.delete(this.id);
   }
@@ -1366,6 +1371,7 @@ class Download {
         id: this.id,
         type: 'error',
       });
+      this.removeCancelHandler();
       this.taskFinisher();
       downloads.delete(this.id);
     });

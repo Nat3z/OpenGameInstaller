@@ -338,6 +338,7 @@ class TorrentDownload {
     if (
       this.status === 'cancelled' ||
       this.status === 'completed' ||
+      this.status === 'seeding' ||
       this.status === 'failed'
     ) {
       return;
@@ -367,16 +368,19 @@ class TorrentDownload {
   private complete() {
     if (
       this.status === 'completed' ||
+      this.status === 'seeding' ||
       this.status === 'cancelled' ||
       this.status === 'failed'
     ) {
       return;
     }
-    this.status = 'completed';
+    // Use 'seeding' (not 'completed') so the frontend does not treat the torrent
+    // as entering the addon setup phase before torrent:download-complete fires.
+    this.status = 'seeding';
     this.sendProgress({ progress: 1, downloadSpeed: 0 });
     this.sendIpc('torrent:download-complete', { id: this.id });
     sendNotification({
-      message: 'Download completed',
+      message: 'Download completed, now seeding.',
       id: this.id,
       type: 'success',
     });
@@ -390,7 +394,8 @@ class TorrentDownload {
     if (
       this.status === 'failed' ||
       this.status === 'cancelled' ||
-      this.status === 'completed'
+      this.status === 'completed' ||
+      this.status === 'seeding'
     ) {
       return;
     }

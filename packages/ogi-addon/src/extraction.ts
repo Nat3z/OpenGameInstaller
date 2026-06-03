@@ -60,7 +60,12 @@ export async function extraction(filePath: string, outputDir: string) {
   } else if (process.platform === 'linux' || process.platform === 'darwin') {
     if (lowerCaseFilePath.endsWith('.zip')) {
       // expect unzip to be installed, and use unzip to unzip
-      const childProcess = spawn('unzip', ['-o', filePath, '-d', outputDir]);
+      const childProcess = spawn('unzip', ['-o', filePath, '-d', outputDir], {
+        env: {
+          ...process.env,
+          UNZIP_DISABLE_ZIPBOMB_DETECTION: 'TRUE',
+        },
+      });
       return await waitForChildProcess(childProcess, 'Failed to unzip file');
     } else if (lowerCaseFilePath.endsWith('.rar')) {
       // check if unrar-nonfree is installed or unrar is installed

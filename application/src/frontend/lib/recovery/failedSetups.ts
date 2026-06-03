@@ -11,7 +11,7 @@ import {
   unrarAndReturnOutputDir,
   unzipAndReturnOutputDir,
 } from '@/frontend/lib/setup/extraction';
-import { runSetupApp } from '@/frontend/lib/setup/setup';
+import { runSetupApp, runSetupAppUpdate } from '@/frontend/lib/setup/setup';
 
 export async function loadFailedSetups() {
   try {
@@ -137,13 +137,14 @@ export async function retryFailedSetup(failedSetup: FailedSetup) {
 
   try {
     console.log('Retrying setup for:', failedSetup.downloadInfo.name);
-    // delete the failed setup file
-    window.electronAPI.fs.delete(`./failed-setups/${failedSetup.id}.json`);
     failedSetups.update((setups) =>
       setups.filter((setup) => setup.id !== failedSetup.id)
     );
 
     const setupData = failedSetup.setupData;
+    const isUpdateRetry =
+      failedSetup.downloadInfo.isUpdate === true ||
+      failedSetup.setupData.for === 'update';
     console.log('setupData', setupData);
     // const addonSource = failedSetup.downloadInfo.addonSource;
 
@@ -255,15 +256,35 @@ export async function retryFailedSetup(failedSetup: FailedSetup) {
     }));
 
     try {
-      await runSetupApp(
-        {
-          ...failedSetup.downloadInfo,
-          id: tempId,
-        },
-        setupData.path,
-        failedSetup.downloadInfo.downloadType === 'torrent' ||
-          failedSetup.downloadInfo.downloadType === 'magnet'
-      );
+      const downloadItem: DownloadStatusAndInfo = {
+        ...failedSetup.downloadInfo,
+        id: tempId,
+      };
+      const isTorrent =
+        downloadItem.downloadType === 'torrent' ||
+        downloadItem.downloadType === 'magnet';
+      const additionalData: Record<string, unknown> = {};
+      if (!isTorrent && downloadItem.files?.length) {
+        additionalData.multiPartFiles = JSON.parse(
+          JSON.stringify(downloadItem.files)
+        );
+      }
+
+      if (isUpdateRetry) {
+        await runSetupAppUpdate(
+          downloadItem,
+          setupData.path,
+          isTorrent,
+          additionalData
+        );
+      } else {
+        await runSetupApp(
+          downloadItem,
+          setupData.path,
+          isTorrent,
+          additionalData
+        );
+      }
       removeFailedSetup(failedSetup.id);
       createNotification({
         id: Math.random().toString(36).substring(7),
@@ -280,7 +301,15 @@ export async function retryFailedSetup(failedSetup: FailedSetup) {
         type: 'error',
         message: `Failed to retry setup for ${failedSetup.downloadInfo.name}`,
       });
-      // updateRetry(failedSetup, error as string);
+      updateRetry(
+        {
+          ...failedSetup,
+          downloadInfo: failedSetup.downloadInfo,
+          setupData: failedSetup.setupData,
+          should: failedSetup.should,
+        },
+        error as string
+      );
     }
   } catch (error: unknown) {
     console.error('Unknown error retrying setup:', error);

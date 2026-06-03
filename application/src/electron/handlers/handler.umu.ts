@@ -769,20 +769,9 @@ export async function installRedistributablesWithUmu(
 
         streamChildProcessOutput(child, `[umu redist:${redistributable.name}]`);
 
-        const timeout = setTimeout(
-          () => {
-            if (child.pid) {
-              child.kill('SIGTERM');
-            }
-            finalize(false);
-          },
-          10 * 60 * 1000
-        ); // 10 minute timeout
-
         child.on(
           'close',
           (code: number | null, signal: NodeJS.Signals | null) => {
-            clearTimeout(timeout);
             const success = code === 0 && signal == null && !!child.pid;
             if (!success && signal != null) {
               console.error(
@@ -794,7 +783,6 @@ export async function installRedistributablesWithUmu(
         );
 
         child.on('error', (error) => {
-          clearTimeout(timeout);
           console.error('[umu] Redistributable error:', error);
           finalize(false);
         });
@@ -1168,20 +1156,9 @@ export async function installRedistributablesWithUmuForLegacy(
           `[umu-legacy redist:${redistributable.name}]`
         );
 
-        const timeout = setTimeout(
-          () => {
-            if (child.pid) {
-              child.kill('SIGTERM');
-            }
-            finalize(false);
-          },
-          10 * 60 * 1000
-        ); // 10 minute timeout
-
         child.on(
           'close',
           (code: number | null, signal: NodeJS.Signals | null) => {
-            clearTimeout(timeout);
             const success = code === 0 && signal == null && !!child.pid;
             if (!success && signal != null) {
               console.error(`[umu-legacy] Process killed by signal: ${signal}`);
@@ -1191,7 +1168,6 @@ export async function installRedistributablesWithUmuForLegacy(
         );
 
         child.on('error', (error) => {
-          clearTimeout(timeout);
           console.error('[umu-legacy] Redistributable error:', error);
           finalize(false);
         });

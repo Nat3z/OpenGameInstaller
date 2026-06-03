@@ -95,6 +95,15 @@
     );
   }
 
+  function hasVisibleAppUpdate(app: LibraryInfo): boolean {
+    const update = updatesManager.getAppUpdate(app.appID);
+    if (!update?.updateAvailable || !update.updateVersion) return false;
+    return !updatesManager.isAppUpdateDismissed(
+      app.appID,
+      update.updateVersion
+    );
+  }
+
   async function openPlayPage(app: LibraryInfo) {
     const freshLibraryInfo = await window.electronAPI.app.getLibraryInfo(
       app.appID
@@ -192,11 +201,11 @@
                     style={getLibraryEntryDelay(index)}
                     onclick={() => void openPlayPage(app)}
                   >
-                    {#if updatesManager.getAppUpdate(app.appID)?.updateAvailable || needsUmuMigration(app)}
+                    {#if hasVisibleAppUpdate(app) || needsUmuMigration(app)}
                       <div
                         class="absolute top-2 right-2 z-2 flex flex-col items-end gap-1"
                       >
-                        {#if updatesManager.getAppUpdate(app.appID)?.updateAvailable}
+                        {#if hasVisibleAppUpdate(app)}
                           <div
                             class="shadow-md h-6 flex items-center bg-yellow-500 rounded-lg flex-row justify-end gap-1 px-2"
                           >
@@ -334,11 +343,11 @@
                     )}
                     onclick={() => void openPlayPage(app)}
                   >
-                    {#if updatesManager.getAppUpdate(app.appID)?.updateAvailable || needsUmuMigration(app)}
+                    {#if hasVisibleAppUpdate(app) || needsUmuMigration(app)}
                       <div
                         class="absolute top-2 right-2 z-2 flex flex-col items-end gap-1"
                       >
-                        {#if updatesManager.getAppUpdate(app.appID)?.updateAvailable}
+                        {#if hasVisibleAppUpdate(app)}
                           <div
                             class="shadow-md h-6 flex items-center bg-yellow-500 rounded-lg flex-row justify-end gap-1 px-2"
                           >

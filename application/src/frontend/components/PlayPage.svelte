@@ -535,6 +535,21 @@
           </button>
         {/if}
 
+        {#if updateInfo && !hasActiveUpdateDownload && isUpdateDismissed}
+          <button
+            aria-label="Open update options"
+            title="Open update options"
+            class="flex items-center justify-center rounded-lg border-none bg-success px-3 py-3 text-overlay-text transition-colors duration-200 hover:bg-success-hover"
+            onclick={() => (showUpdateModal = true)}
+          >
+            <UpdateIcon
+              fill="var(--color-overlay-text)"
+              width="20px"
+              height="20px"
+            />
+          </button>
+        {/if}
+
         <button
           class="flex items-center justify-center gap-2 rounded-lg border-none bg-accent-light px-4 py-3 text-accent-dark transition-colors duration-200 hover:bg-accent-light/80"
           onclick={openGameConfiguration}

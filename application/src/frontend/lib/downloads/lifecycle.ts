@@ -127,15 +127,28 @@ export function updateDownloadStatus(
 
         // Initialize setup logs when status changes to 'completed' (setup phase)
         if (updates.status === 'completed' && download.status !== 'completed') {
-          setupLogs.update((logs) => ({
-            ...logs,
-            [downloadID]: {
-              downloadId: downloadID,
-              logs: [],
-              progress: 0,
-              isActive: true,
-            },
-          }));
+          setupLogs.update((logs) => {
+            const existing = logs[downloadID];
+            // Preserve logs from debrid extraction or other pre-setup work
+            if (existing?.logs?.length) {
+              return {
+                ...logs,
+                [downloadID]: {
+                  ...existing,
+                  isActive: true,
+                },
+              };
+            }
+            return {
+              ...logs,
+              [downloadID]: {
+                downloadId: downloadID,
+                logs: [],
+                progress: 0,
+                isActive: true,
+              },
+            };
+          });
         }
 
         return updatedDownload;

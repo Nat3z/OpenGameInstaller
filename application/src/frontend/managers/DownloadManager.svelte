@@ -58,8 +58,13 @@
       return true;
     }
 
-    // 'completed' means setup is running; skip only if logs prove setup started.
-    if (item.status === 'completed' && setupLog?.logs?.length) {
+    // Skip duplicate complete events after setup finished (inactive logs).
+    // Debrid extraction also writes logs while isActive; do not skip those.
+    if (
+      item.status === 'completed' &&
+      setupLog?.logs?.length &&
+      !setupLog.isActive
+    ) {
       return true;
     }
 

@@ -1,129 +1,8 @@
-import express, { type Request } from 'express';
 const port = 7654;
-import http from 'http';
 import { AddonServer } from '@ogi-sdk/addon-server';
-import { z } from 'zod';
 import { join } from 'path';
 import { existsSync, readFileSync } from 'fs';
-const app = express();
 import { __dirname } from '@/electron/manager/manager.paths.js';
-const server = http.createServer(app);
-
-export const launchForwardPayloadSchema = z.object({
-  gameId: z.number().int().nonnegative(),
-  noLaunch: z.boolean().default(false),
-  runPre: z.boolean().default(false),
-  runPost: z.boolean().default(false),
-  wrapperCommand: z.string().nullable().optional(),
-  originalArgv: z.array(z.string()).optional(),
-  launchEnv: z.record(z.string(), z.string()).optional(),
-});
-
-export type LaunchForwardPayload = z.infer<typeof launchForwardPayloadSchema>;
-
-type FocusRequestHandler = () => boolean | Promise<boolean>;
-type LaunchRequestHandler = (
-  payload: LaunchForwardPayload
-) =>
-  | { success: boolean; error?: string }
-  | Promise<{ success: boolean; error?: string }>;
-
-let focusRequestHandler: FocusRequestHandler | null = null;
-let launchRequestHandler: LaunchRequestHandler | null = null;
-export function registerInstanceBridgeHandlers(handlers: {
-  onFocus?: FocusRequestHandler;
-  onLaunch?: LaunchRequestHandler;
-}) {
-  focusRequestHandler = handlers.onFocus ?? null;
-  launchRequestHandler = handlers.onLaunch ?? null;
-}
-
-function isLoopbackAddress(address: string | undefined): boolean {
-  if (!address) return false;
-  const normalized = address.startsWith('::ffff:')
-    ? address.slice('::ffff:'.length)
-    : address;
-  return normalized === '127.0.0.1' || normalized === '::1';
-}
-
-function isLocalOnlyRequest(request: Request): boolean {
-  return isLoopbackAddress(request.socket.remoteAddress ?? undefined);
-}
-
-app.use(express.json());
-
-app.use('/internal', (req, res, next) => {
-  if (!isLocalOnlyRequest(req)) {
-    res.status(403).json({ success: false, error: 'Local access only' });
-    return;
-  }
-  next();
-});
-
-app.get('/internal/ping', (_, res) => {
-  res.json({
-    ok: true,
-    service: 'OpenGameInstaller',
-    port,
-  });
-});
-
-app.post('/internal/focus', async (_, res) => {
-  if (!focusRequestHandler) {
-    res
-      .status(503)
-      .json({ success: false, error: 'Focus handler unavailable' });
-    return;
-  }
-
-  try {
-    const focused = await focusRequestHandler();
-    if (!focused) {
-      res
-        .status(409)
-        .json({ success: false, error: 'No active window to focus' });
-      return;
-    }
-    res.json({ success: true });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: error instanceof Error ? error.message : String(error),
-    });
-  }
-});
-
-app.post('/internal/launch', async (req, res) => {
-  if (!launchRequestHandler) {
-    res
-      .status(503)
-      .json({ success: false, error: 'Launch handler unavailable' });
-    return;
-  }
-
-  const parsedPayload = launchForwardPayloadSchema.safeParse(req.body);
-  if (!parsedPayload.success) {
-    res.status(400).json({
-      success: false,
-      error: 'Invalid launch payload',
-    });
-    return;
-  }
-
-  try {
-    const result = await launchRequestHandler(parsedPayload.data);
-    if (!result.success) {
-      res.status(409).json(result);
-      return;
-    }
-    res.status(202).json({ success: true });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: error instanceof Error ? error.message : String(error),
-    });
-  }
-});
 
 let isSecurityCheckEnabled = true;
 if (existsSync(join(__dirname, 'config/option/developer.json'))) {
@@ -145,8 +24,6 @@ const addonServer = new AddonServer({
   securityCheck: isSecurityCheckEnabled,
 });
 
-addonServer.extend(server);
-
 addonServer.on('disconnect', (reason) => {
   addonServer.emit('notification', {
     type: 'error',
@@ -156,9 +33,10 @@ addonServer.on('disconnect', (reason) => {
 });
 
 let addonServerStarting: Promise<void> | null = null;
+let isAddonServerListening = false;
 
 function startAddonServer() {
-  if (server.listening) {
+  if (isAddonServerListening) {
     return Promise.resolve();
   }
   if (addonServerStarting) {
@@ -166,38 +44,36 @@ function startAddonServer() {
   }
 
   addonServerStarting = new Promise<void>((resolve, reject) => {
-    const onListening = () => {
-      cleanup();
+    const onStart = () => {
       addonServerStarting = null;
+      isAddonServerListening = true;
       resolve();
     };
-    const onError = (error: Error) => {
-      cleanup();
+
+    addonServer.on('start', onStart);
+
+    void addonServer.start().catch((error) => {
       addonServerStarting = null;
       reject(error);
-    };
-    const cleanup = () => {
-      server.removeListener('listening', onListening);
-      server.removeListener('error', onError);
-    };
-
-    server.once('listening', onListening);
-    server.once('error', onError);
-
-    try {
-      void addonServer.start();
-    } catch (error) {
-      onError(error as Error);
-    }
+    });
   });
 
   return addonServerStarting;
 }
 
+function stopAddonServer() {
+  if (!isAddonServerListening) {
+    return;
+  }
+  addonServer.stop();
+  isAddonServerListening = false;
+}
+
 export {
   port,
-  server,
   addonServer,
   isSecurityCheckEnabled,
+  isAddonServerListening,
   startAddonServer,
+  stopAddonServer,
 };

@@ -207,12 +207,14 @@ async function handleLaunchHooks(
     // Add flags to indicate this is a hook-only launch
     const launchUrl = `${baseUrl}?launchGameId=${gameId}&hookType=${hookType}&noLaunch=true`;
 
+    prepareForMainAppLoad(mainWindow);
     await mainWindow.loadURL(launchUrl);
 
     mainWindow.once('ready-to-show', () => {
       mainWindow?.show();
-      onMainAppReady();
     });
+    await waitForRendererReady();
+    await onMainAppReady();
   }
 }
 
@@ -247,12 +249,14 @@ async function launchGameById(gameId: number, wrapperCommand?: string | null) {
       : '';
     const launchUrl = `${baseUrl}?launchGameId=${gameId}${wrapperQuery}`;
 
+    prepareForMainAppLoad(mainWindow);
     await mainWindow.loadURL(launchUrl);
 
     mainWindow.once('ready-to-show', () => {
       mainWindow?.show();
-      onMainAppReady();
     });
+    await waitForRendererReady();
+    await onMainAppReady();
   }
 }
 
@@ -317,12 +321,65 @@ export function sendNotification(notification: Notification) {
   sendIPCMessage('notification', notification);
 }
 
+let isMainPageLoaded = false;
+let isClientReadyForEvents = false;
 let isReadyForEvents = false;
 
 let readyForEventWaiters: (() => void)[] = [];
 let clientReadyListenerRegistered = false;
 
-const IPC_READY_TIMEOUT_MS = 15000;
+function updateRendererReadyState() {
+  const wasReady = isReadyForEvents;
+  isReadyForEvents = isMainPageLoaded && isClientReadyForEvents;
+  if (isReadyForEvents && !wasReady) {
+    console.log('[IPC] renderer ready for events');
+    for (const waiter of readyForEventWaiters) {
+      waiter();
+    }
+    readyForEventWaiters = [];
+  }
+}
+
+function resetRendererReadyState() {
+  isMainPageLoaded = false;
+  isClientReadyForEvents = false;
+  isReadyForEvents = false;
+}
+
+function prepareForMainAppLoad(win: BrowserWindow) {
+  resetRendererReadyState();
+
+  win.webContents.once('did-finish-load', () => {
+    if (win.isDestroyed()) return;
+    const url = win.webContents.getURL();
+    if (url.includes('splash.html')) return;
+    isMainPageLoaded = true;
+    updateRendererReadyState();
+  });
+}
+
+function waitForRendererReady(): Promise<void> {
+  if (isReadyForEvents) {
+    return Promise.resolve();
+  }
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return Promise.resolve();
+  }
+
+  return new Promise<void>((resolve) => {
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      const idx = readyForEventWaiters.indexOf(finish);
+      if (idx !== -1) readyForEventWaiters.splice(idx, 1);
+      resolve();
+    };
+
+    readyForEventWaiters.push(finish);
+    mainWindow!.once('closed', finish);
+  });
+}
 
 export async function sendIPCMessage(channel: string, ...args: any[]) {
   // If no renderer window is available (e.g., --game-id launch path), skip IPC dispatch
@@ -331,29 +388,14 @@ export async function sendIPCMessage(channel: string, ...args: any[]) {
   }
 
   if (!isReadyForEvents) {
-    let resolverRef: (() => void) | null = null;
-    await Promise.race([
-      new Promise<void>((resolve) => {
-        console.log('waiting for events');
-        resolverRef = resolve;
-        readyForEventWaiters.push(resolve);
-      }),
-      new Promise<void>((resolve) => {
-        setTimeout(() => {
-          if (resolverRef !== null) {
-            const idx = readyForEventWaiters.indexOf(resolverRef);
-            if (idx !== -1) readyForEventWaiters.splice(idx, 1);
-          }
-          console.warn(
-            '[sendIPCMessage] client-ready-for-events not received within timeout, proceeding'
-          );
-          resolve();
-        }, IPC_READY_TIMEOUT_MS);
-      }),
-    ]);
-    if (isReadyForEvents) console.log('events ready');
+    await waitForRendererReady();
   }
-  mainWindow?.webContents.send(channel, ...args);
+
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return;
+  }
+
+  mainWindow.webContents.send(channel, ...args);
 }
 
 export let currentScreens = new Map<
@@ -417,12 +459,9 @@ function registerClientReadyListener() {
   if (clientReadyListenerRegistered) return;
   clientReadyListenerRegistered = true;
 
-  ipcMain.on('client-ready-for-events', async () => {
-    isReadyForEvents = true;
-    for (const waiter of readyForEventWaiters) {
-      waiter();
-    }
-    readyForEventWaiters = [];
+  ipcMain.on('client-ready-for-events', () => {
+    isClientReadyForEvents = true;
+    updateRendererReadyState();
   });
 }
 
@@ -598,18 +637,20 @@ async function startAppFlow(win: BrowserWindow) {
 
   // Load the main app into the same window (replaces splash)
   if (win && !win.isDestroyed()) {
+    prepareForMainAppLoad(win);
     if (isDev()) {
-      win.loadURL('http://localhost:8080');
+      await win.loadURL('http://localhost:8080');
       console.log('Running in development');
     } else {
-      win.loadURL(
+      await win.loadURL(
         'file://' +
           join(app.getAppPath(), 'out', 'renderer', 'index.html') +
           '?secret=' +
           addonServer.getSecret()
       );
     }
-    win.once('ready-to-show', onMainAppReady);
+    await waitForRendererReady();
+    await onMainAppReady();
   }
 }
 

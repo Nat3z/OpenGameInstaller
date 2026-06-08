@@ -94,6 +94,22 @@ export async function restartAddonServer(): Promise<void> {
 export default function AddonManagerHandler(mainWindow: BrowserWindow) {
   ipcMain.handle('install-addons', async (_, addons) => {
     // addons is an array of URLs to the addons to install. these should be valid git repositories
+    addons = Array.isArray(addons)
+      ? addons
+          .filter((addon) => typeof addon === 'string')
+          .map((addon) => addon.trim())
+          .filter(Boolean)
+      : [];
+
+    if (addons.length === 0) {
+      sendNotification({
+        message: 'No addons to install',
+        id: Math.random().toString(36).substring(7),
+        type: 'error',
+      });
+      return;
+    }
+
     // check if git is installed
     if (!fs.existsSync(join(__dirname, 'addons/'))) {
       fs.mkdirSync(join(__dirname, 'addons/'));
@@ -306,35 +322,31 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
             }
             console.log(stdout);
 
-            // Check if already up to date
-            if (
+            const installationLog = join(addonPath, 'installation.log');
+            const isAlreadyUpToDate =
               stdout.includes('Already up to date.') ||
-              stdout.includes('Already up-to-date.')
-            ) {
+              stdout.includes('Already up-to-date.');
+
+            if (isAlreadyUpToDate && fs.existsSync(installationLog)) {
               sendNotification({
                 message: `Addon ${addon} is already up to date.`,
                 id: Math.random().toString(36).substring(7),
                 type: 'info',
               });
               mainWindow!!.webContents.send('addon:updated', addon);
-              // No need to run setupAddon if nothing changed
               resolve();
               return;
             }
 
-            // get rid of the installation log because not up-to-date
-            const installationLog = join(addonPath, 'installation.log');
-            if (fs.existsSync(installationLog)) {
+            if (isAlreadyUpToDate) {
+              console.log(
+                `Addon ${addon} is already up to date, but installation.log is missing. Running setup.`
+              );
+            } else if (fs.existsSync(installationLog)) {
+              // get rid of the installation log because not up-to-date
               fs.unlinkSync(installationLog);
             }
 
-            sendNotification({
-              message: `Addon ${addon} updated successfully.`,
-              id: Math.random().toString(36).substring(7),
-              type: 'info',
-            });
-
-            mainWindow!!.webContents.send('addon:updated', addon);
             void Addon.load(addonPath).then(async (instance) => {
               if (!instance) {
                 reject(new Error(`Failed to load addon ${addon}`));
@@ -342,7 +354,7 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
               }
               try {
                 const success = await instance.install();
-                if (!success) {
+                if (!success || !fs.existsSync(installationLog)) {
                   sendNotification({
                     message: `An error occurred when setting up ${addon}`,
                     id: Math.random().toString(36).substring(7),
@@ -351,7 +363,16 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
                   reject(new Error(`Failed to setup addon ${addon}`));
                   return;
                 }
-                console.log(`Addon ${addon} updated successfully.`);
+
+                sendNotification({
+                  message: isAlreadyUpToDate
+                    ? `Addon ${addon} setup completed successfully.`
+                    : `Addon ${addon} updated successfully.`,
+                  id: Math.random().toString(36).substring(7),
+                  type: 'info',
+                });
+                mainWindow!!.webContents.send('addon:updated', addon);
+                console.log(`Addon ${addon} updated and setup successfully.`);
                 resolve();
               } catch (setupErr) {
                 sendNotification({

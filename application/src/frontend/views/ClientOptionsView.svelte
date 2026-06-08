@@ -446,9 +446,20 @@
     });
   }
 
+  function getAddonListFromInput() {
+    const addonsElement = document.getElementById(
+      'addons'
+    ) as HTMLTextAreaElement | null;
+    const rawAddons = addonsElement
+      ? addonsElement.value.split('\n')
+      : (getStoredOrDefaultValue('addons') as string[]);
+
+    return rawAddons.map((addon) => addon.trim()).filter(Boolean);
+  }
+
   async function installAddons() {
     isInstallingAddons = true;
-    const addons = getStoredOrDefaultValue('addons') as string[];
+    const addons = getAddonListFromInput();
     if (!addons || addons.length === 0) {
       createNotification({
         id: Math.random().toString(36).substring(7),
@@ -458,6 +469,7 @@
       isInstallingAddons = false;
       return;
     }
+    updateConfig();
     await window.electronAPI.installAddons(addons);
     isInstallingAddons = false;
   }

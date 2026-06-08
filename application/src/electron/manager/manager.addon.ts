@@ -90,7 +90,11 @@ export class Addon extends ExecutorAddon {
         Addon.stripAnsi(setupLogs)
       );
       return true;
-    } catch {
+    } catch (err) {
+      console.error(
+        `Error running setup scripts for ${this.config.name}:`,
+        err
+      );
       sendNotification({
         type: 'error',
         message: 'Error running setup scripts for ' + this.config.name,

@@ -2,7 +2,6 @@ import { Addon } from '@/addon';
 import { spawn } from 'child_process';
 import { join } from 'path';
 import { access, writeFile } from 'fs/promises';
-import parseArgsStringToArgv from 'string-argv';
 import { createWriteStream, rmSync, unlink } from 'fs';
 import { Git } from '@/git';
 
@@ -14,7 +13,6 @@ export class AddonSetup {
 
   private runScript(script: string) {
     const startCommand = Addon.intoExecutor(script);
-    const [command, ...args] = parseArgsStringToArgv(startCommand);
 
     console.log(`[${this.addon.config.name}] Running script: ${startCommand}`);
     // get the installation log path
@@ -32,7 +30,8 @@ export class AddonSetup {
     );
     installationLogStream.write(`--------------------------------`);
 
-    const child = spawn(command!, args, {
+    const { command, args } = Addon.getScriptSpawnCommand(script);
+    const child = spawn(command, args, {
       cwd: this.addon.config.path,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
@@ -72,13 +71,14 @@ export class AddonSetup {
     scriptName: string
   ): Promise<string> {
     const startCommand = Addon.intoExecutor(script);
-    const [command, ...args] = parseArgsStringToArgv(startCommand);
     const name = this.addon.config.name;
 
     return new Promise((resolve, reject) => {
       let stdout = '';
       let stderr = '';
-      const child = spawn(command!, args, {
+      console.log(`[${name}@${scriptName}] Running script: ${startCommand}`);
+      const { command, args } = Addon.getScriptSpawnCommand(script);
+      const child = spawn(command, args, {
         cwd: this.addon.config.path,
         stdio: ['ignore', 'pipe', 'pipe'],
       });

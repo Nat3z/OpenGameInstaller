@@ -63,6 +63,46 @@ export class Addon {
     return fullCommand;
   }
 
+  private static intoPowerShellScript(fullCommand: string): string {
+    // PowerShell requires `&` to invoke a quoted executable path.
+    return this.intoExecutor(fullCommand).replace(/^"([^"]+)"/, '& "$1"');
+  }
+
+  public static getPowerShellExecutable(): string {
+    return 'powershell.exe';
+  }
+
+  private static quotePowerShellArgument(value: string): string {
+    return `'${value.replace(/'/g, "''")}'`;
+  }
+
+  public static getScriptSpawnCommand(
+    script: string,
+    extraArgs: string[] = []
+  ): { command: string; args: string[] } {
+    if (process.platform === 'win32') {
+      const command = [
+        this.intoPowerShellScript(script),
+        ...extraArgs.map((arg) => this.quotePowerShellArgument(arg)),
+      ].join(' ');
+
+      return {
+        command: this.getPowerShellExecutable(),
+        args: [
+          '-NoProfile',
+          '-NonInteractive',
+          '-ExecutionPolicy',
+          'Bypass',
+          '-Command',
+          command,
+        ],
+      };
+    }
+
+    const [command, ...args] = parseArgsStringToArgv(this.intoExecutor(script));
+    return { command: command!, args: [...args, ...extraArgs] };
+  }
+
   public start(): void {
     if (!this.config.scripts?.run) {
       // load the addon config
@@ -70,23 +110,18 @@ export class Addon {
       this.config.scripts = addonConfig.scripts;
     }
 
-    // start the addon from the path with the given config
-    const startCommand = Addon.intoExecutor(this.config.scripts.run);
-    // split into the command and the arguments
-    const [command, ...args] = parseArgsStringToArgv(startCommand);
-    const child = spawn(
-      command!,
+    const { command, args } = Addon.getScriptSpawnCommand(
+      this.config.scripts.run,
       [
-        ...args,
         '--addonPort=' + this.config.port.toString(),
         '--addonSecret=' + this.config.secret,
-      ],
-      {
-        cwd: this.config.path,
-        stdio: ['ignore', 'pipe', 'pipe'],
-        signal: this.abort.signal,
-      }
+      ]
     );
+    const child = spawn(command, args, {
+      cwd: this.config.path,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      signal: this.abort.signal,
+    });
 
     // register the stdout and stderr to the console
 

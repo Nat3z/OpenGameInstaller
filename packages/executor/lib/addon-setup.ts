@@ -1,7 +1,7 @@
 import { Addon } from '@/addon';
 import { spawn } from 'child_process';
 import { join } from 'path';
-import { access } from 'fs/promises';
+import { access, writeFile } from 'fs/promises';
 import parseArgsStringToArgv from 'string-argv';
 import { createWriteStream, rmSync, unlink } from 'fs';
 import { Git } from '@/git';
@@ -202,6 +202,12 @@ export class AddonSetup {
     await this.preSetup();
     await this.setup();
     await this.postSetup();
+    // add installation log
+    await this.createLogFile(await this.collectSetupLog());
+  }
+
+  private async createLogFile(content: string): Promise<void> {
+    await writeFile(join(this.addon.config.path, 'installation.log'), content);
   }
 
   public async isInstalled(): Promise<boolean> {

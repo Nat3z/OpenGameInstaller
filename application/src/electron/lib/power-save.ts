@@ -5,7 +5,7 @@ let blockerId: number | null = null;
 export function setPowerSaveBlockActive(active: boolean) {
   if (active) {
     if (blockerId === null || !powerSaveBlocker.isStarted(blockerId)) {
-      blockerId = powerSaveBlocker.start('prevent-app-suspension');
+      blockerId = powerSaveBlocker.start('prevent-display-sleep');
     }
     return;
   }

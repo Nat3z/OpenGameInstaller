@@ -1,4 +1,4 @@
-import { ChildProcess, spawn } from 'child_process';
+import { ChildProcess, execFileSync, spawn } from 'child_process';
 import { readFileSync } from 'fs';
 import { readFile } from 'fs/promises';
 import { join } from 'path';
@@ -155,9 +155,37 @@ export class Addon {
   }
 
   public stop(): void {
+    const child = this.process;
+    if (!child) {
+      return;
+    }
+
     this.abort.abort();
-    this.process?.kill();
+
+    if (process.platform === 'win32' && child.pid) {
+      try {
+        // Windows keeps directories locked while descendant processes have them
+        // as cwd or have files open. `ChildProcess.kill()` only targets the
+        // direct child, so terminate the whole tree before addon update/delete.
+        execFileSync('taskkill.exe', [
+          '/pid',
+          child.pid.toString(),
+          '/T',
+          '/F',
+        ]);
+      } catch (error) {
+        console.error(
+          `[${this.config.name}] Failed to terminate process tree:`,
+          error
+        );
+        child.kill();
+      }
+    } else {
+      child.kill();
+    }
+
     this.process = null;
+    this.abort = new AbortController();
   }
 
   public restart(): void {

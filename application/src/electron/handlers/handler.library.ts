@@ -5,7 +5,11 @@
 import { ipcMain } from 'electron';
 import { spawn, spawnSync } from 'child_process';
 import type { LibraryInfo } from '@ogi-sdk/connect';
-import { isLinux } from '@/electron/handlers/helpers.app/platform.js';
+import {
+  isLinux,
+  isWindows,
+} from '@/electron/handlers/helpers.app/platform.js';
+import { spawnWindowsGameProcess } from '@/electron/handlers/helpers.app/windows-launch.js';
 import {
   getSteamAppIdWithFallback,
   getNonSteamGameAppID,
@@ -134,16 +138,24 @@ export async function launchGameFromLibrary(
     appInfo.cwd
   );
 
-  const needsShellOnWindows = /\.(bat|cmd)$/i.test(launchExecutable);
-  const spawnedItem = spawn(launchExecutable, otherLaunchArguments, {
-    cwd: appInfo.cwd,
-    shell: process.platform === 'win32' ? needsShellOnWindows : true,
-    env: {
-      ...process.env,
-      ...(launchEnv ?? {}),
-      ...effectiveLaunchEnv,
-    },
-  });
+  const launchEnvMerged = {
+    ...process.env,
+    ...(launchEnv ?? {}),
+    ...effectiveLaunchEnv,
+  };
+
+  const spawnedItem = isWindows()
+    ? spawnWindowsGameProcess({
+        executable: launchExecutable,
+        args: otherLaunchArguments,
+        cwd: appInfo.cwd,
+        env: launchEnvMerged,
+      })
+    : spawn(launchExecutable, otherLaunchArguments, {
+        cwd: appInfo.cwd,
+        shell: true,
+        env: launchEnvMerged,
+      });
   spawnedItem.on('error', (error) => {
     console.error(error);
     sendNotification({

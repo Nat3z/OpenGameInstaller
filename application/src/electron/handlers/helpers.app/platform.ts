@@ -9,6 +9,10 @@ export function isLinux(): boolean {
   return process.platform === 'linux';
 }
 
+export function isWindows(): boolean {
+  return process.platform === 'win32';
+}
+
 export function getHomeDir(): string | null {
   return process.env.HOME || process.env.USERPROFILE || null;
 }

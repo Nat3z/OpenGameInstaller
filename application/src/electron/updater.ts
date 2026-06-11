@@ -23,7 +23,6 @@ import { spawn, exec } from 'child_process';
 import { createHash } from 'crypto';
 import * as zlib from 'zlib';
 import * as path from 'path';
-import { __dirname as persistentDataDir } from '@/electron/manager/manager.paths.js';
 import { getEffectiveOnlineState } from '@/electron/lib/online.js';
 
 function isDev() {
@@ -50,10 +49,6 @@ let __dirname = isDev()
 if (process.platform === 'linux') {
   // it's most likely sandboxed, so just use ./
   __dirname = './';
-}
-
-function getBackupSourceRoot() {
-  return process.platform === 'linux' ? persistentDataDir : __dirname;
 }
 
 /**
@@ -151,7 +146,7 @@ async function backupFilesAsync(
   updateStatus: (text: string, subtext?: string) => void,
   updateProgress: (current: number, total: number, speed: string) => void
 ): Promise<{ success: boolean; needsAddonReinstall: boolean }> {
-  const sourceRoot = getBackupSourceRoot();
+  const sourceRoot = __dirname;
 
   // First, count total files to backup
   let totalFiles = 0;
@@ -591,6 +586,20 @@ async function backupStateForSetupReplacement(
   updateProgress: (current: number, total: number, speed: string) => void
 ) {
   const tempFolder = join(app.getPath('temp'), 'ogi-update-backup');
+
+  if (process.platform === 'linux') {
+    console.log('[updater] Skipping setup backup on Linux.');
+    try {
+      rmSync(tempFolder, { recursive: true, force: true });
+    } catch (cleanupError: any) {
+      console.warn(
+        '[updater] Failed to clean stale Linux update backup:',
+        cleanupError.message
+      );
+    }
+    return;
+  }
+
   updateStatus('Backing up Files', 'Calculating...');
 
   try {
@@ -868,8 +877,6 @@ export function checkIfInstallerUpdateAvailable(
             updateProgress,
           });
           console.log(`[updater] Setup downloaded successfully.`);
-          console.log(`[updater] Backing up files in update.`);
-          await backupStateForSetupReplacement(updateStatus, updateProgress);
 
           updateStatus('Starting Setup');
 

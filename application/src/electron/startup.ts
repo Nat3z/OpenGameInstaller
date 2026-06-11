@@ -446,6 +446,20 @@ export async function restoreBackup(
     return { needsAddonReinstall: false };
   }
 
+  if (process.platform === 'linux') {
+    console.log('[backup] Skipping setup backup restore on Linux.');
+    try {
+      rmSync(backupDir, { recursive: true, force: true });
+      console.log('[backup] Removed stale Linux update backup.');
+    } catch (deleteError: any) {
+      console.warn(
+        '[backup] Could not delete stale Linux update backup:',
+        deleteError.message
+      );
+    }
+    return { needsAddonReinstall: false };
+  }
+
   const flagPath = join(backupDir, 'needs-addon-reinstall.flag');
   needsAddonReinstall = existsSync(flagPath);
 
@@ -469,7 +483,7 @@ export async function restoreBackup(
     return { needsAddonReinstall };
   }
 
-  // Check for addon reinstall flag (works for both Windows and Linux)
+  // Check for addon reinstall flag.
   if (needsAddonReinstall) {
     needsAddonReinstall = true;
     console.log('[backup] Addon reinstall flag found');

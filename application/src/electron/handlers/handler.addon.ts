@@ -1,6 +1,6 @@
 import { BrowserWindow, ipcMain } from 'electron';
 import fs from 'fs';
-import { join } from 'path';
+import { dirname, isAbsolute, join, resolve } from 'path';
 import { exec, spawn } from 'child_process';
 import { Addon } from '@/electron/manager/manager.addon.js';
 import { __dirname } from '@/electron/manager/manager.paths.js';
@@ -14,6 +14,37 @@ import axios from 'axios';
 import { AddonConnection } from '@ogi-sdk/addon-server';
 import { deleteInstalledAddon } from '@/electron/server/addon-lifecycle.js';
 import { waitForAddonsConfigured } from '@/electron/manager/manager.addon-readiness.js';
+
+function isGitRepository(addonPath: string): boolean {
+  if (!fs.existsSync(addonPath)) {
+    return false;
+  }
+
+  const gitPath = join(addonPath, '.git');
+  if (!fs.existsSync(gitPath)) {
+    return false;
+  }
+
+  const stat = fs.statSync(gitPath);
+  if (stat.isDirectory()) {
+    return fs.existsSync(join(gitPath, 'HEAD')) && fs.existsSync(join(gitPath, 'config'));
+  }
+
+  if (stat.isFile()) {
+    const gitFile = fs.readFileSync(gitPath, 'utf-8').trim();
+    const match = gitFile.match(/^gitdir:\s*(.+)$/i);
+    if (!match) {
+      return false;
+    }
+    const gitDir = match[1];
+    const resolvedGitDir = isAbsolute(gitDir)
+      ? gitDir
+      : resolve(dirname(gitPath), gitDir);
+    return fs.existsSync(join(resolvedGitDir, 'HEAD'));
+  }
+
+  return false;
+}
 
 export async function startAddons(): Promise<void> {
   // start all of the addons
@@ -296,9 +327,11 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
       } else {
         addonPath = join(__dirname, 'addons', addon.split(/\/|\\/).pop()!!);
       }
-      if (!fs.existsSync(join(addonPath, '.git'))) {
-        console.log(`Addon ${addon} is not a git repository`);
-        // Treat skipped non-.git addons as resolved
+      if (!isGitRepository(addonPath)) {
+        console.log(
+          `Skipping addon update for ${addon}: ${addonPath} is not a valid git repository`
+        );
+        // Treat skipped non-git/corrupt addon installs as resolved so promise indexes stay aligned.
         updatePromises.push(Promise.resolve());
         continue;
       }

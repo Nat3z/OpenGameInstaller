@@ -55,6 +55,9 @@ export default defineConfig({
     plugins: [tailwindcss(), svelte()],
     server: {
       port: 8080,
+      watch: {
+        ignored: ['**/development/**'],
+      },
     },
   },
 });

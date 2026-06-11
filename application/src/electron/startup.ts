@@ -1,6 +1,6 @@
 import { exec } from 'child_process';
 import { __dirname } from '@/electron/manager/manager.paths.js';
-import { join } from 'path';
+import { dirname, isAbsolute, join, resolve } from 'path';
 import * as fs from 'fs';
 import * as fsPromises from 'fs/promises';
 import path from 'path';
@@ -708,7 +708,43 @@ export async function convertLibrary() {
     }
   }
 }
+function isGitRepository(repoPath: string): boolean {
+  if (!fs.existsSync(repoPath)) {
+    return false;
+  }
+
+  const gitPath = join(repoPath, '.git');
+  if (!fs.existsSync(gitPath)) {
+    return false;
+  }
+
+  const stat = fs.statSync(gitPath);
+  if (stat.isDirectory()) {
+    return fs.existsSync(join(gitPath, 'HEAD')) && fs.existsSync(join(gitPath, 'config'));
+  }
+
+  if (stat.isFile()) {
+    const gitFile = fs.readFileSync(gitPath, 'utf-8').trim();
+    const match = gitFile.match(/^gitdir:\s*(.+)$/i);
+    if (!match) {
+      return false;
+    }
+    const gitDir = match[1];
+    const resolvedGitDir = isAbsolute(gitDir)
+      ? gitDir
+      : resolve(dirname(gitPath), gitDir);
+    return fs.existsSync(join(resolvedGitDir, 'HEAD'));
+  }
+
+  return false;
+}
+
 async function checkForGitUpdates(repoPath: string): Promise<boolean> {
+  if (!isGitRepository(repoPath)) {
+    console.log(`Skipping git update check for ${repoPath}: not a valid git repository`);
+    return false;
+  }
+
   // Change the directory to the repository path and run 'git fetch --dry-run'
   return new Promise((resolve, _) => {
     exec(
@@ -765,8 +801,10 @@ export async function checkForAddonUpdates(
       addonPath = join(__dirname, 'addons', addonName);
     }
 
-    if (!fs.existsSync(addonPath + '/.git')) {
-      console.log(`Addon ${addonName} is not a git repository`);
+    if (!isGitRepository(addonPath)) {
+      console.log(
+        `Skipping addon update check for ${addonName}: ${addonPath} is not a valid git repository`
+      );
       continue;
     }
 

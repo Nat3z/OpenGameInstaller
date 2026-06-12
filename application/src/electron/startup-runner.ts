@@ -1,7 +1,10 @@
 import { app, BrowserWindow } from 'electron';
 import { join } from 'path';
 import type { UpdaterCallbacks } from '@/electron/updater.js';
-import { createDefaultSystemUpdateManager } from '@/electron/system-updater.js';
+import {
+  createDefaultSystemUpdateManager,
+  type SystemUpdateResult,
+} from '@/electron/system-updater.js';
 import {
   restoreBackup,
   removeCachedAppUpdates,
@@ -91,6 +94,15 @@ export function closeSplashWindow() {
   }
 }
 
+export type StartupTasksResult = {
+  /** When true, an installer update is shutting the app down; do not load the main UI. */
+  shutdownPending: boolean;
+};
+
+function isShutdownPendingFromUpdates(results: SystemUpdateResult[]): boolean {
+  return results.some((result) => result.updated === true);
+}
+
 /**
  * Runs all pre-launch startup tasks with splash screen feedback.
  * This includes restoring backups, running migrations, checking for updates, etc.
@@ -103,7 +115,8 @@ export function closeSplashWindow() {
  */
 export async function runStartupTasks(
   mainWindow?: BrowserWindow | null
-): Promise<void> {
+): Promise<StartupTasksResult> {
+  let shutdownPending = false;
   try {
     if (mainWindow && !mainWindow.isDestroyed()) {
       splashTargetWindow = mainWindow;
@@ -165,15 +178,24 @@ export async function runStartupTasks(
         updateSplashProgress(current, total, speed);
       },
     };
-    await createDefaultSystemUpdateManager().updateOnlineSystem(
-      updaterCallbacks
-    );
+    const updateResults =
+      await createDefaultSystemUpdateManager().updateOnlineSystem(
+        updaterCallbacks
+      );
 
-    // Final status before main window loads
-    updateSplashStatus('Starting application...');
+    shutdownPending = isShutdownPendingFromUpdates(updateResults);
+
+    // Final status before main window loads (skip when installer update will exit)
+    if (!shutdownPending) {
+      updateSplashStatus('Starting application...');
+    }
   } finally {
-    splashTargetWindow = null;
-    // Ensure splash window is closed if it was created
-    closeSplashWindow();
+    if (!shutdownPending) {
+      splashTargetWindow = null;
+      // Ensure splash window is closed if it was created
+      closeSplashWindow();
+    }
   }
+
+  return { shutdownPending };
 }

@@ -24,6 +24,7 @@ import { createHash } from 'crypto';
 import * as zlib from 'zlib';
 import * as path from 'path';
 import { getEffectiveOnlineState } from '@/electron/lib/online.js';
+import { __dirname } from '@/electron/manager/manager.paths.js';
 
 function isDev() {
   return !app.isPackaged;

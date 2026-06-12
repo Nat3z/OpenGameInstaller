@@ -197,7 +197,10 @@ async function handleLaunchHooks(
   if (mainWindow) {
     registerMainHandlers(mainWindow);
     await startAddonRuntime();
-    await runStartupTasks(mainWindow);
+    const startupResult = await runStartupTasks(mainWindow);
+    if (startupResult.shutdownPending) {
+      return;
+    }
 
     // Load the main app with game ID and hook flags
     const baseUrl = isDev()
@@ -232,7 +235,10 @@ async function launchGameById(gameId: number, wrapperCommand?: string | null) {
     registerMainHandlers(mainWindow);
     await startAddonRuntime();
     // Run startup tasks first
-    await runStartupTasks(mainWindow);
+    const startupResult = await runStartupTasks(mainWindow);
+    if (startupResult.shutdownPending) {
+      return;
+    }
 
     // Load the main app with the game ID in the query params
     // The Svelte frontend will detect this and show the GameLaunchOverlay
@@ -592,8 +598,14 @@ function createWindow(options: { gameLaunchMode?: boolean } = {}) {
 
 async function startAppFlow(win: BrowserWindow) {
   // Run startup tasks; splash updates go to the main window
+  let shutdownPending = false;
   if (win && !win.isDestroyed()) {
-    await runStartupTasks(win);
+    const startupResult = await runStartupTasks(win);
+    shutdownPending = startupResult.shutdownPending;
+  }
+
+  if (shutdownPending) {
+    return;
   }
 
   // Load the main app into the same window (replaces splash)

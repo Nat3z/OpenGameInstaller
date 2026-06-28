@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { app } from 'electron';
+import semver from 'semver';
 import {
   chmodSync,
   createWriteStream,
@@ -757,6 +758,7 @@ export function checkIfInstallerUpdateAvailable(
     const bleedingEdge = existsSync(`${__dirname}/../bleeding-edge.txt`);
     // check for updates
     try {
+      const local = semver.coerce(localVersion.trim())?.version!;
       const gitRepo = 'nat3z/OpenGameInstaller';
       const releases = await axios.get(
         `https://api.github.com/repos/${gitRepo}/releases`,
@@ -789,7 +791,8 @@ export function checkIfInstallerUpdateAvailable(
         const wantedVersion = latestRelease
           .body!.match(/Setup Version: (.*)/)![1]
           .trim();
-        if (wantedVersion === localVersion) {
+        const version = semver.coerce(wantedVersion)?.version!;
+        if (!semver.gt(version, local)) {
           latestRelease = undefined;
         }
       }

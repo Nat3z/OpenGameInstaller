@@ -43,6 +43,17 @@ export class Addon {
     if (process.platform === 'win32') {
       return join(process.env.USERPROFILE || '', '.bun', 'bin', 'bun.exe');
     } else {
+      // find bun via a which command
+      try {
+        const bunPath = execFileSync('which', ['bun'], {
+          encoding: 'utf-8',
+        }).trim();
+        if (bunPath) {
+          return bunPath;
+        }
+      } catch {
+        // fall back to home directory
+      }
       return join(process.env.HOME || '', '.bun', 'bin', 'bun');
     }
   }

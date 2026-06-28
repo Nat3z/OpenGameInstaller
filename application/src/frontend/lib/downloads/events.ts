@@ -1,26 +1,30 @@
+import type { DownloadHandshakeResult } from '@/lib/download-handshake';
 import type { DownloadStatusAndInfo } from '@/frontend/store';
 
-export function listenUntilDownloadReady(
-  channels: string[] = ['ddl:download-progress', 'ddl:download-error']
-) {
-  let state: { [id: string]: Partial<DownloadStatusAndInfo> } = {};
-  const updateState = (e: Event) => {
-    if (e instanceof CustomEvent) {
-      if (e.detail) {
-        state[e.detail.id] = e.detail as Partial<DownloadStatusAndInfo>;
-      }
-    }
-  };
-  channels.forEach((channel) =>
-    document.addEventListener(channel, updateState)
-  );
+export function cardStatusFromHandshake(
+  handshake: DownloadHandshakeResult
+): DownloadStatusAndInfo['status'] {
+  switch (handshake.status) {
+    case 'error':
+      return 'error';
+    case 'completed':
+      return 'completed';
+    case 'seeding':
+      return 'seeding';
+    default:
+      return 'downloading';
+  }
+}
 
-  return {
-    flush: () => {
-      channels.forEach((channel) =>
-        document.removeEventListener(channel, updateState)
-      );
-      return state;
-    },
-  };
+export async function replayDownloadEvents(id: string) {
+  const events = await window.electronAPI.download.consumeReplayEvents(id);
+  for (const event of events) {
+    document.dispatchEvent(
+      new CustomEvent(event.channel, { detail: event.data })
+    );
+  }
+}
+
+export async function finalizeDownloadCard(id: string) {
+  await replayDownloadEvents(id);
 }

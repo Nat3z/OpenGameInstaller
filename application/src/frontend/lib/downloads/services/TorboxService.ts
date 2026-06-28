@@ -1,5 +1,5 @@
 import { currentDownloads } from '@/frontend/store';
-import { getDownloadPath, listenUntilDownloadReady } from '@/frontend/utils';
+import { getDownloadPath, finalizeDownloadCard } from '@/frontend/utils';
 import { getConfigClientOption } from '@/frontend/lib/config/client';
 import type { SearchResultWithAddon } from '@/frontend/lib/tasks/runner';
 import { BaseService } from '@/frontend/lib/downloads/services/BaseService';
@@ -282,8 +282,7 @@ export class TorboxService extends BaseService {
         // generate the whole url
         const downloadUrl = url.toString();
 
-        const { flush } = listenUntilDownloadReady();
-        const downloadID = await window.electronAPI.ddl.download([
+        const handshake = await window.electronAPI.ddl.download([
           {
             link: downloadUrl,
             path:
@@ -298,8 +297,7 @@ export class TorboxService extends BaseService {
             },
           },
         ]);
-        const updatedState = flush();
-        if (downloadID === null) {
+        if (handshake.status === 'error' || !handshake.id) {
           currentDownloads.update((downloads) => {
             return downloads.filter((download) => download.id !== tempId);
           });
@@ -307,7 +305,7 @@ export class TorboxService extends BaseService {
         }
 
         this.updateDownloadRequested(
-          downloadID,
+          handshake,
           tempId,
           downloadUrl,
           getDownloadPath() +
@@ -317,9 +315,9 @@ export class TorboxService extends BaseService {
             result.filename +
             '.zip',
           'torbox',
-          updatedState,
           result
         );
+        await finalizeDownloadCard(handshake.id);
       } else {
         throw new Error('Timed out waiting for torrent to be ready.');
       }

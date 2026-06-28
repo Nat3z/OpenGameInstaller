@@ -2,7 +2,7 @@ import { currentDownloads } from '@/frontend/store';
 import {
   getConfigClientOption,
   getDownloadPath,
-  listenUntilDownloadReady,
+  finalizeDownloadCard,
 } from '@/frontend/utils';
 import type { SearchResultWithAddon } from '@/frontend/lib/tasks/runner';
 import { BaseService } from '@/frontend/lib/downloads/services/BaseService';
@@ -266,8 +266,7 @@ export class PremiumizeService extends BaseService {
       console.log('Direct download URL: ', directDownloadUrl);
 
       // -- Step 5: Send the direct download to the download handler --
-      const { flush } = listenUntilDownloadReady();
-      const downloadID = await window.electronAPI.ddl.download([
+      const handshake = await window.electronAPI.ddl.download([
         {
           link: directDownloadUrl,
           path:
@@ -282,20 +281,19 @@ export class PremiumizeService extends BaseService {
           },
         },
       ]);
-      const updatedState = flush();
-      if (downloadID === null) {
+      if (handshake.status === 'error' || !handshake.id) {
         throw new Error('Failed to download the torrent.');
       }
 
       this.updateDownloadRequested(
-        downloadID,
+        handshake,
         tempId,
         directDownloadUrl,
         getDownloadPath() + '/' + result.name + '/' + result.filename + '.zip',
         'premiumize',
-        updatedState,
         result
       );
+      await finalizeDownloadCard(handshake.id);
     } finally {
       currentDownloads.update((downloads) =>
         downloads.filter((d) => d.id !== tempId)

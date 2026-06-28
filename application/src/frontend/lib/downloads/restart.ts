@@ -107,7 +107,8 @@ async function restartDirectDownload(
   console.log('Restarting direct download with files:', files);
   console.log('Download part:', download.part);
   console.log('Download total parts:', download.totalParts);
-  return await window.electronAPI.ddl.download(files, download.part);
+  const handshake = await window.electronAPI.ddl.download(files, download.part);
+  return handshake.id;
 }
 
 async function restartTorrentDownload(
@@ -158,9 +159,17 @@ async function restartTorrentDownload(
   console.log('Restarting torrent download:', effectiveUrl, 'to path:', path);
 
   if (download.downloadType === 'torrent') {
-    return await window.electronAPI.torrent.downloadTorrent(effectiveUrl, path);
+    const handshake = await window.electronAPI.torrent.downloadTorrent(
+      effectiveUrl,
+      path
+    );
+    return handshake.id;
   } else if (download.downloadType === 'magnet') {
-    return await window.electronAPI.torrent.downloadMagnet(effectiveUrl, path);
+    const handshake = await window.electronAPI.torrent.downloadMagnet(
+      effectiveUrl,
+      path
+    );
+    return handshake.id;
   } else {
     throw new Error(
       `Unsupported torrent download type: ${download.downloadType}`

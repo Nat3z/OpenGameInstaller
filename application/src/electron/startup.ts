@@ -734,7 +734,10 @@ function isGitRepository(repoPath: string): boolean {
 
   const stat = fs.statSync(gitPath);
   if (stat.isDirectory()) {
-    return fs.existsSync(join(gitPath, 'HEAD')) && fs.existsSync(join(gitPath, 'config'));
+    return (
+      fs.existsSync(join(gitPath, 'HEAD')) &&
+      fs.existsSync(join(gitPath, 'config'))
+    );
   }
 
   if (stat.isFile()) {
@@ -755,7 +758,9 @@ function isGitRepository(repoPath: string): boolean {
 
 async function checkForGitUpdates(repoPath: string): Promise<boolean> {
   if (!isGitRepository(repoPath)) {
-    console.log(`Skipping git update check for ${repoPath}: not a valid git repository`);
+    console.log(
+      `Skipping git update check for ${repoPath}: not a valid git repository`
+    );
     return false;
   }
 

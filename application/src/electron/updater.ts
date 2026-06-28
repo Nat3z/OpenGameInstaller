@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { app } from 'electron';
+import semver from 'semver';
 import {
   chmodSync,
   createWriteStream,
@@ -280,6 +281,7 @@ type GithubRelease = {
   tag_name: string;
   body?: string;
   prerelease?: boolean;
+  created_at: string;
   assets: ReleaseAsset[];
 };
 
@@ -756,36 +758,45 @@ export function checkIfInstallerUpdateAvailable(
     const bleedingEdge = existsSync(`${__dirname}/../bleeding-edge.txt`);
     // check for updates
     try {
+      const local = semver.coerce(localVersion.trim())?.version!;
       const gitRepo = 'nat3z/OpenGameInstaller';
       const releases = await axios.get(
         `https://api.github.com/repos/${gitRepo}/releases`,
         { timeout: 10000 } // 10 second timeout for update check
       );
-      let latestRelease: any | undefined = undefined;
-      for (const rel of releases.data) {
-        if (!rel.body) continue;
+      let latestRelease: GithubRelease | undefined = undefined;
+      const candidates = (releases.data as GithubRelease[]).filter(
+        (rel) => rel.body && /Setup Version: /.test(rel.body)
+      );
+      const stableCandidate = candidates.find((rel) => !rel.prerelease);
+      const prereleaseCandidate = candidates.find((rel) => rel.prerelease);
 
-        const latestVersionResults = rel.body.match(/Setup Version: (.*)/);
-        if (!latestVersionResults || latestVersionResults.length < 2) {
-          continue;
-        }
-        const latestSetupVersion = latestVersionResults[1];
-        console.log(latestSetupVersion, localVersion);
-        if (latestSetupVersion === localVersion) {
-          break;
-        }
-        if (
-          rel.prerelease &&
-          bleedingEdge &&
-          latestSetupVersion !== localVersion
-        ) {
-          latestRelease = rel;
-          break;
-        } else if (!rel.prerelease && latestSetupVersion !== localVersion) {
-          latestRelease = rel;
-          break;
+      const wanted = bleedingEdge
+        ? (prereleaseCandidate ?? stableCandidate)
+        : stableCandidate;
+      // check if the stable candidate time released is greater than the pre release candidate
+      if (
+        stableCandidate &&
+        prereleaseCandidate &&
+        new Date(stableCandidate.created_at) >
+          new Date(prereleaseCandidate.created_at)
+      ) {
+        latestRelease = stableCandidate;
+      } else {
+        latestRelease = wanted;
+      }
+
+      // disable the release if we already have this version
+      if (latestRelease) {
+        const wantedVersion = latestRelease
+          .body!.match(/Setup Version: (.*)/)![1]
+          .trim();
+        const version = semver.coerce(wantedVersion)?.version!;
+        if (!semver.gt(version, local)) {
+          latestRelease = undefined;
         }
       }
+
       if (!latestRelease) {
         console.error('[updater] No new version available.');
         resolve({ success: true, updated: false });
@@ -810,7 +821,7 @@ export function checkIfInstallerUpdateAvailable(
       );
       // get the latest version of the setup from the description of the release
       const latestVersionResults =
-        latestRelease.body.match(/Setup Version: (.*)/);
+        latestRelease.body!.match(/Setup Version: (.*)/);
       if (!latestVersionResults || latestVersionResults.length < 2) {
         console.error(
           '[updater] No setup version found in the release description.'

@@ -784,12 +784,13 @@ export function checkIfInstallerUpdateAvailable(
         latestRelease = wanted;
       }
 
-      if (wanted) {
-        const wantedVersion = wanted
+      // disable the release if we already have this version
+      if (latestRelease) {
+        const wantedVersion = latestRelease
           .body!.match(/Setup Version: (.*)/)![1]
           .trim();
-        if (wantedVersion !== localVersion) {
-          latestRelease = wanted;
+        if (wantedVersion === localVersion) {
+          latestRelease = undefined;
         }
       }
 

@@ -3,6 +3,7 @@ import type { SearchResultWithAddon } from '@/frontend/lib/tasks/runner';
 import { currentDownloads } from '@/frontend/store';
 import { getDownloadPath } from '@/frontend/lib/core/fs';
 import { listenUntilDownloadReady } from '@/frontend/lib/downloads/events';
+import { safeDownloadPath } from '@/frontend/lib/downloads/paths';
 /**
  * Handles magnet/torrent downloads that should be routed through Real-Debrid.
  */
@@ -118,10 +119,23 @@ export class RealDebridService extends BaseService {
     // Temporarily register an event listener to store any download updates so that we can match our download to the correct downloadID
     const { flush } = listenUntilDownloadReady();
 
+    const targetPath = safeDownloadPath(
+      getDownloadPath(),
+      result.name,
+      result.filename
+    );
+    const persistedFiles = [
+      {
+        name: result.filename ?? 'download',
+        path: targetPath,
+        downloadURL: download.download,
+      },
+    ];
+
     const downloadID = await window.electronAPI.ddl.download([
       {
         link: download.download,
-        path: getDownloadPath() + '/' + result.name + '/' + result.filename,
+        path: targetPath,
       },
     ]);
     const updatedState = flush();
@@ -142,10 +156,11 @@ export class RealDebridService extends BaseService {
       downloadID,
       tempId,
       download.download,
-      getDownloadPath() + '/' + result.name + '/' + result.filename,
+      targetPath,
       'realdebrid',
       updatedState,
-      result
+      result,
+      persistedFiles
     );
   }
 
@@ -218,10 +233,22 @@ export class RealDebridService extends BaseService {
 
     // Temporarily register an event listener to store any download updates so that we can match our download to the correct downloadID
     const { flush } = listenUntilDownloadReady();
+    const targetPath = safeDownloadPath(
+      getDownloadPath(),
+      result.name,
+      result.filename
+    );
+    const persistedFiles = [
+      {
+        name: result.filename ?? 'download',
+        path: targetPath,
+        downloadURL: download.download,
+      },
+    ];
     const downloadID = await window.electronAPI.ddl.download([
       {
         link: download.download,
-        path: getDownloadPath() + '/' + result.name + '/' + result.filename,
+        path: targetPath,
         headers: {
           'OGI-Parallel-Limit': '1',
         },
@@ -245,10 +272,11 @@ export class RealDebridService extends BaseService {
       downloadID,
       tempId,
       download.download,
-      getDownloadPath() + '/' + result.name + '/' + result.filename,
+      targetPath,
       'realdebrid',
       updatedState,
-      result
+      result,
+      persistedFiles
     );
   }
 }

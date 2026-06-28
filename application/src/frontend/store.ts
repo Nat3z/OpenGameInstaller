@@ -31,6 +31,8 @@ export type DownloadStatusAndInfo = SearchResult & {
   downloadPath: string;
   files: {
     name: string;
+    /** Exact resolved target path used by the download backend. */
+    path?: string;
     downloadURL: string;
     headers?: Record<string, string>;
   }[];

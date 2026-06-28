@@ -27,5 +27,6 @@
     "forceConsistentCasingInFileNames": true,
     "skipLibCheck": true
   },
+  "exclude": ["**/*.test.ts"],
   "include": [".", "../lib/storefronts.ts", "../lib/storefronts.ts"]
 }

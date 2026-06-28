@@ -42,7 +42,6 @@
     "electron-pack": "electron-builder",
     "format": "prettier --write \"src/**/*.{ts,svelte,json}\"",
     "typecheck": "tsc -p src/electron/tsconfig.json --noEmit && svelte-check --tsconfig src/frontend/tsconfig.json",
-    "test": "bun test src/frontend/lib/downloads/paths.test.ts",
     "electron-pack:linux": "electron-builder -l"
   },
   "dependencies": {

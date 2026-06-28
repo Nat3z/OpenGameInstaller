@@ -1,5 +1,7 @@
 import { currentDownloads, type DownloadStatusAndInfo } from '@/frontend/store';
-import { getDownloadPath, updateDownloadStatus } from '@/frontend/utils';
+import { updateDownloadStatus } from '@/frontend/utils';
+import { getDownloadPath } from '@/frontend/lib/core/fs';
+import { safeDownloadPath } from '@/frontend/lib/downloads/paths';
 import type { SearchResultWithAddon } from '@/frontend/lib/tasks/runner';
 
 /**
@@ -45,7 +47,7 @@ export abstract class BaseService {
           progress: 0,
           // im lazy to type this every single time. so this will do.
           usedDebridService: usedDebridService as any,
-          downloadPath: getDownloadPath() + '/' + result.name,
+          downloadPath: safeDownloadPath(getDownloadPath(), result.name),
           downloadSpeed: 0,
           ...result,
         },
@@ -62,7 +64,8 @@ export abstract class BaseService {
     downloadPath: string,
     usedDebridService: string,
     flushed: { [key: string]: Partial<DownloadStatusAndInfo> },
-    result: SearchResultWithAddon
+    result: SearchResultWithAddon,
+    files?: DownloadStatusAndInfo['files']
   ) {
     updateDownloadStatus(tempid, {
       id: downloadId,
@@ -71,6 +74,7 @@ export abstract class BaseService {
       downloadPath: downloadPath,
       queuePosition: flushed[downloadId]?.queuePosition ?? flushed[tempid]?.queuePosition,
       downloadURL: downloadUrl,
+      ...(files && { files }),
       ...((result.downloadType === 'torrent' ||
         result.downloadType === 'magnet') && {
         originalDownloadURL: result.downloadURL,

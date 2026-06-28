@@ -7,6 +7,10 @@ import {
   getDownloadItem,
   updateDownloadStatus,
 } from '@/frontend/lib/downloads/lifecycle';
+import {
+  safeDownloadPath,
+  sanitizePathSegment,
+} from '@/frontend/lib/downloads/paths';
 
 interface PausedDownloadState {
   id: string;
@@ -19,7 +23,6 @@ interface PausedDownloadState {
 async function restartDirectDownload(
   download: DownloadStatusAndInfo
 ): Promise<string> {
-  // Prefer the latest resolved URL for Debrid services. Fall back otherwise.
   const downloadURL =
     download.downloadType === 'torrent' || download.downloadType === 'magnet'
       ? download.downloadURL
@@ -35,22 +38,17 @@ async function restartDirectDownload(
   }[] = [];
 
   const downloadFiles =
-    download.downloadType === 'direct' ? download.files : undefined;
+    download.files && download.files.length > 0 ? download.files : undefined;
   if (downloadFiles && downloadFiles.length > 0) {
-    // Multi-part download
-    files = downloadFiles.map(
-      (file: {
-        name: string;
-        downloadURL: string;
-        headers?: Record<string, string>;
-      }) => ({
-        link: file.downloadURL,
-        path: getDownloadPath() + '/' + download.name + '/' + file.name,
-        headers: file.headers,
-      })
-    );
+    const baseDir = getDownloadPath();
+    files = downloadFiles.map((file) => ({
+      link: file.downloadURL,
+      path:
+        file.path ??
+        safeDownloadPath(baseDir, download.name, file.name),
+      headers: file.headers,
+    }));
   } else if (effectiveUrl) {
-    // Single file download
     const deriveFilenameFromUrl = (url?: string): string | undefined => {
       if (!url) return undefined;
       try {
@@ -64,7 +62,6 @@ async function restartDirectDownload(
     };
     const urlFilename = deriveFilenameFromUrl(effectiveUrl);
 
-    // If downloadPath is a full file path (not just a directory), prefer it to maintain exact continuity
     const isFilePath =
       typeof download.downloadPath === 'string' &&
       !download.downloadPath.endsWith('/') &&
@@ -74,8 +71,6 @@ async function restartDirectDownload(
     if (isFilePath) {
       targetPath = download.downloadPath;
     } else {
-      // Choose a filename that preserves the extension from the URL if present
-      // If download.filename lacks an extension but the URL has one, use the URL-based name
       const downloadFilename =
         download.downloadType === 'torrent' ||
         download.downloadType === 'magnet'
@@ -91,8 +86,11 @@ async function restartDirectDownload(
         downloadFilename ||
         urlFilename ||
         'download';
-      targetPath =
-        getDownloadPath() + '/' + download.name + '/' + chosenFilename;
+      targetPath = safeDownloadPath(
+        getDownloadPath(),
+        download.name,
+        chosenFilename
+      );
     }
     files = [
       {
@@ -113,7 +111,6 @@ async function restartDirectDownload(
 async function restartTorrentDownload(
   download: DownloadStatusAndInfo
 ): Promise<string> {
-  // For torrent/magnet restarts, prefer the latest link if Debrid provided a new one.
   const downloadURL =
     download.downloadType === 'torrent' || download.downloadType === 'magnet'
       ? download.downloadURL
@@ -125,14 +122,41 @@ async function restartTorrentDownload(
     throw new Error('No torrent URL available for restart');
   }
 
-  // Generate a safe filename fallback
+  const persistedFilePath = download.files?.[0]?.path;
+  const folderPath =
+    download.downloadPath.endsWith('/') ||
+    download.downloadPath.endsWith('\\')
+      ? download.downloadPath
+      : persistedFilePath
+        ? persistedFilePath.replace(/[/\\][^/\\]+$/, '/')
+        : safeDownloadPath(getDownloadPath(), download.name);
+
+  if (folderPath) {
+    console.log(
+      'Restarting torrent download:',
+      effectiveUrl,
+      'to path:',
+      folderPath
+    );
+    if (download.downloadType === 'torrent') {
+      return await window.electronAPI.torrent.downloadTorrent(
+        effectiveUrl,
+        folderPath
+      );
+    } else if (download.downloadType === 'magnet') {
+      return await window.electronAPI.torrent.downloadMagnet(
+        effectiveUrl,
+        folderPath
+      );
+    }
+  }
+
   let filename =
     download.downloadType === 'torrent' || download.downloadType === 'magnet'
       ? download.filename
       : undefined;
   if (!filename) {
     if (download.downloadType === 'magnet') {
-      // For magnet links, extract name from the magnet URI or use a generic name
       const magnetMatch = effectiveUrl.match(/dn=([^&]*)/);
       if (magnetMatch) {
         filename = decodeURIComponent(magnetMatch[1]);
@@ -140,7 +164,6 @@ async function restartTorrentDownload(
         filename = download.name || 'torrent_download';
       }
     } else {
-      // For torrent files, try to extract filename from URL
       const urlParts = effectiveUrl.split(/[\\/]/);
       const lastPart = urlParts[urlParts.length - 1];
       if (lastPart && lastPart.includes('.')) {
@@ -149,11 +172,10 @@ async function restartTorrentDownload(
         filename = download.name || 'torrent_download';
       }
     }
-    // Sanitize filename to remove invalid characters and limit length
-    filename = filename.replace(/[<>:"/\\|?*]/g, '_').substring(0, 100);
+    filename = sanitizePathSegment(filename);
   }
 
-  const path = getDownloadPath() + '/' + download.name + '/' + filename;
+  const path = safeDownloadPath(getDownloadPath(), download.name);
 
   console.log('Restarting torrent download:', effectiveUrl, 'to path:', path);
 
@@ -186,13 +208,10 @@ export async function restartDownload(
     const download = { ...pausedState.downloadInfo, ...latestDownload };
     console.log('Restarting download:', download.name);
 
-    // Generate new download ID to avoid conflicts
     newDownloadId = Math.random().toString(36).substring(7);
 
-    // Clean up old paused state
     pausedDownloadStates.delete(pausedState.id);
 
-    // Update the download with new ID
     updateDownloadStatus(pausedState.id, {
       id: newDownloadId,
       status: 'downloading',
@@ -201,7 +220,6 @@ export async function restartDownload(
 
     let newActualDownloadId: string;
 
-    // Restart based on download type
     if (download.downloadType === 'direct' || download.usedDebridService) {
       newActualDownloadId = await restartDirectDownload(download);
     } else if (
@@ -213,7 +231,6 @@ export async function restartDownload(
       throw new Error(`Unsupported download type: ${download.downloadType}`);
     }
 
-    // Update with the actual download ID returned by the backend
     updateDownloadStatus(newDownloadId, { id: newActualDownloadId });
 
     createNotification({
@@ -226,7 +243,6 @@ export async function restartDownload(
   } catch (error) {
     console.error('Error restarting download:', error);
 
-    // Use newDownloadId instead of stale pausedState.id
     if (newDownloadId) {
       updateDownloadStatus(newDownloadId, {
         status: 'error',

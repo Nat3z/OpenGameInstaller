@@ -3,6 +3,7 @@ import type { SearchResultWithAddon } from '@/frontend/lib/tasks/runner';
 import { currentDownloads } from '@/frontend/store';
 import { getDownloadPath } from '@/frontend/lib/core/fs';
 import { listenUntilDownloadReady } from '@/frontend/lib/downloads/events';
+import { safeDownloadPath, sanitizePathSegment } from '@/frontend/lib/downloads/paths';
 
 /**
  * Handles standard magnet and torrent downloads via the configured torrent
@@ -28,7 +29,18 @@ export class TorrentService extends BaseService {
       throw new Error(`Addon did not provide a ${result.downloadType} file.`);
     }
 
-    const downloadPath = getDownloadPath() + '/' + result.name + '/';
+    const baseDir = getDownloadPath();
+    const downloadPath = safeDownloadPath(baseDir, result.name);
+    const persistedFiles =
+      result.filename != null && result.filename !== ''
+        ? [
+            {
+              name: sanitizePathSegment(result.filename),
+              path: safeDownloadPath(baseDir, result.name, result.filename),
+              downloadURL: result.downloadURL,
+            },
+          ]
+        : [];
 
     if (resolvedButton) {
       resolvedButton.textContent = 'Downloading...';
@@ -57,15 +69,15 @@ export class TorrentService extends BaseService {
               ...result,
               id,
               status: updatedState[id]?.error ? 'error' : 'downloading',
-              downloadPath: getDownloadPath() + '/' + result.name + '/',
+              downloadPath,
               downloadSpeed: 0,
-              files: [],
+              files: persistedFiles,
               progress: 0,
               queuePosition: updatedState[id]?.queuePosition,
               error: updatedState[id]?.error,
               appID,
               downloadSize: 0,
-              originalDownloadURL: result.downloadURL, // Store original URL for resume
+              originalDownloadURL: result.downloadURL,
             },
           ];
         });
@@ -85,15 +97,15 @@ export class TorrentService extends BaseService {
               ...result,
               id,
               status: updatedState[id]?.error ? 'error' : 'downloading',
-              downloadPath: getDownloadPath() + '/' + result.name + '/',
+              downloadPath,
               downloadSpeed: 0,
-              files: [],
+              files: persistedFiles,
               progress: 0,
               queuePosition: updatedState[id]?.queuePosition,
               error: updatedState[id]?.error,
               appID,
               downloadSize: 0,
-              originalDownloadURL: result.downloadURL, // Store original URL for resume
+              originalDownloadURL: result.downloadURL,
             },
           ];
         });

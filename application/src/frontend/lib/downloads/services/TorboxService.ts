@@ -3,6 +3,7 @@ import { getDownloadPath, listenUntilDownloadReady } from '@/frontend/utils';
 import { getConfigClientOption } from '@/frontend/lib/config/client';
 import type { SearchResultWithAddon } from '@/frontend/lib/tasks/runner';
 import { BaseService } from '@/frontend/lib/downloads/services/BaseService';
+import { safeDownloadPath } from '@/frontend/lib/downloads/paths';
 
 const BASE_URL = 'https://api.torbox.app/v1';
 
@@ -283,16 +284,23 @@ export class TorboxService extends BaseService {
         const downloadUrl = url.toString();
 
         const { flush } = listenUntilDownloadReady();
+        const zipFilename = `${result.filename}.zip`;
+        const targetPath = safeDownloadPath(
+          getDownloadPath(),
+          result.name,
+          zipFilename
+        );
+        const persistedFiles = [
+          {
+            name: zipFilename,
+            path: targetPath,
+            downloadURL: downloadUrl,
+          },
+        ];
         const downloadID = await window.electronAPI.ddl.download([
           {
             link: downloadUrl,
-            path:
-              getDownloadPath() +
-              '/' +
-              result.name +
-              '/' +
-              result.filename! +
-              '.zip',
+            path: targetPath,
             headers: {
               'OGI-Parallel-Limit': '1',
             },
@@ -310,15 +318,11 @@ export class TorboxService extends BaseService {
           downloadID,
           tempId,
           downloadUrl,
-          getDownloadPath() +
-            '/' +
-            result.name +
-            '/' +
-            result.filename +
-            '.zip',
+          targetPath,
           'torbox',
           updatedState,
-          result
+          result,
+          persistedFiles
         );
       } else {
         throw new Error('Timed out waiting for torrent to be ready.');

@@ -2,6 +2,7 @@ import { BaseService } from '@/frontend/lib/downloads/services/BaseService';
 import type { SearchResultWithAddon } from '@/frontend/lib/tasks/runner';
 import { currentDownloads, type DownloadStatusAndInfo } from '@/frontend/store';
 import { getDownloadPath } from '@/frontend/lib/core/fs';
+import { safeDownloadPath } from '@/frontend/lib/downloads/paths';
 import { runSetupApp, runSetupAppUpdate } from '@/frontend/lib/setup/setup';
 import { updateDownloadStatus } from '@/frontend/lib/downloads/lifecycle';
 
@@ -30,12 +31,14 @@ export class EmptyService extends BaseService {
     // Generate a unique ID for this download
     const downloadId = Math.random().toString(36).substring(2, 15);
 
+    const downloadFolder = safeDownloadPath(getDownloadPath(), result.name);
+
     // Add download to store with 'completed' status to trigger setup immediately
     const downloadedItem: DownloadStatusAndInfo = {
       ...result,
       id: downloadId,
       status: 'completed',
-      downloadPath: getDownloadPath() + '/' + result.name + '/',
+      downloadPath: downloadFolder,
       downloadSpeed: 0,
       progress: 100,
       appID,
@@ -53,14 +56,14 @@ export class EmptyService extends BaseService {
       if (downloadedItem.isUpdate) {
         await runSetupAppUpdate(
           downloadedItem,
-          getDownloadPath() + '/' + result.name + '/',
+          downloadFolder,
           false,
           {}
         );
       } else {
         await runSetupApp(
           downloadedItem,
-          getDownloadPath() + '/' + result.name + '/',
+          downloadFolder,
           false,
           {}
         );

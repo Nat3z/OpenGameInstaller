@@ -3,6 +3,7 @@ import type { SearchResultWithAddon } from '@/frontend/lib/tasks/runner';
 import type { SearchResult } from '@ogi-sdk/connect';
 import { createNotification, currentDownloads } from '@/frontend/store';
 import { getDownloadPath } from '@/frontend/lib/core/fs';
+import { safeDownloadPath } from '@/frontend/lib/downloads/paths';
 import { addonServer } from '@/frontend/lib/core/ipc';
 import { startDownload } from '@/frontend/lib/downloads/lifecycle';
 
@@ -34,7 +35,7 @@ export class RequestService extends BaseService {
           // changed to avoid special characters in the path and make it work with windows on wine
           id: '' + localID,
           status: 'requesting',
-          downloadPath: getDownloadPath() + '/' + result.name + '/',
+          downloadPath: safeDownloadPath(getDownloadPath(), result.name),
           downloadSpeed: 0,
           progress: 0,
           appID,

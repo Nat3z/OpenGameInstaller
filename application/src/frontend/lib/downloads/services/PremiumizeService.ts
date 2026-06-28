@@ -6,6 +6,7 @@ import {
 } from '@/frontend/utils';
 import type { SearchResultWithAddon } from '@/frontend/lib/tasks/runner';
 import { BaseService } from '@/frontend/lib/downloads/services/BaseService';
+import { safeDownloadPath } from '@/frontend/lib/downloads/paths';
 
 const BASE_URL = 'https://www.premiumize.me/api';
 
@@ -267,16 +268,23 @@ export class PremiumizeService extends BaseService {
 
       // -- Step 5: Send the direct download to the download handler --
       const { flush } = listenUntilDownloadReady();
+      const zipFilename = `${result.filename}.zip`;
+      const targetPath = safeDownloadPath(
+        getDownloadPath(),
+        result.name,
+        zipFilename
+      );
+      const persistedFiles = [
+        {
+          name: zipFilename,
+          path: targetPath,
+          downloadURL: directDownloadUrl,
+        },
+      ];
       const downloadID = await window.electronAPI.ddl.download([
         {
           link: directDownloadUrl,
-          path:
-            getDownloadPath() +
-            '/' +
-            result.name +
-            '/' +
-            result.filename +
-            '.zip',
+          path: targetPath,
           headers: {
             'OGI-Parallel-Limit': '1',
           },
@@ -291,10 +299,11 @@ export class PremiumizeService extends BaseService {
         downloadID,
         tempId,
         directDownloadUrl,
-        getDownloadPath() + '/' + result.name + '/' + result.filename + '.zip',
+        targetPath,
         'premiumize',
         updatedState,
-        result
+        result,
+        persistedFiles
       );
     } finally {
       currentDownloads.update((downloads) =>

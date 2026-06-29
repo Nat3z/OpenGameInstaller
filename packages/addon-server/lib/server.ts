@@ -194,6 +194,14 @@ export class AddonServer {
       });
     };
     this.server.on('upgrade', this.upgradeListener);
+    // add a health endpoint
+    this.server.on('request', (req, res) => {
+      if (req.url === '/health') {
+        res.statusCode = 200;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ status: 'ok' }));
+      }
+    });
 
     this.server.listen(this.config.port, () => {
       this.eventEmitter.emit('start');

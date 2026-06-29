@@ -8,6 +8,7 @@ import {
   addonServer,
   port,
   startAddonServer,
+  stopAddonServer,
 } from '@/electron/server/addon-server.js';
 import { sendIPCMessage, sendNotification } from '@/electron/main.js';
 import axios from 'axios';
@@ -27,7 +28,10 @@ function isGitRepository(addonPath: string): boolean {
 
   const stat = fs.statSync(gitPath);
   if (stat.isDirectory()) {
-    return fs.existsSync(join(gitPath, 'HEAD')) && fs.existsSync(join(gitPath, 'config'));
+    return (
+      fs.existsSync(join(gitPath, 'HEAD')) &&
+      fs.existsSync(join(gitPath, 'config'))
+    );
   }
 
   if (stat.isFile()) {
@@ -95,17 +99,37 @@ export async function startAddons(): Promise<void> {
   console.log('All addons started');
 }
 
+const MAX_ATTEMPTS_HEALTH_CHECK = 500;
 export async function restartAddonServer(): Promise<void> {
   // stop the server
   console.log('Stopping server...');
-  addonServer.stop();
+  stopAddonServer();
   // stop all of the addons
   for (const instance of [...Addon.running.values()]) {
     console.log(`Stopping addon ${instance.config.path}`);
     instance.stop();
   }
   // start the server and wait for it to be listening before starting addons
+
   await startAddonServer();
+  const checkHealth = async () => {
+    try {
+      await axios.get(`http://localhost:${port}/health`, { timeout: 500 });
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  let attempts = 0;
+  while (!(await checkHealth()) && attempts < MAX_ATTEMPTS_HEALTH_CHECK) {
+    await new Promise((res) => setTimeout(res, 500));
+    attempts++;
+  }
+  if (attempts === MAX_ATTEMPTS_HEALTH_CHECK) {
+    throw new Error(
+      'Failed to start addon server: health check failed after maximum attempts'
+    );
+  }
   console.log(`Addon Server is running on http://localhost:${port}`);
   console.log(`Server is being executed by electron!`);
   await startAddons();

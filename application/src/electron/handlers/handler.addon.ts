@@ -102,7 +102,7 @@ const MAX_ATTEMPTS_HEALTH_CHECK = 500;
 export async function restartAddonServer(): Promise<void> {
   // stop the server
   console.log('Stopping server...');
-  stopAddonServer();
+  await stopAddonServer();
   // stop all of the addons
   for (const instance of [...Addon.running.values()]) {
     console.log(`Stopping addon ${instance.config.path}`);

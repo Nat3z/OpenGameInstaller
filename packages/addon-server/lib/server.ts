@@ -132,7 +132,7 @@ export class AddonServer {
     return this.config.secret;
   }
 
-  public stop(): void {
+  public stop(): Promise<void> {
     if (this.upgradeListener) {
       this.server.removeListener('upgrade', this.upgradeListener);
       this.upgradeListener = undefined;
@@ -150,12 +150,21 @@ export class AddonServer {
     this.sdkConnections.forEach((connection) => {
       connection.close();
     });
-    this.wss?.close();
+    const closeWebSocketServer = this.wss
+      ? new Promise<void>((resolve, reject) => {
+          this.wss!.close((error) => (error ? reject(error) : resolve()));
+        })
+      : Promise.resolve();
     this.wss = undefined;
-    this.server.close();
+    const closeHttpServer = new Promise<void>((resolve, reject) => {
+      this.server.close((error) => (error ? reject(error) : resolve()));
+    });
     this.connections.clear();
     this.sdkConnections.clear();
     this.clients.clear();
+    return Promise.all([closeWebSocketServer, closeHttpServer]).then(
+      () => undefined
+    );
   }
 
   private handleWebSocketConnection(
@@ -217,13 +226,7 @@ export class AddonServer {
       });
     };
     this.server.on('upgrade', this.upgradeListener);
-    this.healthListener = (req, res) => {
-      if (req.url === '/health') {
-        res.statusCode = 200;
-        res.setHeader('Content-Type', 'application/json');
-        res.end(JSON.stringify({ status: 'ok' }));
-      }
-    };
+    this.healthListener = this.healthHandler.bind(this);
     this.server.on('request', this.healthListener);
 
     this.server.listen(this.config.port, () => {

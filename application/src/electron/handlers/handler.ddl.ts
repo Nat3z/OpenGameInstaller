@@ -223,6 +223,7 @@ class Download {
   private chunks: ChunkState[] = [];
   private parallelTotalSize: number = 0;
   private parallelLimit?: number;
+  private effectiveChunkCount?: number;
   private currentJobPath: string = ''; // Track current job path for chunk file cleanup
 
   // Multi-part parallel download state
@@ -534,6 +535,13 @@ class Download {
       );
     const activeParts = () =>
       this.parts.filter((p) => p.status === 'downloading');
+    const activeRequestCount = () =>
+      activeParts().reduce((count, part) => {
+        if (!part.useChunks || part.chunks.length === 0) {
+          return count + 1;
+        }
+        return count + part.chunks.filter((chunk) => !chunk.completed).length;
+      }, 0);
     const completedParts = () =>
       this.parts.filter((p) => p.status === 'completed');
 
@@ -556,7 +564,7 @@ class Download {
       );
       const availableSlots = Math.max(
         0,
-        (effectivePartLimit ?? PARALLEL_CHUNK_COUNT) - activeParts().length
+        (effectivePartLimit ?? PARALLEL_CHUNK_COUNT) - activeRequestCount()
       );
       const partsToStart = this.parts
         .filter((p) => p.status === 'pending')
@@ -625,6 +633,9 @@ class Download {
       part.parallelLimit,
       parallelInfo.parallelLimit
     );
+    part.effectiveChunkCount =
+      mergeParallelLimits(PARALLEL_CHUNK_COUNT, part.parallelLimit) ??
+      PARALLEL_CHUNK_COUNT;
 
     // Update total bytes for progress calculation
     this.updateMultiPartTotalBytes();
@@ -785,15 +796,8 @@ class Download {
     const job = part.job;
     part.chunks = [];
 
-    // Get parallel limit from the part's parallel info
-    const parallelInfo = await this.shouldUseParallelDownloadForPart(job);
-    part.parallelLimit = mergeParallelLimits(
-      part.parallelLimit,
-      parallelInfo.parallelLimit
-    );
     const effectiveChunkCount =
-      mergeParallelLimits(PARALLEL_CHUNK_COUNT, part.parallelLimit) ??
-      PARALLEL_CHUNK_COUNT;
+      part.effectiveChunkCount ?? PARALLEL_CHUNK_COUNT;
 
     // Store effective chunk count in part state for later use
     part.effectiveChunkCount = effectiveChunkCount;
@@ -1864,15 +1868,10 @@ class Download {
     this.currentJobPath = job.path;
     this.chunks = [];
 
-    // Get parallel limit from the parallel info
-    const parallelInfo = await this.shouldUseParallelDownload(job);
-    this.parallelLimit = mergeParallelLimits(
-      this.parallelLimit,
-      parallelInfo.parallelLimit
-    );
     const effectiveChunkCount =
       mergeParallelLimits(PARALLEL_CHUNK_COUNT, this.parallelLimit) ??
       PARALLEL_CHUNK_COUNT;
+    this.effectiveChunkCount = effectiveChunkCount;
 
     // Calculate chunk sizes
     const chunkSize = Math.ceil(fileSize / effectiveChunkCount);
@@ -1934,7 +1933,7 @@ class Download {
 
     console.log(
       `[direct] Starting parallel download with ${effectiveChunkCount} chunks ` +
-        `(limit: ${parallelInfo.parallelLimit ?? 'none'}), ` +
+        `(limit: ${this.parallelLimit ?? 'none'}), ` +
         `chunk size: ${(chunkSize / (1024 * 1024)).toFixed(2)}MB`
     );
 
@@ -2140,15 +2139,9 @@ class Download {
   private async mergeChunkFiles(job: DownloadJob): Promise<void> {
     console.log('[direct] Merging chunk files into final file...');
 
-    // Get effective chunk count for this job
-    const parallelInfo = await this.shouldUseParallelDownload(job);
-    this.parallelLimit = mergeParallelLimits(
-      this.parallelLimit,
-      parallelInfo.parallelLimit
-    );
     const effectiveChunkCount =
-      mergeParallelLimits(PARALLEL_CHUNK_COUNT, this.parallelLimit) ??
-      PARALLEL_CHUNK_COUNT;
+      this.effectiveChunkCount ??
+      (this.chunks.length > 0 ? this.chunks.length : PARALLEL_CHUNK_COUNT);
 
     // Create the final file write stream
     const finalStream = fs.createWriteStream(job.path, { flags: 'w' });

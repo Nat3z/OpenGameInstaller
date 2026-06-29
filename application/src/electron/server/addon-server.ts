@@ -67,11 +67,14 @@ function startAddonServer() {
   return addonServerStarting;
 }
 
-function stopAddonServer() {
+async function stopAddonServer(): Promise<void> {
+  if (addonServerStarting) {
+    await addonServerStarting;
+  }
   if (!isAddonServerListening) {
     return;
   }
-  addonServer.stop();
+  await addonServer.stop();
   isAddonServerListening = false;
 }
 

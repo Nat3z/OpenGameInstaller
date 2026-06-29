@@ -36,6 +36,10 @@ export class AddonServer {
     socket: import('node:stream').Duplex,
     head: Buffer
   ) => void;
+  private healthListener?: (
+    req: http.IncomingMessage,
+    res: http.ServerResponse
+  ) => void;
 
   private deferredTasksManager: DeferredTasksManager =
     new DeferredTasksManager();
@@ -133,7 +137,10 @@ export class AddonServer {
       this.server.removeListener('upgrade', this.upgradeListener);
       this.upgradeListener = undefined;
     }
-    this.server.removeListener('request', this.healthHandler);
+    if (this.healthListener) {
+      this.server.removeListener('request', this.healthListener);
+      this.healthListener = undefined;
+    }
     this.connections.forEach((connection) => {
       connection.ws.close();
     });
@@ -198,6 +205,10 @@ export class AddonServer {
       this.server.removeListener('upgrade', this.upgradeListener);
       this.upgradeListener = undefined;
     }
+    if (this.healthListener) {
+      this.server.removeListener('request', this.healthListener);
+      this.healthListener = undefined;
+    }
     this.wss?.close();
     this.wss = new WebSocketServer({ noServer: true });
     this.upgradeListener = (req, socket, head) => {
@@ -206,8 +217,14 @@ export class AddonServer {
       });
     };
     this.server.on('upgrade', this.upgradeListener);
-    // add a health endpoint
-    this.server.on('request', this.healthHandler);
+    this.healthListener = (req, res) => {
+      if (req.url === '/health') {
+        res.statusCode = 200;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ status: 'ok' }));
+      }
+    };
+    this.server.on('request', this.healthListener);
 
     this.server.listen(this.config.port, () => {
       this.eventEmitter.emit('start');

@@ -543,7 +543,7 @@ class Download {
       }
 
       // Start new parts if we have capacity. Respect OGI-Parallel-Limit as a
-      // total connection cap for multipart downloads, not just a per-part chunk cap.
+      // total connection cap for concurrent parts.
       const knownParallelLimits = this.parts.map((part) =>
         mergeParallelLimits(
           part.parallelLimit,
@@ -555,7 +555,7 @@ class Download {
         ...knownParallelLimits
       );
       const availableSlots = Math.max(
-        1,
+        0,
         (effectivePartLimit ?? PARALLEL_CHUNK_COUNT) - activeParts().length
       );
       const partsToStart = this.parts
@@ -2314,7 +2314,7 @@ async function checkParallelChunkCount() {
   await refreshCached('general');
   let val = Number(await getStoredValue('general', 'parallelChunkCount'));
   // Ensure minimum of 1, default to 8 if invalid
-  const chunkCount = Math.max(0, Number.isFinite(val) ? val : 8);
+  const chunkCount = Math.max(1, Number.isFinite(val) ? val : 8);
   console.log('[direct] parallel chunk count:', chunkCount);
 
   // Coerce to safe positive integer, ensuring minimum of 1

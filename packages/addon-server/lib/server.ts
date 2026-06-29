@@ -133,6 +133,7 @@ export class AddonServer {
       this.server.removeListener('upgrade', this.upgradeListener);
       this.upgradeListener = undefined;
     }
+    this.server.removeListener('request', this.healthHandler);
     this.connections.forEach((connection) => {
       connection.ws.close();
     });
@@ -181,6 +182,17 @@ export class AddonServer {
     })();
   }
 
+  private healthHandler(
+    req: http.IncomingMessage,
+    res: http.ServerResponse
+  ): void {
+    if (req.url === '/health') {
+      res.statusCode = 200;
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({ status: 'ok' }));
+    }
+  }
+
   public async start(): Promise<void> {
     if (this.upgradeListener) {
       this.server.removeListener('upgrade', this.upgradeListener);
@@ -195,13 +207,7 @@ export class AddonServer {
     };
     this.server.on('upgrade', this.upgradeListener);
     // add a health endpoint
-    this.server.on('request', (req, res) => {
-      if (req.url === '/health') {
-        res.statusCode = 200;
-        res.setHeader('Content-Type', 'application/json');
-        res.end(JSON.stringify({ status: 'ok' }));
-      }
-    });
+    this.server.on('request', this.healthHandler);
 
     this.server.listen(this.config.port, () => {
       this.eventEmitter.emit('start');

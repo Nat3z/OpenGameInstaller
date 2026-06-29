@@ -1,8 +1,10 @@
 import { currentDownloads } from '@/frontend/store';
-import { getDownloadPath, finalizeDownloadCard } from '@/frontend/utils';
+import { getDownloadPath } from '@/frontend/lib/core/fs';
 import { getConfigClientOption } from '@/frontend/lib/config/client';
 import type { SearchResultWithAddon } from '@/frontend/lib/tasks/runner';
 import { BaseService } from '@/frontend/lib/downloads/services/BaseService';
+import { finalizeDownloadCard } from '@/frontend/lib/downloads/events';
+import { safeDownloadPath } from '@/frontend/lib/downloads/paths';
 
 const BASE_URL = 'https://api.torbox.app/v1';
 
@@ -282,16 +284,23 @@ export class TorboxService extends BaseService {
         // generate the whole url
         const downloadUrl = url.toString();
 
+        const zipFilename = `${result.filename}.zip`;
+        const targetPath = safeDownloadPath(
+          getDownloadPath(),
+          result.name,
+          zipFilename
+        );
+        const persistedFiles = [
+          {
+            name: zipFilename,
+            path: targetPath,
+            downloadURL: downloadUrl,
+          },
+        ];
         const handshake = await window.electronAPI.ddl.download([
           {
             link: downloadUrl,
-            path:
-              getDownloadPath() +
-              '/' +
-              result.name +
-              '/' +
-              result.filename! +
-              '.zip',
+            path: targetPath,
             headers: {
               'OGI-Parallel-Limit': '1',
             },
@@ -308,14 +317,10 @@ export class TorboxService extends BaseService {
           handshake,
           tempId,
           downloadUrl,
-          getDownloadPath() +
-            '/' +
-            result.name +
-            '/' +
-            result.filename +
-            '.zip',
+          targetPath,
           'torbox',
-          result
+          result,
+          persistedFiles
         );
         await finalizeDownloadCard(handshake.id);
       } else {

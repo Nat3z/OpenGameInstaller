@@ -2,9 +2,8 @@ import { BaseService } from '@/frontend/lib/downloads/services/BaseService';
 import type { SearchResultWithAddon } from '@/frontend/lib/tasks/runner';
 import { currentDownloads } from '@/frontend/store';
 import { getDownloadPath } from '@/frontend/lib/core/fs';
-import {
-  finalizeDownloadCard,
-} from '@/frontend/lib/downloads/events';
+import { finalizeDownloadCard } from '@/frontend/lib/downloads/events';
+import { safeDownloadPath } from '@/frontend/lib/downloads/paths';
 /**
  * Handles magnet/torrent downloads that should be routed through Real-Debrid.
  */
@@ -117,10 +116,23 @@ export class RealDebridService extends BaseService {
       throw new Error('Failed to unrestrict the link.');
     }
 
+    const targetPath = safeDownloadPath(
+      getDownloadPath(),
+      result.name,
+      result.filename
+    );
+    const persistedFiles = [
+      {
+        name: result.filename ?? 'download',
+        path: targetPath,
+        downloadURL: download.download,
+      },
+    ];
+
     const handshake = await window.electronAPI.ddl.download([
       {
         link: download.download,
-        path: getDownloadPath() + '/' + result.name + '/' + result.filename,
+        path: targetPath,
       },
     ]);
     if (handshake.status === 'error' || !handshake.id) {
@@ -140,9 +152,10 @@ export class RealDebridService extends BaseService {
       handshake,
       tempId,
       download.download,
-      getDownloadPath() + '/' + result.name + '/' + result.filename,
+      targetPath,
       'realdebrid',
-      result
+      result,
+      persistedFiles
     );
     await finalizeDownloadCard(handshake.id);
   }
@@ -214,10 +227,22 @@ export class RealDebridService extends BaseService {
       throw new Error('Failed to unrestrict the link.');
     }
 
+    const targetPath = safeDownloadPath(
+      getDownloadPath(),
+      result.name,
+      result.filename
+    );
+    const persistedFiles = [
+      {
+        name: result.filename ?? 'download',
+        path: targetPath,
+        downloadURL: download.download,
+      },
+    ];
     const handshake = await window.electronAPI.ddl.download([
       {
         link: download.download,
-        path: getDownloadPath() + '/' + result.name + '/' + result.filename,
+        path: targetPath,
         headers: {
           'OGI-Parallel-Limit': '1',
         },
@@ -240,9 +265,10 @@ export class RealDebridService extends BaseService {
       handshake,
       tempId,
       download.download,
-      getDownloadPath() + '/' + result.name + '/' + result.filename,
+      targetPath,
       'realdebrid',
-      result
+      result,
+      persistedFiles
     );
     await finalizeDownloadCard(handshake.id);
   }

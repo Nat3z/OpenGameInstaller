@@ -6,19 +6,7 @@ import {
   cardStatusFromHandshake,
   finalizeDownloadCard,
 } from '@/frontend/lib/downloads/events';
-
-/**
- * Sanitizes a path segment (e.g. result.name or result.filename) to prevent path traversal
- * and invalid characters. Returns a safe basename-like segment.
- */
-function sanitizePathSegment(segment: string | undefined | null): string {
-  if (segment == null || segment === '') return 'download';
-  // Take last path component and strip path separators and ..
-  const normalized = segment.replace(/[/\\]+/g, '/').replace(/\.\./g, '');
-  const parts = normalized.split('/').filter(Boolean);
-  const last = parts[parts.length - 1] ?? 'download';
-  return last.replace(/[\0<>:"|?*]/g, '_').substring(0, 255) || 'download';
-}
+import { safeDownloadPath, sanitizePathSegment } from '@/frontend/lib/downloads/paths';
 
 /**
  * Handles simple direct file downloads (single or multi-part).
@@ -40,16 +28,22 @@ export class DirectService extends BaseService {
       throw new Error('Addon did not provide files for the direct download.');
     }
 
+    const baseDir = getDownloadPath();
     const sanitizedName = sanitizePathSegment(result.name);
     const collectedFiles = result.files.map((file) => {
       const sanitizedFileName = sanitizePathSegment(file.name);
       return {
-        path: getDownloadPath() + '/' + sanitizedName + '/' + sanitizedFileName,
+        path: safeDownloadPath(baseDir, sanitizedName, sanitizedFileName),
         link: file.downloadURL,
-        // remove proxy
         headers: JSON.parse(JSON.stringify(file.headers || {})),
       };
     });
+    const persistedFiles = result.files.map((file, i) => ({
+      name: sanitizePathSegment(file.name),
+      path: collectedFiles[i].path,
+      downloadURL: file.downloadURL,
+      headers: collectedFiles[i].headers,
+    }));
 
     button.textContent = 'Downloading...';
     button.disabled = true;
@@ -62,7 +56,7 @@ export class DirectService extends BaseService {
           {
             id: handshake.id,
             status: cardStatusFromHandshake(handshake),
-            downloadPath: getDownloadPath() + '/' + sanitizedName + '/',
+            downloadPath: safeDownloadPath(baseDir, sanitizedName),
             downloadSpeed: 0,
             progress: 0,
             appID,
@@ -70,6 +64,7 @@ export class DirectService extends BaseService {
             queuePosition: handshake.queuePosition,
             error: handshake.error,
             ...result,
+            files: persistedFiles,
           },
         ];
       });

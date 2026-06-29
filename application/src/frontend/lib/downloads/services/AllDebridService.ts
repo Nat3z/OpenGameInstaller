@@ -7,6 +7,12 @@ import {
   finalizeDownloadCard,
 } from '@/frontend/lib/downloads/events';
 import { updateDownloadStatus } from '@/frontend/lib/downloads/lifecycle';
+import {
+  dedupeFileNames,
+  safeDownloadPath,
+  sanitizePathSegment,
+  urlBasename,
+} from '@/frontend/lib/downloads/paths';
 
 /** Result shape required for AllDebrid (magnet/torrent); caller ensures these exist. */
 type AllDebridSearchResult = SearchResultWithAddon & {
@@ -14,60 +20,6 @@ type AllDebridSearchResult = SearchResultWithAddon & {
   name: string;
   filename?: string;
 };
-
-/**
- * Sanitizes a path segment (e.g. result.name or result.filename) to prevent path traversal
- * and invalid characters. Returns a safe basename-like segment.
- */
-function sanitizePathSegment(segment: string | undefined | null): string {
-  if (segment == null || segment === '') return 'download';
-  // Take last path component and strip path separators and ..
-  const normalized = segment.replace(/[/\\]+/g, '/').replace(/\.\./g, '');
-  const parts = normalized.split('/').filter(Boolean);
-  const last = parts[parts.length - 1] ?? 'download';
-  return last.replace(/[\0<>:"|?*]/g, '_').substring(0, 255) || 'download';
-}
-
-function urlBasename(link: string): string {
-  const raw = link.split('/').pop()?.split('?')[0] ?? 'download';
-  let decoded: string;
-  try {
-    decoded = decodeURIComponent(raw);
-  } catch {
-    decoded = raw;
-  }
-  return sanitizePathSegment(decoded);
-}
-
-/** Ensures unique basenames so multi-file torrents do not overwrite each other. */
-function dedupeFileNames(names: string[]): string[] {
-  const seen = new Map<string, number>();
-  const outputs = new Set<string>();
-  return names.map((name) => {
-    const count = seen.get(name) ?? 0;
-    seen.set(name, count + 1);
-    if (count === 0 && !outputs.has(name)) {
-      outputs.add(name);
-      return name;
-    }
-    const dot = name.lastIndexOf('.');
-    let candidate: string;
-    let suffix = count + 1;
-    while (true) {
-      if (dot > 0) {
-        candidate = `${name.slice(0, dot)}_${suffix}${name.slice(dot)}`;
-      } else {
-        candidate = `${name}_${suffix}`;
-      }
-      if (!outputs.has(candidate)) {
-        outputs.add(candidate);
-        break;
-      }
-      suffix++;
-    }
-    return candidate;
-  });
-}
 
 /**
  * Prefers AllDebrid torrent file names from the API, optional single-file
@@ -338,8 +290,7 @@ export class AllDebridService extends BaseService {
       }
       resolvedLinks.push(download.download ?? download.link);
     }
-    const safePath =
-      getDownloadPath() + '/' + sanitizePathSegment(result.name) + '/';
+    const safePath = safeDownloadPath(getDownloadPath(), result.name);
     const localNames = localNamesForLinks(
       resolvedLinks,
       metaFiles,
@@ -358,6 +309,7 @@ export class AllDebridService extends BaseService {
     }
     const fileEntries = resolvedLinks.map((link, i) => ({
       name: localNames[i],
+      path: safePath + localNames[i],
       downloadURL: link,
       headers: { 'OGI-Parallel-Limit': '1' },
     }));

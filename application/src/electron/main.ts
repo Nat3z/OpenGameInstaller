@@ -1,12 +1,11 @@
 import { join } from 'path';
 import { quote as shellQuote } from 'shell-quote';
 import {
-  registerInstanceBridgeHandlers,
-  server,
   port,
-  type LaunchForwardPayload,
   isSecurityCheckEnabled,
+  isAddonServerListening,
   startAddonServer,
+  stopAddonServer,
   addonServer,
 } from '@/electron/server/addon-server.js';
 import { app, BrowserWindow, globalShortcut, ipcMain, shell } from 'electron';
@@ -50,12 +49,22 @@ import { loadLibraryInfo } from '@/electron/handlers/helpers.app/library.js';
 import { releasePowerSaveBlock } from '@/electron/lib/power-save.js';
 // import steamworks from 'steamworks.js';
 
+type LaunchForwardPayload = {
+  gameId: number;
+  noLaunch: boolean;
+  runPre: boolean;
+  runPost: boolean;
+  wrapperCommand?: string | null;
+  originalArgv?: string[];
+  launchEnv?: Record<string, string>;
+};
+
 /**
  * Parse command line arguments for --game-id flag
  * This is used when launching from Steam shortcuts
  */
-function parseGameIdArg(): number | null {
-  const gameIdArg = process.argv.find((arg) => arg.startsWith('--game-id='));
+function parseGameIdArg(argv: readonly string[] = process.argv): number | null {
+  const gameIdArg = argv.find((arg) => arg.startsWith('--game-id='));
   if (gameIdArg) {
     const gameId = parseInt(gameIdArg.split('=')[1], 10);
     if (!isNaN(gameId)) {
@@ -71,15 +80,15 @@ function parseGameIdArg(): number | null {
  * --pre: Run pre-launch hooks
  * --post: Run post-launch hooks
  */
-function parseLaunchHookArgs(): {
+function parseLaunchHookArgs(argv: readonly string[] = process.argv): {
   noLaunch: boolean;
   runPre: boolean;
   runPost: boolean;
 } {
   return {
-    noLaunch: process.argv.includes('--no-launch'),
-    runPre: process.argv.includes('--pre'),
-    runPost: process.argv.includes('--post'),
+    noLaunch: argv.includes('--no-launch'),
+    runPre: argv.includes('--pre'),
+    runPost: argv.includes('--post'),
   };
 }
 
@@ -89,23 +98,23 @@ function parseLaunchHookArgs(): {
  * Each argument is shell-quoted so paths with spaces survive round-trip
  * when the string is later parsed in the library handler.
  */
-function parseWrapperAfterSeparator(): string | null {
-  const separatorIndex = process.argv.indexOf('--');
-  if (separatorIndex === -1 || separatorIndex >= process.argv.length - 1) {
+function parseWrapperAfterSeparator(
+  argv: readonly string[] = process.argv
+): string | null {
+  const separatorIndex = argv.indexOf('--');
+  if (separatorIndex === -1 || separatorIndex >= argv.length - 1) {
     return null;
   }
 
-  const args = process.argv.slice(separatorIndex + 1);
+  const args = argv.slice(separatorIndex + 1);
   return args.map((arg) => shellQuote([arg])).join(' ');
 }
-
-const INSTANCE_BRIDGE_BASE_URL = `http://127.0.0.1:${port}/internal`;
-const INSTANCE_BRIDGE_TIMEOUT_MS = 1500;
 
 function buildLaunchForwardPayload(
   gameId: number,
   hookArgs: ReturnType<typeof parseLaunchHookArgs>,
-  wrapperCommand: string | null
+  wrapperCommand: string | null,
+  argv: readonly string[] = process.argv
 ): LaunchForwardPayload {
   const launchEnv = Object.fromEntries(
     Object.entries(process.env).filter(
@@ -119,64 +128,25 @@ function buildLaunchForwardPayload(
     runPre: hookArgs.runPre,
     runPost: hookArgs.runPost,
     wrapperCommand,
-    originalArgv: process.argv.slice(1),
+    originalArgv: [...argv].slice(1),
     launchEnv,
   };
 }
 
-async function requestRunningInstance(
-  path: string,
-  init: RequestInit = {}
-): Promise<Response | null> {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => {
-    controller.abort();
-  }, INSTANCE_BRIDGE_TIMEOUT_MS);
-
-  try {
-    return await fetch(`${INSTANCE_BRIDGE_BASE_URL}${path}`, {
-      ...init,
-      signal: controller.signal,
-    });
-  } catch {
+function parseLaunchRequestFromArgv(
+  argv: readonly string[]
+): LaunchForwardPayload | null {
+  const gameId = parseGameIdArg(argv);
+  if (gameId === null) {
     return null;
-  } finally {
-    clearTimeout(timeoutId);
-  }
-}
-
-async function isRunningInstanceAvailable(): Promise<boolean> {
-  const response = await requestRunningInstance('/ping');
-  if (!response?.ok) {
-    return false;
   }
 
-  try {
-    const body = (await response.json()) as { ok?: boolean };
-    return body.ok === true;
-  } catch {
-    return false;
-  }
-}
-
-async function requestRunningInstanceFocus(): Promise<boolean> {
-  const response = await requestRunningInstance('/focus', {
-    method: 'POST',
-  });
-  return response?.ok === true;
-}
-
-async function forwardLaunchToRunningInstance(
-  payload: LaunchForwardPayload
-): Promise<boolean> {
-  const response = await requestRunningInstance('/launch', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(payload),
-  });
-  return response?.ok === true;
+  return buildLaunchForwardPayload(
+    gameId,
+    parseLaunchHookArgs(argv),
+    parseWrapperAfterSeparator(argv),
+    argv
+  );
 }
 
 /**
@@ -435,7 +405,7 @@ function registerClientReadyListener() {
 }
 
 async function ensureAddonServerRunning() {
-  if (server.listening) return;
+  if (isAddonServerListening) return;
 
   try {
     await startAddonServer();
@@ -678,7 +648,7 @@ async function handleRemoteLaunchRequest(
   payload: LaunchForwardPayload
 ): Promise<{ success: boolean; error?: string }> {
   console.log(
-    `[instance-bridge] Remote launch requested for game ${payload.gameId}`,
+    `[single-instance] Remote launch requested for game ${payload.gameId}`,
     payload
   );
 
@@ -780,15 +750,32 @@ async function handleRemoteLaunchRequest(
   return launchResult;
 }
 
-registerInstanceBridgeHandlers({
-  onFocus: () => focusMainWindow(),
-  onLaunch: (payload) => handleRemoteLaunchRequest(payload),
-});
+const gotTheLock = app.requestSingleInstanceLock();
+
+if (!gotTheLock) {
+  app.quit();
+} else {
+  app.on('second-instance', (_event, commandLine) => {
+    console.log('[single-instance] Second instance detected:', commandLine);
+
+    const launchPayload = parseLaunchRequestFromArgv(commandLine);
+    if (launchPayload) {
+      void handleRemoteLaunchRequest(launchPayload);
+      return;
+    }
+
+    focusMainWindow();
+  });
+}
 
 // This method will be called when Electron has finished
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
 app.on('ready', async () => {
+  if (!gotTheLock) {
+    return;
+  }
+
   await startupEnvironmentReady;
   registerClientReadyListener();
 
@@ -796,45 +783,6 @@ app.on('ready', async () => {
   const gameIdToLaunch = parseGameIdArg();
   const hookArgs = parseLaunchHookArgs();
   const wrapperCommand = parseWrapperAfterSeparator();
-  const launchForwardPayload =
-    gameIdToLaunch !== null
-      ? buildLaunchForwardPayload(gameIdToLaunch, hookArgs, wrapperCommand)
-      : null;
-
-  // Before creating any window or starting runtime, check if another OGI instance
-  // is already serving the local port and forward launch/focus requests to it.
-  const runningInstanceAvailable = await isRunningInstanceAvailable();
-  if (runningInstanceAvailable) {
-    console.log('[instance-bridge] Existing instance detected on local port');
-
-    if (launchForwardPayload) {
-      const forwarded =
-        await forwardLaunchToRunningInstance(launchForwardPayload);
-      if (forwarded) {
-        console.log(
-          '[instance-bridge] Forwarded launch request to existing instance. Exiting this instance.'
-        );
-        app.quit();
-        return;
-      }
-      console.warn(
-        '[instance-bridge] Failed to forward launch request to existing instance.'
-      );
-      await requestRunningInstanceFocus();
-      app.quit();
-      return;
-    } else {
-      const focused = await requestRunningInstanceFocus();
-      if (!focused) {
-        console.warn(
-          '[instance-bridge] Existing instance found, but focus handoff failed.'
-        );
-      }
-      app.quit();
-      return;
-    }
-  }
-
   if (gameIdToLaunch !== null) {
     console.log(
       `[app] Steam shortcut launch detected for game ${gameIdToLaunch}`
@@ -882,6 +830,10 @@ app.on('ready', async () => {
 
 // Quit when all windows are closed.
 app.on('window-all-closed', async function () {
+  if (!gotTheLock) {
+    return;
+  }
+
   // On macOS it is common for applications and their menu bar
   // to stay active until the user quits explicitly with Cmd + Q
   if (process.platform === 'darwin') {
@@ -906,14 +858,9 @@ app.on('window-all-closed', async function () {
       clearInterval(interval);
     }
 
-    // stop the server (only if it was listening to avoid hang)
-    if (server.listening) {
-      console.log('Stopping server...');
-      await new Promise<void>((resolve) => {
-        server.close(() => {
-          resolve();
-        });
-      });
+    if (isAddonServerListening) {
+      console.log('Stopping addon server...');
+      stopAddonServer();
     }
   } catch (error) {
     console.error('Error during cleanup:', error);
@@ -924,6 +871,10 @@ app.on('window-all-closed', async function () {
 });
 
 app.on('activate', async function () {
+  if (!gotTheLock) {
+    return;
+  }
+
   // On macOS it's common to re-create a window in the app when the
   // dock icon is clicked and there are no other windows open.
   if (mainWindow === null) {

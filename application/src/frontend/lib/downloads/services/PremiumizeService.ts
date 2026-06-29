@@ -1,11 +1,10 @@
 import { currentDownloads } from '@/frontend/store';
-import {
-  getConfigClientOption,
-  getDownloadPath,
-  finalizeDownloadCard,
-} from '@/frontend/utils';
+import { getConfigClientOption } from '@/frontend/lib/config/client';
+import { getDownloadPath } from '@/frontend/lib/core/fs';
 import type { SearchResultWithAddon } from '@/frontend/lib/tasks/runner';
 import { BaseService } from '@/frontend/lib/downloads/services/BaseService';
+import { finalizeDownloadCard } from '@/frontend/lib/downloads/events';
+import { safeDownloadPath } from '@/frontend/lib/downloads/paths';
 
 const BASE_URL = 'https://www.premiumize.me/api';
 
@@ -266,16 +265,23 @@ export class PremiumizeService extends BaseService {
       console.log('Direct download URL: ', directDownloadUrl);
 
       // -- Step 5: Send the direct download to the download handler --
+      const zipFilename = `${result.filename}.zip`;
+      const targetPath = safeDownloadPath(
+        getDownloadPath(),
+        result.name,
+        zipFilename
+      );
+      const persistedFiles = [
+        {
+          name: zipFilename,
+          path: targetPath,
+          downloadURL: directDownloadUrl,
+        },
+      ];
       const handshake = await window.electronAPI.ddl.download([
         {
           link: directDownloadUrl,
-          path:
-            getDownloadPath() +
-            '/' +
-            result.name +
-            '/' +
-            result.filename +
-            '.zip',
+          path: targetPath,
           headers: {
             'OGI-Parallel-Limit': '1',
           },
@@ -289,9 +295,10 @@ export class PremiumizeService extends BaseService {
         handshake,
         tempId,
         directDownloadUrl,
-        getDownloadPath() + '/' + result.name + '/' + result.filename + '.zip',
+        targetPath,
         'premiumize',
-        result
+        result,
+        persistedFiles
       );
       await finalizeDownloadCard(handshake.id);
     } finally {

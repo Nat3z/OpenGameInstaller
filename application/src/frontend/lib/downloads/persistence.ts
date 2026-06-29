@@ -4,6 +4,7 @@ import {
   type DownloadStatusAndInfo,
   type RedistributableInstall,
 } from '@/frontend/store';
+import { getPersistedFilePaths } from '@/frontend/lib/downloads/paths';
 import { get } from 'svelte/store';
 
 type PersistableStatus =
@@ -288,36 +289,8 @@ export async function deleteDownloadedItems(id: string) {
   const parsed = JSON.parse(content) as PersistedRecord;
   const downloadInfo = parsed.downloadInfo;
 
-  // Normalize and resolve the path correctly
-  let downloadFolder = downloadInfo.downloadPath;
-  // Remove trailing slashes
-  downloadFolder = downloadFolder.replace(/[/\\]+$/, '');
-  // Get directory name (parent directory)
-  const lastSlash = Math.max(
-    downloadFolder.lastIndexOf('/'),
-    downloadFolder.lastIndexOf('\\')
-  );
-  if (lastSlash !== -1) {
-    downloadFolder = downloadFolder.slice(0, lastSlash);
-  }
+  const filesToDelete = getPersistedFilePaths(downloadInfo);
 
-  // Only delete files that belong to this specific download
-  // Derive exact file paths from downloadInfo
-  const filesToDelete: string[] = [];
-
-  if (downloadInfo.files && Array.isArray(downloadInfo.files)) {
-    // Multi-part download - delete specific files
-    for (const file of downloadInfo.files) {
-      if (file.name) {
-        filesToDelete.push(downloadFolder + '/' + file.name);
-      }
-    }
-  } else if ('filename' in downloadInfo && downloadInfo.filename) {
-    // Single file download - delete the specific file
-    filesToDelete.push(downloadFolder + '/' + downloadInfo.filename);
-  }
-
-  // Delete only the validated files
   for (const filePath of filesToDelete) {
     try {
       await window.electronAPI.fs.deleteAsync(filePath);

@@ -2,7 +2,10 @@ import { BaseService } from '@/frontend/lib/downloads/services/BaseService';
 import type { SearchResultWithAddon } from '@/frontend/lib/tasks/runner';
 import { currentDownloads } from '@/frontend/store';
 import { getDownloadPath } from '@/frontend/lib/core/fs';
-import { listenUntilDownloadReady } from '@/frontend/lib/downloads/events';
+import {
+  cardStatusFromHandshake,
+  finalizeDownloadCard,
+} from '@/frontend/lib/downloads/events';
 import { safeDownloadPath, sanitizePathSegment } from '@/frontend/lib/downloads/paths';
 
 /**
@@ -47,71 +50,39 @@ export class TorrentService extends BaseService {
       resolvedButton.disabled = true;
     }
 
-    const { flush } = listenUntilDownloadReady([
-      'torrent:download-progress',
-      'torrent:download-error',
-    ]);
-
     try {
-      if (result.downloadType === 'torrent') {
-        const id = await window.electronAPI.torrent.downloadTorrent(
-          result.downloadURL,
-          downloadPath
-        );
-        if (id === null) {
-          throw new Error('Failed to download torrent.');
-        }
-        const updatedState = flush();
-        currentDownloads.update((downloads) => {
-          return [
-            ...downloads,
-            {
-              ...result,
-              id,
-              status: updatedState[id]?.error ? 'error' : 'downloading',
-              downloadPath,
-              downloadSpeed: 0,
-              files: persistedFiles,
-              progress: 0,
-              queuePosition: updatedState[id]?.queuePosition,
-              error: updatedState[id]?.error,
-              appID,
-              downloadSize: 0,
-              originalDownloadURL: result.downloadURL,
-            },
-          ];
-        });
-      } else if (result.downloadType === 'magnet') {
-        const id = await window.electronAPI.torrent.downloadMagnet(
-          result.downloadURL,
-          downloadPath
-        );
-        if (id === null) {
-          throw new Error('Failed to download torrent.');
-        }
-        const updatedState = flush();
-        currentDownloads.update((downloads) => {
-          return [
-            ...downloads,
-            {
-              ...result,
-              id,
-              status: updatedState[id]?.error ? 'error' : 'downloading',
-              downloadPath,
-              downloadSpeed: 0,
-              files: persistedFiles,
-              progress: 0,
-              queuePosition: updatedState[id]?.queuePosition,
-              error: updatedState[id]?.error,
-              appID,
-              downloadSize: 0,
-              originalDownloadURL: result.downloadURL,
-            },
-          ];
-        });
-      }
+      const handshake =
+        result.downloadType === 'torrent'
+          ? await window.electronAPI.torrent.downloadTorrent(
+              result.downloadURL,
+              downloadPath
+            )
+          : await window.electronAPI.torrent.downloadMagnet(
+              result.downloadURL,
+              downloadPath
+            );
+
+      currentDownloads.update((downloads) => {
+        return [
+          ...downloads,
+          {
+            ...result,
+            id: handshake.id,
+            status: cardStatusFromHandshake(handshake),
+            downloadPath,
+            downloadSpeed: 0,
+            files: persistedFiles,
+            progress: 0,
+            queuePosition: handshake.queuePosition,
+            error: handshake.error,
+            appID,
+            downloadSize: 0,
+            originalDownloadURL: result.downloadURL,
+          },
+        ];
+      });
+      await finalizeDownloadCard(handshake.id);
     } catch (err) {
-      flush();
       console.error('Torrent download error:', err);
       throw err;
     } finally {

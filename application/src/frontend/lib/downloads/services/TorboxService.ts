@@ -1,8 +1,9 @@
 import { currentDownloads } from '@/frontend/store';
-import { getDownloadPath, listenUntilDownloadReady } from '@/frontend/utils';
+import { getDownloadPath } from '@/frontend/lib/core/fs';
 import { getConfigClientOption } from '@/frontend/lib/config/client';
 import type { SearchResultWithAddon } from '@/frontend/lib/tasks/runner';
 import { BaseService } from '@/frontend/lib/downloads/services/BaseService';
+import { finalizeDownloadCard } from '@/frontend/lib/downloads/events';
 import { safeDownloadPath } from '@/frontend/lib/downloads/paths';
 
 const BASE_URL = 'https://api.torbox.app/v1';
@@ -283,7 +284,6 @@ export class TorboxService extends BaseService {
         // generate the whole url
         const downloadUrl = url.toString();
 
-        const { flush } = listenUntilDownloadReady();
         const zipFilename = `${result.filename}.zip`;
         const targetPath = safeDownloadPath(
           getDownloadPath(),
@@ -297,7 +297,7 @@ export class TorboxService extends BaseService {
             downloadURL: downloadUrl,
           },
         ];
-        const downloadID = await window.electronAPI.ddl.download([
+        const handshake = await window.electronAPI.ddl.download([
           {
             link: downloadUrl,
             path: targetPath,
@@ -306,8 +306,7 @@ export class TorboxService extends BaseService {
             },
           },
         ]);
-        const updatedState = flush();
-        if (downloadID === null) {
+        if (handshake.status === 'error' || !handshake.id) {
           currentDownloads.update((downloads) => {
             return downloads.filter((download) => download.id !== tempId);
           });
@@ -315,15 +314,15 @@ export class TorboxService extends BaseService {
         }
 
         this.updateDownloadRequested(
-          downloadID,
+          handshake,
           tempId,
           downloadUrl,
           targetPath,
           'torbox',
-          updatedState,
           result,
           persistedFiles
         );
+        await finalizeDownloadCard(handshake.id);
       } else {
         throw new Error('Timed out waiting for torrent to be ready.');
       }

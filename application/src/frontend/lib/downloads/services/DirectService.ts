@@ -2,7 +2,10 @@ import { BaseService } from '@/frontend/lib/downloads/services/BaseService';
 import type { SearchResultWithAddon } from '@/frontend/lib/tasks/runner';
 import { currentDownloads } from '@/frontend/store';
 import { getDownloadPath } from '@/frontend/lib/core/fs';
-import { listenUntilDownloadReady } from '@/frontend/lib/downloads/events';
+import {
+  cardStatusFromHandshake,
+  finalizeDownloadCard,
+} from '@/frontend/lib/downloads/events';
 import { safeDownloadPath, sanitizePathSegment } from '@/frontend/lib/downloads/paths';
 
 /**
@@ -42,33 +45,30 @@ export class DirectService extends BaseService {
       headers: collectedFiles[i].headers,
     }));
 
-    const { flush } = listenUntilDownloadReady();
-
     button.textContent = 'Downloading...';
     button.disabled = true;
 
     try {
-      const id = await window.electronAPI.ddl.download(collectedFiles);
-      const updatedState = flush();
+      const handshake = await window.electronAPI.ddl.download(collectedFiles);
       currentDownloads.update((downloads) => {
         return [
           ...downloads,
           {
-            id,
-            status: updatedState[id]?.error ? 'error' : 'downloading',
+            id: handshake.id,
+            status: cardStatusFromHandshake(handshake),
             downloadPath: safeDownloadPath(baseDir, sanitizedName),
             downloadSpeed: 0,
             progress: 0,
             appID,
             downloadSize: 0,
-            queuePosition: updatedState[id]?.queuePosition,
-            error: updatedState[id]?.error,
+            queuePosition: handshake.queuePosition,
+            error: handshake.error,
             ...result,
             files: persistedFiles,
           },
         ];
       });
-      console.log('updatedState', updatedState);
+      await finalizeDownloadCard(handshake.id);
     } catch (err) {
       console.error('Direct download error:', err);
       throw err;

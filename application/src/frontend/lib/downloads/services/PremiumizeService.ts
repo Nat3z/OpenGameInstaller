@@ -1,11 +1,9 @@
 import { currentDownloads } from '@/frontend/store';
-import {
-  getConfigClientOption,
-  getDownloadPath,
-  listenUntilDownloadReady,
-} from '@/frontend/utils';
+import { getConfigClientOption } from '@/frontend/lib/config/client';
+import { getDownloadPath } from '@/frontend/lib/core/fs';
 import type { SearchResultWithAddon } from '@/frontend/lib/tasks/runner';
 import { BaseService } from '@/frontend/lib/downloads/services/BaseService';
+import { finalizeDownloadCard } from '@/frontend/lib/downloads/events';
 import { safeDownloadPath } from '@/frontend/lib/downloads/paths';
 
 const BASE_URL = 'https://www.premiumize.me/api';
@@ -267,7 +265,6 @@ export class PremiumizeService extends BaseService {
       console.log('Direct download URL: ', directDownloadUrl);
 
       // -- Step 5: Send the direct download to the download handler --
-      const { flush } = listenUntilDownloadReady();
       const zipFilename = `${result.filename}.zip`;
       const targetPath = safeDownloadPath(
         getDownloadPath(),
@@ -281,7 +278,7 @@ export class PremiumizeService extends BaseService {
           downloadURL: directDownloadUrl,
         },
       ];
-      const downloadID = await window.electronAPI.ddl.download([
+      const handshake = await window.electronAPI.ddl.download([
         {
           link: directDownloadUrl,
           path: targetPath,
@@ -290,21 +287,20 @@ export class PremiumizeService extends BaseService {
           },
         },
       ]);
-      const updatedState = flush();
-      if (downloadID === null) {
+      if (handshake.status === 'error' || !handshake.id) {
         throw new Error('Failed to download the torrent.');
       }
 
       this.updateDownloadRequested(
-        downloadID,
+        handshake,
         tempId,
         directDownloadUrl,
         targetPath,
         'premiumize',
-        updatedState,
         result,
         persistedFiles
       );
+      await finalizeDownloadCard(handshake.id);
     } finally {
       currentDownloads.update((downloads) =>
         downloads.filter((d) => d.id !== tempId)

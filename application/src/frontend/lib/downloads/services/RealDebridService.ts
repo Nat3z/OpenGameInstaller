@@ -2,7 +2,7 @@ import { BaseService } from '@/frontend/lib/downloads/services/BaseService';
 import type { SearchResultWithAddon } from '@/frontend/lib/tasks/runner';
 import { currentDownloads } from '@/frontend/store';
 import { getDownloadPath } from '@/frontend/lib/core/fs';
-import { listenUntilDownloadReady } from '@/frontend/lib/downloads/events';
+import { finalizeDownloadCard } from '@/frontend/lib/downloads/events';
 import { safeDownloadPath } from '@/frontend/lib/downloads/paths';
 /**
  * Handles magnet/torrent downloads that should be routed through Real-Debrid.
@@ -116,9 +116,6 @@ export class RealDebridService extends BaseService {
       throw new Error('Failed to unrestrict the link.');
     }
 
-    // Temporarily register an event listener to store any download updates so that we can match our download to the correct downloadID
-    const { flush } = listenUntilDownloadReady();
-
     const targetPath = safeDownloadPath(
       getDownloadPath(),
       result.name,
@@ -132,14 +129,13 @@ export class RealDebridService extends BaseService {
       },
     ];
 
-    const downloadID = await window.electronAPI.ddl.download([
+    const handshake = await window.electronAPI.ddl.download([
       {
         link: download.download,
         path: targetPath,
       },
     ]);
-    const updatedState = flush();
-    if (downloadID === null) {
+    if (handshake.status === 'error' || !handshake.id) {
       currentDownloads.update((downloads) => {
         const matchingDownload = downloads.find((d) => d.id === tempId);
         if (!matchingDownload) return downloads;
@@ -153,15 +149,15 @@ export class RealDebridService extends BaseService {
       throw new Error('Download failed to start.');
     }
     this.updateDownloadRequested(
-      downloadID,
+      handshake,
       tempId,
       download.download,
       targetPath,
       'realdebrid',
-      updatedState,
       result,
       persistedFiles
     );
+    await finalizeDownloadCard(handshake.id);
   }
 
   private async handleTorrentDownload(
@@ -231,8 +227,6 @@ export class RealDebridService extends BaseService {
       throw new Error('Failed to unrestrict the link.');
     }
 
-    // Temporarily register an event listener to store any download updates so that we can match our download to the correct downloadID
-    const { flush } = listenUntilDownloadReady();
     const targetPath = safeDownloadPath(
       getDownloadPath(),
       result.name,
@@ -245,7 +239,7 @@ export class RealDebridService extends BaseService {
         downloadURL: download.download,
       },
     ];
-    const downloadID = await window.electronAPI.ddl.download([
+    const handshake = await window.electronAPI.ddl.download([
       {
         link: download.download,
         path: targetPath,
@@ -254,8 +248,7 @@ export class RealDebridService extends BaseService {
         },
       },
     ]);
-    const updatedState = flush();
-    if (downloadID === null) {
+    if (handshake.status === 'error' || !handshake.id) {
       currentDownloads.update((downloads) => {
         const matchingDownload = downloads.find((d) => d.id === tempId);
         if (!matchingDownload) return downloads;
@@ -269,14 +262,14 @@ export class RealDebridService extends BaseService {
       throw new Error('Download failed to start.');
     }
     this.updateDownloadRequested(
-      downloadID,
+      handshake,
       tempId,
       download.download,
       targetPath,
       'realdebrid',
-      updatedState,
       result,
       persistedFiles
     );
+    await finalizeDownloadCard(handshake.id);
   }
 }

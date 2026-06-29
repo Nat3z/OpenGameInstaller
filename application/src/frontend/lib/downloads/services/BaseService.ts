@@ -3,6 +3,8 @@ import { updateDownloadStatus } from '@/frontend/utils';
 import { getDownloadPath } from '@/frontend/lib/core/fs';
 import { safeDownloadPath } from '@/frontend/lib/downloads/paths';
 import type { SearchResultWithAddon } from '@/frontend/lib/tasks/runner';
+import type { DownloadHandshakeResult } from '@/lib/download-handshake';
+import { cardStatusFromHandshake } from '@/frontend/lib/downloads/events';
 
 /**
  * Base class that all concrete download services should extend. It defines a
@@ -58,21 +60,21 @@ export abstract class BaseService {
   }
 
   updateDownloadRequested(
-    downloadId: string,
+    handshake: DownloadHandshakeResult,
     tempid: string,
     downloadUrl: string,
     downloadPath: string,
     usedDebridService: string,
-    flushed: { [key: string]: Partial<DownloadStatusAndInfo> },
     result: SearchResultWithAddon,
     files?: DownloadStatusAndInfo['files']
   ) {
     updateDownloadStatus(tempid, {
-      id: downloadId,
-      status: 'downloading',
+      id: handshake.id,
+      status: cardStatusFromHandshake(handshake),
       usedDebridService: usedDebridService as any,
       downloadPath: downloadPath,
-      queuePosition: flushed[downloadId]?.queuePosition ?? flushed[tempid]?.queuePosition,
+      queuePosition: handshake.queuePosition,
+      error: handshake.error,
       downloadURL: downloadUrl,
       ...(files && { files }),
       ...((result.downloadType === 'torrent' ||

@@ -16,6 +16,7 @@ type $AllDebridHosts = import('all-debrid-js').$Hosts;
 type $AddMagnetOrTorrent = import('all-debrid-js').$AddMagnetOrTorrent;
 type $GamepadNavigator =
   import('@/frontend/managers/GamepadManager').GamepadNavigator;
+type DownloadHandshakeResult = import('@/lib/download-handshake').DownloadHandshakeResult;
 
 /** Shared type for app insertion (insertApp) to avoid duplicating LibraryInfo + redistributables. */
 type InsertAppInfo = LibraryInfo & {
@@ -104,8 +105,14 @@ interface Window {
       addMagnet: (magnetURL: string) => Promise<boolean>;
     };
     torrent: {
-      downloadTorrent: (torrent: string, path: string) => Promise<string>;
-      downloadMagnet: (magnet: string, path: string) => Promise<string>;
+      downloadTorrent: (
+        torrent: string,
+        path: string
+      ) => Promise<DownloadHandshakeResult>;
+      downloadMagnet: (
+        magnet: string,
+        path: string
+      ) => Promise<DownloadHandshakeResult>;
       pauseDownload: (downloadID: string) => Promise<void>;
       resumeDownload: (downloadID: string) => Promise<void>;
     };
@@ -117,10 +124,16 @@ interface Window {
           headers?: Record<string, string>;
         }[],
         part?: number
-      ) => Promise<string>;
+      ) => Promise<DownloadHandshakeResult>;
       abortDownload: (downloadID: string) => Promise<void>;
       pauseDownload: (downloadID: string) => Promise<void>;
       resumeDownload: (downloadID: string) => Promise<boolean>;
+    };
+    download: {
+      consumeReplayEvents: (
+        id: string
+      ) => Promise<{ channel: string; data: unknown }[]>;
+      getHandshakeState: (id: string) => Promise<DownloadHandshakeResult | undefined>;
     };
     queue: {
       cancel: (downloadID: string) => Promise<void>;

@@ -200,6 +200,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('ddl:resume', downloadID)
     ),
   },
+  download: {
+    consumeReplayEvents: wrap((id: string) =>
+      ipcRenderer.invoke('download:consume-replay-events', id)
+    ),
+    getHandshakeState: wrap((id: string) =>
+      ipcRenderer.invoke('download:get-handshake-state', id)
+    ),
+  },
   queue: {
     cancel: wrap((downloadID: string) =>
       ipcRenderer.invoke(`queue:${downloadID}:cancel`)

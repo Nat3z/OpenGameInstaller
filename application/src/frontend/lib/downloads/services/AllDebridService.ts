@@ -2,7 +2,10 @@ import { BaseService } from '@/frontend/lib/downloads/services/BaseService';
 import type { SearchResultWithAddon } from '@/frontend/lib/tasks/runner';
 import { currentDownloads, createNotification } from '@/frontend/store';
 import { getDownloadPath } from '@/frontend/lib/core/fs';
-import { listenUntilDownloadReady } from '@/frontend/lib/downloads/events';
+import {
+  cardStatusFromHandshake,
+  finalizeDownloadCard,
+} from '@/frontend/lib/downloads/events';
 import { updateDownloadStatus } from '@/frontend/lib/downloads/lifecycle';
 import {
   dedupeFileNames,
@@ -293,22 +296,14 @@ export class AllDebridService extends BaseService {
       metaFiles,
       result.filename
     );
-    const { flush } = listenUntilDownloadReady();
-    console.log(
-      'resolvedLinks count:',
-      resolvedLinks.length,
-      'localNames',
-      localNames
-    );
-    const downloadID = await window.electronAPI.ddl.download(
+    const handshake = await window.electronAPI.ddl.download(
       resolvedLinks.map((link, i) => ({
         link,
         path: safePath + localNames[i],
         headers: { 'OGI-Parallel-Limit': '1' },
       }))
     );
-    const updatedState = flush();
-    if (downloadID === null) {
+    if (handshake.status === 'error' || !handshake.id) {
       markError();
       throw new Error('Download failed to start.');
     }
@@ -321,13 +316,15 @@ export class AllDebridService extends BaseService {
     const downloadPathForItem =
       resolvedLinks.length === 1 ? safePath + localNames[0] : safePath;
     updateDownloadStatus(tempId, {
-      id: downloadID,
-      status: 'downloading',
+      id: handshake.id,
+      status: cardStatusFromHandshake(handshake),
       usedDebridService: 'alldebrid',
       appID: appID,
       downloadPath: downloadPathForItem,
-      queuePosition: updatedState[downloadID]?.queuePosition,
+      queuePosition: handshake.queuePosition,
+      error: handshake.error,
       files: fileEntries,
     });
+    await finalizeDownloadCard(handshake.id);
   }
 }

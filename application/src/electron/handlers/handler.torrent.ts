@@ -13,6 +13,13 @@ import { torrent as wtConnect } from '@/electron/manager/manager.webtorrent.js';
 import { __dirname } from '@/electron/manager/manager.paths.js';
 import { DOWNLOAD_QUEUE } from '@/electron/manager/manager.queue.js';
 import parseTorrent from 'parse-torrent';
+import {
+  clearDownloadHandshake,
+  registerDownloadHandshake,
+  updateDownloadHandshake,
+  waitForDownloadHandshake,
+  type DownloadHandshakeResult,
+} from '@/lib/download-handshake.js';
 
 let qbitClient: QBittorrent | undefined = undefined;
 
@@ -118,6 +125,36 @@ class TorrentDownload {
     this.job = job;
 
     downloads.set(this.id, this);
+    registerDownloadHandshake(this.id);
+  }
+
+  private reportHandshake(
+    update: Partial<DownloadHandshakeResult> = {},
+    terminalEvent?: { channel: string; data: unknown }
+  ) {
+    const status =
+      update.status ??
+      (this.status === 'failed'
+        ? 'error'
+        : this.status === 'seeding'
+          ? 'seeding'
+          : this.status === 'completed'
+            ? 'completed'
+            : this.status);
+
+    updateDownloadHandshake(
+      {
+        id: this.id,
+        status: status as DownloadHandshakeResult['status'],
+        queuePosition: update.queuePosition,
+        error: update.error,
+      },
+      terminalEvent
+    );
+  }
+
+  public waitForReady(): Promise<DownloadHandshakeResult> {
+    return waitForDownloadHandshake(this.id);
   }
 
   public async start() {
@@ -135,11 +172,15 @@ class TorrentDownload {
 
     const result = await wait((queuePosition) => {
       this.sendProgress({ queuePosition });
+      this.reportHandshake({ status: 'queued', queuePosition });
     });
 
     if (result === 'cancelled') {
       this.removeCancelHandler();
       this.releaseQueueSlot();
+      this.reportHandshake({ status: 'error', error: 'Download cancelled' });
+      clearDownloadHandshake(this.id);
+      downloads.delete(this.id);
       return;
     }
 
@@ -153,6 +194,7 @@ class TorrentDownload {
 
   private async run() {
     this.status = 'downloading';
+    this.reportHandshake({ status: 'downloading' });
     try {
       await refreshCached('general');
       this.torrentClientType =
@@ -378,7 +420,12 @@ class TorrentDownload {
     // as entering the addon setup phase before torrent:download-complete fires.
     this.status = 'seeding';
     this.sendProgress({ progress: 1, downloadSpeed: 0 });
-    this.sendIpc('torrent:download-complete', { id: this.id });
+    const completePayload = { id: this.id };
+    this.reportHandshake({ status: 'seeding' }, {
+      channel: 'torrent:download-complete',
+      data: completePayload,
+    });
+    this.sendIpc('torrent:download-complete', completePayload);
     sendNotification({
       message: 'Download completed, now seeding.',
       id: this.id,
@@ -387,6 +434,7 @@ class TorrentDownload {
     this.cleanup();
     this.removeCancelHandler();
     this.releaseQueueSlot();
+    clearDownloadHandshake(this.id);
     downloads.delete(this.id);
   }
 
@@ -400,10 +448,12 @@ class TorrentDownload {
       return;
     }
     this.status = 'failed';
-    this.sendIpc('torrent:download-error', {
-      id: this.id,
-      error: error.message,
+    const errorPayload = { id: this.id, error: error.message };
+    this.reportHandshake({ status: 'error', error: error.message }, {
+      channel: 'torrent:download-error',
+      data: errorPayload,
     });
+    this.sendIpc('torrent:download-error', errorPayload);
     sendNotification({
       message: error.message || 'Download failed',
       id: this.id,
@@ -413,6 +463,7 @@ class TorrentDownload {
     this.cleanup();
     this.removeCancelHandler();
     this.releaseQueueSlot();
+    clearDownloadHandshake(this.id);
     downloads.delete(this.id);
   }
 
@@ -554,8 +605,7 @@ export default function handler(mainWindow: BrowserWindow) {
   const startDownload = async (job: TorrentJob) => {
     const download = new TorrentDownload(mainWindow, job);
     download.start();
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-    return download.id;
+    return await download.waitForReady();
   };
 
   ipcMain.handle(

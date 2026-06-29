@@ -19,6 +19,7 @@ import RealdDebridHandler from '@/electron/handlers/handler.realdebrid.js';
 import AllDebridHandler from '@/electron/handlers/handler.alldebrid.js';
 import TorrentHandler from '@/electron/handlers/handler.torrent.js';
 import DirectDownloadHandler from '@/electron/handlers/handler.ddl.js';
+import { registerDownloadHandshakeHandlers } from '@/lib/download-handshake.js';
 import { runLaunchAppHooks } from '@/electron/server/addon-lifecycle.js';
 import { __dirname, isDev } from '@/electron/manager/manager.paths.js';
 import {
@@ -377,6 +378,7 @@ function registerMainHandlers(win: BrowserWindow) {
   if (handlersRegistered) return;
   handlersRegistered = true;
 
+  registerDownloadHandshakeHandlers();
   AppEventHandler(win);
   FSEventHandler();
   RealdDebridHandler(win);

@@ -5,7 +5,6 @@ import { exec, spawn } from 'child_process';
 import { Addon } from '@/electron/manager/manager.addon.js';
 import { __dirname } from '@/electron/manager/manager.paths.js';
 import {
-  addonServer,
   port,
   startAddonServer,
   stopAddonServer,

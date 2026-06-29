@@ -566,9 +566,12 @@ class Download {
         0,
         (effectivePartLimit ?? PARALLEL_CHUNK_COUNT) - activeRequestCount()
       );
-      const partsToStart = this.parts
-        .filter((p) => p.status === 'pending')
-        .slice(0, availableSlots);
+      // Start one part at a time so chunk fan-out cannot briefly exceed the
+      // parallel limit while multiple parts are still in HEAD/setup.
+      const partsToStart =
+        availableSlots > 0
+          ? this.parts.filter((p) => p.status === 'pending').slice(0, 1)
+          : [];
 
       if (partsToStart.length > 0) {
         console.log(

@@ -202,7 +202,8 @@ export class AddonServer {
     req: http.IncomingMessage,
     res: http.ServerResponse
   ): void {
-    if (req.url === '/health') {
+    const pathname = req.url?.split('?')[0]?.replace(/\/+$/, '') ?? '';
+    if (pathname === '/health') {
       res.statusCode = 200;
       res.setHeader('Content-Type', 'application/json');
       res.end(JSON.stringify({ status: 'ok' }));

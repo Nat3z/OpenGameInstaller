@@ -98,7 +98,10 @@ export async function startAddons(): Promise<void> {
   console.log('All addons started');
 }
 
-const MAX_ATTEMPTS_HEALTH_CHECK = 500;
+const HEALTH_CHECK_INTERVAL_MS = 500;
+const MAX_ATTEMPTS_HEALTH_CHECK = 60;
+const HEALTH_CHECK_TIMEOUT_MS =
+  MAX_ATTEMPTS_HEALTH_CHECK * HEALTH_CHECK_INTERVAL_MS;
 export async function restartAddonServer(): Promise<void> {
   // stop the server
   console.log('Stopping server...');
@@ -121,12 +124,12 @@ export async function restartAddonServer(): Promise<void> {
   };
   let attempts = 0;
   while (!(await checkHealth()) && attempts < MAX_ATTEMPTS_HEALTH_CHECK) {
-    await new Promise((res) => setTimeout(res, 500));
+    await new Promise((res) => setTimeout(res, HEALTH_CHECK_INTERVAL_MS));
     attempts++;
   }
   if (attempts === MAX_ATTEMPTS_HEALTH_CHECK) {
     throw new Error(
-      'Failed to start addon server: health check failed after maximum attempts'
+      `Failed to start addon server: health check failed after ${attempts} attempts (${HEALTH_CHECK_TIMEOUT_MS / 1000}s)`
     );
   }
   console.log(`Addon Server is running on http://localhost:${port}`);

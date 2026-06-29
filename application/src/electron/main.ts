@@ -858,7 +858,7 @@ app.on('window-all-closed', async function () {
 
     if (isAddonServerListening) {
       console.log('Stopping addon server...');
-      stopAddonServer();
+      await stopAddonServer();
     }
   } catch (error) {
     console.error('Error during cleanup:', error);

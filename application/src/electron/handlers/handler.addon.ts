@@ -1,5 +1,6 @@
 import { BrowserWindow, ipcMain } from 'electron';
 import fs from 'fs';
+import fsAsync from 'fs/promises';
 import { dirname, isAbsolute, join, resolve } from 'path';
 import { exec, spawn } from 'child_process';
 import { Addon } from '@/electron/manager/manager.addon.js';
@@ -158,6 +159,12 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
           .filter(Boolean)
       : [];
 
+    let stagedUpdate = JSON.parse(
+      await fsAsync.readFile(
+        join(__dirname, 'config', 'option', 'general.json'),
+        { encoding: 'utf-8' }
+      )
+    ) as { addons: string[] };
     if (addons.length === 0) {
       sendNotification({
         message: 'No addons to install',
@@ -279,10 +286,16 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
           id: Math.random().toString(36).substring(7),
           type: 'success',
         });
+        stagedUpdate.addons.push(addonPath);
       }
     }
+    await fsAsync.writeFile(
+      join(__dirname, 'config', 'option', 'general.json'),
+      JSON.stringify(stagedUpdate),
+      'utf-8'
+    );
     await restartAddonServer();
-    return;
+    return stagedUpdate.addons;
   });
 
   ipcMain.handle('restart-addon-server', async (_) => {

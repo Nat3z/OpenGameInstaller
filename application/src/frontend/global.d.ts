@@ -255,7 +255,7 @@ interface Window {
     updateAddons: () => Promise<void>;
     getVersion: () => string;
     getTheme: () => 'light' | 'dark' | 'synthwave';
-    installAddons: (addons: string[]) => Promise<void>;
+    installAddons: (addons: string[]) => Promise<string[]>;
     isDev: () => boolean;
     restartAddonServer: () => Promise<void>;
     deleteInstalledAddon: (

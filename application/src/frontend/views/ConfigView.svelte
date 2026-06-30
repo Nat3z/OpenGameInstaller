@@ -3,7 +3,10 @@
   import { fly } from 'svelte/transition';
   import { quintOut } from 'svelte/easing';
   import { queryConnectedAddons, reconnectClientSdk } from '@/frontend/utils';
-  import type { ConfigurationFile, OGIAddonConfiguration } from '@ogi-sdk/connect';
+  import type {
+    ConfigurationFile,
+    OGIAddonConfiguration,
+  } from '@ogi-sdk/connect';
   import { addonUpdates, createNotification } from '@/frontend/store';
   import CommunityAddonsList from '@/frontend/views/CommunityAddonsList.svelte';
   import AddonPicture from '@/frontend/components/AddonPicture.svelte';
@@ -31,14 +34,18 @@
       .then((data) => {
         addons = data;
       })
-      .catch((error) => console.error('Failed to query connected addons:', error));
+      .catch((error) =>
+        console.error('Failed to query connected addons:', error)
+      );
     // Start polling every 3 seconds
     pollingInterval = setInterval(() => {
       queryConnectedAddons<ConfigTemplateAndInfo>()
         .then((data) => {
           addons = data;
         })
-        .catch((error) => console.error('Failed to query connected addons:', error));
+        .catch((error) =>
+          console.error('Failed to query connected addons:', error)
+        );
     }, 3000);
   });
   interface ConfigTemplateAndInfo extends OGIAddonConfiguration {
@@ -89,16 +96,6 @@
   }
 
   async function addAddon() {
-    console.log('Adding addon', addonUrl);
-    const generalConfig = window.electronAPI.fs.read(
-      './config/option/general.json'
-    );
-    const generalConfigJson = JSON.parse(generalConfig);
-    generalConfigJson.addons.push(addonUrl);
-    window.electronAPI.fs.write(
-      './config/option/general.json',
-      JSON.stringify(generalConfigJson)
-    );
     showAddonAddModal = false;
 
     createNotification({
@@ -108,7 +105,7 @@
     });
     await window.electronAPI.installAddons([addonUrl]);
     addonUrl = '';
-    await window.electronAPI.restartAddonServer();
+    await reconnectClientSdk();
   }
 </script>
 

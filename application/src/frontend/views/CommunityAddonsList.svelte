@@ -27,21 +27,12 @@
       currentAddons.addons = [];
     }
 
+    console.log(currentAddons.addons);
+    // remove proxy wrapping
     currentAddons = {
       ...currentAddons,
-      addons: [...currentAddons.addons, addon.source],
+      addons: await window.electronAPI.installAddons([addon.source]),
     };
-
-    console.log(currentAddons.addons);
-    window.electronAPI.fs.write(
-      './config/option/general.json',
-      JSON.stringify(currentAddons, null, 2)
-    );
-    // remove proxy wrapping
-    await window.electronAPI.installAddons(
-      JSON.parse(JSON.stringify(currentAddons.addons))
-    );
-    await window.electronAPI.restartAddonServer();
     await reconnectClientSdk();
   }
 

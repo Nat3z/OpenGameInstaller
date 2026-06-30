@@ -304,7 +304,7 @@
     let generalConfig = {
       theme: selectedTheme,
       fileDownloadLocation: downloadLocation,
-      addons: allAddons,
+      addons: [],
       torrentClient: selectedTorrenter,
     };
     window.electronAPI.fs.mkdir('./config/option/');

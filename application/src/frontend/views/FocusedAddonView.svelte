@@ -1,18 +1,17 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import {
-    addonServer,
-    queryConnectedAddons,
-    runTask,
-  } from '@/frontend/utils';
-  import type { ConfigurationFile, OGIAddonConfiguration } from '@ogi-sdk/connect';
+  import { addonServer, queryConnectedAddons, runTask } from '@/frontend/utils';
+  import type {
+    ConfigurationFile,
+    OGIAddonConfiguration,
+  } from '@ogi-sdk/connect';
   import {
     isActionOption,
     isBooleanOption,
     isNumberOption,
     isStringOption,
   } from 'ogi-addon/config';
-  import { notifications } from '@/frontend/store';
+  import { notifications } from '@/frontend/store.svelte';
   import AddonPicture from '@/frontend/components/AddonPicture.svelte';
   import Modal from '@/frontend/components/modal/Modal.svelte';
   import HeaderModal from '@/frontend/components/modal/HeaderModal.svelte';
@@ -134,7 +133,10 @@
             );
             if (errorMessageElement) {
               errorMessageElement.innerHTML = `<img src="./error.svg" alt="error" class="w-6 h-6" />`;
-              errorMessageElement.setAttribute('data-context', data.errors[key]);
+              errorMessageElement.setAttribute(
+                'data-context',
+                data.errors[key]
+              );
             }
           }
           notifications.update((update) => [

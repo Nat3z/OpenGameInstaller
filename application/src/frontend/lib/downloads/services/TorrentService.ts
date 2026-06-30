@@ -1,9 +1,12 @@
 import { BaseService } from '@/frontend/lib/downloads/services/BaseService';
 import type { SearchResultWithAddon } from '@/frontend/lib/tasks/runner';
-import { currentDownloads } from '@/frontend/store';
+import { currentDownloads } from '@/frontend/store.svelte';
 import { getDownloadPath } from '@/frontend/lib/core/fs';
 import { listenUntilDownloadReady } from '@/frontend/lib/downloads/events';
-import { safeDownloadPath, sanitizePathSegment } from '@/frontend/lib/downloads/paths';
+import {
+  safeDownloadPath,
+  sanitizePathSegment,
+} from '@/frontend/lib/downloads/paths';
 
 /**
  * Handles standard magnet and torrent downloads via the configured torrent

@@ -8,8 +8,21 @@ export const GET: APIRoute = async () => {
   const addonDetail = files.map((file) => {
     const md = readFileSync(`community/${file}`, 'utf-8');
     const content = fm(md);
+
+    let attributes = content.attributes as {
+      name: string;
+      author: string;
+      source: string;
+      img: string;
+      pinnedCommit: string;
+    };
+
     return {
-      ...content.attributes!!,
+      name: attributes.name,
+      author: attributes.author,
+      source: attributes.source,
+      img: attributes.img,
+      pinnedCommit: attributes.pinnedCommit,
       description: content.body,
     };
   });

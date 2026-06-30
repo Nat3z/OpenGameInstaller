@@ -5,7 +5,7 @@
     gameFocused,
     launchGameTrigger,
     launchOverlayPlayPageReady,
-  } from '@/frontend/store';
+  } from '@/frontend/store.svelte';
   import { runLaunchAppAddons } from '@/frontend/utils';
 
   interface Props {

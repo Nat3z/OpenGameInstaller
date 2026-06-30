@@ -3,7 +3,7 @@ import {
   setupLogs,
   redistributableInstalls,
   type DownloadStatusAndInfo,
-} from '@/frontend/store';
+} from '@/frontend/store.svelte';
 import { get } from 'svelte/store';
 import { updateDownloadStatus } from '@/frontend/lib/downloads/lifecycle';
 import { saveFailedSetup } from '@/frontend/lib/recovery/failedSetups';
@@ -163,11 +163,13 @@ async function runAddonSetup(
   callbacks: ReturnType<typeof createSetupCallbacks>
 ): Promise<SetupEventResponse> {
   const { addonID, ...setupArgs } = setupPayload;
-  return (await addonServer.addon(addonID, {
-    onLogs: callbacks.onLogs,
-    onProgress: callbacks.onProgress,
-    onFailed: callbacks.onFailed,
-  }).setup(setupArgs)) as SetupEventResponse;
+  return (await addonServer
+    .addon(addonID, {
+      onLogs: callbacks.onLogs,
+      onProgress: callbacks.onProgress,
+      onFailed: callbacks.onFailed,
+    })
+    .setup(setupArgs)) as SetupEventResponse;
 }
 
 export async function runSetupApp(
@@ -186,7 +188,10 @@ export async function runSetupApp(
   const callbacks = createSetupCallbacks(downloadedItem, 'game');
 
   try {
-    const data: SetupEventResponse = await runAddonSetup(setupPayload, callbacks);
+    const data: SetupEventResponse = await runAddonSetup(
+      setupPayload,
+      callbacks
+    );
 
     if (data.redistributables && data.redistributables.length > 0) {
       updateDownloadStatus(downloadedItem.id, {
@@ -513,7 +518,10 @@ export async function runSetupAppUpdate(
 
   try {
     // Run addon setup to get the new version info
-    const data: SetupEventResponse = await runAddonSetup(setupPayload, callbacks);
+    const data: SetupEventResponse = await runAddonSetup(
+      setupPayload,
+      callbacks
+    );
 
     // Mark setup log as inactive
     setupLogs.update((logs) => {

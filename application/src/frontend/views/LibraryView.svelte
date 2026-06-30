@@ -2,7 +2,7 @@
   import type { LibraryInfo } from '@ogi-sdk/connect';
   import { onDestroy, onMount, tick } from 'svelte';
   import PlayPage from '@/frontend/components/PlayPage.svelte';
-  import { gameFocused } from '@/frontend/store';
+  import { gameFocused } from '@/frontend/store.svelte';
   import { writable, type Writable } from 'svelte/store';
   import Image from '@/frontend/components/Image.svelte';
   import {

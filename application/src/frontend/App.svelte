@@ -40,7 +40,7 @@
     currentDownloads,
     headerBackButton,
     clearHeaderBackButton,
-  } from '@/frontend/store';
+  } from '@/frontend/store.svelte';
   import StorePage from '@/frontend/components/StorePage.svelte';
   import ConfigurationModal from '@/frontend/components/modal/ConfigurationModal.svelte';
   import LibraryView from '@/frontend/views/LibraryView.svelte';

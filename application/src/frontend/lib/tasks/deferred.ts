@@ -4,20 +4,26 @@ import {
   deferredTasks,
   removedTasks,
   type DeferredTask,
-} from '@/frontend/store';
+} from '@/frontend/store.svelte';
 
 export async function loadDeferredTasks(tasksToRemove: string[] = []) {
   try {
     const tasks = await addonServer.getDeferredTasks();
     deferredTasks.set(
       tasks
-        .filter((task: DeferredTaskSnapshot) => !tasksToRemove.includes(task.id))
+        .filter(
+          (task: DeferredTaskSnapshot) => !tasksToRemove.includes(task.id)
+        )
         .map((task: DeferredTaskSnapshot) => ({
           id: task.id,
           name: `Task ${task.id}`,
           description: 'Background task',
           addonOwner: task.addonOwner,
-          status: task.finished ? (task.failed ? 'error' : 'completed') : 'running',
+          status: task.finished
+            ? task.failed
+              ? 'error'
+              : 'completed'
+            : 'running',
           progress: task.progress || 0,
           logs: task.logs || [],
           timestamp: Date.now(),

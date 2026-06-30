@@ -1,4 +1,4 @@
-import { currentDownloads } from '@/frontend/store';
+import { currentDownloads } from '@/frontend/store.svelte';
 import {
   getConfigClientOption,
   getDownloadPath,

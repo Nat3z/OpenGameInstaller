@@ -6,7 +6,10 @@
   import TextModal from '@/frontend/components/modal/TextModal.svelte';
   import SectionModal from '@/frontend/components/modal/SectionModal.svelte';
   import ButtonModal from '@/frontend/components/modal/ButtonModal.svelte';
-  import { createNotification, notificationHistory } from '@/frontend/store';
+  import {
+    createNotification,
+    notificationHistory,
+  } from '@/frontend/store.svelte';
   import CheckboxModal from '@/frontend/components/modal/CheckboxModal.svelte';
   import type { ConfigurationFile } from '@ogi-sdk/connect';
   import { ConfigurationBuilder } from 'ogi-addon/config';

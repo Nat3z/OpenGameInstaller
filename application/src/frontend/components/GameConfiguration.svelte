@@ -10,7 +10,10 @@
     isNumberOption,
     isStringOption,
   } from 'ogi-addon/config';
-  import { createNotification, currentDownloads } from '@/frontend/store';
+  import {
+    createNotification,
+    currentDownloads,
+  } from '@/frontend/store.svelte';
   import { appUpdates } from '@/frontend/states.svelte';
   import Modal from '@/frontend/components/modal/Modal.svelte';
   import TitleModal from '@/frontend/components/modal/TitleModal.svelte';

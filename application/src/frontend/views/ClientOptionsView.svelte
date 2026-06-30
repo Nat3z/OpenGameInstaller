@@ -1,6 +1,6 @@
 <script lang="ts">
   import { fly } from 'svelte/transition';
-  import { createNotification } from '@/frontend/store';
+  import { createNotification } from '@/frontend/store.svelte';
   import Modal from '@/frontend/components/modal/Modal.svelte';
   import TitleModal from '@/frontend/components/modal/TitleModal.svelte';
   import InputModal from '@/frontend/components/modal/InputModal.svelte';

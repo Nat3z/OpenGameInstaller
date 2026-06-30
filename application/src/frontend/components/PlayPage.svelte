@@ -12,7 +12,7 @@
     setHeaderBackButton,
     clearHeaderBackButton,
     createNotification,
-  } from '@/frontend/store';
+  } from '@/frontend/store.svelte';
   import { onDestroy, onMount, tick } from 'svelte';
   import SettingsFilled from '@/frontend/Icons/SettingsFilled.svelte';
   import GameConfiguration from '@/frontend/components/GameConfiguration.svelte';
@@ -355,11 +355,13 @@
     if (addonsWithStorefront.length === 0) return;
     for (const addon of addonsWithStorefront) {
       searchingAddons[addon.id] = undefined;
-      (addonServer.addon(addon.id).search({
-        appID: libraryInfo.appID,
-        storefront: libraryInfo.storefront,
-        for: 'task',
-      }) as Promise<SearchResult[]>)
+      (
+        addonServer.addon(addon.id).search({
+          appID: libraryInfo.appID,
+          storefront: libraryInfo.storefront,
+          for: 'task',
+        }) as Promise<SearchResult[]>
+      )
         .then((tasks) => {
           console.log('tasks', tasks);
           searchingAddons[addon.id] = tasks;

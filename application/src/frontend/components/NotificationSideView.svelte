@@ -8,7 +8,7 @@
     deferredTasks,
     type Notification,
     removedTasks,
-  } from '@/frontend/store';
+  } from '@/frontend/store.svelte';
   import { loadDeferredTasks, clearAllTasks } from '@/frontend/utils';
 
   let sideViewElement: HTMLElement | null = $state(null);

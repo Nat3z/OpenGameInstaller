@@ -4,7 +4,7 @@
     modalQueue,
     priorityToNumber,
     type QueuedModal,
-  } from '@/frontend/store';
+  } from '@/frontend/store.svelte';
 
   let {
     open = false,

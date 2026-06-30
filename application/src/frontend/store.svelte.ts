@@ -248,20 +248,22 @@ export type CommunityAddon = {
   source: string;
   img: string;
   description: string;
+  pinnedCommit: string;
 };
-export const communityAddonsLocal: Writable<CommunityAddon[]> = writable([]);
+export let communityAddons: { [key: string]: CommunityAddon[] } = $state({});
 
 export async function fetchCommunityAddons() {
   window.electronAPI.app
     .axios({
       method: 'GET',
-      url: 'https://ogi.nat3z.com/api/community.json',
+      url: 'http://localhost:4321/api/marketplace.json', // TODO: CHANGE TO ACTUAL HOSTED URI, ALSO HAVE MARKETPLACE LISTING SYSTEM
       headers: {
         'Content-Type': 'application/json',
         'User-Agent': 'OpenGameInstaller Client/Rest1.0',
       },
     })
     .then((response) => {
-      communityAddonsLocal.set(response.data as CommunityAddon[]);
+      communityAddons['https://ogi.nat3z.com'] =
+        response.data as CommunityAddon[];
     });
 }

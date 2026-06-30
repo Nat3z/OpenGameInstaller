@@ -3,7 +3,7 @@ import {
   setupLogs,
   type DownloadStatusAndInfo,
   type SetupLog,
-} from '@/frontend/store';
+} from '@/frontend/store.svelte';
 import { get } from 'svelte/store';
 
 const BLOCKING_DOWNLOAD_STATUSES = new Set<DownloadStatusAndInfo['status']>([

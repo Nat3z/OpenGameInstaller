@@ -3,7 +3,7 @@
   import { fade } from 'svelte/transition';
 
   import { onMount, onDestroy } from 'svelte';
-  import { createNotification, oobeLog } from '@/frontend/store';
+  import { createNotification, oobeLog } from '@/frontend/store.svelte';
   import ThemePicker from '@/frontend/components/ThemePicker.svelte';
 
   let stage = $state(0);

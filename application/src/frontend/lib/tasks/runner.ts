@@ -1,6 +1,6 @@
 import type { LibraryInfo, SearchResult } from '@ogi-sdk/connect';
 import { get } from 'svelte/store';
-import { createNotification, deferredTasks } from '@/frontend/store';
+import { createNotification, deferredTasks } from '@/frontend/store.svelte';
 import { addonServer } from '@/frontend/lib/core/ipc';
 
 export type SearchResultWithAddon = SearchResult & {
@@ -58,56 +58,58 @@ export async function runTask(
     };
   }
 
-  const response = await addonServer.addon(result.addonSource, {
-    onTaskStarted: (newTaskId: string) => {
-      taskID = newTaskId;
-      deferredTasks.update((tasks) => [
-        ...tasks,
-        {
-          id: taskID,
-          name: `Task: ${result.name}`,
-          description: 'Running task',
-          addonOwner: result.addonSource,
-          status: 'running',
-          progress: 0,
-          logs: [],
-          timestamp: Date.now(),
-          type: 'other',
-        },
-      ]);
-      createNotification({
-        id: Math.random().toString(36).substring(7),
-        type: 'info',
-        message:
-          'Task started. You can view the progress in the Notifications tab.',
-      });
-    },
-    onLogs: (logs: string[]) => {
-      if (!taskID) return;
-      deferredTasks.update((tasks) =>
-        tasks.map((t) => (t.id === taskID ? { ...t, logs } : t))
-      );
-    },
-    onProgress: (progress: number) => {
-      if (!taskID) return;
-      deferredTasks.update((tasks) =>
-        tasks.map((t) => (t.id === taskID ? { ...t, progress } : t))
-      );
-    },
-    onFailed: (error: string) => {
-      if (!taskID) return;
-      deferredTasks.update((tasks) =>
-        tasks.map((t) =>
-          t.id === taskID ? { ...t, error, status: 'error' } : t
-        )
-      );
-      createNotification({
-        id: Math.random().toString(36).substring(7),
-        type: 'error',
-        message: error,
-      });
-    },
-  }).taskRun(args);
+  const response = await addonServer
+    .addon(result.addonSource, {
+      onTaskStarted: (newTaskId: string) => {
+        taskID = newTaskId;
+        deferredTasks.update((tasks) => [
+          ...tasks,
+          {
+            id: taskID,
+            name: `Task: ${result.name}`,
+            description: 'Running task',
+            addonOwner: result.addonSource,
+            status: 'running',
+            progress: 0,
+            logs: [],
+            timestamp: Date.now(),
+            type: 'other',
+          },
+        ]);
+        createNotification({
+          id: Math.random().toString(36).substring(7),
+          type: 'info',
+          message:
+            'Task started. You can view the progress in the Notifications tab.',
+        });
+      },
+      onLogs: (logs: string[]) => {
+        if (!taskID) return;
+        deferredTasks.update((tasks) =>
+          tasks.map((t) => (t.id === taskID ? { ...t, logs } : t))
+        );
+      },
+      onProgress: (progress: number) => {
+        if (!taskID) return;
+        deferredTasks.update((tasks) =>
+          tasks.map((t) => (t.id === taskID ? { ...t, progress } : t))
+        );
+      },
+      onFailed: (error: string) => {
+        if (!taskID) return;
+        deferredTasks.update((tasks) =>
+          tasks.map((t) =>
+            t.id === taskID ? { ...t, error, status: 'error' } : t
+          )
+        );
+        createNotification({
+          id: Math.random().toString(36).substring(7),
+          type: 'error',
+          message: error,
+        });
+      },
+    })
+    .taskRun(args);
 
   const finalTask = get(deferredTasks).find((t) => t.id === taskID);
   if (finalTask?.status !== 'error') {

@@ -3,7 +3,7 @@ import {
   currentDownloads,
   setupLogs,
   type DownloadStatusAndInfo,
-} from '@/frontend/store';
+} from '@/frontend/store.svelte';
 import { get } from 'svelte/store';
 import { getConfigClientOption } from '@/frontend/lib/config/client';
 import { ALL_SERVICES } from '@/frontend/lib/downloads/services';

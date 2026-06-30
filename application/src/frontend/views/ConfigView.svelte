@@ -7,7 +7,7 @@
     ConfigurationFile,
     OGIAddonConfiguration,
   } from '@ogi-sdk/connect';
-  import { addonUpdates, createNotification } from '@/frontend/store';
+  import { addonUpdates, createNotification } from '@/frontend/store.svelte';
   import CommunityAddonsList from '@/frontend/views/CommunityAddonsList.svelte';
   import AddonPicture from '@/frontend/components/AddonPicture.svelte';
   import FocusedAddonView from '@/frontend/views/FocusedAddonView.svelte';

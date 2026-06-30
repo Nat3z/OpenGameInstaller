@@ -1,64 +1,79 @@
-import { Addon } from '@/addon';
+import {
+  Addon,
+  AddonFileConfigurationSchema,
+  type AddonFileConfiguration,
+} from '@/addon';
 import { spawn } from 'child_process';
 import { join } from 'path';
 import { access, writeFile } from 'fs/promises';
-import { createWriteStream, rmSync, unlink } from 'fs';
+import { createWriteStream, readFileSync, rmSync } from 'fs';
 import { Git } from '@/git';
+import type z from 'zod';
 
 export class AddonSetup {
   public git: Git;
-  constructor(private readonly addon: Addon) {
-    this.git = new Git(this.addon);
+  constructor(
+    private readonly config: {
+      path: string;
+      name: string;
+      scripts: AddonFileConfiguration['scripts'];
+    }
+  ) {
+    this.git = new Git(config);
+  }
+
+  public static loadAddonConfig(
+    path: string
+  ): z.infer<typeof AddonFileConfigurationSchema> {
+    const addonConfig = readFileSync(join(path, 'addon.json'), 'utf-8');
+    return AddonFileConfigurationSchema.parse(addonConfig);
   }
 
   private runScript(script: string) {
     const startCommand = Addon.intoExecutor(script);
 
-    console.log(`[${this.addon.config.name}] Running script: ${startCommand}`);
+    console.log(`[${this.config.name}] Running script: ${startCommand}`);
     // get the installation log path
-    const installationLogPath = join(
-      this.addon.config.path,
-      'installation.log'
-    );
+    const installationLogPath = join(this.config.path, 'installation.log');
     // create a write stream to the installation log
     const installationLogStream = createWriteStream(installationLogPath);
     // write at the beginning the command
 
     installationLogStream.write(`--------------------------------`);
     installationLogStream.write(
-      `[${this.addon.config.name}] Running script: ${startCommand}`
+      `[${this.config.name}] Running script: ${startCommand}`
     );
     installationLogStream.write(`--------------------------------`);
 
     const { command, args } = Addon.getScriptSpawnCommand(script);
     const child = spawn(command, args, {
-      cwd: this.addon.config.path,
+      cwd: this.config.path,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     child.stdout?.on('data', (data) => {
-      console.log(`[${this.addon.config.name}] ${data.toString()}`);
+      console.log(`[${this.config.name}] ${data.toString()}`);
       installationLogStream.write(data.toString());
     });
     child.stderr?.on('data', (data) => {
-      console.error(`[${this.addon.config.name}] ${data.toString()}`);
+      console.error(`[${this.config.name}] ${data.toString()}`);
       installationLogStream.write(data.toString());
     });
     child.on('error', (error) => {
-      console.error(`[${this.addon.config.name}] ${error}`);
+      console.error(`[${this.config.name}] ${error}`);
       installationLogStream.write(error.message);
     });
 
     child.on('exit', (code, signal) => {
       console.log(
-        `[${this.addon.config.name}] Exited with code ${code} and signal ${signal}`
+        `[${this.config.name}] Exited with code ${code} and signal ${signal}`
       );
       installationLogStream.write(
-        `[${this.addon.config.name}] Exited with code ${code} and signal ${signal}`
+        `[${this.config.name}] Exited with code ${code} and signal ${signal}`
       );
       installationLogStream.end();
       if (code !== 0) {
         throw new Error(
-          `[${this.addon.config.name}] Exited with code ${code} and signal ${signal}`
+          `[${this.config.name}] Exited with code ${code} and signal ${signal}`
         );
       }
     });
@@ -71,7 +86,7 @@ export class AddonSetup {
     scriptName: string
   ): Promise<string> {
     const startCommand = Addon.intoExecutor(script);
-    const name = this.addon.config.name;
+    const name = this.config.name;
 
     return new Promise((resolve, reject) => {
       let stdout = '';
@@ -79,7 +94,7 @@ export class AddonSetup {
       console.log(`[${name}@${scriptName}] Running script: ${startCommand}`);
       const { command, args } = Addon.getScriptSpawnCommand(script);
       const child = spawn(command, args, {
-        cwd: this.addon.config.path,
+        cwd: this.config.path,
         stdio: ['ignore', 'pipe', 'pipe'],
       });
 
@@ -111,12 +126,8 @@ export class AddonSetup {
    * Runs optional pre/setup/post scripts and returns combined stdout (for `installation.log`).
    */
   public async collectSetupLog(): Promise<string> {
-    if (!this.addon.config.scripts) {
-      const cfg = this.addon.loadAddonConfig(this.addon.config.path);
-      this.addon.config.scripts = cfg.scripts;
-    }
-    const scripts = this.addon.config.scripts;
-    const addonName = this.addon.config.name;
+    const scripts = this.config.scripts;
+    const addonName = this.config.name;
     let setupLogs = '';
 
     if (scripts.preSetup) {
@@ -139,17 +150,17 @@ export class AddonSetup {
   }
 
   public setup(): Promise<void> {
-    if (!this.addon.config.scripts?.setup) {
+    if (!this.config.scripts?.setup) {
       throw new Error('Setup script not found');
     }
-    const process = this.runScript(this.addon.config.scripts.setup);
+    const process = this.runScript(this.config.scripts.setup);
 
     return new Promise((resolve, reject) => {
       process.on('exit', (code, signal) => {
         if (code !== 0) {
           reject(
             new Error(
-              `[${this.addon.config.name}] Exited with code ${code} and signal ${signal}`
+              `[${this.config.name}] Exited with code ${code} and signal ${signal}`
             )
           );
         }
@@ -159,16 +170,16 @@ export class AddonSetup {
   }
 
   public preSetup(): Promise<void> {
-    if (!this.addon.config.scripts?.preSetup) {
+    if (!this.config.scripts?.preSetup) {
       throw new Error('Pre-setup script not found');
     }
-    const process = this.runScript(this.addon.config.scripts.preSetup);
+    const process = this.runScript(this.config.scripts.preSetup);
     return new Promise((resolve, reject) => {
       process.on('exit', (code, signal) => {
         if (code !== 0) {
           reject(
             new Error(
-              `[${this.addon.config.name}] Exited with code ${code} and signal ${signal}`
+              `[${this.config.name}] Exited with code ${code} and signal ${signal}`
             )
           );
         }
@@ -178,16 +189,16 @@ export class AddonSetup {
   }
 
   public postSetup(): Promise<void> {
-    if (!this.addon.config.scripts?.postSetup) {
+    if (!this.config.scripts?.postSetup) {
       throw new Error('Post-setup script not found');
     }
-    const process = this.runScript(this.addon.config.scripts.postSetup);
+    const process = this.runScript(this.config.scripts.postSetup);
     return new Promise((resolve, reject) => {
       process.on('exit', (code, signal) => {
         if (code !== 0) {
           reject(
             new Error(
-              `[${this.addon.config.name}] Exited with code ${code} and signal ${signal}`
+              `[${this.config.name}] Exited with code ${code} and signal ${signal}`
             )
           );
         }
@@ -198,7 +209,7 @@ export class AddonSetup {
 
   public async runSetup(): Promise<void> {
     // delete the installation log
-    rmSync(join(this.addon.config.path, 'installation.log'));
+    rmSync(join(this.config.path, 'installation.log'));
     await this.preSetup();
     await this.setup();
     await this.postSetup();
@@ -207,12 +218,12 @@ export class AddonSetup {
   }
 
   private async createLogFile(content: string): Promise<void> {
-    await writeFile(join(this.addon.config.path, 'installation.log'), content);
+    await writeFile(join(this.config.path, 'installation.log'), content);
   }
 
   public async isInstalled(): Promise<boolean> {
     try {
-      await access(join(this.addon.config.path, 'installation.log'));
+      await access(join(this.config.path, 'installation.log'));
       return true;
     } catch {
       return false;

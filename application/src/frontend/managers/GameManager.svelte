@@ -1,6 +1,6 @@
 <script lang="ts">
   import { getAllApps } from '@/frontend/lib/core/library';
-  import { gamesLaunched } from '@/frontend/store';
+  import { gamesLaunched } from '@/frontend/store.svelte';
   import { runLaunchAppAddons } from '@/frontend/utils';
 
   const launchParams = new URLSearchParams(window.location.search);

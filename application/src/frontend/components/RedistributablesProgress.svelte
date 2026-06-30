@@ -1,6 +1,6 @@
 <script lang="ts">
   import { fade } from 'svelte/transition';
-  import type { RedistributableInstall } from '@/frontend/store';
+  import type { RedistributableInstall } from '@/frontend/store.svelte';
 
   let {
     setup,

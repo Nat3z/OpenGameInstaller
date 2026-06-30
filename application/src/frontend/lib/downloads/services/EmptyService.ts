@@ -1,6 +1,9 @@
 import { BaseService } from '@/frontend/lib/downloads/services/BaseService';
 import type { SearchResultWithAddon } from '@/frontend/lib/tasks/runner';
-import { currentDownloads, type DownloadStatusAndInfo } from '@/frontend/store';
+import {
+  currentDownloads,
+  type DownloadStatusAndInfo,
+} from '@/frontend/store.svelte';
 import { getDownloadPath } from '@/frontend/lib/core/fs';
 import { safeDownloadPath } from '@/frontend/lib/downloads/paths';
 import { runSetupApp, runSetupAppUpdate } from '@/frontend/lib/setup/setup';
@@ -54,19 +57,9 @@ export class EmptyService extends BaseService {
     try {
       // Check if this is an update download and route to appropriate setup function
       if (downloadedItem.isUpdate) {
-        await runSetupAppUpdate(
-          downloadedItem,
-          downloadFolder,
-          false,
-          {}
-        );
+        await runSetupAppUpdate(downloadedItem, downloadFolder, false, {});
       } else {
-        await runSetupApp(
-          downloadedItem,
-          downloadFolder,
-          false,
-          {}
-        );
+        await runSetupApp(downloadedItem, downloadFolder, false, {});
       }
     } finally {
       if (resolvedButton instanceof HTMLButtonElement) {

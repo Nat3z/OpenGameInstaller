@@ -3,7 +3,7 @@
     notifications,
     notificationHistory,
     type Notification,
-  } from '@/frontend/store';
+  } from '@/frontend/store.svelte';
   import { onMount } from 'svelte';
 
   let timers = new Map<

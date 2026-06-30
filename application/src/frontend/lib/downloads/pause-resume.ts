@@ -3,7 +3,7 @@ import {
   currentDownloads,
   redistributableInstalls,
   type DownloadStatusAndInfo,
-} from '@/frontend/store';
+} from '@/frontend/store.svelte';
 import { get } from 'svelte/store';
 import {
   getDownloadItem,

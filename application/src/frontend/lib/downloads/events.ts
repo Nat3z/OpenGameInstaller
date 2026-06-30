@@ -1,4 +1,4 @@
-import type { DownloadStatusAndInfo } from '@/frontend/store';
+import type { DownloadStatusAndInfo } from '@/frontend/store.svelte';
 
 export function listenUntilDownloadReady(
   channels: string[] = ['ddl:download-progress', 'ddl:download-error']

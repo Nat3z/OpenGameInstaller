@@ -1,17 +1,17 @@
 import { ChildProcess, execFileSync, spawn } from 'child_process';
 import { readFileSync } from 'fs';
-import { readFile } from 'fs/promises';
 import { join } from 'path';
 import parseArgsStringToArgv from 'string-argv';
 import z from 'zod';
 import { AddonSetup } from '@/addon-setup';
+import { Git } from './git';
 
 export type AddonConfig = {
   port: number;
   secret: string;
   path: string;
   name: string;
-  scripts?: z.infer<typeof AddonFileConfigurationSchema>['scripts'];
+  scripts: z.infer<typeof AddonFileConfigurationSchema>['scripts'];
 };
 
 export const AddonFileConfigurationSchema = z.object({
@@ -36,7 +36,7 @@ export class Addon {
 
   constructor(config: AddonConfig) {
     this.config = config;
-    this.setup = new AddonSetup(this);
+    this.setup = new AddonSetup(this.config);
   }
 
   public static getBunPath(): string {
@@ -58,13 +58,6 @@ export class Addon {
     }
   }
 
-  public loadAddonConfig(
-    path: string
-  ): z.infer<typeof AddonFileConfigurationSchema> {
-    const addonConfig = readFileSync(join(path, 'addon.json'), 'utf-8');
-    return AddonFileConfigurationSchema.parse(addonConfig);
-  }
-
   public static intoExecutor(fullCommand: string): string {
     // turn any 'bun' from the line command into the full path to bun
     fullCommand = fullCommand.replace(
@@ -82,6 +75,10 @@ export class Addon {
   public static getPowerShellExecutable(): string {
     return 'powershell.exe';
   }
+
+  public static Git = Git;
+
+  public static Setup = AddonSetup;
 
   private static quotePowerShellArgument(value: string): string {
     return `'${value.replace(/'/g, "''")}'`;
@@ -117,7 +114,7 @@ export class Addon {
   public start(): void {
     if (!this.config.scripts?.run) {
       // load the addon config
-      const addonConfig = this.loadAddonConfig(this.config.path);
+      const addonConfig = AddonSetup.loadAddonConfig(this.config.path);
       this.config.scripts = addonConfig.scripts;
     }
 

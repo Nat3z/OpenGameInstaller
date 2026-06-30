@@ -6,7 +6,7 @@
     setupLogs,
     redistributableInstalls,
     type FailedSetup,
-  } from '@/frontend/store';
+  } from '@/frontend/store.svelte';
   import {
     loadFailedSetups,
     removeFailedSetup,
@@ -44,7 +44,11 @@
   }
 
   function isQueued(download: { status: string; queuePosition?: number }) {
-    return download.status === 'downloading' && !!download.queuePosition && download.queuePosition > 1;
+    return (
+      download.status === 'downloading' &&
+      !!download.queuePosition &&
+      download.queuePosition > 1
+    );
   }
 
   function queuePositionLabel(position?: number) {
@@ -563,7 +567,9 @@
                         ETA: {formatETA(stats.eta)}
                       </span>
                     {:else if isQueued(download)}
-                      <span class="progress-eta queue-text"> {queuePositionLabel(download.queuePosition)} </span>
+                      <span class="progress-eta queue-text">
+                        {queuePositionLabel(download.queuePosition)}
+                      </span>
                     {/if}
                   </div>
                 </div>
@@ -624,7 +630,9 @@
                   Download Failed
                 </div>
                 {#if download.error}
-                  <p class="text-sm text-error mt-2 break-words">{download.error}</p>
+                  <p class="text-sm text-error mt-2 break-words">
+                    {download.error}
+                  </p>
                 {/if}
               {:else if download.status === 'rd-downloading'}
                 <div class="status-badge downloading">

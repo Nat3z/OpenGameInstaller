@@ -15,7 +15,7 @@
     viewOpenedWhenChanged,
     selectedView,
     createNotification,
-  } from '@/frontend/store';
+  } from '@/frontend/store.svelte';
   import AddonPicture from '@/frontend/components/AddonPicture.svelte';
 
   interface ConfigTemplateAndInfo extends OGIAddonConfiguration {

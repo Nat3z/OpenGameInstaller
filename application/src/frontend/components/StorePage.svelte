@@ -18,7 +18,7 @@
     selectedView,
     viewOpenedWhenChanged,
     currentDownloads,
-  } from '@/frontend/store';
+  } from '@/frontend/store.svelte';
   import type { LibraryInfo, SearchResult, StoreData } from '@ogi-sdk/connect';
   import AddonPicture from '@/frontend/components/AddonPicture.svelte';
   import Modal from '@/frontend/components/modal/Modal.svelte';
@@ -245,11 +245,13 @@
       }
 
       searchPromises.push(
-        (addonServer.addon(addon.id).search({
-          appID: appID,
-          storefront: storefront,
-          for: alreadyOwns ? 'task' : 'game',
-        }) as Promise<SearchResult[]>)
+        (
+          addonServer.addon(addon.id).search({
+            appID: appID,
+            storefront: storefront,
+            for: alreadyOwns ? 'task' : 'game',
+          }) as Promise<SearchResult[]>
+        )
           .then((searchResults = []) => {
             const mappedResults = searchResults.map((result: SearchResult) => {
               return {

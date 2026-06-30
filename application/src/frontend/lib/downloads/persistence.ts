@@ -3,7 +3,7 @@ import {
   redistributableInstalls,
   type DownloadStatusAndInfo,
   type RedistributableInstall,
-} from '@/frontend/store';
+} from '@/frontend/store.svelte';
 import { getPersistedFilePaths } from '@/frontend/lib/downloads/paths';
 import { get } from 'svelte/store';
 

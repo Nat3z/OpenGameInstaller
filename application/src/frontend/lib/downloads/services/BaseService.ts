@@ -1,4 +1,7 @@
-import { currentDownloads, type DownloadStatusAndInfo } from '@/frontend/store';
+import {
+  currentDownloads,
+  type DownloadStatusAndInfo,
+} from '@/frontend/store.svelte';
 import { updateDownloadStatus } from '@/frontend/utils';
 import { getDownloadPath } from '@/frontend/lib/core/fs';
 import { safeDownloadPath } from '@/frontend/lib/downloads/paths';
@@ -72,7 +75,8 @@ export abstract class BaseService {
       status: 'downloading',
       usedDebridService: usedDebridService as any,
       downloadPath: downloadPath,
-      queuePosition: flushed[downloadId]?.queuePosition ?? flushed[tempid]?.queuePosition,
+      queuePosition:
+        flushed[downloadId]?.queuePosition ?? flushed[tempid]?.queuePosition,
       downloadURL: downloadUrl,
       ...(files && { files }),
       ...((result.downloadType === 'torrent' ||

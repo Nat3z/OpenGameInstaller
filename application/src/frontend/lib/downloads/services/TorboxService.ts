@@ -1,4 +1,4 @@
-import { currentDownloads } from '@/frontend/store';
+import { currentDownloads } from '@/frontend/store.svelte';
 import { getDownloadPath, listenUntilDownloadReady } from '@/frontend/utils';
 import { getConfigClientOption } from '@/frontend/lib/config/client';
 import type { SearchResultWithAddon } from '@/frontend/lib/tasks/runner';

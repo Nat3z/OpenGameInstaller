@@ -5,7 +5,7 @@ import {
   setupLogs,
   type FailedSetup,
   type DownloadStatusAndInfo,
-} from '@/frontend/store';
+} from '@/frontend/store.svelte';
 import type { SetupCommandData } from '@ogi-sdk/connect';
 import {
   unrarAndReturnOutputDir,

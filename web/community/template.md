@@ -3,6 +3,7 @@ name: YOUR ADDON NAME
 author: AUTHOR NAME
 source: YOUR REPO LINK
 img: A NICE IMG :)
+pinnedCommit: LONG COMMIT HASH
 ---
 
 **BRIEF** ADDON DESCRIPTION HERE

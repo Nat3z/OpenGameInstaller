@@ -369,9 +369,9 @@
               try {
                 config[key].forEach((line: string) => {
                   if (!line || line.length === 0) return;
-                  if (line.startsWith('local:')) {
+                  if (line.startsWith('local@')) {
                     if (
-                      !window.electronAPI.fs.exists(line.split('local:')[1])
+                      !window.electronAPI.fs.exists(line.split('local@')[1])
                     ) {
                       createNotification({
                         id: Math.random().toString(36).substring(7),

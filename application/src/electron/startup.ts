@@ -634,8 +634,8 @@ export async function reinstallAddonDependencies(
       let addonPath = '';
       let addonName = addon.split(/\/|\\/).pop() ?? 'unknown';
 
-      if (addon.startsWith('local:')) {
-        addonPath = addon.split('local:')[1];
+      if (addon.startsWith('local@')) {
+        addonPath = addon.split('local@')[1];
       } else {
         addonPath = join(__dirname, 'addons', addonName);
       }
@@ -814,8 +814,8 @@ export async function checkForAddonUpdates(
   for (const addon of addons) {
     let addonPath = '';
     const addonName = addon.split(/\/|\\/).pop()!!;
-    if (addon.startsWith('local:')) {
-      addonPath = addon.split('local:')[1];
+    if (addon.startsWith('local@')) {
+      addonPath = addon.split('local@')[1];
     } else {
       addonPath = join(__dirname, 'addons', addonName);
     }

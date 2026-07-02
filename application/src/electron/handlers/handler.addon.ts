@@ -5,9 +5,9 @@ import { exec, spawn } from 'child_process';
 import { Addon } from '@/electron/manager/manager.addon.js';
 import { __dirname } from '@/electron/manager/manager.paths.js';
 import {
-  addonServer,
   port,
   startAddonServer,
+  stopAddonServer,
 } from '@/electron/server/addon-server.js';
 import { sendIPCMessage, sendNotification } from '@/electron/main.js';
 import axios from 'axios';
@@ -27,7 +27,10 @@ function isGitRepository(addonPath: string): boolean {
 
   const stat = fs.statSync(gitPath);
   if (stat.isDirectory()) {
-    return fs.existsSync(join(gitPath, 'HEAD')) && fs.existsSync(join(gitPath, 'config'));
+    return (
+      fs.existsSync(join(gitPath, 'HEAD')) &&
+      fs.existsSync(join(gitPath, 'config'))
+    );
   }
 
   if (stat.isFile()) {
@@ -95,17 +98,40 @@ export async function startAddons(): Promise<void> {
   console.log('All addons started');
 }
 
+const HEALTH_CHECK_INTERVAL_MS = 500;
+const MAX_ATTEMPTS_HEALTH_CHECK = 60;
+const HEALTH_CHECK_TIMEOUT_MS =
+  MAX_ATTEMPTS_HEALTH_CHECK * HEALTH_CHECK_INTERVAL_MS;
 export async function restartAddonServer(): Promise<void> {
   // stop the server
   console.log('Stopping server...');
-  addonServer.stop();
+  await stopAddonServer();
   // stop all of the addons
   for (const instance of [...Addon.running.values()]) {
     console.log(`Stopping addon ${instance.config.path}`);
     instance.stop();
   }
   // start the server and wait for it to be listening before starting addons
+
   await startAddonServer();
+  const checkHealth = async () => {
+    try {
+      await axios.get(`http://localhost:${port}/health`, { timeout: 500 });
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  let attempts = 0;
+  while (!(await checkHealth()) && attempts < MAX_ATTEMPTS_HEALTH_CHECK) {
+    await new Promise((res) => setTimeout(res, HEALTH_CHECK_INTERVAL_MS));
+    attempts++;
+  }
+  if (attempts === MAX_ATTEMPTS_HEALTH_CHECK) {
+    throw new Error(
+      `Failed to start addon server: health check failed after ${attempts} attempts (${HEALTH_CHECK_TIMEOUT_MS / 1000}s)`
+    );
+  }
   console.log(`Addon Server is running on http://localhost:${port}`);
   console.log(`Server is being executed by electron!`);
   await startAddons();

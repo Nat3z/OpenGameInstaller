@@ -17,6 +17,8 @@ import { app, BrowserWindow } from 'electron';
 import { sendNotification } from '@/electron/main.js';
 import semver from 'semver';
 import { Addon } from '@/electron/manager/manager.addon.js';
+import { loadMarketplace } from '@/electron/handlers/handler.addon.js';
+import { tryCatch } from '@/electron/lib/tryCatch.js';
 
 const UMU_RELEASES_URL =
   'https://api.github.com/repos/Open-Wine-Components/umu-launcher/releases/latest';
@@ -756,50 +758,6 @@ function isGitRepository(repoPath: string): boolean {
   return false;
 }
 
-async function checkForGitUpdates(repoPath: string): Promise<boolean> {
-  if (!isGitRepository(repoPath)) {
-    console.log(
-      `Skipping git update check for ${repoPath}: not a valid git repository`
-    );
-    return false;
-  }
-
-  // Change the directory to the repository path and run 'git fetch --dry-run'
-  return new Promise((resolve, _) => {
-    exec(
-      'git fetch --dry-run',
-      {
-        cwd: repoPath,
-        env: { ...process.env, LANG: 'en_US.UTF-8', LD_PRELOAD: '' },
-      },
-      (error, stdout, stderr) => {
-        if (error) {
-          sendNotification({
-            message: 'Failed to check for updates',
-            id: Math.random().toString(36).substring(7),
-            type: 'error',
-          });
-          console.log(error);
-          resolve(false);
-          return;
-        }
-
-        // If stdout is not empty, it means there are updates
-        // auto remove the warning:
-        const output = stdout + stderr;
-        const cleanedOutput = output.replace(/warning: redirecting to .*/, '');
-        console.log(cleanedOutput);
-
-        if (cleanedOutput.trim()) {
-          resolve(true);
-        } else {
-          resolve(false);
-        }
-      }
-    );
-  });
-}
-
 export async function checkForAddonUpdates(
   mainWindow: BrowserWindow
 ): Promise<void> {
@@ -811,14 +769,16 @@ export async function checkForAddonUpdates(
   );
   const addons = generalConfig.addons as string[];
   const promises: Promise<void>[] = [];
-  for (const addon of addons) {
-    let addonPath = '';
-    const addonName = addon.split(/\/|\\/).pop()!!;
-    if (addon.startsWith('local@')) {
-      addonPath = addon.split('local@')[1];
-    } else {
-      addonPath = join(__dirname, 'addons', addonName);
-    }
+  for (const addonWithMarketplaceUrl of addons) {
+    if (addonWithMarketplaceUrl.startsWith('local@')) continue;
+    let addonPath = join(
+      __dirname,
+      'addons',
+      addonWithMarketplaceUrl.split('@')[1].split(/\/|\\/).pop()!!
+    );
+    const addonName = addonWithMarketplaceUrl.split(/\/|\\/).pop()!!;
+    const atSplit = addonWithMarketplaceUrl.split('@');
+    const marketplaceUrl = atSplit[0];
 
     if (!isGitRepository(addonPath)) {
       console.log(
@@ -829,14 +789,47 @@ export async function checkForAddonUpdates(
 
     promises.push(
       (async () => {
-        const isUpdate = await checkForGitUpdates(addonPath);
+        const marketplace = await loadMarketplace(marketplaceUrl);
+        if (!marketplace) {
+          console.warn(`Failed to load marketplace for ${addonName}`);
+          return;
+        }
+
+        // get the addon and compare the commit hashes
+        const addonGit = new Addon.Git({
+          path: addonPath,
+        });
+
+        const localHash = await addonGit.getCurrentHash();
+        const remoteHash = marketplace.getAddon(addonName)?.pinnedCommit!;
+        let isUpdate = localHash !== remoteHash;
+
+        if (remoteHash === 'latest') {
+          // dry fetch dry run - check if updates are available
+          const status = await tryCatch(async () => {
+            return await addonGit.fetch();
+          });
+          if (status.error) {
+            console.error(
+              `[startup] Error checking updates for ${addonName}:`,
+              status.error
+            );
+            return;
+          }
+          if (status.data.alreadyUpToDate) {
+            isUpdate = false;
+          }
+        }
         if (isUpdate) {
           sendNotification({
             message: `Addon ${addonName} has updates.`,
             id: Math.random().toString(36).substring(7),
             type: 'info',
           });
-          mainWindow?.webContents.send('addon:update-available', addon);
+          mainWindow?.webContents.send(
+            'addon:update-available',
+            addonWithMarketplaceUrl
+          );
           console.log(`Addon ${addonName} has updates.`);
         } else {
           console.log(`Addon ${addonName} is up to date.`);

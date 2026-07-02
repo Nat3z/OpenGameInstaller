@@ -12,6 +12,7 @@ export default defineConfig({
     },
     plugins: [externalizeDepsPlugin({ exclude: ['ogi-addon'] })],
     build: {
+      sourcemap: true,
       rollupOptions: {
         input: {
           index: resolve(__dirname, 'src/electron/main.ts'),
@@ -28,6 +29,7 @@ export default defineConfig({
     },
     plugins: [externalizeDepsPlugin({ exclude: ['ogi-addon'] })],
     build: {
+      sourcemap: true,
       rollupOptions: {
         input: {
           index: resolve(__dirname, 'src/electron/preload.mts'),
@@ -46,6 +48,7 @@ export default defineConfig({
     root: '.',
     publicDir: 'public',
     build: {
+      sourcemap: true,
       rollupOptions: {
         input: {
           index: resolve(__dirname, 'index.html'),

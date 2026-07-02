@@ -153,11 +153,15 @@ export async function restartAddonServer(): Promise<void> {
   });
 }
 
-async function loadMarketplace(url: string): Promise<AddonMarketplace> {
+export async function loadMarketplace(url: string): Promise<AddonMarketplace> {
   let marketplace = loadedMarketplaces.find((m) => m.url === url);
   if (!marketplace) {
     const newMarketplace = new AddonMarketplace(url);
     await newMarketplace.fetch();
+    console.log(
+      `[addon-handler] Loaded marketplace from ${url}.`,
+      newMarketplace.getAddons()
+    );
     loadedMarketplaces.push(newMarketplace);
     marketplace = newMarketplace;
   }
@@ -385,7 +389,13 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
         continue;
       }
 
+      if (marketplaceUrl === 'local') {
+        updatePromises.push(Promise.resolve());
+        continue;
+      }
+
       const updatePromise = new Promise<void>(async (resolve, reject) => {
+        console.log(addonPath);
         const addonJSON = Addon.Setup.loadAddonConfig(addonPath);
         const addonSetup = new Addon.Setup({
           name: addonName,
@@ -409,6 +419,7 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
           return;
         }
         const fetchData = fetchResult.data;
+        console.log(marketplaceUrl, addonName, gitUrl);
         const marketplace = await loadMarketplace(marketplaceUrl);
 
         const marketplaceAddon = marketplace.getAddon(gitUrl);

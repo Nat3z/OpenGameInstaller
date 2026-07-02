@@ -15,9 +15,8 @@ import axios from 'axios';
 import { AddonConnection } from '@ogi-sdk/addon-server';
 import { deleteInstalledAddon } from '@/electron/server/addon-lifecycle.js';
 import { waitForAddonsConfigured } from '@/electron/manager/manager.addon-readiness.js';
-import { AddonMarketplace } from 'lib/marketplace';
-import { AddonFileConfiguration } from '@ogi-sdk/executor';
-import { tryCatch } from 'lib/tryCatch';
+import { AddonMarketplace } from '@/electron/lib/marketplace.js';
+import { tryCatch } from '@/electron/lib/tryCatch.js';
 
 function isGitRepository(addonPath: string): boolean {
   if (!fs.existsSync(addonPath)) {
@@ -68,8 +67,8 @@ export async function startAddons(): Promise<void> {
   let promises: Promise<AddonConnection | undefined>[] = [];
   for (const addon of addons) {
     let addonPath = '';
-    if (addon.startsWith('local:')) {
-      addonPath = addon.split('local:')[1];
+    if (addon.startsWith('local@')) {
+      addonPath = addon.split('local@')[1];
     } else {
       addonPath = join(__dirname, 'addons', addon.split(/\/|\\/).pop()!!);
     }

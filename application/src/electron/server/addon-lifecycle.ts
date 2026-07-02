@@ -33,11 +33,11 @@ export async function deleteInstalledAddon(
   if (!client.addonInfo) {
     return { success: false, message: 'Client has no addon info' };
   }
-  if (!client.addonLink || client.addonLink.startsWith('local:')) {
+  if (!client.addonLink || client.addonLink.startsWith('local@')) {
     return {
       success: false,
       message:
-        'Addon was not spawned by OpenGameInstaller or is a "local:..." addon.',
+        'Addon was not spawned by OpenGameInstaller or is a "local@..." addon.',
     };
   }
 

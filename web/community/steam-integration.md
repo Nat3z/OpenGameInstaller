@@ -3,7 +3,7 @@ name: Steam Catalog
 author: OGI Team
 source: https://github.com/Nat3z/steam-integration
 img: https://github.com/Nat3z/steam-integration/blob/main/icon.png?raw=true
-pinnedCommit: 83e0e2006b26f32829a340e78d18197893c8bb6c
+pinnedCommit: a2e1961cfcc7651d7c7d99551a1bf5df68a166ae
 ---
 
 An addon that allows you to search for games on Steam.

@@ -26,7 +26,7 @@ export class AddonSetup {
     path: string
   ): z.infer<typeof AddonFileConfigurationSchema> {
     const addonConfig = readFileSync(join(path, 'addon.json'), 'utf-8');
-    return AddonFileConfigurationSchema.parse(addonConfig);
+    return AddonFileConfigurationSchema.parse(JSON.parse(addonConfig));
   }
 
   private runScript(script: string) {

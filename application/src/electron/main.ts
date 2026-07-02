@@ -1,3 +1,4 @@
+import '@/electron/lib/source-maps.js';
 import { join } from 'path';
 import { quote as shellQuote } from 'shell-quote';
 import {

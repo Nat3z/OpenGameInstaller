@@ -758,7 +758,6 @@ class Download {
         : 0;
       const acceptRanges = headResponse.headers['accept-ranges'];
       const supportsRange = acceptRanges === 'bytes';
-      console.log(job.headers);
 
       const parallelLimit = mergeParallelLimits(
         parseParallelLimitHeader(job.headers),

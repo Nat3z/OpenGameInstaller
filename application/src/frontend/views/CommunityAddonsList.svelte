@@ -38,6 +38,23 @@
     await reconnectClientSdk();
   }
 
+  function addonConfigMatchesSource(configAddon: string, addonSource: string) {
+    return (
+      configAddon === addonSource ||
+      configAddon === `git@${addonSource}` ||
+      configAddon.endsWith(`@${addonSource}`)
+    );
+  }
+
+  function addonInstalled(addon: CommunityAddon) {
+    return (
+      currentAddons.addons &&
+      currentAddons.addons.some((source: string) =>
+        addonConfigMatchesSource(source, addon.source)
+      )
+    );
+  }
+
   async function deleteAddon(addon: CommunityAddon) {
     console.log(`Deleting ${addon.name} by ${addon.author}`);
 
@@ -45,7 +62,7 @@
       currentAddons.addons = [];
     }
     currentAddons.addons = currentAddons.addons.filter(
-      (source: string) => source !== addon.source
+      (source: string) => !addonConfigMatchesSource(source, addon.source)
     );
     window.electronAPI.fs.write(
       './config/option/general.json',
@@ -144,8 +161,7 @@
           <div
             class="flex flex-row items-center justify-start hover:cursor-pointer"
             onclick={() =>
-              currentAddons.addons &&
-              currentAddons.addons.includes(addon.source)
+              addonInstalled(addon)
                 ? deleteAddonWarning(addon)
                 : openWarningModal(urlKey, addon)}
           >
@@ -161,7 +177,7 @@
               </div>
             </div>
             <div class="addon-actions">
-              {#if currentAddons.addons && currentAddons.addons.includes(addon.source)}
+              {#if addonInstalled(addon)}
                 <button
                   onclick={() => deleteAddonWarning(addon)}
                   id={`delete-addon-${addon.source}`}

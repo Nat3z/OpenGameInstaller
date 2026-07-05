@@ -1,24 +1,27 @@
+import type { LibraryInfo } from '@ogi-sdk/connect';
 import { exec } from 'child_process';
-import { __dirname } from '@/electron/manager/manager.paths.js';
-import { dirname, isAbsolute, join, resolve } from 'path';
+import { app, BrowserWindow } from 'electron';
 import * as fs from 'fs';
 import * as fsPromises from 'fs/promises';
-import path from 'path';
 import {
-  existsSync,
-  readdirSync,
-  statSync,
   copyFileSync,
+  existsSync,
   mkdirSync,
+  readdirSync,
   rmSync,
+  statSync,
 } from 'original-fs';
-import type { LibraryInfo } from '@ogi-sdk/connect';
-import { app, BrowserWindow } from 'electron';
-import { sendNotification } from '@/electron/main.js';
+import path, { dirname, isAbsolute, join, resolve } from 'path';
 import semver from 'semver';
-import { Addon } from '@/electron/manager/manager.addon.js';
 import { loadMarketplace } from '@/electron/handlers/handler.addon.js';
+import {
+  normalizeAddonLink,
+  parseAddonLink,
+} from '@/electron/lib/addon-links.js';
 import { tryCatch } from '@/electron/lib/tryCatch.js';
+import { sendNotification } from '@/electron/main.js';
+import { Addon } from '@/electron/manager/manager.addon.js';
+import { __dirname } from '@/electron/manager/manager.paths.js';
 
 const UMU_RELEASES_URL =
   'https://api.github.com/repos/Open-Wine-Components/umu-launcher/releases/latest';
@@ -389,7 +392,7 @@ async function* copyDirectoryAsyncRestore(
 ): AsyncGenerator<{ file: string; success: boolean; error?: string }> {
   if (!existsSync(source)) return;
 
-  let stat;
+  let stat: ReturnType<typeof statSync>;
   try {
     stat = statSync(source);
   } catch (err: any) {
@@ -633,11 +636,12 @@ export async function reinstallAddonDependencies(
     let current = 0;
     for (const addon of addons) {
       current++;
+      const parsedAddon = parseAddonLink(addon);
       let addonPath = '';
-      let addonName = addon.split(/\/|\\/).pop() ?? 'unknown';
+      let addonName = parsedAddon.addonName || 'unknown';
 
-      if (addon.startsWith('local@')) {
-        addonPath = addon.split('local@')[1];
+      if (parsedAddon.kind === 'local') {
+        addonPath = parsedAddon.path;
       } else {
         addonPath = join(__dirname, 'addons', addonName);
       }
@@ -768,17 +772,13 @@ export async function checkForAddonUpdates(
     fs.readFileSync(join(__dirname, 'config/option/general.json'), 'utf-8')
   );
   const addons = generalConfig.addons as string[];
+  const normalizedAddons = addons.map((addon) => normalizeAddonLink(addon));
   const promises: Promise<void>[] = [];
-  for (const addonWithMarketplaceUrl of addons) {
-    if (addonWithMarketplaceUrl.startsWith('local@')) continue;
-    let addonPath = join(
-      __dirname,
-      'addons',
-      addonWithMarketplaceUrl.split('@')[1].split(/\/|\\/).pop()!!
-    );
-    const addonName = addonWithMarketplaceUrl.split(/\/|\\/).pop()!!;
-    const atSplit = addonWithMarketplaceUrl.split('@');
-    const marketplaceUrl = atSplit[0];
+  for (const addonWithMarketplaceUrl of normalizedAddons) {
+    const parsedAddon = parseAddonLink(addonWithMarketplaceUrl);
+    if (parsedAddon.kind === 'local') continue;
+    let addonPath = join(__dirname, 'addons', parsedAddon.addonName);
+    const addonName = parsedAddon.addonName;
 
     if (!isGitRepository(addonPath)) {
       console.log(
@@ -789,20 +789,34 @@ export async function checkForAddonUpdates(
 
     promises.push(
       (async () => {
-        const marketplace = await loadMarketplace(marketplaceUrl);
-        if (!marketplace) {
-          console.warn(`Failed to load marketplace for ${addonName}`);
-          return;
-        }
-
         // get the addon and compare the commit hashes
         const addonGit = new Addon.Git({
           path: addonPath,
         });
 
         const localHash = await addonGit.getCurrentHash();
-        const remoteHash = marketplace.getAddon(addonName)?.pinnedCommit!;
-        let isUpdate = localHash !== remoteHash;
+        let remoteHash = 'latest';
+        let isUpdate = false;
+
+        if (parsedAddon.kind === 'marketplace') {
+          const marketplace = await loadMarketplace(parsedAddon.marketplaceUrl);
+          if (!marketplace) {
+            console.warn(`Failed to load marketplace for ${addonName}`);
+            return;
+          }
+          remoteHash =
+            marketplace.getAddon(parsedAddon.gitUrl)?.pinnedCommit ?? 'latest';
+          isUpdate = localHash !== remoteHash;
+        }
+
+        console.log(
+          '[startup] Checking update for',
+          addonName,
+          'local:',
+          localHash,
+          'remote:',
+          remoteHash
+        );
 
         if (remoteHash === 'latest') {
           // dry fetch dry run - check if updates are available
@@ -816,9 +830,7 @@ export async function checkForAddonUpdates(
             );
             return;
           }
-          if (status.data.alreadyUpToDate) {
-            isUpdate = false;
-          }
+          isUpdate = !status.data.alreadyUpToDate;
         }
         if (isUpdate) {
           sendNotification({

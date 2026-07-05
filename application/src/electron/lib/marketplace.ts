@@ -1,6 +1,6 @@
 import axios from 'axios';
-import { tryCatch } from './tryCatch';
 import { z } from 'zod';
+import { tryCatch } from './tryCatch';
 
 const communityAddon = z.object({
   name: z.string(),
@@ -13,14 +13,27 @@ const communityAddon = z.object({
 
 export type CommunityAddon = z.infer<typeof communityAddon>;
 
+function getMarketplaceJsonUrl(url: string): string {
+  const marketplaceUrl = new URL(url);
+  const hasFurtherPath = marketplaceUrl.pathname !== '/';
+
+  if (!hasFurtherPath) {
+    marketplaceUrl.pathname = '/api/marketplace.json';
+  }
+
+  return marketplaceUrl.toString();
+}
+
 export class AddonMarketplace {
   private addons: CommunityAddon[];
   constructor(public url: string) {}
   async fetch() {
     let result = await tryCatch(async () => {
+      const marketplaceJsonUrl = getMarketplaceJsonUrl(this.url);
+
       return communityAddon.array().parse(
         (
-          await axios.get(this.url + '/api/marketplace.json', {
+          await axios.get(marketplaceJsonUrl, {
             method: 'GET',
             headers: {
               'Content-Type': 'application/json',

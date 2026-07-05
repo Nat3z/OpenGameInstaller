@@ -47,13 +47,13 @@
     "build": "tsdown --config tsdown.config.js && bun run --filter '../../packages/addon-server' generate:event-proxy",
     "typecheck": "tsc --noEmit",
     "release": "bun run build && npm publish",
-    "format": "prettier --write \"src/**/*.{ts,svelte,json}\"",
+    "format": "biome format --write src package.json --files-ignore-unknown=true",
+    "lint": "biome lint src package.json --files-ignore-unknown=true",
     "release-beta": "bun run build && npm publish --tag future"
   },
   "devDependencies": {
     "@types/minimatch": "^6.0.0",
     "@types/node": "^20.14.12",
-    "prettier": "^3.6.0",
     "tsdown": "^0.20.0-beta.4",
     "typescript": "^5.0.0"
   }

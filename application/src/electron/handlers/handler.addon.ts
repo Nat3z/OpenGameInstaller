@@ -1,22 +1,26 @@
+import { AddonConnection } from '@ogi-sdk/addon-server';
+import axios from 'axios';
+import { exec } from 'child_process';
 import { BrowserWindow, ipcMain } from 'electron';
 import fs from 'fs';
 import fsAsync from 'fs/promises';
 import { dirname, isAbsolute, join, resolve } from 'path';
-import { exec } from 'child_process';
+import {
+  normalizeAddonLink,
+  parseAddonLink,
+} from '@/electron/lib/addon-links.js';
+import { AddonMarketplace } from '@/electron/lib/marketplace.js';
+import { tryCatch } from '@/electron/lib/tryCatch.js';
+import { sendIPCMessage, sendNotification } from '@/electron/main.js';
 import { Addon } from '@/electron/manager/manager.addon.js';
+import { waitForAddonsConfigured } from '@/electron/manager/manager.addon-readiness.js';
 import { __dirname } from '@/electron/manager/manager.paths.js';
+import { deleteInstalledAddon } from '@/electron/server/addon-lifecycle.js';
 import {
   port,
   startAddonServer,
   stopAddonServer,
 } from '@/electron/server/addon-server.js';
-import { sendIPCMessage, sendNotification } from '@/electron/main.js';
-import axios from 'axios';
-import { AddonConnection } from '@ogi-sdk/addon-server';
-import { deleteInstalledAddon } from '@/electron/server/addon-lifecycle.js';
-import { waitForAddonsConfigured } from '@/electron/manager/manager.addon-readiness.js';
-import { AddonMarketplace } from '@/electron/lib/marketplace.js';
-import { tryCatch } from '@/electron/lib/tryCatch.js';
 
 function isGitRepository(addonPath: string): boolean {
   if (!fs.existsSync(addonPath)) {
@@ -66,11 +70,12 @@ export async function startAddons(): Promise<void> {
   const addons = generalConfig.addons as string[];
   let promises: Promise<AddonConnection | undefined>[] = [];
   for (const addon of addons) {
+    const parsedAddon = parseAddonLink(addon);
     let addonPath = '';
-    if (addon.startsWith('local@')) {
-      addonPath = addon.split('local@')[1];
+    if (parsedAddon.kind === 'local') {
+      addonPath = parsedAddon.path;
     } else {
-      addonPath = join(__dirname, 'addons', addon.split(/\/|\\/).pop()!!);
+      addonPath = join(__dirname, 'addons', parsedAddon.addonName);
     }
 
     if (!fs.existsSync(addonPath)) {
@@ -95,7 +100,7 @@ export async function startAddons(): Promise<void> {
         if (!instance) {
           return undefined;
         }
-        return instance.startRegistered(addon);
+        return instance.startRegistered(parsedAddon.normalized);
       })()
     );
   }
@@ -218,14 +223,14 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
     }
 
     for (const addonUrlWithMarketplace of addons) {
-      const addonName = addonUrlWithMarketplace.split(/\/|\\/).pop()!!;
-      const isLocal = addonUrlWithMarketplace.startsWith('local@');
-      const atSplit = addonUrlWithMarketplace.split('@', 2);
-      const marketplaceUrl = atSplit[0];
-      const gitUrl = atSplit[1];
+      const parsedAddon = parseAddonLink(addonUrlWithMarketplace);
+      const addonName = parsedAddon.addonName;
+      const isLocal = parsedAddon.kind === 'local';
+      const gitUrl =
+        parsedAddon.kind === 'local' ? undefined : parsedAddon.gitUrl;
       let addonPath = join(__dirname, `addons/${addonName}`);
-      if (addonUrlWithMarketplace.startsWith('local@')) {
-        addonPath = addonUrlWithMarketplace.split('local@')[1];
+      if (parsedAddon.kind === 'local') {
+        addonPath = parsedAddon.path;
       }
       if (fs.existsSync(join(addonPath, 'installation.log'))) {
         console.log(`Addon ${addonName} already installed and setup.`);
@@ -237,13 +242,10 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
         continue;
       }
 
-      // add/get the marketplace commit hash info
-      let marketplace = await loadMarketplace(marketplaceUrl);
-
       if (!isLocal && !fs.existsSync(join(addonPath, 'addon.json'))) {
         // Validate git URL/SSH pattern before cloning
         const gitUrlPattern = /^(https?:\/\/|git@|ssh:\/\/)[^\s]+$/;
-        if (!gitUrlPattern.test(gitUrl)) {
+        if (!gitUrl || !gitUrlPattern.test(gitUrl)) {
           sendNotification({
             message: `Invalid git URL format for addon ${addonName}`,
             id: Math.random().toString(36).substring(7),
@@ -255,24 +257,29 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
         const unloadedAddon = new Addon.Git({ path: addonPath });
         await unloadedAddon.clone(gitUrl);
 
-        // now get the latest pinned commit hash and checkout to there
-        const addonFromMarketplace = marketplace.getAddon(gitUrl);
-        if (!addonUrlWithMarketplace) {
-          sendNotification({
-            message: `Addon ${addonName} not found in marketplace.`,
-            id: Math.random().toString(36).substring(7),
-            type: 'error',
-          });
-          continue;
-        }
+        if (parsedAddon.kind === 'marketplace') {
+          const marketplace = await loadMarketplace(parsedAddon.marketplaceUrl);
+          // now get the latest pinned commit hash and checkout to there
+          const addonFromMarketplace = marketplace.getAddon(gitUrl);
+          if (!addonFromMarketplace) {
+            sendNotification({
+              message: `Addon ${addonName} not found in marketplace.`,
+              id: Math.random().toString(36).substring(7),
+              type: 'error',
+            });
+            continue;
+          }
 
-        if (
-          addonFromMarketplace?.pinnedCommit &&
-          addonFromMarketplace.pinnedCommit !== 'latest'
-        )
-          await unloadedAddon.checkoutCommit(addonFromMarketplace.pinnedCommit);
-        else {
-          console.log('Defaulting to latest commit.');
+          if (
+            addonFromMarketplace.pinnedCommit &&
+            addonFromMarketplace.pinnedCommit !== 'latest'
+          )
+            await unloadedAddon.checkoutCommit(
+              addonFromMarketplace.pinnedCommit
+            );
+          else {
+            console.log('Defaulting to latest commit.');
+          }
         }
       }
 
@@ -290,7 +297,7 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
           id: Math.random().toString(36).substring(7),
           type: 'success',
         });
-        stagedUpdate.addons.push(addonPath);
+        stagedUpdate.addons.push(parsedAddon.normalized);
       }
     }
     await fsAsync.writeFile(
@@ -360,24 +367,25 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
       fs.readFileSync(join(__dirname, 'config/option/general.json'), 'utf-8')
     );
     const addons = generalConfig.addons as string[];
+    const normalizedAddons = addons.map((addon) => normalizeAddonLink(addon));
 
     const updatePromises: Promise<void>[] = [];
 
-    for (const addonWithMarketplace of addons) {
+    for (const addonWithMarketplace of normalizedAddons) {
+      const parsedAddon = parseAddonLink(addonWithMarketplace);
       let addonPath = '';
-      let atSplit = addonWithMarketplace.split('@', 2);
-      let marketplaceUrl = atSplit[0];
-      let gitUrl = atSplit[1];
-      let addonName = addonWithMarketplace.split(/\/|\\/).pop()!!;
+      let marketplaceUrl =
+        parsedAddon.kind === 'marketplace'
+          ? parsedAddon.marketplaceUrl
+          : parsedAddon.kind;
+      let gitUrl =
+        parsedAddon.kind === 'local' ? undefined : parsedAddon.gitUrl;
+      let addonName = parsedAddon.addonName;
 
-      if (addonWithMarketplace.startsWith('local@')) {
-        addonPath = addonWithMarketplace.split('local@')[1];
+      if (parsedAddon.kind === 'local') {
+        addonPath = parsedAddon.path;
       } else {
-        addonPath = join(
-          __dirname,
-          'addons',
-          addonWithMarketplace.split(/\/|\\/).pop()!!
-        );
+        addonPath = join(__dirname, 'addons', parsedAddon.addonName);
       }
 
       if (!isGitRepository(addonPath)) {
@@ -389,7 +397,7 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
         continue;
       }
 
-      if (marketplaceUrl === 'local') {
+      if (parsedAddon.kind === 'local') {
         updatePromises.push(Promise.resolve());
         continue;
       }
@@ -420,22 +428,47 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
         }
         const fetchData = fetchResult.data;
         console.log(marketplaceUrl, addonName, gitUrl);
-        const marketplace = await loadMarketplace(marketplaceUrl);
+        let alreadyUpToDate = fetchData.alreadyUpToDate;
 
-        const marketplaceAddon = marketplace.getAddon(gitUrl);
-        if (!marketplaceAddon) {
-          sendNotification({
-            message: `Could not find ${addonName} in marketplace.`,
-            id: Math.random().toString(36).substring(7),
-            type: 'error',
-          });
-          reject(new Error(`Could not find ${addonName} in marketplace.`));
-          return;
-        }
+        if (parsedAddon.kind === 'marketplace') {
+          const marketplace = await loadMarketplace(parsedAddon.marketplaceUrl);
 
-        const alreadyUpToDate =
-          fetchData.currentHash === marketplaceAddon.pinnedCommit;
-        if (alreadyUpToDate && (await addonSetup.isInstalled())) {
+          const marketplaceAddon = marketplace.getAddon(gitUrl!);
+          if (!marketplaceAddon) {
+            sendNotification({
+              message: `Could not find ${addonName} in marketplace.`,
+              id: Math.random().toString(36).substring(7),
+              type: 'error',
+            });
+            reject(new Error(`Could not find ${addonName} in marketplace.`));
+            return;
+          }
+
+          const pinnedCommit = marketplaceAddon.pinnedCommit ?? 'latest';
+          alreadyUpToDate =
+            pinnedCommit === 'latest'
+              ? fetchData.alreadyUpToDate
+              : fetchData.currentHash === pinnedCommit;
+          if (alreadyUpToDate && (await addonSetup.isInstalled())) {
+            sendNotification({
+              message: `Addon ${addonName} is already up to date.`,
+              id: Math.random().toString(36).substring(7),
+              type: 'info',
+            });
+            mainWindow!!.webContents.send(
+              'addon:updated',
+              addonWithMarketplace
+            );
+            resolve();
+            return;
+          }
+
+          if (pinnedCommit !== 'latest') {
+            await addonSetup.git.checkoutCommit(pinnedCommit);
+          } else if (!alreadyUpToDate) {
+            await addonSetup.git.pull();
+          }
+        } else if (alreadyUpToDate && (await addonSetup.isInstalled())) {
           sendNotification({
             message: `Addon ${addonName} is already up to date.`,
             id: Math.random().toString(36).substring(7),
@@ -444,6 +477,8 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
           mainWindow!!.webContents.send('addon:updated', addonWithMarketplace);
           resolve();
           return;
+        } else {
+          await addonSetup.git.pull();
         }
 
         if (alreadyUpToDate) {
@@ -454,9 +489,6 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
           // get rid of the installation log because not up-to-date
           fs.unlinkSync(join(addonPath, 'installation.log'));
         }
-
-        // now switch to commit and install
-        await addonSetup.git.checkoutCommit(marketplaceAddon.pinnedCommit);
 
         void Addon.load(addonPath).then(async (instance) => {
           if (!instance) {

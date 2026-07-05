@@ -1,54 +1,98 @@
 <script lang="ts">
-  import {
-    notifications,
-    notificationHistory,
-    type Notification,
-  } from '@/frontend/store.svelte';
-  import { onMount } from 'svelte';
+import {
+  notifications,
+  notificationHistory,
+  type Notification,
+} from '@/frontend/store.svelte';
+import { onMount } from 'svelte';
 
-  let timers = new Map<
-    string,
-    {
-      timer: ReturnType<typeof setTimeout>;
-      progressTimer: ReturnType<typeof setInterval>;
+let timers = new Map<
+  string,
+  {
+    timer: ReturnType<typeof setTimeout>;
+    progressTimer: ReturnType<typeof setInterval>;
+  }
+>();
+let progressValues = new Map<string, number>();
+
+notifications.subscribe((value) => {
+  // Clear timers for notifications that no longer exist
+  timers.forEach((timerData, id) => {
+    if (!value.find((n) => n.id === id)) {
+      clearTimeout(timerData.timer);
+      clearInterval(timerData.progressTimer);
+      timers.delete(id);
+      progressValues.delete(id);
     }
-  >();
-  let progressValues = new Map<string, number>();
-
-  notifications.subscribe((value) => {
-    // Clear timers for notifications that no longer exist
-    timers.forEach((timerData, id) => {
-      if (!value.find((n) => n.id === id)) {
-        clearTimeout(timerData.timer);
-        clearInterval(timerData.progressTimer);
-        timers.delete(id);
-        progressValues.delete(id);
-      }
-    });
-
-    // Set up timers for new notifications
-    value.forEach((notification) => {
-      if (!timers.has(notification.id)) {
-        startNotificationTimer(notification.id);
-      }
-    });
   });
 
-  function startNotificationTimer(notificationId: string) {
-    const totalDuration = 3000; // 3 seconds
-    const fadeDuration = 500;
-    let elapsed = 0;
-    const progressInterval = 16; // Update progress every 16ms (60fps) for smoother animation
+  // Set up timers for new notifications
+  value.forEach((notification) => {
+    if (!timers.has(notification.id)) {
+      startNotificationTimer(notification.id);
+    }
+  });
+});
 
-    // Start progress timer
+function startNotificationTimer(notificationId: string) {
+  const totalDuration = 3000; // 3 seconds
+  const fadeDuration = 500;
+  let elapsed = 0;
+  const progressInterval = 16; // Update progress every 16ms (60fps) for smoother animation
+
+  // Start progress timer
+  const progressTimer = setInterval(() => {
+    elapsed += progressInterval;
+    const progress = Math.min((elapsed / totalDuration) * 100, 100);
+    progressValues.set(notificationId, progress);
+    progressValues = new Map(progressValues); // Trigger reactivity
+  }, progressInterval);
+
+  // Start dismiss timer
+  const timer = setTimeout(() => {
+    const element = document.getElementById('notification-' + notificationId);
+    if (!element) return;
+
+    element.animate([{ opacity: 1 }, { opacity: 0 }], {
+      duration: fadeDuration,
+      fill: 'forwards',
+    });
+    setTimeout(() => {
+      notifications.update((n) =>
+        n.filter((notification) => notification.id !== notificationId)
+      );
+    }, fadeDuration);
+  }, totalDuration);
+
+  timers.set(notificationId, { timer, progressTimer });
+}
+
+function pauseNotificationTimer(notificationId: string) {
+  const timerData = timers.get(notificationId);
+  if (timerData) {
+    clearTimeout(timerData.timer);
+    clearInterval(timerData.progressTimer);
+  }
+}
+
+function resumeNotificationTimer(notificationId: string) {
+  const currentProgress = progressValues.get(notificationId) || 0;
+  const remainingTime = 3000 * (1 - currentProgress / 100);
+
+  if (remainingTime > 0) {
+    const fadeDuration = 500;
+    const progressInterval = 16; // Update progress every 16ms (60fps) for smoother animation
+    let elapsed = 3000 - remainingTime;
+
+    // Resume progress timer
     const progressTimer = setInterval(() => {
       elapsed += progressInterval;
-      const progress = Math.min((elapsed / totalDuration) * 100, 100);
+      const progress = Math.min((elapsed / 3000) * 100, 100);
       progressValues.set(notificationId, progress);
-      progressValues = progressValues; // Trigger reactivity
+      progressValues = new Map(progressValues); // Trigger reactivity
     }, progressInterval);
 
-    // Start dismiss timer
+    // Resume dismiss timer
     const timer = setTimeout(() => {
       const element = document.getElementById('notification-' + notificationId);
       if (!element) return;
@@ -62,106 +106,60 @@
           n.filter((notification) => notification.id !== notificationId)
         );
       }, fadeDuration);
-    }, totalDuration);
+    }, remainingTime);
 
     timers.set(notificationId, { timer, progressTimer });
   }
+}
 
-  function pauseNotificationTimer(notificationId: string) {
-    const timerData = timers.get(notificationId);
-    if (timerData) {
+function getNotificationIconColor(type: Notification['type']): string {
+  switch (type) {
+    case 'success':
+      return 'var(--theme-success)';
+    case 'error':
+      return 'var(--theme-error)';
+    case 'warning':
+      return 'var(--theme-warning)';
+    case 'info':
+      return 'var(--theme-info)';
+    default:
+      return 'var(--theme-accent-dark)';
+  }
+}
+
+function isCustomEvent(event: Event): event is CustomEvent<Notification> {
+  return (
+    event instanceof CustomEvent &&
+    event.detail &&
+    event.detail.type &&
+    event.detail.message
+  );
+}
+
+document.addEventListener('new-notification', (event) => {
+  // @ts-ignore
+  if (!isCustomEvent(event)) return;
+  const notification = {
+    id: Math.random().toString(36).substring(7),
+    type: event.detail.type,
+    message: event.detail.message,
+    timestamp: Date.now(),
+  };
+
+  // Add to both stores to ensure it appears in both toast and side view
+  notifications.update((update) => [...update, notification]);
+  notificationHistory.update((history) => [notification, ...history]);
+});
+
+onMount(() => {
+  return () => {
+    // Cleanup timers on component destroy
+    timers.forEach((timerData) => {
       clearTimeout(timerData.timer);
       clearInterval(timerData.progressTimer);
-    }
-  }
-
-  function resumeNotificationTimer(notificationId: string) {
-    const currentProgress = progressValues.get(notificationId) || 0;
-    const remainingTime = 3000 * (1 - currentProgress / 100);
-
-    if (remainingTime > 0) {
-      const fadeDuration = 500;
-      const progressInterval = 16; // Update progress every 16ms (60fps) for smoother animation
-      let elapsed = 3000 - remainingTime;
-
-      // Resume progress timer
-      const progressTimer = setInterval(() => {
-        elapsed += progressInterval;
-        const progress = Math.min((elapsed / 3000) * 100, 100);
-        progressValues.set(notificationId, progress);
-        progressValues = progressValues; // Trigger reactivity
-      }, progressInterval);
-
-      // Resume dismiss timer
-      const timer = setTimeout(() => {
-        const element = document.getElementById(
-          'notification-' + notificationId
-        );
-        if (!element) return;
-
-        element.animate([{ opacity: 1 }, { opacity: 0 }], {
-          duration: fadeDuration,
-          fill: 'forwards',
-        });
-        setTimeout(() => {
-          notifications.update((n) =>
-            n.filter((notification) => notification.id !== notificationId)
-          );
-        }, fadeDuration);
-      }, remainingTime);
-
-      timers.set(notificationId, { timer, progressTimer });
-    }
-  }
-
-  function getNotificationIconColor(type: Notification['type']): string {
-    switch (type) {
-      case 'success':
-        return 'var(--theme-success)';
-      case 'error':
-        return 'var(--theme-error)';
-      case 'warning':
-        return 'var(--theme-warning)';
-      case 'info':
-        return 'var(--theme-info)';
-      default:
-        return 'var(--theme-accent-dark)';
-    }
-  }
-
-  function isCustomEvent(event: Event): event is CustomEvent<Notification> {
-    return (
-      event instanceof CustomEvent &&
-      event.detail &&
-      event.detail.type &&
-      event.detail.message
-    );
-  }
-
-  document.addEventListener('new-notification', (event) => {
-    // @ts-ignore
-    if (!isCustomEvent(event)) return;
-    const notification = {
-      id: Math.random().toString(36).substring(7),
-      type: event.detail.type,
-      message: event.detail.message,
-      timestamp: Date.now(),
-    };
-
-    // Add to both stores to ensure it appears in both toast and side view
-    notifications.update((update) => [...update, notification]);
-    notificationHistory.update((history) => [notification, ...history]);
-  });
-
-  onMount(() => {
-    return () => {
-      // Cleanup timers on component destroy
-      timers.forEach((timerData) => {
-        clearTimeout(timerData.timer);
-        clearInterval(timerData.progressTimer);
-      });
-    };
-  });
+    });
+  };
+});
 </script>
 
 <div

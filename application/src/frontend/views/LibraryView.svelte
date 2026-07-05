@@ -477,9 +477,6 @@
     opacity: 1;
     transform: perspective(1000px) rotateX(5deg) scale(1.1) translateY(-12px)
       translateZ(44px);
-    box-shadow:
-      0 28px 42px 0 rgba(0, 0, 0, 0.24),
-      0 10px 16px 0 rgba(0, 0, 0, 0.16);
     z-index: 8;
   }
 

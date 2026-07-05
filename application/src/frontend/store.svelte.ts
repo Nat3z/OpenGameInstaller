@@ -3,7 +3,7 @@ import type {
   SearchResult,
   SetupCommandData,
 } from '@ogi-sdk/connect';
-import { writable, type Writable } from 'svelte/store';
+import { type Writable, writable } from 'svelte/store';
 
 export type DownloadStatusAndInfo = SearchResult & {
   appID: number;
@@ -48,7 +48,7 @@ export type DownloadStatusAndInfo = SearchResult & {
   queuePosition?: number;
   // Additional properties for resume functionality
   originalDownloadURL?: string;
-  originalFiles?: any[];
+  originalFiles?: DownloadStatusAndInfo['files'];
   pausedAt?: number;
   // Update-specific properties
   isUpdate?: boolean;
@@ -251,19 +251,88 @@ export type CommunityAddon = {
   pinnedCommit: string;
 };
 export let communityAddons: { [key: string]: CommunityAddon[] } = $state({});
+export const DEFAULT_MARKETPLACE_SOURCES = [
+  'https://ogi-marketplace.nat3z.com',
+];
+export const marketplaceSources: string[] = $state([
+  ...DEFAULT_MARKETPLACE_SOURCES,
+]);
+
+function normalizeMarketplaceSource(source: string) {
+  return source.trim().replace(/\/+$/, '');
+}
+
+export function loadMarketplaceSources() {
+  try {
+    const config = JSON.parse(
+      window.electronAPI.fs.read('./config/option/general.json')
+    ) as { marketplaceSources?: unknown };
+    const configuredSources = Array.isArray(config.marketplaceSources)
+      ? config.marketplaceSources
+          .filter((source): source is string => typeof source === 'string')
+          .map((source) => normalizeMarketplaceSource(source))
+          .filter(Boolean)
+      : [];
+
+    marketplaceSources.splice(
+      0,
+      marketplaceSources.length,
+      ...(configuredSources.length
+        ? [...new Set(configuredSources)]
+        : DEFAULT_MARKETPLACE_SOURCES)
+    );
+  } catch (error) {
+    console.error('Failed to load marketplace sources:', error);
+    marketplaceSources.splice(
+      0,
+      marketplaceSources.length,
+      ...DEFAULT_MARKETPLACE_SOURCES
+    );
+  }
+
+  return marketplaceSources;
+}
+
+export function saveMarketplaceSources(sources: string[]) {
+  const normalizedSources = [
+    ...new Set(sources.map((source) => normalizeMarketplaceSource(source))),
+  ].filter(Boolean);
+
+  const nextSources = normalizedSources.length
+    ? normalizedSources
+    : [...DEFAULT_MARKETPLACE_SOURCES];
+
+  const config = JSON.parse(
+    window.electronAPI.fs.read('./config/option/general.json')
+  ) as Record<string, unknown>;
+  config.marketplaceSources = nextSources;
+  window.electronAPI.fs.write(
+    './config/option/general.json',
+    JSON.stringify(config, null, 2)
+  );
+  marketplaceSources.splice(0, marketplaceSources.length, ...nextSources);
+  return marketplaceSources;
+}
 
 export async function fetchCommunityAddons() {
-  window.electronAPI.app
-    .axios({
-      method: 'GET',
-      url: 'http://localhost:4321/api/marketplace.json', // TODO: CHANGE TO ACTUAL HOSTED URI, ALSO HAVE MARKETPLACE LISTING SYSTEM
-      headers: {
-        'Content-Type': 'application/json',
-        'User-Agent': 'OpenGameInstaller Client/Rest1.0',
-      },
+  const sources = loadMarketplaceSources();
+  for (const key of Object.keys(communityAddons)) {
+    delete communityAddons[key];
+  }
+
+  await Promise.allSettled(
+    sources.map(async (source) => {
+      const response = await window.electronAPI.app.axios({
+        method: 'GET',
+        url: source.endsWith('/api/marketplace.json')
+          ? source
+          : `${source}/api/marketplace.json`,
+        headers: {
+          'Content-Type': 'application/json',
+          'User-Agent': 'OpenGameInstaller Client/Rest1.0',
+        },
+      });
+      communityAddons[source] = response.data as CommunityAddon[];
     })
-    .then((response) => {
-      communityAddons['https://ogi.nat3z.com'] =
-        response.data as CommunityAddon[];
-    });
+  );
 }

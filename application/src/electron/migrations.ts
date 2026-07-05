@@ -1,13 +1,12 @@
-import * as fs from 'fs/promises';
+import { exec, spawn } from 'child_process';
 import * as fsSync from 'fs';
+import * as fs from 'fs/promises';
 import { join } from 'path';
-import { __dirname } from '@/electron/manager/manager.paths.js';
 import semver from 'semver';
-import { sendNotification, VERSION } from '@/electron/main.js';
-import { sendIPCMessage } from '@/electron/main.js';
-import { exec } from 'child_process';
-import { spawn } from 'child_process';
 import { addToDesktop } from '@/electron/handlers/handler.app.js';
+import { normalizeAddonLink } from '@/electron/lib/addon-links.js';
+import { sendIPCMessage, sendNotification, VERSION } from '@/electron/main.js';
+import { __dirname } from '@/electron/manager/manager.paths.js';
 
 let migrations: {
   [key: string]: {
@@ -266,6 +265,41 @@ let migrations: {
         id: Math.random().toString(36).substring(7),
         type: 'success',
       });
+    },
+  },
+  'migrate-addon-source-associations': {
+    from: '0.0.0',
+    to: '4.1.0',
+    description:
+      'Migrates legacy bare addon repository URLs to explicit marketplace or git associations.',
+    platform: 'all',
+    run: async () => {
+      const configPath = join(__dirname, 'config/option/general.json');
+      if (!fsSync.existsSync(configPath)) return;
+
+      const generalConfig = await fs.readFile(configPath, 'utf-8');
+      const generalConfigObj = JSON.parse(generalConfig) as {
+        addons?: unknown;
+      };
+      if (!Array.isArray(generalConfigObj.addons)) return;
+
+      const originalAddons = generalConfigObj.addons;
+      const migratedAddons = originalAddons
+        .filter((addon): addon is string => typeof addon === 'string')
+        .map((addon) => normalizeAddonLink(addon));
+
+      const changed =
+        migratedAddons.length !== originalAddons.length ||
+        migratedAddons.some((addon, index) => addon !== originalAddons[index]);
+
+      if (!changed) {
+        console.log('[migration] addon source associations already migrated');
+        return;
+      }
+
+      generalConfigObj.addons = [...new Set(migratedAddons)];
+      await fs.writeFile(configPath, JSON.stringify(generalConfigObj));
+      console.log('[migration] migrated addon source associations');
     },
   },
   'migrate-update-state-format': {

@@ -49,7 +49,7 @@ const embedDescription = `${baseDescription.replace(/\.+$/, "")}. ${sectionEmbed
 let docsInSection = await Astro.glob(`../pages/docs/**/*.{md,mdx}`);
 let sections: string[] = []
 
-docsInSection.map((doc) => {
+docsInSection.forEach((doc) => {
   const section = doc.frontmatter.section
   if (sections.includes(section)) {
     return;

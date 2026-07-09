@@ -769,7 +769,7 @@ function nextUiTick() {
   return new Promise((resolve) => setImmediate(resolve));
 }
 
-function logUpdater(message: string, ...args: string[]) {
+function logUpdater(message: string, ...args: unknown[]) {
   console.log(`[updater] ${message}`, ...args);
 }
 
@@ -1222,14 +1222,20 @@ async function downloadToFile(
       });
       response.data.pipe(writer);
       const startTime = Date.now();
-      const fileSize = response.headers['content-length'];
+      const contentLength = response.headers['content-length'];
+      const fileSize =
+        contentLength === undefined
+          ? undefined
+          : Number(
+              Array.isArray(contentLength) ? contentLength[0] : contentLength
+            );
       response.data.on('data', () => {
         const elapsedTime = (Date.now() - startTime) / 1000;
         const downloadSpeed = writer.bytesWritten / Math.max(elapsedTime, 1);
         sendUpdaterStatus(
           status,
           writer.bytesWritten,
-          fileSize,
+          Number.isFinite(fileSize) ? fileSize : undefined,
           correctParsingSize(downloadSpeed) + '/s'
         );
       });

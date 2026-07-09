@@ -1,242 +1,242 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
-  import {
-    addonServer,
-    fetchAddonsWithConfigure,
-    findAddonsSupportingStorefront,
-    isAddonEventAvailable,
-    startDownload,
-    type SearchResultWithAddon,
-  } from '@/frontend/utils';
-  import { createNotification } from '@/frontend/store.svelte';
-  import type { SearchResult, StoreData } from '@ogi-sdk/connect';
-  import AddonPicture from '@/frontend/components/AddonPicture.svelte';
-  import Modal from '@/frontend/components/modal/Modal.svelte';
-  import TitleModal from '@/frontend/components/modal/TitleModal.svelte';
-  import SectionModal from '@/frontend/components/modal/SectionModal.svelte';
-  import { fly, slide } from 'svelte/transition';
-  import { supportsStorefront } from '@/lib/storefronts';
+import type { SearchResult, StoreData } from '@ogi-sdk/connect';
+import { onMount } from 'svelte';
+import { fly, slide } from 'svelte/transition';
+import AddonPicture from '@/frontend/components/AddonPicture.svelte';
+import Modal from '@/frontend/components/modal/Modal.svelte';
+import SectionModal from '@/frontend/components/modal/SectionModal.svelte';
+import TitleModal from '@/frontend/components/modal/TitleModal.svelte';
+import { createNotification } from '@/frontend/store.svelte';
+import {
+  addonServer,
+  fetchAddonsWithConfigure,
+  findAddonsSupportingStorefront,
+  isAddonEventAvailable,
+  type SearchResultWithAddon,
+  startDownload,
+} from '@/frontend/utils';
+import { supportsStorefront } from '@/lib/storefronts';
 
-  interface Props {
-    libraryInfo: LibraryInfo;
-    updateVersion: string;
-    onClose: () => void;
-  }
+interface Props {
+  libraryInfo: LibraryInfo;
+  updateVersion: string;
+  onClose: () => void;
+}
 
-  let { libraryInfo, updateVersion, onClose }: Props = $props();
+let { libraryInfo, updateVersion, onClose }: Props = $props();
 
-  let { appID, storefront, name: gameName } = $derived(libraryInfo);
+let { appID, storefront, name: gameName } = $derived(libraryInfo);
 
-  let results: SearchResultWithAddon[] = $state([]);
-  let gameData: StoreData | undefined = $state();
-  let loading = $state(true);
-  let queryingSources = $state(false);
-  let loadingAddons: Set<string> = $state(new Set());
-  let emptyAddons: Set<string> = $state(new Set());
-  let collapsedAddons: Set<string> = $state(new Set());
+let results: SearchResultWithAddon[] = $state([]);
+let gameData: StoreData | undefined = $state();
+let loading = $state(true);
+let queryingSources = $state(false);
+let loadingAddons: Set<string> = $state(new Set());
+let emptyAddons: Set<string> = $state(new Set());
+let collapsedAddons: Set<string> = $state(new Set());
 
-  onMount(async () => {
-    const isOnline = await window.electronAPI.app.isOnline();
-    if (!isOnline) {
-      loading = false;
-      createNotification({
-        id: Math.random().toString(36).substring(7),
-        message: 'You are offline. Cannot fetch update sources.',
-        type: 'error',
-      });
-      return;
-    }
-
-    try {
-      await loadUpdateSources();
-    } catch (ex) {
-      console.error(ex);
-      createNotification({
-        id: Math.random().toString(36).substring(7),
-        message: 'Failed to fetch update sources',
-        type: 'error',
-      });
-    }
-  });
-
-  type AddonGroup = {
-    addonId: string;
-    addonName: string;
-    results: SearchResultWithAddon[];
-  };
-
-  // Group results by addon, separating recommended (original addon source) from others
-  let groupedResults = $derived.by(() => {
-    const addonMap = new Map<string, SearchResultWithAddon[]>();
-
-    results.forEach((result) => {
-      if (!addonMap.has(result.addonSource)) {
-        addonMap.set(result.addonSource, []);
-      }
-      addonMap.get(result.addonSource)!.push(result);
-    });
-
-    const originalAddonSource = libraryInfo.addonsource;
-    let recommendedAddon: AddonGroup | null = null;
-    const otherAddons: AddonGroup[] = [];
-
-    addonMap.forEach((results, addonId) => {
-      const addonGroup: AddonGroup = {
-        addonId,
-        addonName: results[0]?.addonName || addonId,
-        results,
-      };
-
-      if (addonId === originalAddonSource) {
-        recommendedAddon = addonGroup;
-      } else {
-        otherAddons.push(addonGroup);
-      }
-    });
-
-    return { recommendedAddon, otherAddons };
-  });
-
-  let recommendedAddon = $derived(groupedResults.recommendedAddon);
-  let otherAddons = $derived(groupedResults.otherAddons);
-
-  async function loadUpdateSources() {
-    results = [];
-
-    // Fetch game details for images
-    const detailAddons = await findAddonsSupportingStorefront(
-      storefront,
-      'game-details'
-    );
-    let response: StoreData | undefined;
-    for (const addon of detailAddons) {
-      try {
-        response = (await addonServer.addon(addon.id).gameDetails({
-          appID,
-          storefront,
-        })) as StoreData | undefined;
-      } catch (error) {
-        console.error(`Failed to load game details from ${addon.id}:`, error);
-        continue;
-      }
-      if (response) break;
-    }
-
-    gameData = response;
+onMount(async () => {
+  const isOnline = await window.electronAPI.app.isOnline();
+  if (!isOnline) {
     loading = false;
-
-    let addons = await fetchAddonsWithConfigure();
-    queryingSources = true;
-
-    if (addons.length === 0) {
-      queryingSources = false;
-      return;
-    }
-
-    // Reset loading states
-    loadingAddons = new Set(addons.map((addon) => addon.id));
-    emptyAddons = new Set();
-
-    const searchPromises = [];
-    for (const addon of addons) {
-      if (!supportsStorefront(addon.storefronts, storefront)) {
-        loadingAddons.delete(addon.id);
-        continue;
-      }
-
-      if (!isAddonEventAvailable(addon, 'search')) {
-        loadingAddons.delete(addon.id);
-        continue;
-      }
-
-      searchPromises.push(
-        (
-          addonServer.addon(addon.id).search({
-            for: 'update',
-            appID,
-            storefront,
-            libraryInfo: JSON.parse(JSON.stringify(libraryInfo)),
-          }) as Promise<SearchResult[]>
-        )
-          .then((searchResults = []) => {
-            const mappedResults = searchResults.map((result: SearchResult) => {
-              return {
-                ...result,
-                coverImage: gameData?.coverImage ?? '',
-                capsuleImage: gameData?.capsuleImage ?? '',
-                name: result.name,
-                addonSource: addon.id,
-                addonName: addon.name,
-                storefront: storefront,
-              };
-            });
-
-            if (mappedResults.length > 0) {
-              loadingAddons.delete(addon.id);
-              loadingAddons = new Set(loadingAddons);
-              results = [...results, ...mappedResults];
-            } else {
-              emptyAddons.add(addon.id);
-              emptyAddons = new Set(emptyAddons);
-
-              setTimeout(() => {
-                loadingAddons.delete(addon.id);
-                loadingAddons = new Set(loadingAddons);
-
-                setTimeout(() => {
-                  emptyAddons.delete(addon.id);
-                  emptyAddons = new Set(emptyAddons);
-                }, 300);
-              }, 1000);
-            }
-          })
-          .catch((ex) => {
-            loadingAddons.delete(addon.id);
-            loadingAddons = new Set(loadingAddons);
-            console.error(ex);
-          })
-      );
-    }
-    collapsedAddons = new Set();
-    addons.forEach((addon) => {
-      collapsedAddons.add(addon.id);
-    });
-    collapsedAddons = new Set(collapsedAddons);
-    await Promise.allSettled(searchPromises);
-    queryingSources = false;
-    loadingAddons = new Set();
-  }
-
-  async function handleDownloadClick(
-    result: SearchResultWithAddon,
-    event: MouseEvent
-  ) {
-    // Add update flags to the result before starting download
-    const updateResult = {
-      ...result,
-      name: gameName,
-      isUpdate: true,
-      updateVersion: updateVersion,
-    } as SearchResultWithAddon & { isUpdate: boolean; updateVersion: string };
-
-    startDownload(updateResult, appID, event);
-    onClose();
-
     createNotification({
       id: Math.random().toString(36).substring(7),
-      message: `Starting update download for ${gameName}`,
-      type: 'info',
+      message: 'You are offline. Cannot fetch update sources.',
+      type: 'error',
     });
+    return;
   }
 
-  function toggleAddonCollapse(addonId: string) {
-    if (collapsedAddons.has(addonId)) {
-      collapsedAddons.delete(addonId);
-    } else {
-      collapsedAddons.add(addonId);
-    }
-    collapsedAddons = new Set(collapsedAddons);
+  try {
+    await loadUpdateSources();
+  } catch (ex) {
+    console.error(ex);
+    createNotification({
+      id: Math.random().toString(36).substring(7),
+      message: 'Failed to fetch update sources',
+      type: 'error',
+    });
   }
+});
+
+type AddonGroup = {
+  addonId: string;
+  addonName: string;
+  results: SearchResultWithAddon[];
+};
+
+// Group results by addon, separating recommended (original addon source) from others
+let groupedResults = $derived.by(() => {
+  const addonMap = new Map<string, SearchResultWithAddon[]>();
+
+  results.forEach((result) => {
+    if (!addonMap.has(result.addonSource)) {
+      addonMap.set(result.addonSource, []);
+    }
+    addonMap.get(result.addonSource)!.push(result);
+  });
+
+  const originalAddonSource = libraryInfo.addonsource;
+  let recommendedAddon: AddonGroup | null = null;
+  const otherAddons: AddonGroup[] = [];
+
+  addonMap.forEach((results, addonId) => {
+    const addonGroup: AddonGroup = {
+      addonId,
+      addonName: results[0]?.addonName || addonId,
+      results,
+    };
+
+    if (addonId === originalAddonSource) {
+      recommendedAddon = addonGroup;
+    } else {
+      otherAddons.push(addonGroup);
+    }
+  });
+
+  return { recommendedAddon, otherAddons };
+});
+
+let recommendedAddon = $derived(groupedResults.recommendedAddon);
+let otherAddons = $derived(groupedResults.otherAddons);
+
+async function loadUpdateSources() {
+  results = [];
+
+  // Fetch game details for images
+  const detailAddons = await findAddonsSupportingStorefront(
+    storefront,
+    'game-details'
+  );
+  let response: StoreData | undefined;
+  for (const addon of detailAddons) {
+    try {
+      response = (await addonServer.addon(addon.id).gameDetails({
+        appID,
+        storefront,
+      })) as StoreData | undefined;
+    } catch (error) {
+      console.error(`Failed to load game details from ${addon.id}:`, error);
+      continue;
+    }
+    if (response) break;
+  }
+
+  gameData = response;
+  loading = false;
+
+  let addons = await fetchAddonsWithConfigure();
+  queryingSources = true;
+
+  if (addons.length === 0) {
+    queryingSources = false;
+    return;
+  }
+
+  // Reset loading states
+  loadingAddons = new Set(addons.map((addon) => addon.id));
+  emptyAddons = new Set();
+
+  const searchPromises = [];
+  for (const addon of addons) {
+    if (!supportsStorefront(addon.storefronts, storefront)) {
+      loadingAddons.delete(addon.id);
+      continue;
+    }
+
+    if (!isAddonEventAvailable(addon, 'search')) {
+      loadingAddons.delete(addon.id);
+      continue;
+    }
+
+    searchPromises.push(
+      (
+        addonServer.addon(addon.id).search({
+          for: 'update',
+          appID,
+          storefront,
+          libraryInfo: JSON.parse(JSON.stringify(libraryInfo)),
+        }) as Promise<SearchResult[]>
+      )
+        .then((searchResults = []) => {
+          const mappedResults = searchResults.map((result: SearchResult) => {
+            return {
+              ...result,
+              coverImage: gameData?.coverImage ?? '',
+              capsuleImage: gameData?.capsuleImage ?? '',
+              name: result.name,
+              addonSource: addon.id,
+              addonName: addon.name,
+              storefront: storefront,
+            };
+          });
+
+          if (mappedResults.length > 0) {
+            loadingAddons.delete(addon.id);
+            loadingAddons = new Set(loadingAddons);
+            results = [...results, ...mappedResults];
+          } else {
+            emptyAddons.add(addon.id);
+            emptyAddons = new Set(emptyAddons);
+
+            setTimeout(() => {
+              loadingAddons.delete(addon.id);
+              loadingAddons = new Set(loadingAddons);
+
+              setTimeout(() => {
+                emptyAddons.delete(addon.id);
+                emptyAddons = new Set(emptyAddons);
+              }, 300);
+            }, 1000);
+          }
+        })
+        .catch((ex) => {
+          loadingAddons.delete(addon.id);
+          loadingAddons = new Set(loadingAddons);
+          console.error(ex);
+        })
+    );
+  }
+  collapsedAddons = new Set();
+  addons.forEach((addon) => {
+    collapsedAddons.add(addon.id);
+  });
+  collapsedAddons = new Set(collapsedAddons);
+  await Promise.allSettled(searchPromises);
+  queryingSources = false;
+  loadingAddons = new Set();
+}
+
+async function handleDownloadClick(
+  result: SearchResultWithAddon,
+  event: MouseEvent
+) {
+  // Add update flags to the result before starting download
+  const updateResult = {
+    ...result,
+    name: gameName,
+    isUpdate: true,
+    updateVersion: updateVersion,
+  } as SearchResultWithAddon & { isUpdate: boolean; updateVersion: string };
+
+  startDownload(updateResult, appID, event);
+  onClose();
+
+  createNotification({
+    id: Math.random().toString(36).substring(7),
+    message: `Starting update download for ${gameName}`,
+    type: 'info',
+  });
+}
+
+function toggleAddonCollapse(addonId: string) {
+  if (collapsedAddons.has(addonId)) {
+    collapsedAddons.delete(addonId);
+  } else {
+    collapsedAddons.add(addonId);
+  }
+  collapsedAddons = new Set(collapsedAddons);
+}
 </script>
 
 <Modal open={true} size="medium" {onClose}>

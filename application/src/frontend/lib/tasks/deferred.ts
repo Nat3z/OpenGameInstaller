@@ -1,9 +1,9 @@
 import type { DeferredTaskSnapshot } from '@ogi-sdk/client-kit';
 import { addonServer } from '@/frontend/lib/core/ipc';
 import {
+  type DeferredTask,
   deferredTasks,
   removedTasks,
-  type DeferredTask,
 } from '@/frontend/store.svelte';
 
 export async function loadDeferredTasks(tasksToRemove: string[] = []) {

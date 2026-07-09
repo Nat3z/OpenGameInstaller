@@ -1,10 +1,10 @@
+import { get } from 'svelte/store';
 import {
   currentDownloads,
-  setupLogs,
   type DownloadStatusAndInfo,
   type SetupLog,
+  setupLogs,
 } from '@/frontend/store.svelte';
-import { get } from 'svelte/store';
 
 const BLOCKING_DOWNLOAD_STATUSES = new Set<DownloadStatusAndInfo['status']>([
   'downloading',

@@ -1,11 +1,11 @@
+import { getDownloadPath } from '@/frontend/lib/core/fs';
+import { safeDownloadPath } from '@/frontend/lib/downloads/paths';
+import type { SearchResultWithAddon } from '@/frontend/lib/tasks/runner';
 import {
   currentDownloads,
   type DownloadStatusAndInfo,
 } from '@/frontend/store.svelte';
 import { updateDownloadStatus } from '@/frontend/utils';
-import { getDownloadPath } from '@/frontend/lib/core/fs';
-import { safeDownloadPath } from '@/frontend/lib/downloads/paths';
-import type { SearchResultWithAddon } from '@/frontend/lib/tasks/runner';
 
 /**
  * Base class that all concrete download services should extend. It defines a

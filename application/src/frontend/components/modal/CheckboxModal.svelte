@@ -1,27 +1,27 @@
 <script lang="ts">
-  let {
-    id,
-    label,
-    description = '',
-    checked = false,
-    disabled = false,
-    class: className = '',
-    onchange,
-  }: {
-    id: string;
-    label: string;
-    description?: string;
-    checked?: boolean;
-    disabled?: boolean;
-    class?: string;
-    onchange?: (id: string, checked: boolean) => void;
-  } = $props();
+let {
+  id,
+  label,
+  description = '',
+  checked = false,
+  disabled = false,
+  class: className = '',
+  onchange,
+}: {
+  id: string;
+  label: string;
+  description?: string;
+  checked?: boolean;
+  disabled?: boolean;
+  class?: string;
+  onchange?: (id: string, checked: boolean) => void;
+} = $props();
 
-  function handleChange(event: Event) {
-    const target = event.target as HTMLInputElement;
-    checked = target.checked;
-    onchange?.(id, checked);
-  }
+function handleChange(event: Event) {
+  const target = event.target as HTMLInputElement;
+  checked = target.checked;
+  onchange?.(id, checked);
+}
 </script>
 
 <div class="flex flex-col items-start justify-center relative {className}">

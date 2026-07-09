@@ -1,6 +1,6 @@
-import { Addon } from './addon';
 import { spawn } from 'child_process';
 import { dirname } from 'path';
+import { Addon } from './addon';
 
 function pipeGitStreams(child: ReturnType<typeof spawn>): void {
   child.stdout?.on('data', (data) => {

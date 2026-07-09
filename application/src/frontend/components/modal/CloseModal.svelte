@@ -1,26 +1,26 @@
 <script lang="ts">
-  import { getContext } from 'svelte';
+import { getContext } from 'svelte';
 
-  let {
-    class: className = '',
-    position = 'top-right',
-  }: {
-    class?: string;
-    position?: 'top-right' | 'top-left' | 'bottom-right' | 'bottom-left';
-  } = $props();
+let {
+  class: className = '',
+  position = 'top-right',
+}: {
+  class?: string;
+  position?: 'top-right' | 'top-left' | 'bottom-right' | 'bottom-left';
+} = $props();
 
-  const positionClasses = {
-    'top-right': 'absolute top-2 right-2',
-    'top-left': 'absolute top-2 left-2',
-    'bottom-right': 'absolute bottom-2 right-2',
-    'bottom-left': 'absolute bottom-2 left-2',
-  };
-  const closeTool = getContext<() => void>('closeModal');
-  function handleClose() {
-    if (closeTool) {
-      closeTool();
-    }
+const positionClasses = {
+  'top-right': 'absolute top-2 right-2',
+  'top-left': 'absolute top-2 left-2',
+  'bottom-right': 'absolute bottom-2 right-2',
+  'bottom-left': 'absolute bottom-2 left-2',
+};
+const closeTool = getContext<() => void>('closeModal');
+function handleClose() {
+  if (closeTool) {
+    closeTool();
   }
+}
 </script>
 
 <button

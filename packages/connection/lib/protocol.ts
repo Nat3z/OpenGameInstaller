@@ -5,25 +5,7 @@
  * derived from that registry so event names, args, responses, listener support,
  * and proxy packing metadata stay together.
  */
-import type { WebsocketMessage } from './types';
-import type {
-  AddonMessageArgs,
-  AddonListenerEventNames,
-  ResolveProtocolValue,
-  SDKMessageRequestArgs,
-  SDKMessageResponseArgs,
-  SDKToServerMessageArgs,
-  ServerCommandArgs,
-  ServerToSDKMessageArgs,
-  ServerCommandResponse,
-  SlotValues,
-} from './protocol-builder';
-import {
-  addonMessage,
-  defineAddonProtocol,
-  sdkMessage,
-  serverCommand,
-} from './protocol-builder';
+
 import type {
   AddonNotificationMessage,
   AddonTaskRunEventArgs,
@@ -36,7 +18,49 @@ import type {
   SetupResponse,
   StoreData,
 } from './protocol-base';
+import type {
+  AddonListenerEventNames,
+  AddonMessageArgs,
+  ResolveProtocolValue,
+  SDKMessageRequestArgs,
+  SDKMessageResponseArgs,
+  SDKToServerMessageArgs,
+  ServerCommandArgs,
+  ServerCommandResponse,
+  ServerToSDKMessageArgs,
+  SlotValues,
+} from './protocol-builder';
+import {
+  addonMessage,
+  defineAddonProtocol,
+  sdkMessage,
+  serverCommand,
+} from './protocol-builder';
+import type { WebsocketMessage } from './types';
 
+export type {
+  ActionConfigurationOption,
+  AddonNotificationMessage,
+  AddonTaskRunEventArgs,
+  BasicLibraryInfo,
+  BooleanConfigurationOption,
+  CatalogCarouselItem,
+  CatalogResponse,
+  CatalogSection,
+  CatalogWithCarousel,
+  ConfigurationFile,
+  ConfigurationOptionType,
+  ConfigurationOptionWire,
+  LibraryInfo,
+  NumberConfigurationOption,
+  OGIAddonConfiguration,
+  SearchResult,
+  SetupEventResponse,
+  SetupResponse,
+  StoreData,
+  StringConfigurationOption,
+  UmuId,
+} from './protocol-base';
 export type {
   AddonMessageSpec,
   AddonProtocolSlots,
@@ -54,29 +78,6 @@ export {
   sdkMessage,
   serverCommand,
 } from './protocol-builder';
-export type {
-  AddonNotificationMessage,
-  AddonTaskRunEventArgs,
-  BasicLibraryInfo,
-  CatalogResponse,
-  CatalogCarouselItem,
-  CatalogSection,
-  CatalogWithCarousel,
-  ConfigurationFile,
-  ConfigurationOptionType,
-  ConfigurationOptionWire,
-  StringConfigurationOption,
-  NumberConfigurationOption,
-  BooleanConfigurationOption,
-  ActionConfigurationOption,
-  LibraryInfo,
-  OGIAddonConfiguration,
-  SearchResult,
-  SetupEventResponse,
-  SetupResponse,
-  StoreData,
-  UmuId,
-} from './protocol-base';
 
 // -----------------------------------------------------------------------------
 // Protocol registry
@@ -457,10 +458,10 @@ export type AddonClientSDKToServerEventArgs<
 
 /** Wire message from in-process addon SDK to the connection server. */
 export interface AddonClientSDKToServerWebsocketMessage<
-  MessageEvent extends AddonClientSDKToServerEvent =
-    AddonClientSDKToServerEvent,
-  ForwardedEvent extends AddonServerToClientEventName =
-    AddonServerToClientEventName,
+  MessageEvent extends
+    AddonClientSDKToServerEvent = AddonClientSDKToServerEvent,
+  ForwardedEvent extends
+    AddonServerToClientEventName = AddonServerToClientEventName,
 > extends WebsocketMessage {
   event: MessageEvent;
   args: AddonClientSDKToServerEventArgs<ForwardedEvent>[MessageEvent];
@@ -492,10 +493,10 @@ export type AddonServerToClientSDKEventArgs<
 
 /** Wire message from server back to the in-process addon SDK after `forward` or `query`. */
 export interface AddonServerToClientSDKWebsocketMessage<
-  MessageEvent extends AddonServerToClientSDKEvent =
-    AddonServerToClientSDKEvent,
-  ForwardedEvent extends AddonServerToClientEventName =
-    AddonServerToClientEventName,
+  MessageEvent extends
+    AddonServerToClientSDKEvent = AddonServerToClientSDKEvent,
+  ForwardedEvent extends
+    AddonServerToClientEventName = AddonServerToClientEventName,
 > extends WebsocketMessage {
   event: MessageEvent;
   args: AddonServerToClientSDKEventArgs<ForwardedEvent>[MessageEvent];

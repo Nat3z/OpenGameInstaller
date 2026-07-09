@@ -3,15 +3,16 @@
  * readiness check, torrent info, unrestrict link. Uses unique temp paths
  * and cleans up streams on all code paths.
  */
+
+import AllDebrid from 'all-debrid-js';
+import axios from 'axios';
 import { ipcMain } from 'electron';
-import { sendNotification } from '@/electron/main.js';
-import { join } from 'path';
 import * as fs from 'fs';
 import type { IncomingMessage } from 'http';
-import AllDebrid from 'all-debrid-js';
 import { ReadStream } from 'original-fs';
+import { join } from 'path';
+import { sendNotification } from '@/electron/main.js';
 import { __dirname } from '@/electron/manager/manager.paths.js';
-import axios from 'axios';
 
 const CONFIG_PATH = join(__dirname, 'config/option/realdebrid.json');
 

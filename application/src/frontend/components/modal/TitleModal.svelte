@@ -1,11 +1,11 @@
 <script lang="ts">
-  let {
-    title,
-    class: className = '',
-  }: {
-    title: string;
-    class?: string;
-  } = $props();
+let {
+  title,
+  class: className = '',
+}: {
+  title: string;
+  class?: string;
+} = $props();
 </script>
 
 <h1

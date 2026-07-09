@@ -1,99 +1,96 @@
 <script lang="ts">
-  import DeleteAddonWarningModal from '@/frontend/components/built/DeleteAddonWarningModal.svelte';
-  import ButtonModal from '@/frontend/components/modal/ButtonModal.svelte';
-  import CloseModal from '@/frontend/components/modal/CloseModal.svelte';
-  import HeaderModal from '@/frontend/components/modal/HeaderModal.svelte';
-  import Modal from '@/frontend/components/modal/Modal.svelte';
-  import TextModal from '@/frontend/components/modal/TextModal.svelte';
-  import TitleModal from '@/frontend/components/modal/TitleModal.svelte';
-  import {
-    type CommunityAddon,
-    communityAddons,
-  } from '@/frontend/store.svelte';
-  import { reconnectClientSdk } from '@/frontend/lib/core/ipc';
-  import { fade } from 'svelte/transition';
+import { fade } from 'svelte/transition';
+import DeleteAddonWarningModal from '@/frontend/components/built/DeleteAddonWarningModal.svelte';
+import ButtonModal from '@/frontend/components/modal/ButtonModal.svelte';
+import CloseModal from '@/frontend/components/modal/CloseModal.svelte';
+import HeaderModal from '@/frontend/components/modal/HeaderModal.svelte';
+import Modal from '@/frontend/components/modal/Modal.svelte';
+import TextModal from '@/frontend/components/modal/TextModal.svelte';
+import TitleModal from '@/frontend/components/modal/TitleModal.svelte';
+import { reconnectClientSdk } from '@/frontend/lib/core/ipc';
+import { type CommunityAddon, communityAddons } from '@/frontend/store.svelte';
 
-  let currentAddons = $state(
-    JSON.parse(window.electronAPI.fs.read('./config/option/general.json'))
+let currentAddons = $state(
+  JSON.parse(window.electronAPI.fs.read('./config/option/general.json'))
+);
+let showWarningModal = $state(false);
+let selectedAddon: (CommunityAddon & { url: string }) | null = $state(null);
+let deleteConfirmationModalAddon: CommunityAddon | null = $state(null);
+
+async function installAddon(marketplaceURL: string, addon: CommunityAddon) {
+  console.log('installing', addon);
+  console.log(`Installing ${addon.name} by ${addon.author}`);
+
+  if (!currentAddons.addons) {
+    currentAddons.addons = [];
+  }
+
+  const addonWithMarketplace = marketplaceURL + '@' + addon.source;
+  console.log(addonWithMarketplace);
+  // remove proxy wrapping
+  currentAddons = {
+    ...currentAddons,
+    addons: await window.electronAPI.installAddons([addonWithMarketplace]),
+  };
+  await reconnectClientSdk();
+}
+
+function addonConfigMatchesSource(configAddon: string, addonSource: string) {
+  return (
+    configAddon === addonSource ||
+    configAddon === `git@${addonSource}` ||
+    configAddon.endsWith(`@${addonSource}`)
   );
-  let showWarningModal = $state(false);
-  let selectedAddon: (CommunityAddon & { url: string }) | null = $state(null);
-  let deleteConfirmationModalAddon: CommunityAddon | null = $state(null);
+}
 
-  async function installAddon(marketplaceURL: string, addon: CommunityAddon) {
-    console.log('installing', addon);
-    console.log(`Installing ${addon.name} by ${addon.author}`);
+function addonInstalled(addon: CommunityAddon) {
+  return (
+    currentAddons.addons &&
+    currentAddons.addons.some((source: string) =>
+      addonConfigMatchesSource(source, addon.source)
+    )
+  );
+}
 
-    if (!currentAddons.addons) {
-      currentAddons.addons = [];
-    }
+async function deleteAddon(addon: CommunityAddon) {
+  console.log(`Deleting ${addon.name} by ${addon.author}`);
 
-    const addonWithMarketplace = marketplaceURL + '@' + addon.source;
-    console.log(addonWithMarketplace);
-    // remove proxy wrapping
-    currentAddons = {
-      ...currentAddons,
-      addons: await window.electronAPI.installAddons([addonWithMarketplace]),
-    };
-    await reconnectClientSdk();
+  if (!currentAddons.addons) {
+    currentAddons.addons = [];
   }
+  currentAddons.addons = currentAddons.addons.filter(
+    (source: string) => !addonConfigMatchesSource(source, addon.source)
+  );
+  window.electronAPI.fs.write(
+    './config/option/general.json',
+    JSON.stringify(currentAddons, null, 2)
+  );
+  await window.electronAPI.restartAddonServer();
+  await reconnectClientSdk();
+  // close the modal
+  deleteConfirmationModalAddon = null;
+}
 
-  function addonConfigMatchesSource(configAddon: string, addonSource: string) {
-    return (
-      configAddon === addonSource ||
-      configAddon === `git@${addonSource}` ||
-      configAddon.endsWith(`@${addonSource}`)
-    );
+async function deleteAddonWarning(addon: CommunityAddon) {
+  deleteConfirmationModalAddon = addon;
+}
+
+function openWarningModal(url: string, addon: CommunityAddon) {
+  selectedAddon = { ...addon, url };
+  showWarningModal = true;
+}
+
+function closeWarningModal() {
+  showWarningModal = false;
+  selectedAddon = null;
+}
+
+async function proceedWithInstall(url: string, addon: CommunityAddon) {
+  if (addon) {
+    closeWarningModal();
+    await installAddon(url, addon);
   }
-
-  function addonInstalled(addon: CommunityAddon) {
-    return (
-      currentAddons.addons &&
-      currentAddons.addons.some((source: string) =>
-        addonConfigMatchesSource(source, addon.source)
-      )
-    );
-  }
-
-  async function deleteAddon(addon: CommunityAddon) {
-    console.log(`Deleting ${addon.name} by ${addon.author}`);
-
-    if (!currentAddons.addons) {
-      currentAddons.addons = [];
-    }
-    currentAddons.addons = currentAddons.addons.filter(
-      (source: string) => !addonConfigMatchesSource(source, addon.source)
-    );
-    window.electronAPI.fs.write(
-      './config/option/general.json',
-      JSON.stringify(currentAddons, null, 2)
-    );
-    await window.electronAPI.restartAddonServer();
-    await reconnectClientSdk();
-    // close the modal
-    deleteConfirmationModalAddon = null;
-  }
-
-  async function deleteAddonWarning(addon: CommunityAddon) {
-    deleteConfirmationModalAddon = addon;
-  }
-
-  function openWarningModal(url: string, addon: CommunityAddon) {
-    selectedAddon = { ...addon, url };
-    showWarningModal = true;
-  }
-
-  function closeWarningModal() {
-    showWarningModal = false;
-    selectedAddon = null;
-  }
-
-  async function proceedWithInstall(url: string, addon: CommunityAddon) {
-    if (addon) {
-      closeWarningModal();
-      await installAddon(url, addon);
-    }
-  }
+}
 </script>
 
 {#if deleteConfirmationModalAddon}

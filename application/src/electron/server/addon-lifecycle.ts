@@ -1,7 +1,7 @@
-import * as fs from 'fs/promises';
-import { readFileSync, writeFileSync } from 'fs';
-import { join } from 'path';
 import type { LibraryInfo, OGIAddonSDKEventListener } from '@ogi-sdk/connect';
+import { readFileSync, writeFileSync } from 'fs';
+import * as fs from 'fs/promises';
+import { join } from 'path';
 import { restartAddonServer } from '@/electron/handlers/handler.addon.js';
 import { __dirname } from '@/electron/manager/manager.paths.js';
 import { addonServer } from '@/electron/server/addon-server.js';

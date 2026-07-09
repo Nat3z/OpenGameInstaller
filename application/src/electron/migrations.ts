@@ -410,12 +410,12 @@ let migrations: {
  */
 export async function execute() {
   // check if the thing is even installed, if not, don't run any migrations because it was just installed
-  if (!fsSync.existsSync(join(__dirname, 'config/option/installed.json'))) {
+  const configDir = join(__dirname, 'config/option');
+  if (!fsSync.existsSync(join(configDir, 'installed.json'))) {
+    // generate the folder path too
+    await fs.mkdir(configDir, { recursive: true });
     // no need to run migrations, the person hasn't even launched anything.
-    await fs.writeFile(
-      join(__dirname, 'config/option/lastVersion.txt'),
-      VERSION
-    );
+    await fs.writeFile(join(configDir, 'lastVersion.txt'), VERSION, 'utf-8');
     return;
   }
 

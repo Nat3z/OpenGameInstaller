@@ -4,9 +4,9 @@
   "scripts": {
     "build": "bun run --filter './packages/*' build",
     "release": "bun run --filter './packages/*' release",
-    "dev": "bun run --filter 'application' dev",
-    "format": "biome format --write package.json packages application/src application/package.json web/src web/community web/scripts web/package.json test-addon --files-ignore-unknown=true",
-    "lint": "biome lint package.json packages application/src application/package.json web/src web/community web/scripts web/package.json test-addon --files-ignore-unknown=true",
+    "dev": "bun run --filter 'opengameinstaller-gui' dev",
+    "format": "biome check --write package.json packages application/src application/package.json updater web/src web/community web/scripts web/package.json test-addon --files-ignore-unknown=true",
+    "lint": "biome check package.json packages application/src application/package.json updater web/src web/community web/scripts web/package.json test-addon --files-ignore-unknown=true",
     "typecheck": "bun run --filter './packages/*' build && bun run --filter '*' typecheck"
   },
   "workspaces": [
@@ -18,7 +18,7 @@
   ],
   "devDependencies": {
     "@biomejs/biome": "^2.5.2",
-    "electron": "^40.1.0",
+    "electron": "^43.1.0",
     "typescript": "^5.9.3"
   },
   "overrides": {

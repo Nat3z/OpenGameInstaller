@@ -13,6 +13,7 @@
   # https://devenv.sh/packages/
   packages = with pkgs; [
     git
+    unrar
   ];
 
   # https://devenv.sh/languages/

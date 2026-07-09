@@ -1,319 +1,317 @@
 <script lang="ts">
-  import { onDestroy, onMount } from 'svelte';
-  import {
-    currentDownloads,
-    failedSetups,
-    setupLogs,
-    redistributableInstalls,
-    type FailedSetup,
-  } from '@/frontend/store.svelte';
-  import {
-    loadFailedSetups,
-    removeFailedSetup,
-    retryFailedSetup,
-    pauseDownload,
-    resumeDownload,
-    cancelPausedDownload,
-  } from '@/frontend/utils';
-  import * as d3 from 'd3';
-  import SetupPrompt from '@/frontend/components/SetupPrompt.svelte';
-  import RedistributablesProgress from '@/frontend/components/RedistributablesProgress.svelte';
+import * as d3 from 'd3';
+import { onDestroy, onMount } from 'svelte';
+import RedistributablesProgress from '@/frontend/components/RedistributablesProgress.svelte';
+import SetupPrompt from '@/frontend/components/SetupPrompt.svelte';
+import {
+  currentDownloads,
+  type FailedSetup,
+  failedSetups,
+  redistributableInstalls,
+  setupLogs,
+} from '@/frontend/store.svelte';
+import {
+  cancelPausedDownload,
+  loadFailedSetups,
+  pauseDownload,
+  removeFailedSetup,
+  resumeDownload,
+  retryFailedSetup,
+} from '@/frontend/utils';
 
-  let chartContainer: HTMLDivElement | null = $state(null);
-  let speedData: { time: Date; speed: number; downloadId: string }[] = $state(
-    []
-  );
+let chartContainer: HTMLDivElement | null = $state(null);
+let speedData: { time: Date; speed: number; downloadId: string }[] = $state([]);
 
-  // Sort downloads by queue position lowest to highest
-  let sortedDownloads = $state(
-    $currentDownloads
-      .slice()
-      .sort((a, b) => (a.queuePosition || 999) - (b.queuePosition || 999))
-  );
+// Sort downloads by queue position lowest to highest
+let sortedDownloads = $state(
+  $currentDownloads
+    .slice()
+    .sort((a, b) => (a.queuePosition || 999) - (b.queuePosition || 999))
+);
 
-  let targetDownload = $derived(
-    sortedDownloads.find(
-      (download) =>
-        download.status === 'downloading' &&
-        (!download.queuePosition || download.queuePosition === 1)
-    ) || undefined
-  );
-
-  function isCustomEvent(event: Event): event is CustomEvent {
-    return event instanceof CustomEvent;
-  }
-
-  function isQueued(download: { status: string; queuePosition?: number }) {
-    return (
+let targetDownload = $derived(
+  sortedDownloads.find(
+    (download) =>
       download.status === 'downloading' &&
-      !!download.queuePosition &&
-      download.queuePosition > 1
-    );
+      (!download.queuePosition || download.queuePosition === 1)
+  ) || undefined
+);
+
+function isCustomEvent(event: Event): event is CustomEvent {
+  return event instanceof CustomEvent;
+}
+
+function isQueued(download: { status: string; queuePosition?: number }) {
+  return (
+    download.status === 'downloading' &&
+    !!download.queuePosition &&
+    download.queuePosition > 1
+  );
+}
+
+function queuePositionLabel(position?: number) {
+  if (!position || position <= 1) return '';
+  return position >= 999 ? 'Waiting in queue' : `Queued #${position}`;
+}
+function correctParsingSize(size: number) {
+  if (size < 1024) {
+    return size + 'B';
+  } else if (size < 1024 * 1024) {
+    return (size / 1024).toFixed(2) + 'KB';
+  } else if (size < 1024 * 1024 * 1024) {
+    return (size / (1024 * 1024)).toFixed(2) + 'MB';
+  } else {
+    return (size / (1024 * 1024 * 1024)).toFixed(2) + 'GB';
+  }
+}
+
+function formatETA(etaMs: number): string {
+  if (!etaMs || !isFinite(etaMs) || etaMs <= 0) {
+    return '--';
   }
 
-  function queuePositionLabel(position?: number) {
-    if (!position || position <= 1) return '';
-    return position >= 999 ? 'Waiting in queue' : `Queued #${position}`;
+  const etaSec = Math.floor(etaMs / 1000);
+  const hours = Math.floor(etaSec / 3600);
+  const minutes = Math.floor((etaSec % 3600) / 60);
+  const seconds = Math.floor(etaSec % 60);
+
+  if (hours > 0) {
+    return `${hours}h ${minutes}m ${seconds}s`;
+  } else if (minutes > 0) {
+    return `${minutes}m ${seconds}s`;
+  } else {
+    return `${seconds}s`;
   }
-  function correctParsingSize(size: number) {
-    if (size < 1024) {
-      return size + 'B';
-    } else if (size < 1024 * 1024) {
-      return (size / 1024).toFixed(2) + 'KB';
-    } else if (size < 1024 * 1024 * 1024) {
-      return (size / (1024 * 1024)).toFixed(2) + 'MB';
-    } else {
-      return (size / (1024 * 1024 * 1024)).toFixed(2) + 'GB';
-    }
+}
+
+function setupLog(event: Event) {
+  if (!isCustomEvent(event)) return;
+  const downloadID = event.detail.id;
+  let logs: string[] = event.detail.log;
+  // Update the $setupLogs state for the given downloadID
+  // if the logs are above 100, remove the first 50
+  if (logs.length > 100) {
+    logs = logs.slice(50);
   }
+  setupLogs.update((otherLogs) => ({
+    ...otherLogs,
+    [downloadID]: {
+      ...(otherLogs[downloadID] || {
+        logs: [],
+        progress: 0,
+        isActive: true,
+        downloadId: downloadID,
+      }),
+      logs: [...logs],
+    },
+  }));
+}
 
-  function formatETA(etaMs: number): string {
-    if (!etaMs || !isFinite(etaMs) || etaMs <= 0) {
-      return '--';
-    }
-
-    const etaSec = Math.floor(etaMs / 1000);
-    const hours = Math.floor(etaSec / 3600);
-    const minutes = Math.floor((etaSec % 3600) / 60);
-    const seconds = Math.floor(etaSec % 60);
-
-    if (hours > 0) {
-      return `${hours}h ${minutes}m ${seconds}s`;
-    } else if (minutes > 0) {
-      return `${minutes}m ${seconds}s`;
-    } else {
-      return `${seconds}s`;
-    }
-  }
-
-  function setupLog(event: Event) {
-    if (!isCustomEvent(event)) return;
-    const downloadID = event.detail.id;
-    let logs: string[] = event.detail.log;
-    // Update the $setupLogs state for the given downloadID
-    // if the logs are above 100, remove the first 50
-    if (logs.length > 100) {
-      logs = logs.slice(50);
-    }
-    setupLogs.update((otherLogs) => ({
-      ...otherLogs,
-      [downloadID]: {
-        ...(otherLogs[downloadID] || {
-          logs: [],
-          progress: 0,
-          isActive: true,
-          downloadId: downloadID,
-        }),
-        logs: [...logs],
-      },
-    }));
-  }
-
-  function setupProgress(event: Event) {
-    if (!isCustomEvent(event)) return;
-    const downloadID = event.detail.id;
-    const progress = event.detail.progress;
-    setupLogs.update((otherLogs) => ({
-      ...otherLogs,
-      [downloadID]: {
-        ...(otherLogs[downloadID] || {
-          logs: [],
-          progress: 0,
-          isActive: true,
-          downloadId: downloadID,
-        }),
-        progress,
-      },
-    }));
-  }
-
-  // Load failed setups and paused downloads when component mounts
-  onMount(() => {
-    loadFailedSetups();
-    document.addEventListener('setup:log', setupLog);
-    document.addEventListener('setup:progress', setupProgress);
-
-    return () => {
-      document.removeEventListener('setup:log', setupLog);
-      document.removeEventListener('setup:progress', setupProgress);
-    };
-  });
-
-  async function handleRetry(failedSetup: FailedSetup) {
-    await retryFailedSetup(failedSetup);
-  }
-
-  function handleRemove(setupId: string) {
-    removeFailedSetup(setupId);
-  }
-  function updateSpeedData() {
-    const now = new Date();
-
-    // Add current speeds to data
-    sortedDownloads.forEach((download) => {
-      if (download.status === 'downloading' && download.downloadSpeed > 0) {
-        speedData.push({
-          time: now,
-          speed: download.downloadSpeed,
-          downloadId: download.id,
-        });
-      }
-    });
-
-    // Keep only last 50 data points (last ~5 minutes if updated every 6 seconds)
-    if (speedData.length > 50) {
-      speedData = speedData.slice(-50);
-    }
-
-    // Update chart if we have data
-    if (speedData.length > 0 && chartContainer) {
-      createChart();
-    }
-  }
-
-  function getDownloadStatistics() {
-    if (!targetDownload) return null;
-
-    const download = targetDownload;
-    const totalSize = download.downloadSize;
-    const currentSpeed = download.downloadSpeed;
-    const downloadedSize = download.downloadSize * download.progress;
-    const remainingSize = totalSize - downloadedSize;
-
-    // Calculate ETA based on current speed
-    let eta = 0;
-    if (currentSpeed > 0 && remainingSize > 0) {
-      eta = (remainingSize / currentSpeed) * 1000; // Convert to milliseconds
-    }
-
-    const progress = downloadedSize / totalSize;
-    return {
-      totalSize,
-      currentSpeed,
-      downloadedSize,
-      remainingSize,
-      eta,
+function setupProgress(event: Event) {
+  if (!isCustomEvent(event)) return;
+  const downloadID = event.detail.id;
+  const progress = event.detail.progress;
+  setupLogs.update((otherLogs) => ({
+    ...otherLogs,
+    [downloadID]: {
+      ...(otherLogs[downloadID] || {
+        logs: [],
+        progress: 0,
+        isActive: true,
+        downloadId: downloadID,
+      }),
       progress,
-    };
-  }
+    },
+  }));
+}
 
-  function createChart() {
-    if (!chartContainer || speedData.length === 0) return;
+// Load failed setups and paused downloads when component mounts
+onMount(() => {
+  loadFailedSetups();
+  document.addEventListener('setup:log', setupLog);
+  document.addEventListener('setup:progress', setupProgress);
 
-    // Clear existing chart
-    d3.select(chartContainer).selectAll('*').remove();
+  return () => {
+    document.removeEventListener('setup:log', setupLog);
+    document.removeEventListener('setup:progress', setupProgress);
+  };
+});
 
-    const margin = { top: 20, right: 30, bottom: 40, left: 60 };
-    const width = chartContainer.clientWidth - margin.left - margin.right;
-    const height = 200 - margin.top - margin.bottom;
+async function handleRetry(failedSetup: FailedSetup) {
+  await retryFailedSetup(failedSetup);
+}
 
-    const svg = d3
-      .select(chartContainer)
-      .append('svg')
-      .attr('width', width + margin.left + margin.right)
-      .attr('height', height + margin.top + margin.bottom);
+function handleRemove(setupId: string) {
+  removeFailedSetup(setupId);
+}
+function updateSpeedData() {
+  const now = new Date();
 
-    const g = svg
-      .append('g')
-      .attr('transform', `translate(${margin.left},${margin.top})`);
-
-    // Scales
-    const xScale = d3
-      .scaleTime()
-      .domain(d3.extent(speedData, (d) => d.time) as [Date, Date])
-      .range([0, width]);
-
-    const yScale = d3
-      .scaleLinear()
-      .domain([0, d3.max(speedData, (d) => d.speed) || 0])
-      .nice()
-      .range([height, 0]);
-
-    // Line generator
-    const line = d3
-      .line<{ time: Date; speed: number; downloadId: string }>()
-      .x((d) => xScale(d.time))
-      .y((d) => yScale(d.speed))
-      .curve(d3.curveCardinal);
-
-    // Group data by download ID
-    const groupedData = Array.from(d3.group(speedData, (d) => d.downloadId));
-
-    // Order IDs with the active/target download first for consistent dark coloring
-    const idsOrdered = groupedData.map((d) => d[0]);
-    if (targetDownload) {
-      const idx = idsOrdered.indexOf(targetDownload.id);
-      if (idx > 0) {
-        idsOrdered.splice(idx, 1);
-        idsOrdered.unshift(targetDownload.id);
-      }
-    }
-
-    // Color scale from theme (accent and accent-dark)
-    const style = getComputedStyle(document.documentElement);
-    const accent = style.getPropertyValue('--theme-accent').trim() || '#428a91';
-    const accentDark =
-      style.getPropertyValue('--theme-accent-dark').trim() || '#2d626a';
-    const borderColor =
-      style.getPropertyValue('--theme-border').trim() || '#e5e7eb';
-    const accentPalette = [accentDark, accent, accentDark, accent];
-    const colorScale = d3
-      .scaleOrdinal()
-      .domain(idsOrdered)
-      .range(accentPalette.slice(0, idsOrdered.length));
-
-    // Add grid lines (theme border)
-    g.selectAll('.grid-line-y')
-      .data(yScale.ticks())
-      .enter()
-      .append('line')
-      .attr('class', 'grid-line-y')
-      .attr('x1', 0)
-      .attr('x2', width)
-      .attr('y1', (d) => yScale(d))
-      .attr('y2', (d) => yScale(d))
-      .attr('stroke', borderColor)
-      .attr('stroke-width', 0.5)
-      .attr('opacity', 0.7);
-
-    // Add lines for each download
-    groupedData.forEach(([downloadId, data]) => {
-      if (data.length > 1) {
-        g.append('path')
-          .datum(data)
-          .attr('fill', 'none')
-          .attr('stroke', colorScale(downloadId) as string)
-          .attr('stroke-width', 2)
-          .attr('d', line);
-      }
-    });
-  }
-
-  let sub_currentDownloads = currentDownloads.subscribe((downloads) => {
-    if (downloads.length > 0) {
-      updateSpeedData();
+  // Add current speeds to data
+  sortedDownloads.forEach((download) => {
+    if (download.status === 'downloading' && download.downloadSpeed > 0) {
+      speedData.push({
+        time: now,
+        speed: download.downloadSpeed,
+        downloadId: download.id,
+      });
     }
   });
 
-  let sub_sortedDownloads = currentDownloads.subscribe((downloads) => {
-    sortedDownloads = downloads
-      .slice()
-      .sort((a, b) => (a.queuePosition || 999) - (b.queuePosition || 999));
-  });
+  // Keep only last 50 data points (last ~5 minutes if updated every 6 seconds)
+  if (speedData.length > 50) {
+    speedData = speedData.slice(-50);
+  }
 
-  // Update chart every 5 seconds
-  onMount(() => {
-    const interval = setInterval(() => {
-      updateSpeedData();
-    }, 1000);
+  // Update chart if we have data
+  if (speedData.length > 0 && chartContainer) {
+    createChart();
+  }
+}
 
-    return () => clearInterval(interval);
-  });
+function getDownloadStatistics() {
+  if (!targetDownload) return null;
 
-  onDestroy(() => {
-    sub_currentDownloads();
-    sub_sortedDownloads();
+  const download = targetDownload;
+  const totalSize = download.downloadSize;
+  const currentSpeed = download.downloadSpeed;
+  const downloadedSize = download.downloadSize * download.progress;
+  const remainingSize = totalSize - downloadedSize;
+
+  // Calculate ETA based on current speed
+  let eta = 0;
+  if (currentSpeed > 0 && remainingSize > 0) {
+    eta = (remainingSize / currentSpeed) * 1000; // Convert to milliseconds
+  }
+
+  const progress = downloadedSize / totalSize;
+  return {
+    totalSize,
+    currentSpeed,
+    downloadedSize,
+    remainingSize,
+    eta,
+    progress,
+  };
+}
+
+function createChart() {
+  if (!chartContainer || speedData.length === 0) return;
+
+  // Clear existing chart
+  d3.select(chartContainer).selectAll('*').remove();
+
+  const margin = { top: 20, right: 30, bottom: 40, left: 60 };
+  const width = chartContainer.clientWidth - margin.left - margin.right;
+  const height = 200 - margin.top - margin.bottom;
+
+  const svg = d3
+    .select(chartContainer)
+    .append('svg')
+    .attr('width', width + margin.left + margin.right)
+    .attr('height', height + margin.top + margin.bottom);
+
+  const g = svg
+    .append('g')
+    .attr('transform', `translate(${margin.left},${margin.top})`);
+
+  // Scales
+  const xScale = d3
+    .scaleTime()
+    .domain(d3.extent(speedData, (d) => d.time) as [Date, Date])
+    .range([0, width]);
+
+  const yScale = d3
+    .scaleLinear()
+    .domain([0, d3.max(speedData, (d) => d.speed) || 0])
+    .nice()
+    .range([height, 0]);
+
+  // Line generator
+  const line = d3
+    .line<{ time: Date; speed: number; downloadId: string }>()
+    .x((d) => xScale(d.time))
+    .y((d) => yScale(d.speed))
+    .curve(d3.curveCardinal);
+
+  // Group data by download ID
+  const groupedData = Array.from(d3.group(speedData, (d) => d.downloadId));
+
+  // Order IDs with the active/target download first for consistent dark coloring
+  const idsOrdered = groupedData.map((d) => d[0]);
+  if (targetDownload) {
+    const idx = idsOrdered.indexOf(targetDownload.id);
+    if (idx > 0) {
+      idsOrdered.splice(idx, 1);
+      idsOrdered.unshift(targetDownload.id);
+    }
+  }
+
+  // Color scale from theme (accent and accent-dark)
+  const style = getComputedStyle(document.documentElement);
+  const accent = style.getPropertyValue('--theme-accent').trim() || '#428a91';
+  const accentDark =
+    style.getPropertyValue('--theme-accent-dark').trim() || '#2d626a';
+  const borderColor =
+    style.getPropertyValue('--theme-border').trim() || '#e5e7eb';
+  const accentPalette = [accentDark, accent, accentDark, accent];
+  const colorScale = d3
+    .scaleOrdinal()
+    .domain(idsOrdered)
+    .range(accentPalette.slice(0, idsOrdered.length));
+
+  // Add grid lines (theme border)
+  g.selectAll('.grid-line-y')
+    .data(yScale.ticks())
+    .enter()
+    .append('line')
+    .attr('class', 'grid-line-y')
+    .attr('x1', 0)
+    .attr('x2', width)
+    .attr('y1', (d) => yScale(d))
+    .attr('y2', (d) => yScale(d))
+    .attr('stroke', borderColor)
+    .attr('stroke-width', 0.5)
+    .attr('opacity', 0.7);
+
+  // Add lines for each download
+  groupedData.forEach(([downloadId, data]) => {
+    if (data.length > 1) {
+      g.append('path')
+        .datum(data)
+        .attr('fill', 'none')
+        .attr('stroke', colorScale(downloadId) as string)
+        .attr('stroke-width', 2)
+        .attr('d', line);
+    }
   });
+}
+
+let sub_currentDownloads = currentDownloads.subscribe((downloads) => {
+  if (downloads.length > 0) {
+    updateSpeedData();
+  }
+});
+
+let sub_sortedDownloads = currentDownloads.subscribe((downloads) => {
+  sortedDownloads = downloads
+    .slice()
+    .sort((a, b) => (a.queuePosition || 999) - (b.queuePosition || 999));
+});
+
+// Update chart every 5 seconds
+onMount(() => {
+  const interval = setInterval(() => {
+    updateSpeedData();
+  }, 1000);
+
+  return () => clearInterval(interval);
+});
+
+onDestroy(() => {
+  sub_currentDownloads();
+  sub_sortedDownloads();
+});
 </script>
 
 <!-- Speed Chart Section -->

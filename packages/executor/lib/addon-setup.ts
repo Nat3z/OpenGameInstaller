@@ -1,14 +1,14 @@
+import { spawn } from 'child_process';
+import { createWriteStream, readFileSync, rmSync } from 'fs';
+import { access, writeFile } from 'fs/promises';
+import { join } from 'path';
+import type z from 'zod';
 import {
   Addon,
-  AddonFileConfigurationSchema,
   type AddonFileConfiguration,
+  AddonFileConfigurationSchema,
 } from '@/addon';
-import { spawn } from 'child_process';
-import { join } from 'path';
-import { access, writeFile } from 'fs/promises';
-import { createWriteStream, readFileSync, rmSync } from 'fs';
 import { Git } from '@/git';
-import type z from 'zod';
 
 export class AddonSetup {
   public git: Git;

@@ -1,113 +1,113 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
-  import Modal from '@/frontend/components/modal/Modal.svelte';
-  import CloseModal from '@/frontend/components/modal/CloseModal.svelte';
-  import TitleModal from '@/frontend/components/modal/TitleModal.svelte';
-  import TextModal from '@/frontend/components/modal/TextModal.svelte';
-  import SectionModal from '@/frontend/components/modal/SectionModal.svelte';
-  import ButtonModal from '@/frontend/components/modal/ButtonModal.svelte';
-  import {
-    createNotification,
-    notificationHistory,
-  } from '@/frontend/store.svelte';
-  import CheckboxModal from '@/frontend/components/modal/CheckboxModal.svelte';
-  import type { ConfigurationFile } from '@ogi-sdk/connect';
-  import { ConfigurationBuilder } from 'ogi-addon/config';
-  import HeaderModal from '@/frontend/components/modal/HeaderModal.svelte';
+import type { ConfigurationFile } from '@ogi-sdk/connect';
+import { ConfigurationBuilder } from 'ogi-addon/config';
+import { onMount } from 'svelte';
+import ButtonModal from '@/frontend/components/modal/ButtonModal.svelte';
+import CheckboxModal from '@/frontend/components/modal/CheckboxModal.svelte';
+import CloseModal from '@/frontend/components/modal/CloseModal.svelte';
+import HeaderModal from '@/frontend/components/modal/HeaderModal.svelte';
+import Modal from '@/frontend/components/modal/Modal.svelte';
+import SectionModal from '@/frontend/components/modal/SectionModal.svelte';
+import TextModal from '@/frontend/components/modal/TextModal.svelte';
+import TitleModal from '@/frontend/components/modal/TitleModal.svelte';
+import {
+  createNotification,
+  notificationHistory,
+} from '@/frontend/store.svelte';
 
-  let showDebugModal = $state(false);
-  let priorityModals = $state({
-    urgent: false,
-    addonAsk1: false,
-    addonAsk2: false,
+let showDebugModal = $state(false);
+let priorityModals = $state({
+  urgent: false,
+  addonAsk1: false,
+  addonAsk2: false,
+});
+let showEventsPerSec = $state(false);
+let showNotificationSideView = $state(false);
+let showInsertAppModal = $state(false);
+// Build test config with real StringOption instances (matches production shape)
+let isDev = window.electronAPI.isDev();
+const optionConfig: {
+  config: ConfigurationFile;
+  id: string;
+  name: string;
+  description: string;
+} = {
+  config: new ConfigurationBuilder()
+    .addStringOption((option) =>
+      option
+        .setName('test-options')
+        .setDisplayName('Test Options')
+        .setDescription('This is a test options modal')
+        .setDefaultValue('')
+    )
+    .addStringOption((option) =>
+      option
+        .setName('test-option-2')
+        .setDisplayName('Test Options')
+        .setDescription('This is a test options modal')
+        .setAllowedValues(['test-option-1', 'test-option-2', 'test-option-3'])
+    )
+    .build(false),
+  id: 'test-options',
+  name: 'Test Options',
+  description: 'This is a test options modal',
+};
+
+let eventsPerSec = $state(0);
+onMount(() => {
+  document.addEventListener(
+    'dbg:debug-modal-trigger',
+    () => (showDebugModal = true)
+  );
+  document.addEventListener(
+    'dbg:events-proc-toggle',
+    () => (showEventsPerSec = !showEventsPerSec)
+  );
+  document.addEventListener('dbg:options-modal-trigger', () => {
+    document.dispatchEvent(
+      new CustomEvent('input-asked', {
+        detail: optionConfig,
+      })
+    );
   });
-  let showEventsPerSec = $state(false);
-  let showNotificationSideView = $state(false);
-  let showInsertAppModal = $state(false);
-  // Build test config with real StringOption instances (matches production shape)
-  let isDev = window.electronAPI.isDev();
-  const optionConfig: {
-    config: ConfigurationFile;
-    id: string;
-    name: string;
-    description: string;
-  } = {
-    config: new ConfigurationBuilder()
-      .addStringOption((option) =>
-        option
-          .setName('test-options')
-          .setDisplayName('Test Options')
-          .setDescription('This is a test options modal')
-          .setDefaultValue('')
-      )
-      .addStringOption((option) =>
-        option
-          .setName('test-option-2')
-          .setDisplayName('Test Options')
-          .setDescription('This is a test options modal')
-          .setAllowedValues(['test-option-1', 'test-option-2', 'test-option-3'])
-      )
-      .build(false),
-    id: 'test-options',
-    name: 'Test Options',
-    description: 'This is a test options modal',
-  };
-
-  let eventsPerSec = $state(0);
-  onMount(() => {
-    document.addEventListener(
-      'dbg:debug-modal-trigger',
-      () => (showDebugModal = true)
-    );
-    document.addEventListener(
-      'dbg:events-proc-toggle',
-      () => (showEventsPerSec = !showEventsPerSec)
-    );
-    document.addEventListener('dbg:options-modal-trigger', () => {
-      document.dispatchEvent(
-        new CustomEvent('input-asked', {
-          detail: optionConfig,
-        })
-      );
-    });
-    document.addEventListener('dbg:priority-test-trigger', () => {
-      // Queue up two modals with different priorities
-      priorityModals.urgent = true; // High priority modal
-      priorityModals.addonAsk1 = true; // Low priority modal
-      priorityModals.addonAsk2 = true; // Low priority modal
-    });
-    document.addEventListener('dbg:events-proc', (e: Event) => {
-      if (e instanceof CustomEvent && e.detail) {
-        eventsPerSec = e.detail.eventsPerSec;
-      }
-    });
-    document.addEventListener(
-      'dbg:notification-side-view-toggle',
-      () => (showNotificationSideView = !showNotificationSideView)
-    );
-    document.addEventListener('dbg:insert-app-modal-trigger', () => {
-      showInsertAppModal = true;
-    });
-
-    if (import.meta.hot) {
-      import.meta.hot.on('vite:afterUpdate', (payload) => {
-        console.debug('[HMR] afterUpdate', payload);
-        createNotification({
-          id: `hmr-after-${Math.random().toString(36).substring(2, 9)}`,
-          type: 'warning',
-          message: `HMR: Events are now deduplicated for a bunch of components now. Please refresh the page on the banner for proper functionality.`,
-        });
-      });
-      import.meta.hot.on('vite:beforeFullReload', () => {
-        console.debug('[HMR] beforeFullReload');
-        createNotification({
-          id: `hmr-fullreload-${Math.random().toString(36).substring(2, 9)}`,
-          type: 'warning',
-          message: 'HMR: full reload',
-        });
-      });
+  document.addEventListener('dbg:priority-test-trigger', () => {
+    // Queue up two modals with different priorities
+    priorityModals.urgent = true; // High priority modal
+    priorityModals.addonAsk1 = true; // Low priority modal
+    priorityModals.addonAsk2 = true; // Low priority modal
+  });
+  document.addEventListener('dbg:events-proc', (e: Event) => {
+    if (e instanceof CustomEvent && e.detail) {
+      eventsPerSec = e.detail.eventsPerSec;
     }
   });
+  document.addEventListener(
+    'dbg:notification-side-view-toggle',
+    () => (showNotificationSideView = !showNotificationSideView)
+  );
+  document.addEventListener('dbg:insert-app-modal-trigger', () => {
+    showInsertAppModal = true;
+  });
+
+  if (import.meta.hot) {
+    import.meta.hot.on('vite:afterUpdate', (payload) => {
+      console.debug('[HMR] afterUpdate', payload);
+      createNotification({
+        id: `hmr-after-${Math.random().toString(36).substring(2, 9)}`,
+        type: 'warning',
+        message: `HMR: Events are now deduplicated for a bunch of components now. Please refresh the page on the banner for proper functionality.`,
+      });
+    });
+    import.meta.hot.on('vite:beforeFullReload', () => {
+      console.debug('[HMR] beforeFullReload');
+      createNotification({
+        id: `hmr-fullreload-${Math.random().toString(36).substring(2, 9)}`,
+        type: 'warning',
+        message: 'HMR: full reload',
+      });
+    });
+  }
+});
 </script>
 
 {#if showDebugModal}

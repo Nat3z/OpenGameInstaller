@@ -1,216 +1,211 @@
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte';
-  import {
-    selectedView,
-    gameFocused,
-    launchGameTrigger,
-    launchOverlayPlayPageReady,
-  } from '@/frontend/store.svelte';
-  import { runLaunchAppAddons } from '@/frontend/utils';
+import { onDestroy, onMount } from 'svelte';
+import {
+  gameFocused,
+  launchGameTrigger,
+  launchOverlayPlayPageReady,
+  selectedView,
+} from '@/frontend/store.svelte';
+import { runLaunchAppAddons } from '@/frontend/utils';
 
-  interface Props {
-    gameId: number;
-    onComplete: () => void;
-    onError: (error: string) => void;
-  }
+interface Props {
+  gameId: number;
+  onComplete: () => void;
+  onError: (error: string) => void;
+}
 
-  let { gameId, onComplete, onError }: Props = $props();
+let { gameId, onComplete, onError }: Props = $props();
 
-  let gameName = $state('Please wait');
-  let status = $state<'loading' | 'running' | 'success' | 'error'>('loading');
-  let errorMessage = $state('');
-  let hookType: 'pre' | 'post' | null = $state(null);
-  let isHookOnly = $state(false);
-  let wrapperCommand: string | null = $state(null);
-  let isWrapperLaunch = $state(false);
-  const timeouts: ReturnType<typeof setTimeout>[] = [];
-  let isMounted = false;
+let gameName = $state('Please wait');
+let status = $state<'loading' | 'running' | 'success' | 'error'>('loading');
+let errorMessage = $state('');
+let hookType: 'pre' | 'post' | null = $state(null);
+let isHookOnly = $state(false);
+let wrapperCommand: string | null = $state(null);
+let isWrapperLaunch = $state(false);
+const timeouts: ReturnType<typeof setTimeout>[] = [];
+let isMounted = false;
 
-  onMount(async () => {
-    isMounted = true;
-    // Parse query parameters
-    const urlParams = new URLSearchParams(window.location.search);
-    const hookTypeParam = urlParams.get('hookType');
-    const noLaunchParam = urlParams.get('noLaunch');
-    wrapperCommand = urlParams.get('wrapperCommand');
-    isWrapperLaunch = !!wrapperCommand;
+onMount(async () => {
+  isMounted = true;
+  // Parse query parameters
+  const urlParams = new URLSearchParams(window.location.search);
+  const hookTypeParam = urlParams.get('hookType');
+  const noLaunchParam = urlParams.get('noLaunch');
+  wrapperCommand = urlParams.get('wrapperCommand');
+  isWrapperLaunch = !!wrapperCommand;
 
-    hookType =
-      hookTypeParam === 'pre'
-        ? 'pre'
-        : hookTypeParam === 'post'
-          ? 'post'
-          : null;
-    isHookOnly = noLaunchParam === 'true' && hookType !== null;
+  hookType =
+    hookTypeParam === 'pre' ? 'pre' : hookTypeParam === 'post' ? 'post' : null;
+  isHookOnly = noLaunchParam === 'true' && hookType !== null;
 
-    // wait 200 ms for the events to register
-    await new Promise((r) => setTimeout(r, 200));
+  // wait 200 ms for the events to register
+  await new Promise((r) => setTimeout(r, 200));
 
-    try {
-      // Load library info
-      const libraryInfo = await window.electronAPI.app.getLibraryInfo(gameId);
+  try {
+    // Load library info
+    const libraryInfo = await window.electronAPI.app.getLibraryInfo(gameId);
 
-      if (!libraryInfo) {
-        status = 'error';
-        errorMessage = 'Game not found in library';
-        onError('Game not found');
-        return;
-      }
+    if (!libraryInfo) {
+      status = 'error';
+      errorMessage = 'Game not found in library';
+      onError('Game not found');
+      return;
+    }
 
-      gameName = libraryInfo.name;
-      status = 'running';
+    gameName = libraryInfo.name;
+    status = 'running';
 
-      if (isHookOnly && hookType) {
-        // Hook-only mode: run addon event without launching game
-        console.log(
-          `[GameLaunchOverlay] Running ${hookType}-launch hooks for ${gameName}`
-        );
+    if (isHookOnly && hookType) {
+      // Hook-only mode: run addon event without launching game
+      console.log(
+        `[GameLaunchOverlay] Running ${hookType}-launch hooks for ${gameName}`
+      );
 
-        try {
-          await runLaunchAppAddons(libraryInfo, hookType);
-
-          status = 'success';
-          console.log(`[GameLaunchOverlay] ${hookType}-launch hooks completed`);
-
-          const t = setTimeout(() => {
-            if (isMounted) {
-              onComplete();
-              window.electronAPI.app.quit();
-            }
-          }, 2000);
-          timeouts.push(t);
-        } catch (error) {
-          console.error(
-            `[GameLaunchOverlay] ${hookType}-launch hooks failed:`,
-            error
-          );
-          status = 'error';
-          errorMessage =
-            error instanceof Error ? error.message : 'Hook execution failed';
-          onError(errorMessage);
-
-          const t = setTimeout(() => {
-            if (isMounted) window.electronAPI.app.quit();
-          }, 5000);
-          timeouts.push(t);
-        }
-      } else if (isWrapperLaunch && wrapperCommand) {
-        // Wrapper mode: run pre-launch hooks, execute wrapper command exactly, then run post-launch hooks
-        console.log(
-          `[GameLaunchOverlay] Running wrapped launch for ${gameName}: ${wrapperCommand}`
-        );
-
-        try {
-          await runLaunchAppAddons(libraryInfo, 'pre');
-        } catch (error) {
-          console.error('[GameLaunchOverlay] Pre-launch hooks failed:', error);
-          status = 'error';
-          errorMessage =
-            error instanceof Error ? error.message : 'Pre-launch failed';
-          onError(errorMessage);
-          const t = setTimeout(() => {
-            if (isMounted) window.electronAPI.app.quit();
-          }, 5000);
-          timeouts.push(t);
-          return;
-        }
-
-        let wrapperError: string | null = null;
-        await window.electronAPI.app.hideWindow();
-        const wrapperResult =
-          await window.electronAPI.app.executeWrapperCommand(
-            gameId,
-            wrapperCommand
-          );
-        if (!wrapperResult.success) {
-          wrapperError = wrapperResult.error || 'Wrapped command failed';
-        }
-        await window.electronAPI.app.showWindow();
-
-        let postLaunchError: string | null = null;
-        try {
-          await runLaunchAppAddons(libraryInfo, 'post');
-        } catch (error) {
-          console.error('[GameLaunchOverlay] Post-launch hooks failed:', error);
-          postLaunchError =
-            error instanceof Error ? error.message : 'Post-launch failed';
-        }
-
-        if (wrapperError || postLaunchError) {
-          status = 'error';
-          errorMessage =
-            wrapperError && postLaunchError
-              ? `${wrapperError}\n${postLaunchError}`
-              : (wrapperError ?? postLaunchError ?? 'Wrapped launch failed');
-          onError(errorMessage);
-          const t2 = setTimeout(() => {
-            if (isMounted) window.electronAPI.app.quit();
-          }, 5000);
-          timeouts.push(t2);
-          return;
-        }
+      try {
+        await runLaunchAppAddons(libraryInfo, hookType);
 
         status = 'success';
-        const t3 = setTimeout(() => {
+        console.log(`[GameLaunchOverlay] ${hookType}-launch hooks completed`);
+
+        const t = setTimeout(() => {
           if (isMounted) {
             onComplete();
             window.electronAPI.app.quit();
           }
         }, 2000);
-        timeouts.push(t3);
-      } else if (libraryInfo.umu) {
-        // Open the play page in the background and trigger the play button
-        // so that the full PlayPage launch flow (addon pre-launch, etc.) runs
-        launchOverlayPlayPageReady.set(undefined);
-        selectedView.set('library');
-        gameFocused.set(gameId);
-
-        const READINESS_TIMEOUT_MS = 5000;
-        const ready = await new Promise<boolean>((resolve) => {
-          const timeout = setTimeout(() => {
-            unsub();
-            resolve(false);
-          }, READINESS_TIMEOUT_MS);
-          const unsub = launchOverlayPlayPageReady.subscribe((readyGameId) => {
-            if (readyGameId === gameId) {
-              clearTimeout(timeout);
-              unsub();
-              resolve(true);
-            }
-          });
-        });
-        if (!ready) {
-          status = 'error';
-          errorMessage =
-            'Library view did not load in time. Please try launching again.';
-          onError(errorMessage);
-          return;
-        }
-        launchGameTrigger.set(gameId);
-
-        // Keep this overlay mounted for Steam shortcut launches.
-        // The window will be hidden on game:launch and shown again on game:exit.
-        status = 'running';
-      } else {
+        timeouts.push(t);
+      } catch (error) {
+        console.error(
+          `[GameLaunchOverlay] ${hookType}-launch hooks failed:`,
+          error
+        );
         status = 'error';
         errorMessage =
-          'Game is not configured for Steam shortcut launching (UMU mode required)';
+          error instanceof Error ? error.message : 'Hook execution failed';
         onError(errorMessage);
+
+        const t = setTimeout(() => {
+          if (isMounted) window.electronAPI.app.quit();
+        }, 5000);
+        timeouts.push(t);
       }
-    } catch (error) {
-      console.error('[GameLaunchOverlay] Error launching game:', error);
+    } else if (isWrapperLaunch && wrapperCommand) {
+      // Wrapper mode: run pre-launch hooks, execute wrapper command exactly, then run post-launch hooks
+      console.log(
+        `[GameLaunchOverlay] Running wrapped launch for ${gameName}: ${wrapperCommand}`
+      );
+
+      try {
+        await runLaunchAppAddons(libraryInfo, 'pre');
+      } catch (error) {
+        console.error('[GameLaunchOverlay] Pre-launch hooks failed:', error);
+        status = 'error';
+        errorMessage =
+          error instanceof Error ? error.message : 'Pre-launch failed';
+        onError(errorMessage);
+        const t = setTimeout(() => {
+          if (isMounted) window.electronAPI.app.quit();
+        }, 5000);
+        timeouts.push(t);
+        return;
+      }
+
+      let wrapperError: string | null = null;
+      await window.electronAPI.app.hideWindow();
+      const wrapperResult = await window.electronAPI.app.executeWrapperCommand(
+        gameId,
+        wrapperCommand
+      );
+      if (!wrapperResult.success) {
+        wrapperError = wrapperResult.error || 'Wrapped command failed';
+      }
+      await window.electronAPI.app.showWindow();
+
+      let postLaunchError: string | null = null;
+      try {
+        await runLaunchAppAddons(libraryInfo, 'post');
+      } catch (error) {
+        console.error('[GameLaunchOverlay] Post-launch hooks failed:', error);
+        postLaunchError =
+          error instanceof Error ? error.message : 'Post-launch failed';
+      }
+
+      if (wrapperError || postLaunchError) {
+        status = 'error';
+        errorMessage =
+          wrapperError && postLaunchError
+            ? `${wrapperError}\n${postLaunchError}`
+            : (wrapperError ?? postLaunchError ?? 'Wrapped launch failed');
+        onError(errorMessage);
+        const t2 = setTimeout(() => {
+          if (isMounted) window.electronAPI.app.quit();
+        }, 5000);
+        timeouts.push(t2);
+        return;
+      }
+
+      status = 'success';
+      const t3 = setTimeout(() => {
+        if (isMounted) {
+          onComplete();
+          window.electronAPI.app.quit();
+        }
+      }, 2000);
+      timeouts.push(t3);
+    } else if (libraryInfo.umu) {
+      // Open the play page in the background and trigger the play button
+      // so that the full PlayPage launch flow (addon pre-launch, etc.) runs
+      launchOverlayPlayPageReady.set(undefined);
+      selectedView.set('library');
+      gameFocused.set(gameId);
+
+      const READINESS_TIMEOUT_MS = 5000;
+      const ready = await new Promise<boolean>((resolve) => {
+        const timeout = setTimeout(() => {
+          unsub();
+          resolve(false);
+        }, READINESS_TIMEOUT_MS);
+        const unsub = launchOverlayPlayPageReady.subscribe((readyGameId) => {
+          if (readyGameId === gameId) {
+            clearTimeout(timeout);
+            unsub();
+            resolve(true);
+          }
+        });
+      });
+      if (!ready) {
+        status = 'error';
+        errorMessage =
+          'Library view did not load in time. Please try launching again.';
+        onError(errorMessage);
+        return;
+      }
+      launchGameTrigger.set(gameId);
+
+      // Keep this overlay mounted for Steam shortcut launches.
+      // The window will be hidden on game:launch and shown again on game:exit.
+      status = 'running';
+    } else {
       status = 'error';
       errorMessage =
-        error instanceof Error ? error.message : 'Unknown error occurred';
+        'Game is not configured for Steam shortcut launching (UMU mode required)';
       onError(errorMessage);
     }
-  });
+  } catch (error) {
+    console.error('[GameLaunchOverlay] Error launching game:', error);
+    status = 'error';
+    errorMessage =
+      error instanceof Error ? error.message : 'Unknown error occurred';
+    onError(errorMessage);
+  }
+});
 
-  onDestroy(() => {
-    isMounted = false;
-    for (const id of timeouts) clearTimeout(id);
-    timeouts.length = 0;
-  });
+onDestroy(() => {
+  isMounted = false;
+  for (const id of timeouts) clearTimeout(id);
+  timeouts.length = 0;
+});
 </script>
 
 <div

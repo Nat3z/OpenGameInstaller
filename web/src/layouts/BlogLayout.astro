@@ -1,70 +1,93 @@
 ---
-import Layout from "./Layout.astro";
-import Header from "../components/Header.astro";
+import Header from '../components/Header.astro';
+import Layout from './Layout.astro';
+
 const { frontmatter } = Astro.props;
 const sectionName = frontmatter.section;
 const part: number = frontmatter.part;
 
-const sectionEmbedConfig: Record<string, { tagline: string; image: string; imageAlt: string }> = {
-  "What is OpenGameInstaller?": {
-    tagline: "Get the big-picture overview of OGI's architecture and addon-first approach.",
-    image: "/librarypage.png",
-    imageAlt: "OpenGameInstaller library interface with a polished game collection grid.",
+const sectionEmbedConfig: Record<
+  string,
+  { tagline: string; image: string; imageAlt: string }
+> = {
+  'What is OpenGameInstaller?': {
+    tagline:
+      "Get the big-picture overview of OGI's architecture and addon-first approach.",
+    image: '/librarypage.png',
+    imageAlt:
+      'OpenGameInstaller library interface with a polished game collection grid.',
   },
-  "Your First Addon": {
-    tagline: "Follow practical, step-by-step docs to build and publish addons with confidence.",
-    image: "/code-snippet.png",
-    imageAlt: "Code snippet for OpenGameInstaller addon development in TypeScript.",
+  'Your First Addon': {
+    tagline:
+      'Follow practical, step-by-step docs to build and publish addons with confidence.',
+    image: '/code-snippet.png',
+    imageAlt:
+      'Code snippet for OpenGameInstaller addon development in TypeScript.',
   },
   "User's Guide": {
-    tagline: "Learn installation, downloading, launching, and troubleshooting for day-to-day use.",
-    image: "/deck.png",
-    imageAlt: "OpenGameInstaller shown on a Steam Deck-compatible workflow preview.",
+    tagline:
+      'Learn installation, downloading, launching, and troubleshooting for day-to-day use.',
+    image: '/deck.png',
+    imageAlt:
+      'OpenGameInstaller shown on a Steam Deck-compatible workflow preview.',
   },
-  "Updates and Migrations": {
-    tagline: "Upgrade addons safely with API migration notes and version-specific upgrade guides.",
-    image: "/playpage.png",
-    imageAlt: "OpenGameInstaller gameplay view used for update and migration docs preview.",
+  'Updates and Migrations': {
+    tagline:
+      'Upgrade addons safely with API migration notes and version-specific upgrade guides.',
+    image: '/playpage.png',
+    imageAlt:
+      'OpenGameInstaller gameplay view used for update and migration docs preview.',
   },
-  "Resources": {
-    tagline: "Find quick setup references, community contribution guides, and support resources.",
-    image: "/storepage.png",
-    imageAlt: "OpenGameInstaller store view previewing resource-centric documentation.",
+  Resources: {
+    tagline:
+      'Find quick setup references, community contribution guides, and support resources.',
+    image: '/storepage.png',
+    imageAlt:
+      'OpenGameInstaller store view previewing resource-centric documentation.',
   },
 };
 
 const sectionEmbed = sectionEmbedConfig[sectionName] ?? {
-  tagline: "Browse detailed OpenGameInstaller documentation and implementation guides.",
-  image: "/librarypage.png",
-  imageAlt: "OpenGameInstaller documentation preview image.",
+  tagline:
+    'Browse detailed OpenGameInstaller documentation and implementation guides.',
+  image: '/librarypage.png',
+  imageAlt: 'OpenGameInstaller documentation preview image.',
 };
 
-const frontmatterDescription = typeof frontmatter.description === "string" ? frontmatter.description.trim() : "";
-const baseDescription = frontmatterDescription.length > 0
-  ? frontmatterDescription
-  : `${frontmatter.title} in the ${sectionName} documentation section.`;
-const embedDescription = `${baseDescription.replace(/\.+$/, "")}. ${sectionEmbed.tagline}`;
+const frontmatterDescription =
+  typeof frontmatter.description === 'string'
+    ? frontmatter.description.trim()
+    : '';
+const baseDescription =
+  frontmatterDescription.length > 0
+    ? frontmatterDescription
+    : `${frontmatter.title} in the ${sectionName} documentation section.`;
+const embedDescription = `${baseDescription.replace(/\.+$/, '')}. ${sectionEmbed.tagline}`;
 // now read each part of the section
 // read every document in the docs folder, and get the basename of the file
 let docsInSection = await Astro.glob(`../pages/docs/**/*.{md,mdx}`);
-let sections: string[] = []
+let sections: string[] = [];
 
 docsInSection.forEach((doc) => {
-  const section = doc.frontmatter.section
+  const section = doc.frontmatter.section;
   if (sections.includes(section)) {
     return;
   }
   sections.push(section);
-})
+});
 
 // sort sections by the index.md's (part 0) priority #
 sections = sections.sort((a, b) => {
-  const partA = docsInSection.find((doc) => doc.frontmatter.section === a && doc.frontmatter.part === 0);
+  const partA = docsInSection.find(
+    (doc) => doc.frontmatter.section === a && doc.frontmatter.part === 0
+  );
   if (partA === undefined) {
     throw new Error(`Section ${a} does not have a part 0, index.md`);
   }
-  const partB = docsInSection.find((doc) => doc.frontmatter.section === b && doc.frontmatter.part === 0);
-  if  (partB === undefined) {
+  const partB = docsInSection.find(
+    (doc) => doc.frontmatter.section === b && doc.frontmatter.part === 0
+  );
+  if (partB === undefined) {
     throw new Error(`Section ${b} does not have a part 0, index.md`);
   }
   return partA.frontmatter.priority - partB.frontmatter.priority;
@@ -73,14 +96,21 @@ docsInSection.sort((a, b) => a.frontmatter.part - b.frontmatter.part);
 
 let docsConnectedToSections: Map<string, any[]> = new Map();
 for (let section of sections) {
-  docsConnectedToSections.set(section, docsInSection.filter((doc) => {
-    const docSection = doc.frontmatter.section;
-    return docSection === section;
-  }));
+  docsConnectedToSections.set(
+    section,
+    docsInSection.filter((doc) => {
+      const docSection = doc.frontmatter.section;
+      return docSection === section;
+    })
+  );
 }
 // sort docs by part, descending to ascending
-const previousSection = part - 1 >= 0 ? docsConnectedToSections.get(sectionName)!![part - 1] : null;
-const nextSection = part + 1 < docsConnectedToSections.get(sectionName)!!.length ? docsConnectedToSections.get(sectionName)!![part + 1] : null;
+const previousSection =
+  part - 1 >= 0 ? docsConnectedToSections.get(sectionName)!![part - 1] : null;
+const nextSection =
+  part + 1 < docsConnectedToSections.get(sectionName)!!.length
+    ? docsConnectedToSections.get(sectionName)!![part + 1]
+    : null;
 const selectedSection = docsConnectedToSections.get(sectionName)!![part];
 ---
 

@@ -1,52 +1,53 @@
 import '@/electron/lib/source-maps.js';
-import { join } from 'path';
-import { quote as shellQuote } from 'shell-quote';
-import {
-  port,
-  isSecurityCheckEnabled,
-  isAddonServerListening,
-  startAddonServer,
-  stopAddonServer,
-  addonServer,
-} from '@/electron/server/addon-server.js';
+import type { ConfigurationFile } from '@ogi-sdk/connect';
 import { app, BrowserWindow, globalShortcut, ipcMain, shell } from 'electron';
 import fs, { existsSync, readFileSync } from 'fs';
-import { Addon } from '@/electron/manager/manager.addon.js';
-import { stopClient } from '@/electron/manager/manager.webtorrent.js';
-import type { ConfigurationFile } from '@ogi-sdk/connect';
-import AppEventHandler from '@/electron/handlers/handler.app.js';
-import FSEventHandler from '@/electron/handlers/handler.fs.js';
-import RealdDebridHandler from '@/electron/handlers/handler.realdebrid.js';
+import { join } from 'path';
+import { quote as shellQuote } from 'shell-quote';
+import AddonManagerHandler, {
+  startAddons,
+} from '@/electron/handlers/handler.addon.js';
 import AllDebridHandler from '@/electron/handlers/handler.alldebrid.js';
-import TorrentHandler from '@/electron/handlers/handler.torrent.js';
+import AppEventHandler from '@/electron/handlers/handler.app.js';
 import DirectDownloadHandler from '@/electron/handlers/handler.ddl.js';
-import { runLaunchAppHooks } from '@/electron/server/addon-lifecycle.js';
+import FSEventHandler from '@/electron/handlers/handler.fs.js';
+import {
+  type ExecuteWrapperResult,
+  executeWrapperCommandForApp,
+  launchGameFromLibrary,
+} from '@/electron/handlers/handler.library.js';
+import OOBEHandler from '@/electron/handlers/handler.oobe.js';
+import { registerPowerSaveHandlers } from '@/electron/handlers/handler.power-save.js';
+import RealdDebridHandler from '@/electron/handlers/handler.realdebrid.js';
+import TorrentHandler from '@/electron/handlers/handler.torrent.js';
+import { registerUmuHandlers } from '@/electron/handlers/handler.umu.js';
+import { loadLibraryInfo } from '@/electron/handlers/helpers.app/library.js';
+import { releasePowerSaveBlock } from '@/electron/lib/power-save.js';
+import { Addon } from '@/electron/manager/manager.addon.js';
+import { waitForAddonsConfigured } from '@/electron/manager/manager.addon-readiness.js';
 import { __dirname, isDev } from '@/electron/manager/manager.paths.js';
+import { stopClient } from '@/electron/manager/manager.webtorrent.js';
+import { runLaunchAppHooks } from '@/electron/server/addon-lifecycle.js';
+import {
+  addonServer,
+  isAddonServerListening,
+  isSecurityCheckEnabled,
+  port,
+  startAddonServer,
+  stopAddonServer,
+} from '@/electron/server/addon-server.js';
 import {
   checkForAddonUpdates,
   convertLibrary,
   IS_NIXOS,
-  startupEnvironmentReady,
   STEAMTINKERLAUNCH_PATH,
+  startupEnvironmentReady,
 } from '@/electron/startup.js';
-import AddonManagerHandler, {
-  startAddons,
-} from '@/electron/handlers/handler.addon.js';
-import { waitForAddonsConfigured } from '@/electron/manager/manager.addon-readiness.js';
-import OOBEHandler from '@/electron/handlers/handler.oobe.js';
 import {
-  runStartupTasks,
   closeSplashWindow,
+  runStartupTasks,
 } from '@/electron/startup-runner.js';
-import { registerUmuHandlers } from '@/electron/handlers/handler.umu.js';
-import { registerPowerSaveHandlers } from '@/electron/handlers/handler.power-save.js';
-import {
-  executeWrapperCommandForApp,
-  launchGameFromLibrary,
-  type ExecuteWrapperResult,
-} from '@/electron/handlers/handler.library.js';
-import { loadLibraryInfo } from '@/electron/handlers/helpers.app/library.js';
-import { releasePowerSaveBlock } from '@/electron/lib/power-save.js';
+
 // import steamworks from 'steamworks.js';
 
 type LaunchForwardPayload = {

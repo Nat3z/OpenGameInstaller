@@ -47,8 +47,8 @@
     "build": "tsdown --config tsdown.config.js && bun run --filter '../../packages/addon-server' generate:event-proxy",
     "typecheck": "tsc --noEmit",
     "release": "bun run build && npm publish",
-    "format": "biome format --write src package.json --files-ignore-unknown=true",
-    "lint": "biome lint src package.json --files-ignore-unknown=true",
+    "format": "biome check --write src package.json --files-ignore-unknown=true",
+    "lint": "biome check src package.json --files-ignore-unknown=true",
     "release-beta": "bun run build && npm publish --tag future"
   },
   "devDependencies": {

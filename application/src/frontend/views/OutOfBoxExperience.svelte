@@ -1,407 +1,540 @@
 <script lang="ts">
-  import { preventDefault } from 'svelte/legacy';
-  import { fade } from 'svelte/transition';
+import { onDestroy, onMount } from 'svelte';
+import { preventDefault } from 'svelte/legacy';
+import { fade } from 'svelte/transition';
+import ThemePicker from '@/frontend/components/ThemePicker.svelte';
+import {
+  type CommunityAddon,
+  createNotification,
+  DEFAULT_MARKETPLACE_SOURCES,
+  oobeLog,
+} from '@/frontend/store.svelte';
 
-  import { onMount, onDestroy } from 'svelte';
-  import { createNotification, oobeLog } from '@/frontend/store.svelte';
-  import ThemePicker from '@/frontend/components/ThemePicker.svelte';
+let stage = $state(0);
 
-  let stage = $state(0);
+let selectedTorrenter:
+  | 'qbittorrent'
+  | 'real-debrid'
+  | 'all-debrid'
+  | 'webtorrent'
+  | 'torbox'
+  | 'premiumize'
+  | '' = $state('webtorrent');
+let fulfilledRequirements = $state(false);
+let addons = '';
+let addonSearch = $state('');
+let oobeMarketplaceSources = $state<string[]>([...DEFAULT_MARKETPLACE_SOURCES]);
+let marketplaceSourceUrl = $state('');
+let selectedAddons = $state<string[]>([
+  `${DEFAULT_MARKETPLACE_SOURCES[0]}@https://github.com/Nat3z/steam-integration`,
+]);
+let selectedTheme = $state('light');
+let isSettingKey = $state(false);
+let logContainer: HTMLDivElement | null = $state(null);
+let previousLogLength = $state(0);
+let communityAddonsLoading = $state(false);
+let communityAddonsError = $state('');
 
-  let selectedTorrenter:
-    | 'qbittorrent'
-    | 'real-debrid'
-    | 'all-debrid'
-    | 'webtorrent'
-    | 'torbox'
-    | 'premiumize'
-    | '' = $state('webtorrent');
-  let fulfilledRequirements = $state(false);
-  let addons = '';
-  let addonSearch = $state('');
-  let selectedAddons = $state<string[]>([
-    'https://github.com/Nat3z/steam-integration',
-  ]);
-  let selectedTheme = $state('light');
-  let isSettingKey = $state(false);
-  let logContainer: HTMLDivElement | null = $state(null);
-  let previousLogLength = $state(0);
+// Auto-scroll when new logs are added
+$effect(() => {
+  if (logContainer && $oobeLog.logs.length > previousLogLength) {
+    logContainer.scrollTo({
+      top: logContainer.scrollHeight,
+      behavior: 'smooth',
+    });
+    previousLogLength = $oobeLog.logs.length;
+  }
+});
 
-  // Auto-scroll when new logs are added
-  $effect(() => {
-    if (logContainer && $oobeLog.logs.length > previousLogLength) {
-      logContainer.scrollTo({
-        top: logContainer.scrollHeight,
-        behavior: 'smooth',
-      });
-      previousLogLength = $oobeLog.logs.length;
+$effect(() => {
+  if (selectedTorrenter === 'webtorrent') {
+    fulfilledRequirements = true;
+  } else {
+    fulfilledRequirements = false;
+  }
+});
+
+interface Props {
+  finishedSetup: () => void;
+}
+
+type ListedCommunityAddon = CommunityAddon & { marketplaceUrl: string };
+
+let communityList: ListedCommunityAddon[] = $state([]);
+let { finishedSetup }: Props = $props();
+
+function normalizeMarketplaceSource(source: string) {
+  return source.trim().replace(/\/+$/, '');
+}
+
+function marketplaceCatalogUrl(source: string) {
+  return source.endsWith('/api/marketplace.json')
+    ? source
+    : `${source}/api/marketplace.json`;
+}
+
+function toMarketplaceAddonLink(marketplaceUrl: string, source: string) {
+  return `${normalizeMarketplaceSource(marketplaceUrl)}@${source}`;
+}
+
+function toGitAddonLink(source: string) {
+  const trimmed = source.trim();
+  if (!trimmed) return '';
+  if (
+    trimmed.startsWith('local@') ||
+    trimmed.startsWith('git@') ||
+    trimmed.includes('@')
+  ) {
+    return trimmed;
+  }
+  return `git@${trimmed}`;
+}
+
+async function loadCommunityAddonsFromMarketplaces(sources: string[]) {
+  communityAddonsLoading = true;
+  communityAddonsError = '';
+  const normalizedSources = [
+    ...new Set(sources.map((source) => normalizeMarketplaceSource(source))),
+  ].filter(Boolean);
+
+  try {
+    const results = await Promise.allSettled(
+      normalizedSources.map(async (marketplaceUrl) => {
+        const response = await window.electronAPI.app.axios({
+          method: 'GET',
+          url: marketplaceCatalogUrl(marketplaceUrl),
+          headers: {
+            'Content-Type': 'application/json',
+            'User-Agent': 'OpenGameInstaller Client/Rest1.0',
+          },
+        });
+        const addons = (response.data as CommunityAddon[]) ?? [];
+        return addons.map((addon) => ({
+          ...addon,
+          marketplaceUrl,
+        }));
+      })
+    );
+
+    const listed: ListedCommunityAddon[] = [];
+    let failedCount = 0;
+    for (const result of results) {
+      if (result.status === 'fulfilled') {
+        listed.push(...result.value);
+      } else {
+        failedCount += 1;
+        console.error('Failed to load marketplace source:', result.reason);
+      }
     }
-  });
 
-  $effect(() => {
-    if (selectedTorrenter === 'webtorrent') {
-      fulfilledRequirements = true;
-    } else {
-      fulfilledRequirements = false;
+    communityList = listed;
+    if (listed.length === 0 && failedCount > 0) {
+      communityAddonsError =
+        'Failed to load marketplace addons. Check your marketplace sources and try again.';
     }
-  });
+  } finally {
+    communityAddonsLoading = false;
+  }
+}
 
-  interface Props {
-    finishedSetup: () => void;
+async function addMarketplaceSource() {
+  const source = normalizeMarketplaceSource(marketplaceSourceUrl);
+  if (!source) return;
+
+  try {
+    new URL(source);
+  } catch {
+    createNotification({
+      message: 'Please enter a valid marketplace URL',
+      id: Math.random().toString(36).substring(7),
+      type: 'error',
+    });
+    return;
   }
 
-  type CommunityAddon = {
-    name: string;
-    author: string;
-    source: string;
-    img: string;
-    description: string;
-  };
+  if (oobeMarketplaceSources.includes(source)) {
+    marketplaceSourceUrl = '';
+    return;
+  }
 
-  let communityList: Promise<CommunityAddon[]> | null = $state(null);
-  let { finishedSetup }: Props = $props();
+  oobeMarketplaceSources = [...oobeMarketplaceSources, source];
+  marketplaceSourceUrl = '';
+  await loadCommunityAddonsFromMarketplaces(oobeMarketplaceSources);
+}
 
-  async function downloadTools() {
-    console.log('Downloading tools');
-    // Activate OOBE logging
+async function removeMarketplaceSource(source: string) {
+  const nextSources = oobeMarketplaceSources.filter(
+    (marketplaceSource) => marketplaceSource !== source
+  );
+  oobeMarketplaceSources = nextSources.length
+    ? nextSources
+    : [...DEFAULT_MARKETPLACE_SOURCES];
+
+  selectedAddons = selectedAddons.filter((addon) => {
+    if (!addon.includes('@') || addon.startsWith('git@')) return true;
+    const marketplaceUrl = addon.slice(0, addon.indexOf('@'));
+    return oobeMarketplaceSources.includes(marketplaceUrl);
+  });
+
+  await loadCommunityAddonsFromMarketplaces(oobeMarketplaceSources);
+}
+
+async function resetMarketplaceSources() {
+  oobeMarketplaceSources = [...DEFAULT_MARKETPLACE_SOURCES];
+  selectedAddons = selectedAddons.filter((addon) => {
+    if (!addon.includes('@') || addon.startsWith('git@')) return true;
+    const marketplaceUrl = addon.slice(0, addon.indexOf('@'));
+    return oobeMarketplaceSources.includes(marketplaceUrl);
+  });
+  await loadCommunityAddonsFromMarketplaces(oobeMarketplaceSources);
+}
+
+async function downloadTools() {
+  console.log('Downloading tools');
+  // Activate OOBE logging
+  oobeLog.update((currentLog) => ({
+    ...currentLog,
+    isActive: true,
+    logs: [],
+  }));
+
+  const result = await window.electronAPI.oobe.downloadTools();
+  if (!result[0]) {
     oobeLog.update((currentLog) => ({
       ...currentLog,
-      isActive: true,
-      logs: [],
+      isActive: false,
     }));
+    return;
+  }
 
-    const result = await window.electronAPI.oobe.downloadTools();
-    if (!result[0]) {
-      oobeLog.update((currentLog) => ({
-        ...currentLog,
-        isActive: false,
-      }));
+  if (result[1]) {
+    stage = 1.5;
+    // write the directory first ./config/option
+    window.electronAPI.fs.mkdir('./config/option/');
+    window.electronAPI.fs.write(
+      './config/option/installed.json',
+      JSON.stringify({ restartRequired: true, installed: false })
+    );
+  } else stage = 2;
+}
+
+function submitTorrenter() {
+  if (selectedTorrenter === 'real-debrid') {
+    console.log('Submitting RD API Key');
+    // save a file with the api key
+    const apiKey = document.querySelector(
+      'input[data-rd-key]'
+    ) as HTMLInputElement;
+    window.electronAPI.fs.mkdir('./config/option/');
+    window.electronAPI.fs.write(
+      './config/option/realdebrid.json',
+      JSON.stringify({ debridApiKey: apiKey.value, torboxApiKey: '' })
+    );
+
+    fulfilledRequirements = true;
+  } else if (selectedTorrenter === 'qbittorrent') {
+    console.log('Submitting qBittorrent');
+    const ip = document.querySelector('input[data-qb-ip]') as HTMLInputElement;
+    const port = document.querySelector(
+      'input[data-qb-port]'
+    ) as HTMLInputElement;
+    const username = document.querySelector(
+      'input[data-qb-username]'
+    ) as HTMLInputElement;
+    const password = document.querySelector(
+      'input[data-qb-pwd]'
+    ) as HTMLInputElement;
+
+    if (!ip.value || !port.value || !username.value || !password.value) {
+      console.error('Missing qBittorrent fields');
       return;
     }
 
-    if (result[1]) {
-      stage = 1.5;
-      // write the directory first ./config/option
-      window.electronAPI.fs.mkdir('./config/option/');
-      window.electronAPI.fs.write(
-        './config/option/installed.json',
-        JSON.stringify({ restartRequired: true, installed: false })
-      );
-    } else stage = 2;
-  }
+    window.electronAPI.fs.mkdir('./config/option/');
+    window.electronAPI.fs.write(
+      './config/option/qbittorrent.json',
+      JSON.stringify({
+        qbitHost: ip.value,
+        qbitPort: port.value,
+        qbitUsername: username.value,
+        qbitPassword: password.value,
+      })
+    );
 
-  function submitTorrenter() {
-    if (selectedTorrenter === 'real-debrid') {
-      console.log('Submitting RD API Key');
-      // save a file with the api key
-      const apiKey = document.querySelector(
-        'input[data-rd-key]'
-      ) as HTMLInputElement;
-      window.electronAPI.fs.mkdir('./config/option/');
-      window.electronAPI.fs.write(
-        './config/option/realdebrid.json',
-        JSON.stringify({ debridApiKey: apiKey.value, torboxApiKey: '' })
-      );
-
-      fulfilledRequirements = true;
-    } else if (selectedTorrenter === 'qbittorrent') {
-      console.log('Submitting qBittorrent');
-      const ip = document.querySelector(
-        'input[data-qb-ip]'
-      ) as HTMLInputElement;
-      const port = document.querySelector(
-        'input[data-qb-port]'
-      ) as HTMLInputElement;
-      const username = document.querySelector(
-        'input[data-qb-username]'
-      ) as HTMLInputElement;
-      const password = document.querySelector(
-        'input[data-qb-pwd]'
-      ) as HTMLInputElement;
-
-      if (!ip.value || !port.value || !username.value || !password.value) {
-        console.error('Missing qBittorrent fields');
-        return;
-      }
-
-      window.electronAPI.fs.mkdir('./config/option/');
-      window.electronAPI.fs.write(
-        './config/option/qbittorrent.json',
-        JSON.stringify({
-          qbitHost: ip.value,
-          qbitPort: port.value,
-          qbitUsername: username.value,
-          qbitPassword: password.value,
-        })
-      );
-
-      fulfilledRequirements = true;
-    } else if (selectedTorrenter === 'torbox') {
-      console.log('Submitting TorBox API Key');
-      // save a file with the api key
-      const apiKey = document.querySelector(
-        'input[data-torbox-key]'
-      ) as HTMLInputElement;
-      window.electronAPI.fs.mkdir('./config/option/');
-      window.electronAPI.fs.write(
-        './config/option/realdebrid.json',
-        JSON.stringify({ torboxApiKey: apiKey.value, debridApiKey: '' })
-      );
-      fulfilledRequirements = true;
-    } else if (selectedTorrenter === 'premiumize') {
-      console.log('Submitting Premiumize API Key');
-      // save a file with the api key
-      const apiKey = document.querySelector(
-        'input[data-premiumize-key]'
-      ) as HTMLInputElement;
-      window.electronAPI.fs.mkdir('./config/option/');
-      window.electronAPI.fs.write(
-        './config/option/realdebrid.json',
-        JSON.stringify({ premiumizeApiKey: apiKey.value, debridApiKey: '' })
-      );
-      fulfilledRequirements = true;
-    } else if (selectedTorrenter === 'all-debrid') {
-      console.log('Submitting AllDebrid API Key');
-      const apiKey = document.querySelector(
-        'input[data-alldebrid-key]'
-      ) as HTMLInputElement | null;
-      if (!apiKey) {
-        console.error('Missing AllDebrid API key input');
-        return;
-      }
-      const key = apiKey.value.trim();
-      if (!key) {
-        console.error('Missing AllDebrid API key');
-        return;
-      }
-      window.electronAPI.fs.mkdir('./config/option/');
-      let config: Record<string, string> = {};
-      if (window.electronAPI.fs.exists('./config/option/realdebrid.json')) {
-        try {
-          config = JSON.parse(
-            window.electronAPI.fs.read('./config/option/realdebrid.json')
-          );
-        } catch {
-          // use empty config
-        }
-      }
-      config.alldebridApiKey = key;
-      window.electronAPI.fs.write(
-        './config/option/realdebrid.json',
-        JSON.stringify(config)
-      );
-      fulfilledRequirements = true;
-    }
-  }
-
-  let downloadLocation = '';
-
-  async function updateDownloadLocation() {
-    window.electronAPI.fs.dialog
-      .showOpenDialog({ properties: ['openDirectory'] })
-      .then((result) => {
-        if (result) {
-          const htmlElement = document.querySelector(
-            'input[data-dwloc]'
-          )!! as HTMLInputElement;
-          htmlElement.value = result;
-          downloadLocation = result;
-        }
-      });
-  }
-
-  function sendDownloadLocation(event: MouseEvent) {
-    const htmlElement = document.querySelector(
-      'input[data-dwloc]'
-    )!! as HTMLInputElement;
-    downloadLocation = htmlElement.value;
-    if (
-      downloadLocation === '' ||
-      !window.electronAPI.fs.exists(downloadLocation)
-    ) {
-      console.error('No download location selected');
-      const button = event.target as HTMLButtonElement;
-      button.textContent = 'Invalid location';
-      button.style.backgroundColor = '#f55045';
-      button.disabled = true;
-      setTimeout(() => {
-        button.textContent = 'Continue';
-        button.style.backgroundColor = '';
-        button.disabled = false;
-      }, 2000);
+    fulfilledRequirements = true;
+  } else if (selectedTorrenter === 'torbox') {
+    console.log('Submitting TorBox API Key');
+    // save a file with the api key
+    const apiKey = document.querySelector(
+      'input[data-torbox-key]'
+    ) as HTMLInputElement;
+    window.electronAPI.fs.mkdir('./config/option/');
+    window.electronAPI.fs.write(
+      './config/option/realdebrid.json',
+      JSON.stringify({ torboxApiKey: apiKey.value, debridApiKey: '' })
+    );
+    fulfilledRequirements = true;
+  } else if (selectedTorrenter === 'premiumize') {
+    console.log('Submitting Premiumize API Key');
+    // save a file with the api key
+    const apiKey = document.querySelector(
+      'input[data-premiumize-key]'
+    ) as HTMLInputElement;
+    window.electronAPI.fs.mkdir('./config/option/');
+    window.electronAPI.fs.write(
+      './config/option/realdebrid.json',
+      JSON.stringify({ premiumizeApiKey: apiKey.value, debridApiKey: '' })
+    );
+    fulfilledRequirements = true;
+  } else if (selectedTorrenter === 'all-debrid') {
+    console.log('Submitting AllDebrid API Key');
+    const apiKey = document.querySelector(
+      'input[data-alldebrid-key]'
+    ) as HTMLInputElement | null;
+    if (!apiKey) {
+      console.error('Missing AllDebrid API key input');
       return;
     }
-    stage = 4;
+    const key = apiKey.value.trim();
+    if (!key) {
+      console.error('Missing AllDebrid API key');
+      return;
+    }
+    window.electronAPI.fs.mkdir('./config/option/');
+    let config: Record<string, string> = {};
+    if (window.electronAPI.fs.exists('./config/option/realdebrid.json')) {
+      try {
+        config = JSON.parse(
+          window.electronAPI.fs.read('./config/option/realdebrid.json')
+        );
+      } catch {
+        // use empty config
+      }
+    }
+    config.alldebridApiKey = key;
+    window.electronAPI.fs.write(
+      './config/option/realdebrid.json',
+      JSON.stringify(config)
+    );
+    fulfilledRequirements = true;
   }
+}
 
-  let completedSetup = false;
-  let currentOS = $state('');
-  let isSteamDeck = $state(false);
+let downloadLocation = '';
 
-  type OOBETool = {
-    shortLabel: string;
-    name: string;
-    purpose: string;
-    icon: 'image' | 'text';
-    iconSrc?: string;
-  };
+async function updateDownloadLocation() {
+  window.electronAPI.fs.dialog
+    .showOpenDialog({ properties: ['openDirectory'] })
+    .then((result) => {
+      if (result) {
+        const htmlElement = document.querySelector(
+          'input[data-dwloc]'
+        )!! as HTMLInputElement;
+        htmlElement.value = result;
+        downloadLocation = result;
+      }
+    });
+}
 
-  function getRequiredTools(osName: string): OOBETool[] {
-    const platformTools: OOBETool[] =
-      osName === 'win32'
+function sendDownloadLocation(event: MouseEvent) {
+  const htmlElement = document.querySelector(
+    'input[data-dwloc]'
+  )!! as HTMLInputElement;
+  downloadLocation = htmlElement.value;
+  if (
+    downloadLocation === '' ||
+    !window.electronAPI.fs.exists(downloadLocation)
+  ) {
+    console.error('No download location selected');
+    const button = event.target as HTMLButtonElement;
+    button.textContent = 'Invalid location';
+    button.style.backgroundColor = '#f55045';
+    button.disabled = true;
+    setTimeout(() => {
+      button.textContent = 'Continue';
+      button.style.backgroundColor = '';
+      button.disabled = false;
+    }, 2000);
+    return;
+  }
+  stage = 4;
+}
+
+let completedSetup = false;
+let currentOS = $state('');
+let isSteamDeck = $state(false);
+
+type OOBETool = {
+  shortLabel: string;
+  name: string;
+  purpose: string;
+  icon: 'image' | 'text';
+  iconSrc?: string;
+};
+
+function getRequiredTools(osName: string): OOBETool[] {
+  const platformTools: OOBETool[] =
+    osName === 'win32'
+      ? [
+          {
+            shortLabel: '7z',
+            name: '7-Zip',
+            purpose: 'Extracts archived installers and repacks.',
+            icon: 'text',
+          },
+        ]
+      : osName === 'linux'
         ? [
             {
-              shortLabel: '7z',
-              name: '7-Zip',
-              purpose: 'Extracts archived installers and repacks.',
+              shortLabel: 'stl',
+              name: 'SteamTinkerLaunch',
+              purpose: 'Handles Steam-side integration for legacy flows.',
               icon: 'text',
             },
           ]
-        : osName === 'linux'
-          ? [
-              {
-                shortLabel: 'stl',
-                name: 'SteamTinkerLaunch',
-                purpose: 'Handles Steam-side integration for legacy flows.',
-                icon: 'text',
-              },
-            ]
-          : [];
+        : [];
 
-    return [
-      ...platformTools,
-      {
-        shortLabel: 'Bun',
-        name: 'Bun',
-        purpose: 'Runs addons and related setup scripts.',
-        icon: 'image',
-        iconSrc: './bun.svg',
-      },
-      {
-        shortLabel: 'Git',
-        name: 'Git',
-        purpose: 'Downloads and updates addon repositories.',
-        icon: 'image',
-        iconSrc: './git.svg',
-      },
-    ];
-  }
+  return [
+    ...platformTools,
+    {
+      shortLabel: 'Bun',
+      name: 'Bun',
+      purpose: 'Runs addons and related setup scripts.',
+      icon: 'image',
+      iconSrc: './bun.svg',
+    },
+    {
+      shortLabel: 'Git',
+      name: 'Git',
+      purpose: 'Downloads and updates addon repositories.',
+      icon: 'image',
+      iconSrc: './git.svg',
+    },
+  ];
+}
 
-  const requiredTools = $derived(getRequiredTools(currentOS));
+const requiredTools = $derived(getRequiredTools(currentOS));
 
-  function handleThemeChange(detail: { selectedId: string }) {
-    selectedTheme = detail.selectedId;
-    document.documentElement.setAttribute('data-theme', detail.selectedId);
-  }
+function handleThemeChange(detail: { selectedId: string }) {
+  selectedTheme = detail.selectedId;
+  document.documentElement.setAttribute('data-theme', detail.selectedId);
+}
 
-  async function finishSetup() {
-    const customAddons = addons
-      .split('\n')
-      .map((addon) => addon.trim())
-      .filter((addon) => addon !== '');
-    const allAddons = [...new Set([...selectedAddons, ...customAddons])];
+async function finishSetup() {
+  const customAddons = addons
+    .split('\n')
+    .map((addon) => toGitAddonLink(addon))
+    .filter((addon) => addon !== '');
+  const allAddons = [...new Set([...selectedAddons, ...customAddons])];
 
-    let generalConfig = {
-      theme: selectedTheme,
-      fileDownloadLocation: downloadLocation,
-      addons: [],
-      torrentClient: selectedTorrenter,
-    };
-    window.electronAPI.fs.mkdir('./config/option/');
-    window.electronAPI.fs.write(
-      './config/option/general.json',
-      JSON.stringify(generalConfig)
-    );
-    window.electronAPI.fs.write(
-      './config/option/installed.json',
-      JSON.stringify({ installed: true })
-    );
-    await window.electronAPI.installAddons(allAddons);
-    completedSetup = true;
-  }
+  let generalConfig = {
+    theme: selectedTheme,
+    fileDownloadLocation: downloadLocation,
+    addons: [],
+    torrentClient: selectedTorrenter,
+    marketplaceSources: oobeMarketplaceSources,
+  };
+  window.electronAPI.fs.mkdir('./config/option/');
+  window.electronAPI.fs.write(
+    './config/option/general.json',
+    JSON.stringify(generalConfig)
+  );
+  window.electronAPI.fs.write(
+    './config/option/installed.json',
+    JSON.stringify({ installed: true })
+  );
+  await window.electronAPI.installAddons(allAddons);
+  completedSetup = true;
+}
 
-  function waitForSetup() {
-    stage = 7;
-    const waitFor = setInterval(() => {
-      if (completedSetup) {
-        document
-          .getElementById('oobe')
-          ?.animate([{ opacity: 1 }, { opacity: 0 }], {
-            duration: 500,
-            fill: 'forwards',
-          });
-        setTimeout(() => {
-          finishedSetup();
-        }, 500);
-        clearInterval(waitFor);
-      }
-    }, 200);
-  }
-
-  function toggleAddon(addon: CommunityAddon) {
-    const index = selectedAddons.indexOf(addon.source);
-    if (index > -1) {
-      selectedAddons.splice(index, 1);
-    } else {
-      selectedAddons.push(addon.source);
+function waitForSetup() {
+  stage = 7;
+  const waitFor = setInterval(() => {
+    if (completedSetup) {
+      document
+        .getElementById('oobe')
+        ?.animate([{ opacity: 1 }, { opacity: 0 }], {
+          duration: 500,
+          fill: 'forwards',
+        });
+      setTimeout(() => {
+        finishedSetup();
+      }, 500);
+      clearInterval(waitFor);
     }
+  }, 200);
+}
+
+function toggleAddon(addon: ListedCommunityAddon) {
+  const addonLink = toMarketplaceAddonLink(addon.marketplaceUrl, addon.source);
+  const index = selectedAddons.indexOf(addonLink);
+  if (index > -1) {
+    selectedAddons.splice(index, 1);
+  } else {
+    selectedAddons.push(addonLink);
   }
+}
 
-  function getFilteredAddons(list: CommunityAddon[]) {
-    const query = addonSearch.trim().toLowerCase();
-    if (!query) return list;
+function isAddonSelected(addon: ListedCommunityAddon) {
+  return selectedAddons.includes(
+    toMarketplaceAddonLink(addon.marketplaceUrl, addon.source)
+  );
+}
 
-    return list.filter((addon) => {
-      const content =
-        `${addon.name} ${addon.author} ${addon.description}`.toLowerCase();
-      return content.includes(query);
-    });
-  }
+function getFilteredAddons(list: ListedCommunityAddon[]) {
+  const query = addonSearch.trim().toLowerCase();
+  if (!query) return list;
 
-  // Event listener for OOBE logs
-  function handleOOBELog(event: Event) {
-    if (!(event instanceof CustomEvent)) return;
-    const logContent = event.detail;
+  return list.filter((addon) => {
+    const content =
+      `${addon.name} ${addon.author} ${addon.description} ${addon.marketplaceUrl}`.toLowerCase();
+    return content.includes(query);
+  });
+}
 
-    oobeLog.update((currentLog) => ({
-      ...currentLog,
-      logs: [...currentLog.logs, logContent],
-      isActive: true,
-    }));
-  }
+// Event listener for OOBE logs
+function handleOOBELog(event: Event) {
+  if (!(event instanceof CustomEvent)) return;
+  const logContent = event.detail;
 
-  onMount(async () => {
-    // Set up OOBE log listener
-    document.addEventListener('oobe:log', handleOOBELog);
+  oobeLog.update((currentLog) => ({
+    ...currentLog,
+    logs: [...currentLog.logs, logContent],
+    isActive: true,
+  }));
+}
 
-    // Initialize previous log length
-    previousLogLength = $oobeLog.logs.length;
-    currentOS = await window.electronAPI.app.getOS();
-    isSteamDeck = await window.electronAPI.app.isSteamDeck();
+onMount(async () => {
+  // Set up OOBE log listener
+  document.addEventListener('oobe:log', handleOOBELog);
 
-    if (window.electronAPI.fs.exists('./config/option/installed.json')) {
-      const installed = JSON.parse(
-        window.electronAPI.fs.read('./config/option/installed.json')
+  // Initialize previous log length
+  previousLogLength = $oobeLog.logs.length;
+  currentOS = await window.electronAPI.app.getOS();
+  isSteamDeck = await window.electronAPI.app.isSteamDeck();
+
+  if (window.electronAPI.fs.exists('./config/option/installed.json')) {
+    const installed = JSON.parse(
+      window.electronAPI.fs.read('./config/option/installed.json')
+    );
+    if (installed.restartRequired) {
+      // Update the file first to clear the restart flag
+      window.electronAPI.fs.write(
+        './config/option/installed.json',
+        JSON.stringify({ restartRequired: false, installed: false })
       );
-      if (installed.restartRequired) {
-        // Update the file first to clear the restart flag
-        window.electronAPI.fs.write(
-          './config/option/installed.json',
-          JSON.stringify({ restartRequired: false, installed: false })
-        );
-        // Then set the stage to continue to torrenting
-        stage = 2;
-      }
+      // Then set the stage to continue to torrenting
+      stage = 2;
     }
-    communityList = fetch('https://ogi.nat3z.com/api/community.json').then(
-      (response) => response.json()
-    );
-  });
+  }
+  communityList = [];
+  await loadCommunityAddonsFromMarketplaces(oobeMarketplaceSources);
+});
 
-  onDestroy(() => {
-    // Clean up event listener
-    document.removeEventListener('oobe:log', handleOOBELog);
-  });
+onDestroy(() => {
+  // Clean up event listener
+  document.removeEventListener('oobe:log', handleOOBELog);
+});
 </script>
 
 <main
@@ -828,88 +961,157 @@
       <div class="oobe-community-header">
         <h1 class="oobe-community-title">Community Addons</h1>
         <p class="oobe-community-subtitle">
-          Pick your core addons from the community list to jump straight into
+          Pick your core addons from marketplace sources to jump straight into
           discovery.
         </p>
       </div>
 
-      {#if communityList}
-        {#await communityList}
-          <div class="oobe-community-loading">
-            <p class="text-text-secondary">Loading community addons...</p>
-          </div>
-        {:then list}
-          {@const selectedCount = list.filter((addon) =>
-            selectedAddons.includes(addon.source)
-          ).length}
-          <div class="oobe-community-toolbar">
-            <input
-              type="search"
-              bind:value={addonSearch}
-              placeholder="Search addons by name, author, or description"
-              class="oobe-community-search"
-            />
-            <p class="oobe-community-count">
-              <span>{selectedCount} selected</span>
-              <span class="oobe-community-count-separator">•</span>
-              <span>{list.length} total</span>
+      <details class="oobe-marketplace-sources-panel">
+        <summary>Marketplace sources</summary>
+        <p class="oobe-marketplace-sources-help">
+          Base URLs and direct <code>/api/marketplace.json</code> links are both
+          supported.
+        </p>
+        <div class="oobe-marketplace-add-row">
+          <input
+            type="url"
+            bind:value={marketplaceSourceUrl}
+            placeholder="https://ogi-marketplace.nat3z.com"
+            class="oobe-marketplace-source-input"
+            onkeydown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                addMarketplaceSource();
+              }
+            }}
+          />
+          <button
+            type="button"
+            onclick={addMarketplaceSource}
+            class="oobe-marketplace-add-button"
+          >
+            Add
+          </button>
+          <button
+            type="button"
+            onclick={resetMarketplaceSources}
+            class="oobe-marketplace-reset-button"
+          >
+            Reset
+          </button>
+        </div>
+        <div class="oobe-marketplace-source-list">
+          {#each oobeMarketplaceSources as source}
+            <div class="oobe-marketplace-source-item">
+              <span class="oobe-marketplace-source-url" title={source}
+                >{source}</span
+              >
+              <button
+                type="button"
+                class="oobe-marketplace-remove-button"
+                aria-label={`Remove marketplace source ${source}`}
+                onclick={() => removeMarketplaceSource(source)}
+              >
+                Remove
+              </button>
+            </div>
+          {/each}
+        </div>
+      </details>
+
+      {#if communityAddonsLoading}
+        <div class="oobe-community-loading">
+          <p class="text-text-secondary">Loading marketplace addons...</p>
+        </div>
+      {:else if communityAddonsError}
+        <div class="oobe-community-empty">
+          <p class="text-text-secondary">{communityAddonsError}</p>
+          <button
+            type="button"
+            class="oobe-marketplace-retry-button"
+            onclick={() =>
+              loadCommunityAddonsFromMarketplaces(oobeMarketplaceSources)}
+          >
+            Retry
+          </button>
+        </div>
+      {:else}
+        {@const selectedCount = communityList.filter((addon) =>
+          isAddonSelected(addon)
+        ).length}
+        <div class="oobe-community-toolbar">
+          <input
+            type="search"
+            bind:value={addonSearch}
+            placeholder="Search addons by name, author, or description"
+            class="oobe-community-search"
+          />
+          <p class="oobe-community-count">
+            <span>{selectedCount} selected</span>
+            <span class="oobe-community-count-separator">•</span>
+            <span>{communityList.length} total</span>
+          </p>
+        </div>
+
+        {#if getFilteredAddons(communityList).length === 0}
+          <div class="oobe-community-empty">
+            <p class="text-text-secondary">
+              {communityList.length === 0
+                ? 'No addons found from the configured marketplace sources.'
+                : 'No addons match your search.'}
             </p>
           </div>
-
-          {#if getFilteredAddons(list).length === 0}
-            <div class="oobe-community-empty">
-              <p class="text-text-secondary">No addons match your search.</p>
-            </div>
-          {:else}
-            <div class="oobe-community-grid">
-              {#each getFilteredAddons(list) as addon}
-                <article
-                  class="oobe-addon-card {selectedAddons.includes(addon.source)
-                    ? 'is-selected'
-                    : ''}"
-                >
-                  <div class="oobe-addon-card-header">
-                    <img
-                      src={addon.img}
-                      alt={addon.name}
-                      class="oobe-addon-image"
-                    />
-                    <div class="oobe-addon-meta">
-                      <h3 class="oobe-addon-title">{addon.name}</h3>
-                      <p class="oobe-addon-author">by {addon.author}</p>
-                    </div>
+        {:else}
+          <div class="oobe-community-grid">
+            {#each getFilteredAddons(communityList) as addon}
+              <article
+                class="oobe-addon-card {isAddonSelected(addon)
+                  ? 'is-selected'
+                  : ''}"
+              >
+                <div class="oobe-addon-card-header">
+                  <img
+                    src={addon.img}
+                    alt={addon.name}
+                    class="oobe-addon-image"
+                  />
+                  <div class="oobe-addon-meta">
+                    <h3 class="oobe-addon-title">{addon.name}</h3>
+                    <p class="oobe-addon-author">by {addon.author}</p>
                   </div>
+                </div>
 
-                  <p class="oobe-addon-description">{addon.description}</p>
+                <p class="oobe-addon-description">{addon.description}</p>
 
-                  <div class="oobe-addon-footer">
+                <div class="oobe-addon-footer">
+                  <div class="oobe-addon-source-stack">
+                    <p class="oobe-addon-marketplace" title={addon.marketplaceUrl}>
+                      {addon.marketplaceUrl}
+                    </p>
                     <p class="oobe-addon-source" title={addon.source}>
                       {addon.source}
                     </p>
-                    <button
-                      onclick={() => toggleAddon(addon)}
-                      class="oobe-addon-select {selectedAddons.includes(
-                        addon.source
-                      )
-                        ? 'selected'
-                        : ''}"
-                    >
-                      {selectedAddons.includes(addon.source)
-                        ? 'Selected'
-                        : 'Select'}
-                    </button>
                   </div>
-                </article>
-              {/each}
-            </div>
-          {/if}
-        {/await}
+                  <button
+                    onclick={() => toggleAddon(addon)}
+                    class="oobe-addon-select {isAddonSelected(addon)
+                      ? 'selected'
+                      : ''}"
+                  >
+                    {isAddonSelected(addon) ? 'Selected' : 'Select'}
+                  </button>
+                </div>
+              </article>
+            {/each}
+          </div>
+        {/if}
       {/if}
 
       <details class="oobe-custom-addon-panel">
         <summary>Add a custom addon repo (optional)</summary>
         <p class="oobe-custom-addon-help">
-          Paste one GitHub/Git repository URL per line.
+          Paste one GitHub/Git repository URL per line. Custom repos are
+          installed as git-managed addons.
         </p>
         <textarea
           bind:value={addons}
@@ -1181,9 +1383,71 @@
     @apply font-open-sans text-text-secondary max-w-3xl;
   }
 
+  .oobe-marketplace-sources-panel {
+    @apply w-full rounded-xl border border-border bg-surface px-4 py-3;
+  }
+
+  .oobe-marketplace-sources-panel summary {
+    @apply font-open-sans text-sm text-text-secondary cursor-pointer select-none;
+  }
+
+  .oobe-marketplace-sources-help {
+    @apply mt-3 mb-2 text-sm font-open-sans text-text-muted;
+  }
+
+  .oobe-marketplace-sources-help code {
+    @apply font-mono text-xs;
+  }
+
+  .oobe-marketplace-add-row {
+    @apply flex items-center gap-2 w-full mb-3;
+  }
+
+  .oobe-marketplace-source-input {
+    @apply flex-1 px-3 py-2 rounded-lg border border-accent-light bg-surface text-text-primary font-open-sans text-sm;
+  }
+
+  .oobe-marketplace-source-input:focus {
+    outline: none;
+    box-shadow: 0 0 0 3px var(--color-focus-ring);
+    border-color: var(--color-accent);
+  }
+
+  .oobe-marketplace-add-button,
+  .oobe-marketplace-reset-button,
+  .oobe-marketplace-remove-button,
+  .oobe-marketplace-retry-button {
+    @apply px-3 py-2 rounded-lg font-open-sans text-sm font-semibold transition-colors duration-200 cursor-pointer;
+  }
+
+  .oobe-marketplace-add-button {
+    @apply bg-accent text-white hover:bg-accent-dark border border-accent;
+  }
+
+  .oobe-marketplace-reset-button,
+  .oobe-marketplace-remove-button {
+    @apply bg-accent-lighter text-accent-dark border border-accent-light hover:bg-accent-light;
+  }
+
+  .oobe-marketplace-retry-button {
+    @apply mt-3 bg-accent text-white hover:bg-accent-dark border border-accent;
+  }
+
+  .oobe-marketplace-source-list {
+    @apply flex flex-col gap-2;
+  }
+
+  .oobe-marketplace-source-item {
+    @apply flex items-center justify-between gap-3 rounded-lg border border-accent-light bg-accent-lighter/40 px-3 py-2;
+  }
+
+  .oobe-marketplace-source-url {
+    @apply text-sm font-open-sans text-text-primary truncate;
+  }
+
   .oobe-community-loading,
   .oobe-community-empty {
-    @apply flex items-center justify-center w-full rounded-xl border border-accent-light bg-surface p-8;
+    @apply flex flex-col items-center justify-center w-full rounded-xl border border-accent-light bg-surface p-8;
   }
 
   .oobe-community-toolbar {
@@ -1262,9 +1526,17 @@
     @apply flex items-end justify-between gap-2 mt-auto;
   }
 
+  .oobe-addon-source-stack {
+    @apply min-w-0 flex flex-col gap-0.5;
+    max-width: calc(100% - 86px);
+  }
+
+  .oobe-addon-marketplace {
+    @apply text-[11px] font-open-sans text-accent-dark truncate;
+  }
+
   .oobe-addon-source {
     @apply text-xs font-open-sans text-text-muted truncate;
-    max-width: calc(100% - 86px);
   }
 
   .oobe-addon-select {

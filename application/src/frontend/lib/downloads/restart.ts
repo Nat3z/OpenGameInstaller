@@ -1,7 +1,3 @@
-import {
-  createNotification,
-  type DownloadStatusAndInfo,
-} from '@/frontend/store.svelte';
 import { getDownloadPath } from '@/frontend/lib/core/fs';
 import {
   getDownloadItem,
@@ -11,6 +7,10 @@ import {
   safeDownloadPath,
   sanitizePathSegment,
 } from '@/frontend/lib/downloads/paths';
+import {
+  createNotification,
+  type DownloadStatusAndInfo,
+} from '@/frontend/store.svelte';
 
 interface PausedDownloadState {
   id: string;

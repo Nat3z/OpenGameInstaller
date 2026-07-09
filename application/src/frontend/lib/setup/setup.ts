@@ -1,20 +1,20 @@
-import {
-  createNotification,
-  setupLogs,
-  redistributableInstalls,
-  type DownloadStatusAndInfo,
-} from '@/frontend/store.svelte';
-import { get } from 'svelte/store';
-import { updateDownloadStatus } from '@/frontend/lib/downloads/lifecycle';
-import { saveFailedSetup } from '@/frontend/lib/recovery/failedSetups';
 import type {
   LibraryInfo,
   SetupCommandData,
   SetupEventResponse,
 } from '@ogi-sdk/connect';
+import { get } from 'svelte/store';
 import { addonServer } from '@/frontend/lib/core/ipc';
-import { updatesManager } from '@/frontend/states.svelte';
 import { getApp } from '@/frontend/lib/core/library';
+import { updateDownloadStatus } from '@/frontend/lib/downloads/lifecycle';
+import { saveFailedSetup } from '@/frontend/lib/recovery/failedSetups';
+import { updatesManager } from '@/frontend/states.svelte';
+import {
+  createNotification,
+  type DownloadStatusAndInfo,
+  redistributableInstalls,
+  setupLogs,
+} from '@/frontend/store.svelte';
 
 function dispatchSetupEvent(
   eventType: 'log' | 'progress',

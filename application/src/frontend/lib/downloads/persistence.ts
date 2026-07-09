@@ -1,11 +1,11 @@
+import { get } from 'svelte/store';
+import { getPersistedFilePaths } from '@/frontend/lib/downloads/paths';
 import {
   currentDownloads,
-  redistributableInstalls,
   type DownloadStatusAndInfo,
   type RedistributableInstall,
+  redistributableInstalls,
 } from '@/frontend/store.svelte';
-import { getPersistedFilePaths } from '@/frontend/lib/downloads/paths';
-import { get } from 'svelte/store';
 
 type PersistableStatus =
   | 'downloading'

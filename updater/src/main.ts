@@ -1,15 +1,17 @@
-import { BrowserWindow, app, dialog, ipcMain, net } from 'electron';
-import axios from 'axios';
-import fs from 'fs';
-import path, { join } from 'path';
-import yauzl from 'yauzl';
-import zlib from 'zlib';
-import { spawn } from 'child_process';
-import { createHash } from 'crypto';
+import type { WriteStream } from 'node:fs';
 import http from 'node:http';
 import https from 'node:https';
-let mainWindow;
+import axios, { type AxiosResponse } from 'axios';
+import { spawn } from 'child_process';
+import { createHash } from 'crypto';
+import { app, BrowserWindow, dialog, ipcMain, net } from 'electron';
+import fs from 'fs';
+import path, { join } from 'path';
+import yauzl, { type ZipFile } from 'yauzl';
+import zlib from 'zlib';
 import pjson from '../package.json' with { type: 'json' };
+
+let mainWindow: BrowserWindow | null = null;
 
 function isDev() {
   return !app.isPackaged;
@@ -29,7 +31,7 @@ fs.writeFile(join(__dirname, 'updater-version.txt'), SETUP_VERSION, () => {
 });
 process.noAsar = true;
 
-function correctParsingSize(size) {
+function correctParsingSize(size: number) {
   if (size < 1024) {
     return size + 'B';
   } else if (size < 1024 * 1024) {
@@ -66,6 +68,7 @@ const HTTP_RETRY_BASE_DELAY_MS = 1500;
 const HTTP_REQUEST_TIMEOUT_MS = 60000;
 const PRESERVED_UPDATE_ENTRIES = new Set(['artifacts', 'latest.log', 'logs']);
 const OGI_REPO_URL = 'https://github.com/Nat3z/OpenGameInstaller';
+const ALL_ORIGIN_HEADS_REFSPEC = '+refs/heads/*:refs/remotes/origin/*';
 const HTTP_RANGE_AGENTS = {
   http: new http.Agent({
     keepAlive: true,
@@ -133,11 +136,7 @@ function parseCommitEdgeFile(contents: string): CommitEdgeTarget {
   return { branch, commit, built };
 }
 
-function writeCommitEdgeFile(
-  branch: string,
-  commit: string,
-  built = ''
-) {
+function writeCommitEdgeFile(branch: string, commit: string, built = '') {
   const lines = [`branch=${branch || DEFAULT_BLEEDING_EDGE_BRANCH}`];
   if (commit) {
     lines.push(`commit=${commit}`);
@@ -279,13 +278,24 @@ function runCommand(
       }
     });
     child.on('error', reject);
-    child.on('close', (code) => code === 0 ? resolve({ stdout, stderr }) : reject(new Error(`${command} exited with code ${code}`)));
+    child.on('close', (code) =>
+      code === 0
+        ? resolve({ stdout, stderr })
+        : reject(new Error(`${command} exited with code ${code}`))
+    );
   });
 }
 
-async function syncBleedingEdgeRepo(repoDir: string, branch: string): Promise<BleedingEdgeSyncResult> {
+async function syncBleedingEdgeRepo(
+  repoDir: string,
+  branch: string
+): Promise<BleedingEdgeSyncResult> {
   const targetBranch = branch || DEFAULT_BLEEDING_EDGE_BRANCH;
-  await runCommand('git', ['fetch', '--all', '--tags'], { cwd: repoDir });
+  await runCommand(
+    'git',
+    ['fetch', '--prune', '--tags', 'origin', ALL_ORIGIN_HEADS_REFSPEC],
+    { cwd: repoDir }
+  );
   await runCommand('git', ['checkout', targetBranch], { cwd: repoDir });
   const beforePullSha = await getRepoHeadSha(repoDir);
   const pullResult = await runCommand(
@@ -295,7 +305,9 @@ async function syncBleedingEdgeRepo(repoDir: string, branch: string): Promise<Bl
   );
   const afterPullSha = await getRepoHeadSha(repoDir);
   const pullOutput = `${pullResult.stdout}\n${pullResult.stderr}`;
-  const pullWasNoop = /already up[ -]to[ -]date/i.test(pullOutput) && beforePullSha === afterPullSha;
+  const pullWasNoop =
+    /already up[ -]to[ -]date/i.test(pullOutput) &&
+    beforePullSha === afterPullSha;
   return { beforePullSha, afterPullSha, pullOutput, pullWasNoop };
 }
 
@@ -303,7 +315,9 @@ async function syncBleedingEdgeRepo(repoDir: string, branch: string): Promise<Bl
 function syncHoistedElectronPackages(repoDir: string) {
   const rootElectron = path.join(repoDir, 'node_modules', 'electron');
   if (!fs.existsSync(rootElectron)) {
-    throw new Error('electron not found in repo root node_modules after install');
+    throw new Error(
+      'electron not found in repo root node_modules after install'
+    );
   }
   for (const pkg of ['application', 'updater'] as const) {
     const dest = path.join(repoDir, pkg, 'node_modules', 'electron');
@@ -362,13 +376,24 @@ async function ensureBleedingEdgeBuild(
   const destRoot = path.join(__dirname, 'update');
   prepareUpdateDestination(destRoot);
   if (process.platform === 'win32') {
-    const exe = findFirstFile(path.join(repoDir, 'application', 'dist'), (name) => name.toLowerCase().endsWith('.exe') && !name.toLowerCase().includes('setup'));
+    const exe = findFirstFile(
+      path.join(repoDir, 'application', 'dist'),
+      (name) =>
+        name.toLowerCase().endsWith('.exe') &&
+        !name.toLowerCase().includes('setup')
+    );
     if (!exe) throw new Error('Built Windows executable not found');
     fs.copyFileSync(exe, path.join(destRoot, 'OpenGameInstaller.exe'));
   } else {
-    const appImage = findFirstFile(path.join(repoDir, 'application', 'dist'), (name) => name.toLowerCase().endsWith('.appimage'));
+    const appImage = findFirstFile(
+      path.join(repoDir, 'application', 'dist'),
+      (name) => name.toLowerCase().endsWith('.appimage')
+    );
     if (!appImage) throw new Error('Built Linux AppImage not found');
-    fs.copyFileSync(appImage, path.join(destRoot, 'OpenGameInstaller.AppImage'));
+    fs.copyFileSync(
+      appImage,
+      path.join(destRoot, 'OpenGameInstaller.AppImage')
+    );
     fs.chmodSync(path.join(destRoot, 'OpenGameInstaller.AppImage'), '755');
   }
   writeCommitEdgeFile(targetBranch, commit, commit ? '' : headSha);
@@ -390,10 +415,14 @@ async function getBranches(): Promise<string[]> {
   const repoDir = getBleedingEdgeRepoDir();
   if (fs.existsSync(path.join(repoDir, '.git'))) {
     try {
-      await runCommand('git', ['fetch', '--prune', 'origin'], {
-        cwd: repoDir,
-        quiet: true,
-      });
+      await runCommand(
+        'git',
+        ['fetch', '--prune', 'origin', ALL_ORIGIN_HEADS_REFSPEC],
+        {
+          cwd: repoDir,
+          quiet: true,
+        }
+      );
       const { stdout } = await runCommand(
         'git',
         [
@@ -429,9 +458,13 @@ async function getBranches(): Promise<string[]> {
     }
   }
 
-  const { stdout } = await runCommand('git', ['ls-remote', '--heads', OGI_REPO_URL], {
-    quiet: true,
-  });
+  const { stdout } = await runCommand(
+    'git',
+    ['ls-remote', '--heads', OGI_REPO_URL],
+    {
+      quiet: true,
+    }
+  );
   const names = new Set<string>();
   for (const line of stdout.split('\n')) {
     const trimmed = line.trim();
@@ -488,10 +521,20 @@ async function getRecentCommits(
   const repoDir = getBleedingEdgeRepoDir();
 
   if (fs.existsSync(path.join(repoDir, '.git'))) {
-    await runCommand('git', ['fetch', 'origin', targetBranch, '--depth', '12'], {
-      cwd: repoDir,
-      quiet: true,
-    });
+    await runCommand(
+      'git',
+      [
+        'fetch',
+        'origin',
+        `+refs/heads/${targetBranch}:refs/remotes/origin/${targetBranch}`,
+        '--depth',
+        '12',
+      ],
+      {
+        cwd: repoDir,
+        quiet: true,
+      }
+    );
     const { stdout } = await runCommand(
       'git',
       ['log', `origin/${targetBranch}`, '-12', `--format=${logFormat}`],
@@ -551,7 +594,9 @@ ipcMain.handle('get-branches', async () => {
 
 ipcMain.handle('get-recent-commits', async (_event, branch) => {
   const targetBranch =
-    typeof branch === 'string' && branch ? branch : DEFAULT_BLEEDING_EDGE_BRANCH;
+    typeof branch === 'string' && branch
+      ? branch
+      : DEFAULT_BLEEDING_EDGE_BRANCH;
   try {
     const commits = await getRecentCommits(targetBranch);
     logUpdater('Loaded commits via git');
@@ -681,7 +726,7 @@ function compareParsedReleaseVersion(a, b) {
   return 0;
 }
 
-function compareReleaseOrder(a, b) {
+function compareReleaseOrder(a: any, b: any) {
   const parsedA = parseReleaseVersion(a?.tag_name);
   const parsedB = parseReleaseVersion(b?.tag_name);
 
@@ -698,14 +743,19 @@ function compareReleaseOrder(a, b) {
   );
 }
 
-function sendUpdaterStatus(text, progress?, max?, subtext?) {
+function sendUpdaterStatus(
+  text: string,
+  progress?: number,
+  max?: number,
+  subtext?: string
+) {
   if (!mainWindow || mainWindow.isDestroyed()) {
     return;
   }
   mainWindow.webContents.send('text', text, progress, max, subtext);
 }
 
-function prepareUpdateDestination(destRoot) {
+function prepareUpdateDestination(destRoot: string) {
   fs.mkdirSync(destRoot, { recursive: true });
   for (const entry of fs.readdirSync(destRoot)) {
     if (PRESERVED_UPDATE_ENTRIES.has(entry)) {
@@ -719,19 +769,19 @@ function nextUiTick() {
   return new Promise((resolve) => setImmediate(resolve));
 }
 
-function logUpdater(message, ...args) {
+function logUpdater(message: string, ...args: string[]) {
   console.log(`[updater] ${message}`, ...args);
 }
 
-function sleep(ms) {
+function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function getRetryDelay(attempt) {
+function getRetryDelay(attempt: number) {
   return HTTP_RETRY_BASE_DELAY_MS * attempt;
 }
 
-function shouldRetryHttpError(error) {
+function shouldRetryHttpError(error: any) {
   const code = error?.code;
   const message =
     typeof error?.message === 'string' ? error.message.toLowerCase() : '';
@@ -752,7 +802,7 @@ function shouldRetryHttpError(error) {
   );
 }
 
-function getAxiosTransportOptions(url) {
+function getAxiosTransportOptions(url: string) {
   if (typeof url !== 'string') {
     return {};
   }
@@ -864,7 +914,11 @@ async function createWindow() {
         return;
       } catch (err) {
         console.error(err);
-        mainWindow.webContents.send('text', 'Bleeding Edge Failed', err.message);
+        mainWindow.webContents.send(
+          'text',
+          'Bleeding Edge Failed',
+          err.message
+        );
         launchApp(true);
         return;
       }
@@ -1123,7 +1177,11 @@ async function ensureCachedSourceArtifact(cacheDir, release, asset) {
   return sourceArtifactPath;
 }
 
-async function ensureCachedBlockmap(cacheDir, release, asset) {
+async function ensureCachedBlockmap(
+  cacheDir: string,
+  release: any,
+  asset: any
+) {
   const blockmapAsset = getBlockmapAsset(release, asset);
   if (!blockmapAsset) {
     throw new Error(`Blockmap missing for ${release.tag_name}`);
@@ -1143,11 +1201,15 @@ async function ensureCachedBlockmap(cacheDir, release, asset) {
   return blockmapPath;
 }
 
-async function downloadToFile(url, destination, status) {
+async function downloadToFile(
+  url: string,
+  destination: string,
+  status: string
+) {
   logUpdater(`Starting download: ${status}`, { url, destination });
   for (let attempt = 1; attempt <= HTTP_RETRY_ATTEMPTS; attempt++) {
-    let writer;
-    let response;
+    let writer: WriteStream | undefined;
+    let response: AxiosResponse | undefined;
     try {
       fs.rmSync(destination, { force: true });
       writer = fs.createWriteStream(destination);
@@ -1171,7 +1233,7 @@ async function downloadToFile(url, destination, status) {
           correctParsingSize(downloadSpeed) + '/s'
         );
       });
-      await new Promise((resolve, reject) => {
+      await new Promise<void>((resolve, reject) => {
         writer.on('finish', resolve);
         writer.on('error', reject);
         response.data.on('error', reject);
@@ -1211,7 +1273,7 @@ async function downloadToFile(url, destination, status) {
   }
 }
 
-function copyCacheToUpdate(cacheDir) {
+function copyCacheToUpdate(cacheDir: string) {
   const files = fs.readdirSync(cacheDir);
   const destRoot = path.join(__dirname, 'update');
   prepareUpdateDestination(destRoot);
@@ -1237,7 +1299,7 @@ function copyCacheToUpdate(cacheDir) {
   }
 }
 
-async function downloadFullRelease(release) {
+async function downloadFullRelease(release: any) {
   const assetWithPortable = getPlatformAsset(release);
   if (!assetWithPortable) {
     throw new Error('No portable asset found for this platform');
@@ -1295,12 +1357,12 @@ async function downloadFullRelease(release) {
   cleanupAfterUpdate(release.tag_name, assetWithPortable.name);
 }
 
-async function applyBlockmapPath(releasePath, releases) {
+async function applyBlockmapPath(releasePath: any, releases: any) {
   let currentTag = localVersion;
   let latestAssetName = null;
   logUpdater('Starting incremental update path', {
     from: currentTag,
-    steps: releasePath.map((release) => release.tag_name),
+    steps: releasePath.map((release: any) => release.tag_name),
   });
   for (let i = 0; i < releasePath.length; i++) {
     const currentRelease = getReleaseByTag(releases, currentTag);
@@ -1462,8 +1524,12 @@ async function applyBlockmapPatch(
     outputArtifact,
     releaseTag,
   });
-  const oldMap = JSON.parse(zlib.gunzipSync(fs.readFileSync(oldBlockmapPath)).toString('utf8'));
-  const newMap = JSON.parse(zlib.gunzipSync(fs.readFileSync(newBlockmapPath)).toString('utf8'));
+  const oldMap = JSON.parse(
+    zlib.gunzipSync(fs.readFileSync(oldBlockmapPath)).toString('utf8')
+  );
+  const newMap = JSON.parse(
+    zlib.gunzipSync(fs.readFileSync(newBlockmapPath)).toString('utf8')
+  );
   const oldFile = oldMap.files?.[0];
   const newFile = newMap.files?.[0];
   if (!oldFile || !newFile) {
@@ -1481,8 +1547,8 @@ async function applyBlockmapPatch(
   }
 
   fs.mkdirSync(path.dirname(outputArtifact), { recursive: true });
-  let sourceFd;
-  let outFd;
+  let sourceFd: number | undefined;
+  let outFd: number | undefined;
 
   try {
     sourceFd = fs.openSync(sourceArtifact, 'r');
@@ -2082,7 +2148,7 @@ app.on('ready', createWindow);
 // taken from https://stackoverflow.com/questions/63932027/how-to-unzip-to-a-folder-using-yauzl
 const unzip = (zipPath, unzipToDir) => {
   return new Promise<void>((resolve, reject) => {
-    let zipFile = null;
+    let zipFile: ZipFile | null = null;
     let filesProcessed = 0;
     let totalFiles = 0;
     logUpdater('Starting unzip', { zipPath, unzipToDir });

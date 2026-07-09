@@ -1,17 +1,17 @@
-import {
-  createNotification,
-  currentDownloads,
-  failedSetups,
-  setupLogs,
-  type FailedSetup,
-  type DownloadStatusAndInfo,
-} from '@/frontend/store.svelte';
 import type { SetupCommandData } from '@ogi-sdk/connect';
 import {
   unrarAndReturnOutputDir,
   unzipAndReturnOutputDir,
 } from '@/frontend/lib/setup/extraction';
 import { runSetupApp, runSetupAppUpdate } from '@/frontend/lib/setup/setup';
+import {
+  createNotification,
+  currentDownloads,
+  type DownloadStatusAndInfo,
+  type FailedSetup,
+  failedSetups,
+  setupLogs,
+} from '@/frontend/store.svelte';
 
 export async function loadFailedSetups() {
   try {

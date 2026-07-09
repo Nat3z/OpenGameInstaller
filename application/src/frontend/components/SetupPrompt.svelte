@@ -1,40 +1,40 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
-  import { fade } from 'svelte/transition';
-  import type { SetupLog } from '@/frontend/store.svelte';
+import { onMount } from 'svelte';
+import { fade } from 'svelte/transition';
+import type { SetupLog } from '@/frontend/store.svelte';
 
-  let {
-    setupLog,
-    downloadName,
-    addonSource,
-  }: {
-    setupLog: SetupLog;
-    downloadName: string;
-    addonSource: string;
-  } = $props();
+let {
+  setupLog,
+  downloadName,
+  addonSource,
+}: {
+  setupLog: SetupLog;
+  downloadName: string;
+  addonSource: string;
+} = $props();
 
-  let logContainer: HTMLDivElement | null = $state(null);
-  let previousLogLength = $state(0);
+let logContainer: HTMLDivElement | null = $state(null);
+let previousLogLength = $state(0);
 
-  // Auto-scroll when new logs are added
-  $effect(() => {
-    if (logContainer && setupLog.logs.length > previousLogLength) {
-      logContainer.scrollTo({
-        top: logContainer.scrollHeight,
-        behavior: 'smooth',
-      });
-      previousLogLength = setupLog.logs.length;
-    }
-  });
-
-  // Initialize previous log length
-  onMount(() => {
+// Auto-scroll when new logs are added
+$effect(() => {
+  if (logContainer && setupLog.logs.length > previousLogLength) {
+    logContainer.scrollTo({
+      top: logContainer.scrollHeight,
+      behavior: 'smooth',
+    });
     previousLogLength = setupLog.logs.length;
-  });
-
-  function formatProgress(progress: number): string {
-    return Math.floor(progress).toString();
   }
+});
+
+// Initialize previous log length
+onMount(() => {
+  previousLogLength = setupLog.logs.length;
+});
+
+function formatProgress(progress: number): string {
+  return Math.floor(progress).toString();
+}
 </script>
 
 <div

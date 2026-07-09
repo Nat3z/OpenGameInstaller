@@ -1,7 +1,7 @@
 import type { LibraryInfo, SearchResult } from '@ogi-sdk/connect';
 import { get } from 'svelte/store';
-import { createNotification, deferredTasks } from '@/frontend/store.svelte';
 import { addonServer } from '@/frontend/lib/core/ipc';
+import { createNotification, deferredTasks } from '@/frontend/store.svelte';
 
 export type SearchResultWithAddon = SearchResult & {
   addonSource: string;

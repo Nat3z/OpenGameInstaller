@@ -2,7 +2,9 @@
  * Sanitizes a path segment (e.g. result.name or file.name) to prevent path traversal
  * and invalid characters. Returns a safe basename-like segment.
  */
-export function sanitizePathSegment(segment: string | undefined | null): string {
+export function sanitizePathSegment(
+  segment: string | undefined | null
+): string {
   if (segment == null || segment === '') return 'download';
   const normalized = segment.replace(/[/\\]+/g, '/').replace(/\.\./g, '');
   const parts = normalized.split('/').filter(Boolean);
@@ -94,7 +96,9 @@ function isFilePath(downloadPath: string): boolean {
  * Resolves exact on-disk file paths for cleanup/resume from persisted download state.
  * Prefers stored per-file paths over reconstructing from display names.
  */
-export function getPersistedFilePaths(downloadInfo: DownloadPathInfo): string[] {
+export function getPersistedFilePaths(
+  downloadInfo: DownloadPathInfo
+): string[] {
   if (downloadInfo.files && downloadInfo.files.length > 0) {
     const paths: string[] = [];
     const folder = downloadInfo.downloadPath.replace(/[/\\]+$/, '');

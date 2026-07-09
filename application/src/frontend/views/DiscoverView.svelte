@@ -1,324 +1,322 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
-  import { addonServer, queryConnectedAddons } from '@/frontend/utils';
-  import type {
-    BasicLibraryInfo,
-    CatalogCarouselItem,
-    CatalogResponse,
-    CatalogSection,
-    ConfigurationFile,
-    OGIAddonConfiguration,
-  } from '@ogi-sdk/connect';
-  import {
-    currentStorePageOpened,
-    currentStorePageOpenedStorefront,
-    viewOpenedWhenChanged,
-    selectedView,
-    createNotification,
-  } from '@/frontend/store.svelte';
-  import AddonPicture from '@/frontend/components/AddonPicture.svelte';
+import type {
+  BasicLibraryInfo,
+  CatalogCarouselItem,
+  CatalogResponse,
+  CatalogSection,
+  ConfigurationFile,
+  OGIAddonConfiguration,
+} from '@ogi-sdk/connect';
+import { onMount } from 'svelte';
+import AddonPicture from '@/frontend/components/AddonPicture.svelte';
+import {
+  createNotification,
+  currentStorePageOpened,
+  currentStorePageOpenedStorefront,
+  selectedView,
+  viewOpenedWhenChanged,
+} from '@/frontend/store.svelte';
+import { addonServer, queryConnectedAddons } from '@/frontend/utils';
 
-  interface ConfigTemplateAndInfo extends OGIAddonConfiguration {
-    configTemplate: ConfigurationFile;
-  }
+interface ConfigTemplateAndInfo extends OGIAddonConfiguration {
+  configTemplate: ConfigurationFile;
+}
 
-  interface AddonCatalog {
-    addonId: string;
-    addonName: string;
-    sections: Record<string, CatalogSection>;
-    carouselItems: CatalogCarouselItem[];
-  }
+interface AddonCatalog {
+  addonId: string;
+  addonName: string;
+  sections: Record<string, CatalogSection>;
+  carouselItems: CatalogCarouselItem[];
+}
 
-  interface AllSections {
-    sectionId: string;
-    sectionKey: string;
-    addonId: string;
-    addonName: string;
-    section: CatalogSection;
-  }
+interface AllSections {
+  sectionId: string;
+  sectionKey: string;
+  addonId: string;
+  addonName: string;
+  section: CatalogSection;
+}
 
-  interface DiscoverCarouselItem extends CatalogCarouselItem {
-    addonId: string;
-    addonName: string;
-  }
+interface DiscoverCarouselItem extends CatalogCarouselItem {
+  addonId: string;
+  addonName: string;
+}
 
-  let addons: ConfigTemplateAndInfo[] = $state([]);
-  let catalogs: AddonCatalog[] = $state([]);
-  let loading = $state(true);
-  let allSections = $state<AllSections[]>([]);
-  let featuredCarouselItems = $state<DiscoverCarouselItem[]>([]);
-  let featuredCarouselIndex = $state(0);
-  let carouselIndices = $state<Record<string, number>>({});
-  const CAROUSEL_PAGE_SIZE = 5;
+let addons: ConfigTemplateAndInfo[] = $state([]);
+let catalogs: AddonCatalog[] = $state([]);
+let loading = $state(true);
+let allSections = $state<AllSections[]>([]);
+let featuredCarouselItems = $state<DiscoverCarouselItem[]>([]);
+let featuredCarouselIndex = $state(0);
+let carouselIndices = $state<Record<string, number>>({});
+const CAROUSEL_PAGE_SIZE = 5;
 
-  function isRecord(value: unknown): value is Record<string, unknown> {
-    return typeof value === 'object' && value !== null && !Array.isArray(value);
-  }
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
 
-  function isBasicLibraryInfo(value: unknown): value is BasicLibraryInfo {
-    if (!isRecord(value)) return false;
-    return (
-      typeof value.name === 'string' &&
-      typeof value.capsuleImage === 'string' &&
-      typeof value.appID === 'number' &&
-      typeof value.storefront === 'string'
-    );
-  }
+function isBasicLibraryInfo(value: unknown): value is BasicLibraryInfo {
+  if (!isRecord(value)) return false;
+  return (
+    typeof value.name === 'string' &&
+    typeof value.capsuleImage === 'string' &&
+    typeof value.appID === 'number' &&
+    typeof value.storefront === 'string'
+  );
+}
 
-  function isCatalogSection(value: unknown): value is CatalogSection {
-    if (!isRecord(value)) return false;
-    return (
-      typeof value.name === 'string' &&
-      typeof value.description === 'string' &&
-      Array.isArray(value.listings) &&
-      value.listings.every(isBasicLibraryInfo)
-    );
-  }
+function isCatalogSection(value: unknown): value is CatalogSection {
+  if (!isRecord(value)) return false;
+  return (
+    typeof value.name === 'string' &&
+    typeof value.description === 'string' &&
+    Array.isArray(value.listings) &&
+    value.listings.every(isBasicLibraryInfo)
+  );
+}
 
-  function isCatalogCarouselItem(value: unknown): value is CatalogCarouselItem {
-    if (!isRecord(value)) return false;
-    const hasSupportedImage =
-      typeof value.carouselImage === 'string' ||
-      typeof value.fullBannerImage === 'string' ||
-      typeof value.capsuleImage === 'string';
-    return (
-      typeof value.name === 'string' &&
-      typeof value.description === 'string' &&
-      hasSupportedImage
-    );
-  }
+function isCatalogCarouselItem(value: unknown): value is CatalogCarouselItem {
+  if (!isRecord(value)) return false;
+  const hasSupportedImage =
+    typeof value.carouselImage === 'string' ||
+    typeof value.fullBannerImage === 'string' ||
+    typeof value.capsuleImage === 'string';
+  return (
+    typeof value.name === 'string' &&
+    typeof value.description === 'string' &&
+    hasSupportedImage
+  );
+}
 
-  function normalizeCatalog(catalogData: CatalogResponse): {
-    sections: Record<string, CatalogSection>;
-    carouselItems: CatalogCarouselItem[];
-  } {
-    const payload = isRecord(catalogData) ? catalogData : {};
-    const sectionsSource =
-      'sections' in payload && isRecord(payload.sections)
-        ? payload.sections
-        : payload;
+function normalizeCatalog(catalogData: CatalogResponse): {
+  sections: Record<string, CatalogSection>;
+  carouselItems: CatalogCarouselItem[];
+} {
+  const payload = isRecord(catalogData) ? catalogData : {};
+  const sectionsSource =
+    'sections' in payload && isRecord(payload.sections)
+      ? payload.sections
+      : payload;
 
-    const sections: Record<string, CatalogSection> = {};
-    Object.entries(sectionsSource).forEach(([sectionId, sectionValue]) => {
-      if (isCatalogSection(sectionValue)) {
-        sections[sectionId] = sectionValue;
-      }
-    });
+  const sections: Record<string, CatalogSection> = {};
+  Object.entries(sectionsSource).forEach(([sectionId, sectionValue]) => {
+    if (isCatalogSection(sectionValue)) {
+      sections[sectionId] = sectionValue;
+    }
+  });
 
-    let carouselItems: CatalogCarouselItem[] = [];
-    if ('carousel' in payload) {
-      const carousel = payload.carousel;
-      if (Array.isArray(carousel)) {
-        carouselItems = carousel.filter(isCatalogCarouselItem);
-      } else if (isRecord(carousel)) {
-        if (isCatalogCarouselItem(carousel)) {
-          carouselItems = [carousel];
-        } else {
-          carouselItems = Object.values(carousel).filter(isCatalogCarouselItem);
-        }
+  let carouselItems: CatalogCarouselItem[] = [];
+  if ('carousel' in payload) {
+    const carousel = payload.carousel;
+    if (Array.isArray(carousel)) {
+      carouselItems = carousel.filter(isCatalogCarouselItem);
+    } else if (isRecord(carousel)) {
+      if (isCatalogCarouselItem(carousel)) {
+        carouselItems = [carousel];
+      } else {
+        carouselItems = Object.values(carousel).filter(isCatalogCarouselItem);
       }
     }
-
-    return { sections, carouselItems };
   }
 
-  function getFeaturedImage(item: CatalogCarouselItem) {
-    return (
-      item.fullBannerImage ??
-      item.carouselImage ??
+  return { sections, carouselItems };
+}
+
+function getFeaturedImage(item: CatalogCarouselItem) {
+  return (
+    item.fullBannerImage ??
+    item.carouselImage ??
+    item.capsuleImage ??
+    './favicon.png'
+  );
+}
+
+function handleCarouselNav(
+  sectionKey: string,
+  direction: number,
+  maxPage: number
+) {
+  const currentIndex = carouselIndices[sectionKey] || 0;
+  const nextIndex = Math.max(0, Math.min(currentIndex + direction, maxPage));
+  if (nextIndex === currentIndex) return;
+
+  carouselIndices = {
+    ...carouselIndices,
+    [sectionKey]: nextIndex,
+  };
+}
+
+function getCarouselPages(listings: BasicLibraryInfo[]): BasicLibraryInfo[][] {
+  const pages: BasicLibraryInfo[][] = [];
+  for (let start = 0; start < listings.length; start += CAROUSEL_PAGE_SIZE) {
+    pages.push(listings.slice(start, start + CAROUSEL_PAGE_SIZE));
+  }
+  return pages;
+}
+
+function getCarouselMaxPage(totalItems: number) {
+  return Math.max(0, Math.ceil(totalItems / CAROUSEL_PAGE_SIZE) - 1);
+}
+
+function setFeaturedCarouselIndex(index: number) {
+  const count = featuredCarouselItems.length;
+  if (count === 0) return;
+  featuredCarouselIndex = (index + count) % count;
+}
+
+function handleFeaturedCarouselNav(direction: number) {
+  const count = featuredCarouselItems.length;
+  if (count < 2) return;
+  setFeaturedCarouselIndex(featuredCarouselIndex + direction + count);
+}
+
+function goToFeaturedCarouselIndex(index: number) {
+  if (index === featuredCarouselIndex) return;
+  setFeaturedCarouselIndex(index);
+}
+
+function shouldPrioritizeFeaturedImage(slideIndex: number) {
+  const count = featuredCarouselItems.length;
+  if (count <= 1) return true;
+  const distance = Math.abs(slideIndex - featuredCarouselIndex);
+  return distance <= 1 || distance >= count - 1;
+}
+
+function shouldPrioritizeSectionPage(
+  sectionKey: string,
+  pageIndex: number,
+  pageCount: number
+) {
+  const activePage = carouselIndices[sectionKey] || 0;
+  return pageCount <= 2 || Math.abs(pageIndex - activePage) <= 1;
+}
+
+function openGameStorePage(game: BasicLibraryInfo) {
+  currentStorePageOpened.set(game.appID);
+  currentStorePageOpenedStorefront.set(game.storefront);
+  viewOpenedWhenChanged.set($selectedView);
+}
+
+function openFeaturedCarouselItem(item: DiscoverCarouselItem) {
+  if (typeof item.appID !== 'number' || typeof item.storefront !== 'string') {
+    return;
+  }
+
+  openGameStorePage({
+    appID: item.appID,
+    storefront: item.storefront,
+    name: item.name,
+    capsuleImage:
       item.capsuleImage ??
-      './favicon.png'
+      item.carouselImage ??
+      item.fullBannerImage ??
+      './favicon.png',
+  });
+}
+
+async function loadCatalogs() {
+  try {
+    loading = true;
+    addons = await queryConnectedAddons<ConfigTemplateAndInfo>();
+
+    const catalogPromises = addons.map(async (addonInfo) => {
+      const addon = addonServer.addon(addonInfo.id);
+      if (!addon.eventsAvailable.includes('catalog')) {
+        return null;
+      }
+      try {
+        const catalogData = (await addon.catalog()) as CatalogResponse;
+        const normalizedCatalog = normalizeCatalog(catalogData);
+
+        return {
+          addonId: addonInfo.id,
+          addonName: addonInfo.name,
+          sections: normalizedCatalog.sections,
+          carouselItems: normalizedCatalog.carouselItems,
+        };
+      } catch (error) {
+        console.warn(
+          `Failed to load catalog for addon ${addonInfo.id}:`,
+          error
+        );
+        return null;
+      }
+    });
+
+    const results = await Promise.all(catalogPromises);
+    catalogs = results.filter(
+      (catalog): catalog is AddonCatalog =>
+        catalog !== null &&
+        (Object.keys(catalog.sections).length > 0 ||
+          catalog.carouselItems.length > 0)
     );
-  }
-
-  function handleCarouselNav(
-    sectionKey: string,
-    direction: number,
-    maxPage: number
-  ) {
-    const currentIndex = carouselIndices[sectionKey] || 0;
-    const nextIndex = Math.max(0, Math.min(currentIndex + direction, maxPage));
-    if (nextIndex === currentIndex) return;
-
-    carouselIndices = {
-      ...carouselIndices,
-      [sectionKey]: nextIndex,
-    };
-  }
-
-  function getCarouselPages(
-    listings: BasicLibraryInfo[]
-  ): BasicLibraryInfo[][] {
-    const pages: BasicLibraryInfo[][] = [];
-    for (let start = 0; start < listings.length; start += CAROUSEL_PAGE_SIZE) {
-      pages.push(listings.slice(start, start + CAROUSEL_PAGE_SIZE));
-    }
-    return pages;
-  }
-
-  function getCarouselMaxPage(totalItems: number) {
-    return Math.max(0, Math.ceil(totalItems / CAROUSEL_PAGE_SIZE) - 1);
-  }
-
-  function setFeaturedCarouselIndex(index: number) {
-    const count = featuredCarouselItems.length;
-    if (count === 0) return;
-    featuredCarouselIndex = (index + count) % count;
-  }
-
-  function handleFeaturedCarouselNav(direction: number) {
-    const count = featuredCarouselItems.length;
-    if (count < 2) return;
-    setFeaturedCarouselIndex(featuredCarouselIndex + direction + count);
-  }
-
-  function goToFeaturedCarouselIndex(index: number) {
-    if (index === featuredCarouselIndex) return;
-    setFeaturedCarouselIndex(index);
-  }
-
-  function shouldPrioritizeFeaturedImage(slideIndex: number) {
-    const count = featuredCarouselItems.length;
-    if (count <= 1) return true;
-    const distance = Math.abs(slideIndex - featuredCarouselIndex);
-    return distance <= 1 || distance >= count - 1;
-  }
-
-  function shouldPrioritizeSectionPage(
-    sectionKey: string,
-    pageIndex: number,
-    pageCount: number
-  ) {
-    const activePage = carouselIndices[sectionKey] || 0;
-    return pageCount <= 2 || Math.abs(pageIndex - activePage) <= 1;
-  }
-
-  function openGameStorePage(game: BasicLibraryInfo) {
-    currentStorePageOpened.set(game.appID);
-    currentStorePageOpenedStorefront.set(game.storefront);
-    viewOpenedWhenChanged.set($selectedView);
-  }
-
-  function openFeaturedCarouselItem(item: DiscoverCarouselItem) {
-    if (typeof item.appID !== 'number' || typeof item.storefront !== 'string') {
-      return;
-    }
-
-    openGameStorePage({
-      appID: item.appID,
-      storefront: item.storefront,
-      name: item.name,
-      capsuleImage:
-        item.capsuleImage ??
-        item.carouselImage ??
-        item.fullBannerImage ??
-        './favicon.png',
+  } catch (error) {
+    console.error('Failed to load catalogs:', error);
+    createNotification({
+      id: Math.random().toString(36).substring(7),
+      message: 'Failed to load catalogs',
+      type: 'error',
     });
+  } finally {
+    loading = false;
   }
+}
 
-  async function loadCatalogs() {
-    try {
-      loading = true;
-      addons = await queryConnectedAddons<ConfigTemplateAndInfo>();
-
-      const catalogPromises = addons.map(async (addonInfo) => {
-        const addon = addonServer.addon(addonInfo.id);
-        if (!addon.eventsAvailable.includes('catalog')) {
-          return null;
-        }
-        try {
-          const catalogData = (await addon.catalog()) as CatalogResponse;
-          const normalizedCatalog = normalizeCatalog(catalogData);
-
-          return {
-            addonId: addonInfo.id,
-            addonName: addonInfo.name,
-            sections: normalizedCatalog.sections,
-            carouselItems: normalizedCatalog.carouselItems,
-          };
-        } catch (error) {
-          console.warn(
-            `Failed to load catalog for addon ${addonInfo.id}:`,
-            error
-          );
-          return null;
-        }
-      });
-
-      const results = await Promise.all(catalogPromises);
-      catalogs = results.filter(
-        (catalog): catalog is AddonCatalog =>
-          catalog !== null &&
-          (Object.keys(catalog.sections).length > 0 ||
-            catalog.carouselItems.length > 0)
-      );
-    } catch (error) {
-      console.error('Failed to load catalogs:', error);
-      createNotification({
-        id: Math.random().toString(36).substring(7),
-        message: 'Failed to load catalogs',
-        type: 'error',
-      });
-    } finally {
-      loading = false;
-    }
-  }
-
-  $effect(() => {
-    const sections: AllSections[] = [];
-    catalogs.forEach((catalog) => {
-      Object.entries(catalog.sections).forEach(([sectionId, section]) => {
-        sections.push({
-          sectionId,
-          sectionKey: `${catalog.addonId}:${sectionId}`,
-          addonId: catalog.addonId,
-          addonName: catalog.addonName,
-          section,
-        });
+$effect(() => {
+  const sections: AllSections[] = [];
+  catalogs.forEach((catalog) => {
+    Object.entries(catalog.sections).forEach(([sectionId, section]) => {
+      sections.push({
+        sectionId,
+        sectionKey: `${catalog.addonId}:${sectionId}`,
+        addonId: catalog.addonId,
+        addonName: catalog.addonName,
+        section,
       });
     });
-    allSections = sections;
   });
+  allSections = sections;
+});
 
-  $effect(() => {
-    const featuredItems: DiscoverCarouselItem[] = [];
-    catalogs.forEach((catalog) => {
-      catalog.carouselItems.forEach((carouselItem) => {
-        featuredItems.push({
-          ...carouselItem,
-          addonId: catalog.addonId,
-          addonName: catalog.addonName,
-        });
+$effect(() => {
+  const featuredItems: DiscoverCarouselItem[] = [];
+  catalogs.forEach((catalog) => {
+    catalog.carouselItems.forEach((carouselItem) => {
+      featuredItems.push({
+        ...carouselItem,
+        addonId: catalog.addonId,
+        addonName: catalog.addonName,
       });
     });
-    featuredCarouselItems = featuredItems;
-    if (featuredCarouselIndex >= featuredItems.length) {
-      featuredCarouselIndex = 0;
-    }
   });
+  featuredCarouselItems = featuredItems;
+  if (featuredCarouselIndex >= featuredItems.length) {
+    featuredCarouselIndex = 0;
+  }
+});
 
-  $effect(() => {
-    const count = featuredCarouselItems.length;
-    if (count < 2) return;
+$effect(() => {
+  const count = featuredCarouselItems.length;
+  if (count < 2) return;
 
-    const interval = setInterval(() => {
-      handleFeaturedCarouselNav(1);
-    }, 7000);
+  const interval = setInterval(() => {
+    handleFeaturedCarouselNav(1);
+  }, 7000);
 
-    return () => clearInterval(interval);
+  return () => clearInterval(interval);
+});
+
+$effect(() => {
+  const indices: Record<string, number> = {};
+  allSections.forEach((section) => {
+    indices[section.sectionKey] = 0;
   });
+  carouselIndices = indices;
+});
 
-  $effect(() => {
-    const indices: Record<string, number> = {};
-    allSections.forEach((section) => {
-      indices[section.sectionKey] = 0;
-    });
-    carouselIndices = indices;
-  });
-
-  onMount(() => {
-    loadCatalogs();
-  });
+onMount(() => {
+  loadCatalogs();
+});
 </script>
 
 <div class="flex flex-col w-full h-full overflow-y-auto gap-6 pb-8">

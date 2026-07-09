@@ -1,13 +1,13 @@
+import { getDownloadPath } from '@/frontend/lib/core/fs';
+import { updateDownloadStatus } from '@/frontend/lib/downloads/lifecycle';
+import { safeDownloadPath } from '@/frontend/lib/downloads/paths';
 import { BaseService } from '@/frontend/lib/downloads/services/BaseService';
+import { runSetupApp, runSetupAppUpdate } from '@/frontend/lib/setup/setup';
 import type { SearchResultWithAddon } from '@/frontend/lib/tasks/runner';
 import {
   currentDownloads,
   type DownloadStatusAndInfo,
 } from '@/frontend/store.svelte';
-import { getDownloadPath } from '@/frontend/lib/core/fs';
-import { safeDownloadPath } from '@/frontend/lib/downloads/paths';
-import { runSetupApp, runSetupAppUpdate } from '@/frontend/lib/setup/setup';
-import { updateDownloadStatus } from '@/frontend/lib/downloads/lifecycle';
 
 /**
  * Handles "empty" downloads that skip directly to the setup phase.

@@ -1,16 +1,16 @@
 <script lang="ts">
-  import { getContext } from 'svelte';
-  import CloseModal from '@/frontend/components/modal/CloseModal.svelte';
+import { getContext } from 'svelte';
+import CloseModal from '@/frontend/components/modal/CloseModal.svelte';
 
-  let {
-    header,
-    class: className = '',
-    closePosition = 'top-right',
-  }: {
-    header: string;
-    class?: string;
-    closePosition?: 'top-right' | 'top-left' | 'bottom-right' | 'bottom-left';
-  } = $props();
+let {
+  header,
+  class: className = '',
+  closePosition = 'top-right',
+}: {
+  header: string;
+  class?: string;
+  closePosition?: 'top-right' | 'top-left' | 'bottom-right' | 'bottom-left';
+} = $props();
 </script>
 
 <h2

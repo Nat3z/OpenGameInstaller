@@ -1,649 +1,643 @@
 <script lang="ts">
-  import { fly } from 'svelte/transition';
-  import { createNotification } from '@/frontend/store.svelte';
-  import Modal from '@/frontend/components/modal/Modal.svelte';
-  import TitleModal from '@/frontend/components/modal/TitleModal.svelte';
-  import InputModal from '@/frontend/components/modal/InputModal.svelte';
-  import ButtonModal from '@/frontend/components/modal/ButtonModal.svelte';
-  import { onMount } from 'svelte';
-  import TextModal from '@/frontend/components/modal/TextModal.svelte';
-  import SectionModal from '@/frontend/components/modal/SectionModal.svelte';
-  import CustomDropdown from '@/frontend/components/CustomDropdown.svelte';
-  import RangeInput from '@/frontend/components/RangeInput.svelte';
-  import ThemePicker from '@/frontend/components/ThemePicker.svelte';
-  import {
-    fetchAddonsWithConfigure,
-    reconnectClientSdk,
-  } from '@/frontend/utils';
+import { onMount } from 'svelte';
+import { fly } from 'svelte/transition';
+import CustomDropdown from '@/frontend/components/CustomDropdown.svelte';
+import ButtonModal from '@/frontend/components/modal/ButtonModal.svelte';
+import InputModal from '@/frontend/components/modal/InputModal.svelte';
+import Modal from '@/frontend/components/modal/Modal.svelte';
+import SectionModal from '@/frontend/components/modal/SectionModal.svelte';
+import TextModal from '@/frontend/components/modal/TextModal.svelte';
+import TitleModal from '@/frontend/components/modal/TitleModal.svelte';
+import RangeInput from '@/frontend/components/RangeInput.svelte';
+import ThemePicker from '@/frontend/components/ThemePicker.svelte';
+import { createNotification } from '@/frontend/store.svelte';
+import { fetchAddonsWithConfigure, reconnectClientSdk } from '@/frontend/utils';
 
-  const fs = window.electronAPI.fs;
-  interface OptionsCategory {
-    name: string;
-    id: string;
-    description: string;
-    options: {
-      [key: string]: {
-        displayName: string;
-        description: string;
-        defaultValue: string | number | boolean;
-        choice?: string[];
-        value: string | number | boolean;
-        type:
-          | 'string'
-          | 'number'
-          | 'boolean'
-          | 'file-folder'
-          | 'textarea'
-          | 'password'
-          | 'section-describer'
-          | 'action';
-        maxTextLength?: number;
-        minTextLength?: number;
-        action?: () => void;
-        max?: number;
-        min?: number;
-        condition?: () => Promise<boolean>;
-      };
+const fs = window.electronAPI.fs;
+interface OptionsCategory {
+  name: string;
+  id: string;
+  description: string;
+  options: {
+    [key: string]: {
+      displayName: string;
+      description: string;
+      defaultValue: string | number | boolean;
+      choice?: string[];
+      value: string | number | boolean;
+      type:
+        | 'string'
+        | 'number'
+        | 'boolean'
+        | 'file-folder'
+        | 'textarea'
+        | 'password'
+        | 'section-describer'
+        | 'action';
+      maxTextLength?: number;
+      minTextLength?: number;
+      action?: () => void;
+      max?: number;
+      min?: number;
+      condition?: () => Promise<boolean>;
     };
+  };
+}
+let options: OptionsCategory[] = [
+  {
+    name: 'General',
+    id: 'general',
+    description: 'General Settings',
+    options: {
+      theme: {
+        displayName: 'Theme',
+        description: 'Appearance theme (Light, Dark, or Synthwave)',
+        defaultValue: 'light',
+        value: 'light',
+        choice: ['light', 'dark', 'synthwave'],
+        type: 'string',
+      },
+      fileDownloadLocation: {
+        displayName: 'Download Location',
+        description: 'The location where files will be downloaded to',
+        defaultValue: './downloads',
+        value: '',
+        type: 'file-folder',
+      },
+      torrentClient: {
+        displayName: 'Torrent Client',
+        description: 'What will do the torrenting for you',
+        defaultValue: 'webtorrent',
+        value: '',
+        choice: [
+          'webtorrent',
+          'qbittorrent',
+          'real-debrid',
+          'all-debrid',
+          'torbox',
+          'premiumize',
+          'disable',
+        ],
+        type: 'string',
+      },
+      parallelChunkCount: {
+        displayName: 'Parallelize Downloads',
+        description:
+          "The number of parallel downloads to use per download. More doesn't always mean faster.",
+        defaultValue: 8,
+        value: 8,
+        type: 'number',
+        max: 32,
+        min: 1,
+      },
+      bandwidthLimit: {
+        displayName: 'Bandwidth Limit (MiB/s)',
+        description:
+          'Maximum download speed for direct downloads in MiB/s. Set to 0 for unlimited.',
+        defaultValue: 0,
+        value: 0,
+        type: 'number',
+        min: 0,
+        max: 100,
+      },
+      reconfigurSteamGridDb: {
+        displayName: 'Change SteamGridDB API Key',
+        description: 'Reconfigure your SteamGridDB API Key',
+        defaultValue: '',
+        value: '',
+        type: 'action',
+        condition: async () =>
+          (await window.electronAPI.app.getOS()) === 'linux',
+        action: () => {
+          document.dispatchEvent(
+            new CustomEvent('steamgriddb-launch', {
+              detail: '',
+            })
+          );
+        },
+      },
+      addToDesktop: {
+        displayName: 'Add to Desktop',
+        description: 'Create a desktop shortcut for OpenGameInstaller',
+        defaultValue: '',
+        value: '',
+        type: 'action',
+        condition: async () =>
+          (await window.electronAPI.app.getOS()) !== 'win32',
+        action: async () => {
+          const result = await window.electronAPI.app.addToDesktop();
+          if (result.success) {
+            createNotification({
+              id: Math.random().toString(36).substring(7),
+              message: 'Desktop shortcut created successfully',
+              type: 'success',
+            });
+          } else {
+            createNotification({
+              id: Math.random().toString(36).substring(7),
+              message: result.error || 'Failed to create desktop shortcut',
+              type: 'error',
+            });
+          }
+        },
+      },
+      addons: {
+        displayName: 'Addons',
+        description: 'The addons you want to use',
+        defaultValue: '',
+        value: '',
+        type: 'textarea',
+      },
+    },
+  },
+  {
+    name: 'Debrid Services',
+    id: 'realdebrid',
+    description: 'Configure Debrid Services',
+    options: {
+      debridApiKey: {
+        displayName: 'Real Debrid API Key',
+        description: 'Your Real Debrid API Key',
+        defaultValue: '',
+        value: '',
+        type: 'password',
+      },
+      torboxApiKey: {
+        displayName: 'TorBox API Key',
+        description: 'Your TorBox API Key',
+        defaultValue: '',
+        value: '',
+        type: 'password',
+      },
+      premiumizeApiKey: {
+        displayName: 'Premiumize API Key',
+        description: 'Your Premiumize API Key',
+        defaultValue: '',
+        value: '',
+        type: 'password',
+      },
+      alldebridApiKey: {
+        displayName: 'AllDebrid API Key',
+        description: 'Your AllDebrid API Key',
+        defaultValue: '',
+        value: '',
+        type: 'password',
+      },
+    },
+  },
+  {
+    name: 'qBittorrent',
+    description: 'Configure qBittorrent',
+    id: 'qbittorrent',
+    options: {
+      qbitHost: {
+        displayName: 'Host',
+        description: 'The host of the qBittorrent server',
+        defaultValue: 'http://127.0.0.1',
+        value: '',
+        type: 'string',
+      },
+      qbitPort: {
+        displayName: 'Port',
+        description: 'The port of the qBittorrent server',
+        defaultValue: '8080',
+        value: '',
+        type: 'string',
+      },
+      qbitUsername: {
+        displayName: 'Username',
+        description: 'The username of the qBittorrent server',
+        defaultValue: 'admin',
+        value: '',
+        type: 'string',
+      },
+      qbitPassword: {
+        displayName: 'Password',
+        description: 'The password of the qBittorrent server',
+        defaultValue: 'admin',
+        value: '',
+        type: 'password',
+      },
+    },
+  },
+  {
+    name: 'Developer',
+    id: 'developer',
+    description: 'Developer Settings',
+    options: {
+      describer: {
+        displayName: 'WARNING BEFORE YOU CHANGE',
+        description:
+          'These settings are for developer use only. Modification of these may lead to undefined, unexpected, and dangerous behavior not intended to be used by the average user. Use at your own risk.',
+        defaultValue: '',
+        value: '',
+        type: 'section-describer',
+      },
+      disableSecretCheck: {
+        displayName: 'Disable Server Secret Check',
+        description:
+          'Disables the check preventing addons without authorization from connecting to the server. Dangerous as malicious addons could chain load another addon which could make unsandboxed changes to the system.',
+        defaultValue: false,
+        value: false,
+        type: 'boolean',
+      },
+      clientSdkUrl: {
+        displayName: 'Client SDK URL',
+        description: 'The URL of the client SDK',
+        defaultValue: 'ws://127.0.0.1:7654',
+        value: '',
+        type: 'string',
+      },
+      showEventsPerSec: {
+        displayName: 'Show Events Per Sec',
+        description: 'Show the number of events processed per second',
+        defaultValue: '',
+        value: '',
+        type: 'action',
+        action: () => {
+          document.dispatchEvent(new Event('dbg:events-proc-toggle'));
+        },
+      },
+      showNotificationSideView: {
+        displayName: 'Show Notification Side View',
+        description: 'Show the notification side view',
+        defaultValue: '',
+        value: '',
+        type: 'action',
+        action: () => {
+          document.dispatchEvent(
+            new Event('dbg:notification-side-view-toggle')
+          );
+        },
+      },
+      testModal: {
+        displayName: 'Test Modal',
+        description: 'Test Modal',
+        defaultValue: '',
+        value: '',
+        type: 'action',
+        action: () => {
+          document.dispatchEvent(new Event('dbg:debug-modal-trigger'));
+        },
+      },
+      testOptionsModal: {
+        displayName: 'Test Priority Modal',
+        description: 'Test Priority Modal',
+        defaultValue: '',
+        value: '',
+        type: 'action',
+        action: () => {
+          document.dispatchEvent(new Event('dbg:priority-test-trigger'));
+        },
+      },
+      triggerOOBE: {
+        displayName: 'Trigger OOBE',
+        description: 'Trigger the Out of Box Experience',
+        defaultValue: '',
+        value: '',
+        type: 'action',
+        action: () => {
+          window.electronAPI.fs.delete('./config/option/installed.json');
+          window.location.reload();
+        },
+      },
+      describerEnd: {
+        displayName: 'Restart to Apply Changes',
+        description: '',
+        defaultValue: '',
+        value: '',
+        type: 'section-describer',
+      },
+    },
+  },
+  {
+    name: 'About',
+    id: 'about',
+    description: 'About the application',
+    options: {},
+  },
+];
+
+let selectedOption: OptionsCategory | null = $state(null);
+let mainContent: HTMLElement;
+let rangeValues: { [key: string]: number } = $state({});
+
+function selectOption(addon: OptionsCategory) {
+  const selected = document.querySelector('.selected');
+  if (selected) {
+    selected.classList.remove('selected');
   }
-  let options: OptionsCategory[] = [
-    {
-      name: 'General',
-      id: 'general',
-      description: 'General Settings',
-      options: {
-        theme: {
-          displayName: 'Theme',
-          description: 'Appearance theme (Light, Dark, or Synthwave)',
-          defaultValue: 'light',
-          value: 'light',
-          choice: ['light', 'dark', 'synthwave'],
-          type: 'string',
-        },
-        fileDownloadLocation: {
-          displayName: 'Download Location',
-          description: 'The location where files will be downloaded to',
-          defaultValue: './downloads',
-          value: '',
-          type: 'file-folder',
-        },
-        torrentClient: {
-          displayName: 'Torrent Client',
-          description: 'What will do the torrenting for you',
-          defaultValue: 'webtorrent',
-          value: '',
-          choice: [
-            'webtorrent',
-            'qbittorrent',
-            'real-debrid',
-            'all-debrid',
-            'torbox',
-            'premiumize',
-            'disable',
-          ],
-          type: 'string',
-        },
-        parallelChunkCount: {
-          displayName: 'Parallelize Downloads',
-          description:
-            "The number of parallel downloads to use per download. More doesn't always mean faster.",
-          defaultValue: 8,
-          value: 8,
-          type: 'number',
-          max: 32,
-          min: 1,
-        },
-        bandwidthLimit: {
-          displayName: 'Bandwidth Limit (MiB/s)',
-          description:
-            'Maximum download speed for direct downloads in MiB/s. Set to 0 for unlimited.',
-          defaultValue: 0,
-          value: 0,
-          type: 'number',
-          min: 0,
-          max: 100,
-        },
-        reconfigurSteamGridDb: {
-          displayName: 'Change SteamGridDB API Key',
-          description: 'Reconfigure your SteamGridDB API Key',
-          defaultValue: '',
-          value: '',
-          type: 'action',
-          condition: async () =>
-            (await window.electronAPI.app.getOS()) === 'linux',
-          action: () => {
-            document.dispatchEvent(
-              new CustomEvent('steamgriddb-launch', {
-                detail: '',
-              })
-            );
-          },
-        },
-        addToDesktop: {
-          displayName: 'Add to Desktop',
-          description: 'Create a desktop shortcut for OpenGameInstaller',
-          defaultValue: '',
-          value: '',
-          type: 'action',
-          condition: async () =>
-            (await window.electronAPI.app.getOS()) !== 'win32',
-          action: async () => {
-            const result = await window.electronAPI.app.addToDesktop();
-            if (result.success) {
-              createNotification({
-                id: Math.random().toString(36).substring(7),
-                message: 'Desktop shortcut created successfully',
-                type: 'success',
+  const element = document.getElementById('cfg-' + addon.name);
+  if (element) {
+    element.classList.add('selected');
+    selectedOption = addon;
+  }
+}
+
+function updateConfig() {
+  const config: any = {};
+  Object.keys(selectedOption!!.options).forEach((key) => {
+    if (!selectedOption) return;
+    const element = document.getElementById(key) as
+      | HTMLInputElement
+      | HTMLSelectElement
+      | HTMLTextAreaElement;
+    if (element && selectedOption!!.options[key]) {
+      if (
+        selectedOption.options[key].type === 'string' ||
+        selectedOption.options[key].type === 'file-folder' ||
+        selectedOption.options[key].type === 'password'
+      ) {
+        if (key === 'torrentClient') {
+          config[key] = selectedTorrentClientId;
+        } else if (key === 'theme') {
+          config[key] = selectedTheme;
+        } else {
+          config[key] = element.value;
+        }
+      }
+      if (selectedOption.options[key].type === 'textarea') {
+        if (key === 'addons') {
+          config[key] = element.value.split('\n');
+          if (config[key].length === 1 && config[key][0] === '') {
+            config[key] = [];
+          } else {
+            // verify that each line is a link
+            try {
+              config[key].forEach((line: string) => {
+                if (!line || line.length === 0) return;
+                if (line.startsWith('local@')) {
+                  if (!window.electronAPI.fs.exists(line.split('local@')[1])) {
+                    createNotification({
+                      id: Math.random().toString(36).substring(7),
+                      message: 'Invalid Local File in Addons',
+                      type: 'error',
+                    });
+                    return;
+                  }
+                } else {
+                  new URL(line);
+                }
               });
-            } else {
+            } catch (error) {
               createNotification({
                 id: Math.random().toString(36).substring(7),
-                message: result.error || 'Failed to create desktop shortcut',
+                message: 'Invalid URL in Addons',
                 type: 'error',
               });
+              return;
             }
-          },
-        },
-        addons: {
-          displayName: 'Addons',
-          description: 'The addons you want to use',
-          defaultValue: '',
-          value: '',
-          type: 'textarea',
-        },
-      },
-    },
-    {
-      name: 'Debrid Services',
-      id: 'realdebrid',
-      description: 'Configure Debrid Services',
-      options: {
-        debridApiKey: {
-          displayName: 'Real Debrid API Key',
-          description: 'Your Real Debrid API Key',
-          defaultValue: '',
-          value: '',
-          type: 'password',
-        },
-        torboxApiKey: {
-          displayName: 'TorBox API Key',
-          description: 'Your TorBox API Key',
-          defaultValue: '',
-          value: '',
-          type: 'password',
-        },
-        premiumizeApiKey: {
-          displayName: 'Premiumize API Key',
-          description: 'Your Premiumize API Key',
-          defaultValue: '',
-          value: '',
-          type: 'password',
-        },
-        alldebridApiKey: {
-          displayName: 'AllDebrid API Key',
-          description: 'Your AllDebrid API Key',
-          defaultValue: '',
-          value: '',
-          type: 'password',
-        },
-      },
-    },
-    {
-      name: 'qBittorrent',
-      description: 'Configure qBittorrent',
-      id: 'qbittorrent',
-      options: {
-        qbitHost: {
-          displayName: 'Host',
-          description: 'The host of the qBittorrent server',
-          defaultValue: 'http://127.0.0.1',
-          value: '',
-          type: 'string',
-        },
-        qbitPort: {
-          displayName: 'Port',
-          description: 'The port of the qBittorrent server',
-          defaultValue: '8080',
-          value: '',
-          type: 'string',
-        },
-        qbitUsername: {
-          displayName: 'Username',
-          description: 'The username of the qBittorrent server',
-          defaultValue: 'admin',
-          value: '',
-          type: 'string',
-        },
-        qbitPassword: {
-          displayName: 'Password',
-          description: 'The password of the qBittorrent server',
-          defaultValue: 'admin',
-          value: '',
-          type: 'password',
-        },
-      },
-    },
-    {
-      name: 'Developer',
-      id: 'developer',
-      description: 'Developer Settings',
-      options: {
-        describer: {
-          displayName: 'WARNING BEFORE YOU CHANGE',
-          description:
-            'These settings are for developer use only. Modification of these may lead to undefined, unexpected, and dangerous behavior not intended to be used by the average user. Use at your own risk.',
-          defaultValue: '',
-          value: '',
-          type: 'section-describer',
-        },
-        disableSecretCheck: {
-          displayName: 'Disable Server Secret Check',
-          description:
-            'Disables the check preventing addons without authorization from connecting to the server. Dangerous as malicious addons could chain load another addon which could make unsandboxed changes to the system.',
-          defaultValue: false,
-          value: false,
-          type: 'boolean',
-        },
-        clientSdkUrl: {
-          displayName: 'Client SDK URL',
-          description: 'The URL of the client SDK',
-          defaultValue: 'ws://127.0.0.1:7654',
-          value: '',
-          type: 'string',
-        },
-        showEventsPerSec: {
-          displayName: 'Show Events Per Sec',
-          description: 'Show the number of events processed per second',
-          defaultValue: '',
-          value: '',
-          type: 'action',
-          action: () => {
-            document.dispatchEvent(new Event('dbg:events-proc-toggle'));
-          },
-        },
-        showNotificationSideView: {
-          displayName: 'Show Notification Side View',
-          description: 'Show the notification side view',
-          defaultValue: '',
-          value: '',
-          type: 'action',
-          action: () => {
-            document.dispatchEvent(
-              new Event('dbg:notification-side-view-toggle')
-            );
-          },
-        },
-        testModal: {
-          displayName: 'Test Modal',
-          description: 'Test Modal',
-          defaultValue: '',
-          value: '',
-          type: 'action',
-          action: () => {
-            document.dispatchEvent(new Event('dbg:debug-modal-trigger'));
-          },
-        },
-        testOptionsModal: {
-          displayName: 'Test Priority Modal',
-          description: 'Test Priority Modal',
-          defaultValue: '',
-          value: '',
-          type: 'action',
-          action: () => {
-            document.dispatchEvent(new Event('dbg:priority-test-trigger'));
-          },
-        },
-        triggerOOBE: {
-          displayName: 'Trigger OOBE',
-          description: 'Trigger the Out of Box Experience',
-          defaultValue: '',
-          value: '',
-          type: 'action',
-          action: () => {
-            window.electronAPI.fs.delete('./config/option/installed.json');
-            window.location.reload();
-          },
-        },
-        describerEnd: {
-          displayName: 'Restart to Apply Changes',
-          description: '',
-          defaultValue: '',
-          value: '',
-          type: 'section-describer',
-        },
-      },
-    },
-    {
-      name: 'About',
-      id: 'about',
-      description: 'About the application',
-      options: {},
-    },
-  ];
-
-  let selectedOption: OptionsCategory | null = $state(null);
-  let mainContent: HTMLElement;
-  let rangeValues: { [key: string]: number } = $state({});
-
-  function selectOption(addon: OptionsCategory) {
-    const selected = document.querySelector('.selected');
-    if (selected) {
-      selected.classList.remove('selected');
-    }
-    const element = document.getElementById('cfg-' + addon.name);
-    if (element) {
-      element.classList.add('selected');
-      selectedOption = addon;
-    }
-  }
-
-  function updateConfig() {
-    const config: any = {};
-    Object.keys(selectedOption!!.options).forEach((key) => {
-      if (!selectedOption) return;
-      const element = document.getElementById(key) as
-        | HTMLInputElement
-        | HTMLSelectElement
-        | HTMLTextAreaElement;
-      if (element && selectedOption!!.options[key]) {
-        if (
-          selectedOption.options[key].type === 'string' ||
-          selectedOption.options[key].type === 'file-folder' ||
-          selectedOption.options[key].type === 'password'
-        ) {
-          if (key === 'torrentClient') {
-            config[key] = selectedTorrentClientId;
-          } else if (key === 'theme') {
-            config[key] = selectedTheme;
-          } else {
-            config[key] = element.value;
           }
-        }
-        if (selectedOption.options[key].type === 'textarea') {
-          if (key === 'addons') {
-            config[key] = element.value.split('\n');
-            if (config[key].length === 1 && config[key][0] === '') {
-              config[key] = [];
-            } else {
-              // verify that each line is a link
-              try {
-                config[key].forEach((line: string) => {
-                  if (!line || line.length === 0) return;
-                  if (line.startsWith('local@')) {
-                    if (
-                      !window.electronAPI.fs.exists(line.split('local@')[1])
-                    ) {
-                      createNotification({
-                        id: Math.random().toString(36).substring(7),
-                        message: 'Invalid Local File in Addons',
-                        type: 'error',
-                      });
-                      return;
-                    }
-                  } else {
-                    new URL(line);
-                  }
-                });
-              } catch (error) {
-                createNotification({
-                  id: Math.random().toString(36).substring(7),
-                  message: 'Invalid URL in Addons',
-                  type: 'error',
-                });
-                return;
-              }
-            }
-          } else {
-            config[key] = element.value;
-          }
-        }
-        if (selectedOption.options[key].type === 'number') {
-          config[key] =
-            rangeValues[key] !== undefined
-              ? rangeValues[key]
-              : parseInt(element.value);
-        }
-        if (
-          selectedOption.options[key].type === 'boolean' &&
-          element instanceof HTMLInputElement
-        ) {
-          config[key] = element.checked;
+        } else {
+          config[key] = element.value;
         }
       }
-    });
-    // save this config to local storage
-    if (!selectedOption) return;
-    fs.write(
-      './config/option/' + selectedOption.id + '.json',
-      JSON.stringify(config)
+      if (selectedOption.options[key].type === 'number') {
+        config[key] =
+          rangeValues[key] !== undefined
+            ? rangeValues[key]
+            : parseInt(element.value);
+      }
+      if (
+        selectedOption.options[key].type === 'boolean' &&
+        element instanceof HTMLInputElement
+      ) {
+        config[key] = element.checked;
+      }
+    }
+  });
+  // save this config to local storage
+  if (!selectedOption) return;
+  fs.write(
+    './config/option/' + selectedOption.id + '.json',
+    JSON.stringify(config)
+  );
+}
+
+function getStoredOrDefaultValue(key: string) {
+  if (!selectedOption) return;
+  if (!fs.exists('./config/option/' + selectedOption.id + '.json')) {
+    return selectedOption.options[key].defaultValue;
+  } else {
+    const storedConfig = JSON.parse(
+      fs.read('./config/option/' + selectedOption.id + '.json')
     );
+    return storedConfig[key] ?? selectedOption.options[key].defaultValue;
   }
+}
 
-  function getStoredOrDefaultValue(key: string) {
-    if (!selectedOption) return;
-    if (!fs.exists('./config/option/' + selectedOption.id + '.json')) {
-      return selectedOption.options[key].defaultValue;
-    } else {
-      const storedConfig = JSON.parse(
-        fs.read('./config/option/' + selectedOption.id + '.json')
-      );
-      return storedConfig[key] ?? selectedOption.options[key].defaultValue;
+function browseForFolder(event: MouseEvent) {
+  const dialog = window.electronAPI.fs.dialog;
+  const element = (event.target as HTMLElement).parentElement!!.querySelector(
+    'input'
+  ) as HTMLInputElement;
+  dialog.showOpenDialog({ properties: ['openDirectory'] }).then((path) => {
+    if (path && path.length > 0) {
+      if (element) {
+        element.value = path[0];
+      }
+      updateConfig();
+    }
+  });
+}
+
+function getAddonListFromInput() {
+  const addonsElement = document.getElementById(
+    'addons'
+  ) as HTMLTextAreaElement | null;
+  const rawAddons = addonsElement
+    ? addonsElement.value.split('\n')
+    : (getStoredOrDefaultValue('addons') as string[]);
+
+  return rawAddons.map((addon) => addon.trim()).filter(Boolean);
+}
+
+async function installAddons() {
+  isInstallingAddons = true;
+  const addons = getAddonListFromInput();
+  if (!addons || addons.length === 0) {
+    createNotification({
+      id: Math.random().toString(36).substring(7),
+      message: 'No addons to install',
+      type: 'error',
+    });
+    isInstallingAddons = false;
+    return;
+  }
+  updateConfig();
+  await window.electronAPI.installAddons(addons);
+  isInstallingAddons = false;
+}
+
+async function cleanAddons() {
+  isCleaningAddons = true;
+  await window.electronAPI.cleanAddons();
+  isCleaningAddons = false;
+}
+
+async function updateAddons() {
+  isUpdatingAddons = true;
+  await window.electronAPI.updateAddons();
+  isUpdatingAddons = false;
+}
+
+async function restartAddonServer() {
+  isRestartingServer = true;
+  try {
+    await window.electronAPI.restartAddonServer();
+    await reconnectClientSdk();
+  } catch (err) {
+    console.error('Failed to restart addon server:', err);
+  } finally {
+    isRestartingServer = false;
+  }
+}
+
+let showPassword: { [key: string]: boolean } = $state({});
+let doSteamGridDBReconfigure: boolean = $state(false);
+let selectedTorrentClientId: string = $state('webtorrent'); // Track selection reactively
+let selectedTheme: string = $state('light');
+
+// Loading states for addon management buttons
+let isInstallingAddons = $state(false);
+let isUpdatingAddons = $state(false);
+let isCleaningAddons = $state(false);
+let isRestartingServer = $state(false);
+
+const torrentClients = [
+  {
+    id: 'webtorrent',
+    name: 'WebTorrent',
+    icon: './WebTorrent_logo.png',
+    iconWidth: 24,
+    iconHeight: 24,
+    description:
+      'Built-in torrent client with no external dependencies. Works out of the box, but lacks security features like VPNs and proxies.',
+  },
+  {
+    id: 'qbittorrent',
+    name: 'qBittorrent',
+    icon: './qbittorrent.svg',
+    iconWidth: 24,
+    iconHeight: 24,
+    description:
+      'Connect to your existing qBittorrent instance. Tried and tested with security features, but requires setup and configuration.',
+  },
+  {
+    id: 'torbox',
+    name: 'TorBox',
+    icon: './torbox.svg',
+    iconWidth: 24,
+    iconHeight: 24,
+    description:
+      'Community-driven and high-speed seedbox with cached torrents. Requires subscription.',
+  },
+  {
+    id: 'real-debrid',
+    name: 'Real-Debrid',
+    icon: './rd-logo.png',
+    iconWidth: 24,
+    iconHeight: 24,
+    description:
+      'Premium service for faster downloads and cached torrents. Requires subscription.',
+  },
+  {
+    id: 'all-debrid',
+    name: 'AllDebrid',
+    icon: './alldebrid-logo.png',
+    iconWidth: 24,
+    iconHeight: 24,
+    description:
+      'Another Premium Debrid service for faster downloads and cached torrents. Requires subscription.',
+  },
+  {
+    id: 'premiumize',
+    name: 'Premiumize',
+    icon: './premiumize.svg',
+    iconWidth: 24,
+    iconHeight: 24,
+    description: 'Premium seedbox with cached torrents. Requires subscription.',
+  },
+  {
+    id: 'disable',
+    name: 'Disable',
+    icon: './disabled_torrent.svg',
+    iconWidth: 24,
+    iconHeight: 24,
+    description:
+      'Disable torrenting altogether, preventing any downloads from happening.',
+  },
+];
+
+function handleTorrentClientChange(detail: { selectedId: string }) {
+  selectedTorrentClientId = detail.selectedId;
+  updateConfig();
+}
+
+function handleThemeChange(detail: { selectedId: string }) {
+  selectedTheme = detail.selectedId;
+  updateConfig();
+  document.documentElement.setAttribute('data-theme', detail.selectedId);
+}
+
+$effect(() => {
+  if (mainContent && selectedOption) {
+    mainContent.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+});
+
+// Initialize selectedTorrentClientId and selectedTheme with stored values
+$effect(() => {
+  if (selectedOption && selectedOption.id === 'general') {
+    const storedValue = getStoredOrDefaultValue('torrentClient');
+    if (storedValue && storedValue !== selectedTorrentClientId) {
+      selectedTorrentClientId = storedValue as string;
+    }
+
+    const storedTheme = getStoredOrDefaultValue('theme');
+    if (storedTheme && storedTheme !== selectedTheme) {
+      selectedTheme = storedTheme as string;
     }
   }
+});
 
-  function browseForFolder(event: MouseEvent) {
-    const dialog = window.electronAPI.fs.dialog;
-    const element = (event.target as HTMLElement).parentElement!!.querySelector(
-      'input'
-    ) as HTMLInputElement;
-    dialog.showOpenDialog({ properties: ['openDirectory'] }).then((path) => {
-      if (path && path.length > 0) {
-        if (element) {
-          element.value = path[0];
-        }
-        updateConfig();
+// Initialize range values when selectedOption changes
+$effect(() => {
+  if (selectedOption) {
+    const currentOption = selectedOption;
+    const newRangeValues: { [key: string]: number } = {};
+    Object.keys(currentOption.options).forEach((key) => {
+      if (currentOption.options[key].type === 'number') {
+        newRangeValues[key] = getStoredOrDefaultValue(key) as number;
       }
     });
+    rangeValues = newRangeValues;
   }
+});
 
-  function getAddonListFromInput() {
-    const addonsElement = document.getElementById(
-      'addons'
-    ) as HTMLTextAreaElement | null;
-    const rawAddons = addonsElement
-      ? addonsElement.value.split('\n')
-      : (getStoredOrDefaultValue('addons') as string[]);
-
-    return rawAddons.map((addon) => addon.trim()).filter(Boolean);
+let reasonForSteamGridLaunch: string = $state('');
+onMount(() => {
+  function steamgriddbLaunch(event: Event) {
+    doSteamGridDBReconfigure = true;
+    reasonForSteamGridLaunch = (event as CustomEvent).detail || '';
   }
-
-  async function installAddons() {
-    isInstallingAddons = true;
-    const addons = getAddonListFromInput();
-    if (!addons || addons.length === 0) {
-      createNotification({
-        id: Math.random().toString(36).substring(7),
-        message: 'No addons to install',
-        type: 'error',
-      });
-      isInstallingAddons = false;
-      return;
-    }
-    updateConfig();
-    await window.electronAPI.installAddons(addons);
-    isInstallingAddons = false;
-  }
-
-  async function cleanAddons() {
-    isCleaningAddons = true;
-    await window.electronAPI.cleanAddons();
-    isCleaningAddons = false;
-  }
-
-  async function updateAddons() {
-    isUpdatingAddons = true;
-    await window.electronAPI.updateAddons();
-    isUpdatingAddons = false;
-  }
-
-  async function restartAddonServer() {
-    isRestartingServer = true;
+  async function handleAddonConnected() {
     try {
-      await window.electronAPI.restartAddonServer();
-      await reconnectClientSdk();
-    } catch (err) {
-      console.error('Failed to restart addon server:', err);
+      await fetchAddonsWithConfigure();
+    } catch (error) {
+      console.error('Failed to configure addons after reconnect:', error);
     } finally {
       isRestartingServer = false;
     }
   }
+  document.addEventListener('steamgriddb-launch', steamgriddbLaunch);
+  document.addEventListener('addon-connected', handleAddonConnected);
 
-  let showPassword: { [key: string]: boolean } = $state({});
-  let doSteamGridDBReconfigure: boolean = $state(false);
-  let selectedTorrentClientId: string = $state('webtorrent'); // Track selection reactively
-  let selectedTheme: string = $state('light');
-
-  // Loading states for addon management buttons
-  let isInstallingAddons = $state(false);
-  let isUpdatingAddons = $state(false);
-  let isCleaningAddons = $state(false);
-  let isRestartingServer = $state(false);
-
-  const torrentClients = [
-    {
-      id: 'webtorrent',
-      name: 'WebTorrent',
-      icon: './WebTorrent_logo.png',
-      iconWidth: 24,
-      iconHeight: 24,
-      description:
-        'Built-in torrent client with no external dependencies. Works out of the box, but lacks security features like VPNs and proxies.',
-    },
-    {
-      id: 'qbittorrent',
-      name: 'qBittorrent',
-      icon: './qbittorrent.svg',
-      iconWidth: 24,
-      iconHeight: 24,
-      description:
-        'Connect to your existing qBittorrent instance. Tried and tested with security features, but requires setup and configuration.',
-    },
-    {
-      id: 'torbox',
-      name: 'TorBox',
-      icon: './torbox.svg',
-      iconWidth: 24,
-      iconHeight: 24,
-      description:
-        'Community-driven and high-speed seedbox with cached torrents. Requires subscription.',
-    },
-    {
-      id: 'real-debrid',
-      name: 'Real-Debrid',
-      icon: './rd-logo.png',
-      iconWidth: 24,
-      iconHeight: 24,
-      description:
-        'Premium service for faster downloads and cached torrents. Requires subscription.',
-    },
-    {
-      id: 'all-debrid',
-      name: 'AllDebrid',
-      icon: './alldebrid-logo.png',
-      iconWidth: 24,
-      iconHeight: 24,
-      description:
-        'Another Premium Debrid service for faster downloads and cached torrents. Requires subscription.',
-    },
-    {
-      id: 'premiumize',
-      name: 'Premiumize',
-      icon: './premiumize.svg',
-      iconWidth: 24,
-      iconHeight: 24,
-      description:
-        'Premium seedbox with cached torrents. Requires subscription.',
-    },
-    {
-      id: 'disable',
-      name: 'Disable',
-      icon: './disabled_torrent.svg',
-      iconWidth: 24,
-      iconHeight: 24,
-      description:
-        'Disable torrenting altogether, preventing any downloads from happening.',
-    },
-  ];
-
-  function handleTorrentClientChange(detail: { selectedId: string }) {
-    selectedTorrentClientId = detail.selectedId;
-    updateConfig();
-  }
-
-  function handleThemeChange(detail: { selectedId: string }) {
-    selectedTheme = detail.selectedId;
-    updateConfig();
-    document.documentElement.setAttribute('data-theme', detail.selectedId);
-  }
-
-  $effect(() => {
-    if (mainContent && selectedOption) {
-      mainContent.scrollTo({ top: 0, behavior: 'smooth' });
-    }
-  });
-
-  // Initialize selectedTorrentClientId and selectedTheme with stored values
-  $effect(() => {
-    if (selectedOption && selectedOption.id === 'general') {
-      const storedValue = getStoredOrDefaultValue('torrentClient');
-      if (storedValue && storedValue !== selectedTorrentClientId) {
-        selectedTorrentClientId = storedValue as string;
-      }
-
-      const storedTheme = getStoredOrDefaultValue('theme');
-      if (storedTheme && storedTheme !== selectedTheme) {
-        selectedTheme = storedTheme as string;
-      }
-    }
-  });
-
-  // Initialize range values when selectedOption changes
-  $effect(() => {
-    if (selectedOption) {
-      const currentOption = selectedOption;
-      const newRangeValues: { [key: string]: number } = {};
-      Object.keys(currentOption.options).forEach((key) => {
-        if (currentOption.options[key].type === 'number') {
-          newRangeValues[key] = getStoredOrDefaultValue(key) as number;
-        }
-      });
-      rangeValues = newRangeValues;
-    }
-  });
-
-  let reasonForSteamGridLaunch: string = $state('');
-  onMount(() => {
-    function steamgriddbLaunch(event: Event) {
-      doSteamGridDBReconfigure = true;
-      reasonForSteamGridLaunch = (event as CustomEvent).detail || '';
-    }
-    async function handleAddonConnected() {
-      try {
-        await fetchAddonsWithConfigure();
-      } catch (error) {
-        console.error('Failed to configure addons after reconnect:', error);
-      } finally {
-        isRestartingServer = false;
-      }
-    }
-    document.addEventListener('steamgriddb-launch', steamgriddbLaunch);
-    document.addEventListener('addon-connected', handleAddonConnected);
-
-    return () => {
-      document.removeEventListener('steamgriddb-launch', steamgriddbLaunch);
-      document.removeEventListener('addon-connected', handleAddonConnected);
-    };
-  });
+  return () => {
+    document.removeEventListener('steamgriddb-launch', steamgriddbLaunch);
+    document.removeEventListener('addon-connected', handleAddonConnected);
+  };
+});
 </script>
 
 {#if doSteamGridDBReconfigure}

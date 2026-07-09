@@ -1,10 +1,10 @@
 <script lang="ts">
-import {
-  notifications,
-  notificationHistory,
-  type Notification,
-} from '@/frontend/store.svelte';
 import { onMount } from 'svelte';
+import {
+  type Notification,
+  notificationHistory,
+  notifications,
+} from '@/frontend/store.svelte';
 
 let timers = new Map<
   string,

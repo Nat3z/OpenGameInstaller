@@ -1,7 +1,7 @@
-import z from 'zod';
 import axios from 'axios';
-import { ReadStream } from 'fs';
 import FormData from 'form-data';
+import { ReadStream } from 'fs';
+import z from 'zod';
 
 const BASE_V4 = 'https://api.alldebrid.com/v4';
 const BASE_V4_1 = 'https://api.alldebrid.com/v4.1';

@@ -1,31 +1,29 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>OpenGameInstaller</title>
-  </head>
-  <body>
-    <div>
-      <main>
-        <img
-          src="./favicon-256x256.png"
-          alt="OpenGameInstaller Logo"
-          width="128"
-          height="128"
-        />
 
-        <h1 id="status">Starting...</h1>
-        <p id="subtext"></p>
-        <progress id="progress" value="0" max="100"></progress>
-        <div class="spinner" id="spinner"></div>
-      </main>
-    </div>
-  </body>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OpenGameInstaller</title>
+</head>
+
+<body>
+  <div>
+    <main>
+      <img src="./favicon-256x256.png" alt="OpenGameInstaller Logo" width="128" height="128" />
+
+      <h1 id="status">Starting...</h1>
+      <p id="subtext"></p>
+      <progress id="progress" value="0" max="100"></progress>
+      <div class="spinner" id="spinner"></div>
+    </main>
+  </div>
+</body>
+
 </html>
 <script>
   document.addEventListener('splash-status', (event) => {
-    const { text, subtext } = event.detail;
+    const {text, subtext} = event.detail;
     document.getElementById('status').textContent = text;
     const subtextEl = document.getElementById('subtext');
     if (subtext) {
@@ -37,7 +35,7 @@
   });
 
   document.addEventListener('splash-progress', (event) => {
-    const { current, total, speed } = event.detail;
+    const {current, total, speed} = event.detail;
     const progressEl = document.getElementById('progress');
     const spinnerEl = document.getElementById('spinner');
 
@@ -59,6 +57,7 @@
     margin: 0;
     padding: 0;
   }
+
   main {
     display: flex;
     justify-content: center;
@@ -66,6 +65,7 @@
     flex-direction: column;
     height: 100vh;
   }
+
   main h1 {
     font-family: 'Archivo', sans-serif;
     font-weight: 300;
@@ -75,6 +75,7 @@
     text-align: center;
     margin-bottom: 0.5rem;
   }
+
   main p {
     font-family: 'Archivo', sans-serif;
     font-weight: 300;
@@ -88,12 +89,16 @@
   }
 
   * {
-    -webkit-touch-callout: none; /* iOS Safari */
-    -webkit-user-select: none; /* Safari */
-    -khtml-user-select: none; /* Konqueror HTML */
-    -moz-user-select: none; /* Old versions of Firefox */
-    -ms-user-select: none; /* Internet Explorer/Edge */
-    user-select: none; /* Non-prefixed version, currently
+    -webkit-touch-callout: none;
+    /* iOS Safari */
+    -webkit-user-select: none;
+    /* Konqueror HTML */
+    -moz-user-select: none;
+    /* Old versions of Firefox */
+    -ms-user-select: none;
+    /* Internet Explorer/Edge */
+    user-select: none;
+    /* Non-prefixed version, currently
 																		supported by Chrome, Edge, Opera and Firefox */
   }
 

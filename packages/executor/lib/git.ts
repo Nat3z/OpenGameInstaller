@@ -2,25 +2,28 @@ import { spawn } from 'child_process';
 import { dirname } from 'path';
 import { Addon } from './addon';
 
-function pipeGitStreams(child: ReturnType<typeof spawn>): void {
-  child.stdout?.on('data', (data) => {
-    console.log(data.toString());
-  });
-  child.stderr?.on('data', (data) => {
-    console.error(data.toString());
-  });
-}
-
 function runGitProcess(
   cwd: string,
   args: string[],
   operation: string
-): Promise<String> {
+): Promise<string> {
   const child = spawn('git', args.filter(Boolean), {
     cwd,
     stdio: 'pipe',
   });
-  pipeGitStreams(child);
+
+  let stdout = '';
+  let stderr = '';
+  child.stdout?.on('data', (data) => {
+    const text = data.toString();
+    stdout += text;
+    console.log(text);
+  });
+  child.stderr?.on('data', (data) => {
+    const text = data.toString();
+    stderr += text;
+    console.error(text);
+  });
 
   return new Promise<string>((resolve, reject) => {
     child.on('error', reject);
@@ -33,7 +36,8 @@ function runGitProcess(
         );
         return;
       }
-      resolve(child.stdout.toString());
+      // Include stderr: git progress / "Already up to date" often lands there.
+      resolve((stdout + stderr).trim());
     });
   });
 }
@@ -41,7 +45,7 @@ function runGitProcess(
 export class Git {
   constructor(private readonly addon: { path: string }) {}
 
-  private async execGit(args: string[], operation: string): Promise<String> {
+  private async execGit(args: string[], operation: string): Promise<string> {
     return await runGitProcess(this.addon.path, args, operation);
   }
 
@@ -140,7 +144,7 @@ export class Git {
   /**
    * Get the working tree commit hash.
    */
-  public async getCurrentHash(): Promise<String> {
+  public async getCurrentHash(): Promise<string> {
     return await this.execGit(['rev-parse', 'HEAD'], 'get commit hash');
   }
 

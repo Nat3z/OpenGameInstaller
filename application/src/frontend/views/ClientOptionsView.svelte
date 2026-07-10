@@ -10,10 +10,24 @@ import TextModal from '@/frontend/components/modal/TextModal.svelte';
 import TitleModal from '@/frontend/components/modal/TitleModal.svelte';
 import RangeInput from '@/frontend/components/RangeInput.svelte';
 import ThemePicker from '@/frontend/components/ThemePicker.svelte';
+import { parseAddonLink } from '@/electron/lib/addon-links';
 import { createNotification } from '@/frontend/store.svelte';
 import { fetchAddonsWithConfigure, reconnectClientSdk } from '@/frontend/utils';
 
 const fs = window.electronAPI.fs;
+
+function isValidGitUrl(gitUrl: string): boolean {
+  const trimmed = gitUrl.trim();
+  if (!trimmed) return false;
+  // Raw SSH repository URLs (git@host:owner/repo) are not parseable by URL().
+  if (/^git@[^/]+:.+/.test(trimmed)) return true;
+  try {
+    new URL(trimmed);
+    return true;
+  } catch {
+    return false;
+  }
+}
 interface OptionsCategory {
   name: string;
   id: string;
@@ -362,12 +376,13 @@ function updateConfig() {
           if (config[key].length === 1 && config[key][0] === '') {
             config[key] = [];
           } else {
-            // verify that each line is a link
+            // verify that each line is a valid addon link (local@, git@, marketplace@)
             try {
               config[key].forEach((line: string) => {
                 if (!line || line.length === 0) return;
-                if (line.startsWith('local@')) {
-                  if (!window.electronAPI.fs.exists(line.split('local@')[1])) {
+                const parsed = parseAddonLink(line);
+                if (parsed.kind === 'local') {
+                  if (!window.electronAPI.fs.exists(parsed.path)) {
                     createNotification({
                       id: Math.random().toString(36).substring(7),
                       message: 'Invalid Local File in Addons',
@@ -375,8 +390,17 @@ function updateConfig() {
                     });
                     return;
                   }
-                } else {
-                  new URL(line);
+                  return;
+                }
+                if (parsed.kind === 'git') {
+                  if (!isValidGitUrl(parsed.gitUrl)) {
+                    throw new Error('Invalid git addon URL');
+                  }
+                  return;
+                }
+                new URL(parsed.marketplaceUrl);
+                if (!isValidGitUrl(parsed.gitUrl)) {
+                  throw new Error('Invalid marketplace addon URL');
                 }
               });
             } catch (error) {

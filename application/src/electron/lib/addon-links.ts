@@ -59,6 +59,8 @@ export function normalizeAddonLink(addonLink: string): string {
   const trimmed = addonLink.trim();
   if (!trimmed || trimmed.startsWith('local@')) {
     return trimmed;
+  } else if (trimmed.startsWith('local:')) {
+    return trimmed.replace(/^local:/, 'local@');
   }
 
   const marketplaceSource = CURRENT_WEB_MARKETPLACE_SOURCE_BY_CANONICAL.get(

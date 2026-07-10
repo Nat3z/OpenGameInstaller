@@ -100,6 +100,9 @@ export function parseAddonLink(addonLink: string): ParsedAddonLink {
     // not a marketplace association. Explicit git@ associations have a full URL
     // after the prefix (for example git@https://host/owner/repo) or another SSH
     // URL (git@git@host:owner/repo).
+    // Raw SSH URLs (git@host:owner/repo) already start with git@, so treat the
+    // full string as both the normalized link and the clone URL. Prefixing again
+    // would produce corrupt git@git@host:owner/repo entries in config.
     if (
       !gitUrl.startsWith('http://') &&
       !gitUrl.startsWith('https://') &&
@@ -110,7 +113,7 @@ export function parseAddonLink(addonLink: string): ParsedAddonLink {
       return {
         kind: 'git',
         original: addonLink,
-        normalized: `git@${normalized}`,
+        normalized,
         gitUrl: normalized,
         addonName: getAddonNameFromGitUrl(normalized),
       };

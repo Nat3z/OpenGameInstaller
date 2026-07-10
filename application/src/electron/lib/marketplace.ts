@@ -25,9 +25,11 @@ function getMarketplaceJsonUrl(url: string): string {
 }
 
 export class AddonMarketplace {
-  private addons: CommunityAddon[];
+  private addons: CommunityAddon[] = [];
   constructor(public url: string) {}
-  async fetch() {
+
+  /** Returns true when the marketplace JSON was fetched and parsed successfully. */
+  async fetch(): Promise<boolean> {
     let result = await tryCatch(async () => {
       const marketplaceJsonUrl = getMarketplaceJsonUrl(this.url);
 
@@ -46,10 +48,11 @@ export class AddonMarketplace {
 
     if (result.error) {
       console.error(
-        `addon-marketplace ${this.url}] Failed to fetch marketplace.`,
+        `[addon-marketplace ${this.url}] Failed to fetch marketplace.`,
         result.error
       );
-      return;
+      this.addons = [];
+      return false;
     }
 
     this.addons = result.data.map((addon) => {
@@ -58,6 +61,7 @@ export class AddonMarketplace {
         pinnedCommit: addon.pinnedCommit || 'latest',
       };
     });
+    return true;
   }
 
   getAddons() {
@@ -65,9 +69,6 @@ export class AddonMarketplace {
   }
 
   getAddon(source: string) {
-    if (!this.addons) {
-      throw new Error('Marketplace not fetched yet');
-    }
     return this.addons.find(
       (a) => a.source.toLowerCase() === source.toLowerCase()
     );

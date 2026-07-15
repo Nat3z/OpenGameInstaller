@@ -610,11 +610,26 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
           `Addon update failed for ${addons[index]}:`,
           result.reason
         );
+
+        sendNotification({
+          message: `Failed to update addon ${addons[index]} with reason ${result.reason}`,
+          id: Math.random().toString(36).substring(7),
+          type: 'error',
+        });
       }
     });
 
     if (failedCount > 0) {
       console.log(`${failedCount} addons failed to update.`);
+    }
+
+    if (failedCount === addons.length) {
+      sendNotification({
+        message: 'All addons failed to update.',
+        id: Math.random().toString(36).substring(7),
+        type: 'error',
+      });
+      return;
     }
 
     // restart all of the addons

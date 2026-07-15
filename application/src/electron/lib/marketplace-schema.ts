@@ -26,6 +26,20 @@ export function assertMarketplaceUrlProtocol(url: string): void {
   }
 }
 
+const ALLOWED_MARKETPLACE_HOSTS = new Set([
+  'ogi-marketplace.nat3z.com',
+  'localhost',
+  '127.0.0.1',
+]);
+
+export function assertAllowedMarketplaceHost(url: string): void {
+  assertMarketplaceUrlProtocol(url);
+  const { hostname } = new URL(url);
+  if (!ALLOWED_MARKETPLACE_HOSTS.has(hostname)) {
+    throw new Error(`Marketplace host not allowed: ${hostname}`);
+  }
+}
+
 export const communityAddonSchema = z.object({
   name: z.string(),
   author: z.string(),

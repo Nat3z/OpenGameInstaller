@@ -252,12 +252,23 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
 
       try {
         if (fs.existsSync(join(addonPath, 'installation.log'))) {
-          console.log(`Addon ${addonName} already installed and setup.`);
-          sendNotification({
-            message: `Addon ${addonName} already installed and setup.`,
-            id: Math.random().toString(36).substring(7),
-            type: 'info',
-          });
+          const alreadyRegistered = stagedUpdate.addons.includes(
+            parsedAddon.normalized
+          );
+          if (!alreadyRegistered) {
+            stagedUpdate.addons.push(parsedAddon.normalized);
+            sendNotification({
+              message: `Re-registered ${addonName} in addon config.`,
+              id: Math.random().toString(36).substring(7),
+              type: 'info',
+            });
+          } else {
+            sendNotification({
+              message: `Addon ${addonName} already installed and setup.`,
+              id: Math.random().toString(36).substring(7),
+              type: 'info',
+            });
+          }
           continue;
         }
 

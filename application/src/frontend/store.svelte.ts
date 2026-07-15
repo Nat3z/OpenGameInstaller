@@ -5,6 +5,7 @@ import type {
 } from '@ogi-sdk/connect';
 import { type Writable, writable } from 'svelte/store';
 import {
+  assertAllowedMarketplaceHost,
   type CommunityAddon,
   communityAddonArraySchema,
 } from '@/electron/lib/marketplace-schema';
@@ -314,28 +315,35 @@ export function saveMarketplaceSources(sources: string[]) {
 
 export async function fetchCommunityAddons() {
   const sources = loadMarketplaceSources();
-  for (const key of Object.keys(communityAddons)) {
-    delete communityAddons[key];
-  }
+  const previousAddons = { ...communityAddons };
 
   await Promise.allSettled(
     sources.map(async (source) => {
-      const response = await window.electronAPI.app.axios({
-        method: 'GET',
-        url: source.endsWith('/api/marketplace.json')
+      try {
+        const url = source.endsWith('/api/marketplace.json')
           ? source
-          : `${source}/api/marketplace.json`,
-        headers: {
-          'Content-Type': 'application/json',
-          'User-Agent': 'OpenGameInstaller Client/Rest1.0',
-        },
-      });
-      const parsed = communityAddonArraySchema.safeParse(response.data);
-      if (!parsed.success) {
-        console.error('Invalid marketplace JSON for', source, parsed.error);
-        return;
+          : `${source}/api/marketplace.json`;
+        assertAllowedMarketplaceHost(url);
+        const response = await window.electronAPI.app.axios({
+          method: 'GET',
+          url,
+          headers: {
+            'Content-Type': 'application/json',
+            'User-Agent': 'OpenGameInstaller Client/Rest1.0',
+          },
+        });
+        const parsed = communityAddonArraySchema.safeParse(response.data);
+        if (!parsed.success) {
+          console.error('Invalid marketplace JSON for', source, parsed.error);
+          return;
+        }
+        communityAddons[source] = parsed.data;
+      } catch (error) {
+        console.error('Failed to fetch marketplace for', source, error);
+        if (previousAddons[source]) {
+          communityAddons[source] = previousAddons[source];
+        }
       }
-      communityAddons[source] = parsed.data;
     })
   );
 }

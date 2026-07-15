@@ -1,13 +1,14 @@
 import axios from 'axios';
 import { canonicalizeAddonSource } from './addon-links';
 import {
-  assertMarketplaceUrlProtocol,
+  assertAllowedMarketplaceHost,
   type CommunityAddon,
   communityAddonArraySchema,
 } from './marketplace-schema';
 import { tryCatch } from './tryCatch';
 
 export {
+  assertAllowedMarketplaceHost,
   assertMarketplaceUrlProtocol,
   type CommunityAddon,
   communityAddonArraySchema,
@@ -36,7 +37,7 @@ export class AddonMarketplace {
 
     let result = await tryCatch(async () => {
       const marketplaceJsonUrl = getMarketplaceJsonUrl(this.url);
-      assertMarketplaceUrlProtocol(marketplaceJsonUrl);
+      assertAllowedMarketplaceHost(marketplaceJsonUrl);
 
       return communityAddonArraySchema.parse(
         (
@@ -70,10 +71,9 @@ export class AddonMarketplace {
   }
 
   getAddon(source: string) {
+    const canonicalSource = canonicalizeAddonSource(source);
     return this.addons.find(
-      (a) =>
-        canonicalizeAddonSource(a.source.toLowerCase()) ===
-        canonicalizeAddonSource(source.toLowerCase())
+      (a) => canonicalizeAddonSource(a.source) === canonicalSource
     );
   }
 }

@@ -350,7 +350,7 @@ function selectOption(addon: OptionsCategory) {
 
 function updateConfig() {
   const config: any = {};
-  Object.keys(selectedOption!!.options).forEach((key) => {
+  for (const key of Object.keys(selectedOption!!.options)) {
     if (!selectedOption) return;
     const element = document.getElementById(key) as
       | HTMLInputElement
@@ -377,33 +377,41 @@ function updateConfig() {
             config[key] = [];
           } else {
             // verify that each line is a valid addon link (local@, git@, marketplace@)
-            try {
-              config[key].forEach((line: string) => {
-                if (!line || line.length === 0) return;
-                const parsed = parseAddonLink(line);
-                if (parsed.kind === 'local') {
-                  if (!window.electronAPI.fs.exists(parsed.path)) {
-                    createNotification({
-                      id: Math.random().toString(36).substring(7),
-                      message: 'Invalid Local File in Addons',
-                      type: 'error',
-                    });
-                    return;
-                  }
-                  return;
+            let addonsValid = true;
+            for (const line of config[key] as string[]) {
+              if (!line) continue;
+              const parsed = parseAddonLink(line);
+              if (parsed.kind === 'local') {
+                if (!window.electronAPI.fs.exists(parsed.path)) {
+                  createNotification({
+                    id: Math.random().toString(36).substring(7),
+                    message: 'Invalid Local File in Addons',
+                    type: 'error',
+                  });
+                  addonsValid = false;
+                  break;
                 }
-                if (parsed.kind === 'git') {
-                  if (!isValidGitUrl(parsed.gitUrl)) {
-                    throw new Error('Invalid git addon URL');
-                  }
-                  return;
-                }
-                new URL(parsed.marketplaceUrl);
+                continue;
+              }
+              if (parsed.kind === 'git') {
                 if (!isValidGitUrl(parsed.gitUrl)) {
-                  throw new Error('Invalid marketplace addon URL');
+                  addonsValid = false;
+                  break;
                 }
-              });
-            } catch (error) {
+                continue;
+              }
+              try {
+                new URL(parsed.marketplaceUrl);
+              } catch {
+                addonsValid = false;
+                break;
+              }
+              if (!isValidGitUrl(parsed.gitUrl)) {
+                addonsValid = false;
+                break;
+              }
+            }
+            if (!addonsValid) {
               createNotification({
                 id: Math.random().toString(36).substring(7),
                 message: 'Invalid URL in Addons',
@@ -429,7 +437,7 @@ function updateConfig() {
         config[key] = element.checked;
       }
     }
-  });
+  }
   // save this config to local storage
   if (!selectedOption) return;
   fs.write(

@@ -1,5 +1,6 @@
 <script lang="ts">
 import { fade } from 'svelte/transition';
+import { parseAddonLink } from '@/electron/lib/addon-links';
 import DeleteAddonWarningModal from '@/frontend/components/built/DeleteAddonWarningModal.svelte';
 import ButtonModal from '@/frontend/components/modal/ButtonModal.svelte';
 import CloseModal from '@/frontend/components/modal/CloseModal.svelte';
@@ -8,7 +9,11 @@ import Modal from '@/frontend/components/modal/Modal.svelte';
 import TextModal from '@/frontend/components/modal/TextModal.svelte';
 import TitleModal from '@/frontend/components/modal/TitleModal.svelte';
 import { reconnectClientSdk } from '@/frontend/lib/core/ipc';
-import { type CommunityAddon, communityAddons } from '@/frontend/store.svelte';
+import {
+  type CommunityAddon,
+  communityAddons,
+  createNotification,
+} from '@/frontend/store.svelte';
 
 let currentAddons = $state(
   JSON.parse(window.electronAPI.fs.read('./config/option/general.json'))
@@ -53,23 +58,26 @@ function addonInstalled(addon: CommunityAddon) {
 }
 
 async function deleteAddon(addon: CommunityAddon) {
-  console.log(`Deleting ${addon.name} by ${addon.author}`);
+  const matchingLink = currentAddons.addons?.find((source: string) =>
+    addonConfigMatchesSource(source, addon.source)
+  );
+  if (!matchingLink) return;
 
-  if (!currentAddons.addons) {
-    currentAddons.addons = [];
+  const addonId = parseAddonLink(matchingLink).addonName;
+  const result = await window.electronAPI.deleteInstalledAddon(addonId);
+  if (!result.success) {
+    createNotification({
+      id: Math.random().toString(36).substring(7),
+      message: result.message ?? `Failed to uninstall ${addon.name}`,
+      type: 'error',
+    });
+    return;
   }
-  currentAddons.addons = currentAddons.addons.filter(
-    (source: string) => !addonConfigMatchesSource(source, addon.source)
-  );
-  window.electronAPI.fs.write(
-    './config/option/general.json',
-    JSON.stringify(currentAddons, null, 2)
-  );
 
-  await window.electronAPI.cleanAddons([addon.source]);
-  await window.electronAPI.restartAddonServer();
+  currentAddons = JSON.parse(
+    window.electronAPI.fs.read('./config/option/general.json')
+  );
   await reconnectClientSdk();
-  // close the modal
   deleteConfirmationModalAddon = null;
 }
 

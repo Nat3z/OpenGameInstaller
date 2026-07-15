@@ -5,7 +5,8 @@ import type {
 } from '@ogi-sdk/connect';
 import { type Writable, writable } from 'svelte/store';
 import {
-  assertAllowedMarketplaceHost,
+  assertMarketplaceUrlProtocol,
+  assertNoShellInjection,
   type CommunityAddon,
   communityAddonArraySchema,
 } from '@/electron/lib/marketplace-schema';
@@ -320,10 +321,11 @@ export async function fetchCommunityAddons() {
   await Promise.allSettled(
     sources.map(async (source) => {
       try {
+        assertNoShellInjection(source, 'marketplace source URL');
         const url = source.endsWith('/api/marketplace.json')
           ? source
           : `${source}/api/marketplace.json`;
-        assertAllowedMarketplaceHost(url);
+        assertMarketplaceUrlProtocol(url);
         const response = await window.electronAPI.app.axios({
           method: 'GET',
           url,

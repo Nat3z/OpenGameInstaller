@@ -5,6 +5,7 @@ export function sanitizePinnedCommit(value?: string): string {
   if (!value || value === 'latest') {
     return 'latest';
   }
+  assertNoShellInjection(value, 'pinnedCommit');
   if (/^[0-9a-f]{7,40}$/i.test(value)) {
     return value;
   }
@@ -26,17 +27,16 @@ export function assertMarketplaceUrlProtocol(url: string): void {
   }
 }
 
-const ALLOWED_MARKETPLACE_HOSTS = new Set([
-  'ogi-marketplace.nat3z.com',
-  'localhost',
-  '127.0.0.1',
-]);
+const SHELL_META_RE = /[`$;|&{}\n\r\\]/;
 
-export function assertAllowedMarketplaceHost(url: string): void {
-  assertMarketplaceUrlProtocol(url);
-  const { hostname } = new URL(url);
-  if (!ALLOWED_MARKETPLACE_HOSTS.has(hostname)) {
-    throw new Error(`Marketplace host not allowed: ${hostname}`);
+export function assertNoShellInjection(
+  value: string,
+  fieldName: string
+): void {
+  if (SHELL_META_RE.test(value)) {
+    throw new Error(
+      `Invalid characters in ${fieldName}: shell metacharacters not allowed`
+    );
   }
 }
 

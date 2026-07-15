@@ -1,15 +1,16 @@
 import axios from 'axios';
 import { canonicalizeAddonSource } from './addon-links';
 import {
-  assertAllowedMarketplaceHost,
+  assertMarketplaceUrlProtocol,
+  assertNoShellInjection,
   type CommunityAddon,
   communityAddonArraySchema,
 } from './marketplace-schema';
 import { tryCatch } from './tryCatch';
 
 export {
-  assertAllowedMarketplaceHost,
   assertMarketplaceUrlProtocol,
+  assertNoShellInjection,
   type CommunityAddon,
   communityAddonArraySchema,
   communityAddonSchema,
@@ -36,10 +37,11 @@ export class AddonMarketplace {
     const previousAddons = this.addons;
 
     let result = await tryCatch(async () => {
+      assertNoShellInjection(this.url, 'marketplace URL');
       const marketplaceJsonUrl = getMarketplaceJsonUrl(this.url);
-      assertAllowedMarketplaceHost(marketplaceJsonUrl);
+      assertMarketplaceUrlProtocol(marketplaceJsonUrl);
 
-      return communityAddonArraySchema.parse(
+      const addons = communityAddonArraySchema.parse(
         (
           await axios.get(marketplaceJsonUrl, {
             method: 'GET',
@@ -50,6 +52,10 @@ export class AddonMarketplace {
           })
         ).data
       );
+      for (const addon of addons) {
+        assertNoShellInjection(addon.pinnedCommit, 'pinnedCommit');
+      }
+      return addons;
     });
 
     if (result.error) {

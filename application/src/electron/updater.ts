@@ -290,6 +290,18 @@ function getSetupVersionFromRelease(release: GithubRelease): string | null {
   return match?.[1]?.trim() ?? null;
 }
 
+function compareReleaseOrder(a: GithubRelease, b: GithubRelease): number {
+  const versionA = semver.clean(a.tag_name);
+  const versionB = semver.clean(b.tag_name);
+
+  if (versionA && versionB) {
+    return semver.compare(versionB, versionA);
+  }
+  if (versionA) return -1;
+  if (versionB) return 1;
+  return 0;
+}
+
 function getSetupAsset(release: GithubRelease): ReleaseAsset | undefined {
   const suffix =
     process.platform === 'win32' ? '-Setup.exe' : '-Setup.AppImage';
@@ -764,27 +776,24 @@ export function checkIfInstallerUpdateAvailable(
         `https://api.github.com/repos/${gitRepo}/releases`,
         { timeout: 10000 } // 10 second timeout for update check
       );
-      let latestRelease: GithubRelease | undefined = undefined;
-      const candidates = (releases.data as GithubRelease[]).filter(
-        (rel) => rel.body && /Setup Version: /.test(rel.body)
-      );
-      const stableCandidate = candidates.find((rel) => !rel.prerelease);
-      const prereleaseCandidate = candidates.find((rel) => rel.prerelease);
-
-      const wanted = bleedingEdge
-        ? (prereleaseCandidate ?? stableCandidate)
-        : stableCandidate;
-      // check if the stable candidate time released is greater than the pre release candidate
-      if (
-        stableCandidate &&
-        prereleaseCandidate &&
-        new Date(stableCandidate.created_at) >
-          new Date(prereleaseCandidate.created_at)
-      ) {
-        latestRelease = stableCandidate;
-      } else {
-        latestRelease = wanted;
-      }
+      const candidates = (releases.data as GithubRelease[])
+        .flatMap((release) => {
+          const setupVersion = getSetupVersionFromRelease(release);
+          const version = setupVersion
+            ? semver.coerce(setupVersion)?.version
+            : undefined;
+          if (
+            !version ||
+            (!bleedingEdge && release.prerelease) ||
+            (setupVersion &&
+              semver.eq(setupVersion.trim(), localVersion.trim()))
+          ) {
+            return [];
+          }
+          return [{ release, version }];
+        })
+        .sort((a, b) => compareReleaseOrder(a.release, b.release));
+      let latestRelease: GithubRelease | undefined = candidates[0]?.release;
 
       // disable the release if we already have this version
       if (latestRelease) {

@@ -1,4 +1,4 @@
-import { EventResponseSocket, randomMessageId } from '@ogi-sdk/connect';
+import events from 'node:events';
 import type {
   AddonClientToServerEventArgs,
   AddonClientToServerEventName,
@@ -7,6 +7,7 @@ import type {
   AddonProtocolEventListenerTypes,
   AddonSDKLifecycleEventListenerTypes,
   AddonServerToClientWebsocketMessage,
+  AddonTaskRunEventArgs,
   BasicLibraryInfo,
   CatalogResponse,
   LibraryInfo,
@@ -15,19 +16,19 @@ import type {
   SearchResult,
   SetupResponse,
   StoreData,
-  AddonTaskRunEventArgs,
 } from '@ogi-sdk/connect';
-import events from 'node:events';
-import { ConfigurationBuilder } from './config/ConfigurationBuilder';
-import { Configuration, DefiniteConfig } from './config/Configuration';
-import EventResponse from './EventResponse';
+import { EventResponseSocket, randomMessageId } from '@ogi-sdk/connect';
 import Fuse, { IFuseOptions } from 'fuse.js';
+import { Configuration, DefiniteConfig } from './config/Configuration';
+import { ConfigurationBuilder } from './config/ConfigurationBuilder';
+import EventResponse from './EventResponse';
 
-export { ConfigurationBuilder, Configuration, EventResponse };
-export { extraction };
+export { Configuration, ConfigurationBuilder, EventResponse, extraction };
+
 const defaultPort = 7654;
-import pjson from '../package.json';
+
 import { z } from 'zod';
+import pjson from '../package.json';
 import { extraction } from './extraction';
 export const VERSION = pjson.version;
 
@@ -36,6 +37,11 @@ export type {
   AddonClientToServerEventName,
   AddonClientToServerWebsocketMessage,
   AddonNotificationMessage,
+  AddonProtocolEventListenerTypes,
+  AddonSDKLifecycleEventListenerTypes,
+  AddonServerHostEventListeners,
+  AddonServerHostEventName,
+  AddonServerLifecycleEvent,
   AddonServerToClientEventName,
   AddonServerToClientWebsocketMessage,
   BasicLibraryInfo,
@@ -50,16 +56,11 @@ export type {
   OGIAddonConfiguration,
   OGIAddonSDKEventListener,
   SearchResult,
-  SetupResponse,
+  SetupCommandData,
   SetupEventResponse,
+  SetupResponse,
   StoreData,
   UmuId,
-  SetupCommandData,
-  AddonProtocolEventListenerTypes,
-  AddonSDKLifecycleEventListenerTypes,
-  AddonServerHostEventListeners,
-  AddonServerHostEventName,
-  AddonServerLifecycleEvent,
 } from '@ogi-sdk/connect';
 
 /** @deprecated Use {@link AddonNotificationMessage}. */
@@ -78,7 +79,9 @@ export type EventListenerTypes = AddonSDKLifecycleEventListenerTypes<
   > & {
     authenticate: (config: unknown) => void;
     configure: (config: ConfigurationBuilder) => ConfigurationBuilder;
-    catalog: (event: Omit<EventResponse<CatalogResponse>, 'askForInput'>) => void;
+    catalog: (
+      event: Omit<EventResponse<CatalogResponse>, 'askForInput'>
+    ) => void;
   };
 
 /**
@@ -573,10 +576,7 @@ class OGIAddonWSListener {
 
     this.socket.addEventListener('error', (event) => {
       this.transport.rejectPendingResponses('Websocket error');
-      const message =
-        event instanceof ErrorEvent
-          ? event.message
-          : event.type;
+      const message = event instanceof ErrorEvent ? event.message : event.type;
       if (message.includes('Failed to connect')) {
         throw new Error(
           'OGI Addon Server is not running/is unreachable. Please start the server and try again.'

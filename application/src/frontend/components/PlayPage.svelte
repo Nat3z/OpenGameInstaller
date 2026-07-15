@@ -1,395 +1,391 @@
 <script lang="ts">
-  import type { LibraryInfo, SearchResult } from '@ogi-sdk/connect';
-  import { ConfigurationBuilder } from 'ogi-addon/config';
-  import PlayIcon from '@/frontend/Icons/PlayIcon.svelte';
-  import {
-    currentDownloads,
-    currentStorePageOpened,
-    currentStorePageOpenedStorefront,
-    gamesLaunched,
-    launchGameTrigger,
-    launchOverlayPlayPageReady,
-    setHeaderBackButton,
-    clearHeaderBackButton,
-    createNotification,
-  } from '@/frontend/store';
-  import { onDestroy, onMount, tick } from 'svelte';
-  import SettingsFilled from '@/frontend/Icons/SettingsFilled.svelte';
-  import GameConfiguration from '@/frontend/components/GameConfiguration.svelte';
-  import { fly, slide } from 'svelte/transition';
-  import { quintOut } from 'svelte/easing';
-  import Image from '@/frontend/components/Image.svelte';
-  import {
-    addonServer,
-    fetchAddonsWithConfigure,
-    isAddonEventAvailable,
-    runLaunchAppAddons,
-    runTask,
-  } from '@/frontend/utils';
-  import AddonPicture from '@/frontend/components/AddonPicture.svelte';
-  import { updatesManager, appUpdates } from '@/frontend/states.svelte';
-  import UpdateIcon from '@/frontend/Icons/UpdateIcon.svelte';
-  import UpdateAppModal from '@/frontend/components/built/UpdateAppModal.svelte';
-  import { supportsStorefront } from '@/lib/storefronts';
+import type { LibraryInfo, SearchResult } from '@ogi-sdk/connect';
+import { ConfigurationBuilder } from 'ogi-addon/config';
+import { onDestroy, onMount, tick } from 'svelte';
+import { quintOut } from 'svelte/easing';
+import { fly, slide } from 'svelte/transition';
+import AddonPicture from '@/frontend/components/AddonPicture.svelte';
+import UpdateAppModal from '@/frontend/components/built/UpdateAppModal.svelte';
+import GameConfiguration from '@/frontend/components/GameConfiguration.svelte';
+import Image from '@/frontend/components/Image.svelte';
+import PlayIcon from '@/frontend/Icons/PlayIcon.svelte';
+import SettingsFilled from '@/frontend/Icons/SettingsFilled.svelte';
+import UpdateIcon from '@/frontend/Icons/UpdateIcon.svelte';
+import { appUpdates, updatesManager } from '@/frontend/states.svelte';
+import {
+  clearHeaderBackButton,
+  createNotification,
+  currentDownloads,
+  currentStorePageOpened,
+  currentStorePageOpenedStorefront,
+  gamesLaunched,
+  launchGameTrigger,
+  launchOverlayPlayPageReady,
+  setHeaderBackButton,
+} from '@/frontend/store.svelte';
+import {
+  addonServer,
+  fetchAddonsWithConfigure,
+  isAddonEventAvailable,
+  runLaunchAppAddons,
+  runTask,
+} from '@/frontend/utils';
+import { supportsStorefront } from '@/lib/storefronts';
 
-  let updateInfo = $derived.by(() => {
-    return updatesManager.getAppUpdate(libraryInfo.appID);
-  });
+let updateInfo = $derived.by(() => {
+  return updatesManager.getAppUpdate(libraryInfo.appID);
+});
 
-  let hasActiveUpdateDownload = $derived(
-    !!$currentDownloads.find(
-      (download) =>
-        download.appID === libraryInfo.appID &&
-        download.status !== 'error' &&
-        download.status !== 'completed' &&
-        download.status !== 'seeding' &&
-        download.status !== 'setup-complete'
-    )
+let hasActiveUpdateDownload = $derived(
+  !!$currentDownloads.find(
+    (download) =>
+      download.appID === libraryInfo.appID &&
+      download.status !== 'error' &&
+      download.status !== 'completed' &&
+      download.status !== 'seeding' &&
+      download.status !== 'setup-complete'
+  )
+);
+
+let isUpdateDismissed = $derived.by(() => {
+  if (!updateInfo?.updateVersion) return false;
+  return updatesManager.isAppUpdateDismissed(
+    libraryInfo.appID,
+    updateInfo.updateVersion
   );
+});
 
-  let isUpdateDismissed = $derived.by(() => {
-    if (!updateInfo?.updateVersion) return false;
-    return updatesManager.isAppUpdateDismissed(
-      libraryInfo.appID,
-      updateInfo.updateVersion
-    );
+let showUpdateModal = $state(false);
+
+interface Props {
+  libraryInfo: LibraryInfo;
+  exitPlayPage: () => void;
+}
+
+let { libraryInfo = $bindable(), exitPlayPage }: Props = $props();
+
+let requiresSteamReadd = $derived(
+  appUpdates.requiredReadds.some((r) => r.appID === libraryInfo.appID)
+);
+let os = $state('');
+let isMigratingToUmu = $state(false);
+let needsUmuSetup = $derived.by(() => {
+  const isLinux = os === 'linux';
+  const isWindowsExecutable = libraryInfo.launchExecutable
+    .toLowerCase()
+    .endsWith('.exe');
+  const needsUmu = !libraryInfo.umu;
+  return isLinux && isWindowsExecutable && needsUmu;
+});
+let needsUmuMigration = $derived(needsUmuSetup);
+
+async function doesLinkExist(url: string | undefined) {
+  if (!url) return false;
+  const response = await window.electronAPI.app.axios({
+    method: 'get',
+    url: url,
+    headers: {
+      'Accept-Language': 'en-US,en;q=0.5',
+    },
+  });
+  return response.status === 200;
+}
+
+let playButton: HTMLButtonElement | undefined = $state(undefined);
+let openedGameConfiguration = $state(false);
+
+async function launchGame() {
+  if ($gamesLaunched[libraryInfo.appID]) return;
+  if (!playButton) return;
+  console.log('Launching game with appID: ' + libraryInfo.appID);
+  playButton.setAttribute('data-error', 'false');
+
+  // Fire of the addon launch-app event first
+
+  gamesLaunched.update((games) => {
+    games[libraryInfo.appID] = 'launching';
+    return games;
   });
 
-  let showUpdateModal = $state(false);
-
-  interface Props {
-    libraryInfo: LibraryInfo;
-    exitPlayPage: () => void;
-  }
-
-  let { libraryInfo = $bindable(), exitPlayPage }: Props = $props();
-
-  let requiresSteamReadd = $derived(
-    appUpdates.requiredReadds.some((r) => r.appID === libraryInfo.appID)
-  );
-  let os = $state('');
-  let isMigratingToUmu = $state(false);
-  let needsUmuSetup = $derived.by(() => {
-    const isLinux = os === 'linux';
-    const isWindowsExecutable = libraryInfo.launchExecutable
-      .toLowerCase()
-      .endsWith('.exe');
-    const needsUmu = !libraryInfo.umu;
-    return isLinux && isWindowsExecutable && needsUmu;
-  });
-  let needsUmuMigration = $derived(needsUmuSetup);
-
-  async function doesLinkExist(url: string | undefined) {
-    if (!url) return false;
-    const response = await window.electronAPI.app.axios({
-      method: 'get',
-      url: url,
-      headers: {
-        'Accept-Language': 'en-US,en;q=0.5',
-      },
-    });
-    return response.status === 200;
-  }
-
-  let playButton: HTMLButtonElement | undefined = $state(undefined);
-  let openedGameConfiguration = $state(false);
-
-  async function launchGame() {
-    if ($gamesLaunched[libraryInfo.appID]) return;
-    if (!playButton) return;
-    console.log('Launching game with appID: ' + libraryInfo.appID);
-    playButton.setAttribute('data-error', 'false');
-
-    // Fire of the addon launch-app event first
-
+  playButton.disabled = true;
+  playButton.querySelector('svg')!!.style.display = 'none';
+  playButton.querySelector('p')!!.textContent = 'WAITING';
+  try {
+    console.log('launching pre-launch');
+    console.log('launchApp', libraryInfo);
+    await runLaunchAppAddons(libraryInfo, 'pre');
+  } catch (error) {
+    console.error(error);
+    // remove the game from the gamesLaunched state first so the play button is restored
     gamesLaunched.update((games) => {
-      games[libraryInfo.appID] = 'launching';
+      delete games[libraryInfo.appID];
       return games;
     });
-
-    playButton.disabled = true;
-    playButton.querySelector('svg')!!.style.display = 'none';
-    playButton.querySelector('p')!!.textContent = 'WAITING';
-    try {
-      console.log('launching pre-launch');
-      console.log('launchApp', libraryInfo);
-      await runLaunchAppAddons(libraryInfo, 'pre');
-    } catch (error) {
-      console.error(error);
-      // remove the game from the gamesLaunched state first so the play button is restored
-      gamesLaunched.update((games) => {
-        delete games[libraryInfo.appID];
-        return games;
-      });
-      // wait for the DOM to update so playButton is restored
-      await tick();
-      if (playButton) {
-        playButton.setAttribute('data-error', 'true');
-      }
-      return;
+    // wait for the DOM to update so playButton is restored
+    await tick();
+    if (playButton) {
+      playButton.setAttribute('data-error', 'true');
     }
-
-    console.log('pre-launch complete');
-
-    await window.electronAPI.app.launchGame('' + libraryInfo.appID);
-
-    console.log('launchGame complete');
-    if (!window.electronAPI.fs.exists('./internals')) {
-      window.electronAPI.fs.mkdir('./internals');
-      window.electronAPI.fs.write(
-        './internals/apps.json',
-        JSON.stringify([], null, 2)
-      );
-    }
-
-    // reorders the recent launched apps to the front of the list
-    if (window.electronAPI.fs.exists('./internals/apps.json')) {
-      let appsOrdered: number[] = JSON.parse(
-        window.electronAPI.fs.read('./internals/apps.json')
-      );
-      // remove the appID from the list
-      appsOrdered = appsOrdered.filter((id) => id !== libraryInfo.appID);
-      // add it to the front
-      appsOrdered.unshift(libraryInfo.appID);
-      window.electronAPI.fs.write(
-        './internals/apps.json',
-        JSON.stringify(appsOrdered, null, 2)
-      );
-    }
+    return;
   }
 
-  onMount(() => {
-    launchOverlayPlayPageReady.set(libraryInfo.appID);
-  });
+  console.log('pre-launch complete');
 
-  const unsubscribe2 = launchGameTrigger.subscribe((game) => {
-    console.log('launchGameTrigger', libraryInfo.appID);
-    if (game === libraryInfo.appID) {
-      launchGame();
-      launchGameTrigger.set(undefined);
-    }
-  });
+  await window.electronAPI.app.launchGame('' + libraryInfo.appID);
 
-  const unsubscribe = gamesLaunched.subscribe((games) => {
-    if (!playButton) return;
-    // wait for playButton to be defined
-    if (!games[libraryInfo.appID]) {
-      playButton.disabled = false;
-      playButton.querySelector('p')!!.textContent = 'PLAY';
-      playButton.querySelector('svg')!!.style.display = 'block';
-      return;
-    }
-    if (games[libraryInfo.appID] === 'error') {
-      console.log('Error launching game');
-      playButton.disabled = false;
-      playButton.querySelector('p')!!.textContent = 'ERROR';
-      playButton.querySelector('svg')!!.style.display = 'none';
-      return;
-    }
-    if (games[libraryInfo.appID] === 'launching') {
-      playButton.disabled = true;
-      playButton.querySelector('p')!!.textContent = 'WAITING';
-      playButton.querySelector('svg')!!.style.display = 'none';
-      return;
-    }
-    if (games[libraryInfo.appID] === 'launched') {
-      playButton.disabled = true;
-      playButton.querySelector('p')!!.textContent = 'PLAYING';
-      playButton.querySelector('svg')!!.style.display = 'none';
-    }
-  });
-
-  function openGameConfiguration() {
-    openedGameConfiguration = true;
-  }
-
-  function onFinish(data: any) {
-    openedGameConfiguration = false;
-    // set the configuration for the game
-    if (!data) return;
-    libraryInfo.cwd = data.cwd;
-    libraryInfo.launchExecutable = data.launchExecutable;
-    libraryInfo.launchArguments = data.launchArguments;
-    if (libraryInfo.umu && Array.isArray(data.dllOverrides)) {
-      libraryInfo.umu = {
-        ...libraryInfo.umu,
-        dllOverrides:
-          data.dllOverrides.length > 0 ? data.dllOverrides : undefined,
-      };
-    }
+  console.log('launchGame complete');
+  if (!window.electronAPI.fs.exists('./internals')) {
+    window.electronAPI.fs.mkdir('./internals');
     window.electronAPI.fs.write(
-      './library/' + libraryInfo.appID + '.json',
-      JSON.stringify(libraryInfo, null, 2)
+      './internals/apps.json',
+      JSON.stringify([], null, 2)
     );
   }
 
-  onDestroy(() => {
-    unsubscribe();
-    unsubscribe2();
-    clearHeaderBackButton();
-  });
-
-  function showUmuMigrationCompletePrompt() {
-    document.dispatchEvent(
-      new CustomEvent('input-asked', {
-        detail: {
-          config: new ConfigurationBuilder().build(false),
-          id: `umu-migration-complete-${libraryInfo.appID}`,
-          name: 'UMU Migration Complete',
-          description:
-            "Prefix migration is complete. Remove this game's existing Steam shortcut, then use Add to Steam in OpenGameInstaller so it can be re-added with UMU launch compatibility.",
-        },
-      })
+  // reorders the recent launched apps to the front of the list
+  if (window.electronAPI.fs.exists('./internals/apps.json')) {
+    let appsOrdered: number[] = JSON.parse(
+      window.electronAPI.fs.read('./internals/apps.json')
+    );
+    // remove the appID from the list
+    appsOrdered = appsOrdered.filter((id) => id !== libraryInfo.appID);
+    // add it to the front
+    appsOrdered.unshift(libraryInfo.appID);
+    window.electronAPI.fs.write(
+      './internals/apps.json',
+      JSON.stringify(appsOrdered, null, 2)
     );
   }
+}
 
-  async function migrateToUmu() {
-    if (isMigratingToUmu) return;
-    isMigratingToUmu = true;
+onMount(() => {
+  launchOverlayPlayPageReady.set(libraryInfo.appID);
+});
 
-    try {
-      const steamAppIdResult = await window.electronAPI.app.getSteamAppId(
-        libraryInfo.appID
-      );
-      const oldSteamAppId = steamAppIdResult.success
-        ? steamAppIdResult.appId
-        : undefined;
+const unsubscribe2 = launchGameTrigger.subscribe((game) => {
+  console.log('launchGameTrigger', libraryInfo.appID);
+  if (game === libraryInfo.appID) {
+    launchGame();
+    launchGameTrigger.set(undefined);
+  }
+});
 
-      const migrationResult = await window.electronAPI.app.migrateToUmu(
-        libraryInfo.appID,
-        oldSteamAppId
-      );
+const unsubscribe = gamesLaunched.subscribe((games) => {
+  if (!playButton) return;
+  // wait for playButton to be defined
+  if (!games[libraryInfo.appID]) {
+    playButton.disabled = false;
+    playButton.querySelector('p')!!.textContent = 'PLAY';
+    playButton.querySelector('svg')!!.style.display = 'block';
+    return;
+  }
+  if (games[libraryInfo.appID] === 'error') {
+    console.log('Error launching game');
+    playButton.disabled = false;
+    playButton.querySelector('p')!!.textContent = 'ERROR';
+    playButton.querySelector('svg')!!.style.display = 'none';
+    return;
+  }
+  if (games[libraryInfo.appID] === 'launching') {
+    playButton.disabled = true;
+    playButton.querySelector('p')!!.textContent = 'WAITING';
+    playButton.querySelector('svg')!!.style.display = 'none';
+    return;
+  }
+  if (games[libraryInfo.appID] === 'launched') {
+    playButton.disabled = true;
+    playButton.querySelector('p')!!.textContent = 'PLAYING';
+    playButton.querySelector('svg')!!.style.display = 'none';
+  }
+});
 
-      if (!migrationResult.success) {
-        createNotification({
-          id: Math.random().toString(36).substring(7),
-          type: 'error',
-          message: migrationResult.error || 'Failed to migrate game to UMU',
-        });
-        return;
-      }
+function openGameConfiguration() {
+  openedGameConfiguration = true;
+}
 
-      const updatedLibraryInfo = await window.electronAPI.app.getLibraryInfo(
-        libraryInfo.appID
-      );
-      if (updatedLibraryInfo) {
-        libraryInfo = updatedLibraryInfo;
-      }
+function onFinish(data: any) {
+  openedGameConfiguration = false;
+  // set the configuration for the game
+  if (!data) return;
+  libraryInfo.cwd = data.cwd;
+  libraryInfo.launchExecutable = data.launchExecutable;
+  libraryInfo.launchArguments = data.launchArguments;
+  if (libraryInfo.umu && Array.isArray(data.dllOverrides)) {
+    libraryInfo.umu = {
+      ...libraryInfo.umu,
+      dllOverrides:
+        data.dllOverrides.length > 0 ? data.dllOverrides : undefined,
+    };
+  }
+  window.electronAPI.fs.write(
+    './library/' + libraryInfo.appID + '.json',
+    JSON.stringify(libraryInfo, null, 2)
+  );
+}
 
-      // Queue Steam re-add requirement so the existing banner appears
-      // and persistence writes update-state.json automatically.
-      appUpdates.requiredReadds = [
-        ...appUpdates.requiredReadds.filter(
-          (r) => r.appID !== libraryInfo.appID
-        ),
-        {
-          appID: libraryInfo.appID,
-          steamAppId: oldSteamAppId ?? 0,
-        },
-      ];
+onDestroy(() => {
+  unsubscribe();
+  unsubscribe2();
+  clearHeaderBackButton();
+});
 
-      createNotification({
-        id: Math.random().toString(36).substring(7),
-        type: 'success',
-        message: 'Successfully migrated game prefix to UMU',
-      });
-      showUmuMigrationCompletePrompt();
-    } catch (error) {
-      console.error(error);
+function showUmuMigrationCompletePrompt() {
+  document.dispatchEvent(
+    new CustomEvent('input-asked', {
+      detail: {
+        config: new ConfigurationBuilder().build(false),
+        id: `umu-migration-complete-${libraryInfo.appID}`,
+        name: 'UMU Migration Complete',
+        description:
+          "Prefix migration is complete. Remove this game's existing Steam shortcut, then use Add to Steam in OpenGameInstaller so it can be re-added with UMU launch compatibility.",
+      },
+    })
+  );
+}
+
+async function migrateToUmu() {
+  if (isMigratingToUmu) return;
+  isMigratingToUmu = true;
+
+  try {
+    const steamAppIdResult = await window.electronAPI.app.getSteamAppId(
+      libraryInfo.appID
+    );
+    const oldSteamAppId = steamAppIdResult.success
+      ? steamAppIdResult.appId
+      : undefined;
+
+    const migrationResult = await window.electronAPI.app.migrateToUmu(
+      libraryInfo.appID,
+      oldSteamAppId
+    );
+
+    if (!migrationResult.success) {
       createNotification({
         id: Math.random().toString(36).substring(7),
         type: 'error',
-        message: 'Failed to migrate game to UMU',
+        message: migrationResult.error || 'Failed to migrate game to UMU',
       });
-    } finally {
-      isMigratingToUmu = false;
+      return;
     }
-  }
 
-  let searchingAddons: { [key: string]: SearchResult[] | undefined } = $state(
-    {}
+    const updatedLibraryInfo = await window.electronAPI.app.getLibraryInfo(
+      libraryInfo.appID
+    );
+    if (updatedLibraryInfo) {
+      libraryInfo = updatedLibraryInfo;
+    }
+
+    // Queue Steam re-add requirement so the existing banner appears
+    // and persistence writes update-state.json automatically.
+    appUpdates.requiredReadds = [
+      ...appUpdates.requiredReadds.filter((r) => r.appID !== libraryInfo.appID),
+      {
+        appID: libraryInfo.appID,
+        steamAppId: oldSteamAppId ?? 0,
+      },
+    ];
+
+    createNotification({
+      id: Math.random().toString(36).substring(7),
+      type: 'success',
+      message: 'Successfully migrated game prefix to UMU',
+    });
+    showUmuMigrationCompletePrompt();
+  } catch (error) {
+    console.error(error);
+    createNotification({
+      id: Math.random().toString(36).substring(7),
+      type: 'error',
+      message: 'Failed to migrate game to UMU',
+    });
+  } finally {
+    isMigratingToUmu = false;
+  }
+}
+
+let searchingAddons: { [key: string]: SearchResult[] | undefined } = $state({});
+let addonsMap: Map<string, { id: string; name: string }> = $state(new Map());
+let collapsedAddons: Set<string> = $state(new Set());
+
+function toggleAddonCollapse(addonId: string) {
+  if (collapsedAddons.has(addonId)) {
+    collapsedAddons.delete(addonId);
+  } else {
+    collapsedAddons.add(addonId);
+  }
+  collapsedAddons = new Set(collapsedAddons);
+}
+let settledAddons = $derived.by(() => {
+  return (
+    Object.values(searchingAddons).filter((task) => task !== undefined)
+      .length === Object.keys(searchingAddons).length
   );
-  let addonsMap: Map<string, { id: string; name: string }> = $state(new Map());
-  let collapsedAddons: Set<string> = $state(new Set());
+});
 
-  function toggleAddonCollapse(addonId: string) {
-    if (collapsedAddons.has(addonId)) {
-      collapsedAddons.delete(addonId);
-    } else {
-      collapsedAddons.add(addonId);
-    }
-    collapsedAddons = new Set(collapsedAddons);
-  }
-  let settledAddons = $derived.by(() => {
-    return (
-      Object.values(searchingAddons).filter((task) => task !== undefined)
-        .length === Object.keys(searchingAddons).length
-    );
-  });
+$effect(() => {
+  console.log('searchingAddons', searchingAddons);
+  console.log('settledAddons', settledAddons);
+});
 
-  $effect(() => {
-    console.log('searchingAddons', searchingAddons);
-    console.log('settledAddons', settledAddons);
-  });
+onMount(async () => {
+  os = await window.electronAPI.app.getOS();
 
-  onMount(async () => {
-    os = await window.electronAPI.app.getOS();
+  // Set up the header back button
+  console.log('PlayPage mounted, setting header back button');
+  setHeaderBackButton(() => {
+    console.log('Header back button clicked');
+    exitPlayPage();
+  }, 'Back to library');
 
-    // Set up the header back button
-    console.log('PlayPage mounted, setting header back button');
-    setHeaderBackButton(() => {
-      console.log('Header back button clicked');
-      exitPlayPage();
-    }, 'Back to library');
+  const addons = await fetchAddonsWithConfigure();
+  addonsMap = new Map(
+    addons.map((addon) => [addon.id, { id: addon.id, name: addon.name }])
+  );
+  const addonsWithStorefront = addons.filter(
+    (addon) =>
+      supportsStorefront(addon.storefronts, libraryInfo.storefront) &&
+      isAddonEventAvailable(addon, 'search')
+  );
 
-    const addons = await fetchAddonsWithConfigure();
-    addonsMap = new Map(
-      addons.map((addon) => [addon.id, { id: addon.id, name: addon.name }])
-    );
-    const addonsWithStorefront = addons.filter(
-      (addon) =>
-        supportsStorefront(addon.storefronts, libraryInfo.storefront) &&
-        isAddonEventAvailable(addon, 'search')
-    );
-
-    if (addonsWithStorefront.length === 0) return;
-    for (const addon of addonsWithStorefront) {
-      searchingAddons[addon.id] = undefined;
-      (addonServer.addon(addon.id).search({
+  if (addonsWithStorefront.length === 0) return;
+  for (const addon of addonsWithStorefront) {
+    searchingAddons[addon.id] = undefined;
+    (
+      addonServer.addon(addon.id).search({
         appID: libraryInfo.appID,
         storefront: libraryInfo.storefront,
         for: 'task',
-      }) as Promise<SearchResult[]>)
-        .then((tasks) => {
-          console.log('tasks', tasks);
-          searchingAddons[addon.id] = tasks;
-        })
-        .catch((ex) => {
-          console.error(ex);
-          searchingAddons[addon.id] = [];
-        });
-    }
-    await Promise.allSettled(
-      Object.values(searchingAddons).map((task) => task)
-    );
-  });
-
-  function handleRunTask(task: SearchResult, addonID: string) {
-    console.log('Running task: ' + task.name);
-    const addon = addonsMap.get(addonID);
-    runTask(
-      {
-        ...task,
-        addonSource: addonID,
-        addonName: addon?.name || addonID,
-        coverImage: libraryInfo.coverImage,
-        storefront: libraryInfo.storefront,
-        capsuleImage: libraryInfo.capsuleImage,
-      },
-      libraryInfo.cwd,
-      libraryInfo
-    );
+      }) as Promise<SearchResult[]>
+    )
+      .then((tasks) => {
+        console.log('tasks', tasks);
+        searchingAddons[addon.id] = tasks;
+      })
+      .catch((ex) => {
+        console.error(ex);
+        searchingAddons[addon.id] = [];
+      });
   }
+  await Promise.allSettled(Object.values(searchingAddons).map((task) => task));
+});
+
+function handleRunTask(task: SearchResult, addonID: string) {
+  console.log('Running task: ' + task.name);
+  const addon = addonsMap.get(addonID);
+  runTask(
+    {
+      ...task,
+      addonSource: addonID,
+      addonName: addon?.name || addonID,
+      coverImage: libraryInfo.coverImage,
+      storefront: libraryInfo.storefront,
+      capsuleImage: libraryInfo.capsuleImage,
+    },
+    libraryInfo.cwd,
+    libraryInfo
+  );
+}
 </script>
 
 {#if openedGameConfiguration}

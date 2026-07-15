@@ -1,18 +1,18 @@
-import { ipcMain, BrowserWindow } from 'electron';
+import axios, { AxiosError, type AxiosResponse } from 'axios';
+import { BrowserWindow, ipcMain } from 'electron';
 import * as fs from 'fs';
 import { rm as rmAsync } from 'fs/promises';
-import { sendNotification } from '@/electron/main.js';
-import axios, { AxiosError, type AxiosResponse } from 'axios';
-import { dirname } from 'path';
-import { DOWNLOAD_QUEUE } from '@/electron/manager/manager.queue.js';
-import { Readable, Transform, type TransformCallback } from 'stream';
 import * as http from 'http';
 import * as https from 'https';
+import { dirname } from 'path';
+import { Readable, Transform, type TransformCallback } from 'stream';
 import { getEffectiveOnlineState } from '@/electron/lib/online.js';
+import { sendNotification } from '@/electron/main.js';
 import {
   getStoredValue,
   refreshCached,
 } from '@/electron/manager/manager.config.js';
+import { DOWNLOAD_QUEUE } from '@/electron/manager/manager.queue.js';
 
 // Parallel download configuration
 const PARALLEL_DOWNLOAD_THRESHOLD = 100 * 1024 * 1024; // 100MB in bytes

@@ -1,7 +1,8 @@
 const port = 7654;
+
 import { AddonServer } from '@ogi-sdk/addon-server';
-import { join } from 'path';
 import { existsSync, readFileSync } from 'fs';
+import { join } from 'path';
 import { __dirname } from '@/electron/manager/manager.paths.js';
 
 let isSecurityCheckEnabled = true;
@@ -79,10 +80,10 @@ async function stopAddonServer(): Promise<void> {
 }
 
 export {
-  port,
   addonServer,
-  isSecurityCheckEnabled,
   isAddonServerListening,
+  isSecurityCheckEnabled,
+  port,
   startAddonServer,
   stopAddonServer,
 };

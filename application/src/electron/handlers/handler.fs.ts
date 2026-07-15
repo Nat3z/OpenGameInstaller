@@ -1,10 +1,10 @@
 import { dialog, ipcMain, shell } from 'electron';
-import { __dirname } from '@/electron/manager/manager.paths.js';
-import { join } from 'path';
 import * as fs from 'fs';
-import { sendIPCMessage } from '@/electron/main.js';
 import * as fsAsync from 'fs/promises';
 import { extraction } from 'ogi-addon';
+import { join } from 'path';
+import { sendIPCMessage } from '@/electron/main.js';
+import { __dirname } from '@/electron/manager/manager.paths.js';
 
 export default function handler() {
   ipcMain.on('fs:read', (event, arg) => {

@@ -1,526 +1,520 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
-  import { fade, fly, slide } from 'svelte/transition';
-  import { quintOut } from 'svelte/easing';
-  import { derived } from 'svelte/store';
-  import ConfigView from '@/frontend/views/ConfigView.svelte';
-  import ClientOptionsView from '@/frontend/views/ClientOptionsView.svelte';
-  import DownloadView from '@/frontend/views/DownloadView.svelte';
-  import DownloadManager from '@/frontend/managers/DownloadManager.svelte';
-  import OOBE from '@/frontend/views/OutOfBoxExperience.svelte';
-  import { GamepadNavigator } from '@/frontend/managers/GamepadManager';
+import type {
+  BasicLibraryInfo,
+  ConfigurationFile,
+  OGIAddonConfiguration,
+} from '@ogi-sdk/connect';
+import { onMount } from 'svelte';
+import { quintOut } from 'svelte/easing';
+import { derived } from 'svelte/store';
+import { fade, fly, slide } from 'svelte/transition';
+import GameLaunchOverlay from '@/frontend/components/GameLaunchOverlay.svelte';
+import ConfigurationModal from '@/frontend/components/modal/ConfigurationModal.svelte';
+import NotificationSideView from '@/frontend/components/NotificationSideView.svelte';
+import StorePage from '@/frontend/components/StorePage.svelte';
+import AppUpdateManager from '@/frontend/managers/AppUpdateManager.svelte';
+import ChangelogManager from '@/frontend/managers/ChangelogManager.svelte';
+import Debug from '@/frontend/managers/Debug.svelte';
+import DownloadManager from '@/frontend/managers/DownloadManager.svelte';
+import GameManager from '@/frontend/managers/GameManager.svelte';
+import { GamepadNavigator } from '@/frontend/managers/GamepadManager';
+import Notifications from '@/frontend/managers/NotificationManager.svelte';
+import RootPasswordGranter from '@/frontend/managers/RootPasswordGranter.svelte';
+import { appUpdates, loadPersistedUpdateState } from '@/frontend/states.svelte';
+import {
+  addonUpdates,
+  clearHeaderBackButton,
+  createNotification,
+  currentDownloads,
+  currentStorePageOpened,
+  currentStorePageOpenedStorefront,
+  fetchCommunityAddons,
+  headerBackButton,
+  isOnline,
+  loadingResults,
+  notificationHistory,
+  readNotificationIds,
+  searchQuery,
+  searchResultsByAddon,
+  searchResults as searchResultsStore,
+  selectedView,
+  showNotificationSideView,
+  type Views,
+  viewOpenedWhenChanged,
+} from '@/frontend/store.svelte';
+import {
+  addonServer,
+  fetchAddonsWithConfigure,
+  getConfigClientOption,
+  initDownloadPersistence,
+  initSleepLock,
+  isAddonEventAvailable,
+  queryConnectedAddons,
+  reconnectClientSdk,
+} from '@/frontend/utils';
+import ClientOptionsView from '@/frontend/views/ClientOptionsView.svelte';
+import ConfigView from '@/frontend/views/ConfigView.svelte';
+import DiscoverView from '@/frontend/views/DiscoverView.svelte';
+import DownloadView from '@/frontend/views/DownloadView.svelte';
+import LibraryView from '@/frontend/views/LibraryView.svelte';
+import OOBE from '@/frontend/views/OutOfBoxExperience.svelte';
 
-  import {
-    fetchAddonsWithConfigure,
-    getConfigClientOption,
-    addonServer,
-    isAddonEventAvailable,
-    queryConnectedAddons,
-    reconnectClientSdk,
-  } from '@/frontend/utils';
-  import Notifications from '@/frontend/managers/NotificationManager.svelte';
-  import NotificationSideView from '@/frontend/components/NotificationSideView.svelte';
-  import {
-    addonUpdates,
-    currentStorePageOpened,
-    currentStorePageOpenedStorefront,
-    selectedView,
-    viewOpenedWhenChanged,
-    type Views,
-    searchResults as searchResultsStore,
-    searchResultsByAddon,
-    searchQuery,
-    loadingResults,
-    isOnline,
-    createNotification,
-    fetchCommunityAddons,
-    notificationHistory,
-    readNotificationIds,
-    showNotificationSideView,
-    currentDownloads,
-    headerBackButton,
-    clearHeaderBackButton,
-  } from '@/frontend/store';
-  import StorePage from '@/frontend/components/StorePage.svelte';
-  import ConfigurationModal from '@/frontend/components/modal/ConfigurationModal.svelte';
-  import LibraryView from '@/frontend/views/LibraryView.svelte';
-  import GameManager from '@/frontend/managers/GameManager.svelte';
-  import type {
-    BasicLibraryInfo,
-    ConfigurationFile,
-    OGIAddonConfiguration,
-  } from '@ogi-sdk/connect';
-  import Debug from '@/frontend/managers/Debug.svelte';
-  import DiscoverView from '@/frontend/views/DiscoverView.svelte';
-  import RootPasswordGranter from '@/frontend/managers/RootPasswordGranter.svelte';
-  import { initDownloadPersistence, initSleepLock } from '@/frontend/utils';
-  import AppUpdateManager from '@/frontend/managers/AppUpdateManager.svelte';
-  import ChangelogManager from '@/frontend/managers/ChangelogManager.svelte';
-  import {
-    appUpdates,
-    loadPersistedUpdateState,
-  } from '@/frontend/states.svelte';
-  import GameLaunchOverlay from '@/frontend/components/GameLaunchOverlay.svelte';
+interface ConfigTemplateAndInfo extends OGIAddonConfiguration {
+  configTemplate: ConfigurationFile;
+}
 
-  interface ConfigTemplateAndInfo extends OGIAddonConfiguration {
-    configTemplate: ConfigurationFile;
-  }
+// post config to server for each addon
 
-  // post config to server for each addon
+let finishedOOBE = $state(true);
+let loading = $state(true);
+let addons: ConfigTemplateAndInfo[] = $state([]);
+let showSearchResults = $state(false);
+let searchTimeout: NodeJS.Timeout | null = null;
+let collapsedAddons: Set<string> = $state(new Set());
+let loadingAddons: Set<string> = $state(new Set());
+let emptyAddons: Set<string> = $state(new Set());
 
-  let finishedOOBE = $state(true);
-  let loading = $state(true);
-  let addons: ConfigTemplateAndInfo[] = $state([]);
-  let showSearchResults = $state(false);
-  let searchTimeout: NodeJS.Timeout | null = null;
-  let collapsedAddons: Set<string> = $state(new Set());
-  let loadingAddons: Set<string> = $state(new Set());
-  let emptyAddons: Set<string> = $state(new Set());
+let recentlyLaunchedApps: LibraryInfo[] = $state([]);
 
-  let recentlyLaunchedApps: LibraryInfo[] = $state([]);
+// Steam shortcut launch mode detection
+let launchGameId: number | null = $state(null);
+let showLaunchOverlay = $state(false);
 
-  // Steam shortcut launch mode detection
-  let launchGameId: number | null = $state(null);
-  let showLaunchOverlay = $state(false);
-
-  // Parse query params on mount to detect launch mode
-  function parseLaunchParams() {
-    const urlParams = new URLSearchParams(window.location.search);
-    const gameIdParam = urlParams.get('launchGameId');
-    if (gameIdParam) {
-      const gameId = parseInt(gameIdParam, 10);
-      if (!isNaN(gameId)) {
-        launchGameId = gameId;
-        showLaunchOverlay = true;
-        console.log('[App] Launch mode detected for game:', gameId);
-      }
+// Parse query params on mount to detect launch mode
+function parseLaunchParams() {
+  const urlParams = new URLSearchParams(window.location.search);
+  const gameIdParam = urlParams.get('launchGameId');
+  if (gameIdParam) {
+    const gameId = parseInt(gameIdParam, 10);
+    if (!isNaN(gameId)) {
+      launchGameId = gameId;
+      showLaunchOverlay = true;
+      console.log('[App] Launch mode detected for game:', gameId);
     }
   }
+}
 
-  function handleLaunchComplete() {
-    showLaunchOverlay = false;
+function handleLaunchComplete() {
+  showLaunchOverlay = false;
+}
+
+function handleLaunchError(error: string) {
+  console.error('[App] Game launch failed:', error);
+  // Keep the overlay visible to show the error, user can close it
+}
+
+// Count active downloads (status 'downloading')
+const activeDownloadsCount = derived(
+  currentDownloads,
+  ($downloads) =>
+    $downloads.filter(
+      (download) =>
+        download.status === 'downloading' ||
+        download.status === 'rd-downloading' ||
+        download.status === 'paused'
+    ).length
+);
+
+// Count unread notifications
+const unreadNotificationCount = derived(
+  [notificationHistory, readNotificationIds],
+  ([$history, $readIds]) => $history.filter((n) => !$readIds.has(n.id)).length
+);
+
+onMount(() => {
+  // Parse launch params first (before other initialization)
+  parseLaunchParams();
+
+  // Initialize notification side view state
+  console.log('App mounted, initializing stores');
+  showNotificationSideView.set(false);
+  loading = true;
+  const installedOption = getConfigClientOption('installed') as {
+    installed: boolean;
+  };
+  console.log('installedOption', installedOption);
+  if (!installedOption || !installedOption.installed) {
+    console.log('OOBE not finished');
+    console.log(installedOption);
+    finishedOOBE = false;
+  }
+  loading = false;
+
+  // get recently launched apps
+  updateRecents();
+
+  // Initialize search-related data
+  initializeSearch();
+  initDownloadPersistence();
+  initSleepLock();
+  const persistedUpdateState = loadPersistedUpdateState();
+  appUpdates.requiredReadds = persistedUpdateState.requiredReadds;
+  appUpdates.dismissedUpdates = persistedUpdateState.dismissedUpdates;
+  // send client-ready-for-events
+  window.electronAPI.app.clientReadyForEvents();
+  console.log('client-ready-for-events sent');
+});
+
+// Initialize when DOM is ready
+document.addEventListener('DOMContentLoaded', () => {
+  window.gamepadNavigator = new GamepadNavigator();
+  window.gamepadNavigator.init();
+});
+
+async function initializeSearch() {
+  try {
+    const addonData = await queryConnectedAddons<ConfigTemplateAndInfo>();
+    addons = addonData;
+
+    const online = await window.electronAPI.app.isOnline();
+    isOnline.set(online);
+  } catch (error) {
+    console.error('Failed to initialize search:', error);
+  }
+}
+
+let activeQuery: string | null = $state(null);
+let currentSearchController: AbortController | null = null;
+
+async function performSearch(query: string) {
+  if (!$isOnline || !query.trim()) {
+    showSearchResults = false;
+    return;
   }
 
-  function handleLaunchError(error: string) {
-    console.error('[App] Game launch failed:', error);
-    // Keep the overlay visible to show the error, user can close it
+  // Cancel any ongoing search
+  if (currentSearchController) {
+    currentSearchController.abort();
   }
 
-  // Count active downloads (status 'downloading')
-  const activeDownloadsCount = derived(
-    currentDownloads,
-    ($downloads) =>
-      $downloads.filter(
-        (download) =>
-          download.status === 'downloading' ||
-          download.status === 'rd-downloading' ||
-          download.status === 'paused'
-      ).length
-  );
+  // Create new abort controller for this search
+  currentSearchController = new AbortController();
+  const signal = currentSearchController.signal;
 
-  // Count unread notifications
-  const unreadNotificationCount = derived(
-    [notificationHistory, readNotificationIds],
-    ([$history, $readIds]) => $history.filter((n) => !$readIds.has(n.id)).length
-  );
+  try {
+    activeQuery = query;
 
-  onMount(() => {
-    // Parse launch params first (before other initialization)
-    parseLaunchParams();
+    // Clear previous results and loading states immediately
+    searchResultsStore.set([]);
+    searchResultsByAddon.set([]);
+    loadingAddons = new Set();
+    emptyAddons = new Set();
 
-    // Initialize notification side view state
-    console.log('App mounted, initializing stores');
-    showNotificationSideView.set(false);
-    loading = true;
-    const installedOption = getConfigClientOption('installed') as {
-      installed: boolean;
-    };
-    console.log('installedOption', installedOption);
-    if (!installedOption || !installedOption.installed) {
-      console.log('OOBE not finished');
-      console.log(installedOption);
-      finishedOOBE = false;
-    }
-    loading = false;
+    loadingResults.set(true);
+    showSearchResults = true;
+    const connectedAddonIds = new Set(addons.map((addon) => addon.id));
+    const configuredAddons = await fetchAddonsWithConfigure();
+    const searchAddons = configuredAddons.filter(
+      (addon) =>
+        connectedAddonIds.has(addon.id) &&
+        isAddonEventAvailable(addon, 'library-search')
+    );
 
-    // get recently launched apps
-    updateRecents();
+    // Check if search was cancelled after fetching addons
+    if (signal.aborted || query !== activeQuery) return;
 
-    // Initialize search-related data
-    initializeSearch();
-    initDownloadPersistence();
-    initSleepLock();
-    const persistedUpdateState = loadPersistedUpdateState();
-    appUpdates.requiredReadds = persistedUpdateState.requiredReadds;
-    appUpdates.dismissedUpdates = persistedUpdateState.dismissedUpdates;
-    // send client-ready-for-events
-    window.electronAPI.app.clientReadyForEvents();
-    console.log('client-ready-for-events sent');
-  });
+    // Reset loading states
+    loadingAddons = new Set(searchAddons.map((addon) => addon.id));
+    emptyAddons = new Set();
 
-  // Initialize when DOM is ready
-  document.addEventListener('DOMContentLoaded', () => {
-    window.gamepadNavigator = new GamepadNavigator();
-    window.gamepadNavigator.init();
-  });
+    // Search through addons and organize results by addon
+    let promises: Promise<void>[] = [];
+    for (const addon of searchAddons) {
+      promises.push(
+        (
+          addonServer.addon(addon.id).librarySearch(query) as Promise<
+            BasicLibraryInfo[]
+          >
+        )
+          .then((response: BasicLibraryInfo[] = []) => {
+            // Check if search was cancelled
+            if (signal.aborted || query !== activeQuery) return;
 
-  async function initializeSearch() {
-    try {
-      const addonData = await queryConnectedAddons<ConfigTemplateAndInfo>();
-      addons = addonData;
+            console.log(addon.id, response);
 
-      const online = await window.electronAPI.app.isOnline();
-      isOnline.set(online);
-    } catch (error) {
-      console.error('Failed to initialize search:', error);
-    }
-  }
+            // Add to flat results (for backward compatibility)
+            searchResultsStore.update((value) => [...value, ...response]);
 
-  let activeQuery: string | null = $state(null);
-  let currentSearchController: AbortController | null = null;
+            // Add to organized results by addon
+            if (response.length > 0) {
+              // Remove from loading set immediately for addons with results
+              loadingAddons.delete(addon.id);
+              loadingAddons = new Set(loadingAddons);
 
-  async function performSearch(query: string) {
-    if (!$isOnline || !query.trim()) {
-      showSearchResults = false;
-      return;
-    }
+              searchResultsByAddon.update((value) => [
+                ...value,
+                {
+                  addonId: addon.id,
+                  addonName: addon.name,
+                  results: response,
+                },
+              ]);
+            } else {
+              // For empty results, add to empty set and animate out after delay
+              emptyAddons.add(addon.id);
+              emptyAddons = new Set(emptyAddons);
 
-    // Cancel any ongoing search
-    if (currentSearchController) {
-      currentSearchController.abort();
-    }
+              setTimeout(() => {
+                // Check again if search was cancelled before updating UI
+                if (signal.aborted || query !== activeQuery) return;
 
-    // Create new abort controller for this search
-    currentSearchController = new AbortController();
-    const signal = currentSearchController.signal;
-
-    try {
-      activeQuery = query;
-
-      // Clear previous results and loading states immediately
-      searchResultsStore.set([]);
-      searchResultsByAddon.set([]);
-      loadingAddons = new Set();
-      emptyAddons = new Set();
-
-      loadingResults.set(true);
-      showSearchResults = true;
-      const connectedAddonIds = new Set(addons.map((addon) => addon.id));
-      const configuredAddons = await fetchAddonsWithConfigure();
-      const searchAddons = configuredAddons.filter(
-        (addon) =>
-          connectedAddonIds.has(addon.id) &&
-          isAddonEventAvailable(addon, 'library-search')
-      );
-
-      // Check if search was cancelled after fetching addons
-      if (signal.aborted || query !== activeQuery) return;
-
-      // Reset loading states
-      loadingAddons = new Set(searchAddons.map((addon) => addon.id));
-      emptyAddons = new Set();
-
-      // Search through addons and organize results by addon
-      let promises: Promise<void>[] = [];
-      for (const addon of searchAddons) {
-        promises.push(
-          (
-            addonServer.addon(addon.id).librarySearch(query) as Promise<
-              BasicLibraryInfo[]
-            >
-          )
-            .then((response: BasicLibraryInfo[] = []) => {
-              // Check if search was cancelled
-              if (signal.aborted || query !== activeQuery) return;
-
-              console.log(addon.id, response);
-
-              // Add to flat results (for backward compatibility)
-              searchResultsStore.update((value) => [...value, ...response]);
-
-              // Add to organized results by addon
-              if (response.length > 0) {
-                // Remove from loading set immediately for addons with results
                 loadingAddons.delete(addon.id);
                 loadingAddons = new Set(loadingAddons);
 
-                searchResultsByAddon.update((value) => [
-                  ...value,
-                  {
-                    addonId: addon.id,
-                    addonName: addon.name,
-                    results: response,
-                  },
-                ]);
-              } else {
-                // For empty results, add to empty set and animate out after delay
-                emptyAddons.add(addon.id);
-                emptyAddons = new Set(emptyAddons);
-
+                // Clean up empty addon after another delay
                 setTimeout(() => {
-                  // Check again if search was cancelled before updating UI
                   if (signal.aborted || query !== activeQuery) return;
+                  emptyAddons.delete(addon.id);
+                  emptyAddons = new Set(emptyAddons);
+                }, 300);
+              }, 1000);
+            }
+          })
+          .catch((error) => {
+            // Don't handle errors if the request was aborted (cancelled)
+            if (signal.aborted || query !== activeQuery) return;
 
-                  loadingAddons.delete(addon.id);
-                  loadingAddons = new Set(loadingAddons);
-
-                  // Clean up empty addon after another delay
-                  setTimeout(() => {
-                    if (signal.aborted || query !== activeQuery) return;
-                    emptyAddons.delete(addon.id);
-                    emptyAddons = new Set(emptyAddons);
-                  }, 300);
-                }, 1000);
-              }
-            })
-            .catch((error) => {
-              // Don't handle errors if the request was aborted (cancelled)
-              if (signal.aborted || query !== activeQuery) return;
-
-              // Remove from loading set even on error
-              loadingAddons.delete(addon.id);
-              loadingAddons = new Set(loadingAddons);
-              console.error(`Error searching addon ${addon.name}:`, error);
-            })
-        );
-      }
-
-      // Check if search was cancelled before awaiting promises
-      if (signal.aborted || query !== activeQuery) return;
-
-      await Promise.allSettled(promises);
-
-      // Final check before updating loading state
-      if (signal.aborted || query !== activeQuery) return;
-
-      loadingResults.set(false);
-      // Ensure all addons are removed from loading state
-      loadingAddons = new Set();
-    } catch (ex) {
-      // Don't handle errors if the request was aborted (cancelled)
-      if (signal.aborted || query !== activeQuery) return;
-
-      console.error(ex);
-      createNotification({
-        id: Math.random().toString(36).substring(7),
-        message: 'Failed to fetch search results',
-        type: 'error',
-      });
-      loadingResults.set(false);
-      loadingAddons = new Set();
-      emptyAddons = new Set();
-    }
-  }
-
-  function handleSearchInput(event: Event) {
-    const target = event.target as HTMLInputElement;
-    const query = target.value;
-    searchQuery.set(query);
-
-    // Cancel any ongoing search when input changes
-    if (currentSearchController) {
-      currentSearchController.abort();
-      currentSearchController = null;
-    }
-
-    // Clear existing timeout
-    if (searchTimeout) {
-      clearTimeout(searchTimeout);
-    }
-
-    if (query.trim()) {
-      // Debounce search by 500ms to prevent rapid API calls
-      searchTimeout = setTimeout(() => {
-        performSearch(query);
-      }, 500);
-    } else {
-      // Clear all search-related state immediately when input is empty
-      searchResultsStore.set([]);
-      searchResultsByAddon.set([]);
-      loadingAddons = new Set();
-      emptyAddons = new Set();
-      loadingResults.set(false);
-      showSearchResults = false;
-      activeQuery = null;
-    }
-  }
-
-  function goToListing(appID: number, storefront: string) {
-    if (!$isOnline) return;
-    currentStorePageOpened.set(appID);
-    currentStorePageOpenedStorefront.set(storefront);
-    viewOpenedWhenChanged.set($selectedView);
-    showSearchResults = false;
-  }
-
-  function toggleAddonCollapse(addonId: string) {
-    if (collapsedAddons.has(addonId)) {
-      collapsedAddons.delete(addonId);
-    } else {
-      collapsedAddons.add(addonId);
-    }
-    // Trigger reactivity
-    collapsedAddons = new Set(collapsedAddons);
-  }
-
-  function updateRecents() {
-    let exists = window.electronAPI.fs.exists('./internals/apps.json');
-    let itemsAdded = 0;
-    if (exists) {
-      let apps: number[] = JSON.parse(
-        window.electronAPI.fs.read('./internals/apps.json')
+            // Remove from loading set even on error
+            loadingAddons.delete(addon.id);
+            loadingAddons = new Set(loadingAddons);
+            console.error(`Error searching addon ${addon.name}:`, error);
+          })
       );
-      // then get the app info via the ./library/{appID}.json
-      recentlyLaunchedApps = [];
-      apps.forEach((appID) => {
-        let exists = window.electronAPI.fs.exists(`./library/${appID}.json`);
-        if (itemsAdded >= 3) return;
-        if (exists) {
-          let appInfo: LibraryInfo = JSON.parse(
-            window.electronAPI.fs.read(`./library/${appID}.json`)
-          );
-          recentlyLaunchedApps.push(appInfo);
-          itemsAdded++;
-        }
-      });
     }
+
+    // Check if search was cancelled before awaiting promises
+    if (signal.aborted || query !== activeQuery) return;
+
+    await Promise.allSettled(promises);
+
+    // Final check before updating loading state
+    if (signal.aborted || query !== activeQuery) return;
+
+    loadingResults.set(false);
+    // Ensure all addons are removed from loading state
+    loadingAddons = new Set();
+  } catch (ex) {
+    // Don't handle errors if the request was aborted (cancelled)
+    if (signal.aborted || query !== activeQuery) return;
+
+    console.error(ex);
+    createNotification({
+      id: Math.random().toString(36).substring(7),
+      message: 'Failed to fetch search results',
+      type: 'error',
+    });
+    loadingResults.set(false);
+    loadingAddons = new Set();
+    emptyAddons = new Set();
+  }
+}
+
+function handleSearchInput(event: Event) {
+  const target = event.target as HTMLInputElement;
+  const query = target.value;
+  searchQuery.set(query);
+
+  // Cancel any ongoing search when input changes
+  if (currentSearchController) {
+    currentSearchController.abort();
+    currentSearchController = null;
   }
 
-  let heldPageOpened: number | undefined;
-  let isStoreOpen = false;
-  let iTriggeredIt = false;
+  // Clear existing timeout
+  if (searchTimeout) {
+    clearTimeout(searchTimeout);
+  }
 
-  document.addEventListener('addon:update-available', (event) => {
-    if (event instanceof CustomEvent) {
-      const { detail } = event;
-      addonUpdates.update((value) => {
-        value.push(detail);
-        return value;
-      });
-    }
-  });
-  document.addEventListener('all-addons-started', async () => {
-    if ($addonUpdates.length > 0) {
-      await window.electronAPI.updateAddons();
-      createNotification({
-        id: Math.random().toString(36).substring(7),
-        message: 'Addons updated successfully',
-        type: 'success',
-      });
-      addonUpdates.set([]);
-      // restart the addon server
-      await window.electronAPI.restartAddonServer();
-      await reconnectClientSdk();
-    }
-  });
-  document.addEventListener('addon:updated', (event) => {
-    if (event instanceof CustomEvent) {
-      const { detail } = event;
-      addonUpdates.update((value) => {
-        value = value.filter((addon) => addon !== detail);
-        return value;
-      });
-    }
-  });
-  document.addEventListener('addon-connected', (event) => {
-    if (event instanceof CustomEvent) {
-      fetchAddonsWithConfigure();
-    }
-  });
-  currentStorePageOpened.subscribe((value) => {
-    if (value) {
-      heldPageOpened = value;
-      isStoreOpen = true;
-      if (!$viewOpenedWhenChanged && !iTriggeredIt)
-        viewOpenedWhenChanged.set($selectedView);
-    }
-  });
-  let exitPlayPage: () => void = $state(() => {});
-  function setView(view: Views) {
-    iTriggeredIt = true;
-    showSearchResults = false;
-    searchQuery.set('');
+  if (query.trim()) {
+    // Debounce search by 500ms to prevent rapid API calls
+    searchTimeout = setTimeout(() => {
+      performSearch(query);
+    }, 500);
+  } else {
+    // Clear all search-related state immediately when input is empty
     searchResultsStore.set([]);
-
-    if (isStoreOpen && $selectedView === view) {
-      // If the store is open and the same tab is clicked again, close the store
-      isStoreOpen = false;
-      currentStorePageOpened.set(undefined);
-      heldPageOpened = undefined;
-      viewOpenedWhenChanged.set(undefined);
-      console.log('Removing store from view');
-    } else if (
-      view === $viewOpenedWhenChanged &&
-      heldPageOpened !== undefined
-    ) {
-      // If switching back to the tab that had the store, reopen the store
-      currentStorePageOpened.set(heldPageOpened);
-      selectedView.set(view);
-      isStoreOpen = true;
-      console.log('Switching back to tab that had the store');
-    } else {
-      // Otherwise, just switch to the new tab
-      if ($selectedView === view && view === 'library') {
-        exitPlayPage();
-      } else {
-        selectedView.set(view);
-        currentStorePageOpened.set(undefined);
-        isStoreOpen = false;
-        console.log('Otherwise, just switch to the new tab');
-      }
-    }
-    iTriggeredIt = false;
+    searchResultsByAddon.set([]);
+    loadingAddons = new Set();
+    emptyAddons = new Set();
+    loadingResults.set(false);
+    showSearchResults = false;
+    activeQuery = null;
   }
-  setTimeout(() => {
-    fetchCommunityAddons();
-  }, 2000);
+}
 
-  function toggleNotificationSideView() {
-    showNotificationSideView.update((v) => {
-      const newValue = !v;
-      // Mark all current notifications as read when opening the side view
-      if (newValue) {
-        const currentNotifications = $notificationHistory;
-        readNotificationIds.update((ids) => {
-          const newIds = new Set(ids);
-          currentNotifications.forEach((n) => newIds.add(n.id));
-          return newIds;
-        });
+function goToListing(appID: number, storefront: string) {
+  if (!$isOnline) return;
+  currentStorePageOpened.set(appID);
+  currentStorePageOpenedStorefront.set(storefront);
+  viewOpenedWhenChanged.set($selectedView);
+  showSearchResults = false;
+}
+
+function toggleAddonCollapse(addonId: string) {
+  if (collapsedAddons.has(addonId)) {
+    collapsedAddons.delete(addonId);
+  } else {
+    collapsedAddons.add(addonId);
+  }
+  // Trigger reactivity
+  collapsedAddons = new Set(collapsedAddons);
+}
+
+function updateRecents() {
+  let exists = window.electronAPI.fs.exists('./internals/apps.json');
+  let itemsAdded = 0;
+  if (exists) {
+    let apps: number[] = JSON.parse(
+      window.electronAPI.fs.read('./internals/apps.json')
+    );
+    // then get the app info via the ./library/{appID}.json
+    recentlyLaunchedApps = [];
+    apps.forEach((appID) => {
+      let exists = window.electronAPI.fs.exists(`./library/${appID}.json`);
+      if (itemsAdded >= 3) return;
+      if (exists) {
+        let appInfo: LibraryInfo = JSON.parse(
+          window.electronAPI.fs.read(`./library/${appID}.json`)
+        );
+        recentlyLaunchedApps.push(appInfo);
+        itemsAdded++;
       }
-      return newValue;
     });
   }
+}
 
-  document.addEventListener('app:ask-root-password', () => {});
+let heldPageOpened: number | undefined;
+let isStoreOpen = false;
+let iTriggeredIt = false;
 
-  // Handle back navigation from StorePage
-  document.addEventListener('store:show-search-results', () => {
-    if ($searchQuery && $searchQuery.trim() && $searchResultsStore.length > 0) {
-      showSearchResults = true;
+document.addEventListener('addon:update-available', (event) => {
+  if (event instanceof CustomEvent) {
+    const { detail } = event;
+    addonUpdates.update((value) => {
+      value.push(detail);
+      return value;
+    });
+  }
+});
+document.addEventListener('all-addons-started', async () => {
+  if ($addonUpdates.length > 0) {
+    await window.electronAPI.updateAddons();
+    createNotification({
+      id: Math.random().toString(36).substring(7),
+      message: 'Addons updated successfully',
+      type: 'success',
+    });
+    addonUpdates.set([]);
+    // restart the addon server
+    await window.electronAPI.restartAddonServer();
+    await reconnectClientSdk();
+  }
+});
+document.addEventListener('addon:updated', (event) => {
+  if (event instanceof CustomEvent) {
+    const { detail } = event;
+    addonUpdates.update((value) => {
+      value = value.filter((addon) => addon !== detail);
+      return value;
+    });
+  }
+});
+document.addEventListener('addon-connected', (event) => {
+  if (event instanceof CustomEvent) {
+    fetchAddonsWithConfigure();
+  }
+});
+currentStorePageOpened.subscribe((value) => {
+  if (value) {
+    heldPageOpened = value;
+    isStoreOpen = true;
+    if (!$viewOpenedWhenChanged && !iTriggeredIt)
+      viewOpenedWhenChanged.set($selectedView);
+  }
+});
+let exitPlayPage: () => void = $state(() => {});
+function setView(view: Views) {
+  iTriggeredIt = true;
+  showSearchResults = false;
+  searchQuery.set('');
+  searchResultsStore.set([]);
+
+  if (isStoreOpen && $selectedView === view) {
+    // If the store is open and the same tab is clicked again, close the store
+    isStoreOpen = false;
+    currentStorePageOpened.set(undefined);
+    heldPageOpened = undefined;
+    viewOpenedWhenChanged.set(undefined);
+    console.log('Removing store from view');
+  } else if (view === $viewOpenedWhenChanged && heldPageOpened !== undefined) {
+    // If switching back to the tab that had the store, reopen the store
+    currentStorePageOpened.set(heldPageOpened);
+    selectedView.set(view);
+    isStoreOpen = true;
+    console.log('Switching back to tab that had the store');
+  } else {
+    // Otherwise, just switch to the new tab
+    if ($selectedView === view && view === 'library') {
+      exitPlayPage();
+    } else {
+      selectedView.set(view);
+      currentStorePageOpened.set(undefined);
+      isStoreOpen = false;
+      console.log('Otherwise, just switch to the new tab');
     }
-  });
+  }
+  iTriggeredIt = false;
+}
+setTimeout(() => {
+  fetchCommunityAddons();
+}, 2000);
 
-  // for migration:
-  document.addEventListener('migration:event:steamgriddb-launch', () => {
-    console.log('steamgriddb-launch');
-    // open client options
-    setView('clientoptions');
-    // then open the steamgriddb modal
-    setTimeout(() => {
-      document.dispatchEvent(
-        new CustomEvent('steamgriddb-launch', {
-          detail:
-            'Automatic SteamGridDB artwork downloads require a SteamGridDB API Key. We forgot to ask for it when you initially installed the app, and you will need to configure it now to take advantage of this feature.',
-        })
-      );
-    }, 200);
+function toggleNotificationSideView() {
+  showNotificationSideView.update((v) => {
+    const newValue = !v;
+    // Mark all current notifications as read when opening the side view
+    if (newValue) {
+      const currentNotifications = $notificationHistory;
+      readNotificationIds.update((ids) => {
+        const newIds = new Set(ids);
+        currentNotifications.forEach((n) => newIds.add(n.id));
+        return newIds;
+      });
+    }
+    return newValue;
   });
-  document.addEventListener('migration:event:install-steam-addon', async () => {
-    // go install steam-integration addon
-    await window.electronAPI.installAddons([
-      'https://github.com/Nat3z/steam-integration',
-    ]);
-  });
+}
+
+document.addEventListener('app:ask-root-password', () => {});
+
+// Handle back navigation from StorePage
+document.addEventListener('store:show-search-results', () => {
+  if ($searchQuery && $searchQuery.trim() && $searchResultsStore.length > 0) {
+    showSearchResults = true;
+  }
+});
+
+// for migration:
+document.addEventListener('migration:event:steamgriddb-launch', () => {
+  console.log('steamgriddb-launch');
+  // open client options
+  setView('clientoptions');
+  // then open the steamgriddb modal
+  setTimeout(() => {
+    document.dispatchEvent(
+      new CustomEvent('steamgriddb-launch', {
+        detail:
+          'Automatic SteamGridDB artwork downloads require a SteamGridDB API Key. We forgot to ask for it when you initially installed the app, and you will need to configure it now to take advantage of this feature.',
+      })
+    );
+  }, 200);
+});
+document.addEventListener('migration:event:install-steam-addon', async () => {
+  // go install steam-integration addon
+  await window.electronAPI.installAddons([
+    'https://github.com/Nat3z/steam-integration',
+  ]);
+});
 </script>
 
 <RootPasswordGranter />

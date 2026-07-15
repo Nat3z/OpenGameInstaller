@@ -1,5 +1,3 @@
-import { EventResponseSocket } from '@ogi-sdk/connect';
-import { createAddonProxy } from './_generated/addon-proxy';
 import type {
   AddonClientSDKToServerIncomingMessage,
   AddonClientSDKToServerWebsocketMessage,
@@ -15,10 +13,12 @@ import type {
   SDKResponseMessage,
   WebSocketLike,
 } from '@ogi-sdk/connect';
+import { EventResponseSocket } from '@ogi-sdk/connect';
 import type {
   AddonForwardResponseMessage,
   AddonProxy,
 } from './_generated/addon-proxy';
+import { createAddonProxy } from './_generated/addon-proxy';
 
 type WebSocketConstructor = new (url: string) => WebSocketLike;
 
@@ -53,9 +53,10 @@ type InputAskedArgs = AddonServerToClientSDKEventArgs['input-asked'] & {
   reply: (result: Record<string, string | number | boolean>) => Promise<void>;
 };
 
-type SDKEventCallback<Event extends AddonServerToClientSDKEvent> = Event extends 'input-asked'
-  ? (args: InputAskedArgs) => void
-  : (args: AddonServerToClientSDKEventArgs[Event]) => void;
+type SDKEventCallback<Event extends AddonServerToClientSDKEvent> =
+  Event extends 'input-asked'
+    ? (args: InputAskedArgs) => void
+    : (args: AddonServerToClientSDKEventArgs[Event]) => void;
 
 class TinyEventEmitter {
   private listeners = new Map<string, Set<Listener>>();
@@ -106,7 +107,10 @@ export class Connection {
     this.ready = this.connect();
   }
 
-  public addon(addonId: string, deferredOptions: DeferredTaskOptions = {}): AddonProxy {
+  public addon(
+    addonId: string,
+    deferredOptions: DeferredTaskOptions = {}
+  ): AddonProxy {
     return createAddonProxy(
       addonId,
       this.sendToAddon.bind(this),
@@ -148,9 +152,8 @@ export class Connection {
     )) as SDKResponseMessage<Name>;
 
     if (name === 'query-connected-addons' && !response.statusError) {
-      const addons = (
-        response as SDKResponseMessage<'query-connected-addons'>
-      ).args.addons;
+      const addons = (response as SDKResponseMessage<'query-connected-addons'>)
+        .args.addons;
       for (const addon of addons) {
         this.connectedAddonInfo.set(addon.id, addon);
       }
@@ -234,7 +237,8 @@ export class Connection {
         } catch (error) {
           settled = true;
           clearInterval(timer);
-          const message = error instanceof Error ? error.message : String(error);
+          const message =
+            error instanceof Error ? error.message : String(error);
           options.onFailed?.(message);
           reject(error);
         } finally {
@@ -244,7 +248,10 @@ export class Connection {
     });
   }
 
-  public async deferToAddonAndWait<T = unknown, Event extends AddonServerToClientEventName = AddonServerToClientEventName>(
+  public async deferToAddonAndWait<
+    T = unknown,
+    Event extends AddonServerToClientEventName = AddonServerToClientEventName,
+  >(
     addonId: string,
     event: Event,
     args: AddonServerToClientEventArgs[Event],
@@ -300,7 +307,10 @@ export class Connection {
       const cleanup = () => {
         const socketWithOff = this.socket as WebSocketLike & {
           off?: (event: string, listener: (...args: unknown[]) => void) => void;
-          removeEventListener?: (event: string, listener: (...args: unknown[]) => void) => void;
+          removeEventListener?: (
+            event: string,
+            listener: (...args: unknown[]) => void
+          ) => void;
         };
         socketWithOff.off?.('open', onOpen);
         socketWithOff.off?.('error', onError);
@@ -316,7 +326,11 @@ export class Connection {
       };
       const onError = (error?: unknown) => {
         cleanup();
-        reject(error instanceof Error ? error : new Error('WebSocket connection error'));
+        reject(
+          error instanceof Error
+            ? error
+            : new Error('WebSocket connection error')
+        );
       };
       const onClose = () => {
         cleanup();
@@ -348,9 +362,13 @@ export class Connection {
     ): Promise<AddonForwardResponse<Event>['args']> => {
       const taskID = await this.deferToAddon(targetAddonId, event, ...args);
       deferredOptions.onTaskStarted?.(taskID);
-      const result = await this.waitForDeferredTask<AddonForwardResponse<Event>['args']>(
+      const result = await this.waitForDeferredTask<
+        AddonForwardResponse<Event>['args']
+      >(
         taskID,
-        deferredOptions as DeferredTaskOptions<AddonForwardResponse<Event>['args']>
+        deferredOptions as DeferredTaskOptions<
+          AddonForwardResponse<Event>['args']
+        >
       );
       return result as AddonForwardResponse<Event>['args'];
     };

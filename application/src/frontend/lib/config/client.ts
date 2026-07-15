@@ -8,9 +8,9 @@ import {
   isStringOption,
 } from 'ogi-addon/config';
 import {
+  type AddonInfo,
   addonServer,
   queryConnectedAddons,
-  type AddonInfo,
 } from '@/frontend/lib/core/ipc';
 
 export interface ConfigTemplateAndInfo extends AddonInfo {

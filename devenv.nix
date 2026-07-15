@@ -13,6 +13,7 @@
   # https://devenv.sh/packages/
   packages = with pkgs; [
     git
+    unrar
   ];
 
   # https://devenv.sh/languages/
@@ -24,7 +25,10 @@
   };
 
   git-hooks.hooks = {
-    prettier.enable = true;
+    biome = {
+      enable = true;
+      settings.write = true;
+    };
     nixfmt.enable = true;
   };
 

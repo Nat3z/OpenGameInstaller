@@ -2,7 +2,9 @@
  * Sanitizes a path segment (e.g. result.name or file.name) to prevent path traversal
  * and invalid characters. Returns a safe basename-like segment.
  */
-export function sanitizePathSegment(segment: string | undefined | null): string {
+export function sanitizePathSegment(
+  segment: string | undefined | null
+): string {
   if (segment == null || segment === '') return 'download';
   // Normalize separators to forward slash
   const normalized = segment.replace(/[/\\]+/g, '/');
@@ -15,7 +17,9 @@ export function sanitizePathSegment(segment: string | undefined | null): string 
     result = result.replace(/\.\./g, '');
   } while (result !== prev);
   // Split and reject any residual . or .. segments
-  const parts = result.split('/').filter((p) => p !== '' && p !== '.' && p !== '..');
+  const parts = result
+    .split('/')
+    .filter((p) => p !== '' && p !== '.' && p !== '..');
   const last = parts[parts.length - 1] ?? 'download';
   return last.replace(/[\0<>:"|?*]/g, '_').substring(0, 255) || 'download';
 }
@@ -106,7 +110,9 @@ function isFilePath(downloadPath: string): boolean {
  * Validates that returned paths are contained within the download directory
  * to prevent path traversal via malicious persisted state.
  */
-export function getPersistedFilePaths(downloadInfo: DownloadPathInfo): string[] {
+export function getPersistedFilePaths(
+  downloadInfo: DownloadPathInfo
+): string[] {
   const downloadRoot = downloadInfo.downloadPath.replace(/[/\\]+$/, '');
 
   if (downloadInfo.files && downloadInfo.files.length > 0) {

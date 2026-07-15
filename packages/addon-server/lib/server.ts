@@ -1,15 +1,15 @@
-import { AddonConnection } from './connections/addon.connection';
-import { ClientConnection } from './connections/client.connection';
-import { WebSocketServer, type WebSocket } from 'ws';
-import { randomUUID } from 'crypto';
-import http from 'http';
-import { EventEmitter } from 'events';
 import type {
   AddonNotificationMessage,
   AddonServerHostEventListeners,
   AddonServerHostEventName,
   ConfigurationFile,
 } from '@ogi-sdk/connect';
+import { randomUUID } from 'crypto';
+import { EventEmitter } from 'events';
+import http from 'http';
+import { type WebSocket, WebSocketServer } from 'ws';
+import { AddonConnection } from './connections/addon.connection';
+import { ClientConnection } from './connections/client.connection';
 import { DeferredTasksManager } from './deffered';
 
 export type AddonConfig = {

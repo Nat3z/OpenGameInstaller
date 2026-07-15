@@ -1,9 +1,12 @@
 ---
-import Layout from "../layouts/Layout.astro";
-import Header from "../components/Header.astro";
+import Header from '../components/Header.astro';
+import Layout from '../layouts/Layout.astro';
+
 let addons = await Astro.glob(`../../community/*.{md,mdx}`);
 addons = addons.filter((addon) => addon.frontmatter.name !== 'YOUR ADDON NAME');
-addons = addons.sort((a, b) => a.frontmatter.name.localeCompare(b.frontmatter.name));
+addons = addons.sort((a, b) =>
+  a.frontmatter.name.localeCompare(b.frontmatter.name)
+);
 ---
 
 <Layout

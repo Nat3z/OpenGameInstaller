@@ -1,28 +1,31 @@
-import { Addon } from './addon';
 import { spawn } from 'child_process';
 import { dirname } from 'path';
-
-function pipeGitStreams(child: ReturnType<typeof spawn>): void {
-  child.stdout?.on('data', (data) => {
-    console.log(data.toString());
-  });
-  child.stderr?.on('data', (data) => {
-    console.error(data.toString());
-  });
-}
+import { Addon } from './addon';
 
 function runGitProcess(
   cwd: string,
   args: string[],
   operation: string
-): Promise<void> {
+): Promise<string> {
   const child = spawn('git', args.filter(Boolean), {
     cwd,
     stdio: 'pipe',
   });
-  pipeGitStreams(child);
 
-  return new Promise((resolve, reject) => {
+  let stdout = '';
+  let stderr = '';
+  child.stdout?.on('data', (data) => {
+    const text = data.toString();
+    stdout += text;
+    console.log(text);
+  });
+  child.stderr?.on('data', (data) => {
+    const text = data.toString();
+    stderr += text;
+    console.error(text);
+  });
+
+  return new Promise<string>((resolve, reject) => {
     child.on('error', reject);
     child.on('close', (code) => {
       if (code !== 0) {
@@ -33,27 +36,28 @@ function runGitProcess(
         );
         return;
       }
-      resolve();
+      // Include stderr: git progress / "Already up to date" often lands there.
+      resolve((stdout + stderr).trim());
     });
   });
 }
 
 export class Git {
-  constructor(private readonly addon: Addon) {}
+  constructor(private readonly addon: { path: string }) {}
 
-  private execGit(args: string[], operation: string): Promise<void> {
-    return runGitProcess(this.addon.config.path, args, operation);
+  private async execGit(args: string[], operation: string): Promise<string> {
+    return await runGitProcess(this.addon.path, args, operation);
   }
 
   /**
    * Clone `url` into {@link Addon.config.path} (`git clone ... <path>`).
    * Parent of the addon path must exist; the clone target must not already exist as a repo root.
    */
-  public clone(
+  public async clone(
     url: string,
     options: { branch?: string; depth?: number; extraArgs?: string[] } = {}
   ): Promise<void> {
-    const target = this.addon.config.path;
+    const target = this.addon.path;
     const args = ['clone'];
     if (options.depth != null) {
       args.push('--depth', String(options.depth));
@@ -65,46 +69,59 @@ export class Git {
       args.push(...options.extraArgs);
     }
     args.push(url, target);
-    return runGitProcess(dirname(target), args, 'clone');
+    return void (await runGitProcess(dirname(target), args, 'clone'));
   }
 
   /** `git fetch` with optional extra arguments (e.g. `['origin', 'main']`). */
-  public fetch(extraArgs: string[] = []): Promise<void> {
-    return this.execGit(['fetch', ...extraArgs], 'fetch');
+  public async fetch(
+    extraArgs: string[] = []
+  ): Promise<{ alreadyUpToDate: boolean }> {
+    const result = await this.execGit(['fetch', ...extraArgs], 'fetch');
+    return {
+      alreadyUpToDate:
+        result.includes('Already up to date.') ||
+        result.includes('Already up-to-date.'),
+    };
   }
 
   /**
    * Fetch a specific ref from a remote without updating HEAD.
    * Example: `fetchRef('origin', 'feature/x')`
    */
-  public fetchRef(remote: string, ref: string): Promise<void> {
-    return this.fetch([remote, ref]);
+  public async fetchRef(remote: string, ref: string): Promise<void> {
+    return void (await this.fetch([remote, ref]));
   }
 
-  public pull(options: { force?: boolean } = {}): Promise<void> {
+  public async pull(options: { force?: boolean } = {}): Promise<void> {
     const args = ['pull'];
     if (options.force) {
       args.push('--force');
     }
-    return this.execGit(args, 'pull');
+    return void (await this.execGit(args, 'pull'));
   }
 
   /**
    * Switch to an existing branch (`git switch <branch>`).
    */
-  public switchBranch(branch: string): Promise<void> {
-    return this.execGit(['switch', branch], `switch to branch ${branch}`);
+  public async switchBranch(branch: string): Promise<void> {
+    return void (await this.execGit(
+      ['switch', branch],
+      `switch to branch ${branch}`
+    ));
   }
 
   /**
    * Create and switch to a new branch from the current HEAD (`git switch -c <branch>`).
    */
-  public createBranch(branch: string, startPoint?: string): Promise<void> {
+  public async createBranch(
+    branch: string,
+    startPoint?: string
+  ): Promise<void> {
     const args = ['switch', '-c', branch];
     if (startPoint) {
       args.push(startPoint);
     }
-    return this.execGit(args, `create branch ${branch}`);
+    return void (await this.execGit(args, `create branch ${branch}`));
   }
 
   /**
@@ -115,20 +132,34 @@ export class Git {
     hash: string,
     options: { fetchFirst?: boolean } = {}
   ): Promise<void> {
+    // Spawn argv is not a shell, but reject option-like refs anyway.
+    if (!hash || hash.startsWith('-')) {
+      throw new Error(`Refusing unsafe git ref: ${hash}`);
+    }
     if (options.fetchFirst) {
       await this.fetch();
     }
-    return this.execGit(
-      ['switch', '--detach', hash],
+    return void (await this.execGit(
+      ['switch', '--detach', '--', hash],
       `checkout commit ${hash}`
-    );
+    ));
+  }
+
+  /**
+   * Get the working tree commit hash.
+   */
+  public async getCurrentHash(): Promise<string> {
+    return await this.execGit(['rev-parse', 'HEAD'], 'get commit hash');
   }
 
   /**
    * Move the current branch to `ref` and match index/worktree (`git reset --hard <ref>`).
    * Use for pinning a branch tip to a specific commit after fetch.
    */
-  public resetHard(ref: string): Promise<void> {
-    return this.execGit(['reset', '--hard', ref], `reset --hard ${ref}`);
+  public async resetHard(ref: string): Promise<void> {
+    return void (await this.execGit(
+      ['reset', '--hard', ref],
+      `reset --hard ${ref}`
+    ));
   }
 }

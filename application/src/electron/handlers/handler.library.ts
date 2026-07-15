@@ -2,47 +2,48 @@
  * Library CRUD IPC handlers
  * Updated to support UMU (Unified Launcher for Windows Games on Linux)
  */
-import { ipcMain } from 'electron';
-import { spawn, spawnSync } from 'child_process';
+
 import type { LibraryInfo } from '@ogi-sdk/connect';
-import { isLinux } from '@/electron/handlers/helpers.app/platform.js';
-import {
-  getSteamAppIdWithFallback,
-  getNonSteamGameAppID,
-  getVersionedGameName,
-  addGameToSteam,
-} from '@/electron/handlers/helpers.app/steam.js';
-import { parse as shellQuoteParse } from 'shell-quote';
-import {
-  loadLibraryInfo,
-  saveLibraryInfo,
-  ensureLibraryDir,
-  ensureInternalsDir,
-  getAllLibraryFiles,
-  removeLibraryFile,
-  addToInternalsApps,
-  removeFromInternalsApps,
-} from '@/electron/handlers/helpers.app/library.js';
-import { generateNotificationId } from '@/electron/handlers/helpers.app/notifications.js';
-import { sendNotification } from '@/electron/main.js';
-import {
-  getProtonPrefixPath,
-  getCurrentUsername,
-} from '@/electron/handlers/helpers.app/platform.js';
+import { spawn, spawnSync } from 'child_process';
+import { ipcMain } from 'electron';
 import * as fs from 'fs';
+import { parse as shellQuoteParse } from 'shell-quote';
+import { addUmuGameToSteam } from '@/electron/handlers/handler.steam.js';
 import {
-  launchWithUmu,
-  isUmuInstalled,
-  installUmu,
-  migrateToUmu,
-  getUmuWinePrefix,
   buildDllOverrides,
   getEffectiveDllOverrides,
   getEffectiveLaunchEnv,
+  getUmuWinePrefix,
+  installUmu,
+  isUmuInstalled,
+  launchWithUmu,
+  migrateToUmu,
   parseLaunchArgumentsAfterCommand,
   resolveLaunchCommand,
 } from '@/electron/handlers/handler.umu.js';
-import { addUmuGameToSteam } from '@/electron/handlers/handler.steam.js';
+import {
+  addToInternalsApps,
+  ensureInternalsDir,
+  ensureLibraryDir,
+  getAllLibraryFiles,
+  loadLibraryInfo,
+  removeFromInternalsApps,
+  removeLibraryFile,
+  saveLibraryInfo,
+} from '@/electron/handlers/helpers.app/library.js';
+import { generateNotificationId } from '@/electron/handlers/helpers.app/notifications.js';
+import {
+  getCurrentUsername,
+  getProtonPrefixPath,
+  isLinux,
+} from '@/electron/handlers/helpers.app/platform.js';
+import {
+  addGameToSteam,
+  getNonSteamGameAppID,
+  getSteamAppIdWithFallback,
+  getVersionedGameName,
+} from '@/electron/handlers/helpers.app/steam.js';
+import { sendNotification } from '@/electron/main.js';
 
 /**
  * Determine if a game should use UMU mode

@@ -1,16 +1,16 @@
+import type { ConfigurationFile } from './ConfigurationBuilder';
 import {
-  ConfigurationBuilder,
-  BooleanOption,
-  ConfigurationOption,
-  NumberOption,
-  StringOption,
   ActionOption,
+  BooleanOption,
+  ConfigurationBuilder,
+  ConfigurationOption,
+  isActionOption,
   isBooleanOption,
   isNumberOption,
   isStringOption,
-  isActionOption,
+  NumberOption,
+  StringOption,
 } from './ConfigurationBuilder';
-import type { ConfigurationFile } from './ConfigurationBuilder';
 
 interface DefiniteConfig {
   [key: string]: string | number | boolean;
@@ -129,18 +129,20 @@ export class Configuration {
   }
 }
 
+export type {
+  ConfigurationFile,
+  ConfigurationOptionWire,
+} from '@ogi-sdk/connect';
+export type { DefiniteConfig };
 export {
-  ConfigurationBuilder,
-  BooleanOption,
-  ConfigurationOption,
-  NumberOption,
-  StringOption,
   ActionOption,
+  BooleanOption,
+  ConfigurationBuilder,
+  ConfigurationOption,
+  isActionOption,
   isBooleanOption,
   isNumberOption,
   isStringOption,
-  isActionOption,
+  NumberOption,
+  StringOption,
 };
-
-export type { ConfigurationFile, ConfigurationOptionWire } from '@ogi-sdk/connect';
-export type { DefiniteConfig };

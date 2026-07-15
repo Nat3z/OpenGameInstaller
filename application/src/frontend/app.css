@@ -1,4 +1,4 @@
-@import 'tailwindcss';
+@import "tailwindcss";
 
 /* Theme variables: set per data-theme; Tailwind @theme references these via var() */
 /* Status colors (shared across themes; never overridden per-theme) */
@@ -15,7 +15,7 @@
 }
 
 :root,
-[data-theme='light'] {
+[data-theme="light"] {
   --theme-accent: #428a91;
   --theme-accent-dark: #2d626a;
   --theme-accent-light: #b0dfd5;
@@ -46,7 +46,7 @@
   --theme-disabled: #9b8fa8;
 }
 
-[data-theme='dark'] {
+[data-theme="dark"] {
   --theme-accent: #5ee7e0;
   --theme-accent-dark: #4fd2bc;
   --theme-accent-light: #0d9488;
@@ -77,7 +77,7 @@
   --theme-disabled: #3c6050;
 }
 
-[data-theme='synthwave'] {
+[data-theme="synthwave"] {
   --theme-accent: #ff7edb;
   --theme-accent-dark: #c026d3;
   --theme-accent-light: #f0abfc;
@@ -142,8 +142,8 @@
   --color-disabled: var(--theme-disabled);
 
   /* Font families */
-  --font-archivo: 'Archivo', sans-serif;
-  --font-open-sans: 'Open Sans', sans-serif;
+  --font-archivo: "Archivo", sans-serif;
+  --font-open-sans: "Open Sans", sans-serif;
 
   /* Custom animations */
   --animate-fade-in: fadeIn 0.5s ease-in-out;
@@ -274,21 +274,21 @@
 
 /* Font faces */
 @font-face {
-  font-family: 'Archivo';
-  src: url('/Archivo-VariableFont_wdth,wght.ttf');
+  font-family: "Archivo";
+  src: url("/Archivo-VariableFont_wdth,wght.ttf");
 }
 
 @font-face {
-  font-family: 'Open Sans';
-  src: url('/OpenSans-VariableFont_wdth,wght.ttf');
+  font-family: "Open Sans";
+  src: url("/OpenSans-VariableFont_wdth,wght.ttf");
 }
 
 /* Restore cursor-pointer on interactive elements (removed in Tailwind v4) */
 button,
-[role='button'],
-input[type='button'],
-input[type='submit'],
-input[type='reset'],
+[role="button"],
+input[type="button"],
+input[type="submit"],
+input[type="reset"],
 summary,
 select {
   cursor: pointer;
@@ -316,7 +316,7 @@ a {
 
 button.gamepad-focus,
 a.gamepad-focus,
-[role='button'].gamepad-focus {
+[role="button"].gamepad-focus {
   filter: brightness(1.06);
 }
 

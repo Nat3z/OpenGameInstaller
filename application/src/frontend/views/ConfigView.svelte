@@ -1,115 +1,164 @@
 <script lang="ts">
-  import { onDestroy, onMount } from 'svelte';
-  import { fly } from 'svelte/transition';
-  import { quintOut } from 'svelte/easing';
-  import { queryConnectedAddons, reconnectClientSdk } from '@/frontend/utils';
-  import type { ConfigurationFile, OGIAddonConfiguration } from '@ogi-sdk/connect';
-  import { addonUpdates, createNotification } from '@/frontend/store';
-  import CommunityAddonsList from '@/frontend/views/CommunityAddonsList.svelte';
-  import AddonPicture from '@/frontend/components/AddonPicture.svelte';
-  import FocusedAddonView from '@/frontend/views/FocusedAddonView.svelte';
-  import { writable } from 'svelte/store';
-  import Modal from '@/frontend/components/modal/Modal.svelte';
-  import TextModal from '@/frontend/components/modal/TextModal.svelte';
-  import TitleModal from '@/frontend/components/modal/TitleModal.svelte';
-  import CloseModal from '@/frontend/components/modal/CloseModal.svelte';
-  import ButtonModal from '@/frontend/components/modal/ButtonModal.svelte';
-  import HeaderModal from '@/frontend/components/modal/HeaderModal.svelte';
-  import SectionModal from '@/frontend/components/modal/SectionModal.svelte';
-  import InputModal from '@/frontend/components/modal/InputModal.svelte';
+import type {
+  ConfigurationFile,
+  OGIAddonConfiguration,
+} from '@ogi-sdk/connect';
+import { onDestroy, onMount } from 'svelte';
+import { quintOut } from 'svelte/easing';
+import { writable } from 'svelte/store';
+import { fly } from 'svelte/transition';
+import AddonPicture from '@/frontend/components/AddonPicture.svelte';
+import ButtonModal from '@/frontend/components/modal/ButtonModal.svelte';
+import CloseModal from '@/frontend/components/modal/CloseModal.svelte';
+import HeaderModal from '@/frontend/components/modal/HeaderModal.svelte';
+import InputModal from '@/frontend/components/modal/InputModal.svelte';
+import Modal from '@/frontend/components/modal/Modal.svelte';
+import SectionModal from '@/frontend/components/modal/SectionModal.svelte';
+import TextModal from '@/frontend/components/modal/TextModal.svelte';
+import TitleModal from '@/frontend/components/modal/TitleModal.svelte';
+import {
+  addonUpdates,
+  createNotification,
+  DEFAULT_MARKETPLACE_SOURCES,
+  fetchCommunityAddons,
+  loadMarketplaceSources,
+  marketplaceSources,
+  saveMarketplaceSources,
+} from '@/frontend/store.svelte';
+import { queryConnectedAddons, reconnectClientSdk } from '@/frontend/utils';
+import CommunityAddonsList from '@/frontend/views/CommunityAddonsList.svelte';
+import FocusedAddonView from '@/frontend/views/FocusedAddonView.svelte';
 
-  let addons: ConfigTemplateAndInfo[] = $state([]);
-  let communityAddonsInfo: boolean = $state(false);
-  let showAddonAddModal: boolean = $state(false);
-  let addonUrl: string = $state('');
-  let pollingInterval: any = null;
-  let view = writable<'my-addons' | 'community-addons'>('my-addons');
+let addons: ConfigTemplateAndInfo[] = $state([]);
+let communityAddonsInfo: boolean = $state(false);
+let showAddonAddModal: boolean = $state(false);
+let showMarketplaceSourceModal: boolean = $state(false);
+let addonUrl: string = $state('');
+let marketplaceSourceUrl: string = $state('');
+let pollingInterval: ReturnType<typeof setInterval> | null = null;
+let view = writable<'my-addons' | 'community-addons'>('my-addons');
 
-  onMount(() => {
-    // Initial fetch
+onMount(() => {
+  // Initial fetch
+  queryConnectedAddons<ConfigTemplateAndInfo>()
+    .then((data) => {
+      addons = data;
+    })
+    .catch((error) =>
+      console.error('Failed to query connected addons:', error)
+    );
+  // Start polling every 3 seconds
+  pollingInterval = setInterval(() => {
     queryConnectedAddons<ConfigTemplateAndInfo>()
       .then((data) => {
         addons = data;
       })
-      .catch((error) => console.error('Failed to query connected addons:', error));
-    // Start polling every 3 seconds
-    pollingInterval = setInterval(() => {
-      queryConnectedAddons<ConfigTemplateAndInfo>()
-        .then((data) => {
-          addons = data;
-        })
-        .catch((error) => console.error('Failed to query connected addons:', error));
-    }, 3000);
+      .catch((error) =>
+        console.error('Failed to query connected addons:', error)
+      );
+  }, 3000);
+});
+interface ConfigTemplateAndInfo extends OGIAddonConfiguration {
+  configTemplate: ConfigurationFile;
+}
+
+onDestroy(() => {
+  if (pollingInterval) clearInterval(pollingInterval);
+});
+
+let focusedAddonId: string | null = $state(null);
+
+function openAddonSettings(addonId: string) {
+  focusedAddonId = addonId;
+}
+
+function goBackToList() {
+  focusedAddonId = null;
+}
+
+async function updateAddons() {
+  const buttonsToDisable = document.querySelectorAll('[data-disable]');
+  buttonsToDisable.forEach((button) => {
+    button.setAttribute('disabled', 'true');
   });
-  interface ConfigTemplateAndInfo extends OGIAddonConfiguration {
-    configTemplate: ConfigurationFile;
-  }
 
-  onDestroy(() => {
-    if (pollingInterval) clearInterval(pollingInterval);
-  });
-
-  let focusedAddonId: string | null = $state(null);
-
-  function openAddonSettings(addonId: string) {
-    focusedAddonId = addonId;
-  }
-
-  function goBackToList() {
-    focusedAddonId = null;
-  }
-
-  async function updateAddons() {
-    const buttonsToDisable = document.querySelectorAll('[data-disable]');
-    buttonsToDisable.forEach((button) => {
-      button.setAttribute('disabled', 'true');
-    });
-
-    try {
-      await window.electronAPI.updateAddons();
-      addonUpdates.set([]);
-      await window.electronAPI.restartAddonServer();
-      await reconnectClientSdk();
-      createNotification({
-        id: Math.random().toString(36).substring(7),
-        message: 'Addons updated successfully',
-        type: 'success',
-      });
-    } catch (error) {
-      createNotification({
-        id: Math.random().toString(36).substring(7),
-        message: 'Failed to update addons',
-        type: 'error',
-      });
-    } finally {
-      buttonsToDisable.forEach((button) => {
-        button.removeAttribute('disabled');
-      });
-    }
-  }
-
-  async function addAddon() {
-    console.log('Adding addon', addonUrl);
-    const generalConfig = window.electronAPI.fs.read(
-      './config/option/general.json'
-    );
-    const generalConfigJson = JSON.parse(generalConfig);
-    generalConfigJson.addons.push(addonUrl);
-    window.electronAPI.fs.write(
-      './config/option/general.json',
-      JSON.stringify(generalConfigJson)
-    );
-    showAddonAddModal = false;
-
+  try {
+    await window.electronAPI.updateAddons();
+    addonUpdates.set([]);
+    await window.electronAPI.restartAddonServer();
+    await reconnectClientSdk();
     createNotification({
       id: Math.random().toString(36).substring(7),
-      message: 'Installing addon...',
-      type: 'info',
+      message: 'Addons updated successfully',
+      type: 'success',
     });
-    await window.electronAPI.installAddons([addonUrl]);
-    addonUrl = '';
-    await window.electronAPI.restartAddonServer();
+  } catch (error) {
+    createNotification({
+      id: Math.random().toString(36).substring(7),
+      message: 'Failed to update addons',
+      type: 'error',
+    });
+  } finally {
+    buttonsToDisable.forEach((button) => {
+      button.removeAttribute('disabled');
+    });
   }
+}
+
+async function addAddon() {
+  showAddonAddModal = false;
+
+  createNotification({
+    id: Math.random().toString(36).substring(7),
+    message: 'Installing addon...',
+    type: 'info',
+  });
+  await window.electronAPI.installAddons([addonUrl]);
+  addonUrl = '';
+  await reconnectClientSdk();
+}
+
+function openMarketplaceSourceManager() {
+  loadMarketplaceSources();
+  marketplaceSourceUrl = '';
+  showMarketplaceSourceModal = true;
+}
+
+async function refreshMarketplaceSources(sources: string[]) {
+  saveMarketplaceSources(sources);
+  await fetchCommunityAddons();
+}
+
+async function addMarketplaceSource() {
+  const source = marketplaceSourceUrl.trim();
+  if (!source) return;
+
+  try {
+    new URL(source);
+  } catch {
+    createNotification({
+      id: Math.random().toString(36).substring(7),
+      message: 'Please enter a valid marketplace URL',
+      type: 'error',
+    });
+    return;
+  }
+
+  await refreshMarketplaceSources([...marketplaceSources, source]);
+  marketplaceSourceUrl = '';
+}
+
+async function removeMarketplaceSource(source: string) {
+  await refreshMarketplaceSources(
+    marketplaceSources.filter(
+      (marketplaceSource) => marketplaceSource !== source
+    )
+  );
+}
+
+async function resetMarketplaceSources() {
+  await refreshMarketplaceSources([...DEFAULT_MARKETPLACE_SOURCES]);
+}
 </script>
 
 <div
@@ -138,7 +187,58 @@
       in:fly={{ y: -100, duration: 400, easing: quintOut }}
     >
       <div class="absolute inset-0 flex flex-row gap-4 h-12 z-10">
-        {#if $view === 'my-addons'}
+        <button
+          onclick={() => view.set('my-addons')}
+          class="h-full flex-1 border-none text-accent-dark font-archivo rounded-lg bg-accent-lighter data-[selected=true]:bg-accent-light shadow-md text-lg hover:bg-accent-light transition-colors"
+          >My Addons</button
+        >
+        <button
+          data-selected={$view === 'community-addons'}
+          onclick={() => view.set('community-addons')}
+          class="h-full flex-1 border-none text-accent-dark rounded-lg bg-accent-lighter shadow-md data-[selected=true]:bg-accent-light font-archivo text-lg hover:bg-accent-light transition-colors"
+          >Community Addons</button
+        >
+        {#if $view === 'community-addons'}
+          <div class="flex justify-center items-center gap-2 shrink-0">
+            <button
+              class="bg-accent-lighter h-full text-accent-dark px-4 py-3 rounded-lg font-archivo font-semibold hover:bg-accent-light transition-colors border-none shadow-md flex items-center gap-2"
+              onclick={openMarketplaceSourceManager}
+              data-disable
+              aria-label="Manage Marketplace Sources"
+              title="Manage Marketplace Sources"
+              in:fly={{ y: -100, duration: 400, easing: quintOut }}
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                fill="currentColor"
+                height="24"
+                viewBox="0 0 24 24"
+                width="24"
+                ><path d="M0 0h24v24H0z" fill="none" /><path
+                  d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"
+                /></svg
+              >
+            </button>
+            <button
+              class="bg-accent-lighter h-full text-accent-dark px-4 py-3 rounded-lg font-archivo font-semibold hover:bg-accent-light transition-colors border-none shadow-md flex items-center gap-2"
+              onclick={() => (communityAddonsInfo = true)}
+              data-disable
+              aria-label="Info About Community Addons"
+              in:fly={{ y: -100, duration: 400, easing: quintOut }}
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                fill="currentColor"
+                height="24"
+                viewBox="0 0 24 24"
+                width="24"
+                ><path d="M0 0h24v24H0V0z" fill="none" /><path
+                  d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 15c-.55 0-1-.45-1-1v-4c0-.55.45-1 1-1s1 .45 1 1v4c0 .55-.45 1-1 1zm1-8h-2V7h2v2z"
+                /></svg
+              >
+            </button>
+          </div>
+        {:else if $view === 'my-addons'}
           <button
             class="bg-accent-lighter z-10 text-accent-dark h-full px-6 relative py-3 rounded-lg font-archivo font-semibold hover:bg-accent-light transition-colors border-none shadow-md flex items-center gap-2"
             onclick={() => updateAddons()}
@@ -186,40 +286,6 @@
               /></svg
             >
           </button>
-        {/if}
-        <button
-          data-selected={$view === 'my-addons'}
-          onclick={() => view.set('my-addons')}
-          class="h-full flex-1 border-none text-accent-dark font-archivo rounded-lg bg-accent-lighter data-[selected=true]:bg-accent-light shadow-md text-lg hover:bg-accent-light transition-colors"
-          >My Addons</button
-        >
-        <button
-          data-selected={$view === 'community-addons'}
-          onclick={() => view.set('community-addons')}
-          class="h-full flex-1 border-none text-accent-dark rounded-lg bg-accent-lighter shadow-md data-[selected=true]:bg-accent-light font-archivo text-lg hover:bg-accent-light transition-colors"
-          >Community Addons</button
-        >
-        {#if $view === 'community-addons'}
-          <div class="flex justify-center items-center">
-            <button
-              class="bg-accent-lighter h-full text-accent-dark px-6 py-3 rounded-lg font-archivo font-semibold hover:bg-accent-light transition-colors border-none shadow-md flex items-center gap-2"
-              onclick={() => (communityAddonsInfo = true)}
-              data-disable
-              aria-label="Info About Community Addons"
-              in:fly={{ y: -100, duration: 400, easing: quintOut }}
-            >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                fill="currentColor"
-                height="24"
-                viewBox="0 0 24 24"
-                width="24"
-                ><path d="M0 0h24v24H0V0z" fill="none" /><path
-                  d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 15c-.55 0-1-.45-1-1v-4c0-.55.45-1 1-1s1 .45 1 1v4c0 .55-.45 1-1 1zm1-8h-2V7h2v2z"
-                /></svg
-              >
-            </button>
-          </div>
         {/if}
       </div>
     </div>
@@ -336,6 +402,105 @@
   </Modal>
 {/if}
 
+{#if showMarketplaceSourceModal}
+  <Modal
+    size="large"
+    class="marketplace-source-modal"
+    open={showMarketplaceSourceModal}
+    onClose={() => (showMarketplaceSourceModal = false)}
+  >
+    <CloseModal />
+    <div class="marketplace-modal-shell">
+      <div class="marketplace-modal-header">
+        <div>
+          <h2 class="marketplace-modal-title">Marketplace Sources</h2>
+          <p class="marketplace-modal-description">
+            Choose which marketplace URLs are used to populate the Community
+            Addons list.
+          </p>
+        </div>
+      </div>
+
+      <div class="marketplace-add-row">
+        <label class="marketplace-input-label" for="marketplace-source-url">
+          Add source URL
+        </label>
+        <div class="marketplace-input-row">
+          <input
+            id="marketplace-source-url"
+            class="marketplace-input"
+            type="url"
+            bind:value={marketplaceSourceUrl}
+            placeholder="https://ogi-marketplace.nat3z.com"
+            onkeydown={(event) => {
+              if (event.key === 'Enter') addMarketplaceSource();
+            }}
+          />
+          <button class="marketplace-add-button" onclick={addMarketplaceSource}>
+            Add
+          </button>
+        </div>
+        <p class="marketplace-input-help">
+          Base URLs and direct <code>/api/marketplace.json</code> links are both supported.
+        </p>
+      </div>
+
+      <div class="marketplace-source-section">
+        <div class="marketplace-source-heading">
+          <span>Active sources</span>
+          <span class="marketplace-source-count"
+            >{marketplaceSources.length}</span
+          >
+        </div>
+
+        <div class="marketplace-source-list">
+          {#each marketplaceSources as source}
+            <div class="marketplace-source-item">
+              <div class="marketplace-source-icon" aria-hidden="true">
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 24 24"
+                  fill="currentColor"
+                >
+                  <path d="M0 0h24v24H0z" fill="none" />
+                  <path
+                    d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"
+                  />
+                </svg>
+              </div>
+              <div class="marketplace-source-copy">
+                <span class="marketplace-source-url">{source}</span>
+              </div>
+              <button
+                class="marketplace-remove-button"
+                aria-label={`Remove marketplace source ${source}`}
+                onclick={() => removeMarketplaceSource(source)}
+              >
+                Remove
+              </button>
+            </div>
+          {/each}
+        </div>
+      </div>
+
+      <div class="marketplace-modal-actions">
+        <button
+          class="marketplace-secondary-button"
+          onclick={resetMarketplaceSources}
+        >
+          Reset default
+        </button>
+        <button
+          class="marketplace-primary-button"
+          onclick={() => (showMarketplaceSourceModal = false)}
+        >
+          Done
+        </button>
+      </div>
+    </div>
+  </Modal>
+{/if}
+
 {#if showAddonAddModal}
   <Modal
     size="medium"
@@ -426,5 +591,141 @@
 
   .settings-button {
     @apply w-full h-full flex items-center justify-center bg-transparent hover:bg-bg-secondary rounded-2xl transition-colors duration-200;
+  }
+
+  :global(.marketplace-source-modal) {
+    width: min(42rem, calc(100vw - 2rem));
+    max-height: min(42rem, calc(100vh - 2rem));
+    overflow: hidden !important;
+    padding: 0 !important;
+  }
+
+  .marketplace-modal-shell {
+    @apply flex flex-col gap-5 w-full h-full p-6;
+    max-height: min(42rem, calc(100vh - 2rem));
+  }
+
+  .marketplace-modal-header {
+    @apply pr-8 pb-4 border-b border-accent-light;
+  }
+
+  .marketplace-modal-eyebrow {
+    @apply text-xs uppercase tracking-widest font-archivo font-bold text-accent-dark mb-1;
+  }
+
+  .marketplace-modal-title {
+    @apply text-3xl font-archivo font-bold text-text-primary m-0;
+  }
+
+  .marketplace-modal-description {
+    @apply text-sm text-text-secondary mt-2 leading-relaxed max-w-xl;
+  }
+
+  .marketplace-add-row {
+    @apply rounded-xl border border-accent-light bg-surface p-4;
+  }
+
+  .marketplace-input-label {
+    @apply block text-sm font-archivo font-bold text-text-primary mb-2;
+  }
+
+  .marketplace-input-row {
+    @apply flex gap-2;
+  }
+
+  .marketplace-input {
+    @apply min-w-0 flex-1 rounded-lg border border-border bg-input-bg px-3 py-2 text-text-primary outline-none transition-colors;
+  }
+
+  .marketplace-input:focus {
+    @apply border-accent ring-2 ring-focus-ring;
+  }
+
+  .marketplace-input-help {
+    @apply text-xs text-text-muted mt-2;
+  }
+
+  .marketplace-input-help code {
+    @apply rounded bg-accent-lighter px-1 py-0.5 text-accent-dark;
+  }
+
+  .marketplace-add-button,
+  .marketplace-primary-button,
+  .marketplace-secondary-button,
+  .marketplace-remove-button {
+    @apply rounded-lg border-none font-archivo font-semibold transition-colors cursor-pointer;
+  }
+
+  .marketplace-add-button {
+    @apply bg-accent text-overlay-text px-4 py-2 hover:bg-accent-dark;
+  }
+
+  .marketplace-source-section {
+    @apply flex min-h-0 flex-1 flex-col gap-3;
+  }
+
+  .marketplace-source-heading {
+    @apply flex items-center justify-between text-sm font-archivo font-bold text-text-primary;
+  }
+
+  .marketplace-source-count {
+    @apply rounded-full bg-accent-lighter px-2 py-0.5 text-xs text-accent-dark;
+  }
+
+  .marketplace-source-list {
+    @apply flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto pr-1;
+  }
+
+  .marketplace-source-item {
+    @apply flex items-center gap-3 rounded-xl border border-border bg-bg-secondary p-3;
+  }
+
+  .marketplace-source-icon {
+    @apply flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-accent-lighter text-accent-dark;
+  }
+
+  .marketplace-source-icon svg {
+    @apply h-5 w-5;
+  }
+
+  .marketplace-source-copy {
+    @apply min-w-0 flex-1;
+  }
+
+  .marketplace-source-url {
+    @apply block truncate text-sm font-medium text-text-primary;
+  }
+
+  .marketplace-remove-button {
+    @apply shrink-0 bg-transparent px-3 py-1.5 text-sm text-error hover:bg-error/10;
+  }
+
+  .marketplace-modal-actions {
+    @apply flex shrink-0 justify-end gap-3 border-t border-accent-light pt-4;
+  }
+
+  .marketplace-secondary-button {
+    @apply bg-accent-lighter px-4 py-2 text-accent-dark hover:bg-accent-light;
+  }
+
+  .marketplace-primary-button {
+    @apply bg-accent px-5 py-2 text-overlay-text hover:bg-accent-dark;
+  }
+
+  @media (max-width: 640px) {
+    .marketplace-input-row,
+    .marketplace-modal-actions {
+      @apply flex-col;
+    }
+
+    .marketplace-add-button,
+    .marketplace-primary-button,
+    .marketplace-secondary-button {
+      @apply w-full;
+    }
+
+    .marketplace-source-item {
+      @apply items-start;
+    }
   }
 </style>

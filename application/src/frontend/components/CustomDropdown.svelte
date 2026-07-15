@@ -1,110 +1,109 @@
 <script lang="ts">
-  import { fly } from 'svelte/transition';
+import { fly } from 'svelte/transition';
 
-  const MENU_MAX_HEIGHT_PX = 320;
+const MENU_MAX_HEIGHT_PX = 320;
 
-  /** Move element to document.body so fixed menus escape overflow containers. */
-  function portal(node: HTMLElement) {
-    document.body.appendChild(node);
-    return {
-      destroy() {
-        node.remove();
-      },
-    };
-  }
+/** Move element to document.body so fixed menus escape overflow containers. */
+function portal(node: HTMLElement) {
+  document.body.appendChild(node);
+  return {
+    destroy() {
+      node.remove();
+    },
+  };
+}
 
-  let {
-    options,
-    selectedId,
-    id,
-    onchange,
-  }: {
-    options: {
-      id: string;
-      name: string;
-      description?: string;
-      icon?: string;
-      iconWidth?: number;
-      iconHeight?: number;
-    }[];
-    selectedId: string;
+let {
+  options,
+  selectedId,
+  id,
+  onchange,
+}: {
+  options: {
     id: string;
-    onchange: (detail: { selectedId: string }) => void;
-  } = $props();
+    name: string;
+    description?: string;
+    icon?: string;
+    iconWidth?: number;
+    iconHeight?: number;
+  }[];
+  selectedId: string;
+  id: string;
+  onchange: (detail: { selectedId: string }) => void;
+} = $props();
 
-  let showDropdown = $state(false);
-  let buttonEl: HTMLButtonElement | undefined = $state();
-  let menuStyle = $state('');
+let showDropdown = $state(false);
+let buttonEl: HTMLButtonElement | undefined = $state();
+let menuStyle = $state('');
 
-  let selectedOption = $derived(
-    options.find((opt) => opt.id === selectedId) || options[0]
+let selectedOption = $derived(
+  options.find((opt) => opt.id === selectedId) || options[0]
+);
+
+function selectOption(optionId: string) {
+  selectedId = optionId;
+  showDropdown = false;
+  onchange({ selectedId: optionId });
+}
+
+function updateMenuPosition() {
+  if (!buttonEl) return;
+  const rect = buttonEl.getBoundingClientRect();
+  const gap = 4;
+  const spaceBelow = window.innerHeight - rect.bottom - gap;
+  const spaceAbove = rect.top - gap;
+  const openUpward = spaceBelow < MENU_MAX_HEIGHT_PX && spaceAbove > spaceBelow;
+  const maxHeight = Math.min(
+    MENU_MAX_HEIGHT_PX,
+    Math.max(0, openUpward ? spaceAbove : spaceBelow)
   );
 
-  function selectOption(optionId: string) {
-    selectedId = optionId;
-    showDropdown = false;
-    onchange({ selectedId: optionId });
+  if (openUpward) {
+    menuStyle = `left:${rect.left}px;width:${rect.width}px;bottom:${window.innerHeight - rect.top + gap}px;max-height:${maxHeight}px;`;
+  } else {
+    menuStyle = `left:${rect.left}px;width:${rect.width}px;top:${rect.bottom + gap}px;max-height:${maxHeight}px;`;
   }
+}
 
-  function updateMenuPosition() {
-    if (!buttonEl) return;
-    const rect = buttonEl.getBoundingClientRect();
-    const gap = 4;
-    const spaceBelow = window.innerHeight - rect.bottom - gap;
-    const spaceAbove = rect.top - gap;
-    const openUpward =
-      spaceBelow < MENU_MAX_HEIGHT_PX && spaceAbove > spaceBelow;
-    const maxHeight = Math.min(
-      MENU_MAX_HEIGHT_PX,
-      Math.max(0, openUpward ? spaceAbove : spaceBelow)
-    );
-
-    if (openUpward) {
-      menuStyle = `left:${rect.left}px;width:${rect.width}px;bottom:${window.innerHeight - rect.top + gap}px;max-height:${maxHeight}px;`;
-    } else {
-      menuStyle = `left:${rect.left}px;width:${rect.width}px;top:${rect.bottom + gap}px;max-height:${maxHeight}px;`;
-    }
-  }
-
-  function toggleDropdown() {
-    showDropdown = !showDropdown;
-    if (showDropdown) {
-      updateMenuPosition();
-    }
-  }
-
-  $effect(() => {
-    if (!showDropdown) return;
-
+function toggleDropdown() {
+  showDropdown = !showDropdown;
+  if (showDropdown) {
     updateMenuPosition();
-    const onScrollOrResize = () => updateMenuPosition();
-    window.addEventListener('scroll', onScrollOrResize, true);
-    window.addEventListener('resize', onScrollOrResize);
+  }
+}
 
-    return () => {
-      window.removeEventListener('scroll', onScrollOrResize, true);
-      window.removeEventListener('resize', onScrollOrResize);
-    };
-  });
+$effect(() => {
+  if (!showDropdown) return;
 
-  $effect(() => {
-    if (!showDropdown) return;
+  updateMenuPosition();
+  const onScrollOrResize = () => updateMenuPosition();
+  window.addEventListener('scroll', onScrollOrResize, true);
+  window.addEventListener('resize', onScrollOrResize);
 
-    function handleClickOutside(event: MouseEvent) {
-      const target = event.target as HTMLElement;
-      if (
-        !target.closest(`.custom-dropdown-button-${id}`) &&
-        !target.closest(`.custom-dropdown-menu-${id}`)
-      ) {
-        showDropdown = false;
-      }
+  return () => {
+    window.removeEventListener('scroll', onScrollOrResize, true);
+    window.removeEventListener('resize', onScrollOrResize);
+  };
+});
+
+$effect(() => {
+  if (!showDropdown) return;
+
+  function handleClickOutside(event: MouseEvent) {
+    const target = event.target as HTMLElement;
+    if (
+      !target.closest(`.custom-dropdown-button-${id}`) &&
+      !target.closest(`.custom-dropdown-menu-${id}`)
+    ) {
+      showDropdown = false;
     }
-    document.addEventListener('click', handleClickOutside);
+  }
+  document.addEventListener('click', handleClickOutside);
 
-    return () => {
-      document.removeEventListener('click', handleClickOutside);
-    };
-  });
+  return () => {
+    document.removeEventListener('click', handleClickOutside);
+  };
+});
 </script>
 
 <div class="relative">

@@ -1,0 +1,120 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.4.16/schema.json",
+  "vcs": {
+    "enabled": true,
+    "clientKind": "git",
+    "useIgnoreFile": true
+  },
+  "files": {
+    "ignoreUnknown": true,
+    "includes": [
+      "**/*",
+      "!**/node_modules",
+      "!**/build",
+      "!**/dist",
+      "!**/.git",
+      "!**/.vscode",
+      "!**/.devenv",
+      "!application/out",
+      "!application/development",
+      "!web/dist"
+    ]
+  },
+  "formatter": {
+    "enabled": true,
+    "formatWithErrors": false,
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineWidth": 80
+  },
+  "javascript": {
+    "formatter": {
+      "quoteStyle": "single",
+      "semicolons": "always",
+      "trailingCommas": "es5"
+    }
+  },
+  "json": {
+    "formatter": {
+      "trailingCommas": "none"
+    }
+  },
+  "css": {
+    "parser": {
+      "tailwindDirectives": true
+    }
+  },
+  "linter": {
+    "rules": {
+      "complexity": {
+        "noBannedTypes": "off",
+        "noThisInStatic": "off",
+        "noUselessConstructor": "off",
+        "noUselessEscapeInRegex": "off",
+        "noUselessSwitchCase": "off",
+        "noUselessUndefinedInitialization": "off",
+        "useArrowFunction": "off",
+        "useIndexOf": "off",
+        "useOptionalChain": "off",
+        "useRegexLiterals": "off"
+      },
+      "correctness": {
+        "noSwitchDeclarations": "off",
+        "noUnusedImports": "off",
+        "noUnusedVariables": "off",
+        "useParseIntRadix": "off"
+      },
+      "style": {
+        "noNonNullAssertion": "off",
+        "useConst": "off",
+        "useImportType": "off",
+        "useNodejsImportProtocol": "off",
+        "useTemplate": "off"
+      },
+      "suspicious": {
+        "noAsyncPromiseExecutor": "off",
+        "noExplicitAny": "off",
+        "noExtraNonNullAssertion": "off",
+        "noGlobalIsFinite": "off",
+        "noGlobalIsNan": "off",
+        "noNonNullAssertedOptionalChain": "off",
+        "noPrototypeBuiltins": "off",
+        "noTsIgnore": "off",
+        "useIterableCallbackReturn": "off"
+      }
+    }
+  },
+  "overrides": [
+    {
+      "includes": ["**/*.{svelte,astro}"],
+      "linter": {
+        "rules": {
+          "correctness": {
+            "noUnusedImports": "off",
+            "noUnusedVariables": "off"
+          },
+          "suspicious": {
+            "noExplicitAny": "off"
+          }
+        }
+      }
+    },
+    {
+      "includes": ["test-addon/**"],
+      "linter": {
+        "rules": {
+          "correctness": {
+            "noUnusedFunctionParameters": "off",
+            "noUnusedVariables": "off"
+          },
+          "suspicious": {
+            "noAsyncPromiseExecutor": "off"
+          },
+          "style": {
+            "noNonNullAssertion": "off"
+          }
+        }
+      }
+    }
+  ]
+}

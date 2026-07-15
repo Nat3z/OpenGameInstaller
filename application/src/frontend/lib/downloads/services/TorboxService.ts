@@ -1,9 +1,9 @@
-import { currentDownloads } from '@/frontend/store';
-import { getDownloadPath, listenUntilDownloadReady } from '@/frontend/utils';
 import { getConfigClientOption } from '@/frontend/lib/config/client';
-import type { SearchResultWithAddon } from '@/frontend/lib/tasks/runner';
-import { BaseService } from '@/frontend/lib/downloads/services/BaseService';
 import { safeDownloadPath } from '@/frontend/lib/downloads/paths';
+import { BaseService } from '@/frontend/lib/downloads/services/BaseService';
+import type { SearchResultWithAddon } from '@/frontend/lib/tasks/runner';
+import { currentDownloads } from '@/frontend/store.svelte';
+import { getDownloadPath, listenUntilDownloadReady } from '@/frontend/utils';
 
 const BASE_URL = 'https://api.torbox.app/v1';
 

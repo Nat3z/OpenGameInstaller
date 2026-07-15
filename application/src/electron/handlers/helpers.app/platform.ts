@@ -2,7 +2,7 @@
  * Platform-related utility functions
  */
 import * as fs from 'fs';
-import { join, basename } from 'path';
+import { basename, join } from 'path';
 import { __dirname } from '@/electron/manager/manager.paths.js';
 
 export function isLinux(): boolean {

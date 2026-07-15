@@ -1,31 +1,31 @@
 <script lang="ts">
-  let {
-    text,
-    variant = 'primary',
-    disabled = false,
-    class: className = '',
-    onclick,
-  }: {
-    text: string;
-    variant?: 'primary' | 'secondary' | 'danger' | 'success';
-    disabled?: boolean;
-    class?: string;
-    onclick?: (event: MouseEvent) => void;
-  } = $props();
+let {
+  text,
+  variant = 'primary',
+  disabled = false,
+  class: className = '',
+  onclick,
+}: {
+  text: string;
+  variant?: 'primary' | 'secondary' | 'danger' | 'success';
+  disabled?: boolean;
+  class?: string;
+  onclick?: (event: MouseEvent) => void;
+} = $props();
 
-  const variantClasses = {
-    primary: 'btn btn-primary bg-accent focus:ring-accent border-none',
-    secondary:
-      'btn btn-secondary bg-accent-lighter text-accent-dark hover:bg-accent-light focus:ring-accent border border-accent-light',
-    danger: 'btn btn-danger border-none',
-    success: 'btn btn-success border-none',
-  };
+const variantClasses = {
+  primary: 'btn btn-primary bg-accent focus:ring-accent border-none',
+  secondary:
+    'btn btn-secondary bg-accent-lighter text-accent-dark hover:bg-accent-light focus:ring-accent border border-accent-light',
+  danger: 'btn btn-danger border-none',
+  success: 'btn btn-success border-none',
+};
 
-  function handleClick(event: MouseEvent) {
-    if (!disabled) {
-      onclick?.(event);
-    }
+function handleClick(event: MouseEvent) {
+  if (!disabled) {
+    onclick?.(event);
   }
+}
 </script>
 
 <button

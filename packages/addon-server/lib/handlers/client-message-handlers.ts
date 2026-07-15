@@ -1,9 +1,10 @@
 import type {
   AddonClientToServerEventArgs,
   AddonNotificationMessage,
+  ConfigurationFile,
   OGIAddonSDKEventListener,
+  StoreData,
 } from '@ogi-sdk/connect';
-import type { ConfigurationFile, StoreData } from '@ogi-sdk/connect';
 import { DeferrableTask } from '../deffered';
 import {
   closeProtocolError,
@@ -172,7 +173,6 @@ const handleTaskUpdate: ClientMessageHandler = (context, message) => {
     task.finished = true;
     return;
   }
-
 };
 
 const handleGetAppDetails: ClientMessageHandler = async (context, message) => {

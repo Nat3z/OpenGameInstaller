@@ -1,6 +1,6 @@
-import z from 'zod';
 import axios from 'axios';
 import { ReadStream } from 'fs';
+import z from 'zod';
 
 export interface RealDebridConfiguration {
   apiKey: string;

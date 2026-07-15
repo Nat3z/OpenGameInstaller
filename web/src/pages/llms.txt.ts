@@ -1,5 +1,5 @@
-import type { APIRoute } from 'astro';
 import { readFile } from 'node:fs/promises';
+import type { APIRoute } from 'astro';
 
 const llmsFileUrl = new URL('../../llms.txt', import.meta.url);
 

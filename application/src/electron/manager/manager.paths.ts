@@ -1,7 +1,7 @@
 import { app } from 'electron';
-import path, { join } from 'path';
-import os from 'os';
 import fs from 'fs';
+import os from 'os';
+import path, { join } from 'path';
 
 export function isDev() {
   return !app.isPackaged;

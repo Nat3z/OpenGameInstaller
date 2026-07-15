@@ -1,6 +1,3 @@
-import { BaseService } from '@/frontend/lib/downloads/services/BaseService';
-import type { SearchResultWithAddon } from '@/frontend/lib/tasks/runner';
-import { currentDownloads, createNotification } from '@/frontend/store';
 import { getDownloadPath } from '@/frontend/lib/core/fs';
 import { listenUntilDownloadReady } from '@/frontend/lib/downloads/events';
 import { updateDownloadStatus } from '@/frontend/lib/downloads/lifecycle';
@@ -10,6 +7,9 @@ import {
   sanitizePathSegment,
   urlBasename,
 } from '@/frontend/lib/downloads/paths';
+import { BaseService } from '@/frontend/lib/downloads/services/BaseService';
+import type { SearchResultWithAddon } from '@/frontend/lib/tasks/runner';
+import { createNotification, currentDownloads } from '@/frontend/store.svelte';
 
 /** Result shape required for AllDebrid (magnet/torrent); caller ensures these exist. */
 type AllDebridSearchResult = SearchResultWithAddon & {

@@ -29,10 +29,7 @@ export function assertMarketplaceUrlProtocol(url: string): void {
 
 const SHELL_META_RE = /[`$;|&{}\n\r\\]/;
 
-export function assertNoShellInjection(
-  value: string,
-  fieldName: string
-): void {
+export function assertNoShellInjection(value: string, fieldName: string): void {
   if (SHELL_META_RE.test(value)) {
     throw new Error(
       `Invalid characters in ${fieldName}: shell metacharacters not allowed`

@@ -13,6 +13,13 @@ import {
   refreshCached,
 } from '@/electron/manager/manager.config.js';
 import { DOWNLOAD_QUEUE } from '@/electron/manager/manager.queue.js';
+import {
+  clearDownloadHandshake,
+  registerDownloadHandshake,
+  updateDownloadHandshake,
+  waitForDownloadHandshake,
+  type DownloadHandshakeResult,
+} from '@/lib/download-handshake.js';
 
 // Parallel download configuration
 const PARALLEL_DOWNLOAD_THRESHOLD = 100 * 1024 * 1024; // 100MB in bytes
@@ -244,6 +251,34 @@ class Download {
     this.currentPart = startPart || 1;
 
     downloads.set(this.id, this);
+    registerDownloadHandshake(this.id);
+  }
+
+  private reportHandshake(
+    update: Partial<DownloadHandshakeResult> = {},
+    terminalEvent?: { channel: string; data: unknown }
+  ) {
+    const status =
+      update.status ??
+      (this.status === 'failed'
+        ? 'error'
+        : this.status === 'completed'
+          ? 'completed'
+          : this.status);
+
+    updateDownloadHandshake(
+      {
+        id: this.id,
+        status: status as DownloadHandshakeResult['status'],
+        queuePosition: update.queuePosition,
+        error: update.error,
+      },
+      terminalEvent
+    );
+  }
+
+  public waitForReady(): Promise<DownloadHandshakeResult> {
+    return waitForDownloadHandshake(this.id);
   }
 
   private createConnectionHealthMonitor(options: {
@@ -375,10 +410,14 @@ class Download {
     const result = await wait((queuePosition) => {
       console.log('queuePosition', queuePosition);
       this.sendProgress({ queuePosition });
+      this.reportHandshake({ status: 'queued', queuePosition });
     });
 
     if (result === 'cancelled') {
       this.removeCancelHandler();
+      this.reportHandshake({ status: 'error', error: 'Download cancelled' });
+      clearDownloadHandshake(this.id);
+      downloads.delete(this.id);
       return;
     }
 
@@ -393,6 +432,7 @@ class Download {
 
   private async run() {
     this.status = 'downloading';
+    this.reportHandshake({ status: 'downloading' });
     try {
       if (this.totalParts > 1) {
         // Multi-part download - use parallel parts
@@ -1390,7 +1430,12 @@ class Download {
     }
 
     this.sendProgress({ progress: 1, downloadSpeed: 0 });
-    this.sendIpc('ddl:download-complete', { id: this.id });
+    const completePayload = { id: this.id };
+    this.reportHandshake({ status: 'completed' }, {
+      channel: 'ddl:download-complete',
+      data: completePayload,
+    });
+    this.sendIpc('ddl:download-complete', completePayload);
     sendNotification({
       message: 'Download completed',
       id: this.id,
@@ -1398,11 +1443,17 @@ class Download {
     });
     this.removeCancelHandler();
     this.taskFinisher();
+    clearDownloadHandshake(this.id);
     downloads.delete(this.id);
   }
 
   private fail(error: Error) {
     this.status = 'failed';
+    const errorPayload = { id: this.id, error: error.message };
+    this.reportHandshake({ status: 'error', error: error.message }, {
+      channel: 'ddl:download-error',
+      data: errorPayload,
+    });
 
     if (this.useParallelParts) {
       // Clean up multi-part parallel downloads
@@ -1433,7 +1484,7 @@ class Download {
     }
 
     this.cleanupAllFiles().then(() => {
-      this.sendIpc('ddl:download-error', { id: this.id, error: error.message });
+      this.sendIpc('ddl:download-error', errorPayload);
       sendNotification({
         message: 'Download failed',
         id: this.id,
@@ -1441,6 +1492,7 @@ class Download {
       });
       this.removeCancelHandler();
       this.taskFinisher();
+      clearDownloadHandshake(this.id);
       downloads.delete(this.id);
     });
   }
@@ -2345,8 +2397,7 @@ export default function handler(mainWindow: BrowserWindow) {
       await checkParallelChunkCount();
       const download = new Download(mainWindow, args, part);
       download.start();
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-      return download.id;
+      return await download.waitForReady();
     }
   );
 

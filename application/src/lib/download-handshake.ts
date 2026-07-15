@@ -28,6 +28,7 @@ const HANDSHAKE_TIMEOUT_MS = 30_000;
 
 const lastKnownState = new Map<string, DownloadHandshakeResult>();
 const pendingHandshakes = new Map<string, PendingHandshake>();
+const settledHandshakes = new Set<string>();
 const pendingReplay = new Map<string, ReplayEvent[]>();
 let handshakeHandlersRegistered = false;
 
@@ -54,6 +55,7 @@ function settleHandshake(id: string, state: DownloadHandshakeResult) {
     return;
   }
   pending.settled = true;
+  settledHandshakes.add(id);
   pending.resolve(state);
 }
 
@@ -83,8 +85,7 @@ export function updateDownloadHandshake(
     return;
   }
 
-  const pending = pendingHandshakes.get(update.id);
-  if (pending?.settled) {
+  if (settledHandshakes.has(update.id)) {
     const events = pendingReplay.get(update.id) ?? [];
     events.push(terminalEvent);
     pendingReplay.set(update.id, events);
@@ -115,8 +116,15 @@ export function waitForDownloadHandshake(
         return;
       }
       pending.settled = true;
+      settledHandshakes.add(id);
       pendingHandshakes.delete(id);
-      resolve(lastKnownState.get(id) ?? { id, status: 'queued' });
+      resolve(
+        lastKnownState.get(id) ?? {
+          id,
+          status: 'error',
+          error: 'Download handshake timed out',
+        }
+      );
     }, timeoutMs);
   });
 }
@@ -136,6 +144,7 @@ export function getDownloadHandshakeState(
 export function clearDownloadHandshake(id: string) {
   lastKnownState.delete(id);
   pendingHandshakes.delete(id);
+  settledHandshakes.delete(id);
   pendingReplay.delete(id);
 }
 

@@ -1,5 +1,5 @@
-import { readFile } from 'fs/promises';
 import { existsSync } from 'fs';
+import { readFile } from 'fs/promises';
 import { __dirname } from '@/electron/manager/manager.paths.js';
 
 const cachedValues: Record<string, Record<string, any>> = {};

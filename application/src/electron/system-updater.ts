@@ -1,9 +1,9 @@
 import { getEffectiveOnlineState } from '@/electron/lib/online.js';
+import { downloadLatestUmu } from '@/electron/startup.js';
 import {
   checkIfInstallerUpdateAvailable,
   type UpdaterCallbacks,
 } from '@/electron/updater.js';
-import { downloadLatestUmu } from '@/electron/startup.js';
 
 export type SystemUpdateResult = {
   id: string;

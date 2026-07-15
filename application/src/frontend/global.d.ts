@@ -268,13 +268,13 @@ interface Window {
     updateAddons: () => Promise<void>;
     getVersion: () => string;
     getTheme: () => 'light' | 'dark' | 'synthwave';
-    installAddons: (addons: string[]) => Promise<void>;
+    installAddons: (addons: string[]) => Promise<string[]>;
     isDev: () => boolean;
     restartAddonServer: () => Promise<void>;
     deleteInstalledAddon: (
       addonID: string
     ) => Promise<{ success: boolean; message?: string }>;
-    cleanAddons: () => Promise<void>;
+    cleanAddons: (marketplaceUrls: string[]) => Promise<void>;
     downloadTorrentInto: (link: string) => Promise<Uint8Array>;
     getTorrentHash: (torrent: string | Buffer | Uint8Array) => Promise<string>;
     powerSave: {

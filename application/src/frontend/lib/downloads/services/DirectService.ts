@@ -1,12 +1,15 @@
-import { BaseService } from '@/frontend/lib/downloads/services/BaseService';
-import type { SearchResultWithAddon } from '@/frontend/lib/tasks/runner';
-import { currentDownloads } from '@/frontend/store';
 import { getDownloadPath } from '@/frontend/lib/core/fs';
 import {
   cardStatusFromHandshake,
   finalizeDownloadCard,
 } from '@/frontend/lib/downloads/events';
-import { safeDownloadPath, sanitizePathSegment } from '@/frontend/lib/downloads/paths';
+import {
+  safeDownloadPath,
+  sanitizePathSegment,
+} from '@/frontend/lib/downloads/paths';
+import { BaseService } from '@/frontend/lib/downloads/services/BaseService';
+import type { SearchResultWithAddon } from '@/frontend/lib/tasks/runner';
+import { currentDownloads } from '@/frontend/store.svelte';
 
 /**
  * Handles simple direct file downloads (single or multi-part).

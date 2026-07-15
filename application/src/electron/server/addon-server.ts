@@ -1,7 +1,8 @@
 const port = 7654;
+
 import { AddonServer } from '@ogi-sdk/addon-server';
-import { join } from 'path';
 import { existsSync, readFileSync } from 'fs';
+import { join } from 'path';
 import { __dirname } from '@/electron/manager/manager.paths.js';
 
 let isSecurityCheckEnabled = true;
@@ -19,18 +20,22 @@ if (existsSync(join(__dirname, 'config/option/developer.json'))) {
   }
 }
 
-const addonServer = new AddonServer({
-  port,
-  securityCheck: isSecurityCheckEnabled,
-});
-
-addonServer.on('disconnect', (reason) => {
-  addonServer.emit('notification', {
-    type: 'error',
-    message: reason,
-    id: 'addon-disconnect-' + Math.random().toString(36).substring(7),
+function createAddonServer() {
+  const server = new AddonServer({
+    port,
+    securityCheck: isSecurityCheckEnabled,
   });
-});
+  server.on('disconnect', (reason) => {
+    server.emit('notification', {
+      type: 'error',
+      message: reason,
+      id: 'addon-disconnect-' + Math.random().toString(36).substring(7),
+    });
+  });
+  return server;
+}
+
+let addonServer = createAddonServer();
 
 let addonServerStarting: Promise<void> | null = null;
 let isAddonServerListening = false;
@@ -42,6 +47,8 @@ function startAddonServer() {
   if (addonServerStarting) {
     return addonServerStarting;
   }
+
+  addonServer = createAddonServer();
 
   addonServerStarting = new Promise<void>((resolve, reject) => {
     const onStart = () => {
@@ -61,19 +68,22 @@ function startAddonServer() {
   return addonServerStarting;
 }
 
-function stopAddonServer() {
+async function stopAddonServer(): Promise<void> {
+  if (addonServerStarting) {
+    await addonServerStarting;
+  }
   if (!isAddonServerListening) {
     return;
   }
-  addonServer.stop();
+  await addonServer.stop();
   isAddonServerListening = false;
 }
 
 export {
-  port,
   addonServer,
-  isSecurityCheckEnabled,
   isAddonServerListening,
+  isSecurityCheckEnabled,
+  port,
   startAddonServer,
   stopAddonServer,
 };

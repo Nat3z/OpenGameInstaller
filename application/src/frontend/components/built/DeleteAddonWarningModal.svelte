@@ -1,21 +1,21 @@
 <script lang="ts">
-  import Modal from '@/frontend/components/modal/Modal.svelte';
-  import TitleModal from '@/frontend/components/modal/TitleModal.svelte';
-  import HeaderModal from '@/frontend/components/modal/HeaderModal.svelte';
-  import TextModal from '@/frontend/components/modal/TextModal.svelte';
-  import ButtonModal from '@/frontend/components/modal/ButtonModal.svelte';
+import ButtonModal from '@/frontend/components/modal/ButtonModal.svelte';
+import HeaderModal from '@/frontend/components/modal/HeaderModal.svelte';
+import Modal from '@/frontend/components/modal/Modal.svelte';
+import TextModal from '@/frontend/components/modal/TextModal.svelte';
+import TitleModal from '@/frontend/components/modal/TitleModal.svelte';
 
-  let {
-    open,
-    onClose,
-    deleteAddonGO,
-    addonName,
-  }: {
-    open: boolean;
-    onClose: () => void;
-    deleteAddonGO: () => void;
-    addonName: string;
-  } = $props();
+let {
+  open,
+  onClose,
+  deleteAddonGO,
+  addonName,
+}: {
+  open: boolean;
+  onClose: () => void;
+  deleteAddonGO: () => void;
+  addonName: string;
+} = $props();
 </script>
 
 <Modal {open} {onClose}>

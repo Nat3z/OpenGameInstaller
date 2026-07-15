@@ -1,29 +1,32 @@
 ---
 interface Props {
-	title: string;
-	description?: string;
-	image?: string;
-	imageAlt?: string;
-	type?: 'website' | 'article';
-	noindex?: boolean;
+  title: string;
+  description?: string;
+  image?: string;
+  imageAlt?: string;
+  type?: 'website' | 'article';
+  noindex?: boolean;
 }
 
 const {
-	title,
-	description = 'OpenGameInstaller is a next-generation game manager built around an addon ecosystem for installing, organizing, and launching games.',
-	image = '/librarypage.png',
-	imageAlt = 'OpenGameInstaller library view preview.',
-	type = 'website',
-	noindex = false,
+  title,
+  description = 'OpenGameInstaller is a next-generation game manager built around an addon ecosystem for installing, organizing, and launching games.',
+  image = '/librarypage.png',
+  imageAlt = 'OpenGameInstaller library view preview.',
+  type = 'website',
+  noindex = false,
 } = Astro.props;
 
 const siteBaseUrl = Astro.site ?? new URL('https://ogi.nat3z.com');
 const canonicalUrl = new URL(Astro.url.pathname, siteBaseUrl).toString();
-const normalizedTitle = title.includes('OpenGameInstaller') ? title : `${title} | OpenGameInstaller`;
+const normalizedTitle = title.includes('OpenGameInstaller')
+  ? title
+  : `${title} | OpenGameInstaller`;
 const imagePath = image.startsWith('/') ? image : `/${image}`;
-const socialImageUrl = image.startsWith('http://') || image.startsWith('https://')
-	? image
-	: new URL(imagePath, siteBaseUrl).toString();
+const socialImageUrl =
+  image.startsWith('http://') || image.startsWith('https://')
+    ? image
+    : new URL(imagePath, siteBaseUrl).toString();
 ---
 
 <!doctype html>

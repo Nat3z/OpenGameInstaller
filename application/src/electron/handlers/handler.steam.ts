@@ -2,28 +2,29 @@
  * Steam-related IPC handlers
  * Updated to support UMU shortcuts and --game-id launch
  */
-import { ipcMain } from 'electron';
+
 import { exec, spawn } from 'child_process';
+import { ipcMain } from 'electron';
 import * as fs from 'fs';
 import { join } from 'path';
 import {
-  isLinux,
-  getHomeDir,
-  getProtonPrefixPath,
-  getOgiExecutablePath,
-} from '@/electron/handlers/helpers.app/platform.js';
-import {
-  getSteamAppIdWithFallback,
-  getNonSteamGameAppID,
-  getVersionedGameName,
-  addGameToSteam,
-} from '@/electron/handlers/helpers.app/steam.js';
-import {
+  ensureLibraryDir,
   loadLibraryInfo,
   saveLibraryInfo,
-  ensureLibraryDir,
 } from '@/electron/handlers/helpers.app/library.js';
 import { generateNotificationId } from '@/electron/handlers/helpers.app/notifications.js';
+import {
+  getHomeDir,
+  getOgiExecutablePath,
+  getProtonPrefixPath,
+  isLinux,
+} from '@/electron/handlers/helpers.app/platform.js';
+import {
+  addGameToSteam,
+  getNonSteamGameAppID,
+  getSteamAppIdWithFallback,
+  getVersionedGameName,
+} from '@/electron/handlers/helpers.app/steam.js';
 import { sendNotification } from '@/electron/main.js';
 
 /**
@@ -114,7 +115,7 @@ export async function createSteamShortcutDesktop(params: {
 
   const versionedGameName = getVersionedGameName(params.name, params.version);
   const sanitizedGameName = versionedGameName
-    .replace(/[\r\n\x00-\x1F=]/g, ' ')
+    .replace(new RegExp('[\\r\\n\\x00-\\x1F=]', 'g'), ' ')
     .replace(/\s+/g, ' ')
     .trim();
   const ogiPath = getOgiExecutablePath();

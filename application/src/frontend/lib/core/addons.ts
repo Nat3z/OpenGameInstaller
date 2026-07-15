@@ -1,6 +1,6 @@
 import type { LibraryInfo, OGIAddonSDKEventListener } from '@ogi-sdk/connect';
 import { supportsStorefront } from '@/lib/storefronts';
-import { addonServer, queryConnectedAddons, type AddonInfo } from './ipc';
+import { type AddonInfo, addonServer, queryConnectedAddons } from './ipc';
 
 export function isAddonEventAvailable(
   addon: Pick<AddonInfo, 'eventsAvailable'> | undefined,

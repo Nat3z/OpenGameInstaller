@@ -1,6 +1,9 @@
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { addonProtocol, type ServerCommandPack } from '../../connection/lib/protocol';
+import {
+  addonProtocol,
+  type ServerCommandPack,
+} from '../../connection/lib/protocol';
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const packageRoot = join(scriptDir, '..');

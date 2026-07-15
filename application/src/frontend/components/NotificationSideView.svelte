@@ -1,208 +1,208 @@
 <script lang="ts">
-  import { fly, fade } from 'svelte/transition';
-  import { quintOut } from 'svelte/easing';
-  import { onMount, onDestroy } from 'svelte';
-  import {
-    notificationHistory,
-    showNotificationSideView,
-    deferredTasks,
-    type Notification,
-    removedTasks,
-  } from '@/frontend/store';
-  import { loadDeferredTasks, clearAllTasks } from '@/frontend/utils';
+import { onDestroy, onMount } from 'svelte';
+import { quintOut } from 'svelte/easing';
+import { fade, fly } from 'svelte/transition';
+import {
+  deferredTasks,
+  type Notification,
+  notificationHistory,
+  removedTasks,
+  showNotificationSideView,
+} from '@/frontend/store.svelte';
+import { clearAllTasks, loadDeferredTasks } from '@/frontend/utils';
 
-  let sideViewElement: HTMLElement | null = $state(null);
-  let currentTab: 'notifications' | 'tasks' = $state('notifications');
-  let pollInterval: ReturnType<typeof setInterval> | null = null;
-  let scrollContainer: HTMLDivElement | null = $state(null);
-  let logContainers: Map<string, HTMLDivElement> = $state(new Map());
-  let previousLogLengths: Map<string, number> = new Map();
-  let closeTimeout = $state(false);
+let sideViewElement: HTMLElement | null = $state(null);
+let currentTab: 'notifications' | 'tasks' = $state('notifications');
+let pollInterval: ReturnType<typeof setInterval> | null = null;
+let scrollContainer: HTMLDivElement | null = $state(null);
+let logContainers: Map<string, HTMLDivElement> = $state(new Map());
+let previousLogLengths: Map<string, number> = new Map();
+let closeTimeout = $state(false);
 
-  function startTaskPolling() {
-    const pollInterval = setInterval(async () => {
-      await loadDeferredTasks($removedTasks);
-    }, 1000);
+function startTaskPolling() {
+  const pollInterval = setInterval(async () => {
+    await loadDeferredTasks($removedTasks);
+  }, 1000);
 
-    return pollInterval;
+  return pollInterval;
+}
+
+function stopTaskPolling(intervalId: ReturnType<typeof setInterval>) {
+  clearInterval(intervalId);
+}
+
+// Load tasks when component mounts
+onMount(async () => {
+  await loadDeferredTasks();
+  setTimeout(() => {
+    closeTimeout = true;
+    console.log('closeTimeout', closeTimeout);
+  }, 5000);
+  pollInterval = startTaskPolling();
+});
+
+// Cleanup polling on destroy
+onDestroy(() => {
+  if (pollInterval) {
+    stopTaskPolling(pollInterval);
   }
+});
 
-  function stopTaskPolling(intervalId: ReturnType<typeof setInterval>) {
-    clearInterval(intervalId);
+$effect(() => {
+  if (scrollContainer) {
+    scrollContainer.scrollTo({ top: 0, behavior: 'smooth' });
   }
+});
 
-  // Load tasks when component mounts
-  onMount(async () => {
-    await loadDeferredTasks();
-    setTimeout(() => {
-      closeTimeout = true;
-      console.log('closeTimeout', closeTimeout);
-    }, 5000);
-    pollInterval = startTaskPolling();
-  });
+// Auto-scroll logs when new log entries are added
+$effect(() => {
+  $deferredTasks.forEach((task) => {
+    if (task.logs && task.logs.length > 0) {
+      const container = logContainers.get(task.id);
+      const previousLength = previousLogLengths.get(task.id) || 0;
 
-  // Cleanup polling on destroy
-  onDestroy(() => {
-    if (pollInterval) {
-      stopTaskPolling(pollInterval);
-    }
-  });
-
-  $effect(() => {
-    if (scrollContainer) {
-      scrollContainer.scrollTo({ top: 0, behavior: 'smooth' });
-    }
-  });
-
-  // Auto-scroll logs when new log entries are added
-  $effect(() => {
-    $deferredTasks.forEach((task) => {
-      if (task.logs && task.logs.length > 0) {
-        const container = logContainers.get(task.id);
-        const previousLength = previousLogLengths.get(task.id) || 0;
-
-        if (container && task.logs.length > previousLength) {
-          // New logs were added, scroll to bottom
-          container.scrollTop = container.scrollHeight;
-        }
-
-        previousLogLengths.set(task.id, task.logs.length);
+      if (container && task.logs.length > previousLength) {
+        // New logs were added, scroll to bottom
+        container.scrollTop = container.scrollHeight;
       }
-    });
+
+      previousLogLengths.set(task.id, task.logs.length);
+    }
   });
+});
 
-  function formatTimestamp(timestamp: number): string {
-    const now = Date.now();
-    const diff = now - timestamp;
+function formatTimestamp(timestamp: number): string {
+  const now = Date.now();
+  const diff = now - timestamp;
 
-    const minutes = Math.floor(diff / (1000 * 60));
-    const hours = Math.floor(diff / (1000 * 60 * 60));
-    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  const minutes = Math.floor(diff / (1000 * 60));
+  const hours = Math.floor(diff / (1000 * 60 * 60));
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
 
-    if (minutes < 1) return 'Just now';
-    if (minutes < 60) return `${minutes}m ago`;
-    if (hours < 24) return `${hours}h ago`;
-    return `${days}d ago`;
+  if (minutes < 1) return 'Just now';
+  if (minutes < 60) return `${minutes}m ago`;
+  if (hours < 24) return `${hours}h ago`;
+  return `${days}d ago`;
+}
+
+function formatDuration(milliseconds?: number): string {
+  if (!milliseconds) return '0s';
+  const seconds = Math.floor(milliseconds / 1000);
+  const minutes = Math.floor(seconds / 60);
+  const hours = Math.floor(minutes / 60);
+
+  if (hours > 0) {
+    return `${hours}h ${minutes % 60}m`;
+  } else if (minutes > 0) {
+    return `${minutes}m ${seconds % 60}s`;
+  } else {
+    return `${seconds}s`;
   }
+}
 
-  function formatDuration(milliseconds?: number): string {
-    if (!milliseconds) return '0s';
-    const seconds = Math.floor(milliseconds / 1000);
-    const minutes = Math.floor(seconds / 60);
-    const hours = Math.floor(minutes / 60);
+function getNotificationIcon(type: Notification['type']): string {
+  return `./${type}.svg`;
+}
 
-    if (hours > 0) {
-      return `${hours}h ${minutes % 60}m`;
-    } else if (minutes > 0) {
-      return `${minutes}m ${seconds % 60}s`;
-    } else {
-      return `${seconds}s`;
-    }
+function getNotificationIconColor(type: Notification['type']): string {
+  switch (type) {
+    case 'success':
+      return 'var(--theme-success)';
+    case 'error':
+      return 'var(--theme-error)';
+    case 'warning':
+      return 'var(--theme-warning)';
+    case 'info':
+      return 'var(--theme-info)';
+    default:
+      return 'var(--theme-accent-dark)';
   }
+}
 
-  function getNotificationIcon(type: Notification['type']): string {
-    return `./${type}.svg`;
+function getTaskStatusIcon(status: string): string {
+  switch (status) {
+    case 'running':
+      return './tasks.svg';
+    case 'completed':
+      return './success.svg';
+    case 'error':
+      return './error.svg';
+    case 'pending':
+      return './warning.svg';
+    case 'cancelled':
+      return './close.svg';
+    default:
+      return './info.svg';
   }
+}
 
-  function getNotificationIconColor(type: Notification['type']): string {
-    switch (type) {
-      case 'success':
-        return 'var(--theme-success)';
-      case 'error':
-        return 'var(--theme-error)';
-      case 'warning':
-        return 'var(--theme-warning)';
-      case 'info':
-        return 'var(--theme-info)';
-      default:
-        return 'var(--theme-accent-dark)';
-    }
+function getTaskStatusIconColor(status: string): string {
+  switch (status) {
+    case 'completed':
+      return 'var(--theme-success)';
+    case 'error':
+      return 'var(--theme-error)';
+    case 'pending':
+      return 'var(--theme-warning)';
+    case 'running':
+      return 'var(--theme-info)';
+    case 'cancelled':
+      return 'var(--theme-error)';
+    default:
+      return 'var(--theme-info)';
   }
+}
 
-  function getTaskStatusIcon(status: string): string {
-    switch (status) {
-      case 'running':
-        return './tasks.svg';
-      case 'completed':
-        return './success.svg';
-      case 'error':
-        return './error.svg';
-      case 'pending':
-        return './warning.svg';
-      case 'cancelled':
-        return './close.svg';
-      default:
-        return './info.svg';
-    }
+function closeSideView() {
+  if (!closeTimeout) return;
+  showNotificationSideView.set(false);
+}
+
+function clearAllNotifications() {
+  notificationHistory.set([]);
+}
+
+function handleClearCompletedTasks() {
+  clearAllTasks(
+    $deferredTasks
+      .map((task) => {
+        if (
+          task.status === 'completed' ||
+          task.status === 'error' ||
+          task.status === 'cancelled'
+        ) {
+          return task.id;
+        } else {
+          return undefined;
+        }
+      })
+      .filter((task) => task !== undefined)
+  );
+}
+
+function handleClearAllTasks() {
+  clearAllTasks($deferredTasks.map((task) => task.id));
+}
+
+function handleClickOutside(event: MouseEvent) {
+  if (
+    sideViewElement &&
+    event.target &&
+    !sideViewElement.contains(event.target as Node)
+  ) {
+    closeSideView();
   }
+}
 
-  function getTaskStatusIconColor(status: string): string {
-    switch (status) {
-      case 'completed':
-        return 'var(--theme-success)';
-      case 'error':
-        return 'var(--theme-error)';
-      case 'pending':
-        return 'var(--theme-warning)';
-      case 'running':
-        return 'var(--theme-info)';
-      case 'cancelled':
-        return 'var(--theme-error)';
-      default:
-        return 'var(--theme-info)';
-    }
-  }
+function registerLogContainer(element: HTMLDivElement, taskId: string) {
+  logContainers.set(taskId, element);
 
-  function closeSideView() {
-    if (!closeTimeout) return;
-    showNotificationSideView.set(false);
-  }
-
-  function clearAllNotifications() {
-    notificationHistory.set([]);
-  }
-
-  function handleClearCompletedTasks() {
-    clearAllTasks(
-      $deferredTasks
-        .map((task) => {
-          if (
-            task.status === 'completed' ||
-            task.status === 'error' ||
-            task.status === 'cancelled'
-          ) {
-            return task.id;
-          } else {
-            return undefined;
-          }
-        })
-        .filter((task) => task !== undefined)
-    );
-  }
-
-  function handleClearAllTasks() {
-    clearAllTasks($deferredTasks.map((task) => task.id));
-  }
-
-  function handleClickOutside(event: MouseEvent) {
-    if (
-      sideViewElement &&
-      event.target &&
-      !sideViewElement.contains(event.target as Node)
-    ) {
-      closeSideView();
-    }
-  }
-
-  function registerLogContainer(element: HTMLDivElement, taskId: string) {
-    logContainers.set(taskId, element);
-
-    return {
-      destroy() {
-        logContainers.delete(taskId);
-      },
-    };
-  }
+  return {
+    destroy() {
+      logContainers.delete(taskId);
+    },
+  };
+}
 </script>
 
 {#if $showNotificationSideView}

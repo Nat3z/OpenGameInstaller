@@ -1,29 +1,29 @@
 import axios from 'axios';
+import { exec, spawn } from 'child_process';
+import { createHash } from 'crypto';
 import { app } from 'electron';
-import semver from 'semver';
 import {
   chmodSync,
+  closeSync,
+  copyFileSync,
+  createReadStream,
   createWriteStream,
   existsSync,
   mkdirSync,
-  readFileSync,
+  openSync,
   readdirSync,
+  readFileSync,
+  readSync,
   rmSync,
   statSync,
-  copyFileSync,
   writeFileSync,
-  openSync,
-  closeSync,
-  readSync,
   writeSync,
-  createReadStream,
 } from 'original-fs';
-import { basename, dirname, join } from 'path';
-import { setTimeout as setTimeoutPromise } from 'timers/promises';
-import { spawn, exec } from 'child_process';
-import { createHash } from 'crypto';
-import * as zlib from 'zlib';
 import * as path from 'path';
+import { basename, dirname, join } from 'path';
+import semver from 'semver';
+import { setTimeout as setTimeoutPromise } from 'timers/promises';
+import * as zlib from 'zlib';
 import { getEffectiveOnlineState } from '@/electron/lib/online.js';
 
 function isDev() {
@@ -90,7 +90,7 @@ async function* copyDirectoryAsync(
 ): AsyncGenerator<{ file: string; success: boolean; error?: string }> {
   if (!existsSync(source)) return;
 
-  let stat;
+  let stat: ReturnType<typeof statSync>;
   try {
     stat = statSync(source);
   } catch (err: any) {
@@ -758,7 +758,7 @@ export function checkIfInstallerUpdateAvailable(
     const bleedingEdge = existsSync(`${__dirname}/../bleeding-edge.txt`);
     // check for updates
     try {
-      const local = semver.coerce(localVersion.trim())?.version!;
+      const local = semver.coerce(localVersion.trim())?.version ?? '0.0.0';
       const gitRepo = 'nat3z/OpenGameInstaller';
       const releases = await axios.get(
         `https://api.github.com/repos/${gitRepo}/releases`,
@@ -791,8 +791,8 @@ export function checkIfInstallerUpdateAvailable(
         const wantedVersion = latestRelease
           .body!.match(/Setup Version: (.*)/)![1]
           .trim();
-        const version = semver.coerce(wantedVersion)?.version!;
-        if (!semver.gt(version, local)) {
+        const version = semver.coerce(wantedVersion)?.version;
+        if (!version || !semver.gt(version, local)) {
           latestRelease = undefined;
         }
       }

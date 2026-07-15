@@ -1,5 +1,5 @@
+import type { DownloadStatusAndInfo } from '@/frontend/store.svelte';
 import type { DownloadHandshakeResult } from '@/lib/download-handshake';
-import type { DownloadStatusAndInfo } from '@/frontend/store';
 
 export function cardStatusFromHandshake(
   handshake: DownloadHandshakeResult

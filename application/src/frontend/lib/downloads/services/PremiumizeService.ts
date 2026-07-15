@@ -1,10 +1,10 @@
-import { currentDownloads } from '@/frontend/store';
 import { getConfigClientOption } from '@/frontend/lib/config/client';
 import { getDownloadPath } from '@/frontend/lib/core/fs';
-import type { SearchResultWithAddon } from '@/frontend/lib/tasks/runner';
-import { BaseService } from '@/frontend/lib/downloads/services/BaseService';
 import { finalizeDownloadCard } from '@/frontend/lib/downloads/events';
 import { safeDownloadPath } from '@/frontend/lib/downloads/paths';
+import { BaseService } from '@/frontend/lib/downloads/services/BaseService';
+import type { SearchResultWithAddon } from '@/frontend/lib/tasks/runner';
+import { currentDownloads } from '@/frontend/store.svelte';
 
 const BASE_URL = 'https://www.premiumize.me/api';
 

@@ -1,16 +1,16 @@
 import { app, BrowserWindow } from 'electron';
 import { join } from 'path';
-import type { UpdaterCallbacks } from '@/electron/updater.js';
+import { execute as executeMigrations } from '@/electron/migrations.js';
+import {
+  reinstallAddonDependencies,
+  removeCachedAppUpdates,
+  restoreBackup,
+} from '@/electron/startup.js';
 import {
   createDefaultSystemUpdateManager,
   type SystemUpdateResult,
 } from '@/electron/system-updater.js';
-import {
-  restoreBackup,
-  removeCachedAppUpdates,
-  reinstallAddonDependencies,
-} from '@/electron/startup.js';
-import { execute as executeMigrations } from '@/electron/migrations.js';
+import type { UpdaterCallbacks } from '@/electron/updater.js';
 
 let splashWindow: BrowserWindow | null = null;
 

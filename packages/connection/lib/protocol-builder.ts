@@ -49,10 +49,7 @@ export type ProtocolSlot<Name extends keyof AddonProtocolSlots> = {
  * Useful when a payload has fixed protocol fields plus a consumer-provided
  * shape. Example: addon authentication is `{ secret, ogiVersion } & Configuration`.
  */
-export type ProtocolSlotMerge<
-  Name extends keyof AddonProtocolSlots,
-  Shape,
-> = {
+export type ProtocolSlotMerge<Name extends keyof AddonProtocolSlots, Shape> = {
   readonly [slotMergeType]: {
     name: Name;
     shape: Shape;
@@ -85,15 +82,16 @@ export type SlotValues<
 export type ResolveProtocolValue<
   T,
   Slots extends Record<keyof AddonProtocolSlots, unknown>,
-> = T extends ProtocolSlotMerge<infer Name, infer Shape>
-  ? ResolveProtocolValue<Shape, Slots> & Slots[Name]
-  : T extends ProtocolSlot<infer Name>
-    ? Slots[Name]
-    : T extends readonly unknown[]
-      ? { [Key in keyof T]: ResolveProtocolValue<T[Key], Slots> }
-      : T extends object
+> =
+  T extends ProtocolSlotMerge<infer Name, infer Shape>
+    ? ResolveProtocolValue<Shape, Slots> & Slots[Name]
+    : T extends ProtocolSlot<infer Name>
+      ? Slots[Name]
+      : T extends readonly unknown[]
         ? { [Key in keyof T]: ResolveProtocolValue<T[Key], Slots> }
-        : T;
+        : T extends object
+          ? { [Key in keyof T]: ResolveProtocolValue<T[Key], Slots> }
+          : T;
 
 /**
  * Describes how positional server→addon event args are packed onto the wire.
@@ -126,7 +124,11 @@ export type AddonMessageSpec<Args> = {
   readonly [addonMessageType]?: Args;
 };
 
-export type SDKMessageSpec<Kind extends string, Args = never, Response = never> = {
+export type SDKMessageSpec<
+  Kind extends string,
+  Args = never,
+  Response = never,
+> = {
   readonly type: 'sdk-bridge-message';
   readonly kind: Kind;
   readonly [sdkMessageKindType]?: Kind;
@@ -155,11 +157,12 @@ export const serverCommand = <
 >(options?: {
   addonListener?: AddonListener;
   pack?: ServerCommandPack;
-}): ServerCommandSpec<Args, Response, AddonListener> => ({
-  type: 'server-command',
-  addonListener: (options?.addonListener ?? false) as AddonListener,
-  pack: options?.pack ?? { type: 'args' },
-}) as ServerCommandSpec<Args, Response, AddonListener>;
+}): ServerCommandSpec<Args, Response, AddonListener> =>
+  ({
+    type: 'server-command',
+    addonListener: (options?.addonListener ?? false) as AddonListener,
+    pack: options?.pack ?? { type: 'args' },
+  }) as ServerCommandSpec<Args, Response, AddonListener>;
 
 /**
  * Creates an addon→server message spec.
@@ -167,9 +170,10 @@ export const serverCommand = <
  * Type param `Args` is the object payload carried in the message's `args` field.
  * Use this for pushes like `notification`, `task-update`, `flag`, etc.
  */
-export const addonMessage = <Args>(): AddonMessageSpec<Args> => ({
-  type: 'addon-message',
-}) as AddonMessageSpec<Args>;
+export const addonMessage = <Args>(): AddonMessageSpec<Args> =>
+  ({
+    type: 'addon-message',
+  }) as AddonMessageSpec<Args>;
 
 /**
  * Creates an SDK bridge envelope event spec.
@@ -192,10 +196,11 @@ export const addonMessage = <Args>(): AddonMessageSpec<Args> => ({
  */
 export const sdkMessage = <Kind extends string, Args = never, Response = never>(
   kind: Kind
-): SDKMessageSpec<Kind, Args, Response> => ({
-  type: 'sdk-bridge-message',
-  kind,
-}) as SDKMessageSpec<Kind, Args, Response>;
+): SDKMessageSpec<Kind, Args, Response> =>
+  ({
+    type: 'sdk-bridge-message',
+    kind,
+  }) as SDKMessageSpec<Kind, Args, Response>;
 
 /**
  * Defines the full addon protocol registry and preserves literal event names.
@@ -219,42 +224,25 @@ export const defineAddonProtocol = <
   serverToSdk: ServerToSDK;
 }) => protocol;
 
-export type ServerCommandArgs<Spec> = Spec extends ServerCommandSpec<
-  infer Args,
-  unknown,
-  boolean
->
-  ? Args
-  : never;
+export type ServerCommandArgs<Spec> =
+  Spec extends ServerCommandSpec<infer Args, unknown, boolean> ? Args : never;
 
-export type ServerCommandResponse<Spec> = Spec extends ServerCommandSpec<
-  readonly unknown[],
-  infer Response,
-  boolean
->
-  ? Response
-  : never;
+export type ServerCommandResponse<Spec> =
+  Spec extends ServerCommandSpec<readonly unknown[], infer Response, boolean>
+    ? Response
+    : never;
 
-export type AddonMessageArgs<Spec> = Spec extends AddonMessageSpec<infer Args>
-  ? Args
-  : never;
+export type AddonMessageArgs<Spec> =
+  Spec extends AddonMessageSpec<infer Args> ? Args : never;
 
 /** Resolves an SDK→server registry entry to its concrete wire `args` type. */
-export type SDKMessageRequestArgs<Spec> = Spec extends SDKMessageSpec<
-  string,
-  infer Args,
-  unknown
->
-  ? Args
-  : never;
+export type SDKMessageRequestArgs<Spec> =
+  Spec extends SDKMessageSpec<string, infer Args, unknown> ? Args : never;
 
-export type SDKMessageResponseArgs<Spec> = Spec extends SDKMessageSpec<
-  string,
-  unknown,
-  infer Response
->
-  ? Response
-  : never;
+export type SDKMessageResponseArgs<Spec> =
+  Spec extends SDKMessageSpec<string, unknown, infer Response>
+    ? Response
+    : never;
 
 export type SDKToServerMessageArgs<Spec, ForwardRequest> =
   Spec extends SDKMessageSpec<'forward', unknown, unknown>

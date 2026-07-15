@@ -1,7 +1,3 @@
-import {
-  createNotification,
-  type DownloadStatusAndInfo,
-} from '@/frontend/store';
 import { getDownloadPath } from '@/frontend/lib/core/fs';
 import {
   getDownloadItem,
@@ -11,6 +7,10 @@ import {
   safeDownloadPath,
   sanitizePathSegment,
 } from '@/frontend/lib/downloads/paths';
+import {
+  createNotification,
+  type DownloadStatusAndInfo,
+} from '@/frontend/store.svelte';
 
 interface PausedDownloadState {
   id: string;
@@ -43,9 +43,7 @@ async function restartDirectDownload(
     const baseDir = getDownloadPath();
     files = downloadFiles.map((file) => ({
       link: file.downloadURL,
-      path:
-        file.path ??
-        safeDownloadPath(baseDir, download.name, file.name),
+      path: file.path ?? safeDownloadPath(baseDir, download.name, file.name),
       headers: file.headers,
     }));
   } else if (effectiveUrl) {
@@ -125,8 +123,7 @@ async function restartTorrentDownload(
 
   const persistedFilePath = download.files?.[0]?.path;
   const folderPath =
-    download.downloadPath.endsWith('/') ||
-    download.downloadPath.endsWith('\\')
+    download.downloadPath.endsWith('/') || download.downloadPath.endsWith('\\')
       ? download.downloadPath
       : persistedFilePath
         ? persistedFilePath.replace(/[/\\][^/\\]+$/, '/')

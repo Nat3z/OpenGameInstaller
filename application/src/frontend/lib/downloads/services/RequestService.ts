@@ -1,11 +1,11 @@
-import { BaseService } from '@/frontend/lib/downloads/services/BaseService';
-import type { SearchResultWithAddon } from '@/frontend/lib/tasks/runner';
 import type { SearchResult } from '@ogi-sdk/connect';
-import { createNotification, currentDownloads } from '@/frontend/store';
 import { getDownloadPath } from '@/frontend/lib/core/fs';
-import { safeDownloadPath } from '@/frontend/lib/downloads/paths';
 import { addonServer } from '@/frontend/lib/core/ipc';
 import { startDownload } from '@/frontend/lib/downloads/lifecycle';
+import { safeDownloadPath } from '@/frontend/lib/downloads/paths';
+import { BaseService } from '@/frontend/lib/downloads/services/BaseService';
+import type { SearchResultWithAddon } from '@/frontend/lib/tasks/runner';
+import { createNotification, currentDownloads } from '@/frontend/store.svelte';
 
 /**
  * Handles the initial "request" downloadType where we first need to ask the

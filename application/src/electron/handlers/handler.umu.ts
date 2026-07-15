@@ -2,21 +2,22 @@
  * UMU (Unified Launcher for Windows Games on Linux) IPC handlers
  * Replaces the legacy Steam/flatpak wine system with UMU Launcher
  */
-import { ipcMain } from 'electron';
+
+import type { LibraryInfo } from '@ogi-sdk/connect';
 import { spawn } from 'child_process';
+import { ipcMain } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
-import type { LibraryInfo } from '@ogi-sdk/connect';
-import {
-  isLinux,
-  getHomeDir,
-} from '@/electron/handlers/helpers.app/platform.js';
+import { getSilentInstallFlags } from '@/electron/handlers/helpers.app/install-flags.js';
 import {
   loadLibraryInfo,
   saveLibraryInfo,
 } from '@/electron/handlers/helpers.app/library.js';
 import { generateNotificationId } from '@/electron/handlers/helpers.app/notifications.js';
-import { getSilentInstallFlags } from '@/electron/handlers/helpers.app/install-flags.js';
+import {
+  getHomeDir,
+  isLinux,
+} from '@/electron/handlers/helpers.app/platform.js';
 import { sendNotification } from '@/electron/main.js';
 import { __dirname } from '@/electron/manager/manager.paths.js';
 import { downloadLatestUmu } from '@/electron/startup.js';

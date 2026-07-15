@@ -1,45 +1,45 @@
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte';
-  import ChangelogModal from '@/frontend/components/modal/ChangelogModal.svelte';
-  import type { Changelog } from '@/frontend/lib/changelog/types';
-  import { getChangelogByVersion } from '@/frontend/lib/changelog/changelogs';
+import { onDestroy, onMount } from 'svelte';
+import ChangelogModal from '@/frontend/components/modal/ChangelogModal.svelte';
+import { getChangelogByVersion } from '@/frontend/lib/changelog/changelogs';
+import type { Changelog } from '@/frontend/lib/changelog/types';
 
-  let showChangelog = $state(false);
-  let currentChangelog = $state<Changelog | undefined>(undefined);
+let showChangelog = $state(false);
+let currentChangelog = $state<Changelog | undefined>(undefined);
 
-  function handleShowChangelog(event: Event) {
-    if (!(event instanceof CustomEvent)) return;
+function handleShowChangelog(event: Event) {
+  if (!(event instanceof CustomEvent)) return;
 
-    const { version } = event.detail as { version: string };
+  const { version } = event.detail as { version: string };
 
-    if (!version) {
-      console.warn('app:show-changelog event received without version');
-      return;
-    }
-
-    const changelog = getChangelogByVersion(version);
-
-    if (!changelog) {
-      console.warn(`No changelog found for version: ${version}`);
-      return;
-    }
-
-    currentChangelog = changelog;
-    showChangelog = true;
+  if (!version) {
+    console.warn('app:show-changelog event received without version');
+    return;
   }
 
-  function handleClose() {
-    showChangelog = false;
-    currentChangelog = undefined;
+  const changelog = getChangelogByVersion(version);
+
+  if (!changelog) {
+    console.warn(`No changelog found for version: ${version}`);
+    return;
   }
 
-  onMount(() => {
-    document.addEventListener('app:show-changelog', handleShowChangelog);
-  });
+  currentChangelog = changelog;
+  showChangelog = true;
+}
 
-  onDestroy(() => {
-    document.removeEventListener('app:show-changelog', handleShowChangelog);
-  });
+function handleClose() {
+  showChangelog = false;
+  currentChangelog = undefined;
+}
+
+onMount(() => {
+  document.addEventListener('app:show-changelog', handleShowChangelog);
+});
+
+onDestroy(() => {
+  document.removeEventListener('app:show-changelog', handleShowChangelog);
+});
 </script>
 
 {#if currentChangelog}

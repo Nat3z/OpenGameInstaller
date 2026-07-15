@@ -463,8 +463,8 @@ class TorrentDownload {
     this.cleanup();
     this.removeCancelHandler();
     this.releaseQueueSlot();
-    // Defer clearing so finalizeDownloadCard can consume replay events
-    queueMicrotask(() => clearDownloadHandshake(this.id));
+    // Defer full cleanup until after the renderer IPC round-trip
+    setImmediate(() => clearDownloadHandshake(this.id));
     downloads.delete(this.id);
   }
 

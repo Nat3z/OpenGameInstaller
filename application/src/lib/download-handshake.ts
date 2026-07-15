@@ -145,7 +145,9 @@ export function clearDownloadHandshake(id: string) {
   lastKnownState.delete(id);
   pendingHandshakes.delete(id);
   settledHandshakes.delete(id);
-  pendingReplay.delete(id);
+  // Don't clear pendingReplay here — let consumeDownloadReplayEvents
+  // own the deletion so the renderer can still consume buffered events
+  // after clearDownloadHandshake runs on the main process.
 }
 
 export function registerDownloadHandshakeHandlers() {

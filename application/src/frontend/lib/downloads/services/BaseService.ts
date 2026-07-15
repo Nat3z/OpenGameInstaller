@@ -1,8 +1,11 @@
-import { currentDownloads, type DownloadStatusAndInfo } from '@/frontend/store';
-import { updateDownloadStatus } from '@/frontend/utils';
 import { getDownloadPath } from '@/frontend/lib/core/fs';
 import { safeDownloadPath } from '@/frontend/lib/downloads/paths';
 import type { SearchResultWithAddon } from '@/frontend/lib/tasks/runner';
+import {
+  currentDownloads,
+  type DownloadStatusAndInfo,
+} from '@/frontend/store.svelte';
+import { updateDownloadStatus } from '@/frontend/utils';
 
 /**
  * Base class that all concrete download services should extend. It defines a
@@ -72,7 +75,8 @@ export abstract class BaseService {
       status: 'downloading',
       usedDebridService: usedDebridService as any,
       downloadPath: downloadPath,
-      queuePosition: flushed[downloadId]?.queuePosition ?? flushed[tempid]?.queuePosition,
+      queuePosition:
+        flushed[downloadId]?.queuePosition ?? flushed[tempid]?.queuePosition,
       downloadURL: downloadUrl,
       ...(files && { files }),
       ...((result.downloadType === 'torrent' ||

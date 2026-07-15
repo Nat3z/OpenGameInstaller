@@ -1,62 +1,62 @@
 <script lang="ts">
-  import { fly } from 'svelte/transition';
-  import { cubicOut } from 'svelte/easing';
-  import Modal from '@/frontend/components/modal/Modal.svelte';
-  import type { Changelog } from '@/frontend/lib/changelog/types';
+import { cubicOut } from 'svelte/easing';
+import { fly } from 'svelte/transition';
+import Modal from '@/frontend/components/modal/Modal.svelte';
+import type { Changelog } from '@/frontend/lib/changelog/types';
 
-  let {
-    changelog,
-    open = $bindable(false),
-    onClose,
-  }: {
-    changelog: Changelog;
-    open?: boolean;
-    onClose?: () => void;
-  } = $props();
+let {
+  changelog,
+  open = $bindable(false),
+  onClose,
+}: {
+  changelog: Changelog;
+  open?: boolean;
+  onClose?: () => void;
+} = $props();
 
-  let currentSlideIndex = $state(0);
-  let direction = $state<'left' | 'right'>('right');
+let currentSlideIndex = $state(0);
+let direction = $state<'left' | 'right'>('right');
 
-  const slides = $derived(changelog?.slides ?? []);
-  const totalSlides = $derived(slides.length);
-  const currentSlide = $derived(slides[currentSlideIndex]);
+const slides = $derived(changelog?.slides ?? []);
+const totalSlides = $derived(slides.length);
+const currentSlide = $derived(slides[currentSlideIndex]);
 
-  function nextSlide() {
-    if (currentSlideIndex < totalSlides - 1) {
-      direction = 'right';
-      currentSlideIndex++;
-    }
+function nextSlide() {
+  if (currentSlideIndex < totalSlides - 1) {
+    direction = 'right';
+    currentSlideIndex++;
   }
+}
 
-  function prevSlide() {
-    if (currentSlideIndex > 0) {
-      direction = 'left';
-      currentSlideIndex--;
-    }
+function prevSlide() {
+  if (currentSlideIndex > 0) {
+    direction = 'left';
+    currentSlideIndex--;
   }
+}
 
-  function goToSlide(index: number) {
-    direction = index > currentSlideIndex ? 'right' : 'left';
-    currentSlideIndex = index;
-  }
+function goToSlide(index: number) {
+  direction = index > currentSlideIndex ? 'right' : 'left';
+  currentSlideIndex = index;
+}
 
-  function handleClose() {
-    currentSlideIndex = 0;
-    open = false;
-    onClose?.();
-  }
+function handleClose() {
+  currentSlideIndex = 0;
+  open = false;
+  onClose?.();
+}
 
-  function handleKeydown(event: KeyboardEvent) {
-    if (event.key === 'ArrowRight') {
-      nextSlide();
-    } else if (event.key === 'ArrowLeft') {
-      prevSlide();
-    }
+function handleKeydown(event: KeyboardEvent) {
+  if (event.key === 'ArrowRight') {
+    nextSlide();
+  } else if (event.key === 'ArrowLeft') {
+    prevSlide();
   }
+}
 
-  function openExternalLink(url: string) {
-    window.open(url, '_blank');
-  }
+function openExternalLink(url: string) {
+  window.open(url, '_blank');
+}
 </script>
 
 <Modal {open} size="large" onClose={handleClose} boundsClose={true}>

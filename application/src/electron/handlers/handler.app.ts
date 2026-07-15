@@ -1,19 +1,18 @@
 import axios from 'axios';
-import { ipcMain, app } from 'electron';
-import { currentScreens, screenInputCallbacks } from '@/electron/main.js';
+import { app, ipcMain } from 'electron';
 import * as fs from 'fs';
-import { join } from 'path';
+import { createReadStream, createWriteStream } from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { createReadStream, createWriteStream } from 'fs';
-import { isDev } from '@/electron/manager/manager.paths.js';
-import { __dirname } from '@/electron/manager/manager.paths.js';
-import { registerSteamHandlers } from '@/electron/handlers/handler.steam.js';
+import { join } from 'path';
 import { registerLibraryHandlers } from '@/electron/handlers/handler.library.js';
 import { registerRedistributableHandlers } from '@/electron/handlers/handler.redists.js';
-import { getCurrentUsername } from './helpers.app/platform.js';
+import { registerSteamHandlers } from '@/electron/handlers/handler.steam.js';
 import { getEffectiveOnlineState } from '@/electron/lib/online.js';
+import { currentScreens, screenInputCallbacks } from '@/electron/main.js';
+import { __dirname, isDev } from '@/electron/manager/manager.paths.js';
 import { addonServer } from '@/electron/server/addon-server.js';
+import { getCurrentUsername } from './helpers.app/platform.js';
 
 /**
  * Escapes a string for safe use in shell commands by escaping special characters

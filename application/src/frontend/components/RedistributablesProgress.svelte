@@ -1,30 +1,28 @@
 <script lang="ts">
-  import { fade } from 'svelte/transition';
-  import type { RedistributableInstall } from '@/frontend/store';
+import { fade } from 'svelte/transition';
+import type { RedistributableInstall } from '@/frontend/store.svelte';
 
-  let {
-    setup,
-  }: {
-    setup: RedistributableInstall;
-  } = $props();
+let {
+  setup,
+}: {
+  setup: RedistributableInstall;
+} = $props();
 
-  // Get current redistributable being installed
-  const currentRedistributable = $derived(() => {
-    return setup.redistributables.find((r) => r.status === 'installing');
-  });
+// Get current redistributable being installed
+const currentRedistributable = $derived(() => {
+  return setup.redistributables.find((r) => r.status === 'installing');
+});
 
-  // Get next pending redistributable
-  const nextRedistributable = $derived(() => {
-    const pending = setup.redistributables.filter(
-      (r) => r.status === 'pending'
-    );
-    return pending[0];
-  });
+// Get next pending redistributable
+const nextRedistributable = $derived(() => {
+  const pending = setup.redistributables.filter((r) => r.status === 'pending');
+  return pending[0];
+});
 
-  // Calculate progress percentage
-  const progressPercent = $derived(() => {
-    return Math.round(setup.overallProgress);
-  });
+// Calculate progress percentage
+const progressPercent = $derived(() => {
+  return Math.round(setup.overallProgress);
+});
 </script>
 
 <div

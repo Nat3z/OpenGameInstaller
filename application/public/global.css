@@ -12,7 +12,7 @@ body {
   margin: 0;
   padding: 8px;
   box-sizing: border-box;
-  font-family: 'Open Sans', sans-serif;
+  font-family: "Open Sans", sans-serif;
 }
 
 a {
@@ -62,9 +62,6 @@ button {
   background-color: #f4f4f4;
   outline: none;
   transition: all 0.2s ease-in-out;
-}
-
-button:disabled {
 }
 
 button:not(:disabled):active {

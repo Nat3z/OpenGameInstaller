@@ -1,6 +1,6 @@
 import type { OGIAddonSDKEventListener } from '@ogi-sdk/connect';
-import type { HandlerContext } from './types';
 import { supportsStorefront } from '../lib';
+import type { HandlerContext } from './types';
 
 export const closeProtocolError = (
   { connection }: HandlerContext,

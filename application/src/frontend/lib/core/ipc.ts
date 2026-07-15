@@ -1,4 +1,4 @@
-import { Connection, type ConnectedAddonInfo } from '@ogi-sdk/client-kit';
+import { type ConnectedAddonInfo, Connection } from '@ogi-sdk/client-kit';
 import { getConfigClientOption } from '@/frontend/lib/config/client';
 
 export let addonServer = connectClientSdk();

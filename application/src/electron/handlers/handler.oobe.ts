@@ -1,12 +1,12 @@
-import { ipcMain } from 'electron';
-import { exec } from 'child_process';
-import { __dirname } from '@/electron/manager/manager.paths.js';
-import fs from 'fs';
-import { join } from 'path';
 import axios from 'axios';
-import { sendNotification, sendIPCMessage } from '@/electron/main.js';
-import { IS_NIXOS, STEAMTINKERLAUNCH_PATH } from '@/electron/startup.js';
+import { exec } from 'child_process';
+import { ipcMain } from 'electron';
+import fs from 'fs';
 import os from 'os';
+import { join } from 'path';
+import { sendIPCMessage, sendNotification } from '@/electron/main.js';
+import { __dirname } from '@/electron/manager/manager.paths.js';
+import { IS_NIXOS, STEAMTINKERLAUNCH_PATH } from '@/electron/startup.js';
 
 function sendOOBELog(content: string) {
   sendIPCMessage('oobe:log', content);

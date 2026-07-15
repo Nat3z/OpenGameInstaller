@@ -1,11 +1,11 @@
+import type { AddonConnection } from '@ogi-sdk/addon-server';
+import {
+  AddonFileConfigurationSchema,
+  Addon as ExecutorAddon,
+} from '@ogi-sdk/executor';
 import { readFile, writeFile } from 'fs/promises';
 import { join } from 'path';
 import { sendNotification } from '@/electron/main.js';
-import {
-  Addon as ExecutorAddon,
-  AddonFileConfigurationSchema,
-} from '@ogi-sdk/executor';
-import type { AddonConnection } from '@ogi-sdk/addon-server';
 import { addonServer, port } from '@/electron/server/addon-server.js';
 
 export class Addon extends ExecutorAddon {
@@ -13,7 +13,7 @@ export class Addon extends ExecutorAddon {
   static readonly running = new Map<string, Addon>();
 
   private static stripAnsi(input: string): string {
-    return input.replace(/\x1b\[[0-9;]*m/g, '');
+    return input.replace(new RegExp('\\x1b\\[[0-9;]*m', 'g'), '');
   }
 
   static async load(addonPath: string): Promise<Addon | null> {

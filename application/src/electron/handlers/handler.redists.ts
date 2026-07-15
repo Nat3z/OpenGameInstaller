@@ -2,19 +2,20 @@
  * Redistributable installation handlers
  * Uses UMU (Unified Launcher for Windows Games on Linux) for all games
  */
-import { ipcMain } from 'electron';
+
 import type { LibraryInfo } from '@ogi-sdk/connect';
-import { isLinux } from '@/electron/handlers/helpers.app/platform.js';
-import {
-  getNonSteamGameAppID,
-  getVersionedGameName,
-} from '@/electron/handlers/helpers.app/steam.js';
-import { loadLibraryInfo } from '@/electron/handlers/helpers.app/library.js';
+import { ipcMain } from 'electron';
 import {
   installRedistributablesWithUmu,
   installRedistributablesWithUmuForLegacy,
   type RedistributableInstallProgress,
 } from '@/electron/handlers/handler.umu.js';
+import { loadLibraryInfo } from '@/electron/handlers/helpers.app/library.js';
+import { isLinux } from '@/electron/handlers/helpers.app/platform.js';
+import {
+  getNonSteamGameAppID,
+  getVersionedGameName,
+} from '@/electron/handlers/helpers.app/steam.js';
 import { sendIPCMessage } from '@/electron/main.js';
 
 export function registerRedistributableHandlers() {

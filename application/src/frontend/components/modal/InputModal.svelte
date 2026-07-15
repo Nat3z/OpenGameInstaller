@@ -1,102 +1,102 @@
 <script lang="ts">
-  import TextModal from '@/frontend/components/modal/TextModal.svelte';
-  import CustomDropdown from '@/frontend/components/CustomDropdown.svelte';
-  import RangeInput from '@/frontend/components/RangeInput.svelte';
+import CustomDropdown from '@/frontend/components/CustomDropdown.svelte';
+import TextModal from '@/frontend/components/modal/TextModal.svelte';
+import RangeInput from '@/frontend/components/RangeInput.svelte';
 
-  let {
-    id,
-    label,
-    description = '',
-    type = 'text',
-    value: displayValue = '',
-    options = [],
-    min,
-    max,
-    maxLength,
-    minLength,
-    disabled = false,
-    class: className = '',
-    onchange,
-  }: {
-    id: string;
-    label: string;
-    description?: string;
-    type?:
-      | 'text'
-      | 'password'
-      | 'number'
-      | 'range'
-      | 'select'
-      | 'file'
-      | 'folder';
-    value?: string | number;
-    options?: { id: string; name: string; description?: string }[];
-    min?: number;
-    max?: number;
-    maxLength?: number;
-    minLength?: number;
-    disabled?: boolean;
-    class?: string;
-    onchange?: (id: string, value: string | number) => void;
-  } = $props();
+let {
+  id,
+  label,
+  description = '',
+  type = 'text',
+  value: displayValue = '',
+  options = [],
+  min,
+  max,
+  maxLength,
+  minLength,
+  disabled = false,
+  class: className = '',
+  onchange,
+}: {
+  id: string;
+  label: string;
+  description?: string;
+  type?:
+    | 'text'
+    | 'password'
+    | 'number'
+    | 'range'
+    | 'select'
+    | 'file'
+    | 'folder';
+  value?: string | number;
+  options?: { id: string; name: string; description?: string }[];
+  min?: number;
+  max?: number;
+  maxLength?: number;
+  minLength?: number;
+  disabled?: boolean;
+  class?: string;
+  onchange?: (id: string, value: string | number) => void;
+} = $props();
 
-  function resolveSelectId(
-    raw: string | number | undefined,
-    selectOptions: { id: string; name: string; description?: string }[]
-  ): string {
-    if (selectOptions.length === 0) return '';
-    const id = typeof raw === 'string' ? raw : '';
-    return id && selectOptions.some((opt) => opt.id === id)
-      ? id
-      : selectOptions[0].id;
+function resolveSelectId(
+  raw: string | number | undefined,
+  selectOptions: { id: string; name: string; description?: string }[]
+): string {
+  if (selectOptions.length === 0) return '';
+  const id = typeof raw === 'string' ? raw : '';
+  return id && selectOptions.some((opt) => opt.id === id)
+    ? id
+    : selectOptions[0].id;
+}
+
+let selectedId = $derived(
+  type === 'select'
+    ? resolveSelectId(displayValue, options)
+    : typeof displayValue === 'string'
+      ? displayValue
+      : ''
+);
+
+function syncValueFromTarget(target: HTMLInputElement) {
+  if (type === 'number' || type === 'range') {
+    displayValue = Number(target.value);
+  } else {
+    displayValue = target.value;
   }
+  onchange?.(id, displayValue);
+}
 
-  let selectedId = $derived(
-    type === 'select'
-      ? resolveSelectId(displayValue, options)
-      : typeof displayValue === 'string'
-        ? displayValue
-        : ''
-  );
+function handleChange(event: Event) {
+  syncValueFromTarget(event.target as HTMLInputElement);
+}
 
-  function syncValueFromTarget(target: HTMLInputElement) {
-    if (type === 'number' || type === 'range') {
-      displayValue = Number(target.value);
-    } else {
-      displayValue = target.value;
-    }
-    onchange?.(id, displayValue);
+function handleInput(event: Event) {
+  syncValueFromTarget(event.target as HTMLInputElement);
+}
+
+function handleDropdownChange(detail: { selectedId: string }) {
+  selectedId = detail.selectedId;
+  if (onchange) {
+    onchange(id, selectedId);
   }
+}
 
-  function handleChange(event: Event) {
-    syncValueFromTarget(event.target as HTMLInputElement);
-  }
-
-  function handleInput(event: Event) {
-    syncValueFromTarget(event.target as HTMLInputElement);
-  }
-
-  function handleDropdownChange(detail: { selectedId: string }) {
-    selectedId = detail.selectedId;
-    if (onchange) {
-      onchange(id, selectedId);
-    }
-  }
-
-  function browseForPath(browseType: 'file' | 'folder') {
-    const dialog = window.electronAPI.fs.dialog;
-    const properties: ('openDirectory' | 'openFile')[] =
-      browseType === 'folder' ? ['openDirectory'] : ['openFile'];
-    dialog.showOpenDialog({ properties }).then((result) => {
-      if (result && result.length > 0) {
-        const path = result[0];
-        displayValue = path;
-        if (onchange) {
-          onchange(id, path);
-        }
+function browseForPath(browseType: 'file' | 'folder') {
+  const dialog = window.electronAPI.fs.dialog;
+  const properties: ('openDirectory' | 'openFile')[] =
+    browseType === 'folder' ? ['openDirectory'] : ['openFile'];
+  dialog.showOpenDialog({ properties }).then((result) => {
+    if (result && result.length > 0) {
+      const path = result[0];
+      displayValue = path;
+      if (onchange) {
+        onchange(id, path);
       }
-    });
-  }
+    }
+  });
+}
 </script>
 
 <div class="w-full {className} mt-2">

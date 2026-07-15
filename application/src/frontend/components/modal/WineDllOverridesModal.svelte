@@ -1,89 +1,89 @@
 <script lang="ts">
-  import Modal from '@/frontend/components/modal/Modal.svelte';
-  import TitleModal from '@/frontend/components/modal/TitleModal.svelte';
-  import TextModal from '@/frontend/components/modal/TextModal.svelte';
-  import ButtonModal from '@/frontend/components/modal/ButtonModal.svelte';
+import ButtonModal from '@/frontend/components/modal/ButtonModal.svelte';
+import Modal from '@/frontend/components/modal/Modal.svelte';
+import TextModal from '@/frontend/components/modal/TextModal.svelte';
+import TitleModal from '@/frontend/components/modal/TitleModal.svelte';
 
-  type DllOverrideRow = {
-    id: string;
-    dll: string;
-    override: string;
+type DllOverrideRow = {
+  id: string;
+  dll: string;
+  override: string;
+};
+
+let {
+  open = false,
+  initialOverrides = [],
+  onSave,
+  onClose,
+}: {
+  open?: boolean;
+  initialOverrides?: string[];
+  onSave?: (overrides: string[]) => void;
+  onClose?: () => void;
+} = $props();
+
+let rows: DllOverrideRow[] = $state([]);
+
+function createRow(entry = ''): DllOverrideRow {
+  const trimmedEntry = entry.trim();
+  const equalsIndex = trimmedEntry.indexOf('=');
+
+  return {
+    id: Math.random().toString(36).slice(2, 11),
+    dll:
+      equalsIndex >= 0
+        ? trimmedEntry.slice(0, equalsIndex).trim()
+        : trimmedEntry,
+    override:
+      equalsIndex >= 0 ? trimmedEntry.slice(equalsIndex + 1).trim() : '',
   };
+}
 
-  let {
-    open = false,
-    initialOverrides = [],
-    onSave,
-    onClose,
-  }: {
-    open?: boolean;
-    initialOverrides?: string[];
-    onSave?: (overrides: string[]) => void;
-    onClose?: () => void;
-  } = $props();
+function cloneInitialOverrides() {
+  rows =
+    initialOverrides.length > 0
+      ? initialOverrides.map((entry) => createRow(entry))
+      : [createRow()];
+}
 
-  let rows: DllOverrideRow[] = $state([]);
+$effect(() => {
+  if (!open) return;
+  cloneInitialOverrides();
+});
 
-  function createRow(entry = ''): DllOverrideRow {
-    const trimmedEntry = entry.trim();
-    const equalsIndex = trimmedEntry.indexOf('=');
+function updateRow(
+  id: string,
+  key: keyof Pick<DllOverrideRow, 'dll' | 'override'>,
+  value: string
+) {
+  rows = rows.map((row) => (row.id === id ? { ...row, [key]: value } : row));
+}
 
-    return {
-      id: Math.random().toString(36).slice(2, 11),
-      dll:
-        equalsIndex >= 0
-          ? trimmedEntry.slice(0, equalsIndex).trim()
-          : trimmedEntry,
-      override:
-        equalsIndex >= 0 ? trimmedEntry.slice(equalsIndex + 1).trim() : '',
-    };
-  }
+function addRow() {
+  rows = [...rows, createRow()];
+}
 
-  function cloneInitialOverrides() {
-    rows =
-      initialOverrides.length > 0
-        ? initialOverrides.map((entry) => createRow(entry))
-        : [createRow()];
-  }
+function removeRow(id: string) {
+  const nextRows = rows.filter((row) => row.id !== id);
+  rows = nextRows.length > 0 ? nextRows : [createRow()];
+}
 
-  $effect(() => {
-    if (!open) return;
-    cloneInitialOverrides();
-  });
+function serializeRows() {
+  return rows
+    .map((row) => {
+      const dll = row.dll.trim();
+      const override = row.override.trim();
 
-  function updateRow(
-    id: string,
-    key: keyof Pick<DllOverrideRow, 'dll' | 'override'>,
-    value: string
-  ) {
-    rows = rows.map((row) => (row.id === id ? { ...row, [key]: value } : row));
-  }
+      if (!dll) return '';
+      return override ? `${dll}=${override}` : dll;
+    })
+    .filter(Boolean);
+}
 
-  function addRow() {
-    rows = [...rows, createRow()];
-  }
-
-  function removeRow(id: string) {
-    const nextRows = rows.filter((row) => row.id !== id);
-    rows = nextRows.length > 0 ? nextRows : [createRow()];
-  }
-
-  function serializeRows() {
-    return rows
-      .map((row) => {
-        const dll = row.dll.trim();
-        const override = row.override.trim();
-
-        if (!dll) return '';
-        return override ? `${dll}=${override}` : dll;
-      })
-      .filter(Boolean);
-  }
-
-  function handleSave() {
-    onSave?.(serializeRows());
-    onClose?.();
-  }
+function handleSave() {
+  onSave?.(serializeRows());
+  onClose?.();
+}
 </script>
 
 {#if open}

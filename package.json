@@ -4,8 +4,9 @@
   "scripts": {
     "build": "bun run --filter './packages/*' build",
     "release": "bun run --filter './packages/*' release",
-    "dev": "bun run --filter 'application' dev",
-    "format": "prettier --write \"packages/**/*.{ts,svelte,json}\" \"application/**/*.{ts,svelte,json}\" \"web/**/*.{ts,svelte,json}\" \"test-addon/**/*.{ts,svelte,json}\"",
+    "dev": "bun run --filter 'opengameinstaller-gui' dev",
+    "format": "biome check --write package.json packages application/src application/package.json updater web/src web/community web/scripts web/package.json test-addon --files-ignore-unknown=true",
+    "lint": "biome check package.json packages application/src application/package.json updater web/src web/community web/scripts web/package.json test-addon --files-ignore-unknown=true",
     "typecheck": "bun run --filter './packages/*' build && bun run --filter '*' typecheck"
   },
   "workspaces": [
@@ -16,9 +17,8 @@
     "test-addon"
   ],
   "devDependencies": {
-    "electron": "^40.1.0",
-    "prettier": "^3.6.2",
-    "prettier-plugin-svelte": "^3.4.0",
+    "@biomejs/biome": "^2.5.2",
+    "electron": "^43.1.0",
     "typescript": "^5.9.3"
   },
   "overrides": {

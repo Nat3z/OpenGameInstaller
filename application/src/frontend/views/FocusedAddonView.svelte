@@ -1,396 +1,387 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
-  import {
-    addonServer,
-    queryConnectedAddons,
-    runTask,
-  } from '@/frontend/utils';
-  import type { ConfigurationFile, OGIAddonConfiguration } from '@ogi-sdk/connect';
-  import {
-    isActionOption,
-    isBooleanOption,
-    isNumberOption,
-    isStringOption,
-  } from 'ogi-addon/config';
-  import { notifications } from '@/frontend/store';
-  import AddonPicture from '@/frontend/components/AddonPicture.svelte';
-  import Modal from '@/frontend/components/modal/Modal.svelte';
-  import HeaderModal from '@/frontend/components/modal/HeaderModal.svelte';
-  import TitleModal from '@/frontend/components/modal/TitleModal.svelte';
-  import TextModal from '@/frontend/components/modal/TextModal.svelte';
-  import ButtonModal from '@/frontend/components/modal/ButtonModal.svelte';
-  import DeleteAddonWarningModal from '@/frontend/components/built/DeleteAddonWarningModal.svelte';
-  import CustomDropdown from '@/frontend/components/CustomDropdown.svelte';
-  import RangeInput from '@/frontend/components/RangeInput.svelte';
+import type {
+  ConfigurationFile,
+  OGIAddonConfiguration,
+} from '@ogi-sdk/connect';
+import {
+  isActionOption,
+  isBooleanOption,
+  isNumberOption,
+  isStringOption,
+} from 'ogi-addon/config';
+import { onMount } from 'svelte';
+import AddonPicture from '@/frontend/components/AddonPicture.svelte';
+import DeleteAddonWarningModal from '@/frontend/components/built/DeleteAddonWarningModal.svelte';
+import CustomDropdown from '@/frontend/components/CustomDropdown.svelte';
+import ButtonModal from '@/frontend/components/modal/ButtonModal.svelte';
+import HeaderModal from '@/frontend/components/modal/HeaderModal.svelte';
+import Modal from '@/frontend/components/modal/Modal.svelte';
+import TextModal from '@/frontend/components/modal/TextModal.svelte';
+import TitleModal from '@/frontend/components/modal/TitleModal.svelte';
+import RangeInput from '@/frontend/components/RangeInput.svelte';
+import { notifications } from '@/frontend/store.svelte';
+import { addonServer, queryConnectedAddons, runTask } from '@/frontend/utils';
 
-  const fs = window.electronAPI.fs;
+const fs = window.electronAPI.fs;
 
-  let {
-    addonId,
-    onBack,
-    refreshAddon,
-  }: { addonId: string; onBack: () => void; refreshAddon: () => void } =
-    $props();
+let {
+  addonId,
+  onBack,
+  refreshAddon,
+}: { addonId: string; onBack: () => void; refreshAddon: () => void } = $props();
 
-  interface ConfigTemplateAndInfo extends OGIAddonConfiguration {
-    configTemplate: ConfigurationFile;
-  }
+interface ConfigTemplateAndInfo extends OGIAddonConfiguration {
+  configTemplate: ConfigurationFile;
+}
 
-  let selectedAddon: ConfigTemplateAndInfo | null = $state(null);
-  let deleteConfirmationModalOpen: boolean = $state(false);
-  let backConfirmationModalOpen: boolean = $state(false);
-  let selectedValues: Record<string, string> = $state({});
-  let runningActions: Record<string, boolean> = $state({});
+let selectedAddon: ConfigTemplateAndInfo | null = $state(null);
+let deleteConfirmationModalOpen: boolean = $state(false);
+let backConfirmationModalOpen: boolean = $state(false);
+let selectedValues: Record<string, string> = $state({});
+let runningActions: Record<string, boolean> = $state({});
 
-  onMount(() => {
-    queryConnectedAddons<ConfigTemplateAndInfo>().then((data) => {
-      const addon = data.find((a: ConfigTemplateAndInfo) => a.id === addonId);
-      if (addon) {
-        selectedAddon = addon;
-        if (selectedAddon) {
-          Object.keys(selectedAddon.configTemplate).forEach((key) => {
-            if (
-              isStringOption(selectedAddon!.configTemplate[key]) &&
-              (selectedAddon!.configTemplate[key].allowedValues?.length ?? 0) >
-                0
-            ) {
-              selectedValues[key] = getStoredOrDefaultValue(key);
-            }
-          });
-        }
-        setTimeout(() => {
-          updateConfig();
-        }, 100);
+onMount(() => {
+  queryConnectedAddons<ConfigTemplateAndInfo>().then((data) => {
+    const addon = data.find((a: ConfigTemplateAndInfo) => a.id === addonId);
+    if (addon) {
+      selectedAddon = addon;
+      if (selectedAddon) {
+        Object.keys(selectedAddon.configTemplate).forEach((key) => {
+          if (
+            isStringOption(selectedAddon!.configTemplate[key]) &&
+            (selectedAddon!.configTemplate[key].allowedValues?.length ?? 0) > 0
+          ) {
+            selectedValues[key] = getStoredOrDefaultValue(key);
+          }
+        });
       }
-    });
+      setTimeout(() => {
+        updateConfig();
+      }, 100);
+    }
+  });
+});
+
+function updateConfig() {
+  if (!selectedAddon) return;
+  let config: Record<string, string | number | boolean> = {};
+  Object.keys(selectedAddon.configTemplate).forEach((key) => {
+    const option = selectedAddon!.configTemplate[key];
+    const element = document.getElementById(key) as
+      | HTMLInputElement
+      | HTMLSelectElement;
+
+    if (element) {
+      if (isStringOption(option)) {
+        if ((option.allowedValues?.length ?? 0) > 0) {
+          config[key] = selectedValues[key];
+        } else {
+          config[key] = element.value;
+        }
+      } else if (isNumberOption(option)) {
+        config[key] = parseInt(element.value);
+      } else if (isBooleanOption(option) && element.type === 'checkbox') {
+        config[key] = element.checked;
+      }
+    }
   });
 
-  function updateConfig() {
-    if (!selectedAddon) return;
-    let config: Record<string, string | number | boolean> = {};
-    Object.keys(selectedAddon.configTemplate).forEach((key) => {
-      const option = selectedAddon!.configTemplate[key];
-      const element = document.getElementById(key) as
-        | HTMLInputElement
-        | HTMLSelectElement;
-
-      if (element) {
-        if (isStringOption(option)) {
-          if ((option.allowedValues?.length ?? 0) > 0) {
-            config[key] = selectedValues[key];
-          } else {
-            config[key] = element.value;
-          }
-        } else if (isNumberOption(option)) {
-          config[key] = parseInt(element.value);
-        } else if (isBooleanOption(option) && element.type === 'checkbox') {
-          config[key] = element.checked;
-        }
-      }
-    });
-
-    document.querySelectorAll('[data-error-message]').forEach((element) => {
-      element.textContent = '';
-      element.setAttribute('data-context', '');
-      const inputElement =
-        element.parentElement!!.querySelector('[data-input]');
-      if (inputElement) {
-        inputElement.classList.remove(
-          'outline-red-500',
-          'outline-2',
-          'outline'
-        );
-      }
-    });
-
-    const addonId = selectedAddon.id;
-    addonServer
-      .addon(addonId)
-      .configUpdate(config as any)
-      .then((data: any) => {
-        if (data?.success !== true) {
-          for (const key in data?.errors ?? {}) {
-            const element = document.getElementById(key);
-            if (!element) {
-              console.error('element not found for key', key);
-              continue;
-            }
-            const inputElement = element.matches('[data-input]')
-              ? element
-              : element
-                  .closest('[data-input-parent]')
-                  ?.querySelector('[data-input]');
-
-            if (inputElement) {
-              inputElement.classList.add(
-                'outline-red-500',
-                'outline-2',
-                'outline'
-              );
-            }
-
-            const errorMessageElement = element.parentElement!!.querySelector(
-              '[data-error-message]'
-            );
-            if (errorMessageElement) {
-              errorMessageElement.innerHTML = `<img src="./error.svg" alt="error" class="w-6 h-6" />`;
-              errorMessageElement.setAttribute('data-context', data.errors[key]);
-            }
-          }
-          notifications.update((update) => [
-            ...update,
-            {
-              id: Math.random().toString(36).substring(7),
-              type: 'error',
-              message:
-                'Failed to validate configuration. Configuration will not be usable.',
-            },
-          ]);
-          return;
-        }
-
-        fs.write('./config/' + addonId + '.json', JSON.stringify(config));
-      })
-      .catch((error) => {
-        console.error('Failed to update addon configuration:', error);
-        notifications.update((update) => [
-          ...update,
-          {
-            id: Math.random().toString(36).substring(7),
-            type: 'error',
-            message: 'Failed to update addon configuration.',
-          },
-        ]);
-      });
-  }
-
-  function getStoredOrDefaultValue(key: string): any {
-    if (!selectedAddon) return undefined;
-    if (!fs.exists('./config/' + selectedAddon.id + '.json')) {
-      return selectedAddon.configTemplate[key].defaultValue;
-    } else {
-      const storedConfig = JSON.parse(
-        fs.read('./config/' + selectedAddon.id + '.json')
-      );
-      return storedConfig.hasOwnProperty(key)
-        ? storedConfig[key]
-        : selectedAddon.configTemplate[key].defaultValue;
+  document.querySelectorAll('[data-error-message]').forEach((element) => {
+    element.textContent = '';
+    element.setAttribute('data-context', '');
+    const inputElement = element.parentElement!!.querySelector('[data-input]');
+    if (inputElement) {
+      inputElement.classList.remove('outline-red-500', 'outline-2', 'outline');
     }
-  }
+  });
 
-  function browseForFolder(event: MouseEvent, type: 'file' | 'folder') {
-    const dialog = window.electronAPI.fs.dialog;
-    const element = (event.target as HTMLElement).parentElement!!.querySelector(
-      'input'
-    ) as HTMLInputElement;
-    dialog
-      .showOpenDialog({
-        properties: type === 'file' ? ['openFile'] : ['openDirectory'],
-      })
-      .then((result) => {
-        if (result && result.length > 0) {
-          if (element) {
-            element.value = result[0];
+  const addonId = selectedAddon.id;
+  addonServer
+    .addon(addonId)
+    .configUpdate(config as any)
+    .then((data: any) => {
+      if (data?.success !== true) {
+        for (const key in data?.errors ?? {}) {
+          const element = document.getElementById(key);
+          if (!element) {
+            console.error('element not found for key', key);
+            continue;
           }
-          updateConfig();
+          const inputElement = element.matches('[data-input]')
+            ? element
+            : element
+                .closest('[data-input-parent]')
+                ?.querySelector('[data-input]');
+
+          if (inputElement) {
+            inputElement.classList.add(
+              'outline-red-500',
+              'outline-2',
+              'outline'
+            );
+          }
+
+          const errorMessageElement = element.parentElement!!.querySelector(
+            '[data-error-message]'
+          );
+          if (errorMessageElement) {
+            errorMessageElement.innerHTML = `<img src="./error.svg" alt="error" class="w-6 h-6" />`;
+            errorMessageElement.setAttribute('data-context', data.errors[key]);
+          }
         }
-      });
-  }
-
-  function showDescription(event: MouseEvent | FocusEvent) {
-    const element = event.target as HTMLElement;
-    const contextual = element.parentElement!!.querySelector(
-      '[data-description]'
-    )!! as HTMLDivElement;
-    contextual.style.display = 'flex';
-    contextual.animate(
-      [
-        { opacity: 0, transform: 'translateY(-8px) scale(0.95)' },
-        { opacity: 1, transform: 'translateY(0) scale(1)' },
-      ],
-      {
-        duration: 150,
-        easing: 'cubic-bezier(0.16, 1, 0.3, 1)',
-        fill: 'forwards',
-      }
-    );
-  }
-
-  function hideDescription(event: MouseEvent) {
-    const element = event.target as HTMLElement;
-    const contextual = element.parentElement!!.querySelector(
-      '[data-description]'
-    )!! as HTMLDivElement;
-    contextual.animate(
-      [
-        { opacity: 1, transform: 'translateY(0) scale(1)' },
-        { opacity: 0, transform: 'translateY(-8px) scale(0.95)' },
-      ],
-      {
-        duration: 150,
-        easing: 'cubic-bezier(0.16, 1, 0.3, 1)',
-        fill: 'forwards',
-      }
-    );
-    setTimeout(() => {
-      contextual.style.display = 'none';
-    }, 150);
-  }
-
-  function showContextHint(event: MouseEvent) {
-    const element = event.target as HTMLElement;
-    const context = element.getAttribute('data-context');
-    if (!context) return;
-    const contextual = element.parentElement!!.querySelector(
-      '[data-contextual]'
-    )!! as HTMLDivElement;
-    contextual.style.display = 'flex';
-
-    const hint = contextual.querySelector('p')!!;
-    hint.textContent = context;
-    contextual.animate(
-      [
-        { opacity: 0, transform: 'translateY(-8px) scale(0.95)' },
-        { opacity: 1, transform: 'translateY(0) scale(1)' },
-      ],
-      {
-        duration: 150,
-        easing: 'cubic-bezier(0.16, 1, 0.3, 1)',
-        fill: 'forwards',
-      }
-    );
-  }
-
-  function hideContextHint(event: MouseEvent) {
-    const element = event.target as HTMLElement;
-    const contextual = element.parentElement!!.querySelector(
-      '[data-contextual]'
-    )!! as HTMLDivElement;
-    contextual.animate(
-      [
-        { opacity: 1, transform: 'translateY(0) scale(1)' },
-        { opacity: 0, transform: 'translateY(-8px) scale(0.95)' },
-      ],
-      {
-        duration: 150,
-        easing: 'cubic-bezier(0.16, 1, 0.3, 1)',
-        fill: 'forwards',
-      }
-    );
-    setTimeout(() => {
-      contextual.style.display = 'none';
-    }, 150);
-  }
-
-  async function deleteAddon() {
-    deleteConfirmationModalOpen = true;
-  }
-
-  async function deleteAddonGO() {
-    if (!selectedAddon) return;
-    try {
-      const result = await window.electronAPI.deleteInstalledAddon(
-        selectedAddon.id
-      );
-      if (result.success) {
-        notifications.update((update) => [
-          ...update,
-          {
-            id: Math.random().toString(36).substring(7),
-            type: 'success',
-            message: `Addon '${selectedAddon!.name}' deleted successfully.`,
-          },
-        ]);
-        refreshAddon();
-        onBack();
-      } else {
         notifications.update((update) => [
           ...update,
           {
             id: Math.random().toString(36).substring(7),
             type: 'error',
             message:
-              result.message ||
-              `Failed to delete addon '${selectedAddon!.name}'.`,
+              'Failed to validate configuration. Configuration will not be usable.',
           },
         ]);
+        return;
       }
-    } catch (e) {
+
+      fs.write('./config/' + addonId + '.json', JSON.stringify(config));
+    })
+    .catch((error) => {
+      console.error('Failed to update addon configuration:', error);
       notifications.update((update) => [
         ...update,
         {
           id: Math.random().toString(36).substring(7),
           type: 'error',
-          message: `Error deleting addon: ${e}`,
+          message: 'Failed to update addon configuration.',
         },
       ]);
-    }
-  }
+    });
+}
 
-  function hasConfigErrors() {
-    return Array.from(document.querySelectorAll('[data-error-message]')).some(
-      (el) =>
-        el.getAttribute('data-context') &&
-        el.getAttribute('data-context') !== ''
+function getStoredOrDefaultValue(key: string): any {
+  if (!selectedAddon) return undefined;
+  if (!fs.exists('./config/' + selectedAddon.id + '.json')) {
+    return selectedAddon.configTemplate[key].defaultValue;
+  } else {
+    const storedConfig = JSON.parse(
+      fs.read('./config/' + selectedAddon.id + '.json')
     );
+    return storedConfig.hasOwnProperty(key)
+      ? storedConfig[key]
+      : selectedAddon.configTemplate[key].defaultValue;
   }
+}
 
-  function handleBackClick() {
-    if (hasConfigErrors()) {
-      backConfirmationModalOpen = true;
-    } else {
-      onBack();
+function browseForFolder(event: MouseEvent, type: 'file' | 'folder') {
+  const dialog = window.electronAPI.fs.dialog;
+  const element = (event.target as HTMLElement).parentElement!!.querySelector(
+    'input'
+  ) as HTMLInputElement;
+  dialog
+    .showOpenDialog({
+      properties: type === 'file' ? ['openFile'] : ['openDirectory'],
+    })
+    .then((result) => {
+      if (result && result.length > 0) {
+        if (element) {
+          element.value = result[0];
+        }
+        updateConfig();
+      }
+    });
+}
+
+function showDescription(event: MouseEvent | FocusEvent) {
+  const element = event.target as HTMLElement;
+  const contextual = element.parentElement!!.querySelector(
+    '[data-description]'
+  )!! as HTMLDivElement;
+  contextual.style.display = 'flex';
+  contextual.animate(
+    [
+      { opacity: 0, transform: 'translateY(-8px) scale(0.95)' },
+      { opacity: 1, transform: 'translateY(0) scale(1)' },
+    ],
+    {
+      duration: 150,
+      easing: 'cubic-bezier(0.16, 1, 0.3, 1)',
+      fill: 'forwards',
     }
-  }
+  );
+}
 
-  function handleDropdownChange(key: string, detail: { selectedId: string }) {
-    selectedValues[key] = detail.selectedId;
-    updateConfig();
-  }
+function hideDescription(event: MouseEvent) {
+  const element = event.target as HTMLElement;
+  const contextual = element.parentElement!!.querySelector(
+    '[data-description]'
+  )!! as HTMLDivElement;
+  contextual.animate(
+    [
+      { opacity: 1, transform: 'translateY(0) scale(1)' },
+      { opacity: 0, transform: 'translateY(-8px) scale(0.95)' },
+    ],
+    {
+      duration: 150,
+      easing: 'cubic-bezier(0.16, 1, 0.3, 1)',
+      fill: 'forwards',
+    }
+  );
+  setTimeout(() => {
+    contextual.style.display = 'none';
+  }, 150);
+}
 
-  async function handleActionClick(key: string) {
-    if (!selectedAddon) return;
-    if (runningActions[key]) return;
+function showContextHint(event: MouseEvent) {
+  const element = event.target as HTMLElement;
+  const context = element.getAttribute('data-context');
+  if (!context) return;
+  const contextual = element.parentElement!!.querySelector(
+    '[data-contextual]'
+  )!! as HTMLDivElement;
+  contextual.style.display = 'flex';
 
-    const option = selectedAddon.configTemplate[key];
-    if (!isActionOption(option)) return;
+  const hint = contextual.querySelector('p')!!;
+  hint.textContent = context;
+  contextual.animate(
+    [
+      { opacity: 0, transform: 'translateY(-8px) scale(0.95)' },
+      { opacity: 1, transform: 'translateY(0) scale(1)' },
+    ],
+    {
+      duration: 150,
+      easing: 'cubic-bezier(0.16, 1, 0.3, 1)',
+      fill: 'forwards',
+    }
+  );
+}
 
-    const actionOption = option;
-    const taskName = actionOption.taskName || key;
-    const manifest = {
-      __taskName: taskName,
-      ...actionOption.manifest,
-    };
+function hideContextHint(event: MouseEvent) {
+  const element = event.target as HTMLElement;
+  const contextual = element.parentElement!!.querySelector(
+    '[data-contextual]'
+  )!! as HTMLDivElement;
+  contextual.animate(
+    [
+      { opacity: 1, transform: 'translateY(0) scale(1)' },
+      { opacity: 0, transform: 'translateY(-8px) scale(0.95)' },
+    ],
+    {
+      duration: 150,
+      easing: 'cubic-bezier(0.16, 1, 0.3, 1)',
+      fill: 'forwards',
+    }
+  );
+  setTimeout(() => {
+    contextual.style.display = 'none';
+  }, 150);
+}
 
-    runningActions = { ...runningActions, [key]: true };
-    try {
-      await runTask(
+async function deleteAddon() {
+  deleteConfirmationModalOpen = true;
+}
+
+async function deleteAddonGO() {
+  if (!selectedAddon) return;
+  try {
+    const result = await window.electronAPI.deleteInstalledAddon(
+      selectedAddon.id
+    );
+    if (result.success) {
+      notifications.update((update) => [
+        ...update,
         {
-          addonSource: selectedAddon.id,
-          addonName: selectedAddon.name,
-          manifest: manifest,
-          name: actionOption.displayName,
-          downloadType: 'task' as const,
-          taskName: taskName,
-          capsuleImage: '',
-          coverImage: '',
-          storefront: '',
+          id: Math.random().toString(36).substring(7),
+          type: 'success',
+          message: `Addon '${selectedAddon!.name}' deleted successfully.`,
         },
-        ''
-      );
-    } catch (error) {
+      ]);
+      refreshAddon();
+      onBack();
+    } else {
       notifications.update((update) => [
         ...update,
         {
           id: Math.random().toString(36).substring(7),
           type: 'error',
-          message: `Failed to run action: ${error}`,
+          message:
+            result.message ||
+            `Failed to delete addon '${selectedAddon!.name}'.`,
         },
       ]);
-    } finally {
-      runningActions = { ...runningActions, [key]: false };
     }
+  } catch (e) {
+    notifications.update((update) => [
+      ...update,
+      {
+        id: Math.random().toString(36).substring(7),
+        type: 'error',
+        message: `Error deleting addon: ${e}`,
+      },
+    ]);
   }
+}
+
+function hasConfigErrors() {
+  return Array.from(document.querySelectorAll('[data-error-message]')).some(
+    (el) =>
+      el.getAttribute('data-context') && el.getAttribute('data-context') !== ''
+  );
+}
+
+function handleBackClick() {
+  if (hasConfigErrors()) {
+    backConfirmationModalOpen = true;
+  } else {
+    onBack();
+  }
+}
+
+function handleDropdownChange(key: string, detail: { selectedId: string }) {
+  selectedValues[key] = detail.selectedId;
+  updateConfig();
+}
+
+async function handleActionClick(key: string) {
+  if (!selectedAddon) return;
+  if (runningActions[key]) return;
+
+  const option = selectedAddon.configTemplate[key];
+  if (!isActionOption(option)) return;
+
+  const actionOption = option;
+  const taskName = actionOption.taskName || key;
+  const manifest = {
+    __taskName: taskName,
+    ...actionOption.manifest,
+  };
+
+  runningActions = { ...runningActions, [key]: true };
+  try {
+    await runTask(
+      {
+        addonSource: selectedAddon.id,
+        addonName: selectedAddon.name,
+        manifest: manifest,
+        name: actionOption.displayName,
+        downloadType: 'task' as const,
+        taskName: taskName,
+        capsuleImage: '',
+        coverImage: '',
+        storefront: '',
+      },
+      ''
+    );
+  } catch (error) {
+    notifications.update((update) => [
+      ...update,
+      {
+        id: Math.random().toString(36).substring(7),
+        type: 'error',
+        message: `Failed to run action: ${error}`,
+      },
+    ]);
+  } finally {
+    runningActions = { ...runningActions, [key]: false };
+  }
+}
 </script>
 
 {#if deleteConfirmationModalOpen}

@@ -1,169 +1,163 @@
 <script lang="ts">
-  import type { LibraryInfo } from '@ogi-sdk/connect';
-  import { onDestroy, onMount, tick } from 'svelte';
-  import PlayPage from '@/frontend/components/PlayPage.svelte';
-  import { gameFocused } from '@/frontend/store';
-  import { writable, type Writable } from 'svelte/store';
-  import Image from '@/frontend/components/Image.svelte';
-  import {
-    getAllApps,
-    getRecentlyPlayed,
-    sortLibraryAlphabetically,
-    filterLibrary,
-  } from '@/frontend/lib/core/library';
-  import { updatesManager } from '@/frontend/states.svelte';
-  import UpdateIcon from '@/frontend/Icons/UpdateIcon.svelte';
-  import MigrateIcon from '@/frontend/Icons/MigrateIcon.svelte';
+import type { LibraryInfo } from '@ogi-sdk/connect';
+import { onDestroy, onMount, tick } from 'svelte';
+import { type Writable, writable } from 'svelte/store';
+import Image from '@/frontend/components/Image.svelte';
+import PlayPage from '@/frontend/components/PlayPage.svelte';
+import MigrateIcon from '@/frontend/Icons/MigrateIcon.svelte';
+import UpdateIcon from '@/frontend/Icons/UpdateIcon.svelte';
+import {
+  filterLibrary,
+  getAllApps,
+  getRecentlyPlayed,
+  sortLibraryAlphabetically,
+} from '@/frontend/lib/core/library';
+import { updatesManager } from '@/frontend/states.svelte';
+import { gameFocused } from '@/frontend/store.svelte';
 
-  let library: LibraryInfo[] = $state([]);
-  let recentlyPlayed: LibraryInfo[] = $state([]);
-  let allGamesAlphabetical: LibraryInfo[] = $state([]);
-  let filteredGames: LibraryInfo[] = $state([]);
-  let selectedApp: Writable<LibraryInfo | undefined> = writable(undefined);
-  let loading = $state(true);
-  let searchQuery = $state('');
-  let isSearching = $derived(searchQuery.trim().length > 0);
-  let os: string | undefined = $state(undefined);
-  let osLoading = $state(true);
-  let revealLibraryEntries = $state(false);
-  let revealLibraryDelayActive = $state(false);
-  let revealLibraryTimer: ReturnType<typeof setTimeout> | undefined;
+let library: LibraryInfo[] = $state([]);
+let recentlyPlayed: LibraryInfo[] = $state([]);
+let allGamesAlphabetical: LibraryInfo[] = $state([]);
+let filteredGames: LibraryInfo[] = $state([]);
+let selectedApp: Writable<LibraryInfo | undefined> = writable(undefined);
+let loading = $state(true);
+let searchQuery = $state('');
+let isSearching = $derived(searchQuery.trim().length > 0);
+let os: string | undefined = $state(undefined);
+let osLoading = $state(true);
+let revealLibraryEntries = $state(false);
+let revealLibraryDelayActive = $state(false);
+let revealLibraryTimer: ReturnType<typeof setTimeout> | undefined;
 
-  let { exitPlayPage = $bindable() } = $props();
+let { exitPlayPage = $bindable() } = $props();
 
-  // Avoid infinite update loop by only assigning exitPlayPage once on mount
-  onMount(() => {
-    if (exitPlayPage) {
-      exitPlayPage = () => {
-        $selectedApp = undefined;
-        void reloadLibrary().catch((err) => {
-          console.error(
-            'Failed to reload library when exiting play page:',
-            err
-          );
-        });
-      };
-    }
-  });
-
-  async function reloadLibrary() {
-    library = await getAllApps();
-
-    // Update recently played (first 4 games from the ordered list)
-    recentlyPlayed = getRecentlyPlayed(library);
-
-    // Update all games alphabetical
-    allGamesAlphabetical = sortLibraryAlphabetically(library);
-
-    // Update filtered games
-    filteredGames = filterLibrary(allGamesAlphabetical, searchQuery);
-
-    loading = false;
-  }
-
-  async function runInitialLibraryReveal() {
-    revealLibraryEntries = false;
-    revealLibraryDelayActive = false;
-    if (revealLibraryTimer) {
-      clearTimeout(revealLibraryTimer);
-      revealLibraryTimer = undefined;
-    }
-
-    await tick();
-    await new Promise<void>((resolve) => {
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => resolve());
+// Avoid infinite update loop by only assigning exitPlayPage once on mount
+onMount(() => {
+  if (exitPlayPage) {
+    exitPlayPage = () => {
+      $selectedApp = undefined;
+      void reloadLibrary().catch((err) => {
+        console.error('Failed to reload library when exiting play page:', err);
       });
+    };
+  }
+});
+
+async function reloadLibrary() {
+  library = await getAllApps();
+
+  // Update recently played (first 4 games from the ordered list)
+  recentlyPlayed = getRecentlyPlayed(library);
+
+  // Update all games alphabetical
+  allGamesAlphabetical = sortLibraryAlphabetically(library);
+
+  // Update filtered games
+  filteredGames = filterLibrary(allGamesAlphabetical, searchQuery);
+
+  loading = false;
+}
+
+async function runInitialLibraryReveal() {
+  revealLibraryEntries = false;
+  revealLibraryDelayActive = false;
+  if (revealLibraryTimer) {
+    clearTimeout(revealLibraryTimer);
+    revealLibraryTimer = undefined;
+  }
+
+  await tick();
+  await new Promise<void>((resolve) => {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => resolve());
     });
-    revealLibraryDelayActive = true;
-    revealLibraryEntries = true;
-    revealLibraryTimer = setTimeout(() => {
-      revealLibraryDelayActive = false;
-    }, 1400);
-  }
-
-  function getLibraryEntryDelay(index: number): string {
-    const delay = revealLibraryDelayActive ? Math.min(index * 45, 900) : 0;
-    return `--library-entry-delay: ${delay}ms;`;
-  }
-
-  function needsUmuMigration(app: LibraryInfo): boolean {
-    return (
-      os === 'linux' &&
-      app.launchExecutable.toLowerCase().endsWith('.exe') &&
-      !app.umu
-    );
-  }
-
-  function hasVisibleAppUpdate(app: LibraryInfo): boolean {
-    const update = updatesManager.getAppUpdate(app.appID);
-    if (!update?.updateAvailable || !update.updateVersion) return false;
-    return !updatesManager.isAppUpdateDismissed(
-      app.appID,
-      update.updateVersion
-    );
-  }
-
-  async function openPlayPage(app: LibraryInfo) {
-    const freshLibraryInfo = await window.electronAPI.app.getLibraryInfo(
-      app.appID
-    );
-    $selectedApp = freshLibraryInfo ?? app;
-  }
-
-  async function openPlayPageByAppID(appID: number) {
-    const existingApp = library.find((app) => app.appID === appID);
-    if (existingApp) {
-      await openPlayPage(existingApp);
-      return;
-    }
-
-    const freshLibraryInfo = await window.electronAPI.app.getLibraryInfo(appID);
-    if (freshLibraryInfo) {
-      $selectedApp = freshLibraryInfo;
-    }
-  }
-
-  // Update filtered games when search query changes
-  $effect(() => {
-    filteredGames = filterLibrary(allGamesAlphabetical, searchQuery);
   });
+  revealLibraryDelayActive = true;
+  revealLibraryEntries = true;
+  revealLibraryTimer = setTimeout(() => {
+    revealLibraryDelayActive = false;
+  }, 1400);
+}
 
-  let wasPlayPageOpen = false;
-  $effect(() => {
-    const isPlayPageOpen = $selectedApp !== undefined;
-    if (wasPlayPageOpen && !isPlayPageOpen && !osLoading) {
-      void runInitialLibraryReveal();
-    }
-    wasPlayPageOpen = isPlayPageOpen;
-  });
+function getLibraryEntryDelay(index: number): string {
+  const delay = revealLibraryDelayActive ? Math.min(index * 45, 900) : 0;
+  return `--library-entry-delay: ${delay}ms;`;
+}
 
-  onMount(async () => {
-    const [resolvedOs] = await Promise.all([
-      window.electronAPI.app.getOS(),
-      reloadLibrary(),
-    ]);
+function needsUmuMigration(app: LibraryInfo): boolean {
+  return (
+    os === 'linux' &&
+    app.launchExecutable.toLowerCase().endsWith('.exe') &&
+    !app.umu
+  );
+}
 
-    os = resolvedOs;
-    osLoading = false;
-    await runInitialLibraryReveal();
-  });
+function hasVisibleAppUpdate(app: LibraryInfo): boolean {
+  const update = updatesManager.getAppUpdate(app.appID);
+  if (!update?.updateAvailable || !update.updateVersion) return false;
+  return !updatesManager.isAppUpdateDismissed(app.appID, update.updateVersion);
+}
 
-  const unsubscribe = gameFocused.subscribe((game) => {
-    if (game !== undefined) {
-      setTimeout(() => {
-        void openPlayPageByAppID(game);
-        gameFocused.set(undefined);
-      }, 100);
-    }
-  });
+async function openPlayPage(app: LibraryInfo) {
+  const freshLibraryInfo = await window.electronAPI.app.getLibraryInfo(
+    app.appID
+  );
+  $selectedApp = freshLibraryInfo ?? app;
+}
 
-  onDestroy(() => {
-    if (revealLibraryTimer) {
-      clearTimeout(revealLibraryTimer);
-    }
-    unsubscribe();
-  });
+async function openPlayPageByAppID(appID: number) {
+  const existingApp = library.find((app) => app.appID === appID);
+  if (existingApp) {
+    await openPlayPage(existingApp);
+    return;
+  }
+
+  const freshLibraryInfo = await window.electronAPI.app.getLibraryInfo(appID);
+  if (freshLibraryInfo) {
+    $selectedApp = freshLibraryInfo;
+  }
+}
+
+// Update filtered games when search query changes
+$effect(() => {
+  filteredGames = filterLibrary(allGamesAlphabetical, searchQuery);
+});
+
+let wasPlayPageOpen = false;
+$effect(() => {
+  const isPlayPageOpen = $selectedApp !== undefined;
+  if (wasPlayPageOpen && !isPlayPageOpen && !osLoading) {
+    void runInitialLibraryReveal();
+  }
+  wasPlayPageOpen = isPlayPageOpen;
+});
+
+onMount(async () => {
+  const [resolvedOs] = await Promise.all([
+    window.electronAPI.app.getOS(),
+    reloadLibrary(),
+  ]);
+
+  os = resolvedOs;
+  osLoading = false;
+  await runInitialLibraryReveal();
+});
+
+const unsubscribe = gameFocused.subscribe((game) => {
+  if (game !== undefined) {
+    setTimeout(() => {
+      void openPlayPageByAppID(game);
+      gameFocused.set(undefined);
+    }, 100);
+  }
+});
+
+onDestroy(() => {
+  if (revealLibraryTimer) {
+    clearTimeout(revealLibraryTimer);
+  }
+  unsubscribe();
+});
 </script>
 
 {#key library}
@@ -477,9 +471,6 @@
     opacity: 1;
     transform: perspective(1000px) rotateX(5deg) scale(1.1) translateY(-12px)
       translateZ(44px);
-    box-shadow:
-      0 28px 42px 0 rgba(0, 0, 0, 0.24),
-      0 10px 16px 0 rgba(0, 0, 0, 0.16);
     z-index: 8;
   }
 

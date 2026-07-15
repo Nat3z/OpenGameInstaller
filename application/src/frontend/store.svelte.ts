@@ -3,7 +3,15 @@ import type {
   SearchResult,
   SetupCommandData,
 } from '@ogi-sdk/connect';
-import { writable, type Writable } from 'svelte/store';
+import { type Writable, writable } from 'svelte/store';
+import {
+  assertMarketplaceUrlProtocol,
+  assertNoShellInjection,
+  type CommunityAddon,
+  communityAddonArraySchema,
+} from '@/electron/lib/marketplace-schema';
+
+export type { CommunityAddon };
 
 export type DownloadStatusAndInfo = SearchResult & {
   appID: number;
@@ -48,7 +56,7 @@ export type DownloadStatusAndInfo = SearchResult & {
   queuePosition?: number;
   // Additional properties for resume functionality
   originalDownloadURL?: string;
-  originalFiles?: any[];
+  originalFiles?: DownloadStatusAndInfo['files'];
   pausedAt?: number;
   // Update-specific properties
   isUpdate?: boolean;
@@ -242,26 +250,102 @@ export const priorityToNumber: Record<QueuedModal['priority'], number> = {
 
 export const modalQueue: Writable<QueuedModal[]> = writable([]);
 
-export type CommunityAddon = {
-  name: string;
-  author: string;
-  source: string;
-  img: string;
-  description: string;
-};
-export const communityAddonsLocal: Writable<CommunityAddon[]> = writable([]);
+export let communityAddons: { [key: string]: CommunityAddon[] } = $state({});
+export const DEFAULT_MARKETPLACE_SOURCES = [
+  'https://ogi-marketplace.nat3z.com',
+];
+export const marketplaceSources: string[] = $state([
+  ...DEFAULT_MARKETPLACE_SOURCES,
+]);
+
+function normalizeMarketplaceSource(source: string) {
+  return source.trim().replace(/\/+$/, '');
+}
+
+export function loadMarketplaceSources() {
+  try {
+    const config = JSON.parse(
+      window.electronAPI.fs.read('./config/option/general.json')
+    ) as { marketplaceSources?: unknown };
+    const configuredSources = Array.isArray(config.marketplaceSources)
+      ? config.marketplaceSources
+          .filter((source): source is string => typeof source === 'string')
+          .map((source) => normalizeMarketplaceSource(source))
+          .filter(Boolean)
+      : [];
+
+    marketplaceSources.splice(
+      0,
+      marketplaceSources.length,
+      ...(configuredSources.length
+        ? [...new Set(configuredSources)]
+        : DEFAULT_MARKETPLACE_SOURCES)
+    );
+  } catch (error) {
+    console.error('Failed to load marketplace sources:', error);
+    marketplaceSources.splice(
+      0,
+      marketplaceSources.length,
+      ...DEFAULT_MARKETPLACE_SOURCES
+    );
+  }
+
+  return marketplaceSources;
+}
+
+export function saveMarketplaceSources(sources: string[]) {
+  const normalizedSources = [
+    ...new Set(sources.map((source) => normalizeMarketplaceSource(source))),
+  ].filter(Boolean);
+
+  const nextSources = normalizedSources.length
+    ? normalizedSources
+    : [...DEFAULT_MARKETPLACE_SOURCES];
+
+  const config = JSON.parse(
+    window.electronAPI.fs.read('./config/option/general.json')
+  ) as Record<string, unknown>;
+  config.marketplaceSources = nextSources;
+  window.electronAPI.fs.write(
+    './config/option/general.json',
+    JSON.stringify(config, null, 2)
+  );
+  marketplaceSources.splice(0, marketplaceSources.length, ...nextSources);
+  return marketplaceSources;
+}
 
 export async function fetchCommunityAddons() {
-  window.electronAPI.app
-    .axios({
-      method: 'GET',
-      url: 'https://ogi.nat3z.com/api/community.json',
-      headers: {
-        'Content-Type': 'application/json',
-        'User-Agent': 'OpenGameInstaller Client/Rest1.0',
-      },
+  const sources = loadMarketplaceSources();
+  const previousAddons = { ...communityAddons };
+
+  await Promise.allSettled(
+    sources.map(async (source) => {
+      try {
+        assertNoShellInjection(source, 'marketplace source URL');
+        const url = source.endsWith('/api/marketplace.json')
+          ? source
+          : `${source}/api/marketplace.json`;
+        assertMarketplaceUrlProtocol(url);
+        const response = await window.electronAPI.app.axios({
+          method: 'GET',
+          url,
+          headers: {
+            'Content-Type': 'application/json',
+            'User-Agent': 'OpenGameInstaller Client/Rest1.0',
+          },
+        });
+        const parsed = communityAddonArraySchema.safeParse(response.data);
+        if (!parsed.success) {
+          console.error('Invalid marketplace JSON for', source, parsed.error);
+          return;
+        }
+        communityAddons[source] = parsed.data;
+      } catch (error) {
+        console.error('Failed to fetch marketplace for', source, error);
+        if (previousAddons[source]) {
+          communityAddons[source] = previousAddons[source];
+        }
+      }
     })
-    .then((response) => {
-      communityAddonsLocal.set(response.data as CommunityAddon[]);
-    });
+  );
 }

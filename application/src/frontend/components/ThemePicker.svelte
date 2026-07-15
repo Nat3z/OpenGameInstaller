@@ -1,160 +1,160 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
-  import { fly } from 'svelte/transition';
+import { onMount } from 'svelte';
+import { fly } from 'svelte/transition';
 
-  const MENU_MAX_HEIGHT_PX = 260;
+const MENU_MAX_HEIGHT_PX = 260;
 
-  function portal(node: HTMLElement) {
-    document.body.appendChild(node);
-    return {
-      destroy() {
-        node.remove();
-      },
-    };
-  }
-
-  type ThemeOption = {
-    id: string;
-    name: string;
-    palette: string[];
+function portal(node: HTMLElement) {
+  document.body.appendChild(node);
+  return {
+    destroy() {
+      node.remove();
+    },
   };
+}
 
-  let {
-    id = 'theme',
-    selectedId = 'light',
-    onchange,
-  }: {
-    id?: string;
-    selectedId: string;
-    onchange: (detail: { selectedId: string }) => void;
-  } = $props();
+type ThemeOption = {
+  id: string;
+  name: string;
+  palette: string[];
+};
 
-  const paletteVariables = [
-    '--theme-bg-primary',
-    '--theme-bg-secondary',
-    '--theme-accent',
-    '--theme-accent-light',
-  ];
+let {
+  id = 'theme',
+  selectedId = 'light',
+  onchange,
+}: {
+  id?: string;
+  selectedId: string;
+  onchange: (detail: { selectedId: string }) => void;
+} = $props();
 
-  const fallbackThemes: ThemeOption[] = [
-    { id: 'light', name: 'Light', palette: [] },
-    { id: 'dark', name: 'Dark', palette: [] },
-    { id: 'synthwave', name: 'Synthwave', palette: [] },
-  ];
+const paletteVariables = [
+  '--theme-bg-primary',
+  '--theme-bg-secondary',
+  '--theme-accent',
+  '--theme-accent-light',
+];
 
-  let themes: ThemeOption[] = $state(fallbackThemes);
+const fallbackThemes: ThemeOption[] = [
+  { id: 'light', name: 'Light', palette: [] },
+  { id: 'dark', name: 'Dark', palette: [] },
+  { id: 'synthwave', name: 'Synthwave', palette: [] },
+];
 
-  let open = $state(false);
-  let buttonEl: HTMLButtonElement | undefined = $state();
-  let menuStyle = $state('');
-  let internalSelectedId = $state(selectedId);
+let themes: ThemeOption[] = $state(fallbackThemes);
 
-  let selectedTheme = $derived(
-    themes.find((theme) => theme.id === internalSelectedId) ?? themes[0]
-  );
+let open = $state(false);
+let buttonEl: HTMLButtonElement | undefined = $state();
+let menuStyle = $state('');
+let internalSelectedId = $state(selectedId);
 
-  function toTitleCase(value: string) {
-    return value
-      .split(/[-_\s]+/)
-      .filter(Boolean)
-      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-      .join(' ');
-  }
+let selectedTheme = $derived(
+  themes.find((theme) => theme.id === internalSelectedId) ?? themes[0]
+);
 
-  function extractThemeIdsFromCss() {
-    const themeIds = new Set<string>();
+function toTitleCase(value: string) {
+  return value
+    .split(/[-_\s]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+}
 
-    for (const sheet of Array.from(document.styleSheets)) {
-      let rules: CSSRuleList;
-      try {
-        rules = sheet.cssRules;
-      } catch {
-        continue;
-      }
+function extractThemeIdsFromCss() {
+  const themeIds = new Set<string>();
 
-      for (const rule of Array.from(rules)) {
-        if (!(rule instanceof CSSStyleRule)) continue;
-        const matches = rule.selectorText.matchAll(
-          /\[data-theme=(?:'|")?([^'"\]]+)(?:'|")?\]/g
-        );
-        for (const match of matches) {
-          themeIds.add(match[1]);
-        }
-      }
+  for (const sheet of Array.from(document.styleSheets)) {
+    let rules: CSSRuleList;
+    try {
+      rules = sheet.cssRules;
+    } catch {
+      continue;
     }
 
-    return Array.from(themeIds);
+    for (const rule of Array.from(rules)) {
+      if (!(rule instanceof CSSStyleRule)) continue;
+      const matches = rule.selectorText.matchAll(
+        /\[data-theme=(?:'|")?([^'"\]]+)(?:'|")?\]/g
+      );
+      for (const match of matches) {
+        themeIds.add(match[1]);
+      }
+    }
   }
 
-  function getThemePalette(themeId: string) {
-    const probe = document.createElement('div');
-    probe.setAttribute('data-theme', themeId);
-    probe.className = 'absolute invisible pointer-events-none';
-    document.body.appendChild(probe);
-    const styles = getComputedStyle(probe);
-    const palette = paletteVariables
-      .map((variable) => styles.getPropertyValue(variable).trim())
-      .filter(Boolean);
-    probe.remove();
-    return palette;
-  }
+  return Array.from(themeIds);
+}
 
-  function loadThemesFromCss() {
-    const themeIds = extractThemeIdsFromCss();
-    if (themeIds.length === 0) return;
+function getThemePalette(themeId: string) {
+  const probe = document.createElement('div');
+  probe.setAttribute('data-theme', themeId);
+  probe.className = 'absolute invisible pointer-events-none';
+  document.body.appendChild(probe);
+  const styles = getComputedStyle(probe);
+  const palette = paletteVariables
+    .map((variable) => styles.getPropertyValue(variable).trim())
+    .filter(Boolean);
+  probe.remove();
+  return palette;
+}
 
-    themes = themeIds.map((themeId) => ({
-      id: themeId,
-      name: toTitleCase(themeId),
-      palette: getThemePalette(themeId),
-    }));
-  }
+function loadThemesFromCss() {
+  const themeIds = extractThemeIdsFromCss();
+  if (themeIds.length === 0) return;
 
-  function updateMenuPosition() {
-    if (!buttonEl) return;
-    const rect = buttonEl.getBoundingClientRect();
-    const gap = 6;
-    const spaceBelow = window.innerHeight - rect.bottom - gap;
-    const spaceAbove = rect.top - gap;
-    const openUpward = spaceBelow < MENU_MAX_HEIGHT_PX && spaceAbove > spaceBelow;
-    const maxHeight = Math.min(
-      MENU_MAX_HEIGHT_PX,
-      Math.max(0, openUpward ? spaceAbove : spaceBelow)
-    );
+  themes = themeIds.map((themeId) => ({
+    id: themeId,
+    name: toTitleCase(themeId),
+    palette: getThemePalette(themeId),
+  }));
+}
 
-    menuStyle = openUpward
-      ? `left:${rect.left}px;width:${rect.width}px;bottom:${window.innerHeight - rect.top + gap}px;max-height:${maxHeight}px;`
-      : `left:${rect.left}px;width:${rect.width}px;top:${rect.bottom + gap}px;max-height:${maxHeight}px;`;
-  }
+function updateMenuPosition() {
+  if (!buttonEl) return;
+  const rect = buttonEl.getBoundingClientRect();
+  const gap = 6;
+  const spaceBelow = window.innerHeight - rect.bottom - gap;
+  const spaceAbove = rect.top - gap;
+  const openUpward = spaceBelow < MENU_MAX_HEIGHT_PX && spaceAbove > spaceBelow;
+  const maxHeight = Math.min(
+    MENU_MAX_HEIGHT_PX,
+    Math.max(0, openUpward ? spaceAbove : spaceBelow)
+  );
 
-  function toggle() {
-    open = !open;
-    if (open) updateMenuPosition();
-  }
+  menuStyle = openUpward
+    ? `left:${rect.left}px;width:${rect.width}px;bottom:${window.innerHeight - rect.top + gap}px;max-height:${maxHeight}px;`
+    : `left:${rect.left}px;width:${rect.width}px;top:${rect.bottom + gap}px;max-height:${maxHeight}px;`;
+}
 
-  function selectTheme(themeId: string) {
-    internalSelectedId = themeId;
-    open = false;
-    onchange({ selectedId: themeId });
-  }
+function toggle() {
+  open = !open;
+  if (open) updateMenuPosition();
+}
 
-  onMount(loadThemesFromCss);
+function selectTheme(themeId: string) {
+  internalSelectedId = themeId;
+  open = false;
+  onchange({ selectedId: themeId });
+}
 
-  $effect(() => {
-    internalSelectedId = selectedId;
-  });
+onMount(loadThemesFromCss);
 
-  $effect(() => {
-    if (!open) return;
-    updateMenuPosition();
-    const onScrollOrResize = () => updateMenuPosition();
-    window.addEventListener('resize', onScrollOrResize);
-    window.addEventListener('scroll', onScrollOrResize, true);
-    return () => {
-      window.removeEventListener('resize', onScrollOrResize);
-      window.removeEventListener('scroll', onScrollOrResize, true);
-    };
-  });
+$effect(() => {
+  internalSelectedId = selectedId;
+});
+
+$effect(() => {
+  if (!open) return;
+  updateMenuPosition();
+  const onScrollOrResize = () => updateMenuPosition();
+  window.addEventListener('resize', onScrollOrResize);
+  window.addEventListener('scroll', onScrollOrResize, true);
+  return () => {
+    window.removeEventListener('resize', onScrollOrResize);
+    window.removeEventListener('scroll', onScrollOrResize, true);
+  };
+});
 </script>
 
 <div class="theme-picker">

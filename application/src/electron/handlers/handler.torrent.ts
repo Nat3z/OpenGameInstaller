@@ -1,18 +1,18 @@
+import { QBittorrent } from '@ctrl/qbittorrent';
 import axios from 'axios';
-import { ipcMain, BrowserWindow } from 'electron';
-import { sendNotification } from '@/electron/main.js';
-import { join } from 'path';
+import { BrowserWindow, ipcMain } from 'electron';
 import * as fs from 'fs';
-import { rm as rmAsync, readFile } from 'fs/promises';
+import { readFile, rm as rmAsync } from 'fs/promises';
+import parseTorrent from 'parse-torrent';
+import { join } from 'path';
+import { sendNotification } from '@/electron/main.js';
 import {
   getStoredValue,
   refreshCached,
 } from '@/electron/manager/manager.config.js';
-import { QBittorrent } from '@ctrl/qbittorrent';
-import { torrent as wtConnect } from '@/electron/manager/manager.webtorrent.js';
 import { __dirname } from '@/electron/manager/manager.paths.js';
 import { DOWNLOAD_QUEUE } from '@/electron/manager/manager.queue.js';
-import parseTorrent from 'parse-torrent';
+import { torrent as wtConnect } from '@/electron/manager/manager.webtorrent.js';
 
 let qbitClient: QBittorrent | undefined = undefined;
 
@@ -447,7 +447,7 @@ class TorrentDownload {
 
       try {
         const torrents = (await qbitClient.getAllData()).torrents;
-        let torrent;
+        let torrent: (typeof torrents)[number] | undefined;
 
         if (!this.qbitTorrentHash) {
           torrent = torrents.find((t) => {

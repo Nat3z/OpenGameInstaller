@@ -1,9 +1,9 @@
-import { BaseService } from '@/frontend/lib/downloads/services/BaseService';
-import type { SearchResultWithAddon } from '@/frontend/lib/tasks/runner';
-import { currentDownloads } from '@/frontend/store';
 import { getDownloadPath } from '@/frontend/lib/core/fs';
 import { listenUntilDownloadReady } from '@/frontend/lib/downloads/events';
 import { safeDownloadPath } from '@/frontend/lib/downloads/paths';
+import { BaseService } from '@/frontend/lib/downloads/services/BaseService';
+import type { SearchResultWithAddon } from '@/frontend/lib/tasks/runner';
+import { currentDownloads } from '@/frontend/store.svelte';
 /**
  * Handles magnet/torrent downloads that should be routed through Real-Debrid.
  */

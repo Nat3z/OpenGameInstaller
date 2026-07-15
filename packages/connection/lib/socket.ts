@@ -240,7 +240,9 @@ export class EventResponseSocket<
       // OPEN state is 1
       if (this.socket.readyState !== 1) {
         reject(
-          new Error(`Websocket is not open (readyState: ${this.socket.readyState})`)
+          new Error(
+            `Websocket is not open (readyState: ${this.socket.readyState})`
+          )
         );
         return;
       }

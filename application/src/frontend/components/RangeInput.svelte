@@ -1,54 +1,54 @@
 <script lang="ts">
-  let {
-    value = $bindable(0),
-    min = 0,
-    max = 100,
-    step = 1,
-    disabled = false,
-    id,
-    class: className = '',
-    showValue = true,
-    editableValue = false,
-    dataInput = false,
-    oninput,
-    onchange,
-  }: {
-    value?: number;
-    min?: number;
-    max?: number;
-    step?: number;
-    disabled?: boolean;
-    id?: string;
-    class?: string;
-    showValue?: boolean;
-    editableValue?: boolean;
-    dataInput?: boolean;
-    oninput?: (value: number) => void;
-    onchange?: (value: number) => void;
-  } = $props();
+let {
+  value = $bindable(0),
+  min = 0,
+  max = 100,
+  step = 1,
+  disabled = false,
+  id,
+  class: className = '',
+  showValue = true,
+  editableValue = false,
+  dataInput = false,
+  oninput,
+  onchange,
+}: {
+  value?: number;
+  min?: number;
+  max?: number;
+  step?: number;
+  disabled?: boolean;
+  id?: string;
+  class?: string;
+  showValue?: boolean;
+  editableValue?: boolean;
+  dataInput?: boolean;
+  oninput?: (value: number) => void;
+  onchange?: (value: number) => void;
+} = $props();
 
-  function handleRangeInput(event: Event) {
-    const target = event.target as HTMLInputElement;
-    const v = Number(target.value);
-    value = v;
-    oninput?.(v);
-  }
+function handleRangeInput(event: Event) {
+  const target = event.target as HTMLInputElement;
+  const v = Number(target.value);
+  value = v;
+  oninput?.(v);
+}
 
-  function handleRangeChange(event: Event) {
-    const target = event.target as HTMLInputElement;
-    value = Number(target.value);
-    onchange?.(value);
-  }
+function handleRangeChange(event: Event) {
+  const target = event.target as HTMLInputElement;
+  value = Number(target.value);
+  onchange?.(value);
+}
 
-  function handleValueInputChange(event: Event) {
-    const target = event.target as HTMLInputElement;
-    let v = Number(target.value);
-    if (Number.isNaN(v)) v = value;
-    v = Math.min(max, Math.max(min, v));
-    target.value = String(v);
-    value = v;
-    onchange?.(v);
-  }
+function handleValueInputChange(event: Event) {
+  const target = event.target as HTMLInputElement;
+  let v = Number(target.value);
+  if (Number.isNaN(v)) v = value;
+  v = Math.min(max, Math.max(min, v));
+  target.value = String(v);
+  value = v;
+  onchange?.(v);
+}
 </script>
 
 <div class="range-input-wrapper flex items-center gap-4 w-full {className}">

@@ -1,21 +1,21 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { randomUUID } from 'crypto';
 import {
-  EventResponseSocket,
-  type WebSocketLike,
   type AddonClientSDKToServerIncomingMessage,
   type AddonClientSDKToServerWebsocketMessage,
+  type AddonNotificationMessage,
   type AddonServerToClientEventArgs,
   type AddonServerToClientEventName,
   type AddonServerToClientSDKIncomingMessage,
   type AddonServerToClientSDKWebsocketMessage,
+  type ConfigurationFile,
+  type ConnectedAddonInfo,
+  EventResponseSocket,
   type SDKRequestName,
   type SDKResponse,
-  type AddonNotificationMessage,
-  type ConnectedAddonInfo,
-  type ConfigurationFile,
+  type WebSocketLike,
 } from '@ogi-sdk/connect';
+import { randomUUID } from 'crypto';
 import { buildEventMessage } from '../_generated/event-proxy';
 import { DeferrableTask } from '../deffered';
 import type { AddonServer } from '../server';
@@ -293,10 +293,8 @@ export class ClientConnection {
     });
 
     bindWebSocketLifecycle(this.socket, {
-      onClose: () =>
-        this.transport.rejectPendingResponses('Websocket closed'),
-      onError: () =>
-        this.transport.rejectPendingResponses('Websocket error'),
+      onClose: () => this.transport.rejectPendingResponses('Websocket closed'),
+      onError: () => this.transport.rejectPendingResponses('Websocket error'),
     });
   }
 
@@ -344,7 +342,9 @@ export class ClientConnection {
     );
   }
 
-  public sendNotification(notification: AddonNotificationMessage): Promise<AddonClientSDKToServerWebsocketMessage> {
+  public sendNotification(
+    notification: AddonNotificationMessage
+  ): Promise<AddonClientSDKToServerWebsocketMessage> {
     return this.transport.send(
       {
         event: 'notification',

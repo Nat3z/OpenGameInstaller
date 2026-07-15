@@ -19,9 +19,11 @@
         <section id="channel-picker" style="display: none">
           <div id="channel-screen">
             <div class="chips">
-              <button data-channel="stable">Stable</button>
-              <button data-channel="unstable">Unstable</button>
-              <button data-channel="bleeding-edge">Bleeding Edge</button>
+              <button type="button" data-channel="stable">Stable</button>
+              <button type="button" data-channel="unstable">Unstable</button>
+              <button type="button" data-channel="bleeding-edge">
+                Bleeding Edge
+              </button>
             </div>
           </div>
           <div id="bleeding-edge-screen" style="display: none">
@@ -340,7 +342,6 @@
   * {
     -webkit-touch-callout: none; /* iOS Safari */
     -webkit-user-select: none; /* Safari */
-    -khtml-user-select: none; /* Konqueror HTML */
     -moz-user-select: none; /* Old versions of Firefox */
     -ms-user-select: none; /* Internet Explorer/Edge */
     user-select: none; /* Non-prefixed version, currently

@@ -14,7 +14,7 @@ const CURRENT_WEB_MARKETPLACE_SOURCE_BY_CANONICAL = new Map(
   ])
 );
 
-function canonicalizeAddonSource(source: string): string {
+export function canonicalizeAddonSource(source: string): string {
   return source
     .trim()
     .replace(/\/+$/, '')

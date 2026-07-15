@@ -132,11 +132,15 @@ export class Git {
     hash: string,
     options: { fetchFirst?: boolean } = {}
   ): Promise<void> {
+    // Spawn argv is not a shell, but reject option-like refs anyway.
+    if (!hash || hash.startsWith('-')) {
+      throw new Error(`Refusing unsafe git ref: ${hash}`);
+    }
     if (options.fetchFirst) {
       await this.fetch();
     }
     return void (await this.execGit(
-      ['switch', '--detach', hash],
+      ['switch', '--detach', '--', hash],
       `checkout commit ${hash}`
     ));
   }

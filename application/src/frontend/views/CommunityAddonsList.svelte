@@ -65,6 +65,8 @@ async function deleteAddon(addon: CommunityAddon) {
     './config/option/general.json',
     JSON.stringify(currentAddons, null, 2)
   );
+
+  await window.electronAPI.cleanAddons([addon.source]);
   await window.electronAPI.restartAddonServer();
   await reconnectClientSdk();
   // close the modal

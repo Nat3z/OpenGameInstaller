@@ -1,6 +1,7 @@
 <script lang="ts">
 import { onMount } from 'svelte';
 import { fly } from 'svelte/transition';
+import { parseAddonLink } from '@/electron/lib/addon-links';
 import CustomDropdown from '@/frontend/components/CustomDropdown.svelte';
 import ButtonModal from '@/frontend/components/modal/ButtonModal.svelte';
 import InputModal from '@/frontend/components/modal/InputModal.svelte';
@@ -10,7 +11,6 @@ import TextModal from '@/frontend/components/modal/TextModal.svelte';
 import TitleModal from '@/frontend/components/modal/TitleModal.svelte';
 import RangeInput from '@/frontend/components/RangeInput.svelte';
 import ThemePicker from '@/frontend/components/ThemePicker.svelte';
-import { parseAddonLink } from '@/electron/lib/addon-links';
 import { createNotification } from '@/frontend/store.svelte';
 import { fetchAddonsWithConfigure, reconnectClientSdk } from '@/frontend/utils';
 
@@ -495,7 +495,17 @@ async function installAddons() {
 
 async function cleanAddons() {
   isCleaningAddons = true;
-  await window.electronAPI.cleanAddons();
+  const addons = getAddonListFromInput();
+  if (!addons || addons.length === 0) {
+    createNotification({
+      id: Math.random().toString(36).substring(7),
+      message: 'No addons to clean',
+      type: 'error',
+    });
+    isCleaningAddons = false;
+    return;
+  }
+  await window.electronAPI.cleanAddons(addons);
   isCleaningAddons = false;
 }
 

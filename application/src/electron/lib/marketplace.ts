@@ -1,17 +1,19 @@
 import axios from 'axios';
-import { z } from 'zod';
+import { canonicalizeAddonSource } from './addon-links';
+import {
+  assertMarketplaceUrlProtocol,
+  type CommunityAddon,
+  communityAddonArraySchema,
+} from './marketplace-schema';
 import { tryCatch } from './tryCatch';
 
-const communityAddon = z.object({
-  name: z.string(),
-  author: z.string(),
-  source: z.string(),
-  img: z.string(),
-  description: z.string(),
-  pinnedCommit: z.string().optional(),
-});
-
-export type CommunityAddon = z.infer<typeof communityAddon>;
+export {
+  assertMarketplaceUrlProtocol,
+  type CommunityAddon,
+  communityAddonArraySchema,
+  communityAddonSchema,
+  sanitizePinnedCommit,
+} from './marketplace-schema';
 
 function getMarketplaceJsonUrl(url: string): string {
   const marketplaceUrl = new URL(url);
@@ -30,10 +32,13 @@ export class AddonMarketplace {
 
   /** Returns true when the marketplace JSON was fetched and parsed successfully. */
   async fetch(): Promise<boolean> {
+    const previousAddons = this.addons;
+
     let result = await tryCatch(async () => {
       const marketplaceJsonUrl = getMarketplaceJsonUrl(this.url);
+      assertMarketplaceUrlProtocol(marketplaceJsonUrl);
 
-      return communityAddon.array().parse(
+      return communityAddonArraySchema.parse(
         (
           await axios.get(marketplaceJsonUrl, {
             method: 'GET',
@@ -51,16 +56,12 @@ export class AddonMarketplace {
         `[addon-marketplace ${this.url}] Failed to fetch marketplace.`,
         result.error
       );
-      this.addons = [];
+      // Keep serving the last good catalog on transient refresh failures.
+      this.addons = previousAddons;
       return false;
     }
 
-    this.addons = result.data.map((addon) => {
-      return {
-        ...addon,
-        pinnedCommit: addon.pinnedCommit || 'latest',
-      };
-    });
+    this.addons = result.data;
     return true;
   }
 
@@ -70,7 +71,9 @@ export class AddonMarketplace {
 
   getAddon(source: string) {
     return this.addons.find(
-      (a) => a.source.toLowerCase() === source.toLowerCase()
+      (a) =>
+        canonicalizeAddonSource(a.source.toLowerCase()) ===
+        canonicalizeAddonSource(source.toLowerCase())
     );
   }
 }

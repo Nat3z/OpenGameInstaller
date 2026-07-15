@@ -340,7 +340,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   deleteInstalledAddon: wrap((addonID: string) =>
     ipcRenderer.invoke('addon:delete-installed', addonID)
   ),
-  cleanAddons: wrap(() => ipcRenderer.invoke('clean-addons')),
+  cleanAddons: wrap((marketplaceUrls: string[]) =>
+    ipcRenderer.invoke('clean-addons', marketplaceUrls)
+  ),
   downloadTorrentInto: wrap((link: string) =>
     ipcRenderer.invoke('download-torrent-into', link)
   ),

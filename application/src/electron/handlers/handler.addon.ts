@@ -166,13 +166,8 @@ export async function loadMarketplace(
   let marketplace = loadedMarketplaces.find((m) => m.url === url);
 
   if (marketplace && refresh) {
-    const ok = await marketplace.fetch();
-    if (!ok) {
-      const index = loadedMarketplaces.indexOf(marketplace);
-      if (index !== -1) {
-        loadedMarketplaces.splice(index, 1);
-      }
-    }
+    // fetch() keeps the last good catalog on failure; do not evict the cache.
+    await marketplace.fetch();
     return marketplace;
   }
 
@@ -367,15 +362,25 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
     return deleteInstalledAddon(addonID);
   });
 
-  ipcMain.handle('clean-addons', async (_) => {
+  ipcMain.handle('clean-addons', async (_, marketplaceUrls: string[]) => {
     for (const instance of [...Addon.running.values()]) {
       console.log(`Stopping addon ${instance.config.path}`);
       instance.stop();
     }
 
-    // delete all of the addons
-    fs.rmSync(join(__dirname, 'addons/'), { recursive: true, force: true });
-    fs.mkdirSync(join(__dirname, 'addons/'));
+    // delete specific addons in marketplaceUrls
+    for (const addonURL of marketplaceUrls) {
+      const parsedAddon = parseAddonLink(addonURL);
+      let addonPath = '';
+      if (parsedAddon.kind === 'local') {
+        addonPath = parsedAddon.path;
+      } else {
+        addonPath = join(__dirname, 'addons', parsedAddon.addonName);
+      }
+      if (fs.existsSync(addonPath)) {
+        fs.rmSync(addonPath, { recursive: true, force: true });
+      }
+    }
 
     sendNotification({
       message: 'Successfully cleaned addons.',

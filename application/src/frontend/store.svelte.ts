@@ -4,6 +4,12 @@ import type {
   SetupCommandData,
 } from '@ogi-sdk/connect';
 import { type Writable, writable } from 'svelte/store';
+import {
+  type CommunityAddon,
+  communityAddonArraySchema,
+} from '@/electron/lib/marketplace-schema';
+
+export type { CommunityAddon };
 
 export type DownloadStatusAndInfo = SearchResult & {
   appID: number;
@@ -242,14 +248,6 @@ export const priorityToNumber: Record<QueuedModal['priority'], number> = {
 
 export const modalQueue: Writable<QueuedModal[]> = writable([]);
 
-export type CommunityAddon = {
-  name: string;
-  author: string;
-  source: string;
-  img: string;
-  description: string;
-  pinnedCommit: string;
-};
 export let communityAddons: { [key: string]: CommunityAddon[] } = $state({});
 export const DEFAULT_MARKETPLACE_SOURCES = [
   'https://ogi-marketplace.nat3z.com',
@@ -332,7 +330,12 @@ export async function fetchCommunityAddons() {
           'User-Agent': 'OpenGameInstaller Client/Rest1.0',
         },
       });
-      communityAddons[source] = response.data as CommunityAddon[];
+      const parsed = communityAddonArraySchema.safeParse(response.data);
+      if (!parsed.success) {
+        console.error('Invalid marketplace JSON for', source, parsed.error);
+        return;
+      }
+      communityAddons[source] = parsed.data;
     })
   );
 }

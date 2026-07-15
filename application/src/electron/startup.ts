@@ -800,10 +800,6 @@ export async function checkForAddonUpdates(
 
         if (parsedAddon.kind === 'marketplace') {
           const marketplace = await loadMarketplace(parsedAddon.marketplaceUrl);
-          if (!marketplace) {
-            console.warn(`Failed to load marketplace for ${addonName}`);
-            return;
-          }
           remoteHash =
             marketplace.getAddon(parsedAddon.gitUrl)?.pinnedCommit ?? 'latest';
           isUpdate = localHash !== remoteHash;

@@ -2,6 +2,7 @@
 import { onDestroy, onMount } from 'svelte';
 import { preventDefault } from 'svelte/legacy';
 import { fade } from 'svelte/transition';
+import { communityAddonArraySchema } from '@/electron/lib/marketplace-schema';
 import ThemePicker from '@/frontend/components/ThemePicker.svelte';
 import {
   type CommunityAddon,
@@ -108,8 +109,16 @@ async function loadCommunityAddonsFromMarketplaces(sources: string[]) {
             'User-Agent': 'OpenGameInstaller Client/Rest1.0',
           },
         });
-        const addons = (response.data as CommunityAddon[]) ?? [];
-        return addons.map((addon) => ({
+        const parsed = communityAddonArraySchema.safeParse(response.data);
+        if (!parsed.success) {
+          console.error(
+            'Invalid marketplace JSON for',
+            marketplaceUrl,
+            parsed.error
+          );
+          throw new Error('Invalid marketplace JSON');
+        }
+        return parsed.data.map((addon) => ({
           ...addon,
           marketplaceUrl,
         }));

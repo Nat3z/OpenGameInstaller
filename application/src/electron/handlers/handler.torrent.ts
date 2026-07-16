@@ -1,7 +1,7 @@
 import { QBittorrent } from '@ctrl/qbittorrent';
 import axios from 'axios';
 import { BrowserWindow, ipcMain } from 'electron';
-import { HttpError, TorrentError, formatError, formatErrorResponse } from '@ogi/errors';
+import { HttpError, TorrentError, formatError, runEffectBoundary as run } from '@ogi/errors';
 import { Effect } from 'effect';
 import * as fs from 'fs';
 import { readFile, rm as rmAsync } from 'fs/promises';
@@ -624,8 +624,6 @@ class TorrentDownload {
 }
 
 export default function handler(mainWindow: BrowserWindow): void {
-  const run = <A, E>(effect: Effect.Effect<A, E>) =>
-    Effect.runPromise(effect.pipe(Effect.catchAll((error) => Effect.succeed(formatErrorResponse(error)))));
   const startDownload = (job: TorrentJob) => Effect.gen(function* () {
     const download = new TorrentDownload(mainWindow, job);
     yield* Effect.sync(() => download.start());
@@ -656,7 +654,11 @@ export default function handler(mainWindow: BrowserWindow): void {
   ipcMain.handle('download-torrent-into', (_, link: string) => run(
     Effect.tryPromise({
       try: () => axios.get<ArrayBuffer>(link, { responseType: 'arraybuffer' }),
-      catch: (cause: any) => new HttpError({ message: cause?.message ?? 'Torrent download failed', statusCode: cause?.response?.status ?? 0, url: link }),
+      catch: (cause: unknown) => new HttpError({
+        message: axios.isAxiosError(cause) ? cause.message : formatError(cause),
+        statusCode: axios.isAxiosError(cause) ? cause.response?.status ?? 0 : 0,
+        url: link,
+      }),
     }).pipe(Effect.map((response) => Buffer.from(response.data)))
   ));
 

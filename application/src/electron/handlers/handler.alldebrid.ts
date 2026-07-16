@@ -5,7 +5,7 @@ import * as fs from 'node:fs';
 import * as fsAsync from 'node:fs/promises';
 import { join } from 'node:path';
 import type { ReadStream } from 'original-fs';
-import { FileSystemError, HttpError, formatError } from '@ogi/errors';
+import { FileSystemError, HttpError, formatError, runEffectBoundary } from '@ogi/errors';
 import { Effect, Schema } from 'effect';
 import { sendNotification } from '@/electron/main.js';
 import { __dirname } from '@/electron/manager/manager.paths.js';
@@ -39,7 +39,11 @@ const notifyFailure = <A, E>(effect: Effect.Effect<A, E>, message: string): Effe
 const downloadTorrent = (url: string, path: string) => Effect.gen(function* () {
   const response = yield* Effect.tryPromise({
     try: () => axios.get<ArrayBuffer>(url, { responseType: 'arraybuffer', timeout: 60_000 }),
-    catch: (cause: any) => new HttpError({ message: cause?.message ?? 'Torrent download failed', statusCode: cause?.response?.status ?? 0, url }),
+    catch: (cause: unknown) => new HttpError({
+      message: axios.isAxiosError(cause) ? cause.message : formatError(cause),
+      statusCode: axios.isAxiosError(cause) ? cause.response?.status ?? 0 : 0,
+      url,
+    }),
   });
   const buffer = Buffer.from(response.data);
   if (buffer.byteLength > 10 * 1024 * 1024) {
@@ -52,7 +56,7 @@ const downloadTorrent = (url: string, path: string) => Effect.gen(function* () {
 });
 
 const run = <A, E>(effect: Effect.Effect<A, E>, message: string) =>
-  Effect.runPromise(notifyFailure(effect, message));
+  runEffectBoundary(notifyFailure(effect, message));
 
 export default function handler(_mainWindow: Electron.BrowserWindow): void {
   ipcMain.handle('all-debrid:set-key', (_, key: string) => run(Effect.sync(() => {

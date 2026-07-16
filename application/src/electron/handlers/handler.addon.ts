@@ -6,7 +6,7 @@ import {
   AddonError,
   AddonNotFound,
   formatError,
-  formatErrorResponse,
+  runEffectBoundary,
 } from '@ogi/errors';
 import { Effect } from 'effect';
 import fs from 'fs';
@@ -28,13 +28,15 @@ import {
   stopAddonServer,
 } from '@/electron/server/addon-server.js';
 
+/** @deprecated Temporary Effect shim - internal functions still use async/await.
+ *  Full conversion pending. Do not use this pattern for new code. */
 const ipcBoundary = <Args extends readonly unknown[], A>(
   operation: (event: IpcMainInvokeEvent, ...args: Args) => Promise<A> | A
 ) => (event: IpcMainInvokeEvent, ...args: Args) =>
-  Effect.runPromise(Effect.tryPromise({
+  runEffectBoundary(Effect.tryPromise({
     try: () => Promise.resolve(operation(event, ...args)),
     catch: (cause) => new AddonError({ message: formatError(cause) }),
-  }).pipe(Effect.catchAll((error) => Effect.succeed(formatErrorResponse(error)))));
+  }));
 
 function isGitRepository(addonPath: string): boolean {
   if (!fs.existsSync(addonPath)) {

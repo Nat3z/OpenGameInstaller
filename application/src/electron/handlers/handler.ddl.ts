@@ -6,7 +6,7 @@ import {
   FileSystemError,
   TooManyRequests,
   formatError,
-  formatErrorResponse,
+  runEffectBoundary,
 } from '@ogi/errors';
 import { Context, Effect, Layer, Schedule, Stream } from 'effect';
 import * as fs from 'fs';
@@ -2473,10 +2473,7 @@ export const DownloadServiceLive = (mainWindow: BrowserWindow): Layer.Layer<Down
 export default function handler(mainWindow: BrowserWindow): void {
   const layer = DownloadServiceLive(mainWindow);
   const run = <A, E>(effect: Effect.Effect<A, E, DownloadService>) =>
-    Effect.runPromise(effect.pipe(
-      Effect.provide(layer),
-      Effect.catchAll((error) => Effect.succeed(formatErrorResponse(error)))
-    ));
+    runEffectBoundary(effect.pipe(Effect.provide(layer)));
 
   ipcMain.handle('ddl:download', (_, jobs: DownloadJob[], part?: number) =>
     run(Effect.gen(function* () { return yield* (yield* DownloadService).start(jobs, part); }))

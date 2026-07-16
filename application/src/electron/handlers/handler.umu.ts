@@ -4,7 +4,7 @@
  */
 
 import type { LibraryInfo } from '@ogi-sdk/connect';
-import { PlatformError, formatError, formatErrorResponse } from '@ogi/errors';
+import { PlatformError, formatError, runEffectBoundary as runUmuBoundary } from '@ogi/errors';
 import { spawn } from 'child_process';
 import { ipcMain } from 'electron';
 import { Effect } from 'effect';
@@ -1544,9 +1544,6 @@ const umuEffect = <A>(operation: () => Promise<A>): Effect.Effect<A, PlatformErr
     try: operation,
     catch: (cause) => new PlatformError({ message: formatError(cause), platform: process.platform }),
   });
-
-const runUmuBoundary = <A>(effect: Effect.Effect<A, PlatformError>) =>
-  Effect.runPromise(effect.pipe(Effect.catchAll((error) => Effect.succeed(formatErrorResponse(error)))));
 
 /** Effect service adapters retained alongside the Promise compatibility API. */
 export const isUmuInstalledEffect = () => umuEffect(isUmuInstalled);

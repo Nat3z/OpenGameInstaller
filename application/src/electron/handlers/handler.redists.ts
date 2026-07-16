@@ -1,5 +1,5 @@
 import type { LibraryInfo } from '@ogi-sdk/connect';
-import { LibraryError, PlatformError, formatError, formatErrorResponse } from '@ogi/errors';
+import { LibraryError, PlatformError, formatError, runEffectBoundary } from '@ogi/errors';
 import { ipcMain } from 'electron';
 import { Effect } from 'effect';
 import {
@@ -53,12 +53,11 @@ const installRedistributables = (appID: number, downloadId?: string) =>
 
 export function registerRedistributableHandlers(): void {
   ipcMain.handle('app:install-redistributables', (_, appID: number, downloadId?: string) =>
-    Effect.runPromise(installRedistributables(appID, downloadId).pipe(
+    runEffectBoundary(installRedistributables(appID, downloadId).pipe(
       Effect.catchTags({
         PlatformError: () => Effect.succeed('failed' as const),
         LibraryError: (error) => Effect.succeed(error.message === 'Game not found' ? 'not-found' as const : 'failed' as const),
-      }),
-      Effect.catchAll((error) => Effect.succeed(formatErrorResponse(error)))
+      })
     ))
   );
 }

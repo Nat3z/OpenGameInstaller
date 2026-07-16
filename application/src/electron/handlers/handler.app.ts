@@ -5,7 +5,7 @@ import * as fsAsync from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { join } from 'node:path';
-import { FileSystemError, HttpError, PlatformError, formatError, formatErrorResponse } from '@ogi/errors';
+import { FileSystemError, HttpError, PlatformError, formatError, runEffectBoundary as runBoundary } from '@ogi/errors';
 import { Effect } from 'effect';
 import { registerLibraryHandlers } from '@/electron/handlers/handler.library.js';
 import { registerRedistributableHandlers } from '@/electron/handlers/handler.redists.js';
@@ -15,9 +15,6 @@ import { currentScreens, screenInputCallbacks } from '@/electron/main.js';
 import { __dirname, isDev } from '@/electron/manager/manager.paths.js';
 import { addonServer } from '@/electron/server/addon-server.js';
 import { getCurrentUsername } from './helpers.app/platform.js';
-
-const runBoundary = <A, E>(effect: Effect.Effect<A, E>) =>
-  Effect.runPromise(effect.pipe(Effect.catchAll((error) => Effect.succeed(formatErrorResponse(error)))));
 
 export function escapeShellArg(arg: string): string {
   return arg.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\$/g, '\\$').replace(/`/g, '\\`');
@@ -84,9 +81,9 @@ const axiosRequest = (options: AxiosRequestConfig): Effect.Effect<
     const response = await axios(options);
     return { data: response.data, status: response.status, success: response.status >= 200 && response.status < 300 };
   },
-  catch: (cause: any) => new HttpError({
-    message: cause?.message ?? 'HTTP request failed',
-    statusCode: cause?.response?.status ?? 500,
+  catch: (cause: unknown) => new HttpError({
+    message: axios.isAxiosError(cause) ? cause.message : formatError(cause),
+    statusCode: axios.isAxiosError(cause) ? cause.response?.status ?? 500 : 500,
     url: options.url,
   }),
 });

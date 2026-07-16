@@ -23,6 +23,7 @@
         "@ogi-sdk/client-kit": "workspace:*",
         "@ogi-sdk/connect": "workspace:*",
         "@ogi-sdk/executor": "workspace:*",
+        "@ogi/errors": "workspace:*",
         "all-debrid-js": "workspace:*",
         "axios": "^1.13.4",
         "d3": "^7.9.0",
@@ -75,6 +76,7 @@
       "dependencies": {
         "@effect/schema": "^0.75.5",
         "@ogi-sdk/connect": "^1.0.2",
+        "@ogi/errors": "workspace:*",
         "effect": "^3.22.0",
         "elysia": "^1.4.28",
         "ogi-addon": "^4.1.0",
@@ -184,9 +186,9 @@
       "dependencies": {
         "@effect/schema": "^0.75.5",
         "@ogi-sdk/connect": "^1.0.2",
+        "@ogi/errors": "workspace:*",
         "effect": "^3.22.0",
         "fuse.js": "^7.1.0",
-        "zod": "^3.23.8",
       },
       "devDependencies": {
         "@types/minimatch": "^6.0.0",

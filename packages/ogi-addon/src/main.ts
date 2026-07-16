@@ -1,4 +1,10 @@
 import events from 'node:events';
+import {
+  AddonError,
+  formatError,
+  NetworkError,
+  ValidationError,
+} from '@ogi/errors';
 import type {
   AddonClientToServerEventArgs,
   AddonClientToServerEventName,
@@ -18,7 +24,6 @@ import type {
   StoreData,
 } from '@ogi-sdk/connect';
 import { EventResponseSocket, randomMessageId } from '@ogi-sdk/connect';
-import { AddonError, NetworkError, ValidationError, formatError } from '@ogi/errors';
 import { Effect, Fiber, Schema } from 'effect';
 import Fuse, { IFuseOptions } from 'fuse.js';
 import { Configuration, DefiniteConfig } from './config/Configuration';
@@ -165,7 +170,9 @@ export default class OGIAddon {
    * @param notification {Notification}
    */
   public notifyEffect(notification: AddonNotificationMessage) {
-    return this.addonWSListener.send('notification', notification).pipe(Effect.asVoid);
+    return this.addonWSListener
+      .send('notification', notification)
+      .pipe(Effect.asVoid);
   }
 
   public notify(notification: AddonNotificationMessage): void {
@@ -185,7 +192,10 @@ export default class OGIAddon {
     );
   }
 
-  public getAppDetails(appID: number, storefront: string): Promise<StoreData | undefined> {
+  public getAppDetails(
+    appID: number,
+    storefront: string
+  ): Promise<StoreData | undefined> {
     return Effect.runPromise(this.getAppDetailsEffect(appID, storefront));
   }
 
@@ -196,7 +206,10 @@ export default class OGIAddon {
     );
   }
 
-  public searchGame(query: string, storefront: string): Promise<BasicLibraryInfo[]> {
+  public searchGame(
+    query: string,
+    storefront: string
+  ): Promise<BasicLibraryInfo[]> {
     return Effect.runPromise(this.searchGameEffect(query, storefront));
   }
 
@@ -436,13 +449,15 @@ export class Task {
    */
   private update(): Effect.Effect<void, NetworkError | ValidationError> {
     if (!this.ws || this.id === undefined) return Effect.void;
-    return this.ws.send('task-update', {
-      id: this.id,
-      progress: this.progress,
-      logs: this.logs,
-      finished: this.finished,
-      failed: this.failed,
-    }).pipe(Effect.asVoid);
+    return this.ws
+      .send('task-update', {
+        id: this.id,
+        progress: this.progress,
+        logs: this.logs,
+        finished: this.finished,
+        failed: this.failed,
+      })
+      .pipe(Effect.asVoid);
   }
 }
 /**
@@ -488,24 +503,36 @@ export const LibraryInfoSchema: Schema.Schema<LibraryInfo> = Schema.Struct({
   appID: Schema.Number,
   launchExecutable: Schema.String,
   launchArguments: Schema.optional(Schema.String),
-  launchEnv: Schema.optional(Schema.Record({ key: Schema.String, value: Schema.String })),
+  launchEnv: Schema.optional(
+    Schema.Record({ key: Schema.String, value: Schema.String })
+  ),
   capsuleImage: Schema.String,
   storefront: Schema.String,
   addonsource: Schema.String,
   coverImage: Schema.String,
   titleImage: Schema.optional(Schema.String),
-  umu: Schema.optional(Schema.Struct({
-    umuId: Schema.String.pipe(Schema.pattern(/^(steam|umu):\S+$/)),
-    dllOverrides: Schema.optional(Schema.mutable(Schema.Array(Schema.String))),
-    protonVersion: Schema.optional(Schema.String),
-    store: Schema.optional(Schema.String),
-    winePrefixPath: Schema.optional(Schema.String),
-    steamShortcutId: Schema.optional(Schema.Number),
-  })),
-  redistributables: Schema.optional(Schema.mutable(Schema.Array(Schema.Struct({
-    name: Schema.String,
-    path: Schema.String,
-  })))),
+  umu: Schema.optional(
+    Schema.Struct({
+      umuId: Schema.String.pipe(Schema.pattern(/^(steam|umu):\S+$/)),
+      dllOverrides: Schema.optional(
+        Schema.mutable(Schema.Array(Schema.String))
+      ),
+      protonVersion: Schema.optional(Schema.String),
+      store: Schema.optional(Schema.String),
+      winePrefixPath: Schema.optional(Schema.String),
+      steamShortcutId: Schema.optional(Schema.Number),
+    })
+  ),
+  redistributables: Schema.optional(
+    Schema.mutable(
+      Schema.Array(
+        Schema.Struct({
+          name: Schema.String,
+          path: Schema.String,
+        })
+      )
+    )
+  ),
 });
 
 /** @deprecated Use LibraryInfoSchema. */
@@ -537,27 +564,48 @@ class OGIAddonWSListener {
     eventEmitter: events.EventEmitter
   ): Effect.Effect<OGIAddonWSListener, AddonError | NetworkError> {
     return Effect.gen(function* () {
-      const secret = process.argv.find((arg) => arg.startsWith('--addonSecret='))?.split('=')[1];
+      const secret = process.argv
+        .find((arg) => arg.startsWith('--addonSecret='))
+        ?.split('=')[1];
       if (!secret) {
-        return yield* Effect.fail(new AddonError({
-          message: 'No secret provided. The addon must be started by the OGI Addon Server.',
-          addonName: addon.addonInfo.name,
-        }));
+        return yield* Effect.fail(
+          new AddonError({
+            message:
+              'No secret provided. The addon must be started by the OGI Addon Server.',
+            addonName: addon.addonInfo.name,
+          })
+        );
       }
-      const port = process.argv.find((arg) => arg.startsWith('--addonPort='))?.split('=')[1] ?? String(defaultPort);
+      const port =
+        process.argv
+          .find((arg) => arg.startsWith('--addonPort='))
+          ?.split('=')[1] ?? String(defaultPort);
       const WebSocketConstructor = globalThis.WebSocket;
       if (!WebSocketConstructor) {
-        return yield* Effect.fail(new NetworkError({ message: 'WebSocket is not available in this runtime' }));
+        return yield* Effect.fail(
+          new NetworkError({
+            message: 'WebSocket is not available in this runtime',
+          })
+        );
       }
       const socket = yield* Effect.try({
         try: () => new WebSocketConstructor(`ws://localhost:${port}`),
-        catch: (cause) => new NetworkError({ message: `Unable to create addon websocket: ${formatError(cause)}` }),
+        catch: (cause) =>
+          new NetworkError({
+            message: `Unable to create addon websocket: ${formatError(cause)}`,
+          }),
       });
       const transport = yield* EventResponseSocket.make<
         AddonServerToClientWebsocketMessage,
         AddonClientToServerWebsocketMessage
       >(socket);
-      const listener = new OGIAddonWSListener(addon, eventEmitter, socket, transport, secret);
+      const listener = new OGIAddonWSListener(
+        addon,
+        eventEmitter,
+        socket,
+        transport,
+        secret
+      );
       yield* listener.registerMessageReceiver();
       listener.registerLifecycle();
       return listener;
@@ -569,9 +617,12 @@ class OGIAddonWSListener {
     this.socket.addEventListener('error', (event) => {
       Effect.runFork(this.transport.rejectPendingResponses('Websocket error'));
       const message = event instanceof ErrorEvent ? event.message : event.type;
-      console.error(message.includes('Failed to connect')
-        ? 'OGI Addon Server is not running or is unreachable.'
-        : 'An addon websocket error occurred:', event);
+      console.error(
+        message.includes('Failed to connect')
+          ? 'OGI Addon Server is not running or is unreachable.'
+          : 'An addon websocket error occurred:',
+        event
+      );
     });
     this.socket.addEventListener('close', (event) => {
       Effect.runFork(this.transport.rejectPendingResponses('Websocket closed'));
@@ -600,51 +651,71 @@ class OGIAddonWSListener {
     });
   }
 
-  private userInputAskedEffect<U extends Record<string, string | number | boolean>>(
+  private userInputAsked<U extends Record<string, string | number | boolean>>(
     configBuilt: ConfigurationBuilder<U>,
     name: string,
     description: string
   ): Effect.Effect<U, NetworkError | ValidationError> {
-    return this.transport.send({
-      event: 'input-asked',
-      args: { config: configBuilt.build(false), name, description },
-    } as AddonClientToServerWebsocketMessage, { expectResponse: true }).pipe(
-      Effect.map((response) => response.args as U)
-    );
-  }
-
-  private userInputAsked<U extends Record<string, string | number | boolean>>(
-    config: ConfigurationBuilder<U>,
-    name: string,
-    description: string
-  ): Promise<U> {
-    return Effect.runPromise(this.userInputAskedEffect(config, name, description));
+    return this.transport
+      .send(
+        {
+          event: 'input-asked',
+          args: { config: configBuilt.build(false), name, description },
+        } as AddonClientToServerWebsocketMessage,
+        { expectResponse: true }
+      )
+      .pipe(Effect.map((response) => response.args as U));
   }
 
   private registerMessageReceiver(): Effect.Effect<void> {
     const protocolEvents: AddonServerToClientWebsocketMessage['event'][] = [
-      'config-update', 'search', 'setup', 'library-search', 'game-details',
-      'check-for-updates', 'request-dl', 'catalog', 'task-run', 'launch-app',
+      'config-update',
+      'search',
+      'setup',
+      'library-search',
+      'game-details',
+      'check-for-updates',
+      'request-dl',
+      'catalog',
+      'task-run',
+      'launch-app',
     ];
-    return Effect.forEach(protocolEvents, (event) =>
-      this.transport.on(event, (message) => this.handleMessage(message)).pipe(Effect.asVoid),
+    return Effect.forEach(
+      protocolEvents,
+      (event) =>
+        this.transport
+          .on(event, (message) => this.handleMessage(message))
+          .pipe(Effect.asVoid),
       { discard: true }
     );
   }
 
-  private handleMessage(message: AddonServerToClientWebsocketMessage): Effect.Effect<void> {
+  private handleMessage(
+    message: AddonServerToClientWebsocketMessage
+  ): Effect.Effect<void> {
     return Effect.gen(this, function* () {
       const id = message.id;
       if (!id) {
-        return yield* Effect.fail(new ValidationError({ message: `Message ${message.event} is missing an ID` }));
+        return yield* Effect.fail(
+          new ValidationError({
+            message: `Message ${message.event} is missing an ID`,
+          })
+        );
       }
       switch (message.event) {
         case 'config-update': {
           const result = yield* Effect.try({
-            try: () => this.addon.config.updateConfig(message.args as DefiniteConfig),
-            catch: (cause) => new ValidationError({ message: `Invalid addon configuration: ${formatError(cause)}` }),
+            try: () =>
+              this.addon.config.updateConfig(message.args as DefiniteConfig),
+            catch: (cause) =>
+              new ValidationError({
+                message: `Invalid addon configuration: ${formatError(cause)}`,
+              }),
           });
-          yield* this.respondToMessage(id, result[0] ? { success: true } : { success: false, error: result[1] });
+          yield* this.respondToMessage(
+            id,
+            result[0] ? { success: true } : { success: false, error: result[1] }
+          );
           if (!this.configConnected) {
             this.configConnected = true;
             this.eventEmitter.emit('connect', this.makeEventResponse<void>());
@@ -652,42 +723,66 @@ class OGIAddonWSListener {
           return;
         }
         case 'search':
-          return yield* this.handleEventWithResponse<SearchResult[]>(message, (event) => this.eventEmitter.emit('search', message.args, event));
+          return yield* this.handleEventWithResponse<SearchResult[]>(
+            message,
+            (event) => this.eventEmitter.emit('search', message.args, event)
+          );
         case 'setup':
           return yield* this.handleSetup(message);
         case 'library-search':
-          return yield* this.handleEventWithResponse<BasicLibraryInfo[]>(message, (event) => this.eventEmitter.emit('library-search', message.args, event));
+          return yield* this.handleEventWithResponse<BasicLibraryInfo[]>(
+            message,
+            (event) =>
+              this.eventEmitter.emit('library-search', message.args, event)
+          );
         case 'game-details':
           return yield* this.handleEventWithResponse<StoreData | undefined>(
             message,
-            (event) => this.eventEmitter.emit('game-details', message.args, event),
-            { requireListener: 'game-details', noListenerError: 'No event listener for game-details' }
+            (event) =>
+              this.eventEmitter.emit('game-details', message.args, event),
+            {
+              requireListener: 'game-details',
+              noListenerError: 'No event listener for game-details',
+            }
           );
         case 'check-for-updates':
-          return yield* this.handleEventWithResponse<{ available: true; version: string } | { available: false }>(
-            message,
-            (event) => this.eventEmitter.emit('check-for-updates', message.args, event)
+          return yield* this.handleEventWithResponse<
+            { available: true; version: string } | { available: false }
+          >(message, (event) =>
+            this.eventEmitter.emit('check-for-updates', message.args, event)
           );
         case 'request-dl':
           return yield* this.handleRequestDownload(message);
         case 'catalog':
-          return yield* this.handleEventWithResponseNoInput<CatalogResponse>(message, (event) => this.eventEmitter.emit('catalog', event));
+          return yield* this.handleEventWithResponseNoInput<CatalogResponse>(
+            message,
+            (event) => this.eventEmitter.emit('catalog', event)
+          );
         case 'task-run':
           return yield* this.handleTaskRun(message);
         case 'launch-app':
-          return yield* this.handleEventWithResponse<void>(message, (event) => this.eventEmitter.emit('launch-app', message.args, event));
+          return yield* this.handleEventWithResponse<void>(message, (event) =>
+            this.eventEmitter.emit('launch-app', message.args, event)
+          );
       }
     }).pipe(
       Effect.catchAll((error) =>
         message.id
-          ? this.respondToMessage(message.id, undefined, undefined, formatError(error)).pipe(Effect.ignore)
+          ? this.respondToMessage(
+              message.id,
+              undefined,
+              undefined,
+              formatError(error)
+            ).pipe(Effect.ignore)
           : Effect.sync(() => console.error(formatError(error)))
       )
     );
   }
 
   private makeEventResponse<T>(): EventResponse<T> {
-    return new EventResponse<T>((screen, name, description) => this.userInputAsked(screen, name, description));
+    return new EventResponse<T>((screen, name, description) =>
+      Effect.runPromise(this.userInputAsked(screen, name, description))
+    );
   }
 
   private reportDeferred(
@@ -707,61 +802,98 @@ class OGIAddonWSListener {
     });
   }
 
-  private handleSetup(message: AddonServerToClientWebsocketMessage): Effect.Effect<void, AddonError | NetworkError | ValidationError> {
+  private handleSetup(
+    message: AddonServerToClientWebsocketMessage
+  ): Effect.Effect<void, AddonError | NetworkError | ValidationError> {
     return Effect.gen(this, function* () {
       const event = this.makeEventResponse<SetupResponse>();
       this.eventEmitter.emit('setup', message.args, event);
-      const reporter = yield* Effect.fork(this.reportDeferred(event, message.id!));
+      const reporter = yield* Effect.fork(
+        this.reportDeferred(event, message.id!)
+      );
       const result = yield* this.waitForEventToRespond(event);
       yield* Fiber.interrupt(reporter);
       yield* this.respondToMessage(message.id!, result.data, event);
     });
   }
 
-  private handleRequestDownload(message: AddonServerToClientWebsocketMessage): Effect.Effect<void, AddonError | NetworkError | ValidationError> {
+  private handleRequestDownload(
+    message: AddonServerToClientWebsocketMessage
+  ): Effect.Effect<void, AddonError | NetworkError | ValidationError> {
     return Effect.gen(this, function* () {
       const event = this.makeEventResponse<SearchResult>();
       if (this.eventEmitter.listenerCount('request-dl') === 0) {
-        yield* this.respondToMessage(message.id!, { error: 'No event listener for request-dl' }, event);
+        yield* this.respondToMessage(
+          message.id!,
+          { error: 'No event listener for request-dl' },
+          event
+        );
         return;
       }
-      const { appID, info } = message.args as { appID: number; info: SearchResult };
+      const { appID, info } = message.args as {
+        appID: number;
+        info: SearchResult;
+      };
       this.eventEmitter.emit('request-dl', appID, info, event);
       const result = yield* this.waitForEventToRespond(event);
       if (event.failed) {
         yield* this.respondToMessage(message.id!, undefined, event);
-      } else if (event.data === undefined || event.data.downloadType === 'request') {
-        yield* Effect.fail(new AddonError({ message: 'Request DL event returned an invalid request result' }));
+      } else if (
+        event.data === undefined ||
+        event.data.downloadType === 'request'
+      ) {
+        yield* Effect.fail(
+          new AddonError({
+            message: 'Request DL event returned an invalid request result',
+          })
+        );
       } else {
         yield* this.respondToMessage(message.id!, result.data, event);
       }
     });
   }
 
-  private handleTaskRun(message: AddonServerToClientWebsocketMessage): Effect.Effect<void, AddonError | NetworkError | ValidationError> {
+  private handleTaskRun(
+    message: AddonServerToClientWebsocketMessage
+  ): Effect.Effect<void, AddonError | NetworkError | ValidationError> {
     return Effect.gen(this, function* () {
       const event = this.makeEventResponse<void>();
       const args = message.args as AddonTaskRunEventArgs;
-      const taskName = typeof args.taskName === 'string'
-        ? args.taskName
-        : args.manifest && typeof args.manifest === 'object'
-          ? args.manifest.__taskName
-          : undefined;
-      if (typeof taskName !== 'string' || !this.addon.hasTaskHandler(taskName)) {
-        event.fail(taskName ? `No task handler registered for task name: ${taskName}` : 'No task name provided');
+      const taskName =
+        typeof args.taskName === 'string'
+          ? args.taskName
+          : args.manifest && typeof args.manifest === 'object'
+            ? args.manifest.__taskName
+            : undefined;
+      if (
+        typeof taskName !== 'string' ||
+        !this.addon.hasTaskHandler(taskName)
+      ) {
+        event.fail(
+          taskName
+            ? `No task handler registered for task name: ${taskName}`
+            : 'No task name provided'
+        );
       } else {
-        const reporter = yield* Effect.fork(this.reportDeferred(event, args.deferID ?? ''));
+        const reporter = yield* Effect.fork(
+          this.reportDeferred(event, args.deferID ?? '')
+        );
         const task = new Task(event);
         const handler = this.addon.getTaskHandler(taskName)!;
         yield* Effect.tryPromise({
-          try: async () => handler(task, {
-            manifest: args.manifest || {},
-            downloadPath: args.downloadPath || '',
-            name: args.name || '',
-            libraryInfo: args.libraryInfo,
-          }),
+          try: async () =>
+            handler(task, {
+              manifest: args.manifest || {},
+              downloadPath: args.downloadPath || '',
+              name: args.name || '',
+              libraryInfo: args.libraryInfo,
+            }),
           catch: (cause) => new AddonError({ message: formatError(cause) }),
-        }).pipe(Effect.catchAll((error) => Effect.sync(() => event.fail(error.message))));
+        }).pipe(
+          Effect.catchAll((error) =>
+            Effect.sync(() => event.fail(error.message))
+          )
+        );
         yield* Fiber.interrupt(reporter);
       }
       const result = yield* this.waitForEventToRespond(event);
@@ -769,12 +901,16 @@ class OGIAddonWSListener {
     });
   }
 
-  private waitForEventToRespond<T>(event: EventResponse<T>): Effect.Effect<EventResponse<T>, AddonError> {
+  private waitForEventToRespond<T>(
+    event: EventResponse<T>
+  ): Effect.Effect<EventResponse<T>, AddonError> {
     return Effect.gen(function* () {
       const deadline = Date.now() + 5_000;
       while (!event.resolved) {
         if (!event.deffered && Date.now() >= deadline) {
-          return yield* Effect.fail(new AddonError({ message: 'Event did not respond in time' }));
+          return yield* Effect.fail(
+            new AddonError({ message: 'Event did not respond in time' })
+          );
         }
         yield* Effect.sleep(event.deffered ? '100 millis' : '5 millis');
       }
@@ -789,8 +925,15 @@ class OGIAddonWSListener {
   ): Effect.Effect<void, AddonError | NetworkError | ValidationError> {
     return Effect.gen(this, function* () {
       const event = this.makeEventResponse<T>();
-      if (options && this.eventEmitter.listenerCount(options.requireListener) === 0) {
-        yield* this.respondToMessage(message.id!, { error: options.noListenerError }, event);
+      if (
+        options &&
+        this.eventEmitter.listenerCount(options.requireListener) === 0
+      ) {
+        yield* this.respondToMessage(
+          message.id!,
+          { error: options.noListenerError },
+          event
+        );
         return;
       }
       emit(event);
@@ -817,24 +960,33 @@ class OGIAddonWSListener {
     originalEvent?: EventResponse<unknown>,
     statusError?: string
   ): Effect.Effect<void, NetworkError | ValidationError> {
-    return this.transport.send({
-      event: 'response',
-      id: messageID,
-      args: response,
-      statusError: statusError ?? originalEvent?.failed,
-    } as AddonClientToServerWebsocketMessage, { expectResponse: false }).pipe(
-      Effect.tap(() => Effect.sync(() => console.log(`dispatched response to ${messageID}`))),
-      Effect.asVoid
-    );
+    return this.transport
+      .send(
+        {
+          event: 'response',
+          id: messageID,
+          args: response,
+          statusError: statusError ?? originalEvent?.failed,
+        } as AddonClientToServerWebsocketMessage,
+        { expectResponse: false }
+      )
+      .pipe(
+        Effect.tap(() =>
+          Effect.sync(() => console.log(`dispatched response to ${messageID}`))
+        ),
+        Effect.asVoid
+      );
   }
 
   public requestResponse<T>(
     event: AddonClientToServerEventName,
     args: AddonClientToServerEventArgs[AddonClientToServerEventName]
   ): Effect.Effect<T, NetworkError | ValidationError> {
-    return this.transport.send({ event, args } as AddonClientToServerWebsocketMessage, { expectResponse: true }).pipe(
-      Effect.map((response) => response.args as T)
-    );
+    return this.transport
+      .send({ event, args } as AddonClientToServerWebsocketMessage, {
+        expectResponse: true,
+      })
+      .pipe(Effect.map((response) => response.args as T));
   }
 
   public send(
@@ -843,7 +995,10 @@ class OGIAddonWSListener {
   ): Effect.Effect<string, NetworkError | ValidationError> {
     return Effect.gen(this, function* () {
       const id = yield* randomMessageId();
-      yield* this.transport.send({ event, args, id } as AddonClientToServerWebsocketMessage, { expectResponse: false });
+      yield* this.transport.send(
+        { event, args, id } as AddonClientToServerWebsocketMessage,
+        { expectResponse: false }
+      );
       return id;
     });
   }

@@ -335,7 +335,9 @@ export async function fetchCommunityAddons() {
             'User-Agent': 'OpenGameInstaller Client/Rest1.0',
           },
         });
-        const parsed = Schema.decodeUnknownEither(communityAddonArraySchema)(response.data);
+        const parsed = Schema.decodeUnknownEither(communityAddonArraySchema)(
+          response.data
+        );
         if (Either.isLeft(parsed)) {
           console.error('Invalid marketplace JSON for', source, parsed.left);
           return;

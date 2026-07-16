@@ -16,7 +16,8 @@ type $AllDebridHosts = import('all-debrid-js').$Hosts;
 type $AddMagnetOrTorrent = import('all-debrid-js').$AddMagnetOrTorrent;
 type $GamepadNavigator =
   import('@/frontend/managers/GamepadManager').GamepadNavigator;
-type DownloadHandshakeResult = import('@/lib/download-handshake').DownloadHandshakeResult;
+type DownloadHandshakeResult =
+  import('@/lib/download-handshake').DownloadHandshakeResult;
 
 /** Shared type for app insertion (insertApp) to avoid duplicating LibraryInfo + redistributables. */
 type InsertAppInfo = LibraryInfo & {
@@ -133,7 +134,9 @@ interface Window {
       consumeReplayEvents: (
         id: string
       ) => Promise<{ channel: string; data: unknown }[]>;
-      getHandshakeState: (id: string) => Promise<DownloadHandshakeResult | undefined>;
+      getHandshakeState: (
+        id: string
+      ) => Promise<DownloadHandshakeResult | undefined>;
     };
     queue: {
       cancel: (downloadID: string) => Promise<void>;

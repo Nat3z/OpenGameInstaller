@@ -1,7 +1,7 @@
 import '@/electron/lib/source-maps.js';
 import type { ConfigurationFile } from '@ogi-sdk/connect';
-import { app, BrowserWindow, globalShortcut, ipcMain, shell } from 'electron';
 import { Effect } from 'effect';
+import { app, BrowserWindow, globalShortcut, ipcMain, shell } from 'electron';
 import fs, { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { quote as shellQuote } from 'shell-quote';
@@ -26,7 +26,6 @@ import { loadLibraryInfo } from '@/electron/handlers/helpers.app/library.js';
 import { releasePowerSaveBlock } from '@/electron/lib/power-save.js';
 import { Addon } from '@/electron/manager/manager.addon.js';
 import { waitForAddonsConfigured } from '@/electron/manager/manager.addon-readiness.js';
-import { registerDownloadHandshakeHandlers } from '@/lib/download-handshake.js';
 import { __dirname, isDev } from '@/electron/manager/manager.paths.js';
 import { stopClient } from '@/electron/manager/manager.webtorrent.js';
 import { runLaunchAppHooks } from '@/electron/server/addon-lifecycle.js';
@@ -49,6 +48,7 @@ import {
   closeSplashWindow,
   runStartupTasks,
 } from '@/electron/startup-runner.js';
+import { registerDownloadHandshakeHandlers } from '@/lib/download-handshake.js';
 
 // import steamworks from 'steamworks.js';
 
@@ -846,7 +846,9 @@ app.on('window-all-closed', () => {
       for (const interval of torrentIntervals) clearInterval(interval);
       if (isAddonServerListening) yield* stopAddonServerEffect();
     }).pipe(
-      Effect.catchAll((error) => Effect.sync(() => console.error('Error during cleanup:', error))),
+      Effect.catchAll((error) =>
+        Effect.sync(() => console.error('Error during cleanup:', error))
+      ),
       Effect.ensuring(Effect.sync(() => app.quit()))
     )
   );

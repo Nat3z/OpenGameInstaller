@@ -110,9 +110,15 @@ async function loadCommunityAddonsFromMarketplaces(sources: string[]) {
             'User-Agent': 'OpenGameInstaller Client/Rest1.0',
           },
         });
-        const parsed = Schema.decodeUnknownEither(communityAddonArraySchema)(response.data);
+        const parsed = Schema.decodeUnknownEither(communityAddonArraySchema)(
+          response.data
+        );
         if (Either.isLeft(parsed)) {
-          console.error('Invalid marketplace JSON for', marketplaceUrl, parsed.left);
+          console.error(
+            'Invalid marketplace JSON for',
+            marketplaceUrl,
+            parsed.left
+          );
           throw new Error('Invalid marketplace JSON');
         }
         return parsed.right.map((addon) => ({

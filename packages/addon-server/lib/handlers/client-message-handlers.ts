@@ -18,7 +18,9 @@ import type { ClientMessageHandler, ClientMessageHandlers } from './types';
 const handleNotification: ClientMessageHandler = ({ server }, message) =>
   Effect.sync(() => {
     const args = message.args as AddonClientToServerEventArgs['notification'];
-    const notification: AddonNotificationMessage | undefined = Array.isArray(args)
+    const notification: AddonNotificationMessage | undefined = Array.isArray(
+      args
+    )
       ? args[0]
       : args;
     if (notification?.type && notification.message) {
@@ -30,13 +32,22 @@ const handleAuthenticate: ClientMessageHandler = (context, message) =>
   Effect.gen(function* () {
     const { connection, config, server } = context;
     const args = message.args as AddonClientToServerEventArgs['authenticate'];
-    if (config.securityCheck && (!args.secret || args.secret !== config.secret)) {
-      closeProtocolError(context, 'Client attempted to authenticate with an invalid secret');
+    if (
+      config.securityCheck &&
+      (!args.secret || args.secret !== config.secret)
+    ) {
+      closeProtocolError(
+        context,
+        'Client attempted to authenticate with an invalid secret'
+      );
       yield* context.resolveAuthentication(false);
       return;
     }
     if (server.getClient(args.id)) {
-      closeProtocolError(context, 'Client attempted to authenticate with an ID that is already in use');
+      closeProtocolError(
+        context,
+        'Client attempted to authenticate with an ID that is already in use'
+      );
       yield* context.resolveAuthentication(false);
       return;
     }
@@ -60,12 +71,20 @@ const handleDeferUpdate: ClientMessageHandler = (context, message) =>
     if (!requireAuthenticated(context, 'defer-update') || !message.args) return;
     const args = message.args as AddonClientToServerEventArgs['defer-update'];
     if (!args.deferID) {
-      closeProtocolError(context, 'Client attempted to send defer-update without an ID');
+      closeProtocolError(
+        context,
+        'Client attempted to send defer-update without an ID'
+      );
       return;
     }
-    const task = context.server.getDeferredTasksManager().getTasks()[args.deferID];
+    const task = context.server.getDeferredTasksManager().getTasks()[
+      args.deferID
+    ];
     if (!task) {
-      closeProtocolError(context, 'Client attempted to send defer-update with an invalid ID');
+      closeProtocolError(
+        context,
+        'Client attempted to send defer-update with an invalid ID'
+      );
       return;
     }
     if (task.addonOwner !== context.connection.addonInfo!.id) return;
@@ -82,13 +101,26 @@ const handleInputAsked: ClientMessageHandler = (context, message) =>
     if (!requireAuthenticated(context, 'input-asked') || !message.args) return;
     const args = message.args as AddonClientToServerEventArgs['input-asked'];
     if (!args.config || !args.name || !args.description) {
-      closeProtocolError(context, 'Client attempted to send input-asked without a configuration');
+      closeProtocolError(
+        context,
+        'Client attempted to send input-asked without a configuration'
+      );
       return;
     }
     if (!requireMessageId(context, 'input-asked', message.id)) return;
-    context.server.emit('input-asked', args.name, args.description, args.config, (reply) => {
-      Effect.runFork(context.connection.events.response(message.id!, reply).pipe(Effect.asVoid));
-    });
+    context.server.emit(
+      'input-asked',
+      args.name,
+      args.description,
+      args.config,
+      (reply) => {
+        Effect.runFork(
+          context.connection.events
+            .response(message.id!, reply)
+            .pipe(Effect.asVoid)
+        );
+      }
+    );
   });
 
 const handleTaskUpdate: ClientMessageHandler = (context, message) =>
@@ -96,13 +128,19 @@ const handleTaskUpdate: ClientMessageHandler = (context, message) =>
     if (!requireAuthenticated(context, 'task-update')) return;
     const args = message.args as AddonClientToServerEventArgs['task-update'];
     if (!args.id) {
-      closeProtocolError(context, 'Client attempted to send task-update without an ID');
+      closeProtocolError(
+        context,
+        'Client attempted to send task-update without an ID'
+      );
       return;
     }
     const manager = context.server.getDeferredTasksManager();
     let task = manager.getTasks()[args.id];
     if (!task) {
-      task = new DeferrableTask(() => Effect.succeed(null), context.connection.addonInfo!.id);
+      task = new DeferrableTask(
+        () => Effect.succeed(null),
+        context.connection.addonInfo!.id
+      );
       task.id = args.id;
       yield* manager.addTask(task);
     }
@@ -117,7 +155,8 @@ const handleGetAppDetails: ClientMessageHandler = (context, message) =>
   Effect.gen(function* () {
     if (!requireAuthenticated(context, 'get-app-details')) return;
     if (!requireMessageId(context, 'get-app-details', message.id)) return;
-    const { appID, storefront } = message.args as AddonClientToServerEventArgs['get-app-details'];
+    const { appID, storefront } =
+      message.args as AddonClientToServerEventArgs['get-app-details'];
     const clients = getClientsSupporting(context, storefront, 'game-details');
     let appDetails: StoreData | undefined;
     for (const client of clients) {
@@ -128,21 +167,26 @@ const handleGetAppDetails: ClientMessageHandler = (context, message) =>
       }
     }
     if (!appDetails) console.error('No app details found for client');
-    yield* context.connection.events.response(message.id, appDetails).pipe(Effect.asVoid);
+    yield* context.connection.events
+      .response(message.id, appDetails)
+      .pipe(Effect.asVoid);
   });
 
 const handleSearchAppName: ClientMessageHandler = (context, message) =>
   Effect.gen(function* () {
     if (!requireAuthenticated(context, 'search-app-name')) return;
     if (!requireMessageId(context, 'search-app-name', message.id)) return;
-    const { query, storefront } = message.args as AddonClientToServerEventArgs['search-app-name'];
+    const { query, storefront } =
+      message.args as AddonClientToServerEventArgs['search-app-name'];
     const clients = getClientsSupporting(context, storefront, 'library-search');
     const results: StoreData[] = [];
     for (const client of clients) {
       const response = yield* client.events.librarySearch(query);
       if (response.args) results.push(...(response.args as StoreData[]));
     }
-    yield* context.connection.events.response(message.id, results).pipe(Effect.asVoid);
+    yield* context.connection.events
+      .response(message.id, results)
+      .pipe(Effect.asVoid);
   });
 
 const handleFlag: ClientMessageHandler = (context, message) =>
@@ -150,7 +194,8 @@ const handleFlag: ClientMessageHandler = (context, message) =>
     if (!requireAuthenticated(context, 'flag')) return;
     const args = message.args as AddonClientToServerEventArgs['flag'];
     if (args.flag === 'events-available') {
-      context.connection.eventsAvailable = args.value as OGIAddonSDKEventListener[];
+      context.connection.eventsAvailable =
+        args.value as OGIAddonSDKEventListener[];
     }
   });
 

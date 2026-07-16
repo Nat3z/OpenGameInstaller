@@ -3,10 +3,10 @@
  * Updated to support UMU shortcuts and --game-id launch
  */
 
-import { exec, spawn } from 'child_process';
-import { ipcMain } from 'electron';
 import { FileSystemError, formatError, ipcBoundary } from '@ogi/errors';
+import { exec, spawn } from 'child_process';
 import { Effect } from 'effect';
+import { ipcMain } from 'electron';
 import * as fs from 'fs';
 import { join } from 'path';
 import {
@@ -43,17 +43,30 @@ const copyRecursiveSync = (source: string, destination: string): void => {
   }
 };
 
-const migrateCompatData = (source: string, destination: string): Effect.Effect<void, FileSystemError> =>
+const migrateCompatData = (
+  source: string,
+  destination: string
+): Effect.Effect<void, FileSystemError> =>
   Effect.try({
     try: () => fs.renameSync(source, destination),
-    catch: (cause) => new FileSystemError({ message: formatError(cause), path: source, cause }),
-  }).pipe(Effect.orElse(() => Effect.try({
-    try: () => {
-      copyRecursiveSync(source, destination);
-      fs.rmSync(source, { recursive: true, force: true });
-    },
-    catch: (cause) => new FileSystemError({ message: formatError(cause), path: source, cause }),
-  })));
+    catch: (cause) =>
+      new FileSystemError({ message: formatError(cause), path: source, cause }),
+  }).pipe(
+    Effect.orElse(() =>
+      Effect.try({
+        try: () => {
+          copyRecursiveSync(source, destination);
+          fs.rmSync(source, { recursive: true, force: true });
+        },
+        catch: (cause) =>
+          new FileSystemError({
+            message: formatError(cause),
+            path: source,
+            cause,
+          }),
+      })
+    )
+  );
 
 /**
  * Add a UMU game to Steam using OGI wrapper launches.
@@ -157,16 +170,21 @@ Categories=Game;
 Icon=steam_icon_${params.appID}
 `;
 
-  const result = Effect.runSync(Effect.either(Effect.try({
-    try: () => {
-      const desktopDir = join(homeDir, '.local', 'share', 'applications');
-      fs.mkdirSync(desktopDir, { recursive: true });
-      const desktopFile = join(desktopDir, `ogi-${params.appID}.desktop`);
-      fs.writeFileSync(desktopFile, desktopEntry);
-      fs.chmodSync(desktopFile, '755');
-    },
-    catch: (cause) => new FileSystemError({ message: formatError(cause), cause }),
-  })));
+  const result = Effect.runSync(
+    Effect.either(
+      Effect.try({
+        try: () => {
+          const desktopDir = join(homeDir, '.local', 'share', 'applications');
+          fs.mkdirSync(desktopDir, { recursive: true });
+          const desktopFile = join(desktopDir, `ogi-${params.appID}.desktop`);
+          fs.writeFileSync(desktopFile, desktopEntry);
+          fs.chmodSync(desktopFile, '755');
+        },
+        catch: (cause) =>
+          new FileSystemError({ message: formatError(cause), cause }),
+      })
+    )
+  );
   return result._tag === 'Right'
     ? { success: true }
     : { success: false, error: result.left.message };
@@ -176,10 +194,118 @@ export function registerSteamHandlers() {
   // Get Steam app ID (legacy - for backward compatibility)
   ipcMain.handle(
     'app:get-steam-app-id',
-    ipcBoundary(async (
-      _,
-      appID: number
-    ): Promise<{ success: boolean; appId?: number; error?: string }> => {
+    ipcBoundary(
+      async (
+        _,
+        appID: number
+      ): Promise<{ success: boolean; appId?: number; error?: string }> => {
+        if (!isLinux()) {
+          return { success: false, error: 'Only available on Linux' };
+        }
+
+        const appInfo = loadLibraryInfo(appID);
+        if (!appInfo) {
+          return { success: false, error: 'Game not found' };
+        }
+
+        return await getSteamAppIdWithFallback(
+          appInfo.name,
+          appInfo.version,
+          'app:get-steam-app-id'
+        );
+      }
+    )
+  );
+
+  // Kill Steam process
+  ipcMain.handle(
+    'app:kill-steam',
+    ipcBoundary(async () => {
+      if (!isLinux()) {
+        return { success: false, error: 'Only available on Linux' };
+      }
+
+      console.log('[steam] Attempting to kill Steam process...');
+
+      return new Promise<{ success: boolean; error?: string }>((resolve) => {
+        // Try steam -shutdown first, then killall as fallback
+        exec('steam -shutdown', (error) => {
+          if (error) {
+            // pkill returns non-zero if no process found, try killall
+            exec('killall steam', (error2) => {
+              if (error2) {
+                console.log('[steam] No Steam process found to kill');
+                // Not an error - Steam might not be running
+                resolve({ success: true });
+              } else {
+                console.log('[steam] Steam process killed via killall');
+                resolve({ success: true });
+              }
+            });
+          } else {
+            console.log('[steam] Steam process killed via pkill');
+            resolve({ success: true });
+          }
+        });
+      });
+    })
+  );
+
+  // Start Steam
+  ipcMain.handle(
+    'app:start-steam',
+    ipcBoundary(async () => {
+      if (!isLinux()) {
+        return { success: false, error: 'Only available on Linux' };
+      }
+
+      console.log('[steam] Starting Steam...');
+
+      return new Promise<{ success: boolean; error?: string }>((resolve) => {
+        // Launch Steam detached so it doesn't block
+        const child = spawn('steam', [], {
+          detached: true,
+          stdio: 'ignore',
+        });
+
+        child.unref();
+
+        let timeoutId: NodeJS.Timeout | null = setTimeout(() => {
+          console.log('[steam] Steam launch command executed');
+          timeoutId = null;
+          resolve({ success: true });
+        }, 1000);
+
+        child.on('error', (error) => {
+          console.error('[steam] Failed to start Steam:', error);
+          if (timeoutId) {
+            clearTimeout(timeoutId);
+            timeoutId = null;
+          }
+          resolve({ success: false, error: error.message });
+        });
+
+        child.on('exit', (code) => {
+          if (code !== 0 && code !== null) {
+            console.error(`[steam] Steam process exited with code ${code}`);
+            if (timeoutId) {
+              clearTimeout(timeoutId);
+              timeoutId = null;
+            }
+            resolve({
+              success: false,
+              error: `Steam process exited with code ${code}`,
+            });
+          }
+        });
+      });
+    })
+  );
+
+  // Launch Steam app (legacy - for backward compatibility)
+  ipcMain.handle(
+    'app:launch-steam-app',
+    ipcBoundary(async (_, appID: number) => {
       if (!isLinux()) {
         return { success: false, error: 'Only available on Linux' };
       }
@@ -189,202 +315,108 @@ export function registerSteamHandlers() {
         return { success: false, error: 'Game not found' };
       }
 
-      return await getSteamAppIdWithFallback(
-        appInfo.name,
-        appInfo.version,
-        'app:get-steam-app-id'
-      );
-    })
-  );
+      // Check if this is a UMU game
+      if (appInfo.umu) {
+        // For UMU games, only add shortcut if it doesn't already exist
+        let { success, appId } = await getSteamAppIdWithFallback(
+          appInfo.name,
+          appInfo.version,
+          'steam'
+        );
 
-  // Kill Steam process
-  ipcMain.handle('app:kill-steam', ipcBoundary(async () => {
-    if (!isLinux()) {
-      return { success: false, error: 'Only available on Linux' };
-    }
-
-    console.log('[steam] Attempting to kill Steam process...');
-
-    return new Promise<{ success: boolean; error?: string }>((resolve) => {
-      // Try steam -shutdown first, then killall as fallback
-      exec('steam -shutdown', (error) => {
-        if (error) {
-          // pkill returns non-zero if no process found, try killall
-          exec('killall steam', (error2) => {
-            if (error2) {
-              console.log('[steam] No Steam process found to kill');
-              // Not an error - Steam might not be running
-              resolve({ success: true });
-            } else {
-              console.log('[steam] Steam process killed via killall');
-              resolve({ success: true });
-            }
+        if (!success || !appId) {
+          const result = await addUmuGameToSteam({
+            appID,
+            name: appInfo.name,
+            version: appInfo.version,
           });
-        } else {
-          console.log('[steam] Steam process killed via pkill');
-          resolve({ success: true });
-        }
-      });
-    });
-  }));
-
-  // Start Steam
-  ipcMain.handle('app:start-steam', ipcBoundary(async () => {
-    if (!isLinux()) {
-      return { success: false, error: 'Only available on Linux' };
-    }
-
-    console.log('[steam] Starting Steam...');
-
-    return new Promise<{ success: boolean; error?: string }>((resolve) => {
-      // Launch Steam detached so it doesn't block
-      const child = spawn('steam', [], {
-        detached: true,
-        stdio: 'ignore',
-      });
-
-      child.unref();
-
-      let timeoutId: NodeJS.Timeout | null = setTimeout(() => {
-        console.log('[steam] Steam launch command executed');
-        timeoutId = null;
-        resolve({ success: true });
-      }, 1000);
-
-      child.on('error', (error) => {
-        console.error('[steam] Failed to start Steam:', error);
-        if (timeoutId) {
-          clearTimeout(timeoutId);
-          timeoutId = null;
-        }
-        resolve({ success: false, error: error.message });
-      });
-
-      child.on('exit', (code) => {
-        if (code !== 0 && code !== null) {
-          console.error(`[steam] Steam process exited with code ${code}`);
-          if (timeoutId) {
-            clearTimeout(timeoutId);
-            timeoutId = null;
+          if (!result.success) {
+            return result;
           }
-          resolve({
-            success: false,
-            error: `Steam process exited with code ${code}`,
-          });
+          const lookup = await getSteamAppIdWithFallback(
+            appInfo.name,
+            appInfo.version,
+            'steam'
+          );
+          success = lookup.success;
+          appId = lookup.appId;
         }
-      });
-    });
-  }));
 
-  // Launch Steam app (legacy - for backward compatibility)
-  ipcMain.handle('app:launch-steam-app', ipcBoundary(async (_, appID: number) => {
-    if (!isLinux()) {
-      return { success: false, error: 'Only available on Linux' };
-    }
+        // Launch via Steam
 
-    const appInfo = loadLibraryInfo(appID);
-    if (!appInfo) {
-      return { success: false, error: 'Game not found' };
-    }
+        if (!success || !appId) {
+          return { success: false, error: 'Failed to get Steam shortcut ID' };
+        }
 
-    // Check if this is a UMU game
-    if (appInfo.umu) {
-      // For UMU games, only add shortcut if it doesn't already exist
-      let { success, appId } = await getSteamAppIdWithFallback(
+        return launchViaSteam(appId);
+      }
+
+      // Legacy mode
+      const { success, appId } = await getSteamAppIdWithFallback(
         appInfo.name,
         appInfo.version,
         'steam'
       );
 
-      if (!success || !appId) {
-        const result = await addUmuGameToSteam({
-          appID,
-          name: appInfo.name,
-          version: appInfo.version,
-        });
-        if (!result.success) {
-          return result;
-        }
-        const lookup = await getSteamAppIdWithFallback(
-          appInfo.name,
-          appInfo.version,
-          'steam'
-        );
-        success = lookup.success;
-        appId = lookup.appId;
-      }
-
-      // Launch via Steam
-
-      if (!success || !appId) {
+      if (!success || appId == null) {
         return { success: false, error: 'Failed to get Steam shortcut ID' };
       }
 
+      console.log(
+        `[steam] Launching app via Steam: ${appInfo.name} (shortcut ID: ${appId})`
+      );
+
       return launchViaSteam(appId);
-    }
-
-    // Legacy mode
-    const { success, appId } = await getSteamAppIdWithFallback(
-      appInfo.name,
-      appInfo.version,
-      'steam'
-    );
-
-    if (!success || appId == null) {
-      return { success: false, error: 'Failed to get Steam shortcut ID' };
-    }
-
-    console.log(
-      `[steam] Launching app via Steam: ${appInfo.name} (shortcut ID: ${appId})`
-    );
-
-    return launchViaSteam(appId);
-  }));
+    })
+  );
 
   // Check if prefix exists (legacy - for backward compatibility)
-  ipcMain.handle('app:check-prefix-exists', ipcBoundary(async (_, appID: number) => {
-    if (!isLinux()) {
-      return { exists: false, error: 'Only available on Linux' };
-    }
+  ipcMain.handle(
+    'app:check-prefix-exists',
+    ipcBoundary(async (_, appID: number) => {
+      if (!isLinux()) {
+        return { exists: false, error: 'Only available on Linux' };
+      }
 
-    const libraryInfo = loadLibraryInfo(appID);
-    if (!libraryInfo) {
-      return { exists: false, error: 'Game not found' };
-    }
+      const libraryInfo = loadLibraryInfo(appID);
+      if (!libraryInfo) {
+        return { exists: false, error: 'Game not found' };
+      }
 
-    // Check if this is a UMU game
-    if (libraryInfo.umu?.winePrefixPath) {
-      const exists = fs.existsSync(libraryInfo.umu.winePrefixPath);
-      return {
-        exists,
-        prefixPath: libraryInfo.umu.winePrefixPath,
-      };
-    }
+      // Check if this is a UMU game
+      if (libraryInfo.umu?.winePrefixPath) {
+        const exists = fs.existsSync(libraryInfo.umu.winePrefixPath);
+        return {
+          exists,
+          prefixPath: libraryInfo.umu.winePrefixPath,
+        };
+      }
 
-    // Legacy mode
-    const { success, appId } = await getSteamAppIdWithFallback(
-      libraryInfo.name,
-      libraryInfo.version,
-      'prefix'
-    );
+      // Legacy mode
+      const { success, appId } = await getSteamAppIdWithFallback(
+        libraryInfo.name,
+        libraryInfo.version,
+        'prefix'
+      );
 
-    const homeDir = getHomeDir();
-    if (!homeDir) {
-      return { exists: false, error: 'Home directory not found' };
-    }
+      const homeDir = getHomeDir();
+      if (!homeDir) {
+        return { exists: false, error: 'Home directory not found' };
+      }
 
-    if (!success) {
-      return { exists: false, error: 'Failed to get Steam shortcut ID' };
-    }
+      if (!success) {
+        return { exists: false, error: 'Failed to get Steam shortcut ID' };
+      }
 
-    const prefixPath = getProtonPrefixPath(appId!);
-    const exists = fs.existsSync(prefixPath);
-    console.log(
-      `[prefix] Checking prefix for appID ${appID}: ${exists ? 'exists' : 'not found'} at ${prefixPath}`
-    );
+      const prefixPath = getProtonPrefixPath(appId!);
+      const exists = fs.existsSync(prefixPath);
+      console.log(
+        `[prefix] Checking prefix for appID ${appID}: ${exists ? 'exists' : 'not found'} at ${prefixPath}`
+      );
 
-    return { exists, prefixPath };
-  }));
+      return { exists, prefixPath };
+    })
+  );
 
   // Add to Steam (updated to support UMU)
   ipcMain.handle(
@@ -487,17 +519,33 @@ export function registerSteamHandlers() {
           const newAppIdDir = `${compatDataDir}/${newSteamAppId}`;
 
           if (!fs.existsSync(oldAppIdDir)) {
-            sendNotification({ message: 'Old prefix not found, skipping migration', id: generateNotificationId(), type: 'error' });
+            sendNotification({
+              message: 'Old prefix not found, skipping migration',
+              id: generateNotificationId(),
+              type: 'error',
+            });
           } else if (fs.existsSync(newAppIdDir)) {
-            console.warn(`[add-to-steam] New compatdata directory exists at ${newAppIdDir}`);
+            console.warn(
+              `[add-to-steam] New compatdata directory exists at ${newAppIdDir}`
+            );
           } else {
-            const migration = Effect.runSync(Effect.either(migrateCompatData(oldAppIdDir, newAppIdDir)));
+            const migration = Effect.runSync(
+              Effect.either(migrateCompatData(oldAppIdDir, newAppIdDir))
+            );
             if (migration._tag === 'Left') {
-              sendNotification({ message: `Error migrating prefix: ${migration.left.message}`, id: generateNotificationId(), type: 'error' });
+              sendNotification({
+                message: `Error migrating prefix: ${migration.left.message}`,
+                id: generateNotificationId(),
+                type: 'error',
+              });
               shouldUpdateLaunchArguments = false;
               appInfo.launchArguments = originalLaunchArguments;
             } else {
-              sendNotification({ message: 'Successfully migrated prefix to new version.', id: generateNotificationId(), type: 'success' });
+              sendNotification({
+                message: 'Successfully migrated prefix to new version.',
+                id: generateNotificationId(),
+                type: 'success',
+              });
             }
           }
         }

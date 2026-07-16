@@ -1,3 +1,4 @@
+import type { NetworkError, ValidationError } from '@ogi/errors';
 import type {
   AddonClientToServerWebsocketMessage,
   AddonServerToClientEventArgs,
@@ -7,7 +8,6 @@ import type {
   OGIAddonSDKEventListener,
 } from '@ogi-sdk/connect';
 import { EventResponseSocket, type WebSocketLike } from '@ogi-sdk/connect';
-import type { NetworkError, ValidationError } from '@ogi/errors';
 import { Deferred, Effect } from 'effect';
 import {
   buildEventMessage,
@@ -69,7 +69,9 @@ export class AddonConnection {
     });
   }
 
-  public configure(config: ConfigurationFile): Effect.Effect<void, AddonConnectionError> {
+  public configure(
+    config: ConfigurationFile
+  ): Effect.Effect<void, AddonConnectionError> {
     return this.events.noResponse.configUpdate(config).pipe(Effect.asVoid);
   }
 
@@ -88,7 +90,9 @@ export class AddonConnection {
                 config: this.config,
                 server: this.server,
                 resolveAuthentication: (authenticated) =>
-                  Deferred.succeed(authentication, authenticated).pipe(Effect.asVoid),
+                  Deferred.succeed(authentication, authenticated).pipe(
+                    Effect.asVoid
+                  ),
               },
               message as AddonClientToServerWebsocketMessage
             )
@@ -96,7 +100,8 @@ export class AddonConnection {
       }
 
       yield* bindWebSocketLifecycle(this.ws, {
-        onClose: () => this.transport.rejectPendingResponses('Websocket closed'),
+        onClose: () =>
+          this.transport.rejectPendingResponses('Websocket closed'),
         onError: () => this.transport.rejectPendingResponses('Websocket error'),
       });
 
@@ -127,7 +132,8 @@ export class AddonConnection {
       {},
       {
         get: (_, property) => {
-          if (property === 'noResponse') return this.createSendEventProxy(false);
+          if (property === 'noResponse')
+            return this.createSendEventProxy(false);
           if (typeof property !== 'string') return undefined;
 
           const event = eventAliases[property];

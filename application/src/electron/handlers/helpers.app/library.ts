@@ -2,8 +2,8 @@
  * Library file operations
  */
 
-import type { LibraryInfo } from '@ogi-sdk/connect';
 import { GameNotFound } from '@ogi/errors';
+import type { LibraryInfo } from '@ogi-sdk/connect';
 import * as fs from 'fs';
 import { join } from 'path';
 import { __dirname } from '@/electron/manager/manager.paths.js';

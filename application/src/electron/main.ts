@@ -35,7 +35,7 @@ import {
   isSecurityCheckEnabled,
   port,
   startAddonServer,
-  stopAddonServerEffect,
+  stopAddonServer,
 } from '@/electron/server/addon-server.js';
 import {
   checkForAddonUpdates,
@@ -411,7 +411,7 @@ async function ensureAddonServerRunning() {
   if (isAddonServerListening) return;
 
   try {
-    await startAddonServer();
+    await Effect.runPromise(startAddonServer());
     console.log(`Addon Server is running on http://localhost:${port}`);
     console.log(`Server is being executed by electron!`);
   } catch (error) {
@@ -844,7 +844,7 @@ app.on('window-all-closed', () => {
         yield* instance.stop().pipe(Effect.ignore);
       }
       for (const interval of torrentIntervals) clearInterval(interval);
-      if (isAddonServerListening) yield* stopAddonServerEffect();
+      if (isAddonServerListening) yield* stopAddonServer();
     }).pipe(
       Effect.catchAll((error) =>
         Effect.sync(() => console.error('Error during cleanup:', error))

@@ -64,7 +64,7 @@ export let addonServer = createAddonServer();
 export let isAddonServerListening = false;
 let starting: Effect.Effect<void, unknown> | undefined;
 
-export const startAddonServerEffect = (): Effect.Effect<void, unknown> => {
+export const startAddonServer = (): Effect.Effect<void, unknown> => {
   if (isAddonServerListening) return Effect.void;
   if (starting) return starting;
   addonServer = createAddonServer();
@@ -83,7 +83,7 @@ export const startAddonServerEffect = (): Effect.Effect<void, unknown> => {
   return starting;
 };
 
-export const stopAddonServerEffect = (): Effect.Effect<void, unknown> =>
+export const stopAddonServer = (): Effect.Effect<void, unknown> =>
   isAddonServerListening
     ? addonServer.stop().pipe(
         Effect.tap(() =>
@@ -94,7 +94,4 @@ export const stopAddonServerEffect = (): Effect.Effect<void, unknown> =>
       )
     : Effect.void;
 
-export const startAddonServer = (): Promise<void> =>
-  Effect.runPromise(startAddonServerEffect());
-export const stopAddonServer = (): Promise<void> =>
-  Effect.runPromise(stopAddonServerEffect());
+

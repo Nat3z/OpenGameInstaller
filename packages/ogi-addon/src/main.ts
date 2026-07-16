@@ -169,10 +169,12 @@ export default class OGIAddon {
    * Notify the client using a notification. Provide the type of notification, the message, and an ID.
    * @param notification {Notification}
    */
-  public notify(notification: AddonNotificationMessage) {
-    return this.addonWSListener
-      .send('notification', notification)
-      .pipe(Effect.asVoid);
+  public notify(notification: AddonNotificationMessage): void {
+    Effect.runFork(
+      this.addonWSListener
+        .send('notification', notification)
+        .pipe(Effect.asVoid)
+    );
   }
 
   /**
@@ -181,17 +183,27 @@ export default class OGIAddon {
    * @param storefront {string}
    * @returns {Promise<StoreData>}
    */
-  public getAppDetails(appID: number, storefront: string) {
-    return this.addonWSListener.requestResponse<StoreData | undefined>(
-      'get-app-details',
-      { appID, storefront }
+  public getAppDetails(
+    appID: number,
+    storefront: string
+  ): Promise<StoreData | undefined> {
+    return Effect.runPromise(
+      this.addonWSListener.requestResponse<StoreData | undefined>(
+        'get-app-details',
+        { appID, storefront }
+      )
     );
   }
 
-  public searchGame(query: string, storefront: string) {
-    return this.addonWSListener.requestResponse<BasicLibraryInfo[]>(
-      'search-app-name',
-      { query, storefront }
+  public searchGame(
+    query: string,
+    storefront: string
+  ): Promise<BasicLibraryInfo[]> {
+    return Effect.runPromise(
+      this.addonWSListener.requestResponse<BasicLibraryInfo[]>(
+        'search-app-name',
+        { query, storefront }
+      )
     );
   }
 
@@ -199,21 +211,23 @@ export default class OGIAddon {
    * Notify the OGI Addon Server that you are performing a background task. This can be used to help users understand what is happening in the background.
    * @returns {Promise<Task>} A Task instance for managing the background task.
    */
-  public task(): Effect.Effect<Task, NetworkError | ValidationError> {
-    return Effect.gen(this, function* () {
-      const id = yield* randomMessageId();
-      const progress = 0;
-      const logs: string[] = [];
-      const task = new Task(this.addonWSListener, id, progress, logs);
-      yield* this.addonWSListener.send('task-update', {
-        id,
-        progress,
-        logs,
-        finished: false,
-        failed: undefined,
-      });
-      return task;
-    });
+  public task(): Promise<Task> {
+    return Effect.runPromise(
+      Effect.gen(this, function* () {
+        const id = yield* randomMessageId();
+        const progress = 0;
+        const logs: string[] = [];
+        const task = new Task(this.addonWSListener, id, progress, logs);
+        yield* this.addonWSListener.send('task-update', {
+          id,
+          progress,
+          logs,
+          finished: false,
+          failed: undefined,
+        });
+        return task;
+      })
+    );
   }
 
   /**

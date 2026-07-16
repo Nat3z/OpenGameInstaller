@@ -31,7 +31,10 @@ import { downloadLatestUmu } from '@/electron/startup.js';
 function getUmuPrefixBase(): string {
   const home = getHomeDir();
   if (!home) {
-    throw new Error('Cannot determine home directory for UMU prefix base');
+    throw new PlatformError({
+      message: 'Cannot determine home directory for UMU prefix base',
+      platform: process.platform,
+    });
   }
   return path.join(home, '.ogi-wine-prefixes');
 }
@@ -329,7 +332,10 @@ export function buildUmuWrapperCommandTemplate(
   libraryInfo: LibraryInfo
 ): string {
   if (!libraryInfo.umu) {
-    throw new Error('No UMU configuration found');
+    throw new PlatformError({
+      message: 'No UMU configuration found',
+      platform: process.platform,
+    });
   }
 
   const { umuId } = libraryInfo.umu;

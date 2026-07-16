@@ -1,3 +1,5 @@
+import { DebridError } from '@ogi/errors';
+import { Effect } from 'effect';
 import { getConfigClientOption } from '@/frontend/lib/config/client';
 import { getDownloadPath } from '@/frontend/lib/core/fs';
 import { finalizeDownloadCard } from '@/frontend/lib/downloads/events';
@@ -7,290 +9,249 @@ import type { SearchResultWithAddon } from '@/frontend/lib/tasks/runner';
 import { currentDownloads } from '@/frontend/store.svelte';
 
 const BASE_URL = 'https://www.premiumize.me/api';
-
+type PremiumizeErrorResponse = { status: 'error'; message: string };
 type ResponseFolder =
   | PremiumizeErrorResponse
-  | {
-      status: 'success';
-      id: string;
-      message?: string;
-    };
-type PremiumizeFolderContentItem = {
-  id: string;
-  name: string;
-  type: string;
-  size?: number;
-  created_at: number;
-  mime_type?: string;
-  transcode_status?: string;
-  link?: string;
-  stream_link?: string;
-  virus_scan?: string;
-};
-
-type PremiumizeErrorResponse = {
-  status: 'error';
-  message: string;
-};
-
+  | { status: 'success'; id: string; message?: string };
 type PremiumizeFolderResponse =
   | PremiumizeErrorResponse
   | {
       status: 'success';
-      content: PremiumizeFolderContentItem[];
+      content: Array<{ id: string; name: string }>;
       name: string;
       parent_id: string;
       breadcrumbs: string;
       folder_id?: string;
     };
-
 type PremiumizeTransferResponse =
   | PremiumizeErrorResponse
-  | {
-      status: 'success';
-      id: string;
-      name: string;
-      type: string;
-    };
-
+  | { status: 'success'; id: string; name: string; type: string };
 type PremiumizeTransfersListResponse =
   | PremiumizeErrorResponse
   | {
       status: 'success';
       transfers: Array<{
         id: string;
-        name: string;
-        message: string;
         status: 'finished' | 'waiting';
-        progress: number;
-        src: string;
         folder_id: string;
-        file_id: string;
       }>;
     };
-
 type PremiumizeZipGenerateResponse =
   | PremiumizeErrorResponse
   | { status: 'success'; location: string };
 
+const premiumizePromise = <A>(operation: () => Promise<A>, message: string) =>
+  Effect.tryPromise({
+    try: operation,
+    catch: (cause) =>
+      new DebridError({
+        message: `${message}: ${cause instanceof Error ? cause.message : String(cause)}`,
+        service: 'premiumize' as const,
+      }),
+  });
+
 export class PremiumizeService extends BaseService {
   readonly types = ['premiumize-magnet', 'premiumize-torrent'];
 
-  async startDownload(
+  startDownload(
     result: SearchResultWithAddon,
     appID: number,
     _event: MouseEvent | null,
     htmlButton?: HTMLButtonElement
-  ): Promise<void> {
-    if (result.downloadType !== 'magnet' && result.downloadType !== 'torrent')
-      return;
-
+  ) {
     let originalText = '';
     let originalDisabled = false;
+    let tempId: string | undefined;
 
-    if (htmlButton) {
-      originalText = htmlButton.textContent || '';
-      originalDisabled = htmlButton.disabled;
-      htmlButton.textContent = 'Downloading...';
-      htmlButton.disabled = true;
-    }
-
-    const tempId = this.queueRequestDownload(result, appID, 'premiumize');
-    try {
-      console.log('PremiumizeService startDownload', result);
-      const optionHandled = getConfigClientOption<{
-        premiumizeApiKey?: string;
-      }>('realdebrid');
-      if (!optionHandled || !optionHandled.premiumizeApiKey) {
-        throw new Error('Please set your Premiumize API key in the settings.');
+    return Effect.gen(this, function* () {
+      if (result.downloadType !== 'magnet' && result.downloadType !== 'torrent')
+        return;
+      if (htmlButton) {
+        originalText = htmlButton.textContent || '';
+        originalDisabled = htmlButton.disabled;
+        htmlButton.textContent = 'Downloading...';
+        htmlButton.disabled = true;
       }
-      const { premiumizeApiKey } = optionHandled;
 
-      // create the opengameinstaller folder on premiumize
-
-      let folderId = '';
-      console.log(
-        'Creating folder on Premiumize... API Key:',
-        premiumizeApiKey
+      tempId = this.queueRequestDownload(result, appID, 'premiumize');
+      const options = getConfigClientOption<{ premiumizeApiKey?: string }>(
+        'realdebrid'
       );
+      if (!options?.premiumizeApiKey) {
+        return yield* Effect.fail(
+          new DebridError({
+            message: 'Please set your Premiumize API key in the settings.',
+            service: 'premiumize',
+          })
+        );
+      }
+      const { premiumizeApiKey } = options;
 
-      const responseFolder = await window.electronAPI.app.axios({
-        method: 'POST',
-        url: `${BASE_URL}/folder/create?apikey=${premiumizeApiKey}`,
-        data: {
-          name: 'OpenGameInstaller',
-        },
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          Accept: 'application/json',
-        },
-      });
-
-      // -- Step 1: Create the folder for OGI to download to --
-      const responseFolderData = responseFolder.data as ResponseFolder;
-      if (responseFolderData.status === 'success') {
-        folderId = responseFolderData.id;
-      } else if (responseFolderData.status === 'error') {
-        console.log('Error creating folder:', responseFolderData.message);
-        // get the folder from the root
-        const responseFolderContent = await window.electronAPI.app.axios({
-          method: 'GET',
-          url: `${BASE_URL}/folder/search?apikey=${premiumizeApiKey}&q=OpenGameInstaller`,
-          headers: {
-            Accept: 'application/json',
-          },
-        });
-
-        const responseFolderContentData =
-          responseFolderContent.data as PremiumizeFolderResponse;
-
-        console.log('Folder content: ', responseFolderContentData);
-        if (responseFolderContentData.status === 'success') {
-          const folder = responseFolderContentData.content.find(
-            (item) => item.name === 'OpenGameInstaller'
+      const responseFolder = yield* premiumizePromise(
+        () =>
+          window.electronAPI.app.axios({
+            method: 'POST',
+            url: `${BASE_URL}/folder/create?apikey=${premiumizeApiKey}`,
+            data: { name: 'OpenGameInstaller' },
+            headers: {
+              'Content-Type': 'application/x-www-form-urlencoded',
+              Accept: 'application/json',
+            },
+          }),
+        'Failed to create Premiumize folder'
+      );
+      const folderData = responseFolder.data as ResponseFolder;
+      let folderId = folderData.status === 'success' ? folderData.id : '';
+      if (folderData.status === 'error') {
+        const searchResponse = yield* premiumizePromise(
+          () =>
+            window.electronAPI.app.axios({
+              method: 'GET',
+              url: `${BASE_URL}/folder/search?apikey=${premiumizeApiKey}&q=OpenGameInstaller`,
+              headers: { Accept: 'application/json' },
+            }),
+          'Failed to search Premiumize folders'
+        );
+        const searchData = searchResponse.data as PremiumizeFolderResponse;
+        if (searchData.status === 'error') {
+          return yield* Effect.fail(
+            new DebridError({
+              message: searchData.message,
+              service: 'premiumize',
+            })
           );
-          if (folder) {
-            folderId = folder.id;
-          } else {
-            throw new Error('OpenGameInstaller folder not found in Premiumize');
-          }
-        } else if (responseFolderContentData.status === 'error') {
-          throw new Error(responseFolderContentData.message);
+        }
+        folderId =
+          searchData.content.find((item) => item.name === 'OpenGameInstaller')
+            ?.id ?? '';
+        if (!folderId) {
+          return yield* Effect.fail(
+            new DebridError({
+              message: 'OpenGameInstaller folder not found in Premiumize.',
+              service: 'premiumize',
+            })
+          );
         }
       }
 
-      // -- Step 2: Add the torrent to the folder --
-      const formDataAddTorrent = new FormData();
+      const formData = new FormData();
       if (result.downloadType === 'torrent') {
-        const torrentData = await window.electronAPI.downloadTorrentInto(
-          result.downloadURL!
+        const torrentData = yield* premiumizePromise(
+          () => window.electronAPI.downloadTorrentInto(result.downloadURL!),
+          'Failed to download torrent data'
         );
-        formDataAddTorrent.append(
-          'file',
-          new Blob([torrentData.buffer as ArrayBuffer])
+        formData.append('file', new Blob([torrentData.buffer as ArrayBuffer]));
+      } else {
+        formData.append('src', result.downloadURL!);
+      }
+      formData.append('folder_id', folderId);
+      const transferResponse = yield* premiumizePromise(
+        () =>
+          window.electronAPI.app.axios<PremiumizeTransferResponse>({
+            method: 'POST',
+            url: `${BASE_URL}/transfer/create?apikey=${premiumizeApiKey}`,
+            data: Object.fromEntries(formData.entries()),
+            headers: {
+              'Content-Type': 'multipart/form-data',
+              Accept: 'application/json',
+            },
+          }),
+        'Failed to create Premiumize transfer'
+      );
+      if (transferResponse.data.status === 'error') {
+        return yield* Effect.fail(
+          new DebridError({
+            message: transferResponse.data.message,
+            service: 'premiumize',
+          })
         );
-      } else if (result.downloadType === 'magnet') {
-        formDataAddTorrent.append('src', result.downloadURL!);
       }
-      formDataAddTorrent.append('folder_id', folderId);
+      const transferId = transferResponse.data.id;
 
-      const responseAddTorrent =
-        await window.electronAPI.app.axios<PremiumizeTransferResponse>({
-          method: 'POST',
-          url: `${BASE_URL}/transfer/create?apikey=${premiumizeApiKey}`,
-          data: Object.fromEntries(formDataAddTorrent.entries()),
-          headers: {
-            'Content-Type': 'multipart/form-data',
-            Accept: 'application/json',
-          },
-        });
-
-      if (responseAddTorrent.data.status === 'error') {
-        throw new Error(responseAddTorrent.data.message);
-      }
-      const transferId = responseAddTorrent.data.id;
-      console.log('Transfer ID: ', transferId);
-
-      // -- Step 3: Wait for the torrent to be ready --
-      const foundFolderId = await new Promise<string>((resolve, reject) => {
-        let attempts = 0;
-        const interval = setInterval(async () => {
-          try {
-            if (attempts > 120) {
-              // 120 * 2.5s = 5 minutes (adjust if needed, but 10 mins is standard)
-              clearInterval(interval);
-              reject(new Error('Timed out waiting for Premiumize transfer.'));
-              return;
-            }
-            const responseTransfersList =
-              await window.electronAPI.app.axios<PremiumizeTransfersListResponse>(
-                {
-                  method: 'GET',
-                  url: `${BASE_URL}/transfer/list?apikey=${premiumizeApiKey}`,
-                }
-              );
-            if (responseTransfersList.status !== 200) {
-              attempts++;
-              return;
-            }
-            if (responseTransfersList.data.status === 'error') {
-              attempts++;
-              return;
-            }
-            const transfer = responseTransfersList.data.transfers.find(
-              (transfer) => transfer.id === transferId
-            );
-            if (transfer?.status === 'finished') {
-              clearInterval(interval);
-              resolve(transfer?.folder_id || '');
-              return;
-            }
-            attempts++;
-          } catch (err) {
-            clearInterval(interval);
-            reject(err);
+      let foundFolderId = '';
+      for (let attempt = 0; attempt <= 120; attempt++) {
+        const transfersResponse = yield* premiumizePromise(
+          () =>
+            window.electronAPI.app.axios<PremiumizeTransfersListResponse>({
+              method: 'GET',
+              url: `${BASE_URL}/transfer/list?apikey=${premiumizeApiKey}`,
+            }),
+          'Failed to check Premiumize transfer'
+        );
+        if (
+          transfersResponse.status === 200 &&
+          transfersResponse.data.status === 'success'
+        ) {
+          const transfer = transfersResponse.data.transfers.find(
+            (item) => item.id === transferId
+          );
+          if (transfer?.status === 'finished') {
+            foundFolderId = transfer.folder_id || '';
+            break;
           }
-        }, 2500);
-      });
-
+        }
+        yield* Effect.sleep(2500);
+      }
       if (!foundFolderId) {
-        throw new Error('Failed to download torrent from Premiumize');
+        return yield* Effect.fail(
+          new DebridError({
+            message: 'Timed out waiting for Premiumize transfer.',
+            service: 'premiumize',
+          })
+        );
       }
 
-      // -- Step 4: Get the direct download --
-      const responseTorrentFile =
-        await window.electronAPI.app.axios<PremiumizeZipGenerateResponse>({
-          method: 'POST',
-          url: `${BASE_URL}/zip/generate?apikey=${premiumizeApiKey}`,
-          data: {
-            'folders[]': foundFolderId,
-          },
-          headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-            Accept: 'application/json',
-          },
-        });
-
-      if (responseTorrentFile.status !== 200) {
-        console.log('Response: ', responseTorrentFile);
-        throw new Error('Failed to get direct download from Premiumize');
+      const zipResponse = yield* premiumizePromise(
+        () =>
+          window.electronAPI.app.axios<PremiumizeZipGenerateResponse>({
+            method: 'POST',
+            url: `${BASE_URL}/zip/generate?apikey=${premiumizeApiKey}`,
+            data: { 'folders[]': foundFolderId },
+            headers: {
+              'Content-Type': 'application/x-www-form-urlencoded',
+              Accept: 'application/json',
+            },
+          }),
+        'Failed to generate Premiumize download'
+      );
+      if (zipResponse.status !== 200 || zipResponse.data.status === 'error') {
+        return yield* Effect.fail(
+          new DebridError({
+            message:
+              zipResponse.data.status === 'error'
+                ? zipResponse.data.message
+                : 'Failed to get direct download from Premiumize.',
+            service: 'premiumize',
+          })
+        );
       }
 
-      if (responseTorrentFile.data.status === 'error') {
-        console.log('Response: ', responseTorrentFile.data);
-        throw new Error(responseTorrentFile.data.message);
-      }
-
-      const directDownloadUrl = responseTorrentFile.data.location;
-      console.log('Direct download URL: ', directDownloadUrl);
-
-      // -- Step 5: Send the direct download to the download handler --
+      const directDownloadUrl = zipResponse.data.location;
       const zipFilename = `${result.filename}.zip`;
       const targetPath = safeDownloadPath(
         getDownloadPath(),
         result.name,
         zipFilename
       );
-      const persistedFiles = [
-        {
-          name: zipFilename,
-          path: targetPath,
-          downloadURL: directDownloadUrl,
-        },
-      ];
-      const handshake = await window.electronAPI.ddl.download([
-        {
-          link: directDownloadUrl,
-          path: targetPath,
-          headers: {
-            'OGI-Parallel-Limit': '1',
-          },
-        },
-      ]);
+      const handshake = yield* premiumizePromise(
+        () =>
+          window.electronAPI.ddl.download([
+            {
+              link: directDownloadUrl,
+              path: targetPath,
+              headers: { 'OGI-Parallel-Limit': '1' },
+            },
+          ]),
+        'Failed to start Premiumize download'
+      );
       if (handshake.status === 'error' || !handshake.id) {
-        throw new Error('Failed to download the torrent.');
+        return yield* Effect.fail(
+          new DebridError({
+            message: 'Failed to download the torrent.',
+            service: 'premiumize',
+          })
+        );
       }
-
       this.updateDownloadRequested(
         handshake,
         tempId,
@@ -298,17 +259,32 @@ export class PremiumizeService extends BaseService {
         targetPath,
         'premiumize',
         result,
-        persistedFiles
+        [
+          {
+            name: zipFilename,
+            path: targetPath,
+            downloadURL: directDownloadUrl,
+          },
+        ]
       );
-      await finalizeDownloadCard(handshake.id);
-    } finally {
-      currentDownloads.update((downloads) =>
-        downloads.filter((d) => d.id !== tempId)
+      yield* premiumizePromise(
+        () => finalizeDownloadCard(handshake.id),
+        'Failed to finalize Premiumize download'
       );
-      if (htmlButton) {
-        htmlButton.textContent = originalText;
-        htmlButton.disabled = originalDisabled;
-      }
-    }
+    }).pipe(
+      Effect.ensuring(
+        Effect.sync(() => {
+          if (tempId) {
+            currentDownloads.update((downloads) =>
+              downloads.filter((download) => download.id !== tempId)
+            );
+          }
+          if (htmlButton) {
+            htmlButton.textContent = originalText;
+            htmlButton.disabled = originalDisabled;
+          }
+        })
+      )
+    );
   }
 }

@@ -1,3 +1,5 @@
+import { DebridError } from '@ogi/errors';
+import { Effect } from 'effect';
 import { getConfigClientOption } from '@/frontend/lib/config/client';
 import { getDownloadPath } from '@/frontend/lib/core/fs';
 import { finalizeDownloadCard } from '@/frontend/lib/downloads/events';
@@ -7,45 +9,11 @@ import type { SearchResultWithAddon } from '@/frontend/lib/tasks/runner';
 import { currentDownloads } from '@/frontend/store.svelte';
 
 const BASE_URL = 'https://api.torbox.app/v1';
-
-type TorboxFile = {
-  id: number;
-  md5: string;
-  s3_path: string;
-  name: string;
-  size: number;
-  mimetype: string;
-  short_name: string;
-};
-
 type TorboxTorrent = {
   id: number;
   hash: string;
-  created_at: string;
-  updated_at: string;
-  magnet: string;
-  size: number;
-  active: boolean;
-  auth_id: string;
-  download_state: string;
-  seeds: number;
-  peers: number;
-  ratio: number;
-  progress: number;
-  download_speed: number;
-  upload_speed: number;
-  name: string;
-  eta: number;
-  server: number;
-  torrent_file: boolean;
-  expires_at: string;
-  download_present: boolean;
   download_finished: boolean;
-  files: TorboxFile[];
-  inactive_check: number;
-  availability: number;
 };
-
 type TorboxTorrentListResponse = {
   success: boolean;
   error: string | null;
@@ -53,284 +21,240 @@ type TorboxTorrentListResponse = {
   data: TorboxTorrent[];
 };
 
+const torboxPromise = <A>(operation: () => Promise<A>, message: string) =>
+  Effect.tryPromise({
+    try: operation,
+    catch: (cause) =>
+      new DebridError({
+        message: `${message}: ${cause instanceof Error ? cause.message : String(cause)}`,
+        service: 'torbox' as const,
+      }),
+  });
+
 export class TorboxService extends BaseService {
   readonly types = ['torbox-magnet', 'torbox-torrent'];
 
-  async startDownload(
+  startDownload(
     result: SearchResultWithAddon,
     appID: number,
     event: MouseEvent | null,
     htmlButton?: HTMLButtonElement
-  ): Promise<void> {
-    if (event === null) return;
-    if (result.downloadType !== 'magnet' && result.downloadType !== 'torrent')
-      return;
-
+  ) {
     let originalText = '';
     let originalDisabled = false;
+    return Effect.gen(this, function* () {
+      if (event === null) return;
+      if (result.downloadType !== 'magnet' && result.downloadType !== 'torrent')
+        return;
+      if (htmlButton) {
+        originalText = htmlButton.textContent || '';
+        originalDisabled = htmlButton.disabled;
+        htmlButton.textContent = 'Downloading...';
+        htmlButton.disabled = true;
+      }
 
-    if (htmlButton) {
-      originalText = htmlButton.textContent || '';
-      originalDisabled = htmlButton.disabled;
-      htmlButton.textContent = 'Downloading...';
-      htmlButton.disabled = true;
-    }
-
-    try {
-      const optionHandled = getConfigClientOption<{ torboxApiKey?: string }>(
+      const options = getConfigClientOption<{ torboxApiKey?: string }>(
         'realdebrid'
       );
-      if (!optionHandled || !optionHandled.torboxApiKey) {
-        throw new Error('Please set your TorBox API key in the settings.');
+      if (!options?.torboxApiKey) {
+        return yield* Effect.fail(
+          new DebridError({
+            message: 'Please set your TorBox API key in the settings.',
+            service: 'torbox',
+          })
+        );
       }
-      const { torboxApiKey } = optionHandled;
-      const addTorrentForm = new FormData();
-
-      // -- STEP 1: CREATE THE TORRENT ON TORBOX --
-
+      const { torboxApiKey } = options;
+      const formData = new FormData();
       let torrentHash = '';
-
       if (result.downloadType === 'torrent') {
-        const torrentData = await window.electronAPI.downloadTorrentInto(
-          result.downloadURL!
+        const torrentData = yield* torboxPromise(
+          () => window.electronAPI.downloadTorrentInto(result.downloadURL!),
+          'Failed to load torrent data'
         );
-        // with the torrent data, use in new FormData as a file
-        addTorrentForm.append(
-          'file',
-          new Blob([torrentData.buffer as ArrayBuffer])
+        formData.append('file', new Blob([torrentData.buffer as ArrayBuffer]));
+        torrentHash = yield* torboxPromise(
+          () => window.electronAPI.getTorrentHash(torrentData),
+          'Failed to hash torrent'
         );
-        torrentHash = await window.electronAPI.getTorrentHash(torrentData);
-      } else if (result.downloadType === 'magnet') {
-        addTorrentForm.append('magnet', result.downloadURL!);
-        torrentHash = await window.electronAPI.getTorrentHash(
-          result.downloadURL!
+      } else {
+        formData.append('magnet', result.downloadURL!);
+        torrentHash = yield* torboxPromise(
+          () => window.electronAPI.getTorrentHash(result.downloadURL!),
+          'Failed to hash magnet'
         );
       }
+      formData.append('seed', '1');
+      formData.append('allow_zip', 'true');
+      formData.append('as_queued', 'false');
 
-      // seed to auto (the preference of the user)
-      addTorrentForm.append('seed', '1');
-      // alow the torrent output downloaded to be a zip file
-      addTorrentForm.append('allow_zip', 'true');
-      // instant in the queue
-      addTorrentForm.append('as_queued', 'false');
-
-      const response = await window.electronAPI.app.axios<{
-        success: boolean;
-        error: string | null;
-        detail: string;
-        data:
-          | {
-              hash: string;
-              queued_id?: number;
-              torrent_id?: number;
-            }
-          | {
-              cooldown_until: number;
-            };
-      }>({
-        url: `${BASE_URL}/api/torrents/createtorrent`,
-        method: 'post',
-        data: Object.fromEntries(addTorrentForm.entries()),
-        headers: {
-          'Content-Type': 'multipart/form-data',
-          Authorization: `Bearer ${torboxApiKey}`,
-        },
-      });
-
-      // Check response status and handle errors
+      const response = yield* torboxPromise(
+        () =>
+          window.electronAPI.app.axios<{
+            success: boolean;
+            error: string | null;
+            detail: string;
+            data:
+              | { hash: string; queued_id?: number; torrent_id?: number }
+              | { cooldown_until: number };
+          }>({
+            url: `${BASE_URL}/api/torrents/createtorrent`,
+            method: 'post',
+            data: Object.fromEntries(formData.entries()),
+            headers: {
+              'Content-Type': 'multipart/form-data',
+              Authorization: `Bearer ${torboxApiKey}`,
+            },
+          }),
+        'Failed to create TorBox torrent'
+      );
       if (response.status !== 200) {
-        // Handle non-200 status codes
-        const errorMessage = response.data.detail;
-        console.error('Failed to create torrent on Torbox: ', errorMessage);
-
+        const detail = response.data.detail;
         const message =
           response.data.error === 'DOWNLOAD_TOO_LARGE'
-            ? 'Your current plan does not support the size you are trying to download.'
-            : response.data.detail.includes('active torrent limit of')
+            ? 'Your current plan does not support the requested download size.'
+            : detail.includes('active torrent limit of')
               ? 'You have reached your active torrent limit.'
-              : response.data.detail.includes(
-                    'reached your monthly download limit'
-                  )
+              : detail.includes('reached your monthly download limit')
                 ? 'You have reached your monthly download limit.'
-                : response.data.detail.includes('must provide') &&
-                    response.data.detail.includes('file or magnet')
+                : detail.includes('must provide')
                   ? 'Addon did not provide a valid file or magnet.'
-                  : response.data.detail;
-
-        throw new Error(message);
+                  : detail;
+        return yield* Effect.fail(
+          new DebridError({ message, service: 'torbox' })
+        );
       }
 
-      // Type narrowing: Check if response is success or cooldown
       const responseData = response.data.data;
       if ('cooldown_until' in responseData) {
-        // Cooldown response (shouldn't happen with status 200, but handle safely)
-        throw new Error(
-          'You are on a cooldown period. Please wait until ' +
-            new Date(responseData.cooldown_until * 1000).toLocaleString() +
-            ' to try again.'
+        return yield* Effect.fail(
+          new DebridError({
+            message: `You are on cooldown until ${new Date(
+              responseData.cooldown_until * 1000
+            ).toLocaleString()}.`,
+            service: 'torbox',
+          })
         );
       }
-
-      // Now TypeScript knows responseData is the success type
-      // Extract queued_id and torrent_id from response data
       const { queued_id, torrent_id } = responseData;
-
       if (!queued_id && !torrent_id) {
-        throw new Error('No queued id or torrent id found');
+        return yield* Effect.fail(
+          new DebridError({
+            message: 'No queued id or torrent id found.',
+            service: 'torbox',
+          })
+        );
       }
-
-      let finalTorrentId = torrent_id;
 
       if (queued_id) {
-        // -- STEP 2.5: GET THE TORRENT ID FROM THE QUEUED ID BY INSTANTLY STARTING IT --
-        const startTorrentResponse = await window.electronAPI.app.axios({
-          url: `${BASE_URL}/api/queued/controlqueued`,
-          method: 'post',
-          data: {
-            queued_id: queued_id,
-            operation: 'start',
-            all: false,
-          },
-          headers: {
-            Authorization: `Bearer ${torboxApiKey}`,
-          },
-        });
-
-        if (startTorrentResponse.status !== 200) {
-          console.error('startTorrentResponse: ', startTorrentResponse);
-          throw new Error('Failed to start torrent');
+        const startResponse = yield* torboxPromise(
+          () =>
+            window.electronAPI.app.axios({
+              url: `${BASE_URL}/api/queued/controlqueued`,
+              method: 'post',
+              data: { queued_id, operation: 'start', all: false },
+              headers: { Authorization: `Bearer ${torboxApiKey}` },
+            }),
+          'Failed to start queued TorBox torrent'
+        );
+        if (startResponse.status !== 200) {
+          return yield* Effect.fail(
+            new DebridError({
+              message: 'Failed to start torrent.',
+              service: 'torbox',
+            })
+          );
         }
       }
 
-      // -- STEP 3: WAIT FOR THE TORRENT TO BE READY  --
-      // insert into the downloadItems array the temp id
       const tempId = this.queueRequestDownload(result, appID, 'torbox');
-
-      // If we already have a torrent_id, use it; otherwise poll for it
+      let finalTorrentId = torrent_id;
       if (!finalTorrentId) {
-        const torrentGrabber = await new Promise<TorboxTorrent | undefined>(
-          (resolve) => {
-            const startTime = Date.now();
-            const timeoutMs = 650 * 1000; // 650 seconds
-            let interval: ReturnType<typeof setInterval> | null = null;
-
-            const cleanup = () => {
-              if (interval !== null) {
-                clearInterval(interval);
-                interval = null;
-              }
-            };
-
-            interval = setInterval(async () => {
-              try {
-                // Check for timeout
-                if (Date.now() - startTime > timeoutMs) {
-                  cleanup();
-                  console.error(
-                    'Timeout: Torrent did not appear on Torbox within the allowed time'
-                  );
-                  resolve(undefined);
-                  return;
-                }
-
-                const torrentInfo =
-                  await window.electronAPI.app.axios<TorboxTorrentListResponse>(
-                    {
-                      url: `${BASE_URL}/api/torrents/mylist?bypass_cache=true`,
-                      method: 'get',
-                      headers: {
-                        Authorization: `Bearer ${torboxApiKey}`,
-                      },
-                    }
-                  );
-
-                if (!torrentInfo.data.success) {
-                  return;
-                }
-
-                const torrent = torrentInfo.data.data.find(
-                  (torrent) => torrent.hash === torrentHash
-                );
-
-                if (!torrent) {
-                  return;
-                }
-
-                if (torrent.download_finished) {
-                  cleanup();
-                  resolve(torrent);
-                  return;
-                }
-              } catch (error) {
-                cleanup();
-                console.error('Error polling Torbox:', error);
-                resolve(undefined);
-              }
-            }, 3000);
+        for (let attempt = 0; attempt < 217; attempt++) {
+          const list = yield* torboxPromise(
+            () =>
+              window.electronAPI.app.axios<TorboxTorrentListResponse>({
+                url: `${BASE_URL}/api/torrents/mylist?bypass_cache=true`,
+                method: 'get',
+                headers: { Authorization: `Bearer ${torboxApiKey}` },
+              }),
+            'Failed to poll TorBox torrent'
+          );
+          const torrent = list.data.success
+            ? list.data.data.find((item) => item.hash === torrentHash)
+            : undefined;
+          if (torrent?.download_finished) {
+            finalTorrentId = torrent.id;
+            break;
           }
-        );
-
-        finalTorrentId = torrentGrabber?.id;
-      }
-
-      if (finalTorrentId) {
-        // -- STEP 4: DOWNLOAD THE TORRENT --
-        const url = new URL(`${BASE_URL}/api/torrents/requestdl`);
-        url.searchParams.set('token', torboxApiKey);
-        url.searchParams.set('torrent_id', finalTorrentId.toString());
-        url.searchParams.set('zip_link', 'true');
-        url.searchParams.set('redirect', 'true');
-
-        // generate the whole url
-        const downloadUrl = url.toString();
-
-        const zipFilename = `${result.filename}.zip`;
-        const targetPath = safeDownloadPath(
-          getDownloadPath(),
-          result.name,
-          zipFilename
-        );
-        const persistedFiles = [
-          {
-            name: zipFilename,
-            path: targetPath,
-            downloadURL: downloadUrl,
-          },
-        ];
-        const handshake = await window.electronAPI.ddl.download([
-          {
-            link: downloadUrl,
-            path: targetPath,
-            headers: {
-              'OGI-Parallel-Limit': '1',
-            },
-          },
-        ]);
-        if (handshake.status === 'error' || !handshake.id) {
-          currentDownloads.update((downloads) => {
-            return downloads.filter((download) => download.id !== tempId);
-          });
-          throw new Error('Failed to download the torrent.');
+          yield* Effect.sleep(3000);
         }
-
-        this.updateDownloadRequested(
-          handshake,
-          tempId,
-          downloadUrl,
-          targetPath,
-          'torbox',
-          result,
-          persistedFiles
+      }
+      if (!finalTorrentId) {
+        return yield* Effect.fail(
+          new DebridError({
+            message: 'Timed out waiting for torrent to be ready.',
+            service: 'torbox',
+          })
         );
-        await finalizeDownloadCard(handshake.id);
-      } else {
-        throw new Error('Timed out waiting for torrent to be ready.');
       }
-    } finally {
-      if (htmlButton) {
-        htmlButton.textContent = originalText;
-        htmlButton.disabled = originalDisabled;
+
+      const url = new URL(`${BASE_URL}/api/torrents/requestdl`);
+      url.searchParams.set('token', torboxApiKey);
+      url.searchParams.set('torrent_id', finalTorrentId.toString());
+      url.searchParams.set('zip_link', 'true');
+      url.searchParams.set('redirect', 'true');
+      const downloadUrl = url.toString();
+      const zipFilename = `${result.filename}.zip`;
+      const targetPath = safeDownloadPath(
+        getDownloadPath(),
+        result.name,
+        zipFilename
+      );
+      const handshake = yield* torboxPromise(
+        () =>
+          window.electronAPI.ddl.download([
+            {
+              link: downloadUrl,
+              path: targetPath,
+              headers: { 'OGI-Parallel-Limit': '1' },
+            },
+          ]),
+        'Failed to start TorBox download'
+      );
+      if (handshake.status === 'error' || !handshake.id) {
+        currentDownloads.update((downloads) =>
+          downloads.filter((download) => download.id !== tempId)
+        );
+        return yield* Effect.fail(
+          new DebridError({
+            message: 'Failed to download the torrent.',
+            service: 'torbox',
+          })
+        );
       }
-    }
+      this.updateDownloadRequested(
+        handshake,
+        tempId,
+        downloadUrl,
+        targetPath,
+        'torbox',
+        result,
+        [{ name: zipFilename, path: targetPath, downloadURL: downloadUrl }]
+      );
+      yield* torboxPromise(
+        () => finalizeDownloadCard(handshake.id),
+        'Failed to finalize TorBox download'
+      );
+    }).pipe(
+      Effect.ensuring(
+        Effect.sync(() => {
+          if (htmlButton) {
+            htmlButton.textContent = originalText;
+            htmlButton.disabled = originalDisabled;
+          }
+        })
+      )
+    );
   }
 }

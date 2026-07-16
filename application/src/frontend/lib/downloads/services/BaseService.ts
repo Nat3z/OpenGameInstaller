@@ -1,3 +1,5 @@
+import type { OgiError } from '@ogi/errors';
+import { Effect } from 'effect';
 import { getDownloadPath } from '@/frontend/lib/core/fs';
 import { cardStatusFromHandshake } from '@/frontend/lib/downloads/events';
 import { safeDownloadPath } from '@/frontend/lib/downloads/paths';
@@ -9,30 +11,16 @@ import {
 import { updateDownloadStatus } from '@/frontend/utils';
 import type { DownloadHandshakeResult } from '@/lib/download-handshake';
 
-/**
- * Base class that all concrete download services should extend. It defines a
- * minimal contract so each service can be discovered and invoked in a generic
- * fashion.
- */
+/** Base contract implemented by each frontend download service. */
 export abstract class BaseService {
-  /**
-   * List of downloadType strings handled by this service (e.g. ['torrent', 'magnet']).
-   */
   abstract readonly types: string[];
 
-  /**
-   * Execute the download flow for the given result. Concrete implementations
-   * should move the logic that currently lives in lifecycle.ts into this
-   * method. When called recursively (e.g. from RequestService), htmlButton may
-   * be passed so the button element is available even when event.currentTarget
-   * is null.
-   */
   abstract startDownload(
     result: SearchResultWithAddon,
     appID: number,
     event: MouseEvent | null,
     htmlButton?: HTMLButtonElement
-  ): Promise<void>;
+  ): Effect.Effect<void, OgiError>;
 
   queueRequestDownload(
     result: SearchResultWithAddon,
@@ -40,25 +28,21 @@ export abstract class BaseService {
     usedDebridService: string
   ) {
     const tempId = Math.random().toString(36).substring(2, 15);
-    currentDownloads.update((downloads) => {
-      return [
-        ...downloads,
-        {
-          id: '' + tempId,
-          downloadSize: 0,
-          status: 'rd-downloading',
-          appID: appID,
-          files: [],
-          progress: 0,
-          // im lazy to type this every single time. so this will do.
-          usedDebridService: usedDebridService as any,
-          downloadPath: safeDownloadPath(getDownloadPath(), result.name),
-          downloadSpeed: 0,
-          ...result,
-        },
-      ];
-    });
-
+    currentDownloads.update((downloads) => [
+      ...downloads,
+      {
+        id: tempId,
+        downloadSize: 0,
+        status: 'rd-downloading',
+        appID,
+        files: [],
+        progress: 0,
+        usedDebridService: usedDebridService as any,
+        downloadPath: safeDownloadPath(getDownloadPath(), result.name),
+        downloadSpeed: 0,
+        ...result,
+      },
+    ]);
     return tempId;
   }
 
@@ -75,7 +59,7 @@ export abstract class BaseService {
       id: handshake.id,
       status: cardStatusFromHandshake(handshake),
       usedDebridService: usedDebridService as any,
-      downloadPath: downloadPath,
+      downloadPath,
       queuePosition: handshake.queuePosition,
       error: handshake.error,
       downloadURL: downloadUrl,

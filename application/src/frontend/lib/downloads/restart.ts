@@ -1,3 +1,5 @@
+import { DownloadError } from '@ogi/errors';
+import { Effect } from 'effect';
 import { getDownloadPath } from '@/frontend/lib/core/fs';
 import {
   getDownloadItem,
@@ -97,7 +99,14 @@ async function restartDirectDownload(
       },
     ];
   } else {
-    throw new Error('No download URL available for restart');
+    return Effect.runPromise(
+      Effect.fail(
+        new DownloadError({
+          message: 'No download URL available for restart',
+          downloadId: download.id,
+        })
+      )
+    );
   }
 
   console.log('Restarting direct download with files:', files);
@@ -118,7 +127,14 @@ async function restartTorrentDownload(
     ? downloadURL || download.originalDownloadURL
     : download.originalDownloadURL || downloadURL;
   if (!effectiveUrl) {
-    throw new Error('No torrent URL available for restart');
+    return Effect.runPromise(
+      Effect.fail(
+        new DownloadError({
+          message: 'No torrent URL available for restart',
+          downloadId: download.id,
+        })
+      )
+    );
   }
 
   const persistedFilePath = download.files?.[0]?.path;
@@ -192,8 +208,13 @@ async function restartTorrentDownload(
     );
     return handshake.id;
   } else {
-    throw new Error(
-      `Unsupported torrent download type: ${download.downloadType}`
+    return Effect.runPromise(
+      Effect.fail(
+        new DownloadError({
+          message: `Unsupported torrent download type: ${download.downloadType}`,
+          downloadId: download.id,
+        })
+      )
     );
   }
 }
@@ -236,7 +257,14 @@ export async function restartDownload(
     ) {
       newActualDownloadId = await restartTorrentDownload(download);
     } else {
-      throw new Error(`Unsupported download type: ${download.downloadType}`);
+      return await Effect.runPromise(
+        Effect.fail(
+          new DownloadError({
+            message: `Unsupported download type: ${download.downloadType}`,
+            downloadId: download.id,
+          })
+        )
+      );
     }
 
     updateDownloadStatus(newDownloadId, { id: newActualDownloadId });

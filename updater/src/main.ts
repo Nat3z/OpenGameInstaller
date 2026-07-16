@@ -4,12 +4,33 @@ import https from 'node:https';
 import axios, { type AxiosResponse } from 'axios';
 import { spawn } from 'child_process';
 import { createHash } from 'crypto';
+import { Data, Effect } from 'effect';
 import { app, BrowserWindow, dialog, ipcMain, net } from 'electron';
 import fs from 'fs';
 import path, { join } from 'path';
 import yauzl, { type ZipFile } from 'yauzl';
 import zlib from 'zlib';
 import pjson from '../package.json' with { type: 'json' };
+
+class UpdateError extends Data.TaggedError('UpdateError')<{
+  readonly message: string;
+  readonly phase?: string;
+}> {}
+
+const formatCause = (cause: unknown): string =>
+  cause instanceof Error ? cause.message : String(cause);
+
+const tryUpdate = <A>(phase: string, operation: () => A) =>
+  Effect.try({
+    try: operation,
+    catch: (cause) => new UpdateError({ message: formatCause(cause), phase }),
+  });
+
+const tryUpdatePromise = <A>(phase: string, operation: () => PromiseLike<A>) =>
+  Effect.tryPromise({
+    try: operation,
+    catch: (cause) => new UpdateError({ message: formatCause(cause), phase }),
+  });
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -313,90 +334,145 @@ async function syncBleedingEdgeRepo(
 
 /** Match .github/workflows/build-release.yml after hoisted `bun install`. */
 function syncHoistedElectronPackages(repoDir: string) {
-  const rootElectron = path.join(repoDir, 'node_modules', 'electron');
-  if (!fs.existsSync(rootElectron)) {
-    throw new Error(
-      'electron not found in repo root node_modules after install'
+  return Effect.gen(function* () {
+    const rootElectron = path.join(repoDir, 'node_modules', 'electron');
+    const electronExists = yield* tryUpdate('sync-electron', () =>
+      fs.existsSync(rootElectron)
     );
-  }
-  for (const pkg of ['application', 'updater'] as const) {
-    const dest = path.join(repoDir, pkg, 'node_modules', 'electron');
-    fs.mkdirSync(path.dirname(dest), { recursive: true });
-    fs.rmSync(dest, { recursive: true, force: true });
-    fs.cpSync(rootElectron, dest, { recursive: true });
-  }
+    if (!electronExists) {
+      return yield* Effect.fail(
+        new UpdateError({
+          message: 'electron not found in repo root node_modules after install',
+          phase: 'sync-electron',
+        })
+      );
+    }
+    yield* tryUpdate('sync-electron', () => {
+      for (const pkg of ['application', 'updater'] as const) {
+        const dest = path.join(repoDir, pkg, 'node_modules', 'electron');
+        fs.mkdirSync(path.dirname(dest), { recursive: true });
+        fs.rmSync(dest, { recursive: true, force: true });
+        fs.cpSync(rootElectron, dest, { recursive: true });
+      }
+    });
+  });
 }
 
-async function ensureBleedingEdgeBuild(
+function ensureBleedingEdgeBuild(
   commit = '',
   branch = DEFAULT_BLEEDING_EDGE_BRANCH
 ) {
-  const repoDir = getBleedingEdgeRepoDir();
-  const targetBranch = branch || DEFAULT_BLEEDING_EDGE_BRANCH;
-  sendUpdaterStatus('Preparing Bleeding Edge');
-  let syncResult: BleedingEdgeSyncResult | null = null;
-  if (!fs.existsSync(path.join(repoDir, '.git'))) {
-    fs.rmSync(repoDir, { recursive: true, force: true });
-    await runCommand('git', [
-      'clone',
-      '--branch',
-      targetBranch,
-      OGI_REPO_URL,
-      repoDir,
-    ]);
-  } else {
-    syncResult = await syncBleedingEdgeRepo(repoDir, targetBranch);
-  }
-  if (commit) {
-    await runCommand('git', ['checkout', commit], { cwd: repoDir });
-  }
+  return Effect.gen(function* () {
+    const repoDir = getBleedingEdgeRepoDir();
+    const targetBranch = branch || DEFAULT_BLEEDING_EDGE_BRANCH;
+    sendUpdaterStatus('Preparing Bleeding Edge');
+    let syncResult: BleedingEdgeSyncResult | null = null;
+    if (!fs.existsSync(path.join(repoDir, '.git'))) {
+      yield* tryUpdate('clone-repository', () =>
+        fs.rmSync(repoDir, { recursive: true, force: true })
+      );
+      yield* tryUpdatePromise('clone-repository', () =>
+        runCommand('git', [
+          'clone',
+          '--branch',
+          targetBranch,
+          OGI_REPO_URL,
+          repoDir,
+        ])
+      );
+    } else {
+      syncResult = yield* tryUpdatePromise('sync-repository', () =>
+        syncBleedingEdgeRepo(repoDir, targetBranch)
+      );
+    }
+    if (commit) {
+      yield* tryUpdatePromise('checkout-commit', () =>
+        runCommand('git', ['checkout', commit], { cwd: repoDir })
+      );
+    }
 
-  const headSha = await getRepoHeadSha(repoDir);
-  if (
-    !commit &&
-    syncResult?.pullWasNoop &&
-    shouldSkipBranchOnlyBleedingEdgeBuild(targetBranch, headSha)
-  ) {
-    sendUpdaterStatus(
-      'Bleeding Edge up to date',
-      undefined,
-      undefined,
-      'Skipping build'
+    const headSha = yield* tryUpdatePromise('resolve-commit', () =>
+      getRepoHeadSha(repoDir)
     );
-    writeCommitEdgeFile(targetBranch, '', headSha);
-    return;
-  }
+    if (
+      !commit &&
+      syncResult?.pullWasNoop &&
+      shouldSkipBranchOnlyBleedingEdgeBuild(targetBranch, headSha)
+    ) {
+      sendUpdaterStatus(
+        'Bleeding Edge up to date',
+        undefined,
+        undefined,
+        'Skipping build'
+      );
+      yield* tryUpdate('write-commit-state', () =>
+        writeCommitEdgeFile(targetBranch, '', headSha)
+      );
+      return;
+    }
 
-  await runCommand('bun', ['install', '--linker=hoisted'], { cwd: repoDir });
-  syncHoistedElectronPackages(repoDir);
-  await runCommand('bun', ['run', 'build'], { cwd: repoDir });
-  const [buildCommand, buildArgs] = getApplicationBuildCommand();
-  await runCommand(buildCommand, buildArgs, { cwd: repoDir });
+    yield* tryUpdatePromise('install-dependencies', () =>
+      runCommand('bun', ['install', '--linker=hoisted'], { cwd: repoDir })
+    );
+    yield* syncHoistedElectronPackages(repoDir);
+    yield* tryUpdatePromise('build-application', () =>
+      runCommand('bun', ['run', 'build'], { cwd: repoDir })
+    );
+    const [buildCommand, buildArgs] = getApplicationBuildCommand();
+    yield* tryUpdatePromise('package-application', () =>
+      runCommand(buildCommand, buildArgs, { cwd: repoDir })
+    );
 
-  const destRoot = path.join(__dirname, 'update');
-  prepareUpdateDestination(destRoot);
-  if (process.platform === 'win32') {
-    const exe = findFirstFile(
-      path.join(repoDir, 'application', 'dist'),
-      (name) =>
-        name.toLowerCase().endsWith('.exe') &&
-        !name.toLowerCase().includes('setup')
+    const destRoot = path.join(__dirname, 'update');
+    yield* tryUpdate('prepare-update', () =>
+      prepareUpdateDestination(destRoot)
     );
-    if (!exe) throw new Error('Built Windows executable not found');
-    fs.copyFileSync(exe, path.join(destRoot, 'OpenGameInstaller.exe'));
-  } else {
-    const appImage = findFirstFile(
-      path.join(repoDir, 'application', 'dist'),
-      (name) => name.toLowerCase().endsWith('.appimage')
+    if (process.platform === 'win32') {
+      const exe = yield* tryUpdate('find-build', () =>
+        findFirstFile(
+          path.join(repoDir, 'application', 'dist'),
+          (name) =>
+            name.toLowerCase().endsWith('.exe') &&
+            !name.toLowerCase().includes('setup')
+        )
+      );
+      if (!exe) {
+        return yield* Effect.fail(
+          new UpdateError({
+            message: 'Built Windows executable not found',
+            phase: 'find-build',
+          })
+        );
+      }
+      yield* tryUpdate('copy-build', () =>
+        fs.copyFileSync(exe, path.join(destRoot, 'OpenGameInstaller.exe'))
+      );
+    } else {
+      const appImage = yield* tryUpdate('find-build', () =>
+        findFirstFile(path.join(repoDir, 'application', 'dist'), (name) =>
+          name.toLowerCase().endsWith('.appimage')
+        )
+      );
+      if (!appImage) {
+        return yield* Effect.fail(
+          new UpdateError({
+            message: 'Built Linux AppImage not found',
+            phase: 'find-build',
+          })
+        );
+      }
+      yield* tryUpdate('copy-build', () => {
+        fs.copyFileSync(
+          appImage,
+          path.join(destRoot, 'OpenGameInstaller.AppImage')
+        );
+        fs.chmodSync(path.join(destRoot, 'OpenGameInstaller.AppImage'), '755');
+      });
+    }
+    yield* tryUpdate('write-commit-state', () =>
+      writeCommitEdgeFile(targetBranch, commit, commit ? '' : headSha)
     );
-    if (!appImage) throw new Error('Built Linux AppImage not found');
-    fs.copyFileSync(
-      appImage,
-      path.join(destRoot, 'OpenGameInstaller.AppImage')
-    );
-    fs.chmodSync(path.join(destRoot, 'OpenGameInstaller.AppImage'), '755');
-  }
-  writeCommitEdgeFile(targetBranch, commit, commit ? '' : headSha);
+  });
 }
 
 function parseRemoteBranchName(ref: string): string | null {
@@ -1177,28 +1253,38 @@ async function ensureCachedSourceArtifact(cacheDir, release, asset) {
   return sourceArtifactPath;
 }
 
-async function ensureCachedBlockmap(
-  cacheDir: string,
-  release: any,
-  asset: any
-) {
-  const blockmapAsset = getBlockmapAsset(release, asset);
-  if (!blockmapAsset) {
-    throw new Error(`Blockmap missing for ${release.tag_name}`);
-  }
+function ensureCachedBlockmap(cacheDir: string, release: any, asset: any) {
+  return Effect.gen(function* () {
+    const blockmapAsset = getBlockmapAsset(release, asset);
+    if (!blockmapAsset) {
+      return yield* Effect.fail(
+        new UpdateError({
+          message: `Blockmap missing for ${release.tag_name}`,
+          phase: 'validate-blockmap',
+        })
+      );
+    }
 
-  const blockmapPath = path.join(cacheDir, `${asset.name}.blockmap`);
-  if (fs.existsSync(blockmapPath)) {
+    const blockmapPath = path.join(cacheDir, `${asset.name}.blockmap`);
+    const cached = yield* tryUpdate('inspect-blockmap-cache', () =>
+      fs.existsSync(blockmapPath)
+    );
+    if (cached) {
+      return blockmapPath;
+    }
+
+    yield* tryUpdate('prepare-blockmap-cache', () =>
+      fs.mkdirSync(cacheDir, { recursive: true })
+    );
+    yield* tryUpdatePromise('download-blockmap', () =>
+      downloadToFile(
+        blockmapAsset.browser_download_url,
+        blockmapPath,
+        `Downloading blockmap ${release.tag_name}`
+      )
+    );
     return blockmapPath;
-  }
-
-  fs.mkdirSync(cacheDir, { recursive: true });
-  await downloadToFile(
-    blockmapAsset.browser_download_url,
-    blockmapPath,
-    `Downloading blockmap ${release.tag_name}`
-  );
-  return blockmapPath;
+  });
 }
 
 async function downloadToFile(
@@ -1305,213 +1391,272 @@ function copyCacheToUpdate(cacheDir: string) {
   }
 }
 
-async function downloadFullRelease(release: any) {
-  const assetWithPortable = getPlatformAsset(release);
-  if (!assetWithPortable) {
-    throw new Error('No portable asset found for this platform');
-  }
-  const localCache = getVersionCache(release.tag_name);
-  fs.mkdirSync(localCache, { recursive: true });
-  const blockmapAsset = getBlockmapAsset(release, assetWithPortable);
-
-  sendUpdaterStatus('Downloading Update');
-  const downloadPath =
-    process.platform === 'win32'
-      ? path.join(__dirname, 'update.zip')
-      : './update/OpenGameInstaller.AppImage';
-  if (process.platform === 'linux') {
-    fs.mkdirSync('./update', { recursive: true });
-  }
-  await downloadToFile(
-    assetWithPortable.browser_download_url,
-    downloadPath,
-    'Downloading Update'
-  );
-  sendUpdaterStatus('Verifying Download');
-  await verifyReleaseArtifact(
-    downloadPath,
-    {
-      size: assetWithPortable.size,
-      digest: assetWithPortable.digest,
-    },
-    'downloaded release artifact'
-  );
-  if (blockmapAsset) {
-    await downloadToFile(
-      blockmapAsset.browser_download_url,
-      path.join(localCache, `${assetWithPortable.name}.blockmap`),
-      'Downloading blockmap'
-    );
-  }
-  sendUpdaterStatus('Download Complete');
-
-  if (process.platform === 'win32') {
-    const zipPath = path.join(__dirname, 'update.zip');
-    persistSourceArtifact(assetWithPortable.name, zipPath);
-    sendUpdaterStatus('Extracting Update');
-    await unzip(zipPath, localCache);
-    sendUpdaterStatus('Copying Update Files');
-    copyCacheToUpdate(localCache);
-    fs.copyFileSync(zipPath, path.join(localCache, assetWithPortable.name));
-    fs.unlinkSync(zipPath);
-  } else {
-    const item = path.join(__dirname, 'update', 'OpenGameInstaller.AppImage');
-    fs.copyFileSync(item, path.join(localCache, 'OpenGameInstaller.AppImage'));
-    fs.copyFileSync(item, path.join(localCache, assetWithPortable.name));
-    fs.chmodSync(item, '755');
-  }
-  cleanupAfterUpdate(release.tag_name, assetWithPortable.name);
-}
-
-async function applyBlockmapPath(releasePath: any, releases: any) {
-  let currentTag = localVersion;
-  let latestAssetName = null;
-  logUpdater('Starting incremental update path', {
-    from: currentTag,
-    steps: releasePath.map((release: any) => release.tag_name),
-  });
-  for (let i = 0; i < releasePath.length; i++) {
-    const currentRelease = getReleaseByTag(releases, currentTag);
-    const nextRelease = releasePath[i];
-    logUpdater('Applying incremental patch step', {
-      step: i + 1,
-      totalSteps: releasePath.length,
-      from: currentTag,
-      to: nextRelease.tag_name,
-    });
-    sendUpdaterStatus(`Applying patch ${i + 1} of ${releasePath.length}`);
-    if (!currentRelease) {
-      throw new Error(`Release metadata missing for ${currentTag}`);
-    }
-    const fromCache = getVersionCache(currentTag);
-    const nextCache = getVersionCache(nextRelease.tag_name);
-    const currentAsset = getPlatformAsset(currentRelease);
-    if (!currentAsset) {
-      throw new Error(`Portable asset missing for ${currentTag}`);
-    }
-    const nextAsset = getPlatformAsset(nextRelease);
-    if (!nextAsset) {
-      throw new Error(`Portable asset missing for ${nextRelease.tag_name}`);
-    }
-    latestAssetName = nextAsset.name;
-    const newBlockmapAsset = getBlockmapAsset(nextRelease, nextAsset);
-    if (!newBlockmapAsset) {
-      throw new Error(`Blockmap missing for ${nextRelease.tag_name}`);
-    }
-    const sourceArtifact = await ensureCachedSourceArtifact(
-      fromCache,
-      currentRelease,
-      currentAsset
-    );
-    sendUpdaterStatus('Verifying base artifact');
-    await verifyReleaseArtifact(
-      sourceArtifact,
-      {
-        size: currentAsset.size,
-        digest: currentAsset.digest,
-      },
-      'base artifact'
-    );
-    const oldBlockmapPath = await ensureCachedBlockmap(
-      fromCache,
-      currentRelease,
-      currentAsset
-    );
-    fs.mkdirSync(nextCache, { recursive: true });
-    const newBlockmapPath = path.join(nextCache, `${nextAsset.name}.blockmap`);
-    if (!fs.existsSync(newBlockmapPath)) {
-      await downloadToFile(
-        newBlockmapAsset.browser_download_url,
-        newBlockmapPath,
-        'Downloading blockmap'
+function downloadFullRelease(release: any) {
+  return Effect.gen(function* () {
+    const assetWithPortable = getPlatformAsset(release);
+    if (!assetWithPortable) {
+      return yield* Effect.fail(
+        new UpdateError({
+          message: 'No portable asset found for this platform',
+          phase: 'validate-release',
+        })
       );
     }
-    const outputArtifact = path.join(nextCache, nextAsset.name);
-    logUpdater('Prepared patch inputs', {
-      sourceArtifact,
-      oldBlockmapPath,
-      newBlockmapPath,
-      outputArtifact,
-    });
-    sendUpdaterStatus(
-      `Building patch ${i + 1} of ${releasePath.length}`,
-      0,
-      1,
-      nextRelease.tag_name
+    const localCache = getVersionCache(release.tag_name);
+    yield* tryUpdate('prepare-release-cache', () =>
+      fs.mkdirSync(localCache, { recursive: true })
     );
-    await nextUiTick();
-    await applyBlockmapPatch(
-      sourceArtifact,
-      oldBlockmapPath,
-      outputArtifact,
-      newBlockmapPath,
-      nextAsset.browser_download_url,
-      { size: nextAsset.size, digest: nextAsset.digest },
+    const blockmapAsset = getBlockmapAsset(release, assetWithPortable);
+
+    sendUpdaterStatus('Downloading Update');
+    const downloadPath =
+      process.platform === 'win32'
+        ? path.join(__dirname, 'update.zip')
+        : './update/OpenGameInstaller.AppImage';
+    if (process.platform === 'linux') {
+      yield* tryUpdate('prepare-update-directory', () =>
+        fs.mkdirSync('./update', { recursive: true })
+      );
+    }
+    yield* tryUpdatePromise('download-release', () =>
+      downloadToFile(
+        assetWithPortable.browser_download_url,
+        downloadPath,
+        'Downloading Update'
+      )
+    );
+    sendUpdaterStatus('Verifying Download');
+    yield* verifyReleaseArtifact(
+      downloadPath,
       {
-        patchLabel: `Building patch ${i + 1} of ${releasePath.length}`,
-        verifyLabel: `Verifying patch ${i + 1} of ${releasePath.length}`,
-        releaseTag: nextRelease.tag_name,
-      }
+        size: assetWithPortable.size,
+        digest: assetWithPortable.digest,
+      },
+      'downloaded release artifact'
     );
+    if (blockmapAsset) {
+      yield* tryUpdatePromise('download-blockmap', () =>
+        downloadToFile(
+          blockmapAsset.browser_download_url,
+          path.join(localCache, `${assetWithPortable.name}.blockmap`),
+          'Downloading blockmap'
+        )
+      );
+    }
+    sendUpdaterStatus('Download Complete');
 
     if (process.platform === 'win32') {
-      persistSourceArtifact(nextAsset.name, outputArtifact);
-      logUpdater('Extracting patched Windows artifact', {
-        artifact: outputArtifact,
-        destination: nextCache,
-      });
-      sendUpdaterStatus(
-        `Extracting patch ${i + 1} of ${releasePath.length}`,
-        0,
-        1,
-        nextRelease.tag_name
+      const zipPath = path.join(__dirname, 'update.zip');
+      yield* tryUpdate('persist-release', () =>
+        persistSourceArtifact(assetWithPortable.name, zipPath)
       );
-      await nextUiTick();
-      await unzip(outputArtifact, nextCache);
+      sendUpdaterStatus('Extracting Update');
+      yield* tryUpdatePromise('extract-release', () =>
+        unzip(zipPath, localCache)
+      );
+      sendUpdaterStatus('Copying Update Files');
+      yield* tryUpdate('copy-release', () => {
+        copyCacheToUpdate(localCache);
+        fs.copyFileSync(zipPath, path.join(localCache, assetWithPortable.name));
+        fs.unlinkSync(zipPath);
+      });
     } else {
-      logUpdater('Finalizing patched Linux artifact', {
-        artifact: outputArtifact,
-        destination: path.join(nextCache, 'OpenGameInstaller.AppImage'),
+      const item = path.join(__dirname, 'update', 'OpenGameInstaller.AppImage');
+      yield* tryUpdate('copy-release', () => {
+        fs.copyFileSync(
+          item,
+          path.join(localCache, 'OpenGameInstaller.AppImage')
+        );
+        fs.copyFileSync(item, path.join(localCache, assetWithPortable.name));
+        fs.chmodSync(item, '755');
       });
-      sendUpdaterStatus(
-        `Finalizing patch ${i + 1} of ${releasePath.length}`,
-        0,
-        1,
-        nextRelease.tag_name
-      );
-      fs.copyFileSync(
-        outputArtifact,
-        path.join(nextCache, 'OpenGameInstaller.AppImage')
-      );
     }
-    currentTag = nextRelease.tag_name;
-    logUpdater('Completed incremental patch step', {
-      step: i + 1,
-      currentTag,
-    });
-  }
-  sendUpdaterStatus('Copying Update Files');
-  logUpdater('Copying patched cache into update directory', {
-    cache: getVersionCache(releasePath[releasePath.length - 1].tag_name),
+    yield* tryUpdate('clean-release-cache', () =>
+      cleanupAfterUpdate(release.tag_name, assetWithPortable.name)
+    );
   });
-  copyCacheToUpdate(
-    getVersionCache(releasePath[releasePath.length - 1].tag_name)
-  );
-  if (process.platform === 'linux') {
-    sendUpdaterStatus('Finishing Update');
-    fs.chmodSync('./update/OpenGameInstaller.AppImage', '755');
-  }
-  logUpdater('Incremental update path complete', {
-    finalTag: releasePath[releasePath.length - 1].tag_name,
-    latestAssetName,
-  });
-  cleanupAfterUpdate(
-    releasePath[releasePath.length - 1].tag_name,
-    latestAssetName
-  );
 }
 
-async function applyBlockmapPatch(
+function applyBlockmapPath(releasePath: any, releases: any) {
+  return Effect.gen(function* () {
+    let currentTag = localVersion;
+    let latestAssetName = null;
+    logUpdater('Starting incremental update path', {
+      from: currentTag,
+      steps: releasePath.map((release: any) => release.tag_name),
+    });
+    for (let i = 0; i < releasePath.length; i++) {
+      const currentRelease = getReleaseByTag(releases, currentTag);
+      const nextRelease = releasePath[i];
+      logUpdater('Applying incremental patch step', {
+        step: i + 1,
+        totalSteps: releasePath.length,
+        from: currentTag,
+        to: nextRelease.tag_name,
+      });
+      sendUpdaterStatus(`Applying patch ${i + 1} of ${releasePath.length}`);
+      if (!currentRelease) {
+        return yield* Effect.fail(
+          new UpdateError({
+            message: `Release metadata missing for ${currentTag}`,
+            phase: 'validate-patch-path',
+          })
+        );
+      }
+      const fromCache = getVersionCache(currentTag);
+      const nextCache = getVersionCache(nextRelease.tag_name);
+      const currentAsset = getPlatformAsset(currentRelease);
+      if (!currentAsset) {
+        return yield* Effect.fail(
+          new UpdateError({
+            message: `Portable asset missing for ${currentTag}`,
+            phase: 'validate-patch-path',
+          })
+        );
+      }
+      const nextAsset = getPlatformAsset(nextRelease);
+      if (!nextAsset) {
+        return yield* Effect.fail(
+          new UpdateError({
+            message: `Portable asset missing for ${nextRelease.tag_name}`,
+            phase: 'validate-patch-path',
+          })
+        );
+      }
+      latestAssetName = nextAsset.name;
+      const newBlockmapAsset = getBlockmapAsset(nextRelease, nextAsset);
+      if (!newBlockmapAsset) {
+        return yield* Effect.fail(
+          new UpdateError({
+            message: `Blockmap missing for ${nextRelease.tag_name}`,
+            phase: 'validate-patch-path',
+          })
+        );
+      }
+      const sourceArtifact = yield* tryUpdatePromise(
+        'cache-source-artifact',
+        () =>
+          ensureCachedSourceArtifact(fromCache, currentRelease, currentAsset)
+      );
+      sendUpdaterStatus('Verifying base artifact');
+      yield* verifyReleaseArtifact(
+        sourceArtifact,
+        {
+          size: currentAsset.size,
+          digest: currentAsset.digest,
+        },
+        'base artifact'
+      );
+      const oldBlockmapPath = yield* ensureCachedBlockmap(
+        fromCache,
+        currentRelease,
+        currentAsset
+      );
+      fs.mkdirSync(nextCache, { recursive: true });
+      const newBlockmapPath = path.join(
+        nextCache,
+        `${nextAsset.name}.blockmap`
+      );
+      if (!fs.existsSync(newBlockmapPath)) {
+        yield* tryUpdatePromise('download-blockmap', () =>
+          downloadToFile(
+            newBlockmapAsset.browser_download_url,
+            newBlockmapPath,
+            'Downloading blockmap'
+          )
+        );
+      }
+      const outputArtifact = path.join(nextCache, nextAsset.name);
+      logUpdater('Prepared patch inputs', {
+        sourceArtifact,
+        oldBlockmapPath,
+        newBlockmapPath,
+        outputArtifact,
+      });
+      sendUpdaterStatus(
+        `Building patch ${i + 1} of ${releasePath.length}`,
+        0,
+        1,
+        nextRelease.tag_name
+      );
+      yield* tryUpdatePromise('update-ui', () => nextUiTick());
+      yield* applyBlockmapPatch(
+        sourceArtifact,
+        oldBlockmapPath,
+        outputArtifact,
+        newBlockmapPath,
+        nextAsset.browser_download_url,
+        { size: nextAsset.size, digest: nextAsset.digest },
+        {
+          patchLabel: `Building patch ${i + 1} of ${releasePath.length}`,
+          verifyLabel: `Verifying patch ${i + 1} of ${releasePath.length}`,
+          releaseTag: nextRelease.tag_name,
+        }
+      );
+
+      if (process.platform === 'win32') {
+        persistSourceArtifact(nextAsset.name, outputArtifact);
+        logUpdater('Extracting patched Windows artifact', {
+          artifact: outputArtifact,
+          destination: nextCache,
+        });
+        sendUpdaterStatus(
+          `Extracting patch ${i + 1} of ${releasePath.length}`,
+          0,
+          1,
+          nextRelease.tag_name
+        );
+        yield* tryUpdatePromise('update-ui', () => nextUiTick());
+        yield* tryUpdatePromise('extract-patch', () =>
+          unzip(outputArtifact, nextCache)
+        );
+      } else {
+        logUpdater('Finalizing patched Linux artifact', {
+          artifact: outputArtifact,
+          destination: path.join(nextCache, 'OpenGameInstaller.AppImage'),
+        });
+        sendUpdaterStatus(
+          `Finalizing patch ${i + 1} of ${releasePath.length}`,
+          0,
+          1,
+          nextRelease.tag_name
+        );
+        fs.copyFileSync(
+          outputArtifact,
+          path.join(nextCache, 'OpenGameInstaller.AppImage')
+        );
+      }
+      currentTag = nextRelease.tag_name;
+      logUpdater('Completed incremental patch step', {
+        step: i + 1,
+        currentTag,
+      });
+    }
+    sendUpdaterStatus('Copying Update Files');
+    logUpdater('Copying patched cache into update directory', {
+      cache: getVersionCache(releasePath[releasePath.length - 1].tag_name),
+    });
+    copyCacheToUpdate(
+      getVersionCache(releasePath[releasePath.length - 1].tag_name)
+    );
+    if (process.platform === 'linux') {
+      sendUpdaterStatus('Finishing Update');
+      fs.chmodSync('./update/OpenGameInstaller.AppImage', '755');
+    }
+    logUpdater('Incremental update path complete', {
+      finalTag: releasePath[releasePath.length - 1].tag_name,
+      latestAssetName,
+    });
+    yield* tryUpdate('clean-patch-cache', () =>
+      cleanupAfterUpdate(
+        releasePath[releasePath.length - 1].tag_name,
+        latestAssetName
+      )
+    );
+  });
+}
+
+function applyBlockmapPatch(
   sourceArtifact,
   oldBlockmapPath,
   outputArtifact,
@@ -1519,174 +1664,209 @@ async function applyBlockmapPatch(
   targetUrl,
   expectedArtifact = {},
   statusLabels: any = {}
-) {
-  const patchLabel = statusLabels.patchLabel || 'Building patch';
-  const verifyLabel = statusLabels.verifyLabel || 'Verifying patch';
-  const releaseTag = statusLabels.releaseTag;
-  logUpdater('Starting blockmap patch', {
-    sourceArtifact,
-    oldBlockmapPath,
-    newBlockmapPath,
-    outputArtifact,
-    releaseTag,
-  });
-  const oldMap = JSON.parse(
-    zlib.gunzipSync(fs.readFileSync(oldBlockmapPath)).toString('utf8')
-  );
-  const newMap = JSON.parse(
-    zlib.gunzipSync(fs.readFileSync(newBlockmapPath)).toString('utf8')
-  );
-  const oldFile = oldMap.files?.[0];
-  const newFile = newMap.files?.[0];
-  if (!oldFile || !newFile) {
-    throw new Error('Invalid blockmap payload');
-  }
-  const checksumToBlocks = new Map();
-  let oldOffset = oldFile.offset || 0;
-  for (let i = 0; i < oldFile.checksums.length; i++) {
-    const key = getBlockKey(oldFile.checksums[i], oldFile.sizes[i]);
-    const block = { offset: oldOffset, size: oldFile.sizes[i] };
-    const current = checksumToBlocks.get(key) || [];
-    current.push(block);
-    checksumToBlocks.set(key, current);
-    oldOffset += oldFile.sizes[i];
-  }
-
-  fs.mkdirSync(path.dirname(outputArtifact), { recursive: true });
-  let sourceFd: number | undefined;
-  let outFd: number | undefined;
-
-  try {
-    sourceFd = fs.openSync(sourceArtifact, 'r');
-    outFd = fs.openSync(outputArtifact, 'w');
-    let writeOffset = newFile.offset || 0;
-    const misses = [];
-
-    if (writeOffset > 0) {
-      sendUpdaterStatus(patchLabel, 0, newFile.checksums.length, releaseTag);
-      await nextUiTick();
-      const headerChunk = await downloadRangeChunk(
-        targetUrl,
-        0,
-        writeOffset - 1
-      );
-      fs.writeSync(outFd, headerChunk, 0, headerChunk.length, 0);
-    }
-
-    for (let i = 0; i < newFile.checksums.length; i++) {
-      const size = newFile.sizes[i];
-      const blocks = checksumToBlocks.get(
-        getBlockKey(newFile.checksums[i], size)
-      );
-      // Consume one old block at most once to avoid reusing source data.
-      const matched = takeMatchingBlock(blocks);
-      if (matched) {
-        const buffer = Buffer.alloc(size);
-        const bytesRead = fs.readSync(
-          sourceFd,
-          buffer,
-          0,
-          size,
-          matched.offset
-        );
-        if (bytesRead !== size) {
-          throw new Error(
-            `Short read from source artifact at ${matched.offset}: expected ${size}, got ${bytesRead}`
-          );
-        }
-        fs.writeSync(outFd, buffer, 0, size, writeOffset);
-      } else {
-        misses.push({ offset: writeOffset, size });
-      }
-      writeOffset += size;
-      if (
-        i === newFile.checksums.length - 1 ||
-        (i + 1) % PATCH_PROGRESS_INTERVAL === 0
-      ) {
-        sendUpdaterStatus(
-          patchLabel,
-          i + 1,
-          newFile.checksums.length,
-          releaseTag
-        );
-        await nextUiTick();
-      }
-    }
-
-    const mergedMisses = [];
-    for (const miss of misses) {
-      const last = mergedMisses[mergedMisses.length - 1];
-      if (last && last.offset + last.size === miss.offset) {
-        last.size += miss.size;
-      } else {
-        mergedMisses.push({ ...miss });
-      }
-    }
-
-    const totalMissBytes = mergedMisses.reduce(
-      (total, miss) => total + miss.size,
-      0
-    );
-    const reusedBytes =
-      newFile.sizes.reduce((total, size) => total + size, 0) - totalMissBytes;
-    const downloadTasks = createRangeDownloadTasks(mergedMisses);
-    const totalScheduledDownloadBytes = downloadTasks.reduce(
-      (total, task) => total + task.size,
-      0
-    );
-    logUpdater('Patch block analysis complete', {
+): Effect.Effect<void, UpdateError> {
+  return Effect.gen(function* () {
+    const patchLabel = statusLabels.patchLabel || 'Building patch';
+    const verifyLabel = statusLabels.verifyLabel || 'Verifying patch';
+    const releaseTag = statusLabels.releaseTag;
+    logUpdater('Starting blockmap patch', {
+      sourceArtifact,
+      oldBlockmapPath,
+      newBlockmapPath,
+      outputArtifact,
       releaseTag,
-      blockCount: newFile.checksums.length,
-      missingRanges: mergedMisses.length,
-      downloadTasks: downloadTasks.length,
-      totalMissBytes,
-      totalScheduledDownloadBytes,
-      reusedBytes,
     });
-    await downloadMissingPatchRanges(
-      targetUrl,
-      outFd,
-      downloadTasks,
+    const { oldMap, newMap } = yield* tryUpdate(
+      'prepare-blockmap-patch',
+      () => ({
+        oldMap: JSON.parse(
+          zlib.gunzipSync(fs.readFileSync(oldBlockmapPath)).toString('utf8')
+        ),
+        newMap: JSON.parse(
+          zlib.gunzipSync(fs.readFileSync(newBlockmapPath)).toString('utf8')
+        ),
+      })
+    );
+    const oldFile = oldMap.files?.[0];
+    const newFile = newMap.files?.[0];
+    if (!oldFile || !newFile) {
+      return yield* Effect.fail(
+        new UpdateError({ message: 'Invalid blockmap payload' })
+      );
+    }
+    const checksumToBlocks = yield* tryUpdate('prepare-blockmap-patch', () => {
+      const blocksByChecksum = new Map();
+      let oldOffset = oldFile.offset || 0;
+      for (let i = 0; i < oldFile.checksums.length; i++) {
+        const key = getBlockKey(oldFile.checksums[i], oldFile.sizes[i]);
+        const block = { offset: oldOffset, size: oldFile.sizes[i] };
+        const current = blocksByChecksum.get(key) || [];
+        current.push(block);
+        blocksByChecksum.set(key, current);
+        oldOffset += oldFile.sizes[i];
+      }
+
+      fs.mkdirSync(path.dirname(outputArtifact), { recursive: true });
+      return blocksByChecksum;
+    });
+    let sourceFd: number | undefined;
+    let outFd: number | undefined;
+
+    try {
+      sourceFd = yield* tryUpdate('open-patch-source', () =>
+        fs.openSync(sourceArtifact, 'r')
+      );
+      outFd = yield* tryUpdate('open-patch-output', () =>
+        fs.openSync(outputArtifact, 'w')
+      );
+      let writeOffset = newFile.offset || 0;
+      const misses = [];
+
+      if (writeOffset > 0) {
+        sendUpdaterStatus(patchLabel, 0, newFile.checksums.length, releaseTag);
+        yield* tryUpdatePromise('update-ui', () => nextUiTick());
+        const headerChunk = yield* downloadRangeChunk(
+          targetUrl,
+          0,
+          writeOffset - 1
+        );
+        yield* tryUpdate('write-patch-header', () =>
+          fs.writeSync(outFd, headerChunk, 0, headerChunk.length, 0)
+        );
+      }
+
+      for (let i = 0; i < newFile.checksums.length; i++) {
+        const size = newFile.sizes[i];
+        const blocks = checksumToBlocks.get(
+          getBlockKey(newFile.checksums[i], size)
+        );
+        // Consume one old block at most once to avoid reusing source data.
+        const matched = takeMatchingBlock(blocks);
+        if (matched) {
+          const { buffer, bytesRead } = yield* tryUpdate(
+            'reuse-patch-block',
+            () => {
+              const buffer = Buffer.alloc(size);
+              const bytesRead = fs.readSync(
+                sourceFd,
+                buffer,
+                0,
+                size,
+                matched.offset
+              );
+              return { buffer, bytesRead };
+            }
+          );
+          if (bytesRead !== size) {
+            return yield* Effect.fail(
+              new UpdateError({
+                message: `Short read from source artifact at ${matched.offset}: expected ${size}, got ${bytesRead}`,
+              })
+            );
+          }
+          yield* tryUpdate('reuse-patch-block', () =>
+            fs.writeSync(outFd, buffer, 0, size, writeOffset)
+          );
+        } else {
+          misses.push({ offset: writeOffset, size });
+        }
+        writeOffset += size;
+        if (
+          i === newFile.checksums.length - 1 ||
+          (i + 1) % PATCH_PROGRESS_INTERVAL === 0
+        ) {
+          sendUpdaterStatus(
+            patchLabel,
+            i + 1,
+            newFile.checksums.length,
+            releaseTag
+          );
+          yield* tryUpdatePromise('update-ui', () => nextUiTick());
+        }
+      }
+
+      const mergedMisses = [];
+      for (const miss of misses) {
+        const last = mergedMisses[mergedMisses.length - 1];
+        if (last && last.offset + last.size === miss.offset) {
+          last.size += miss.size;
+        } else {
+          mergedMisses.push({ ...miss });
+        }
+      }
+
+      const totalMissBytes = mergedMisses.reduce(
+        (total, miss) => total + miss.size,
+        0
+      );
+      const reusedBytes =
+        newFile.sizes.reduce((total, size) => total + size, 0) - totalMissBytes;
+      const downloadTasks = createRangeDownloadTasks(mergedMisses);
+      const totalScheduledDownloadBytes = downloadTasks.reduce(
+        (total, task) => total + task.size,
+        0
+      );
+      logUpdater('Patch block analysis complete', {
+        releaseTag,
+        blockCount: newFile.checksums.length,
+        missingRanges: mergedMisses.length,
+        downloadTasks: downloadTasks.length,
+        totalMissBytes,
+        totalScheduledDownloadBytes,
+        reusedBytes,
+      });
+      yield* downloadMissingPatchRanges(
+        targetUrl,
+        outFd,
+        downloadTasks,
+        releaseTag
+      );
+    } finally {
+      if (typeof sourceFd === 'number') {
+        try {
+          fs.closeSync(sourceFd);
+        } catch (closeErr) {
+          console.error('Failed to close source file descriptor:', closeErr);
+        }
+      }
+      if (typeof outFd === 'number') {
+        try {
+          fs.closeSync(outFd);
+        } catch (closeErr) {
+          console.error('Failed to close output file descriptor:', closeErr);
+        }
+      }
+    }
+    const patchIsEmpty = yield* tryUpdate(
+      'inspect-patched-artifact',
+      () =>
+        !fs.existsSync(outputArtifact) || fs.statSync(outputArtifact).size === 0
+    );
+    if (patchIsEmpty) {
+      return yield* Effect.fail(
+        new UpdateError({
+          message: 'Patched artifact is empty',
+          phase: 'inspect-patched-artifact',
+        })
+      );
+    }
+    sendUpdaterStatus(verifyLabel, 0, newFile.checksums.length, releaseTag);
+    yield* tryUpdatePromise('update-ui', () => nextUiTick());
+    logUpdater('Starting patched artifact verification', {
+      outputArtifact,
+      releaseTag,
+    });
+    yield* verifyPatchedArtifact(
+      outputArtifact,
+      newFile,
+      expectedArtifact,
+      verifyLabel,
       releaseTag
     );
-  } finally {
-    if (typeof sourceFd === 'number') {
-      try {
-        fs.closeSync(sourceFd);
-      } catch (closeErr) {
-        console.error('Failed to close source file descriptor:', closeErr);
-      }
-    }
-    if (typeof outFd === 'number') {
-      try {
-        fs.closeSync(outFd);
-      } catch (closeErr) {
-        console.error('Failed to close output file descriptor:', closeErr);
-      }
-    }
-  }
-  if (
-    !fs.existsSync(outputArtifact) ||
-    fs.statSync(outputArtifact).size === 0
-  ) {
-    throw new Error('Patched artifact is empty');
-  }
-  sendUpdaterStatus(verifyLabel, 0, newFile.checksums.length, releaseTag);
-  await nextUiTick();
-  logUpdater('Starting patched artifact verification', {
-    outputArtifact,
-    releaseTag,
-  });
-  await verifyPatchedArtifact(
-    outputArtifact,
-    newFile,
-    expectedArtifact,
-    verifyLabel,
-    releaseTag
-  );
-  logUpdater('Completed blockmap patch', {
-    outputArtifact,
-    releaseTag,
+    logUpdater('Completed blockmap patch', {
+      outputArtifact,
+      releaseTag,
+    });
   });
 }
 
@@ -1738,108 +1918,169 @@ function createRangeDownloadTasks(misses) {
   return tasks;
 }
 
-async function downloadMissingPatchRanges(targetUrl, outFd, tasks, releaseTag) {
-  const totalBytes = tasks.reduce((total, task) => total + task.size, 0);
-  if (totalBytes <= 0) {
-    sendUpdaterStatus('Downloading patch data', 0, 1, releaseTag);
-    return;
-  }
-
-  let downloadedBytes = 0;
-  let nextTaskIndex = 0;
-  let lastProgressAt = 0;
-
-  const reportProgress = (force = false) => {
-    const now = Date.now();
-    if (!force && now - lastProgressAt < PATCH_DOWNLOAD_PROGRESS_INTERVAL_MS) {
+function downloadMissingPatchRanges(
+  targetUrl,
+  outFd,
+  tasks,
+  releaseTag
+): Effect.Effect<void, UpdateError> {
+  return Effect.gen(function* () {
+    const totalBytes = tasks.reduce((total, task) => total + task.size, 0);
+    if (totalBytes <= 0) {
+      sendUpdaterStatus('Downloading patch data', 0, 1, releaseTag);
       return;
     }
-    lastProgressAt = now;
-    sendUpdaterStatus(
-      'Downloading patch data',
-      downloadedBytes,
-      totalBytes,
-      releaseTag
-    );
-  };
 
-  reportProgress(true);
+    let downloadedBytes = 0;
+    let nextTaskIndex = 0;
+    let lastProgressAt = 0;
 
-  const workerCount = Math.min(RANGE_DOWNLOAD_CONCURRENCY, tasks.length);
-  await Promise.all(
-    Array.from({ length: workerCount }, async () => {
-      while (true) {
-        const taskIndex = nextTaskIndex++;
-        if (taskIndex >= tasks.length) {
-          return;
-        }
-
-        const task = tasks[taskIndex];
-        logUpdater('Downloading patch data range', {
-          releaseTag,
-          start: task.start,
-          end: task.end,
-          size: task.size,
-          task: taskIndex + 1,
-          totalTasks: tasks.length,
-        });
-
-        const chunk = await downloadRangeChunk(targetUrl, task.start, task.end);
-        fs.writeSync(outFd, chunk, 0, chunk.length, task.start);
-        downloadedBytes += chunk.length;
-
-        logUpdater('Downloaded patch data range', {
-          releaseTag,
-          start: task.start,
-          end: task.end,
-          chunkSize: chunk.length,
-          downloadedBytes,
-          totalBytes,
-        });
-        reportProgress();
+    const reportProgress = (force = false) => {
+      const now = Date.now();
+      if (
+        !force &&
+        now - lastProgressAt < PATCH_DOWNLOAD_PROGRESS_INTERVAL_MS
+      ) {
+        return;
       }
-    })
-  );
+      lastProgressAt = now;
+      sendUpdaterStatus(
+        'Downloading patch data',
+        downloadedBytes,
+        totalBytes,
+        releaseTag
+      );
+    };
 
-  reportProgress(true);
+    reportProgress(true);
+
+    const workerCount = Math.min(RANGE_DOWNLOAD_CONCURRENCY, tasks.length);
+    yield* Effect.forEach(
+      Array.from({ length: workerCount }),
+      () =>
+        Effect.gen(function* () {
+          while (true) {
+            const taskIndex = nextTaskIndex++;
+            if (taskIndex >= tasks.length) {
+              return;
+            }
+
+            const task = tasks[taskIndex];
+            logUpdater('Downloading patch data range', {
+              releaseTag,
+              start: task.start,
+              end: task.end,
+              size: task.size,
+              task: taskIndex + 1,
+              totalTasks: tasks.length,
+            });
+
+            const chunk = yield* downloadRangeChunk(
+              targetUrl,
+              task.start,
+              task.end
+            );
+            yield* tryUpdate('write-patch-range', () =>
+              fs.writeSync(outFd, chunk, 0, chunk.length, task.start)
+            );
+            downloadedBytes += chunk.length;
+
+            logUpdater('Downloaded patch data range', {
+              releaseTag,
+              start: task.start,
+              end: task.end,
+              chunkSize: chunk.length,
+              downloadedBytes,
+              totalBytes,
+            });
+            reportProgress();
+          }
+        }),
+      { concurrency: 'unbounded', discard: true }
+    );
+
+    reportProgress(true);
+  });
 }
 
-async function downloadRangeChunk(url, start, end) {
-  const requestedRange = `bytes=${start}-${end}`;
-  for (let attempt = 1; attempt <= HTTP_RETRY_ATTEMPTS; attempt++) {
-    try {
+function downloadRangeChunk(
+  url,
+  start,
+  end
+): Effect.Effect<Buffer, UpdateError> {
+  return Effect.gen(function* () {
+    const requestedRange = `bytes=${start}-${end}`;
+    for (let attempt = 1; attempt <= HTTP_RETRY_ATTEMPTS; attempt++) {
       logUpdater('Requesting HTTP range', { url, requestedRange, attempt });
-      const rangeResponse = await axios({
-        url,
-        method: 'GET',
-        responseType: 'arraybuffer',
-        headers: {
-          Range: requestedRange,
-          'Accept-Encoding': 'identity',
-        },
-        timeout: HTTP_REQUEST_TIMEOUT_MS,
-        ...getAxiosTransportOptions(url),
-      });
+      const responseResult = yield* Effect.either(
+        Effect.tryPromise({
+          try: () =>
+            axios({
+              url,
+              method: 'GET',
+              responseType: 'arraybuffer',
+              headers: {
+                Range: requestedRange,
+                'Accept-Encoding': 'identity',
+              },
+              timeout: HTTP_REQUEST_TIMEOUT_MS,
+              ...getAxiosTransportOptions(url),
+            }),
+          catch: (cause) => cause,
+        })
+      );
+      if (responseResult._tag === 'Left') {
+        const error: any = responseResult.left;
+        const retryable = shouldRetryHttpError(error);
+        logUpdater('HTTP range request failed', {
+          requestedRange,
+          attempt,
+          retryable,
+          error: error?.message,
+          code: error?.code,
+          statusCode: error?.response?.status,
+        });
+        if (!retryable || attempt === HTTP_RETRY_ATTEMPTS) {
+          return yield* Effect.fail(
+            new UpdateError({
+              message: formatCause(error),
+              phase: 'download-patch-range',
+            })
+          );
+        }
+        yield* tryUpdatePromise('retry-patch-range', () =>
+          sleep(getRetryDelay(attempt))
+        );
+        continue;
+      }
+
+      const rangeResponse = responseResult.right;
       const expectedSize = end - start + 1;
       const actualSize = Buffer.byteLength(rangeResponse.data);
       const contentRange = rangeResponse.headers['content-range'];
       const expectedContentRangePrefix = `bytes ${start}-${end}/`;
       if (rangeResponse.status !== 206) {
-        throw new Error(
-          `Invalid range response status ${rangeResponse.status} for ${requestedRange}`
+        return yield* Effect.fail(
+          new UpdateError({
+            message: `Invalid range response status ${rangeResponse.status} for ${requestedRange}`,
+          })
         );
       }
       if (actualSize !== expectedSize) {
-        throw new Error(
-          `Invalid range response length ${actualSize} for ${requestedRange}; expected ${expectedSize}`
+        return yield* Effect.fail(
+          new UpdateError({
+            message: `Invalid range response length ${actualSize} for ${requestedRange}; expected ${expectedSize}`,
+          })
         );
       }
       if (
         typeof contentRange !== 'string' ||
         !contentRange.startsWith(expectedContentRangePrefix)
       ) {
-        throw new Error(
-          `Invalid content-range header for ${requestedRange}: ${contentRange}`
+        return yield* Effect.fail(
+          new UpdateError({
+            message: `Invalid content-range header for ${requestedRange}: ${contentRange}`,
+          })
         );
       }
       logUpdater('Received HTTP range', {
@@ -1849,22 +2090,15 @@ async function downloadRangeChunk(url, start, end) {
         attempt,
       });
       return Buffer.from(rangeResponse.data);
-    } catch (error) {
-      const retryable = shouldRetryHttpError(error);
-      logUpdater('HTTP range request failed', {
-        requestedRange,
-        attempt,
-        retryable,
-        error: error?.message,
-        code: error?.code,
-        statusCode: error?.response?.status,
-      });
-      if (!retryable || attempt === HTTP_RETRY_ATTEMPTS) {
-        throw error;
-      }
-      await sleep(getRetryDelay(attempt));
     }
-  }
+
+    return yield* Effect.fail(
+      new UpdateError({
+        message: `Exhausted HTTP range retries for ${requestedRange}`,
+        phase: 'download-patch-range',
+      })
+    );
+  });
 }
 
 function parseDigest(digest) {
@@ -1896,142 +2130,186 @@ async function hashFile(filePath, algorithm) {
   });
 }
 
-async function verifyReleaseArtifact(
+function verifyReleaseArtifact(
   artifactPath,
   expectedArtifact,
   logLabel = 'release artifact'
-) {
-  const stat = fs.statSync(artifactPath);
-  if (
-    Number.isFinite(expectedArtifact.size) &&
-    expectedArtifact.size > 0 &&
-    stat.size !== expectedArtifact.size
-  ) {
-    throw new Error(
-      `${logLabel} size mismatch: expected ${expectedArtifact.size}, got ${stat.size}`
+): Effect.Effect<void, UpdateError> {
+  return Effect.gen(function* () {
+    const stat = yield* tryUpdate('verify-release-artifact', () =>
+      fs.statSync(artifactPath)
     );
-  }
+    if (
+      Number.isFinite(expectedArtifact.size) &&
+      expectedArtifact.size > 0 &&
+      stat.size !== expectedArtifact.size
+    ) {
+      return yield* Effect.fail(
+        new UpdateError({
+          message: `${logLabel} size mismatch: expected ${expectedArtifact.size}, got ${stat.size}`,
+        })
+      );
+    }
 
-  const parsedDigest = parseDigest(expectedArtifact.digest);
-  if (expectedArtifact.digest && !parsedDigest) {
-    logUpdater('Invalid digest format, aborting verification', {
-      artifactPath,
-      logLabel,
-      digest: expectedArtifact.digest,
-    });
-    throw new Error(
-      `${logLabel} has invalid digest format: ${expectedArtifact.digest}`
-    );
-  }
-  if (!parsedDigest) {
-    logUpdater('No release digest available for artifact verification', {
-      artifactPath,
-      logLabel,
-    });
-    return;
-  }
+    const parsedDigest = parseDigest(expectedArtifact.digest);
+    if (expectedArtifact.digest && !parsedDigest) {
+      logUpdater('Invalid digest format, aborting verification', {
+        artifactPath,
+        logLabel,
+        digest: expectedArtifact.digest,
+      });
+      return yield* Effect.fail(
+        new UpdateError({
+          message: `${logLabel} has invalid digest format: ${expectedArtifact.digest}`,
+        })
+      );
+    }
+    if (!parsedDigest) {
+      logUpdater('No release digest available for artifact verification', {
+        artifactPath,
+        logLabel,
+      });
+      return;
+    }
 
-  const actualDigest = await hashFile(artifactPath, parsedDigest.algorithm);
-  if (actualDigest !== parsedDigest.value) {
-    throw new Error(
-      `${logLabel} digest mismatch for ${parsedDigest.algorithm}`
+    const actualDigest = yield* tryUpdatePromise(
+      'verify-release-artifact',
+      () => hashFile(artifactPath, parsedDigest.algorithm)
     );
-  }
+    if (actualDigest !== parsedDigest.value) {
+      return yield* Effect.fail(
+        new UpdateError({
+          message: `${logLabel} digest mismatch for ${parsedDigest.algorithm}`,
+          phase: 'verify-release-artifact',
+        })
+      );
+    }
+  });
 }
 
-async function verifyPatchedArtifact(
+function verifyPatchedArtifact(
   outputArtifact,
   newFile,
   expectedArtifact,
   verifyLabel = 'Verifying patch',
   releaseTag
-) {
-  logUpdater('Verifying patched artifact metadata', {
-    outputArtifact,
-    releaseTag,
-  });
-  const stat = fs.statSync(outputArtifact);
-  if (
-    !Array.isArray(newFile.sizes) ||
-    !Array.isArray(newFile.checksums) ||
-    newFile.sizes.length !== newFile.checksums.length
-  ) {
-    throw new Error('Invalid blockmap payload for patched artifact');
-  }
-  const expectedByBlockmap =
-    (newFile.offset || 0) +
-    newFile.sizes.reduce((total, size) => total + size, 0);
-  if (stat.size !== expectedByBlockmap) {
-    throw new Error(
-      `Patched artifact size mismatch: expected ${expectedByBlockmap}, got ${stat.size}`
-    );
-  }
-  if (
-    Number.isFinite(expectedArtifact.size) &&
-    expectedArtifact.size > 0 &&
-    stat.size !== expectedArtifact.size
-  ) {
-    throw new Error(
-      `Patched artifact does not match expected release size ${expectedArtifact.size}`
-    );
-  }
-
-  const fd = fs.openSync(outputArtifact, 'r');
-  try {
-    let readOffset = newFile.offset || 0;
-    for (let i = 0; i < newFile.checksums.length; i++) {
-      const size = newFile.sizes[i];
-      if (!Number.isInteger(size) || size < 0) {
-        throw new Error(`Invalid block size at index ${i}: ${size}`);
-      }
-      const buffer = Buffer.alloc(size);
-      const bytesRead = fs.readSync(fd, buffer, 0, size, readOffset);
-      if (bytesRead !== size) {
-        throw new Error(
-          `Short read from patched artifact at ${readOffset}: expected ${size}, got ${bytesRead}`
-        );
-      }
-      readOffset += size;
-      if (
-        i === newFile.checksums.length - 1 ||
-        (i + 1) % VERIFY_PROGRESS_INTERVAL === 0
-      ) {
-        sendUpdaterStatus(
-          verifyLabel,
-          i + 1,
-          newFile.checksums.length,
-          releaseTag
-        );
-        await nextUiTick();
-      }
-    }
-  } finally {
-    fs.closeSync(fd);
-  }
-  logUpdater('Completed block-level verification', {
-    outputArtifact,
-    releaseTag,
-    blocks: newFile.checksums.length,
-  });
-
-  const parsedDigest = parseDigest(expectedArtifact.digest);
-  if (!parsedDigest) {
-    logUpdater('No release digest available for final artifact verification', {
+): Effect.Effect<void, UpdateError> {
+  return Effect.gen(function* () {
+    logUpdater('Verifying patched artifact metadata', {
       outputArtifact,
       releaseTag,
     });
-    return;
-  }
-  const actualDigest = await hashFile(outputArtifact, parsedDigest.algorithm);
-  if (actualDigest !== parsedDigest.value) {
-    throw new Error(
-      `Patched artifact digest mismatch for ${parsedDigest.algorithm}`
+    const stat = yield* tryUpdate('verify-patched-artifact', () =>
+      fs.statSync(outputArtifact)
     );
-  }
-  logUpdater('Completed final artifact digest verification', {
-    outputArtifact,
-    releaseTag,
-    algorithm: parsedDigest.algorithm,
+    if (
+      !Array.isArray(newFile.sizes) ||
+      !Array.isArray(newFile.checksums) ||
+      newFile.sizes.length !== newFile.checksums.length
+    ) {
+      return yield* Effect.fail(
+        new UpdateError({
+          message: 'Invalid blockmap payload for patched artifact',
+        })
+      );
+    }
+    const expectedByBlockmap =
+      (newFile.offset || 0) +
+      newFile.sizes.reduce((total, size) => total + size, 0);
+    if (stat.size !== expectedByBlockmap) {
+      return yield* Effect.fail(
+        new UpdateError({
+          message: `Patched artifact size mismatch: expected ${expectedByBlockmap}, got ${stat.size}`,
+        })
+      );
+    }
+    if (
+      Number.isFinite(expectedArtifact.size) &&
+      expectedArtifact.size > 0 &&
+      stat.size !== expectedArtifact.size
+    ) {
+      return yield* Effect.fail(
+        new UpdateError({
+          message: `Patched artifact does not match expected release size ${expectedArtifact.size}`,
+        })
+      );
+    }
+
+    const fd = yield* tryUpdate('verify-patched-artifact', () =>
+      fs.openSync(outputArtifact, 'r')
+    );
+    try {
+      let readOffset = newFile.offset || 0;
+      for (let i = 0; i < newFile.checksums.length; i++) {
+        const size = newFile.sizes[i];
+        if (!Number.isInteger(size) || size < 0) {
+          return yield* Effect.fail(
+            new UpdateError({
+              message: `Invalid block size at index ${i}: ${size}`,
+            })
+          );
+        }
+        const buffer = Buffer.alloc(size);
+        const bytesRead = yield* tryUpdate('verify-patched-artifact', () =>
+          fs.readSync(fd, buffer, 0, size, readOffset)
+        );
+        if (bytesRead !== size) {
+          return yield* Effect.fail(
+            new UpdateError({
+              message: `Short read from patched artifact at ${readOffset}: expected ${size}, got ${bytesRead}`,
+            })
+          );
+        }
+        readOffset += size;
+        if (
+          i === newFile.checksums.length - 1 ||
+          (i + 1) % VERIFY_PROGRESS_INTERVAL === 0
+        ) {
+          sendUpdaterStatus(
+            verifyLabel,
+            i + 1,
+            newFile.checksums.length,
+            releaseTag
+          );
+          yield* tryUpdatePromise('update-ui', () => nextUiTick());
+        }
+      }
+    } finally {
+      fs.closeSync(fd);
+    }
+    logUpdater('Completed block-level verification', {
+      outputArtifact,
+      releaseTag,
+      blocks: newFile.checksums.length,
+    });
+
+    const parsedDigest = parseDigest(expectedArtifact.digest);
+    if (!parsedDigest) {
+      logUpdater(
+        'No release digest available for final artifact verification',
+        {
+          outputArtifact,
+          releaseTag,
+        }
+      );
+      return;
+    }
+    const actualDigest = yield* tryUpdatePromise(
+      'verify-patched-artifact',
+      () => hashFile(outputArtifact, parsedDigest.algorithm)
+    );
+    if (actualDigest !== parsedDigest.value) {
+      return yield* Effect.fail(
+        new UpdateError({
+          message: `Patched artifact digest mismatch for ${parsedDigest.algorithm}`,
+        })
+      );
+    }
+    logUpdater('Completed final artifact digest verification', {
+      outputArtifact,
+      releaseTag,
+      algorithm: parsedDigest.algorithm,
+    });
   });
 }
 
@@ -2133,21 +2411,28 @@ async function launchApp(online) {
   }
 }
 
-function resolveZipEntryPath(unzipToDir, entryName) {
-  const root = path.resolve(unzipToDir);
-  const normalizedEntryName = entryName.replace(/\//g, path.sep);
-  const fullPath = path.resolve(root, normalizedEntryName);
-  const relativePath = path.relative(root, fullPath);
+function resolveZipEntryPath(
+  unzipToDir,
+  entryName
+): Effect.Effect<string, UpdateError> {
+  return Effect.gen(function* () {
+    const root = path.resolve(unzipToDir);
+    const normalizedEntryName = entryName.replace(/\//g, path.sep);
+    const fullPath = path.resolve(root, normalizedEntryName);
+    const relativePath = path.relative(root, fullPath);
 
-  if (
-    relativePath.startsWith('..') ||
-    path.isAbsolute(relativePath) ||
-    relativePath === ''
-  ) {
-    throw new Error(`Unsafe zip entry path: ${entryName}`);
-  }
+    if (
+      relativePath.startsWith('..') ||
+      path.isAbsolute(relativePath) ||
+      relativePath === ''
+    ) {
+      return yield* Effect.fail(
+        new UpdateError({ message: `Unsafe zip entry path: ${entryName}` })
+      );
+    }
 
-  return fullPath;
+    return fullPath;
+  });
 }
 
 app.on('ready', createWindow);
@@ -2180,10 +2465,12 @@ const unzip = (zipPath, unzipToDir) => {
         // Now for every entry, we will write a file or dir
         // to disk. Then call zipFile.readEntry() again to
         // trigger the next cycle.
-        zipFile.on('entry', (entry) => {
+        zipFile.on('entry', async (entry) => {
           try {
             sendUpdaterStatus('Extracting Update', filesProcessed, totalFiles);
-            const fullPath = resolveZipEntryPath(unzipToDir, entry.fileName);
+            const fullPath = await Effect.runPromise(
+              resolveZipEntryPath(unzipToDir, entry.fileName)
+            );
 
             // Ensure the directory exists
             const dir = path.dirname(fullPath);

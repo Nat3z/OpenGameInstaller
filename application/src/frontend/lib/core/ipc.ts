@@ -1,3 +1,4 @@
+import { AddonError } from '@ogi/errors';
 import { type ConnectedAddonInfo, Connection } from '@ogi-sdk/client-kit';
 import { Effect } from 'effect';
 import { getConfigClientOption } from '@/frontend/lib/config/client';
@@ -19,12 +20,20 @@ export async function connectClientSdk(): Promise<Connection> {
 
 export let addonServer = await connectClientSdk();
 
-export async function queryConnectedAddons<T = AddonInfo>(): Promise<T[]> {
-  const response = await Effect.runPromise(
-    addonServer.request('query-connected-addons', { type: 'addons' })
+export function queryConnectedAddons<T = AddonInfo>(): Promise<T[]> {
+  return Effect.runPromise(
+    Effect.gen(function* () {
+      const response = yield* addonServer.request('query-connected-addons', {
+        type: 'addons',
+      });
+      if (response.statusError) {
+        return yield* Effect.fail(
+          new AddonError({ message: response.statusError })
+        );
+      }
+      return response.args.addons as T[];
+    })
   );
-  if (response.statusError) throw new Error(response.statusError);
-  return response.args.addons as T[];
 }
 
 let reconnectInFlight: Promise<void> | null = null;

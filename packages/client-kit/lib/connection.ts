@@ -119,8 +119,14 @@ export class Connection {
             }),
         });
         const eventPubSub = yield* PubSub.unbounded<ConnectionEvent>();
+        let transport:
+          | EventResponseSocket<
+              AddonServerToClientSDKIncomingMessage,
+              AddonClientSDKToServerIncomingMessage
+            >
+          | undefined;
         return yield* Effect.gen(function* () {
-          const transport = yield* EventResponseSocket.make<
+          transport = yield* EventResponseSocket.make<
             AddonServerToClientSDKIncomingMessage,
             AddonClientSDKToServerIncomingMessage
           >(socket, {
@@ -136,6 +142,11 @@ export class Connection {
         }).pipe(
           Effect.catchAll((error) =>
             Effect.gen(function* () {
+              if (transport) {
+                yield* transport
+                  .shutdown('Connection failed')
+                  .pipe(Effect.ignore);
+              }
               yield* PubSub.shutdown(eventPubSub);
               yield* Effect.sync(() => {
                 try {

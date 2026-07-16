@@ -2,6 +2,7 @@ import { QBittorrent } from '@ctrl/qbittorrent';
 import {
   formatError,
   HttpError,
+  NetworkError,
   runEffectBoundary as run,
   TorrentError,
 } from '@ogi/errors';
@@ -30,11 +31,19 @@ import {
 
 let qbitClient: QBittorrent | undefined = undefined;
 
-async function getTorrentInfoHash(
+function getTorrentInfoHash(
   input: string | Buffer | Uint8Array
-): Promise<string> {
-  const parsed = await parseTorrent(input);
-  return parsed.infoHash;
+): Effect.Effect<string, NetworkError> {
+  return Effect.try({
+    try: () => {
+      const parsed = parseTorrent(input);
+      return (parsed as { infoHash: string }).infoHash;
+    },
+    catch: (cause) =>
+      new NetworkError({
+        message: `Failed to parse torrent: ${formatError(cause)}`,
+      }),
+  });
 }
 
 function getErrorMessage(error: unknown): string {
@@ -177,10 +186,10 @@ class TorrentDownload {
       });
     });
 
-    const result = await wait((queuePosition) => {
+    const result = await Effect.runPromise(wait((queuePosition) => {
       this.sendProgress({ queuePosition });
       this.reportHandshake({ status: 'queued', queuePosition });
-    });
+    }));
 
     if (result === 'cancelled') {
       this.removeCancelHandler();
@@ -203,11 +212,11 @@ class TorrentDownload {
     this.status = 'downloading';
     this.reportHandshake({ status: 'downloading' });
     try {
-      await refreshCached('general');
+      await Effect.runPromise(refreshCached('general'));
       this.torrentClientType =
-        ((await getStoredValue('general', 'torrentClient')) as
-          | 'webtorrent'
-          | 'qbittorrent') ?? 'webtorrent';
+        ((await Effect.runPromise(
+          getStoredValue('general', 'torrentClient')
+        )) as 'webtorrent' | 'qbittorrent') ?? 'webtorrent';
 
       if (this.torrentClientType === 'webtorrent') {
         await this.runWebTorrent();
@@ -231,44 +240,46 @@ class TorrentDownload {
 
     this.startProgressTracker();
 
-    this.wtBlock = await this.wtInstance.start(
-      (
-        _: any,
-        speed: number,
-        progress: number,
-        length: number,
-        ratio: number
-      ) => {
-        this.downloadSpeed = speed;
-        this.progress = progress;
-        this.totalSize = length;
-        this.ratio = ratio;
-      },
-      () => {
-        if (
-          this.status === 'cancelled' ||
-          this.status === 'failed' ||
-          this.status === 'completed'
-        ) {
-          return;
-        }
-        this.releaseQueueSlot();
-        setTimeout(() => {
-          if (this.status === 'cancelled' || this.status === 'failed') {
+    this.wtBlock = await Effect.runPromise(
+      this.wtInstance.start(
+        (
+          _: any,
+          speed: number,
+          progress: number,
+          length: number,
+          ratio: number
+        ) => {
+          this.downloadSpeed = speed;
+          this.progress = progress;
+          this.totalSize = length;
+          this.ratio = ratio;
+        },
+        () => {
+          if (
+            this.status === 'cancelled' ||
+            this.status === 'failed' ||
+            this.status === 'completed'
+          ) {
             return;
           }
-          this.status = 'seeding';
-          this.progress = 1;
-          this.sendProgress({ progress: 1, downloadSpeed: 0, ratio: 0 });
-          this.sendIpc('torrent:download-complete', { id: this.id });
-          sendNotification({
-            message: 'Download completed, now seeding.',
-            id: this.id,
-            type: 'success',
-          });
-          this.wtInstance?.seed();
-        }, 1000);
-      }
+          this.releaseQueueSlot();
+          setTimeout(() => {
+            if (this.status === 'cancelled' || this.status === 'failed') {
+              return;
+            }
+            this.status = 'seeding';
+            this.progress = 1;
+            this.sendProgress({ progress: 1, downloadSpeed: 0, ratio: 0 });
+            this.sendIpc('torrent:download-complete', { id: this.id });
+            sendNotification({
+              message: 'Download completed, now seeding.',
+              id: this.id,
+              type: 'success',
+            });
+            if (this.wtInstance) Effect.runFork(this.wtInstance.seed());
+          }, 1000);
+        }
+      )
     );
   }
 
@@ -278,14 +289,14 @@ class TorrentDownload {
 
       if (this.job.type === 'torrent') {
         const torrentData = await this.downloadTorrentFile(this.job.link);
-        this.expectedInfoHash = await getTorrentInfoHash(torrentData);
+        this.expectedInfoHash = await Effect.runPromise(getTorrentInfoHash(torrentData));
         // turn torrent data into a Uint8Array<ArrayBuffer>
         const torrentDataUint8Array = new Uint8Array(torrentData);
         await qbitClient.addTorrent(torrentDataUint8Array, {
           savepath: this.job.path,
         });
       } else {
-        this.expectedInfoHash = await getTorrentInfoHash(this.job.link);
+        this.expectedInfoHash = await Effect.runPromise(getTorrentInfoHash(this.job.link));
         await qbitClient.addMagnet(this.job.link, {
           savepath: this.job.path,
         });
@@ -301,16 +312,22 @@ class TorrentDownload {
   }
 
   private async setupQbitClient() {
-    await refreshCached('qbittorrent');
+    await Effect.runPromise(refreshCached('qbittorrent'));
     return new QBittorrent({
       baseUrl:
-        ((await getStoredValue('qbittorrent', 'qbitHost')) ??
+        ((await Effect.runPromise(getStoredValue('qbittorrent', 'qbitHost'))) ??
           'http://127.0.0.1') +
         ':' +
-        ((await getStoredValue('qbittorrent', 'qbitPort')) ?? '8080'),
+        ((await Effect.runPromise(getStoredValue('qbittorrent', 'qbitPort'))) ??
+          '8080'),
       username:
-        (await getStoredValue('qbittorrent', 'qbitUsername')) ?? 'admin',
-      password: (await getStoredValue('qbittorrent', 'qbitPassword')) ?? '',
+        (await Effect.runPromise(
+          getStoredValue('qbittorrent', 'qbitUsername')
+        )) ?? 'admin',
+      password:
+        (await Effect.runPromise(
+          getStoredValue('qbittorrent', 'qbitPassword')
+        )) ?? '',
     });
   }
 
@@ -690,12 +707,6 @@ export default function handler(mainWindow: BrowserWindow): void {
   );
 
   ipcMain.handle('torrent:get-hash', (_, item: string | Buffer | Uint8Array) =>
-    run(
-      Effect.tryPromise({
-        try: () => getTorrentInfoHash(item),
-        catch: (cause) =>
-          new TorrentError({ message: formatError(cause), cause }),
-      })
-    )
+    run(getTorrentInfoHash(item))
   );
 }

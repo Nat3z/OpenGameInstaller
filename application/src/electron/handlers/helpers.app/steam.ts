@@ -1,7 +1,9 @@
 /**
  * Steam/Proton helper functions
  */
+
 import { exec, execFile } from 'child_process';
+import { Effect } from 'effect';
 import {
   notifyError,
   notifySuccess,
@@ -56,50 +58,59 @@ export function getVersionedGameName(
  * Get the Steam App ID for a non-Steam game using steamtinkerlaunch
  * Output format from STL: "<appid>\t(<game name>)" or "<appid> (<game name>)"
  */
-export function getNonSteamGameAppID(
-  gameName: string
-): Promise<{ success: boolean; appId?: number; error?: string }> {
-  return new Promise((resolve) => {
+export function getNonSteamGameAppID(gameName: string): Effect.Effect<{
+  success: boolean;
+  appId?: number;
+  error?: string;
+}> {
+  return Effect.gen(function* () {
     if (cachedAppIds[gameName]) {
-      resolve({ success: true, appId: cachedAppIds[gameName] });
-      return;
+      return { success: true, appId: cachedAppIds[gameName] };
     }
-    execFile(
-      STEAMTINKERLAUNCH_PATH,
-      ['getid', gameName],
-      { cwd: __dirname },
-      (error, stdout, _stderr) => {
-        if (error) {
-          console.error('[getNonSteamGameAppID] Error:', error);
-          resolve({ success: false, error: error.message });
-          return;
-        }
 
-        // Parse the output - extract just the numbers (appid)
-        // Output format: "Preparing to installSteamTinkerLaunch...\njefopwejfoew\nfijwepfjoeww\n....\n<appid><tab or space>(<game name>)"
-        const output = stdout.trim();
-        const appIdLine = output
-          .split('\n')
-          .find((line) => line.includes('(' + gameName + ')'));
-        if (!appIdLine) {
-          console.error(
-            '[getNonSteamGameAppID] Could not find app ID for game:',
-            gameName
+    return yield* Effect.async<{
+      success: boolean;
+      appId?: number;
+      error?: string;
+    }>((resume) => {
+      execFile(
+        STEAMTINKERLAUNCH_PATH,
+        ['getid', gameName],
+        { cwd: __dirname },
+        (error, stdout, _stderr) => {
+          if (error) {
+            console.error('[getNonSteamGameAppID] Error:', error);
+            resume(Effect.succeed({ success: false, error: error.message }));
+            return;
+          }
+
+          const output = stdout.trim();
+          const appIdLine = output
+            .split('\n')
+            .find((line) => line.includes('(' + gameName + ')'));
+          if (!appIdLine) {
+            console.error(
+              '[getNonSteamGameAppID] Could not find app ID for game:',
+              gameName
+            );
+            resume(
+              Effect.succeed({
+                success: false,
+                error: 'Could not find app ID for game',
+              })
+            );
+            return;
+          }
+
+          const appId = parseInt(appIdLine.split('(')[0].trim());
+          console.log(
+            `[getNonSteamGameAppID] Found app ID ${appId} for "${gameName}"`
           );
-          resolve({
-            success: false,
-            error: 'Could not find app ID for game',
-          });
-          return;
+          cachedAppIds[gameName] = appId;
+          resume(Effect.succeed({ success: true, appId }));
         }
-        const appId = parseInt(appIdLine.split('(')[0].trim());
-        console.log(
-          `[getNonSteamGameAppID] Found app ID ${appId} for "${gameName}"`
-        );
-        resolve({ success: true, appId });
-        cachedAppIds[gameName] = appId;
-      }
-    );
+      );
+    });
   });
 }
 
@@ -107,39 +118,40 @@ export function getNonSteamGameAppID(
  * Consolidated Steam app ID lookup with fallback
  * Tries versioned name first, then falls back to plain name if that fails
  */
-export async function getSteamAppIdWithFallback(
+export function getSteamAppIdWithFallback(
   name: string,
   version?: string | null,
   context?: string
-): Promise<{ success: boolean; appId?: number; error?: string }> {
-  const versionedGameName = getVersionedGameName(name, version);
-  let { success, appId } = await getNonSteamGameAppID(versionedGameName);
+): Effect.Effect<{ success: boolean; appId?: number; error?: string }> {
+  return Effect.gen(function* () {
+    const versionedGameName = getVersionedGameName(name, version);
+    let { success, appId } = yield* getNonSteamGameAppID(versionedGameName);
 
-  // If lookup with versioned name failed, try with plain name (for legacy shortcuts)
-  if (!success) {
-    const fallbackResult = await getNonSteamGameAppID(name);
-    if (fallbackResult.success) {
-      success = true;
-      appId = fallbackResult.appId;
-      const contextPrefix = context ? `[${context}] ` : '';
-      console.log(
-        `${contextPrefix}Found Steam app ID using plain name "${name}" after versioned lookup failed.`
-      );
+    if (!success) {
+      const fallbackResult = yield* getNonSteamGameAppID(name);
+      if (fallbackResult.success) {
+        success = true;
+        appId = fallbackResult.appId;
+        const contextPrefix = context ? `[${context}] ` : '';
+        console.log(
+          `${contextPrefix}Found Steam app ID using plain name "${name}" after versioned lookup failed.`
+        );
+      }
     }
-  }
 
-  return {
-    success,
-    appId,
-    error: success ? undefined : 'Failed to get Steam app ID',
-  };
+    return {
+      success,
+      appId,
+      error: success ? undefined : 'Failed to get Steam app ID',
+    };
+  });
 }
 
 /**
  * Add game to Steam via SteamTinkerLaunch using OGI wrapper mode.
  * Steam launches OGI, then OGI executes the wrapper command.
  */
-export async function addGameToSteam(params: {
+export function addGameToSteam(params: {
   name: string;
   version?: string;
   launchExecutable: string;
@@ -147,35 +159,35 @@ export async function addGameToSteam(params: {
   wrapperCommand?: string;
   appID: number;
   compatibilityTool?: string;
-}): Promise<boolean> {
-  const ogiPath = getOgiExecutablePath();
-  const wrapperCommand =
-    params.wrapperCommand && params.wrapperCommand.length > 0
-      ? params.wrapperCommand
-      : '%command%';
-  const launchOptions = `"${ogiPath}" --game-id=${params.appID} --no-sandbox -- "${escapeDoubleQuotedValue(wrapperCommand)}"`;
-  const compatibilityToolArg = params.compatibilityTool
-    ? ` --compatibilitytool="${escapeShellArg(params.compatibilityTool)}"`
-    : '';
+}): Effect.Effect<boolean> {
+  return Effect.gen(function* () {
+    const ogiPath = getOgiExecutablePath();
+    const wrapperCommand =
+      params.wrapperCommand && params.wrapperCommand.length > 0
+        ? params.wrapperCommand
+        : '%command%';
+    const launchOptions = `"${ogiPath}" --game-id=${params.appID} --no-sandbox -- "${escapeDoubleQuotedValue(wrapperCommand)}"`;
+    const compatibilityToolArg = params.compatibilityTool
+      ? ` --compatibilitytool="${escapeShellArg(params.compatibilityTool)}"`
+      : '';
 
-  return new Promise<boolean>((resolve) =>
-    exec(
-      `${STEAMTINKERLAUNCH_PATH} addnonsteamgame --appname="${escapeShellArg(params.name)}" --exepath="${escapeShellArg(params.launchExecutable)}" --startdir="${escapeShellArg(params.cwd)}" --launchoptions="${escapeShellArg(launchOptions)}"${compatibilityToolArg} --use-steamgriddb`,
-      {
-        cwd: __dirname,
-      },
-      (error, stdout, stderr) => {
-        if (error) {
-          console.error(error);
-          notifyError('Failed to add game to Steam');
-          resolve(false);
-          return;
+    return yield* Effect.async<boolean>((resume) => {
+      exec(
+        `${STEAMTINKERLAUNCH_PATH} addnonsteamgame --appname="${escapeShellArg(params.name)}" --exepath="${escapeShellArg(params.launchExecutable)}" --startdir="${escapeShellArg(params.cwd)}" --launchoptions="${escapeShellArg(launchOptions)}"${compatibilityToolArg} --use-steamgriddb`,
+        { cwd: __dirname },
+        (error, stdout, stderr) => {
+          if (error) {
+            console.error(error);
+            notifyError('Failed to add game to Steam');
+            resume(Effect.succeed(false));
+            return;
+          }
+          console.log(stdout);
+          console.log(stderr);
+          notifySuccess('Game added to Steam');
+          resume(Effect.succeed(true));
         }
-        console.log(stdout);
-        console.log(stderr);
-        notifySuccess('Game added to Steam');
-        resolve(true);
-      }
-    )
-  );
+      );
+    });
+  });
 }

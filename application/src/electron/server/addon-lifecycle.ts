@@ -1,4 +1,6 @@
+import { AddonError, FileSystemError } from '@ogi/errors';
 import type { LibraryInfo, OGIAddonSDKEventListener } from '@ogi-sdk/connect';
+import { Effect } from 'effect';
 import { readFileSync, writeFileSync } from 'fs';
 import * as fs from 'fs/promises';
 import { join } from 'path';
@@ -23,97 +25,118 @@ export function isAddonEventAvailable(
   return client?.eventsAvailable?.includes(event) === true;
 }
 
-export async function deleteInstalledAddon(
+export function deleteInstalledAddon(
   addonID: string
-): Promise<DeleteInstalledAddonResult> {
-  const client = addonServer.getClient(addonID);
-  if (!client) {
-    return { success: false, message: 'Client not found' };
-  }
-  if (!client.addonInfo) {
-    return { success: false, message: 'Client has no addon info' };
-  }
-  if (!client.addonLink || client.addonLink.startsWith('local@')) {
-    return {
-      success: false,
-      message:
-        'Addon was not spawned by OpenGameInstaller or is a "local@..." addon.',
-    };
-  }
+): Effect.Effect<DeleteInstalledAddonResult, FileSystemError | AddonError> {
+  return Effect.gen(function* () {
+    const client = addonServer.getClient(addonID);
+    if (!client) {
+      return { success: false, message: 'Client not found' };
+    }
+    if (!client.addonInfo) {
+      return { success: false, message: 'Client has no addon info' };
+    }
+    if (!client.addonLink || client.addonLink.startsWith('local@')) {
+      return {
+        success: false,
+        message:
+          'Addon was not spawned by OpenGameInstaller or is a "local@..." addon.',
+      };
+    }
 
-  const generalConfigPath = join(__dirname, 'config/option/general.json');
-  const generalConfig = JSON.parse(
-    readFileSync(generalConfigPath, 'utf-8')
-  ) as { addons: string[] };
+    const generalConfigPath = join(__dirname, 'config/option/general.json');
+    yield* Effect.try({
+      try: () => {
+        const generalConfig = JSON.parse(
+          readFileSync(generalConfigPath, 'utf-8')
+        ) as { addons: string[] };
+        generalConfig.addons = generalConfig.addons.filter(
+          (addon) => addon !== client.addonLink
+        );
+        writeFileSync(
+          generalConfigPath,
+          JSON.stringify(generalConfig, null, 2)
+        );
+      },
+      catch: (cause) =>
+        new FileSystemError({
+          message: `Failed to update addon configuration: ${String(cause)}`,
+          path: generalConfigPath,
+          cause,
+        }),
+    });
 
-  generalConfig.addons = generalConfig.addons.filter(
-    (addon) => addon !== client.addonLink
-  );
+    yield* restartAddonServer();
+    yield* Effect.sleep('1 second');
 
-  writeFileSync(generalConfigPath, JSON.stringify(generalConfig, null, 2));
+    const removals = yield* Effect.tryPromise({
+      try: () =>
+        Promise.allSettled([
+          fs.rm(client.filePath!!, { recursive: true, force: true }),
+          fs.rm(join(__dirname, 'config', addonID), {
+            recursive: true,
+            force: true,
+          }),
+        ]),
+      catch: (cause) =>
+        new FileSystemError({
+          message: `Failed to remove addon ${addonID}: ${String(cause)}`,
+          path: client.filePath,
+          cause,
+        }),
+    });
 
-  await restartAddonServer();
-  await new Promise((resolve) => setTimeout(resolve, 1000));
+    console[removals[0].status === 'fulfilled' ? 'log' : 'error'](
+      removals[0].status === 'fulfilled'
+        ? 'Addon removed from addons folder'
+        : 'Failed to remove addon from addons folder'
+    );
+    console[removals[1].status === 'fulfilled' ? 'log' : 'error'](
+      removals[1].status === 'fulfilled'
+        ? 'Addon removed from config folder'
+        : 'Failed to remove addon from config folder'
+    );
 
-  const promises = await Promise.allSettled([
-    fs.rm(client.filePath!!, {
-      recursive: true,
-      force: true,
-    }),
-    fs.rm(join(__dirname, 'config', addonID), {
-      recursive: true,
-      force: true,
-    }),
-  ]);
-
-  if (promises[0].status === 'fulfilled') {
-    console.log('Addon removed from addons folder');
-  } else {
-    console.error('Failed to remove addon from addons folder');
-  }
-  if (promises[1].status === 'fulfilled') {
-    console.log('Addon removed from config folder');
-  } else {
-    console.error('Failed to remove addon from config folder');
-  }
-
-  if (promises[0].status === 'fulfilled') {
-    return { success: true };
-  }
-
-  return { success: false, message: 'Failed to remove addon' };
+    return removals[0].status === 'fulfilled'
+      ? { success: true }
+      : { success: false, message: 'Failed to remove addon' };
+  });
 }
 
-export async function runLaunchAppHooks(
+export function runLaunchAppHooks(
   libraryInfo: LibraryInfo,
   launchType: 'pre' | 'post'
-): Promise<RunLaunchAppHooksResult> {
+): Effect.Effect<RunLaunchAppHooksResult> {
   const clientsWithEvent = Array.from(
     addonServer.getConnections().values()
   ).filter((client) => isAddonEventAvailable(client, 'launch-app'));
 
   if (clientsWithEvent.length === 0) {
-    return { success: true };
+    return Effect.succeed({ success: true });
   }
 
-  try {
-    await Promise.all(
-      clientsWithEvent.map(async (client) => {
-        if (!isAddonEventAvailable(client, 'launch-app')) {
-          return;
-        }
-
-        await client.events.launchApp({
-          libraryInfo,
-          launchType,
-        });
+  return Effect.forEach(
+    clientsWithEvent,
+    (client) =>
+      isAddonEventAvailable(client, 'launch-app')
+        ? client.events.launchApp({ libraryInfo, launchType }).pipe(
+            Effect.mapError(
+              (cause) =>
+                new AddonError({
+                  message: `Launch hook failed: ${String(cause)}`,
+                  addonName: client.addonInfo?.name,
+                })
+            )
+          )
+        : Effect.void,
+    { concurrency: 'unbounded', discard: true }
+  ).pipe(
+    Effect.as<RunLaunchAppHooksResult>({ success: true }),
+    Effect.catchTag('AddonError', (error) =>
+      Effect.succeed<RunLaunchAppHooksResult>({
+        success: false,
+        error: error.message,
       })
-    );
-    return { success: true };
-  } catch (error) {
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : String(error),
-    };
-  }
+    )
+  );
 }

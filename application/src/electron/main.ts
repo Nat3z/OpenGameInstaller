@@ -433,7 +433,7 @@ async function startAddonRuntime() {
     id: Math.random().toString(36).substring(7),
     type: 'success',
   });
-  await startAddons();
+  await Effect.runPromise(startAddons());
 }
 
 async function onMainAppReady() {
@@ -446,7 +446,7 @@ async function onMainAppReady() {
     await checkForAddonUpdates(mainWindow);
   }
   await sendIPCMessage('all-addons-started');
-  const configuredAddons = await waitForAddonsConfigured();
+  const configuredAddons = await Effect.runPromise(waitForAddonsConfigured());
   for (const connection of configuredAddons) {
     await sendIPCMessage('addon-connected', connection.addonInfo!.id);
   }
@@ -644,7 +644,7 @@ async function runAddonLaunchEvent(
     return { success: false, error: 'Game not found in library' };
   }
 
-  return runLaunchAppHooks(libraryInfo, launchType);
+  return Effect.runPromise(runLaunchAppHooks(libraryInfo, launchType));
 }
 
 async function handleRemoteLaunchRequest(
@@ -697,18 +697,22 @@ async function handleRemoteLaunchRequest(
 
     let wrapperResult: ExecuteWrapperResult | null = null;
     if (payload.wrapperCommand.includes('steam-launch-wrapper')) {
-      wrapperResult = await executeWrapperCommandForApp(
-        payload.gameId,
-        payload.wrapperCommand,
-        'steam-proton',
-        payload.launchEnv
+      wrapperResult = await Effect.runPromise(
+        executeWrapperCommandForApp(
+          payload.gameId,
+          payload.wrapperCommand,
+          'steam-proton',
+          payload.launchEnv
+        )
       );
     } else {
-      wrapperResult = await executeWrapperCommandForApp(
-        payload.gameId,
-        payload.wrapperCommand,
-        'unknown',
-        payload.launchEnv
+      wrapperResult = await Effect.runPromise(
+        executeWrapperCommandForApp(
+          payload.gameId,
+          payload.wrapperCommand,
+          'unknown',
+          payload.launchEnv
+        )
       );
     }
 
@@ -740,10 +744,8 @@ async function handleRemoteLaunchRequest(
     return preResult;
   }
 
-  const launchResult = await launchGameFromLibrary(
-    payload.gameId,
-    mainWindow,
-    payload.launchEnv
+  const launchResult = await Effect.runPromise(
+    launchGameFromLibrary(payload.gameId, mainWindow, payload.launchEnv)
   );
 
   if (!launchResult.success) {
@@ -838,7 +840,7 @@ app.on('window-all-closed', () => {
     Effect.gen(function* () {
       releasePowerSaveBlock();
       console.log('Stopping torrent client...');
-      yield* Effect.promise(stopClient);
+      yield* stopClient();
       for (const instance of [...Addon.running.values()]) {
         console.log(`Stopping addon ${instance.config.path}`);
         yield* instance.stop().pipe(Effect.ignore);

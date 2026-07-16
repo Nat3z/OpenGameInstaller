@@ -1,5 +1,4 @@
 import { AddonError, AddonNotFound, ipcBoundary } from '@ogi/errors';
-import { AddonConnection } from '@ogi-sdk/addon-server';
 import axios from 'axios';
 import { exec } from 'child_process';
 import { Effect } from 'effect';
@@ -59,140 +58,181 @@ function isGitRepository(addonPath: string): boolean {
 
 const loadedMarketplaces: AddonMarketplace[] = [];
 
-export async function startAddons(): Promise<void> {
-  // start all of the addons
-  if (!fs.existsSync(join(__dirname, 'config/option/general.json'))) {
-    return;
-  }
+export function startAddons(): Effect.Effect<void, AddonError> {
+  return Effect.gen(function* () {
+    const configPath = join(__dirname, 'config/option/general.json');
+    const addons = yield* Effect.try({
+      try: () => {
+        if (!fs.existsSync(configPath)) return [] as string[];
+        const generalConfig = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+        return generalConfig.addons as string[];
+      },
+      catch: (cause) =>
+        new AddonError({
+          message: `Failed to read addon configuration: ${String(cause)}`,
+        }),
+    });
 
-  const generalConfig = JSON.parse(
-    fs.readFileSync(join(__dirname, 'config/option/general.json'), 'utf-8')
-  );
-  const addons = generalConfig.addons as string[];
-  let promises: Promise<AddonConnection | undefined>[] = [];
-  for (const addon of addons) {
-    const parsedAddon = parseAddonLink(addon);
-    let addonPath = '';
-    if (parsedAddon.kind === 'local') {
-      addonPath = parsedAddon.path;
-    } else {
-      addonPath = join(__dirname, 'addons', parsedAddon.addonName);
-    }
+    yield* Effect.forEach(
+      addons,
+      (addon) =>
+        Effect.gen(function* () {
+          const parsedAddon = yield* Effect.try({
+            try: () => parseAddonLink(addon),
+            catch: (cause) =>
+              new AddonError({
+                message: `Invalid addon link ${addon}: ${String(cause)}`,
+              }),
+          });
+          const addonPath =
+            parsedAddon.kind === 'local'
+              ? parsedAddon.path
+              : join(__dirname, 'addons', parsedAddon.addonName);
 
-    if (!fs.existsSync(addonPath)) {
-      console.error(`Addon ${addonPath} does not exist`);
-      sendNotification({
-        message: `Addon ${addonPath} does not exist`,
-        id: Math.random().toString(36).substring(7),
-        type: 'error',
-      });
-      continue;
-    }
+          if (!fs.existsSync(addonPath)) {
+            console.error(`Addon ${addonPath} does not exist`);
+            sendNotification({
+              message: `Addon ${addonPath} does not exist`,
+              id: Math.random().toString(36).substring(7),
+              type: 'error',
+            });
+            return;
+          }
 
-    if (!fs.existsSync(join(addonPath, 'installation.log'))) {
-      console.log(`Addon ${addonPath} has not been installed yet.`);
-      continue;
-    }
+          if (!fs.existsSync(join(addonPath, 'installation.log'))) {
+            console.log(`Addon ${addonPath} has not been installed yet.`);
+            return;
+          }
 
-    console.log(`Starting addon ${addonPath}`);
-    promises.push(
-      (async () => {
-        const instance = await Effect.runPromise(
-          Addon.load(addonPath).pipe(
+          console.log(`Starting addon ${addonPath}`);
+          const instance = yield* Addon.load(addonPath).pipe(
             Effect.catchAll(() => Effect.succeed(null))
-          )
-        );
-        if (!instance) {
-          return undefined;
-        }
-        return Effect.runPromise(
-          instance.startRegistered(parsedAddon.normalized)
-        );
-      })()
+          );
+          if (instance) {
+            yield* instance.startRegistered(parsedAddon.normalized);
+          }
+        }).pipe(Effect.catchAll(() => Effect.void)),
+      { concurrency: 'unbounded', discard: true }
     );
-  }
-  await Promise.allSettled(promises);
-  console.log('All addons started');
+    console.log('All addons started');
+  });
 }
 
 const HEALTH_CHECK_INTERVAL_MS = 500;
 const MAX_ATTEMPTS_HEALTH_CHECK = 60;
 const HEALTH_CHECK_TIMEOUT_MS =
   MAX_ATTEMPTS_HEALTH_CHECK * HEALTH_CHECK_INTERVAL_MS;
-export async function restartAddonServer(): Promise<void> {
-  // stop the server
-  console.log('Stopping server...');
-  await Effect.runPromise(stopAddonServer());
-  // stop all of the addons
-  for (const instance of [...Addon.running.values()]) {
-    console.log(`Stopping addon ${instance.config.path}`);
-    await Effect.runPromise(instance.stop());
-  }
-  // start the server and wait for it to be listening before starting addons
 
-  await Effect.runPromise(startAddonServer());
-  const checkHealth = async () => {
-    try {
-      await axios.get(`http://localhost:${port}/health`, { timeout: 500 });
-      return true;
-    } catch {
-      return false;
+export function restartAddonServer(): Effect.Effect<void, AddonError> {
+  return Effect.gen(function* () {
+    console.log('Stopping server...');
+    yield* stopAddonServer().pipe(
+      Effect.mapError(
+        (cause) =>
+          new AddonError({
+            message: `Failed to stop addon server: ${String(cause)}`,
+          })
+      )
+    );
+    for (const instance of [...Addon.running.values()]) {
+      console.log(`Stopping addon ${instance.config.path}`);
+      yield* instance.stop().pipe(
+        Effect.mapError(
+          (cause) =>
+            new AddonError({
+              message: `Failed to stop addon ${instance.config.path}: ${String(cause)}`,
+            })
+        )
+      );
     }
-  };
-  let attempts = 0;
-  while (!(await checkHealth()) && attempts < MAX_ATTEMPTS_HEALTH_CHECK) {
-    await new Promise((res) => setTimeout(res, HEALTH_CHECK_INTERVAL_MS));
-    attempts++;
-  }
-  if (attempts === MAX_ATTEMPTS_HEALTH_CHECK) {
-    throw new AddonError({
-      message: `Failed to start addon server: health check failed after ${attempts} attempts (${HEALTH_CHECK_TIMEOUT_MS / 1000}s)`,
-    });
-  }
-  console.log(`Addon Server is running on http://localhost:${port}`);
-  console.log(`Server is being executed by electron!`);
-  await startAddons();
-  const configuredAddons = await waitForAddonsConfigured();
-  for (const connection of configuredAddons) {
-    await sendIPCMessage('addon-connected', connection.addonInfo!.id);
-  }
-  await sendIPCMessage('addon-runtime-ready');
 
-  sendNotification({
-    message: 'Addon server restarted successfully.',
-    id: Math.random().toString(36).substring(7),
-    type: 'success',
+    yield* startAddonServer().pipe(
+      Effect.mapError(
+        (cause) =>
+          new AddonError({
+            message: `Failed to start addon server: ${String(cause)}`,
+          })
+      )
+    );
+
+    const checkHealth = () =>
+      Effect.tryPromise({
+        try: () =>
+          axios.get(`http://localhost:${port}/health`, { timeout: 500 }),
+        catch: () => new AddonError({ message: 'Addon health check failed' }),
+      }).pipe(
+        Effect.as(true),
+        Effect.catchTag('AddonError', () => Effect.succeed(false))
+      );
+
+    let attempts = 0;
+    while (!(yield* checkHealth()) && attempts < MAX_ATTEMPTS_HEALTH_CHECK) {
+      yield* Effect.sleep(`${HEALTH_CHECK_INTERVAL_MS} millis`);
+      attempts++;
+    }
+    if (attempts === MAX_ATTEMPTS_HEALTH_CHECK) {
+      return yield* Effect.fail(
+        new AddonError({
+          message: `Failed to start addon server: health check failed after ${attempts} attempts (${HEALTH_CHECK_TIMEOUT_MS / 1000}s)`,
+        })
+      );
+    }
+
+    console.log(`Addon Server is running on http://localhost:${port}`);
+    console.log(`Server is being executed by electron!`);
+    yield* startAddons();
+    const configuredAddons = yield* waitForAddonsConfigured();
+    for (const connection of configuredAddons) {
+      yield* Effect.tryPromise({
+        try: () => sendIPCMessage('addon-connected', connection.addonInfo!.id),
+        catch: (cause) =>
+          new AddonError({
+            message: `Failed to notify renderer: ${String(cause)}`,
+          }),
+      });
+    }
+    yield* Effect.tryPromise({
+      try: () => sendIPCMessage('addon-runtime-ready'),
+      catch: (cause) =>
+        new AddonError({
+          message: `Failed to notify renderer: ${String(cause)}`,
+        }),
+    });
+
+    sendNotification({
+      message: 'Addon server restarted successfully.',
+      id: Math.random().toString(36).substring(7),
+      type: 'success',
+    });
   });
 }
 
-export async function loadMarketplace(
+export function loadMarketplace(
   url: string,
   options?: { refresh?: boolean }
-): Promise<AddonMarketplace> {
-  const refresh = options?.refresh === true;
-  let marketplace = loadedMarketplaces.find((m) => m.url === url);
+): Effect.Effect<AddonMarketplace> {
+  return Effect.gen(function* () {
+    const refresh = options?.refresh === true;
+    let marketplace = loadedMarketplaces.find((m) => m.url === url);
 
-  if (marketplace && refresh) {
-    // fetch() keeps the last good catalog on failure; do not evict the cache.
-    await marketplace.fetch();
-    return marketplace;
-  }
-
-  if (!marketplace) {
-    const newMarketplace = new AddonMarketplace(url);
-    const ok = await newMarketplace.fetch();
-    if (!ok) {
-      // Do not cache a failed fetch; callers can retry on the next request.
-      return newMarketplace;
+    if (marketplace && refresh) {
+      yield* marketplace.fetch();
+      return marketplace;
     }
-    console.log(
-      `[addon-handler] Loaded marketplace from ${url}.`,
-      newMarketplace.getAddons()
-    );
-    loadedMarketplaces.push(newMarketplace);
-    marketplace = newMarketplace;
-  }
-  return marketplace;
+
+    if (!marketplace) {
+      const newMarketplace = new AddonMarketplace(url);
+      const ok = yield* newMarketplace.fetch();
+      if (!ok) return newMarketplace;
+      console.log(
+        `[addon-handler] Loaded marketplace from ${url}.`,
+        newMarketplace.getAddons()
+      );
+      loadedMarketplaces.push(newMarketplace);
+      marketplace = newMarketplace;
+    }
+    return marketplace;
+  });
 }
 
 export default function AddonManagerHandler(mainWindow: BrowserWindow) {
@@ -298,8 +338,8 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
             clonedThisInstall = true;
 
             if (parsedAddon.kind === 'marketplace') {
-              const marketplace = await loadMarketplace(
-                parsedAddon.marketplaceUrl
+              const marketplace = await Effect.runPromise(
+                loadMarketplace(parsedAddon.marketplaceUrl)
               );
               // now get the latest pinned commit hash and checkout to there
               const addonFromMarketplace = marketplace.getAddon(gitUrl);
@@ -375,7 +415,7 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
         JSON.stringify(stagedUpdate),
         'utf-8'
       );
-      await restartAddonServer();
+      await Effect.runPromise(restartAddonServer());
       return stagedUpdate.addons;
     })
   );
@@ -383,7 +423,7 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
   ipcMain.handle(
     'restart-addon-server',
     ipcBoundary(async (_) => {
-      await restartAddonServer();
+      await Effect.runPromise(restartAddonServer());
     })
   );
 
@@ -393,7 +433,7 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
       if (typeof addonID !== 'string' || addonID.trim().length === 0) {
         return { success: false, message: 'Invalid addon ID' };
       }
-      return deleteInstalledAddon(addonID);
+      return Effect.runPromise(deleteInstalledAddon(addonID));
     })
   );
 
@@ -529,11 +569,8 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
           let alreadyUpToDate = fetchData.alreadyUpToDate;
 
           if (parsedAddon.kind === 'marketplace') {
-            const marketplace = await loadMarketplace(
-              parsedAddon.marketplaceUrl,
-              {
-                refresh: true,
-              }
+            const marketplace = await Effect.runPromise(
+              loadMarketplace(parsedAddon.marketplaceUrl, { refresh: true })
             );
 
             const marketplaceAddon = marketplace.getAddon(gitUrl!);
@@ -666,7 +703,7 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
       }
 
       // restart all of the addons
-      await restartAddonServer();
+      await Effect.runPromise(restartAddonServer());
 
       if (failedCount === addons.length) {
         sendNotification({

@@ -71,11 +71,7 @@ const installRedistributables = (appID: number, downloadId?: string) =>
       });
     }
     const versionedName = getVersionedGameName(appInfo.name, appInfo.version);
-    const steam = yield* Effect.tryPromise({
-      try: () => getNonSteamGameAppID(versionedName),
-      catch: (cause) =>
-        new LibraryError({ message: formatError(cause), gameId: appID }),
-    });
+    const steam = yield* getNonSteamGameAppID(versionedName);
     if (!steam.success || !steam.appId) {
       emitProgress({
         kind: 'done',

@@ -37,7 +37,7 @@ export class AddonMarketplace {
   private addons: ReadonlyArray<CommunityAddon> = [];
   constructor(public readonly url: string) {}
 
-  fetchEffect(): Effect.Effect<boolean> {
+  fetch(): Effect.Effect<boolean> {
     const previous = this.addons;
     return Effect.gen(this, function* () {
       const url = yield* marketplaceJsonUrl(this.url);
@@ -81,9 +81,6 @@ export class AddonMarketplace {
     );
   }
 
-  fetch(): Promise<boolean> {
-    return Effect.runPromise(this.fetchEffect());
-  }
   getAddons(): ReadonlyArray<CommunityAddon> {
     return this.addons;
   }

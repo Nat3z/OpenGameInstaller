@@ -4,8 +4,10 @@
  */
 
 import type { LibraryInfo } from '@ogi-sdk/connect';
+import { PlatformError, formatError, formatErrorResponse } from '@ogi/errors';
 import { spawn } from 'child_process';
 import { ipcMain } from 'electron';
+import { Effect } from 'effect';
 import * as fs from 'fs';
 import * as path from 'path';
 import { getSilentInstallFlags } from '@/electron/handlers/helpers.app/install-flags.js';
@@ -1531,52 +1533,53 @@ async function copyDirectory(src: string, dest: string): Promise<void> {
   }
 }
 
-/**
- * Register UMU IPC handlers
- */
-export function registerUmuHandlers() {
-  // Check if UMU is installed
-  ipcMain.handle('app:check-umu-installed', async () => {
-    return await isUmuInstalled();
+const umuEffect = <A>(operation: () => Promise<A>): Effect.Effect<A, PlatformError> =>
+  Effect.tryPromise({
+    try: operation,
+    catch: (cause) => new PlatformError({ message: formatError(cause), platform: process.platform }),
   });
+
+const runUmuBoundary = <A>(effect: Effect.Effect<A, PlatformError>) =>
+  Effect.runPromise(effect.pipe(Effect.catchAll((error) => Effect.succeed(formatErrorResponse(error)))));
+
+/** Effect service adapters retained alongside the Promise compatibility API. */
+export const isUmuInstalledEffect = () => umuEffect(isUmuInstalled);
+export const installUmuEffect = () => umuEffect(installUmu);
+export const launchWithUmuEffect = (...args: Parameters<typeof launchWithUmu>) =>
+  umuEffect(() => launchWithUmu(...args));
+export const installRedistributablesWithUmuEffect = (...args: Parameters<typeof installRedistributablesWithUmu>) =>
+  umuEffect(() => installRedistributablesWithUmu(...args));
+export const migrateToUmuEffect = (...args: Parameters<typeof migrateToUmu>) =>
+  umuEffect(() => migrateToUmu(...args));
+
+/** Register UMU IPC boundaries. */
+export function registerUmuHandlers(): void {
+  // Check if UMU is installed
+  ipcMain.handle('app:check-umu-installed', () => runUmuBoundary(isUmuInstalledEffect()));
 
   // Install UMU
-  ipcMain.handle('app:install-umu', async () => {
-    return await installUmu();
-  });
+  ipcMain.handle('app:install-umu', () => runUmuBoundary(installUmuEffect()));
 
   // Launch game with UMU
-  ipcMain.handle('app:launch-with-umu', async (_, appID: number) => {
-    const libraryInfo = loadLibraryInfo(appID);
-    if (!libraryInfo) {
-      return { success: false, error: 'Game not found' };
-    }
-
-    // Check if migration is needed
-    if (!libraryInfo.umu) {
-      console.log('[umu] No UMU configuration found, cannot launch with UMU');
-      return {
-        success: false,
-        error: 'No UMU configuration found, cannot launch with UMU',
-      };
-    }
-
-    return await launchWithUmu(libraryInfo);
-  });
+  ipcMain.handle('app:launch-with-umu', (_, appID: number) => runUmuBoundary(
+    Effect.gen(function* () {
+      const libraryInfo = loadLibraryInfo(appID);
+      if (!libraryInfo?.umu) {
+        return yield* Effect.fail(new PlatformError({ message: 'Game is not configured for UMU', platform: process.platform }));
+      }
+      return yield* launchWithUmuEffect(libraryInfo);
+    })
+  ));
 
   // Install redistributables with UMU
   ipcMain.handle(
     'app:install-redistributables-umu',
-    async (_, appID: number) => {
-      return await installRedistributablesWithUmu(appID);
-    }
+    (_, appID: number) => runUmuBoundary(installRedistributablesWithUmuEffect(appID))
   );
 
   // Migrate game to UMU
   ipcMain.handle(
     'app:migrate-to-umu',
-    async (_, appID: number, oldSteamAppId?: number) => {
-      return await migrateToUmu(appID, oldSteamAppId);
-    }
+    (_, appID: number, oldSteamAppId?: number) => runUmuBoundary(migrateToUmuEffect(appID, oldSteamAppId))
   );
 }

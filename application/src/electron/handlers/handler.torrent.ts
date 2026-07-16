@@ -1,6 +1,8 @@
 import { QBittorrent } from '@ctrl/qbittorrent';
 import axios from 'axios';
 import { BrowserWindow, ipcMain } from 'electron';
+import { HttpError, TorrentError, formatError, formatErrorResponse } from '@ogi/errors';
+import { Effect } from 'effect';
 import * as fs from 'fs';
 import { readFile, rm as rmAsync } from 'fs/promises';
 import parseTorrent from 'parse-torrent';
@@ -602,67 +604,48 @@ class TorrentDownload {
   }
 }
 
-export default function handler(mainWindow: BrowserWindow) {
-  const startDownload = async (job: TorrentJob) => {
+export default function handler(mainWindow: BrowserWindow): void {
+  const run = <A, E>(effect: Effect.Effect<A, E>) =>
+    Effect.runPromise(effect.pipe(Effect.catchAll((error) => Effect.succeed(formatErrorResponse(error)))));
+  const startDownload = (job: TorrentJob) => Effect.gen(function* () {
     const download = new TorrentDownload(mainWindow, job);
-    download.start();
-    return await download.waitForReady();
-  };
+    yield* Effect.sync(() => download.start());
+    return yield* Effect.tryPromise({
+      try: () => download.waitForReady(),
+      catch: (cause) => new TorrentError({ message: formatError(cause), cause }),
+    });
+  });
 
   ipcMain.handle(
     'torrent:download-torrent',
     (_, arg: { link: string; path: string }) => {
-      return startDownload({ ...arg, type: 'torrent' });
+      return run(startDownload({ ...arg, type: 'torrent' }));
     }
   );
 
   ipcMain.handle(
     'torrent:download-magnet',
     (_, arg: { link: string; path: string }) => {
-      return startDownload({ ...arg, type: 'magnet' });
+      return run(startDownload({ ...arg, type: 'magnet' }));
     }
   );
 
-  ipcMain.handle('torrent:pause', (_, id: string) => {
-    downloads.get(id)?.pause();
-  });
+  ipcMain.handle('torrent:pause', (_, id: string) => run(Effect.sync(() => downloads.get(id)?.pause())));
+  ipcMain.handle('torrent:resume', (_, id: string) => run(Effect.sync(() => downloads.get(id)?.resume())));
+  ipcMain.handle('torrent:abort', (_, id: string) => run(Effect.sync(() => downloads.get(id)?.cancel())));
 
-  ipcMain.handle('torrent:resume', (_, id: string) => {
-    downloads.get(id)?.resume();
-  });
-
-  ipcMain.handle('torrent:abort', (_, id: string) => {
-    downloads.get(id)?.cancel();
-  });
-
-  ipcMain.handle('download-torrent-into', async (_, link: string) => {
-    const tempPath = join(__dirname, 'temp.torrent');
-    const fileStream = fs.createWriteStream(tempPath);
-    const response = await axios({
-      method: 'get',
-      url: link,
-      responseType: 'stream',
-    });
-    response.data.pipe(fileStream);
-    return new Promise<Buffer>((resolve, reject) => {
-      fileStream.on('finish', async () => {
-        fileStream.close();
-        const buffer = await readFile(tempPath);
-        await rmAsync(tempPath, { force: true });
-        resolve(buffer);
-      });
-      fileStream.on('error', (err) => {
-        fileStream.close();
-        rmAsync(tempPath, { force: true });
-        reject(err);
-      });
-    });
-  });
+  ipcMain.handle('download-torrent-into', (_, link: string) => run(
+    Effect.tryPromise({
+      try: () => axios.get<ArrayBuffer>(link, { responseType: 'arraybuffer' }),
+      catch: (cause: any) => new HttpError({ message: cause?.message ?? 'Torrent download failed', statusCode: cause?.response?.status ?? 0, url: link }),
+    }).pipe(Effect.map((response) => Buffer.from(response.data)))
+  ));
 
   ipcMain.handle(
     'torrent:get-hash',
-    async (_, item: string | Buffer | Uint8Array) => {
-      return getTorrentInfoHash(item);
-    }
+    (_, item: string | Buffer | Uint8Array) => run(Effect.tryPromise({
+      try: () => getTorrentInfoHash(item),
+      catch: (cause) => new TorrentError({ message: formatError(cause), cause }),
+    }))
   );
 }

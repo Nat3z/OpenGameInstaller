@@ -1,7 +1,9 @@
 import { AddonConnection } from '@ogi-sdk/addon-server';
 import axios from 'axios';
 import { exec } from 'child_process';
-import { BrowserWindow, ipcMain } from 'electron';
+import { BrowserWindow, ipcMain, type IpcMainInvokeEvent } from 'electron';
+import { AddonError, formatError, formatErrorResponse } from '@ogi/errors';
+import { Effect } from 'effect';
 import fs from 'fs';
 import fsAsync from 'fs/promises';
 import { dirname, isAbsolute, join, resolve } from 'path';
@@ -10,7 +12,6 @@ import {
   parseAddonLink,
 } from '@/electron/lib/addon-links.js';
 import { AddonMarketplace } from '@/electron/lib/marketplace.js';
-import { tryCatch } from '@/electron/lib/tryCatch.js';
 import { sendIPCMessage, sendNotification } from '@/electron/main.js';
 import { Addon } from '@/electron/manager/manager.addon.js';
 import { waitForAddonsConfigured } from '@/electron/manager/manager.addon-readiness.js';
@@ -21,6 +22,14 @@ import {
   startAddonServer,
   stopAddonServer,
 } from '@/electron/server/addon-server.js';
+
+const ipcBoundary = <Args extends readonly unknown[], A>(
+  operation: (event: IpcMainInvokeEvent, ...args: Args) => Promise<A> | A
+) => (event: IpcMainInvokeEvent, ...args: Args) =>
+  Effect.runPromise(Effect.tryPromise({
+    try: () => Promise.resolve(operation(event, ...args)),
+    catch: (cause) => new AddonError({ message: formatError(cause) }),
+  }).pipe(Effect.catchAll((error) => Effect.succeed(formatErrorResponse(error)))));
 
 function isGitRepository(addonPath: string): boolean {
   if (!fs.existsSync(addonPath)) {
@@ -189,7 +198,7 @@ export async function loadMarketplace(
 }
 
 export default function AddonManagerHandler(mainWindow: BrowserWindow) {
-  ipcMain.handle('install-addons', async (_, addons: string[]) => {
+  ipcMain.handle('install-addons', ipcBoundary(async (_, addons: string[]) => {
     // addons is an array of URLs to the addons to install. these should be valid git repositories
     addons = Array.isArray(addons)
       ? addons
@@ -360,20 +369,20 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
     );
     await restartAddonServer();
     return stagedUpdate.addons;
-  });
+  }));
 
-  ipcMain.handle('restart-addon-server', async (_) => {
+  ipcMain.handle('restart-addon-server', ipcBoundary(async (_) => {
     await restartAddonServer();
-  });
+  }));
 
-  ipcMain.handle('addon:delete-installed', async (_, addonID: string) => {
+  ipcMain.handle('addon:delete-installed', ipcBoundary(async (_, addonID: string) => {
     if (typeof addonID !== 'string' || addonID.trim().length === 0) {
       return { success: false, message: 'Invalid addon ID' };
     }
     return deleteInstalledAddon(addonID);
-  });
+  }));
 
-  ipcMain.handle('clean-addons', async (_, marketplaceUrls: string[]) => {
+  ipcMain.handle('clean-addons', ipcBoundary(async (_, marketplaceUrls: string[]) => {
     for (const instance of [...Addon.running.values()]) {
       console.log(`Stopping addon ${instance.config.path}`);
       instance.stop();
@@ -398,9 +407,9 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
       id: Math.random().toString(36).substring(7),
       type: 'info',
     });
-  });
+  }));
 
-  ipcMain.handle('update-addons', async (_) => {
+  ipcMain.handle('update-addons', ipcBoundary(async (_) => {
     // check if wifi is available
     const isWifiAvailable = await new Promise<boolean>((resolve, _) => {
       const req = axios.get('https://www.google.com');
@@ -467,29 +476,29 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
 
       const updatePromise = new Promise<void>(async (resolve, reject) => {
         console.log(addonPath);
-        const addonJSON = Addon.Setup.loadAddonConfig(addonPath);
+        const addonJSON = await Effect.runPromise(Addon.Setup.loadAddonConfig(addonPath));
         const addonSetup = new Addon.Setup({
           name: addonName,
           path: addonPath,
           scripts: addonJSON.scripts,
         });
 
-        const fetchResult = await tryCatch(async () => {
+        const fetchResult = await Effect.runPromise(Effect.either(Effect.gen(function* () {
           return {
-            alreadyUpToDate: (await addonSetup.git.fetch()).alreadyUpToDate,
-            currentHash: await addonSetup.git.getCurrentHash(),
+            alreadyUpToDate: (yield* addonSetup.git.fetch()).alreadyUpToDate,
+            currentHash: yield* addonSetup.git.getCurrentHash(),
           };
-        });
-        if (fetchResult.error) {
+        })));
+        if (fetchResult._tag === 'Left') {
           sendNotification({
             message: `Failed to update addon ${addonName}`,
             id: Math.random().toString(36).substring(7),
             type: 'error',
           });
-          reject(fetchResult.error);
+          reject(fetchResult.left);
           return;
         }
-        const fetchData = fetchResult.data;
+        const fetchData = fetchResult.right;
         console.log(marketplaceUrl, addonName, gitUrl);
         let alreadyUpToDate = fetchData.alreadyUpToDate;
 
@@ -517,7 +526,7 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
             pinnedCommit === 'latest'
               ? fetchData.alreadyUpToDate
               : fetchData.currentHash === pinnedCommit;
-          if (alreadyUpToDate && (await addonSetup.isInstalled())) {
+          if (alreadyUpToDate && (await Effect.runPromise(addonSetup.isInstalled()))) {
             sendNotification({
               message: `Addon ${addonName} is already up to date.`,
               id: Math.random().toString(36).substring(7),
@@ -532,11 +541,11 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
           }
 
           if (pinnedCommit !== 'latest') {
-            await addonSetup.git.checkoutCommit(pinnedCommit);
+            await Effect.runPromise(addonSetup.git.checkoutCommit(pinnedCommit));
           } else if (!alreadyUpToDate) {
-            await addonSetup.git.pull();
+            await Effect.runPromise(addonSetup.git.pull());
           }
-        } else if (alreadyUpToDate && (await addonSetup.isInstalled())) {
+        } else if (alreadyUpToDate && (await Effect.runPromise(addonSetup.isInstalled()))) {
           sendNotification({
             message: `Addon ${addonName} is already up to date.`,
             id: Math.random().toString(36).substring(7),
@@ -639,5 +648,5 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
         type: 'warning',
       });
     }
-  });
+  }));
 }

@@ -2,7 +2,12 @@ import { dialog, ipcMain, shell } from 'electron';
 import * as fs from 'node:fs';
 import * as fsAsync from 'node:fs/promises';
 import { join } from 'node:path';
-import { FileSystemError, formatError, formatErrorResponse } from '@ogi/errors';
+import {
+  FileSystemError,
+  formatError,
+  runEffectBoundary as runBoundary,
+  runSyncBoundary,
+} from '@ogi/errors';
 import { Effect } from 'effect';
 import { extraction } from 'ogi-addon';
 import { sendIPCMessage } from '@/electron/main.js';
@@ -22,12 +27,6 @@ const fsTryPromise = <A>(path: string, operation: () => Promise<A>): Effect.Effe
     try: operation,
     catch: (cause) => new FileSystemError({ message: formatError(cause), path, cause }),
   });
-
-const runBoundary = <A, E>(effect: Effect.Effect<A, E>): Promise<A | ReturnType<typeof formatErrorResponse>> =>
-  Effect.runPromise(effect.pipe(Effect.catchAll((error) => Effect.succeed(formatErrorResponse(error)))));
-
-const runSyncBoundary = <A, E>(effect: Effect.Effect<A, E>): A | ReturnType<typeof formatErrorResponse> =>
-  Effect.runSync(effect.pipe(Effect.catchAll((error) => Effect.succeed(formatErrorResponse(error)))));
 
 const extractArchive = (arg: {
   rarFilePath?: string;

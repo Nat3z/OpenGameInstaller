@@ -5,7 +5,7 @@ import * as fsAsync from 'node:fs/promises';
 import { join } from 'node:path';
 import type { ReadStream } from 'original-fs';
 import RealDebrid from 'real-debrid-js';
-import { FileSystemError, HttpError, formatError } from '@ogi/errors';
+import { FileSystemError, HttpError, formatError, runEffectBoundary } from '@ogi/errors';
 import { Effect, Schema } from 'effect';
 import { sendNotification } from '@/electron/main.js';
 import { __dirname } from '@/electron/manager/manager.paths.js';
@@ -26,7 +26,7 @@ const notifyFailure = <A, E>(effect: Effect.Effect<A, E>, message: string): Effe
   })));
 
 const run = <A, E>(effect: Effect.Effect<A, E>, message: string) =>
-  Effect.runPromise(notifyFailure(effect, message));
+  runEffectBoundary(notifyFailure(effect, message));
 
 const updateKey = () => Effect.gen(function* () {
   const raw = yield* Effect.tryPromise({
@@ -47,7 +47,11 @@ const updateKey = () => Effect.gen(function* () {
 const downloadTorrent = (url: string, path: string) => Effect.gen(function* () {
   const response = yield* Effect.tryPromise({
     try: () => axios.get<ArrayBuffer>(url, { responseType: 'arraybuffer', timeout: 60_000 }),
-    catch: (cause: any) => new HttpError({ message: cause?.message ?? 'Torrent download failed', statusCode: cause?.response?.status ?? 0, url }),
+    catch: (cause: unknown) => new HttpError({
+      message: axios.isAxiosError(cause) ? cause.message : formatError(cause),
+      statusCode: axios.isAxiosError(cause) ? cause.response?.status ?? 0 : 0,
+      url,
+    }),
   });
   yield* Effect.tryPromise({
     try: () => fsAsync.writeFile(path, Buffer.from(response.data)),

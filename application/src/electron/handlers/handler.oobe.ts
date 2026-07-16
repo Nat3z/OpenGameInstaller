@@ -4,7 +4,7 @@ import * as fs from 'node:fs/promises';
 import os from 'node:os';
 import { join } from 'node:path';
 import { ipcMain } from 'electron';
-import { FileSystemError, HttpError, PlatformError, formatError } from '@ogi/errors';
+import { FileSystemError, HttpError, PlatformError, formatError, runEffectBoundary } from '@ogi/errors';
 import { Effect } from 'effect';
 import { sendIPCMessage, sendNotification } from '@/electron/main.js';
 import { __dirname } from '@/electron/manager/manager.paths.js';
@@ -37,9 +37,9 @@ const download = (url: string, destination: string): Effect.Effect<void, HttpErr
   Effect.gen(function* () {
     const response = yield* Effect.tryPromise({
       try: () => axios.get<ArrayBuffer>(url, { responseType: 'arraybuffer' }),
-      catch: (cause: any) => new HttpError({
-        message: cause?.message ?? 'Download failed',
-        statusCode: cause?.response?.status ?? 0,
+      catch: (cause: unknown) => new HttpError({
+        message: axios.isAxiosError(cause) ? cause.message : formatError(cause),
+        statusCode: axios.isAxiosError(cause) ? cause.response?.status ?? 0 : 0,
         url,
       }),
     });
@@ -141,9 +141,9 @@ const downloadTools = (): Effect.Effect<readonly [boolean, boolean]> =>
   });
 
 export default function OOBEHandler(): void {
-  ipcMain.handle('oobe:download-tools', () => Effect.runPromise(downloadTools()));
+  ipcMain.handle('oobe:download-tools', () => runEffectBoundary(downloadTools()));
   ipcMain.handle('oobe:set-steamgriddb-key', (_, key: string) =>
-    Effect.runPromise(
+    runEffectBoundary(
       command(`${STEAMTINKERLAUNCH_PATH} set SGDBAPIKEY global ${key}`).pipe(
         Effect.as(true),
         Effect.catchAll((error) => Effect.sync(() => { log(`Error: ${error.message}`); return false; }))

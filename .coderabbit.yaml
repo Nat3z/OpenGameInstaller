@@ -6,6 +6,8 @@ ignore_from_diff:
   - '.coderabbit.yaml'
   - 'EFFECT-MIGRATION.md'
   - '**/_generated/**'
+  - '**/*.svelte'
+  - 'application/src/frontend/lib/tasks/deferred.ts'
 reviews:
   profile: 'chill'
   request_changes_workflow: false

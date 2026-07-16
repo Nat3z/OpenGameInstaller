@@ -13,7 +13,18 @@ export class Queue<T = any> {
    */
   enqueue(id: string, item: T) {
     if (this.queue.find((q) => q.id === id) || this.processing.has(id)) {
-      throw new Error('Duplicate id in queue or processing');
+      console.warn(`[Queue] Ignoring duplicate id: ${id}`);
+      return {
+        initialPosition: this.processing.has(id)
+          ? 1
+          : this.queue.findIndex((queued) => queued.id === id) +
+            1 +
+            this.processing.size,
+        wait: async (_update: (position: number) => void) =>
+          'cancelled' as const,
+        cancelHandler: (_cancel: (handle: () => void) => void) => {},
+        finish: () => {},
+      };
     }
     this.queue.push({ id, item });
     return {
@@ -98,7 +109,6 @@ export class Queue<T = any> {
 
   /**
    * Remove an item from the queue by id (if not processing yet).
-   * @param id The id to remove.
    */
   remove(id: string) {
     const idx = this.queue.findIndex((q) => q.id === id);

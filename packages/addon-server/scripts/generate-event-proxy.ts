@@ -32,10 +32,15 @@ import type {
   AddonClientToServerWebsocketMessage,
   AddonServerToClientWebsocketMessage,
 } from '@ogi-sdk/connect';
+import type { NetworkError, ValidationError } from '@ogi/errors';
+import type { Effect } from 'effect';
 
 type SendEventProxyMethod<Event extends AddonServerToClientEventName> = (
   ...args: AddonServerToClientEventArgs[Event]
-) => Promise<AddonClientToServerWebsocketMessage>;
+) => Effect.Effect<
+  AddonClientToServerWebsocketMessage,
+  NetworkError | ValidationError
+>;
 
 type CamelCaseEvent<Event extends string> =
   Event extends \`\${infer Head}-\${infer Tail}\`

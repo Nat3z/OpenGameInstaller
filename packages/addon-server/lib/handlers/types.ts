@@ -2,6 +2,7 @@ import type {
   AddonClientToServerEventName,
   AddonClientToServerWebsocketMessage,
 } from '@ogi-sdk/connect';
+import type { Effect } from 'effect';
 import type { AddonConnection } from '../connections/addon.connection';
 import type { AddonConfig, AddonServer } from '../server';
 
@@ -9,14 +10,13 @@ export type HandlerContext = {
   connection: AddonConnection;
   config: AddonConfig;
   server: AddonServer;
-  authenticationTimeout: Timer;
-  resolveAuthentication: (authenticated: boolean) => void;
+  resolveAuthentication: (authenticated: boolean) => Effect.Effect<void>;
 };
 
 export type ClientMessageHandler = (
   context: HandlerContext,
   message: AddonClientToServerWebsocketMessage
-) => Promise<void> | void;
+) => Effect.Effect<void, unknown>;
 
 export type ClientMessageHandlers = Partial<
   Record<AddonClientToServerEventName, ClientMessageHandler>

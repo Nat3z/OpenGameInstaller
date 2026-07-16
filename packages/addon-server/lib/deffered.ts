@@ -1,67 +1,84 @@
-// Utility function to safely serialize data and remove Proxy wrapping
-function safeSerialize<T>(data: T): T {
-  if (data === null || data === undefined) {
-    return data;
-  }
-  try {
-    // Use JSON.parse(JSON.stringify()) to deep clone and remove any Proxy wrapping
-    return JSON.parse(JSON.stringify(data));
-  } catch (error) {
-    console.warn('Failed to serialize task data, returning as-is:', error);
-    return data;
-  }
-}
+import { formatError, ValidationError } from '@ogi/errors';
+import { Effect } from 'effect';
+
+/** Safely serializes task data and removes Proxy wrappers. */
+const safeSerialize = <T>(data: T): Effect.Effect<T, ValidationError> =>
+  Effect.try({
+    try: () =>
+      data === null || data === undefined
+        ? data
+        : (JSON.parse(JSON.stringify(data)) as T),
+    catch: (cause) =>
+      new ValidationError({
+        message: `Failed to serialize deferred task data: ${String(cause)}`,
+      }),
+  });
 
 export class DeferrableTask<T> {
-  private task: () => Promise<any>;
-  public finished: boolean = false;
-
+  public finished = false;
   public data: T | null = null;
-  public id: string = Math.random().toString(36).substring(7);
-  public addonOwner = '';
+  public id = Math.random().toString(36).substring(7);
+  public readonly addonOwner: string;
   public logs: string[] = [];
   public progress = 0;
-  public failed: string | undefined = undefined;
-  constructor(task: () => Promise<T>, addonOwner: string) {
-    this.task = task;
+  public failed: string | undefined;
+
+  public constructor(
+    private readonly task: () => Effect.Effect<T, unknown>,
+    addonOwner: string
+  ) {
     this.addonOwner = addonOwner;
   }
 
-  public async run() {
-    try {
-      const result = await this.task();
-      this.finished = true;
-      // Serialize the data to ensure it can be sent over IPC
-      this.data = safeSerialize(result);
-      console.log('task finished', this.id);
-    } catch (error) {
-      this.failed = error instanceof Error ? error.message : String(error);
-      this.data = null;
-      this.finished = true;
-    }
+  public run(): Effect.Effect<void> {
+    return this.task().pipe(
+      Effect.flatMap((result) =>
+        safeSerialize(result).pipe(
+          Effect.catchAll((error) => {
+            console.warn(error.message);
+            return Effect.succeed(result);
+          })
+        )
+      ),
+      Effect.tap((result) =>
+        Effect.sync(() => {
+          this.data = result;
+          this.finished = true;
+          console.log('task finished', this.id);
+        })
+      ),
+      Effect.catchAll((error) =>
+        Effect.sync(() => {
+          this.failed = formatError(error);
+          this.data = null;
+          this.finished = true;
+        })
+      ),
+      Effect.asVoid
+    );
   }
 
-  // Method to get serialized data (additional safety)
-  public getSerializedData(): T | null {
+  public getSerializedData(): Effect.Effect<T | null, ValidationError> {
     return safeSerialize(this.data);
   }
 }
 
-// Singleton pattern to ensure DeferredTasks maintains state across imports
 export class DeferredTasksManager {
-  private tasks: Record<string, DeferrableTask<any>> = {};
+  private readonly tasks: Record<string, DeferrableTask<unknown>> = {};
 
-  public constructor() {}
-
-  public getTasks(): Record<string, DeferrableTask<any>> {
+  public getTasks(): Record<string, DeferrableTask<unknown>> {
     return this.tasks;
   }
 
-  public addTask(task: DeferrableTask<any>) {
-    this.tasks[task.id] = task;
+  public addTask(task: DeferrableTask<unknown>): Effect.Effect<void> {
+    return Effect.sync(() => {
+      this.tasks[task.id] = task;
+    });
   }
 
-  public removeTask(id: string) {
-    delete this.tasks[id];
+  public removeTask(id: string): Effect.Effect<void> {
+    return Effect.sync(() => {
+      delete this.tasks[id];
+    });
   }
 }

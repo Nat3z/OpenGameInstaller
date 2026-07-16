@@ -80,7 +80,7 @@ type GenericRequestName = Exclude<SDKRequestName, 'forward'>;
 
 export type ConnectionError = NetworkError | ValidationError;
 
-/** Effect-based client SDK connection. */
+/** Client SDK connection. */
 export class Connection {
   private readonly connectedAddonInfo = new Map<string, ConnectedAddonInfo>();
 
@@ -94,43 +94,45 @@ export class Connection {
   ) {}
 
   /** Creates a connected SDK client and installs its message stream consumers. */
-  public static make(
-    options: ConnectionOptions
-  ): Effect.Effect<Connection, ConnectionError> {
-    return Effect.gen(function* () {
-      const WebSocketImplementation =
-        options.webSocket ??
-        (globalThis as { WebSocket?: WebSocketConstructor }).WebSocket;
-      if (!WebSocketImplementation) {
-        return yield* Effect.fail(
-          new NetworkError({ message: 'No WebSocket implementation available' })
-        );
-      }
+  public static make(options: ConnectionOptions): Promise<Connection> {
+    return Effect.runPromise(
+      Effect.gen(function* () {
+        const WebSocketImplementation =
+          options.webSocket ??
+          (globalThis as { WebSocket?: WebSocketConstructor }).WebSocket;
+        if (!WebSocketImplementation) {
+          return yield* Effect.fail(
+            new NetworkError({
+              message: 'No WebSocket implementation available',
+            })
+          );
+        }
 
-      const url = yield* Connection.getSDKUrl(options.url);
-      const socket = yield* Effect.try({
-        try: () => new WebSocketImplementation(url),
-        catch: (cause) =>
-          new NetworkError({
-            message: `Unable to create WebSocket: ${String(cause)}`,
-            url,
-          }),
-      });
-      const eventPubSub = yield* PubSub.unbounded<ConnectionEvent>();
-      const transport = yield* EventResponseSocket.make<
-        AddonServerToClientSDKIncomingMessage,
-        AddonClientSDKToServerIncomingMessage
-      >(socket, {
-        onInvalidMessage: () =>
-          Effect.sync(() => {
-            console.error('Failed to parse websocket message');
-            socket.close(1008, 'Invalid JSON message');
-          }),
-      });
-      const connection = new Connection(socket, transport, eventPubSub);
-      yield* connection.connect();
-      return connection;
-    });
+        const url = yield* Connection.getSDKUrl(options.url);
+        const socket = yield* Effect.try({
+          try: () => new WebSocketImplementation(url),
+          catch: (cause) =>
+            new NetworkError({
+              message: `Unable to create WebSocket: ${String(cause)}`,
+              url,
+            }),
+        });
+        const eventPubSub = yield* PubSub.unbounded<ConnectionEvent>();
+        const transport = yield* EventResponseSocket.make<
+          AddonServerToClientSDKIncomingMessage,
+          AddonClientSDKToServerIncomingMessage
+        >(socket, {
+          onInvalidMessage: () =>
+            Effect.sync(() => {
+              console.error('Failed to parse websocket message');
+              socket.close(1008, 'Invalid JSON message');
+            }),
+        });
+        const connection = new Connection(socket, transport, eventPubSub);
+        yield* connection.connect();
+        return connection;
+      })
+    );
   }
 
   /**
@@ -144,7 +146,7 @@ export class Connection {
     return createAddonProxy(
       addonId,
       (targetAddonId, event, ...args) =>
-        Effect.runPromise(this.sendToAddon(targetAddonId, event, ...args)),
+        this.sendToAddon(targetAddonId, event, ...args),
       this.createDeferToAddon(deferredOptions),
       (id) => this.connectedAddonInfo.get(id)
     );
@@ -154,122 +156,41 @@ export class Connection {
     addonId: string,
     event: Event,
     ...args: AddonServerToClientEventArgs[Event]
-  ): Effect.Effect<AddonForwardResponseMessage<Event>, ConnectionError> {
-    return this.transport
-      .send(
-        {
-          event: 'forward',
-          args: { addonId, event, args },
-        } as AddonClientSDKToServerWebsocketMessage<'forward', Event>,
-        { expectResponse: true, responseEvent: 'forward-response' }
-      )
-      .pipe(
-        Effect.map((response) => response as AddonForwardResponseMessage<Event>)
-      );
+  ): Promise<AddonForwardResponseMessage<Event>> {
+    return Effect.runPromise(this.sendToAddonEffect(addonId, event, ...args));
   }
 
   public request<Name extends GenericRequestName>(
     name: Name,
     args: SDKRequest<Name>
-  ): Effect.Effect<SDKResponseMessage<Name>, ConnectionError> {
-    return Effect.gen(this, function* () {
-      const response = (yield* this.transport.send(
-        {
-          event: name,
-          args,
-        } as AddonClientSDKToServerIncomingMessage,
-        { expectResponse: true, responseEvent: 'response' }
-      )) as SDKResponseMessage<Name>;
-
-      if (name === 'query-connected-addons' && !response.statusError) {
-        const addons = (
-          response as SDKResponseMessage<'query-connected-addons'>
-        ).args.addons;
-        for (const addon of addons) {
-          this.connectedAddonInfo.set(addon.id, addon);
-        }
-      }
-      return response;
-    });
+  ): Promise<SDKResponseMessage<Name>> {
+    return Effect.runPromise(this.requestEffect(name, args));
   }
 
   public deferToAddon<Event extends AddonServerToClientEventName>(
     addonId: string,
     event: Event,
     ...args: AddonServerToClientEventArgs[Event]
-  ): Effect.Effect<string, ConnectionError> {
-    return Effect.gen(this, function* () {
-      const response = yield* this.request('defer-forward', {
-        addonId,
-        event,
-        args,
-      });
-      if (response.statusError) {
-        return yield* Effect.fail(
-          new NetworkError({ message: response.statusError })
-        );
-      }
-      return response.args.taskID;
-    });
+  ): Promise<string> {
+    return Effect.runPromise(this.deferToAddonEffect(addonId, event, ...args));
   }
 
   public getDeferredTask<T = unknown>(
     taskID: string
-  ): Effect.Effect<DeferredTaskSnapshot<T> | undefined, ConnectionError> {
-    return Effect.gen(this, function* () {
-      const response = yield* this.request('get-deferred-task', { taskID });
-      if (response.statusError) {
-        return yield* Effect.fail(
-          new NetworkError({ message: response.statusError })
-        );
-      }
-      return response.args.task as DeferredTaskSnapshot<T> | undefined;
-    });
+  ): Promise<DeferredTaskSnapshot<T> | undefined> {
+    return Effect.runPromise(this.getDeferredTaskEffect<T>(taskID));
   }
 
-  public getDeferredTasks(): Effect.Effect<
-    DeferredTaskSnapshot[],
-    ConnectionError
-  > {
-    return Effect.gen(this, function* () {
-      const response = yield* this.request('get-deferred-tasks', {});
-      if (response.statusError) {
-        return yield* Effect.fail(
-          new NetworkError({ message: response.statusError })
-        );
-      }
-      return response.args.tasks as DeferredTaskSnapshot[];
-    });
+  public getDeferredTasks(): Promise<DeferredTaskSnapshot[]> {
+    return Effect.runPromise(this.getDeferredTasksEffect());
   }
 
-  /** Polls a deferred task without timers or Promise constructors. */
+  /** Polls a deferred task until it resolves. */
   public waitForDeferredTask<T = unknown>(
     taskID: string,
     options: DeferredTaskOptions<T> = {}
-  ): Effect.Effect<T | undefined, ConnectionError> {
-    const interval = options.interval ?? 50;
-    return Effect.gen(this, function* () {
-      while (true) {
-        const task = yield* this.getDeferredTask<T>(taskID);
-        if (!task) {
-          const message = 'Task not found';
-          if (options.onFailed) yield* asEffect(options.onFailed(message));
-          return yield* Effect.fail(new NetworkError({ message }));
-        }
-
-        if (options.onProgress) {
-          yield* asEffect(options.onProgress(task.progress, task));
-        }
-        if (options.onLogs) yield* asEffect(options.onLogs(task.logs, task));
-
-        if (task.failed) {
-          if (options.onFailed) yield* asEffect(options.onFailed(task.failed));
-          return yield* Effect.fail(new NetworkError({ message: task.failed }));
-        }
-        if (task.resolved) return task.data;
-        yield* Effect.sleep(interval);
-      }
-    });
+  ): Promise<T | undefined> {
+    return Effect.runPromise(this.waitForDeferredTaskEffect(taskID, options));
   }
 
   public deferToAddonAndWait<
@@ -280,11 +201,13 @@ export class Connection {
     event: Event,
     args: AddonServerToClientEventArgs[Event],
     options: DeferredTaskOptions<T> = {}
-  ): Effect.Effect<T | undefined, ConnectionError> {
-    return Effect.gen(this, function* () {
-      const taskID = yield* this.deferToAddon(addonId, event, ...args);
-      return yield* this.waitForDeferredTask<T>(taskID, options);
-    });
+  ): Promise<T | undefined> {
+    return Effect.runPromise(
+      Effect.gen(this, function* () {
+        const taskID = yield* this.deferToAddonEffect(addonId, event, ...args);
+        return yield* this.waitForDeferredTaskEffect<T>(taskID, options);
+      })
+    );
   }
 
   /** Stream of one SDK event with its event-specific argument type. */
@@ -311,15 +234,140 @@ export class Connection {
     );
   }
 
-  public close(): Effect.Effect<void, NetworkError> {
+  public close(): Promise<void> {
+    return Effect.runPromise(
+      Effect.gen(this, function* () {
+        yield* PubSub.shutdown(this.eventPubSub);
+        yield* this.transport.shutdown('Connection closed');
+      })
+    );
+  }
+
+  public dispose(): Promise<void> {
+    return this.close();
+  }
+
+  private sendToAddonEffect<Event extends AddonServerToClientEventName>(
+    addonId: string,
+    event: Event,
+    ...args: AddonServerToClientEventArgs[Event]
+  ): Effect.Effect<AddonForwardResponseMessage<Event>, ConnectionError> {
+    return this.transport
+      .send(
+        {
+          event: 'forward',
+          args: { addonId, event, args },
+        } as AddonClientSDKToServerWebsocketMessage<'forward', Event>,
+        { expectResponse: true, responseEvent: 'forward-response' }
+      )
+      .pipe(
+        Effect.map((response) => response as AddonForwardResponseMessage<Event>)
+      );
+  }
+
+  private requestEffect<Name extends GenericRequestName>(
+    name: Name,
+    args: SDKRequest<Name>
+  ): Effect.Effect<SDKResponseMessage<Name>, ConnectionError> {
     return Effect.gen(this, function* () {
-      yield* PubSub.shutdown(this.eventPubSub);
-      yield* this.transport.shutdown('Connection closed');
+      const response = (yield* this.transport.send(
+        {
+          event: name,
+          args,
+        } as AddonClientSDKToServerIncomingMessage,
+        { expectResponse: true, responseEvent: 'response' }
+      )) as SDKResponseMessage<Name>;
+
+      if (name === 'query-connected-addons' && !response.statusError) {
+        const addons = (
+          response as SDKResponseMessage<'query-connected-addons'>
+        ).args.addons;
+        for (const addon of addons) {
+          this.connectedAddonInfo.set(addon.id, addon);
+        }
+      }
+      return response;
     });
   }
 
-  public dispose(): Effect.Effect<void, NetworkError> {
-    return this.close();
+  private deferToAddonEffect<Event extends AddonServerToClientEventName>(
+    addonId: string,
+    event: Event,
+    ...args: AddonServerToClientEventArgs[Event]
+  ): Effect.Effect<string, ConnectionError> {
+    return Effect.gen(this, function* () {
+      const response = yield* this.requestEffect('defer-forward', {
+        addonId,
+        event,
+        args,
+      });
+      if (response.statusError) {
+        return yield* Effect.fail(
+          new NetworkError({ message: response.statusError })
+        );
+      }
+      return response.args.taskID;
+    });
+  }
+
+  private getDeferredTaskEffect<T = unknown>(
+    taskID: string
+  ): Effect.Effect<DeferredTaskSnapshot<T> | undefined, ConnectionError> {
+    return Effect.gen(this, function* () {
+      const response = yield* this.requestEffect('get-deferred-task', {
+        taskID,
+      });
+      if (response.statusError) {
+        return yield* Effect.fail(
+          new NetworkError({ message: response.statusError })
+        );
+      }
+      return response.args.task as DeferredTaskSnapshot<T> | undefined;
+    });
+  }
+
+  private getDeferredTasksEffect(): Effect.Effect<
+    DeferredTaskSnapshot[],
+    ConnectionError
+  > {
+    return Effect.gen(this, function* () {
+      const response = yield* this.requestEffect('get-deferred-tasks', {});
+      if (response.statusError) {
+        return yield* Effect.fail(
+          new NetworkError({ message: response.statusError })
+        );
+      }
+      return response.args.tasks as DeferredTaskSnapshot[];
+    });
+  }
+
+  private waitForDeferredTaskEffect<T = unknown>(
+    taskID: string,
+    options: DeferredTaskOptions<T> = {}
+  ): Effect.Effect<T | undefined, ConnectionError> {
+    const interval = options.interval ?? 50;
+    return Effect.gen(this, function* () {
+      while (true) {
+        const task = yield* this.getDeferredTaskEffect<T>(taskID);
+        if (!task) {
+          const message = 'Task not found';
+          if (options.onFailed) yield* asEffect(options.onFailed(message));
+          return yield* Effect.fail(new NetworkError({ message }));
+        }
+
+        if (options.onProgress) {
+          yield* asEffect(options.onProgress(task.progress, task));
+        }
+        if (options.onLogs) yield* asEffect(options.onLogs(task.logs, task));
+
+        if (task.failed) {
+          if (options.onFailed) yield* asEffect(options.onFailed(task.failed));
+          return yield* Effect.fail(new NetworkError({ message: task.failed }));
+        }
+        if (task.resolved) return task.data;
+        yield* Effect.sleep(interval);
+      }
+    });
   }
 
   private connect(): Effect.Effect<void, NetworkError> {
@@ -425,7 +473,7 @@ export class Connection {
     ): Promise<AddonForwardResponse<Event>['args']> =>
       Effect.runPromise(
         Effect.gen(this, function* () {
-          const taskID = yield* this.deferToAddon(
+          const taskID = yield* this.deferToAddonEffect(
             targetAddonId,
             event,
             ...args
@@ -433,7 +481,7 @@ export class Connection {
           if (deferredOptions.onTaskStarted) {
             yield* asEffect(deferredOptions.onTaskStarted(taskID));
           }
-          const result = yield* this.waitForDeferredTask<
+          const result = yield* this.waitForDeferredTaskEffect<
             AddonForwardResponse<Event>['args']
           >(
             taskID,

@@ -1,6 +1,6 @@
 <script lang="ts">
+import { Effect } from 'effect';
 import core from '@/frontend/lib/core';
-import { tryCatch } from '@/frontend/lib/core/tryCatch';
 import { updatesManager } from '@/frontend/states.svelte';
 import {
   addonServer,
@@ -39,39 +39,50 @@ async function checkForAppUpdates() {
     return;
   }
   for (const app of library) {
-    tryCatch(async () => {
-      const addons = await findAddonsSupportingStorefront(
-        app.storefront,
-        'check-for-updates'
-      );
-      if (addons.length === 0) return undefined;
-      if (addons.length > 1) {
-        throw new Error('Multiple clients found to serve this storefront');
-      }
-      const update = (await addonServer.addon(addons[0].id).checkForUpdates({
-        appID: app.appID,
-        storefront: app.storefront,
-        currentVersion: app.version,
-      })) as { available: boolean; version: string };
-      if (update.available) {
-        return { available: true, version: update.version };
-      }
-      return undefined;
-    }).then((result) => {
+    Effect.runPromise(
+      Effect.either(
+        Effect.tryPromise({
+          try: async () => {
+            const addons = await findAddonsSupportingStorefront(
+              app.storefront,
+              'check-for-updates'
+            );
+            if (addons.length === 0) return undefined;
+            if (addons.length > 1) {
+              throw new Error(
+                'Multiple clients found to serve this storefront'
+              );
+            }
+            const update = (await addonServer
+              .addon(addons[0].id)
+              .checkForUpdates({
+                appID: app.appID,
+                storefront: app.storefront,
+                currentVersion: app.version,
+              })) as { available: boolean; version: string };
+            if (update.available) {
+              return { available: true, version: update.version };
+            }
+            return undefined;
+          },
+          catch: (cause) => cause,
+        })
+      )
+    ).then((result) => {
       if (runId !== updateCheckRunId) return;
 
-      if (result.error !== null) {
+      if (result._tag === 'Left') {
         console.error(
           'Error checking for updates for app',
           app.name,
-          result.error
+          result.left
         );
-      } else if (result.data !== undefined) {
+      } else if (result.right !== undefined) {
         updatesManager.addAppUpdate({
           appID: app.appID,
           name: app.name,
-          updateAvailable: result.data.available,
-          updateVersion: result.data.version,
+          updateAvailable: result.right.available,
+          updateVersion: result.right.version,
         });
       }
     });

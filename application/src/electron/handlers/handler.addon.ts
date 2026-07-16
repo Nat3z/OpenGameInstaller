@@ -2,7 +2,12 @@ import { AddonConnection } from '@ogi-sdk/addon-server';
 import axios from 'axios';
 import { exec } from 'child_process';
 import { BrowserWindow, ipcMain, type IpcMainInvokeEvent } from 'electron';
-import { AddonError, formatError, formatErrorResponse } from '@ogi/errors';
+import {
+  AddonError,
+  AddonNotFound,
+  formatError,
+  formatErrorResponse,
+} from '@ogi/errors';
 import { Effect } from 'effect';
 import fs from 'fs';
 import fsAsync from 'fs/promises';
@@ -147,9 +152,9 @@ export async function restartAddonServer(): Promise<void> {
     attempts++;
   }
   if (attempts === MAX_ATTEMPTS_HEALTH_CHECK) {
-    throw new Error(
-      `Failed to start addon server: health check failed after ${attempts} attempts (${HEALTH_CHECK_TIMEOUT_MS / 1000}s)`
-    );
+    throw new AddonError({
+      message: `Failed to start addon server: health check failed after ${attempts} attempts (${HEALTH_CHECK_TIMEOUT_MS / 1000}s)`,
+    });
   }
   console.log(`Addon Server is running on http://localhost:${port}`);
   console.log(`Server is being executed by electron!`);
@@ -517,7 +522,7 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
               id: Math.random().toString(36).substring(7),
               type: 'error',
             });
-            reject(new Error(`Could not find ${addonName} in marketplace.`));
+            reject(new AddonNotFound({ addonName }));
             return;
           }
 
@@ -569,7 +574,12 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
 
         void Addon.load(addonPath).then(async (instance) => {
           if (!instance) {
-            reject(new Error(`Failed to load addon ${addonName}`));
+            reject(
+              new AddonError({
+                message: `Failed to load addon ${addonName}`,
+                addonName,
+              })
+            );
             return;
           }
           try {
@@ -580,7 +590,12 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
                 id: Math.random().toString(36).substring(7),
                 type: 'error',
               });
-              reject(new Error(`Failed to setup addon ${addonName}`));
+              reject(
+                new AddonError({
+                  message: `Failed to setup addon ${addonName}`,
+                  addonName,
+                })
+              );
               return;
             }
 

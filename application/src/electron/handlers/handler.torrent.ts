@@ -209,7 +209,7 @@ class TorrentDownload {
       } else if (this.torrentClientType === 'qbittorrent') {
         await this.runQbittorrent();
       } else {
-        throw new Error('No torrent client configured');
+        throw new TorrentError({ message: 'No torrent client configured' });
       }
     } catch (error) {
       this.fail(error as Error);
@@ -288,7 +288,10 @@ class TorrentDownload {
 
       this.startQbitProgressTracker();
     } catch (error) {
-      throw new Error(getQbitErrorMessage(error));
+      throw new TorrentError({
+        message: getQbitErrorMessage(error),
+        cause: error,
+      });
     }
   }
 
@@ -343,7 +346,12 @@ class TorrentDownload {
       this.qbitTorrentHash
     ) {
       qbitClient?.stopTorrent(this.qbitTorrentHash).catch((error) => {
-        this.fail(new Error(getQbitErrorMessage(error)));
+        this.fail(
+          new TorrentError({
+            message: getQbitErrorMessage(error),
+            cause: error,
+          })
+        );
       });
     }
 
@@ -366,7 +374,12 @@ class TorrentDownload {
       this.qbitTorrentHash
     ) {
       qbitClient?.startTorrent(this.qbitTorrentHash).catch((error) => {
-        this.fail(new Error(getQbitErrorMessage(error)));
+        this.fail(
+          new TorrentError({
+            message: getQbitErrorMessage(error),
+            cause: error,
+          })
+        );
       });
     }
 
@@ -536,9 +549,10 @@ class TorrentDownload {
             this.qbitNotFoundTicks >= TorrentDownload.QBIT_LOOKUP_TIMEOUT_TICKS
           ) {
             this.fail(
-              new Error(
-                'Timed out waiting for qBittorrent to register the torrent.'
-              )
+              new TorrentError({
+                message:
+                  'Timed out waiting for qBittorrent to register the torrent.',
+              })
             );
           }
           return;
@@ -558,7 +572,12 @@ class TorrentDownload {
         }
       } catch (error) {
         console.error('[torrent] Error getting qBittorrent data:', error);
-        this.fail(new Error(getQbitErrorMessage(error)));
+        this.fail(
+          new TorrentError({
+            message: getQbitErrorMessage(error),
+            cause: error,
+          })
+        );
       }
     }, 1000);
 

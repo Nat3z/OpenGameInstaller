@@ -1,6 +1,13 @@
 import axios, { AxiosError, type AxiosResponse } from 'axios';
 import { BrowserWindow, ipcMain } from 'electron';
-import { DownloadError, DownloadNotActive, formatError, formatErrorResponse } from '@ogi/errors';
+import {
+  DownloadError,
+  DownloadNotActive,
+  FileSystemError,
+  TooManyRequests,
+  formatError,
+  formatErrorResponse,
+} from '@ogi/errors';
 import { Context, Effect, Layer, Schedule, Stream } from 'effect';
 import * as fs from 'fs';
 import { rm as rmAsync } from 'fs/promises';
@@ -589,7 +596,7 @@ class Download {
 
     while (pendingParts().length > 0 || activeParts().length > 0) {
       if (this.status !== 'downloading') {
-        throw new Error('Download not active');
+        throw new DownloadNotActive({ downloadId: this.id });
       }
 
       // Start new parts if we have capacity. Respect OGI-Parallel-Limit as a
@@ -654,7 +661,10 @@ class Download {
     // Check for any failed parts
     const failedParts = this.parts.filter((p) => p.status === 'failed');
     if (failedParts.length > 0) {
-      throw new Error(`${failedParts.length} parts failed to download`);
+      throw new DownloadError({
+        message: `${failedParts.length} parts failed to download`,
+        downloadId: this.id,
+      });
     }
 
     console.log('[direct] All parallel parts completed');
@@ -694,7 +704,7 @@ class Download {
 
       for (let i = 0; i < retries; i++) {
         if (this.status !== 'downloading') {
-          throw new Error('Download not active');
+          throw new DownloadNotActive({ downloadId: this.id });
         }
         try {
           await this.executeParallelDownloadForPart(
@@ -712,7 +722,10 @@ class Download {
           );
 
           // If 429 error, disable chunk parallelization and retry as standard download
-          if (lastError.message === '429_TOO_MANY_REQUESTS') {
+          if (
+            lastError instanceof TooManyRequests ||
+            lastError.message === '429_TOO_MANY_REQUESTS'
+          ) {
             console.log(
               `[direct] Part ${part.index + 1}: 429 detected, disabling chunk parallelization and retrying as standard download`
             );
@@ -736,7 +749,10 @@ class Download {
       }
 
       // If we broke out due to 429, continue to standard download
-      if (lastError?.message === '429_TOO_MANY_REQUESTS') {
+      if (
+        lastError instanceof TooManyRequests ||
+        lastError?.message === '429_TOO_MANY_REQUESTS'
+      ) {
         // Reset lastError so we can try standard download
         lastError = undefined;
       } else {
@@ -748,7 +764,7 @@ class Download {
     // Standard download for this part
     for (let i = 0; i < retries; i++) {
       if (this.status !== 'downloading') {
-        throw new Error('Download not active');
+        throw new DownloadNotActive({ downloadId: this.id });
       }
       try {
         console.log(`[direct] Part ${part.index + 1}: Standard download`);
@@ -1116,7 +1132,10 @@ class Download {
 
         // Ensure path is not a directory
         if (fs.existsSync(job.path) && fs.statSync(job.path).isDirectory()) {
-          throw new Error(`Cannot write to path: ${job.path} is a directory`);
+          throw new FileSystemError({
+            message: `Cannot write to path: ${job.path} is a directory`,
+            path: job.path,
+          });
         }
 
         part.fileStream = fs.createWriteStream(job.path, {
@@ -1509,7 +1528,7 @@ class Download {
         console.log('[direct] Using parallel download');
         for (let i = 0; i < retries; i++) {
           if (this.status !== 'downloading')
-            throw new Error('Download not active');
+            throw new DownloadNotActive({ downloadId: this.id });
           try {
             await this.executeParallelDownload(job, parallelInfo.fileSize);
             console.log('[direct] Parallel download completed');
@@ -1523,7 +1542,10 @@ class Download {
             );
 
             // If 429 error, disable parallelization and retry as standard download
-            if (lastError.message === '429_TOO_MANY_REQUESTS') {
+            if (
+              lastError instanceof TooManyRequests ||
+              lastError.message === '429_TOO_MANY_REQUESTS'
+            ) {
               console.log(
                 '[direct] 429 detected, disabling parallelization and retrying as standard download'
               );
@@ -1546,7 +1568,10 @@ class Download {
         }
 
         // If we broke out due to 429, continue to standard download
-        if (lastError?.message === '429_TOO_MANY_REQUESTS') {
+        if (
+          lastError instanceof TooManyRequests ||
+          lastError?.message === '429_TOO_MANY_REQUESTS'
+        ) {
           // Reset lastError so we can try standard download
           lastError = undefined;
         } else {
@@ -1557,7 +1582,9 @@ class Download {
 
     // Standard download
     for (let i = 0; i < retries; i++) {
-      if (this.status !== 'downloading') throw new Error('Download not active');
+      if (this.status !== 'downloading') {
+        throw new DownloadNotActive({ downloadId: this.id });
+      }
       try {
         console.log('[direct] Attempting to download part', this.currentPart);
         await this._executeDownloadPart(job);
@@ -1599,7 +1626,10 @@ class Download {
 
         // Ensure path is not a directory
         if (fs.existsSync(job.path) && fs.statSync(job.path).isDirectory()) {
-          throw new Error(`Cannot write to path: ${job.path} is a directory`);
+          throw new FileSystemError({
+            message: `Cannot write to path: ${job.path} is a directory`,
+            path: job.path,
+          });
         }
 
         this.fileStream = fs.createWriteStream(job.path, {
@@ -2009,7 +2039,7 @@ class Download {
 
       // If 429 error occurred, propagate it to disable parallelization
       if (error instanceof Error && error.message === '429_TOO_MANY_REQUESTS') {
-        throw new Error('429_TOO_MANY_REQUESTS');
+        throw new TooManyRequests({});
       }
 
       throw error;

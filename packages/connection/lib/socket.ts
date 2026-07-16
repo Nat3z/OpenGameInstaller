@@ -1,12 +1,30 @@
+import { NetworkError, ValidationError } from '@ogi/errors';
+import {
+  Deferred,
+  Effect,
+  Fiber,
+  PubSub,
+  Random,
+  Schema,
+  Stream,
+} from 'effect';
+
+export const EventResponseMessageSchema = Schema.Struct({
+  event: Schema.String,
+  id: Schema.optional(Schema.String),
+  args: Schema.Unknown,
+  statusError: Schema.optional(Schema.String),
+});
+
 export type EventResponseMessage = {
-  event: string;
+  readonly event: string;
   id?: string;
-  args: unknown;
-  statusError?: string;
+  readonly args: unknown;
+  readonly statusError?: string;
 };
 
 export type WebSocketLike = {
-  readyState: number;
+  readonly readyState: number;
   send(data: string): void;
   close(code?: number, reason?: string): void;
   on?(event: 'message', listener: (rawMessage: unknown) => void): unknown;
@@ -16,7 +34,7 @@ export type WebSocketLike = {
   ): unknown;
   addEventListener?(
     event: 'message',
-    listener: (message: { data: unknown }) => void
+    listener: (message: { readonly data: unknown }) => void
   ): unknown;
   addEventListener?(
     event: 'open' | 'close' | 'error',
@@ -25,147 +43,323 @@ export type WebSocketLike = {
 };
 
 type PendingResponse<IncomingMessage extends EventResponseMessage> = {
-  responseEvent: string;
-  resolve: (value: IncomingMessage) => void;
-  reject: (reason?: unknown) => void;
+  readonly responseEvent: string;
+  readonly deferred: Deferred.Deferred<IncomingMessage, NetworkError>;
 };
 
-type SendOptions = {
-  expectResponse?: boolean;
-  responseEvent?: string;
+export type SendOptions = {
+  readonly expectResponse?: boolean;
+  readonly responseEvent?: string;
 };
 
-type MessageListener<Message extends EventResponseMessage> = (
-  message: Message
-) => void | Promise<void>;
+export type EventResponseSocketOptions = {
+  readonly responseEvent?: string;
+  readonly onInvalidMessage?: (
+    rawMessage: unknown
+  ) => Effect.Effect<void, never>;
+};
 
-export const randomMessageId = (): string =>
-  Math.random().toString(36).substring(7);
+/** Generates a correlation id through Effect's Random service. */
+export const randomMessageId = (): Effect.Effect<string> =>
+  Random.next.pipe(Effect.map((value) => value.toString(36).substring(2, 9)));
 
 const isBuffer = (value: unknown): value is Buffer => {
   const bufferConstructor = (globalThis as { Buffer?: typeof Buffer }).Buffer;
   return !!bufferConstructor?.isBuffer(value);
 };
 
-const isBlob = (value: unknown): value is { text(): Promise<string> } => {
-  return typeof value === 'object' && value !== null && 'text' in value;
-};
+const isBlob = (value: unknown): value is { text(): Promise<string> } =>
+  typeof value === 'object' &&
+  value !== null &&
+  'text' in value &&
+  typeof value.text === 'function';
 
+/**
+ * Effect-based request/response transport over a WebSocket-like value.
+ *
+ * Incoming messages are published through {@link messages}; event handlers are
+ * stream consumers, and correlated requests wait on Effect Deferred values.
+ */
 export class EventResponseSocket<
   IncomingMessage extends EventResponseMessage,
   OutgoingMessage extends EventResponseMessage,
 > {
-  private pendingResponses = new Map<
+  private readonly pendingResponses = new Map<
     string,
     PendingResponse<IncomingMessage>
   >();
-  private listeners = new Map<string, Set<MessageListener<IncomingMessage>>>();
 
-  public constructor(
+  public readonly messages: Stream.Stream<IncomingMessage>;
+
+  private constructor(
     private readonly socket: WebSocketLike,
-    private readonly options: {
-      responseEvent?: string;
-      onInvalidMessage?: (rawMessage: unknown) => void;
-    } = {}
+    private readonly messagePubSub: PubSub.PubSub<IncomingMessage>,
+    private readonly options: EventResponseSocketOptions
   ) {
-    if (this.socket.on) {
-      this.socket.on('message', (rawMessage: unknown) => {
-        void this.handleRawMessage(rawMessage);
-      });
-      return;
-    }
-
-    if (this.socket.addEventListener) {
-      this.socket.addEventListener('message', (message) => {
-        void this.handleRawMessage(message.data);
-      });
-      return;
-    }
-
-    throw new Error('Unsupported websocket implementation');
+    this.messages = Stream.fromPubSub(messagePubSub);
   }
 
-  public parseMessage(rawMessage: unknown): IncomingMessage | undefined {
-    try {
-      const normalized = this.normalizeRawMessageSync(rawMessage);
-      if (normalized === undefined) return undefined;
-      return JSON.parse(normalized) as IncomingMessage;
-    } catch {
-      return undefined;
-    }
+  /** Allocates and attaches a transport without performing work in a constructor. */
+  public static make<
+    Incoming extends EventResponseMessage,
+    Outgoing extends EventResponseMessage,
+  >(
+    socket: WebSocketLike,
+    options: EventResponseSocketOptions = {}
+  ): Effect.Effect<EventResponseSocket<Incoming, Outgoing>, NetworkError> {
+    return Effect.gen(function* () {
+      const pubsub = yield* PubSub.unbounded<Incoming>();
+      const transport = new EventResponseSocket<Incoming, Outgoing>(
+        socket,
+        pubsub,
+        options
+      );
+      yield* transport.attach();
+      return transport;
+    });
   }
 
-  public on<Event extends IncomingMessage['event']>(
-    event: Event,
-    listener: MessageListener<Extract<IncomingMessage, { event: Event }>>
-  ): () => void {
-    const listeners = this.listeners.get(event) ?? new Set();
-    listeners.add(listener as MessageListener<IncomingMessage>);
-    this.listeners.set(event, listeners);
-
-    return () => this.off(event, listener);
-  }
-
-  public off<Event extends IncomingMessage['event']>(
-    event: Event,
-    listener: MessageListener<Extract<IncomingMessage, { event: Event }>>
-  ): void {
-    const listeners = this.listeners.get(event);
-    if (!listeners) return;
-
-    listeners.delete(listener as MessageListener<IncomingMessage>);
-    if (listeners.size === 0) {
-      this.listeners.delete(event);
-    }
-  }
-
-  public resolveIncomingResponse(message: IncomingMessage): boolean {
-    if (!message.id) {
-      return false;
-    }
-
-    const pending = this.pendingResponses.get(message.id);
-    if (!pending || message.event !== pending.responseEvent) {
-      return false;
-    }
-
-    this.pendingResponses.delete(message.id);
-    if (message.statusError) {
-      pending.reject(new Error(message.statusError));
-      return true;
-    }
-
-    pending.resolve(message);
-    return true;
-  }
-
-  private async handleRawMessage(rawMessage: unknown): Promise<void> {
-    const message = await this.parseRawMessage(rawMessage);
-    if (!message) {
-      this.options.onInvalidMessage?.(rawMessage);
-      return;
-    }
-
-    if (this.resolveIncomingResponse(message)) return;
-
-    const listeners = this.listeners.get(message.event);
-    if (!listeners) return;
-
-    for (const listener of [...listeners]) {
-      await listener(message);
-    }
-  }
-
-  private async parseRawMessage(
+  /** Parses and validates one websocket frame. */
+  public parseMessage(
     rawMessage: unknown
-  ): Promise<IncomingMessage | undefined> {
-    try {
-      const normalized = await this.normalizeRawMessage(rawMessage);
-      if (normalized === undefined) return undefined;
-      return JSON.parse(normalized) as IncomingMessage;
-    } catch {
-      return undefined;
-    }
+  ): Effect.Effect<IncomingMessage, ValidationError> {
+    return Effect.gen(this, function* () {
+      const normalized = yield* this.normalizeRawMessage(rawMessage);
+      const json = yield* Effect.try({
+        try: () => JSON.parse(normalized) as unknown,
+        catch: (cause) =>
+          new ValidationError({
+            message: `Invalid websocket JSON: ${String(cause)}`,
+          }),
+      });
+      const parsed = yield* Schema.decodeUnknown(EventResponseMessageSchema)(
+        json
+      ).pipe(
+        Effect.mapError(
+          (cause) =>
+            new ValidationError({
+              message: `Invalid websocket message: ${String(cause)}`,
+            })
+        )
+      );
+      return parsed as IncomingMessage;
+    });
+  }
+
+  /** Returns a typed stream containing only one protocol event. */
+  public stream<Event extends IncomingMessage['event']>(
+    event: Event
+  ): Stream.Stream<Extract<IncomingMessage, { readonly event: Event }>> {
+    return this.messages.pipe(
+      Stream.filter(
+        (
+          message
+        ): message is Extract<IncomingMessage, { readonly event: Event }> =>
+          message.event === event
+      )
+    );
+  }
+
+  /** Forks an Effect listener for one event stream. */
+  public on<Event extends IncomingMessage['event'], E>(
+    event: Event,
+    listener: (
+      message: Extract<IncomingMessage, { readonly event: Event }>
+    ) => Effect.Effect<void, E>
+  ): Effect.Effect<Fiber.RuntimeFiber<void, E>> {
+    return this.stream(event).pipe(
+      Stream.runForEach(listener),
+      Effect.forkDaemon
+    );
+  }
+
+  /** Completes a matching request Deferred when a response arrives. */
+  public resolveIncomingResponse(
+    message: IncomingMessage
+  ): Effect.Effect<boolean> {
+    return Effect.gen(this, function* () {
+      if (!message.id) return false;
+
+      const pending = this.pendingResponses.get(message.id);
+      if (!pending || message.event !== pending.responseEvent) return false;
+
+      this.pendingResponses.delete(message.id);
+      if (message.statusError) {
+        yield* Deferred.fail(
+          pending.deferred,
+          new NetworkError({ message: message.statusError })
+        );
+      } else {
+        yield* Deferred.succeed(pending.deferred, message);
+      }
+      return true;
+    });
+  }
+
+  /** Sends a protocol message and optionally waits for its correlated response. */
+  public send(
+    message: OutgoingMessage,
+    options: SendOptions = {}
+  ): Effect.Effect<IncomingMessage, NetworkError | ValidationError> {
+    return Effect.gen(this, function* () {
+      const expectResponse = options.expectResponse ?? true;
+      if (expectResponse && !message.id) {
+        message.id = yield* randomMessageId();
+      }
+
+      if (this.socket.readyState !== 1) {
+        return yield* Effect.fail(
+          new NetworkError({
+            message: `Websocket is not open (readyState: ${this.socket.readyState})`,
+          })
+        );
+      }
+
+      const responseEvent =
+        options.responseEvent ?? this.options.responseEvent ?? 'response';
+      const deferred = expectResponse
+        ? yield* Deferred.make<IncomingMessage, NetworkError>()
+        : undefined;
+
+      if (deferred && message.id) {
+        this.pendingResponses.set(message.id, { responseEvent, deferred });
+      }
+
+      const serialized = yield* Effect.try({
+        try: () => JSON.stringify(message),
+        catch: (cause) =>
+          new ValidationError({
+            message: `Unable to serialize websocket message: ${String(cause)}`,
+          }),
+      });
+
+      yield* Effect.try({
+        try: () => this.socket.send(serialized),
+        catch: (cause) =>
+          new NetworkError({
+            message: `Unable to send websocket message: ${String(cause)}`,
+          }),
+      }).pipe(
+        Effect.tapError(() =>
+          Effect.sync(() => {
+            if (message.id) this.pendingResponses.delete(message.id);
+          })
+        )
+      );
+
+      if (!deferred || !message.id) {
+        return {
+          event: responseEvent,
+          args: 'OK',
+        } as IncomingMessage;
+      }
+
+      const messageId = message.id;
+      return yield* Deferred.await(deferred).pipe(
+        Effect.ensuring(
+          Effect.sync(() => {
+            this.pendingResponses.delete(messageId);
+          })
+        )
+      );
+    });
+  }
+
+  /** Fails every request currently waiting for a response. */
+  public rejectPendingResponses(reason: string): Effect.Effect<void> {
+    return Effect.gen(this, function* () {
+      const error = new NetworkError({ message: reason });
+      for (const pending of this.pendingResponses.values()) {
+        yield* Deferred.fail(pending.deferred, error);
+      }
+      this.pendingResponses.clear();
+    });
+  }
+
+  /** Shuts down streams, pending requests, and the underlying socket. */
+  public shutdown(
+    reason = 'Connection closed'
+  ): Effect.Effect<void, NetworkError> {
+    return Effect.gen(this, function* () {
+      yield* this.rejectPendingResponses(reason);
+      yield* PubSub.shutdown(this.messagePubSub);
+      yield* Effect.try({
+        try: () => this.socket.close(),
+        catch: (cause) =>
+          new NetworkError({
+            message: `Unable to close websocket: ${String(cause)}`,
+          }),
+      });
+    });
+  }
+
+  private attach(): Effect.Effect<void, NetworkError> {
+    return Effect.try({
+      try: () => {
+        const runMessage = (rawMessage: unknown): void => {
+          Effect.runFork(this.handleRawMessage(rawMessage));
+        };
+
+        if (this.socket.on) {
+          this.socket.on('message', runMessage);
+          return;
+        }
+        if (this.socket.addEventListener) {
+          this.socket.addEventListener('message', (message) =>
+            runMessage(message.data)
+          );
+          return;
+        }
+        throw new TypeError('Unsupported websocket implementation');
+      },
+      catch: (cause) =>
+        new NetworkError({
+          message: `Unable to attach websocket listener: ${String(cause)}`,
+        }),
+    });
+  }
+
+  private handleRawMessage(rawMessage: unknown): Effect.Effect<void> {
+    return this.parseMessage(rawMessage).pipe(
+      Effect.matchEffect({
+        onFailure: () =>
+          this.options.onInvalidMessage?.(rawMessage) ?? Effect.void,
+        onSuccess: (message) =>
+          Effect.gen(this, function* () {
+            const resolved = yield* this.resolveIncomingResponse(message);
+            if (!resolved) yield* PubSub.publish(this.messagePubSub, message);
+          }),
+      })
+    );
+  }
+
+  private normalizeRawMessage(
+    rawMessage: unknown
+  ): Effect.Effect<string, ValidationError> {
+    return Effect.gen(this, function* () {
+      const syncNormalized = yield* Effect.try({
+        try: () => this.normalizeRawMessageSync(rawMessage),
+        catch: (cause) =>
+          new ValidationError({
+            message: `Unable to decode websocket frame: ${String(cause)}`,
+          }),
+      });
+      if (syncNormalized !== undefined) return syncNormalized;
+
+      if (isBlob(rawMessage)) {
+        return yield* Effect.tryPromise({
+          try: () => rawMessage.text(),
+          catch: (cause) =>
+            new ValidationError({
+              message: `Unable to read websocket Blob: ${String(cause)}`,
+            }),
+        });
+      }
+
+      return yield* Effect.fail(
+        new ValidationError({ message: 'Unsupported websocket frame type' })
+      );
+    });
   }
 
   private normalizeRawMessageSync(rawMessage: unknown): string | undefined {
@@ -175,106 +369,22 @@ export class EventResponseSocket<
       return new TextDecoder().decode(rawMessage);
     }
     if (ArrayBuffer.isView(rawMessage)) {
-      const view = rawMessage;
       return new TextDecoder().decode(
-        new Uint8Array(view.buffer, view.byteOffset, view.byteLength)
+        new Uint8Array(
+          rawMessage.buffer,
+          rawMessage.byteOffset,
+          rawMessage.byteLength
+        )
       );
     }
     if (Array.isArray(rawMessage)) {
-      const pieces = rawMessage.map((message) =>
-        this.normalizeRawMessageSync(message)
+      const pieces = rawMessage.map((piece) =>
+        this.normalizeRawMessageSync(piece)
       );
-      if (pieces.every((piece) => piece === undefined)) {
-        return undefined;
-      }
-      const hasBinaryPiece = rawMessage.some(
-        (message) =>
-          isBuffer(message) ||
-          message instanceof ArrayBuffer ||
-          ArrayBuffer.isView(message)
-      );
-      if (hasBinaryPiece) {
-        const buffers = rawMessage.map((message) => {
-          if (isBuffer(message)) return message;
-          if (message instanceof ArrayBuffer) return Buffer.from(message);
-          if (ArrayBuffer.isView(message)) {
-            return Buffer.from(
-              message.buffer,
-              message.byteOffset,
-              message.byteLength
-            );
-          }
-          if (typeof message === 'string') return Buffer.from(message);
-          const normalized = this.normalizeRawMessageSync(message);
-          return normalized === undefined
-            ? Buffer.alloc(0)
-            : Buffer.from(normalized);
-        });
-        return Buffer.concat(buffers).toString();
-      }
-      return pieces.join('');
+      return pieces.every((piece) => piece === undefined)
+        ? undefined
+        : pieces.map((piece) => piece ?? '').join('');
     }
     return undefined;
-  }
-
-  private async normalizeRawMessage(
-    rawMessage: unknown
-  ): Promise<string | undefined> {
-    const syncNormalized = this.normalizeRawMessageSync(rawMessage);
-    if (syncNormalized !== undefined) return syncNormalized;
-    if (isBlob(rawMessage)) return rawMessage.text();
-    return undefined;
-  }
-
-  public send(
-    message: OutgoingMessage,
-    options: SendOptions = {}
-  ): Promise<IncomingMessage> {
-    const expectResponse = options.expectResponse ?? true;
-
-    if (expectResponse) {
-      message.id = message.id ?? randomMessageId();
-    }
-
-    return new Promise((resolve, reject) => {
-      // OPEN state is 1
-      if (this.socket.readyState !== 1) {
-        reject(
-          new Error(
-            `Websocket is not open (readyState: ${this.socket.readyState})`
-          )
-        );
-        return;
-      }
-
-      const responseEvent =
-        options.responseEvent ?? this.options.responseEvent ?? 'response';
-
-      if (expectResponse && message.id) {
-        this.pendingResponses.set(message.id, {
-          responseEvent,
-          resolve,
-          reject,
-        });
-      }
-
-      this.socket.send(JSON.stringify(message));
-
-      if (expectResponse && message.id) {
-        return;
-      }
-
-      resolve({
-        event: responseEvent,
-        args: 'OK',
-      } as IncomingMessage);
-    });
-  }
-
-  public rejectPendingResponses(reason: string): void {
-    for (const pending of this.pendingResponses.values()) {
-      pending.reject(new Error(reason));
-    }
-    this.pendingResponses.clear();
   }
 }

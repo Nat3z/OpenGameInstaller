@@ -8,7 +8,7 @@ reviews:
   review_status: true
   review_details: false
   auto_review:
-    enabled: false
+    enabled: true
     drafts: false
 chat:
   auto_reply: true

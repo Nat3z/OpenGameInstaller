@@ -98,10 +98,15 @@ function updateConfig() {
   const addonId = selectedAddon.id;
   addonServer
     .addon(addonId)
-    .configUpdate(config as any)
-    .then((data: any) => {
-      if (data?.success !== true) {
-        for (const key in data?.errors ?? {}) {
+    // The wire type models config templates, but this endpoint receives values.
+    .configUpdate(config as unknown as ConfigurationFile)
+    .then((data: unknown) => {
+      const configUpdateResult = data as
+        | { success?: boolean; errors?: Record<string, string> }
+        | undefined;
+      if (configUpdateResult?.success !== true) {
+        const errors = configUpdateResult?.errors ?? {};
+        for (const key in errors) {
           const element = document.getElementById(key);
           if (!element) {
             console.error('element not found for key', key);
@@ -126,7 +131,7 @@ function updateConfig() {
           );
           if (errorMessageElement) {
             errorMessageElement.innerHTML = `<img src="./error.svg" alt="error" class="w-6 h-6" />`;
-            errorMessageElement.setAttribute('data-context', data.errors[key]);
+            errorMessageElement.setAttribute('data-context', errors[key]);
           }
         }
         notifications.update((update) => [

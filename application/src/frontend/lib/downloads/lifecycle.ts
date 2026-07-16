@@ -38,9 +38,10 @@ export function startDownloadEffect(
   return Effect.gen(function* () {
     let downloadHandler: string = result.downloadType;
     if (downloadHandler === 'torrent' || downloadHandler === 'magnet') {
-      const generalOptions = getConfigClientOption('general') as any;
-      const torrentClient =
-        (generalOptions?.torrentClient as string | undefined) ?? 'disable';
+      const generalOptions = getConfigClientOption<{
+        torrentClient?: string;
+      }>('general');
+      const torrentClient = generalOptions?.torrentClient ?? 'disable';
       if (torrentClient === 'disable') {
         return yield* Effect.fail(
           new DownloadError({

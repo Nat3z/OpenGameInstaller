@@ -4,9 +4,9 @@
  */
 
 import type { LibraryInfo } from '@ogi-sdk/connect';
-import { LibraryError, formatError, formatErrorResponse } from '@ogi/errors';
+import { LibraryError, ipcBoundary } from '@ogi/errors';
 import { spawn, spawnSync } from 'child_process';
-import { ipcMain, type IpcMainInvokeEvent } from 'electron';
+import { ipcMain } from 'electron';
 import { Effect } from 'effect';
 import * as fs from 'fs';
 import { parse as shellQuoteParse } from 'shell-quote';
@@ -72,16 +72,6 @@ export type ExecuteWrapperResult = {
   signal?: string;
   error?: string;
 };
-
-const ipcBoundary = <Args extends readonly unknown[], A>(
-  operation: (event: IpcMainInvokeEvent, ...args: Args) => Promise<A> | A
-) => (event: IpcMainInvokeEvent, ...args: Args) =>
-  Effect.runPromise(
-    Effect.tryPromise({
-      try: () => Promise.resolve(operation(event, ...args)),
-      catch: (cause) => new LibraryError({ message: formatError(cause) }),
-    }).pipe(Effect.catchAll((error) => Effect.succeed(formatErrorResponse(error))))
-  );
 
 export async function launchGameFromLibrary(
   appid: number | string,
@@ -587,18 +577,15 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
         if (data.redistributables && data.redistributables.length > 0) {
           let redistributableFailed = false;
           for (const redistributable of data.redistributables) {
-            const result = Effect.runSync(Effect.either(Effect.try({
-              try: () => {
-                if (!fs.existsSync(redistributable.path)) {
-                  throw new LibraryError({ message: `Redistributable path does not exist: ${redistributable.path}` });
-                }
-                spawnSync(redistributable.path, [], { stdio: 'inherit', shell: false });
-                sendNotification({
-                  message: `Installed ${redistributable.name} for ${data.name}`,
-                  id: generateNotificationId(), type: 'success',
-                });
-              },
-              catch: (cause) => new LibraryError({ message: formatError(cause), gameId: data.appID }),
+            const result = Effect.runSync(Effect.either(Effect.gen(function* () {
+              if (!fs.existsSync(redistributable.path)) {
+                return yield* Effect.fail(new LibraryError({ message: `Redistributable path does not exist: ${redistributable.path}`, gameId: data.appID }));
+              }
+              spawnSync(redistributable.path, [], { stdio: 'inherit', shell: false });
+              sendNotification({
+                message: `Installed ${redistributable.name} for ${data.name}`,
+                id: generateNotificationId(), type: 'success',
+              });
             })));
             if (result._tag === 'Left') {
               redistributableFailed = true;

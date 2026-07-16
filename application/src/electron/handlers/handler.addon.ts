@@ -1,12 +1,11 @@
 import { AddonConnection } from '@ogi-sdk/addon-server';
 import axios from 'axios';
 import { exec } from 'child_process';
-import { BrowserWindow, ipcMain, type IpcMainInvokeEvent } from 'electron';
+import { BrowserWindow, ipcMain } from 'electron';
 import {
   AddonError,
   AddonNotFound,
-  formatError,
-  runEffectBoundary,
+  ipcBoundary,
 } from '@ogi/errors';
 import { Effect } from 'effect';
 import fs from 'fs';
@@ -27,16 +26,6 @@ import {
   startAddonServer,
   stopAddonServer,
 } from '@/electron/server/addon-server.js';
-
-/** @deprecated Temporary Effect shim - internal functions still use async/await.
- *  Full conversion pending. Do not use this pattern for new code. */
-const ipcBoundary = <Args extends readonly unknown[], A>(
-  operation: (event: IpcMainInvokeEvent, ...args: Args) => Promise<A> | A
-) => (event: IpcMainInvokeEvent, ...args: Args) =>
-  runEffectBoundary(Effect.tryPromise({
-    try: () => Promise.resolve(operation(event, ...args)),
-    catch: (cause) => new AddonError({ message: formatError(cause) }),
-  }));
 
 function isGitRepository(addonPath: string): boolean {
   if (!fs.existsSync(addonPath)) {

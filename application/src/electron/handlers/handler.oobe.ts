@@ -146,7 +146,7 @@ export default function OOBEHandler(): void {
     runEffectBoundary(
       command(`${STEAMTINKERLAUNCH_PATH} set SGDBAPIKEY global ${key}`).pipe(
         Effect.as(true),
-        Effect.catchAll((error) => Effect.sync(() => { log(`Error: ${error.message}`); return false; }))
+        Effect.catchAll((error) => Effect.sync(() => { log(`Error: ${formatError(error)}`); return false; }))
       )
     )
   );

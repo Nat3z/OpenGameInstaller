@@ -1,6 +1,6 @@
 import { Data } from 'effect';
 
-export { runEffectBoundary, runSyncBoundary } from './boundary.js';
+export { runEffectBoundary, runSyncBoundary, ipcBoundary } from './boundary.js';
 
 // =============================================================================
 // Download Errors

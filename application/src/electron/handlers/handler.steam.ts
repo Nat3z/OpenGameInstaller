@@ -4,7 +4,9 @@
  */
 
 import { exec, spawn } from 'child_process';
-import { ipcMain } from 'electron';
+import { ipcMain, type IpcMainInvokeEvent } from 'electron';
+import { FileSystemError, PlatformError, formatError, formatErrorResponse } from '@ogi/errors';
+import { Effect } from 'effect';
 import * as fs from 'fs';
 import { join } from 'path';
 import {
@@ -26,6 +28,40 @@ import {
   getVersionedGameName,
 } from '@/electron/handlers/helpers.app/steam.js';
 import { sendNotification } from '@/electron/main.js';
+
+const ipcBoundary = <Args extends readonly unknown[], A>(
+  operation: (event: IpcMainInvokeEvent, ...args: Args) => Promise<A> | A
+) => (event: IpcMainInvokeEvent, ...args: Args) =>
+  Effect.runPromise(Effect.tryPromise({
+    try: () => Promise.resolve(operation(event, ...args)),
+    catch: (cause) => new PlatformError({ message: formatError(cause), platform: process.platform }),
+  }).pipe(Effect.catchAll((error) => Effect.succeed(formatErrorResponse(error)))));
+
+const copyRecursiveSync = (source: string, destination: string): void => {
+  const stats = fs.lstatSync(source);
+  if (stats.isSymbolicLink()) {
+    fs.symlinkSync(fs.readlinkSync(source), destination);
+  } else if (stats.isDirectory()) {
+    fs.mkdirSync(destination, { recursive: true });
+    for (const child of fs.readdirSync(source)) {
+      copyRecursiveSync(join(source, child), join(destination, child));
+    }
+  } else {
+    fs.copyFileSync(source, destination);
+  }
+};
+
+const migrateCompatData = (source: string, destination: string): Effect.Effect<void, FileSystemError> =>
+  Effect.try({
+    try: () => fs.renameSync(source, destination),
+    catch: (cause) => new FileSystemError({ message: formatError(cause), path: source, cause }),
+  }).pipe(Effect.orElse(() => Effect.try({
+    try: () => {
+      copyRecursiveSync(source, destination);
+      fs.rmSync(source, { recursive: true, force: true });
+    },
+    catch: (cause) => new FileSystemError({ message: formatError(cause), path: source, cause }),
+  })));
 
 /**
  * Add a UMU game to Steam using OGI wrapper launches.
@@ -129,31 +165,26 @@ Categories=Game;
 Icon=steam_icon_${params.appID}
 `;
 
-  try {
-    const desktopDir = join(homeDir, '.local', 'share', 'applications');
-    if (!fs.existsSync(desktopDir)) {
+  const result = Effect.runSync(Effect.either(Effect.try({
+    try: () => {
+      const desktopDir = join(homeDir, '.local', 'share', 'applications');
       fs.mkdirSync(desktopDir, { recursive: true });
-    }
-
-    const desktopFile = join(desktopDir, `ogi-${params.appID}.desktop`);
-    fs.writeFileSync(desktopFile, desktopEntry);
-    fs.chmodSync(desktopFile, '755');
-
-    return { success: true };
-  } catch (error) {
-    console.error('[steam] Failed to create desktop entry:', error);
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : String(error),
-    };
-  }
+      const desktopFile = join(desktopDir, `ogi-${params.appID}.desktop`);
+      fs.writeFileSync(desktopFile, desktopEntry);
+      fs.chmodSync(desktopFile, '755');
+    },
+    catch: (cause) => new FileSystemError({ message: formatError(cause), cause }),
+  })));
+  return result._tag === 'Right'
+    ? { success: true }
+    : { success: false, error: result.left.message };
 }
 
 export function registerSteamHandlers() {
   // Get Steam app ID (legacy - for backward compatibility)
   ipcMain.handle(
     'app:get-steam-app-id',
-    async (
+    ipcBoundary(async (
       _,
       appID: number
     ): Promise<{ success: boolean; appId?: number; error?: string }> => {
@@ -171,11 +202,11 @@ export function registerSteamHandlers() {
         appInfo.version,
         'app:get-steam-app-id'
       );
-    }
+    })
   );
 
   // Kill Steam process
-  ipcMain.handle('app:kill-steam', async () => {
+  ipcMain.handle('app:kill-steam', ipcBoundary(async () => {
     if (!isLinux()) {
       return { success: false, error: 'Only available on Linux' };
     }
@@ -203,10 +234,10 @@ export function registerSteamHandlers() {
         }
       });
     });
-  });
+  }));
 
   // Start Steam
-  ipcMain.handle('app:start-steam', async () => {
+  ipcMain.handle('app:start-steam', ipcBoundary(async () => {
     if (!isLinux()) {
       return { success: false, error: 'Only available on Linux' };
     }
@@ -251,10 +282,10 @@ export function registerSteamHandlers() {
         }
       });
     });
-  });
+  }));
 
   // Launch Steam app (legacy - for backward compatibility)
-  ipcMain.handle('app:launch-steam-app', async (_, appID: number) => {
+  ipcMain.handle('app:launch-steam-app', ipcBoundary(async (_, appID: number) => {
     if (!isLinux()) {
       return { success: false, error: 'Only available on Linux' };
     }
@@ -316,10 +347,10 @@ export function registerSteamHandlers() {
     );
 
     return launchViaSteam(appId);
-  });
+  }));
 
   // Check if prefix exists (legacy - for backward compatibility)
-  ipcMain.handle('app:check-prefix-exists', async (_, appID: number) => {
+  ipcMain.handle('app:check-prefix-exists', ipcBoundary(async (_, appID: number) => {
     if (!isLinux()) {
       return { exists: false, error: 'Only available on Linux' };
     }
@@ -361,12 +392,12 @@ export function registerSteamHandlers() {
     );
 
     return { exists, prefixPath };
-  });
+  }));
 
   // Add to Steam (updated to support UMU)
   ipcMain.handle(
     'app:add-to-steam',
-    async (_, appID: number, oldSteamAppId: number | undefined) => {
+    ipcBoundary(async (_, appID: number, oldSteamAppId: number | undefined) => {
       if (!isLinux()) {
         return { success: false, error: 'Only available on Linux' };
       }
@@ -463,102 +494,19 @@ export function registerSteamHandlers() {
           const oldAppIdDir = `${compatDataDir}/${oldSteamAppId}`;
           const newAppIdDir = `${compatDataDir}/${newSteamAppId}`;
 
-          try {
-            // Check if old app ID directory exists
-            if (fs.existsSync(oldAppIdDir)) {
-              // Check if new app ID directory already exists
-              if (fs.existsSync(newAppIdDir)) {
-                console.warn(
-                  `[add-to-steam] New compatdata directory already exists at ${newAppIdDir}, skipping migration`
-                );
-                // New directory already exists, safe to update launchArguments
-                shouldUpdateLaunchArguments = true;
-              } else {
-                // Try to rename first (fastest, works on same filesystem)
-                try {
-                  fs.renameSync(oldAppIdDir, newAppIdDir);
-                  console.log(
-                    `[add-to-steam] Successfully migrated compatdata directory from ${oldAppIdDir} to ${newAppIdDir}`
-                  );
-                  sendNotification({
-                    message: `Successfully migrated prefix to new version.`,
-                    id: generateNotificationId(),
-                    type: 'success',
-                  });
-                  // Migration succeeded, safe to update launchArguments
-                  shouldUpdateLaunchArguments = true;
-                } catch (renameError) {
-                  // If rename fails (e.g., cross-filesystem), use copy + delete
-                  console.log(
-                    `[add-to-steam] Rename failed (possibly cross-filesystem), using copy instead`
-                  );
-                  // Copy recursively, preserving symlinks (lstat + readlink/symlink)
-                  const copyRecursiveSync = (src: string, dest: string) => {
-                    const exists = fs.existsSync(src);
-                    if (!exists) return;
-                    const stats = fs.lstatSync(src);
-                    if (stats.isSymbolicLink()) {
-                      const target = fs.readlinkSync(src);
-                      fs.symlinkSync(target, dest);
-                      return;
-                    }
-                    if (stats.isDirectory()) {
-                      if (!fs.existsSync(dest)) {
-                        fs.mkdirSync(dest, { recursive: true });
-                      }
-                      fs.readdirSync(src).forEach((childItemName) => {
-                        copyRecursiveSync(
-                          join(src, childItemName),
-                          join(dest, childItemName)
-                        );
-                      });
-                    } else {
-                      fs.copyFileSync(src, dest);
-                    }
-                  };
-                  copyRecursiveSync(oldAppIdDir, newAppIdDir);
-                  // Delete old directory
-                  fs.rmSync(oldAppIdDir, { recursive: true, force: true });
-                  console.log(
-                    `[add-to-steam] Successfully copied compatdata directory from ${oldAppIdDir} to ${newAppIdDir}`
-                  );
-
-                  sendNotification({
-                    message: `Successfully migrated prefix to new version.`,
-                    id: generateNotificationId(),
-                    type: 'success',
-                  });
-                  // Migration succeeded, safe to update launchArguments
-                  shouldUpdateLaunchArguments = true;
-                }
-              }
+          if (!fs.existsSync(oldAppIdDir)) {
+            sendNotification({ message: 'Old prefix not found, skipping migration', id: generateNotificationId(), type: 'error' });
+          } else if (fs.existsSync(newAppIdDir)) {
+            console.warn(`[add-to-steam] New compatdata directory exists at ${newAppIdDir}`);
+          } else {
+            const migration = Effect.runSync(Effect.either(migrateCompatData(oldAppIdDir, newAppIdDir)));
+            if (migration._tag === 'Left') {
+              sendNotification({ message: `Error migrating prefix: ${migration.left.message}`, id: generateNotificationId(), type: 'error' });
+              shouldUpdateLaunchArguments = false;
+              appInfo.launchArguments = originalLaunchArguments;
             } else {
-              console.log(
-                `[add-to-steam] Old compatdata directory not found at ${oldAppIdDir}, skipping migration`
-              );
-              sendNotification({
-                message: `Old prefix not found, skipping migration`,
-                id: generateNotificationId(),
-                type: 'error',
-              });
-              // Old directory doesn't exist, but no error occurred in migration
-              // Safe to update launchArguments to new path
-              shouldUpdateLaunchArguments = true;
+              sendNotification({ message: 'Successfully migrated prefix to new version.', id: generateNotificationId(), type: 'success' });
             }
-          } catch (migrationError) {
-            console.error(
-              `[add-to-steam] Error migrating prefix:`,
-              migrationError
-            );
-            // Don't fail the operation if migration fails
-            sendNotification({
-              message: `Error migrating prefix: ${migrationError}`,
-              id: generateNotificationId(),
-              type: 'error',
-            });
-            // Migration failed, restore original launchArguments
-            shouldUpdateLaunchArguments = false;
-            appInfo.launchArguments = originalLaunchArguments;
           }
         }
       }
@@ -573,6 +521,6 @@ export function registerSteamHandlers() {
       saveLibraryInfo(appID, appInfo);
 
       return { success: true };
-    }
+    })
   );
 }

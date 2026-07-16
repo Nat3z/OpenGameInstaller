@@ -4,8 +4,10 @@
  */
 
 import type { LibraryInfo } from '@ogi-sdk/connect';
+import { LibraryError, formatError, formatErrorResponse } from '@ogi/errors';
 import { spawn, spawnSync } from 'child_process';
-import { ipcMain } from 'electron';
+import { ipcMain, type IpcMainInvokeEvent } from 'electron';
+import { Effect } from 'effect';
 import * as fs from 'fs';
 import { parse as shellQuoteParse } from 'shell-quote';
 import { addUmuGameToSteam } from '@/electron/handlers/handler.steam.js';
@@ -70,6 +72,16 @@ export type ExecuteWrapperResult = {
   signal?: string;
   error?: string;
 };
+
+const ipcBoundary = <Args extends readonly unknown[], A>(
+  operation: (event: IpcMainInvokeEvent, ...args: Args) => Promise<A> | A
+) => (event: IpcMainInvokeEvent, ...args: Args) =>
+  Effect.runPromise(
+    Effect.tryPromise({
+      try: () => Promise.resolve(operation(event, ...args)),
+      catch: (cause) => new LibraryError({ message: formatError(cause) }),
+    }).pipe(Effect.catchAll((error) => Effect.succeed(formatErrorResponse(error))))
+  );
 
 export async function launchGameFromLibrary(
   appid: number | string,
@@ -381,24 +393,24 @@ async function executeWrapperCommandForAppSteam(
 }
 
 export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
-  ipcMain.handle('app:launch-game', async (_, appid) => {
+  ipcMain.handle('app:launch-game', ipcBoundary(async (_, appid) => {
     const result = await launchGameFromLibrary(appid, mainWindow);
     if (!result.success) {
-      throw new Error(result.error ?? 'Failed to launch game');
+      throw new LibraryError({ message: result.error ?? 'Failed to launch game' });
     }
-  });
+  }));
 
   ipcMain.handle(
     'app:execute-wrapper-command',
-    async (
+    ipcBoundary(async (
       _,
       appid: number,
       wrapperCommand: string
     ): Promise<ExecuteWrapperResult> =>
-      executeWrapperCommandForAppSteam(appid, wrapperCommand)
+      executeWrapperCommandForAppSteam(appid, wrapperCommand))
   );
 
-  ipcMain.handle('app:remove-app', async (_, appid: number) => {
+  ipcMain.handle('app:remove-app', ipcBoundary(async (_, appid: number) => {
     ensureLibraryDir();
     ensureInternalsDir();
 
@@ -410,11 +422,11 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
     removeLibraryFile(appid);
     removeFromInternalsApps(appid);
     return;
-  });
+  }));
 
   ipcMain.handle(
     'app:insert-app',
-    async (
+    ipcBoundary(async (
       _,
       data: LibraryInfo & {
         redistributables?: { name: string; path: string }[];
@@ -575,26 +587,22 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
         if (data.redistributables && data.redistributables.length > 0) {
           let redistributableFailed = false;
           for (const redistributable of data.redistributables) {
-            try {
-              if (!fs.existsSync(redistributable.path)) {
-                throw new Error(
-                  `Redistributable path does not exist: ${redistributable.path}`
-                );
-              }
-              spawnSync(redistributable.path, [], {
-                stdio: 'inherit',
-                shell: false,
-              });
-              sendNotification({
-                message: `Installed ${redistributable.name} for ${data.name}`,
-                id: generateNotificationId(),
-                type: 'success',
-              });
-            } catch (error) {
+            const result = Effect.runSync(Effect.either(Effect.try({
+              try: () => {
+                if (!fs.existsSync(redistributable.path)) {
+                  throw new LibraryError({ message: `Redistributable path does not exist: ${redistributable.path}` });
+                }
+                spawnSync(redistributable.path, [], { stdio: 'inherit', shell: false });
+                sendNotification({
+                  message: `Installed ${redistributable.name} for ${data.name}`,
+                  id: generateNotificationId(), type: 'success',
+                });
+              },
+              catch: (cause) => new LibraryError({ message: formatError(cause), gameId: data.appID }),
+            })));
+            if (result._tag === 'Left') {
               redistributableFailed = true;
-              console.error(
-                `[redistributable] failed to install ${redistributable.name} for ${data.name}: ${error}`
-              );
+              console.error(`[redistributable] failed to install ${redistributable.name}: ${result.left.message}`);
             }
           }
           if (redistributableFailed) {
@@ -604,16 +612,16 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
       }
 
       return 'setup-success';
-    }
+    })
   );
 
-  ipcMain.handle('app:get-all-apps', async () => {
+  ipcMain.handle('app:get-all-apps', ipcBoundary(async () => {
     return getAllLibraryFiles();
-  });
+  }));
 
   ipcMain.handle(
     'app:update-app-version',
-    async (
+    ipcBoundary(async (
       _,
       data: {
         appID: number;
@@ -723,10 +731,10 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
 
       saveLibraryInfo(data.appID, appData);
       return 'success';
-    }
+    })
   );
 
-  ipcMain.handle('app:get-library-info', async (_, appID: number) => {
+  ipcMain.handle('app:get-library-info', ipcBoundary(async (_, appID: number) => {
     return loadLibraryInfo(appID);
-  });
+  }));
 }

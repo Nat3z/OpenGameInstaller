@@ -186,10 +186,12 @@ class TorrentDownload {
       });
     });
 
-    const result = await Effect.runPromise(wait((queuePosition) => {
-      this.sendProgress({ queuePosition });
-      this.reportHandshake({ status: 'queued', queuePosition });
-    }));
+    const result = await Effect.runPromise(
+      wait((queuePosition) => {
+        this.sendProgress({ queuePosition });
+        this.reportHandshake({ status: 'queued', queuePosition });
+      })
+    );
 
     if (result === 'cancelled') {
       this.removeCancelHandler();
@@ -289,14 +291,18 @@ class TorrentDownload {
 
       if (this.job.type === 'torrent') {
         const torrentData = await this.downloadTorrentFile(this.job.link);
-        this.expectedInfoHash = await Effect.runPromise(getTorrentInfoHash(torrentData));
+        this.expectedInfoHash = await Effect.runPromise(
+          getTorrentInfoHash(torrentData)
+        );
         // turn torrent data into a Uint8Array<ArrayBuffer>
         const torrentDataUint8Array = new Uint8Array(torrentData);
         await qbitClient.addTorrent(torrentDataUint8Array, {
           savepath: this.job.path,
         });
       } else {
-        this.expectedInfoHash = await Effect.runPromise(getTorrentInfoHash(this.job.link));
+        this.expectedInfoHash = await Effect.runPromise(
+          getTorrentInfoHash(this.job.link)
+        );
         await qbitClient.addMagnet(this.job.link, {
           savepath: this.job.path,
         });

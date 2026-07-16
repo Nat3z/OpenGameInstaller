@@ -15,6 +15,7 @@ import type {
   WebSocketLike,
 } from '@ogi-sdk/connect';
 import { EventResponseSocket } from '@ogi-sdk/connect';
+import type { Cause } from 'effect';
 import { Effect, Fiber, PubSub, Stream } from 'effect';
 import type {
   AddonForwardResponseMessage,
@@ -41,28 +42,28 @@ export type DeferredTaskSnapshot<T = unknown> = {
   readonly resolved: boolean;
 };
 
-type MaybeEffect = Effect.Effect<void> | void;
-const asEffect = (value: MaybeEffect): Effect.Effect<void> =>
-  Effect.isEffect(value) ? value : Effect.void;
+type MaybePromise = void | Promise<void>;
+const asEffect = (value: MaybePromise) =>
+  value === undefined ? Effect.void : Effect.tryPromise(() => value);
 
 export type DeferredTaskOptions<T = unknown> = {
   readonly interval?: number;
-  readonly onTaskStarted?: (taskID: string) => MaybeEffect;
+  readonly onTaskStarted?: (taskID: string) => MaybePromise;
   readonly onProgress?: (
     progress: number,
     task: DeferredTaskSnapshot<T>
-  ) => MaybeEffect;
+  ) => MaybePromise;
   readonly onLogs?: (
     logs: string[],
     task: DeferredTaskSnapshot<T>
-  ) => MaybeEffect;
-  readonly onFailed?: (error: string) => MaybeEffect;
+  ) => MaybePromise;
+  readonly onFailed?: (error: string) => MaybePromise;
 };
 
 type InputAskedArgs = AddonServerToClientSDKEventArgs['input-asked'] & {
   readonly reply: (
     result: Record<string, string | number | boolean>
-  ) => Effect.Effect<void, ConnectionError>;
+  ) => Promise<void>;
 };
 
 type SDKEventArgs<Event extends AddonServerToClientSDKEvent> =
@@ -344,7 +345,7 @@ export class Connection {
   private waitForDeferredTaskEffect<T = unknown>(
     taskID: string,
     options: DeferredTaskOptions<T> = {}
-  ): Effect.Effect<T | undefined, ConnectionError> {
+  ): Effect.Effect<T | undefined, ConnectionError | Cause.UnknownException> {
     const interval = options.interval ?? 50;
     return Effect.gen(this, function* () {
       while (true) {
@@ -387,16 +388,18 @@ export class Connection {
           args: {
             ...message.args,
             reply: (result: Record<string, string | number | boolean>) =>
-              this.transport
-                .send(
-                  {
-                    event: 'input-response',
-                    id,
-                    args: result,
-                  } as AddonClientSDKToServerIncomingMessage,
-                  { expectResponse: false }
-                )
-                .pipe(Effect.asVoid),
+              Effect.runPromise(
+                this.transport
+                  .send(
+                    {
+                      event: 'input-response',
+                      id,
+                      args: result,
+                    } as AddonClientSDKToServerIncomingMessage,
+                    { expectResponse: false }
+                  )
+                  .pipe(Effect.asVoid)
+              ),
           } satisfies InputAskedArgs,
         }).pipe(Effect.asVoid);
       });

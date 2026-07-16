@@ -1,8 +1,8 @@
-import { spawn } from 'child_process';
-import { createWriteStream, readFileSync, rmSync } from 'fs';
-import { access, writeFile } from 'fs/promises';
-import { join } from 'path';
-import type z from 'zod';
+import { spawn } from 'node:child_process';
+import { access, readFile, rm, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { AddonError, FileSystemError, ValidationError } from '@ogi/errors';
+import { Effect, Schema } from 'effect';
 import {
   Addon,
   type AddonFileConfiguration,
@@ -10,13 +10,17 @@ import {
 } from '@/addon';
 import { Git } from '@/git';
 
+type SetupError = AddonError | FileSystemError | ValidationError;
+
+/** Effect-based setup script runner for an addon. */
 export class AddonSetup {
-  public git: Git;
+  public readonly git: Git;
+
   constructor(
     private readonly config: {
-      path: string;
-      name: string;
-      scripts: AddonFileConfiguration['scripts'];
+      readonly path: string;
+      readonly name: string;
+      readonly scripts: AddonFileConfiguration['scripts'];
     }
   ) {
     this.git = new Git(config);
@@ -24,209 +28,219 @@ export class AddonSetup {
 
   public static loadAddonConfig(
     path: string
-  ): z.infer<typeof AddonFileConfigurationSchema> {
-    const addonConfig = readFileSync(join(path, 'addon.json'), 'utf-8');
-    return AddonFileConfigurationSchema.parse(JSON.parse(addonConfig));
+  ): Effect.Effect<AddonFileConfiguration, FileSystemError | ValidationError> {
+    const configPath = join(path, 'addon.json');
+    return Effect.gen(function* () {
+      const contents = yield* Effect.tryPromise({
+        try: () => readFile(configPath, 'utf-8'),
+        catch: (cause) =>
+          new FileSystemError({
+            path: configPath,
+            message: `Unable to read addon configuration: ${String(cause)}`,
+            cause,
+          }),
+      });
+      const json = yield* Effect.try({
+        try: () => JSON.parse(contents) as unknown,
+        catch: (cause) =>
+          new ValidationError({
+            message: `Invalid addon.json: ${String(cause)}`,
+          }),
+      });
+      return yield* Schema.decodeUnknown(AddonFileConfigurationSchema)(
+        json
+      ).pipe(
+        Effect.mapError(
+          (cause) =>
+            new ValidationError({
+              message: `Invalid addon configuration: ${String(cause)}`,
+            })
+        )
+      );
+    });
   }
 
-  private runScript(script: string) {
-    const startCommand = Addon.intoExecutor(script);
-
-    console.log(`[${this.config.name}] Running script: ${startCommand}`);
-    // get the installation log path
-    const installationLogPath = join(this.config.path, 'installation.log');
-    // create a write stream to the installation log
-    const installationLogStream = createWriteStream(installationLogPath);
-    // write at the beginning the command
-
-    installationLogStream.write(`--------------------------------`);
-    installationLogStream.write(
-      `[${this.config.name}] Running script: ${startCommand}`
-    );
-    installationLogStream.write(`--------------------------------`);
-
-    const { command, args } = Addon.getScriptSpawnCommand(script);
-    const child = spawn(command, args, {
-      cwd: this.config.path,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-    child.stdout?.on('data', (data) => {
-      console.log(`[${this.config.name}] ${data.toString()}`);
-      installationLogStream.write(data.toString());
-    });
-    child.stderr?.on('data', (data) => {
-      console.error(`[${this.config.name}] ${data.toString()}`);
-      installationLogStream.write(data.toString());
-    });
-    child.on('error', (error) => {
-      console.error(`[${this.config.name}] ${error}`);
-      installationLogStream.write(error.message);
-    });
-
-    child.on('exit', (code, signal) => {
-      console.log(
-        `[${this.config.name}] Exited with code ${code} and signal ${signal}`
-      );
-      installationLogStream.write(
-        `[${this.config.name}] Exited with code ${code} and signal ${signal}`
-      );
-      installationLogStream.end();
-      if (code !== 0) {
-        throw new Error(
-          `[${this.config.name}] Exited with code ${code} and signal ${signal}`
-        );
-      }
-    });
-
-    return child;
-  }
-
-  private spawnScriptCapture(
+  /** Runs one setup script and captures its stdout for the installation log. */
+  private runScriptCapture(
     script: string,
     scriptName: string
-  ): Promise<string> {
-    const startCommand = Addon.intoExecutor(script);
-    const name = this.config.name;
-
-    return new Promise((resolve, reject) => {
-      let stdout = '';
-      let stderr = '';
-      console.log(`[${name}@${scriptName}] Running script: ${startCommand}`);
-      const { command, args } = Addon.getScriptSpawnCommand(script);
-      const child = spawn(command, args, {
-        cwd: this.config.path,
-        stdio: ['ignore', 'pipe', 'pipe'],
+  ): Effect.Effect<string, AddonError | ValidationError> {
+    return Effect.gen(this, function* () {
+      const startCommand = yield* Addon.intoExecutor(script);
+      const { command, args } = yield* Addon.getScriptSpawnCommand(script);
+      const child = yield* Effect.try({
+        try: () =>
+          spawn(command, args, {
+            cwd: this.config.path,
+            stdio: ['ignore', 'pipe', 'pipe'],
+          }),
+        catch: (cause) =>
+          new AddonError({
+            addonName: this.config.name,
+            message: `Unable to run ${scriptName}: ${String(cause)}`,
+          }),
       });
+      const name = this.config.name;
 
-      child.stdout?.on('data', (data: Buffer) => {
-        const t = data.toString();
-        console.log(`[${name}@${scriptName}] ${t}`);
-        stdout += t;
-      });
-      child.stderr?.on('data', (data: Buffer) => {
-        const t = data.toString();
-        console.error(`[${name}@${scriptName}] ${t}`);
-        stderr += t;
-      });
+      return yield* Effect.async<string, AddonError>((resume) => {
+        let stdout = '';
+        let stderr = '';
+        let settled = false;
+        console.log(`[${name}@${scriptName}] Running script: ${startCommand}`);
 
-      child.on('close', (code) => {
-        if (code !== 0) {
-          reject(
-            new Error(`Addon ${name} exited with error: ${code}\n${stderr}`)
+        child.stdout?.on('data', (data: Buffer) => {
+          const text = data.toString();
+          stdout += text;
+          console.log(`[${name}@${scriptName}] ${text}`);
+        });
+        child.stderr?.on('data', (data: Buffer) => {
+          const text = data.toString();
+          stderr += text;
+          console.error(`[${name}@${scriptName}] ${text}`);
+        });
+        child.on('error', (cause) => {
+          if (settled) return;
+          settled = true;
+          resume(
+            Effect.fail(
+              new AddonError({
+                addonName: name,
+                message: `Unable to run ${scriptName}: ${String(cause)}`,
+              })
+            )
           );
-          return;
-        }
-        resolve(stdout);
+        });
+        child.on('close', (code, signal) => {
+          if (settled) return;
+          settled = true;
+          if (code !== 0) {
+            resume(
+              Effect.fail(
+                new AddonError({
+                  addonName: name,
+                  message: `${scriptName} exited with code ${code} and signal ${signal}\n${stderr}`,
+                })
+              )
+            );
+          } else {
+            resume(Effect.succeed(stdout));
+          }
+        });
+
+        return Effect.sync(() => {
+          if (!settled) child.kill();
+        });
       });
-      child.on('error', reject);
     });
   }
 
-  /**
-   * Runs optional pre/setup/post scripts and returns combined stdout (for `installation.log`).
-   */
-  public async collectSetupLog(): Promise<string> {
-    const scripts = this.config.scripts;
-    const addonName = this.config.name;
-    let setupLogs = '';
+  /** Runs optional pre/setup/post scripts and returns their combined stdout. */
+  public collectSetupLog(): Effect.Effect<string, SetupError> {
+    return Effect.gen(this, function* () {
+      const scripts = this.config.scripts;
+      const addonName = this.config.name;
+      let setupLogs = '';
 
-    if (scripts.preSetup) {
-      setupLogs += `\nRunning pre-setup script for ${addonName}...\n> ${scripts.preSetup}\n`;
-      setupLogs += await this.spawnScriptCapture(scripts.preSetup, 'pre-setup');
-    }
-    if (scripts.setup) {
-      setupLogs += `\nRunning setup script for ${addonName}...\n> ${scripts.setup}\n`;
-      setupLogs += await this.spawnScriptCapture(scripts.setup, 'setup');
-    }
-    if (scripts.postSetup) {
-      setupLogs += `\nRunning post-setup script for ${addonName}...\n> ${scripts.postSetup}\n`;
-      setupLogs += await this.spawnScriptCapture(
-        scripts.postSetup,
-        'post-setup'
+      if (scripts.preSetup) {
+        setupLogs += `\nRunning pre-setup script for ${addonName}...\n> ${scripts.preSetup}\n`;
+        setupLogs += yield* this.runScriptCapture(
+          scripts.preSetup,
+          'pre-setup'
+        );
+      }
+      if (scripts.setup) {
+        setupLogs += `\nRunning setup script for ${addonName}...\n> ${scripts.setup}\n`;
+        setupLogs += yield* this.runScriptCapture(scripts.setup, 'setup');
+      }
+      if (scripts.postSetup) {
+        setupLogs += `\nRunning post-setup script for ${addonName}...\n> ${scripts.postSetup}\n`;
+        setupLogs += yield* this.runScriptCapture(
+          scripts.postSetup,
+          'post-setup'
+        );
+      }
+      return setupLogs;
+    });
+  }
+
+  public setup(): Effect.Effect<void, SetupError> {
+    if (!this.config.scripts.setup) {
+      return Effect.fail(
+        new AddonError({
+          addonName: this.config.name,
+          message: 'Setup script not found',
+        })
       );
     }
-
-    return setupLogs;
+    return this.runScriptCapture(this.config.scripts.setup, 'setup').pipe(
+      Effect.asVoid
+    );
   }
 
-  public setup(): Promise<void> {
-    if (!this.config.scripts?.setup) {
-      throw new Error('Setup script not found');
+  public preSetup(): Effect.Effect<void, SetupError> {
+    if (!this.config.scripts.preSetup) {
+      return Effect.fail(
+        new AddonError({
+          addonName: this.config.name,
+          message: 'Pre-setup script not found',
+        })
+      );
     }
-    const process = this.runScript(this.config.scripts.setup);
+    return this.runScriptCapture(
+      this.config.scripts.preSetup,
+      'pre-setup'
+    ).pipe(Effect.asVoid);
+  }
 
-    return new Promise((resolve, reject) => {
-      process.on('exit', (code, signal) => {
-        if (code !== 0) {
-          reject(
-            new Error(
-              `[${this.config.name}] Exited with code ${code} and signal ${signal}`
-            )
-          );
-        }
-        resolve();
+  public postSetup(): Effect.Effect<void, SetupError> {
+    if (!this.config.scripts.postSetup) {
+      return Effect.fail(
+        new AddonError({
+          addonName: this.config.name,
+          message: 'Post-setup script not found',
+        })
+      );
+    }
+    return this.runScriptCapture(
+      this.config.scripts.postSetup,
+      'post-setup'
+    ).pipe(Effect.asVoid);
+  }
+
+  public runSetup(): Effect.Effect<void, SetupError> {
+    const logPath = join(this.config.path, 'installation.log');
+    return Effect.gen(this, function* () {
+      yield* Effect.tryPromise({
+        try: () => rm(logPath, { force: true }),
+        catch: (cause) =>
+          new FileSystemError({
+            path: logPath,
+            message: `Unable to remove old installation log: ${String(cause)}`,
+            cause,
+          }),
       });
+      const log = yield* this.collectSetupLog();
+      yield* this.createLogFile(log);
     });
   }
 
-  public preSetup(): Promise<void> {
-    if (!this.config.scripts?.preSetup) {
-      throw new Error('Pre-setup script not found');
-    }
-    const process = this.runScript(this.config.scripts.preSetup);
-    return new Promise((resolve, reject) => {
-      process.on('exit', (code, signal) => {
-        if (code !== 0) {
-          reject(
-            new Error(
-              `[${this.config.name}] Exited with code ${code} and signal ${signal}`
-            )
-          );
-        }
-        resolve();
-      });
+  private createLogFile(content: string): Effect.Effect<void, FileSystemError> {
+    const logPath = join(this.config.path, 'installation.log');
+    return Effect.tryPromise({
+      try: () => writeFile(logPath, content),
+      catch: (cause) =>
+        new FileSystemError({
+          path: logPath,
+          message: `Unable to write installation log: ${String(cause)}`,
+          cause,
+        }),
     });
   }
 
-  public postSetup(): Promise<void> {
-    if (!this.config.scripts?.postSetup) {
-      throw new Error('Post-setup script not found');
-    }
-    const process = this.runScript(this.config.scripts.postSetup);
-    return new Promise((resolve, reject) => {
-      process.on('exit', (code, signal) => {
-        if (code !== 0) {
-          reject(
-            new Error(
-              `[${this.config.name}] Exited with code ${code} and signal ${signal}`
-            )
-          );
-        }
-        resolve();
-      });
-    });
-  }
-
-  public async runSetup(): Promise<void> {
-    // delete the installation log
-    rmSync(join(this.config.path, 'installation.log'));
-    await this.preSetup();
-    await this.setup();
-    await this.postSetup();
-    // add installation log
-    await this.createLogFile(await this.collectSetupLog());
-  }
-
-  private async createLogFile(content: string): Promise<void> {
-    await writeFile(join(this.config.path, 'installation.log'), content);
-  }
-
-  public async isInstalled(): Promise<boolean> {
-    try {
-      await access(join(this.config.path, 'installation.log'));
-      return true;
-    } catch {
-      return false;
-    }
+  public isInstalled(): Effect.Effect<boolean> {
+    const logPath = join(this.config.path, 'installation.log');
+    return Effect.tryPromise(() => access(logPath)).pipe(
+      Effect.match({ onFailure: () => false, onSuccess: () => true })
+    );
   }
 }

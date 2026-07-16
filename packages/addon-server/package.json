@@ -34,7 +34,9 @@
     "typescript": "^5"
   },
   "dependencies": {
+    "@effect/schema": "^0.75.5",
     "@ogi-sdk/connect": "^1.0.2",
+    "effect": "^3.22.0",
     "elysia": "^1.4.28",
     "ogi-addon": "^4.1.0",
     "websocket": "^1.0.35",

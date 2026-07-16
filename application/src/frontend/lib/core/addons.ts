@@ -52,7 +52,9 @@ export async function findAddonsSupportingStorefront(
 ): Promise<AddonInfo[]> {
   return (await queryConnectedAddons()).filter(
     (addon) =>
-      supportsStorefront(addon.storefronts as any, storefront) &&
-      isAddonEventAvailable(addon, event as OGIAddonSDKEventListener)
+      supportsStorefront(
+        addon.storefronts as readonly string[] | undefined,
+        storefront
+      ) && isAddonEventAvailable(addon, event as OGIAddonSDKEventListener)
   );
 }

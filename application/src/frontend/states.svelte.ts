@@ -30,8 +30,8 @@ export function loadPersistedUpdateState(): {
                 return (
                   typeof v === 'object' &&
                   v !== null &&
-                  typeof (v as any).appID === 'number' &&
-                  typeof (v as any).steamAppId === 'number'
+                  typeof (v as Record<string, unknown>).appID === 'number' &&
+                  typeof (v as Record<string, unknown>).steamAppId === 'number'
                 );
               })
             : [];
@@ -41,8 +41,9 @@ export function loadPersistedUpdateState(): {
                   return (
                     typeof v === 'object' &&
                     v !== null &&
-                    typeof (v as any).appID === 'number' &&
-                    typeof (v as any).updateVersion === 'string'
+                    typeof (v as Record<string, unknown>).appID === 'number' &&
+                    typeof (v as Record<string, unknown>).updateVersion ===
+                      'string'
                   );
                 }
               )

@@ -4,21 +4,21 @@ import { Data } from 'effect';
 // Download Errors
 // =============================================================================
 
-export class DownloadError extends Data.TaggedError('DownloadError')<{
+export class DownloadError extends Data.TaggedClass('DownloadError')<{
   readonly message: string;
   readonly downloadId?: string;
   readonly cause?: unknown;
 }> {}
 
-export class DownloadNotActive extends Data.TaggedError('DownloadNotActive')<{
+export class DownloadNotActive extends Data.TaggedClass('DownloadNotActive')<{
   readonly downloadId: string;
 }> {}
 
-export class TooManyRequests extends Data.TaggedError('TooManyRequests')<{
+export class TooManyRequests extends Data.TaggedClass('TooManyRequests')<{
   readonly retryAfter?: number;
 }> {}
 
-export class ConnectionRefreshRequested extends Data.TaggedError('ConnectionRefreshRequested')<{
+export class ConnectionRefreshRequested extends Data.TaggedClass('ConnectionRefreshRequested')<{
   readonly downloadId: string;
 }> {}
 
@@ -26,13 +26,13 @@ export class ConnectionRefreshRequested extends Data.TaggedError('ConnectionRefr
 // Network Errors
 // =============================================================================
 
-export class NetworkError extends Data.TaggedError('NetworkError')<{
+export class NetworkError extends Data.TaggedClass('NetworkError')<{
   readonly message: string;
   readonly statusCode?: number;
   readonly url?: string;
 }> {}
 
-export class HttpError extends Data.TaggedError('HttpError')<{
+export class HttpError extends Data.TaggedClass('HttpError')<{
   readonly statusCode: number;
   readonly message: string;
   readonly url?: string;
@@ -42,7 +42,7 @@ export class HttpError extends Data.TaggedError('HttpError')<{
 // File System Errors
 // =============================================================================
 
-export class FileSystemError extends Data.TaggedError('FileSystemError')<{
+export class FileSystemError extends Data.TaggedClass('FileSystemError')<{
   readonly message: string;
   readonly path?: string;
   readonly cause?: unknown;
@@ -52,16 +52,16 @@ export class FileSystemError extends Data.TaggedError('FileSystemError')<{
 // Addon Errors
 // =============================================================================
 
-export class AddonError extends Data.TaggedError('AddonError')<{
+export class AddonError extends Data.TaggedClass('AddonError')<{
   readonly message: string;
   readonly addonName?: string;
 }> {}
 
-export class AddonNotFound extends Data.TaggedError('AddonNotFound')<{
+export class AddonNotFound extends Data.TaggedClass('AddonNotFound')<{
   readonly addonName: string;
 }> {}
 
-export class AddonLoadError extends Data.TaggedError('AddonLoadError')<{
+export class AddonLoadError extends Data.TaggedClass('AddonLoadError')<{
   readonly addonName: string;
   readonly cause?: unknown;
 }> {}
@@ -70,7 +70,7 @@ export class AddonLoadError extends Data.TaggedError('AddonLoadError')<{
 // Config Errors
 // =============================================================================
 
-export class ConfigError extends Data.TaggedError('ConfigError')<{
+export class ConfigError extends Data.TaggedClass('ConfigError')<{
   readonly message: string;
   readonly key?: string;
 }> {}
@@ -79,13 +79,13 @@ export class ConfigError extends Data.TaggedError('ConfigError')<{
 // Debrid Service Errors
 // =============================================================================
 
-export class DebridError extends Data.TaggedError('DebridError')<{
+export class DebridError extends Data.TaggedClass('DebridError')<{
   readonly message: string;
   readonly service: 'alldebrid' | 'realdebrid' | 'premiumize' | 'torbox';
   readonly apiCode?: string;
 }> {}
 
-export class DebridAuthError extends Data.TaggedError('DebridAuthError')<{
+export class DebridAuthError extends Data.TaggedClass('DebridAuthError')<{
   readonly service: 'alldebrid' | 'realdebrid' | 'premiumize' | 'torbox';
 }> {}
 
@@ -93,12 +93,12 @@ export class DebridAuthError extends Data.TaggedError('DebridAuthError')<{
 // Library Errors
 // =============================================================================
 
-export class LibraryError extends Data.TaggedError('LibraryError')<{
+export class LibraryError extends Data.TaggedClass('LibraryError')<{
   readonly message: string;
   readonly gameId?: number;
 }> {}
 
-export class GameNotFound extends Data.TaggedError('GameNotFound')<{
+export class GameNotFound extends Data.TaggedClass('GameNotFound')<{
   readonly gameId: number;
 }> {}
 
@@ -106,7 +106,7 @@ export class GameNotFound extends Data.TaggedError('GameNotFound')<{
 // Torrent Errors
 // =============================================================================
 
-export class TorrentError extends Data.TaggedError('TorrentError')<{
+export class TorrentError extends Data.TaggedClass('TorrentError')<{
   readonly message: string;
   readonly cause?: unknown;
 }> {}
@@ -115,7 +115,7 @@ export class TorrentError extends Data.TaggedError('TorrentError')<{
 // Validation Errors
 // =============================================================================
 
-export class ValidationError extends Data.TaggedError('ValidationError')<{
+export class ValidationError extends Data.TaggedClass('ValidationError')<{
   readonly message: string;
   readonly field?: string;
 }> {}
@@ -124,7 +124,7 @@ export class ValidationError extends Data.TaggedError('ValidationError')<{
 // Platform Errors
 // =============================================================================
 
-export class PlatformError extends Data.TaggedError('PlatformError')<{
+export class PlatformError extends Data.TaggedClass('PlatformError')<{
   readonly message: string;
   readonly platform?: string;
 }> {}
@@ -133,7 +133,7 @@ export class PlatformError extends Data.TaggedError('PlatformError')<{
 // Updater Errors
 // =============================================================================
 
-export class UpdateError extends Data.TaggedError('UpdateError')<{
+export class UpdateError extends Data.TaggedClass('UpdateError')<{
   readonly message: string;
   readonly cause?: unknown;
 }> {}

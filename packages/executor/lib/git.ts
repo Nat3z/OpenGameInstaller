@@ -1,165 +1,174 @@
-import { spawn } from 'child_process';
-import { dirname } from 'path';
-import { Addon } from './addon';
+import { spawn } from 'node:child_process';
+import { dirname } from 'node:path';
+import { AddonError, ValidationError } from '@ogi/errors';
+import { Effect } from 'effect';
 
-function runGitProcess(
+const runGitProcess = (
   cwd: string,
   args: string[],
   operation: string
-): Promise<string> {
-  const child = spawn('git', args.filter(Boolean), {
-    cwd,
-    stdio: 'pipe',
-  });
+): Effect.Effect<string, AddonError> =>
+  Effect.gen(function* () {
+    const filteredArgs = args.filter(Boolean);
+    const child = yield* Effect.try({
+      try: () =>
+        spawn('git', filteredArgs, {
+          cwd,
+          stdio: 'pipe',
+        }),
+      catch: (cause) =>
+        new AddonError({
+          message: `Unable to start git ${operation}: ${String(cause)}`,
+        }),
+    });
 
-  let stdout = '';
-  let stderr = '';
-  child.stdout?.on('data', (data) => {
-    const text = data.toString();
-    stdout += text;
-    console.log(text);
-  });
-  child.stderr?.on('data', (data) => {
-    const text = data.toString();
-    stderr += text;
-    console.error(text);
-  });
+    return yield* Effect.async<string, AddonError>((resume) => {
+      let stdout = '';
+      let stderr = '';
+      let settled = false;
 
-  return new Promise<string>((resolve, reject) => {
-    child.on('error', reject);
-    child.on('close', (code) => {
-      if (code !== 0) {
-        reject(
-          new Error(
-            `Git ${operation} failed with code ${code}: git ${args.join(' ')}`
+      child.stdout?.on('data', (data) => {
+        const text = data.toString();
+        stdout += text;
+        console.log(text);
+      });
+      child.stderr?.on('data', (data) => {
+        const text = data.toString();
+        stderr += text;
+        console.error(text);
+      });
+      child.on('error', (cause) => {
+        if (settled) return;
+        settled = true;
+        resume(
+          Effect.fail(
+            new AddonError({
+              message: `Git ${operation} failed: ${String(cause)}`,
+            })
           )
         );
-        return;
-      }
-      // Include stderr: git progress / "Already up to date" often lands there.
-      resolve((stdout + stderr).trim());
+      });
+      child.on('close', (code) => {
+        if (settled) return;
+        settled = true;
+        if (code !== 0) {
+          resume(
+            Effect.fail(
+              new AddonError({
+                message: `Git ${operation} failed with code ${code}: git ${filteredArgs.join(' ')}\n${stderr}`,
+              })
+            )
+          );
+        } else {
+          // Git progress and "Already up to date" often land on stderr.
+          resume(Effect.succeed((stdout + stderr).trim()));
+        }
+      });
+
+      return Effect.sync(() => {
+        if (!settled) child.kill();
+      });
     });
   });
-}
 
+/** Effect-based git operations for an addon checkout. */
 export class Git {
-  constructor(private readonly addon: { path: string }) {}
+  constructor(private readonly addon: { readonly path: string }) {}
 
-  private async execGit(args: string[], operation: string): Promise<string> {
-    return await runGitProcess(this.addon.path, args, operation);
+  private execGit(
+    args: string[],
+    operation: string
+  ): Effect.Effect<string, AddonError> {
+    return runGitProcess(this.addon.path, args, operation);
   }
 
-  /**
-   * Clone `url` into {@link Addon.config.path} (`git clone ... <path>`).
-   * Parent of the addon path must exist; the clone target must not already exist as a repo root.
-   */
-  public async clone(
+  public clone(
     url: string,
-    options: { branch?: string; depth?: number; extraArgs?: string[] } = {}
-  ): Promise<void> {
+    options: {
+      readonly branch?: string;
+      readonly depth?: number;
+      readonly extraArgs?: string[];
+    } = {}
+  ): Effect.Effect<void, AddonError> {
     const target = this.addon.path;
     const args = ['clone'];
-    if (options.depth != null) {
-      args.push('--depth', String(options.depth));
-    }
-    if (options.branch != null) {
-      args.push('-b', options.branch);
-    }
-    if (options.extraArgs?.length) {
-      args.push(...options.extraArgs);
-    }
+    if (options.depth != null) args.push('--depth', String(options.depth));
+    if (options.branch != null) args.push('-b', options.branch);
+    if (options.extraArgs?.length) args.push(...options.extraArgs);
     args.push(url, target);
-    return void (await runGitProcess(dirname(target), args, 'clone'));
+    return runGitProcess(dirname(target), args, 'clone').pipe(Effect.asVoid);
   }
 
-  /** `git fetch` with optional extra arguments (e.g. `['origin', 'main']`). */
-  public async fetch(
+  public fetch(
     extraArgs: string[] = []
-  ): Promise<{ alreadyUpToDate: boolean }> {
-    const result = await this.execGit(['fetch', ...extraArgs], 'fetch');
-    return {
-      alreadyUpToDate:
-        result.includes('Already up to date.') ||
-        result.includes('Already up-to-date.'),
-    };
+  ): Effect.Effect<{ readonly alreadyUpToDate: boolean }, AddonError> {
+    return this.execGit(['fetch', ...extraArgs], 'fetch').pipe(
+      Effect.map((result) => ({
+        alreadyUpToDate:
+          result.includes('Already up to date.') ||
+          result.includes('Already up-to-date.'),
+      }))
+    );
   }
 
-  /**
-   * Fetch a specific ref from a remote without updating HEAD.
-   * Example: `fetchRef('origin', 'feature/x')`
-   */
-  public async fetchRef(remote: string, ref: string): Promise<void> {
-    return void (await this.fetch([remote, ref]));
+  public fetchRef(
+    remote: string,
+    ref: string
+  ): Effect.Effect<void, AddonError> {
+    return this.fetch([remote, ref]).pipe(Effect.asVoid);
   }
 
-  public async pull(options: { force?: boolean } = {}): Promise<void> {
+  public pull(
+    options: { readonly force?: boolean } = {}
+  ): Effect.Effect<void, AddonError> {
     const args = ['pull'];
-    if (options.force) {
-      args.push('--force');
-    }
-    return void (await this.execGit(args, 'pull'));
+    if (options.force) args.push('--force');
+    return this.execGit(args, 'pull').pipe(Effect.asVoid);
   }
 
-  /**
-   * Switch to an existing branch (`git switch <branch>`).
-   */
-  public async switchBranch(branch: string): Promise<void> {
-    return void (await this.execGit(
-      ['switch', branch],
-      `switch to branch ${branch}`
-    ));
+  public switchBranch(branch: string): Effect.Effect<void, AddonError> {
+    return this.execGit(['switch', branch], `switch to branch ${branch}`).pipe(
+      Effect.asVoid
+    );
   }
 
-  /**
-   * Create and switch to a new branch from the current HEAD (`git switch -c <branch>`).
-   */
-  public async createBranch(
+  public createBranch(
     branch: string,
     startPoint?: string
-  ): Promise<void> {
+  ): Effect.Effect<void, AddonError> {
     const args = ['switch', '-c', branch];
-    if (startPoint) {
-      args.push(startPoint);
-    }
-    return void (await this.execGit(args, `create branch ${branch}`));
+    if (startPoint) args.push(startPoint);
+    return this.execGit(args, `create branch ${branch}`).pipe(Effect.asVoid);
   }
 
-  /**
-   * Pin the working tree to an exact commit (detached HEAD).
-   * Fetches first when `fetchFirst` is true so the hash exists locally.
-   */
-  public async checkoutCommit(
+  public checkoutCommit(
     hash: string,
-    options: { fetchFirst?: boolean } = {}
-  ): Promise<void> {
-    // Spawn argv is not a shell, but reject option-like refs anyway.
-    if (!hash || hash.startsWith('-')) {
-      throw new Error(`Refusing unsafe git ref: ${hash}`);
-    }
-    if (options.fetchFirst) {
-      await this.fetch();
-    }
-    return void (await this.execGit(
-      ['switch', '--detach', '--', hash],
-      `checkout commit ${hash}`
-    ));
+    options: { readonly fetchFirst?: boolean } = {}
+  ): Effect.Effect<void, AddonError | ValidationError> {
+    return Effect.gen(this, function* () {
+      if (!hash || hash.startsWith('-')) {
+        return yield* Effect.fail(
+          new ValidationError({
+            field: 'hash',
+            message: `Refusing unsafe git ref: ${hash}`,
+          })
+        );
+      }
+      if (options.fetchFirst) yield* this.fetch();
+      yield* this.execGit(
+        ['switch', '--detach', '--', hash],
+        `checkout commit ${hash}`
+      );
+    });
   }
 
-  /**
-   * Get the working tree commit hash.
-   */
-  public async getCurrentHash(): Promise<string> {
-    return await this.execGit(['rev-parse', 'HEAD'], 'get commit hash');
+  public getCurrentHash(): Effect.Effect<string, AddonError> {
+    return this.execGit(['rev-parse', 'HEAD'], 'get commit hash');
   }
 
-  /**
-   * Move the current branch to `ref` and match index/worktree (`git reset --hard <ref>`).
-   * Use for pinning a branch tip to a specific commit after fetch.
-   */
-  public async resetHard(ref: string): Promise<void> {
-    return void (await this.execGit(
-      ['reset', '--hard', ref],
-      `reset --hard ${ref}`
-    ));
+  public resetHard(ref: string): Effect.Effect<void, AddonError> {
+    return this.execGit(['reset', '--hard', ref], `reset --hard ${ref}`).pipe(
+      Effect.asVoid
+    );
   }
 }

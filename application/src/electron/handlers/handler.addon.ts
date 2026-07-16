@@ -122,7 +122,7 @@ const HEALTH_CHECK_TIMEOUT_MS =
 export async function restartAddonServer(): Promise<void> {
   // stop the server
   console.log('Stopping server...');
-  await stopAddonServer();
+  await Effect.runPromise(stopAddonServer());
   // stop all of the addons
   for (const instance of [...Addon.running.values()]) {
     console.log(`Stopping addon ${instance.config.path}`);
@@ -130,7 +130,7 @@ export async function restartAddonServer(): Promise<void> {
   }
   // start the server and wait for it to be listening before starting addons
 
-  await startAddonServer();
+  await Effect.runPromise(startAddonServer());
   const checkHealth = async () => {
     try {
       await axios.get(`http://localhost:${port}/health`, { timeout: 500 });

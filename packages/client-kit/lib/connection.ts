@@ -119,19 +119,35 @@ export class Connection {
             }),
         });
         const eventPubSub = yield* PubSub.unbounded<ConnectionEvent>();
-        const transport = yield* EventResponseSocket.make<
-          AddonServerToClientSDKIncomingMessage,
-          AddonClientSDKToServerIncomingMessage
-        >(socket, {
-          onInvalidMessage: () =>
-            Effect.sync(() => {
-              console.error('Failed to parse websocket message');
-              socket.close(1008, 'Invalid JSON message');
-            }),
-        });
-        const connection = new Connection(socket, transport, eventPubSub);
-        yield* connection.connect();
-        return connection;
+        return yield* Effect.gen(function* () {
+          const transport = yield* EventResponseSocket.make<
+            AddonServerToClientSDKIncomingMessage,
+            AddonClientSDKToServerIncomingMessage
+          >(socket, {
+            onInvalidMessage: () =>
+              Effect.sync(() => {
+                console.error('Failed to parse websocket message');
+                socket.close(1008, 'Invalid JSON message');
+              }),
+          });
+          const connection = new Connection(socket, transport, eventPubSub);
+          yield* connection.connect();
+          return connection;
+        }).pipe(
+          Effect.catchAll((error) =>
+            Effect.gen(function* () {
+              yield* PubSub.shutdown(eventPubSub);
+              yield* Effect.sync(() => {
+                try {
+                  socket.close();
+                } catch {
+                  // Preserve the original connection error if closing fails.
+                }
+              });
+              return yield* Effect.fail(error);
+            })
+          )
+        );
       })
     );
   }
@@ -349,7 +365,16 @@ export class Connection {
     const interval = options.interval ?? 50;
     return Effect.gen(this, function* () {
       while (true) {
-        const task = yield* this.getDeferredTaskEffect<T>(taskID);
+        const task = yield* this.getDeferredTaskEffect<T>(taskID).pipe(
+          Effect.catchAll((error) =>
+            Effect.gen(function* () {
+              if (options.onFailed) {
+                yield* asEffect(options.onFailed(error.message));
+              }
+              return yield* Effect.fail(error);
+            })
+          )
+        );
         if (!task) {
           const message = 'Task not found';
           if (options.onFailed) yield* asEffect(options.onFailed(message));

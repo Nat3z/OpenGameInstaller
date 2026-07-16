@@ -3,6 +3,7 @@ import type {
   SearchResult,
   SetupCommandData,
 } from '@ogi-sdk/connect';
+import { Either, Schema } from 'effect';
 import { type Writable, writable } from 'svelte/store';
 import {
   assertMarketplaceUrlProtocol,
@@ -334,12 +335,12 @@ export async function fetchCommunityAddons() {
             'User-Agent': 'OpenGameInstaller Client/Rest1.0',
           },
         });
-        const parsed = communityAddonArraySchema.safeParse(response.data);
-        if (!parsed.success) {
-          console.error('Invalid marketplace JSON for', source, parsed.error);
+        const parsed = Schema.decodeUnknownEither(communityAddonArraySchema)(response.data);
+        if (Either.isLeft(parsed)) {
+          console.error('Invalid marketplace JSON for', source, parsed.left);
           return;
         }
-        communityAddons[source] = parsed.data;
+        communityAddons[source] = [...parsed.right];
       } catch (error) {
         console.error('Failed to fetch marketplace for', source, error);
         if (previousAddons[source]) {

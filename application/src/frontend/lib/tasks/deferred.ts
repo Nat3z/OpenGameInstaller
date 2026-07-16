@@ -1,4 +1,5 @@
 import type { DeferredTaskSnapshot } from '@ogi-sdk/client-kit';
+import { Effect } from 'effect';
 import { addonServer } from '@/frontend/lib/core/ipc';
 import {
   type DeferredTask,
@@ -8,7 +9,7 @@ import {
 
 export async function loadDeferredTasks(tasksToRemove: string[] = []) {
   try {
-    const tasks = await addonServer.getDeferredTasks();
+    const tasks = await Effect.runPromise(addonServer.getDeferredTasks());
     deferredTasks.set(
       tasks
         .filter(

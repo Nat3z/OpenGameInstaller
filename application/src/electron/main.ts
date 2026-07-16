@@ -1,6 +1,7 @@
 import '@/electron/lib/source-maps.js';
 import type { ConfigurationFile } from '@ogi-sdk/connect';
 import { app, BrowserWindow, globalShortcut, ipcMain, shell } from 'electron';
+import { Effect } from 'effect';
 import fs, { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { quote as shellQuote } from 'shell-quote';
@@ -35,7 +36,7 @@ import {
   isSecurityCheckEnabled,
   port,
   startAddonServer,
-  stopAddonServer,
+  stopAddonServerEffect,
 } from '@/electron/server/addon-server.js';
 import {
   checkForAddonUpdates,
@@ -831,45 +832,24 @@ app.on('ready', async () => {
 });
 
 // Quit when all windows are closed.
-app.on('window-all-closed', async function () {
-  if (!gotTheLock) {
-    return;
-  }
-
-  // On macOS it is common for applications and their menu bar
-  // to stay active until the user quits explicitly with Cmd + Q
-  if (process.platform === 'darwin') {
-    return;
-  }
-
-  // Perform cleanup before quitting
-  try {
-    releasePowerSaveBlock();
-
-    // stop torrenting
-    console.log('Stopping torrent client...');
-    await stopClient();
-
-    for (const instance of [...Addon.running.values()]) {
-      console.log(`Stopping addon ${instance.config.path}`);
-      instance.stop();
-    }
-
-    // stopping all of the torrent intervals
-    for (const interval of torrentIntervals) {
-      clearInterval(interval);
-    }
-
-    if (isAddonServerListening) {
-      console.log('Stopping addon server...');
-      await stopAddonServer();
-    }
-  } catch (error) {
-    console.error('Error during cleanup:', error);
-  }
-
-  // Now quit the application
-  app.quit();
+app.on('window-all-closed', () => {
+  if (!gotTheLock || process.platform === 'darwin') return;
+  Effect.runFork(
+    Effect.gen(function* () {
+      releasePowerSaveBlock();
+      console.log('Stopping torrent client...');
+      yield* Effect.promise(stopClient);
+      for (const instance of [...Addon.running.values()]) {
+        console.log(`Stopping addon ${instance.config.path}`);
+        yield* instance.stop().pipe(Effect.ignore);
+      }
+      for (const interval of torrentIntervals) clearInterval(interval);
+      if (isAddonServerListening) yield* stopAddonServerEffect();
+    }).pipe(
+      Effect.catchAll((error) => Effect.sync(() => console.error('Error during cleanup:', error))),
+      Effect.ensuring(Effect.sync(() => app.quit()))
+    )
+  );
 });
 
 app.on('activate', async function () {

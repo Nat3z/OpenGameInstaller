@@ -41,18 +41,22 @@ export type DeferredTaskSnapshot<T = unknown> = {
   readonly resolved: boolean;
 };
 
+type MaybeEffect = Effect.Effect<void> | void;
+const asEffect = (value: MaybeEffect): Effect.Effect<void> =>
+  Effect.isEffect(value) ? value : Effect.void;
+
 export type DeferredTaskOptions<T = unknown> = {
   readonly interval?: number;
-  readonly onTaskStarted?: (taskID: string) => Effect.Effect<void>;
+  readonly onTaskStarted?: (taskID: string) => MaybeEffect;
   readonly onProgress?: (
     progress: number,
     task: DeferredTaskSnapshot<T>
-  ) => Effect.Effect<void>;
+  ) => MaybeEffect;
   readonly onLogs?: (
     logs: string[],
     task: DeferredTaskSnapshot<T>
-  ) => Effect.Effect<void>;
-  readonly onFailed?: (error: string) => Effect.Effect<void>;
+  ) => MaybeEffect;
+  readonly onFailed?: (error: string) => MaybeEffect;
 };
 
 type InputAskedArgs = AddonServerToClientSDKEventArgs['input-asked'] & {
@@ -249,17 +253,17 @@ export class Connection {
         const task = yield* this.getDeferredTask<T>(taskID);
         if (!task) {
           const message = 'Task not found';
-          if (options.onFailed) yield* options.onFailed(message);
+          if (options.onFailed) yield* asEffect(options.onFailed(message));
           return yield* Effect.fail(new NetworkError({ message }));
         }
 
         if (options.onProgress) {
-          yield* options.onProgress(task.progress, task);
+          yield* asEffect(options.onProgress(task.progress, task));
         }
-        if (options.onLogs) yield* options.onLogs(task.logs, task);
+        if (options.onLogs) yield* asEffect(options.onLogs(task.logs, task));
 
         if (task.failed) {
-          if (options.onFailed) yield* options.onFailed(task.failed);
+          if (options.onFailed) yield* asEffect(options.onFailed(task.failed));
           return yield* Effect.fail(new NetworkError({ message: task.failed }));
         }
         if (task.resolved) return task.data;
@@ -296,10 +300,13 @@ export class Connection {
   /** Forks a callback as a consumer of an SDK event stream. */
   public on<Event extends AddonServerToClientSDKEvent, E>(
     event: Event,
-    callback: (args: SDKEventArgs<Event>) => Effect.Effect<void, E>
+    callback: (args: SDKEventArgs<Event>) => Effect.Effect<void, E> | void
   ): Effect.Effect<Fiber.RuntimeFiber<void, E>> {
     return this.events(event).pipe(
-      Stream.runForEach(callback),
+      Stream.runForEach((args) => {
+        const result = callback(args);
+        return Effect.isEffect(result) ? result : Effect.void;
+      }),
       Effect.forkDaemon
     );
   }
@@ -424,7 +431,7 @@ export class Connection {
             ...args
           );
           if (deferredOptions.onTaskStarted) {
-            yield* deferredOptions.onTaskStarted(taskID);
+            yield* asEffect(deferredOptions.onTaskStarted(taskID));
           }
           const result = yield* this.waitForDeferredTask<
             AddonForwardResponse<Event>['args']

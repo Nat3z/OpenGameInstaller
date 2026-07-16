@@ -1,4 +1,5 @@
 <script lang="ts">
+import { Either, Schema } from 'effect';
 import { onDestroy, onMount } from 'svelte';
 import { preventDefault } from 'svelte/legacy';
 import { fade } from 'svelte/transition';
@@ -109,16 +110,12 @@ async function loadCommunityAddonsFromMarketplaces(sources: string[]) {
             'User-Agent': 'OpenGameInstaller Client/Rest1.0',
           },
         });
-        const parsed = communityAddonArraySchema.safeParse(response.data);
-        if (!parsed.success) {
-          console.error(
-            'Invalid marketplace JSON for',
-            marketplaceUrl,
-            parsed.error
-          );
+        const parsed = Schema.decodeUnknownEither(communityAddonArraySchema)(response.data);
+        if (Either.isLeft(parsed)) {
+          console.error('Invalid marketplace JSON for', marketplaceUrl, parsed.left);
           throw new Error('Invalid marketplace JSON');
         }
-        return parsed.data.map((addon) => ({
+        return parsed.right.map((addon) => ({
           ...addon,
           marketplaceUrl,
         }));

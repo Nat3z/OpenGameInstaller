@@ -18,7 +18,7 @@ import {
   normalizeAddonLink,
   parseAddonLink,
 } from '@/electron/lib/addon-links.js';
-import { tryCatch } from '@/electron/lib/tryCatch.js';
+import { Effect } from 'effect';
 import { sendNotification } from '@/electron/main.js';
 import { Addon } from '@/electron/manager/manager.addon.js';
 import { __dirname } from '@/electron/manager/manager.paths.js';
@@ -794,7 +794,7 @@ export async function checkForAddonUpdates(
           path: addonPath,
         });
 
-        const localHash = await addonGit.getCurrentHash();
+        const localHash = await Effect.runPromise(addonGit.getCurrentHash());
         let remoteHash = 'latest';
         let isUpdate = false;
 
@@ -816,17 +816,12 @@ export async function checkForAddonUpdates(
 
         if (remoteHash === 'latest') {
           // dry fetch dry run - check if updates are available
-          const status = await tryCatch(async () => {
-            return await addonGit.fetch();
-          });
-          if (status.error) {
-            console.error(
-              `[startup] Error checking updates for ${addonName}:`,
-              status.error
-            );
+          const status = await Effect.runPromise(Effect.either(addonGit.fetch()));
+          if (status._tag === 'Left') {
+            console.error(`[startup] Error checking updates for ${addonName}:`, status.left);
             return;
           }
-          isUpdate = !status.data.alreadyUpToDate;
+          isUpdate = !status.right.alreadyUpToDate;
         }
         if (isUpdate) {
           sendNotification({

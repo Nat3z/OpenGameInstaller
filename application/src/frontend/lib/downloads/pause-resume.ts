@@ -43,7 +43,7 @@ async function enqueueRemainingPausedDownloads(
 
   bulkQueuePromise = (async () => {
     // Build an ordered list of other paused items to enqueue behind the active one
-    let downloadsSnapshot: DownloadStatusAndInfo[] = [] as any;
+    let downloadsSnapshot: DownloadStatusAndInfo[] = [];
     currentDownloads.subscribe((d) => (downloadsSnapshot = d))();
     const toQueue = downloadsSnapshot.filter(
       (d) => d.id !== resumedId && d.status === 'paused'

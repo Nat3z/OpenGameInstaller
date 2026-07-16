@@ -37,7 +37,12 @@ export abstract class BaseService {
         appID,
         files: [],
         progress: 0,
-        usedDebridService: usedDebridService as any,
+        usedDebridService: usedDebridService as
+          | 'realdebrid'
+          | 'alldebrid'
+          | 'torbox'
+          | 'premiumize'
+          | 'none',
         downloadPath: safeDownloadPath(getDownloadPath(), result.name),
         downloadSpeed: 0,
         ...result,
@@ -58,7 +63,12 @@ export abstract class BaseService {
     updateDownloadStatus(tempid, {
       id: handshake.id,
       status: cardStatusFromHandshake(handshake),
-      usedDebridService: usedDebridService as any,
+      usedDebridService: usedDebridService as
+        | 'realdebrid'
+        | 'alldebrid'
+        | 'torbox'
+        | 'premiumize'
+        | 'none',
       downloadPath,
       queuePosition: handshake.queuePosition,
       error: handshake.error,

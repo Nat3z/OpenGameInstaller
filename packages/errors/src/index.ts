@@ -1,6 +1,6 @@
 import { Data } from 'effect';
 
-export { runEffectBoundary, runSyncBoundary, ipcBoundary } from './boundary.js';
+export { ipcBoundary, runEffectBoundary, runSyncBoundary } from './boundary.js';
 
 // =============================================================================
 // Download Errors
@@ -20,7 +20,9 @@ export class TooManyRequests extends Data.TaggedError('TooManyRequests')<{
   readonly retryAfter?: number;
 }> {}
 
-export class ConnectionRefreshRequested extends Data.TaggedError('ConnectionRefreshRequested')<{
+export class ConnectionRefreshRequested extends Data.TaggedError(
+  'ConnectionRefreshRequested'
+)<{
   readonly downloadId: string;
 }> {}
 
@@ -178,7 +180,9 @@ export const formatError = (error: unknown): string => {
   return String(error);
 };
 
-export const formatErrorResponse = (error: unknown): { status: 'error'; error: string } => ({
+export const formatErrorResponse = (
+  error: unknown
+): { status: 'error'; error: string } => ({
   status: 'error',
   error: formatError(error),
 });

@@ -1,8 +1,13 @@
 import { QBittorrent } from '@ctrl/qbittorrent';
+import {
+  formatError,
+  HttpError,
+  runEffectBoundary as run,
+  TorrentError,
+} from '@ogi/errors';
 import axios from 'axios';
-import { BrowserWindow, ipcMain } from 'electron';
-import { HttpError, TorrentError, formatError, runEffectBoundary as run } from '@ogi/errors';
 import { Effect } from 'effect';
+import { BrowserWindow, ipcMain } from 'electron';
 import * as fs from 'fs';
 import { readFile, rm as rmAsync } from 'fs/promises';
 import parseTorrent from 'parse-torrent';
@@ -17,10 +22,10 @@ import { DOWNLOAD_QUEUE } from '@/electron/manager/manager.queue.js';
 import { torrent as wtConnect } from '@/electron/manager/manager.webtorrent.js';
 import {
   clearDownloadHandshake,
+  type DownloadHandshakeResult,
   registerDownloadHandshake,
   updateDownloadHandshake,
   waitForDownloadHandshake,
-  type DownloadHandshakeResult,
 } from '@/lib/download-handshake.js';
 
 let qbitClient: QBittorrent | undefined = undefined;
@@ -436,10 +441,13 @@ class TorrentDownload {
     this.status = 'seeding';
     this.sendProgress({ progress: 1, downloadSpeed: 0 });
     const completePayload = { id: this.id };
-    this.reportHandshake({ status: 'seeding' }, {
-      channel: 'torrent:download-complete',
-      data: completePayload,
-    });
+    this.reportHandshake(
+      { status: 'seeding' },
+      {
+        channel: 'torrent:download-complete',
+        data: completePayload,
+      }
+    );
     this.sendIpc('torrent:download-complete', completePayload);
     sendNotification({
       message: 'Download completed, now seeding.',
@@ -464,10 +472,13 @@ class TorrentDownload {
     }
     this.status = 'failed';
     const errorPayload = { id: this.id, error: error.message };
-    this.reportHandshake({ status: 'error', error: error.message }, {
-      channel: 'torrent:download-error',
-      data: errorPayload,
-    });
+    this.reportHandshake(
+      { status: 'error', error: error.message },
+      {
+        channel: 'torrent:download-error',
+        data: errorPayload,
+      }
+    );
     this.sendIpc('torrent:download-error', errorPayload);
     sendNotification({
       message: error.message || 'Download failed',
@@ -624,14 +635,16 @@ class TorrentDownload {
 }
 
 export default function handler(mainWindow: BrowserWindow): void {
-  const startDownload = (job: TorrentJob) => Effect.gen(function* () {
-    const download = new TorrentDownload(mainWindow, job);
-    yield* Effect.sync(() => download.start());
-    return yield* Effect.tryPromise({
-      try: () => download.waitForReady(),
-      catch: (cause) => new TorrentError({ message: formatError(cause), cause }),
+  const startDownload = (job: TorrentJob) =>
+    Effect.gen(function* () {
+      const download = new TorrentDownload(mainWindow, job);
+      yield* Effect.sync(() => download.start());
+      return yield* Effect.tryPromise({
+        try: () => download.waitForReady(),
+        catch: (cause) =>
+          new TorrentError({ message: formatError(cause), cause }),
+      });
     });
-  });
 
   ipcMain.handle(
     'torrent:download-torrent',
@@ -647,26 +660,42 @@ export default function handler(mainWindow: BrowserWindow): void {
     }
   );
 
-  ipcMain.handle('torrent:pause', (_, id: string) => run(Effect.sync(() => downloads.get(id)?.pause())));
-  ipcMain.handle('torrent:resume', (_, id: string) => run(Effect.sync(() => downloads.get(id)?.resume())));
-  ipcMain.handle('torrent:abort', (_, id: string) => run(Effect.sync(() => downloads.get(id)?.cancel())));
+  ipcMain.handle('torrent:pause', (_, id: string) =>
+    run(Effect.sync(() => downloads.get(id)?.pause()))
+  );
+  ipcMain.handle('torrent:resume', (_, id: string) =>
+    run(Effect.sync(() => downloads.get(id)?.resume()))
+  );
+  ipcMain.handle('torrent:abort', (_, id: string) =>
+    run(Effect.sync(() => downloads.get(id)?.cancel()))
+  );
 
-  ipcMain.handle('download-torrent-into', (_, link: string) => run(
-    Effect.tryPromise({
-      try: () => axios.get<ArrayBuffer>(link, { responseType: 'arraybuffer' }),
-      catch: (cause: unknown) => new HttpError({
-        message: axios.isAxiosError(cause) ? cause.message : formatError(cause),
-        statusCode: axios.isAxiosError(cause) ? cause.response?.status ?? 0 : 0,
-        url: link,
-      }),
-    }).pipe(Effect.map((response) => Buffer.from(response.data)))
-  ));
+  ipcMain.handle('download-torrent-into', (_, link: string) =>
+    run(
+      Effect.tryPromise({
+        try: () =>
+          axios.get<ArrayBuffer>(link, { responseType: 'arraybuffer' }),
+        catch: (cause: unknown) =>
+          new HttpError({
+            message: axios.isAxiosError(cause)
+              ? cause.message
+              : formatError(cause),
+            statusCode: axios.isAxiosError(cause)
+              ? (cause.response?.status ?? 0)
+              : 0,
+            url: link,
+          }),
+      }).pipe(Effect.map((response) => Buffer.from(response.data)))
+    )
+  );
 
-  ipcMain.handle(
-    'torrent:get-hash',
-    (_, item: string | Buffer | Uint8Array) => run(Effect.tryPromise({
-      try: () => getTorrentInfoHash(item),
-      catch: (cause) => new TorrentError({ message: formatError(cause), cause }),
-    }))
+  ipcMain.handle('torrent:get-hash', (_, item: string | Buffer | Uint8Array) =>
+    run(
+      Effect.tryPromise({
+        try: () => getTorrentInfoHash(item),
+        catch: (cause) =>
+          new TorrentError({ message: formatError(cause), cause }),
+      })
+    )
   );
 }

@@ -1,14 +1,14 @@
-import axios, { AxiosError, type AxiosResponse } from 'axios';
-import { BrowserWindow, ipcMain } from 'electron';
 import {
   DownloadError,
   DownloadNotActive,
   FileSystemError,
-  TooManyRequests,
   formatError,
   runEffectBoundary,
+  TooManyRequests,
 } from '@ogi/errors';
+import axios, { AxiosError, type AxiosResponse } from 'axios';
 import { Context, Effect, Layer, Schedule, Stream } from 'effect';
+import { BrowserWindow, ipcMain } from 'electron';
 import * as fs from 'fs';
 import { rm as rmAsync } from 'fs/promises';
 import * as http from 'http';
@@ -24,10 +24,10 @@ import {
 import { DOWNLOAD_QUEUE } from '@/electron/manager/manager.queue.js';
 import {
   clearDownloadHandshake,
+  type DownloadHandshakeResult,
   registerDownloadHandshake,
   updateDownloadHandshake,
   waitForDownloadHandshake,
-  type DownloadHandshakeResult,
 } from '@/lib/download-handshake.js';
 
 // Parallel download configuration
@@ -1452,10 +1452,13 @@ class Download {
 
     this.sendProgress({ progress: 1, downloadSpeed: 0 });
     const completePayload = { id: this.id };
-    this.reportHandshake({ status: 'completed' }, {
-      channel: 'ddl:download-complete',
-      data: completePayload,
-    });
+    this.reportHandshake(
+      { status: 'completed' },
+      {
+        channel: 'ddl:download-complete',
+        data: completePayload,
+      }
+    );
     this.sendIpc('ddl:download-complete', completePayload);
     sendNotification({
       message: 'Download completed',
@@ -1471,10 +1474,13 @@ class Download {
   private fail(error: Error) {
     this.status = 'failed';
     const errorPayload = { id: this.id, error: error.message };
-    this.reportHandshake({ status: 'error', error: error.message }, {
-      channel: 'ddl:download-error',
-      data: errorPayload,
-    });
+    this.reportHandshake(
+      { status: 'error', error: error.message },
+      {
+        channel: 'ddl:download-error',
+        data: errorPayload,
+      }
+    );
 
     if (this.useParallelParts) {
       // Clean up multi-part parallel downloads
@@ -2421,53 +2427,81 @@ async function checkParallelChunkCount() {
 export class DownloadService extends Context.Tag('DownloadService')<
   DownloadService,
   {
-    readonly start: (jobs: DownloadJob[], part?: number) => Effect.Effect<unknown, DownloadError>;
+    readonly start: (
+      jobs: DownloadJob[],
+      part?: number
+    ) => Effect.Effect<unknown, DownloadError>;
     readonly pause: (id: string) => Effect.Effect<void, DownloadNotActive>;
-    readonly resume: (id: string) => Effect.Effect<void, DownloadError | DownloadNotActive>;
+    readonly resume: (
+      id: string
+    ) => Effect.Effect<void, DownloadError | DownloadNotActive>;
     readonly abort: (id: string) => Effect.Effect<void, DownloadNotActive>;
-    readonly statuses: Stream.Stream<ReadonlyArray<{ id: string; status: DownloadStatus }>>;
+    readonly statuses: Stream.Stream<
+      ReadonlyArray<{ id: string; status: DownloadStatus }>
+    >;
   }
 >() {}
 
 /** Layer facade around the legacy transport internals while they are incrementally split into fibers. */
-export const DownloadServiceLive = (mainWindow: BrowserWindow): Layer.Layer<DownloadService> =>
+export const DownloadServiceLive = (
+  mainWindow: BrowserWindow
+): Layer.Layer<DownloadService> =>
   Layer.succeed(DownloadService, {
-    start: (jobs, part) => Effect.gen(function* () {
-      yield* Effect.tryPromise({
-        try: checkParallelChunkCount,
-        catch: (cause) => new DownloadError({ message: formatError(cause), cause }),
-      });
-      const download = new Download(mainWindow, jobs, part);
-      yield* Effect.sync(() => download.start());
-      return yield* Effect.tryPromise({
-        try: () => download.waitForReady(),
-        catch: (cause) => new DownloadError({ message: formatError(cause), downloadId: download.id, cause }),
-      });
-    }),
+    start: (jobs, part) =>
+      Effect.gen(function* () {
+        yield* Effect.tryPromise({
+          try: checkParallelChunkCount,
+          catch: (cause) =>
+            new DownloadError({ message: formatError(cause), cause }),
+        });
+        const download = new Download(mainWindow, jobs, part);
+        yield* Effect.sync(() => download.start());
+        return yield* Effect.tryPromise({
+          try: () => download.waitForReady(),
+          catch: (cause) =>
+            new DownloadError({
+              message: formatError(cause),
+              downloadId: download.id,
+              cause,
+            }),
+        });
+      }),
     pause: (id) => {
       const download = downloads.get(id);
       return download
         ? Effect.sync(() => download.pause())
         : Effect.fail(new DownloadNotActive({ downloadId: id }));
     },
-    resume: (id) => Effect.gen(function* () {
-      const download = downloads.get(id);
-      if (!download) return yield* Effect.fail(new DownloadNotActive({ downloadId: id }));
-      yield* Effect.tryPromise({
-        try: checkParallelChunkCount,
-        catch: (cause) => new DownloadError({ message: formatError(cause), downloadId: id, cause }),
-      });
-      yield* Effect.sync(() => download.resume());
-    }),
+    resume: (id) =>
+      Effect.gen(function* () {
+        const download = downloads.get(id);
+        if (!download)
+          return yield* Effect.fail(new DownloadNotActive({ downloadId: id }));
+        yield* Effect.tryPromise({
+          try: checkParallelChunkCount,
+          catch: (cause) =>
+            new DownloadError({
+              message: formatError(cause),
+              downloadId: id,
+              cause,
+            }),
+        });
+        yield* Effect.sync(() => download.resume());
+      }),
     abort: (id) => {
       const download = downloads.get(id);
       return download
         ? Effect.sync(() => download.cancel())
         : Effect.fail(new DownloadNotActive({ downloadId: id }));
     },
-    statuses: Stream.repeatEffect(Effect.sync(() =>
-      Array.from(downloads, ([id, download]) => ({ id, status: download.status }))
-    )).pipe(Stream.schedule(Schedule.spaced('1 second'))),
+    statuses: Stream.repeatEffect(
+      Effect.sync(() =>
+        Array.from(downloads, ([id, download]) => ({
+          id,
+          status: download.status,
+        }))
+      )
+    ).pipe(Stream.schedule(Schedule.spaced('1 second'))),
   });
 
 export default function handler(mainWindow: BrowserWindow): void {
@@ -2476,15 +2510,31 @@ export default function handler(mainWindow: BrowserWindow): void {
     runEffectBoundary(effect.pipe(Effect.provide(layer)));
 
   ipcMain.handle('ddl:download', (_, jobs: DownloadJob[], part?: number) =>
-    run(Effect.gen(function* () { return yield* (yield* DownloadService).start(jobs, part); }))
+    run(
+      Effect.gen(function* () {
+        return yield* (yield* DownloadService).start(jobs, part);
+      })
+    )
   );
   ipcMain.handle('ddl:pause', (_, id: string) =>
-    run(Effect.gen(function* () { yield* (yield* DownloadService).pause(id); }))
+    run(
+      Effect.gen(function* () {
+        yield* (yield* DownloadService).pause(id);
+      })
+    )
   );
   ipcMain.handle('ddl:resume', (_, id: string) =>
-    run(Effect.gen(function* () { yield* (yield* DownloadService).resume(id); }))
+    run(
+      Effect.gen(function* () {
+        yield* (yield* DownloadService).resume(id);
+      })
+    )
   );
   ipcMain.handle('ddl:abort', (_, id: string) =>
-    run(Effect.gen(function* () { yield* (yield* DownloadService).abort(id); }))
+    run(
+      Effect.gen(function* () {
+        yield* (yield* DownloadService).abort(id);
+      })
+    )
   );
 }

@@ -1,4 +1,5 @@
 import { exec, spawn } from 'child_process';
+import { Effect } from 'effect';
 import * as fsSync from 'fs';
 import * as fs from 'fs/promises';
 import { join } from 'path';
@@ -258,7 +259,7 @@ let migrations: {
     description: 'Adds a desktop shortcut for OpenGameInstaller',
     platform: 'linux',
     run: async () => {
-      await addToDesktop();
+      await Effect.runPromise(addToDesktop());
       sendNotification({
         message:
           'Desktop shortcut created successfully. You can now find OpenGameInstaller in your Desktop.',

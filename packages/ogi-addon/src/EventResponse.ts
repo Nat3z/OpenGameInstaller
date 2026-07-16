@@ -78,11 +78,14 @@ export default class EventResponse<T> {
     screen: ConfigurationBuilder<U>
   ): Effect.Effect<U, AddonError> {
     if (!this.onInputAsked) {
-      return Effect.fail(new AddonError({ message: 'No input callback is registered' }));
+      return Effect.fail(
+        new AddonError({ message: 'No input callback is registered' })
+      );
     }
     return Effect.tryPromise({
       try: () => this.onInputAsked!(screen, name, description),
-      catch: (cause) => new AddonError({ message: `Input request failed: ${String(cause)}` }),
+      catch: (cause) =>
+        new AddonError({ message: `Input request failed: ${String(cause)}` }),
     });
   }
 

@@ -1,10 +1,10 @@
+import { AddonError, NetworkError } from '@ogi/errors';
 import type {
   AddonNotificationMessage,
   AddonServerHostEventListeners,
   AddonServerHostEventName,
   ConfigurationFile,
 } from '@ogi-sdk/connect';
-import { AddonError, NetworkError } from '@ogi/errors';
 import { randomUUID } from 'crypto';
 import { Effect } from 'effect';
 import { EventEmitter } from 'events';
@@ -20,7 +20,8 @@ export type AddonConfig = {
   secret?: string;
 };
 
-export type AddonServerEventListeners = AddonServerHostEventListeners<AddonConnection>;
+export type AddonServerEventListeners =
+  AddonServerHostEventListeners<AddonConnection>;
 export type AddonServerEventName = AddonServerHostEventName;
 
 /** HTTP/WebSocket addon server whose lifecycle is represented by Effects. */
@@ -37,7 +38,10 @@ export class AddonServer {
     socket: import('node:stream').Duplex,
     head: Buffer
   ) => void;
-  private healthListener?: (req: http.IncomingMessage, res: http.ServerResponse) => void;
+  private healthListener?: (
+    req: http.IncomingMessage,
+    res: http.ServerResponse
+  ) => void;
 
   public constructor(private readonly config: AddonConfig) {
     this.config.secret ??= randomUUID();
@@ -61,7 +65,8 @@ export class AddonServer {
         const [notification] = args as [AddonNotificationMessage];
         yield* Effect.forEach(
           this.sdkConnections,
-          (connection) => connection.sendNotification(notification).pipe(Effect.ignore),
+          (connection) =>
+            connection.sendNotification(notification).pipe(Effect.ignore),
           { concurrency: 'unbounded', discard: true }
         );
       }
@@ -74,7 +79,9 @@ export class AddonServer {
         ];
         const [connection] = this.sdkConnections;
         const answer = connection
-          ? yield* connection.askInput(name, description, config).pipe(Effect.catchAll(() => Effect.succeed({})))
+          ? yield* connection
+              .askInput(name, description, config)
+              .pipe(Effect.catchAll(() => Effect.succeed({})))
           : {};
         reply(answer);
       }
@@ -82,17 +89,28 @@ export class AddonServer {
     });
   }
 
-  public getConnections(): Set<AddonConnection> { return this.connections; }
-  public getClient(id: string): AddonConnection | undefined { return this.clients.get(id); }
-  public addClient(id: string, connection: AddonConnection): void { this.clients.set(id, connection); }
-  public getDeferredTasksManager(): DeferredTasksManager { return this.deferredTasksManager; }
+  public getConnections(): Set<AddonConnection> {
+    return this.connections;
+  }
+  public getClient(id: string): AddonConnection | undefined {
+    return this.clients.get(id);
+  }
+  public addClient(id: string, connection: AddonConnection): void {
+    this.clients.set(id, connection);
+  }
+  public getDeferredTasksManager(): DeferredTasksManager {
+    return this.deferredTasksManager;
+  }
 
   public removeConnection(connection: AddonConnection): void {
     this.connections.delete(connection);
     if (connection.addonInfo) this.clients.delete(connection.addonInfo.id);
   }
 
-  public on<T extends AddonServerEventName>(event: T, listener: AddonServerEventListeners[T]): this {
+  public on<T extends AddonServerEventName>(
+    event: T,
+    listener: AddonServerEventListeners[T]
+  ): this {
     this.eventEmitter.on(event, listener);
     return this;
   }
@@ -105,30 +123,49 @@ export class AddonServer {
   public getSecret(): Effect.Effect<string, AddonError> {
     return this.config.secret
       ? Effect.succeed(this.config.secret)
-      : Effect.fail(new AddonError({ message: 'Addon server secret is not configured' }));
+      : Effect.fail(
+          new AddonError({ message: 'Addon server secret is not configured' })
+        );
   }
 
   public stop(): Effect.Effect<void, NetworkError> {
     return Effect.gen(this, function* () {
       this.detachListeners();
       for (const connection of this.connections) connection.ws.close();
-      for (const connection of this.sdkConnections) yield* connection.close().pipe(Effect.ignore);
+      for (const connection of this.sdkConnections)
+        yield* connection.close().pipe(Effect.ignore);
 
       if (this.wss) {
         const wss = this.wss;
         yield* Effect.async<void, NetworkError>((resume) => {
-          wss.close((error) => resume(error
-            ? Effect.fail(new NetworkError({ message: `Unable to stop websocket server: ${error.message}` }))
-            : Effect.void));
+          wss.close((error) =>
+            resume(
+              error
+                ? Effect.fail(
+                    new NetworkError({
+                      message: `Unable to stop websocket server: ${error.message}`,
+                    })
+                  )
+                : Effect.void
+            )
+          );
         });
       }
       this.wss = undefined;
 
       if (this.server.listening) {
         yield* Effect.async<void, NetworkError>((resume) => {
-          this.server.close((error) => resume(error
-            ? Effect.fail(new NetworkError({ message: `Unable to stop HTTP server: ${error.message}` }))
-            : Effect.void));
+          this.server.close((error) =>
+            resume(
+              error
+                ? Effect.fail(
+                    new NetworkError({
+                      message: `Unable to stop HTTP server: ${error.message}`,
+                    })
+                  )
+                : Effect.void
+            )
+          );
         });
       }
       this.connections.clear();
@@ -137,7 +174,10 @@ export class AddonServer {
     });
   }
 
-  private handleWebSocketConnection(ws: WebSocket, request: http.IncomingMessage): Effect.Effect<void> {
+  private handleWebSocketConnection(
+    ws: WebSocket,
+    request: http.IncomingMessage
+  ): Effect.Effect<void> {
     return Effect.gen(this, function* () {
       if (request.url?.startsWith('/sdk')) {
         const connection = yield* ClientConnection.make(ws, this);
@@ -149,7 +189,10 @@ export class AddonServer {
       this.connections.add(connection);
       ws.on('close', () => {
         this.removeConnection(connection);
-        this.eventEmitter.emit('disconnect', `${connection.addonInfo?.name ?? 'Addon'} websocket closed`);
+        this.eventEmitter.emit(
+          'disconnect',
+          `${connection.addonInfo?.name ?? 'Addon'} websocket closed`
+        );
       });
       const success = yield* connection.setupWebsocket();
       if (!success) {
@@ -168,7 +211,10 @@ export class AddonServer {
     );
   }
 
-  private healthHandler(req: http.IncomingMessage, res: http.ServerResponse): void {
+  private healthHandler(
+    req: http.IncomingMessage,
+    res: http.ServerResponse
+  ): void {
     const pathname = req.url?.split('?')[0]?.replace(/\/+$/, '') ?? '';
     if (pathname === '/health') {
       res.statusCode = 200;
@@ -194,7 +240,13 @@ export class AddonServer {
       yield* Effect.async<void, NetworkError>((resume) => {
         const onError = (cause: Error): void => {
           this.server.off('error', onError);
-          resume(Effect.fail(new NetworkError({ message: `Unable to start addon server: ${cause.message}` })));
+          resume(
+            Effect.fail(
+              new NetworkError({
+                message: `Unable to start addon server: ${cause.message}`,
+              })
+            )
+          );
         };
         this.server.once('error', onError);
         this.server.listen(this.config.port, () => {
@@ -207,8 +259,10 @@ export class AddonServer {
   }
 
   private detachListeners(): void {
-    if (this.upgradeListener) this.server.removeListener('upgrade', this.upgradeListener);
-    if (this.healthListener) this.server.removeListener('request', this.healthListener);
+    if (this.upgradeListener)
+      this.server.removeListener('upgrade', this.upgradeListener);
+    if (this.healthListener)
+      this.server.removeListener('request', this.healthListener);
     this.upgradeListener = undefined;
     this.healthListener = undefined;
   }

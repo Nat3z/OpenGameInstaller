@@ -1,3 +1,4 @@
+import { ValidationError } from '@ogi/errors';
 import type {
   ActionConfigurationOption,
   BooleanConfigurationOption,
@@ -7,7 +8,6 @@ import type {
   NumberConfigurationOption,
   StringConfigurationOption,
 } from '@ogi-sdk/connect';
-import { ValidationError } from '@ogi/errors';
 import { Either, Schema } from 'effect';
 
 export type {
@@ -126,7 +126,9 @@ export class ConfigurationBuilder<
       // remove all functions from the option object
       if (!includeFunctions) {
         option = JSON.parse(JSON.stringify(option));
-        const optionData = Schema.decodeUnknownEither(ConfigValidationSchema)(option);
+        const optionData = Schema.decodeUnknownEither(ConfigValidationSchema)(
+          option
+        );
         if (Either.isLeft(optionData)) {
           throw new ValidationError({
             message: `Invalid configuration option: ${String(optionData.left)}`,

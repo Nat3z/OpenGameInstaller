@@ -1,7 +1,7 @@
 import { getDownloadPath } from '@/frontend/lib/core/fs';
+import { cardStatusFromHandshake } from '@/frontend/lib/downloads/events';
 import { safeDownloadPath } from '@/frontend/lib/downloads/paths';
 import type { SearchResultWithAddon } from '@/frontend/lib/tasks/runner';
-import { cardStatusFromHandshake } from '@/frontend/lib/downloads/events';
 import {
   currentDownloads,
   type DownloadStatusAndInfo,

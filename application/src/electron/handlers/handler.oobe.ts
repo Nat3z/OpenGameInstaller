@@ -1,11 +1,17 @@
-import axios from 'axios';
 import { exec, execFile } from 'node:child_process';
 import * as fs from 'node:fs/promises';
 import os from 'node:os';
 import { join } from 'node:path';
-import { ipcMain } from 'electron';
-import { FileSystemError, HttpError, PlatformError, formatError, runEffectBoundary } from '@ogi/errors';
+import {
+  FileSystemError,
+  formatError,
+  HttpError,
+  PlatformError,
+  runEffectBoundary,
+} from '@ogi/errors';
+import axios from 'axios';
 import { Effect } from 'effect';
+import { ipcMain } from 'electron';
 import { sendIPCMessage, sendNotification } from '@/electron/main.js';
 import { __dirname } from '@/electron/manager/manager.paths.js';
 import { IS_NIXOS, STEAMTINKERLAUNCH_PATH } from '@/electron/startup.js';
@@ -22,13 +28,27 @@ const command = (
   Effect.async<{ stdout: string; stderr: string }, PlatformError>((resume) => {
     const child = exec(executable, options ?? {}, (error, stdout, stderr) => {
       if (error) {
-        resume(Effect.fail(new PlatformError({ message: error.message, platform: process.platform })));
+        resume(
+          Effect.fail(
+            new PlatformError({
+              message: error.message,
+              platform: process.platform,
+            })
+          )
+        );
       } else {
         resume(Effect.succeed({ stdout, stderr }));
       }
     });
     return Effect.sync(() => child.kill());
-  }).pipe(Effect.tap(({ stdout, stderr }) => Effect.sync(() => { log(stdout); log(stderr); })));
+  }).pipe(
+    Effect.tap(({ stdout, stderr }) =>
+      Effect.sync(() => {
+        log(stdout);
+        log(stderr);
+      })
+    )
+  );
 
 const commandArgs = (
   executable: string,
@@ -37,35 +57,69 @@ const commandArgs = (
   Effect.async<{ stdout: string; stderr: string }, PlatformError>((resume) => {
     const child = execFile(executable, args, (error, stdout, stderr) => {
       if (error) {
-        resume(Effect.fail(new PlatformError({ message: error.message, platform: process.platform })));
+        resume(
+          Effect.fail(
+            new PlatformError({
+              message: error.message,
+              platform: process.platform,
+            })
+          )
+        );
       } else {
         resume(Effect.succeed({ stdout, stderr }));
       }
     });
     return Effect.sync(() => child.kill());
-  }).pipe(Effect.tap(({ stdout, stderr }) => Effect.sync(() => { log(stdout); log(stderr); })));
+  }).pipe(
+    Effect.tap(({ stdout, stderr }) =>
+      Effect.sync(() => {
+        log(stdout);
+        log(stderr);
+      })
+    )
+  );
 
 const commandExists = (executable: string): Effect.Effect<boolean> =>
-  command(executable).pipe(Effect.as(true), Effect.catchAll(() => Effect.succeed(false)));
+  command(executable).pipe(
+    Effect.as(true),
+    Effect.catchAll(() => Effect.succeed(false))
+  );
 
-const download = (url: string, destination: string): Effect.Effect<void, HttpError | FileSystemError> =>
+const download = (
+  url: string,
+  destination: string
+): Effect.Effect<void, HttpError | FileSystemError> =>
   Effect.gen(function* () {
     const response = yield* Effect.tryPromise({
       try: () => axios.get<ArrayBuffer>(url, { responseType: 'arraybuffer' }),
-      catch: (cause: unknown) => new HttpError({
-        message: axios.isAxiosError(cause) ? cause.message : formatError(cause),
-        statusCode: axios.isAxiosError(cause) ? cause.response?.status ?? 0 : 0,
-        url,
-      }),
+      catch: (cause: unknown) =>
+        new HttpError({
+          message: axios.isAxiosError(cause)
+            ? cause.message
+            : formatError(cause),
+          statusCode: axios.isAxiosError(cause)
+            ? (cause.response?.status ?? 0)
+            : 0,
+          url,
+        }),
     });
     yield* Effect.tryPromise({
       try: () => fs.writeFile(destination, Buffer.from(response.data)),
-      catch: (cause) => new FileSystemError({ message: formatError(cause), path: destination, cause }),
+      catch: (cause) =>
+        new FileSystemError({
+          message: formatError(cause),
+          path: destination,
+          cause,
+        }),
     });
   });
 
 const notify = (message: string, type: 'info' | 'error'): void =>
-  sendNotification({ message, id: Math.random().toString(36).substring(7), type });
+  sendNotification({
+    message,
+    id: Math.random().toString(36).substring(7),
+    type,
+  });
 
 const runInstaller = (
   installerUrl: string,
@@ -79,7 +133,12 @@ const runInstaller = (
     yield* command(installCommand);
     yield* Effect.tryPromise({
       try: () => fs.rm(installerPath, { force: true }),
-      catch: (cause) => new FileSystemError({ message: formatError(cause), path: installerPath, cause }),
+      catch: (cause) =>
+        new FileSystemError({
+          message: formatError(cause),
+          path: installerPath,
+          cause,
+        }),
     });
     notify(successMessage, 'info');
   });
@@ -89,64 +148,109 @@ const downloadTools = (): Effect.Effect<readonly [boolean, boolean]> =>
     let clean = true;
     let restart = false;
     const attempt = <E>(effect: Effect.Effect<void, E>) =>
-      effect.pipe(Effect.either, Effect.tap((result) => Effect.sync(() => {
-        if (result._tag === 'Left') { clean = false; log(`Error: ${formatError(result.left)}`); }
-      })));
+      effect.pipe(
+        Effect.either,
+        Effect.tap((result) =>
+          Effect.sync(() => {
+            if (result._tag === 'Left') {
+              clean = false;
+              log(`Error: ${formatError(result.left)}`);
+            }
+          })
+        )
+      );
 
-    if (process.platform === 'win32' && !(yield* commandExists('"C:\\Program Files\\7-Zip\\7z.exe" --help'))) {
-      const result = yield* attempt(runInstaller(
-        'https://7-zip.org/a/7z2407-x64.exe',
-        join(__dirname, '7z-install.exe'),
-        '7z-install.exe /S /D="C:\\Program Files\\7-Zip"',
-        'Successfully installed 7zip.'
-      ));
+    if (
+      process.platform === 'win32' &&
+      !(yield* commandExists('"C:\\Program Files\\7-Zip\\7z.exe" --help'))
+    ) {
+      const result = yield* attempt(
+        runInstaller(
+          'https://7-zip.org/a/7z2407-x64.exe',
+          join(__dirname, '7z-install.exe'),
+          '7z-install.exe /S /D="C:\\Program Files\\7-Zip"',
+          'Successfully installed 7zip.'
+        )
+      );
       if (result._tag === 'Right') restart = true;
     }
 
     if (!(yield* commandExists('git --version'))) {
       if (process.platform === 'win32') {
         const installerPath = join(__dirname, 'git-install.exe');
-        const result = yield* attempt(runInstaller(
-          'https://github.com/git-for-windows/git/releases/download/v2.46.0.windows.1/Git-2.46.0-64-bit.exe',
-          installerPath,
-          `${installerPath} /VERYSILENT /NORESTART /NOCANCEL`,
-          'Successfully installed git.'
-        ));
+        const result = yield* attempt(
+          runInstaller(
+            'https://github.com/git-for-windows/git/releases/download/v2.46.0.windows.1/Git-2.46.0-64-bit.exe',
+            installerPath,
+            `${installerPath} /VERYSILENT /NORESTART /NOCANCEL`,
+            'Successfully installed git.'
+          )
+        );
         if (result._tag === 'Right') restart = true;
       } else {
         clean = false;
-        notify('Missing Git and automatic installation is not supported.', 'error');
+        notify(
+          'Missing Git and automatic installation is not supported.',
+          'error'
+        );
       }
     }
 
     if (process.platform === 'linux') {
-      const bundled = join(__dirname, 'bin/steamtinkerlaunch/steamtinkerlaunch');
+      const bundled = join(
+        __dirname,
+        'bin/steamtinkerlaunch/steamtinkerlaunch'
+      );
       if (STEAMTINKERLAUNCH_PATH === bundled) {
         if (!(yield* commandExists(`test -x "${bundled}"`))) {
-          yield* attempt(command(`git clone https://github.com/sonic2kk/steamtinkerlaunch "${join(__dirname, 'bin/steamtinkerlaunch')}"`).pipe(
-            Effect.zipRight(command(`chmod +x "${bundled}"`)),
-            Effect.zipRight(command(`"${bundled}"`)),
-            Effect.asVoid
-          ));
+          yield* attempt(
+            command(
+              `git clone https://github.com/sonic2kk/steamtinkerlaunch "${join(__dirname, 'bin/steamtinkerlaunch')}"`
+            ).pipe(
+              Effect.zipRight(command(`chmod +x "${bundled}"`)),
+              Effect.zipRight(command(`"${bundled}"`)),
+              Effect.asVoid
+            )
+          );
         } else {
-          yield* attempt(command('git pull', { cwd: join(__dirname, 'bin/steamtinkerlaunch') }).pipe(
-            Effect.zipRight(command(`chmod +x "${bundled}"`)), Effect.asVoid
-          ));
+          yield* attempt(
+            command('git pull', {
+              cwd: join(__dirname, 'bin/steamtinkerlaunch'),
+            }).pipe(
+              Effect.zipRight(command(`chmod +x "${bundled}"`)),
+              Effect.asVoid
+            )
+          );
         }
-      } else if (!(yield* commandExists(`test -x "${STEAMTINKERLAUNCH_PATH}"`))) {
+      } else if (
+        !(yield* commandExists(`test -x "${STEAMTINKERLAUNCH_PATH}"`))
+      ) {
         clean = false;
-        notify('SteamTinkerLaunch is not installed. Please install it manually.', 'error');
+        notify(
+          'SteamTinkerLaunch is not installed. Please install it manually.',
+          'error'
+        );
       }
     }
 
     if (!(yield* commandExists('bun --version'))) {
-      const install = process.platform === 'win32'
-        ? command('powershell -c "irm bun.sh/install.ps1 | iex"')
-        : process.platform === 'linux' && !IS_NIXOS
-          ? command('curl -fsSL https://bun.sh/install | bash').pipe(
-              Effect.zipRight(command(`echo "export PATH=$PATH:/home/${os.userInfo().username}/.bun/bin" >> ~/.bashrc`))
-            )
-          : Effect.fail(new PlatformError({ message: 'Automatic Bun installation is unsupported', platform: process.platform }));
+      const install =
+        process.platform === 'win32'
+          ? command('powershell -c "irm bun.sh/install.ps1 | iex"')
+          : process.platform === 'linux' && !IS_NIXOS
+            ? command('curl -fsSL https://bun.sh/install | bash').pipe(
+                Effect.zipRight(
+                  command(
+                    `echo "export PATH=$PATH:/home/${os.userInfo().username}/.bun/bin" >> ~/.bashrc`
+                  )
+                )
+              )
+            : Effect.fail(
+                new PlatformError({
+                  message: 'Automatic Bun installation is unsupported',
+                  platform: process.platform,
+                })
+              );
       const result = yield* attempt(install.pipe(Effect.asVoid));
       if (result._tag === 'Right') restart = true;
     } else if (!IS_NIXOS) {
@@ -156,12 +260,24 @@ const downloadTools = (): Effect.Effect<readonly [boolean, boolean]> =>
   });
 
 export default function OOBEHandler(): void {
-  ipcMain.handle('oobe:download-tools', () => runEffectBoundary(downloadTools()));
+  ipcMain.handle('oobe:download-tools', () =>
+    runEffectBoundary(downloadTools())
+  );
   ipcMain.handle('oobe:set-steamgriddb-key', (_, key: string) =>
     runEffectBoundary(
-      commandArgs(STEAMTINKERLAUNCH_PATH, ['set', 'SGDBAPIKEY', 'global', key]).pipe(
+      commandArgs(STEAMTINKERLAUNCH_PATH, [
+        'set',
+        'SGDBAPIKEY',
+        'global',
+        key,
+      ]).pipe(
         Effect.as(true),
-        Effect.catchAll((error) => Effect.sync(() => { log(`Error: ${formatError(error)}`); return false; }))
+        Effect.catchAll((error) =>
+          Effect.sync(() => {
+            log(`Error: ${formatError(error)}`);
+            return false;
+          })
+        )
       )
     )
   );

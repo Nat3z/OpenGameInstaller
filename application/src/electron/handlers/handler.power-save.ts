@@ -1,5 +1,5 @@
-import { ipcMain } from 'electron';
 import { Effect } from 'effect';
+import { ipcMain } from 'electron';
 import { setPowerSaveBlockActive } from '@/electron/lib/power-save.js';
 
 export function registerPowerSaveHandlers(): void {

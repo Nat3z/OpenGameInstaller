@@ -1,5 +1,5 @@
-import type { WebSocketLike } from '@ogi-sdk/connect';
 import { NetworkError } from '@ogi/errors';
+import type { WebSocketLike } from '@ogi-sdk/connect';
 import { Effect } from 'effect';
 
 /** Installs lifecycle callbacks and runs their Effects at the websocket boundary. */

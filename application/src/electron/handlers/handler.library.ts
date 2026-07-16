@@ -581,7 +581,16 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
               if (!fs.existsSync(redistributable.path)) {
                 return yield* Effect.fail(new LibraryError({ message: `Redistributable path does not exist: ${redistributable.path}`, gameId: data.appID }));
               }
-              spawnSync(redistributable.path, [], { stdio: 'inherit', shell: false });
+              const installResult = spawnSync(redistributable.path, [], {
+                stdio: 'inherit',
+                shell: false,
+              });
+              if (installResult.error || installResult.status !== 0) {
+                return yield* Effect.fail(new LibraryError({
+                  message: installResult.error?.message ?? `Redistributable installer exited with status ${installResult.status ?? 'unknown'}`,
+                  gameId: data.appID,
+                }));
+              }
               sendNotification({
                 message: `Installed ${redistributable.name} for ${data.name}`,
                 id: generateNotificationId(), type: 'success',
@@ -674,7 +683,7 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
       }
 
       // On Linux, handle legacy mode updates
-      if (isLinux() && prevUmu === undefined) {
+      if (isLinux() && appData.umu === undefined) {
         // Preserve the original launch arguments before any modifications
         // Prefer incoming update over existing appData to avoid discarding newly provided edits
         const originalLaunchArguments =

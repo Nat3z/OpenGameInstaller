@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { exec } from 'node:child_process';
+import { exec, execFile } from 'node:child_process';
 import * as fs from 'node:fs/promises';
 import os from 'node:os';
 import { join } from 'node:path';
@@ -21,6 +21,21 @@ const command = (
 ): Effect.Effect<{ stdout: string; stderr: string }, PlatformError> =>
   Effect.async<{ stdout: string; stderr: string }, PlatformError>((resume) => {
     const child = exec(executable, options ?? {}, (error, stdout, stderr) => {
+      if (error) {
+        resume(Effect.fail(new PlatformError({ message: error.message, platform: process.platform })));
+      } else {
+        resume(Effect.succeed({ stdout, stderr }));
+      }
+    });
+    return Effect.sync(() => child.kill());
+  }).pipe(Effect.tap(({ stdout, stderr }) => Effect.sync(() => { log(stdout); log(stderr); })));
+
+const commandArgs = (
+  executable: string,
+  args: string[]
+): Effect.Effect<{ stdout: string; stderr: string }, PlatformError> =>
+  Effect.async<{ stdout: string; stderr: string }, PlatformError>((resume) => {
+    const child = execFile(executable, args, (error, stdout, stderr) => {
       if (error) {
         resume(Effect.fail(new PlatformError({ message: error.message, platform: process.platform })));
       } else {
@@ -144,7 +159,7 @@ export default function OOBEHandler(): void {
   ipcMain.handle('oobe:download-tools', () => runEffectBoundary(downloadTools()));
   ipcMain.handle('oobe:set-steamgriddb-key', (_, key: string) =>
     runEffectBoundary(
-      command(`${STEAMTINKERLAUNCH_PATH} set SGDBAPIKEY global ${key}`).pipe(
+      commandArgs(STEAMTINKERLAUNCH_PATH, ['set', 'SGDBAPIKEY', 'global', key]).pipe(
         Effect.as(true),
         Effect.catchAll((error) => Effect.sync(() => { log(`Error: ${formatError(error)}`); return false; }))
       )

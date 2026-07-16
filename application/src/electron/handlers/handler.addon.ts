@@ -124,7 +124,7 @@ export async function restartAddonServer(): Promise<void> {
   // stop all of the addons
   for (const instance of [...Addon.running.values()]) {
     console.log(`Stopping addon ${instance.config.path}`);
-    instance.stop();
+    await Effect.runPromise(instance.stop());
   }
   // start the server and wait for it to be listening before starting addons
 
@@ -290,7 +290,7 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
           }
 
           const unloadedAddon = new Addon.Git({ path: addonPath });
-          await unloadedAddon.clone(gitUrl);
+          await Effect.runPromise(unloadedAddon.clone(gitUrl));
           clonedThisInstall = true;
 
           if (parsedAddon.kind === 'marketplace') {
@@ -315,8 +315,10 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
               addonFromMarketplace.pinnedCommit &&
               addonFromMarketplace.pinnedCommit !== 'latest'
             )
-              await unloadedAddon.checkoutCommit(
-                addonFromMarketplace.pinnedCommit
+              await Effect.runPromise(
+                unloadedAddon.checkoutCommit(
+                  addonFromMarketplace.pinnedCommit
+                )
               );
             else {
               console.log('Defaulting to latest commit.');
@@ -381,7 +383,7 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
   ipcMain.handle('clean-addons', ipcBoundary(async (_, marketplaceUrls: string[]) => {
     for (const instance of [...Addon.running.values()]) {
       console.log(`Stopping addon ${instance.config.path}`);
-      instance.stop();
+      await Effect.runPromise(instance.stop());
     }
 
     // delete specific addons in marketplaceUrls
@@ -424,7 +426,7 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
 
     for (const instance of [...Addon.running.values()]) {
       console.log(`Stopping addon ${instance.config.path}`);
-      instance.stop();
+      await Effect.runPromise(instance.stop());
     }
 
     // pull all of the addons
@@ -470,29 +472,32 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
         continue;
       }
 
-      const updatePromise = new Promise<void>(async (resolve, reject) => {
+      const updatePromise = (async () => {
         console.log(addonPath);
-        const addonJSON = await Effect.runPromise(Addon.Setup.loadAddonConfig(addonPath));
+        const addonJSON = await Effect.runPromise(
+          Addon.Setup.loadAddonConfig(addonPath)
+        );
         const addonSetup = new Addon.Setup({
           name: addonName,
           path: addonPath,
           scripts: addonJSON.scripts,
         });
 
-        const fetchResult = await Effect.runPromise(Effect.either(Effect.gen(function* () {
-          return {
-            alreadyUpToDate: (yield* addonSetup.git.fetch()).alreadyUpToDate,
-            currentHash: yield* addonSetup.git.getCurrentHash(),
-          };
-        })));
+        const fetchResult = await Effect.runPromise(
+          Effect.either(Effect.gen(function* () {
+            return {
+              alreadyUpToDate: (yield* addonSetup.git.fetch()).alreadyUpToDate,
+              currentHash: yield* addonSetup.git.getCurrentHash(),
+            };
+          }))
+        );
         if (fetchResult._tag === 'Left') {
           sendNotification({
             message: `Failed to update addon ${addonName}`,
             id: Math.random().toString(36).substring(7),
             type: 'error',
           });
-          reject(fetchResult.left);
-          return;
+          throw fetchResult.left;
         }
         const fetchData = fetchResult.right;
         console.log(marketplaceUrl, addonName, gitUrl);
@@ -513,8 +518,7 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
               id: Math.random().toString(36).substring(7),
               type: 'error',
             });
-            reject(new AddonNotFound({ addonName }));
-            return;
+            throw new AddonNotFound({ addonName });
           }
 
           const pinnedCommit = marketplaceAddon.pinnedCommit ?? 'latest';
@@ -522,7 +526,10 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
             pinnedCommit === 'latest'
               ? fetchData.alreadyUpToDate
               : fetchData.currentHash === pinnedCommit;
-          if (alreadyUpToDate && (await Effect.runPromise(addonSetup.isInstalled()))) {
+          if (
+            alreadyUpToDate &&
+            (await Effect.runPromise(addonSetup.isInstalled()))
+          ) {
             sendNotification({
               message: `Addon ${addonName} is already up to date.`,
               id: Math.random().toString(36).substring(7),
@@ -532,87 +539,81 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
               'addon:updated',
               addonWithMarketplace
             );
-            resolve();
             return;
           }
 
           if (pinnedCommit !== 'latest') {
-            await Effect.runPromise(addonSetup.git.checkoutCommit(pinnedCommit));
+            await Effect.runPromise(
+              addonSetup.git.checkoutCommit(pinnedCommit)
+            );
           } else if (!alreadyUpToDate) {
             await Effect.runPromise(addonSetup.git.pull());
           }
-        } else if (alreadyUpToDate && (await Effect.runPromise(addonSetup.isInstalled()))) {
+        } else if (
+          alreadyUpToDate &&
+          (await Effect.runPromise(addonSetup.isInstalled()))
+        ) {
           sendNotification({
             message: `Addon ${addonName} is already up to date.`,
             id: Math.random().toString(36).substring(7),
             type: 'info',
           });
           mainWindow!!.webContents.send('addon:updated', addonWithMarketplace);
-          resolve();
           return;
         } else {
-          await addonSetup.git.pull();
+          await Effect.runPromise(addonSetup.git.pull());
         }
 
         if (alreadyUpToDate) {
           console.log(
             `Addon ${addonName} is already up to date, but installation.log is missing. Running setup.`
           );
-        } else if (await addonSetup.isInstalled()) {
+        } else if (await Effect.runPromise(addonSetup.isInstalled())) {
           // get rid of the installation log because not up-to-date
           fs.unlinkSync(join(addonPath, 'installation.log'));
         }
 
-        void Addon.load(addonPath).then(async (instance) => {
-          if (!instance) {
-            reject(
-              new AddonError({
-                message: `Failed to load addon ${addonName}`,
-                addonName,
-              })
-            );
-            return;
-          }
-          try {
-            const success = await instance.install();
-            if (!success || !(await instance.setup.isInstalled())) {
-              sendNotification({
-                message: `An error occurred when setting up ${addonName}`,
-                id: Math.random().toString(36).substring(7),
-                type: 'error',
-              });
-              reject(
-                new AddonError({
-                  message: `Failed to setup addon ${addonName}`,
-                  addonName,
-                })
-              );
-              return;
-            }
+        const instance = await Addon.load(addonPath);
+        if (!instance) {
+          throw new AddonError({
+            message: `Failed to load addon ${addonName}`,
+            addonName,
+          });
+        }
 
-            sendNotification({
-              message: alreadyUpToDate
-                ? `Addon ${addonName} setup completed successfully.`
-                : `Addon ${addonName} updated successfully.`,
-              id: Math.random().toString(36).substring(7),
-              type: 'info',
+        try {
+          const success = await instance.install();
+          if (
+            !success ||
+            !(await Effect.runPromise(instance.setup.isInstalled()))
+          ) {
+            throw new AddonError({
+              message: `Failed to setup addon ${addonName}`,
+              addonName,
             });
-            mainWindow!!.webContents.send(
-              'addon:updated',
-              addonWithMarketplace
-            );
-            console.log(`Addon ${addonName} updated and setup successfully.`);
-            resolve();
-          } catch (setupErr) {
-            sendNotification({
-              message: `An error occurred when setting up ${addonName}`,
-              id: Math.random().toString(36).substring(7),
-              type: 'error',
-            });
-            reject(setupErr);
           }
-        });
-      });
+
+          sendNotification({
+            message: alreadyUpToDate
+              ? `Addon ${addonName} setup completed successfully.`
+              : `Addon ${addonName} updated successfully.`,
+            id: Math.random().toString(36).substring(7),
+            type: 'info',
+          });
+          mainWindow!!.webContents.send(
+            'addon:updated',
+            addonWithMarketplace
+          );
+          console.log(`Addon ${addonName} updated and setup successfully.`);
+        } catch (setupErr) {
+          sendNotification({
+            message: `An error occurred when setting up ${addonName}`,
+            id: Math.random().toString(36).substring(7),
+            type: 'error',
+          });
+          throw setupErr;
+        }
+      })();
       updatePromises.push(updatePromise);
     }
 

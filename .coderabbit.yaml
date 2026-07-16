@@ -1,5 +1,11 @@
 language: 'en-US'
 early_access: false
+ignore_from_diff:
+  - '**/package.json'
+  - 'bun.lock'
+  - '.coderabbit.yaml'
+  - 'EFFECT-MIGRATION.md'
+  - '**/_generated/**'
 reviews:
   profile: 'chill'
   request_changes_workflow: false

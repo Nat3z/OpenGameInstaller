@@ -805,7 +805,9 @@ export async function checkForAddonUpdates(
         let isUpdate = false;
 
         if (parsedAddon.kind === 'marketplace') {
-          const marketplace = await loadMarketplace(parsedAddon.marketplaceUrl);
+          const marketplace = await Effect.runPromise(
+            loadMarketplace(parsedAddon.marketplaceUrl)
+          );
           remoteHash =
             marketplace.getAddon(parsedAddon.gitUrl)?.pinnedCommit ?? 'latest';
           isUpdate = localHash !== remoteHash;

@@ -71,66 +71,64 @@ const migrateCompatData = (
 /**
  * Add a UMU game to Steam using OGI wrapper launches.
  */
-export async function addUmuGameToSteam(params: {
+export function addUmuGameToSteam(params: {
   appID: number;
   name: string;
   version?: string;
-}): Promise<{ success: boolean; error?: string; steamAppId?: number }> {
-  if (!isLinux()) {
-    return { success: false, error: 'Only available on Linux' };
-  }
+}): Effect.Effect<{ success: boolean; error?: string; steamAppId?: number }> {
+  return Effect.gen(function* () {
+    if (!isLinux()) {
+      return { success: false, error: 'Only available on Linux' };
+    }
 
-  const appInfo = loadLibraryInfo(params.appID);
-  if (!appInfo || !appInfo.umu) {
-    return { success: false, error: 'Game is not configured for UMU mode' };
-  }
+    const appInfo = loadLibraryInfo(params.appID);
+    if (!appInfo || !appInfo.umu) {
+      return { success: false, error: 'Game is not configured for UMU mode' };
+    }
 
-  const result = await addGameToSteam({
-    name: params.name,
-    version: params.version,
-    launchExecutable: appInfo.launchExecutable,
-    cwd: appInfo.cwd,
-    // %command% is intentionally the only thing in the wrapper command.
-    wrapperCommand: '%command%',
-    appID: params.appID,
-    compatibilityTool: 'proton_experimental',
+    const result = yield* addGameToSteam({
+      name: params.name,
+      version: params.version,
+      launchExecutable: appInfo.launchExecutable,
+      cwd: appInfo.cwd,
+      wrapperCommand: '%command%',
+      appID: params.appID,
+      compatibilityTool: 'proton_experimental',
+    });
+
+    if (!result) {
+      return { success: false, error: 'Failed to add game to Steam' };
+    }
+
+    const { success, appId: steamAppId } = yield* getSteamAppIdWithFallback(
+      params.name,
+      params.version,
+      'addGameToSteam'
+    );
+
+    return !success || !steamAppId
+      ? { success: true }
+      : { success: true, steamAppId };
   });
-
-  if (!result) {
-    return { success: false, error: 'Failed to add game to Steam' };
-  }
-
-  // Get the Steam app ID (try versioned shortcut name first, then plain name)
-  const { success, appId: steamAppId } = await getSteamAppIdWithFallback(
-    params.name,
-    params.version,
-    'addGameToSteam'
-  );
-
-  if (!success || !steamAppId) {
-    return { success: true }; // Game was added but we couldn't get the ID
-  }
-
-  return { success: true, steamAppId };
 }
 
 /**
  * Launch a Steam game by app ID via xdg-open. Returns a Promise with
  * { success, shortcutId?, error? } for use by both UMU and legacy launch paths.
  */
-function launchViaSteam(appId: number): Promise<{
+function launchViaSteam(appId: number): Effect.Effect<{
   success: boolean;
   shortcutId?: number;
   error?: string;
 }> {
-  return new Promise((resolve) => {
+  return Effect.async((resume) => {
     exec(`xdg-open steam://rungameid/${appId}`, (error) => {
       if (error) {
         console.error('[steam] Failed to launch app via Steam:', error);
-        resolve({ success: false, error: error.message });
+        resume(Effect.succeed({ success: false, error: error.message }));
       } else {
         console.log('[steam] Steam app launch command executed');
-        resolve({ success: true, shortcutId: appId });
+        resume(Effect.succeed({ success: true, shortcutId: appId }));
       }
     });
   });
@@ -140,29 +138,30 @@ function launchViaSteam(appId: number): Promise<{
  * Create a .desktop entry for Steam shortcut that launches OGI with --game-id
  * This is an alternative to steamtinkerlaunch
  */
-export async function createSteamShortcutDesktop(params: {
+export function createSteamShortcutDesktop(params: {
   appID: number;
   name: string;
   version?: string;
-}): Promise<{ success: boolean; error?: string }> {
-  if (!isLinux()) {
-    return { success: false, error: 'Only available on Linux' };
-  }
+}): Effect.Effect<{ success: boolean; error?: string }> {
+  return Effect.sync(() => {
+    if (!isLinux()) {
+      return { success: false, error: 'Only available on Linux' };
+    }
 
-  const homeDir = getHomeDir();
-  if (!homeDir) {
-    return { success: false, error: 'Home directory not found' };
-  }
+    const homeDir = getHomeDir();
+    if (!homeDir) {
+      return { success: false, error: 'Home directory not found' };
+    }
 
-  const versionedGameName = getVersionedGameName(params.name, params.version);
-  const sanitizedGameName = versionedGameName
-    .replace(new RegExp('[\\r\\n\\x00-\\x1F=]', 'g'), ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-  const ogiPath = getOgiExecutablePath();
+    const versionedGameName = getVersionedGameName(params.name, params.version);
+    const sanitizedGameName = versionedGameName
+      .replace(new RegExp('[\\r\\n\\x00-\\x1F=]', 'g'), ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    const ogiPath = getOgiExecutablePath();
 
-  // Create .desktop file for Steam
-  const desktopEntry = `[Desktop Entry]
+    // Create .desktop file for Steam
+    const desktopEntry = `[Desktop Entry]
 Name=${sanitizedGameName}
 Exec="${ogiPath}" --game-id=${params.appID}
 Type=Application
@@ -170,24 +169,25 @@ Categories=Game;
 Icon=steam_icon_${params.appID}
 `;
 
-  const result = Effect.runSync(
-    Effect.either(
-      Effect.try({
-        try: () => {
-          const desktopDir = join(homeDir, '.local', 'share', 'applications');
-          fs.mkdirSync(desktopDir, { recursive: true });
-          const desktopFile = join(desktopDir, `ogi-${params.appID}.desktop`);
-          fs.writeFileSync(desktopFile, desktopEntry);
-          fs.chmodSync(desktopFile, '755');
-        },
-        catch: (cause) =>
-          new FileSystemError({ message: formatError(cause), cause }),
-      })
-    )
-  );
-  return result._tag === 'Right'
-    ? { success: true }
-    : { success: false, error: result.left.message };
+    const result = Effect.runSync(
+      Effect.either(
+        Effect.try({
+          try: () => {
+            const desktopDir = join(homeDir, '.local', 'share', 'applications');
+            fs.mkdirSync(desktopDir, { recursive: true });
+            const desktopFile = join(desktopDir, `ogi-${params.appID}.desktop`);
+            fs.writeFileSync(desktopFile, desktopEntry);
+            fs.chmodSync(desktopFile, '755');
+          },
+          catch: (cause) =>
+            new FileSystemError({ message: formatError(cause), cause }),
+        })
+      )
+    );
+    return result._tag === 'Right'
+      ? { success: true }
+      : { success: false, error: result.left.message };
+  });
 }
 
 export function registerSteamHandlers() {
@@ -208,10 +208,12 @@ export function registerSteamHandlers() {
           return { success: false, error: 'Game not found' };
         }
 
-        return await getSteamAppIdWithFallback(
-          appInfo.name,
-          appInfo.version,
-          'app:get-steam-app-id'
+        return await Effect.runPromise(
+          getSteamAppIdWithFallback(
+            appInfo.name,
+            appInfo.version,
+            'app:get-steam-app-id'
+          )
         );
       }
     )
@@ -318,25 +320,23 @@ export function registerSteamHandlers() {
       // Check if this is a UMU game
       if (appInfo.umu) {
         // For UMU games, only add shortcut if it doesn't already exist
-        let { success, appId } = await getSteamAppIdWithFallback(
-          appInfo.name,
-          appInfo.version,
-          'steam'
+        let { success, appId } = await Effect.runPromise(
+          getSteamAppIdWithFallback(appInfo.name, appInfo.version, 'steam')
         );
 
         if (!success || !appId) {
-          const result = await addUmuGameToSteam({
-            appID,
-            name: appInfo.name,
-            version: appInfo.version,
-          });
+          const result = await Effect.runPromise(
+            addUmuGameToSteam({
+              appID,
+              name: appInfo.name,
+              version: appInfo.version,
+            })
+          );
           if (!result.success) {
             return result;
           }
-          const lookup = await getSteamAppIdWithFallback(
-            appInfo.name,
-            appInfo.version,
-            'steam'
+          const lookup = await Effect.runPromise(
+            getSteamAppIdWithFallback(appInfo.name, appInfo.version, 'steam')
           );
           success = lookup.success;
           appId = lookup.appId;
@@ -348,14 +348,12 @@ export function registerSteamHandlers() {
           return { success: false, error: 'Failed to get Steam shortcut ID' };
         }
 
-        return launchViaSteam(appId);
+        return Effect.runPromise(launchViaSteam(appId));
       }
 
       // Legacy mode
-      const { success, appId } = await getSteamAppIdWithFallback(
-        appInfo.name,
-        appInfo.version,
-        'steam'
+      const { success, appId } = await Effect.runPromise(
+        getSteamAppIdWithFallback(appInfo.name, appInfo.version, 'steam')
       );
 
       if (!success || appId == null) {
@@ -366,7 +364,7 @@ export function registerSteamHandlers() {
         `[steam] Launching app via Steam: ${appInfo.name} (shortcut ID: ${appId})`
       );
 
-      return launchViaSteam(appId);
+      return Effect.runPromise(launchViaSteam(appId));
     })
   );
 
@@ -393,10 +391,12 @@ export function registerSteamHandlers() {
       }
 
       // Legacy mode
-      const { success, appId } = await getSteamAppIdWithFallback(
-        libraryInfo.name,
-        libraryInfo.version,
-        'prefix'
+      const { success, appId } = await Effect.runPromise(
+        getSteamAppIdWithFallback(
+          libraryInfo.name,
+          libraryInfo.version,
+          'prefix'
+        )
       );
 
       const homeDir = getHomeDir();
@@ -435,11 +435,13 @@ export function registerSteamHandlers() {
 
       // If this is a UMU game, use the new shortcut method
       if (appInfo.umu) {
-        const result = await addUmuGameToSteam({
-          appID,
-          name: appInfo.name,
-          version: appInfo.version,
-        });
+        const result = await Effect.runPromise(
+          addUmuGameToSteam({
+            appID,
+            name: appInfo.name,
+            version: appInfo.version,
+          })
+        );
 
         if (result.success && result.steamAppId) {
           sendNotification({
@@ -465,23 +467,26 @@ export function registerSteamHandlers() {
       );
 
       // Use steamtinkerlaunch to add the game to steam
-      const result = await addGameToSteam({
-        name: appInfo.name,
-        version: appInfo.version,
-        launchExecutable: appInfo.launchExecutable,
-        cwd: appInfo.cwd,
-        wrapperCommand: launchOptions || '%command%',
-        appID,
-        compatibilityTool: 'proton_experimental',
-      });
+      const result = await Effect.runPromise(
+        addGameToSteam({
+          name: appInfo.name,
+          version: appInfo.version,
+          launchExecutable: appInfo.launchExecutable,
+          cwd: appInfo.cwd,
+          wrapperCommand: launchOptions || '%command%',
+          appID,
+          compatibilityTool: 'proton_experimental',
+        })
+      );
 
       if (!result) {
         return { success: false };
       }
 
       // Get the new Steam app ID after adding
-      const { success, appId: newSteamAppId } =
-        await getNonSteamGameAppID(versionedGameName);
+      const { success, appId: newSteamAppId } = await Effect.runPromise(
+        getNonSteamGameAppID(versionedGameName)
+      );
 
       if (!success || !newSteamAppId) {
         console.warn(

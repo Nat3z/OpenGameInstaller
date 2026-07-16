@@ -51,14 +51,8 @@ import { sendNotification } from '@/electron/main.js';
  * Determine if a game should use UMU mode
  * - If game has `umu` config → use UMU
  */
-async function shouldUseUmuMode(libraryInfo: LibraryInfo): Promise<boolean> {
-  if (!isLinux()) return false;
-
-  // Explicit UMU config
-  if (libraryInfo.umu) return true;
-
-  // No UMU config → use legacy mode (for backward compatibility)
-  return false;
+function shouldUseUmuMode(libraryInfo: LibraryInfo): Effect.Effect<boolean> {
+  return Effect.sync(() => isLinux() && Boolean(libraryInfo.umu));
 }
 
 export type LaunchGameResult = {
@@ -73,310 +67,333 @@ export type ExecuteWrapperResult = {
   error?: string;
 };
 
-export async function launchGameFromLibrary(
+export function launchGameFromLibrary(
   appid: number | string,
   mainWindow?: Electron.BrowserWindow | null,
   launchEnv?: Record<string, string>
-): Promise<LaunchGameResult> {
-  console.log('[launch] Launching game', appid);
-  ensureLibraryDir();
-  ensureInternalsDir();
+): Effect.Effect<LaunchGameResult, LibraryError> {
+  return Effect.gen(function* () {
+    console.log('[launch] Launching game', appid);
+    ensureLibraryDir();
+    ensureInternalsDir();
 
-  const parsedAppId =
-    typeof appid === 'number' ? appid : parseInt(String(appid), 10);
-  if (Number.isNaN(parsedAppId)) {
-    return { success: false, error: 'Invalid app ID' };
-  }
+    const parsedAppId =
+      typeof appid === 'number' ? appid : parseInt(String(appid), 10);
+    if (Number.isNaN(parsedAppId)) {
+      return { success: false, error: 'Invalid app ID' };
+    }
 
-  const appInfo = loadLibraryInfo(parsedAppId);
-  if (!appInfo) {
-    console.log('[launch] Game not found');
-    return { success: false, error: 'Game not found' };
-  }
+    const appInfo = loadLibraryInfo(parsedAppId);
+    if (!appInfo) {
+      console.log('[launch] Game not found');
+      return { success: false, error: 'Game not found' };
+    }
 
-  // Check if we should use UMU mode
-  const useUmu = await shouldUseUmuMode(appInfo);
+    // Check if we should use UMU mode
+    const useUmu = yield* shouldUseUmuMode(appInfo);
 
-  if (useUmu) {
-    console.log(`[launch] Using UMU mode for ${appInfo.name}`);
+    if (useUmu) {
+      console.log(`[launch] Using UMU mode for ${appInfo.name}`);
 
-    const appID = appInfo.appID;
-    const result = await launchWithUmu(appInfo, {
-      onExit: () => {
-        mainWindow?.webContents.send('game:exit', { id: appID });
+      const appID = appInfo.appID;
+      const result = yield* Effect.tryPromise({
+        try: () =>
+          launchWithUmu(appInfo, {
+            onExit: () => {
+              mainWindow?.webContents.send('game:exit', { id: appID });
+            },
+          }),
+        catch: (cause) =>
+          new LibraryError({
+            message: `Failed to launch game with UMU: ${String(cause)}`,
+            gameId: parsedAppId,
+          }),
+      });
+
+      if (!result.success) {
+        console.error('[launch] UMU launch failed:', result.error);
+        sendNotification({
+          message: `Failed to launch game: ${result.error}`,
+          id: generateNotificationId(),
+          type: 'error',
+        });
+        mainWindow?.webContents.send('game:exit', { id: appInfo.appID });
+        return {
+          success: false,
+          error: result.error ?? 'Failed to launch game with UMU',
+        };
+      }
+
+      mainWindow?.webContents.send('game:launch', { id: appInfo.appID });
+      return { success: true };
+    }
+
+    // Legacy mode
+    const effectiveLaunchEnv = getEffectiveLaunchEnv(appInfo);
+    const { command: launchExecutable, args: otherLaunchArguments } =
+      resolveLaunchCommand(appInfo.launchExecutable, appInfo.launchArguments);
+    console.log(
+      'Launching game:',
+      launchExecutable,
+      otherLaunchArguments,
+      'in cwd:',
+      appInfo.cwd
+    );
+
+    const needsShellOnWindows = /\.(bat|cmd)$/i.test(launchExecutable);
+    const spawnedItem = spawn(launchExecutable, otherLaunchArguments, {
+      cwd: appInfo.cwd,
+      shell: process.platform === 'win32' ? needsShellOnWindows : true,
+      env: {
+        ...process.env,
+        ...(launchEnv ?? {}),
+        ...effectiveLaunchEnv,
       },
     });
-
-    if (!result.success) {
-      console.error('[launch] UMU launch failed:', result.error);
+    spawnedItem.on('error', (error) => {
+      console.error(error);
       sendNotification({
-        message: `Failed to launch game: ${result.error}`,
+        message: 'Failed to launch game',
         id: generateNotificationId(),
         type: 'error',
       });
       mainWindow?.webContents.send('game:exit', { id: appInfo.appID });
-      return {
-        success: false,
-        error: result.error ?? 'Failed to launch game with UMU',
-      };
-    }
+    });
+    spawnedItem.on('exit', (exitCode, signal) => {
+      console.log(
+        'Game exited with code: ' +
+          exitCode +
+          (signal ? ` signal: ${signal}` : '')
+      );
+      if (exitCode !== 0 && exitCode != null) {
+        sendNotification({
+          message: 'Game Crashed',
+          id: generateNotificationId(),
+          type: 'error',
+        });
+      }
+      mainWindow?.webContents.send('game:exit', { id: appInfo.appID });
+    });
 
     mainWindow?.webContents.send('game:launch', { id: appInfo.appID });
     return { success: true };
-  }
-
-  // Legacy mode
-  const effectiveLaunchEnv = getEffectiveLaunchEnv(appInfo);
-  const { command: launchExecutable, args: otherLaunchArguments } =
-    resolveLaunchCommand(appInfo.launchExecutable, appInfo.launchArguments);
-  console.log(
-    'Launching game:',
-    launchExecutable,
-    otherLaunchArguments,
-    'in cwd:',
-    appInfo.cwd
-  );
-
-  const needsShellOnWindows = /\.(bat|cmd)$/i.test(launchExecutable);
-  const spawnedItem = spawn(launchExecutable, otherLaunchArguments, {
-    cwd: appInfo.cwd,
-    shell: process.platform === 'win32' ? needsShellOnWindows : true,
-    env: {
-      ...process.env,
-      ...(launchEnv ?? {}),
-      ...effectiveLaunchEnv,
-    },
   });
-  spawnedItem.on('error', (error) => {
-    console.error(error);
-    sendNotification({
-      message: 'Failed to launch game',
-      id: generateNotificationId(),
-      type: 'error',
-    });
-    mainWindow?.webContents.send('game:exit', { id: appInfo.appID });
-  });
-  spawnedItem.on('exit', (exitCode, signal) => {
-    console.log(
-      'Game exited with code: ' +
-        exitCode +
-        (signal ? ` signal: ${signal}` : '')
-    );
-    if (exitCode !== 0 && exitCode != null) {
-      sendNotification({
-        message: 'Game Crashed',
-        id: generateNotificationId(),
-        type: 'error',
-      });
-    }
-    mainWindow?.webContents.send('game:exit', { id: appInfo.appID });
-  });
-
-  mainWindow?.webContents.send('game:launch', { id: appInfo.appID });
-  return { success: true };
 }
 
-export async function executeWrapperCommandForApp(
+export function executeWrapperCommandForApp(
   appid: number,
   wrapperCommand: string,
   type: 'steam-proton' | 'unknown',
   launchEnv?: Record<string, string>
-): Promise<ExecuteWrapperResult> {
+): Effect.Effect<ExecuteWrapperResult> {
   if (type === 'steam-proton') {
     return executeWrapperCommandForAppSteam(appid, wrapperCommand, launchEnv);
   }
-  return { success: false, error: 'Unsupported wrapper command type' };
+  return Effect.succeed({
+    success: false,
+    error: 'Unsupported wrapper command type',
+  });
 }
 
-async function executeWrapperCommandForAppSteam(
+function executeWrapperCommandForAppSteam(
   appid: number,
   wrapperCommand: string,
   launchEnv?: Record<string, string>
-): Promise<ExecuteWrapperResult> {
-  ensureLibraryDir();
+): Effect.Effect<ExecuteWrapperResult> {
+  return Effect.gen(function* () {
+    ensureLibraryDir();
 
-  const appInfo = loadLibraryInfo(appid);
-  if (!appInfo) {
-    return { success: false, error: 'Game not found' };
-  }
-
-  if (!wrapperCommand || wrapperCommand.trim().length === 0) {
-    return { success: false, error: 'Wrapper command is empty' };
-  }
-
-  /* Built for Proton Steam */
-
-  console.log(
-    `[wrapper] Executing wrapper command for ${appInfo.name}: ${wrapperCommand}`
-  );
-
-  // Parse so paths with spaces aren't broken: split on the known verb first,
-  // parse only the prefix (which may contain quoted paths), and treat
-  // everything after the verb as a single path argument we replace with
-  // appInfo.launchExecutable.
-  const verb = 'waitforexitandrun';
-  const verbWithSpaces = ` ${verb} `;
-  const steamArgSeparator = ' -- ';
-  const verbIndexInString = wrapperCommand.indexOf(verbWithSpaces);
-  let parsed: ReturnType<typeof shellQuoteParse>;
-  if (verbIndexInString !== -1) {
-    const prefix = wrapperCommand.slice(0, verbIndexInString).trimEnd();
-    parsed = shellQuoteParse(prefix);
-    parsed.push(verb);
-    // Everything after " waitforexitandrun " is the exe path (may contain spaces);
-    // we replace it with the canonical path, so we don't parse the suffix.
-  } else {
-    parsed = shellQuoteParse(wrapperCommand);
-
-    const firstToken =
-      parsed.length > 0 && typeof parsed[0] === 'string' ? parsed[0] : '';
-    const looksLikeCollapsedLauncher =
-      firstToken.includes('steam-launch-wrapper') &&
-      firstToken.includes(steamArgSeparator);
-    if (looksLikeCollapsedLauncher) {
-      const lastSeparatorInString =
-        wrapperCommand.lastIndexOf(steamArgSeparator);
-      if (lastSeparatorInString !== -1) {
-        const prefix = wrapperCommand.slice(0, lastSeparatorInString).trimEnd();
-        parsed = shellQuoteParse(prefix);
-        parsed.push('--');
-      }
-    }
-  }
-
-  // Some Steam wrapper payloads arrive with a Proton executable path split
-  // across tokens (for example: ".../common/Proton", "-", "Experimental/proton").
-  // Recombine those segments so the wrapped launcher gets a valid executable path.
-  const normalizeSplitProtonExecutable = (
-    tokens: ReturnType<typeof shellQuoteParse>
-  ): ReturnType<typeof shellQuoteParse> => {
-    const normalized: ReturnType<typeof shellQuoteParse> = [];
-    for (let i = 0; i < tokens.length; i += 1) {
-      const token = tokens[i];
-      if (typeof token !== 'string') {
-        normalized.push(token);
-        continue;
-      }
-
-      const isSplitProtonStart =
-        token.includes('/steamapps/common/Proton') &&
-        !token.includes('/proton') &&
-        !token.endsWith('/proton');
-
-      if (!isSplitProtonStart) {
-        normalized.push(token);
-        continue;
-      }
-
-      let merged = token;
-      let j = i + 1;
-      while (j < tokens.length) {
-        const next = tokens[j];
-        if (typeof next !== 'string' || next === '--' || next === verb) {
-          break;
-        }
-        merged += ` ${next}`;
-        j += 1;
-        if (merged.includes('/proton') || merged.endsWith('/proton')) {
-          break;
-        }
-      }
-
-      normalized.push(merged);
-      i = j - 1;
+    const appInfo = loadLibraryInfo(appid);
+    if (!appInfo) {
+      return { success: false, error: 'Game not found' };
     }
 
-    return normalized;
-  };
+    if (!wrapperCommand || wrapperCommand.trim().length === 0) {
+      return { success: false, error: 'Wrapper command is empty' };
+    }
 
-  parsed = normalizeSplitProtonExecutable(parsed);
+    /* Built for Proton Steam */
 
-  if (parsed.length === 0) {
-    return { success: false, error: 'Wrapper command could not be parsed' };
-  }
-  const verbIndex = parsed.findIndex((x) => x === verb);
-  const fixedArgs =
-    verbIndex === -1
-      ? [...parsed, appInfo.launchExecutable]
-      : [...parsed.slice(0, verbIndex + 1), appInfo.launchExecutable];
-  const wrappedCommand = parsed[0].toString();
-  // for launch arguments, get everything after the %command% to include. not just replacing
-  const launchArguments = parseLaunchArgumentsAfterCommand(
-    appInfo.launchArguments
-  );
+    console.log(
+      `[wrapper] Executing wrapper command for ${appInfo.name}: ${wrapperCommand}`
+    );
 
-  // If %command% is missing and launchArguments is empty, fall back to normal parser
-  // to preserve wrapper launch tokens like WINEPREFIX=/path --fullscreen
-  const effectiveLaunchArguments =
-    launchArguments.length === 0
-      ? resolveLaunchCommand(appInfo.launchExecutable, appInfo.launchArguments)
-          .args
-      : launchArguments;
+    // Parse so paths with spaces aren't broken: split on the known verb first,
+    // parse only the prefix (which may contain quoted paths), and treat
+    // everything after the verb as a single path argument we replace with
+    // appInfo.launchExecutable.
+    const verb = 'waitforexitandrun';
+    const verbWithSpaces = ` ${verb} `;
+    const steamArgSeparator = ' -- ';
+    const verbIndexInString = wrapperCommand.indexOf(verbWithSpaces);
+    let parsed: ReturnType<typeof shellQuoteParse>;
+    if (verbIndexInString !== -1) {
+      const prefix = wrapperCommand.slice(0, verbIndexInString).trimEnd();
+      parsed = shellQuoteParse(prefix);
+      parsed.push(verb);
+      // Everything after " waitforexitandrun " is the exe path (may contain spaces);
+      // we replace it with the canonical path, so we don't parse the suffix.
+    } else {
+      parsed = shellQuoteParse(wrapperCommand);
 
-  const wrappedArgv = [
-    ...fixedArgs.slice(1).map((x) => x.toString()),
-    ...effectiveLaunchArguments,
-  ];
+      const firstToken =
+        parsed.length > 0 && typeof parsed[0] === 'string' ? parsed[0] : '';
+      const looksLikeCollapsedLauncher =
+        firstToken.includes('steam-launch-wrapper') &&
+        firstToken.includes(steamArgSeparator);
+      if (looksLikeCollapsedLauncher) {
+        const lastSeparatorInString =
+          wrapperCommand.lastIndexOf(steamArgSeparator);
+        if (lastSeparatorInString !== -1) {
+          const prefix = wrapperCommand
+            .slice(0, lastSeparatorInString)
+            .trimEnd();
+          parsed = shellQuoteParse(prefix);
+          parsed.push('--');
+        }
+      }
+    }
 
-  console.log(
-    `[wrapper] Resolved exec for ${
-      appInfo.name
-    }: command=${wrappedCommand} args=${JSON.stringify(wrappedArgv)}`
-  );
+    // Some Steam wrapper payloads arrive with a Proton executable path split
+    // across tokens (for example: ".../common/Proton", "-", "Experimental/proton").
+    // Recombine those segments so the wrapped launcher gets a valid executable path.
+    const normalizeSplitProtonExecutable = (
+      tokens: ReturnType<typeof shellQuoteParse>
+    ): ReturnType<typeof shellQuoteParse> => {
+      const normalized: ReturnType<typeof shellQuoteParse> = [];
+      for (let i = 0; i < tokens.length; i += 1) {
+        const token = tokens[i];
+        if (typeof token !== 'string') {
+          normalized.push(token);
+          continue;
+        }
 
-  return await new Promise((resolve) => {
-    const effectiveLaunchEnv = getEffectiveLaunchEnv(appInfo);
-    const effectiveDllOverrides = getEffectiveDllOverrides(appInfo);
-    const dllOverrideString = buildDllOverrides(effectiveDllOverrides);
-    const baseEnv = {
-      ...process.env,
-      ...(launchEnv ?? {}),
-      ...effectiveLaunchEnv,
-      PROTON_LOG: '1',
+        const isSplitProtonStart =
+          token.includes('/steamapps/common/Proton') &&
+          !token.includes('/proton') &&
+          !token.endsWith('/proton');
+
+        if (!isSplitProtonStart) {
+          normalized.push(token);
+          continue;
+        }
+
+        let merged = token;
+        let j = i + 1;
+        while (j < tokens.length) {
+          const next = tokens[j];
+          if (typeof next !== 'string' || next === '--' || next === verb) {
+            break;
+          }
+          merged += ` ${next}`;
+          j += 1;
+          if (merged.includes('/proton') || merged.endsWith('/proton')) {
+            break;
+          }
+        }
+
+        normalized.push(merged);
+        i = j - 1;
+      }
+
+      return normalized;
     };
-    const env = appInfo.umu
-      ? {
-          ...baseEnv,
-          STEAM_COMPAT_DATA_PATH: getUmuWinePrefix(appInfo.umu.umuId),
-          WINEPREFIX: getUmuWinePrefix(appInfo.umu.umuId),
-          ...(dllOverrideString ? { WINEDLLOVERRIDES: dllOverrideString } : {}),
+
+    parsed = normalizeSplitProtonExecutable(parsed);
+
+    if (parsed.length === 0) {
+      return { success: false, error: 'Wrapper command could not be parsed' };
+    }
+    const verbIndex = parsed.findIndex((x) => x === verb);
+    const fixedArgs =
+      verbIndex === -1
+        ? [...parsed, appInfo.launchExecutable]
+        : [...parsed.slice(0, verbIndex + 1), appInfo.launchExecutable];
+    const wrappedCommand = parsed[0].toString();
+    // for launch arguments, get everything after the %command% to include. not just replacing
+    const launchArguments = parseLaunchArgumentsAfterCommand(
+      appInfo.launchArguments
+    );
+
+    // If %command% is missing and launchArguments is empty, fall back to normal parser
+    // to preserve wrapper launch tokens like WINEPREFIX=/path --fullscreen
+    const effectiveLaunchArguments =
+      launchArguments.length === 0
+        ? resolveLaunchCommand(
+            appInfo.launchExecutable,
+            appInfo.launchArguments
+          ).args
+        : launchArguments;
+
+    const wrappedArgv = [
+      ...fixedArgs.slice(1).map((x) => x.toString()),
+      ...effectiveLaunchArguments,
+    ];
+
+    console.log(
+      `[wrapper] Resolved exec for ${
+        appInfo.name
+      }: command=${wrappedCommand} args=${JSON.stringify(wrappedArgv)}`
+    );
+
+    return yield* Effect.async<ExecuteWrapperResult>((resume) => {
+      const effectiveLaunchEnv = getEffectiveLaunchEnv(appInfo);
+      const effectiveDllOverrides = getEffectiveDllOverrides(appInfo);
+      const dllOverrideString = buildDllOverrides(effectiveDllOverrides);
+      const baseEnv = {
+        ...process.env,
+        ...(launchEnv ?? {}),
+        ...effectiveLaunchEnv,
+        PROTON_LOG: '1',
+      };
+      const env = appInfo.umu
+        ? {
+            ...baseEnv,
+            STEAM_COMPAT_DATA_PATH: getUmuWinePrefix(appInfo.umu.umuId),
+            WINEPREFIX: getUmuWinePrefix(appInfo.umu.umuId),
+            ...(dllOverrideString
+              ? { WINEDLLOVERRIDES: dllOverrideString }
+              : {}),
+          }
+        : baseEnv;
+
+      const wrappedChild = spawn(wrappedCommand, wrappedArgv, {
+        cwd: appInfo.cwd,
+        env,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+
+      wrappedChild.stdout?.on('data', (data) => {
+        console.log(`[wrapper stdout] ${data}`);
+      });
+
+      wrappedChild.stderr?.on('data', (data) => {
+        console.error(`[wrapper stderr] ${data}`);
+      });
+
+      wrappedChild.on('error', (error) => {
+        console.error('[wrapper] Failed to execute wrapper command:', error);
+        resume(Effect.succeed({ success: false, error: error.message }));
+      });
+
+      wrappedChild.on('close', (code, signal) => {
+        if (code === 0) {
+          resume(Effect.succeed({ success: true, exitCode: 0 }));
+          return;
         }
-      : baseEnv;
 
-    const wrappedChild = spawn(wrappedCommand, wrappedArgv, {
-      cwd: appInfo.cwd,
-      env,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-
-    wrappedChild.stdout?.on('data', (data) => {
-      console.log(`[wrapper stdout] ${data}`);
-    });
-
-    wrappedChild.stderr?.on('data', (data) => {
-      console.error(`[wrapper stderr] ${data}`);
-    });
-
-    wrappedChild.on('error', (error) => {
-      console.error('[wrapper] Failed to execute wrapper command:', error);
-      resolve({ success: false, error: error.message });
-    });
-
-    wrappedChild.on('close', (code, signal) => {
-      if (code === 0) {
-        resolve({ success: true, exitCode: 0 });
-        return;
-      }
-
-      const error = `Wrapped command exited with code ${code ?? 'null'}${
-        signal ? ` (signal: ${signal})` : ''
-      }`;
-      console.error(`[wrapper] ${error}`);
-      resolve({
-        success: false,
-        error,
-        exitCode: code ?? undefined,
-        signal: signal ?? undefined,
+        const error = `Wrapped command exited with code ${code ?? 'null'}${
+          signal ? ` (signal: ${signal})` : ''
+        }`;
+        console.error(`[wrapper] ${error}`);
+        resume(
+          Effect.succeed({
+            success: false,
+            error,
+            exitCode: code ?? undefined,
+            signal: signal ?? undefined,
+          })
+        );
       });
     });
   });
@@ -386,7 +403,9 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
   ipcMain.handle(
     'app:launch-game',
     ipcBoundary(async (_, appid) => {
-      const result = await launchGameFromLibrary(appid, mainWindow);
+      const result = await Effect.runPromise(
+        launchGameFromLibrary(appid, mainWindow)
+      );
       if (!result.success) {
         throw new LibraryError({
           message: result.error ?? 'Failed to launch game',
@@ -403,7 +422,9 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
         appid: number,
         wrapperCommand: string
       ): Promise<ExecuteWrapperResult> =>
-        executeWrapperCommandForAppSteam(appid, wrapperCommand)
+        Effect.runPromise(
+          executeWrapperCommandForAppSteam(appid, wrapperCommand)
+        )
     )
   );
 
@@ -490,11 +511,13 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
 
             // On Steam Deck (user "deck"), add a Steam shortcut so the game appears in Game Mode
             if (isDeckUser) {
-              const steamResult = await addUmuGameToSteam({
-                appID: data.appID,
-                name: data.name,
-                version: data.version,
-              });
+              const steamResult = await Effect.runPromise(
+                addUmuGameToSteam({
+                  appID: data.appID,
+                  name: data.name,
+                  version: data.version,
+                })
+              );
               if (!steamResult.success) {
                 console.warn(
                   '[setup] Failed to add UMU game to Steam for Deck:',
@@ -532,19 +555,22 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
             data.version
           );
 
-          const result = await addGameToSteam({
-            name: versionedGameName,
-            version: data.version,
-            launchExecutable: data.launchExecutable,
-            cwd: data.cwd,
-            wrapperCommand: launchOptions || '%command%',
-            appID: data.appID,
-            compatibilityTool: 'proton_experimental',
-          });
+          const result = await Effect.runPromise(
+            addGameToSteam({
+              name: versionedGameName,
+              version: data.version,
+              launchExecutable: data.launchExecutable,
+              cwd: data.cwd,
+              wrapperCommand: launchOptions || '%command%',
+              appID: data.appID,
+              compatibilityTool: 'proton_experimental',
+            })
+          );
 
           // add to the {appid}.json file the launch options
-          const { success, appId: steamAppId } =
-            await getNonSteamGameAppID(versionedGameName);
+          const { success, appId: steamAppId } = await Effect.runPromise(
+            getNonSteamGameAppID(versionedGameName)
+          );
           if (!success) {
             return 'setup-failed';
           }
@@ -696,12 +722,9 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
             console.log('[update] Migrating game from legacy to UMU mode');
 
             // Get the old Steam app ID for migration (use old version)
-            const { success, appId: oldSteamAppId } =
-              await getSteamAppIdWithFallback(
-                appData.name,
-                oldVersion,
-                'migration'
-              );
+            const { success, appId: oldSteamAppId } = await Effect.runPromise(
+              getSteamAppIdWithFallback(appData.name, oldVersion, 'migration')
+            );
 
             if (!success || !oldSteamAppId) {
               console.warn(
@@ -729,10 +752,12 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
 
           // Get the Steam app ID and construct the proton path
           // First try with versioned name, then fallback to plain name if that fails
-          const { success, appId } = await getSteamAppIdWithFallback(
-            appData.name,
-            appData.version,
-            'app:update-app-version'
+          const { success, appId } = await Effect.runPromise(
+            getSteamAppIdWithFallback(
+              appData.name,
+              appData.version,
+              'app:update-app-version'
+            )
           );
 
           if (success && appId) {

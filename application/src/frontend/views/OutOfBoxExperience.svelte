@@ -1,5 +1,6 @@
 <script lang="ts">
-import { Either, Schema } from 'effect';
+import { ValidationError } from '@ogi/errors';
+import { Effect, Either, Schema } from 'effect';
 import { onDestroy, onMount } from 'svelte';
 import { preventDefault } from 'svelte/legacy';
 import { fade } from 'svelte/transition';
@@ -119,7 +120,14 @@ async function loadCommunityAddonsFromMarketplaces(sources: string[]) {
             marketplaceUrl,
             parsed.left
           );
-          throw new Error('Invalid marketplace JSON');
+          return Effect.runPromise(
+            Effect.fail(
+              new ValidationError({
+                message: 'Invalid marketplace JSON',
+                field: marketplaceUrl,
+              })
+            )
+          );
         }
         return parsed.right.map((addon) => ({
           ...addon,

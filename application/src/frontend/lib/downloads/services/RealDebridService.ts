@@ -1,275 +1,264 @@
+import { DebridError, ValidationError } from '@ogi/errors';
+import { Effect } from 'effect';
 import { getDownloadPath } from '@/frontend/lib/core/fs';
 import { finalizeDownloadCard } from '@/frontend/lib/downloads/events';
 import { safeDownloadPath } from '@/frontend/lib/downloads/paths';
 import { BaseService } from '@/frontend/lib/downloads/services/BaseService';
 import type { SearchResultWithAddon } from '@/frontend/lib/tasks/runner';
 import { currentDownloads } from '@/frontend/store.svelte';
-/**
- * Handles magnet/torrent downloads that should be routed through Real-Debrid.
- */
+
+type RealDebridSearchResult = SearchResultWithAddon & {
+  downloadType: 'magnet' | 'torrent';
+  filename: string;
+  downloadURL: string;
+};
+
+const realDebridPromise = <A>(
+  operation: () => Promise<A>,
+  message: string
+): Effect.Effect<A, DebridError> =>
+  Effect.tryPromise({
+    try: operation,
+    catch: (cause) =>
+      new DebridError({
+        message: `${message}: ${cause instanceof Error ? cause.message : String(cause)}`,
+        service: 'realdebrid',
+      }),
+  });
+
+function waitForTorrentReady(id: string) {
+  return Effect.gen(function* () {
+    for (let attempt = 0; attempt < 200; attempt++) {
+      if (
+        yield* realDebridPromise(
+          () => window.electronAPI.realdebrid.isTorrentReady(id),
+          'Failed to check Real-Debrid torrent status'
+        )
+      ) {
+        return;
+      }
+      yield* Effect.sleep(3000);
+    }
+    return yield* Effect.fail(
+      new DebridError({
+        message: 'Timed out waiting for Real-Debrid torrent to be ready.',
+        service: 'realdebrid',
+      })
+    );
+  });
+}
+
+/** Routes magnet and torrent downloads through Real-Debrid. */
 export class RealDebridService extends BaseService {
   readonly types = ['real-debrid-magnet', 'real-debrid-torrent'];
 
-  async startDownload(
+  startDownload(
     result: SearchResultWithAddon,
     appID: number,
     _event: MouseEvent | null,
     _htmlButton?: HTMLButtonElement
-  ): Promise<void> {
-    if (result.downloadType !== 'magnet' && result.downloadType !== 'torrent')
-      return;
-
-    if (!result.downloadURL) {
-      throw new Error('Addon did not provide a magnet link.');
-    }
-
-    const worked = await window.electronAPI.realdebrid.updateKey();
-    if (!worked) {
-      throw new Error('Please set your Real-Debrid API key in the settings.');
-    }
-
-    // get the first host
-    const hosts = await window.electronAPI.realdebrid.getHosts();
-    const tempId = this.queueRequestDownload(result, appID, 'realdebrid');
-
-    try {
-      const preferredHost = hosts[0]?.host;
-
-      if (result.downloadType === 'magnet') {
-        await this.handleMagnetDownload(result, appID, tempId, preferredHost);
-      } else if (result.downloadType === 'torrent') {
-        await this.handleTorrentDownload(result, appID, tempId, preferredHost);
-      }
-    } catch (err) {
-      console.error('Failed to start Real-Debrid download:', err);
-      // set the download as failed
-      currentDownloads.update((downloads) => {
-        const matchingDownload = downloads.find((d) => d.id === tempId);
-        if (!matchingDownload) return downloads;
-        matchingDownload.status = 'error';
-        matchingDownload.error =
-          err instanceof Error
-            ? err.message
-            : 'Failed to start Real-Debrid download.';
-        downloads[downloads.indexOf(matchingDownload)] = matchingDownload;
-        return downloads;
-      });
-      throw err;
-    }
-  }
-
-  private async handleMagnetDownload(
-    result: SearchResultWithAddon,
-    appID: number,
-    tempId: string,
-    host?: string
-  ): Promise<void> {
-    if (result.downloadType !== 'magnet') return;
-
-    // add magnet link
-    const magnetLink = await window.electronAPI.realdebrid.addMagnet(
-      result.downloadURL!,
-      host
-    );
-    const isReady = await window.electronAPI.realdebrid.isTorrentReady(
-      magnetLink.id
-    );
-    if (!isReady) {
-      window.electronAPI.realdebrid.selectTorrent(magnetLink.id);
-      await new Promise<void>((resolve, reject) => {
-        const startTime = Date.now();
-        const timeout = 10 * 60 * 1000; // 10 minutes
-        const interval = setInterval(async () => {
-          try {
-            if (Date.now() - startTime > timeout) {
-              clearInterval(interval);
-              reject(
-                new Error(
-                  'Timed out waiting for Real-Debrid torrent to be ready.'
-                )
-              );
-              return; // prevent further isTorrentReady call after reject
-            }
-            const isReady = await window.electronAPI.realdebrid.isTorrentReady(
-              magnetLink.id
-            );
-            if (isReady) {
-              clearInterval(interval);
-              resolve();
-            }
-          } catch (err) {
-            clearInterval(interval);
-            reject(err);
-          }
-        }, 3000);
-      });
-    }
-
-    const torrentInfo = await window.electronAPI.realdebrid.getTorrentInfo(
-      magnetLink.id
-    );
-    const download = await window.electronAPI.realdebrid.unrestrictLink(
-      torrentInfo.links[0]
-    );
-
-    if (download === null) {
-      throw new Error('Failed to unrestrict the link.');
-    }
-
-    const targetPath = safeDownloadPath(
-      getDownloadPath(),
-      result.name,
-      result.filename
-    );
-    const persistedFiles = [
-      {
-        name: result.filename ?? 'download',
-        path: targetPath,
-        downloadURL: download.download,
-      },
-    ];
-
-    const handshake = await window.electronAPI.ddl.download([
-      {
-        link: download.download,
-        path: targetPath,
-      },
-    ]);
-    if (handshake.status === 'error' || !handshake.id) {
-      currentDownloads.update((downloads) => {
-        const matchingDownload = downloads.find((d) => d.id === tempId);
-        if (!matchingDownload) return downloads;
-        matchingDownload.status = 'error';
-        matchingDownload.usedDebridService = 'realdebrid';
-        matchingDownload.appID = appID;
-        downloads[downloads.indexOf(matchingDownload)] = matchingDownload;
-        return downloads;
-      });
-
-      throw new Error('Download failed to start.');
-    }
-    this.updateDownloadRequested(
-      handshake,
-      tempId,
-      download.download,
-      targetPath,
-      'realdebrid',
-      result,
-      persistedFiles
-    );
-    await finalizeDownloadCard(handshake.id);
-  }
-
-  private async handleTorrentDownload(
-    result: SearchResultWithAddon,
-    appID: number,
-    tempId: string,
-    host?: string
-  ): Promise<void> {
-    if (result.downloadType !== 'torrent') return;
-
-    if (!result.name || !result.downloadURL) {
-      if (!result.name) {
-        throw new Error('Addon did not provide a name for the torrent.');
-      }
+  ) {
+    let tempId: string | undefined;
+    return Effect.gen(this, function* () {
+      if (result.downloadType !== 'magnet' && result.downloadType !== 'torrent')
+        return;
       if (!result.downloadURL) {
-        throw new Error('Addon did not provide a downloadURL for the torrent.');
+        return yield* Effect.fail(
+          new ValidationError({
+            message: 'Addon did not provide a magnet link.',
+            field: 'downloadURL',
+          })
+        );
       }
-    }
 
-    // add torrent link
-    const torrent = await window.electronAPI.realdebrid.addTorrent(
-      result.downloadURL,
-      host
-    );
-    const isReady = await window.electronAPI.realdebrid.isTorrentReady(
-      torrent.id
-    );
-    if (!isReady) {
-      window.electronAPI.realdebrid.selectTorrent(torrent.id);
-      await new Promise<void>((resolve, reject) => {
-        const startTime = Date.now();
-        const timeout = 10 * 60 * 1000; // 10 minutes
-        const interval = setInterval(async () => {
-          try {
-            if (Date.now() - startTime > timeout) {
-              clearInterval(interval);
-              reject(
-                new Error(
-                  'Timed out waiting for Real-Debrid torrent to be ready.'
-                )
-              );
-              return; // prevent further isTorrentReady call after reject
-            }
-            const isReady = await window.electronAPI.realdebrid.isTorrentReady(
-              torrent.id
-            );
-            if (isReady) {
-              clearInterval(interval);
-              resolve();
-            }
-          } catch (err) {
-            clearInterval(interval);
-            reject(err);
-          }
-        }, 3000);
-      });
-    }
+      const worked = yield* realDebridPromise(
+        () => window.electronAPI.realdebrid.updateKey(),
+        'Failed to update Real-Debrid API key'
+      );
+      if (!worked) {
+        return yield* Effect.fail(
+          new DebridError({
+            message: 'Please set your Real-Debrid API key in the settings.',
+            service: 'realdebrid',
+          })
+        );
+      }
 
-    const torrentInfo = await window.electronAPI.realdebrid.getTorrentInfo(
-      torrent.id
+      const hosts = yield* realDebridPromise(
+        () => window.electronAPI.realdebrid.getHosts(),
+        'Failed to load Real-Debrid hosts'
+      );
+      const debridResult = result as RealDebridSearchResult;
+      tempId = this.queueRequestDownload(debridResult, appID, 'realdebrid');
+      if (debridResult.downloadType === 'magnet') {
+        yield* this.handleMagnetDownload(
+          debridResult,
+          appID,
+          tempId,
+          hosts[0]?.host
+        );
+      } else {
+        yield* this.handleTorrentDownload(
+          debridResult,
+          appID,
+          tempId,
+          hosts[0]?.host
+        );
+      }
+    }).pipe(
+      Effect.tapError((error) =>
+        Effect.sync(() => {
+          console.error('Failed to start Real-Debrid download:', error);
+          if (!tempId) return;
+          currentDownloads.update((downloads) =>
+            downloads.map((download) =>
+              download.id === tempId
+                ? { ...download, status: 'error', error: error.message }
+                : download
+            )
+          );
+        })
+      )
     );
-    // currently only supporting the first link
-    const download = await window.electronAPI.realdebrid.unrestrictLink(
-      torrentInfo.links[0]
-    );
-    if (download === null) {
-      throw new Error('Failed to unrestrict the link.');
-    }
+  }
 
-    const targetPath = safeDownloadPath(
-      getDownloadPath(),
-      result.name,
-      result.filename
-    );
-    const persistedFiles = [
-      {
-        name: result.filename ?? 'download',
-        path: targetPath,
-        downloadURL: download.download,
-      },
-    ];
-    const handshake = await window.electronAPI.ddl.download([
-      {
-        link: download.download,
-        path: targetPath,
-        headers: {
-          'OGI-Parallel-Limit': '1',
+  private handleMagnetDownload(
+    result: RealDebridSearchResult,
+    appID: number,
+    tempId: string,
+    host?: string
+  ) {
+    return Effect.gen(this, function* () {
+      if (result.downloadType !== 'magnet') return;
+      const magnet = yield* realDebridPromise(
+        () =>
+          window.electronAPI.realdebrid.addMagnet(result.downloadURL!, host),
+        'Failed to add magnet to Real-Debrid'
+      );
+      yield* this.finishDebridDownload(result, appID, tempId, magnet.id);
+    });
+  }
+
+  private handleTorrentDownload(
+    result: RealDebridSearchResult,
+    appID: number,
+    tempId: string,
+    host?: string
+  ) {
+    return Effect.gen(this, function* () {
+      if (result.downloadType !== 'torrent') return;
+      if (!result.name || !result.downloadURL) {
+        return yield* Effect.fail(
+          new ValidationError({
+            message: !result.name
+              ? 'Addon did not provide a name for the torrent.'
+              : 'Addon did not provide a downloadURL for the torrent.',
+            field: !result.name ? 'name' : 'downloadURL',
+          })
+        );
+      }
+      const torrent = yield* realDebridPromise(
+        () =>
+          window.electronAPI.realdebrid.addTorrent(result.downloadURL!, host),
+        'Failed to add torrent to Real-Debrid'
+      );
+      yield* this.finishDebridDownload(result, appID, tempId, torrent.id);
+    });
+  }
+
+  private finishDebridDownload(
+    result: RealDebridSearchResult,
+    appID: number,
+    tempId: string,
+    torrentId: string
+  ) {
+    return Effect.gen(this, function* () {
+      const isReady = yield* realDebridPromise(
+        () => window.electronAPI.realdebrid.isTorrentReady(torrentId),
+        'Failed to check Real-Debrid torrent status'
+      );
+      if (!isReady) {
+        yield* realDebridPromise(
+          () => window.electronAPI.realdebrid.selectTorrent(torrentId),
+          'Failed to select Real-Debrid torrent files'
+        );
+        yield* waitForTorrentReady(torrentId);
+      }
+
+      const torrentInfo = yield* realDebridPromise(
+        () => window.electronAPI.realdebrid.getTorrentInfo(torrentId),
+        'Failed to load Real-Debrid torrent info'
+      );
+      const download = yield* realDebridPromise(
+        () =>
+          window.electronAPI.realdebrid.unrestrictLink(torrentInfo.links[0]),
+        'Failed to unrestrict Real-Debrid link'
+      );
+      if (download === null) {
+        return yield* Effect.fail(
+          new DebridError({
+            message: 'Failed to unrestrict the link.',
+            service: 'realdebrid',
+          })
+        );
+      }
+
+      const targetPath = safeDownloadPath(
+        getDownloadPath(),
+        result.name,
+        result.filename
+      );
+      const persistedFiles = [
+        {
+          name: result.filename ?? 'download',
+          path: targetPath,
+          downloadURL: download.download,
         },
-      },
-    ]);
-    if (handshake.status === 'error' || !handshake.id) {
-      currentDownloads.update((downloads) => {
-        const matchingDownload = downloads.find((d) => d.id === tempId);
-        if (!matchingDownload) return downloads;
-        matchingDownload.status = 'error';
-        matchingDownload.usedDebridService = 'realdebrid';
-        matchingDownload.appID = appID;
-        downloads[downloads.indexOf(matchingDownload)] = matchingDownload;
-        return downloads;
-      });
-
-      throw new Error('Download failed to start.');
-    }
-    this.updateDownloadRequested(
-      handshake,
-      tempId,
-      download.download,
-      targetPath,
-      'realdebrid',
-      result,
-      persistedFiles
-    );
-    await finalizeDownloadCard(handshake.id);
+      ];
+      const handshake = yield* realDebridPromise(
+        () =>
+          window.electronAPI.ddl.download([
+            {
+              link: download.download,
+              path: targetPath,
+              headers: { 'OGI-Parallel-Limit': '1' },
+            },
+          ]),
+        'Failed to start Real-Debrid download'
+      );
+      if (handshake.status === 'error' || !handshake.id) {
+        currentDownloads.update((downloads) =>
+          downloads.map((item) =>
+            item.id === tempId
+              ? {
+                  ...item,
+                  status: 'error',
+                  usedDebridService: 'realdebrid',
+                  appID,
+                }
+              : item
+          )
+        );
+        return yield* Effect.fail(
+          new DebridError({
+            message: 'Download failed to start.',
+            service: 'realdebrid',
+          })
+        );
+      }
+      this.updateDownloadRequested(
+        handshake,
+        tempId,
+        download.download,
+        targetPath,
+        'realdebrid',
+        result,
+        persistedFiles
+      );
+      yield* realDebridPromise(
+        () => finalizeDownloadCard(handshake.id),
+        'Failed to finalize Real-Debrid download'
+      );
+    });
   }
 }

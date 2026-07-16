@@ -1,6 +1,8 @@
+import { formatError, NetworkError, ValidationError } from '@ogi/errors';
 import axios from 'axios';
 import { exec, spawn } from 'child_process';
 import { createHash } from 'crypto';
+import { Effect } from 'effect';
 import { app } from 'electron';
 import {
   chmodSync,
@@ -344,53 +346,92 @@ async function hashFile(filePath: string, algorithm: string): Promise<string> {
   });
 }
 
-async function verifyReleaseArtifact(
+function verifyReleaseArtifact(
   artifactPath: string,
   expectedArtifact: ReleaseAsset
-): Promise<void> {
-  const size = statSync(artifactPath).size;
-  if (
-    Number.isFinite(expectedArtifact.size) &&
-    expectedArtifact.size &&
-    size !== expectedArtifact.size
-  ) {
-    throw new Error(
-      `Artifact size mismatch: expected ${expectedArtifact.size}, got ${size}`
-    );
-  }
+): Effect.Effect<void, ValidationError> {
+  return Effect.gen(function* () {
+    const size = yield* Effect.try({
+      try: () => statSync(artifactPath).size,
+      catch: (cause) =>
+        new ValidationError({
+          message: `Unable to inspect release artifact: ${formatError(cause)}`,
+          field: artifactPath,
+        }),
+    });
+    if (
+      Number.isFinite(expectedArtifact.size) &&
+      expectedArtifact.size &&
+      size !== expectedArtifact.size
+    ) {
+      return yield* Effect.fail(
+        new ValidationError({
+          message: `Artifact size mismatch: expected ${expectedArtifact.size}, got ${size}`,
+          field: artifactPath,
+        })
+      );
+    }
 
-  const parsedDigest = parseDigest(expectedArtifact.digest);
-  if (!parsedDigest) return;
+    const parsedDigest = parseDigest(expectedArtifact.digest);
+    if (!parsedDigest) return;
 
-  const actualDigest = await hashFile(artifactPath, parsedDigest.algorithm);
-  if (actualDigest !== parsedDigest.value) {
-    throw new Error(`Artifact digest mismatch for ${parsedDigest.algorithm}`);
-  }
+    const actualDigest = yield* Effect.tryPromise({
+      try: () => hashFile(artifactPath, parsedDigest.algorithm),
+      catch: (cause) =>
+        new ValidationError({
+          message: `Unable to hash release artifact: ${formatError(cause)}`,
+          field: artifactPath,
+        }),
+    });
+    if (actualDigest !== parsedDigest.value) {
+      return yield* Effect.fail(
+        new ValidationError({
+          message: `Artifact digest mismatch for ${parsedDigest.algorithm}`,
+          field: artifactPath,
+        })
+      );
+    }
+  });
 }
 
-async function downloadRangeChunk(
+function downloadRangeChunk(
   url: string,
   start: number,
   end: number
-): Promise<Buffer> {
-  const response = await axios({
-    url,
-    method: 'GET',
-    responseType: 'arraybuffer',
-    headers: {
-      Range: `bytes=${start}-${end}`,
-      'Accept-Encoding': 'identity',
-    },
-    timeout: 60000,
+): Effect.Effect<Buffer, NetworkError | ValidationError> {
+  return Effect.gen(function* () {
+    const response = yield* Effect.tryPromise({
+      try: () =>
+        axios({
+          url,
+          method: 'GET',
+          responseType: 'arraybuffer',
+          headers: {
+            Range: `bytes=${start}-${end}`,
+            'Accept-Encoding': 'identity',
+          },
+          timeout: 60000,
+        }),
+      catch: (cause) =>
+        new NetworkError({
+          message: `Failed to download bytes=${start}-${end}: ${formatError(cause)}`,
+          url,
+        }),
+    });
+
+    const expectedSize = end - start + 1;
+    const actualSize = Buffer.byteLength(response.data);
+    if (response.status !== 206 || actualSize !== expectedSize) {
+      return yield* Effect.fail(
+        new ValidationError({
+          message: `Invalid range response for bytes=${start}-${end}`,
+          field: 'rangeResponse',
+        })
+      );
+    }
+
+    return Buffer.from(response.data);
   });
-
-  const expectedSize = end - start + 1;
-  const actualSize = Buffer.byteLength(response.data);
-  if (response.status !== 206 || actualSize !== expectedSize) {
-    throw new Error(`Invalid range response for bytes=${start}-${end}`);
-  }
-
-  return Buffer.from(response.data);
 }
 
 function createRangeDownloadTasks(
@@ -423,7 +464,7 @@ function createRangeDownloadTasks(
   return tasks;
 }
 
-async function applyBlockmapPatch(params: {
+function applyBlockmapPatch(params: {
   sourceArtifact: string;
   oldBlockmapPath: string;
   outputArtifact: string;
@@ -432,92 +473,179 @@ async function applyBlockmapPatch(params: {
   expectedArtifact: ReleaseAsset;
   updateStatus: (text: string, subtext?: string) => void;
   updateProgress: (current: number, total: number, speed: string) => void;
-}): Promise<void> {
-  const oldMap = JSON.parse(
-    zlib.gunzipSync(readFileSync(params.oldBlockmapPath)).toString('utf8')
-  );
-  const newMap = JSON.parse(
-    zlib.gunzipSync(readFileSync(params.newBlockmapPath)).toString('utf8')
-  );
-  const oldFile = oldMap.files?.[0];
-  const newFile = newMap.files?.[0];
-  if (!oldFile || !newFile) throw new Error('Invalid blockmap payload');
-
-  const checksumToBlocks = new Map<
-    string,
-    Array<{ offset: number; size: number }>
-  >();
-  let oldOffset = oldFile.offset || 0;
-  for (let i = 0; i < oldFile.checksums.length; i++) {
-    const key = getBlockKey(oldFile.checksums[i], oldFile.sizes[i]);
-    const blocks = checksumToBlocks.get(key) ?? [];
-    blocks.push({ offset: oldOffset, size: oldFile.sizes[i] });
-    checksumToBlocks.set(key, blocks);
-    oldOffset += oldFile.sizes[i];
-  }
-
-  let sourceFd: number | null = null;
-  let outFd: number | null = null;
-  try {
-    sourceFd = openSync(params.sourceArtifact, 'r');
-    outFd = openSync(params.outputArtifact, 'w');
-    let writeOffset = newFile.offset || 0;
-    const misses: Array<{ offset: number; size: number }> = [];
-
-    if (writeOffset > 0) {
-      const header = await downloadRangeChunk(
-        params.targetUrl,
-        0,
-        writeOffset - 1
+}): Effect.Effect<void, NetworkError | ValidationError> {
+  return Effect.gen(function* () {
+    const { oldMap, newMap } = yield* Effect.try({
+      try: () => ({
+        oldMap: JSON.parse(
+          zlib.gunzipSync(readFileSync(params.oldBlockmapPath)).toString('utf8')
+        ),
+        newMap: JSON.parse(
+          zlib.gunzipSync(readFileSync(params.newBlockmapPath)).toString('utf8')
+        ),
+      }),
+      catch: (cause) =>
+        new ValidationError({
+          message: `Unable to parse blockmap payload: ${formatError(cause)}`,
+          field: 'blockmap',
+        }),
+    });
+    const oldFile = oldMap.files?.[0];
+    const newFile = newMap.files?.[0];
+    if (!oldFile || !newFile) {
+      return yield* Effect.fail(
+        new ValidationError({
+          message: 'Invalid blockmap payload',
+          field: 'blockmap',
+        })
       );
-      writeSync(outFd, header, 0, header.length, 0);
     }
 
-    for (let i = 0; i < newFile.checksums.length; i++) {
-      const size = newFile.sizes[i];
-      const blocks = checksumToBlocks.get(
-        getBlockKey(newFile.checksums[i], size)
-      );
-      const matched = blocks?.pop();
-      if (matched) {
-        const buffer = Buffer.alloc(size);
-        const bytesRead = readSync(sourceFd, buffer, 0, size, matched.offset);
-        if (bytesRead !== size)
-          throw new Error('Short read from source artifact');
-        writeSync(outFd, buffer, 0, size, writeOffset);
-      } else {
-        misses.push({ offset: writeOffset, size });
+    const checksumToBlocks = new Map<
+      string,
+      Array<{ offset: number; size: number }>
+    >();
+    let oldOffset = oldFile.offset || 0;
+    for (let i = 0; i < oldFile.checksums.length; i++) {
+      const key = getBlockKey(oldFile.checksums[i], oldFile.sizes[i]);
+      const blocks = checksumToBlocks.get(key) ?? [];
+      blocks.push({ offset: oldOffset, size: oldFile.sizes[i] });
+      checksumToBlocks.set(key, blocks);
+      oldOffset += oldFile.sizes[i];
+    }
+
+    let sourceFd: number | null = null;
+    let outFd: number | null = null;
+    try {
+      sourceFd = yield* Effect.try({
+        try: () => openSync(params.sourceArtifact, 'r'),
+        catch: (cause) =>
+          new ValidationError({
+            message: `Unable to open source artifact: ${formatError(cause)}`,
+            field: params.sourceArtifact,
+          }),
+      });
+      outFd = yield* Effect.try({
+        try: () => openSync(params.outputArtifact, 'w'),
+        catch: (cause) =>
+          new ValidationError({
+            message: `Unable to open output artifact: ${formatError(cause)}`,
+            field: params.outputArtifact,
+          }),
+      });
+      let writeOffset = newFile.offset || 0;
+      const misses: Array<{ offset: number; size: number }> = [];
+
+      if (writeOffset > 0) {
+        const header = yield* downloadRangeChunk(
+          params.targetUrl,
+          0,
+          writeOffset - 1
+        );
+        yield* Effect.try({
+          try: () => writeSync(outFd!, header, 0, header.length, 0),
+          catch: (cause) =>
+            new ValidationError({
+              message: `Unable to write artifact header: ${formatError(cause)}`,
+              field: params.outputArtifact,
+            }),
+        });
       }
-      writeOffset += size;
-      if (
-        i === newFile.checksums.length - 1 ||
-        (i + 1) % PATCH_PROGRESS_INTERVAL === 0
-      ) {
-        params.updateStatus('Building setup patch');
-        params.updateProgress(i + 1, newFile.checksums.length, '');
+
+      for (let i = 0; i < newFile.checksums.length; i++) {
+        const size = newFile.sizes[i];
+        const blocks = checksumToBlocks.get(
+          getBlockKey(newFile.checksums[i], size)
+        );
+        const matched = blocks?.pop();
+        if (matched) {
+          const buffer = Buffer.alloc(size);
+          const bytesRead = yield* Effect.try({
+            try: () => readSync(sourceFd!, buffer, 0, size, matched.offset),
+            catch: (cause) =>
+              new ValidationError({
+                message: `Unable to read source artifact: ${formatError(cause)}`,
+                field: params.sourceArtifact,
+              }),
+          });
+          if (bytesRead !== size) {
+            return yield* Effect.fail(
+              new ValidationError({
+                message: 'Short read from source artifact',
+                field: params.sourceArtifact,
+              })
+            );
+          }
+          yield* Effect.try({
+            try: () => writeSync(outFd!, buffer, 0, size, writeOffset),
+            catch: (cause) =>
+              new ValidationError({
+                message: `Unable to write patched artifact: ${formatError(cause)}`,
+                field: params.outputArtifact,
+              }),
+          });
+        } else {
+          misses.push({ offset: writeOffset, size });
+        }
+        writeOffset += size;
+        if (
+          i === newFile.checksums.length - 1 ||
+          (i + 1) % PATCH_PROGRESS_INTERVAL === 0
+        ) {
+          params.updateStatus('Building setup patch');
+          params.updateProgress(i + 1, newFile.checksums.length, '');
+        }
+      }
+
+      const tasks = createRangeDownloadTasks(misses);
+      let downloaded = 0;
+      const total = tasks.reduce((sum, task) => sum + task.size, 0);
+      for (const task of tasks) {
+        const chunk = yield* downloadRangeChunk(
+          params.targetUrl,
+          task.start,
+          task.end
+        );
+        yield* Effect.try({
+          try: () => writeSync(outFd!, chunk, 0, chunk.length, task.start),
+          catch: (cause) =>
+            new ValidationError({
+              message: `Unable to write downloaded patch data: ${formatError(cause)}`,
+              field: params.outputArtifact,
+            }),
+        });
+        downloaded += chunk.length;
+        params.updateStatus('Downloading setup patch data');
+        params.updateProgress(downloaded, total, '');
+      }
+    } finally {
+      if (sourceFd !== null) {
+        yield* Effect.try({
+          try: () => closeSync(sourceFd!),
+          catch: (cause) =>
+            new ValidationError({
+              message: `Unable to close source artifact: ${formatError(cause)}`,
+              field: params.sourceArtifact,
+            }),
+        });
+      }
+      if (outFd !== null) {
+        yield* Effect.try({
+          try: () => closeSync(outFd!),
+          catch: (cause) =>
+            new ValidationError({
+              message: `Unable to close output artifact: ${formatError(cause)}`,
+              field: params.outputArtifact,
+            }),
+        });
       }
     }
 
-    const tasks = createRangeDownloadTasks(misses);
-    let downloaded = 0;
-    const total = tasks.reduce((sum, task) => sum + task.size, 0);
-    for (const task of tasks) {
-      const chunk = await downloadRangeChunk(
-        params.targetUrl,
-        task.start,
-        task.end
-      );
-      writeSync(outFd, chunk, 0, chunk.length, task.start);
-      downloaded += chunk.length;
-      params.updateStatus('Downloading setup patch data');
-      params.updateProgress(downloaded, total, '');
-    }
-  } finally {
-    if (sourceFd !== null) closeSync(sourceFd);
-    if (outFd !== null) closeSync(outFd);
-  }
-
-  await verifyReleaseArtifact(params.outputArtifact, params.expectedArtifact);
+    yield* verifyReleaseArtifact(
+      params.outputArtifact,
+      params.expectedArtifact
+    );
+  });
 }
 
 async function downloadSetupAppImageWithDifferentialFallback(params: {
@@ -563,16 +691,18 @@ async function downloadSetupAppImageWithDifferentialFallback(params: {
         params.updateStatus,
         params.updateProgress
       );
-      await applyBlockmapPatch({
-        sourceArtifact: currentSetupPath,
-        oldBlockmapPath,
-        outputArtifact: params.destination,
-        newBlockmapPath,
-        targetUrl: params.latestAsset.browser_download_url,
-        expectedArtifact: params.latestAsset,
-        updateStatus: params.updateStatus,
-        updateProgress: params.updateProgress,
-      });
+      await Effect.runPromise(
+        applyBlockmapPatch({
+          sourceArtifact: currentSetupPath,
+          oldBlockmapPath,
+          outputArtifact: params.destination,
+          newBlockmapPath,
+          targetUrl: params.latestAsset.browser_download_url,
+          expectedArtifact: params.latestAsset,
+          updateStatus: params.updateStatus,
+          updateProgress: params.updateProgress,
+        })
+      );
       console.log('[updater] Setup AppImage differential update succeeded');
       return;
     } catch (error) {

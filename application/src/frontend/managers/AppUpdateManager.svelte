@@ -1,4 +1,5 @@
 <script lang="ts">
+import { UpdateError } from '@ogi/errors';
 import { Effect } from 'effect';
 import core from '@/frontend/lib/core';
 import { updatesManager } from '@/frontend/states.svelte';
@@ -49,8 +50,12 @@ async function checkForAppUpdates() {
             );
             if (addons.length === 0) return undefined;
             if (addons.length > 1) {
-              throw new Error(
-                'Multiple clients found to serve this storefront'
+              return await Effect.runPromise(
+                Effect.fail(
+                  new UpdateError({
+                    message: 'Multiple clients found to serve this storefront',
+                  })
+                )
               );
             }
             const update = (await addonServer

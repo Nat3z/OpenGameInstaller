@@ -1,5 +1,7 @@
 <script lang="ts">
+import { FileSystemError } from '@ogi/errors';
 import type { LibraryInfo } from '@ogi-sdk/connect';
+import { Effect } from 'effect';
 import { get } from 'svelte/store';
 import { getApp } from '@/frontend/lib/core/library';
 import { saveFailedSetup } from '@/frontend/lib/recovery/failedSetups';
@@ -368,7 +370,14 @@ async function processDownloadComplete(
         should: 'call-unzip',
       });
       processingDownloadCompletions.delete(downloadID);
-      throw new Error('Failed to extract ZIP file');
+      return Effect.runPromise(
+        Effect.fail(
+          new FileSystemError({
+            message: 'Failed to extract ZIP file',
+            path: originalZipFilePath,
+          })
+        )
+      );
     }
 
     // deletion handled in unzip helper

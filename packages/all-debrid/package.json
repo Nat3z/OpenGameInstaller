@@ -23,9 +23,11 @@
   "types": "./build/main.d.mts",
   "main": "./build/main.cjs",
   "dependencies": {
+    "@effect/schema": "^0.75.5",
+    "@ogi/errors": "workspace:*",
     "axios": "^1.7.2",
-    "form-data": "^4.0.0",
-    "zod": "^3.23.8"
+    "effect": "^3.22.0",
+    "form-data": "^4.0.0"
   },
   "scripts": {
     "auto-build": "tsdown --config tsdown.config.js --watch",

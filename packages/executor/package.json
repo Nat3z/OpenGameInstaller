@@ -30,6 +30,8 @@
     "typescript": "^5"
   },
   "dependencies": {
+    "@effect/schema": "^0.75.5",
+    "effect": "^3.22.0",
     "string-argv": "^0.3.2",
     "zod": "^4.4.2"
   },

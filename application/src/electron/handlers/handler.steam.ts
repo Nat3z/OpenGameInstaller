@@ -4,8 +4,8 @@
  */
 
 import { exec, spawn } from 'child_process';
-import { ipcMain, type IpcMainInvokeEvent } from 'electron';
-import { FileSystemError, PlatformError, formatError, formatErrorResponse } from '@ogi/errors';
+import { ipcMain } from 'electron';
+import { FileSystemError, formatError, ipcBoundary } from '@ogi/errors';
 import { Effect } from 'effect';
 import * as fs from 'fs';
 import { join } from 'path';
@@ -28,14 +28,6 @@ import {
   getVersionedGameName,
 } from '@/electron/handlers/helpers.app/steam.js';
 import { sendNotification } from '@/electron/main.js';
-
-const ipcBoundary = <Args extends readonly unknown[], A>(
-  operation: (event: IpcMainInvokeEvent, ...args: Args) => Promise<A> | A
-) => (event: IpcMainInvokeEvent, ...args: Args) =>
-  Effect.runPromise(Effect.tryPromise({
-    try: () => Promise.resolve(operation(event, ...args)),
-    catch: (cause) => new PlatformError({ message: formatError(cause), platform: process.platform }),
-  }).pipe(Effect.catchAll((error) => Effect.succeed(formatErrorResponse(error)))));
 
 const copyRecursiveSync = (source: string, destination: string): void => {
   const stats = fs.lstatSync(source);

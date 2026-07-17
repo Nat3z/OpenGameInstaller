@@ -41,14 +41,14 @@ export class DirectService extends BaseService {
       const sanitizedName = sanitizePathSegment(result.name);
       const collectedFiles = yield* Effect.try({
         try: () =>
-          result.files!.map((file) => ({
+          result.files.map((file) => ({
             path: safeDownloadPath(
               baseDir,
               sanitizedName,
               sanitizePathSegment(file.name)
             ),
             link: file.downloadURL,
-            headers: JSON.parse(JSON.stringify(file.headers || {})),
+            headers: { ...(file.headers ?? {}) },
           })),
         catch: (cause) =>
           new DownloadError({

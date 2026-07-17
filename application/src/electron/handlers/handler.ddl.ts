@@ -803,7 +803,10 @@ class Download {
               `[direct] Part ${part.index + 1}: 429 detected, disabling chunk parallelization and retrying as standard download`
             );
             part.useChunks = false;
-            yield* this.deleteChunkFiles(part.job.path);
+            yield* this.deleteChunkFiles(
+              part.job.path,
+              part.effectiveChunkCount
+            );
             break;
           }
           if (this.status !== 'downloading') {
@@ -1117,11 +1120,16 @@ class Download {
       });
 
       yield* Effect.async<void, DownloadError>((resume) => {
+        let resolved = false;
         stream.stream.on('finish', () => {
+          if (resolved) return;
+          resolved = true;
           chunk.completed = true;
           resume(Effect.void);
         });
         chunk.abortController.signal.addEventListener('abort', () => {
+          if (resolved) return;
+          resolved = true;
           stream.throttle?.destroy();
           chunk.fileStream?.close();
           chunk.fileStream = undefined;
@@ -1136,7 +1144,9 @@ class Download {
             )
           );
         });
-        stream.stream.on('error', (cause) =>
+        stream.stream.on('error', (cause) => {
+          if (resolved) return;
+          resolved = true;
           resume(
             Effect.fail(
               new DownloadError({
@@ -1145,8 +1155,8 @@ class Download {
                 cause,
               })
             )
-          )
-        );
+          );
+        });
         chunk.response!.data.on('data', (data: Buffer) => {
           chunk.currentBytes += data.length;
           part.downloadedBytes = part.chunks.reduce(
@@ -1179,8 +1189,11 @@ class Download {
         part.effectiveChunkCount ?? PARALLEL_CHUNK_COUNT;
 
       yield* Effect.async<void, FileSystemError>((resume) => {
+        let resolved = false;
         let currentChunkIndex = 0;
-        const fail = (cause: unknown, path = part.job.path) =>
+        const fail = (cause: unknown, path = part.job.path) => {
+          if (resolved) return;
+          resolved = true;
           resume(
             Effect.fail(
               new FileSystemError({
@@ -1190,9 +1203,14 @@ class Download {
               })
             )
           );
+        };
         const writeNextChunk = () => {
           if (currentChunkIndex >= effectiveChunkCount) {
-            finalStream.end(() => resume(Effect.void));
+            finalStream.end(() => {
+              if (resolved) return;
+              resolved = true;
+              resume(Effect.void);
+            });
             return;
           }
           const chunkPath = this.getChunkPath(part.job.path, currentChunkIndex);
@@ -1214,7 +1232,10 @@ class Download {
         finalStream.on('error', fail);
         writeNextChunk();
       });
-      yield* this.deleteChunkFiles(part.job.path).pipe(Effect.ignore);
+      yield* this.deleteChunkFiles(
+        part.job.path,
+        part.effectiveChunkCount
+      ).pipe(Effect.ignore);
     });
   }
 
@@ -1366,13 +1387,18 @@ class Download {
       });
 
       yield* Effect.async<void, DownloadError>((resume) => {
+        let resolved = false;
         stream.file.on('finish', () => {
+          if (resolved) return;
+          resolved = true;
           part.fileStream?.close();
           part.fileStream = undefined;
           part.response = undefined;
           resume(Effect.void);
         });
         part.abortController.signal.addEventListener('abort', () => {
+          if (resolved) return;
+          resolved = true;
           stream.throttle?.destroy();
           part.fileStream?.close();
           part.fileStream = undefined;
@@ -1390,6 +1416,8 @@ class Download {
           );
         });
         stream.file.on('error', (cause) => {
+          if (resolved) return;
+          resolved = true;
           part.fileStream?.close();
           part.fileStream = undefined;
           resume(
@@ -1506,7 +1534,7 @@ class Download {
     }
 
     this.sendIpc('ddl:download-resumed', { id: this.id });
-    this.run();
+    Effect.runFork(this.run());
   }
 
   public cancel() {
@@ -1714,7 +1742,7 @@ class Download {
               console.log(
                 '[direct] 429 detected, disabling parallelization and retrying as standard download'
               );
-              yield* this.deleteChunkFiles(job.path);
+              yield* this.deleteChunkFiles(job.path, this.effectiveChunkCount);
               break;
             }
             if (this.status !== 'downloading') {
@@ -1939,7 +1967,10 @@ class Download {
       });
 
       yield* Effect.async<void, DownloadError>((resume) => {
+        let resolved = false;
         stream.file.on('finish', () => {
+          if (resolved) return;
+          resolved = true;
           this.cleanupPart();
           console.log(
             '[direct] Stream finished (Downloaded bytes:',
@@ -1948,6 +1979,8 @@ class Download {
           resume(Effect.void);
         });
         this.abortController!.signal.addEventListener('abort', () => {
+          if (resolved) return;
+          resolved = true;
           stream.throttle?.destroy();
           this.cleanupPart();
           stream.file.destroy();
@@ -1963,6 +1996,8 @@ class Download {
           );
         });
         stream.file.on('error', (cause) => {
+          if (resolved) return;
+          resolved = true;
           this.cleanupPart();
           resume(
             Effect.fail(
@@ -2182,7 +2217,13 @@ class Download {
         ),
         { concurrency: 'unbounded', discard: true }
       ).pipe(
-        Effect.tapError(() => Effect.sync(() => this.cleanupParallelChunks())),
+        Effect.tapError(() =>
+          Effect.sync(() => this.cleanupParallelChunks()).pipe(
+            Effect.zipRight(
+              this.deleteChunkFiles(job.path, effectiveChunkCount)
+            )
+          )
+        ),
         Effect.ensuring(Effect.sync(() => connectionHealth.dispose()))
       );
       console.log('[direct] All parallel chunks completed');
@@ -2270,9 +2311,13 @@ class Download {
   }
 
   /** Delete all chunk files for a job. */
-  private deleteChunkFiles(basePath: string): Effect.Effect<void> {
+  private deleteChunkFiles(
+    basePath: string,
+    effectiveChunkCount?: number
+  ): Effect.Effect<void> {
+    const count = effectiveChunkCount ?? PARALLEL_CHUNK_COUNT;
     return Effect.forEach(
-      Array.from({ length: PARALLEL_CHUNK_COUNT }, (_, index) =>
+      Array.from({ length: count }, (_, index) =>
         this.getChunkPath(basePath, index)
       ),
       (chunkPath) =>
@@ -2326,14 +2371,18 @@ class Download {
   private cleanupAllFiles(): Effect.Effect<void> {
     const paths = this.jobs.map((job) => job.path);
     if (this.currentJobPath) {
-      for (let i = 0; i < PARALLEL_CHUNK_COUNT; i++) {
+      const effectiveChunkCount =
+        this.effectiveChunkCount ?? PARALLEL_CHUNK_COUNT;
+      for (let i = 0; i < effectiveChunkCount; i++) {
         paths.push(this.getChunkPath(this.currentJobPath, i));
       }
     }
     if (this.useParallelParts || this.parts.length > 0) {
       for (const part of this.parts) {
         if (!part.useChunks) continue;
-        for (let i = 0; i < PARALLEL_CHUNK_COUNT; i++) {
+        const effectiveChunkCount =
+          part.effectiveChunkCount ?? PARALLEL_CHUNK_COUNT;
+        for (let i = 0; i < effectiveChunkCount; i++) {
           paths.push(this.getChunkPath(part.job.path, i));
         }
       }
@@ -2358,7 +2407,7 @@ class Download {
     );
   }
 
-  private sendIpc(channel: string, data: any) {
+  private sendIpc(channel: string, data: Record<string, unknown>) {
     if (this.mainWindow && !this.mainWindow.isDestroyed()) {
       this.mainWindow.webContents.send(channel, data);
     }
@@ -2381,9 +2430,10 @@ function checkParallelChunkCount(): Effect.Effect<void, ConfigError> {
     console.log('[direct] parallel chunk count:', chunkCount);
 
     // Coerce to safe positive integer, ensuring minimum of 1
+    const oldChunkCount = PARALLEL_CHUNK_COUNT;
     PARALLEL_CHUNK_COUNT = chunkCount;
 
-    if (PARALLEL_CHUNK_COUNT > 0 && PARALLEL_CHUNK_COUNT !== chunkCount) {
+    if (oldChunkCount > 0 && oldChunkCount !== chunkCount) {
       console.log(
         '[direct] mismatched parallel chunk counts, will kill all downloads'
       );

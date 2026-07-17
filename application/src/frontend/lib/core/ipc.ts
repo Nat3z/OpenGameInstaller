@@ -9,38 +9,30 @@ export async function connectClientSdk(): Promise<Connection> {
   const developerConfig = getConfigClientOption('developer') as {
     clientSdkUrl?: string;
   } | null;
-  const server = await Effect.runPromise(
-    Connection.make({
-      url: developerConfig?.clientSdkUrl ?? 'ws://127.0.0.1:7654',
-    })
-  );
+  const server = await Connection.make({
+    url: developerConfig?.clientSdkUrl ?? 'ws://127.0.0.1:7654',
+  });
   initialize(server);
   return server;
 }
 
 export let addonServer = await connectClientSdk();
 
-export function queryConnectedAddons<T = AddonInfo>(): Promise<T[]> {
-  return Effect.runPromise(
-    Effect.gen(function* () {
-      const response = yield* addonServer.request('query-connected-addons', {
-        type: 'addons',
-      });
-      if (response.statusError) {
-        return yield* Effect.fail(
-          new AddonError({ message: response.statusError })
-        );
-      }
-      return response.args.addons as T[];
-    })
-  );
+export async function queryConnectedAddons<T = AddonInfo>(): Promise<T[]> {
+  const response = await addonServer.request('query-connected-addons', {
+    type: 'addons',
+  });
+  if (response.statusError) {
+    throw new AddonError({ message: response.statusError });
+  }
+  return response.args.addons as T[];
 }
 
 let reconnectInFlight: Promise<void> | null = null;
 export async function reconnectClientSdk(): Promise<void> {
   if (reconnectInFlight) return reconnectInFlight;
   reconnectInFlight = (async () => {
-    await Effect.runPromise(addonServer.close());
+    await addonServer.close();
     addonServer = await connectClientSdk();
   })().finally(() => {
     reconnectInFlight = null;

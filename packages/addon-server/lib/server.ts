@@ -1,4 +1,4 @@
-import { AddonError, NetworkError } from '@ogi/errors';
+import { NetworkError } from '@ogi/errors';
 import type {
   AddonNotificationMessage,
   AddonServerHostEventListeners,
@@ -120,12 +120,8 @@ export class AddonServer {
     return this;
   }
 
-  public getSecret(): Effect.Effect<string, AddonError> {
-    return this.config.secret
-      ? Effect.succeed(this.config.secret)
-      : Effect.fail(
-          new AddonError({ message: 'Addon server secret is not configured' })
-        );
+  public getSecret(): string {
+    return this.config.secret ?? '';
   }
 
   public stop(): Effect.Effect<void, NetworkError> {

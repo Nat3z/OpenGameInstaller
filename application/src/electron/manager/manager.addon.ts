@@ -39,11 +39,7 @@ export class Addon extends ExecutorAddon {
       ).pipe(
         Effect.mapError((cause) => new AddonLoadError({ addonName, cause }))
       );
-      const secret = yield* addonServer
-        .getSecret()
-        .pipe(
-          Effect.mapError((cause) => new AddonLoadError({ addonName, cause }))
-        );
+      const secret = addonServer.getSecret();
       return new Addon({
         port,
         secret,

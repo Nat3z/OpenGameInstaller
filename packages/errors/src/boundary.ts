@@ -20,23 +20,35 @@ export const runSyncBoundary = <A, E>(
   );
 
 /**
- * Shared IPC handler boundary. Wraps an async or sync operation into an
- * ipcMain.handle-compatible handler that catches all errors and formats
- * them as `{ status: 'error', error: string }`.
+ * Shared IPC handler boundary. Wraps an Effect, async operation, or sync
+ * operation into an ipcMain.handle-compatible handler that catches all errors
+ * and formats them as `{ status: 'error', error: string }`.
  *
  * @example
  * ```ts
- * ipcMain.handle('my-channel', ipcBoundary(async (_, arg) => doWork(arg)));
+ * ipcMain.handle('my-channel', ipcBoundary((_, arg) => doWork(arg)));
  * ```
  */
 export const ipcBoundary =
-  <Args extends readonly unknown[], A>(
-    operation: (...args: Args) => Promise<A> | A
+  <Args extends readonly unknown[], A, E = never>(
+    operation: (...args: Args) => Effect.Effect<A, E> | Promise<A> | A
   ) =>
   (...args: Args): Promise<{ status: 'error'; error: string } | A> =>
     Effect.runPromise(
-      Effect.tryPromise({
-        try: () => Promise.resolve(operation(...args)),
-        catch: (cause) => formatErrorResponse(cause),
-      }).pipe(Effect.catchAll((error) => Effect.succeed(error)))
+      Effect.try({
+        try: () => operation(...args),
+        catch: (cause) => cause,
+      }).pipe(
+        Effect.flatMap((result) =>
+          Effect.isEffect(result)
+            ? result
+            : Effect.tryPromise({
+                try: () => Promise.resolve(result),
+                catch: (cause) => cause,
+              })
+        ),
+        Effect.catchAll((error) =>
+          Effect.succeed(formatErrorResponse(error))
+        )
+      )
     );

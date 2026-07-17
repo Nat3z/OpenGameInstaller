@@ -100,15 +100,13 @@ export function addUmuGameToSteam(params: {
       return { success: false, error: 'Failed to add game to Steam' };
     }
 
-    const { success, appId: steamAppId } = yield* getSteamAppIdWithFallback(
+    const steamAppId = yield* getSteamAppIdWithFallback(
       params.name,
       params.version,
       'addGameToSteam'
-    );
+    ).pipe(Effect.catchAll(() => Effect.succeed(undefined)));
 
-    return !success || !steamAppId
-      ? { success: true }
-      : { success: true, steamAppId };
+    return steamAppId ? { success: true, steamAppId } : { success: true };
   });
 }
 
@@ -208,11 +206,19 @@ export function registerSteamHandlers() {
           return { success: false, error: 'Game not found' };
         }
 
-        return await Effect.runPromise(
+        return Effect.runPromise(
           getSteamAppIdWithFallback(
             appInfo.name,
             appInfo.version,
             'app:get-steam-app-id'
+          ).pipe(
+            Effect.map((appId) => ({ success: true as const, appId })),
+            Effect.catchAll((error) =>
+              Effect.succeed({
+                success: false as const,
+                error: formatError(error),
+              })
+            )
           )
         );
       }
@@ -320,11 +326,15 @@ export function registerSteamHandlers() {
       // Check if this is a UMU game
       if (appInfo.umu) {
         // For UMU games, only add shortcut if it doesn't already exist
-        let { success, appId } = await Effect.runPromise(
-          getSteamAppIdWithFallback(appInfo.name, appInfo.version, 'steam')
+        let appId = await Effect.runPromise(
+          getSteamAppIdWithFallback(
+            appInfo.name,
+            appInfo.version,
+            'steam'
+          ).pipe(Effect.catchAll(() => Effect.succeed(undefined)))
         );
 
-        if (!success || !appId) {
+        if (!appId) {
           const result = await Effect.runPromise(
             addUmuGameToSteam({
               appID,
@@ -335,16 +345,18 @@ export function registerSteamHandlers() {
           if (!result.success) {
             return result;
           }
-          const lookup = await Effect.runPromise(
-            getSteamAppIdWithFallback(appInfo.name, appInfo.version, 'steam')
+          appId = await Effect.runPromise(
+            getSteamAppIdWithFallback(
+              appInfo.name,
+              appInfo.version,
+              'steam'
+            ).pipe(Effect.catchAll(() => Effect.succeed(undefined)))
           );
-          success = lookup.success;
-          appId = lookup.appId;
         }
 
         // Launch via Steam
 
-        if (!success || !appId) {
+        if (!appId) {
           return { success: false, error: 'Failed to get Steam shortcut ID' };
         }
 
@@ -352,11 +364,15 @@ export function registerSteamHandlers() {
       }
 
       // Legacy mode
-      const { success, appId } = await Effect.runPromise(
-        getSteamAppIdWithFallback(appInfo.name, appInfo.version, 'steam')
+      const appId = await Effect.runPromise(
+        getSteamAppIdWithFallback(
+          appInfo.name,
+          appInfo.version,
+          'steam'
+        ).pipe(Effect.catchAll(() => Effect.succeed(undefined)))
       );
 
-      if (!success || appId == null) {
+      if (appId == null) {
         return { success: false, error: 'Failed to get Steam shortcut ID' };
       }
 
@@ -391,12 +407,12 @@ export function registerSteamHandlers() {
       }
 
       // Legacy mode
-      const { success, appId } = await Effect.runPromise(
+      const appId = await Effect.runPromise(
         getSteamAppIdWithFallback(
           libraryInfo.name,
           libraryInfo.version,
           'prefix'
-        )
+        ).pipe(Effect.catchAll(() => Effect.succeed(undefined)))
       );
 
       const homeDir = getHomeDir();
@@ -404,11 +420,11 @@ export function registerSteamHandlers() {
         return { exists: false, error: 'Home directory not found' };
       }
 
-      if (!success) {
+      if (appId == null) {
         return { exists: false, error: 'Failed to get Steam shortcut ID' };
       }
 
-      const prefixPath = getProtonPrefixPath(appId!);
+      const prefixPath = getProtonPrefixPath(appId);
       const exists = fs.existsSync(prefixPath);
       console.log(
         `[prefix] Checking prefix for appID ${appID}: ${exists ? 'exists' : 'not found'} at ${prefixPath}`
@@ -484,11 +500,13 @@ export function registerSteamHandlers() {
       }
 
       // Get the new Steam app ID after adding
-      const { success, appId: newSteamAppId } = await Effect.runPromise(
-        getNonSteamGameAppID(versionedGameName)
+      const newSteamAppId = await Effect.runPromise(
+        getNonSteamGameAppID(versionedGameName).pipe(
+          Effect.catchAll(() => Effect.succeed(undefined))
+        )
       );
 
-      if (!success || !newSteamAppId) {
+      if (!newSteamAppId) {
         console.warn(
           `[add-to-steam] Failed to get new Steam app ID for "${versionedGameName}"`
         );

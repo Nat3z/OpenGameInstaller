@@ -71,29 +71,28 @@ const installRedistributables = (appID: number, downloadId?: string) =>
       });
     }
     const versionedName = getVersionedGameName(appInfo.name, appInfo.version);
-    const steam = yield* getNonSteamGameAppID(versionedName);
-    if (!steam.success || !steam.appId) {
-      emitProgress({
-        kind: 'done',
-        total: appInfo.redistributables?.length ?? 0,
-        completedCount: 0,
-        failedCount: appInfo.redistributables?.length ?? 0,
-        overallProgress: 100,
-        result: 'failed',
-        error: 'Failed to resolve Steam App ID',
-      });
-      return yield* Effect.fail(
-        new LibraryError({
+    const steamAppId = yield* getNonSteamGameAppID(versionedName).pipe(
+      Effect.mapError(() => {
+        emitProgress({
+          kind: 'done',
+          total: appInfo.redistributables?.length ?? 0,
+          completedCount: 0,
+          failedCount: appInfo.redistributables?.length ?? 0,
+          overallProgress: 100,
+          result: 'failed',
+          error: 'Failed to resolve Steam App ID',
+        });
+        return new LibraryError({
           message: 'Failed to resolve Steam App ID',
           gameId: appID,
-        })
-      );
-    }
+        });
+      })
+    );
     return yield* Effect.tryPromise({
       try: () =>
         installRedistributablesWithUmuForLegacy(
           appID,
-          steam.appId!,
+          steamAppId,
           emitProgress
         ),
       catch: (cause) =>

@@ -133,24 +133,16 @@ const axiosRequest = (
   });
 
 export default function handler(mainWindow: Electron.BrowserWindow): void {
-  const syncHandlers: Array<[string, () => void]> = [
-    ['app:close', () => mainWindow?.close()],
-    ['app:hide-window', () => mainWindow?.hide()],
-    [
-      'app:show-window',
-      () => {
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.show();
-          mainWindow.focus();
-        }
-      },
-    ],
-    ['app:minimize', () => mainWindow?.minimize()],
-    ['app:quit', () => app.quit()],
-  ];
-  for (const [channel, operation] of syncHandlers) {
-    ipcMain.handle(channel, () => runBoundary(Effect.sync(operation)));
-  }
+  ipcMain.handle('app:close', () => mainWindow?.close());
+  ipcMain.handle('app:hide-window', () => mainWindow?.hide());
+  ipcMain.handle('app:show-window', () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.show();
+      mainWindow.focus();
+    }
+  });
+  ipcMain.handle('app:minimize', () => mainWindow?.minimize());
+  ipcMain.handle('app:quit', () => app.quit());
 
   ipcMain.handle('app:axios', (_, options: AxiosRequestConfig) =>
     Effect.runPromise(

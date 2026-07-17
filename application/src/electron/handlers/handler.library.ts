@@ -568,13 +568,15 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
           );
 
           // add to the {appid}.json file the launch options
-          const { success, appId: steamAppId } = await Effect.runPromise(
-            getNonSteamGameAppID(versionedGameName)
+          const steamAppId = await Effect.runPromise(
+            getNonSteamGameAppID(versionedGameName).pipe(
+              Effect.catchAll(() => Effect.succeed(undefined))
+            )
           );
-          if (!success) {
+          if (steamAppId == null) {
             return 'setup-failed';
           }
-          const protonPath = getProtonPrefixPath(steamAppId!);
+          const protonPath = getProtonPrefixPath(steamAppId);
           const normalizedLaunchOptions = launchOptions || '%command%';
           data.launchArguments =
             'WINEPREFIX=' + protonPath + ' ' + normalizedLaunchOptions;
@@ -722,11 +724,15 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
             console.log('[update] Migrating game from legacy to UMU mode');
 
             // Get the old Steam app ID for migration (use old version)
-            const { success, appId: oldSteamAppId } = await Effect.runPromise(
-              getSteamAppIdWithFallback(appData.name, oldVersion, 'migration')
+            const oldSteamAppId = await Effect.runPromise(
+              getSteamAppIdWithFallback(
+                appData.name,
+                oldVersion,
+                'migration'
+              ).pipe(Effect.catchAll(() => Effect.succeed(undefined)))
             );
 
-            if (!success || !oldSteamAppId) {
+            if (!oldSteamAppId) {
               console.warn(
                 '[update] Could not detect old Steam app ID during migration. Falling back to UMU prefix initialization.'
               );
@@ -752,15 +758,15 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
 
           // Get the Steam app ID and construct the proton path
           // First try with versioned name, then fallback to plain name if that fails
-          const { success, appId } = await Effect.runPromise(
+          const appId = await Effect.runPromise(
             getSteamAppIdWithFallback(
               appData.name,
               appData.version,
               'app:update-app-version'
-            )
+            ).pipe(Effect.catchAll(() => Effect.succeed(undefined)))
           );
 
-          if (success && appId) {
+          if (appId) {
             // Only modify WINEPREFIX when we successfully get the Steam app ID
             let launchOptions = originalLaunchArguments;
 

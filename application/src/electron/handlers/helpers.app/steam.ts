@@ -2,6 +2,7 @@
  * Steam/Proton helper functions
  */
 
+import { PlatformError } from '@ogi/errors';
 import { exec, execFile } from 'child_process';
 import { Effect } from 'effect';
 import {
@@ -58,21 +59,15 @@ export function getVersionedGameName(
  * Get the Steam App ID for a non-Steam game using steamtinkerlaunch
  * Output format from STL: "<appid>\t(<game name>)" or "<appid> (<game name>)"
  */
-export function getNonSteamGameAppID(gameName: string): Effect.Effect<{
-  success: boolean;
-  appId?: number;
-  error?: string;
-}> {
+export function getNonSteamGameAppID(
+  gameName: string
+): Effect.Effect<number, PlatformError> {
   return Effect.gen(function* () {
     if (cachedAppIds[gameName]) {
-      return { success: true, appId: cachedAppIds[gameName] };
+      return cachedAppIds[gameName];
     }
 
-    return yield* Effect.async<{
-      success: boolean;
-      appId?: number;
-      error?: string;
-    }>((resume) => {
+    return yield* Effect.async<number, PlatformError>((resume) => {
       execFile(
         STEAMTINKERLAUNCH_PATH,
         ['getid', gameName],
@@ -80,7 +75,14 @@ export function getNonSteamGameAppID(gameName: string): Effect.Effect<{
         (error, stdout, _stderr) => {
           if (error) {
             console.error('[getNonSteamGameAppID] Error:', error);
-            resume(Effect.succeed({ success: false, error: error.message }));
+            resume(
+              Effect.fail(
+                new PlatformError({
+                  message: error.message,
+                  platform: process.platform,
+                })
+              )
+            );
             return;
           }
 
@@ -94,20 +96,34 @@ export function getNonSteamGameAppID(gameName: string): Effect.Effect<{
               gameName
             );
             resume(
-              Effect.succeed({
-                success: false,
-                error: 'Could not find app ID for game',
-              })
+              Effect.fail(
+                new PlatformError({
+                  message: `Could not find Steam app ID for "${gameName}"`,
+                  platform: process.platform,
+                })
+              )
             );
             return;
           }
 
-          const appId = parseInt(appIdLine.split('(')[0].trim());
+          const appId = parseInt(appIdLine.split('(')[0].trim(), 10);
+          if (Number.isNaN(appId)) {
+            resume(
+              Effect.fail(
+                new PlatformError({
+                  message: `Invalid Steam app ID returned for "${gameName}"`,
+                  platform: process.platform,
+                })
+              )
+            );
+            return;
+          }
+
           console.log(
             `[getNonSteamGameAppID] Found app ID ${appId} for "${gameName}"`
           );
           cachedAppIds[gameName] = appId;
-          resume(Effect.succeed({ success: true, appId }));
+          resume(Effect.succeed(appId));
         }
       );
     });
@@ -122,29 +138,23 @@ export function getSteamAppIdWithFallback(
   name: string,
   version?: string | null,
   context?: string
-): Effect.Effect<{ success: boolean; appId?: number; error?: string }> {
-  return Effect.gen(function* () {
-    const versionedGameName = getVersionedGameName(name, version);
-    let { success, appId } = yield* getNonSteamGameAppID(versionedGameName);
+): Effect.Effect<number, PlatformError> {
+  const versionedGameName = getVersionedGameName(name, version);
 
-    if (!success) {
-      const fallbackResult = yield* getNonSteamGameAppID(name);
-      if (fallbackResult.success) {
-        success = true;
-        appId = fallbackResult.appId;
-        const contextPrefix = context ? `[${context}] ` : '';
-        console.log(
-          `${contextPrefix}Found Steam app ID using plain name "${name}" after versioned lookup failed.`
-        );
-      }
-    }
-
-    return {
-      success,
-      appId,
-      error: success ? undefined : 'Failed to get Steam app ID',
-    };
-  });
+  return getNonSteamGameAppID(versionedGameName).pipe(
+    Effect.catchAll(() =>
+      getNonSteamGameAppID(name).pipe(
+        Effect.tap(() =>
+          Effect.sync(() => {
+            const contextPrefix = context ? `[${context}] ` : '';
+            console.log(
+              `${contextPrefix}Found Steam app ID using plain name "${name}" after versioned lookup failed.`
+            );
+          })
+        )
+      )
+    )
+  );
 }
 
 /**

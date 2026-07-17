@@ -495,19 +495,19 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
 
   ipcMain.handle(
     'restart-addon-server',
-    ipcBoundary(async (_) => {
-      await Effect.runPromise(restartAddonServer());
-    })
+    ipcBoundary(() => restartAddonServer())
   );
 
   ipcMain.handle(
     'addon:delete-installed',
-    ipcBoundary(async (_, addonID: string) => {
-      if (typeof addonID !== 'string' || addonID.trim().length === 0) {
-        return { success: false, message: 'Invalid addon ID' };
-      }
-      return Effect.runPromise(deleteInstalledAddon(addonID));
-    })
+    ipcBoundary((_, addonID: string) =>
+      Effect.gen(function* () {
+        if (typeof addonID !== 'string' || addonID.trim().length === 0) {
+          return { success: false, message: 'Invalid addon ID' };
+        }
+        return yield* deleteInstalledAddon(addonID);
+      })
+    )
   );
 
   ipcMain.handle(

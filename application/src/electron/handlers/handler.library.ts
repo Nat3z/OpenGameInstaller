@@ -402,66 +402,47 @@ function executeWrapperCommandForAppSteam(
 export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
   ipcMain.handle(
     'app:launch-game',
-    ipcBoundary(async (_, appid) => {
-      const result = await Effect.runPromise(
-        launchGameFromLibrary(appid, mainWindow)
-      );
-      if (!result.success) {
-        throw new LibraryError({
-          message: result.error ?? 'Failed to launch game',
-        });
-      }
-    })
+    ipcBoundary((_, appid: number) =>
+      Effect.gen(function* () {
+        const result = yield* launchGameFromLibrary(appid, mainWindow);
+        if (!result.success) {
+          return yield* Effect.fail(
+            new LibraryError({ message: result.error ?? 'Failed to launch game' })
+          );
+        }
+      })
+    )
   );
 
   ipcMain.handle(
     'app:execute-wrapper-command',
-    ipcBoundary(
-      async (
-        _,
-        appid: number,
-        wrapperCommand: string
-      ): Promise<ExecuteWrapperResult> =>
-        Effect.runPromise(
-          executeWrapperCommandForAppSteam(appid, wrapperCommand)
-        )
+    ipcBoundary((_, appid: number, wrapperCommand: string) =>
+      executeWrapperCommandForAppSteam(appid, wrapperCommand)
     )
   );
 
   ipcMain.handle(
     'app:remove-app',
-    ipcBoundary(async (_, appid: number) => {
-      ensureLibraryDir();
-      ensureInternalsDir();
-
-      const appInfo = loadLibraryInfo(appid);
-      if (!appInfo) {
-        return;
-      }
-
-      removeLibraryFile(appid);
-      removeFromInternalsApps(appid);
-      return;
-    })
+    ipcBoundary((_, appid: number) =>
+      Effect.gen(function* () {
+        yield* Effect.try({ try: () => { ensureLibraryDir(); ensureInternalsDir(); }, catch: () => {} });
+        const appInfo = yield* Effect.sync(() => loadLibraryInfo(appid));
+        if (!appInfo) return;
+        yield* Effect.try({ try: () => { removeLibraryFile(appid); removeFromInternalsApps(appid); }, catch: () => {} });
+      })
+    )
   );
 
   ipcMain.handle(
     'app:insert-app',
-    ipcBoundary(
-      async (
+    ipcBoundary((
         _,
         data: LibraryInfo & {
           redistributables?: { name: string; path: string }[];
         }
-      ): Promise<
-        | 'setup-failed'
-        | 'setup-success'
-        | 'setup-redistributables-failed'
-        | 'setup-redistributables-success'
-        | 'setup-prefix-required'
-      > => {
-        ensureLibraryDir();
-        ensureInternalsDir();
+      ) =>
+      Effect.gen(function* () {
+        yield* Effect.try({ try: () => { ensureLibraryDir(); ensureInternalsDir(); }, catch: () => {} });
 
         // Check if UMU is available and should be used (Linux only; macOS uses legacy)
         const umuAvailable = isLinux();
@@ -472,13 +453,14 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
           console.log('[setup] Using UMU mode for new game');
 
           // Ensure UMU is installed (if not, try to install)
-          if (!(await isUmuInstalled())) {
+          const umuInstalled = yield* Effect.tryPromise({ try: isUmuInstalled, catch: (cause: unknown) => new LibraryError({ message: `Failed to check UMU: ${String(cause)}`, gameId: data.appID }) });
+          if (!umuInstalled) {
             sendNotification({
               message: 'Installing UMU...',
               id: generateNotificationId(),
               type: 'info',
             });
-            const installResult = await installUmu();
+            const installResult = yield* Effect.tryPromise({ try: installUmu, catch: (cause: unknown) => new LibraryError({ message: `Failed to install UMU: ${String(cause)}`, gameId: data.appID }) });
             if (!installResult.success) {
               console.error(
                 '[setup] UMU auto-install failed:',
@@ -511,13 +493,9 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
 
             // On Steam Deck (user "deck"), add a Steam shortcut so the game appears in Game Mode
             if (isDeckUser) {
-              const steamResult = await Effect.runPromise(
-                addUmuGameToSteam({
-                  appID: data.appID,
-                  name: data.name,
-                  version: data.version,
-                })
-              );
+              const steamResult = yield* addUmuGameToSteam({
+                appID: data.appID, name: data.name, version: data.version,
+              });
               if (!steamResult.success) {
                 console.warn(
                   '[setup] Failed to add UMU game to Steam for Deck:',
@@ -555,23 +533,16 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
             data.version
           );
 
-          const result = await Effect.runPromise(
-            addGameToSteam({
-              name: versionedGameName,
-              version: data.version,
-              launchExecutable: data.launchExecutable,
-              cwd: data.cwd,
-              wrapperCommand: launchOptions || '%command%',
-              appID: data.appID,
-              compatibilityTool: 'proton_experimental',
-            })
-          );
+          const result = yield* addGameToSteam({
+            name: versionedGameName, version: data.version,
+            launchExecutable: data.launchExecutable, cwd: data.cwd,
+            wrapperCommand: launchOptions || '%command%',
+            appID: data.appID, compatibilityTool: 'proton_experimental',
+          });
 
           // add to the {appid}.json file the launch options
-          const steamAppId = await Effect.runPromise(
-            getNonSteamGameAppID(versionedGameName).pipe(
-              Effect.catchAll(() => Effect.succeed(undefined))
-            )
+          const steamAppId = yield* getNonSteamGameAppID(versionedGameName).pipe(
+            Effect.catchAll(() => Effect.succeed(undefined))
           );
           if (steamAppId == null) {
             return 'setup-failed';
@@ -666,21 +637,18 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
         }
 
         return 'setup-success';
-      }
+      })
     )
   );
 
   ipcMain.handle(
     'app:get-all-apps',
-    ipcBoundary(async () => {
-      return getAllLibraryFiles();
-    })
+    ipcBoundary(() => Effect.succeed(getAllLibraryFiles()))
   );
 
   ipcMain.handle(
     'app:update-app-version',
-    ipcBoundary(
-      async (
+    ipcBoundary((
         _,
         data: {
           appID: number;
@@ -692,8 +660,9 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
           umu?: LibraryInfo['umu'];
           launchEnv?: LibraryInfo['launchEnv'];
         }
-      ) => {
-        const appData = loadLibraryInfo(data.appID);
+      ) =>
+      Effect.gen(function* () {
+        const appData = yield* Effect.sync(() => loadLibraryInfo(data.appID));
         if (!appData) {
           return 'app-not-found';
         }
@@ -724,13 +693,9 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
             console.log('[update] Migrating game from legacy to UMU mode');
 
             // Get the old Steam app ID for migration (use old version)
-            const oldSteamAppId = await Effect.runPromise(
-              getSteamAppIdWithFallback(
-                appData.name,
-                oldVersion,
-                'migration'
-              ).pipe(Effect.catchAll(() => Effect.succeed(undefined)))
-            );
+            const oldSteamAppId = yield* getSteamAppIdWithFallback(
+              appData.name, oldVersion, 'migration'
+            ).pipe(Effect.catchAll(() => Effect.succeed(undefined)));
 
             if (!oldSteamAppId) {
               console.warn(
@@ -738,10 +703,10 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
               );
             }
 
-            const migrationResult = await migrateToUmu(
-              data.appID,
-              oldSteamAppId
-            );
+            const migrationResult = yield* Effect.tryPromise({
+              try: () => migrateToUmu(data.appID, oldSteamAppId),
+              catch: (cause: unknown) => new LibraryError({ message: `Migration failed: ${String(cause)}`, gameId: data.appID })
+            });
             if (!migrationResult.success) {
               console.warn('[update] Migration failed:', migrationResult.error);
               // Continue anyway - UMU will create a fresh prefix
@@ -758,13 +723,9 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
 
           // Get the Steam app ID and construct the proton path
           // First try with versioned name, then fallback to plain name if that fails
-          const appId = await Effect.runPromise(
-            getSteamAppIdWithFallback(
-              appData.name,
-              appData.version,
-              'app:update-app-version'
-            ).pipe(Effect.catchAll(() => Effect.succeed(undefined)))
-          );
+          const appId = yield* getSteamAppIdWithFallback(
+            appData.name, appData.version, 'app:update-app-version'
+          ).pipe(Effect.catchAll(() => Effect.succeed(undefined)));
 
           if (appId) {
             // Only modify WINEPREFIX when we successfully get the Steam app ID
@@ -796,14 +757,12 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
 
         saveLibraryInfo(data.appID, appData);
         return 'success';
-      }
+      })
     )
   );
 
   ipcMain.handle(
     'app:get-library-info',
-    ipcBoundary(async (_, appID: number) => {
-      return loadLibraryInfo(appID);
-    })
+    ipcBoundary((_, appID: number) => Effect.succeed(loadLibraryInfo(appID)))
   );
 }

@@ -252,14 +252,14 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
     try {
       realPath = fs.realpathSync(requestPath);
     } catch (err) {
-      console.error('Failed to resolve real path:', path, err);
+      console.error('Failed to resolve real path:', requestPath, err);
       return null;
     }
 
     // Normalize paths for comparison
     const normalizedRealPath = realPath.replace(/\\/g, '/');
     const isAllowed = allowedDirs.some((allowedDir) => {
-      const normalizedAllowed = allowedDir.replace(/\\/g, '/');
+      const normalizedAllowed = `${allowedDir.replace(/\\/g, '/').replace(/\/+$/, '')}/`;
       return normalizedRealPath.startsWith(normalizedAllowed);
     });
 

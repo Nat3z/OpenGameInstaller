@@ -797,12 +797,15 @@ export function checkIfInstallerUpdateAvailable(
 
       // disable the release if we already have this version
       if (latestRelease) {
-        const wantedVersion = latestRelease
-          .body!.match(/Setup Version: (.*)/)![1]
-          .trim();
-        const version = semver.coerce(wantedVersion)?.version;
-        if (!version || !semver.gt(version, local)) {
+        const match = latestRelease.body?.match(/Setup Version: (.*)/);
+        if (!match || match.length < 2) {
           latestRelease = undefined;
+        } else {
+          const wantedVersion = match[1].trim();
+          const version = semver.coerce(wantedVersion)?.version;
+          if (!version || !semver.gt(version, local)) {
+            latestRelease = undefined;
+          }
         }
       }
 

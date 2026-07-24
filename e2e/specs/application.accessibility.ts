@@ -113,7 +113,7 @@ describe('application accessibility', () => {
     }
 
     if (state === 'oobe-resume') {
-      await waitForHeading('How do you want to download?');
+      await waitForHeading('Torrenting');
       await scan('Download provider');
       await activateByText('Continue');
       await waitForHeading('Download Location');

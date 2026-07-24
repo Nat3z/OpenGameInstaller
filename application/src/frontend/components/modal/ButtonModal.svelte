@@ -14,7 +14,7 @@ let {
 } = $props();
 
 const variantClasses = {
-  primary: 'btn btn-primary bg-accent focus:ring-accent border-none',
+  primary: 'btn btn-primary bg-accent-dark focus:ring-accent border-none',
   secondary:
     'btn btn-secondary bg-accent-lighter text-accent-dark hover:bg-accent-light focus:ring-accent border border-accent-light',
   danger: 'btn btn-danger border-none',
@@ -56,7 +56,7 @@ function handleClick(event: MouseEvent) {
 <style>
   .btn-primary {
     color: var(--color-overlay-text);
-    background-color: var(--color-accent);
+    background-color: var(--color-accent-dark);
   }
   .btn-primary:hover:not(:disabled),
   .btn-primary:focus-visible {

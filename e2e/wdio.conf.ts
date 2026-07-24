@@ -1,25 +1,44 @@
 import {
   copyFileSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   rmSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { getAccessibilityState } from './accessibility-states';
 
 const currentDirectory = dirname(fileURLToPath(import.meta.url));
 const applicationDirectory = resolve(currentDirectory, '../application');
-const sandboxDirectory = mkdtempSync(join(tmpdir(), 'ogi-accessibility-'));
-const state = process.env.OGI_ACCESSIBILITY_STATE ?? 'welcome';
+const state = getAccessibilityState();
+const inheritedRunDescriptorPath = process.env.OGI_RUN_DESCRIPTOR;
+const inheritedRunDescriptor =
+  inheritedRunDescriptorPath && existsSync(inheritedRunDescriptorPath)
+    ? JSON.parse(readFileSync(inheritedRunDescriptorPath, 'utf8'))
+    : undefined;
+const ownsSandbox = inheritedRunDescriptor === undefined;
+const sandboxDirectory =
+  inheritedRunDescriptor?.sandboxDirectory ??
+  mkdtempSync(join(tmpdir(), 'ogi-accessibility-'));
 const optionDirectory = join(sandboxDirectory, 'config/option');
-const axeDestination = join(
-  applicationDirectory,
-  'out/renderer/axe.min.js'
-);
+const runDescriptorPath = join(sandboxDirectory, 'run-descriptor.json');
+const axeDestination = join(applicationDirectory, 'out/renderer/axe.min.js');
 
 process.env.OGI_DIRECTORY = sandboxDirectory;
+process.env.OGI_RUN_DESCRIPTOR = runDescriptorPath;
+writeFileSync(
+  runDescriptorPath,
+  JSON.stringify({
+    version: 1,
+    scenario: 'application-accessibility',
+    state,
+    sandboxDirectory,
+  })
+);
 copyFileSync(
   resolve(currentDirectory, '../node_modules/axe-core/axe.min.js'),
   axeDestination
@@ -83,7 +102,9 @@ export const config = {
     ],
   ],
   onComplete() {
-    rmSync(sandboxDirectory, { recursive: true, force: true });
-    rmSync(axeDestination, { force: true });
+    if (ownsSandbox) {
+      rmSync(sandboxDirectory, { recursive: true, force: true });
+      rmSync(axeDestination, { force: true });
+    }
   },
 };

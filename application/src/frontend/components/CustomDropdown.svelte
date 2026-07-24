@@ -215,17 +215,15 @@ $effect(() => {
 
 <!-- Portaled menu: fixed positioning escapes overflow containers (e.g. modals) -->
 {#if showDropdown}
-  <div
+  <aside
     use:portal
-    bind:this={menuEl}
-    id={menuId}
-    role="listbox"
-    aria-label={label}
+    aria-label={`${label} options`}
     class="custom-dropdown-menu custom-dropdown-menu-{id} overflow-x-hidden"
     style={menuStyle}
     in:fly={{ y: -10, duration: 200 }}
     out:fly={{ y: -10, duration: 150 }}
   >
+    <div bind:this={menuEl} id={menuId} role="listbox" aria-label={label}>
       {#each options as option, index (option.id)}
         <button
           type="button"
@@ -267,7 +265,8 @@ $effect(() => {
           {/if}
         </button>
       {/each}
-  </div>
+    </div>
+  </aside>
 {/if}
 
 <style>

@@ -4,7 +4,7 @@
 
 **Blocked by:** None — can start immediately
 
-**Status:** resolved
+**Status:** ready-for-agent
 
 - [x] Native and custom controls expose correct roles, accessible names, values, and states.
 - [x] Icon-only controls, navigation, inputs, dropdowns, dialogs, progress UI, and dynamic status regions are covered.

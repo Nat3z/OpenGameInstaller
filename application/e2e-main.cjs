@@ -1,73 +1,26 @@
 const { app, BrowserWindow, ipcMain } = require('electron');
 const fs = require('node:fs');
 const path = require('node:path');
+const { registerFixtureService } = require('../e2e/fixture-service.cjs');
 
 const applicationDirectory = __dirname;
-const sandboxDirectory = process.env.OGI_DIRECTORY;
+const runDescriptorPath = process.env.OGI_RUN_DESCRIPTOR;
 
-if (!sandboxDirectory) {
-  throw new Error('OGI_DIRECTORY is required by the accessibility harness');
+if (!runDescriptorPath) {
+  throw new Error('OGI_RUN_DESCRIPTOR is required by the accessibility harness');
 }
 
-function sandboxPath(relativePath) {
-  const resolved = path.resolve(sandboxDirectory, relativePath);
-  const relative = path.relative(sandboxDirectory, resolved);
-  if (relative.startsWith('..') || path.isAbsolute(relative)) {
-    throw new Error(`Path escapes the accessibility sandbox: ${relativePath}`);
-  }
-  return resolved;
+const runDescriptor = JSON.parse(fs.readFileSync(runDescriptorPath, 'utf8'));
+if (
+  runDescriptor.version !== 1 ||
+  runDescriptor.scenario !== 'application-accessibility' ||
+  typeof runDescriptor.sandboxDirectory !== 'string' ||
+  !['welcome', 'oobe-resume', 'main'].includes(runDescriptor.state)
+) {
+  throw new Error('Invalid accessibility Run Descriptor');
 }
 
-ipcMain.on('get-initial-theme', (event) => {
-  event.returnValue = 'light';
-});
-ipcMain.on('get-version', (event) => {
-  event.returnValue = '4.1.0';
-});
-ipcMain.on('is-dev', (event) => {
-  event.returnValue = false;
-});
-ipcMain.on('fs:exists', (event, relativePath) => {
-  event.returnValue = fs.existsSync(sandboxPath(relativePath));
-});
-ipcMain.on('fs:read', (event, relativePath) => {
-  event.returnValue = fs.readFileSync(sandboxPath(relativePath), 'utf8');
-});
-ipcMain.on('fs:mkdir', (event, relativePath) => {
-  fs.mkdirSync(sandboxPath(relativePath), { recursive: true });
-  event.returnValue = true;
-});
-ipcMain.on('fs:write', (event, { path: relativePath, data }) => {
-  const destination = sandboxPath(relativePath);
-  fs.mkdirSync(path.dirname(destination), { recursive: true });
-  fs.writeFileSync(destination, data);
-  event.returnValue = true;
-});
-ipcMain.on('fs:delete:sync', (event, relativePath) => {
-  fs.rmSync(sandboxPath(relativePath), { recursive: true, force: true });
-  event.returnValue = true;
-});
-
-const emptyArrayChannels = [
-  'app:get-all-apps',
-  'download:consume-replay-events',
-  'download:get-handshake-state',
-  'fs:get-files-in-dir',
-];
-for (const channel of emptyArrayChannels) {
-  ipcMain.handle(channel, () => []);
-}
-
-ipcMain.handle('app:get-os', () => process.platform);
-ipcMain.handle('app:is-steam-deck', () => false);
-ipcMain.handle('app:is-online', () => true);
-ipcMain.handle('app:axios', () => ({ data: [] }));
-ipcMain.handle('install-addons', () => true);
-ipcMain.handle('update-addons', () => true);
-ipcMain.handle('clean-addons', () => true);
-ipcMain.handle('restart-addon-server', () => true);
-ipcMain.handle('power-save:set-active', () => true);
-ipcMain.handle('app:add-to-desktop', () => ({ success: true }));
+registerFixtureService(ipcMain, runDescriptor.sandboxDirectory);
 
 app.whenReady().then(async () => {
   const window = new BrowserWindow({

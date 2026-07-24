@@ -1,4 +1,5 @@
 import { $, browser } from '@wdio/globals';
+import { getAccessibilityState } from '../accessibility-states';
 
 type AxeViolation = {
   id: string;
@@ -21,7 +22,7 @@ function formatViolations(violations: AxeViolation[]) {
     .join('\n\n');
 }
 
-async function scan(label: string) {
+async function scan(label: string, rootSelector?: string) {
   console.log(`Scanning ${label}`);
   await browser.execute(() => {
     for (const animation of document.getAnimations()) {
@@ -32,13 +33,18 @@ async function scan(label: string) {
   });
   const response = await browser.executeAsync<
     { error?: string; violations?: AxeViolation[] },
-    []
-  >((done) => {
+    [string | undefined]
+  >((selector, done) => {
+    const root = selector ? document.querySelector(selector) : document;
+    if (!root) {
+      done({ error: `Accessibility scan root not found: ${selector}` });
+      return;
+    }
     (
       window as typeof window & {
         axe: {
           run: (
-            root: Document,
+            root: Document | Element,
             callback: (
               error: Error | null,
               results?: { violations: AxeViolation[] }
@@ -46,14 +52,14 @@ async function scan(label: string) {
           ) => void;
         };
       }
-    ).axe.run(document, (error, results) => {
+    ).axe.run(root, (error, results) => {
       done(
         error
           ? { error: error.message }
           : { violations: results?.violations ?? [] }
       );
     });
-  });
+  }, rootSelector);
   if (response.error) {
     throw new Error(`${label} accessibility scan failed: ${response.error}`);
   }
@@ -84,8 +90,23 @@ async function waitForHeading(name: string) {
   await heading.waitForDisplayed();
 }
 
+async function expectAttribute(
+  selector: string,
+  attribute: string,
+  expected: string
+) {
+  const control = await $(selector);
+  await control.waitForDisplayed();
+  const actual = await control.getAttribute(attribute);
+  if (actual !== expected) {
+    throw new Error(
+      `${selector} expected ${attribute}="${expected}", received "${actual}"`
+    );
+  }
+}
+
 describe('application accessibility', () => {
-  const state = process.env.OGI_ACCESSIBILITY_STATE ?? 'welcome';
+  const state = getAccessibilityState();
 
   before(async () => {
     await browser.waitUntil(
@@ -95,10 +116,9 @@ describe('application accessibility', () => {
         timeoutMsg: `OpenGameInstaller window did not become ready (title: ${await browser.getTitle()}, URL: ${await browser.getUrl()})`,
       }
     );
-    await browser.waitUntil(
-      () => browser.execute(() => 'axe' in window),
-      { timeoutMsg: 'Axe did not load into the application renderer' }
-    );
+    await browser.waitUntil(() => browser.execute(() => 'axe' in window), {
+      timeoutMsg: 'Axe did not load into the application renderer',
+    });
   });
 
   it('has no automated accessibility violations in user-visible states', async () => {
@@ -116,9 +136,16 @@ describe('application accessibility', () => {
 
     if (state === 'oobe-resume') {
       await waitForHeading('Torrenting');
+      await expectAttribute('aria/Setup progress', 'value', '1');
+      await expectAttribute(
+        'button[aria-pressed="true"]',
+        'aria-pressed',
+        'true'
+      );
       await scan('Download provider');
       await activateByText('Continue');
       await waitForHeading('Download Location');
+      await expectAttribute('aria/Setup progress', 'value', '2');
       await scan('Download location');
       const location = await $('aria/Download location');
       await location.waitForClickable();
@@ -136,25 +163,75 @@ describe('application accessibility', () => {
       return;
     }
 
-    await (await $('aria/Library')).waitForDisplayed();
-    await scan('Library');
+    if (state === 'main') {
+      await (await $('aria/Library')).waitForDisplayed();
+      await scan('Library');
 
-    for (const view of [
-      'Discovery',
-      'Addon Settings',
-      'Client Options',
-      'Downloads',
-    ]) {
-      await activate(view);
-      await scan(view);
+      await activate('Discovery');
+      await scan('Discovery');
+      await activate('Addon Settings');
+      await scan('Addon Settings');
+      await activate('Client Options');
+      await activate('General');
+      await scan('Client Options');
+
+      const torrentClient = await $('button[aria-label^="Torrent Client:"]');
+      await torrentClient.click();
+      await browser.waitUntil(
+        async () =>
+          (await torrentClient.getAttribute('aria-expanded')) === 'true'
+      );
+      const selectedTorrentClient = await $(
+        '[role="option"][aria-selected="true"]'
+      );
+      await selectedTorrentClient.waitForDisplayed();
+      await browser.keys('ArrowDown');
+      if (!(await selectedTorrentClient.isFocused())) {
+        throw new Error('ArrowDown did not focus the selected dropdown option');
+      }
+      await scan('Open torrent client dropdown');
+      await browser.keys('Escape');
+      await browser.waitUntil(
+        async () =>
+          (await torrentClient.getAttribute('aria-expanded')) === 'false'
+      );
+
+      const changeSteamGridDBKey = await $('aria/Change SteamGridDB API Key');
+      await changeSteamGridDBKey.click();
+      const dialog = await $(
+        '[role="dialog"][aria-label="SteamGridDB API key"]'
+      );
+      await dialog.waitForDisplayed();
+      const dialogOwnsFocus = await browser.execute(
+        (selector) =>
+          document.querySelector(selector)?.contains(document.activeElement) ??
+          false,
+        '[role="dialog"][aria-label="SteamGridDB API key"]'
+      );
+      if (!dialogOwnsFocus) {
+        throw new Error('SteamGridDB dialog did not receive focus');
+      }
+      await scan(
+        'SteamGridDB dialog',
+        '[role="dialog"][aria-label="SteamGridDB API key"]'
+      );
+      await activateByText('Cancel');
+      await dialog.waitForDisplayed({ reverse: true });
+      if (!(await changeSteamGridDBKey.isFocused())) {
+        throw new Error('Dialog did not restore focus to its trigger');
+      }
+
+      await activate('Downloads');
+      await scan('Downloads');
+
+      const notifications = await $('button[aria-label="Notifications"]');
+      await notifications.waitForClickable();
+      await notifications.click();
+      await (await $('button[aria-label="Close panel"]')).waitForDisplayed();
+      await scan('Notifications');
+      return;
     }
 
-    const notifications = await $('button[aria-label="Notifications"]');
-    await notifications.waitForClickable();
-    await notifications.click();
-    await (
-      await $('button[aria-label="Close panel"]')
-    ).waitForDisplayed();
-    await scan('Notifications');
+    throw new Error(`Unhandled accessibility state: ${state}`);
   });
 });

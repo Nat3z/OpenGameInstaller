@@ -10,6 +10,7 @@ let {
   showValue = true,
   editableValue = false,
   dataInput = false,
+  ariaLabel,
   oninput,
   onchange,
 }: {
@@ -23,6 +24,7 @@ let {
   showValue?: boolean;
   editableValue?: boolean;
   dataInput?: boolean;
+  ariaLabel?: string;
   oninput?: (value: number) => void;
   onchange?: (value: number) => void;
 } = $props();
@@ -66,6 +68,7 @@ function handleValueInputChange(event: Event) {
     aria-valuemin={min}
     aria-valuemax={max}
     aria-valuenow={value}
+    aria-label={ariaLabel}
     data-input={dataInput ? '' : undefined}
   />
   {#if showValue}

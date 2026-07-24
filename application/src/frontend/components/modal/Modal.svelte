@@ -37,6 +37,9 @@ const sizeClasses = {
   full: 'modal-full',
 };
 
+const FOCUSABLE_CONTROL_SELECTOR =
+  'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
 function handleOverlayClick(event: MouseEvent) {
   if (
     closeOnOverlayClick &&
@@ -55,9 +58,7 @@ function handleKeydown(event: KeyboardEvent) {
 
   if (event.key === 'Tab' && dialogEl) {
     const focusable = Array.from(
-      dialogEl.querySelectorAll<HTMLElement>(
-        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
-      )
+      dialogEl.querySelectorAll<HTMLElement>(FOCUSABLE_CONTROL_SELECTOR)
     );
     if (focusable.length === 0) {
       event.preventDefault();
@@ -95,7 +96,7 @@ $effect(() => {
   const previouslyFocused = document.activeElement as HTMLElement | null;
   void tick().then(() => {
     const firstControl = dialogEl?.querySelector<HTMLElement>(
-      'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      FOCUSABLE_CONTROL_SELECTOR
     );
     (firstControl ?? dialogEl)?.focus();
   });

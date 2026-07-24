@@ -751,7 +751,7 @@ onMount(() => {
             id={'cfg-' + option.name}
           >
             <div class="sidebar-item-content">
-              <h3 class="sidebar-item-title">{option.name}</h3>
+              <span class="sidebar-item-title">{option.name}</span>
               <p class="sidebar-item-description">{option.description}</p>
             </div>
           </button>

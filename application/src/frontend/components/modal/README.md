@@ -13,6 +13,7 @@ The foundation component that provides the overlay and container structure.
 **Props:**
 
 - `open: boolean` - Controls modal visibility (default: false)
+- `ariaLabel: string` - Accessible name for the dialog (required)
 - `class: string` - Additional CSS classes (optional)
 - `size: "small" | "medium" | "large" | "full"` - Modal size (default: "medium")
 - `closeOnOverlayClick: boolean` - Whether clicking overlay closes modal (default: true)
@@ -144,7 +145,7 @@ Provides styled buttons for modal actions.
   let open = false;
 </script>
 
-<Modal {open} onclose={() => (open = false)}>
+<Modal ariaLabel="Confirm action" {open} onclose={() => (open = false)}>
   <TitleModal title="Confirmation" />
   <p>Are you sure you want to proceed?</p>
   <ButtonModal text="Yes" onclick={() => (open = false)} />
@@ -171,7 +172,7 @@ Provides styled buttons for modal actions.
   }
 </script>
 
-<Modal {open} onclose={() => (open = false)}>
+<Modal ariaLabel="Contact form" {open} onclose={() => (open = false)}>
   <TitleModal title="Contact Form" />
 
   <SectionModal>

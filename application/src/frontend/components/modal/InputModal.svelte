@@ -116,6 +116,7 @@ function browseForPath(browseType: 'file' | 'folder') {
       />
     {:else if type === 'range'}
       <RangeInput
+        ariaLabel={label}
         value={Number(displayValue) || 0}
         min={min ?? 0}
         max={max ?? 100}
@@ -131,6 +132,7 @@ function browseForPath(browseType: 'file' | 'folder') {
       <input
         {type}
         {id}
+        aria-label={label}
         value={displayValue}
         oninput={handleInput}
         onchange={handleChange}
@@ -144,6 +146,7 @@ function browseForPath(browseType: 'file' | 'folder') {
       <input
         type="number"
         {id}
+        aria-label={label}
         value={displayValue}
         oninput={handleInput}
         onchange={handleChange}
@@ -158,6 +161,7 @@ function browseForPath(browseType: 'file' | 'folder') {
         <input
           type="text"
           {id}
+          aria-label={label}
           value={displayValue}
           oninput={handleInput}
           onchange={handleChange}

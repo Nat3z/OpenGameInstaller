@@ -13,6 +13,7 @@
     "noEmit": true
   },
   "include": [
+    "accessibility-states.ts",
     "specs/**/*.ts",
     "wdio.conf.ts"
   ]

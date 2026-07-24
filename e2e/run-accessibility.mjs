@@ -1,8 +1,7 @@
 import { spawnSync } from 'node:child_process';
+import { ACCESSIBILITY_STATES } from './accessibility-states.ts';
 
-const states = ['welcome', 'oobe-resume', 'main'];
-
-for (const state of states) {
+for (const state of ACCESSIBILITY_STATES) {
   const command = process.platform === 'linux' ? 'xvfb-run' : 'bunx';
   const args =
     process.platform === 'linux'

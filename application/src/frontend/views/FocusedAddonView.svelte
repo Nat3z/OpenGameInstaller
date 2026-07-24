@@ -395,6 +395,7 @@ async function handleActionClick(key: string) {
 
 {#if backConfirmationModalOpen}
   <Modal
+    ariaLabel="Configuration errors"
     open={backConfirmationModalOpen}
     onClose={() => (backConfirmationModalOpen = false)}
   >
@@ -511,6 +512,7 @@ async function handleActionClick(key: string) {
                   <div class="config-input-container">
                     <CustomDropdown
                       id={key}
+                      label={option.displayName}
                       options={(option.allowedValues ?? []).map((v) => ({
                         id: v,
                         name: v,

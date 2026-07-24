@@ -1,4 +1,3 @@
-import axe from 'axe-core';
 import { $, browser } from '@wdio/globals';
 
 type AxeViolation = {
@@ -96,7 +95,10 @@ describe('application accessibility', () => {
         timeoutMsg: `OpenGameInstaller window did not become ready (title: ${await browser.getTitle()}, URL: ${await browser.getUrl()})`,
       }
     );
-    await browser.execute(axe.source);
+    await browser.waitUntil(
+      () => browser.execute(() => 'axe' in window),
+      { timeoutMsg: 'Axe did not load into the application renderer' }
+    );
   });
 
   it('has no automated accessibility violations in user-visible states', async () => {
@@ -118,8 +120,10 @@ describe('application accessibility', () => {
       await activateByText('Continue');
       await waitForHeading('Download Location');
       await scan('Download location');
-      const location = await $('input[data-dwloc]');
-      await location.setValue(process.env.OGI_DIRECTORY ?? '');
+      const location = await $('aria/Download location');
+      await location.waitForClickable();
+      await location.click();
+      await location.addValue(process.env.OGI_DIRECTORY ?? '');
       await activateByText('Continue');
       await waitForHeading('Community Addons');
       await scan('Community addons');
@@ -145,8 +149,12 @@ describe('application accessibility', () => {
       await scan(view);
     }
 
-    await activate('Notifications');
-    await (await $('aria/Close panel')).waitForDisplayed();
+    const notifications = await $('button[aria-label="Notifications"]');
+    await notifications.waitForClickable();
+    await notifications.click();
+    await (
+      await $('button[aria-label="Close panel"]')
+    ).waitForDisplayed();
     await scan('Notifications');
   });
 });

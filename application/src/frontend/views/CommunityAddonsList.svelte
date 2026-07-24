@@ -124,6 +124,7 @@ async function proceedWithInstall(url: string, addon: CommunityAddon) {
     <div class="addon-grid">
       {#if showWarningModal && selectedAddon}
         <Modal
+          ariaLabel="Community addon warning"
           open={showWarningModal}
           size="medium"
           onClose={closeWarningModal}
@@ -163,16 +164,18 @@ async function proceedWithInstall(url: string, addon: CommunityAddon) {
       {/if}
       {#each Object.keys(communityAddons) as urlKey}
         {#each communityAddons[urlKey] as addon}
-          <!-- svelte-ignore a11y_click_events_have_key_events -->
-          <!-- svelte-ignore a11y_no_static_element_interactions -->
           <div
-            class="flex flex-row items-center justify-start hover:cursor-pointer"
-            onclick={() =>
-              addonInstalled(addon)
-                ? deleteAddonWarning(addon)
-                : openWarningModal(urlKey, addon)}
+            class="flex flex-row items-center justify-start"
           >
-            <div class="addon-card">
+            <button
+              type="button"
+              class="addon-card text-left"
+              aria-label={`${addonInstalled(addon) ? 'Uninstall' : 'Install'} ${addon.name}`}
+              onclick={() =>
+                addonInstalled(addon)
+                  ? deleteAddonWarning(addon)
+                  : openWarningModal(urlKey, addon)}
+            >
               <div class="addon-content">
                 <div class="addon-icon">
                   <img src={addon.img} alt={addon.name} />
@@ -182,7 +185,7 @@ async function proceedWithInstall(url: string, addon: CommunityAddon) {
                   <p class="addon-description">{addon.description}</p>
                 </div>
               </div>
-            </div>
+            </button>
             <div class="addon-actions">
               {#if addonInstalled(addon)}
                 <button

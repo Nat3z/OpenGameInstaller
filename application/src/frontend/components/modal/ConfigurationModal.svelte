@@ -215,6 +215,7 @@ function getInputOptions(
   {#if activeScreen}
     {@const screen = activeScreen}
     <Modal
+      ariaLabel={screen.name}
       open={true}
       priority="addon-ask"
       size="medium"

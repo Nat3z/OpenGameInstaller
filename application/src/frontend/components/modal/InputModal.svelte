@@ -109,6 +109,7 @@ function browseForPath(browseType: 'file' | 'folder') {
     {#if type === 'select' && options.length > 0}
       <CustomDropdown
         {id}
+        {label}
         {options}
         {selectedId}
         onchange={handleDropdownChange}

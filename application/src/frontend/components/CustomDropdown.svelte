@@ -17,6 +17,7 @@ let {
   options,
   selectedId,
   id,
+  label,
   onchange,
 }: {
   options: {
@@ -29,12 +30,15 @@ let {
   }[];
   selectedId: string;
   id: string;
+  label: string;
   onchange: (detail: { selectedId: string }) => void;
 } = $props();
 
 let showDropdown = $state(false);
 let buttonEl: HTMLButtonElement | undefined = $state();
+let menuEl: HTMLDivElement | undefined = $state();
 let menuStyle = $state('');
+const menuId = $derived(`${id}-listbox`);
 
 let selectedOption = $derived(
   options.find((opt) => opt.id === selectedId) || options[0]
@@ -69,6 +73,56 @@ function toggleDropdown() {
   showDropdown = !showDropdown;
   if (showDropdown) {
     updateMenuPosition();
+  }
+}
+
+function focusOption(position: 'selected' | 'first' | 'last') {
+  requestAnimationFrame(() => {
+    const options = Array.from(
+      menuEl?.querySelectorAll<HTMLButtonElement>('[role="option"]') ?? []
+    );
+    const target =
+      position === 'first'
+        ? options[0]
+        : position === 'last'
+          ? options.at(-1)
+          : options.find((option) => option.ariaSelected === 'true');
+    (target ?? options[0])?.focus();
+  });
+}
+
+function handleTriggerKeydown(event: KeyboardEvent) {
+  if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+    event.preventDefault();
+    showDropdown = true;
+    updateMenuPosition();
+    focusOption(event.key === 'ArrowUp' ? 'last' : 'selected');
+  } else if (event.key === 'Escape') {
+    showDropdown = false;
+  }
+}
+
+function handleOptionKeydown(event: KeyboardEvent, optionId: string) {
+  const options = Array.from(
+    menuEl?.querySelectorAll<HTMLButtonElement>('[role="option"]') ?? []
+  );
+  const current = options.indexOf(event.currentTarget as HTMLButtonElement);
+
+  if (event.key === 'Enter' || event.key === ' ') {
+    event.preventDefault();
+    selectOption(optionId);
+    buttonEl?.focus();
+  } else if (event.key === 'Escape') {
+    event.preventDefault();
+    showDropdown = false;
+    buttonEl?.focus();
+  } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+    event.preventDefault();
+    const offset = event.key === 'ArrowDown' ? 1 : -1;
+    options[(current + offset + options.length) % options.length]?.focus();
+  } else if (event.key === 'Home' || event.key === 'End') {
+    event.preventDefault();
+    options[event.key === 'Home' ? 0 : options.length - 1]?.focus();
   }
 }
 
@@ -120,19 +174,19 @@ $effect(() => {
     bind:this={buttonEl}
     class="custom-dropdown-button custom-dropdown-button-{id}"
     onclick={toggleDropdown}
-    onkeydown={(e) => {
-      if (e.key === 'Enter' || e.key === ' ') {
-        e.preventDefault();
-        toggleDropdown();
-      }
-    }}
+    onkeydown={handleTriggerKeydown}
+    aria-label={`${label}: ${selectedOption?.name ?? ''}`}
+    aria-haspopup="listbox"
+    aria-expanded={showDropdown}
+    aria-controls={menuId}
   >
     {#if selectedOption}
       <div class="flex items-center gap-3">
         {#if selectedOption.icon}
           <img
             src={selectedOption.icon}
-            alt={selectedOption.name}
+            alt=""
+            aria-hidden="true"
             class="w-6 h-6 object-contain"
           />
         {/if}
@@ -142,6 +196,7 @@ $effect(() => {
       </div>
     {/if}
     <svg
+      aria-hidden="true"
       class="w-5 h-5 transition-transform duration-200"
       class:rotate-180={showDropdown}
       fill="none"
@@ -162,6 +217,10 @@ $effect(() => {
 {#if showDropdown}
   <div
     use:portal
+    bind:this={menuEl}
+    id={menuId}
+    role="listbox"
+    aria-label={label}
     class="custom-dropdown-menu custom-dropdown-menu-{id} overflow-x-hidden"
     style={menuStyle}
     in:fly={{ y: -10, duration: 200 }}
@@ -170,15 +229,12 @@ $effect(() => {
       {#each options as option, index (option.id)}
         <button
           type="button"
+          role="option"
+          aria-selected={selectedId === option.id}
           class="custom-dropdown-option"
           class:selected={selectedId === option.id}
           onclick={() => selectOption(option.id)}
-          onkeydown={(e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-              e.preventDefault();
-              selectOption(option.id);
-            }
-          }}
+          onkeydown={(event) => handleOptionKeydown(event, option.id)}
           title={option.description}
           in:fly={{
             x: -20,
@@ -191,7 +247,8 @@ $effect(() => {
             {#if option.icon}
               <img
                 src={option.icon}
-                alt={option.name}
+                alt=""
+                aria-hidden="true"
                 width={option.iconWidth || 24}
                 height={option.iconHeight || 24}
                 class="object-contain"

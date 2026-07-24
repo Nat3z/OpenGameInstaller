@@ -112,6 +112,7 @@ onMount(() => {
 
 {#if showDebugModal}
   <Modal
+    ariaLabel="Debug"
     priority="urgent"
     open={showDebugModal}
     onClose={() => (showDebugModal = false)}
@@ -160,6 +161,7 @@ onMount(() => {
 
 {#if showInsertAppModal}
   <Modal
+    ariaLabel="Insert app with dependencies"
     priority="urgent"
     open={showInsertAppModal}
     onClose={() => (showInsertAppModal = false)}
@@ -275,6 +277,7 @@ onMount(() => {
 
 {#if priorityModals.urgent}
   <Modal
+    ariaLabel="High priority modal"
     priority="urgent"
     open={priorityModals.urgent}
     onClose={() => (priorityModals.urgent = false)}
@@ -301,6 +304,7 @@ onMount(() => {
 
 {#if priorityModals.addonAsk1}
   <Modal
+    ariaLabel="Low priority modal"
     priority="addon-ask"
     open={priorityModals.addonAsk1}
     onClose={() => (priorityModals.addonAsk1 = false)}
@@ -327,6 +331,7 @@ onMount(() => {
 
 {#if priorityModals.addonAsk2}
   <Modal
+    ariaLabel="Second low priority modal"
     priority="addon-ask"
     open={priorityModals.addonAsk2}
     onClose={() => (priorityModals.addonAsk2 = false)}

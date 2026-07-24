@@ -239,7 +239,7 @@ function toggleAddonCollapse(addonId: string) {
 }
 </script>
 
-<Modal open={true} size="medium" {onClose}>
+<Modal ariaLabel={`Update ${gameName}`} open={true} size="medium" {onClose}>
   <TitleModal title="Update {gameName}" />
 
   <p class="text-sm text-text-secondary mt-1 mb-4">

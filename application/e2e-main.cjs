@@ -80,9 +80,6 @@ app.whenReady().then(async () => {
       nodeIntegration: true,
     },
   });
-  window.webContents.on('console-message', (_event, details) => {
-    console.log(`[renderer:${details.level}] ${details.message}`);
-  });
   window.webContents.on(
     'did-fail-load',
     (_event, errorCode, errorDescription) => {
@@ -93,6 +90,15 @@ app.whenReady().then(async () => {
   await window.loadFile(
     path.join(applicationDirectory, 'out/renderer/index.html')
   );
+  await window.webContents.executeJavaScript(`
+    new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = './axe.min.js';
+      script.onload = resolve;
+      script.onerror = () => reject(new Error('Failed to load Axe'));
+      document.head.appendChild(script);
+    })
+  `);
 });
 
 app.on('window-all-closed', () => {

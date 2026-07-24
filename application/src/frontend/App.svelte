@@ -717,6 +717,7 @@ document.addEventListener('migration:event:install-steam-addon', async () => {
       <!-- Left Sidebar -->
       <nav
         class="flex flex-col items-center w-20 h-full bg-background-color py-4"
+        aria-label="Primary"
       >
         <!-- Navigation buttons -->
         <div class="flex flex-col gap-4">
@@ -724,6 +725,7 @@ document.addEventListener('migration:event:install-steam-addon', async () => {
             onclick={() => setView('library')}
             data-selected-header={$selectedView === 'library'}
             aria-label="Library"
+            aria-current={$selectedView === 'library' ? 'page' : undefined}
             class="nav-button"
           >
             <svg
@@ -743,6 +745,7 @@ document.addEventListener('migration:event:install-steam-addon', async () => {
             onclick={() => setView('discovery')}
             data-selected-header={$selectedView === 'discovery'}
             aria-label="Discovery"
+            aria-current={$selectedView === 'discovery' ? 'page' : undefined}
             class="nav-button"
           >
             <svg
@@ -762,6 +765,7 @@ document.addEventListener('migration:event:install-steam-addon', async () => {
             onclick={() => setView('config')}
             data-selected-header={$selectedView === 'config'}
             aria-label="Addon Settings"
+            aria-current={$selectedView === 'config' ? 'page' : undefined}
             class="nav-button"
           >
             <svg
@@ -788,6 +792,9 @@ document.addEventListener('migration:event:install-steam-addon', async () => {
             onclick={() => setView('clientoptions')}
             data-selected-header={$selectedView === 'clientoptions'}
             aria-label="Client Options"
+            aria-current={$selectedView === 'clientoptions'
+              ? 'page'
+              : undefined}
             class="nav-button"
           >
             <svg

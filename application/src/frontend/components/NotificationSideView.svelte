@@ -206,20 +206,21 @@ function registerLogContainer(element: HTMLDivElement, taskId: string) {
 </script>
 
 {#if $showNotificationSideView}
-  <!-- Backdrop -->
-  <!-- svelte-ignore a11y_click_events_have_key_events -->
-  <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div
+  <button
+    type="button"
+    aria-label="Close notifications"
     class="fixed inset-0 bg-black/25 z-100 pointer-events-auto"
     in:fade={{ duration: 200 }}
     out:fade={{ duration: 200 }}
     onclick={handleClickOutside}
-  ></div>
+  ></button>
 
   <!-- Side Panel -->
   <div
     bind:this={sideViewElement}
     class="fixed right-0 top-0 h-full w-96 bg-background-color shadow-2xl z-101 flex flex-col"
+    role="complementary"
+    aria-label="Notifications and tasks"
     in:fly={{ x: 384, duration: 300, easing: quintOut }}
     out:fly={{ x: 384, duration: 200 }}
   >
@@ -280,13 +281,19 @@ function registerLogContainer(element: HTMLDivElement, taskId: string) {
       </div>
 
       <!-- Tab Navigation -->
-      <div class="flex px-6 pb-3 gap-2">
+      <div
+        class="flex px-6 pb-3 gap-2"
+        role="tablist"
+        aria-label="Activity"
+      >
         <button
           class="flex-1 px-3 py-2 text-sm font-medium rounded-lg transition-colors duration-200 border-none {currentTab ===
           'notifications'
             ? 'bg-accent-light text-text-primary'
             : 'text-accent-dark bg-accent-lighter hover:bg-accent-dark/25'}"
           onclick={() => (currentTab = 'notifications')}
+          role="tab"
+          aria-selected={currentTab === 'notifications'}
         >
           Notifications
           {#if $notificationHistory.length > 0}
@@ -301,6 +308,8 @@ function registerLogContainer(element: HTMLDivElement, taskId: string) {
             ? 'bg-accent-light text-text-primary'
             : 'text-accent-dark bg-accent-lighter hover:bg-accent-dark/25'}"
           onclick={() => (currentTab = 'tasks')}
+          role="tab"
+          aria-selected={currentTab === 'tasks'}
         >
           Tasks
           {#if $deferredTasks.length > 0}

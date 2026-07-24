@@ -304,11 +304,8 @@ async function resetMarketplaceSources() {
           <div class="addon-list">
             {#if addons.length !== 0}
               {#each addons as addon}
-                <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <section
-                  class="addon-card-large hover:cursor-pointer"
-                  onkeypress={() => {}}
-                  onclick={() => openAddonSettings(addon.id)}
+                  class="addon-card-large"
                   id={'cfg-' + addon.id}
                 >
                   <div class="addon-card-content">
@@ -369,6 +366,7 @@ async function resetMarketplaceSources() {
 </div>
 {#if communityAddonsInfo}
   <Modal
+    ariaLabel="Community addons"
     size="medium"
     open={communityAddonsInfo}
     onClose={() => (communityAddonsInfo = false)}
@@ -404,6 +402,7 @@ async function resetMarketplaceSources() {
 
 {#if showMarketplaceSourceModal}
   <Modal
+    ariaLabel="Marketplace sources"
     size="large"
     class="marketplace-source-modal"
     open={showMarketplaceSourceModal}
@@ -503,6 +502,7 @@ async function resetMarketplaceSources() {
 
 {#if showAddonAddModal}
   <Modal
+    ariaLabel="Add addon"
     size="medium"
     open={showAddonAddModal}
     onClose={() => (showAddonAddModal = false)}

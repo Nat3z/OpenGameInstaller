@@ -87,7 +87,13 @@ function handleSave() {
 </script>
 
 {#if open}
-  <Modal open={true} size="large" priority="urgent" {onClose}>
+  <Modal
+    ariaLabel="Wine DLL overrides"
+    open={true}
+    size="large"
+    priority="urgent"
+    {onClose}
+  >
     <TitleModal title="Wine DLL Overrides" />
     <TextModal
       text="Edit WINEDLLOVERRIDES entries for this game. Leave Override blank to keep Wine's default n,b fallback."

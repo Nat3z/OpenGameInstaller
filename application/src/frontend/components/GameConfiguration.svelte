@@ -191,7 +191,12 @@ function getInputOptions(option: ConfigurationOptionWire): string[] {
 </script>
 
 {#if Object.keys(formData).length > 0}
-  <Modal open={true} size="large" onClose={closeModal}>
+  <Modal
+    ariaLabel={`Configure ${gameInfo.name}`}
+    open={true}
+    size="large"
+    onClose={closeModal}
+  >
     <TitleModal title={gameInfo.name} />
 
     {#each Object.keys(screenRendering) as key}

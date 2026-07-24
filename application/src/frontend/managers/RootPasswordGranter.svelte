@@ -12,7 +12,12 @@ document.addEventListener('app:ask-root-password', () => {
 </script>
 
 {#if openRootPasswordModal}
-  <Modal open={openRootPasswordModal} priority="ui" boundsClose={false}>
+  <Modal
+    ariaLabel="Root password"
+    open={openRootPasswordModal}
+    priority="ui"
+    boundsClose={false}
+  >
     <TitleModal title="Root Password" />
     <HeaderModal
       header="We need your root password to allow for flatpak to access the proton path."

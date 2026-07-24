@@ -22,7 +22,7 @@ let selectedTorrenter:
   | 'premiumize'
   | '' = $state('webtorrent');
 let fulfilledRequirements = $state(false);
-let addons = '';
+let addons = $state('');
 let addonSearch = $state('');
 let oobeMarketplaceSources = $state<string[]>([...DEFAULT_MARKETPLACE_SOURCES]);
 let marketplaceSourceUrl = $state('');
@@ -551,7 +551,11 @@ onDestroy(() => {
   id="oobe"
 >
   {#if stage >= 1}
-    <progress class="animate-fade-in-slow w-full" max="4" value={stage - 1}
+    <progress
+      class="animate-fade-in-slow w-full"
+      max="6"
+      value={stage - 1}
+      aria-label="Setup progress"
     ></progress>
   {/if}
 
@@ -572,7 +576,7 @@ onDestroy(() => {
       <div class="animate-in-sub-content-slow">
         <button
           onclick={() => (stage = 0.5)}
-          class="bg-accent hover:bg-accent-dark text-accent-text-color font-open-sans font-semibold py-3 px-6 rounded-lg transition-colors duration-200"
+          class="bg-accent hover:bg-accent-dark text-accent-text-color hover:text-overlay-text font-open-sans font-semibold py-3 px-6 rounded-lg transition-colors duration-200"
           >Get Started</button
         >
       </div>
@@ -596,7 +600,7 @@ onDestroy(() => {
       </div>
       <button
         onclick={() => (stage = 1)}
-        class="bg-accent hover:bg-accent-dark text-accent-text-color font-open-sans font-semibold py-3 px-6 rounded-lg transition-colors duration-200"
+        class="bg-accent hover:bg-accent-dark text-accent-text-color hover:text-overlay-text font-open-sans font-semibold py-3 px-6 rounded-lg transition-colors duration-200"
         >Continue</button
       >
     </div>
@@ -645,7 +649,7 @@ onDestroy(() => {
             {/if}
             <button
               onclick={downloadTools}
-              class="bg-accent hover:bg-accent-dark text-accent-text-color disabled:text-accent-text-color disabled:bg-yellow-500 font-open-sans font-semibold py-3 px-6 rounded-lg transition-colors duration-200"
+              class="bg-accent hover:bg-accent-dark text-accent-text-color hover:text-overlay-text disabled:text-accent-text-color disabled:bg-yellow-500 font-open-sans font-semibold py-3 px-6 rounded-lg transition-colors duration-200"
               >Install</button
             >
           </div>
@@ -654,7 +658,11 @@ onDestroy(() => {
 
       <!-- OOBE Terminal Log Display -->
       {#if $oobeLog.isActive && $oobeLog.logs.length > 0}
-        <div class="oobe-terminal w-full max-w-3xl mt-6 h-64">
+        <div
+          class="oobe-terminal w-full max-w-3xl mt-6 h-64"
+          role="log"
+          aria-live="polite"
+        >
           <div class="terminal-header">
             <div class="flex items-center gap-2">
               <span class="text-xs text-text-muted font-mono"
@@ -696,7 +704,7 @@ onDestroy(() => {
       </h2>
       <button
         onclick={() => window.electronAPI.app.close()}
-        class="bg-accent hover:bg-accent-dark text-accent-text-color font-open-sans font-semibold py-3 px-6 rounded-lg transition-colors duration-200"
+        class="bg-accent hover:bg-accent-dark text-accent-text-color hover:text-overlay-text font-open-sans font-semibold py-3 px-6 rounded-lg transition-colors duration-200"
         >Close</button
       >
     </div>
@@ -710,10 +718,10 @@ onDestroy(() => {
       <h2 class="font-open-sans text-text-secondary text-center mb-6">
         How would you like to torrent your files?
       </h2>
-      <!-- svelte-ignore a11y_consider_explicit_label -->
       <div class="flex-row flex gap-6 justify-center items-center">
         <button
           onclick={() => (selectedTorrenter = 'webtorrent')}
+          aria-pressed={selectedTorrenter === 'webtorrent'}
           class="flex justify-center p-4 items-center w-24 h-24 bg-accent-lighter hover:bg-accent-light rounded-lg border-2 transition-colors duration-200 {selectedTorrenter ===
           'webtorrent'
             ? 'border-accent'
@@ -723,6 +731,7 @@ onDestroy(() => {
         </button>
         <button
           onclick={() => (selectedTorrenter = 'real-debrid')}
+          aria-pressed={selectedTorrenter === 'real-debrid'}
           class="flex justify-center p-4 items-center w-24 h-24 bg-accent-lighter hover:bg-accent-light rounded-lg border-2 transition-colors duration-200 {selectedTorrenter ===
           'real-debrid'
             ? 'border-accent'
@@ -732,6 +741,7 @@ onDestroy(() => {
         </button>
         <button
           onclick={() => (selectedTorrenter = 'all-debrid')}
+          aria-pressed={selectedTorrenter === 'all-debrid'}
           class="flex justify-center p-4 items-center w-24 h-24 bg-accent-lighter hover:bg-accent-light rounded-lg border-2 transition-colors duration-200 {selectedTorrenter ===
           'all-debrid'
             ? 'border-accent'
@@ -741,6 +751,7 @@ onDestroy(() => {
         </button>
         <button
           onclick={() => (selectedTorrenter = 'torbox')}
+          aria-pressed={selectedTorrenter === 'torbox'}
           class="flex justify-center p-4 items-center w-24 h-24 bg-accent-lighter hover:bg-accent-light rounded-lg border-2 transition-colors duration-200 {selectedTorrenter ===
           'torbox'
             ? 'border-accent'
@@ -750,6 +761,7 @@ onDestroy(() => {
         </button>
         <button
           onclick={() => (selectedTorrenter = 'premiumize')}
+          aria-pressed={selectedTorrenter === 'premiumize'}
           class="flex justify-center p-4 items-center w-24 h-24 bg-accent-lighter hover:bg-accent-light rounded-lg border-2 transition-colors duration-200 {selectedTorrenter ===
           'premiumize'
             ? 'border-accent'
@@ -759,6 +771,7 @@ onDestroy(() => {
         </button>
         <button
           onclick={() => (selectedTorrenter = 'qbittorrent')}
+          aria-pressed={selectedTorrenter === 'qbittorrent'}
           class="flex justify-center p-4 items-center w-24 h-24 bg-accent-lighter hover:bg-accent-light rounded-lg border-2 transition-colors duration-200 {selectedTorrenter ===
           'qbittorrent'
             ? 'border-accent'
@@ -776,24 +789,24 @@ onDestroy(() => {
           <input
             data-rd-key
             type="text"
+            aria-label="Real Debrid API key"
             onchange={submitTorrenter}
             placeholder="Real Debrid API Key"
             class="w-full p-3 bg-surface border border-accent-light rounded-lg focus:outline-none focus:ring-2 focus:ring-accent"
           />
-          <!-- svelte-ignore a11y_label_has_associated_control -->
-          <label class="text-sm text-text-muted mt-2"
+          <p class="text-sm text-text-muted mt-2"
             >Insert your <a
               href="https://real-debrid.com/apitoken"
               target="_blank"
-              class="underline text-accent hover:text-accent-dark"
+              class="underline text-accent-dark hover:text-accent-dark"
               >Real Debrid API Key</a
-            ></label
+            ></p
           >
         {:else if selectedTorrenter === 'qbittorrent'}
           <!-- TODO: WORK ON OUR OWN TUTORIAL -->
           <a
             href="https://ogi.nat3z.com/docs/for-users/qb-setup"
-            class="font-open-sans mb-4 text-center text-sm underline text-accent hover:text-accent-dark"
+            class="font-open-sans mb-4 text-center text-sm underline text-accent-dark hover:text-accent-dark"
             target="_blank"
           >
             <p>
@@ -807,6 +820,7 @@ onDestroy(() => {
           >
             <span class="items-center justify-center flex flex-col flex-1">
               <input
+                id="qbittorrent-host"
                 data-qb-ip
                 type="text"
                 onchange={submitTorrenter}
@@ -814,10 +828,13 @@ onDestroy(() => {
                 value="http://127.0.0.1"
                 class="w-full p-3 bg-surface border border-accent-light rounded-lg focus:outline-none focus:ring-2 focus:ring-accent"
               />
-              <label class="text-sm text-text-muted mt-1">Hostname</label>
+              <label for="qbittorrent-host" class="text-sm text-text-muted mt-1"
+                >Hostname</label
+              >
             </span>
             <span class="items-center justify-center flex flex-col w-24">
               <input
+                id="qbittorrent-port"
                 data-qb-port
                 type="text"
                 onchange={submitTorrenter}
@@ -825,7 +842,9 @@ onDestroy(() => {
                 value="8080"
                 class="w-full p-3 bg-surface border border-accent-light rounded-lg focus:outline-none focus:ring-2 focus:ring-accent"
               />
-              <label class="text-sm text-text-muted mt-1">Port</label>
+              <label for="qbittorrent-port" class="text-sm text-text-muted mt-1"
+                >Port</label
+              >
             </span>
           </div>
 
@@ -834,6 +853,7 @@ onDestroy(() => {
           >
             <span class="items-center justify-center flex flex-col w-32">
               <input
+                id="qbittorrent-username"
                 data-qb-username
                 type="text"
                 onchange={submitTorrenter}
@@ -841,10 +861,14 @@ onDestroy(() => {
                 value=""
                 class="w-full p-3 bg-surface border border-accent-light rounded-lg focus:outline-none focus:ring-2 focus:ring-accent"
               />
-              <label class="text-sm text-text-muted mt-1">Username</label>
+              <label
+                for="qbittorrent-username"
+                class="text-sm text-text-muted mt-1">Username</label
+              >
             </span>
             <span class="items-center justify-center flex flex-col flex-1">
               <input
+                id="qbittorrent-password"
                 data-qb-pwd
                 type="password"
                 onchange={submitTorrenter}
@@ -852,7 +876,10 @@ onDestroy(() => {
                 value=""
                 class="w-full p-3 bg-surface border border-accent-light rounded-lg focus:outline-none focus:ring-2 focus:ring-accent"
               />
-              <label class="text-sm text-text-muted mt-1">Password</label>
+              <label
+                for="qbittorrent-password"
+                class="text-sm text-text-muted mt-1">Password</label
+              >
             </span>
           </div>
         {:else if selectedTorrenter === 'webtorrent'}
@@ -880,59 +907,59 @@ onDestroy(() => {
           <input
             data-torbox-key
             type="text"
+            aria-label="TorBox API key"
             onchange={submitTorrenter}
             placeholder="TorBox API Key"
             class="w-full p-3 bg-surface border border-accent-light rounded-lg focus:outline-none focus:ring-2 focus:ring-accent"
           />
-          <!-- svelte-ignore a11y_label_has_associated_control -->
-          <label class="text-sm text-text-muted mt-2"
+          <p class="text-sm text-text-muted mt-2"
             >Insert your <a
               href="https://torbox.app/settings"
               target="_blank"
-              class="underline text-accent hover:text-accent-dark"
+              class="underline text-accent-dark hover:text-accent-dark"
               >TorBox API Key</a
             >.
-          </label>
+          </p>
         {:else if selectedTorrenter === 'premiumize'}
           <input
             data-premiumize-key
             type="text"
+            aria-label="Premiumize API key"
             onchange={submitTorrenter}
             placeholder="Premiumize API Key"
             class="w-full p-3 bg-surface border border-accent-light rounded-lg focus:outline-none focus:ring-2 focus:ring-accent"
           />
-          <!-- svelte-ignore a11y_label_has_associated_control -->
-          <label class="text-sm text-text-muted mt-2"
+          <p class="text-sm text-text-muted mt-2"
             >Insert your <a
               href="https://www.premiumize.me/account"
               target="_blank"
-              class="underline text-accent hover:text-accent-dark"
+              class="underline text-accent-dark hover:text-accent-dark"
               >Premiumize API Key</a
-            ></label
+            ></p
           >
         {:else if selectedTorrenter === 'all-debrid'}
           <input
             data-alldebrid-key
             type="text"
+            aria-label="AllDebrid API key"
             onchange={submitTorrenter}
             placeholder="AllDebrid API Key"
             class="w-full p-3 bg-surface border border-accent-light rounded-lg focus:outline-none focus:ring-2 focus:ring-accent"
           />
-          <!-- svelte-ignore a11y_label_has_associated_control -->
-          <label class="text-sm text-text-muted mt-2"
+          <p class="text-sm text-text-muted mt-2"
             >Insert your <a
               href="https://alldebrid.com/apikeys"
               target="_blank"
-              class="underline text-accent hover:text-accent-dark"
+              class="underline text-accent-dark hover:text-accent-dark"
               >AllDebrid API Key</a
-            ></label
+            ></p
           >
         {/if}
       </form>
       {#if fulfilledRequirements || selectedTorrenter === 'webtorrent'}
         <button
           onclick={() => (stage = 3)}
-          class="bg-accent animate-fade-in hover:bg-accent-dark text-accent-text-color font-open-sans font-semibold py-3 px-6 rounded-lg transition-colors duration-200"
+          class="bg-accent animate-fade-in hover:bg-accent-dark text-accent-text-color hover:text-overlay-text font-open-sans font-semibold py-3 px-6 rounded-lg transition-colors duration-200"
           >Continue</button
         >
       {/if}
@@ -951,19 +978,20 @@ onDestroy(() => {
         <input
           data-dwloc
           type="text"
+          aria-label="Download location"
           class="flex-1 p-3 bg-surface text-text-primary border border-accent-light rounded-lg focus:outline-none focus:ring-2 focus:ring-accent"
           placeholder="Select download location..."
         />
         <button
           onclick={updateDownloadLocation}
-          class="bg-accent hover:bg-accent-dark text-accent-text-color font-open-sans font-semibold py-3 px-4 rounded-lg transition-colors duration-200"
+          class="bg-accent hover:bg-accent-dark text-accent-text-color hover:text-overlay-text font-open-sans font-semibold py-3 px-4 rounded-lg transition-colors duration-200"
           >Browse</button
         >
       </div>
 
       <button
         onclick={sendDownloadLocation}
-        class="bg-accent hover:bg-accent-dark text-accent-text-color font-open-sans font-semibold py-3 px-6 rounded-lg transition-colors duration-200"
+        class="bg-accent hover:bg-accent-dark text-accent-text-color hover:text-overlay-text font-open-sans font-semibold py-3 px-6 rounded-lg transition-colors duration-200"
         >Continue</button
       >
     </div>
@@ -986,6 +1014,7 @@ onDestroy(() => {
         <div class="oobe-marketplace-add-row">
           <input
             type="url"
+            aria-label="Marketplace source URL"
             bind:value={marketplaceSourceUrl}
             placeholder="https://ogi-marketplace.nat3z.com"
             class="oobe-marketplace-source-input"
@@ -1031,11 +1060,11 @@ onDestroy(() => {
       </details>
 
       {#if communityAddonsLoading}
-        <div class="oobe-community-loading">
+        <div class="oobe-community-loading" role="status" aria-live="polite">
           <p class="text-text-secondary">Loading marketplace addons...</p>
         </div>
       {:else if communityAddonsError}
-        <div class="oobe-community-empty">
+        <div class="oobe-community-empty" role="alert">
           <p class="text-text-secondary">{communityAddonsError}</p>
           <button
             type="button"
@@ -1053,6 +1082,7 @@ onDestroy(() => {
         <div class="oobe-community-toolbar">
           <input
             type="search"
+            aria-label="Search community addons"
             bind:value={addonSearch}
             placeholder="Search addons by name, author, or description"
             class="oobe-community-search"
@@ -1105,6 +1135,7 @@ onDestroy(() => {
                   </div>
                   <button
                     onclick={() => toggleAddon(addon)}
+                    aria-pressed={isAddonSelected(addon)}
                     class="oobe-addon-select {isAddonSelected(addon)
                       ? 'selected'
                       : ''}"
@@ -1126,6 +1157,7 @@ onDestroy(() => {
         </p>
         <textarea
           bind:value={addons}
+          aria-label="Custom addon repository URLs"
           class="oobe-custom-addon-input"
           placeholder="https://github.com/user/my-custom-addon"
         ></textarea>
@@ -1143,7 +1175,7 @@ onDestroy(() => {
             stage = 5;
           }
         }}
-        class="bg-accent hover:bg-accent-dark text-accent-text-color font-open-sans font-semibold py-3 px-6 rounded-lg transition-colors duration-200"
+        class="bg-accent hover:bg-accent-dark text-accent-text-color hover:text-overlay-text font-open-sans font-semibold py-3 px-6 rounded-lg transition-colors duration-200"
         >Continue</button
       >
     </div>
@@ -1162,7 +1194,7 @@ onDestroy(() => {
         <a
           href="https://www.steamgriddb.com/profile/preferences/api"
           target="_blank"
-          class="underline text-accent hover:text-accent-dark"
+          class="underline text-accent-dark hover:text-accent-dark"
           >Insert your SteamGridDB API Key below. If you don't have one, you can
           get one by going here
           (https://www.steamgriddb.com/profile/preferences/api)</a
@@ -1172,6 +1204,7 @@ onDestroy(() => {
         <input
           data-sgdb-key
           type="text"
+          aria-label="SteamGridDB API key"
           class="flex-1 p-3 bg-surface border border-accent-light rounded-lg focus:outline-none focus:ring-2 focus:ring-accent"
           placeholder="SteamGridDB API Key"
         />
@@ -1203,7 +1236,7 @@ onDestroy(() => {
             stage = 6;
             isSettingKey = false;
           }}
-          class="bg-accent hover:bg-accent-dark text-accent-text-color font-open-sans font-semibold py-3 px-6 rounded-lg transition-colors duration-200 flex items-center justify-center"
+          class="bg-accent hover:bg-accent-dark text-accent-text-color hover:text-overlay-text font-open-sans font-semibold py-3 px-6 rounded-lg transition-colors duration-200 flex items-center justify-center"
           disabled={isSettingKey}
         >
           {#if isSettingKey}
@@ -1220,7 +1253,7 @@ onDestroy(() => {
             finishSetup();
             stage = 6;
           }}
-          class="border-accent border-2 text-accent hover:border-accent-dark font-open-sans font-semibold py-3 px-6 rounded-lg transition-colors duration-200"
+          class="border-accent border-2 text-accent-dark hover:border-accent-dark font-open-sans font-semibold py-3 px-6 rounded-lg transition-colors duration-200"
           >Skip</button
         >
       </div>
@@ -1228,6 +1261,8 @@ onDestroy(() => {
   {:else if stage === 6}
     <div
       class="animate-fade-in-pop flex justify-center items-center h-full flex-col gap-6 p-10 w-full"
+      role="status"
+      aria-live="polite"
     >
       <img src="./favicon.png" alt="OpenGameInstaller Logo" class="w-32 h-32" />
       <h1 class="text-3xl font-archivo font-semibold text-text-primary mt-2">
@@ -1240,13 +1275,15 @@ onDestroy(() => {
 
       <button
         onclick={waitForSetup}
-        class="bg-accent hover:bg-accent-dark text-accent-text-color font-open-sans font-semibold py-3 px-6 rounded-lg transition-colors duration-200"
+        class="bg-accent hover:bg-accent-dark text-accent-text-color hover:text-overlay-text font-open-sans font-semibold py-3 px-6 rounded-lg transition-colors duration-200"
         >Finish</button
       >
     </div>
   {:else if stage === 7}
     <div
       class="animate-fade-in-pop flex justify-center items-center h-full flex-col gap-6 p-10 w-full"
+      role="status"
+      aria-live="polite"
     >
       <img src="./favicon.png" alt="OpenGameInstaller Logo" class="w-32 h-32" />
       <h1 class="text-3xl font-archivo font-semibold text-text-primary mt-2">
@@ -1432,7 +1469,7 @@ onDestroy(() => {
   }
 
   .oobe-marketplace-add-button {
-    @apply bg-accent text-accent-text-color hover:bg-accent-dark border border-accent;
+    @apply bg-accent text-accent-text-color hover:bg-accent-dark hover:text-overlay-text border border-accent;
   }
 
   .oobe-marketplace-reset-button,
@@ -1441,7 +1478,7 @@ onDestroy(() => {
   }
 
   .oobe-marketplace-retry-button {
-    @apply mt-3 bg-accent text-accent-text-color hover:bg-accent-dark border border-accent;
+    @apply mt-3 bg-accent text-accent-text-color hover:bg-accent-dark hover:text-overlay-text border border-accent;
   }
 
   .oobe-marketplace-source-list {

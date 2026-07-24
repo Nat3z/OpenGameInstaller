@@ -1,5 +1,5 @@
 <script lang="ts">
-import { onDestroy, onMount, type Snippet, setContext } from 'svelte';
+import { onDestroy, onMount, type Snippet, setContext, tick } from 'svelte';
 import {
   modalQueue,
   priorityToNumber,
@@ -16,6 +16,7 @@ let {
   modalId = Math.random().toString(36).substring(2, 15),
   boundsClose = true,
   priority = 'ui',
+  ariaLabel,
 }: {
   open?: boolean;
   class?: string;
@@ -26,6 +27,7 @@ let {
   onClose?: () => void;
   boundsClose?: boolean;
   modalId?: string;
+  ariaLabel: string;
 } = $props();
 
 const sizeClasses = {
@@ -48,10 +50,30 @@ function handleOverlayClick(event: MouseEvent) {
 function handleKeydown(event: KeyboardEvent) {
   if (event.key === 'Escape') {
     onClose?.();
+    return;
+  }
+
+  if (event.key === 'Tab' && dialogEl) {
+    const focusable = Array.from(
+      dialogEl.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      )
+    );
+    if (focusable.length === 0) {
+      event.preventDefault();
+      dialogEl.focus();
+    } else if (event.shiftKey && document.activeElement === focusable[0]) {
+      event.preventDefault();
+      focusable.at(-1)?.focus();
+    } else if (!event.shiftKey && document.activeElement === focusable.at(-1)) {
+      event.preventDefault();
+      focusable[0].focus();
+    }
   }
 }
 
 let modalShouldOpenQueued = $state(false);
+let dialogEl: HTMLDivElement | undefined = $state();
 let unsubscriber: (() => void) | null = null;
 
 setContext('closeModal', () => {
@@ -66,6 +88,21 @@ $effect(() => {
     queue.map((modal) => ({ ...modal, preparedToOpen: open }))
   );
 });
+
+$effect(() => {
+  if (!open || !modalShouldOpenQueued) return;
+
+  const previouslyFocused = document.activeElement as HTMLElement | null;
+  void tick().then(() => {
+    const firstControl = dialogEl?.querySelector<HTMLElement>(
+      'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+    );
+    (firstControl ?? dialogEl)?.focus();
+  });
+
+  return () => previouslyFocused?.focus();
+});
+
 onMount(() => {
   console.log('mounted', modalId, priority);
   // subscribe to the queue
@@ -118,13 +155,15 @@ onDestroy(() => {
 </script>
 
 {#if open && modalShouldOpenQueued}
-  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <!-- svelte-ignore a11y_no_static_element_interactions (The dialog owns keyboard focus and overlay dismissal. Owner: application UI.) -->
   <div
+    bind:this={dialogEl}
     class="w-full h-full fixed bg-slate-900/40 backdrop-blur-sm flex top-0 left-0 justify-center items-center z-40 transition-all duration-200"
     onclick={handleOverlayClick}
     onkeydown={handleKeydown}
     tabindex="-1"
     aria-modal="true"
+    aria-label={ariaLabel}
     role="dialog"
   >
     <article

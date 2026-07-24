@@ -940,6 +940,7 @@ $effect(() => {
 {#key selectedResult}
   {#if selectedResult}
     <Modal
+      ariaLabel="Source information"
       open={selectedResult !== undefined}
       size="medium"
       onClose={closeInfoModal}

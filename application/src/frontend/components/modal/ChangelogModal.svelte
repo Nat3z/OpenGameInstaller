@@ -46,26 +46,22 @@ function handleClose() {
   onClose?.();
 }
 
-function handleKeydown(event: KeyboardEvent) {
-  if (event.key === 'ArrowRight') {
-    nextSlide();
-  } else if (event.key === 'ArrowLeft') {
-    prevSlide();
-  }
-}
-
 function openExternalLink(url: string) {
   window.open(url, '_blank');
 }
 </script>
 
-<Modal {open} size="large" onClose={handleClose} boundsClose={true}>
+<Modal
+  ariaLabel="Changelog"
+  {open}
+  size="large"
+  onClose={handleClose}
+  boundsClose={true}
+>
   <div
     class="changelog-modal"
-    role="dialog"
-    tabindex="-1"
-    aria-label="Changelog"
-    onkeydown={handleKeydown}
+    role="group"
+    aria-label="Changelog slides"
   >
     <!-- Header -->
     <div class="flex items-center justify-between mb-6">

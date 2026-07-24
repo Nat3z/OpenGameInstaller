@@ -1,4 +1,10 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  copyFileSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -8,8 +14,16 @@ const applicationDirectory = resolve(currentDirectory, '../application');
 const sandboxDirectory = mkdtempSync(join(tmpdir(), 'ogi-accessibility-'));
 const state = process.env.OGI_ACCESSIBILITY_STATE ?? 'welcome';
 const optionDirectory = join(sandboxDirectory, 'config/option');
+const axeDestination = join(
+  applicationDirectory,
+  'out/renderer/axe.min.js'
+);
 
 process.env.OGI_DIRECTORY = sandboxDirectory;
+copyFileSync(
+  resolve(currentDirectory, '../node_modules/axe-core/axe.min.js'),
+  axeDestination
+);
 
 if (state === 'oobe-resume' || state === 'main') {
   mkdirSync(optionDirectory, { recursive: true });
@@ -56,7 +70,6 @@ export const config = {
       'wdio:electronServiceOptions': {
         appEntryPoint: join(applicationDirectory, 'e2e-main.cjs'),
         appArgs: ['--disable-gpu', '--no-sandbox'],
-        captureRendererLogs: true,
       },
     },
   ],
@@ -66,11 +79,11 @@ export const config = {
       {
         appEntryPoint: join(applicationDirectory, 'e2e-main.cjs'),
         appArgs: ['--disable-gpu', '--no-sandbox'],
-        captureRendererLogs: true,
       },
     ],
   ],
   onComplete() {
     rmSync(sandboxDirectory, { recursive: true, force: true });
+    rmSync(axeDestination, { force: true });
   },
 };

@@ -18,7 +18,7 @@ let {
 } = $props();
 </script>
 
-<Modal {open} {onClose}>
+<Modal ariaLabel="Delete addon" {open} {onClose}>
   <TitleModal title="Delete Addon" />
   <HeaderModal header={`Are you sure you want to delete '${addonName}'?`} />
   <TextModal

@@ -684,6 +684,7 @@ onMount(() => {
 
 {#if doSteamGridDBReconfigure}
   <Modal
+    ariaLabel="SteamGridDB API key"
     open={doSteamGridDBReconfigure}
     boundsClose={true}
     onClose={() => (doSteamGridDBReconfigure = false)}
@@ -739,12 +740,13 @@ onMount(() => {
 <div class="config-container">
   <!-- Sidebar -->
   <div class="sidebar">
-    <nav class="sidebar-nav">
+    <nav class="sidebar-nav" aria-label="Client options">
       {#if options.length !== 0}
         {#each options as option}
           <button
             class="sidebar-item"
             class:selected={selectedOption?.id === option.id}
+            aria-pressed={selectedOption?.id === option.id}
             onclick={() => selectOption(option)}
             id={'cfg-' + option.name}
           >
@@ -759,7 +761,7 @@ onMount(() => {
   </div>
 
   <!-- Main Content -->
-  <main
+  <section
     class="main-content overflow-x-hidden overflow-y-auto relative"
     bind:this={mainContent}
   >
@@ -1032,6 +1034,7 @@ onMount(() => {
                             {#if key === 'torrentClient'}
                               <CustomDropdown
                                 id={key}
+                                label={selectedOption.options[key].displayName}
                                 options={torrentClients}
                                 selectedId={selectedTorrentClientId}
                                 onchange={handleTorrentClientChange}
@@ -1179,7 +1182,7 @@ onMount(() => {
         {/if}
       </div>
     {/key}
-  </main>
+  </section>
 </div>
 
 <style>

@@ -5,6 +5,7 @@
     "build": "bun run --filter './packages/*' build",
     "release": "bun run --filter './packages/*' release",
     "dev": "bun run --filter 'opengameinstaller-gui' dev",
+    "test:accessibility": "bun run --cwd e2e test:accessibility",
     "format": "biome check --write package.json packages application/src application/package.json updater web/src web/community web/scripts web/package.json test-addon --files-ignore-unknown=true",
     "lint": "biome check package.json packages application/src application/package.json updater web/src web/community web/scripts web/package.json test-addon --files-ignore-unknown=true",
     "typecheck": "bun run --filter './packages/*' build && bun run --filter '*' typecheck"
@@ -12,6 +13,7 @@
   "workspaces": [
     "packages/*",
     "application",
+    "e2e",
     "updater",
     "web",
     "test-addon"

@@ -545,7 +545,7 @@ document.addEventListener('migration:event:install-steam-addon', async () => {
   />
 {/if}
 
-{#if !loading}
+{#if !loading && finishedOOBE}
   <div
     class="flex flex-col h-screen w-screen fixed left-0 top-0 bg-background-color"
   >

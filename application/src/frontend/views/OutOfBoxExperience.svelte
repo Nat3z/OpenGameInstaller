@@ -572,7 +572,7 @@ onDestroy(() => {
       <div class="animate-in-sub-content-slow">
         <button
           onclick={() => (stage = 0.5)}
-          class="bg-accent hover:bg-accent-dark text-white font-open-sans font-semibold py-3 px-6 rounded-lg transition-colors duration-200"
+          class="bg-accent hover:bg-accent-dark text-accent-text-color font-open-sans font-semibold py-3 px-6 rounded-lg transition-colors duration-200"
           >Get Started</button
         >
       </div>
@@ -596,7 +596,7 @@ onDestroy(() => {
       </div>
       <button
         onclick={() => (stage = 1)}
-        class="bg-accent hover:bg-accent-dark text-white font-open-sans font-semibold py-3 px-6 rounded-lg transition-colors duration-200"
+        class="bg-accent hover:bg-accent-dark text-accent-text-color font-open-sans font-semibold py-3 px-6 rounded-lg transition-colors duration-200"
         >Continue</button
       >
     </div>
@@ -618,7 +618,7 @@ onDestroy(() => {
           >
             {#each requiredTools as tool}
               <div class="oobe-tool-row" role="row">
-                <div class="oobe-tool-name">
+                <div class="oobe-tool-name" role="cell">
                   <span class="oobe-tool-mark" aria-hidden="true">
                     {#if tool.icon === 'image' && tool.iconSrc}
                       <img src={tool.iconSrc} alt="" class="oobe-tool-icon" />
@@ -628,7 +628,9 @@ onDestroy(() => {
                   </span>
                   <span class="oobe-tool-label">{tool.name}</span>
                 </div>
-                <span class="oobe-tool-purpose">{tool.purpose}</span>
+                <span class="oobe-tool-purpose" role="cell"
+                  >{tool.purpose}</span
+                >
               </div>
             {/each}
           </div>
@@ -643,7 +645,7 @@ onDestroy(() => {
             {/if}
             <button
               onclick={downloadTools}
-              class="bg-accent hover:bg-accent-dark text-white disabled:text-white disabled:bg-yellow-500 font-open-sans font-semibold py-3 px-6 rounded-lg transition-colors duration-200"
+              class="bg-accent hover:bg-accent-dark text-accent-text-color disabled:text-accent-text-color disabled:bg-yellow-500 font-open-sans font-semibold py-3 px-6 rounded-lg transition-colors duration-200"
               >Install</button
             >
           </div>
@@ -694,7 +696,7 @@ onDestroy(() => {
       </h2>
       <button
         onclick={() => window.electronAPI.app.close()}
-        class="bg-accent hover:bg-accent-dark text-white font-open-sans font-semibold py-3 px-6 rounded-lg transition-colors duration-200"
+        class="bg-accent hover:bg-accent-dark text-accent-text-color font-open-sans font-semibold py-3 px-6 rounded-lg transition-colors duration-200"
         >Close</button
       >
     </div>
@@ -930,7 +932,7 @@ onDestroy(() => {
       {#if fulfilledRequirements || selectedTorrenter === 'webtorrent'}
         <button
           onclick={() => (stage = 3)}
-          class="bg-accent animate-fade-in hover:bg-accent-dark text-white font-open-sans font-semibold py-3 px-6 rounded-lg transition-colors duration-200"
+          class="bg-accent animate-fade-in hover:bg-accent-dark text-accent-text-color font-open-sans font-semibold py-3 px-6 rounded-lg transition-colors duration-200"
           >Continue</button
         >
       {/if}
@@ -954,14 +956,14 @@ onDestroy(() => {
         />
         <button
           onclick={updateDownloadLocation}
-          class="bg-accent hover:bg-accent-dark text-white font-open-sans font-semibold py-3 px-4 rounded-lg transition-colors duration-200"
+          class="bg-accent hover:bg-accent-dark text-accent-text-color font-open-sans font-semibold py-3 px-4 rounded-lg transition-colors duration-200"
           >Browse</button
         >
       </div>
 
       <button
         onclick={sendDownloadLocation}
-        class="bg-accent hover:bg-accent-dark text-white font-open-sans font-semibold py-3 px-6 rounded-lg transition-colors duration-200"
+        class="bg-accent hover:bg-accent-dark text-accent-text-color font-open-sans font-semibold py-3 px-6 rounded-lg transition-colors duration-200"
         >Continue</button
       >
     </div>
@@ -1141,7 +1143,7 @@ onDestroy(() => {
             stage = 5;
           }
         }}
-        class="bg-accent hover:bg-accent-dark text-white font-open-sans font-semibold py-3 px-6 rounded-lg transition-colors duration-200"
+        class="bg-accent hover:bg-accent-dark text-accent-text-color font-open-sans font-semibold py-3 px-6 rounded-lg transition-colors duration-200"
         >Continue</button
       >
     </div>
@@ -1201,7 +1203,7 @@ onDestroy(() => {
             stage = 6;
             isSettingKey = false;
           }}
-          class="bg-accent hover:bg-accent-dark text-white font-open-sans font-semibold py-3 px-6 rounded-lg transition-colors duration-200 flex items-center justify-center"
+          class="bg-accent hover:bg-accent-dark text-accent-text-color font-open-sans font-semibold py-3 px-6 rounded-lg transition-colors duration-200 flex items-center justify-center"
           disabled={isSettingKey}
         >
           {#if isSettingKey}
@@ -1238,7 +1240,7 @@ onDestroy(() => {
 
       <button
         onclick={waitForSetup}
-        class="bg-accent hover:bg-accent-dark text-white font-open-sans font-semibold py-3 px-6 rounded-lg transition-colors duration-200"
+        class="bg-accent hover:bg-accent-dark text-accent-text-color font-open-sans font-semibold py-3 px-6 rounded-lg transition-colors duration-200"
         >Finish</button
       >
     </div>
@@ -1430,7 +1432,7 @@ onDestroy(() => {
   }
 
   .oobe-marketplace-add-button {
-    @apply bg-accent text-white hover:bg-accent-dark border border-accent;
+    @apply bg-accent text-accent-text-color hover:bg-accent-dark border border-accent;
   }
 
   .oobe-marketplace-reset-button,
@@ -1439,7 +1441,7 @@ onDestroy(() => {
   }
 
   .oobe-marketplace-retry-button {
-    @apply mt-3 bg-accent text-white hover:bg-accent-dark border border-accent;
+    @apply mt-3 bg-accent text-accent-text-color hover:bg-accent-dark border border-accent;
   }
 
   .oobe-marketplace-source-list {
@@ -1553,11 +1555,11 @@ onDestroy(() => {
   }
 
   .oobe-addon-select:hover {
-    @apply bg-accent text-white border-accent;
+    @apply bg-accent text-accent-text-color border-accent;
   }
 
   .oobe-addon-select.selected {
-    @apply bg-accent border-accent text-white;
+    @apply bg-accent border-accent text-accent-text-color;
   }
 
   .oobe-custom-addon-panel {

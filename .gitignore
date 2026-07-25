@@ -119,6 +119,7 @@ out
 
 .nuxt
 dist
+e2e/observer-dist/
 
 # Gatsby files
 

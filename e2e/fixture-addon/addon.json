@@ -1,0 +1,7 @@
+{
+  "author": "OpenGameInstaller E2E",
+  "icon": "icon.svg",
+  "scripts": {
+    "run": "bun run dist/main.js"
+  }
+}

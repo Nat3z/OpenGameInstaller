@@ -1164,14 +1164,11 @@ onDestroy(() => {
       </details>
 
       <button
-        onclick={async () => {
-          // check if the user is on windows or linux
-          const os = await window.electronAPI.app.getOS();
-          if (os === 'win32') {
+        onclick={() => {
+          if (currentOS === 'win32') {
             finishSetup();
             stage = 6;
           } else {
-            // go to steamgriddb
             stage = 5;
           }
         }}

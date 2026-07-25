@@ -10,6 +10,12 @@ import path, { join } from 'path';
 import yauzl, { type ZipFile } from 'yauzl';
 import zlib from 'zlib';
 import pjson from '../package.json' with { type: 'json' };
+import {
+  type UpdaterStatusPayload,
+  updaterFailure,
+  updaterProgress,
+  updaterStatus,
+} from './status.js';
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -744,15 +750,31 @@ function compareReleaseOrder(a: any, b: any) {
 }
 
 function sendUpdaterStatus(
-  text: string,
+  title: string,
   progress?: number,
   max?: number,
-  subtext?: string
+  detail?: string
 ) {
+  const payload =
+    typeof progress === 'number' &&
+    Number.isFinite(progress) &&
+    typeof max === 'number' &&
+    Number.isFinite(max) &&
+    max > 0
+      ? updaterProgress(title, progress, max, detail)
+      : updaterStatus(title, detail);
+  sendUpdaterStatusPayload(payload);
+}
+
+function sendUpdaterFailure(title: string, detail?: string) {
+  sendUpdaterStatusPayload(updaterFailure(title, detail));
+}
+
+function sendUpdaterStatusPayload(payload: UpdaterStatusPayload) {
   if (!mainWindow || mainWindow.isDestroyed()) {
     return;
   }
-  mainWindow.webContents.send('text', text, progress, max, subtext);
+  mainWindow.webContents.send('updater-status', payload);
 }
 
 function prepareUpdateDestination(destRoot: string) {
@@ -880,9 +902,10 @@ async function createWindow() {
         ? 'Updater requested offline mode, skipping update check'
         : 'Device is offline, skipping update check'
     );
-    mainWindow.webContents.send(
-      'text',
+    sendUpdaterStatus(
       'Launching OpenGameInstaller',
+      undefined,
+      undefined,
       'Offline Mode'
     );
     launchApp(false);
@@ -909,16 +932,12 @@ async function createWindow() {
           (choice?.commit || '').trim(),
           (choice?.branch || DEFAULT_BLEEDING_EDGE_BRANCH).trim()
         );
-        mainWindow.webContents.send('text', 'Launching OpenGameInstaller');
+        sendUpdaterStatus('Launching OpenGameInstaller');
         launchApp(true);
         return;
       } catch (err) {
         console.error(err);
-        mainWindow.webContents.send(
-          'text',
-          'Bleeding Edge Failed',
-          err.message
-        );
+        sendUpdaterFailure('Bleeding Edge Failed', err.message);
         launchApp(true);
         return;
       }
@@ -927,12 +946,12 @@ async function createWindow() {
     try {
       const { branch, commit } = getCommitEdgeTarget();
       await ensureBleedingEdgeBuild(commit, branch);
-      mainWindow.webContents.send('text', 'Launching OpenGameInstaller');
+      sendUpdaterStatus('Launching OpenGameInstaller');
       launchApp(true);
       return;
     } catch (err) {
       console.error(err);
-      mainWindow.webContents.send('text', 'Bleeding Edge Failed', err.message);
+      sendUpdaterFailure('Bleeding Edge Failed', err.message);
       launchApp(true);
       return;
     }
@@ -947,7 +966,7 @@ async function createWindow() {
       `https://api.github.com/repos/${gitRepo}/releases`,
       { timeout: 10000 } // 10 second timeout for update check
     );
-    mainWindow.webContents.send('text', 'Checking for Updates');
+    sendUpdaterStatus('Checking for Updates');
     const releases = response.data
       .filter((rel) => usingBleedingEdge || !rel.prerelease)
       .sort(compareReleaseOrder);
@@ -966,31 +985,31 @@ async function createWindow() {
       let updateApplied = false;
 
       if (Number.isFinite(gap) && gap > 0 && gap <= 3) {
-        mainWindow.webContents.send(
-          'text',
-          'Preparing incremental update path'
-        );
+        sendUpdaterStatus('Preparing incremental update path');
         try {
           await applyBlockmapPath(releasePath, releases);
           updateApplied = true;
         } catch (patchErr) {
           console.error('Incremental patching failed, falling back:', patchErr);
-          mainWindow.webContents.send(
-            'text',
+          sendUpdaterStatus(
             'Falling back to full download',
+            undefined,
+            undefined,
             patchErr.message
           );
         }
       } else if (!Number.isFinite(gap)) {
-        mainWindow.webContents.send(
-          'text',
+        sendUpdaterStatus(
           'Falling back to full download',
+          undefined,
+          undefined,
           'Local version missing from release feed'
         );
       } else {
-        mainWindow.webContents.send(
-          'text',
+        sendUpdaterStatus(
           'Falling back to full download',
+          undefined,
+          undefined,
           'Version too old for incremental update'
         );
       }
@@ -999,14 +1018,15 @@ async function createWindow() {
         await downloadFullRelease(targetRelease);
       }
       fs.writeFileSync(`./version.txt`, targetRelease.tag_name);
-      mainWindow.webContents.send('text', 'Launching OpenGameInstaller');
+      sendUpdaterStatus('Launching OpenGameInstaller');
       launchApp(true);
       return;
     }
     if (!updating) {
-      mainWindow.webContents.send(
-        'text',
+      sendUpdaterStatus(
         'Launching OpenGameInstaller',
+        undefined,
+        undefined,
         'No Updates Found'
       );
       launchApp(true);
@@ -1015,16 +1035,16 @@ async function createWindow() {
     console.error(e);
     const onlineState = getEffectiveOnlineState();
     if (!onlineState.effectiveOnline) {
-      mainWindow.webContents.send(
-        'text',
+      sendUpdaterStatus(
         'Launching OpenGameInstaller',
+        undefined,
+        undefined,
         'Offline Mode'
       );
       launchApp(false);
       return;
     }
-    mainWindow.webContents.send(
-      'text',
+    sendUpdaterFailure(
       'Launching OpenGameInstaller',
       'Failed to check for updates'
     );
@@ -2046,16 +2066,12 @@ async function launchApp(online) {
   console.log(
     'Launching in ' + (effectiveOnline ? 'online' : 'offline') + ' mode'
   );
-  mainWindow.webContents.send('text', 'Launching OpenGameInstaller');
+  sendUpdaterStatus('Launching OpenGameInstaller');
   if (process.platform === 'win32') {
     if (
       !fs.existsSync(path.join(__dirname, 'update', 'OpenGameInstaller.exe'))
     ) {
-      mainWindow.webContents.send(
-        'text',
-        'Installation not found',
-        'Launch Failed'
-      );
+      sendUpdaterFailure('Installation not found', 'Launch Failed');
       return;
     }
     // OpenGameInstaller.exe logs will be written to latest.log in the update directory
@@ -2092,11 +2108,7 @@ async function launchApp(online) {
         path.join(__dirname, 'update', 'OpenGameInstaller.AppImage')
       )
     ) {
-      mainWindow.webContents.send(
-        'text',
-        'Installation not found',
-        'Launch Failed'
-      );
+      sendUpdaterFailure('Installation not found', 'Launch Failed');
       return;
     }
     setTimeout(() => {

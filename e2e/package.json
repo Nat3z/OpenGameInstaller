@@ -3,7 +3,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test:accessibility": "bun run --cwd ../application build && bun run run-accessibility.mjs",
+    "test:accessibility": "bun run test:accessibility:application && bun run test:accessibility:updater",
+    "test:accessibility:application": "bun run --cwd ../application build && bun run run-accessibility.mjs",
+    "test:accessibility:updater": "bun run --cwd ../updater build && bun run run-updater-accessibility.ts",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
@@ -14,6 +16,7 @@
     "@wdio/mocha-framework": "9.27.1",
     "@wdio/xvfb": "9.27.1",
     "axe-core": "4.10.3",
+    "effect": "^3.19.14",
     "electron": "40.10.2",
     "typescript": "5.9.3"
   }

@@ -10,14 +10,43 @@
       <main>
         <img
           src="./favicon-256x256.png"
-          alt="OpenGameInstaller Logo"
+          alt="OpenGameInstaller"
           width="128"
           height="128"
         />
 
-        <h1 style="width: 100%; text-align: center">Checking for Updates</h1>
-        <section id="channel-picker" style="display: none">
-          <div id="channel-screen">
+        <div id="status-presentation">
+          <h1 id="updater-heading" tabindex="-1">Checking for Updates</h1>
+          <p id="status-detail" style="display: none"></p>
+        </div>
+        <progress
+          aria-label="Update progress"
+          aria-describedby="status-detail"
+          value="10"
+          max="100"
+          style="display: none"
+        ></progress>
+        <div
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+          class="visually-hidden"
+        ></div>
+        <div
+          role="alert"
+          aria-live="assertive"
+          aria-atomic="true"
+          style="display: none"
+        >
+          <h1 id="updater-alert-heading" tabindex="-1">Updater alert</h1>
+          <p id="alert-detail" style="display: none"></p>
+        </div>
+        <section
+          id="channel-picker"
+          aria-labelledby="updater-heading"
+          style="display: none"
+        >
+          <fieldset id="channel-screen" aria-label="Update channel">
             <div class="chips">
               <button type="button" data-channel="stable">Stable</button>
               <button type="button" data-channel="unstable">Unstable</button>
@@ -25,7 +54,7 @@
                 Bleeding Edge
               </button>
             </div>
-          </div>
+          </fieldset>
           <div id="bleeding-edge-screen" style="display: none">
             <button type="button" id="bleeding-edge-back" class="back-button">
               Back
@@ -33,51 +62,138 @@
             <label for="branch-select" id="branch-label" class="field-label"
               >Branch</label
             >
-            <select id="branch-select">
+            <select id="branch-select" aria-label="Branch">
               <option value="main">main</option>
             </select>
+            <label for="commit-input" class="field-label"
+              >Optional commit SHA, branch, or tag</label
+            >
             <input
               id="commit-input"
+              type="text"
               placeholder="Optional commit SHA, branch, or tag"
+              autocomplete="off"
             />
-            <div id="commit-list" style="display: none"></div>
+            <section
+              id="commit-list"
+              aria-label="Recent commits"
+              aria-live="polite"
+              style="display: none"
+            ></section>
             <button type="button" id="bleeding-edge-build" class="build-button">
               Build Selected
             </button>
           </div>
         </section>
-        <progress value="10" max="100" style="display: none"></progress>
-        <p style="display: none">hello</p>
       </main>
     </div>
   </body>
 </html>
 <script>
-  document.addEventListener('text', (event) => {
-    const picker = document.querySelector('#channel-picker');
-    if (picker.style.display !== 'none') {
+  const ANNOUNCEMENT_INTERVAL_MS = 5000;
+  let lastAnnouncementAt = 0;
+  let lastAnnouncementTitle = '';
+  let lastProgressBucket = -1;
+  let pendingAnnouncement;
+  let pendingAnnouncementTimer;
+
+  function progressBucket(payload) {
+    if (payload.kind !== 'progress') return -1;
+    const percentage =
+      (payload.progress.value / Math.max(payload.progress.max, 1)) * 100;
+    return Math.floor(Math.max(0, Math.min(percentage, 100)) / 10);
+  }
+
+  function publishStatusAnnouncement(payload) {
+    const announcement = document.querySelector('[role="status"]');
+    announcement.textContent = payload.detail
+      ? `${payload.title}. ${payload.detail}`
+      : payload.title;
+    lastAnnouncementAt = Date.now();
+    lastAnnouncementTitle = payload.title;
+    lastProgressBucket = progressBucket(payload);
+    pendingAnnouncement = undefined;
+    pendingAnnouncementTimer = undefined;
+  }
+
+  function queueStatusAnnouncement(payload) {
+    const now = Date.now();
+    const bucket = progressBucket(payload);
+    const shouldPublishNow =
+      payload.kind === 'recovery' ||
+      payload.title !== lastAnnouncementTitle ||
+      (bucket >= 0 && bucket !== lastProgressBucket) ||
+      now - lastAnnouncementAt >= ANNOUNCEMENT_INTERVAL_MS;
+    if (shouldPublishNow) {
+      if (pendingAnnouncementTimer) clearTimeout(pendingAnnouncementTimer);
+      publishStatusAnnouncement(payload);
       return;
     }
-    const { text, progress, subtext, max } = event.detail;
-    const progressHTML = document.querySelector('progress');
-    const subTextHTML = document.querySelector('p');
+
+    pendingAnnouncement = payload;
+    if (!pendingAnnouncementTimer) {
+      pendingAnnouncementTimer = setTimeout(() => {
+        if (pendingAnnouncement) publishStatusAnnouncement(pendingAnnouncement);
+      }, ANNOUNCEMENT_INTERVAL_MS - (now - lastAnnouncementAt));
+    }
+  }
+
+  function cancelPendingStatusAnnouncement() {
+    if (pendingAnnouncementTimer) clearTimeout(pendingAnnouncementTimer);
+    pendingAnnouncement = undefined;
+    pendingAnnouncementTimer = undefined;
+  }
+
+  window.ogiUpdater.onStatus((payload) => {
+    const picker = document.querySelector('#channel-picker');
+    const statusPresentation = document.querySelector('#status-presentation');
+    const statusAnnouncement = document.querySelector('[role="status"]');
+    const alertRegion = document.querySelector('[role="alert"]');
+    const statusHeading = document.querySelector('#updater-heading');
+    const alertHeading = document.querySelector('#updater-alert-heading');
+    const progress = document.querySelector('progress');
+    const statusDetail = document.querySelector('#status-detail');
+    const alertDetail = document.querySelector('#alert-detail');
+    const isFailure = payload.severity === 'assertive';
+    const alertHadFocus = alertRegion.contains(document.activeElement);
+
     picker.style.display = 'none';
-    document.querySelector('h1').textContent = text;
-    if (progress !== undefined && progress !== null && max) {
-      progressHTML.value = progress;
-      progressHTML.max = max;
-      progressHTML.style.display = 'block';
-    } else {
-      progressHTML.style.display = 'none';
+    statusPresentation.style.display = isFailure ? 'none' : 'block';
+    alertRegion.style.display = isFailure ? 'block' : 'none';
+    progress.style.display = 'none';
+    progress.removeAttribute('aria-valuetext');
+    statusDetail.style.display = 'none';
+    alertDetail.style.display = 'none';
+    statusDetail.textContent = '';
+    alertDetail.textContent = '';
+
+    if (isFailure) {
+      cancelPendingStatusAnnouncement();
+      statusAnnouncement.textContent = '';
+      alertHeading.textContent = payload.title;
+      if (payload.detail) {
+        alertDetail.textContent = payload.detail;
+        alertDetail.style.display = 'block';
+      }
+      alertHeading.focus();
+      return;
     }
-    if (subtext) {
-      subTextHTML.textContent = subtext;
-      subTextHTML.style.display = 'block';
-    } else {
-      subTextHTML.style.display = 'none';
-      subTextHTML.textContent = '';
-      subTextHTML.style.display = 'none';
+
+    statusHeading.textContent = payload.title;
+    if (payload.kind === 'progress') {
+      progress.value = payload.progress.value;
+      progress.max = payload.progress.max;
+      if (payload.detail) {
+        progress.setAttribute('aria-valuetext', payload.detail);
+      }
+      progress.style.display = 'block';
     }
+    if (payload.detail) {
+      statusDetail.textContent = payload.detail;
+      statusDetail.style.display = 'block';
+    }
+    queueStatusAnnouncement(payload);
+    if (alertHadFocus) statusHeading.focus();
   });
 
   function showChannelScreen(screen) {
@@ -88,12 +204,24 @@
     document.querySelector('#bleeding-edge-screen').style.display = isBleedingEdge
       ? 'block'
       : 'none';
-    document.querySelector('h1').textContent = isBleedingEdge
+    document.querySelector('#updater-heading').textContent = isBleedingEdge
       ? 'Bleeding Edge Build'
       : 'Choose Update Channel';
-    document.querySelector('p').textContent = isBleedingEdge
+    document.querySelector('#status-detail').textContent = isBleedingEdge
       ? 'Pick a branch and optional commit, then build from source.'
       : 'Stable uses normal releases. Unstable uses pre-releases. Bleeding Edge builds from source.';
+    document.querySelector('#status-presentation').style.display = 'block';
+    document.querySelector('[role="alert"]').style.display = 'none';
+    cancelPendingStatusAnnouncement();
+    document.querySelector('[role="status"]').textContent = '';
+    queueMicrotask(() => {
+      const focusTarget = isBleedingEdge
+        ? document.querySelector('#bleeding-edge-back')
+        : document.querySelector('[data-channel="stable"]');
+      if (document.querySelector('#channel-picker').style.display !== 'none') {
+        focusTarget.focus();
+      }
+    });
   }
 
   function resetBleedingEdgePicker() {
@@ -107,9 +235,9 @@
     showChannelScreen('channels');
   }
 
-  document.addEventListener('show-channel-picker', () => {
+  window.ogiUpdater.onShowChannelPicker(() => {
     document.querySelector('progress').style.display = 'none';
-    document.querySelector('p').style.display = 'block';
+    document.querySelector('#status-detail').style.display = 'block';
     resetBleedingEdgePicker();
     document.querySelector('#channel-picker').style.display = 'block';
   });
@@ -121,6 +249,7 @@
   async function loadBranches() {
     const select = document.querySelector('#branch-select');
     select.disabled = true;
+    select.setAttribute('aria-busy', 'true');
     select.innerHTML = '<option value="">Loading branches...</option>';
     try {
       const result = await window.ogiUpdater.getBranches();
@@ -141,13 +270,32 @@
       select.value = 'main';
     } finally {
       select.disabled = false;
+      select.removeAttribute('aria-busy');
     }
+  }
+
+  function normalizeCommit(value) {
+    return value.trim().toLowerCase();
+  }
+
+  function syncCommitSelection() {
+    const selectedCommit = normalizeCommit(
+      document.querySelector('#commit-input').value
+    );
+    document.querySelectorAll('.commit-item').forEach((item) => {
+      const isSelected =
+        selectedCommit.length > 0 &&
+        normalizeCommit(item.dataset.commitSha || '') === selectedCommit;
+      item.classList.toggle('selected', isSelected);
+      item.setAttribute('aria-pressed', String(isSelected));
+    });
   }
 
   async function loadCommitList() {
     const list = document.querySelector('#commit-list');
     const branch = getSelectedBranch();
     list.style.display = 'block';
+    list.setAttribute('aria-busy', 'true');
     list.textContent = `Loading commits for ${branch}...`;
     try {
       const result = await window.ogiUpdater.getRecentCommits(branch);
@@ -160,6 +308,12 @@
         const item = document.createElement('button');
         item.className = 'commit-item';
         item.type = 'button';
+        item.dataset.commitSha = commit.sha;
+        item.setAttribute('aria-pressed', 'false');
+        item.setAttribute(
+          'aria-label',
+          `Commit ${commit.shortSha}: ${commit.message}`
+        );
         item.innerHTML = `
           <strong>${commit.shortSha}</strong>
           <span>${commit.message}</span>
@@ -167,17 +321,21 @@
         `;
         item.addEventListener('click', () => {
           document.querySelector('#commit-input').value = commit.sha;
-          document.querySelectorAll('.commit-item').forEach((other) => {
-            other.classList.remove('selected');
-          });
-          item.classList.add('selected');
+          syncCommitSelection();
         });
         list.appendChild(item);
       });
+      syncCommitSelection();
     } catch (error) {
       list.textContent = 'Failed to load commits.';
+    } finally {
+      list.removeAttribute('aria-busy');
     }
   }
+
+  document
+    .querySelector('#commit-input')
+    .addEventListener('input', syncCommitSelection);
 
   document.querySelector('#branch-select').addEventListener('change', () => {
     if (document.querySelector('#commit-list').style.display !== 'none') {
@@ -192,7 +350,10 @@
       getSelectedBranch()
     );
     document.querySelector('#channel-picker').style.display = 'none';
-    document.querySelector('h1').textContent = 'Applying Channel';
+    document.querySelector('#updater-heading').textContent = 'Applying Channel';
+    document.querySelector('#status-detail').textContent =
+      `Selected ${channel} update channel.`;
+    document.querySelector('#updater-heading').focus();
   }
 
   document.querySelectorAll('[data-channel]').forEach((button) => {
@@ -233,22 +394,44 @@
     flex-direction: column;
     height: 100vh;
   }
+  #status-presentation,
+  [role='alert'] {
+    width: 100%;
+    text-align: center;
+  }
+  .visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
   main h1 {
     font-family: 'Archivo', sans-serif;
     font-weight: 300;
     font-size: 1.25rem;
-    color: rgb(175, 175, 175);
+    color: rgb(75, 75, 75);
+    outline: none;
   }
   main p {
     font-family: 'Archivo', sans-serif;
     font-weight: 300;
     font-size: 1rem;
-    color: rgb(175, 175, 175);
+    color: rgb(75, 75, 75);
     text-align: center;
     padding: 0 1rem;
   }
   #channel-picker {
     width: 90%;
+  }
+  #channel-screen {
+    min-width: 0;
+    margin: 0;
+    border: 0;
+    padding: 0;
   }
   #bleeding-edge-screen {
     max-height: 14rem;
@@ -271,7 +454,7 @@
   }
   .build-button {
     margin-top: 0.75rem;
-    background: rgb(66, 138, 145);
+    background: rgb(43, 104, 111);
     color: white;
   }
   .chips {
@@ -283,7 +466,7 @@
   .chips button {
     border: 0;
     border-radius: 999px;
-    background: rgb(66, 138, 145);
+    background: rgb(43, 104, 111);
     color: white;
     font-family: 'Archivo', sans-serif;
     padding: 0.65rem 0.25rem;
@@ -295,7 +478,7 @@
     margin-bottom: 0.25rem;
     font-family: 'Archivo', sans-serif;
     font-size: 0.85rem;
-    color: rgb(120, 120, 120);
+    color: rgb(90, 90, 90);
   }
   #branch-select,
   #commit-input {
@@ -307,6 +490,12 @@
     font-family: 'Archivo', sans-serif;
     background: white;
     color: rgb(80, 80, 80);
+  }
+  button:focus-visible,
+  select:focus-visible,
+  input:focus-visible {
+    outline: 3px solid rgb(22, 91, 99);
+    outline-offset: 2px;
   }
   #commit-list {
     margin-top: 0.75rem;
@@ -327,7 +516,7 @@
     cursor: pointer;
   }
   .commit-item.selected {
-    border-color: rgb(66, 138, 145);
+    border-color: rgb(43, 104, 111);
     background: rgb(230, 246, 243);
   }
   .commit-item span {
@@ -336,7 +525,7 @@
     white-space: nowrap;
   }
   .commit-item small {
-    color: rgb(135, 135, 135);
+    color: rgb(90, 90, 90);
   }
 
   * {
@@ -365,6 +554,6 @@
 
   progress::-webkit-progress-value {
     border-radius: 0.5rem;
-    background-color: rgb(66, 138, 145);
+    background-color: rgb(43, 104, 111);
   }
 </style>

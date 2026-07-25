@@ -1,14 +1,8 @@
 import { contextBridge, ipcRenderer } from 'electron';
+import type { UpdaterStatusPayload } from './status.js';
 
-ipcRenderer.on('text', (_event, text, progress, max, subtext) => {
-  document.dispatchEvent(
-    new CustomEvent('text', { detail: { text, progress, max, subtext } })
-  );
-});
-
-ipcRenderer.on('show-channel-picker', () => {
-  document.dispatchEvent(new CustomEvent('show-channel-picker'));
-});
+type StatusListener = (payload: UpdaterStatusPayload) => void;
+type ChannelPickerListener = () => void;
 
 contextBridge.exposeInMainWorld('ogiUpdater', {
   chooseChannel: (channel, commit, branch) =>
@@ -16,4 +10,17 @@ contextBridge.exposeInMainWorld('ogiUpdater', {
   getBranches: () => ipcRenderer.invoke('get-branches'),
   getRecentCommits: (branch) =>
     ipcRenderer.invoke('get-recent-commits', branch),
+  onStatus: (listener: StatusListener) => {
+    const handler = (
+      _event: Electron.IpcRendererEvent,
+      payload: UpdaterStatusPayload
+    ) => listener(payload);
+    ipcRenderer.on('updater-status', handler);
+    return () => ipcRenderer.removeListener('updater-status', handler);
+  },
+  onShowChannelPicker: (listener: ChannelPickerListener) => {
+    const handler = () => listener();
+    ipcRenderer.on('show-channel-picker', handler);
+    return () => ipcRenderer.removeListener('show-channel-picker', handler);
+  },
 });

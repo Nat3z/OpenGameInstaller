@@ -46,6 +46,7 @@ const closeFixtureIntegration = registerFixtureService(
 app
   .whenReady()
   .then(async () => {
+    await closeFixtureIntegration.ready;
     const window = new BrowserWindow({
       width: 1000,
       height: 700,
@@ -121,7 +122,7 @@ app
     logMain('Packaged application failed to start', {
       error: error instanceof Error ? error.message : String(error),
     });
-    app.exit(1);
+    void closeFixtureIntegration().finally(() => app.exit(1));
   });
 
 app.on('window-all-closed', () => {

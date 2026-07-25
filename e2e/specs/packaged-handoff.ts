@@ -178,22 +178,12 @@ describe('packaged Golden Journey', () => {
         'first-run-downloads',
         'Choose sandbox download location',
         async () => {
-          await page.$eval(
-            'input[aria-label="Download location"]',
-            (input, value) => {
-              const field = input as HTMLInputElement;
-              field.value = value;
-              field.dispatchEvent(new Event('input', { bubbles: true }));
-            },
+          await page.click('input[aria-label="Download location"]');
+          await page.keyboard.type(
             join(descriptor.sandboxDirectory, 'downloads')
           );
-          await page.focus('input[aria-label="Download location"]');
-          await page.keyboard.press('Tab');
-          await page.keyboard.press('Tab');
-          await page.keyboard.press('Enter');
-          await page.waitForSelector('.oobe-community-title', {
-            timeout: 30_000,
-          });
+          await clickButtonText(page, 'Continue');
+          await waitForText(page, 'Community Addons');
         }
       );
       await namedStep(
@@ -201,13 +191,14 @@ describe('packaged Golden Journey', () => {
         'first-run-addon',
         'Select E2E Fixture Addon',
         async () => {
-          await page.click('.oobe-custom-addon-panel summary');
-          await page.type(
-            'textarea[aria-label="Custom addon repository URLs"]',
-            `local@${join(
-              descriptor.installationDirectory,
-              'app/e2e-fixture-addon'
-            )}`
+          await waitForText(page, 'Steam Integration');
+          await clickButtonText(page, 'Selected');
+          await page.click('[aria-label="Custom addon repository"]');
+          await page.click(
+            'textarea[aria-label="Custom addon repository URLs"]'
+          );
+          await page.keyboard.type(
+            `local@${join(descriptor.installationDirectory, 'app/ogi-e2e-fixture-addon')}`
           );
           await clickButtonText(page, 'Continue');
           if (descriptor.platform === 'linux') {
@@ -231,7 +222,8 @@ describe('packaged Golden Journey', () => {
           await page.waitForSelector('[aria-label="Golden Journey Fixture"]', {
             timeout: 30_000,
           });
-          await page.click('[aria-label="Golden Journey Fixture"]');
+          await page.focus('[aria-label="Golden Journey Fixture"]');
+          await page.keyboard.press('Enter');
           await waitForText(page, 'Fixture Service direct do');
         }
       );

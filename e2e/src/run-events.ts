@@ -31,7 +31,8 @@ type EventPayloads = {
       | 'native-dialog-requests'
       | 'run-descriptor'
       | 'handoff-log'
-      | 'startup-health';
+      | 'startup-health'
+      | 'html-report';
     path: string;
     stepId?: string;
   };
@@ -155,6 +156,7 @@ function validatePayload(type: string, payload: Record<string, unknown>) {
           'run-descriptor',
           'handoff-log',
           'startup-health',
+          'html-report',
         ].includes(payload.artifactType) ||
         !isString(payload.path) ||
         payload.path.length === 0
@@ -370,4 +372,58 @@ export function replayRunEventLog(path: string): {
     lastSequence: events.at(-1)!.sequence,
     scenarios,
   };
+}
+
+const escapeHtml = (value: string) =>
+  value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+
+export function renderRunHtmlReport(
+  path: string,
+  outcome: TerminalOutcome
+): string {
+  const events = readRunEvents(path);
+  const stepNames = new Map<string, string>();
+  for (const event of events) {
+    if (event.type === 'step.started') {
+      stepNames.set(event.payload.stepId, event.payload.name);
+    }
+  }
+  const steps = events
+    .filter(
+      (event): event is Extract<RunEvent, { type: 'step.completed' }> =>
+        event.type === 'step.completed'
+    )
+    .map(
+      (event) =>
+        `<li><strong>${escapeHtml(stepNames.get(event.payload.stepId) ?? event.payload.stepId)}</strong>: ${escapeHtml(event.payload.outcome)}${event.payload.error ? ` — ${escapeHtml(event.payload.error)}` : ''}</li>`
+    )
+    .join('');
+  const artifacts = events
+    .filter(
+      (event): event is Extract<RunEvent, { type: 'artifact.created' }> =>
+        event.type === 'artifact.created'
+    )
+    .map(
+      (event) =>
+        `<li>${escapeHtml(event.payload.artifactType)}: <code>${escapeHtml(event.payload.path)}</code>${event.payload.stepId ? ` (${escapeHtml(stepNames.get(event.payload.stepId) ?? event.payload.stepId)})` : ''}</li>`
+    )
+    .join('');
+  return `<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>OpenGameInstaller E2E report</title></head>
+<body>
+<main>
+<h1>Run ${escapeHtml(events[0]!.runId)}</h1>
+<p>Outcome: <strong>${escapeHtml(outcome)}</strong></p>
+<h2>Named steps</h2><ol>${steps}</ol>
+<h2>Artifacts</h2><ul>${artifacts}</ul>
+</main>
+</body>
+</html>
+`;
 }

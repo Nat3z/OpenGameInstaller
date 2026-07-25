@@ -7,7 +7,7 @@ import * as https from 'https';
 import { dirname } from 'path';
 import { Readable, Transform, type TransformCallback } from 'stream';
 import { getEffectiveOnlineState } from '@/electron/lib/online.js';
-import { sendNotification } from '@/electron/main.js';
+import { sendNotification } from '@/electron/lib/renderer-notifications.js';
 import {
   getStoredValue,
   refreshCached,
@@ -15,10 +15,10 @@ import {
 import { DOWNLOAD_QUEUE } from '@/electron/manager/manager.queue.js';
 import {
   clearDownloadHandshake,
+  type DownloadHandshakeResult,
   registerDownloadHandshake,
   updateDownloadHandshake,
   waitForDownloadHandshake,
-  type DownloadHandshakeResult,
 } from '@/lib/download-handshake.js';
 
 // Parallel download configuration
@@ -197,7 +197,7 @@ function calculateBaselineSpeed(samples: number[]): number {
   return average(positiveSamples.slice(0, baselineSampleCount));
 }
 
-class Download {
+export class Download {
   public id: string;
   private _status: DownloadStatus = 'queued';
 
@@ -1431,10 +1431,13 @@ class Download {
 
     this.sendProgress({ progress: 1, downloadSpeed: 0 });
     const completePayload = { id: this.id };
-    this.reportHandshake({ status: 'completed' }, {
-      channel: 'ddl:download-complete',
-      data: completePayload,
-    });
+    this.reportHandshake(
+      { status: 'completed' },
+      {
+        channel: 'ddl:download-complete',
+        data: completePayload,
+      }
+    );
     this.sendIpc('ddl:download-complete', completePayload);
     sendNotification({
       message: 'Download completed',
@@ -1450,10 +1453,13 @@ class Download {
   private fail(error: Error) {
     this.status = 'failed';
     const errorPayload = { id: this.id, error: error.message };
-    this.reportHandshake({ status: 'error', error: error.message }, {
-      channel: 'ddl:download-error',
-      data: errorPayload,
-    });
+    this.reportHandshake(
+      { status: 'error', error: error.message },
+      {
+        channel: 'ddl:download-error',
+        data: errorPayload,
+      }
+    );
 
     if (this.useParallelParts) {
       // Clean up multi-part parallel downloads
@@ -2386,7 +2392,7 @@ async function checkParallelChunkCount() {
   );
 }
 
-export default function handler(mainWindow: BrowserWindow) {
+export default function handler(mainWindow?: BrowserWindow) {
   ipcMain.handle(
     'ddl:download',
     async (
@@ -2395,7 +2401,12 @@ export default function handler(mainWindow: BrowserWindow) {
       part?: number
     ) => {
       await checkParallelChunkCount();
-      const download = new Download(mainWindow, args, part);
+      const downloadWindow =
+        mainWindow ?? BrowserWindow.fromWebContents(_.sender);
+      if (!downloadWindow) {
+        throw new Error('Direct download requires an application window');
+      }
+      const download = new Download(downloadWindow, args, part);
       download.start();
       return await download.waitForReady();
     }
@@ -2417,3 +2428,5 @@ export default function handler(mainWindow: BrowserWindow) {
     downloads.get(id)?.cancel();
   });
 }
+
+export { registerDownloadHandshakeHandlers } from '@/lib/download-handshake.js';

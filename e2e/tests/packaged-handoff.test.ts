@@ -136,8 +136,8 @@ describe('packaged updater-to-application handoff', () => {
         expect.arrayContaining([
           'app/e2e-product-main.cjs',
           'app/out/renderer/index.html',
-          'app/e2e-fixture-addon/addon.json',
-          'app/e2e-fixture-addon/main.js',
+          'app/ogi-e2e-fixture-addon/addon.json',
+          'app/ogi-e2e-fixture-addon/main.js',
           'support/fixture-service.cjs',
           'support/packaged-handoff-run-descriptor.cjs',
         ])
@@ -287,6 +287,11 @@ describe('packaged updater-to-application handoff', () => {
       expect(readFileSync(fixture.requestLogPath, 'utf8')).toContain(
         '"path":"/artifacts/current.json"'
       );
+      const gameHeadResponse = await fetch(
+        `${fixture.baseUrl}/games/golden-journey.txt`,
+        { method: 'HEAD' }
+      );
+      expect(gameHeadResponse.status).toBe(200);
       const gameResponse = await fetch(
         `${fixture.baseUrl}/games/golden-journey.txt`
       );

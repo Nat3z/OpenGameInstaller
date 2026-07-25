@@ -23,6 +23,7 @@ import {
 import { terminateProcessTree } from './process-tree';
 import {
   makeRunEventWriter,
+  renderRunHtmlReport,
   replayRunEventLog,
   type TerminalOutcome,
 } from './run-events';
@@ -276,6 +277,18 @@ const outcome: TerminalOutcome = failure
     ? 'Infrastructure Failed'
     : 'Failed'
   : 'Passed';
+const htmlReportPath = join(descriptor.sandboxDirectory, 'report.html');
+writeFileSync(
+  htmlReportPath,
+  renderRunHtmlReport(descriptor.eventLogPath, outcome)
+);
+writeEvent({
+  type: 'artifact.created',
+  payload: {
+    artifactType: 'html-report',
+    path: relative(descriptor.sandboxDirectory, htmlReportPath),
+  },
+});
 writeEvent({
   type: 'attempt.completed',
   payload: { attempt: 1, outcome },

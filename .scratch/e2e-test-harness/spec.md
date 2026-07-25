@@ -23,7 +23,7 @@ The first Product Journey will update a synthetic older installation through a f
 1. As an OpenGameInstaller maintainer, I want one E2E harness for both products, so that updater and application behavior is evaluated consistently.
 2. As a developer, I want Application Scenarios to launch the app directly, so that most app failures can be diagnosed without updater overhead.
 3. As a developer, I want Updater Scenarios to exercise the updater independently, so that release handling and recovery failures are localized.
-4. As a release owner, I want a small set of Product Journeys, so that updater-to-application integration is proven without making every app test slow.
+4. As a release owner, I want a small set of Product Journeys, so that updater-to-application integration is proven without making every Application Scenario slow.
 5. As a Windows user, I want required scenarios to run on Windows, so that installer and process behavior matches my supported platform.
 6. As a Linux or Steam Deck user, I want required scenarios to run on Linux, so that AppImage permissions and launch behavior are protected.
 7. As a developer, I want each scenario to use a fresh Scenario Sandbox, so that tests cannot damage my real profile, installation, downloads, or configuration.

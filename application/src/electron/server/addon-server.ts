@@ -1,15 +1,24 @@
-const port = 7654;
-
 import { AddonServer } from '@ogi-sdk/addon-server';
 import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { __dirname } from '@/electron/manager/manager.paths.js';
 
 let isSecurityCheckEnabled = true;
+let port = 7654;
 if (existsSync(join(__dirname, 'config/option/developer.json'))) {
   const developerConfig = JSON.parse(
     readFileSync(join(__dirname, 'config/option/developer.json'), 'utf-8')
   );
+  if (typeof developerConfig.clientSdkUrl === 'string') {
+    try {
+      const configuredPort = Number(new URL(developerConfig.clientSdkUrl).port);
+      if (Number.isInteger(configuredPort) && configuredPort > 0) {
+        port = configuredPort;
+      }
+    } catch {
+      console.warn('Ignoring invalid developer clientSdkUrl');
+    }
+  }
   isSecurityCheckEnabled = developerConfig.disableSecretCheck !== true;
   if (!isSecurityCheckEnabled) {
     for (let i = 0; i < 10; i++) {

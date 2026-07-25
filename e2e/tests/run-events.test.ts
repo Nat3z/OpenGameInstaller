@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import {
   parseRunEvent,
   type RunEvent,
+  renderRunHtmlReport,
   replayRunEventLog,
 } from '../src/run-events';
 
@@ -171,5 +172,42 @@ describe('Run Event Log', () => {
 
     expect(replayRunEventLog(path).outcome).toBe('Aborted');
     expect(readFileSync(path, 'utf8')).toBe(contents);
+  });
+
+  test('HTML report exposes named steps, outcomes, errors, and artifacts', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'ogi-event-report-'));
+    const path = join(directory, 'events.jsonl');
+    writeFileSync(
+      path,
+      [
+        event(1, 'run.started', { platform: 'linux' }),
+        event(2, 'scenario.started', {
+          scenarioId: 'golden-journey',
+          kind: 'Product Journey',
+        }),
+        event(3, 'step.started', {
+          stepId: 'install-fixture',
+          name: 'Install <fixture>',
+        }),
+        event(4, 'artifact.created', {
+          artifactType: 'screenshot',
+          path: 'artifacts/failure.png',
+          stepId: 'install-fixture',
+        }),
+        event(5, 'step.completed', {
+          stepId: 'install-fixture',
+          outcome: 'Failed',
+          error: 'Expected exactly one & received two',
+        }),
+      ]
+        .map((value) => JSON.stringify(value))
+        .join('\n')
+    );
+
+    const report = renderRunHtmlReport(path, 'Failed');
+    expect(report).toContain('Install &lt;fixture&gt;');
+    expect(report).toContain('Failed');
+    expect(report).toContain('Expected exactly one &amp; received two');
+    expect(report).toContain('artifacts/failure.png');
   });
 });

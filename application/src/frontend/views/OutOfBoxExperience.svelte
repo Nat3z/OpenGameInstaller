@@ -4,6 +4,8 @@ import { preventDefault } from 'svelte/legacy';
 import { fade } from 'svelte/transition';
 import { communityAddonArraySchema } from '@/electron/lib/marketplace-schema';
 import ThemePicker from '@/frontend/components/ThemePicker.svelte';
+import { fetchAddonsWithConfigure } from '@/frontend/lib/config/client';
+import { reconnectClientSdk } from '@/frontend/lib/core/ipc';
 import {
   type CommunityAddon,
   createNotification,
@@ -453,6 +455,8 @@ async function finishSetup() {
     JSON.stringify({ installed: true })
   );
   await window.electronAPI.installAddons(allAddons);
+  await reconnectClientSdk();
+  await fetchAddonsWithConfigure();
   completedSetup = true;
 }
 
@@ -1150,7 +1154,9 @@ onDestroy(() => {
       {/if}
 
       <details class="oobe-custom-addon-panel">
-        <summary>Add a custom addon repo (optional)</summary>
+        <summary aria-label="Custom addon repository">
+          Add a custom addon repo (optional)
+        </summary>
         <p class="oobe-custom-addon-help">
           Paste one GitHub/Git repository URL per line. Custom repos are
           installed as git-managed addons.

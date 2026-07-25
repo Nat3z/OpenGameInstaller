@@ -5,7 +5,7 @@ import {
 } from '@ogi-sdk/executor';
 import { readFile, writeFile } from 'fs/promises';
 import { join } from 'path';
-import { sendNotification } from '@/electron/main.js';
+import { sendNotification } from '@/electron/lib/renderer-notifications.js';
 import { addonServer, port } from '@/electron/server/addon-server.js';
 
 export class Addon extends ExecutorAddon {

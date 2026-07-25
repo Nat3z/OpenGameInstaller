@@ -1,7 +1,7 @@
 import { AddonConnection } from '@ogi-sdk/addon-server';
 import axios from 'axios';
 import { exec } from 'child_process';
-import { BrowserWindow, ipcMain } from 'electron';
+import { ipcMain } from 'electron';
 import fs from 'fs';
 import fsAsync from 'fs/promises';
 import { dirname, isAbsolute, join, resolve } from 'path';
@@ -10,8 +10,11 @@ import {
   parseAddonLink,
 } from '@/electron/lib/addon-links.js';
 import { AddonMarketplace } from '@/electron/lib/marketplace.js';
+import {
+  sendIPCMessage,
+  sendNotification,
+} from '@/electron/lib/renderer-notifications.js';
 import { tryCatch } from '@/electron/lib/tryCatch.js';
-import { sendIPCMessage, sendNotification } from '@/electron/main.js';
 import { Addon } from '@/electron/manager/manager.addon.js';
 import { waitForAddonsConfigured } from '@/electron/manager/manager.addon-readiness.js';
 import { __dirname } from '@/electron/manager/manager.paths.js';
@@ -145,11 +148,12 @@ export async function restartAddonServer(): Promise<void> {
   console.log(`Addon Server is running on http://localhost:${port}`);
   console.log(`Server is being executed by electron!`);
   await startAddons();
-  const configuredAddons = await waitForAddonsConfigured();
-  for (const connection of configuredAddons) {
-    await sendIPCMessage('addon-connected', connection.addonInfo!.id);
-  }
   await sendIPCMessage('addon-runtime-ready');
+  void waitForAddonsConfigured().then(async (configuredAddons) => {
+    for (const connection of configuredAddons) {
+      await sendIPCMessage('addon-connected', connection.addonInfo!.id);
+    }
+  });
 
   sendNotification({
     message: 'Addon server restarted successfully.',
@@ -188,7 +192,7 @@ export async function loadMarketplace(
   return marketplace;
 }
 
-export default function AddonManagerHandler(mainWindow: BrowserWindow) {
+export default function AddonManagerHandler() {
   ipcMain.handle('install-addons', async (_, addons: string[]) => {
     // addons is an array of URLs to the addons to install. these should be valid git repositories
     addons = Array.isArray(addons)
@@ -523,10 +527,7 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
               id: Math.random().toString(36).substring(7),
               type: 'info',
             });
-            mainWindow!!.webContents.send(
-              'addon:updated',
-              addonWithMarketplace
-            );
+            void sendIPCMessage('addon:updated', addonWithMarketplace);
             resolve();
             return;
           }
@@ -542,7 +543,7 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
             id: Math.random().toString(36).substring(7),
             type: 'info',
           });
-          mainWindow!!.webContents.send('addon:updated', addonWithMarketplace);
+          void sendIPCMessage('addon:updated', addonWithMarketplace);
           resolve();
           return;
         } else {
@@ -582,10 +583,7 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
               id: Math.random().toString(36).substring(7),
               type: 'info',
             });
-            mainWindow!!.webContents.send(
-              'addon:updated',
-              addonWithMarketplace
-            );
+            void sendIPCMessage('addon:updated', addonWithMarketplace);
             console.log(`Addon ${addonName} updated and setup successfully.`);
             resolve();
           } catch (setupErr) {
@@ -641,3 +639,5 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
     }
   });
 }
+
+export { startAddonServer, stopAddonServer };

@@ -278,7 +278,7 @@ export function buildPackagedHandoffArtifacts(
       ...collectArtifactFiles(input.applicationBundleDirectory, 'app/out'),
       ...collectArtifactFiles(
         input.fixtureAddonDirectory,
-        'app/e2e-fixture-addon'
+        'app/ogi-e2e-fixture-addon'
       ),
       ...collectArtifactFiles(
         input.fixtureWebSocketModuleDirectory,
@@ -477,7 +477,7 @@ export async function startPackagedHandoffFixture(
       request.method === 'GET' &&
       requestUrl.pathname === '/artifacts/current.json';
     const isGame =
-      request.method === 'GET' &&
+      ['GET', 'HEAD'].includes(request.method ?? '') &&
       requestUrl.pathname === '/games/golden-journey.txt';
     const isImage =
       request.method === 'GET' &&
@@ -531,7 +531,7 @@ export async function startPackagedHandoffFixture(
         'content-type': 'text/plain',
         'content-length': Buffer.byteLength(body),
       });
-      response.end(body);
+      response.end(request.method === 'HEAD' ? undefined : body);
       return;
     }
     if (isImage) {

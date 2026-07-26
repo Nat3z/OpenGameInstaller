@@ -108,13 +108,73 @@ jobs:
             updater/dist/OpenGameInstaller-Setup.AppImage.blockmap
             application/dist/OpenGameInstaller-linux-pt.AppImage
             application/dist/OpenGameInstaller-linux-pt.AppImage.blockmap
+
+  e2e-release:
+    name: Release E2E (${{ matrix.os }})
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    env:
+      OGI_E2E_DETERMINISTIC_ONLY: '1'
+      OGI_E2E_RUN_ROOT: ${{ github.workspace }}/.e2e-ci-runs
+      OGI_E2E_ARTIFACT_NAME: release-e2e-${{ matrix.os }}
+      OGI_RELEASE_ARTIFACT_DIRECTORY: ${{ github.workspace }}/.release-assets
+    steps:
+      - name: Check out Git repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Install Linux traffic isolation tools
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y bubblewrap strace
+      - name: Download exact publication assets
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ runner.os == 'Windows' && 'windows-assets' || 'linux-assets' }}
+          path: ${{ runner.temp }}/release-assets
+      - name: Collect exact publication artifacts
+        shell: bash
+        run: |
+          mkdir -p "$OGI_RELEASE_ARTIFACT_DIRECTORY"
+          find "${{ runner.temp }}/release-assets" -type f \( -name 'OpenGameInstaller-Portable.zip' -o -name 'OpenGameInstaller-Setup.exe' -o -name 'OpenGameInstaller-Setup.AppImage' -o -name 'OpenGameInstaller-linux-pt.AppImage' -o -name '*.blockmap' \) -exec cp {} "$OGI_RELEASE_ARTIFACT_DIRECTORY/" \;
+      - name: Smoke exact publication artifacts and run full deterministic suite
+        working-directory: e2e
+        run: bun run ci:release
+      - name: Upload retained E2E reports
+        id: reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-e2e-${{ matrix.os }}
+          path: ${{ github.workspace }}/.e2e-ci-runs
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 30
+      - name: Link retained E2E reports
+        if: always()
+        working-directory: e2e
+        env:
+          OGI_E2E_ARTIFACT_URL: ${{ steps.reports.outputs.artifact-url }}
+        run: bun run ci:publish-summary
+
   release:
     permissions:
       contents: write
     name: Create Github Release
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
-    needs: [build]
+    needs: [build, e2e-release]
     steps:
       - name: Check out Git repository
         uses: actions/checkout@v4

@@ -5,20 +5,26 @@ import * as fs from 'fs';
 import { readFile, rm as rmAsync } from 'fs/promises';
 import parseTorrent from 'parse-torrent';
 import { join } from 'path';
-import { sendNotification } from '@/electron/main.js';
 import {
   getStoredValue,
   refreshCached,
 } from '@/electron/manager/manager.config.js';
 import { __dirname } from '@/electron/manager/manager.paths.js';
 import { DOWNLOAD_QUEUE } from '@/electron/manager/manager.queue.js';
-import { torrent as wtConnect } from '@/electron/manager/manager.webtorrent.js';
+import {
+  configureWebTorrentClient,
+  stopClient as stopWebTorrentClient,
+  torrent as wtConnect,
+} from '@/electron/manager/manager.webtorrent.js';
+
+export { configureWebTorrentClient, stopWebTorrentClient };
+
 import {
   clearDownloadHandshake,
+  type DownloadHandshakeResult,
   registerDownloadHandshake,
   updateDownloadHandshake,
   waitForDownloadHandshake,
-  type DownloadHandshakeResult,
 } from '@/lib/download-handshake.js';
 
 let qbitClient: QBittorrent | undefined = undefined;
@@ -74,6 +80,14 @@ interface TorrentJob {
   type: 'torrent' | 'magnet';
 }
 
+type TorrentNotification = {
+  message: string;
+  id: string;
+  type: 'info' | 'error' | 'success' | 'warning';
+};
+
+type SendTorrentNotification = (notification: TorrentNotification) => void;
+
 const downloads = new Map<string, TorrentDownload>();
 
 class TorrentDownload {
@@ -88,8 +102,9 @@ class TorrentDownload {
     this._status = newStatus;
   }
 
-  private mainWindow: BrowserWindow;
+  private mainWindow: BrowserWindow | undefined;
   private job: TorrentJob;
+  private notify: SendTorrentNotification;
   private taskFinisher: () => void = () => {};
   private queueReleased = false;
   private torrentClientType: 'webtorrent' | 'qbittorrent' | 'unselected' =
@@ -119,10 +134,15 @@ class TorrentDownload {
   private progress: number = 0;
   private ratio: number = 0;
 
-  constructor(mainWindow: BrowserWindow, job: TorrentJob) {
+  constructor(
+    mainWindow: BrowserWindow | undefined,
+    job: TorrentJob,
+    notify: SendTorrentNotification
+  ) {
     this.id = Math.random().toString(36).substring(7);
     this.mainWindow = mainWindow;
     this.job = job;
+    this.notify = notify;
 
     downloads.set(this.id, this);
     registerDownloadHandshake(this.id);
@@ -254,12 +274,11 @@ class TorrentDownload {
           this.progress = 1;
           this.sendProgress({ progress: 1, downloadSpeed: 0, ratio: 0 });
           this.sendIpc('torrent:download-complete', { id: this.id });
-          sendNotification({
+          this.notify({
             message: 'Download completed, now seeding.',
             id: this.id,
             type: 'success',
           });
-          this.wtInstance?.seed();
         }, 1000);
       }
     );
@@ -346,7 +365,7 @@ class TorrentDownload {
     }
 
     this.sendIpc('torrent:download-paused', { id: this.id });
-    sendNotification({
+    this.notify({
       message: 'Download paused',
       id: this.id,
       type: 'info',
@@ -369,7 +388,7 @@ class TorrentDownload {
     }
 
     this.sendIpc('torrent:download-resumed', { id: this.id });
-    sendNotification({
+    this.notify({
       message: 'Download resumed',
       id: this.id,
       type: 'info',
@@ -421,12 +440,15 @@ class TorrentDownload {
     this.status = 'seeding';
     this.sendProgress({ progress: 1, downloadSpeed: 0 });
     const completePayload = { id: this.id };
-    this.reportHandshake({ status: 'seeding' }, {
-      channel: 'torrent:download-complete',
-      data: completePayload,
-    });
+    this.reportHandshake(
+      { status: 'seeding' },
+      {
+        channel: 'torrent:download-complete',
+        data: completePayload,
+      }
+    );
     this.sendIpc('torrent:download-complete', completePayload);
-    sendNotification({
+    this.notify({
       message: 'Download completed, now seeding.',
       id: this.id,
       type: 'success',
@@ -449,12 +471,15 @@ class TorrentDownload {
     }
     this.status = 'failed';
     const errorPayload = { id: this.id, error: error.message };
-    this.reportHandshake({ status: 'error', error: error.message }, {
-      channel: 'torrent:download-error',
-      data: errorPayload,
-    });
+    this.reportHandshake(
+      { status: 'error', error: error.message },
+      {
+        channel: 'torrent:download-error',
+        data: errorPayload,
+      }
+    );
     this.sendIpc('torrent:download-error', errorPayload);
-    sendNotification({
+    this.notify({
       message: error.message || 'Download failed',
       id: this.id,
       type: 'error',
@@ -596,15 +621,27 @@ class TorrentDownload {
   }
 
   private sendIpc(channel: string, data: any) {
-    if (this.mainWindow && !this.mainWindow.isDestroyed()) {
-      this.mainWindow.webContents.send(channel, data);
+    const target = this.mainWindow ?? BrowserWindow.getAllWindows()[0];
+    if (target && !target.isDestroyed()) {
+      target.webContents.send(channel, data);
     }
   }
 }
 
-export default function handler(mainWindow: BrowserWindow) {
+export default function handler(
+  mainWindow?: BrowserWindow,
+  sendNotification?: SendTorrentNotification
+) {
+  const notify: SendTorrentNotification =
+    sendNotification ??
+    ((notification) => {
+      const target = mainWindow ?? BrowserWindow.getAllWindows()[0];
+      if (target && !target.isDestroyed()) {
+        target.webContents.send('notification', notification);
+      }
+    });
   const startDownload = async (job: TorrentJob) => {
-    const download = new TorrentDownload(mainWindow, job);
+    const download = new TorrentDownload(mainWindow, job, notify);
     download.start();
     return await download.waitForReady();
   };

@@ -115,6 +115,10 @@ export interface LibraryInfo {
   name: string;
   version: string;
   cwd: string;
+  /** Application-owned directory that may be removed by visible uninstall UI. */
+  installDirectory?: string;
+  /** Download root that owned installDirectory when the game was installed. */
+  installRoot?: string;
   launchExecutable: string;
   launchArguments?: string;
   launchEnv?: Record<string, string>;

@@ -18,7 +18,7 @@ export type ObserverStep = {
   name: string;
   startedAt: string;
   completedAt?: string;
-  outcome?: 'Passed' | 'Failed';
+  outcome?: Extract<RunEvent, { type: 'step.completed' }>['payload']['outcome'];
   error?: string;
 };
 
@@ -45,6 +45,9 @@ export type ObserverState = {
   artifacts: ObserverArtifact[];
   latestScreenshot: string | null;
   logs: string[];
+  externalIntegrationHealth:
+    | Extract<RunEvent, { type: 'external-integration.health' }>['payload']
+    | null;
   lastSequence: number;
 };
 
@@ -65,6 +68,7 @@ export const emptyObserverState = (): ObserverState => ({
   artifacts: [],
   latestScreenshot: null,
   logs: [],
+  externalIntegrationHealth: null,
   lastSequence: 0,
 });
 
@@ -143,6 +147,9 @@ export function reduceObserverEvents(
         if (artifact.type.endsWith('log')) state.logs.push(artifact.path);
         break;
       }
+      case 'external-integration.health':
+        state.externalIntegrationHealth = event.payload;
+        break;
       case 'scenario.completed': {
         const scenario = scenarios.get(event.payload.scenarioId);
         if (scenario) scenario.outcome = event.payload.outcome;

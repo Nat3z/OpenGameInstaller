@@ -1,7 +1,26 @@
 import webtorrent from 'webtorrent';
 
-let client = new webtorrent();
-console.log(webtorrent);
+type WebTorrentOptions = ConstructorParameters<typeof webtorrent>[0] & {
+  torrentPort?: number;
+  natUpnp?: boolean;
+  natPmp?: boolean;
+  uploadLimit?: number;
+};
+
+let client: InstanceType<typeof webtorrent> | undefined;
+let clientOptions: WebTorrentOptions | undefined;
+
+export function configureWebTorrentClient(options: WebTorrentOptions) {
+  if (client) {
+    throw new Error('WebTorrent client is already initialized');
+  }
+  clientOptions = { ...options };
+}
+
+function getClient() {
+  client ??= new webtorrent(clientOptions);
+  return client;
+}
 
 export function torrent(torrentId: string | Buffer, path: string) {
   return {
@@ -20,7 +39,7 @@ export function torrent(torrentId: string | Buffer, path: string) {
         resume: () => void;
         destroy: () => void;
       }>((resolve, _) =>
-        client.add(torrentId, { path }, async (torrent) => {
+        getClient().add(torrentId, { path }, async (torrent) => {
           console.log('Added torrent to download system');
           // Torrents can contain many files. Download the first one.
           // get size of all files in torrent
@@ -95,7 +114,7 @@ export function torrent(torrentId: string | Buffer, path: string) {
       ),
     seed: () =>
       new Promise<void>((resolve) => {
-        client.seed(path, () => {
+        getClient().seed(path, () => {
           console.log('Seeding torrent finished');
           resolve();
         });
@@ -105,15 +124,17 @@ export function torrent(torrentId: string | Buffer, path: string) {
 
 export function seedTorrent(buffer: Buffer): Promise<void> {
   return new Promise((resolve, _) => {
-    client.seed(buffer, () => {
+    getClient().seed(buffer, () => {
       resolve();
     });
   });
 }
 
 export async function stopClient(): Promise<void> {
-  return new Promise(async (resolve) => {
-    client.destroy();
-    resolve();
+  const activeClient = client;
+  client = undefined;
+  if (!activeClient) return;
+  await new Promise<void>((resolve, reject) => {
+    activeClient.destroy((error) => (error ? reject(error) : resolve()));
   });
 }

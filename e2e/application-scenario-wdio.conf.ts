@@ -1,6 +1,7 @@
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readApplicationRunDescriptor } from './src/application-scenario';
+import { writeExpectedAssertionExitConfirmation } from './src/run-reliability';
 
 const currentDirectory = dirname(fileURLToPath(import.meta.url));
 const applicationDirectory = resolve(currentDirectory, '../application');
@@ -41,4 +42,16 @@ export const config = {
       },
     ],
   ],
+  onComplete(
+    exitCode: number,
+    _config: unknown,
+    _capabilities: unknown,
+    results: unknown
+  ) {
+    writeExpectedAssertionExitConfirmation(
+      process.env.OGI_EXPECTED_ASSERTION_EXIT,
+      exitCode,
+      results
+    );
+  },
 };

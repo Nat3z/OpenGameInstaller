@@ -29,11 +29,13 @@ body {
 }
 
 button,
+input,
 select {
   font: inherit;
 }
 
 button,
+input,
 select,
 a,
 summary {
@@ -41,6 +43,7 @@ summary {
 }
 
 button:focus-visible,
+input:focus-visible,
 select:focus-visible,
 a:focus-visible,
 summary:focus-visible {
@@ -161,7 +164,51 @@ h2 {
 }
 
 .controls {
+  flex-wrap: wrap;
   justify-content: flex-end;
+}
+
+.scenario-class {
+  display: flex;
+  gap: 0.65rem;
+  padding: 0;
+  border: 0;
+}
+
+.scenario-class legend {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.scenario-class label,
+.controls label.confirmation {
+  display: flex;
+  flex-direction: row;
+  gap: 0.35rem;
+  align-items: center;
+  text-transform: none;
+}
+
+.live-service-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  align-items: end;
+  padding: 0.6rem;
+  background: #211b10;
+  border: 1px solid #735c2b;
+  border-radius: 0.65rem;
+}
+
+.live-warning {
+  flex-basis: 100%;
+  margin: 0;
+  color: #ffe0a1;
+  font-size: 0.75rem;
 }
 
 .controls label {
@@ -174,6 +221,7 @@ h2 {
   text-transform: uppercase;
 }
 
+input[type="password"],
 select {
   min-height: 2.5rem;
   padding: 0.5rem 2rem 0.5rem 0.7rem;
@@ -391,6 +439,41 @@ main {
 .outcome-dot[data-outcome="Flaky"],
 .outcome-dot[data-outcome="Running"] {
   background: var(--warning);
+}
+
+.external-health {
+  padding-bottom: 1rem;
+  border-color: #735c2b;
+}
+
+.external-health dl {
+  display: grid;
+  gap: 0.45rem;
+  padding: 0 1rem;
+  margin: 0;
+}
+
+.external-health div {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.external-health dt,
+.external-health p {
+  color: var(--muted);
+}
+
+.external-health dd {
+  margin: 0;
+  font-weight: 700;
+  text-align: right;
+}
+
+.external-health p {
+  padding: 0 1rem;
+  margin: 0.75rem 0 0;
+  font-size: 0.78rem;
 }
 
 .totals {

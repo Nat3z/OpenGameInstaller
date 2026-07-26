@@ -120,6 +120,8 @@ out
 .nuxt
 dist
 e2e/observer-dist/
+e2e/.e2e-ci-runs/
+.scratch/e2e-test-harness/evidence/
 
 # Gatsby files
 

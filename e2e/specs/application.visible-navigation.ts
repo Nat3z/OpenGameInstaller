@@ -12,9 +12,12 @@ const writeEvent = makeRunEventWriter(
   replayRunEventLog(descriptor.eventLogPath).lastSequence
 );
 const stepId = 'navigate-discovery';
-
 describe('observable Application Scenario', () => {
   it('navigates to Discovery through the visible accessible control', async () => {
+    const attempt = Number(process.env.OGI_SCENARIO_ATTEMPT ?? '1');
+    if (!Number.isInteger(attempt) || attempt < 1 || attempt > 2) {
+      throw new Error('OGI_SCENARIO_ATTEMPT must be 1 or 2');
+    }
     writeEvent({
       type: 'step.started',
       payload: { stepId, name: 'Navigate to Discovery' },
@@ -54,7 +57,9 @@ describe('observable Application Scenario', () => {
       });
       const screenshotPath = join(
         descriptor.artifactDirectory,
-        'navigate-discovery.png'
+        descriptor.mode === 'flaky-once'
+          ? `attempt-${attempt}-navigate-discovery.png`
+          : 'navigate-discovery.png'
       );
       await browser.saveScreenshot(screenshotPath);
       writeEvent({
@@ -68,12 +73,20 @@ describe('observable Application Scenario', () => {
       if (descriptor.mode === 'assertion-failure') {
         throw new Error('Deliberate Application Scenario assertion failure');
       }
+      if (descriptor.mode === 'flaky-once' && attempt === 1) {
+        throw new Error('Deliberate first-attempt failure for automatic retry');
+      }
       writeEvent({
         type: 'step.completed',
         payload: { stepId, outcome: 'Passed' },
       });
     } catch (cause) {
-      const failurePath = join(descriptor.artifactDirectory, 'failure.png');
+      const failurePath = join(
+        descriptor.artifactDirectory,
+        descriptor.mode === 'flaky-once'
+          ? `attempt-${attempt}-failure.png`
+          : 'failure.png'
+      );
       try {
         await browser.saveScreenshot(failurePath);
         writeEvent({
@@ -87,15 +100,20 @@ describe('observable Application Scenario', () => {
       } catch {
         // A session-start failure can make screenshot capture unavailable.
       }
+      const error = cause instanceof Error ? cause.message : String(cause);
+      const deliberateAssertion =
+        descriptor.mode === 'assertion-failure' ||
+        (descriptor.mode === 'flaky-once' && attempt === 1);
       writeEvent({
         type: 'step.completed',
         payload: {
           stepId,
           outcome: 'Failed',
-          error: cause instanceof Error ? cause.message : String(cause),
+          error,
+          ...(!deliberateAssertion ? { expectedProcessExit: true } : {}),
         },
       });
-      throw cause;
+      if (!deliberateAssertion) throw cause;
     }
   });
 });

@@ -1,15 +1,33 @@
-import { type ChildProcess, spawn } from 'node:child_process';
+import type { ChildProcess } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { Cause, Data, Effect, Exit } from 'effect';
-import { terminateProcessTree } from './process-tree';
+import { Cause, Data, Effect, Exit, Option } from 'effect';
+import {
+  findTrackedProcessSurvivors,
+  readWindowsJobSurvivors,
+  spawnTrackedProcess,
+  terminateProcessTree,
+} from './process-tree';
 import {
   makeRunEventWriter,
+  readRunEvents,
+  renderRunHtmlReport,
   replayRunEventLog,
   type TerminalOutcome,
 } from './run-events';
+import {
+  type AttemptOutcome,
+  applyRunRetention,
+  classifyAttemptProcessFailure,
+  classifyRunOutcome,
+  finalizeRunRetention,
+  getDefaultRunRoot,
+  getRequiredCheckResult,
+  hasExpectedAssertionExitConfirmation,
+  validateScenarioSourceDispositions,
+} from './run-reliability';
 import {
   createUpdaterScenarioSandbox,
   FixtureServiceError,
@@ -18,13 +36,20 @@ import {
   writeUpdaterRunDescriptor,
 } from './updater-scenario';
 
-class UpdaterScenarioProcessError extends Data.TaggedError(
-  'UpdaterScenarioProcessError'
+class UpdaterScenarioSpawnError extends Data.TaggedError(
+  'UpdaterScenarioSpawnError'
+)<{ readonly command: string; readonly cause?: unknown }> {
+  override get message() {
+    return `Could not start ${this.command}`;
+  }
+}
+
+class UpdaterScenarioProcessExitError extends Data.TaggedError(
+  'UpdaterScenarioProcessExitError'
 )<{
   readonly command: string;
   readonly status: number | null;
   readonly signal: NodeJS.Signals | null;
-  readonly cause?: unknown;
 }> {
   override get message() {
     return `${this.command} exited with status ${this.status} and signal ${this.signal}`;
@@ -39,25 +64,27 @@ class UpdaterScenarioTimeoutError extends Data.TaggedError(
   }
 }
 
+class UpdaterScenarioTrackingError extends Data.TaggedError(
+  'UpdaterScenarioTrackingError'
+)<{ readonly command: string; readonly cause: unknown }> {
+  override get message() {
+    return `Could not track the process tree for ${this.command}`;
+  }
+}
+
 function waitForProcess(child: ChildProcess, command: string) {
-  return Effect.async<void, UpdaterScenarioProcessError>((resume) => {
+  return Effect.async<
+    void,
+    UpdaterScenarioSpawnError | UpdaterScenarioProcessExitError
+  >((resume) => {
     const onError = (cause: Error) =>
-      resume(
-        Effect.fail(
-          new UpdaterScenarioProcessError({
-            command,
-            status: null,
-            signal: null,
-            cause,
-          })
-        )
-      );
+      resume(Effect.fail(new UpdaterScenarioSpawnError({ command, cause })));
     const onExit = (status: number | null, signal: NodeJS.Signals | null) =>
       resume(
         status === 0
           ? Effect.void
           : Effect.fail(
-              new UpdaterScenarioProcessError({ command, status, signal })
+              new UpdaterScenarioProcessExitError({ command, status, signal })
             )
       );
     if (child.exitCode !== null || child.signalCode !== null) {
@@ -84,12 +111,36 @@ function waitForProcess(child: ChildProcess, command: string) {
 
 const currentDirectory = dirname(fileURLToPath(import.meta.url));
 const e2eDirectory = resolve(currentDirectory, '..');
+validateScenarioSourceDispositions([
+  join(e2eDirectory, 'specs/updater.fixture-release.ts'),
+]);
 const runId = randomUUID();
+const runnerArgs = process.argv.slice(2);
+if (runnerArgs.some((argument) => argument !== '--pin')) {
+  throw new Error('Updater Scenario accepts only the optional --pin argument');
+}
+const pinRequested = runnerArgs.includes('--pin');
+let cancellationRequested = false;
+let requestCancellation!: () => void;
+const cancellation = new Promise<void>((resolveCancellation) => {
+  requestCancellation = resolveCancellation;
+});
+const cancel = () => {
+  if (cancellationRequested) return;
+  cancellationRequested = true;
+  requestCancellation();
+};
+process.once('SIGINT', cancel);
+process.once('SIGTERM', cancel);
 const layout = createUpdaterScenarioSandbox(runId);
 const fixture = await startFixtureService(layout.fixtureStateDirectory);
 const descriptor = writeUpdaterRunDescriptor(layout, fixture.baseUrl);
+const startedAt = new Date().toISOString();
 let writeEvent = makeRunEventWriter(descriptor.eventLogPath, runId);
-writeEvent({ type: 'run.started', payload: { platform: process.platform } });
+writeEvent(
+  { type: 'run.started', payload: { platform: process.platform } },
+  startedAt
+);
 writeEvent({
   type: 'scenario.started',
   payload: { scenarioId: descriptor.scenario, kind: 'Updater Scenario' },
@@ -100,67 +151,191 @@ writeEvent({
 });
 writeEvent({ type: 'fixture.started', payload: { port: fixture.port } });
 
-const scenario = Effect.scoped(
-  Effect.gen(function* () {
-    const { command, args, detached } = getUpdaterScenarioLaunch(
-      process.platform
-    );
-    const commandLine = [command, ...args].join(' ');
-    const child = yield* Effect.acquireRelease(
-      Effect.try({
-        try: () =>
-          spawn(command, args, {
-            cwd: e2eDirectory,
-            detached,
-            env: {
-              ...process.env,
-              OGI_RUN_DESCRIPTOR: descriptor.descriptorPath,
-            },
-            stdio: 'inherit',
-          }),
-        catch: (cause) =>
-          new UpdaterScenarioProcessError({
-            command: commandLine,
-            status: null,
-            signal: null,
-            cause,
-          }),
-      }),
-      (processHandle) => terminateProcessTree(processHandle).pipe(Effect.orDie)
-    );
-    if (child.pid === undefined) {
-      return yield* new UpdaterScenarioProcessError({
-        command: commandLine,
-        status: null,
-        signal: null,
-      });
-    }
-    writeEvent({
-      type: 'process.started',
-      payload: { pid: child.pid, name: 'WebdriverIO Updater Scenario' },
-    });
-    const processExit = yield* Effect.exit(waitForProcess(child, commandLine));
-    const cleanupExit = yield* Effect.exit(terminateProcessTree(child));
-    writeEvent = makeRunEventWriter(
-      descriptor.eventLogPath,
-      runId,
-      replayRunEventLog(descriptor.eventLogPath).lastSequence
-    );
-    writeEvent({
-      type: 'process.stopped',
-      payload: { pid: child.pid, leaked: Exit.isFailure(cleanupExit) },
-    });
-    if (Exit.isFailure(cleanupExit)) {
-      return yield* Effect.failCause(cleanupExit.cause);
-    }
-    if (Exit.isFailure(processExit)) {
-      return yield* Effect.failCause(processExit.cause);
-    }
-  })
-);
+function waitForCancellation() {
+  return Effect.promise(() => cancellation);
+}
 
+function runScenarioAttempt(attempt: number) {
+  return Effect.scoped(
+    Effect.gen(function* () {
+      const probeRunnerPath = process.env.OGI_E2E_RUNNER_PROBE_PATH;
+      const { command, args, detached } = probeRunnerPath
+        ? {
+            command: process.execPath,
+            args: [probeRunnerPath],
+            detached: process.platform === 'linux',
+          }
+        : getUpdaterScenarioLaunch(process.platform);
+      const commandLine = [command, ...args].join(' ');
+      const windowsJobResultPath = join(
+        descriptor.artifactDirectory,
+        `attempt-${attempt}-windows-job.json`
+      );
+      const expectedAssertionExitPath = join(
+        descriptor.artifactDirectory,
+        `attempt-${attempt}-expected-assertion-exit.json`
+      );
+      const launched = yield* Effect.acquireRelease(
+        Effect.tryPromise({
+          try: () =>
+            spawnTrackedProcess(command, args, {
+              cwd: e2eDirectory,
+              detached,
+              env: {
+                ...process.env,
+                OGI_RUN_DESCRIPTOR: descriptor.descriptorPath,
+                OGI_SCENARIO_ATTEMPT: String(attempt),
+                OGI_WINDOWS_JOB_RESULT: windowsJobResultPath,
+                OGI_EXPECTED_ASSERTION_EXIT: expectedAssertionExitPath,
+              },
+              stdio: 'inherit',
+            }),
+          catch: (cause) =>
+            new UpdaterScenarioTrackingError({ command: commandLine, cause }),
+        }),
+        ({ child }) => terminateProcessTree(child).pipe(Effect.orDie)
+      );
+      const { child, tracker } = launched;
+      if (child.pid === undefined) {
+        return yield* new UpdaterScenarioSpawnError({ command: commandLine });
+      }
+      writeEvent({
+        type: 'process.started',
+        payload: { pid: child.pid, name: 'WebdriverIO Updater Scenario' },
+      });
+      const completion = yield* Effect.race(
+        Effect.exit(waitForProcess(child, commandLine)).pipe(
+          Effect.map((processExit) => ({
+            kind: 'process' as const,
+            processExit,
+          }))
+        ),
+        waitForCancellation().pipe(Effect.as({ kind: 'cancelled' as const }))
+      );
+      const inspectionExit = yield* Effect.exit(
+        Effect.tryPromise({
+          try: () =>
+            process.platform === 'win32'
+              ? Promise.resolve(readWindowsJobSurvivors(windowsJobResultPath))
+              : findTrackedProcessSurvivors(tracker, [child.pid!]),
+          catch: (cause) =>
+            new UpdaterScenarioTrackingError({ command: commandLine, cause }),
+        })
+      );
+      const unexpectedSurvivors = Exit.isSuccess(inspectionExit)
+        ? inspectionExit.value
+        : [];
+      const cleanupExit = yield* Effect.exit(
+        terminateProcessTree(child, tracker)
+      );
+      writeEvent = makeRunEventWriter(
+        descriptor.eventLogPath,
+        runId,
+        replayRunEventLog(descriptor.eventLogPath).lastSequence
+      );
+      writeEvent({
+        type: 'process.stopped',
+        payload: {
+          pid: child.pid,
+          leaked:
+            (completion.kind === 'process' && unexpectedSurvivors.length > 0) ||
+            Exit.isFailure(cleanupExit),
+        },
+      });
+      return {
+        completion,
+        inspectionExit,
+        cleanupExit,
+        unexpectedSurvivors,
+      };
+    })
+  );
+}
+
+let finalOutcome: TerminalOutcome = 'Aborted';
 const program = Effect.gen(function* () {
-  const scenarioExit = yield* Effect.exit(scenario);
+  const recordedAttemptOutcomes: AttemptOutcome[] = [];
+  let failureDetail = '';
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    const sequenceBeforeAttempt = replayRunEventLog(
+      descriptor.eventLogPath
+    ).lastSequence;
+    const attemptExit = yield* Effect.exit(runScenarioAttempt(attempt));
+    const attemptEvents = readRunEvents(descriptor.eventLogPath).slice(
+      sequenceBeforeAttempt
+    );
+    const failedAssertion = attemptEvents.find(
+      (
+        event
+      ): event is Extract<
+        (typeof attemptEvents)[number],
+        { type: 'step.completed' }
+      > => event.type === 'step.completed' && event.payload.outcome === 'Failed'
+    );
+    let attemptOutcome: AttemptOutcome;
+    if (Exit.isFailure(attemptExit)) {
+      attemptOutcome = 'Infrastructure Failed';
+      failureDetail = Cause.pretty(attemptExit.cause);
+    } else if (Exit.isFailure(attemptExit.value.inspectionExit)) {
+      attemptOutcome = 'Infrastructure Failed';
+      failureDetail = Cause.pretty(attemptExit.value.inspectionExit.cause);
+    } else if (Exit.isFailure(attemptExit.value.cleanupExit)) {
+      attemptOutcome = 'Infrastructure Failed';
+      failureDetail = Cause.pretty(attemptExit.value.cleanupExit.cause);
+    } else if (attemptExit.value.completion.kind === 'cancelled') {
+      attemptOutcome = 'Cancelled';
+    } else if (attemptExit.value.unexpectedSurvivors.length > 0) {
+      attemptOutcome = 'Infrastructure Failed';
+      failureDetail = `Unexpected surviving product processes: ${attemptExit.value.unexpectedSurvivors.join(', ')}`;
+    } else if (Exit.isFailure(attemptExit.value.completion.processExit)) {
+      const expectedAssertionExit =
+        failedAssertion?.payload.expectedProcessExit === true &&
+        hasExpectedAssertionExitConfirmation(
+          join(
+            descriptor.artifactDirectory,
+            `attempt-${attempt}-expected-assertion-exit.json`
+          )
+        );
+      attemptOutcome = classifyAttemptProcessFailure(
+        Option.getOrUndefined(
+          Cause.failureOption(attemptExit.value.completion.processExit.cause)
+        ),
+        expectedAssertionExit
+      );
+      failureDetail = Cause.pretty(
+        attemptExit.value.completion.processExit.cause
+      );
+    } else if (failedAssertion) {
+      attemptOutcome = 'Failed';
+      failureDetail =
+        failedAssertion.payload.error ?? 'Updater Scenario assertion failed';
+    } else {
+      attemptOutcome = 'Passed';
+    }
+    recordedAttemptOutcomes.push(attemptOutcome);
+    writeEvent({
+      type: 'attempt.completed',
+      payload: { attempt, outcome: attemptOutcome },
+    });
+    if (attempt === 1 && attemptOutcome === 'Failed') {
+      writeEvent({
+        type: 'retry.scheduled',
+        payload: {
+          scenarioId: descriptor.scenario,
+          fromAttempt: 1,
+          toAttempt: 2,
+          reason: failureDetail || 'Scenario assertion failed',
+        },
+      });
+      writeEvent({
+        type: 'attempt.started',
+        payload: { scenarioId: descriptor.scenario, attempt: 2 },
+      });
+      continue;
+    }
+    break;
+  }
+
   const fixtureCloseExit = yield* Effect.exit(
     Effect.tryPromise({
       try: () => fixture.close(),
@@ -171,11 +346,10 @@ const program = Effect.gen(function* () {
         }),
     })
   );
-  const failureCause = Exit.isFailure(scenarioExit)
-    ? scenarioExit.cause
-    : Exit.isFailure(fixtureCloseExit)
-      ? fixtureCloseExit.cause
-      : undefined;
+  const fixtureInfrastructureFailed = Exit.isFailure(fixtureCloseExit);
+  if (fixtureInfrastructureFailed) {
+    failureDetail = Cause.pretty(fixtureCloseExit.cause);
+  }
 
   writeEvent = makeRunEventWriter(
     descriptor.eventLogPath,
@@ -225,14 +399,46 @@ const program = Effect.gen(function* () {
     }
   }
 
-  const failureDetail = failureCause
-    ? Cause.pretty(failureCause as Cause.Cause<unknown>)
-    : '';
-  const outcome: TerminalOutcome = failureCause
-    ? /ProcessTreeCleanupError|FixtureServiceError/.test(failureDetail)
-      ? 'Infrastructure Failed'
-      : 'Failed'
-    : 'Passed';
+  const outcome: TerminalOutcome = fixtureInfrastructureFailed
+    ? 'Infrastructure Failed'
+    : classifyRunOutcome(recordedAttemptOutcomes);
+  finalOutcome = outcome;
+  const reliabilityReportPath = join(
+    descriptor.artifactDirectory,
+    'reliability.json'
+  );
+  const htmlReportPath = join(descriptor.sandboxDirectory, 'report.html');
+  const requiredCheck = getRequiredCheckResult(outcome);
+  const shouldRetain = pinRequested || outcome !== 'Passed';
+  writeFileSync(
+    reliabilityReportPath,
+    JSON.stringify(
+      {
+        version: 1,
+        runId,
+        outcome,
+        attempts: recordedAttemptOutcomes,
+        requiredCheck,
+        retained: shouldRetain,
+        ...(failureDetail ? { failureDetail } : {}),
+      },
+      null,
+      2
+    )
+  );
+  writeFileSync(
+    htmlReportPath,
+    renderRunHtmlReport(descriptor.eventLogPath, outcome)
+  );
+  if (shouldRetain) {
+    finalizeRunRetention({
+      runId,
+      sandboxDirectory: descriptor.sandboxDirectory,
+      outcome,
+      createdAt: startedAt,
+      pinned: pinRequested,
+    });
+  }
   const artifacts = [
     [
       'updater-main-log',
@@ -245,6 +451,32 @@ const program = Effect.gen(function* () {
     ['fixture-requests', fixture.requestLogPath],
     ['native-dialog-requests', descriptor.nativeDialogLogPath],
     ['run-descriptor', descriptor.descriptorPath],
+    ...([1, 2] as const).flatMap((attempt) => [
+      [
+        'windows-job-result',
+        join(
+          descriptor.artifactDirectory,
+          `attempt-${attempt}-windows-job.json`
+        ),
+      ] as const,
+      [
+        'assertion-exit-evidence',
+        join(
+          descriptor.artifactDirectory,
+          `attempt-${attempt}-expected-assertion-exit.json`
+        ),
+      ] as const,
+    ]),
+    ['reliability-report', reliabilityReportPath],
+    ['html-report', htmlReportPath],
+    ...(shouldRetain
+      ? ([
+          [
+            'retention-manifest',
+            join(descriptor.sandboxDirectory, 'retention.json'),
+          ],
+        ] as const)
+      : []),
   ] as const;
   const recordedArtifacts =
     replayRunEventLog(descriptor.eventLogPath).scenarios[descriptor.scenario]
@@ -259,10 +491,6 @@ const program = Effect.gen(function* () {
     }
   }
   writeEvent({
-    type: 'attempt.completed',
-    payload: { attempt: 1, outcome },
-  });
-  writeEvent({
     type: 'scenario.completed',
     payload: { scenarioId: descriptor.scenario, outcome },
   });
@@ -272,13 +500,33 @@ const program = Effect.gen(function* () {
     join(descriptor.sandboxDirectory, 'summary.json'),
     JSON.stringify(replay, null, 2)
   );
+  writeFileSync(
+    htmlReportPath,
+    renderRunHtmlReport(descriptor.eventLogPath, outcome)
+  );
   console.log(`Run Event Log: ${descriptor.eventLogPath}`);
   console.log(`Scenario Sandbox: ${descriptor.sandboxDirectory}`);
-  if (failureCause) {
-    console.error(failureDetail);
-    return yield* Effect.failCause(failureCause as Cause.Cause<unknown>);
+  console.log(
+    `Required check: ${requiredCheck.passed ? 'Passed' : 'Failed'} (${outcome})`
+  );
+  if (!shouldRetain) {
+    finalizeRunRetention({
+      runId,
+      sandboxDirectory: descriptor.sandboxDirectory,
+      outcome,
+      createdAt: startedAt,
+    });
+    console.log('Scenario Sandbox deleted by successful-run retention policy');
   }
+  const retention = applyRunRetention(getDefaultRunRoot());
+  if (retention.deleted.length > 0) {
+    console.log(`Expired retained runs deleted: ${retention.deleted.length}`);
+  }
+  if (failureDetail) console.error(failureDetail);
 });
 
 const exit = await Effect.runPromiseExit(program);
-process.exitCode = Exit.isSuccess(exit) ? 0 : 1;
+process.off('SIGINT', cancel);
+process.off('SIGTERM', cancel);
+process.exitCode =
+  Exit.isSuccess(exit) && getRequiredCheckResult(finalOutcome).passed ? 0 : 1;

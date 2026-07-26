@@ -1,11 +1,15 @@
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Data } from 'effect';
 import sharp from 'sharp';
+import { getDefaultRunRoot } from './run-reliability';
 
-export type ApplicationScenarioMode = 'success' | 'assertion-failure';
+export type ApplicationScenarioMode =
+  | 'success'
+  | 'assertion-failure'
+  | 'flaky-once'
+  | 'helper-leak';
 
 export type ApplicationRunDescriptor = {
   version: 1;
@@ -64,13 +68,16 @@ export function parseApplicationScenarioMode(
   if (
     args.length === 2 &&
     args[0] === '--mode' &&
-    (args[1] === 'success' || args[1] === 'assertion-failure')
+    (args[1] === 'success' ||
+      args[1] === 'assertion-failure' ||
+      args[1] === 'flaky-once' ||
+      args[1] === 'helper-leak')
   ) {
     return args[1];
   }
   throw new RunDescriptorValidationError({
     detail:
-      'Application Scenario mode must be configured as --mode success or --mode assertion-failure',
+      'Application Scenario mode must be configured as --mode success, --mode assertion-failure, --mode flaky-once, or --mode helper-leak',
   });
 }
 
@@ -271,9 +278,9 @@ export function createApplicationScenarioSandbox(
   runId: string,
   mode: ApplicationScenarioMode = 'success'
 ) {
-  const sandboxDirectory = mkdtempSync(
-    join(tmpdir(), `ogi-application-scenario-${runId}-`)
-  );
+  const runRoot = getDefaultRunRoot();
+  mkdirSync(runRoot, { recursive: true });
+  const sandboxDirectory = mkdtempSync(join(runRoot, `application-${runId}-`));
   const applicationStateDirectory = join(sandboxDirectory, 'application-state');
   const userDataDirectory = join(sandboxDirectory, 'user-data');
   const artifactDirectory = join(sandboxDirectory, 'artifacts');

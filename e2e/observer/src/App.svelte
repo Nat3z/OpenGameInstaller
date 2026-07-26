@@ -22,7 +22,7 @@ type State = {
     steps: Array<{
       id: string;
       name: string;
-      outcome?: 'Passed' | 'Failed';
+      outcome?: 'Passed' | 'Failed' | 'Cancelled';
       error?: string;
     }>;
   }>;
@@ -31,6 +31,13 @@ type State = {
   artifacts: Array<{ type: string; path: string; stepId?: string }>;
   latestScreenshot: string | null;
   logs: string[];
+  externalIntegrationHealth: {
+    provider: string;
+    status: 'Healthy' | 'Unhealthy';
+    deterministicCoverage: 'Not evaluated';
+    responseStatus?: number;
+    error?: string;
+  } | null;
   lastSequence: number;
   processActive: boolean;
   canRerun: boolean;
@@ -62,12 +69,17 @@ let state: State = {
   artifacts: [],
   latestScreenshot: null,
   logs: [],
+  externalIntegrationHealth: null,
   lastSequence: 0,
   processActive: false,
   canRerun: false,
   output: [],
 };
+let scenarioClass: 'deterministic' | 'live-service' = 'deterministic';
 let suite = 'application-smoke';
+let liveProvider = 'github';
+let liveCredential = '';
+let liveConfirmed = false;
 let commandError = '';
 let connectionStatus = 'Connecting';
 let now = Date.now();
@@ -97,6 +109,22 @@ function connect() {
 function send(command: object) {
   commandError = '';
   socket.send(JSON.stringify(command));
+}
+
+function startSelectedScenario() {
+  if (scenarioClass === 'live-service') {
+    const credential = liveCredential;
+    send({
+      type: 'start-live-service',
+      provider: liveProvider,
+      confirmed: liveConfirmed,
+      credential,
+    });
+    liveCredential = '';
+    liveConfirmed = false;
+    return;
+  }
+  send({ type: 'start', suite });
 }
 
 function artifactUrl(path: string) {
@@ -137,16 +165,58 @@ window.addEventListener('beforeunload', () => window.clearInterval(timer), {
       <span>{formatDuration(liveElapsed)}</span>
     </div>
     <div class="controls" aria-label="Run controls">
-      <label>
-        Suite
-        <select bind:value={suite} disabled={state.processActive}>
-          <option value="application-smoke">Application smoke</option>
-        </select>
-      </label>
+      <fieldset class="scenario-class" disabled={state.processActive}>
+        <legend>Scenario class</legend>
+        <label>
+          <input type="radio" bind:group={scenarioClass} value="deterministic" />
+          Deterministic suite
+        </label>
+        <label>
+          <input type="radio" bind:group={scenarioClass} value="live-service" />
+          Live Service Scenario
+        </label>
+      </fieldset>
+      {#if scenarioClass === 'deterministic'}
+        <label>
+          Deterministic suite
+          <select bind:value={suite} disabled={state.processActive}>
+            <option value="application-smoke">Application smoke</option>
+          </select>
+        </label>
+      {:else}
+        <div class="live-service-controls">
+          <p class="live-warning">
+            User-triggered only. Makes real external calls and does not replace deterministic coverage.
+          </p>
+          <label>
+            Live Service provider
+            <select bind:value={liveProvider} disabled={state.processActive}>
+              <option value="github">GitHub account API</option>
+            </select>
+          </label>
+          <label>
+            Credential
+            <input
+              type="password"
+              autocomplete="off"
+              bind:value={liveCredential}
+              disabled={state.processActive}
+            />
+          </label>
+          <label class="confirmation">
+            <input
+              type="checkbox"
+              bind:checked={liveConfirmed}
+              disabled={state.processActive}
+            />
+            I confirm this run may contact the selected real provider.
+          </label>
+        </div>
+      {/if}
       <button
         class="primary"
         disabled={state.processActive}
-        on:click={() => send({ type: 'start', suite })}>Start</button
+        on:click={startSelectedScenario}>Start</button
       >
       <button
         class="danger"
@@ -243,6 +313,23 @@ window.addEventListener('beforeunload', () => window.clearInterval(timer), {
     </section>
 
     <aside class="rail" aria-label="Run evidence and statistics">
+      {#if state.externalIntegrationHealth}
+        <section class="panel external-health" aria-labelledby="external-health-heading">
+          <div class="panel-heading">
+            <p class="eyebrow">Live Service Scenario</p>
+            <h2 id="external-health-heading">External integration health</h2>
+          </div>
+          <dl>
+            <div><dt>Provider</dt><dd>{state.externalIntegrationHealth.provider}</dd></div>
+            <div><dt>Status</dt><dd>{state.externalIntegrationHealth.status}</dd></div>
+            <div><dt>Deterministic coverage</dt><dd>Not evaluated</dd></div>
+            {#if state.externalIntegrationHealth.responseStatus}
+              <div><dt>HTTP status</dt><dd>{state.externalIntegrationHealth.responseStatus}</dd></div>
+            {/if}
+          </dl>
+          <p>Live Service health never replaces or blocks deterministic coverage.</p>
+        </section>
+      {/if}
       <section class="panel" aria-labelledby="outcomes-heading">
         <div class="panel-heading inline">
           <div>

@@ -7,9 +7,9 @@ import {
 } from 'node:fs';
 import { createServer } from 'node:http';
 import { createRequire } from 'node:module';
-import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Data } from 'effect';
+import { getDefaultRunRoot } from './run-reliability';
 
 export type NativeDialogResponse = {
   action: 'choose-stable-channel';
@@ -85,9 +85,9 @@ export function readUpdaterRunDescriptor(path: string) {
 export function createUpdaterScenarioSandbox(
   runId: string
 ): UpdaterScenarioLayout {
-  const sandboxDirectory = mkdtempSync(
-    join(tmpdir(), `ogi-updater-scenario-${runId}-`)
-  );
+  const runRoot = getDefaultRunRoot();
+  mkdirSync(runRoot, { recursive: true });
+  const sandboxDirectory = mkdtempSync(join(runRoot, `updater-${runId}-`));
   const userDataDirectory = join(sandboxDirectory, 'user-data');
   const installationDirectory = join(sandboxDirectory, 'installation');
   const artifactDirectory = join(sandboxDirectory, 'artifacts');

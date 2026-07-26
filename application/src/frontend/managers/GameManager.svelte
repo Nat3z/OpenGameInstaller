@@ -1,6 +1,6 @@
 <script lang="ts">
 import { getAllApps } from '@/frontend/lib/core/library';
-import { gamesLaunched } from '@/frontend/store.svelte';
+import { gamesLaunched, isOnline } from '@/frontend/store.svelte';
 import { runLaunchAppAddons } from '@/frontend/utils';
 
 const launchParams = new URLSearchParams(window.location.search);
@@ -59,7 +59,11 @@ document.addEventListener('game:exit', async (event: Event) => {
       return;
     }
 
-    await runLaunchAppAddons(libraryInfo, 'post');
+    if ($isOnline) {
+      await runLaunchAppAddons(libraryInfo, 'post');
+    } else {
+      console.log('Offline mode: skipping addon post-launch hooks');
+    }
   } catch (error) {
     console.error(error);
   } finally {

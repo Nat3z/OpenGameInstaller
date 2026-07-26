@@ -7,14 +7,25 @@ import { dirname, extname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { ServerWebSocket } from 'bun';
 import {
+  createSecretRedactor,
+  type LiveServiceProviderId,
+  prepareLiveServiceEnvironment,
+} from './live-service-scenarios';
+import {
   emptyObserverState,
   type ObserverState,
   reduceObserverEvents,
 } from './observer-state';
-import { readRunEvents } from './run-events';
+import { parseRunEvent, type RunEvent, readRunEvents } from './run-events';
 
 export type ObserverCommand =
   | { type: 'start'; suite: 'application-smoke' }
+  | {
+      type: 'start-live-service';
+      provider: LiveServiceProviderId;
+      confirmed: boolean;
+      credential: string;
+    }
   | { type: 'stop' }
   | { type: 'rerun-failed' };
 
@@ -22,6 +33,7 @@ type RunAnnouncement = {
   runId: string;
   sandboxDirectory: string;
   eventLogPath: string;
+  events?: RunEvent[];
 };
 
 type ObserverServerOptions = {
@@ -29,6 +41,7 @@ type ObserverServerOptions = {
   hostname?: string;
   openWindow?: boolean;
   runnerCommand?: string[];
+  liveServiceRunnerCommand?: string[];
   pollIntervalMilliseconds?: number;
 };
 
@@ -108,6 +121,11 @@ export async function createObserverServer(
     'run',
     'src/run-application-scenario.ts',
   ];
+  const liveServiceRunnerCommand = options.liveServiceRunnerCommand ?? [
+    process.execPath,
+    'run',
+    'src/run-live-service-scenario.ts',
+  ];
   const sockets = new Set<ServerWebSocket<SocketData>>();
   const outputLines: string[] = [];
   let bootstrapConsumed = false;
@@ -119,6 +137,7 @@ export async function createObserverServer(
   let announcement: RunAnnouncement | null = null;
   let state = emptyObserverState();
   let lastState: ObserverState | null = null;
+  let activeRedactor: ReturnType<typeof createSecretRedactor> | null = null;
   let pollTimer: ReturnType<typeof setInterval> | null = null;
 
   const authenticated = (request: Request) =>
@@ -131,7 +150,10 @@ export async function createObserverServer(
     canRerun:
       child === null &&
       state.outcome !== null &&
-      failureOutcomes.has(state.outcome),
+      failureOutcomes.has(state.outcome) &&
+      !state.scenarios.some(
+        (scenario) => scenario.kind === 'Live Service Scenario'
+      ),
     output: outputLines.slice(-400),
   });
 
@@ -141,11 +163,13 @@ export async function createObserverServer(
   };
 
   const refreshState = () => {
-    if (!announcement?.eventLogPath || !existsSync(announcement.eventLogPath)) {
-      return;
-    }
+    if (!announcement?.eventLogPath) return;
+    const archivedEvents = announcement.events;
+    if (!existsSync(announcement.eventLogPath) && !archivedEvents) return;
     try {
-      const events = readRunEvents(announcement.eventLogPath);
+      const events = existsSync(announcement.eventLogPath)
+        ? readRunEvents(announcement.eventLogPath)
+        : archivedEvents!;
       const nextState = reduceObserverEvents(events);
       if (child === null && nextState.outcome === null) {
         nextState.status = 'Aborted';
@@ -168,9 +192,7 @@ export async function createObserverServer(
   };
 
   const readAnnouncement = () => {
-    if (announcement || !announcementPath || !existsSync(announcementPath)) {
-      return;
-    }
+    if (!announcementPath || !existsSync(announcementPath)) return;
     const value = JSON.parse(readFileSync(announcementPath, 'utf8')) as unknown;
     if (
       typeof value !== 'object' ||
@@ -182,13 +204,21 @@ export async function createObserverServer(
       throw new Error('Runner announcement is invalid');
     }
     const candidate = value as RunAnnouncement;
+    if (candidate.events !== undefined) {
+      if (!Array.isArray(candidate.events)) {
+        throw new Error('Runner announcement events are invalid');
+      }
+      candidate.events = candidate.events.map(parseRunEvent);
+      if (candidate.events.some((event) => event.runId !== candidate.runId)) {
+        throw new Error('Runner announcement events have a mismatched run ID');
+      }
+    }
     if (!safePath(candidate.sandboxDirectory, candidate.eventLogPath)) {
       throw new Error(
         'Runner announcement event log escapes its Scenario Sandbox'
       );
     }
     announcement = candidate;
-    broadcast();
   };
 
   const stopPolling = () => {
@@ -224,7 +254,15 @@ export async function createObserverServer(
     }, 30_000);
   };
 
-  const startRun = () => {
+  const startRun = (
+    options: {
+      command?: string[];
+      liveService?: {
+        provider: LiveServiceProviderId;
+        credential: string;
+      };
+    } = {}
+  ) => {
     if (child) throw new Error('A run is already active');
     lastState = state.runId ? state : lastState;
     state = emptyObserverState();
@@ -232,26 +270,50 @@ export async function createObserverServer(
     const controlId = randomUUID();
     announcementPath = join(observerDirectory, `${controlId}.json`);
     cancellationPath = join(observerDirectory, `${controlId}.cancel`);
-    const [command, ...args] = runnerCommand;
+    const [command, ...args] = options.command ?? runnerCommand;
     if (!command) throw new Error('Observer runner command is empty');
+    if (options.liveService) {
+      args.push(
+        '--provider',
+        options.liveService.provider,
+        '--confirm-live-service'
+      );
+    }
+    activeRedactor = options.liveService
+      ? createSecretRedactor([options.liveService.credential])
+      : null;
+    const environment = prepareLiveServiceEnvironment(
+      process.env,
+      options.liveService
+    );
     child = spawn(command, args, {
       cwd: e2eDirectory,
       env: {
-        ...process.env,
+        ...environment,
         OGI_OBSERVER_ANNOUNCEMENT: announcementPath,
         OGI_OBSERVER_CANCELLATION: cancellationPath,
       },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
+    const runRedactor = activeRedactor;
     for (const stream of [child.stdout, child.stderr]) {
+      let buffered = '';
       stream?.setEncoding('utf8');
       stream?.on('data', (chunk: string) => {
+        const lines = `${buffered}${chunk}`.split(/\r?\n/);
+        buffered = lines.pop() ?? '';
         outputLines.push(
-          ...chunk
-            .split(/\r?\n/)
+          ...lines
             .map((line) => line.trimEnd())
             .filter(Boolean)
+            .map((line) => runRedactor?.text(line) ?? line)
         );
+        broadcast();
+      });
+      stream?.on('end', () => {
+        const line = buffered.trimEnd();
+        if (line) outputLines.push(runRedactor?.text(line) ?? line);
+        buffered = '';
         broadcast();
       });
     }
@@ -259,6 +321,7 @@ export async function createObserverServer(
       outputLines.push(`Runner failed to start: ${cause.message}`);
       clearForceStop();
       child = null;
+      activeRedactor = null;
       refreshState();
       broadcast();
     });
@@ -268,6 +331,7 @@ export async function createObserverServer(
       );
       clearForceStop();
       child = null;
+      activeRedactor = null;
       readAnnouncement();
       refreshState();
       lastState = state;
@@ -281,6 +345,23 @@ export async function createObserverServer(
     switch (command.type) {
       case 'start':
         startRun();
+        return;
+      case 'start-live-service':
+        if (!command.confirmed) {
+          throw new Error(
+            'Live Service Scenario requires explicit confirmation'
+          );
+        }
+        if (command.credential.trim().length < 8) {
+          throw new Error('Live Service credential is missing or invalid');
+        }
+        startRun({
+          command: liveServiceRunnerCommand,
+          liveService: {
+            provider: command.provider,
+            credential: command.credential,
+          },
+        });
         return;
       case 'stop':
         requestStop();
@@ -329,6 +410,15 @@ export async function createObserverServer(
         });
       }
       if (url.pathname === '/ws') {
+        const originHostname = hostname.includes(':')
+          ? `[${hostname}]`
+          : hostname;
+        const allowedOrigin = `http://${originHostname}:${server.port}`;
+        if (request.headers.get('origin') !== allowedOrigin) {
+          return new Response('Observer WebSocket Origin is not allowed', {
+            status: 403,
+          });
+        }
         return server.upgrade(request, { data: { authenticated: true } })
           ? undefined
           : new Response('WebSocket upgrade failed', { status: 400 });
@@ -376,8 +466,14 @@ export async function createObserverServer(
           if (
             !value ||
             typeof value !== 'object' ||
-            !['start', 'stop', 'rerun-failed'].includes(value.type) ||
-            (value.type === 'start' && value.suite !== 'application-smoke')
+            !['start', 'start-live-service', 'stop', 'rerun-failed'].includes(
+              value.type
+            ) ||
+            (value.type === 'start' && value.suite !== 'application-smoke') ||
+            (value.type === 'start-live-service' &&
+              (!['github', 'synthetic-local'].includes(value.provider) ||
+                typeof value.confirmed !== 'boolean' ||
+                typeof value.credential !== 'string'))
           ) {
             throw new Error('Observer command is invalid');
           }

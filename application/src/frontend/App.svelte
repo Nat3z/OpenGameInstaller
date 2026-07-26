@@ -163,11 +163,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
 async function initializeSearch() {
   try {
-    const addonData = await queryConnectedAddons<ConfigTemplateAndInfo>();
-    addons = addonData;
-
     const online = await window.electronAPI.app.isOnline();
     isOnline.set(online);
+    if (!online) {
+      addons = [];
+      return;
+    }
+
+    const addonData = await queryConnectedAddons<ConfigTemplateAndInfo>();
+    addons = addonData;
   } catch (error) {
     console.error('Failed to initialize search:', error);
   }

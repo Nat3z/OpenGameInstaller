@@ -255,8 +255,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     launchGame: wrap((appid: string) =>
       ipcRenderer.invoke('app:launch-game', appid)
     ),
-    removeApp: wrap((appid: number) =>
-      ipcRenderer.invoke('app:remove-app', appid)
+    removeApp: wrap((appid: number, options?: { deleteFiles?: boolean }) =>
+      ipcRenderer.invoke('app:remove-app', appid, options)
     ),
     getOS: wrap(() => ipcRenderer.invoke('app:get-os')),
     isSteamDeck: wrap(() => ipcRenderer.invoke('app:is-steam-deck')),

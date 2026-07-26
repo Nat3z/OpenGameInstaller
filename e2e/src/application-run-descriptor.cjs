@@ -39,7 +39,9 @@ function validateApplicationRunDescriptor(value) {
     value.scenario !== 'application-visible-navigation' ||
     typeof value.runId !== 'string' ||
     value.runId.length === 0 ||
-    !['success', 'assertion-failure'].includes(value.mode)
+    !['success', 'assertion-failure', 'flaky-once', 'helper-leak'].includes(
+      value.mode
+    )
   ) {
     throw new Error(
       'Run Descriptor version, scenario, runId, or mode is invalid'

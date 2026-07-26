@@ -87,14 +87,16 @@ function validateUpdaterRunDescriptor(value) {
     value.fixtureBaseUrl,
     'fixtureBaseUrl'
   );
-  const releaseApiUrl = validateLoopbackUrl(value.releaseApiUrl, 'releaseApiUrl');
+  const releaseApiUrl = validateLoopbackUrl(
+    value.releaseApiUrl,
+    'releaseApiUrl'
+  );
   if (releaseApiUrl.origin !== fixtureBaseUrl.origin) {
-    throw new Error('Run Descriptor releaseApiUrl must use the Fixture Service');
+    throw new Error(
+      'Run Descriptor releaseApiUrl must use the Fixture Service'
+    );
   }
-  if (
-    releaseApiUrl.pathname !==
-    '/repos/Nat3z/OpenGameInstaller/releases'
-  ) {
+  if (releaseApiUrl.pathname !== '/repos/Nat3z/OpenGameInstaller/releases') {
     throw new Error('Run Descriptor releaseApiUrl path is invalid');
   }
   if (
@@ -108,7 +110,9 @@ function validateUpdaterRunDescriptor(value) {
     !response ||
     typeof response !== 'object' ||
     Array.isArray(response) ||
-    Object.keys(response).some((key) => !['action', 'response'].includes(key)) ||
+    Object.keys(response).some(
+      (key) => !['action', 'response'].includes(key)
+    ) ||
     response.action !== 'choose-stable-channel' ||
     !Number.isInteger(response.response) ||
     response.response < 0

@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test';
+import { randomBytes } from 'node:crypto';
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { createConnection } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createObserverServer } from '../src/observer-server';
@@ -18,6 +20,37 @@ function createDist() {
   );
   writeFileSync(join(directory, 'assets/app.js'), 'console.log("observer")');
   return directory;
+}
+
+function websocketUpgradeStatus(options: {
+  port: number;
+  cookie: string;
+  origin?: string;
+}) {
+  return new Promise<number>((resolve, reject) => {
+    const socket = createConnection(options.port, '127.0.0.1');
+    socket.once('error', reject);
+    socket.once('connect', () => {
+      const headers = [
+        'GET /ws HTTP/1.1',
+        `Host: 127.0.0.1:${options.port}`,
+        'Connection: Upgrade',
+        'Upgrade: websocket',
+        'Sec-WebSocket-Version: 13',
+        `Sec-WebSocket-Key: ${randomBytes(16).toString('base64')}`,
+        `Cookie: ${options.cookie}`,
+        ...(options.origin === undefined ? [] : [`Origin: ${options.origin}`]),
+        '',
+        '',
+      ];
+      socket.write(headers.join('\r\n'));
+    });
+    socket.once('data', (data) => {
+      const status = Number(data.toString().match(/^HTTP\/1\.1 (\d{3})/)?.[1]);
+      socket.destroy();
+      resolve(status);
+    });
+  });
 }
 
 async function waitUntil(
@@ -60,6 +93,50 @@ describe('Observer Window server', () => {
         })
       ).status
     ).toBe(200);
+  });
+
+  test('requires the exact Observer Origin for WebSocket refresh and reconnect', async () => {
+    const server = await createObserverServer({
+      distDirectory: createDist(),
+      openWindow: false,
+    });
+    servers.push(server);
+    const bootstrap = await fetch(server.url);
+    const cookie = bootstrap.headers.get('set-cookie')?.split(';')[0];
+    expect(cookie).toBeDefined();
+    const port = server.port;
+    if (port === undefined) throw new Error('Observer port was not allocated');
+    const allowedOrigin = `http://127.0.0.1:${port}`;
+
+    for (const origin of [
+      undefined,
+      'null',
+      `http://127.0.0.1:${port + 1}`,
+      `http://localhost:${port}`,
+      `https://127.0.0.1:${port}`,
+    ]) {
+      expect(
+        await websocketUpgradeStatus({
+          port,
+          cookie: cookie!,
+          ...(origin === undefined ? {} : { origin }),
+        })
+      ).toBe(403);
+    }
+    expect(
+      await websocketUpgradeStatus({
+        port,
+        cookie: cookie!,
+        origin: allowedOrigin,
+      })
+    ).toBe(101);
+    expect(
+      await websocketUpgradeStatus({
+        port,
+        cookie: cookie!,
+        origin: allowedOrigin,
+      })
+    ).toBe(101);
   });
 
   test('rejects non-loopback binding', async () => {
@@ -135,7 +212,9 @@ describe('Observer Window server', () => {
       headers: { cookie: cookie! },
     });
     await waitUntil(
-      () => server.getState().status === 'Passed',
+      () =>
+        server.getState().status === 'Passed' &&
+        !server.getState().processActive,
       'Run did not continue after dashboard refresh'
     );
     expect(server.getState()).toMatchObject({
@@ -143,6 +222,135 @@ describe('Observer Window server', () => {
       outcome: 'Passed',
       processActive: false,
     });
+  });
+
+  test('keeps the completed Observer state after a passed sandbox is deleted', async () => {
+    const server = await createObserverServer({
+      distDirectory: createDist(),
+      openWindow: false,
+      runnerCommand: [
+        process.execPath,
+        join(import.meta.dir, 'fixtures/observer-runner.ts'),
+        'complete-delete',
+      ],
+      pollIntervalMilliseconds: 20,
+    });
+    servers.push(server);
+
+    server.command({ type: 'start', suite: 'application-smoke' });
+    await waitUntil(
+      () =>
+        server.getState().status === 'Passed' &&
+        !server.getState().processActive,
+      'Observer lost the passed result after sandbox deletion'
+    );
+    expect(server.getState()).toMatchObject({
+      status: 'Passed',
+      outcome: 'Passed',
+      totals: { Passed: 1 },
+    });
+  });
+
+  test('keeps Live Service selection separate, confirmed, credentialed, and redacted', async () => {
+    const secret = 'synthetic/observer secret+XYZ';
+    const server = await createObserverServer({
+      distDirectory: createDist(),
+      openWindow: false,
+      liveServiceRunnerCommand: [
+        process.execPath,
+        join(import.meta.dir, 'fixtures/observer-runner.ts'),
+        'live',
+      ],
+      pollIntervalMilliseconds: 20,
+    });
+    servers.push(server);
+
+    expect(() =>
+      server.command({
+        type: 'start-live-service',
+        provider: 'synthetic-local',
+        confirmed: false,
+        credential: secret,
+      })
+    ).toThrow('confirmation');
+    expect(() =>
+      server.command({
+        type: 'start-live-service',
+        provider: 'synthetic-local',
+        confirmed: true,
+        credential: '',
+      })
+    ).toThrow('credential');
+
+    server.command({
+      type: 'start-live-service',
+      provider: 'synthetic-local',
+      confirmed: true,
+      credential: secret,
+    });
+    await waitUntil(
+      () =>
+        server.getState().status === 'Passed' &&
+        !server.getState().processActive,
+      'Live Service run did not complete'
+    );
+    expect(server.getState().scenarios[0]?.kind).toBe('Live Service Scenario');
+    expect(server.getState().externalIntegrationHealth).toEqual({
+      provider: 'synthetic-local',
+      status: 'Healthy',
+      deterministicCoverage: 'Not evaluated',
+      responseStatus: 200,
+    });
+    const output = server.getState().output.join('\n');
+    let percentToken = 0;
+    const mixedPercent = encodeURIComponent(secret).replace(
+      /%[0-9A-F]{2}/g,
+      (value) => {
+        percentToken += 1;
+        return percentToken % 2 === 0
+          ? value.toLowerCase()
+          : value.toUpperCase();
+      }
+    );
+    for (const variant of [
+      secret,
+      Buffer.from(secret).toString('base64url'),
+      Buffer.from(secret).toString('hex'),
+      new URLSearchParams({ token: secret }).toString().slice('token='.length),
+      mixedPercent,
+      encodeURIComponent(mixedPercent),
+    ]) {
+      expect(output).not.toContain(variant);
+    }
+    expect(output).toContain('[REDACTED]');
+  });
+
+  test('scrubs inherited Live Service credentials from deterministic Observer runs', async () => {
+    const prior = process.env.OGI_LIVE_GITHUB_TOKEN;
+    process.env.OGI_LIVE_GITHUB_TOKEN = 'must-not-inherit';
+    try {
+      const server = await createObserverServer({
+        distDirectory: createDist(),
+        openWindow: false,
+        runnerCommand: [
+          process.execPath,
+          join(import.meta.dir, 'fixtures/observer-runner.ts'),
+          'assert-no-live-env',
+        ],
+        pollIntervalMilliseconds: 20,
+      });
+      servers.push(server);
+      server.command({ type: 'start', suite: 'application-smoke' });
+      await waitUntil(
+        () =>
+          server.getState().status === 'Passed' &&
+          !server.getState().processActive,
+        'Deterministic Observer run did not complete'
+      );
+    } finally {
+      if (prior === undefined) delete process.env.OGI_LIVE_GITHUB_TOKEN;
+      else process.env.OGI_LIVE_GITHUB_TOKEN = prior;
+    }
   });
 
   test('rerun-failed starts a new attempt only after a failure outcome', async () => {

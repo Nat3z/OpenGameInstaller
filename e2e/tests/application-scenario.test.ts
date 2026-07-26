@@ -1,8 +1,17 @@
-import { describe, expect, test } from 'bun:test';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { afterAll, describe, expect, test } from 'bun:test';
+import { spawn, spawnSync } from 'node:child_process';
+import {
+  existsSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import {
-  createApplicationScenarioSandbox,
+  createApplicationScenarioSandbox as createSandbox,
   createUnavailableScreenshot,
   ensureApplicationFailureEvidence,
   getApplicationScenarioLaunch,
@@ -11,6 +20,18 @@ import {
   validateApplicationFailureEvidence,
   validateApplicationScenarioProcessOutcome,
 } from '../src/application-scenario';
+
+const generatedSandboxes: string[] = [];
+const createApplicationScenarioSandbox: typeof createSandbox = (...args) => {
+  const sandbox = createSandbox(...args);
+  generatedSandboxes.push(sandbox.sandboxDirectory);
+  return sandbox;
+};
+afterAll(() => {
+  for (const sandbox of generatedSandboxes) {
+    rmSync(sandbox, { recursive: true, force: true });
+  }
+});
 
 describe('Application Scenario sandbox', () => {
   test('creates fresh state wholly beneath its sandbox', () => {
@@ -37,6 +58,12 @@ describe('Application Scenario sandbox', () => {
     expect(parseApplicationScenarioMode([])).toBe('success');
     expect(parseApplicationScenarioMode(['--mode', 'assertion-failure'])).toBe(
       'assertion-failure'
+    );
+    expect(parseApplicationScenarioMode(['--mode', 'flaky-once'])).toBe(
+      'flaky-once'
+    );
+    expect(parseApplicationScenarioMode(['--mode', 'helper-leak'])).toBe(
+      'helper-leak'
     );
     expect(() => parseApplicationScenarioMode(['--mode', 'unknown'])).toThrow(
       'mode'
@@ -197,6 +224,172 @@ describe('Application Scenario sandbox', () => {
     );
     expect(wrapper).toContain('DuplicateStandardHandle(StdOutputHandle)');
     expect(wrapper).toContain('ProcThreadAttributeHandleList');
+    expect(wrapper).toContain('QueryInformationJobObject');
+    expect(wrapper).toContain('OGI_WINDOWS_JOB_RESULT');
+    expect(wrapper.lastIndexOf('WriteResult(')).toBeLessThan(
+      wrapper.indexOf('if (job != IntPtr.Zero) CloseHandle(job)')
+    );
+  });
+
+  test('classifies an immediate detached root-exit orphan as infrastructure failure and removes it', () => {
+    if (process.platform === 'win32') return;
+    const root = mkdtempSync(join(tmpdir(), 'ogi-application-runner-leak-'));
+    const probePath = join(root, 'root-exit-orphan.ts');
+    const pidPath = join(root, 'orphan.pid');
+    writeFileSync(
+      probePath,
+      `import { spawn } from 'node:child_process';
+import { writeFileSync } from 'node:fs';
+const orphan = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { detached: true, stdio: 'ignore' });
+if (!orphan.pid) throw new Error('orphan did not start');
+orphan.unref();
+writeFileSync(${JSON.stringify(pidPath)}, String(orphan.pid));
+`
+    );
+
+    try {
+      const result = spawnSync(
+        process.execPath,
+        [join(import.meta.dir, '../src/run-application-scenario.ts')],
+        {
+          env: {
+            ...process.env,
+            OGI_E2E_RUN_ROOT: root,
+            OGI_E2E_RUNNER_PROBE_PATH: probePath,
+          },
+          encoding: 'utf8',
+          timeout: 30_000,
+        }
+      );
+      expect(result.status).toBe(1);
+      const sandboxDirectory = result.stdout
+        .match(/Scenario Sandbox: (.+)/)?.[1]
+        ?.trim();
+      expect(sandboxDirectory).toBeTruthy();
+      expect(
+        JSON.parse(
+          readFileSync(
+            join(sandboxDirectory!, 'artifacts/reliability.json'),
+            'utf8'
+          )
+        )
+      ).toMatchObject({
+        outcome: 'Infrastructure Failed',
+        attempts: ['Infrastructure Failed'],
+      });
+      const events = readFileSync(
+        join(sandboxDirectory!, 'events.jsonl'),
+        'utf8'
+      );
+      expect(events).toMatch(/"type":"process.stopped".*"leaked":true/);
+      expect(events).not.toContain('retry.scheduled');
+      const orphanPid = Number(readFileSync(pidPath, 'utf8'));
+      expect(() => process.kill(orphanPid, 0)).toThrow();
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test('keeps an unconfirmed status-1 process failure infrastructural after an assertion step fails', () => {
+    if (process.platform === 'win32') return;
+    const root = mkdtempSync(join(tmpdir(), 'ogi-application-mixed-failure-'));
+    const probePath = join(root, 'assertion-then-crash.ts');
+    writeFileSync(
+      probePath,
+      `import { readFileSync } from 'node:fs';
+import { makeRunEventWriter, replayRunEventLog } from ${JSON.stringify(join(import.meta.dir, '../src/run-events.ts'))};
+const descriptor = JSON.parse(readFileSync(process.env.OGI_RUN_DESCRIPTOR!, 'utf8'));
+const writeEvent = makeRunEventWriter(descriptor.eventLogPath, descriptor.runId, replayRunEventLog(descriptor.eventLogPath).lastSequence);
+writeEvent({ type: 'step.started', payload: { stepId: 'mixed-failure', name: 'Fail assertion before crash' } });
+writeEvent({ type: 'step.completed', payload: { stepId: 'mixed-failure', outcome: 'Failed', error: 'assertion failed first' } });
+process.exit(1);
+`
+    );
+
+    try {
+      const result = spawnSync(
+        process.execPath,
+        [join(import.meta.dir, '../src/run-application-scenario.ts')],
+        {
+          env: {
+            ...process.env,
+            OGI_E2E_RUN_ROOT: root,
+            OGI_E2E_RUNNER_PROBE_PATH: probePath,
+          },
+          encoding: 'utf8',
+          timeout: 30_000,
+        }
+      );
+      expect(result.status).toBe(1);
+      const sandboxDirectory = result.stdout
+        .match(/Scenario Sandbox: (.+)/)?.[1]
+        ?.trim();
+      expect(sandboxDirectory).toBeTruthy();
+      expect(
+        JSON.parse(
+          readFileSync(
+            join(sandboxDirectory!, 'artifacts/reliability.json'),
+            'utf8'
+          )
+        )
+      ).toMatchObject({
+        outcome: 'Infrastructure Failed',
+        attempts: ['Infrastructure Failed'],
+      });
+      expect(
+        readFileSync(join(sandboxDirectory!, 'events.jsonl'), 'utf8')
+      ).not.toContain('retry.scheduled');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test('does not retry a cancelled Application Scenario', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'ogi-application-runner-cancel-'));
+    const probePath = join(root, 'long-running-probe.ts');
+    const startedPath = join(root, 'started');
+    writeFileSync(
+      probePath,
+      `import { writeFileSync } from 'node:fs'; writeFileSync(${JSON.stringify(startedPath)}, 'started'); await Bun.sleep(30_000);`
+    );
+    const child = spawn(
+      process.execPath,
+      [join(import.meta.dir, '../src/run-application-scenario.ts')],
+      {
+        env: {
+          ...process.env,
+          OGI_E2E_RUN_ROOT: root,
+          OGI_E2E_RUNNER_PROBE_PATH: probePath,
+        },
+        stdio: 'ignore',
+      }
+    );
+
+    try {
+      const deadline = Date.now() + 3_000;
+      while (!existsSync(startedPath) && Date.now() < deadline) {
+        await Bun.sleep(25);
+      }
+      expect(existsSync(startedPath)).toBe(true);
+      child.kill('SIGTERM');
+      const status = await new Promise<number | null>((resolveExit) =>
+        child.once('exit', resolveExit)
+      );
+      expect(status).toBe(1);
+      const sandboxName = readdirSync(root).find((name) =>
+        name.startsWith('application-')
+      );
+      expect(sandboxName).toBeTruthy();
+      const events = readFileSync(
+        join(root, sandboxName!, 'events.jsonl'),
+        'utf8'
+      );
+      expect(events).toContain('"outcome":"Cancelled"');
+      expect(events).not.toContain('retry.scheduled');
+    } finally {
+      if (child.exitCode === null) child.kill('SIGKILL');
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   test('rejects unknown fields and paths escaping the sandbox', () => {

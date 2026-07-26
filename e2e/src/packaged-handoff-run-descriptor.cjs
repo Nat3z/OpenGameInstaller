@@ -11,6 +11,7 @@ const descriptorKeys = [
   'applicationStateDirectory',
   'packagedUpdaterDirectory',
   'installationDirectory',
+  'applicationLauncherPath',
   'backupDirectory',
   'stagingDirectory',
   'artifactDirectory',
@@ -23,7 +24,17 @@ const descriptorKeys = [
   'artifactUrl',
   'automationPort',
   'clientSdkPort',
+  'gameAutomationPort',
   'healthTimeoutMs',
+  'recoveryFailure',
+  'incrementalUpdate',
+  'gameDownloadRecovery',
+  'fixtureGameLifecycle',
+  'offlineProductBehavior',
+  'deterministicTorrentInstallation',
+  'torrentUrl',
+  'torrentTrackerUrl',
+  'torrentPeerPort',
 ];
 
 const pathKeys = [
@@ -33,6 +44,7 @@ const pathKeys = [
   'applicationStateDirectory',
   'packagedUpdaterDirectory',
   'installationDirectory',
+  'applicationLauncherPath',
   'backupDirectory',
   'stagingDirectory',
   'artifactDirectory',
@@ -101,6 +113,17 @@ function validatePackagedHandoffRunDescriptor(value) {
       throw new Error(`Run Descriptor ${key} escapes the Scenario Sandbox`);
     }
   }
+  const expectedLauncher = resolve(
+    value.installationDirectory,
+    value.platform === 'win32'
+      ? 'OpenGameInstaller.exe'
+      : 'OpenGameInstaller.AppImage'
+  );
+  if (resolve(value.applicationLauncherPath) !== expectedLauncher) {
+    throw new Error(
+      'Run Descriptor applicationLauncherPath does not match the platform launcher'
+    );
+  }
   const fixtureBaseUrl = validateLoopbackUrl(
     value.fixtureBaseUrl,
     'fixtureBaseUrl'
@@ -126,11 +149,87 @@ function validatePackagedHandoffRunDescriptor(value) {
     throw new Error('Run Descriptor clientSdkPort is invalid');
   }
   if (
+    !Number.isInteger(value.gameAutomationPort) ||
+    value.gameAutomationPort < 1 ||
+    value.gameAutomationPort > 65535
+  ) {
+    throw new Error('Run Descriptor gameAutomationPort is invalid');
+  }
+  if (
     !Number.isInteger(value.healthTimeoutMs) ||
     value.healthTimeoutMs < 1000 ||
     value.healthTimeoutMs > 120000
   ) {
     throw new Error('Run Descriptor healthTimeoutMs is invalid');
+  }
+  if (
+    !['none', 'valid', 'corrupt', 'interrupted', 'fallback-failure'].includes(
+      value.incrementalUpdate
+    )
+  ) {
+    throw new Error('Run Descriptor incrementalUpdate is invalid');
+  }
+  if (typeof value.gameDownloadRecovery !== 'boolean') {
+    throw new Error('Run Descriptor gameDownloadRecovery is invalid');
+  }
+  if (typeof value.fixtureGameLifecycle !== 'boolean') {
+    throw new Error('Run Descriptor fixtureGameLifecycle is invalid');
+  }
+  if (typeof value.offlineProductBehavior !== 'boolean') {
+    throw new Error('Run Descriptor offlineProductBehavior is invalid');
+  }
+  if (typeof value.deterministicTorrentInstallation !== 'boolean') {
+    throw new Error(
+      'Run Descriptor deterministicTorrentInstallation is invalid'
+    );
+  }
+  if (value.deterministicTorrentInstallation) {
+    const torrentUrl = validateLoopbackUrl(value.torrentUrl, 'torrentUrl');
+    const trackerUrl = validateLoopbackUrl(
+      value.torrentTrackerUrl,
+      'torrentTrackerUrl'
+    );
+    if (torrentUrl.origin !== fixtureBaseUrl.origin) {
+      throw new Error('Run Descriptor torrentUrl must use the Fixture Service');
+    }
+    if (trackerUrl.pathname !== '/announce') {
+      throw new Error(
+        'Run Descriptor torrentTrackerUrl must use the local tracker announce path'
+      );
+    }
+    if (
+      !Number.isInteger(value.torrentPeerPort) ||
+      value.torrentPeerPort < 1 ||
+      value.torrentPeerPort > 65535
+    ) {
+      throw new Error('Run Descriptor torrentPeerPort is invalid');
+    }
+  } else if (
+    value.torrentUrl !== null ||
+    value.torrentTrackerUrl !== null ||
+    value.torrentPeerPort !== null
+  ) {
+    throw new Error(
+      'Run Descriptor torrent fixture fields require deterministicTorrentInstallation'
+    );
+  }
+  if (
+    ![
+      'none',
+      'download',
+      'incomplete-content',
+      'unsafe-archive-path',
+      'missing-required-file',
+      'replacement',
+      'crash',
+      'pre-identity',
+      'immediate-root-exit',
+      'fork-during-scan',
+      'timeout',
+      'invalid-health',
+    ].includes(value.recoveryFailure)
+  ) {
+    throw new Error('Run Descriptor recoveryFailure is invalid');
   }
   return value;
 }

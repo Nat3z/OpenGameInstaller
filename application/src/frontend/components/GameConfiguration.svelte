@@ -29,6 +29,9 @@ let { exitPlayPage, gameInfo, onFinish }: Props = $props();
 
 let platform = $state<string>('');
 let showDllOverridesModal = $state(false);
+let showRemovalConfirmation = $state(false);
+let removalError = $state('');
+let removalInProgress = $state(false);
 
 // Get OS platform
 $effect(() => {
@@ -116,18 +119,42 @@ let dllOverridesCount = $derived.by(() => {
   return dllOverrides.length;
 });
 
-async function removeFromList() {
-  await window.electronAPI.app.removeApp(gameInfo.appID);
-  createNotification({
-    id: Math.random().toString(36).substring(7),
-    message: 'Game removed from library. (Not deleted from disk)',
-    type: 'success',
-  });
-  // remove the download from the downloads list
-  currentDownloads.update((downloads) =>
-    downloads.filter((download) => download.appID !== gameInfo.appID)
-  );
-  exitPlayPage();
+function openRemovalConfirmation() {
+  removalError = '';
+  showRemovalConfirmation = true;
+}
+
+async function removeFromList(deleteFiles: boolean) {
+  if (removalInProgress) return;
+  removalError = '';
+  removalInProgress = true;
+  try {
+    const result = await window.electronAPI.app.removeApp(gameInfo.appID, {
+      deleteFiles,
+    });
+    createNotification({
+      id: Math.random().toString(36).substring(7),
+      message: result.filesRemoved
+        ? 'Game files deleted and Library entry removed.'
+        : 'Game removed from Library. Files were left on disk.',
+      type: 'success',
+    });
+    currentDownloads.update((downloads) =>
+      downloads.filter((download) => download.appID !== gameInfo.appID)
+    );
+    showRemovalConfirmation = false;
+    exitPlayPage();
+  } catch (error) {
+    removalError =
+      error instanceof Error ? error.message : 'The game could not be removed.';
+    createNotification({
+      id: Math.random().toString(36).substring(7),
+      message: removalError,
+      type: 'error',
+    });
+  } finally {
+    removalInProgress = false;
+  }
 }
 
 async function addToSteam(button: HTMLButtonElement) {
@@ -191,72 +218,147 @@ function getInputOptions(option: ConfigurationOptionWire): string[] {
 </script>
 
 {#if Object.keys(formData).length > 0}
-  <Modal
-    ariaLabel={`Configure ${gameInfo.name}`}
+  {#key showRemovalConfirmation}
+    <Modal
+    ariaLabel={showRemovalConfirmation
+      ? `Confirm removal of ${gameInfo.name}`
+      : `Configure ${gameInfo.name}`}
     open={true}
-    size="large"
-    onClose={closeModal}
+    size={showRemovalConfirmation ? 'medium' : 'large'}
+    closeOnOverlayClick={!showRemovalConfirmation}
+    boundsClose={!showRemovalConfirmation}
+    onClose={() => {
+      if (showRemovalConfirmation) {
+        if (!removalInProgress) showRemovalConfirmation = false;
+      } else {
+        closeModal();
+      }
+    }}
   >
-    <TitleModal title={gameInfo.name} />
-
-    {#each Object.keys(screenRendering) as key}
-      {#if isBooleanOption(screenRendering[key])}
-        <CheckboxModal
-          id={key}
-          label={screenRendering[key].displayName}
-          description={screenRendering[key].description}
-          checked={formData[key]}
-          class="mb-4"
-          onchange={handleInputChange}
-        />
-      {:else}
-        <InputModal
-          id={key}
-          label={screenRendering[key].displayName}
-          description={screenRendering[key].description}
-          type={getInputType(screenRendering[key])}
-          value={getInputValue(key, screenRendering[key])}
-          options={getInputOptions(screenRendering[key]).map((value) => ({
-            id: value,
-            name: value,
-          }))}
-          class="mb-4 {key === 'launchArguments' ? 'inline' : ''}"
-          onchange={handleInputChange}
-        />
-        {#if key === 'launchArguments'}
-          {#if platform === 'linux' || platform === 'darwin'}
+    {#if showRemovalConfirmation}
+      <TitleModal title={`Remove ${gameInfo.name}`} />
+      <div class="space-y-4 text-text-primary">
+        <p>
+          Choose whether to permanently delete the installed game files or only
+          remove this game from your Library.
+        </p>
+        {#if gameInfo.installDirectory}
+          <div class="rounded-lg border border-error/40 bg-error/10 p-4">
+            <h2 class="font-archivo font-semibold text-accent-dark">
+              Delete files and remove from Library
+            </h2>
+            <p class="mt-2 text-sm">
+              This permanently deletes the game directory below. This action
+              cannot be undone.
+            </p>
+            <code class="mt-2 block break-all rounded bg-background-color p-2 text-sm"
+              >{gameInfo.installDirectory}</code
+            >
+          </div>
+        {/if}
+        <div class="rounded-lg border border-accent-light p-4">
+          <h2 class="font-archivo font-semibold text-accent-dark">
+            Remove from Library only
+          </h2>
+          <p class="mt-2 text-sm">
+            This removes the Library entry but leaves every installed file on
+            disk.
+          </p>
+        </div>
+        {#if removalError}
+          <p
+            role="alert"
+            class="rounded-lg border border-error/40 bg-error/10 p-3 text-sm text-accent-dark"
+          >
+            {removalError}
+          </p>
+        {/if}
+        <div class="flex flex-row flex-wrap gap-3 pt-2">
+          {#if gameInfo.installDirectory}
             <ButtonModal
-              text={dllOverridesCount > 0
-                ? `DLL Overrides (${dllOverridesCount})`
-                : 'DLL Overrides'}
-              variant="secondary"
-              onclick={openDllOverridesModal}
-              disabled={!canEditDllOverrides}
+              text="Delete Files and Remove from Library"
+              variant="primary"
+              disabled={removalInProgress}
+              onclick={() => void removeFromList(true)}
             />
           {/if}
-        {/if}
-      {/if}
-    {/each}
+          <ButtonModal
+            text="Remove from Library Only"
+            variant="secondary"
+            disabled={removalInProgress}
+            onclick={() => void removeFromList(false)}
+          />
+          <ButtonModal
+            text="Cancel"
+            variant="secondary"
+            disabled={removalInProgress}
+            onclick={() => (showRemovalConfirmation = false)}
+          />
+        </div>
+      </div>
+    {:else}
+      <TitleModal title={gameInfo.name} />
 
-    <div class="pt-4 flex flex-row flex-wrap gap-3">
-      <ButtonModal text="Save" variant="primary" onclick={pushChanges} />
-      {#if platform === 'linux' || platform === 'darwin'}
+      {#each Object.keys(screenRendering) as key}
+        {#if isBooleanOption(screenRendering[key])}
+          <CheckboxModal
+            id={key}
+            label={screenRendering[key].displayName}
+            description={screenRendering[key].description}
+            checked={formData[key]}
+            class="mb-4"
+            onchange={handleInputChange}
+          />
+        {:else}
+          <InputModal
+            id={key}
+            label={screenRendering[key].displayName}
+            description={screenRendering[key].description}
+            type={getInputType(screenRendering[key])}
+            value={getInputValue(key, screenRendering[key])}
+            options={getInputOptions(screenRendering[key]).map((value) => ({
+              id: value,
+              name: value,
+            }))}
+            class="mb-4 {key === 'launchArguments' ? 'inline' : ''}"
+            onchange={handleInputChange}
+          />
+          {#if key === 'launchArguments'}
+            {#if platform === 'linux' || platform === 'darwin'}
+              <ButtonModal
+                text={dllOverridesCount > 0
+                  ? `DLL Overrides (${dllOverridesCount})`
+                  : 'DLL Overrides'}
+                variant="secondary"
+                onclick={openDllOverridesModal}
+                disabled={!canEditDllOverrides}
+              />
+            {/if}
+          {/if}
+        {/if}
+      {/each}
+
+      <div class="pt-4 flex flex-row flex-wrap gap-3">
+        <ButtonModal text="Save" variant="primary" onclick={pushChanges} />
+        {#if platform === 'linux' || platform === 'darwin'}
+          <ButtonModal
+            text="Add to Steam"
+            variant="secondary"
+            onclick={(event) => {
+              addToSteam(event.currentTarget as HTMLButtonElement);
+            }}
+          />
+        {/if}
         <ButtonModal
-          text="Add to Steam"
-          variant="secondary"
-          onclick={(event) => {
-            addToSteam(event.currentTarget as HTMLButtonElement);
-          }}
+          text="Manage Game Removal"
+          variant="danger"
+          onclick={openRemovalConfirmation}
         />
-      {/if}
-      <ButtonModal
-        text="Remove Game"
-        variant="danger"
-        onclick={removeFromList}
-      />
-      <ButtonModal text="Cancel" variant="secondary" onclick={closeModal} />
-    </div>
-  </Modal>
+        <ButtonModal text="Cancel" variant="secondary" onclick={closeModal} />
+      </div>
+    {/if}
+    </Modal>
+  {/key}
 
   <WineDllOverridesModal
     open={showDllOverridesModal}

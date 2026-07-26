@@ -4,6 +4,7 @@ import type {
   SetupEventResponse,
 } from '@ogi-sdk/connect';
 import { get } from 'svelte/store';
+import { getDownloadPath } from '@/frontend/lib/core/fs';
 import { addonServer } from '@/frontend/lib/core/ipc';
 import { getApp } from '@/frontend/lib/core/library';
 import { updateDownloadStatus } from '@/frontend/lib/downloads/lifecycle';
@@ -209,6 +210,8 @@ export async function runSetupApp(
 
     const result = await window.electronAPI.app.insertApp({
       ...data,
+      installDirectory: data.installDirectory ?? downloadedItem.downloadPath,
+      installRoot: getDownloadPath(),
       capsuleImage: downloadedItem.capsuleImage,
       coverImage: downloadedItem.coverImage,
       name: downloadedItem.name,

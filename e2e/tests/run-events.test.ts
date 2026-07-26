@@ -1,10 +1,20 @@
 import { describe, expect, test } from 'bun:test';
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { createSecretRedactor } from '../src/live-service-scenarios';
 import {
+  makeRunEventWriter,
   parseRunEvent,
   type RunEvent,
+  readRecoveryHandoffEvents,
+  readRunEvents,
   renderRunHtmlReport,
   replayRunEventLog,
 } from '../src/run-events';
@@ -40,6 +50,155 @@ describe('Run Event Log', () => {
         })
       )
     ).toThrow('artifact.created');
+    expect(
+      parseRunEvent(
+        event(4, 'recovery.performed', {
+          phase: 'last-known-good-launched',
+          version: 'v0.0.1-e2e',
+          pid: 1234,
+        })
+      ).type
+    ).toBe('recovery.performed');
+    expect(() =>
+      parseRunEvent(
+        event(5, 'recovery.performed', { phase: 'candidate-deleted' })
+      )
+    ).toThrow('recovery.performed');
+  });
+
+  test('redacts registered secrets before appending events and reports', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'ogi-event-redaction-'));
+    const path = join(directory, 'events.jsonl');
+    const secret = 'synthetic-event-secret';
+    const writeEvent = makeRunEventWriter(
+      path,
+      'redacted-run',
+      0,
+      createSecretRedactor([secret])
+    );
+    writeEvent({ type: 'run.started', payload: { platform: 'linux' } });
+    writeEvent({
+      type: 'scenario.started',
+      payload: {
+        scenarioId: 'live-service-synthetic-local',
+        kind: 'Live Service Scenario',
+      },
+    });
+    writeEvent({
+      type: 'step.started',
+      payload: { stepId: 'health', name: `Bearer ${secret}` },
+    });
+    writeEvent({
+      type: 'external-integration.health',
+      payload: {
+        provider: 'synthetic-local',
+        status: 'Unhealthy',
+        deterministicCoverage: 'Not evaluated',
+        error: `request token=${secret}`,
+      },
+    });
+    writeEvent({
+      type: 'step.completed',
+      payload: {
+        stepId: 'health',
+        outcome: 'Failed',
+        error: `credential ${secret}`,
+      },
+    });
+    const contents = readFileSync(path, 'utf8');
+    expect(contents).not.toContain(secret);
+    expect(contents).toContain('[REDACTED]');
+    const report = renderRunHtmlReport(path, 'Failed');
+    expect(report).not.toContain(secret);
+    expect(report).toContain('External integration health');
+    expect(report).toContain('does not replace deterministic coverage');
+  });
+
+  test('preserves recovery timestamps before step completion and shutdown', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'ogi-event-recovery-'));
+    const handoffPath = join(directory, 'handoff.jsonl');
+    const eventPath = join(directory, 'events.jsonl');
+    const recoveryTimestamps = [
+      '2026-07-25T00:00:01.000Z',
+      '2026-07-25T00:00:02.000Z',
+      '2026-07-25T00:00:03.000Z',
+    ];
+    writeFileSync(
+      handoffPath,
+      [
+        {
+          timestamp: recoveryTimestamps[0],
+          phase: 'recovery-started',
+          error: 'candidate failed',
+        },
+        {
+          timestamp: recoveryTimestamps[1],
+          phase: 'last-known-good-restored',
+          version: 'v0.0.1-e2e',
+        },
+        {
+          timestamp: recoveryTimestamps[2],
+          phase: 'last-known-good-launched',
+          version: 'v0.0.1-e2e',
+          pid: 1234,
+        },
+      ]
+        .map((value) => JSON.stringify(value))
+        .join('\n')
+    );
+
+    const writeEvent = makeRunEventWriter(eventPath, 'run-1');
+    writeEvent(
+      {
+        type: 'step.started',
+        payload: { stepId: 'recover-replacement', name: 'Recover replacement' },
+      },
+      '2026-07-25T00:00:00.000Z'
+    );
+    for (const recovery of readRecoveryHandoffEvents(handoffPath)) {
+      writeEvent(recovery.input, recovery.timestamp);
+    }
+    writeEvent(
+      {
+        type: 'artifact.created',
+        payload: {
+          artifactType: 'screenshot',
+          path: 'artifacts/recover-replacement.png',
+          stepId: 'recover-replacement',
+        },
+      },
+      '2026-07-25T00:00:04.000Z'
+    );
+    writeEvent(
+      {
+        type: 'step.completed',
+        payload: { stepId: 'recover-replacement', outcome: 'Passed' },
+      },
+      '2026-07-25T00:00:05.000Z'
+    );
+    writeEvent(
+      { type: 'process.stopped', payload: { pid: 4321, leaked: false } },
+      '2026-07-25T00:00:06.000Z'
+    );
+    writeEvent(
+      { type: 'fixture.stopped', payload: { requests: 2 } },
+      '2026-07-25T00:00:07.000Z'
+    );
+
+    const events = readRunEvents(eventPath);
+    expect(events.map((value) => value.type)).toEqual([
+      'step.started',
+      'recovery.performed',
+      'recovery.performed',
+      'recovery.performed',
+      'artifact.created',
+      'step.completed',
+      'process.stopped',
+      'fixture.stopped',
+    ]);
+    expect(events.slice(1, 4).map((value) => value.timestamp)).toEqual(
+      recoveryTimestamps
+    );
   });
 
   test('replay reconstructs completed state', () => {
@@ -91,6 +250,54 @@ describe('Run Event Log', () => {
           attempts: 1,
           completedSteps: ['navigate-discovery'],
           artifacts: ['artifacts/navigate-discovery.png'],
+        },
+      },
+    });
+  });
+
+  test('replay retains both automatic-retry attempts and a distinct Flaky outcome', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'ogi-event-flaky-'));
+    const path = join(directory, 'events.jsonl');
+    const events = [
+      event(1, 'run.started', { platform: 'linux' }),
+      event(2, 'scenario.started', {
+        scenarioId: 'application-visible-navigation',
+        kind: 'Application Scenario',
+      }),
+      event(3, 'attempt.started', {
+        scenarioId: 'application-visible-navigation',
+        attempt: 1,
+      }),
+      event(4, 'attempt.completed', { attempt: 1, outcome: 'Failed' }),
+      event(5, 'retry.scheduled', {
+        scenarioId: 'application-visible-navigation',
+        fromAttempt: 1,
+        toAttempt: 2,
+        reason: 'first attempt failed',
+      }),
+      event(6, 'attempt.started', {
+        scenarioId: 'application-visible-navigation',
+        attempt: 2,
+      }),
+      event(7, 'attempt.completed', { attempt: 2, outcome: 'Passed' }),
+      event(8, 'scenario.completed', {
+        scenarioId: 'application-visible-navigation',
+        outcome: 'Flaky',
+      }),
+      event(9, 'run.completed', { outcome: 'Flaky' }),
+    ];
+    writeFileSync(
+      path,
+      `${events.map((value) => JSON.stringify(value)).join('\n')}\n`
+    );
+
+    expect(replayRunEventLog(path)).toMatchObject({
+      outcome: 'Flaky',
+      completed: true,
+      scenarios: {
+        'application-visible-navigation': {
+          outcome: 'Flaky',
+          attempts: 2,
         },
       },
     });
@@ -177,6 +384,8 @@ describe('Run Event Log', () => {
   test('HTML report exposes named steps, outcomes, errors, and artifacts', () => {
     const directory = mkdtempSync(join(tmpdir(), 'ogi-event-report-'));
     const path = join(directory, 'events.jsonl');
+    mkdirSync(join(directory, 'artifacts'));
+    writeFileSync(join(directory, 'artifacts', 'failure.png'), 'evidence');
     writeFileSync(
       path,
       [
@@ -208,6 +417,14 @@ describe('Run Event Log', () => {
     expect(report).toContain('Install &lt;fixture&gt;');
     expect(report).toContain('Failed');
     expect(report).toContain('Expected exactly one &amp; received two');
+    expect(report).toContain('href="artifacts/failure.png"');
     expect(report).toContain('artifacts/failure.png');
+    const hrefs = [...report.matchAll(/href="([^"]+)"/g)].map(
+      (match) => match[1]!
+    );
+    expect(hrefs).toContain('artifacts/failure.png');
+    for (const href of hrefs) {
+      expect(existsSync(join(directory, href))).toBe(true);
+    }
   });
 });

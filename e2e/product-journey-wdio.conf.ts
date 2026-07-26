@@ -1,11 +1,14 @@
 import { join } from 'node:path';
 import { readPackagedHandoffRunDescriptor } from './src/packaged-handoff';
+import { writeExpectedAssertionExitConfirmation } from './src/run-reliability';
 
 const descriptorPath = process.env.OGI_RUN_DESCRIPTOR;
 if (!descriptorPath) throw new Error('OGI_RUN_DESCRIPTOR is required');
 const descriptor = readPackagedHandoffRunDescriptor(descriptorPath);
+const chromedriverBinary = process.env.OGI_CHROMEDRIVER_PATH;
 const appArgs = [
   '--disable-gpu',
+  ...(descriptor.offlineProductBehavior ? ['--online=false'] : []),
   ...(process.platform === 'linux' ? ['--no-sandbox'] : []),
   `--user-data-dir=${descriptor.updaterUserDataDirectory}`,
 ];
@@ -22,6 +25,13 @@ export const config = {
   capabilities: [
     {
       browserName: 'electron',
+      ...(chromedriverBinary
+        ? {
+            'wdio:chromedriverOptions': {
+              binary: chromedriverBinary,
+            },
+          }
+        : {}),
       'wdio:electronServiceOptions': {
         appEntryPoint: join(
           descriptor.packagedUpdaterDirectory,
@@ -43,4 +53,16 @@ export const config = {
       },
     ],
   ],
+  onComplete(
+    exitCode: number,
+    _config: unknown,
+    _capabilities: unknown,
+    results: unknown
+  ) {
+    writeExpectedAssertionExitConfirmation(
+      process.env.OGI_EXPECTED_ASSERTION_EXIT,
+      exitCode,
+      results
+    );
+  },
 };

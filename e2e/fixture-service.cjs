@@ -1,17 +1,23 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
+const { spawn } = require('node:child_process');
+const { pathToFileURL } = require('node:url');
 
 function registerFixtureService(
   ipcMain,
   applicationStateDirectory,
   fixtureBaseUrl,
   scenarioSandboxDirectory,
-  clientSdkPort
+  clientSdkPort,
+  effectiveOnline = true,
+  torrentFixture = null
 ) {
   fixtureBaseUrl ??= 'http://127.0.0.1:1';
   scenarioSandboxDirectory ??= applicationStateDirectory;
   const replayEvents = new Map();
+  let torrentRuntime;
+  let torrentReady = Promise.resolve();
   const fixtureAddonDirectory = path.join(
     scenarioSandboxDirectory,
     'installation/app/ogi-e2e-fixture-addon'
@@ -44,13 +50,40 @@ function registerFixtureService(
               sandboxPath(`./library/${appID}.json`),
               JSON.stringify(libraryInfo, null, 2)
             ),
+          removeLibraryFile: (appID) =>
+            fs.rmSync(sandboxPath(`./library/${appID}.json`), { force: true }),
+          removeFromInternalsApps: (appID) => {
+            const appsPath = sandboxPath('./internals/apps.json');
+            if (!fs.existsSync(appsPath)) return;
+            const apps = JSON.parse(fs.readFileSync(appsPath, 'utf8'));
+            fs.writeFileSync(
+              appsPath,
+              JSON.stringify(
+                apps.filter((id) => id !== appID),
+                null,
+                2
+              )
+            );
+          },
+          uninstallGameFromLibrary: (appID, deleteFiles) => {
+            if (deleteFiles) {
+              throw new Error(
+                'File deletion requires the packaged production library runtime'
+              );
+            }
+            fs.rmSync(sandboxPath(`./library/${appID}.json`), { force: true });
+            return { filesRemoved: false };
+          },
         }
       : require(path.join(fixtureAddonDirectory, 'dist/library-runtime.cjs'));
   const {
     ensureLibraryDir,
     getAllLibraryFiles,
     loadLibraryInfo,
+    removeFromInternalsApps,
+    removeLibraryFile,
     saveLibraryInfo,
+    uninstallGameFromLibrary,
   } = libraryRuntime;
 
   function sandboxPath(relativePath) {
@@ -97,9 +130,30 @@ function registerFixtureService(
     event.returnValue = true;
   });
 
-  for (const channel of ['fs:get-files-in-dir']) {
-    ipcMain.handle(channel, () => []);
-  }
+  ipcMain.handle('fs:get-files-in-dir', (_event, relativePath) => {
+    const directory = sandboxPath(relativePath);
+    return fs.existsSync(directory) ? fs.readdirSync(directory) : [];
+  });
+  ipcMain.handle('fs:delete', async (_event, relativePath) => {
+    fs.rmSync(sandboxPath(relativePath), { recursive: true, force: true });
+    return true;
+  });
+  ipcMain.handle('fs:move', async (_event, { source, destination }) => {
+    const sourcePath = sandboxPath(source);
+    const destinationPath = sandboxPath(destination);
+    fs.mkdirSync(path.dirname(destinationPath), { recursive: true });
+    fs.renameSync(sourcePath, destinationPath);
+    return 'success';
+  });
+  ipcMain.on('fs:stat', (event, { path: relativePath }) => {
+    const target = sandboxPath(relativePath);
+    event.returnValue = fs.existsSync(target)
+      ? {
+          size: fs.statSync(target).size,
+          isDirectory: fs.statSync(target).isDirectory(),
+        }
+      : null;
+  });
 
   ipcMain.handle('oobe:download-tools', (event) => {
     event.sender.send('oobe:log', 'Using sandboxed prerequisite state');
@@ -108,7 +162,7 @@ function registerFixtureService(
   ipcMain.handle('oobe:set-steamgriddb-key', () => true);
   ipcMain.handle('app:get-os', () => process.platform);
   ipcMain.handle('app:is-steam-deck', () => false);
-  ipcMain.handle('app:is-online', () => true);
+  ipcMain.handle('app:is-online', () => effectiveOnline);
   ipcMain.handle('app:axios', () => ({
     data: [
       {
@@ -121,7 +175,7 @@ function registerFixtureService(
     ],
   }));
   let addonRuntime;
-  if (clientSdkPort === undefined) {
+  if (clientSdkPort === undefined || !effectiveOnline) {
     ipcMain.handle('install-addons', (_event, addons) => {
       const generalPath = sandboxPath('./config/option/general.json');
       const general = JSON.parse(fs.readFileSync(generalPath, 'utf8'));
@@ -166,7 +220,47 @@ function registerFixtureService(
     saveLibraryInfo(libraryInfo.appID, libraryInfo);
     return 'success';
   });
-  if (clientSdkPort === undefined) {
+  ipcMain.handle('app:launch-game', (event, appID) => {
+    const libraryInfo = loadLibraryInfo(Number(appID));
+    if (!libraryInfo) throw new Error(`Fixture game not found: ${appID}`);
+    const gameEnvironment = { ...process.env };
+    delete gameEnvironment.ELECTRON_RUN_AS_NODE;
+    if (!gameEnvironment.OGI_OFFLINE_TRAFFIC_GUARD_CONFIG) {
+      delete gameEnvironment.NODE_OPTIONS;
+    }
+    const gameLogPath = path.join(
+      scenarioSandboxDirectory,
+      'artifacts',
+      'fixture-game.log'
+    );
+    const gameLog = fs.openSync(gameLogPath, 'a');
+    const child = spawn(libraryInfo.launchExecutable, [], {
+      cwd: libraryInfo.cwd,
+      env: gameEnvironment,
+      shell:
+        process.platform === 'win32' &&
+        /\.(bat|cmd)$/i.test(libraryInfo.launchExecutable),
+      stdio: ['ignore', gameLog, gameLog],
+    });
+    event.sender.send('game:launch', { id: libraryInfo.appID });
+    child.once('error', (error) => {
+      fs.appendFileSync(gameLogPath, `Fixture game spawn failed: ${error}\n`);
+      fs.closeSync(gameLog);
+      event.sender.send('game:exit', { id: libraryInfo.appID });
+    });
+    child.once('exit', (code, signal) => {
+      fs.appendFileSync(
+        gameLogPath,
+        `Fixture game exited with code ${code} and signal ${signal}\n`
+      );
+      fs.closeSync(gameLog);
+      event.sender.send('game:exit', { id: libraryInfo.appID });
+    });
+  });
+  ipcMain.handle('app:remove-app', (_event, appID, options) =>
+    uninstallGameFromLibrary(Number(appID), options?.deleteFiles === true)
+  );
+  if (clientSdkPort === undefined || !effectiveOnline) {
     ipcMain.handle('ddl:download', async (_event, downloads) => {
       const id = randomUUID();
       for (const download of downloads) {
@@ -216,19 +310,59 @@ function registerFixtureService(
     );
     directDownloadRuntime.registerDownloadHandshakeHandlers();
     directDownloadRuntime.default();
+    if (torrentFixture) {
+      torrentReady = import(
+        pathToFileURL(
+          path.join(fixtureAddonDirectory, 'dist/torrent-runtime.mjs')
+        ).href
+      ).then((runtime) => {
+        torrentRuntime = runtime;
+        torrentRuntime.configureWebTorrentClient({
+          dht: false,
+          lsd: false,
+          utp: false,
+          tracker: true,
+          natUpnp: false,
+          natPmp: false,
+        });
+        torrentRuntime.default();
+      });
+    }
   }
 
-  if (clientSdkPort === undefined) {
+  if (clientSdkPort === undefined || !effectiveOnline) {
     const close = async () => {};
     close.ready = Promise.resolve();
     return close;
   }
 
-  const ready = addonRuntime.startAddonServer();
+  const installedStatePath = path.join(
+    applicationStateDirectory,
+    'config/option/installed.json'
+  );
+  const ready = Promise.all([
+    addonRuntime.startAddonServer(),
+    torrentReady,
+  ]).then(() => undefined);
+  let restoredAddonsReady;
+  ipcMain.on('client-ready-for-events', (event) => {
+    if (!fs.existsSync(installedStatePath)) return;
+    restoredAddonsReady ??= ready.then(() => addonRuntime.startAddons());
+    void restoredAddonsReady.then(() => {
+      if (event.sender.isDestroyed()) return;
+      event.sender.send('addon-runtime-ready');
+      setTimeout(() => {
+        if (event.sender.isDestroyed()) return;
+        event.sender.send('addon-connected', 'ogi-e2e-fixture-addon');
+      }, 1000);
+    });
+  });
   let closed = false;
   const close = async () => {
     if (closed) return;
     closed = true;
+    await torrentReady;
+    await torrentRuntime?.stopWebTorrentClient();
     await addonRuntime.stopAddonServer();
   };
   close.ready = ready;

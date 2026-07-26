@@ -16,6 +16,10 @@ const stepId = 'select-stable-fixture-release';
 
 describe('deterministic Updater Scenario', () => {
   it('selects Stable and reads release metadata from the Fixture Service', async () => {
+    const attempt = Number(process.env.OGI_SCENARIO_ATTEMPT ?? '1');
+    if (!Number.isInteger(attempt) || attempt < 1 || attempt > 2) {
+      throw new Error('OGI_SCENARIO_ATTEMPT must be 1 or 2');
+    }
     writeEvent({
       type: 'step.started',
       payload: { stepId, name: 'Select Stable fixture release' },
@@ -64,7 +68,7 @@ describe('deterministic Updater Scenario', () => {
       );
       const screenshotPath = join(
         descriptor.artifactDirectory,
-        'fixture-release-ready.png'
+        `attempt-${attempt}-fixture-release-ready.png`
       );
       await browser.saveScreenshot(screenshotPath);
       writeEvent({
@@ -75,12 +79,18 @@ describe('deterministic Updater Scenario', () => {
           stepId,
         },
       });
+      if (process.env.OGI_E2E_FAIL_FIRST_ATTEMPT === '1' && attempt === 1) {
+        throw new Error('Deliberate first-attempt Updater assertion failure');
+      }
       writeEvent({
         type: 'step.completed',
         payload: { stepId, outcome: 'Passed' },
       });
     } catch (cause) {
-      const failurePath = join(descriptor.artifactDirectory, 'failure.png');
+      const failurePath = join(
+        descriptor.artifactDirectory,
+        `attempt-${attempt}-failure.png`
+      );
       try {
         await browser.saveScreenshot(failurePath);
         writeEvent({
@@ -94,15 +104,18 @@ describe('deterministic Updater Scenario', () => {
       } catch {
         // A session-start failure can make screenshot capture unavailable.
       }
+      const deliberateAssertion =
+        process.env.OGI_E2E_FAIL_FIRST_ATTEMPT === '1' && attempt === 1;
       writeEvent({
         type: 'step.completed',
         payload: {
           stepId,
           outcome: 'Failed',
           error: cause instanceof Error ? cause.message : String(cause),
+          ...(!deliberateAssertion ? { expectedProcessExit: true } : {}),
         },
       });
-      throw cause;
+      if (!deliberateAssertion) throw cause;
     }
   });
 });

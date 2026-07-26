@@ -27,9 +27,8 @@ import {
   ensureLibraryDir,
   getAllLibraryFiles,
   loadLibraryInfo,
-  removeFromInternalsApps,
-  removeLibraryFile,
   saveLibraryInfo,
+  uninstallGameFromLibrary,
 } from '@/electron/handlers/helpers.app/library.js';
 import { generateNotificationId } from '@/electron/handlers/helpers.app/notifications.js';
 import {
@@ -138,7 +137,7 @@ export async function launchGameFromLibrary(
   const needsShellOnWindows = /\.(bat|cmd)$/i.test(launchExecutable);
   const spawnedItem = spawn(launchExecutable, otherLaunchArguments, {
     cwd: appInfo.cwd,
-    shell: process.platform === 'win32' ? needsShellOnWindows : true,
+    shell: process.platform === 'win32' ? needsShellOnWindows : false,
     env: {
       ...process.env,
       ...(launchEnv ?? {}),
@@ -398,19 +397,11 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
       executeWrapperCommandForAppSteam(appid, wrapperCommand)
   );
 
-  ipcMain.handle('app:remove-app', async (_, appid: number) => {
-    ensureLibraryDir();
-    ensureInternalsDir();
-
-    const appInfo = loadLibraryInfo(appid);
-    if (!appInfo) {
-      return;
-    }
-
-    removeLibraryFile(appid);
-    removeFromInternalsApps(appid);
-    return;
-  });
+  ipcMain.handle(
+    'app:remove-app',
+    async (_, appid: number, options?: { deleteFiles?: boolean }) =>
+      uninstallGameFromLibrary(appid, options?.deleteFiles === true)
+  );
 
   ipcMain.handle(
     'app:insert-app',

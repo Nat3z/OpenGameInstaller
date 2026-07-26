@@ -376,6 +376,29 @@ const ogiDebug = () => (process.env.OGI_DEBUG ?? 'false') === 'true';
  */
 let handlersRegistered = false;
 
+function emitUpdaterStartupHealth() {
+  const healthPath = process.env.OGI_STARTUP_HEALTH_PATH;
+  const token = process.env.OGI_STARTUP_HEALTH_TOKEN;
+  const transactionToken = process.env.OGI_UPDATE_TRANSACTION_TOKEN;
+  if (!healthPath || !token || !transactionToken) return;
+  const temporaryPath = `${healthPath}.${process.pid}.tmp`;
+  fs.mkdirSync(join(healthPath, '..'), { recursive: true });
+  fs.writeFileSync(
+    temporaryPath,
+    JSON.stringify({
+      version: 1,
+      state: 'interactive',
+      processAlive: true,
+      pid: process.pid,
+      token,
+      transactionToken,
+      timestamp: new Date().toISOString(),
+    })
+  );
+  fs.renameSync(temporaryPath, healthPath);
+  console.log(`[updater-health] Startup Health emitted at ${healthPath}`);
+}
+
 function registerMainHandlers(win: BrowserWindow) {
   if (handlersRegistered) return;
   handlersRegistered = true;
@@ -385,7 +408,7 @@ function registerMainHandlers(win: BrowserWindow) {
   FSEventHandler();
   RealdDebridHandler(win);
   AllDebridHandler(win);
-  TorrentHandler(win);
+  TorrentHandler(win, sendNotification);
   DirectDownloadHandler(win);
   AddonManagerHandler();
   OOBEHandler();
@@ -487,6 +510,7 @@ async function onMainAppReady() {
   }
 
   convertLibrary();
+  emitUpdaterStartupHealth();
 
   mainWindow?.webContents?.setWindowOpenHandler((details) => {
     shell.openExternal(details.url);

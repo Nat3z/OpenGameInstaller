@@ -19,6 +19,7 @@ import {
   currentStorePageOpened,
   currentStorePageOpenedStorefront,
   gamesLaunched,
+  isOnline,
   launchGameTrigger,
   launchOverlayPlayPageReady,
   setHeaderBackButton,
@@ -111,9 +112,13 @@ async function launchGame() {
   playButton.querySelector('svg')!!.style.display = 'none';
   playButton.querySelector('p')!!.textContent = 'WAITING';
   try {
-    console.log('launching pre-launch');
-    console.log('launchApp', libraryInfo);
-    await runLaunchAppAddons(libraryInfo, 'pre');
+    if ($isOnline) {
+      console.log('launching pre-launch');
+      console.log('launchApp', libraryInfo);
+      await runLaunchAppAddons(libraryInfo, 'pre');
+    } else {
+      console.log('Offline mode: skipping addon pre-launch hooks');
+    }
   } catch (error) {
     console.error(error);
     // remove the game from the gamesLaunched state first so the play button is restored
@@ -337,6 +342,11 @@ onMount(async () => {
     console.log('Header back button clicked');
     exitPlayPage();
   }, 'Back to library');
+
+  if (!$isOnline) {
+    console.log('Offline mode: skipping addon task queries');
+    return;
+  }
 
   const addons = await fetchAddonsWithConfigure();
   addonsMap = new Map(

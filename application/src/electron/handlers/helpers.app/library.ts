@@ -6,6 +6,7 @@ import type { LibraryInfo } from '@ogi-sdk/connect';
 import * as fs from 'fs';
 import { join } from 'path';
 import { __dirname } from '@/electron/manager/manager.paths.js';
+import { deleteOwnedInstallDirectory } from './uninstall.js';
 
 export function getLibraryPath(appID: number): string {
   return join(__dirname, `library/${appID}.json`);
@@ -65,6 +66,28 @@ export function removeLibraryFile(appID: number): void {
   if (fs.existsSync(appPath)) {
     fs.unlinkSync(appPath);
   }
+}
+
+export type UninstallGameResult = {
+  filesRemoved: boolean;
+};
+
+export function uninstallGameFromLibrary(
+  appID: number,
+  deleteFiles = false
+): UninstallGameResult {
+  ensureLibraryDir();
+  ensureInternalsDir();
+
+  const libraryInfo = loadLibraryInfo(appID);
+  if (!libraryInfo) return { filesRemoved: false };
+
+  const filesRemoved = deleteFiles
+    ? deleteOwnedInstallDirectory(libraryInfo, __dirname)
+    : false;
+  removeLibraryFile(appID);
+  removeFromInternalsApps(appID);
+  return { filesRemoved };
 }
 
 export function getInternalsAppsPath(): string {

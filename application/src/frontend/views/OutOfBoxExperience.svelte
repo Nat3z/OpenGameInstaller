@@ -1121,7 +1121,7 @@ onDestroy(() => {
                     class="oobe-addon-image"
                   />
                   <div class="oobe-addon-meta">
-                    <h3 class="oobe-addon-title">{addon.name}</h3>
+                    <h2 class="oobe-addon-title">{addon.name}</h2>
                     <p class="oobe-addon-author">by {addon.author}</p>
                   </div>
                 </div>
@@ -1587,7 +1587,7 @@ onDestroy(() => {
   }
 
   .oobe-addon-source {
-    @apply text-xs font-open-sans text-text-muted truncate;
+    @apply text-xs font-open-sans text-text-secondary truncate;
   }
 
   .oobe-addon-select {

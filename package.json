@@ -2,7 +2,8 @@
   "name": "ogi-monorepo",
   "private": true,
   "scripts": {
-    "build": "bun run --filter './packages/*' build",
+    "build": "bun run ensure:workspace-builds --force",
+    "ensure:workspace-builds": "bun run scripts/ensure-workspace-builds.ts",
     "release": "bun run --filter './packages/*' release",
     "dev": "bun run --filter 'opengameinstaller-gui' dev",
     "test:accessibility": "bun run --cwd e2e test:accessibility",
@@ -27,7 +28,7 @@
     "e2e:live-service": "bun run --cwd e2e live-service",
     "format": "biome check --write package.json packages application/src application/package.json updater web/src web/community web/scripts web/package.json test-addon --files-ignore-unknown=true",
     "lint": "biome check package.json packages application/src application/package.json updater web/src web/community web/scripts web/package.json test-addon --files-ignore-unknown=true",
-    "typecheck": "bun run --filter './packages/*' build && bun run --filter '*' typecheck"
+    "typecheck": "bun run build && bun run --filter '*' typecheck"
   },
   "workspaces": [
     "packages/*",

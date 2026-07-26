@@ -8,6 +8,7 @@ import {
   CI_WORKFLOW_TIMEOUTS,
   type CiSummary,
   classifyCiCheckOutcome,
+  classifyWorkspacePreparationOutcome,
   collectTopLevelArtifactTypes,
   evaluateRunEventBudgets,
   renderCiHtmlSummary,
@@ -52,6 +53,17 @@ describe('CI and release gates', () => {
     );
     expect(CI_WORKFLOW_TIMEOUTS.fullMinutes * 60_000).toBeGreaterThan(
       CI_BUDGETS.fullJobMs
+    );
+  });
+
+  test('classifies workspace preparation timeouts as budget failures', () => {
+    expect(
+      classifyWorkspacePreparationOutcome(
+        Object.assign(new Error('timed out'), { code: 'ETIMEDOUT' })
+      )
+    ).toBe('Budget Failed');
+    expect(classifyWorkspacePreparationOutcome(new Error('build failed'))).toBe(
+      'Failed'
     );
   });
 
@@ -300,6 +312,55 @@ describe('CI and release gates', () => {
       artifactUrl:
         'https://github.example/owner/repository/actions/runs/42/artifacts',
     });
+  });
+
+  test('builds generated workspace package entries before application and fixture consumers', () => {
+    const applicationPackage = JSON.parse(
+      readFileSync(join(repositoryRoot, 'application/package.json'), 'utf8')
+    );
+    const e2ePackage = JSON.parse(
+      readFileSync(join(repositoryRoot, 'e2e/package.json'), 'utf8')
+    );
+
+    const rootPackage = JSON.parse(
+      readFileSync(join(repositoryRoot, 'package.json'), 'utf8')
+    );
+    const ciSuiteSource = readFileSync(
+      join(repositoryRoot, 'e2e/src/run-ci-suite.ts'),
+      'utf8'
+    );
+
+    expect(rootPackage.scripts['ensure:workspace-builds']).toBe(
+      'bun run scripts/ensure-workspace-builds.ts'
+    );
+    expect(applicationPackage.scripts.prebuild).toBe(
+      'bun run --cwd .. ensure:workspace-builds'
+    );
+    expect(rootPackage.scripts.build).toBe(
+      'bun run ensure:workspace-builds --force'
+    );
+    expect(applicationPackage.scripts['build:all']).toBe(
+      'bun run --cwd .. ensure:workspace-builds --force'
+    );
+    expect(e2ePackage.dependencies['ogi-addon']).toBe('workspace:*');
+    expect(e2ePackage.scripts['build:fixture-addon']).toStartWith(
+      'bun run prepare:workspace-packages && '
+    );
+    expect(e2ePackage.scripts['build:fixture-addon:main']).toStartWith(
+      'bun run --cwd .. ensure:workspace-builds ogi-addon && '
+    );
+    expect(
+      ciSuiteSource.indexOf('ensureWorkspaceBuilds(undefined')
+    ).toBeLessThan(ciSuiteSource.indexOf('for (const entry'));
+    expect(ciSuiteSource).toContain(
+      'timeoutMs: jobBudgetMs - (Date.now() - startedAt)'
+    );
+    expect(ciSuiteSource).toContain(
+      'outcome: classifyWorkspacePreparationOutcome(cause)'
+    );
+    expect(ciSuiteSource.indexOf('workspace-prerequisites')).toBeLessThan(
+      ciSuiteSource.lastIndexOf("join(runRoot, 'ci-summary.json')")
+    );
   });
 
   test('configures Windows and Linux PR, nightly, and release workflows with hard job budgets and artifact publication', () => {

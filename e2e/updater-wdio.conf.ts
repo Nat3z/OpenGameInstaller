@@ -1,5 +1,6 @@
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createElectronServiceOptions } from './electron-service-options';
 
 const currentDirectory = dirname(fileURLToPath(import.meta.url));
 const updaterDirectory = resolve(currentDirectory, '../updater');
@@ -27,19 +28,19 @@ export const config = {
   capabilities: [
     {
       browserName: 'electron',
-      'wdio:electronServiceOptions': {
-        appEntryPoint: join(updaterDirectory, 'e2e-main.cjs'),
-        appArgs,
-      },
+      'wdio:electronServiceOptions': createElectronServiceOptions(
+        join(updaterDirectory, 'e2e-main.cjs'),
+        appArgs
+      ),
     },
   ],
   services: [
     [
       'electron',
-      {
-        appEntryPoint: join(updaterDirectory, 'e2e-main.cjs'),
-        appArgs,
-      },
+      createElectronServiceOptions(
+        join(updaterDirectory, 'e2e-main.cjs'),
+        appArgs
+      ),
     ],
   ],
 };

@@ -16,6 +16,13 @@ export const CI_WORKFLOW_TIMEOUTS = {
   fullMinutes: 35,
 } as const;
 
+export function classifyWorkspacePreparationOutcome(cause: unknown) {
+  return cause instanceof Error &&
+    (cause as NodeJS.ErrnoException).code === 'ETIMEDOUT'
+    ? 'Budget Failed'
+    : 'Failed';
+}
+
 export function collectTopLevelArtifactTypes(
   runRoot: string,
   eventLogPaths: readonly string[]

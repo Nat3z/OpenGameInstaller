@@ -40,8 +40,9 @@
     "ci:nightly": "bun run src/run-ci-suite.ts nightly",
     "ci:release": "bun run src/run-ci-suite.ts release",
     "ci:publish-summary": "bun run src/run-ci-suite.ts --publish",
-    "build:fixture-addon": "bun run build:fixture-addon:main && bun run build:fixture-addon:addons && bun run build:fixture-addon:library && bun run build:fixture-addon:download && bun run build:fixture-addon:torrent",
-    "build:fixture-addon:main": "bun build fixture-addon/main.ts --target=bun --outfile fixture-addon/dist/main.js",
+    "prepare:workspace-packages": "bun run --cwd .. ensure:workspace-builds",
+    "build:fixture-addon": "bun run prepare:workspace-packages && bun run build:fixture-addon:main && bun run build:fixture-addon:addons && bun run build:fixture-addon:library && bun run build:fixture-addon:download && bun run build:fixture-addon:torrent",
+    "build:fixture-addon:main": "bun run --cwd .. ensure:workspace-builds ogi-addon && bun build fixture-addon/main.ts --target=bun --outfile fixture-addon/dist/main.js",
     "build:fixture-addon:addons": "bun build ../application/src/electron/handlers/handler.addon.ts --target=node --format=cjs --external electron --external original-fs --outfile fixture-addon/dist/addon-runtime.cjs",
     "build:fixture-addon:library": "bun build ../application/src/electron/handlers/helpers.app/library.ts --target=node --format=cjs --external electron --outfile fixture-addon/dist/library-runtime.cjs",
     "build:fixture-addon:download": "bun build ../application/src/electron/handlers/handler.ddl.ts --target=node --format=cjs --external electron --external original-fs --outfile fixture-addon/dist/download-runtime.cjs",
@@ -72,6 +73,7 @@
   },
   "dependencies": {
     "bittorrent-tracker": "11.2.3",
+    "ogi-addon": "workspace:*",
     "webtorrent": "2.8.5"
   }
 }

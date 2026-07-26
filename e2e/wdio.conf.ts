@@ -11,6 +11,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getAccessibilityState } from './accessibility-states';
+import { createElectronServiceOptions } from './electron-service-options';
 
 const currentDirectory = dirname(fileURLToPath(import.meta.url));
 const applicationDirectory = resolve(currentDirectory, '../application');
@@ -86,19 +87,19 @@ export const config = {
   capabilities: [
     {
       browserName: 'electron',
-      'wdio:electronServiceOptions': {
-        appEntryPoint: join(applicationDirectory, 'e2e-main.cjs'),
-        appArgs: ['--disable-gpu', '--no-sandbox'],
-      },
+      'wdio:electronServiceOptions': createElectronServiceOptions(
+        join(applicationDirectory, 'e2e-main.cjs'),
+        ['--disable-gpu', '--no-sandbox']
+      ),
     },
   ],
   services: [
     [
       'electron',
-      {
-        appEntryPoint: join(applicationDirectory, 'e2e-main.cjs'),
-        appArgs: ['--disable-gpu', '--no-sandbox'],
-      },
+      createElectronServiceOptions(join(applicationDirectory, 'e2e-main.cjs'), [
+        '--disable-gpu',
+        '--no-sandbox',
+      ]),
     ],
   ],
   onComplete() {

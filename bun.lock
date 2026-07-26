@@ -68,6 +68,7 @@
       "name": "@ogi/e2e",
       "dependencies": {
         "bittorrent-tracker": "11.2.3",
+        "ogi-addon": "workspace:*",
         "webtorrent": "2.8.5",
       },
       "devDependencies": {

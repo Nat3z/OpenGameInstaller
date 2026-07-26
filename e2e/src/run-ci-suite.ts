@@ -8,12 +8,14 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { ensureWorkspaceBuilds } from '../../scripts/ensure-workspace-builds';
 import {
   type BudgetMeasurement,
   CI_BUDGETS,
   CI_SUITES,
   type CiSuiteName,
   classifyCiCheckOutcome,
+  classifyWorkspacePreparationOutcome,
   collectTopLevelArtifactTypes,
   evaluateRunEventLogBudgets,
   renderCiHtmlSummary,
@@ -75,7 +77,24 @@ if (process.argv.includes('--publish')) {
   const budgetViolations: BudgetMeasurement[] = [];
   let failed = false;
 
-  for (const entry of CI_SUITES[suiteName]) {
+  const prerequisiteStartedAt = Date.now();
+  try {
+    ensureWorkspaceBuilds(undefined, {
+      timeoutMs: jobBudgetMs - (Date.now() - startedAt),
+    });
+  } catch (cause) {
+    checks.push({
+      id: 'workspace-prerequisites',
+      outcome: classifyWorkspacePreparationOutcome(cause),
+      elapsedMs: Date.now() - prerequisiteStartedAt,
+    });
+    process.stderr.write(
+      `Workspace prerequisite build failed: ${cause instanceof Error ? cause.message : String(cause)}\n`
+    );
+    failed = true;
+  }
+
+  for (const entry of failed ? [] : CI_SUITES[suiteName]) {
     const elapsedBefore = Date.now() - startedAt;
     const remainingMs = jobBudgetMs - elapsedBefore;
     if (remainingMs <= 0) {

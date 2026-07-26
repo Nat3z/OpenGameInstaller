@@ -32,8 +32,9 @@
     }
   },
   "scripts": {
+    "prebuild": "bun run --cwd .. ensure:workspace-builds",
     "build": "electron-vite build",
-    "build:all": "bun run --cwd .. --filter './packages/*' build",
+    "build:all": "bun run --cwd .. ensure:workspace-builds --force",
     "dev": "bun run build:all && ELECTRON_EXEC_PATH=\"$(bun -e \"console.log(require('electron'))\" )\" electron-vite dev",
     "preview": "electron-vite preview",
     "dev:server": "nodemon --watch server --ext ts,json --exec \"tsc --p tsconfig.addonserver.json && bun run --bun build-addons/dev-server.js\"",

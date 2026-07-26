@@ -1,4 +1,5 @@
 import { join } from 'node:path';
+import { createElectronServiceOptions } from './electron-service-options';
 import { readPackagedHandoffRunDescriptor } from './src/packaged-handoff';
 import { writeExpectedAssertionExitConfirmation } from './src/run-reliability';
 
@@ -32,25 +33,19 @@ export const config = {
             },
           }
         : {}),
-      'wdio:electronServiceOptions': {
-        appEntryPoint: join(
-          descriptor.packagedUpdaterDirectory,
-          'e2e-product-main.cjs'
-        ),
-        appArgs,
-      },
+      'wdio:electronServiceOptions': createElectronServiceOptions(
+        join(descriptor.packagedUpdaterDirectory, 'e2e-product-main.cjs'),
+        appArgs
+      ),
     },
   ],
   services: [
     [
       'electron',
-      {
-        appEntryPoint: join(
-          descriptor.packagedUpdaterDirectory,
-          'e2e-product-main.cjs'
-        ),
-        appArgs,
-      },
+      createElectronServiceOptions(
+        join(descriptor.packagedUpdaterDirectory, 'e2e-product-main.cjs'),
+        appArgs
+      ),
     ],
   ],
   onComplete(

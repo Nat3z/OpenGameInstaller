@@ -1,5 +1,6 @@
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createElectronServiceOptions } from './electron-service-options';
 import { writeExpectedAssertionExitConfirmation } from './src/run-reliability';
 import { readUpdaterRunDescriptor } from './src/updater-scenario';
 
@@ -27,19 +28,19 @@ export const config = {
   capabilities: [
     {
       browserName: 'electron',
-      'wdio:electronServiceOptions': {
-        appEntryPoint: join(updaterDirectory, 'e2e-scenario-main.cjs'),
-        appArgs,
-      },
+      'wdio:electronServiceOptions': createElectronServiceOptions(
+        join(updaterDirectory, 'e2e-scenario-main.cjs'),
+        appArgs
+      ),
     },
   ],
   services: [
     [
       'electron',
-      {
-        appEntryPoint: join(updaterDirectory, 'e2e-scenario-main.cjs'),
-        appArgs,
-      },
+      createElectronServiceOptions(
+        join(updaterDirectory, 'e2e-scenario-main.cjs'),
+        appArgs
+      ),
     ],
   ],
   onComplete(

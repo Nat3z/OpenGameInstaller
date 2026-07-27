@@ -1,6 +1,7 @@
 /**
  * Platform-related utility functions
  */
+import { PlatformError } from '@ogi/errors';
 import * as fs from 'fs';
 import { basename, join } from 'path';
 import { __dirname } from '@/electron/manager/manager.paths.js';
@@ -23,7 +24,10 @@ export function getCurrentUsername(): string | null {
 export function getCompatDataDir(): string {
   const homeDir = getHomeDir();
   if (!homeDir) {
-    throw new Error('Home directory not found');
+    throw new PlatformError({
+      message: 'Home directory not found',
+      platform: process.platform,
+    });
   }
   return `${homeDir}/.steam/steam/steamapps/compatdata`;
 }

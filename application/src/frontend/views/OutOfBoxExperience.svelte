@@ -1,4 +1,6 @@
 <script lang="ts">
+import { ValidationError } from '@ogi/errors';
+import { Effect, Either, Schema } from 'effect';
 import { onDestroy, onMount } from 'svelte';
 import { preventDefault } from 'svelte/legacy';
 import { fade } from 'svelte/transition';
@@ -111,16 +113,25 @@ async function loadCommunityAddonsFromMarketplaces(sources: string[]) {
             'User-Agent': 'OpenGameInstaller Client/Rest1.0',
           },
         });
-        const parsed = communityAddonArraySchema.safeParse(response.data);
-        if (!parsed.success) {
+        const parsed = Schema.decodeUnknownEither(communityAddonArraySchema)(
+          response.data
+        );
+        if (Either.isLeft(parsed)) {
           console.error(
             'Invalid marketplace JSON for',
             marketplaceUrl,
-            parsed.error
+            parsed.left
           );
-          throw new Error('Invalid marketplace JSON');
+          return Effect.runPromise(
+            Effect.fail(
+              new ValidationError({
+                message: 'Invalid marketplace JSON',
+                field: marketplaceUrl,
+              })
+            )
+          );
         }
-        return parsed.data.map((addon) => ({
+        return parsed.right.map((addon) => ({
           ...addon,
           marketplaceUrl,
         }));

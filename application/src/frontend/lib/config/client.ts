@@ -136,7 +136,10 @@ export async function fetchAddonsWithConfigure() {
       }
 
       console.log('Posting stored config for addon', safeId, config);
-      await addonServer.addon(safeId).configUpdate(config as any);
+      // The wire type models config templates, but this endpoint receives values.
+      await addonServer
+        .addon(safeId)
+        .configUpdate(config as unknown as ConfigurationFile);
     })
   );
 

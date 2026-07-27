@@ -1,5 +1,6 @@
 import '@/electron/lib/source-maps.js';
 import type { ConfigurationFile } from '@ogi-sdk/connect';
+import { Effect } from 'effect';
 import { app, BrowserWindow, globalShortcut, ipcMain, shell } from 'electron';
 import fs, { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
@@ -408,9 +409,9 @@ function registerMainHandlers(win: BrowserWindow) {
   FSEventHandler();
   RealdDebridHandler(win);
   AllDebridHandler(win);
-  TorrentHandler(win, sendNotification);
+  TorrentHandler(win);
   DirectDownloadHandler(win);
-  AddonManagerHandler();
+  AddonManagerHandler(win);
   OOBEHandler();
   registerUmuHandlers();
   registerPowerSaveHandlers();
@@ -433,7 +434,7 @@ async function ensureAddonServerRunning() {
   if (isAddonServerListening) return;
 
   try {
-    await startAddonServer();
+    await Effect.runPromise(startAddonServer());
     console.log(`Addon Server is running on http://localhost:${port}`);
     console.log(`Server is being executed by electron!`);
   } catch (error) {
@@ -455,7 +456,7 @@ async function startAddonRuntime() {
     id: Math.random().toString(36).substring(7),
     type: 'success',
   });
-  await startAddons();
+  await Effect.runPromise(startAddons());
 }
 
 async function onMainAppReady() {
@@ -468,7 +469,7 @@ async function onMainAppReady() {
     await checkForAddonUpdates(mainWindow);
   }
   await sendIPCMessage('all-addons-started');
-  const configuredAddons = await waitForAddonsConfigured();
+  const configuredAddons = await Effect.runPromise(waitForAddonsConfigured());
   for (const connection of configuredAddons) {
     await sendIPCMessage('addon-connected', connection.addonInfo!.id);
   }
@@ -667,7 +668,7 @@ async function runAddonLaunchEvent(
     return { success: false, error: 'Game not found in library' };
   }
 
-  return runLaunchAppHooks(libraryInfo, launchType);
+  return Effect.runPromise(runLaunchAppHooks(libraryInfo, launchType));
 }
 
 async function handleRemoteLaunchRequest(
@@ -720,18 +721,22 @@ async function handleRemoteLaunchRequest(
 
     let wrapperResult: ExecuteWrapperResult | null = null;
     if (payload.wrapperCommand.includes('steam-launch-wrapper')) {
-      wrapperResult = await executeWrapperCommandForApp(
-        payload.gameId,
-        payload.wrapperCommand,
-        'steam-proton',
-        payload.launchEnv
+      wrapperResult = await Effect.runPromise(
+        executeWrapperCommandForApp(
+          payload.gameId,
+          payload.wrapperCommand,
+          'steam-proton',
+          payload.launchEnv
+        )
       );
     } else {
-      wrapperResult = await executeWrapperCommandForApp(
-        payload.gameId,
-        payload.wrapperCommand,
-        'unknown',
-        payload.launchEnv
+      wrapperResult = await Effect.runPromise(
+        executeWrapperCommandForApp(
+          payload.gameId,
+          payload.wrapperCommand,
+          'unknown',
+          payload.launchEnv
+        )
       );
     }
 
@@ -763,10 +768,8 @@ async function handleRemoteLaunchRequest(
     return preResult;
   }
 
-  const launchResult = await launchGameFromLibrary(
-    payload.gameId,
-    mainWindow,
-    payload.launchEnv
+  const launchResult = await Effect.runPromise(
+    launchGameFromLibrary(payload.gameId, mainWindow, payload.launchEnv)
   );
 
   if (!launchResult.success) {
@@ -855,45 +858,26 @@ app.on('ready', async () => {
 });
 
 // Quit when all windows are closed.
-app.on('window-all-closed', async function () {
-  if (!gotTheLock) {
-    return;
-  }
-
-  // On macOS it is common for applications and their menu bar
-  // to stay active until the user quits explicitly with Cmd + Q
-  if (process.platform === 'darwin') {
-    return;
-  }
-
-  // Perform cleanup before quitting
-  try {
-    releasePowerSaveBlock();
-
-    // stop torrenting
-    console.log('Stopping torrent client...');
-    await stopClient();
-
-    for (const instance of [...Addon.running.values()]) {
-      console.log(`Stopping addon ${instance.config.path}`);
-      instance.stop();
-    }
-
-    // stopping all of the torrent intervals
-    for (const interval of torrentIntervals) {
-      clearInterval(interval);
-    }
-
-    if (isAddonServerListening) {
-      console.log('Stopping addon server...');
-      await stopAddonServer();
-    }
-  } catch (error) {
-    console.error('Error during cleanup:', error);
-  }
-
-  // Now quit the application
-  app.quit();
+app.on('window-all-closed', () => {
+  if (!gotTheLock || process.platform === 'darwin') return;
+  Effect.runFork(
+    Effect.gen(function* () {
+      releasePowerSaveBlock();
+      console.log('Stopping torrent client...');
+      yield* stopClient();
+      for (const instance of [...Addon.running.values()]) {
+        console.log(`Stopping addon ${instance.config.path}`);
+        yield* instance.stop().pipe(Effect.ignore);
+      }
+      for (const interval of torrentIntervals) clearInterval(interval);
+      if (isAddonServerListening) yield* stopAddonServer();
+    }).pipe(
+      Effect.catchAll((error) =>
+        Effect.sync(() => console.error('Error during cleanup:', error))
+      ),
+      Effect.ensuring(Effect.sync(() => app.quit()))
+    )
+  );
 });
 
 app.on('activate', async function () {

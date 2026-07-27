@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { formatError, NetworkError, ValidationError } from '@ogi/errors';
 import {
   type AddonClientSDKToServerIncomingMessage,
   type AddonClientSDKToServerWebsocketMessage,
@@ -16,119 +17,159 @@ import {
   type WebSocketLike,
 } from '@ogi-sdk/connect';
 import { randomUUID } from 'crypto';
+import { Effect } from 'effect';
 import { buildEventMessage } from '../_generated/event-proxy';
 import { DeferrableTask } from '../deffered';
 import type { AddonServer } from '../server';
 import type { AddonConnection } from './addon.connection';
 import { bindWebSocketLifecycle } from './websocket-lifecycle';
 
-type SDKResponseMap = {
-  [Name in SDKRequestName]: SDKResponse<Name>;
-};
+type SDKResponseMap = { [Name in SDKRequestName]: SDKResponse<Name> };
+type ClientConnectionError = NetworkError | ValidationError;
 
 const readAddonIconPaths = (
   client: AddonConnection | undefined
-): { icon?: string; iconPath?: string } => {
-  if (!client?.filePath) return {};
-  try {
-    const raw = readFileSync(join(client.filePath, 'addon.json'), 'utf-8');
-    const parsed = JSON.parse(raw) as { icon?: string };
-    if (typeof parsed.icon !== 'string' || !parsed.icon) return {};
-    return {
-      icon: parsed.icon,
-      iconPath: join(client.filePath, parsed.icon),
-    };
-  } catch {
-    return {};
-  }
+): Effect.Effect<{ icon?: string; iconPath?: string }> => {
+  if (!client?.filePath) return Effect.succeed({});
+  return Effect.try({
+    try: () => {
+      const parsed = JSON.parse(
+        readFileSync(join(client.filePath!, 'addon.json'), 'utf-8')
+      ) as { icon?: string };
+      return typeof parsed.icon === 'string' && parsed.icon
+        ? { icon: parsed.icon, iconPath: join(client.filePath!, parsed.icon) }
+        : {};
+    },
+    catch: () => ({}),
+  }).pipe(Effect.merge);
 };
 
+/** Effect-based SDK websocket connection. */
 export class ClientConnection {
-  private socket: WebSocketLike;
-  private transport: EventResponseSocket<
-    AddonClientSDKToServerIncomingMessage,
-    AddonServerToClientSDKIncomingMessage
-  >;
-  private server: AddonServer;
+  private constructor(
+    private readonly socket: WebSocketLike,
+    private readonly server: AddonServer,
+    private readonly transport: EventResponseSocket<
+      AddonClientSDKToServerIncomingMessage,
+      AddonServerToClientSDKIncomingMessage
+    >
+  ) {}
 
-  constructor(socket: WebSocketLike, server: AddonServer) {
-    this.socket = socket;
-    this.server = server;
-    this.transport = new EventResponseSocket(this.socket, {
-      onInvalidMessage: () => {
-        console.error('Failed to parse websocket message');
-        this.socket.close(1008, 'Invalid JSON message');
-      },
+  public static make(
+    socket: WebSocketLike,
+    server: AddonServer
+  ): Effect.Effect<ClientConnection, NetworkError> {
+    return Effect.gen(function* () {
+      const transport = yield* EventResponseSocket.make<
+        AddonClientSDKToServerIncomingMessage,
+        AddonServerToClientSDKIncomingMessage
+      >(socket, {
+        onInvalidMessage: () =>
+          Effect.sync(() => {
+            console.error('Failed to parse websocket message');
+            socket.close(1008, 'Invalid JSON message');
+          }),
+      });
+      const connection = new ClientConnection(socket, server, transport);
+      yield* connection.setupWebsocket();
+      return connection;
     });
-
-    this.setupWebsocket();
   }
 
-  private setupWebsocket(): void {
-    this.transport.on('forward', async (message) => {
-      const { addonId, event, args } = message.args;
-      const addon = this.server.getClient(addonId);
+  private setupWebsocket(): Effect.Effect<void, NetworkError> {
+    return Effect.gen(this, function* () {
+      yield* this.transport.on('forward', (message) =>
+        this.handleForward(message)
+      );
+      yield* this.transport.on('defer-forward', (message) =>
+        this.handleDeferredForward(message)
+      );
+      yield* this.transport.on('query-connected-addons', (message) =>
+        this.handleConnectedAddons(message)
+      );
+      yield* this.transport.on('get-deferred-tasks', (message) =>
+        this.handleDeferredTasks(message)
+      );
+      yield* this.transport.on('get-deferred-task', (message) =>
+        this.handleDeferredTask(message)
+      );
+      yield* bindWebSocketLifecycle(this.socket, {
+        onClose: () =>
+          this.transport.rejectPendingResponses('Websocket closed'),
+        onError: () => this.transport.rejectPendingResponses('Websocket error'),
+      });
+    });
+  }
 
+  private handleForward(
+    message: AddonClientSDKToServerIncomingMessage
+  ): Effect.Effect<void> {
+    return Effect.gen(this, function* () {
+      const { addonId, event, args } =
+        message.args as AddonClientSDKToServerWebsocketMessage<'forward'>['args'];
       if (!message.id) {
         this.socket.close(1008, 'Forward message missing ID');
         return;
       }
-
+      const addon = this.server.getClient(addonId);
       if (!addon) {
-        await this.sendForwardResponse(
+        yield* this.sendForwardResponse(
           message.id,
           addonId,
           event,
           undefined,
           `Addon not connected: ${addonId}`
-        );
+        ).pipe(Effect.ignore);
         return;
       }
-
-      try {
-        const response = await addon.sendEventMessage(
+      const result = yield* addon
+        .sendEventMessage(
           buildEventMessage(
             event,
             args as AddonServerToClientEventArgs[AddonServerToClientEventName]
           ),
           event !== 'response'
-        );
-
-        await this.sendForwardResponse(
-          message.id,
-          addonId,
-          event,
-          response.args,
-          response.statusError
-        );
-      } catch (error) {
-        await this.sendForwardResponse(
+        )
+        .pipe(Effect.either);
+      if (result._tag === 'Left') {
+        yield* this.sendForwardResponse(
           message.id,
           addonId,
           event,
           undefined,
-          error instanceof Error ? error.message : String(error)
-        );
+          formatError(result.left)
+        ).pipe(Effect.ignore);
+      } else {
+        yield* this.sendForwardResponse(
+          message.id,
+          addonId,
+          event,
+          result.right.args,
+          result.right.statusError
+        ).pipe(Effect.ignore);
       }
     });
+  }
 
-    this.transport.on('defer-forward', async (message) => {
+  private handleDeferredForward(
+    message: AddonClientSDKToServerIncomingMessage
+  ): Effect.Effect<void> {
+    return Effect.gen(this, function* () {
       if (!message.id) {
         this.socket.close(1008, 'Deferred forward message missing ID');
         return;
       }
-
-      const { addonId, event, args } = message.args;
+      const { addonId, event, args } =
+        message.args as AddonClientSDKToServerWebsocketMessage<'defer-forward'>['args'];
       const addon = this.server.getClient(addonId);
       if (!addon) {
-        await this.sendQueryResponse(
+        yield* this.sendQueryResponse(
           message.id,
           { taskID: '' },
           `Addon not connected: ${addonId}`
-        );
+        ).pipe(Effect.ignore);
         return;
       }
-
       const taskID = randomUUID();
       const typedEvent = event as AddonServerToClientEventName;
       const forwardedArgs = [...args];
@@ -145,156 +186,141 @@ export class ClientConnection {
         forwardedArgs as AddonServerToClientEventArgs[AddonServerToClientEventName]
       );
       eventMessage.id = taskID;
-
-      const task = new DeferrableTask(async () => {
-        const response = await addon.sendEventMessage(
-          eventMessage,
-          event !== 'response'
-        );
-        if (response.statusError) {
-          throw new Error(response.statusError);
-        }
-        return response.args;
-      }, addonId);
+      const task = new DeferrableTask(
+        () =>
+          addon
+            .sendEventMessage(eventMessage, event !== 'response')
+            .pipe(
+              Effect.flatMap((response) =>
+                response.statusError
+                  ? Effect.fail(
+                      new NetworkError({ message: response.statusError })
+                    )
+                  : Effect.succeed(response.args)
+              )
+            ),
+        addonId
+      );
       task.id = taskID;
-      this.server.getDeferredTasksManager().addTask(task);
-      void task.run().catch((error) => {
-        console.error('Deferred task failed:', error);
-      });
-
-      await this.sendQueryResponse(message.id, { taskID });
+      yield* this.server.getDeferredTasksManager().addTask(task);
+      yield* Effect.forkDaemon(task.run());
+      yield* this.sendQueryResponse(message.id, { taskID }).pipe(Effect.ignore);
     });
+  }
 
-    this.transport.on('query-connected-addons', async (message) => {
+  private handleConnectedAddons(
+    message: AddonClientSDKToServerIncomingMessage
+  ): Effect.Effect<void> {
+    return Effect.gen(this, function* () {
       if (!message.id) {
         this.socket.close(1008, 'Query message missing ID');
         return;
       }
-
-      try {
-        const addonIds = this.addonIdsForQuery();
-        await this.sendQueryResponse(message.id, {
-          addons: addonIds.map((addonId) => {
-            const client = this.server.getClient(addonId);
-            return {
-              ...client?.addonInfo,
-              id: addonId,
-              name: client?.addonInfo?.name ?? '',
-              eventsAvailable: client?.eventsAvailable ?? [],
-              configTemplate: client?.configTemplate,
-              ...readAddonIconPaths(client),
-            } satisfies ConnectedAddonInfo;
-          }),
+      const addons: ConnectedAddonInfo[] = [];
+      for (const addonId of this.addonIdsForQuery()) {
+        const client = this.server.getClient(addonId);
+        addons.push({
+          ...client?.addonInfo,
+          id: addonId,
+          name: client?.addonInfo?.name ?? '',
+          eventsAvailable: client?.eventsAvailable ?? [],
+          configTemplate: client?.configTemplate,
+          ...(yield* readAddonIconPaths(client)),
         });
-      } catch (error) {
-        await this.sendQueryResponse(
-          message.id,
-          { addons: [] },
-          error instanceof Error ? error.message : String(error)
-        );
       }
+      yield* this.sendQueryResponse(message.id, { addons }).pipe(Effect.ignore);
     });
+  }
 
-    this.transport.on('get-deferred-tasks', async (message) => {
+  private handleDeferredTasks(
+    message: AddonClientSDKToServerIncomingMessage
+  ): Effect.Effect<void> {
+    return Effect.gen(this, function* () {
       if (!message.id) {
         this.socket.close(1008, 'Get deferred tasks message missing ID');
         return;
       }
-
-      try {
-        const tasks = Object.values(
-          this.server.getDeferredTasksManager().getTasks()
-        ).map((task) => ({
-          id: task.id,
-          addonOwner: task.addonOwner,
-          finished: task.finished,
-          progress: task.progress,
-          logs: task.logs,
-          failed: task.failed,
-        }));
-        await this.sendQueryResponse(message.id, { tasks });
-      } catch (error) {
-        await this.sendQueryResponse(
-          message.id,
-          { tasks: [] },
-          error instanceof Error ? error.message : String(error)
-        );
-      }
+      const tasks = Object.values(
+        this.server.getDeferredTasksManager().getTasks()
+      ).map((task) => ({
+        id: task.id,
+        addonOwner: task.addonOwner,
+        finished: task.finished,
+        progress: task.progress,
+        logs: task.logs,
+        failed: task.failed,
+      }));
+      yield* this.sendQueryResponse(message.id, { tasks }).pipe(Effect.ignore);
     });
+  }
 
-    this.transport.on('get-deferred-task', async (message) => {
+  private handleDeferredTask(
+    message: AddonClientSDKToServerIncomingMessage
+  ): Effect.Effect<void> {
+    return Effect.gen(this, function* () {
       if (!message.id) {
         this.socket.close(1008, 'Get deferred task message missing ID');
         return;
       }
-
-      const taskID = message.args.taskID;
-      const deferredTasksManager = this.server.getDeferredTasksManager();
-      const task = deferredTasksManager.getTasks()[taskID];
-
+      const taskID = (message.args as { taskID: string }).taskID;
+      const manager = this.server.getDeferredTasksManager();
+      const task = manager.getTasks()[taskID];
       if (!task) {
-        await this.sendQueryResponse(
+        yield* this.sendQueryResponse(
           message.id,
           { task: undefined },
           'Task not found'
-        );
+        ).pipe(Effect.ignore);
         return;
       }
-
-      const stillExists = this.server.getClient(task.addonOwner) !== undefined;
-      if (!stillExists && task.addonOwner !== '*') {
-        deferredTasksManager.removeTask(taskID);
-        await this.sendQueryResponse(
+      if (!this.server.getClient(task.addonOwner) && task.addonOwner !== '*') {
+        yield* manager.removeTask(taskID);
+        yield* this.sendQueryResponse(
           message.id,
           { task: undefined },
           'Addon is no longer connected'
-        );
+        ).pipe(Effect.ignore);
         return;
       }
-
       if (task.failed) {
-        deferredTasksManager.removeTask(taskID);
-        await this.sendQueryResponse(
+        yield* manager.removeTask(taskID);
+        yield* this.sendQueryResponse(
           message.id,
           { task: undefined },
           task.failed
-        );
+        ).pipe(Effect.ignore);
         return;
       }
-
       if (task.finished) {
-        deferredTasksManager.removeTask(taskID);
-        await this.sendQueryResponse(message.id, {
+        yield* manager.removeTask(taskID);
+        const data = yield* task
+          .getSerializedData()
+          .pipe(Effect.catchAll(() => Effect.succeed(task.data)));
+        yield* this.sendQueryResponse(message.id, {
           task: {
             id: task.id,
             addonOwner: task.addonOwner,
-            finished: task.finished,
+            finished: true,
             progress: task.progress,
             logs: task.logs,
             failed: task.failed,
-            data: task.getSerializedData(),
+            data,
             resolved: true,
           },
-        });
+        }).pipe(Effect.ignore);
         return;
       }
-
-      await this.sendQueryResponse(message.id, {
+      yield* this.sendQueryResponse(message.id, {
         task: {
           id: task.id,
           addonOwner: task.addonOwner,
-          finished: task.finished,
+          finished: false,
           progress: task.progress,
           logs: task.logs,
           failed: task.failed,
           resolved: false,
         },
-      });
-    });
-
-    bindWebSocketLifecycle(this.socket, {
-      onClose: () => this.transport.rejectPendingResponses('Websocket closed'),
-      onError: () => this.transport.rejectPendingResponses('Websocket error'),
+      }).pipe(Effect.ignore);
     });
   }
 
@@ -304,16 +330,15 @@ export class ClientConnection {
     event: AddonServerToClientEventName,
     args: unknown,
     statusError?: string
-  ): Promise<AddonClientSDKToServerWebsocketMessage> {
+  ): Effect.Effect<
+    AddonClientSDKToServerWebsocketMessage,
+    ClientConnectionError
+  > {
     return this.transport.send(
       {
         event: 'forward-response',
         id,
-        args: {
-          addonId,
-          event,
-          args,
-        },
+        args: { addonId, event, args },
         statusError,
       } as AddonServerToClientSDKIncomingMessage,
       { expectResponse: false }
@@ -322,7 +347,7 @@ export class ClientConnection {
 
   private addonIdsForQuery(): string[] {
     return Array.from(this.server.getConnections())
-      .filter((addon: AddonConnection) => Boolean(addon.addonInfo?.id))
+      .filter((addon) => Boolean(addon.addonInfo?.id))
       .map((addon) => addon.addonInfo!.id);
   }
 
@@ -330,7 +355,10 @@ export class ClientConnection {
     id: string,
     args: SDKResponseMap[Name],
     statusError?: string
-  ): Promise<AddonClientSDKToServerWebsocketMessage> {
+  ): Effect.Effect<
+    AddonClientSDKToServerWebsocketMessage,
+    ClientConnectionError
+  > {
     return this.transport.send(
       {
         event: 'response',
@@ -344,33 +372,43 @@ export class ClientConnection {
 
   public sendNotification(
     notification: AddonNotificationMessage
-  ): Promise<AddonClientSDKToServerWebsocketMessage> {
-    return this.transport.send(
-      {
-        event: 'notification',
-        args: notification,
-      } as AddonServerToClientSDKWebsocketMessage<'notification'>,
-      { expectResponse: false }
-    );
+  ): Effect.Effect<void, ClientConnectionError> {
+    return this.transport
+      .send(
+        {
+          event: 'notification',
+          args: notification,
+        } as AddonServerToClientSDKWebsocketMessage<'notification'>,
+        { expectResponse: false }
+      )
+      .pipe(Effect.asVoid);
   }
 
-  public async askInput(
+  public askInput(
     name: string,
     description: string,
     config: ConfigurationFile
-  ): Promise<Record<string, string | number | boolean>> {
-    const response = await this.transport.send(
-      {
-        event: 'input-asked',
-        args: { name, description, config },
-      } as AddonServerToClientSDKWebsocketMessage<'input-asked'>,
-      { expectResponse: true, responseEvent: 'input-response' }
-    );
-
-    return response.args as Record<string, string | number | boolean>;
+  ): Effect.Effect<
+    Record<string, string | number | boolean>,
+    ClientConnectionError
+  > {
+    return this.transport
+      .send(
+        {
+          event: 'input-asked',
+          args: { name, description, config },
+        } as AddonServerToClientSDKWebsocketMessage<'input-asked'>,
+        { expectResponse: true, responseEvent: 'input-response' }
+      )
+      .pipe(
+        Effect.map(
+          (response) =>
+            response.args as Record<string, string | number | boolean>
+        )
+      );
   }
 
-  public close(): void {
-    this.socket.close();
+  public close(): Effect.Effect<void, NetworkError> {
+    return this.transport.shutdown('SDK connection closed');
   }
 }

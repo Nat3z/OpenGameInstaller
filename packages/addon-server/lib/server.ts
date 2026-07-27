@@ -1,3 +1,4 @@
+import { NetworkError } from '@ogi/errors';
 import type {
   AddonNotificationMessage,
   AddonServerHostEventListeners,
@@ -5,6 +6,7 @@ import type {
   ConfigurationFile,
 } from '@ogi-sdk/connect';
 import { randomUUID } from 'crypto';
+import { Effect } from 'effect';
 import { EventEmitter } from 'events';
 import http from 'http';
 import { type WebSocket, WebSocketServer } from 'ws';
@@ -18,17 +20,17 @@ export type AddonConfig = {
   secret?: string;
 };
 
-// If changing stuff like this, update it in packages/connection/lib/protocol.ts at the bottom of the file
 export type AddonServerEventListeners =
   AddonServerHostEventListeners<AddonConnection>;
-
 export type AddonServerEventName = AddonServerHostEventName;
 
+/** HTTP/WebSocket addon server whose lifecycle is represented by Effects. */
 export class AddonServer {
-  private connections: Set<AddonConnection> = new Set();
-  private sdkConnections: Set<ClientConnection> = new Set();
-  private clients: Map<string, AddonConnection> = new Map();
-
+  private readonly connections = new Set<AddonConnection>();
+  private readonly sdkConnections = new Set<ClientConnection>();
+  private readonly clients = new Map<string, AddonConnection>();
+  private readonly deferredTasksManager = new DeferredTasksManager();
+  private readonly eventEmitter = new EventEmitter();
   private server = http.createServer();
   private wss: WebSocketServer | undefined;
   private upgradeListener?: (
@@ -41,73 +43,68 @@ export class AddonServer {
     res: http.ServerResponse
   ) => void;
 
-  private deferredTasksManager: DeferredTasksManager =
-    new DeferredTasksManager();
   public constructor(private readonly config: AddonConfig) {
-    // create a random secret if not provided
-    config.secret = randomUUID();
+    this.config.secret ??= randomUUID();
   }
 
-  private eventEmitter = new EventEmitter();
-
+  /** EventEmitter compatibility boundary. Effectful fan-out is forked explicitly. */
   public emit<T extends AddonServerEventName>(
     event: T,
     ...args: Parameters<AddonServerEventListeners[T]>
   ): this {
-    if (event === 'notification') {
-      const [notification] = args as [AddonNotificationMessage];
-      this.sdkConnections.forEach((connection) => {
-        void connection.sendNotification(notification);
-      });
-    }
-
-    if (event === 'input-asked') {
-      const [name, description, config, reply] = args as [
-        string,
-        string,
-        ConfigurationFile,
-        (reply: Record<string, string | number | boolean>) => void,
-      ];
-      const [connection] = this.sdkConnections;
-      void (async () => {
-        try {
-          reply(
-            connection
-              ? await connection.askInput(name, description, config)
-              : {}
-          );
-        } catch (error) {
-          console.error('Failed to ask SDK for input:', error);
-          reply({});
-        }
-      })();
-    }
-
-    this.eventEmitter.emit(event, ...args);
+    Effect.runFork(this.emitEffect(event, ...args));
     return this;
+  }
+
+  public emitEffect<T extends AddonServerEventName>(
+    event: T,
+    ...args: Parameters<AddonServerEventListeners[T]>
+  ): Effect.Effect<void> {
+    return Effect.gen(this, function* () {
+      if (event === 'notification') {
+        const [notification] = args as [AddonNotificationMessage];
+        yield* Effect.forEach(
+          this.sdkConnections,
+          (connection) =>
+            connection.sendNotification(notification).pipe(Effect.ignore),
+          { concurrency: 'unbounded', discard: true }
+        );
+      }
+      if (event === 'input-asked') {
+        const [name, description, config, reply] = args as [
+          string,
+          string,
+          ConfigurationFile,
+          (value: Record<string, string | number | boolean>) => void,
+        ];
+        const [connection] = this.sdkConnections;
+        const answer = connection
+          ? yield* connection
+              .askInput(name, description, config)
+              .pipe(Effect.catchAll(() => Effect.succeed({})))
+          : {};
+        reply(answer);
+      }
+      this.eventEmitter.emit(event, ...args);
+    });
   }
 
   public getConnections(): Set<AddonConnection> {
     return this.connections;
   }
-
   public getClient(id: string): AddonConnection | undefined {
     return this.clients.get(id);
   }
-
   public addClient(id: string, connection: AddonConnection): void {
     this.clients.set(id, connection);
   }
-
   public getDeferredTasksManager(): DeferredTasksManager {
     return this.deferredTasksManager;
   }
 
   public removeConnection(connection: AddonConnection): void {
     this.connections.delete(connection);
-    if (connection.addonInfo) {
-      this.clients.delete(connection.addonInfo.id);
-    }
+    if (connection.addonInfo) this.clients.delete(connection.addonInfo.id);
   }
 
   public on<T extends AddonServerEventName>(
@@ -124,78 +121,90 @@ export class AddonServer {
   }
 
   public getSecret(): string {
-    if (!this.config.secret) {
-      throw new Error(
-        'Addon server secret is not configured. Enable securityCheck and set a secret, or provide one in the server config.'
-      );
-    }
-    return this.config.secret;
+    return this.config.secret ?? '';
   }
 
-  public stop(): Promise<void> {
-    if (this.upgradeListener) {
-      this.server.removeListener('upgrade', this.upgradeListener);
-      this.upgradeListener = undefined;
-    }
-    if (this.healthListener) {
-      this.server.removeListener('request', this.healthListener);
-      this.healthListener = undefined;
-    }
-    this.connections.forEach((connection) => {
-      connection.ws.close();
+  public stop(): Effect.Effect<void, NetworkError> {
+    return Effect.gen(this, function* () {
+      this.detachListeners();
+      for (const connection of this.connections) connection.ws.close();
+      for (const connection of this.sdkConnections)
+        yield* connection.close().pipe(Effect.ignore);
+
+      if (this.wss) {
+        const wss = this.wss;
+        yield* Effect.async<void, NetworkError>((resume) => {
+          wss.close((error) =>
+            resume(
+              error
+                ? Effect.fail(
+                    new NetworkError({
+                      message: `Unable to stop websocket server: ${error.message}`,
+                    })
+                  )
+                : Effect.void
+            )
+          );
+        });
+      }
+      this.wss = undefined;
+
+      if (this.server.listening) {
+        yield* Effect.async<void, NetworkError>((resume) => {
+          this.server.close((error) =>
+            resume(
+              error
+                ? Effect.fail(
+                    new NetworkError({
+                      message: `Unable to stop HTTP server: ${error.message}`,
+                    })
+                  )
+                : Effect.void
+            )
+          );
+        });
+      }
+      this.connections.clear();
+      this.sdkConnections.clear();
+      this.clients.clear();
     });
-    this.clients.forEach((client) => {
-      client.ws.close();
-    });
-    this.sdkConnections.forEach((connection) => {
-      connection.close();
-    });
-    const closeWebSocketServer = this.wss
-      ? new Promise<void>((resolve, reject) => {
-          this.wss!.close((error) => (error ? reject(error) : resolve()));
-        })
-      : Promise.resolve();
-    this.wss = undefined;
-    const closeHttpServer = new Promise<void>((resolve, reject) => {
-      this.server.close((error) => (error ? reject(error) : resolve()));
-    });
-    this.connections.clear();
-    this.sdkConnections.clear();
-    this.clients.clear();
-    return Promise.all([closeWebSocketServer, closeHttpServer]).then(
-      () => undefined
-    );
   }
 
   private handleWebSocketConnection(
     ws: WebSocket,
     request: http.IncomingMessage
-  ): void {
-    if (request.url?.startsWith('/sdk')) {
-      const connection = new ClientConnection(ws, this);
-      this.sdkConnections.add(connection);
-      ws.on('close', () => this.sdkConnections.delete(connection));
-      return;
-    }
-
-    const connection = new AddonConnection(ws, this.config, this);
-    this.connections.add(connection);
-    ws.on('close', () => {
-      this.removeConnection(connection);
-      this.eventEmitter.emit(
-        'disconnect',
-        connection.addonInfo?.name + ' websocket closed'
-      );
-    });
-    void (async () => {
-      const success = await connection.setupWebsocket();
+  ): Effect.Effect<void> {
+    return Effect.gen(this, function* () {
+      if (request.url?.startsWith('/sdk')) {
+        const connection = yield* ClientConnection.make(ws, this);
+        this.sdkConnections.add(connection);
+        ws.on('close', () => this.sdkConnections.delete(connection));
+        return;
+      }
+      const connection = yield* AddonConnection.make(ws, this.config, this);
+      this.connections.add(connection);
+      ws.on('close', () => {
+        this.removeConnection(connection);
+        this.eventEmitter.emit(
+          'disconnect',
+          `${connection.addonInfo?.name ?? 'Addon'} websocket closed`
+        );
+      });
+      const success = yield* connection.setupWebsocket();
       if (!success) {
         this.removeConnection(connection);
         this.eventEmitter.emit('disconnect', 'Failed to setup websocket');
       } else {
         this.eventEmitter.emit('connect', connection);
       }
-    })();
+    }).pipe(
+      Effect.catchAll((error) =>
+        Effect.sync(() => {
+          ws.close(1011, error.message);
+          this.eventEmitter.emit('disconnect', error.message);
+        })
+      )
+    );
   }
 
   private healthHandler(
@@ -210,28 +219,47 @@ export class AddonServer {
     }
   }
 
-  public async start(): Promise<void> {
-    if (this.upgradeListener) {
-      this.server.removeListener('upgrade', this.upgradeListener);
-      this.upgradeListener = undefined;
-    }
-    if (this.healthListener) {
-      this.server.removeListener('request', this.healthListener);
-      this.healthListener = undefined;
-    }
-    this.wss?.close();
-    this.wss = new WebSocketServer({ noServer: true });
-    this.upgradeListener = (req, socket, head) => {
-      this.wss!.handleUpgrade(req, socket, head, (ws: WebSocket) => {
-        this.handleWebSocketConnection(ws, req);
-      });
-    };
-    this.server.on('upgrade', this.upgradeListener);
-    this.healthListener = this.healthHandler.bind(this);
-    this.server.on('request', this.healthListener);
+  public start(): Effect.Effect<void, NetworkError> {
+    return Effect.gen(this, function* () {
+      this.detachListeners();
+      this.wss?.close();
+      this.wss = new WebSocketServer({ noServer: true });
+      this.upgradeListener = (req, socket, head) => {
+        this.wss!.handleUpgrade(req, socket, head, (ws) => {
+          Effect.runFork(this.handleWebSocketConnection(ws, req));
+        });
+      };
+      this.server.on('upgrade', this.upgradeListener);
+      this.healthListener = this.healthHandler.bind(this);
+      this.server.on('request', this.healthListener);
 
-    this.server.listen(this.config.port, () => {
-      this.eventEmitter.emit('start');
+      yield* Effect.async<void, NetworkError>((resume) => {
+        const onError = (cause: Error): void => {
+          this.server.off('error', onError);
+          resume(
+            Effect.fail(
+              new NetworkError({
+                message: `Unable to start addon server: ${cause.message}`,
+              })
+            )
+          );
+        };
+        this.server.once('error', onError);
+        this.server.listen(this.config.port, () => {
+          this.server.off('error', onError);
+          this.eventEmitter.emit('start');
+          resume(Effect.void);
+        });
+      });
     });
+  }
+
+  private detachListeners(): void {
+    if (this.upgradeListener)
+      this.server.removeListener('upgrade', this.upgradeListener);
+    if (this.healthListener)
+      this.server.removeListener('request', this.healthListener);
+    this.upgradeListener = undefined;
+    this.healthListener = undefined;
   }
 }

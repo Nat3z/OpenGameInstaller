@@ -1,251 +1,222 @@
+import * as fs from 'node:fs';
+import * as fsAsync from 'node:fs/promises';
+import { join } from 'node:path';
+import {
+  FileSystemError,
+  formatError,
+  runEffectBoundary as runBoundary,
+  runSyncBoundary,
+} from '@ogi/errors';
+import { Effect } from 'effect';
 import { dialog, ipcMain, shell } from 'electron';
-import * as fs from 'fs';
-import * as fsAsync from 'fs/promises';
 import { extraction } from 'ogi-addon';
-import { join } from 'path';
 import { sendIPCMessage } from '@/electron/main.js';
 import { __dirname } from '@/electron/manager/manager.paths.js';
 
-export default function handler() {
-  ipcMain.on('fs:read', (event, arg) => {
-    if (String(arg).startsWith('./')) {
-      arg = join(__dirname, arg);
-    }
-    fs.readFile(arg, 'utf-8', (err, data) => {
-      if (err) {
-        event.returnValue = err;
-        console.error(err);
-        return;
-      }
-      event.returnValue = data;
-    });
+const resolvePath = (value: string): string =>
+  value.startsWith('./') ? join(__dirname, value) : value;
+
+const fsTry = <A>(
+  path: string,
+  operation: () => A
+): Effect.Effect<A, FileSystemError> =>
+  Effect.try({
+    try: operation,
+    catch: (cause) =>
+      new FileSystemError({ message: formatError(cause), path, cause }),
   });
 
-  ipcMain.on('fs:exists', (event, arg) => {
-    if (String(arg).startsWith('./')) {
-      arg = join(__dirname, arg);
-    }
-    fs.access(arg, (err) => {
-      if (err) {
-        event.returnValue = false;
-        return;
-      }
-      event.returnValue = true;
-    });
-  });
-  ipcMain.on('fs:write', (event, arg) => {
-    if (String(arg.path).startsWith('./')) {
-      arg.path = join(__dirname, arg.path);
-    }
-    fs.writeFile(arg.path, arg.data, (err) => {
-      if (err) {
-        event.returnValue = err;
-        console.error(err);
-        return;
-      }
-      event.returnValue = 'success';
-    });
-  });
-  ipcMain.on('fs:mkdir', (event, arg) => {
-    if (String(arg).startsWith('./')) {
-      arg = join(__dirname, arg);
-    }
-    fs.mkdir(arg, { recursive: true }, (err) => {
-      if (err) {
-        event.returnValue = err;
-        console.error(err);
-        return;
-      }
-      event.returnValue = 'success';
-    });
-  });
-  ipcMain.on('fs:show-file-loc', (event, path) => {
-    if (String(path).startsWith('./')) {
-      path = join(__dirname, path);
-    }
-
-    if (!fs.existsSync(path)) {
-      event.returnValue = false;
-      return;
-    }
-    shell.showItemInFolder(path);
-    event.returnValue = true;
-  });
-  ipcMain.handle('fs:dialog:show-open-dialog', async (_, options) => {
-    const result = await dialog.showOpenDialog(options);
-    return result.filePaths;
-  });
-  ipcMain.handle('fs:dialog:show-save-dialog', async (_, options) => {
-    const result = await dialog.showSaveDialog(options);
-    return result.filePath;
+const fsTryPromise = <A>(
+  path: string,
+  operation: () => Promise<A>
+): Effect.Effect<A, FileSystemError> =>
+  Effect.tryPromise({
+    try: operation,
+    catch: (cause) =>
+      new FileSystemError({ message: formatError(cause), path, cause }),
   });
 
-  ipcMain.handle('fs:get-files-in-dir', async (_, arg) => {
-    if (String(arg).startsWith('./')) {
-      arg = join(__dirname, arg);
+const extractArchive = (arg: {
+  rarFilePath?: string;
+  zipFilePath?: string;
+  outputDir: string;
+  downloadId?: string;
+}) =>
+  Effect.gen(function* () {
+    const archivePath = arg.rarFilePath ?? arg.zipFilePath;
+    if (!archivePath) {
+      return yield* Effect.fail(
+        new FileSystemError({ message: 'Archive path is required' })
+      );
     }
-    const files = fs.readdirSync(arg);
-    return files;
+    const exists = yield* fsTry(archivePath, () => fs.existsSync(archivePath));
+    if (!exists) {
+      return yield* Effect.fail(
+        new FileSystemError({
+          message: 'Archive file does not exist',
+          path: archivePath,
+        })
+      );
+    }
+    yield* fsTry(arg.outputDir, () =>
+      fs.mkdirSync(arg.outputDir, { recursive: true })
+    );
+    if (arg.downloadId) {
+      sendIPCMessage('setup:log', {
+        id: arg.downloadId,
+        log: [
+          'Starting archive extraction...',
+          'Using ogi-addon extraction helper...',
+        ],
+      });
+    }
+    yield* extraction(archivePath, arg.outputDir).pipe(
+      Effect.tapError((error) =>
+        Effect.sync(() => {
+          if (arg.downloadId) {
+            sendIPCMessage('setup:log', {
+              id: arg.downloadId,
+              log: [`Archive extraction failed: ${formatError(error)}`],
+            });
+          }
+        })
+      )
+    );
+    if (arg.downloadId) {
+      sendIPCMessage('setup:log', {
+        id: arg.downloadId,
+        log: ['Archive extraction completed successfully'],
+      });
+    }
+    return arg.outputDir;
   });
 
-  ipcMain.handle('fs:delete', async (_, arg) => {
-    if (String(arg).startsWith('./')) {
-      arg = join(__dirname, arg);
-    }
-    try {
-      if (String(arg).startsWith('./')) {
-        arg = join(__dirname, arg);
-      }
-      await fsAsync.rm(arg, { recursive: true, force: true });
-      return 'success';
-    } catch (err) {
-      return err;
-    }
+export default function handler(): void {
+  ipcMain.on('fs:read', (event, arg: string) => {
+    const path = resolvePath(String(arg));
+    event.returnValue = runSyncBoundary(
+      fsTry(path, () => fs.readFileSync(path, 'utf-8'))
+    );
   });
-  ipcMain.handle(
-    'fs:move',
-    async (_, arg: { source: string; destination: string }) => {
-      let { source, destination } = arg;
-      if (String(source).startsWith('./')) {
-        source = join(__dirname, source);
-      }
-      if (String(destination).startsWith('./')) {
-        destination = join(__dirname, destination);
-      }
-      try {
-        await fsAsync.rename(source, destination);
-        return 'success';
-      } catch (err) {
-        console.error(err);
-        return err;
-      }
+
+  ipcMain.on('fs:exists', (event, arg: string) => {
+    const path = resolvePath(String(arg));
+    event.returnValue = runSyncBoundary(fsTry(path, () => fs.existsSync(path)));
+  });
+
+  ipcMain.on(
+    'fs:write',
+    (event, arg: { path: string; data: string | Uint8Array }) => {
+      const path = resolvePath(String(arg.path));
+      event.returnValue = runSyncBoundary(
+        fsTry(path, () => {
+          fs.writeFileSync(path, arg.data);
+          return 'success' as const;
+        })
+      );
     }
   );
-  ipcMain.on('fs:delete:sync', async (event, arg) => {
-    try {
-      if (String(arg).startsWith('./')) {
-        arg = join(__dirname, arg);
-      }
-      await fsAsync.rm(arg, { recursive: true, force: true });
-      event.returnValue = 'success';
-    } catch (err) {
-      console.error(err);
-      event.returnValue = err;
-    }
-  });
-  ipcMain.handle('fs:extract-rar', async (_, arg) => {
-    const { rarFilePath, outputDir, downloadId } = arg;
 
-    if (!fs.existsSync(rarFilePath)) {
-      throw new Error('RAR file does not exist');
-    }
-
-    if (!fs.existsSync(outputDir)) {
-      fs.mkdirSync(outputDir, { recursive: true });
-    }
-
-    console.log('Extracting RAR file: ', rarFilePath);
-    console.log('Output directory: ', outputDir);
-
-    // Send initial log to frontend if downloadId is provided
-    if (downloadId) {
-      sendIPCMessage('setup:log', {
-        id: downloadId,
-        log: ['Starting RAR extraction...'],
-      });
-    }
-    if (downloadId) {
-      sendIPCMessage('setup:log', {
-        id: downloadId,
-        log: ['Using ogi-addon extraction helper...'],
-      });
-    }
-
-    try {
-      await extraction(rarFilePath, outputDir);
-      if (downloadId) {
-        sendIPCMessage('setup:log', {
-          id: downloadId,
-          log: ['RAR extraction completed successfully'],
-        });
-      }
-    } catch (error) {
-      console.error(error);
-      if (downloadId) {
-        const message =
-          error instanceof Error ? error.message : 'Unknown extraction error';
-        sendIPCMessage('setup:log', {
-          id: downloadId,
-          log: [`RAR extraction failed: ${message}`],
-        });
-      }
-      throw error;
-    }
-
-    return outputDir;
+  ipcMain.on('fs:mkdir', (event, arg: string) => {
+    const path = resolvePath(String(arg));
+    event.returnValue = runSyncBoundary(
+      fsTry(path, () => {
+        fs.mkdirSync(path, { recursive: true });
+        return 'success' as const;
+      })
+    );
   });
 
-  ipcMain.on('fs:stat', async (event, arg: { path: string }) => {
-    let stat = fs.statSync(arg.path);
-    event.returnValue = {
-      isDirectory: stat.isDirectory(),
-      isFile: stat.isFile(),
-      isSymbolicLink: stat.isSymbolicLink(),
-      isBlockDevice: stat.isBlockDevice(),
-      isCharacterDevice: stat.isCharacterDevice(),
-      isFIFO: stat.isFIFO(),
-      isSocket: stat.isSocket(),
-    };
+  ipcMain.on('fs:show-file-loc', (event, value: string) => {
+    const path = resolvePath(String(value));
+    event.returnValue = runSyncBoundary(
+      fsTry(path, () => {
+        if (!fs.existsSync(path)) return false;
+        shell.showItemInFolder(path);
+        return true;
+      })
+    );
+  });
+
+  ipcMain.handle('fs:dialog:show-open-dialog', (_, options) =>
+    runBoundary(
+      Effect.tryPromise({
+        try: () => dialog.showOpenDialog(options),
+        catch: (cause) =>
+          new FileSystemError({ message: formatError(cause), cause }),
+      }).pipe(Effect.map((result) => result.filePaths))
+    )
+  );
+
+  ipcMain.handle('fs:dialog:show-save-dialog', (_, options) =>
+    runBoundary(
+      Effect.tryPromise({
+        try: () => dialog.showSaveDialog(options),
+        catch: (cause) =>
+          new FileSystemError({ message: formatError(cause), cause }),
+      }).pipe(Effect.map((result) => result.filePath))
+    )
+  );
+
+  ipcMain.handle('fs:get-files-in-dir', (_, arg: string) => {
+    const path = resolvePath(String(arg));
+    return runBoundary(fsTry(path, () => fs.readdirSync(path)));
+  });
+
+  ipcMain.handle('fs:delete', (_, arg: string) => {
+    const path = resolvePath(String(arg));
+    return runBoundary(
+      fsTryPromise(path, () =>
+        fsAsync.rm(path, { recursive: true, force: true })
+      ).pipe(Effect.as('success' as const))
+    );
   });
 
   ipcMain.handle(
-    'fs:extract-zip',
-    async (
-      _,
-      arg: { zipFilePath: string; outputDir: string; downloadId?: string }
-    ) => {
-      try {
-        const { zipFilePath, outputDir, downloadId } = arg;
-
-        if (!fs.existsSync(zipFilePath)) {
-          throw new Error('ZIP file does not exist');
-        }
-
-        if (!fs.existsSync(outputDir)) {
-          fs.mkdirSync(outputDir, { recursive: true });
-        }
-
-        console.log('Extracting ZIP file: ', zipFilePath);
-        console.log('Output directory: ', outputDir);
-
-        // Send initial log to frontend if downloadId is provided
-        if (downloadId) {
-          sendIPCMessage('setup:log', {
-            id: downloadId,
-            log: ['Starting ZIP extraction...'],
-          });
-        }
-
-        if (downloadId) {
-          sendIPCMessage('setup:log', {
-            id: downloadId,
-            log: ['Using ogi-addon extraction helper...'],
-          });
-        }
-
-        await extraction(zipFilePath, outputDir);
-        if (downloadId) {
-          sendIPCMessage('setup:log', {
-            id: downloadId,
-            log: ['ZIP extraction completed successfully'],
-          });
-        }
-
-        return outputDir;
-      } catch (err) {
-        console.error(err);
-        return null;
-      }
+    'fs:move',
+    (_, arg: { source: string; destination: string }) => {
+      const source = resolvePath(arg.source);
+      const destination = resolvePath(arg.destination);
+      return runBoundary(
+        fsTryPromise(source, () => fsAsync.rename(source, destination)).pipe(
+          Effect.as('success' as const)
+        )
+      );
     }
+  );
+
+  ipcMain.on('fs:delete:sync', (event, arg: string) => {
+    const path = resolvePath(String(arg));
+    event.returnValue = runSyncBoundary(
+      fsTry(path, () => {
+        fs.rmSync(path, { recursive: true, force: true });
+        return 'success' as const;
+      })
+    );
+  });
+
+  ipcMain.handle('fs:extract-rar', (_, arg) =>
+    runBoundary(extractArchive(arg))
+  );
+
+  ipcMain.on('fs:stat', (event, arg: { path: string }) => {
+    event.returnValue = runSyncBoundary(
+      fsTry(arg.path, () => {
+        const stat = fs.statSync(arg.path);
+        return {
+          isDirectory: stat.isDirectory(),
+          isFile: stat.isFile(),
+          isSymbolicLink: stat.isSymbolicLink(),
+          isBlockDevice: stat.isBlockDevice(),
+          isCharacterDevice: stat.isCharacterDevice(),
+          isFIFO: stat.isFIFO(),
+          isSocket: stat.isSocket(),
+        };
+      })
+    );
+  });
+
+  ipcMain.handle('fs:extract-zip', (_, arg) =>
+    runBoundary(extractArchive(arg))
   );
 }

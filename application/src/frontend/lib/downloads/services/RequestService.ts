@@ -1,39 +1,35 @@
+import { DownloadError } from '@ogi/errors';
 import type { SearchResult } from '@ogi-sdk/connect';
+import { Effect } from 'effect';
 import { getDownloadPath } from '@/frontend/lib/core/fs';
 import { addonServer } from '@/frontend/lib/core/ipc';
-import { startDownload } from '@/frontend/lib/downloads/lifecycle';
+import { startDownloadEffect } from '@/frontend/lib/downloads/lifecycle';
 import { safeDownloadPath } from '@/frontend/lib/downloads/paths';
 import { BaseService } from '@/frontend/lib/downloads/services/BaseService';
 import type { SearchResultWithAddon } from '@/frontend/lib/tasks/runner';
 import { createNotification, currentDownloads } from '@/frontend/store.svelte';
 
-/**
- * Handles the initial "request" downloadType where we first need to ask the
- * addon backend for a direct/magnet/torrent URL.
- */
+/** Resolves the addon "request" response and delegates to its real service. */
 export class RequestService extends BaseService {
   readonly types = ['request'];
 
-  async startDownload(
+  startDownload(
     result: SearchResultWithAddon,
     appID: number,
     event: MouseEvent | null,
     htmlButton?: HTMLButtonElement
-  ): Promise<void> {
-    const button = htmlButton ?? event?.currentTarget ?? null;
-    const resolvedButton =
-      button instanceof HTMLButtonElement ? button : undefined;
-
-    // Create a local ID for tracking, similar to real-debrid cases
-    const localID = Math.floor(Math.random() * 1000000);
-    currentDownloads.update((downloads) => {
-      return [
+  ) {
+    return Effect.gen(function* () {
+      const button = htmlButton ?? event?.currentTarget ?? null;
+      const resolvedButton =
+        button instanceof HTMLButtonElement ? button : undefined;
+      const localID = Math.floor(Math.random() * 1000000);
+      currentDownloads.update((downloads) => [
         ...downloads,
         {
           ...result,
-          files: [], // Ensure 'files' property is present for type safety
-          // changed to avoid special characters in the path and make it work with windows on wine
-          id: '' + localID,
+          files: [],
+          id: String(localID),
           status: 'requesting',
           downloadPath: safeDownloadPath(getDownloadPath(), result.name),
           downloadSpeed: 0,
@@ -41,78 +37,83 @@ export class RequestService extends BaseService {
           appID,
           downloadSize: 0,
         },
-      ];
-    });
+      ]);
 
-    console.log('Requesting download', result);
-    const response = (await addonServer
-      .addon(result.addonSource, {
-        onFailed: (error: string) => {
-          createNotification({
-            id: Math.random().toString(36).substring(7),
-            type: 'error',
-            message: error,
-          });
-          currentDownloads.update((downloads) => {
-            const matchingDownload = downloads.find(
-              (d) => d.id === localID + ''
-            );
-            if (!matchingDownload) return downloads;
-            matchingDownload.status = 'error';
-            matchingDownload.error = error;
-            downloads[downloads.indexOf(matchingDownload)] = matchingDownload;
-            return downloads;
-          });
-        },
-      })
-      .requestDl(appID, JSON.parse(JSON.stringify(result)))) as SearchResult;
-
-    // Check if response is null/undefined
-    if (response === null || response === undefined) {
-      currentDownloads.update((downloads) => {
-        const matchingDownload = downloads.find((d) => d.id === localID + '');
-        if (!matchingDownload) return downloads;
-        matchingDownload.status = 'error';
-        matchingDownload.error = 'Failed to get download response';
-        downloads[downloads.indexOf(matchingDownload)] = matchingDownload;
-        return downloads;
+      console.log('Requesting download', result);
+      const serializedResult = yield* Effect.try({
+        try: () => JSON.parse(JSON.stringify(result)),
+        catch: (cause) =>
+          new DownloadError({
+            message: 'Failed to serialize addon download request.',
+            cause,
+          }),
       });
-      if (resolvedButton) {
-        resolvedButton.textContent = 'Download';
-        resolvedButton.disabled = false;
+      const response = yield* Effect.tryPromise({
+        try: () =>
+          addonServer
+            .addon(result.addonSource, {
+              onFailed: (error: string) => {
+                createNotification({
+                  id: Math.random().toString(36).substring(7),
+                  type: 'error',
+                  message: error,
+                });
+                currentDownloads.update((downloads) =>
+                  downloads.map((download) =>
+                    download.id === String(localID)
+                      ? { ...download, status: 'error', error }
+                      : download
+                  )
+                );
+              },
+            })
+            .requestDl(appID, serializedResult) as Promise<SearchResult>,
+        catch: (cause) =>
+          new DownloadError({
+            message: 'Failed to request download from addon.',
+            cause,
+          }),
+      });
+
+      if (response == null) {
+        currentDownloads.update((downloads) =>
+          downloads.map((download) =>
+            download.id === String(localID)
+              ? {
+                  ...download,
+                  status: 'error',
+                  error: 'Failed to get download response',
+                }
+              : download
+          )
+        );
+        if (resolvedButton) {
+          resolvedButton.textContent = 'Download';
+          resolvedButton.disabled = false;
+        }
+        return;
       }
-      return;
-    }
 
-    console.log('Request response:', response);
-
-    // Merge response with original context, preserving update-specific fields
-    const updatedResult = {
-      ...response,
-      addonSource: result.addonSource,
-      addonName: result.addonName,
-      capsuleImage: result.capsuleImage,
-      coverImage: result.coverImage,
-      storefront: result.storefront,
-      status: 'downloading',
-      name: result.name,
-      isUpdate: result.isUpdate,
-      updateVersion: result.updateVersion,
-      clearOldFilesBeforeUpdate: result.clearOldFilesBeforeUpdate,
-    };
-
-    // Remove the temporary requesting download
-    currentDownloads.update((downloads) => {
-      return downloads.filter((d) => d.id !== localID + '');
+      const updatedResult = {
+        ...response,
+        addonSource: result.addonSource,
+        addonName: result.addonName,
+        capsuleImage: result.capsuleImage,
+        coverImage: result.coverImage,
+        storefront: result.storefront,
+        name: result.name,
+        isUpdate: result.isUpdate,
+        updateVersion: result.updateVersion,
+        clearOldFilesBeforeUpdate: result.clearOldFilesBeforeUpdate,
+      } as unknown as SearchResultWithAddon;
+      currentDownloads.update((downloads) =>
+        downloads.filter((download) => download.id !== String(localID))
+      );
+      if (resolvedButton) {
+        resolvedButton.textContent = 'Downloading...';
+        resolvedButton.disabled = true;
+      }
+      yield* startDownloadEffect(updatedResult, appID, event, resolvedButton);
     });
-
-    // Reset button state before recursive call
-    if (resolvedButton) {
-      resolvedButton.textContent = 'Downloading...';
-      resolvedButton.disabled = true;
-    }
-
-    // Recursively call startDownload with the resolved result (pass button so recursive call doesn't rely on currentTarget)
-    return await startDownload(updatedResult, appID, event, resolvedButton);
   }
 }

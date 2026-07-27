@@ -1,4 +1,5 @@
 import type { AddonConnection } from '@ogi-sdk/addon-server';
+import { Effect } from 'effect';
 import { Addon } from '@/electron/manager/manager.addon.js';
 import { addonServer } from '@/electron/server/addon-server.js';
 
@@ -17,29 +18,31 @@ function configuredRunningConnections(): AddonConnection[] {
   return configured;
 }
 
-export async function waitForAddonsConfigured(
+export function waitForAddonsConfigured(
   options: { timeoutMs?: number; pollIntervalMs?: number } = {}
-): Promise<AddonConnection[]> {
-  const { timeoutMs = 30_000, pollIntervalMs = 100 } = options;
-  const expectedCount = Addon.running.size;
+): Effect.Effect<AddonConnection[]> {
+  return Effect.gen(function* () {
+    const { timeoutMs = 30_000, pollIntervalMs = 100 } = options;
+    const expectedCount = Addon.running.size;
 
-  if (expectedCount === 0) {
-    return [];
-  }
-
-  const deadline = Date.now() + timeoutMs;
-
-  while (Date.now() < deadline) {
-    const ready = configuredRunningConnections();
-    if (ready.length >= expectedCount) {
-      return ready;
+    if (expectedCount === 0) {
+      return [];
     }
-    await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
-  }
 
-  const ready = configuredRunningConnections();
-  console.warn(
-    `[addon-readiness] Timed out waiting for addons to send configure (${ready.length}/${expectedCount} ready)`
-  );
-  return ready;
+    const deadline = Date.now() + timeoutMs;
+
+    while (Date.now() < deadline) {
+      const ready = configuredRunningConnections();
+      if (ready.length >= expectedCount) {
+        return ready;
+      }
+      yield* Effect.sleep(`${pollIntervalMs} millis`);
+    }
+
+    const ready = configuredRunningConnections();
+    console.warn(
+      `[addon-readiness] Timed out waiting for addons to send configure (${ready.length}/${expectedCount} ready)`
+    );
+    return ready;
+  });
 }

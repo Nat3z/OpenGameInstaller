@@ -1,4 +1,5 @@
 import { exec, spawn } from 'child_process';
+import { Effect } from 'effect';
 import * as fsSync from 'fs';
 import * as fs from 'fs/promises';
 import { join } from 'path';
@@ -258,7 +259,7 @@ let migrations: {
     description: 'Adds a desktop shortcut for OpenGameInstaller',
     platform: 'linux',
     run: async () => {
-      await addToDesktop();
+      await Effect.runPromise(addToDesktop());
       sendNotification({
         message:
           'Desktop shortcut created successfully. You can now find OpenGameInstaller in your Desktop.',
@@ -351,20 +352,18 @@ let migrations: {
 
             // Convert: keep new format entries, remove old format entries
             const convertedRequiredReadds = parsed.requiredReadds
-              .filter((v: unknown) => {
-                // Keep new format entries (objects with appID and steamAppId)
-                if (
-                  typeof v === 'object' &&
-                  v !== null &&
-                  typeof (v as any).appID === 'number' &&
-                  typeof (v as any).steamAppId === 'number'
-                ) {
-                  return true;
+              .filter(
+                (v: unknown): v is { appID: number; steamAppId: number } => {
+                  return (
+                    typeof v === 'object' &&
+                    v !== null &&
+                    typeof (v as Record<string, unknown>).appID === 'number' &&
+                    typeof (v as Record<string, unknown>).steamAppId ===
+                      'number'
+                  );
                 }
-                // Remove old format entries (plain numbers)
-                return false;
-              })
-              .map((v: any) => ({
+              )
+              .map((v: { appID: number; steamAppId: number }) => ({
                 appID: v.appID,
                 steamAppId: v.steamAppId,
               }));

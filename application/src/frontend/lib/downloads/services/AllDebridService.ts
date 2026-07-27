@@ -1,3 +1,5 @@
+import { DebridError, ValidationError } from '@ogi/errors';
+import { Effect } from 'effect';
 import { getDownloadPath } from '@/frontend/lib/core/fs';
 import {
   cardStatusFromHandshake,
@@ -14,317 +16,300 @@ import { BaseService } from '@/frontend/lib/downloads/services/BaseService';
 import type { SearchResultWithAddon } from '@/frontend/lib/tasks/runner';
 import { createNotification, currentDownloads } from '@/frontend/store.svelte';
 
-/** Result shape required for AllDebrid (magnet/torrent); caller ensures these exist. */
 type AllDebridSearchResult = SearchResultWithAddon & {
   downloadURL: string;
   name: string;
   filename?: string;
 };
 
-/**
- * Prefers AllDebrid torrent file names from the API, optional single-file
- * addon filename, then URL basename. Deduplicates collisions.
- */
+const allDebridPromise = <A>(
+  operation: () => Promise<A>,
+  message: string
+): Effect.Effect<A, DebridError> =>
+  Effect.tryPromise({
+    try: operation,
+    catch: (cause) =>
+      new DebridError({
+        message: `${message}: ${cause instanceof Error ? cause.message : String(cause)}`,
+        service: 'alldebrid',
+      }),
+  });
+
 function localNamesForLinks(
   links: string[],
   fileMeta: { name: string; size?: number }[] | undefined,
   addonFilename: string | undefined
 ): string[] {
-  const raw = links.map((link, i) => {
-    if (links.length === 1 && addonFilename?.trim()) {
-      const sanitized = sanitizePathSegment(addonFilename);
-      // Preserve archive extension from fileMeta if addonFilename lacks it
-      if (fileMeta?.[0]?.name) {
-        const metaName = fileMeta[0].name;
-        const archiveExtMatch = metaName.match(/\.(rar|part\d*|r\d+)$/i);
-        if (archiveExtMatch && !sanitized.match(/\.(rar|part\d*|r\d+)$/i)) {
-          return sanitized + archiveExtMatch[0];
-        }
+  return dedupeFileNames(
+    links.map((link, index) => {
+      if (links.length === 1 && addonFilename?.trim()) {
+        const sanitized = sanitizePathSegment(addonFilename);
+        const metaName = fileMeta?.[0]?.name;
+        const archiveExt = metaName?.match(/\.(rar|part\d*|r\d+)$/i)?.[0];
+        return archiveExt && !sanitized.match(/\.(rar|part\d*|r\d+)$/i)
+          ? sanitized + archiveExt
+          : sanitized;
       }
-      return sanitized;
-    }
-    if (fileMeta?.[i]?.name) {
-      return sanitizePathSegment(fileMeta[i].name);
-    }
-    return urlBasename(link);
-  });
-  return dedupeFileNames(raw);
+      return fileMeta?.[index]?.name
+        ? sanitizePathSegment(fileMeta[index].name)
+        : urlBasename(link);
+    })
+  );
 }
 
-/**
- * Polls until the torrent is ready or timeout/cancel. Clears interval on resolve/reject.
- */
-function waitForTorrentReady(
-  magnetId: string,
-  options?: { intervalMs?: number; timeoutMs?: number; onCancel?: () => void }
-): Promise<void> {
-  const intervalMs = options?.intervalMs ?? 3000;
-  const timeoutMs = options?.timeoutMs ?? 600000; // 10 min default
-  let intervalId: ReturnType<typeof setInterval> | null = null;
-  let timeoutId: ReturnType<typeof setTimeout> | null = null;
-
-  const clearAll = () => {
-    if (intervalId !== null) {
-      clearInterval(intervalId);
-      intervalId = null;
-    }
-    if (timeoutId !== null) {
-      clearTimeout(timeoutId);
-      timeoutId = null;
-    }
-  };
-
-  return new Promise((resolve, reject) => {
-    timeoutId = setTimeout(() => {
-      clearAll();
-      options?.onCancel?.();
-      reject(new Error('Torrent not ready in time'));
-    }, timeoutMs);
-
-    const check = async () => {
-      try {
-        const isReady =
-          await window.electronAPI.alldebrid.isTorrentReady(magnetId);
-        if (isReady) {
-          clearAll();
-          resolve();
-        }
-      } catch (err) {
-        clearAll();
-        options?.onCancel?.();
-        reject(err);
+function waitForTorrentReady(id: string) {
+  return Effect.gen(function* () {
+    for (let attempt = 0; attempt < 200; attempt++) {
+      if (
+        yield* allDebridPromise(
+          () => window.electronAPI.alldebrid.isTorrentReady(id),
+          'Failed to check AllDebrid torrent status'
+        )
+      ) {
+        return;
       }
-    };
-
-    intervalId = setInterval(check, intervalMs);
-    check();
+      yield* Effect.sleep(3000);
+    }
+    return yield* Effect.fail(
+      new DebridError({
+        message: 'Torrent not ready in time.',
+        service: 'alldebrid',
+      })
+    );
   });
 }
 
-/**
- * Handles magnet/torrent downloads that should be routed through AllDebrid.
- */
+/** Routes magnet and torrent downloads through AllDebrid. */
 export class AllDebridService extends BaseService {
   readonly types = ['all-debrid-magnet', 'all-debrid-torrent'];
 
-  /**
-   * Starts an AllDebrid download (magnet or torrent). Delegates to handleMagnetDownload or handleTorrentDownload.
-   * @param result - Search result with download URL and type
-   * @param appID - Application ID for the download
-   * @param event - Mouse event (used to resolve button if htmlButton not provided)
-   * @param htmlButton - Optional button element for consistent UX (e.g. recursive call)
-   */
-  async startDownload(
+  startDownload(
     result: SearchResultWithAddon,
     appID: number,
-    _event: MouseEvent | null,
-    _htmlButton?: HTMLButtonElement
-  ): Promise<void> {
-    console.log('Starting AllDebrid download:', result);
-    if (result.downloadType !== 'magnet' && result.downloadType !== 'torrent')
-      return;
-
-    const tempId = this.queueRequestDownload(result, appID, 'alldebrid');
-
-    if (!result.downloadURL) {
-      throw new Error('Addon did not provide a magnet link.');
-    }
-
-    const worked = await window.electronAPI.alldebrid.updateKey();
-    if (!worked) {
-      throw new Error('Please set your AllDebrid API key in the settings.');
-    }
-
-    const resolvedButton =
-      _htmlButton ??
-      (_event?.currentTarget instanceof HTMLButtonElement
-        ? _event.currentTarget
-        : null);
-
-    const debridResult = result as AllDebridSearchResult;
-    try {
-      if (result.downloadType === 'magnet') {
-        await this.handleAllDebridDownload(debridResult, appID, tempId, () =>
-          this.getTorrentIdFromMagnet(debridResult)
-        );
-      } else if (result.downloadType === 'torrent') {
-        await this.handleAllDebridDownload(debridResult, appID, tempId, () =>
-          this.getTorrentIdFromTorrent(debridResult, resolvedButton)
+    event: MouseEvent | null,
+    htmlButton?: HTMLButtonElement
+  ) {
+    return Effect.gen(this, function* () {
+      if (result.downloadType !== 'magnet' && result.downloadType !== 'torrent')
+        return;
+      const tempId = this.queueRequestDownload(result, appID, 'alldebrid');
+      if (!result.downloadURL) {
+        return yield* Effect.fail(
+          new ValidationError({
+            message: 'Addon did not provide a magnet link.',
+            field: 'downloadURL',
+          })
         );
       }
-    } catch (err) {
-      console.error('Failed to start AllDebrid download:', err);
-      // set the download as failed
-      currentDownloads.update((downloads) => {
-        const matchingDownload = downloads.find((d) => d.id === tempId);
-        if (!matchingDownload) return downloads;
-        matchingDownload.status = 'error';
-        matchingDownload.error =
-          err instanceof Error
-            ? err.message
-            : 'Failed to start AllDebrid download.';
-        downloads[downloads.indexOf(matchingDownload)] = matchingDownload;
-        return downloads;
-      });
-      if (resolvedButton) {
-        resolvedButton.textContent = 'Download';
-        resolvedButton.disabled = false;
+      const worked = yield* allDebridPromise(
+        () => window.electronAPI.alldebrid.updateKey(),
+        'Failed to update AllDebrid API key'
+      );
+      if (!worked) {
+        return yield* Effect.fail(
+          new DebridError({
+            message: 'Please set your AllDebrid API key in the settings.',
+            service: 'alldebrid',
+          })
+        );
       }
-      throw err;
-    }
+
+      const resolvedButton =
+        htmlButton ??
+        (event?.currentTarget instanceof HTMLButtonElement
+          ? event.currentTarget
+          : null);
+      const debridResult = result as AllDebridSearchResult;
+      const flow = this.handleAllDebridDownload(
+        debridResult,
+        appID,
+        tempId,
+        result.downloadType === 'magnet'
+          ? this.getTorrentIdFromMagnet(debridResult)
+          : this.getTorrentIdFromTorrent(debridResult, resolvedButton)
+      );
+      yield* flow.pipe(
+        Effect.tapError((error) =>
+          Effect.sync(() => {
+            console.error('Failed to start AllDebrid download:', error);
+            currentDownloads.update((downloads) =>
+              downloads.map((download) =>
+                download.id === tempId
+                  ? { ...download, status: 'error', error: error.message }
+                  : download
+              )
+            );
+            if (resolvedButton) {
+              resolvedButton.textContent = 'Download';
+              resolvedButton.disabled = false;
+            }
+          })
+        )
+      );
+    });
   }
 
-  /** First step for magnet: add magnet and return torrent id. */
-  private async getTorrentIdFromMagnet(
-    result: AllDebridSearchResult
-  ): Promise<string> {
-    try {
-      const magnetLink = await window.electronAPI.alldebrid.addMagnet(
-        result.downloadURL
+  private getTorrentIdFromMagnet(result: AllDebridSearchResult) {
+    return Effect.gen(function* () {
+      const magnet = yield* allDebridPromise(
+        () => window.electronAPI.alldebrid.addMagnet(result.downloadURL),
+        'Failed to add magnet to AllDebrid'
       );
-      return magnetLink.id;
-    } catch (err) {
-      throw new Error(
-        err instanceof Error
-          ? `Failed to add magnet to AllDebrid: ${err.message}`
-          : 'Failed to add magnet to AllDebrid.'
-      );
-    }
+      return magnet.id;
+    });
   }
 
-  /** First step for torrent: validate, add torrent, and return torrent id. */
-  private async getTorrentIdFromTorrent(
+  private getTorrentIdFromTorrent(
     result: AllDebridSearchResult,
     htmlButton?: HTMLButtonElement | null
-  ): Promise<string> {
-    const resetButton = () => {
-      if (htmlButton) {
-        htmlButton.textContent = 'Download';
-        htmlButton.disabled = false;
+  ) {
+    return Effect.gen(function* () {
+      const resetButton = () => {
+        if (htmlButton) {
+          htmlButton.textContent = 'Download';
+          htmlButton.disabled = false;
+        }
+      };
+      if (!result.name || !result.downloadURL) {
+        const message = !result.name
+          ? 'Addon did not provide a name for the torrent.'
+          : 'Addon did not provide a downloadURL for the torrent.';
+        createNotification({
+          id: Math.random().toString(36).substring(7),
+          type: 'error',
+          message,
+        });
+        resetButton();
+        return yield* Effect.fail(
+          new ValidationError({
+            message,
+            field: !result.name ? 'name' : 'downloadURL',
+          })
+        );
       }
-    };
-    if (!result.name || !result.downloadURL) {
-      createNotification({
-        id: Math.random().toString(36).substring(7),
-        type: 'error',
-        message: !result.name
-          ? 'Addon did not provide a name for the torrent.'
-          : 'Addon did not provide a downloadURL for the torrent.',
-      });
-      resetButton();
-      throw new Error(
-        !result.name
-          ? 'Addon did not provide a name for the torrent.'
-          : 'Addon did not provide a downloadURL for the torrent.'
-      );
-    }
-    try {
-      const torrent = await window.electronAPI.alldebrid.addTorrent(
-        result.downloadURL
+      const torrent = yield* allDebridPromise(
+        () => window.electronAPI.alldebrid.addTorrent(result.downloadURL),
+        'Failed to add torrent to AllDebrid'
       );
       if (!torrent) {
-        throw new Error('Failed to add torrent to AllDebrid.');
+        return yield* Effect.fail(
+          new DebridError({
+            message: 'Failed to add torrent to AllDebrid.',
+            service: 'alldebrid',
+          })
+        );
       }
       return torrent.id;
-    } catch (err) {
-      throw new Error(
-        err instanceof Error
-          ? `Failed to add torrent to AllDebrid: ${err.message}`
-          : 'Failed to add torrent to AllDebrid.'
-      );
-    }
+    });
   }
 
-  /**
-   * Shared flow: wait for torrent ready, get torrent info, then either
-   * single-file or multi-file download. Multi-file is on by default.
-   */
-  private async handleAllDebridDownload(
+  private handleAllDebridDownload(
     result: AllDebridSearchResult,
     appID: number,
     tempId: string,
-    getTorrentId: () => Promise<string>,
-    options?: { multiFile?: boolean }
-  ): Promise<void> {
-    const torrentId = await getTorrentId();
+    getTorrentId: Effect.Effect<string, DebridError | ValidationError>
+  ) {
+    return Effect.gen(function* () {
+      const torrentId = yield* getTorrentId;
+      const isReady = yield* allDebridPromise(
+        () => window.electronAPI.alldebrid.isTorrentReady(torrentId),
+        'Failed to check AllDebrid torrent status'
+      );
+      if (!isReady) {
+        yield* allDebridPromise(
+          () => window.electronAPI.alldebrid.selectTorrent(),
+          'Failed to select AllDebrid torrent files'
+        );
+        yield* waitForTorrentReady(torrentId);
+      }
+      const torrentInfo = yield* allDebridPromise(
+        () => window.electronAPI.alldebrid.getTorrentInfo(torrentId),
+        'Failed to load AllDebrid torrent info'
+      );
+      const markError = () =>
+        currentDownloads.update((downloads) =>
+          downloads.map((download) =>
+            download.id === tempId
+              ? {
+                  ...download,
+                  status: 'error',
+                  usedDebridService: 'alldebrid',
+                  appID,
+                }
+              : download
+          )
+        );
 
-    let isReady = await window.electronAPI.alldebrid.isTorrentReady(torrentId);
-    if (!isReady) {
-      window.electronAPI.alldebrid.selectTorrent();
-      await waitForTorrentReady(torrentId, {
-        intervalMs: 3000,
-        timeoutMs: 600000,
+      createNotification({
+        id: Math.random().toString(36).substring(7),
+        type: 'info',
+        message: 'Unrestricting AllDebrid links...',
       });
-    }
-    const torrentInfo =
-      await window.electronAPI.alldebrid.getTorrentInfo(torrentId);
+      const resolvedLinks: string[] = [];
+      for (const link of torrentInfo.links) {
+        const download = yield* allDebridPromise(
+          () => window.electronAPI.alldebrid.unrestrictLink(link),
+          'Failed to unrestrict AllDebrid link'
+        );
+        if (!download) {
+          return yield* Effect.fail(
+            new DebridError({
+              message:
+                'Failed to unrestrict the link: No response from AllDebrid.',
+              service: 'alldebrid',
+            })
+          );
+        }
+        resolvedLinks.push(download.download ?? download.link);
+      }
 
-    const markError = () => {
-      currentDownloads.update((downloads) => {
-        const matchingDownload = downloads.find((d) => d.id === tempId);
-        if (!matchingDownload) return downloads;
-        matchingDownload.status = 'error';
-        matchingDownload.usedDebridService = 'alldebrid';
-        matchingDownload.appID = appID;
-        downloads[downloads.indexOf(matchingDownload)] = matchingDownload;
-        return downloads;
-      });
-    };
-
-    console.log('torrentInfo', torrentInfo, 'options', options);
-
-    const links = torrentInfo.links;
-    const metaFiles = torrentInfo.files;
-    let resolvedLinks: string[] = [];
-    createNotification({
-      id: Math.random().toString(36).substring(7),
-      type: 'info',
-      message: 'Unrestricting AllDebrid links...',
-    });
-    for (const link of links) {
-      const download = await window.electronAPI.alldebrid.unrestrictLink(link);
-      if (!download) {
-        throw new Error(
-          'Failed to unrestrict the link: No response from AllDebrid.'
+      const safePath = safeDownloadPath(getDownloadPath(), result.name);
+      const localNames = localNamesForLinks(
+        resolvedLinks,
+        torrentInfo.files,
+        result.filename
+      );
+      const handshake = yield* allDebridPromise(
+        () =>
+          window.electronAPI.ddl.download(
+            resolvedLinks.map((link, index) => ({
+              link,
+              path: safePath + localNames[index],
+              headers: { 'OGI-Parallel-Limit': '1' },
+            }))
+          ),
+        'Failed to start AllDebrid download'
+      );
+      if (handshake.status === 'error' || !handshake.id) {
+        markError();
+        return yield* Effect.fail(
+          new DebridError({
+            message: 'Download failed to start.',
+            service: 'alldebrid',
+          })
         );
       }
-      resolvedLinks.push(download.download ?? download.link);
-    }
-    const safePath = safeDownloadPath(getDownloadPath(), result.name);
-    const localNames = localNamesForLinks(
-      resolvedLinks,
-      metaFiles,
-      result.filename
-    );
-    const handshake = await window.electronAPI.ddl.download(
-      resolvedLinks.map((link, i) => ({
-        link,
-        path: safePath + localNames[i],
+      const files = resolvedLinks.map((link, index) => ({
+        name: localNames[index],
+        path: safePath + localNames[index],
+        downloadURL: link,
         headers: { 'OGI-Parallel-Limit': '1' },
-      }))
-    );
-    if (handshake.status === 'error' || !handshake.id) {
-      markError();
-      throw new Error('Download failed to start.');
-    }
-    const fileEntries = resolvedLinks.map((link, i) => ({
-      name: localNames[i],
-      path: safePath + localNames[i],
-      downloadURL: link,
-      headers: { 'OGI-Parallel-Limit': '1' },
-    }));
-    const downloadPathForItem =
-      resolvedLinks.length === 1 ? safePath + localNames[0] : safePath;
-    updateDownloadStatus(tempId, {
-      id: handshake.id,
-      status: cardStatusFromHandshake(handshake),
-      usedDebridService: 'alldebrid',
-      appID: appID,
-      downloadPath: downloadPathForItem,
-      queuePosition: handshake.queuePosition,
-      error: handshake.error,
-      files: fileEntries,
+      }));
+      updateDownloadStatus(tempId, {
+        id: handshake.id,
+        status: cardStatusFromHandshake(handshake),
+        usedDebridService: 'alldebrid',
+        appID,
+        downloadPath:
+          resolvedLinks.length === 1 ? safePath + localNames[0] : safePath,
+        queuePosition: handshake.queuePosition,
+        error: handshake.error,
+        files,
+      });
+      yield* allDebridPromise(
+        () => finalizeDownloadCard(handshake.id),
+        'Failed to finalize AllDebrid download'
+      );
     });
-    await finalizeDownloadCard(handshake.id);
   }
 }

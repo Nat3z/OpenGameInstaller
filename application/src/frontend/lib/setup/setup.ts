@@ -1,8 +1,15 @@
+import {
+  AddonError,
+  formatError,
+  GameNotFound,
+  UpdateError,
+} from '@ogi/errors';
 import type {
   LibraryInfo,
   SetupCommandData,
   SetupEventResponse,
 } from '@ogi-sdk/connect';
+import { Effect } from 'effect';
 import { get } from 'svelte/store';
 import { getDownloadPath } from '@/frontend/lib/core/fs';
 import { addonServer } from '@/frontend/lib/core/ipc';
@@ -229,7 +236,9 @@ export async function runSetupApp(
         status: 'error',
         error: result,
       });
-      throw new Error(result);
+      return Effect.runPromise(
+        Effect.fail(new AddonError({ message: result }))
+      );
     }
 
     // Handle redistributable installation for Linux
@@ -281,9 +290,16 @@ export async function runSetupApp(
 
     return data;
   } catch (error) {
-    // Error flows already handled in callbacks; rethrow for callers to react if needed
+    // Error flows already handled in callbacks; preserve a typed failure for callers.
     console.error('Error setting up app: ', error);
-    throw error;
+    return Effect.runPromise(
+      Effect.fail(
+        new AddonError({
+          message: formatError(error),
+          addonName: downloadedItem.addonSource,
+        })
+      )
+    );
   }
 }
 
@@ -501,8 +517,8 @@ export async function runSetupAppUpdate(
       status: 'error',
       error: `App not found in library (appID: ${downloadedItem.appID})`,
     });
-    throw new Error(
-      `App not found in library (appID: ${downloadedItem.appID})`
+    return Effect.runPromise(
+      Effect.fail(new GameNotFound({ gameId: downloadedItem.appID }))
     );
   }
 
@@ -551,7 +567,9 @@ export async function runSetupAppUpdate(
         status: 'error',
         error: 'App not found in library',
       });
-      throw new Error('App not found in library');
+      return Effect.runPromise(
+        Effect.fail(new GameNotFound({ gameId: downloadedItem.appID }))
+      );
     }
 
     // Remove from appUpdates state
@@ -590,6 +608,10 @@ export async function runSetupAppUpdate(
     return data;
   } catch (error) {
     console.error('Error updating app: ', error);
-    throw error;
+    return Effect.runPromise(
+      Effect.fail(
+        new UpdateError({ message: formatError(error), cause: error })
+      )
+    );
   }
 }

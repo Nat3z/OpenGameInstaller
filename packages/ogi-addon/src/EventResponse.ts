@@ -1,4 +1,6 @@
-import { ConfigurationBuilder } from './main';
+import { AddonError } from '@ogi/errors';
+import { Effect } from 'effect';
+import { ConfigurationBuilder } from './config/ConfigurationBuilder';
 
 export default class EventResponse<T> {
   data: T | undefined = undefined;
@@ -23,11 +25,12 @@ export default class EventResponse<T> {
     this.onInputAsked = onInputAsked;
   }
 
-  public defer(promise?: () => Promise<void>) {
+  public defer(effect?: () => Effect.Effect<void> | Promise<void>): void {
     this.deffered = true;
-    // include this to make it easier to use the defer method with async functions
-    if (promise) {
-      promise();
+    if (effect) {
+      const result = effect();
+      if (Effect.isEffect(result)) Effect.runFork(result);
+      else void result;
     }
   }
 
@@ -69,14 +72,28 @@ export default class EventResponse<T> {
    * @param screen {ConfigurationBuilder<U>} The configuration builder for the input form.
    * @returns {Promise<U>} The user's input with types matching the configuration options.
    */
-  public async askForInput<U extends Record<string, string | number | boolean>>(
+  public askForInputEffect<U extends Record<string, string | number | boolean>>(
+    name: string,
+    description: string,
+    screen: ConfigurationBuilder<U>
+  ): Effect.Effect<U, AddonError> {
+    if (!this.onInputAsked) {
+      return Effect.fail(
+        new AddonError({ message: 'No input callback is registered' })
+      );
+    }
+    return Effect.tryPromise({
+      try: () => this.onInputAsked!(screen, name, description),
+      catch: (cause) =>
+        new AddonError({ message: `Input request failed: ${String(cause)}` }),
+    });
+  }
+
+  public askForInput<U extends Record<string, string | number | boolean>>(
     name: string,
     description: string,
     screen: ConfigurationBuilder<U>
   ): Promise<U> {
-    if (!this.onInputAsked) {
-      throw new Error('No input asked callback');
-    }
-    return await this.onInputAsked(screen, name, description);
+    return Effect.runPromise(this.askForInputEffect(name, description, screen));
   }
 }

@@ -1,3 +1,5 @@
+import { DownloadError, formatError } from '@ogi/errors';
+import { Effect } from 'effect';
 import { get } from 'svelte/store';
 import { getConfigClientOption } from '@/frontend/lib/config/client';
 import { ALL_SERVICES } from '@/frontend/lib/downloads/services';
@@ -17,7 +19,7 @@ import {
  * @param event - Mouse event (used to resolve button if htmlButton not provided)
  * @param htmlButton - Optional button element (e.g. when called recursively)
  */
-export async function startDownload(
+export function startDownloadEffect(
   result: SearchResultWithAddon,
   appID: number,
   event: MouseEvent | null,
@@ -26,7 +28,6 @@ export async function startDownload(
   const button =
     htmlButton ?? (event?.currentTarget as HTMLButtonElement | null);
   const resolvedButton = button instanceof HTMLButtonElement ? button : null;
-
   const resetButton = () => {
     if (resolvedButton) {
       resolvedButton.textContent = 'Download';
@@ -34,78 +35,81 @@ export async function startDownload(
     }
   };
 
-  let downloadHandler = result.downloadType;
-  if (downloadHandler === 'torrent' || downloadHandler === 'magnet') {
-    const generalOptions = getConfigClientOption('general') as any;
-    const torrentClient:
-      | 'webtorrent'
-      | 'qbittorrent'
-      | 'real-debrid'
-      | 'all-debrid'
-      | 'torbox'
-      | 'premiumize'
-      | 'disable' =
-      (generalOptions ? generalOptions.torrentClient : null) ?? 'disable';
-
-    if (torrentClient === 'disable') {
-      createNotification({
-        id: Math.random().toString(36).substring(7),
-        type: 'error',
-        message: 'Torrenting is disabled in the settings.',
-      });
-      resetButton();
-      return;
+  return Effect.gen(function* () {
+    let downloadHandler: string = result.downloadType;
+    if (downloadHandler === 'torrent' || downloadHandler === 'magnet') {
+      const generalOptions = getConfigClientOption<{
+        torrentClient?: string;
+      }>('general');
+      const torrentClient = generalOptions?.torrentClient ?? 'disable';
+      if (torrentClient === 'disable') {
+        return yield* Effect.fail(
+          new DownloadError({
+            message: 'Torrenting is disabled in the settings.',
+          })
+        );
+      }
+      if (
+        torrentClient === 'real-debrid' ||
+        torrentClient === 'all-debrid' ||
+        torrentClient === 'torbox' ||
+        torrentClient === 'premiumize'
+      ) {
+        downloadHandler = `${torrentClient}-${downloadHandler}`;
+      }
     }
 
-    if (torrentClient === 'real-debrid') {
-      downloadHandler = 'real-debrid-' + downloadHandler;
-    } else if (torrentClient === 'all-debrid') {
-      downloadHandler = 'all-debrid-' + downloadHandler;
-    } else if (torrentClient === 'torbox') {
-      downloadHandler = 'torbox-' + downloadHandler;
-    } else if (torrentClient === 'premiumize') {
-      downloadHandler = 'premiumize-' + downloadHandler;
+    const sanitizedResult = {
+      ...result,
+      name: result.name.replace(/[\\/:*?"<>|]/g, '-'),
+    };
+    const service = ALL_SERVICES.find((candidate) =>
+      candidate.types.includes(downloadHandler)
+    );
+    console.log('Service:', service);
+    if (!service) {
+      return yield* Effect.fail(
+        new DownloadError({
+          message: `No service found for download type: ${downloadHandler}`,
+        })
+      );
     }
-  }
 
-  // Replace special characters (e.g. ampersand, colon, or any character Windows doesn't support) with a dash
-  const sanitizedResult = {
-    ...result,
-    name: result.name.replace(/[\\/:*?"<>|]/g, '-'),
-  };
-
-  // Service-based architecture: find and delegate to the appropriate service
-  const svc = ALL_SERVICES.find((s) => s.types.includes(downloadHandler));
-  console.log('Service:', svc);
-  if (!svc) {
-    // If no service is found for this download type, log an error and reset button
-    console.error(`No service found for download type: ${downloadHandler}`);
-    resetButton();
-    return;
-  }
-
-  // Set button state only after confirming a service exists
-  if (resolvedButton) {
-    resolvedButton.textContent = 'Downloading...';
-    resolvedButton.disabled = true;
-  }
-
-  try {
-    await svc.startDownload(
+    if (resolvedButton) {
+      resolvedButton.textContent = 'Downloading...';
+      resolvedButton.disabled = true;
+    }
+    yield* service.startDownload(
       sanitizedResult,
       appID,
       event,
       resolvedButton ?? undefined
     );
-  } catch (err) {
-    resetButton();
-    console.error('startDownload failed:', err);
-    createNotification({
-      id: Math.random().toString(36).substring(7),
-      type: 'error',
-      message: err instanceof Error ? err.message : 'Download failed.',
-    });
-  }
+  }).pipe(
+    Effect.catchAll((error) =>
+      Effect.sync(() => {
+        resetButton();
+        console.error('startDownload failed:', error);
+        createNotification({
+          id: Math.random().toString(36).substring(7),
+          type: 'error',
+          message: formatError(error),
+        });
+      })
+    )
+  );
+}
+
+/** Promise bridge used by Svelte event handlers. */
+export function startDownload(
+  result: SearchResultWithAddon,
+  appID: number,
+  event: MouseEvent | null,
+  htmlButton?: HTMLButtonElement
+): Promise<void> {
+  return Effect.runPromise(
+    startDownloadEffect(result, appID, event, htmlButton)
+  );
 }
 
 /**

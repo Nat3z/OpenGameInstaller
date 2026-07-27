@@ -1,5 +1,6 @@
 import type { LibraryInfo } from '@ogi-sdk/connect';
 import { exec } from 'child_process';
+import { Effect } from 'effect';
 import { app, BrowserWindow } from 'electron';
 import * as fs from 'fs';
 import * as fsPromises from 'fs/promises';
@@ -18,7 +19,6 @@ import {
   normalizeAddonLink,
   parseAddonLink,
 } from '@/electron/lib/addon-links.js';
-import { tryCatch } from '@/electron/lib/tryCatch.js';
 import { sendNotification } from '@/electron/main.js';
 import { Addon } from '@/electron/manager/manager.addon.js';
 import { __dirname } from '@/electron/manager/manager.paths.js';
@@ -679,8 +679,14 @@ export async function reinstallAddonDependencies(
         `[startup] Running setup for addon ${addonName} (${current}/${addons.length})`
       );
       try {
-        const instance = await Addon.load(addonPath);
-        const success = instance ? await instance.install() : false;
+        const instance = await Effect.runPromise(
+          Addon.load(addonPath).pipe(
+            Effect.catchAll(() => Effect.succeed(null))
+          )
+        );
+        const success = instance
+          ? await Effect.runPromise(instance.install())
+          : false;
         if (success) {
           console.log(`[startup] Successfully set up ${addonName}`);
         } else {
@@ -794,12 +800,14 @@ export async function checkForAddonUpdates(
           path: addonPath,
         });
 
-        const localHash = await addonGit.getCurrentHash();
+        const localHash = await Effect.runPromise(addonGit.getCurrentHash());
         let remoteHash = 'latest';
         let isUpdate = false;
 
         if (parsedAddon.kind === 'marketplace') {
-          const marketplace = await loadMarketplace(parsedAddon.marketplaceUrl);
+          const marketplace = await Effect.runPromise(
+            loadMarketplace(parsedAddon.marketplaceUrl)
+          );
           remoteHash =
             marketplace.getAddon(parsedAddon.gitUrl)?.pinnedCommit ?? 'latest';
           isUpdate = localHash !== remoteHash;
@@ -816,17 +824,17 @@ export async function checkForAddonUpdates(
 
         if (remoteHash === 'latest') {
           // dry fetch dry run - check if updates are available
-          const status = await tryCatch(async () => {
-            return await addonGit.fetch();
-          });
-          if (status.error) {
+          const status = await Effect.runPromise(
+            Effect.either(addonGit.fetch())
+          );
+          if (status._tag === 'Left') {
             console.error(
               `[startup] Error checking updates for ${addonName}:`,
-              status.error
+              status.left
             );
             return;
           }
-          isUpdate = !status.data.alreadyUpToDate;
+          isUpdate = !status.right.alreadyUpToDate;
         }
         if (isUpdate) {
           sendNotification({

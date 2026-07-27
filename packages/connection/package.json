@@ -46,5 +46,10 @@
     "LICENSE"
   ],
   "main": "./build/index.cjs",
-  "types": "./build/index.d.mts"
+  "types": "./build/index.d.mts",
+  "dependencies": {
+    "@effect/schema": "^0.75.5",
+    "@ogi/errors": "workspace:*",
+    "effect": "^3.22.0"
+  }
 }

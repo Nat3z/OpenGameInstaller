@@ -1,3 +1,5 @@
+import { Effect } from 'effect';
+
 export class Queue<T = any> {
   private queue: { id: string; item: T }[] = [];
   private processing: Set<string> = new Set();
@@ -13,29 +15,39 @@ export class Queue<T = any> {
    */
   enqueue(id: string, item: T) {
     if (this.queue.find((q) => q.id === id) || this.processing.has(id)) {
-      throw new Error('Duplicate id in queue or processing');
+      console.warn(`[Queue] Ignoring duplicate id: ${id}`);
+      return {
+        initialPosition: this.processing.has(id)
+          ? 1
+          : this.queue.findIndex((queued) => queued.id === id) +
+            1 +
+            this.processing.size,
+        wait: (_update: (position: number) => void) =>
+          Effect.succeed('cancelled' as const),
+        cancelHandler: (_cancel: (handle: () => void) => void) => {},
+        finish: () => {},
+      };
     }
     this.queue.push({ id, item });
     return {
       initialPosition: this.queue.length,
       wait: (update: (position: number) => void) =>
-        new Promise<'cancelled' | 'fulfilled'>((resolve) => {
+        Effect.async<'cancelled' | 'fulfilled'>((resume) => {
           const listener = (pos: number, cancelled?: boolean) => {
             if (cancelled) {
-              resolve('cancelled');
+              resume(Effect.succeed('cancelled'));
               return;
             }
             console.log('pos', pos, 'processing #', this.processing.size);
             if (pos === 1 && this.processing.size === 0) {
               update(pos);
-              resolve('fulfilled');
+              resume(Effect.succeed('fulfilled'));
               return;
             }
             update(pos);
           };
           this.queueListeners.set(id, listener);
           if (this.queue.length === 1 && this.processing.size === 0) {
-            // automatically dequeue if there is only one item in the queue
             listener(this.queue.length, false);
             this.dequeue();
           } else {
@@ -98,7 +110,6 @@ export class Queue<T = any> {
 
   /**
    * Remove an item from the queue by id (if not processing yet).
-   * @param id The id to remove.
    */
   remove(id: string) {
     const idx = this.queue.findIndex((q) => q.id === id);

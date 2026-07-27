@@ -1,35 +1,51 @@
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { ConfigError, formatError } from '@ogi/errors';
 import { AddonServer } from '@ogi-sdk/addon-server';
-import { existsSync, readFileSync } from 'fs';
-import { join } from 'path';
+import { Effect, Schema } from 'effect';
 import { __dirname } from '@/electron/manager/manager.paths.js';
 
-let isSecurityCheckEnabled = true;
-let port = 7654;
-if (existsSync(join(__dirname, 'config/option/developer.json'))) {
-  const developerConfig = JSON.parse(
-    readFileSync(join(__dirname, 'config/option/developer.json'), 'utf-8')
-  );
-  if (typeof developerConfig.clientSdkUrl === 'string') {
-    try {
-      const configuredPort = Number(new URL(developerConfig.clientSdkUrl).port);
-      if (Number.isInteger(configuredPort) && configuredPort > 0) {
-        port = configuredPort;
-      }
-    } catch {
-      console.warn('Ignoring invalid developer clientSdkUrl');
-    }
-  }
-  isSecurityCheckEnabled = developerConfig.disableSecretCheck !== true;
-  if (!isSecurityCheckEnabled) {
-    for (let i = 0; i < 10; i++) {
-      console.warn(
-        'WARNING Security check is disabled. THIS IS A MAJOR SECURITY RISK. PLEASE ENABLE DURING NORMAL USE.'
-      );
-    }
+export const port = 7654;
+const DeveloperConfigSchema = Schema.Struct({
+  disableSecretCheck: Schema.optional(Schema.Boolean),
+});
+const developerPath = join(__dirname, 'config/option/developer.json');
+
+const readSecurityConfig = (): Effect.Effect<boolean, ConfigError> => {
+  if (!existsSync(developerPath)) return Effect.succeed(true);
+  return Effect.gen(function* () {
+    const json = yield* Effect.try({
+      try: () => JSON.parse(readFileSync(developerPath, 'utf-8')) as unknown,
+      catch: (cause) =>
+        new ConfigError({
+          message: formatError(cause),
+          key: 'disableSecretCheck',
+        }),
+    });
+    const config = yield* Schema.decodeUnknown(DeveloperConfigSchema)(
+      json
+    ).pipe(
+      Effect.mapError(
+        (cause) =>
+          new ConfigError({ message: String(cause), key: 'disableSecretCheck' })
+      )
+    );
+    return config.disableSecretCheck !== true;
+  });
+};
+
+export const isSecurityCheckEnabled = Effect.runSync(
+  readSecurityConfig().pipe(Effect.catchAll(() => Effect.succeed(true)))
+);
+if (!isSecurityCheckEnabled) {
+  for (let index = 0; index < 10; index += 1) {
+    console.warn(
+      'WARNING Security check is disabled. THIS IS A MAJOR SECURITY RISK.'
+    );
   }
 }
 
-function createAddonServer() {
+const createAddonServer = (): AddonServer => {
   const server = new AddonServer({
     port,
     securityCheck: isSecurityCheckEnabled,
@@ -38,61 +54,42 @@ function createAddonServer() {
     server.emit('notification', {
       type: 'error',
       message: reason,
-      id: 'addon-disconnect-' + Math.random().toString(36).substring(7),
+      id: `addon-disconnect-${Math.random().toString(36).slice(2)}`,
     });
   });
   return server;
-}
-
-let addonServer = createAddonServer();
-
-let addonServerStarting: Promise<void> | null = null;
-let isAddonServerListening = false;
-
-function startAddonServer() {
-  if (isAddonServerListening) {
-    return Promise.resolve();
-  }
-  if (addonServerStarting) {
-    return addonServerStarting;
-  }
-
-  addonServer = createAddonServer();
-
-  addonServerStarting = new Promise<void>((resolve, reject) => {
-    const onStart = () => {
-      addonServerStarting = null;
-      isAddonServerListening = true;
-      resolve();
-    };
-
-    addonServer.on('start', onStart);
-
-    void addonServer.start().catch((error) => {
-      addonServerStarting = null;
-      reject(error);
-    });
-  });
-
-  return addonServerStarting;
-}
-
-async function stopAddonServer(): Promise<void> {
-  if (addonServerStarting) {
-    await addonServerStarting;
-  }
-  if (!isAddonServerListening) {
-    return;
-  }
-  await addonServer.stop();
-  isAddonServerListening = false;
-}
-
-export {
-  addonServer,
-  isAddonServerListening,
-  isSecurityCheckEnabled,
-  port,
-  startAddonServer,
-  stopAddonServer,
 };
+
+export let addonServer = createAddonServer();
+export let isAddonServerListening = false;
+let starting: Effect.Effect<void, unknown> | undefined;
+
+export const startAddonServer = (): Effect.Effect<void, unknown> => {
+  if (isAddonServerListening) return Effect.void;
+  if (starting) return starting;
+  addonServer = createAddonServer();
+  starting = addonServer.start().pipe(
+    Effect.tap(() =>
+      Effect.sync(() => {
+        isAddonServerListening = true;
+      })
+    ),
+    Effect.ensuring(
+      Effect.sync(() => {
+        starting = undefined;
+      })
+    )
+  );
+  return starting;
+};
+
+export const stopAddonServer = (): Effect.Effect<void, unknown> =>
+  isAddonServerListening
+    ? addonServer.stop().pipe(
+        Effect.tap(() =>
+          Effect.sync(() => {
+            isAddonServerListening = false;
+          })
+        )
+      )
+    : Effect.void;

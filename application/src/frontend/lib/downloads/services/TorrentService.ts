@@ -1,3 +1,5 @@
+import { DownloadError, ValidationError } from '@ogi/errors';
+import { Effect } from 'effect';
 import { getDownloadPath } from '@/frontend/lib/core/fs';
 import {
   cardStatusFromHandshake,
@@ -11,34 +13,35 @@ import { BaseService } from '@/frontend/lib/downloads/services/BaseService';
 import type { SearchResultWithAddon } from '@/frontend/lib/tasks/runner';
 import { currentDownloads } from '@/frontend/store.svelte';
 
-/**
- * Handles standard magnet and torrent downloads via the configured torrent
- * client.
- */
+/** Handles standard magnet and torrent downloads. */
 export class TorrentService extends BaseService {
   readonly types = ['torrent', 'magnet'];
 
-  async startDownload(
+  startDownload(
     result: SearchResultWithAddon,
     appID: number,
     event: MouseEvent | null,
     htmlButton?: HTMLButtonElement
-  ): Promise<void> {
+  ) {
     const button =
       htmlButton ?? (event?.currentTarget as HTMLButtonElement | null);
     const resolvedButton = button instanceof HTMLButtonElement ? button : null;
 
-    if (result.downloadType !== 'magnet' && result.downloadType !== 'torrent')
-      return;
+    return Effect.gen(function* () {
+      if (result.downloadType !== 'magnet' && result.downloadType !== 'torrent')
+        return;
+      if (!result.downloadURL) {
+        return yield* Effect.fail(
+          new ValidationError({
+            message: `Addon did not provide a ${result.downloadType} file.`,
+            field: 'downloadURL',
+          })
+        );
+      }
 
-    if (!result.downloadURL) {
-      throw new Error(`Addon did not provide a ${result.downloadType} file.`);
-    }
-
-    const baseDir = getDownloadPath();
-    const downloadPath = safeDownloadPath(baseDir, result.name);
-    const persistedFiles =
-      result.filename != null && result.filename !== ''
+      const baseDir = getDownloadPath();
+      const downloadPath = safeDownloadPath(baseDir, result.name);
+      const persistedFiles = result.filename
         ? [
             {
               name: sanitizePathSegment(result.filename),
@@ -48,51 +51,67 @@ export class TorrentService extends BaseService {
           ]
         : [];
 
-    if (resolvedButton) {
-      resolvedButton.textContent = 'Downloading...';
-      resolvedButton.disabled = true;
-    }
-
-    try {
-      const handshake =
-        result.downloadType === 'torrent'
-          ? await window.electronAPI.torrent.downloadTorrent(
-              result.downloadURL,
-              downloadPath
-            )
-          : await window.electronAPI.torrent.downloadMagnet(
-              result.downloadURL,
-              downloadPath
-            );
-
-      currentDownloads.update((downloads) => {
-        return [
-          ...downloads,
-          {
-            ...result,
-            id: handshake.id,
-            status: cardStatusFromHandshake(handshake),
-            downloadPath,
-            downloadSpeed: 0,
-            files: persistedFiles,
-            progress: 0,
-            queuePosition: handshake.queuePosition,
-            error: handshake.error,
-            appID,
-            downloadSize: 0,
-            originalDownloadURL: result.downloadURL,
-          },
-        ];
-      });
-      await finalizeDownloadCard(handshake.id);
-    } catch (err) {
-      console.error('Torrent download error:', err);
-      throw err;
-    } finally {
       if (resolvedButton) {
-        resolvedButton.textContent = 'Download';
-        resolvedButton.disabled = false;
+        resolvedButton.textContent = 'Downloading...';
+        resolvedButton.disabled = true;
       }
-    }
+
+      const handshake = yield* Effect.tryPromise({
+        try: () =>
+          result.downloadType === 'torrent'
+            ? window.electronAPI.torrent.downloadTorrent(
+                result.downloadURL!,
+                downloadPath
+              )
+            : window.electronAPI.torrent.downloadMagnet(
+                result.downloadURL!,
+                downloadPath
+              ),
+        catch: (cause) =>
+          new DownloadError({
+            message: 'Failed to start torrent download.',
+            cause,
+          }),
+      });
+
+      currentDownloads.update((downloads) => [
+        ...downloads,
+        {
+          ...result,
+          id: handshake.id,
+          status: cardStatusFromHandshake(handshake),
+          downloadPath,
+          downloadSpeed: 0,
+          files: persistedFiles,
+          progress: 0,
+          queuePosition: handshake.queuePosition,
+          error: handshake.error,
+          appID,
+          downloadSize: 0,
+          originalDownloadURL: result.downloadURL,
+        },
+      ]);
+      yield* Effect.tryPromise({
+        try: () => finalizeDownloadCard(handshake.id),
+        catch: (cause) =>
+          new DownloadError({
+            message: 'Failed to finalize torrent download card.',
+            downloadId: handshake.id,
+            cause,
+          }),
+      });
+    }).pipe(
+      Effect.tapError((error) =>
+        Effect.sync(() => console.error('Torrent download error:', error))
+      ),
+      Effect.ensuring(
+        Effect.sync(() => {
+          if (resolvedButton) {
+            resolvedButton.textContent = 'Download';
+            resolvedButton.disabled = false;
+          }
+        })
+      )
+    );
   }
 }

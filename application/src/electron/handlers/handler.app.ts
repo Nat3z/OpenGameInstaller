@@ -1,10 +1,18 @@
-import axios from 'axios';
+import * as fs from 'node:fs';
+import * as fsAsync from 'node:fs/promises';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import { join } from 'node:path';
+import {
+  FileSystemError,
+  formatError,
+  HttpError,
+  PlatformError,
+  runEffectBoundary as runBoundary,
+} from '@ogi/errors';
+import axios, { type AxiosRequestConfig } from 'axios';
+import { Effect } from 'effect';
 import { app, ipcMain } from 'electron';
-import * as fs from 'fs';
-import { createReadStream, createWriteStream } from 'fs';
-import * as os from 'os';
-import * as path from 'path';
-import { join } from 'path';
 import { registerLibraryHandlers } from '@/electron/handlers/handler.library.js';
 import { registerRedistributableHandlers } from '@/electron/handlers/handler.redists.js';
 import { registerSteamHandlers } from '@/electron/handlers/handler.steam.js';
@@ -14,12 +22,7 @@ import { __dirname, isDev } from '@/electron/manager/manager.paths.js';
 import { addonServer } from '@/electron/server/addon-server.js';
 import { getCurrentUsername } from './helpers.app/platform.js';
 
-/**
- * Escapes a string for safe use in shell commands by escaping special characters
- */
 export function escapeShellArg(arg: string): string {
-  // Replace any backslashes first (to avoid double-escaping)
-  // Then escape double quotes, dollar signs, backticks, and backslashes
   return arg
     .replace(/\\/g, '\\\\')
     .replace(/"/g, '\\"')
@@ -27,281 +30,250 @@ export function escapeShellArg(arg: string): string {
     .replace(/`/g, '\\`');
 }
 
-export async function addToDesktop() {
+export const addToDesktop = (): Effect.Effect<
+  { success: true; path: string } | { success: false; error: string },
+  FileSystemError
+> => {
   if (process.platform === 'win32') {
-    return {
+    return Effect.succeed({
       success: false,
       error: 'This feature is only available on Linux',
-    };
+    });
   }
-  let appDirpath = isDev()
-    ? app.getAppPath() + '/../'
-    : path.dirname(process.execPath);
-  if (process.platform === 'linux') {
-    // it's most likely sandboxed, so just use ./
-    appDirpath = './';
-  }
-
-  // get the appimage path
-  let execPath =
-    path.resolve(
-      appDirpath,
-      fs.readdirSync(appDirpath).find((file) => file.endsWith('.AppImage')) ||
+  return Effect.gen(function* () {
+    let appDirPath = isDev()
+      ? `${app.getAppPath()}/../`
+      : path.dirname(process.execPath);
+    if (process.platform === 'linux') appDirPath = './';
+    let execPath = path.resolve(
+      appDirPath,
+      fs.readdirSync(appDirPath).find((file) => file.endsWith('.AppImage')) ??
         './OpenGameInstaller.AppImage'
-    ) ?? './OpenGameInstaller.AppImage';
-
-  try {
+    );
     const desktopDir = path.join(os.homedir(), 'Desktop');
     const desktopFilePath = path.join(desktopDir, 'OpenGameInstaller.desktop');
-
-    // Ensure Desktop directory exists
-    if (!fs.existsSync(desktopDir)) {
-      fs.mkdirSync(desktopDir, { recursive: true });
-    }
-
-    // Get executable path
-    const setupAppImagePath = path.resolve(
-      path.resolve(appDirpath, '..'),
+    yield* Effect.tryPromise({
+      try: () => fsAsync.mkdir(desktopDir, { recursive: true }),
+      catch: (cause) =>
+        new FileSystemError({
+          message: formatError(cause),
+          path: desktopDir,
+          cause,
+        }),
+    });
+    const setupPath = path.resolve(
+      path.resolve(appDirPath, '..'),
       'OpenGameInstaller-Setup.AppImage'
     );
-    if (fs.existsSync(setupAppImagePath)) {
-      execPath = setupAppImagePath;
-    }
-
-    // Get icon path (try to find favicon.png in resources)
-    let iconPathForFavicon = '';
-    if (app.isPackaged) {
-      iconPathForFavicon = path.join(
-        app.getPath('exe'),
-        '..',
-        'opengameinstaller-gui.png'
-      );
-    } else {
-      // In development, use the public folder
-      iconPathForFavicon = path.join(
-        __dirname,
-        '..',
-        '..',
-        'public',
-        'favicon.png'
-      );
-    }
-
-    // dump the icon path into the appdirpath/favicon.png
-    if (iconPathForFavicon) {
-      createReadStream(iconPathForFavicon).pipe(
-        createWriteStream(path.join(appDirpath, 'favicon.png'))
-      );
-    }
-
-    // now turn the path into an absolute path
-    let desktopIconPath = path.resolve(appDirpath, 'favicon.png');
-    console.log('Desktop icon path:', desktopIconPath);
-
-    // Create .desktop file content
-    const desktopContent = `[Desktop Entry]
-Type=Application
-Name=OpenGameInstaller
-Exec=${execPath}
-Path=${execPath.endsWith('-Setup.AppImage') ? path.resolve(appDirpath, '..') : path.resolve(appDirpath)}
-Icon=${desktopIconPath}
-Terminal=false
-Categories=Game;
-StartupNotify=true
-`;
-
-    // Write the .desktop file
-    fs.writeFileSync(desktopFilePath, desktopContent, { mode: 0o755 });
-
-    return {
-      success: true,
-      path: desktopFilePath,
-    };
-  } catch (error: any) {
-    console.error('Failed to create desktop shortcut:', error);
-    return {
-      success: false,
-      error: error.message || 'Failed to create desktop shortcut',
-    };
-  }
-}
-
-export default function handler(mainWindow: Electron.BrowserWindow) {
-  // Window controls
-  ipcMain.handle('app:close', () => {
-    mainWindow?.close();
+    if (fs.existsSync(setupPath)) execPath = setupPath;
+    const sourceIcon = app.isPackaged
+      ? path.join(app.getPath('exe'), '..', 'opengameinstaller-gui.png')
+      : path.join(__dirname, '..', '..', 'public', 'favicon.png');
+    const targetIcon = path.join(appDirPath, 'favicon.png');
+    yield* Effect.tryPromise({
+      try: () => fsAsync.copyFile(sourceIcon, targetIcon),
+      catch: (cause) =>
+        new FileSystemError({
+          message: formatError(cause),
+          path: sourceIcon,
+          cause,
+        }),
+    });
+    const absoluteIcon = path.resolve(targetIcon);
+    const desktopContent = `[Desktop Entry]\nType=Application\nName=OpenGameInstaller\nExec=${execPath}\nPath=${execPath.endsWith('-Setup.AppImage') ? path.resolve(appDirPath, '..') : path.resolve(appDirPath)}\nIcon=${absoluteIcon}\nTerminal=false\nCategories=Game;\nStartupNotify=true\n`;
+    yield* Effect.tryPromise({
+      try: () =>
+        fsAsync.writeFile(desktopFilePath, desktopContent, { mode: 0o755 }),
+      catch: (cause) =>
+        new FileSystemError({
+          message: formatError(cause),
+          path: desktopFilePath,
+          cause,
+        }),
+    });
+    return { success: true as const, path: desktopFilePath };
   });
-  ipcMain.handle('app:hide-window', () => {
-    mainWindow?.hide();
-  });
-  ipcMain.handle('app:show-window', () => {
-    if (!mainWindow || mainWindow.isDestroyed()) return;
-    mainWindow.show();
-    mainWindow.focus();
-  });
-  ipcMain.handle('app:minimize', () => {
-    mainWindow?.minimize();
-  });
-  ipcMain.handle('app:quit', () => {
-    app.quit();
-  });
+};
 
-  // Utilities
-  ipcMain.handle('app:axios', async (_, options) => {
-    if (
-      options.data &&
-      options.headers &&
-      (options.headers['Content-Type'] === 'multipart/form-data' ||
-        options.headers['Content-Type'] === 'application/x-www-form-urlencoded')
-    ) {
-      const formData = new FormData();
-      for (const [key, value] of Object.entries(options.data)) {
-        formData.append(key, value as string);
+const axiosRequest = (
+  options: AxiosRequestConfig
+): Effect.Effect<
+  { data: unknown; status: number; success: boolean },
+  HttpError
+> =>
+  Effect.tryPromise({
+    try: async () => {
+      if (
+        options.data &&
+        options.headers &&
+        (options.headers['Content-Type'] === 'multipart/form-data' ||
+          options.headers['Content-Type'] ===
+            'application/x-www-form-urlencoded')
+      ) {
+        const formData = new FormData();
+        for (const [key, value] of Object.entries(options.data))
+          formData.append(key, value as string);
+        options = { ...options, data: formData };
       }
-      options.data = formData;
-    }
-    console.log('app:axios', options);
-    try {
       const response = await axios(options);
       return {
         data: response.data,
         status: response.status,
         success: response.status >= 200 && response.status < 300,
       };
-    } catch (err: any) {
-      return {
-        data: err?.response?.data ?? err?.message ?? err,
-        status: err?.response?.status ?? 500,
-        success: false,
-      };
-    }
+    },
+    catch: (cause: unknown) =>
+      new HttpError({
+        message: axios.isAxiosError(cause) ? cause.message : formatError(cause),
+        statusCode: axios.isAxiosError(cause)
+          ? (cause.response?.status ?? 500)
+          : 500,
+        url: options.url,
+      }),
   });
 
-  ipcMain.handle('app:get-os', () => {
-    return process.platform;
-  });
-  ipcMain.handle('app:is-steam-deck', () => {
-    return (
-      process.platform === 'linux' &&
-      getCurrentUsername()?.toLowerCase() === 'deck'
-    );
-  });
-  ipcMain.handle('app:screen-input', async (_, data) => {
-    currentScreens.set(data.id, data.data);
-    const callback = screenInputCallbacks.get(data.id);
-    if (callback) {
-      callback(data.data);
-      screenInputCallbacks.delete(data.id);
-    }
-    return;
-  });
-
-  ipcMain.handle('app:is-online', async () => {
-    return getEffectiveOnlineState().effectiveOnline;
-  });
-
-  // Addon helpers
-  ipcMain.handle('app:get-addon-path', async (_, addonID: string) => {
-    let client = addonServer.getClient(addonID);
-    if (!client || !client.filePath) {
-      return null;
-    }
-    return client.filePath;
-  });
-  ipcMain.handle('app:get-addon-icon', async (_, addonID: string) => {
-    let client = addonServer.getClient(addonID);
-    if (!client || !client.filePath) {
-      return null;
-    }
-    // read the addon.json file to get the icon path
-    const addonJson = JSON.parse(
-      fs.readFileSync(join(client.filePath, 'addon.json'), 'utf-8')
-    );
-    if (!addonJson.icon) {
-      return null;
-    }
-    const iconPath = join(client.filePath, addonJson.icon);
-    if (!fs.existsSync(iconPath)) {
-      console.error(
-        'No icon path found for addon (does not exist): ' +
-          addonID +
-          ' at path: ' +
-          iconPath
-      );
-      return null;
-    }
-    return iconPath;
-  });
-
-  ipcMain.handle('app:get-local-image', async (_, requestPath: string) => {
-    if (!fs.existsSync(requestPath)) {
-      return null;
-    }
-
-    const allowedDirs = [
-      join(__dirname, 'addons'),
-      join(__dirname, 'public'),
-      join(__dirname, 'config'),
-      // for each addon, add the basedir of the addon to the allowed dirs
-      ...Array.from(addonServer.getConnections().values())
-        .filter((connection) => connection.filePath)
-        .map((connection) => connection.filePath + '/'),
-    ];
-
-    let realPath: string;
-    try {
-      realPath = fs.realpathSync(requestPath);
-    } catch (err) {
-      console.error('Failed to resolve real path:', path, err);
-      return null;
-    }
-
-    // Normalize paths for comparison
-    const normalizedRealPath = realPath.replace(/\\/g, '/');
-    const isAllowed = allowedDirs.some((allowedDir) => {
-      const normalizedAllowed = allowedDir.replace(/\\/g, '/');
-      return normalizedRealPath.startsWith(normalizedAllowed);
-    });
-
-    if (!isAllowed) {
-      console.error('Path not in allowed directories:', realPath);
-      return null;
-    }
-
-    try {
-      // Resolve to absolute path and normalize
-      const ext = realPath.split('.').pop()?.toLowerCase() || 'png';
-
-      const mimeType =
-        {
-          jpg: 'image/jpeg',
-          jpeg: 'image/jpeg',
-          png: 'image/png',
-          gif: 'image/gif',
-          webp: 'image/webp',
-          bmp: 'image/bmp',
-          svg: 'image/svg+xml',
-        }[ext] || 'image/png';
-      try {
-        const buffer = fs.readFileSync(realPath);
-        const base64 = buffer.toString('base64');
-        return `data:${mimeType};base64,${base64}`;
-      } catch (err) {
-        console.error('Failed to read image file: ' + realPath);
-        return null;
-      }
-    } catch (err) {
-      console.error('Error handling get-local-image request:', err);
-      return null;
+export default function handler(mainWindow: Electron.BrowserWindow): void {
+  ipcMain.handle('app:close', () => mainWindow?.close());
+  ipcMain.handle('app:hide-window', () => mainWindow?.hide());
+  ipcMain.handle('app:show-window', () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.show();
+      mainWindow.focus();
     }
   });
+  ipcMain.handle('app:minimize', () => mainWindow?.minimize());
+  ipcMain.handle('app:quit', () => app.quit());
 
-  // Desktop shortcut
-  ipcMain.handle('app:add-to-desktop', async () => {
-    return await addToDesktop();
-  });
+  ipcMain.handle('app:axios', (_, options: AxiosRequestConfig) =>
+    Effect.runPromise(
+      axiosRequest(options).pipe(
+        Effect.catchAll((error) =>
+          Effect.succeed({
+            data: error.message,
+            status: error.statusCode,
+            success: false,
+          })
+        )
+      )
+    )
+  );
+  ipcMain.handle('app:get-os', () =>
+    runBoundary(Effect.succeed(process.platform))
+  );
+  ipcMain.handle('app:is-steam-deck', () =>
+    runBoundary(
+      Effect.try({
+        try: () =>
+          process.platform === 'linux' &&
+          getCurrentUsername()?.toLowerCase() === 'deck',
+        catch: (cause) =>
+          new PlatformError({
+            message: formatError(cause),
+            platform: process.platform,
+          }),
+      })
+    )
+  );
+  ipcMain.handle('app:screen-input', (_, data) =>
+    runBoundary(
+      Effect.sync(() => {
+        currentScreens.set(data.id, data.data);
+        screenInputCallbacks.get(data.id)?.(data.data);
+        screenInputCallbacks.delete(data.id);
+      })
+    )
+  );
+  ipcMain.handle('app:is-online', () =>
+    runBoundary(Effect.sync(() => getEffectiveOnlineState().effectiveOnline))
+  );
 
-  // Register sub-handlers
+  ipcMain.handle('app:get-addon-path', (_, addonID: string) =>
+    runBoundary(
+      Effect.sync(() => addonServer.getClient(addonID)?.filePath ?? null)
+    )
+  );
+  ipcMain.handle('app:get-addon-icon', (_, addonID: string) =>
+    runBoundary(
+      Effect.try({
+        try: () => {
+          const client = addonServer.getClient(addonID);
+          if (!client?.filePath) return null;
+          const addonJson = JSON.parse(
+            fs.readFileSync(join(client.filePath, 'addon.json'), 'utf-8')
+          ) as { icon?: string };
+          if (!addonJson.icon) return null;
+          const iconPath = join(client.filePath, addonJson.icon);
+          return fs.existsSync(iconPath) ? iconPath : null;
+        },
+        catch: (cause) =>
+          new FileSystemError({ message: formatError(cause), cause }),
+      })
+    )
+  );
+
+  ipcMain.handle('app:get-local-image', (_, requestPath: string) =>
+    runBoundary(
+      Effect.gen(function* () {
+        if (!fs.existsSync(requestPath)) return null;
+        const allowedDirs = [
+          join(__dirname, 'addons'),
+          join(__dirname, 'public'),
+          join(__dirname, 'config'),
+          ...Array.from(addonServer.getConnections()).flatMap((connection) =>
+            connection.filePath ? [connection.filePath] : []
+          ),
+        ].map((directory) => path.resolve(directory));
+        const realPath = yield* Effect.try({
+          try: () => fs.realpathSync(requestPath),
+          catch: (cause) =>
+            new FileSystemError({
+              message: formatError(cause),
+              path: requestPath,
+              cause,
+            }),
+        });
+        const allowed = allowedDirs.some((directory) => {
+          const relative = path.relative(directory, realPath);
+          return (
+            relative === '' ||
+            (!relative.startsWith('..') && !path.isAbsolute(relative))
+          );
+        });
+        if (!allowed)
+          return yield* Effect.fail(
+            new FileSystemError({
+              message: 'Path is outside allowed directories',
+              path: realPath,
+            })
+          );
+        const ext = path.extname(realPath).slice(1).toLowerCase();
+        const mimeType =
+          (
+            {
+              jpg: 'image/jpeg',
+              jpeg: 'image/jpeg',
+              png: 'image/png',
+              gif: 'image/gif',
+              webp: 'image/webp',
+              bmp: 'image/bmp',
+              svg: 'image/svg+xml',
+            } as Record<string, string>
+          )[ext] ?? 'image/png';
+        const buffer = yield* Effect.tryPromise({
+          try: () => fsAsync.readFile(realPath),
+          catch: (cause) =>
+            new FileSystemError({
+              message: formatError(cause),
+              path: realPath,
+              cause,
+            }),
+        });
+        return `data:${mimeType};base64,${buffer.toString('base64')}`;
+      })
+    )
+  );
+
+  ipcMain.handle('app:add-to-desktop', () => runBoundary(addToDesktop()));
   registerSteamHandlers();
   registerLibraryHandlers(mainWindow);
   registerRedistributableHandlers();

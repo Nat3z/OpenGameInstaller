@@ -1,3 +1,4 @@
+import { ValidationError } from '@ogi/errors';
 import type {
   ActionConfigurationOption,
   BooleanConfigurationOption,
@@ -7,7 +8,7 @@ import type {
   NumberConfigurationOption,
   StringConfigurationOption,
 } from '@ogi-sdk/connect';
-import z, { ZodError } from 'zod';
+import { Either, Schema } from 'effect';
 
 export type {
   ActionConfigurationOption,
@@ -19,10 +20,10 @@ export type {
   StringConfigurationOption,
 } from '@ogi-sdk/connect';
 
-const configValidation = z.object({
-  name: z.string().min(1),
-  displayName: z.string().min(1),
-  description: z.string().min(1),
+const ConfigValidationSchema = Schema.Struct({
+  name: Schema.NonEmptyString,
+  displayName: Schema.NonEmptyString,
+  description: Schema.NonEmptyString,
 });
 
 export function isStringOption(
@@ -125,9 +126,13 @@ export class ConfigurationBuilder<
       // remove all functions from the option object
       if (!includeFunctions) {
         option = JSON.parse(JSON.stringify(option));
-        const optionData = configValidation.safeParse(option);
-        if (!optionData.success) {
-          throw new ZodError(optionData.error.errors);
+        const optionData = Schema.decodeUnknownEither(ConfigValidationSchema)(
+          option
+        );
+        if (Either.isLeft(optionData)) {
+          throw new ValidationError({
+            message: `Invalid configuration option: ${String(optionData.left)}`,
+          });
         }
 
         config[option.name] = option as unknown as ConfigurationFile[string];

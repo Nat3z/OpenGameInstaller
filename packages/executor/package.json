@@ -30,8 +30,10 @@
     "typescript": "^5"
   },
   "dependencies": {
-    "string-argv": "^0.3.2",
-    "zod": "^4.4.2"
+    "@effect/schema": "^0.75.5",
+    "@ogi/errors": "workspace:*",
+    "effect": "^3.22.0",
+    "string-argv": "^0.3.2"
   },
   "description": "Addon process execution and setup helpers for OpenGameInstaller.",
   "license": "MIT",

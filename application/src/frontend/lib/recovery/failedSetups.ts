@@ -1,4 +1,6 @@
+import { FileSystemError } from '@ogi/errors';
 import type { SetupCommandData } from '@ogi-sdk/connect';
+import { Effect } from 'effect';
 import {
   unrarAndReturnOutputDir,
   unzipAndReturnOutputDir,
@@ -167,8 +169,14 @@ export async function retryFailedSetup(failedSetup: FailedSetup) {
           ? failedSetup.downloadInfo.filename
           : undefined;
       if (!filename) {
-        throw new Error(
-          'Cannot extract RAR: filename not available for this download type'
+        return await Effect.runPromise(
+          Effect.fail(
+            new FileSystemError({
+              message:
+                'Cannot extract RAR: filename not available for this download type',
+              path: failedSetup.downloadInfo.downloadPath,
+            })
+          )
         );
       }
       const rarFilePath =
@@ -198,8 +206,14 @@ export async function retryFailedSetup(failedSetup: FailedSetup) {
           ? failedSetup.downloadInfo.filename
           : undefined;
       if (!filename) {
-        throw new Error(
-          'Cannot extract ZIP: filename not available for this download type'
+        return await Effect.runPromise(
+          Effect.fail(
+            new FileSystemError({
+              message:
+                'Cannot extract ZIP: filename not available for this download type',
+              path: failedSetup.downloadInfo.downloadPath,
+            })
+          )
         );
       }
       const originalZipFilePath =
@@ -235,7 +249,14 @@ export async function retryFailedSetup(failedSetup: FailedSetup) {
       }
 
       if (!outputDir) {
-        throw new Error('Failed to extract ZIP file after 3 attempts');
+        return await Effect.runPromise(
+          Effect.fail(
+            new FileSystemError({
+              message: 'Failed to extract ZIP file after 3 attempts',
+              path: originalZipFilePath,
+            })
+          )
+        );
       }
 
       failedSetup.downloadInfo.downloadPath = outputDir;

@@ -1,3 +1,5 @@
+import { DownloadError, ValidationError } from '@ogi/errors';
+import { Effect } from 'effect';
 import { getDownloadPath } from '@/frontend/lib/core/fs';
 import {
   cardStatusFromHandshake,
@@ -11,70 +13,96 @@ import { BaseService } from '@/frontend/lib/downloads/services/BaseService';
 import type { SearchResultWithAddon } from '@/frontend/lib/tasks/runner';
 import { currentDownloads } from '@/frontend/store.svelte';
 
-/**
- * Handles simple direct file downloads (single or multi-part).
- */
+/** Handles simple direct file downloads (single or multi-part). */
 export class DirectService extends BaseService {
   readonly types = ['direct'];
 
-  async startDownload(
+  startDownload(
     result: SearchResultWithAddon,
     appID: number,
     event: MouseEvent | null,
     htmlButton?: HTMLButtonElement
-  ): Promise<void> {
-    if (result.downloadType !== 'direct') return;
-    const button = htmlButton ?? event?.currentTarget ?? null;
-    if (button === null || !(button instanceof HTMLButtonElement)) return;
+  ) {
+    return Effect.gen(function* () {
+      if (result.downloadType !== 'direct') return;
+      const button = htmlButton ?? event?.currentTarget ?? null;
+      if (!(button instanceof HTMLButtonElement)) return;
 
-    if (!result.files || result.files.length === 0) {
-      throw new Error('Addon did not provide files for the direct download.');
-    }
+      if (!result.files?.length) {
+        return yield* Effect.fail(
+          new ValidationError({
+            message: 'Addon did not provide files for the direct download.',
+            field: 'files',
+          })
+        );
+      }
 
-    const baseDir = getDownloadPath();
-    const sanitizedName = sanitizePathSegment(result.name);
-    const collectedFiles = result.files.map((file) => {
-      const sanitizedFileName = sanitizePathSegment(file.name);
-      return {
-        path: safeDownloadPath(baseDir, sanitizedName, sanitizedFileName),
-        link: file.downloadURL,
-        headers: JSON.parse(JSON.stringify(file.headers || {})),
-      };
-    });
-    const persistedFiles = result.files.map((file, i) => ({
-      name: sanitizePathSegment(file.name),
-      path: collectedFiles[i].path,
-      downloadURL: file.downloadURL,
-      headers: collectedFiles[i].headers,
-    }));
-
-    button.textContent = 'Downloading...';
-    button.disabled = true;
-
-    try {
-      const handshake = await window.electronAPI.ddl.download(collectedFiles);
-      currentDownloads.update((downloads) => {
-        return [
-          ...downloads,
-          {
-            id: handshake.id,
-            status: cardStatusFromHandshake(handshake),
-            downloadPath: safeDownloadPath(baseDir, sanitizedName),
-            downloadSpeed: 0,
-            progress: 0,
-            appID,
-            downloadSize: 0,
-            queuePosition: handshake.queuePosition,
-            error: handshake.error,
-            ...result,
-            files: persistedFiles,
-          },
-        ];
+      const baseDir = getDownloadPath();
+      const sanitizedName = sanitizePathSegment(result.name);
+      const collectedFiles = yield* Effect.try({
+        try: () =>
+          result.files.map((file) => ({
+            path: safeDownloadPath(
+              baseDir,
+              sanitizedName,
+              sanitizePathSegment(file.name)
+            ),
+            link: file.downloadURL,
+            headers: { ...(file.headers ?? {}) },
+          })),
+        catch: (cause) =>
+          new DownloadError({
+            message: 'Failed to prepare direct download files.',
+            cause,
+          }),
       });
-      await finalizeDownloadCard(handshake.id);
-    } catch (err) {
-      console.error('Direct download error:', err);
-      throw err;
-    }
+      const persistedFiles = result.files.map((file, i) => ({
+        name: sanitizePathSegment(file.name),
+        path: collectedFiles[i].path,
+        downloadURL: file.downloadURL,
+        headers: collectedFiles[i].headers,
+      }));
+
+      button.textContent = 'Downloading...';
+      button.disabled = true;
+
+      const handshake = yield* Effect.tryPromise({
+        try: () => window.electronAPI.ddl.download(collectedFiles),
+        catch: (cause) =>
+          new DownloadError({
+            message: 'Failed to start direct download.',
+            cause,
+          }),
+      });
+      currentDownloads.update((downloads) => [
+        ...downloads,
+        {
+          id: handshake.id,
+          status: cardStatusFromHandshake(handshake),
+          downloadPath: safeDownloadPath(baseDir, sanitizedName),
+          downloadSpeed: 0,
+          progress: 0,
+          appID,
+          downloadSize: 0,
+          queuePosition: handshake.queuePosition,
+          error: handshake.error,
+          ...result,
+          files: persistedFiles,
+        },
+      ]);
+      yield* Effect.tryPromise({
+        try: () => finalizeDownloadCard(handshake.id),
+        catch: (cause) =>
+          new DownloadError({
+            message: 'Failed to finalize direct download card.',
+            downloadId: handshake.id,
+            cause,
+          }),
+      });
+    }).pipe(
+      Effect.tapError((error) =>
+        Effect.sync(() => console.error('Direct download error:', error))
+      )
+    );
   }
 }

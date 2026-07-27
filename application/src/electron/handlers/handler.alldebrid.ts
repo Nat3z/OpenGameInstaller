@@ -1,244 +1,186 @@
-/**
- * AllDebrid IPC handlers: API key, user info, hosts, add magnet/torrent,
- * readiness check, torrent info, unrestrict link. Uses unique temp paths
- * and cleans up streams on all code paths.
- */
-
+import * as fs from 'node:fs';
+import * as fsAsync from 'node:fs/promises';
+import { join } from 'node:path';
+import {
+  FileSystemError,
+  formatError,
+  HttpError,
+  runEffectBoundary,
+} from '@ogi/errors';
 import AllDebrid from 'all-debrid-js';
 import axios from 'axios';
+import { Effect, Schema } from 'effect';
 import { ipcMain } from 'electron';
-import * as fs from 'fs';
-import type { IncomingMessage } from 'http';
-import { ReadStream } from 'original-fs';
-import { join } from 'path';
+import type { ReadStream } from 'original-fs';
 import { sendNotification } from '@/electron/main.js';
 import { __dirname } from '@/electron/manager/manager.paths.js';
 
 const CONFIG_PATH = join(__dirname, 'config/option/realdebrid.json');
-
-let allDebridClient = new AllDebrid({
-  apiKey: 'UNSET',
+const ConfigSchema = Schema.Struct({
+  alldebridApiKey: Schema.optional(Schema.String),
 });
+let allDebridClient = new AllDebrid({ apiKey: 'UNSET' });
 
-/**
- * Reads the AllDebrid API key from the realdebrid config file.
- * @returns The API key or null if missing or invalid.
- */
-function readAlldebridKey(): string | null {
-  if (!fs.existsSync(CONFIG_PATH)) return null;
-  try {
-    const raw = fs.readFileSync(CONFIG_PATH, 'utf-8');
-    const json = JSON.parse(raw);
-    return json.alldebridApiKey ?? null;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Registers IPC handlers for AllDebrid: set key, update key, user info, hosts,
- * add magnet/torrent, readiness check, get torrent info, unrestrict link, select torrent.
- */
-export default function handler(_mainWindow: Electron.BrowserWindow) {
-  ipcMain.handle('all-debrid:set-key', async (_, arg: string) => {
-    allDebridClient = new AllDebrid({ apiKey: arg });
-    return 'success';
-  });
-
-  ipcMain.handle('all-debrid:update-key', async () => {
-    const key = readAlldebridKey();
-    if (!key) return false;
-    allDebridClient = new AllDebrid({ apiKey: key });
-    return true;
-  });
-
-  async function safeAllDebridCall<T>(
-    operation: () => Promise<T>,
-    errorMessage: string
-  ): Promise<T | null> {
-    try {
-      return await operation();
-    } catch (err) {
-      console.error(err);
-      sendNotification({
-        message: errorMessage,
-        id: Math.random().toString(36).substring(7),
-        type: 'error',
-      });
-      return null;
-    }
-  }
-
-  ipcMain.handle('all-debrid:get-user-info', async () => {
-    return safeAllDebridCall(
-      () => allDebridClient.getUserInfo(),
-      'Failed to fetch AllDebrid user info'
+const readKey = () =>
+  Effect.gen(function* () {
+    const raw = yield* Effect.tryPromise({
+      try: () => fsAsync.readFile(CONFIG_PATH, 'utf-8'),
+      catch: (cause) =>
+        new FileSystemError({
+          message: formatError(cause),
+          path: CONFIG_PATH,
+          cause,
+        }),
+    });
+    const json = yield* Effect.try({
+      try: () => JSON.parse(raw) as unknown,
+      catch: (cause) =>
+        new FileSystemError({
+          message: formatError(cause),
+          path: CONFIG_PATH,
+          cause,
+        }),
+    });
+    const config = yield* Schema.decodeUnknown(ConfigSchema)(json).pipe(
+      Effect.mapError(
+        (cause) =>
+          new FileSystemError({
+            message: String(cause),
+            path: CONFIG_PATH,
+            cause,
+          })
+      )
     );
+    return config.alldebridApiKey ?? null;
   });
 
-  ipcMain.handle('all-debrid:get-hosts', async () => {
-    return safeAllDebridCall(
-      () => allDebridClient.getHosts(),
-      'Failed to fetch AllDebrid hosts'
-    );
-  });
-
-  ipcMain.handle(
-    'all-debrid:add-magnet',
-    async (_, arg: { url: string; host?: string }) => {
-      return safeAllDebridCall(
-        () => allDebridClient.addMagnet(arg.url, arg.host),
-        'Failed to add magnet to AllDebrid'
-      );
-    }
-  );
-
-  ipcMain.handle('all-debrid:is-torrent-ready', async (_, id: string) => {
-    return safeAllDebridCall(
-      () => allDebridClient.isTorrentReady(id),
-      'Failed to check AllDebrid torrent status'
-    );
-  });
-
-  ipcMain.handle('all-debrid:get-torrent-info', async (_, id: string) => {
-    return safeAllDebridCall(
-      () => allDebridClient.getMagnetFiles(id),
-      'Failed to fetch AllDebrid torrent info'
-    );
-  });
-
-  ipcMain.handle('all-debrid:unrestrict-link', async (_, link: string) => {
-    return safeAllDebridCall(
-      () => allDebridClient.unrestrictLink(link),
-      'Failed to unrestrict AllDebrid link'
-    );
-  });
-
-  // AllDebrid auto-selects all files; no explicit selection needed
-  ipcMain.handle('all-debrid:select-torrent', async () => {
-    return true;
-  });
-
-  // Streams (fileStream, responseStream, readStream) are explicitly destroyed on all paths to avoid leaks.
-  ipcMain.handle(
-    'all-debrid:add-torrent',
-    async (_, arg: { torrent: string }) => {
-      const tempPath = join(
-        __dirname,
-        `temp-alldebrid-${Date.now()}-${Math.random().toString(36).slice(2)}.torrent`
-      );
-      let fileStream: fs.WriteStream | null = null;
-      let responseStream: IncomingMessage | null = null;
-      const controller = new AbortController();
-      const MAX_BYTES = 10 * 1024 * 1024; // 10MB limit for torrent files
-
-      try {
-        fileStream = fs.createWriteStream(tempPath);
-        const response = await axios({
-          method: 'get',
-          url: arg.torrent,
-          responseType: 'stream',
-          timeout: 30000, // Connection timeout
-          signal: controller.signal,
-        });
-        responseStream = response.data as IncomingMessage;
-        let bytesRead = 0;
-
-        await new Promise<void>((resolve, reject) => {
-          const streamTimeout = setTimeout(() => {
-            controller.abort();
-            onError(new Error('Torrent download timed out after 60 seconds'));
-          }, 60000);
-
-          const onError = (err: Error) => {
-            clearTimeout(streamTimeout);
-            cleanup();
-            reject(err);
-          };
-
-          const cleanup = () => {
-            if (fileStream) {
-              fileStream.destroy();
-              fileStream = null;
-            }
-            if (responseStream) {
-              responseStream.destroy();
-              responseStream = null;
-            }
-          };
-
-          if (responseStream && fileStream) {
-            responseStream.on('data', (chunk) => {
-              bytesRead += chunk.length;
-              if (bytesRead > MAX_BYTES) {
-                controller.abort();
-                onError(
-                  new Error(
-                    `Torrent file exceeds size limit of ${MAX_BYTES} bytes`
-                  )
-                );
-              }
-            });
-
-            responseStream.pipe(fileStream);
-            fileStream.on('finish', () => {
-              clearTimeout(streamTimeout);
-              resolve();
-            });
-            fileStream.on('error', onError);
-            responseStream.on('error', onError);
-          } else {
-            clearTimeout(streamTimeout);
-            reject(new Error('Failed to initialize streams'));
-          }
-        });
-
-        if (fileStream) {
-          fileStream.close();
-          fileStream = null;
-        }
-        if (responseStream) {
-          responseStream.destroy();
-          responseStream = null;
-        }
-        const readStream = fs.createReadStream(tempPath) as ReadStream;
-        try {
-          const data = await allDebridClient.addTorrent(readStream);
-          return data;
-        } finally {
-          readStream.destroy();
-        }
-      } catch (err) {
-        if (fileStream) {
-          fileStream.destroy();
-          fileStream = null;
-        }
-        if (responseStream) {
-          responseStream.destroy();
-          responseStream = null;
-        }
-        console.error(err);
+const notifyFailure = <A, E>(
+  effect: Effect.Effect<A, E>,
+  message: string
+): Effect.Effect<A | null> =>
+  effect.pipe(
+    Effect.catchAll((error) =>
+      Effect.sync(() => {
+        console.error(error);
         sendNotification({
-          message: 'Failed to add torrent to AllDebrid',
+          message,
           id: Math.random().toString(36).substring(7),
           type: 'error',
         });
         return null;
-      } finally {
-        if (fileStream) {
-          fileStream.destroy();
-          fileStream = null;
-        }
-        if (responseStream) {
-          responseStream.destroy();
-          responseStream = null;
-        }
-        try {
-          if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
-        } catch {
-          // ignore
-        }
-      }
-    }
+      })
+    )
   );
+
+const downloadTorrent = (url: string, path: string) =>
+  Effect.gen(function* () {
+    const response = yield* Effect.tryPromise({
+      try: () =>
+        axios.get<ArrayBuffer>(url, {
+          responseType: 'arraybuffer',
+          timeout: 60_000,
+        }),
+      catch: (cause: unknown) =>
+        new HttpError({
+          message: axios.isAxiosError(cause)
+            ? cause.message
+            : formatError(cause),
+          statusCode: axios.isAxiosError(cause)
+            ? (cause.response?.status ?? 0)
+            : 0,
+          url,
+        }),
+    });
+    const buffer = Buffer.from(response.data);
+    if (buffer.byteLength > 10 * 1024 * 1024) {
+      return yield* Effect.fail(
+        new HttpError({
+          message: 'Torrent exceeds 10MB size limit',
+          statusCode: 413,
+          url,
+        })
+      );
+    }
+    yield* Effect.tryPromise({
+      try: () => fsAsync.writeFile(path, buffer),
+      catch: (cause) =>
+        new FileSystemError({ message: formatError(cause), path, cause }),
+    });
+  });
+
+const run = <A, E>(effect: Effect.Effect<A, E>, message: string) =>
+  runEffectBoundary(notifyFailure(effect, message));
+
+export default function handler(_mainWindow: Electron.BrowserWindow): void {
+  ipcMain.handle('all-debrid:set-key', (_, key: string) =>
+    run(
+      Effect.sync(() => {
+        allDebridClient = new AllDebrid({ apiKey: key });
+        return 'success' as const;
+      }),
+      'Failed to set AllDebrid key'
+    )
+  );
+  ipcMain.handle('all-debrid:update-key', () =>
+    run(
+      readKey().pipe(
+        Effect.map((key) => {
+          if (!key) return false;
+          allDebridClient = new AllDebrid({ apiKey: key });
+          return true;
+        })
+      ),
+      'Failed to update AllDebrid key'
+    )
+  );
+  ipcMain.handle('all-debrid:get-user-info', () =>
+    run(allDebridClient.getUserInfo(), 'Failed to fetch AllDebrid user info')
+  );
+  ipcMain.handle('all-debrid:get-hosts', () =>
+    run(allDebridClient.getHosts(), 'Failed to fetch AllDebrid hosts')
+  );
+  ipcMain.handle(
+    'all-debrid:add-magnet',
+    (_, arg: { url: string; host?: string }) =>
+      run(
+        allDebridClient.addMagnet(arg.url, arg.host),
+        'Failed to add magnet to AllDebrid'
+      )
+  );
+  ipcMain.handle('all-debrid:is-torrent-ready', (_, id: string) =>
+    run(
+      allDebridClient.isTorrentReady(id),
+      'Failed to check AllDebrid torrent status'
+    )
+  );
+  ipcMain.handle('all-debrid:get-torrent-info', (_, id: string) =>
+    run(
+      allDebridClient.getMagnetFiles(id),
+      'Failed to fetch AllDebrid torrent info'
+    )
+  );
+  ipcMain.handle('all-debrid:unrestrict-link', (_, link: string) =>
+    run(
+      allDebridClient.unrestrictLink(link),
+      'Failed to unrestrict AllDebrid link'
+    )
+  );
+  ipcMain.handle('all-debrid:select-torrent', () =>
+    Effect.runPromise(Effect.succeed(true))
+  );
+  ipcMain.handle('all-debrid:add-torrent', (_, arg: { torrent: string }) => {
+    const tempPath = join(__dirname, `temp-alldebrid-${Date.now()}.torrent`);
+    const operation = Effect.gen(function* () {
+      yield* downloadTorrent(arg.torrent, tempPath);
+      const stream = fs.createReadStream(tempPath) as ReadStream;
+      return yield* allDebridClient
+        .addTorrent(stream)
+        .pipe(Effect.ensuring(Effect.sync(() => stream.destroy())));
+    }).pipe(
+      Effect.ensuring(
+        Effect.promise(() => fsAsync.rm(tempPath, { force: true }))
+      )
+    );
+    return run(operation, 'Failed to add torrent to AllDebrid');
+  });
 }

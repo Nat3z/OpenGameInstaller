@@ -1,4 +1,14 @@
+import {
+  ConfigError,
+  DownloadError,
+  DownloadNotActive,
+  FileSystemError,
+  formatError,
+  runEffectBoundary,
+  TooManyRequests,
+} from '@ogi/errors';
 import axios, { AxiosError, type AxiosResponse } from 'axios';
+import { Context, Effect, Layer, Schedule, Stream } from 'effect';
 import { BrowserWindow, ipcMain } from 'electron';
 import * as fs from 'fs';
 import { rm as rmAsync } from 'fs/promises';
@@ -7,7 +17,7 @@ import * as https from 'https';
 import { dirname } from 'path';
 import { Readable, Transform, type TransformCallback } from 'stream';
 import { getEffectiveOnlineState } from '@/electron/lib/online.js';
-import { sendNotification } from '@/electron/lib/renderer-notifications.js';
+import { sendNotification } from '@/electron/main.js';
 import {
   getStoredValue,
   refreshCached,
@@ -52,20 +62,22 @@ class GlobalTokenBucket {
     if (this.tokens > bytesPerSec) this.tokens = bytesPerSec;
   }
 
-  async consume(bytes: number): Promise<void> {
-    if (this.bytesPerSec === 0) return;
-    const now = Date.now();
-    const elapsed = (now - this.lastRefillTime) / 1000;
-    this.lastRefillTime = now;
-    this.tokens = Math.min(
-      this.bytesPerSec,
-      this.tokens + elapsed * this.bytesPerSec
-    );
-    this.tokens -= bytes;
-    if (this.tokens < 0) {
-      const waitMs = (-this.tokens / this.bytesPerSec) * 1000;
-      await new Promise<void>((resolve) => setTimeout(resolve, waitMs));
-    }
+  consume(bytes: number): Effect.Effect<void> {
+    return Effect.gen(this, function* () {
+      if (this.bytesPerSec === 0) return;
+      const now = Date.now();
+      const elapsed = (now - this.lastRefillTime) / 1000;
+      this.lastRefillTime = now;
+      this.tokens = Math.min(
+        this.bytesPerSec,
+        this.tokens + elapsed * this.bytesPerSec
+      );
+      this.tokens -= bytes;
+      if (this.tokens < 0) {
+        const waitMs = (-this.tokens / this.bytesPerSec) * 1000;
+        yield* Effect.sleep(`${waitMs} millis`);
+      }
+    });
   }
 }
 
@@ -77,10 +89,16 @@ class ThrottleStream extends Transform {
       callback();
       return;
     }
-    globalTokenBucket.consume(chunk.length).then(() => {
-      if (!this.destroyed) this.push(chunk);
-      callback();
-    });
+    Effect.runFork(
+      globalTokenBucket.consume(chunk.length).pipe(
+        Effect.tap(() =>
+          Effect.sync(() => {
+            if (!this.destroyed) this.push(chunk);
+          })
+        ),
+        Effect.ensuring(Effect.sync(callback))
+      )
+    );
   }
 }
 
@@ -197,7 +215,7 @@ function calculateBaselineSpeed(samples: number[]): number {
   return average(positiveSamples.slice(0, baselineSampleCount));
 }
 
-export class Download {
+class Download {
   public id: string;
   private _status: DownloadStatus = 'queued';
 
@@ -277,8 +295,16 @@ export class Download {
     );
   }
 
-  public waitForReady(): Promise<DownloadHandshakeResult> {
-    return waitForDownloadHandshake(this.id);
+  public waitForReady(): Effect.Effect<DownloadHandshakeResult, DownloadError> {
+    return Effect.tryPromise({
+      try: () => waitForDownloadHandshake(this.id),
+      catch: (cause) =>
+        new DownloadError({
+          message: formatError(cause),
+          downloadId: this.id,
+          cause,
+        }),
+    });
   }
 
   private createConnectionHealthMonitor(options: {
@@ -394,110 +420,141 @@ export class Download {
     };
   }
 
-  public async start() {
-    const { wait, finish, cancelHandler } = DOWNLOAD_QUEUE.enqueue(this.id, {
-      type: 'direct',
-    });
-    this.taskFinisher = finish;
-
-    cancelHandler((cancel) => {
-      ipcMain.handleOnce(`queue:${this.id}:cancel`, (_) => {
-        cancel();
-        this.cancel();
+  public start(): Effect.Effect<void, DownloadError> {
+    return Effect.gen(this, function* () {
+      const { wait, finish, cancelHandler } = DOWNLOAD_QUEUE.enqueue(this.id, {
+        type: 'direct',
       });
+      this.taskFinisher = finish;
+
+      cancelHandler((cancel) => {
+        ipcMain.handleOnce(`queue:${this.id}:cancel`, (_) => {
+          cancel();
+          this.cancel();
+        });
+      });
+
+      const result = yield* wait((queuePosition) => {
+        console.log('queuePosition', queuePosition);
+        this.sendProgress({ queuePosition });
+        this.reportHandshake({ status: 'queued', queuePosition });
+      });
+
+      if (result === 'cancelled') {
+        this.removeCancelHandler();
+        this.reportHandshake({ status: 'error', error: 'Download cancelled' });
+        clearDownloadHandshake(this.id);
+        downloads.delete(this.id);
+        return;
+      }
+
+      console.log('[direct] Starting download...');
+      yield* Effect.forkDaemon(this.run());
     });
-
-    const result = await wait((queuePosition) => {
-      console.log('queuePosition', queuePosition);
-      this.sendProgress({ queuePosition });
-      this.reportHandshake({ status: 'queued', queuePosition });
-    });
-
-    if (result === 'cancelled') {
-      this.removeCancelHandler();
-      this.reportHandshake({ status: 'error', error: 'Download cancelled' });
-      clearDownloadHandshake(this.id);
-      downloads.delete(this.id);
-      return;
-    }
-
-    console.log('[direct] Starting download...');
-
-    this.run();
   }
 
   private removeCancelHandler() {
     ipcMain.removeHandler(`queue:${this.id}:cancel`);
   }
 
-  private async run() {
+  private run(): Effect.Effect<void> {
     this.status = 'downloading';
     this.reportHandshake({ status: 'downloading' });
-    try {
+    return Effect.gen(this, function* () {
       if (this.totalParts > 1) {
-        // Multi-part download - use parallel parts
-        await this.runParallelParts();
+        yield* this.runParallelParts();
       } else {
-        // Single part download - use existing logic (with optional chunk parallelization)
         this.currentPart = 1;
         const job = this.jobs[0];
         console.log('[direct] Downloading single part');
-        await this.downloadPart(job);
+        yield* this.downloadPart(job);
         console.log('[direct] Completed downloading single part');
       }
       console.log('[direct] Completed downloading all parts');
       this.complete();
-    } catch (error) {
-      if (!['paused', 'cancelled'].includes(this.status)) {
-        this.fail(error as Error);
-      }
-    }
+    }).pipe(
+      Effect.catchAll((error) =>
+        Effect.sync(() => {
+          if (!['paused', 'cancelled'].includes(this.status)) {
+            this.fail(
+              error instanceof Error
+                ? error
+                : new DownloadError({
+                    message: formatError(error),
+                    downloadId: this.id,
+                    cause: error,
+                  })
+            );
+          }
+        })
+      )
+    );
   }
 
   /**
    * Run parallel downloads for multi-part downloads.
    * Downloads up to PARALLEL_CHUNK_COUNT parts simultaneously.
    */
-  private async runParallelParts(): Promise<void> {
-    this.useParallelParts = true;
+  private runParallelParts(): Effect.Effect<
+    void,
+    DownloadError | DownloadNotActive
+  > {
+    return Effect.gen(this, function* () {
+      this.useParallelParts = true;
 
-    // Only re-initialize parts if they don't exist (first run, not resume)
-    if (this.parts.length === 0) {
-      this.parts = [];
-    }
-
-    console.log(
-      `[direct] Starting parallel multi-part download with ${this.totalParts} parts`
-    );
-
-    // Initialize part states - check existing files for resume
-    for (let i = 0; i < this.totalParts; i++) {
-      // Skip if part already exists in array (resume scenario)
-      const existingPart = this.parts.find((p) => p.index === i);
-      if (existingPart) {
-        // Reset status if it was downloading when paused
-        if (existingPart.status === 'downloading') {
-          existingPart.status = 'pending';
-        }
-        continue;
+      // Only re-initialize parts if they don't exist (first run, not resume)
+      if (this.parts.length === 0) {
+        this.parts = [];
       }
 
-      const job = this.jobs[i];
-      let downloadedBytes = 0;
-      let isComplete = false;
+      console.log(
+        `[direct] Starting parallel multi-part download with ${this.totalParts} parts`
+      );
 
-      // Check if part file exists for resume
-      let totalBytes = 0;
-      let knownPartParallelLimit = parseParallelLimitHeader(job.headers);
-      if (fs.existsSync(job.path)) {
-        downloadedBytes = fs.statSync(job.path).size;
-        console.log(
-          `[direct] Part ${i + 1} file exists with ${downloadedBytes} bytes`
+      // Initialize part states - check existing files for resume
+      for (let i = 0; i < this.totalParts; i++) {
+        // Skip if part already exists in array (resume scenario)
+        const existingPart = this.parts.find((p) => p.index === i);
+        if (existingPart) {
+          // Reset status if it was downloading when paused
+          if (existingPart.status === 'downloading') {
+            existingPart.status = 'pending';
+          }
+          continue;
+        }
+
+        const job = this.jobs[i];
+        let downloadedBytes = 0;
+        let isComplete = false;
+
+        // Check if part file exists for resume
+        let totalBytes = 0;
+        let knownPartParallelLimit = parseParallelLimitHeader(job.headers);
+        const existingSize = yield* Effect.try({
+          try: () =>
+            fs.existsSync(job.path) ? fs.statSync(job.path).size : undefined,
+          catch: (cause) =>
+            new FileSystemError({
+              message: `Could not inspect part ${i + 1}: ${formatError(cause)}`,
+              path: job.path,
+              cause,
+            }),
+        }).pipe(
+          Effect.catchTag('FileSystemError', (error) =>
+            Effect.sync(() => {
+              console.log(error.message);
+              return undefined;
+            })
+          )
         );
+        if (existingSize !== undefined) {
+          downloadedBytes = existingSize;
+          console.log(
+            `[direct] Part ${i + 1} file exists with ${downloadedBytes} bytes`
+          );
 
-        // Check if file is complete by getting expected size
-        try {
-          const parallelInfo = await this.shouldUseParallelDownloadForPart(job);
+          const parallelInfo =
+            yield* this.shouldUseParallelDownloadForPart(job);
           totalBytes = parallelInfo.fileSize;
           knownPartParallelLimit = mergeParallelLimits(
             knownPartParallelLimit,
@@ -515,13 +572,25 @@ export class Download {
                   parseParallelLimitHeader(job.headers),
                   parallelInfo.parallelLimit
                 ) ?? PARALLEL_CHUNK_COUNT;
-              const allChunksExist = Array.from(
-                { length: effectiveChunkCount },
-                (_, idx) => {
-                  const chunkPath = this.getChunkPath(job.path, idx);
-                  return fs.existsSync(chunkPath);
-                }
-              ).every((exists) => exists);
+              const allChunksExist = yield* Effect.try({
+                try: () =>
+                  Array.from({ length: effectiveChunkCount }, (_, idx) =>
+                    fs.existsSync(this.getChunkPath(job.path, idx))
+                  ).every(Boolean),
+                catch: (cause) =>
+                  new FileSystemError({
+                    message: `Could not inspect chunks: ${formatError(cause)}`,
+                    path: job.path,
+                    cause,
+                  }),
+              }).pipe(
+                Effect.catchTag('FileSystemError', (error) =>
+                  Effect.sync(() => {
+                    console.log(error.message);
+                    return false;
+                  })
+                )
+              );
 
               if (allChunksExist && downloadedBytes >= parallelInfo.fileSize) {
                 isComplete = true;
@@ -535,395 +604,428 @@ export class Download {
               }
             }
           }
-        } catch (error) {
-          console.log(
-            `[direct] Could not verify completion for part ${i + 1}:`,
-            error
+        }
+
+        this.parts.push({
+          index: i,
+          job,
+          status: isComplete ? 'completed' : 'pending',
+          downloadedBytes,
+          totalBytes: totalBytes || 0, // Set if we got it from HEAD request
+          abortController: new AbortController(),
+          useChunks: false,
+          chunks: [],
+          chunkJobPath: '',
+          parallelLimit: knownPartParallelLimit,
+          effectiveChunkCount: undefined,
+        });
+
+        if (isComplete) {
+          console.log(`[direct] Part ${i + 1} already complete, skipping`);
+        }
+      }
+
+      // Update total bytes for progress calculation
+      this.updateMultiPartTotalBytes();
+
+      this.multiPartStartTime = Date.now();
+      this.startMultiPartProgressTracker();
+
+      // Process parts in batches
+      const pendingParts = () =>
+        this.parts.filter(
+          (p) => p.status === 'pending' || p.status === 'downloading'
+        );
+      const activeParts = () =>
+        this.parts.filter((p) => p.status === 'downloading');
+      const activeRequestCount = () =>
+        activeParts().reduce((count, part) => {
+          if (!part.useChunks || part.chunks.length === 0) {
+            return count + 1;
+          }
+          return count + part.chunks.filter((chunk) => !chunk.completed).length;
+        }, 0);
+      const completedParts = () =>
+        this.parts.filter((p) => p.status === 'completed');
+
+      while (pendingParts().length > 0 || activeParts().length > 0) {
+        if (this.status !== 'downloading') {
+          return yield* Effect.fail(
+            new DownloadNotActive({ downloadId: this.id })
           );
         }
-      }
 
-      this.parts.push({
-        index: i,
-        job,
-        status: isComplete ? 'completed' : 'pending',
-        downloadedBytes,
-        totalBytes: totalBytes || 0, // Set if we got it from HEAD request
-        abortController: new AbortController(),
-        useChunks: false,
-        chunks: [],
-        chunkJobPath: '',
-        parallelLimit: knownPartParallelLimit,
-        effectiveChunkCount: undefined,
-      });
-
-      if (isComplete) {
-        console.log(`[direct] Part ${i + 1} already complete, skipping`);
-      }
-    }
-
-    // Update total bytes for progress calculation
-    this.updateMultiPartTotalBytes();
-
-    this.multiPartStartTime = Date.now();
-    this.startMultiPartProgressTracker();
-
-    // Process parts in batches
-    const pendingParts = () =>
-      this.parts.filter(
-        (p) => p.status === 'pending' || p.status === 'downloading'
-      );
-    const activeParts = () =>
-      this.parts.filter((p) => p.status === 'downloading');
-    const activeRequestCount = () =>
-      activeParts().reduce((count, part) => {
-        if (!part.useChunks || part.chunks.length === 0) {
-          return count + 1;
-        }
-        return count + part.chunks.filter((chunk) => !chunk.completed).length;
-      }, 0);
-    const completedParts = () =>
-      this.parts.filter((p) => p.status === 'completed');
-
-    while (pendingParts().length > 0 || activeParts().length > 0) {
-      if (this.status !== 'downloading') {
-        throw new Error('Download not active');
-      }
-
-      // Start new parts if we have capacity. Respect OGI-Parallel-Limit as a
-      // total connection cap for concurrent parts.
-      const knownParallelLimits = this.parts.map((part) =>
-        mergeParallelLimits(
-          part.parallelLimit,
-          parseParallelLimitHeader(part.job.headers)
-        )
-      );
-      const effectivePartLimit = mergeParallelLimits(
-        PARALLEL_CHUNK_COUNT,
-        ...knownParallelLimits
-      );
-      const availableSlots = Math.max(
-        0,
-        (effectivePartLimit ?? PARALLEL_CHUNK_COUNT) - activeRequestCount()
-      );
-      // Start one part at a time so chunk fan-out cannot briefly exceed the
-      // parallel limit while multiple parts are still in HEAD/setup.
-      const partsToStart =
-        availableSlots > 0
-          ? this.parts.filter((p) => p.status === 'pending').slice(0, 1)
-          : [];
-
-      if (partsToStart.length > 0) {
-        console.log(
-          `[direct] Starting ${partsToStart.length} parts (${activeParts().length} active, ${completedParts().length} completed)`
+        // Start new parts if we have capacity. Respect OGI-Parallel-Limit as a
+        // total connection cap for concurrent parts.
+        const knownParallelLimits = this.parts.map((part) =>
+          mergeParallelLimits(
+            part.parallelLimit,
+            parseParallelLimitHeader(part.job.headers)
+          )
         );
+        const effectivePartLimit = mergeParallelLimits(
+          PARALLEL_CHUNK_COUNT,
+          ...knownParallelLimits
+        );
+        const availableSlots = Math.max(
+          0,
+          (effectivePartLimit ?? PARALLEL_CHUNK_COUNT) - activeRequestCount()
+        );
+        // Start one part at a time so chunk fan-out cannot briefly exceed the
+        // parallel limit while multiple parts are still in HEAD/setup.
+        const partsToStart =
+          availableSlots > 0
+            ? this.parts.filter((p) => p.status === 'pending').slice(0, 1)
+            : [];
 
-        // Start downloads without waiting
-        for (const part of partsToStart) {
-          part.status = 'downloading';
-          this.downloadPartWithState(part).catch((error) => {
-            if (this.status === 'downloading') {
-              console.error(`[direct] Part ${part.index + 1} failed:`, error);
-              part.status = 'failed';
-            }
-          });
+        if (partsToStart.length > 0) {
+          console.log(
+            `[direct] Starting ${partsToStart.length} parts (${activeParts().length} active, ${completedParts().length} completed)`
+          );
+
+          // Start downloads without waiting
+          for (const part of partsToStart) {
+            part.status = 'downloading';
+            yield* Effect.forkDaemon(
+              this.downloadPartWithState(part).pipe(
+                Effect.catchAll((error) =>
+                  Effect.sync(() => {
+                    if (this.status === 'downloading') {
+                      console.error(
+                        `[direct] Part ${part.index + 1} failed:`,
+                        error
+                      );
+                      part.status = 'failed';
+                    }
+                  })
+                )
+              )
+            );
+          }
+        }
+
+        // Wait a bit before checking again
+        yield* Effect.sleep('100 millis');
+
+        // Check if all parts are done
+        if (
+          this.parts.every(
+            (p) => p.status === 'completed' || p.status === 'failed'
+          )
+        ) {
+          break;
         }
       }
 
-      // Wait a bit before checking again
-      await new Promise((resolve) => setTimeout(resolve, 100));
-
-      // Check if all parts are done
-      if (
-        this.parts.every(
-          (p) => p.status === 'completed' || p.status === 'failed'
-        )
-      ) {
-        break;
+      // Clean up progress tracker
+      if (this.progressInterval) {
+        clearInterval(this.progressInterval);
+        this.progressInterval = undefined;
       }
-    }
 
-    // Clean up progress tracker
-    if (this.progressInterval) {
-      clearInterval(this.progressInterval);
-      this.progressInterval = undefined;
-    }
+      // Check for any failed parts
+      const failedParts = this.parts.filter((p) => p.status === 'failed');
+      if (failedParts.length > 0) {
+        return yield* Effect.fail(
+          new DownloadError({
+            message: `${failedParts.length} parts failed to download`,
+            downloadId: this.id,
+          })
+        );
+      }
 
-    // Check for any failed parts
-    const failedParts = this.parts.filter((p) => p.status === 'failed');
-    if (failedParts.length > 0) {
-      throw new Error(`${failedParts.length} parts failed to download`);
-    }
-
-    console.log('[direct] All parallel parts completed');
+      console.log('[direct] All parallel parts completed');
+    });
   }
 
   /**
    * Download a single part with optional chunk parallelization.
    * Used by runParallelParts() for multi-part downloads.
    */
-  private async downloadPartWithState(
+  private downloadPartWithState(
     part: PartState,
     retries = 5
-  ): Promise<void> {
-    const job = part.job;
-    let lastError: Error | undefined;
+  ): Effect.Effect<
+    void,
+    DownloadError | DownloadNotActive | TooManyRequests | FileSystemError
+  > {
+    return Effect.gen(this, function* () {
+      const job = part.job;
+      let lastError:
+        | DownloadError
+        | DownloadNotActive
+        | TooManyRequests
+        | FileSystemError
+        | undefined;
 
-    // Check if this part should use chunk parallelization
-    const parallelInfo = await this.shouldUseParallelDownloadForPart(job);
-    part.totalBytes = parallelInfo.fileSize;
-    part.parallelLimit = mergeParallelLimits(
-      part.parallelLimit,
-      parallelInfo.parallelLimit
-    );
-    part.effectiveChunkCount =
-      mergeParallelLimits(PARALLEL_CHUNK_COUNT, part.parallelLimit) ??
-      PARALLEL_CHUNK_COUNT;
-
-    // Update total bytes for progress calculation
-    this.updateMultiPartTotalBytes();
-
-    if (parallelInfo.useParallel) {
-      console.log(
-        `[direct] Part ${part.index + 1}: Using chunk parallelization (${(parallelInfo.fileSize / (1024 * 1024)).toFixed(2)}MB)`
+      // Check if this part should use chunk parallelization
+      const parallelInfo = yield* this.shouldUseParallelDownloadForPart(job);
+      part.totalBytes = parallelInfo.fileSize;
+      part.parallelLimit = mergeParallelLimits(
+        part.parallelLimit,
+        parallelInfo.parallelLimit
       );
-      part.useChunks = true;
-      part.chunkJobPath = job.path;
+      part.effectiveChunkCount =
+        mergeParallelLimits(PARALLEL_CHUNK_COUNT, part.parallelLimit) ??
+        PARALLEL_CHUNK_COUNT;
 
-      for (let i = 0; i < retries; i++) {
-        if (this.status !== 'downloading') {
-          throw new Error('Download not active');
-        }
-        try {
-          await this.executeParallelDownloadForPart(
-            part,
-            parallelInfo.fileSize
+      // Update total bytes for progress calculation
+      this.updateMultiPartTotalBytes();
+
+      if (parallelInfo.useParallel) {
+        console.log(
+          `[direct] Part ${part.index + 1}: Using chunk parallelization (${(parallelInfo.fileSize / (1024 * 1024)).toFixed(2)}MB)`
+        );
+        part.useChunks = true;
+        part.chunkJobPath = job.path;
+
+        for (let i = 0; i < retries; i++) {
+          if (this.status !== 'downloading') {
+            return yield* Effect.fail(
+              new DownloadNotActive({ downloadId: this.id })
+            );
+          }
+          const attempt = yield* Effect.either(
+            this.executeParallelDownloadForPart(part, parallelInfo.fileSize)
           );
-          part.status = 'completed';
-          console.log(`[direct] Part ${part.index + 1} completed (chunked)`);
-          return;
-        } catch (error) {
-          lastError = error as Error;
+          if (attempt._tag === 'Right') {
+            part.status = 'completed';
+            console.log(`[direct] Part ${part.index + 1} completed (chunked)`);
+            return;
+          }
+          lastError = attempt.left;
           console.log(
             `[direct] Part ${part.index + 1} chunk download attempt ${i} failed:`,
             lastError
           );
-
-          // If 429 error, disable chunk parallelization and retry as standard download
-          if (lastError.message === '429_TOO_MANY_REQUESTS') {
+          if (lastError instanceof TooManyRequests) {
             console.log(
               `[direct] Part ${part.index + 1}: 429 detected, disabling chunk parallelization and retrying as standard download`
             );
             part.useChunks = false;
-            // Clean up any partial chunk files
-            try {
-              await this.deleteChunkFiles(part.job.path);
-            } catch (cleanupError) {
-              console.log(
-                '[direct] Error cleaning up chunk files:',
-                cleanupError
-              );
-            }
-            // Fall through to standard download
+            yield* this.deleteChunkFiles(
+              part.job.path,
+              part.effectiveChunkCount
+            );
             break;
           }
+          if (this.status !== 'downloading') {
+            return yield* Effect.fail(lastError);
+          }
+          yield* Effect.sleep(`${1000 * (i + 1)} millis`);
+        }
 
-          if (this.status !== 'downloading') throw lastError;
-          await new Promise((resolve) => setTimeout(resolve, 1000 * (i + 1)));
+        // If we broke out due to 429, continue to standard download
+        if (
+          lastError instanceof TooManyRequests ||
+          lastError?.message === '429_TOO_MANY_REQUESTS'
+        ) {
+          // Reset lastError so we can try standard download
+          lastError = undefined;
+        } else {
+          part.status = 'failed';
+          return yield* Effect.fail(
+            lastError ??
+              new DownloadError({
+                message: 'Parallel part download failed',
+                downloadId: this.id,
+              })
+          );
         }
       }
 
-      // If we broke out due to 429, continue to standard download
-      if (lastError?.message === '429_TOO_MANY_REQUESTS') {
-        // Reset lastError so we can try standard download
-        lastError = undefined;
-      } else {
-        part.status = 'failed';
-        throw lastError;
-      }
-    }
-
-    // Standard download for this part
-    for (let i = 0; i < retries; i++) {
-      if (this.status !== 'downloading') {
-        throw new Error('Download not active');
-      }
-      try {
+      // Standard download for this part
+      for (let i = 0; i < retries; i++) {
+        if (this.status !== 'downloading') {
+          return yield* Effect.fail(
+            new DownloadNotActive({ downloadId: this.id })
+          );
+        }
         console.log(`[direct] Part ${part.index + 1}: Standard download`);
-        await this.executePartDownload(part);
-        part.status = 'completed';
-        console.log(`[direct] Part ${part.index + 1} completed`);
-        return;
-      } catch (error) {
-        lastError = error as Error;
+        const attempt = yield* Effect.either(this.executePartDownload(part));
+        if (attempt._tag === 'Right') {
+          part.status = 'completed';
+          console.log(`[direct] Part ${part.index + 1} completed`);
+          return;
+        }
+        lastError = attempt.left;
         console.log(
           `[direct] Part ${part.index + 1} download attempt ${i} failed:`,
           lastError
         );
-        if (this.status !== 'downloading') throw lastError;
+        if (this.status !== 'downloading') {
+          return yield* Effect.fail(lastError);
+        }
         if (lastError.message === 'CONNECTION_REFRESH_REQUESTED') {
           part.abortController = new AbortController();
           continue;
         }
-        await new Promise((resolve) => setTimeout(resolve, 1000 * (i + 1)));
+        yield* Effect.sleep(`${1000 * (i + 1)} millis`);
       }
-    }
-    part.status = 'failed';
-    throw lastError;
+      part.status = 'failed';
+      return yield* Effect.fail(
+        lastError ??
+          new DownloadError({
+            message: 'Part download failed',
+            downloadId: this.id,
+          })
+      );
+    });
   }
 
   /**
    * Check if parallel download should be used for a part in multi-part download.
    */
-  private async shouldUseParallelDownloadForPart(
+  private shouldUseParallelDownloadForPart(
     job: DownloadJob
-  ): Promise<ParallelDownloadInfo> {
-    try {
+  ): Effect.Effect<ParallelDownloadInfo> {
+    return Effect.gen(function* () {
       const keepAliveAgent = job.link.startsWith('https')
         ? new https.Agent({ keepAlive: true })
         : new http.Agent({ keepAlive: true });
 
-      const headResponse = await axios.head(job.link, {
-        headers: {
-          ...job.headers,
-          'User-Agent': 'OpenGameInstaller Downloader/1.0.0',
-        },
-        httpAgent: keepAliveAgent,
-        httpsAgent: keepAliveAgent,
-        timeout: 10000,
+      const headResponse = yield* Effect.tryPromise({
+        try: () =>
+          axios.head(job.link, {
+            headers: {
+              ...job.headers,
+              'User-Agent': 'OpenGameInstaller Downloader/1.0.0',
+            },
+            httpAgent: keepAliveAgent,
+            httpsAgent: keepAliveAgent,
+            timeout: 10000,
+          }),
+        catch: (cause) =>
+          new DownloadError({
+            message: `HEAD request failed: ${formatError(cause)}`,
+            cause,
+          }),
       });
 
       const contentLength = headResponse.headers['content-length']
         ? parseInt(String(headResponse.headers['content-length']), 10)
         : 0;
-      const acceptRanges = headResponse.headers['accept-ranges'];
-      const supportsRange = acceptRanges === 'bytes';
-
+      const supportsRange = headResponse.headers['accept-ranges'] === 'bytes';
       const parallelLimit = mergeParallelLimits(
         parseParallelLimitHeader(job.headers),
         parseParallelLimitHeader(headResponse.headers)
       );
 
-      const useParallel =
-        supportsRange &&
-        contentLength > PARALLEL_DOWNLOAD_THRESHOLD &&
-        !(parallelLimit === 1);
-
       return {
-        useParallel,
+        useParallel:
+          supportsRange &&
+          contentLength > PARALLEL_DOWNLOAD_THRESHOLD &&
+          parallelLimit !== 1,
         fileSize: contentLength,
         supportsRange,
         parallelLimit,
       };
-    } catch (error) {
-      console.log(
-        '[direct] HEAD request failed for part, falling back to standard:',
-        error
-      );
-      return {
-        useParallel: false,
-        fileSize: 0,
-        supportsRange: false,
-      };
-    }
+    }).pipe(
+      Effect.catchTag('DownloadError', (error) =>
+        Effect.sync(() => {
+          console.log(
+            '[direct] HEAD request failed for part, falling back to standard:',
+            error
+          );
+          return {
+            useParallel: false,
+            fileSize: 0,
+            supportsRange: false,
+          };
+        })
+      )
+    );
   }
 
   /**
    * Execute a parallel (chunked) download for a part.
    */
-  private async executeParallelDownloadForPart(
+  private executeParallelDownloadForPart(
     part: PartState,
     fileSize: number
-  ): Promise<void> {
-    const job = part.job;
-    part.chunks = [];
+  ): Effect.Effect<void, DownloadError | TooManyRequests | FileSystemError> {
+    return Effect.gen(this, function* () {
+      const job = part.job;
+      part.chunks = [];
 
-    const effectiveChunkCount =
-      part.effectiveChunkCount ?? PARALLEL_CHUNK_COUNT;
+      const effectiveChunkCount =
+        part.effectiveChunkCount ?? PARALLEL_CHUNK_COUNT;
 
-    // Store effective chunk count in part state for later use
-    part.effectiveChunkCount = effectiveChunkCount;
+      // Store effective chunk count in part state for later use
+      part.effectiveChunkCount = effectiveChunkCount;
 
-    const chunkSize = Math.ceil(fileSize / effectiveChunkCount);
-    fs.mkdirSync(dirname(job.path), { recursive: true });
+      const chunkSize = Math.ceil(fileSize / effectiveChunkCount);
+      fs.mkdirSync(dirname(job.path), { recursive: true });
 
-    // Initialize chunks for this part
-    for (let i = 0; i < effectiveChunkCount; i++) {
-      const startByte = i * chunkSize;
-      const endByte = Math.min((i + 1) * chunkSize - 1, fileSize - 1);
-      const expectedChunkSize = endByte - startByte + 1;
-      const chunkPath = this.getChunkPath(job.path, i);
+      // Initialize chunks for this part
+      for (let i = 0; i < effectiveChunkCount; i++) {
+        const startByte = i * chunkSize;
+        const endByte = Math.min((i + 1) * chunkSize - 1, fileSize - 1);
+        const expectedChunkSize = endByte - startByte + 1;
+        const chunkPath = this.getChunkPath(job.path, i);
 
-      let chunkCurrentBytes = 0;
-      if (fs.existsSync(chunkPath)) {
-        chunkCurrentBytes = fs.statSync(chunkPath).size;
-      }
-
-      part.chunks.push({
-        index: i,
-        startByte,
-        endByte,
-        currentBytes: chunkCurrentBytes,
-        abortController: new AbortController(),
-        completed: chunkCurrentBytes >= expectedChunkSize,
-      });
-    }
-
-    part.downloadedBytes = part.chunks.reduce(
-      (sum, chunk) => sum + chunk.currentBytes,
-      0
-    );
-
-    let connectionRefreshRequested = false;
-    const connectionHealth = this.createConnectionHealthMonitor({
-      label: `Part ${part.index + 1}`,
-      initialBytes: part.downloadedBytes,
-      onReconnect: ({ currentSpeed, baselineSpeed }) => {
-        if (connectionRefreshRequested || this.status !== 'downloading') return;
-        connectionRefreshRequested = true;
-        console.log(
-          `[direct] Part ${part.index + 1}: restarting ranged chunk requests ` +
-            `after slowdown (${(currentSpeed / (1024 * 1024)).toFixed(2)}MB/s of ` +
-            `${(baselineSpeed / (1024 * 1024)).toFixed(2)}MB/s baseline)`
-        );
-        for (const activeChunk of part.chunks) {
-          activeChunk.abortController.abort();
+        let chunkCurrentBytes = 0;
+        if (fs.existsSync(chunkPath)) {
+          chunkCurrentBytes = fs.statSync(chunkPath).size;
         }
-      },
-    });
 
-    // Download all chunks in parallel
-    const chunkPromises = part.chunks.map((chunk) =>
-      this.downloadChunkForPart(part, chunk, () =>
-        connectionHealth.observe(part.downloadedBytes)
-      )
-    );
-
-    try {
-      await Promise.all(chunkPromises);
-    } catch (error) {
-      // Check if error is 429
-      if (error instanceof Error && error.message === '429_TOO_MANY_REQUESTS') {
-        throw error;
+        part.chunks.push({
+          index: i,
+          startByte,
+          endByte,
+          currentBytes: chunkCurrentBytes,
+          abortController: new AbortController(),
+          completed: chunkCurrentBytes >= expectedChunkSize,
+        });
       }
-      // Re-throw other errors
-      throw error;
-    } finally {
-      connectionHealth.dispose();
-    }
 
-    // Mark only this part as merging (don't change global status)
-    part.status = 'merging';
-    this.sendProgress({ progress: this.currentBytes / this.totalSize });
+      part.downloadedBytes = part.chunks.reduce(
+        (sum, chunk) => sum + chunk.currentBytes,
+        0
+      );
 
-    // Merge chunk files
-    await this.mergeChunkFilesForPart(part);
+      let connectionRefreshRequested = false;
+      const connectionHealth = this.createConnectionHealthMonitor({
+        label: `Part ${part.index + 1}`,
+        initialBytes: part.downloadedBytes,
+        onReconnect: ({ currentSpeed, baselineSpeed }) => {
+          if (connectionRefreshRequested || this.status !== 'downloading')
+            return;
+          connectionRefreshRequested = true;
+          console.log(
+            `[direct] Part ${part.index + 1}: restarting ranged chunk requests ` +
+              `after slowdown (${(currentSpeed / (1024 * 1024)).toFixed(2)}MB/s of ` +
+              `${(baselineSpeed / (1024 * 1024)).toFixed(2)}MB/s baseline)`
+          );
+          for (const activeChunk of part.chunks) {
+            activeChunk.abortController.abort();
+          }
+        },
+      });
 
-    // Reset part status to downloading after merge completes
-    part.status = 'downloading';
+      // Download all chunks in parallel and always dispose the health monitor.
+      yield* Effect.all(
+        part.chunks.map((chunk) =>
+          this.downloadChunkForPart(part, chunk, () =>
+            connectionHealth.observe(part.downloadedBytes)
+          )
+        ),
+        { concurrency: 'unbounded', discard: true }
+      ).pipe(Effect.ensuring(Effect.sync(() => connectionHealth.dispose())));
 
-    // Update part's downloaded bytes
-    part.downloadedBytes = fileSize;
+      // Mark only this part as merging (don't change global status)
+      part.status = 'merging';
+      this.sendProgress({ progress: this.currentBytes / this.totalSize });
+
+      // Merge chunk files
+      yield* this.mergeChunkFilesForPart(part);
+
+      // Reset part status to downloading after merge completes
+      part.status = 'downloading';
+
+      // Update part's downloaded bytes
+      part.downloadedBytes = fileSize;
+    });
   }
 
   /**
@@ -933,325 +1035,406 @@ export class Download {
     part: PartState,
     chunk: ChunkState,
     onProgress?: () => void
-  ): Promise<void> {
-    return new Promise<void>(async (resolve, reject) => {
-      if (chunk.completed) {
-        resolve();
-        return;
-      }
+  ): Effect.Effect<void, DownloadError | TooManyRequests | FileSystemError> {
+    return Effect.gen(this, function* () {
+      if (chunk.completed) return;
 
       const actualStartByte = chunk.startByte + chunk.currentBytes;
       if (actualStartByte > chunk.endByte) {
         chunk.completed = true;
-        resolve();
         return;
       }
 
       const chunkPath = this.getChunkPath(part.job.path, chunk.index);
-
-      try {
-        const keepAliveAgent = part.job.link.startsWith('https')
-          ? new https.Agent({ keepAlive: true })
-          : new http.Agent({ keepAlive: true });
-
-        const headers = {
-          ...part.job.headers,
-          'User-Agent': 'OpenGameInstaller Downloader/1.0.0',
-          'Accept-Encoding': 'identity',
-          Range: `bytes=${actualStartByte}-${chunk.endByte}`,
-        };
-
-        chunk.response = await axios.get<Readable>(part.job.link, {
-          responseType: 'stream',
-          headers,
-          httpAgent: keepAliveAgent,
-          httpsAgent: keepAliveAgent,
-          signal: chunk.abortController.signal,
-        });
-
-        if (chunk.response.status === 429) {
-          console.log(
-            `[direct] Part ${part.index + 1} chunk ${chunk.index}: 429 Too Many Requests, disabling chunk parallelization`
-          );
-          reject(new Error('429_TOO_MANY_REQUESTS'));
+      const keepAliveAgent = part.job.link.startsWith('https')
+        ? new https.Agent({ keepAlive: true })
+        : new http.Agent({ keepAlive: true });
+      const request = Effect.tryPromise({
+        try: () =>
+          axios.get<Readable>(part.job.link, {
+            responseType: 'stream',
+            headers: {
+              ...part.job.headers,
+              'User-Agent': 'OpenGameInstaller Downloader/1.0.0',
+              'Accept-Encoding': 'identity',
+              Range: `bytes=${actualStartByte}-${chunk.endByte}`,
+            },
+            httpAgent: keepAliveAgent,
+            httpsAgent: keepAliveAgent,
+            signal: chunk.abortController.signal,
+          }),
+        catch: (cause) =>
+          new DownloadError({
+            message: `Chunk request failed: ${formatError(cause)}`,
+            downloadId: this.id,
+            cause,
+          }),
+      });
+      const responseResult = yield* Effect.either(request);
+      if (responseResult._tag === 'Left') {
+        const cause = responseResult.left.cause;
+        if (cause instanceof AxiosError && cause.response?.status === 416) {
+          chunk.completed = true;
           return;
         }
-        if (chunk.response.status !== 206) {
-          reject(
-            new Error(
-              `Unexpected status ${chunk.response.status} for range request`
+        if (cause instanceof AxiosError && cause.response?.status === 429) {
+          return yield* Effect.fail(new TooManyRequests({}));
+        }
+        return yield* Effect.fail(responseResult.left);
+      }
+      chunk.response = responseResult.right;
+
+      if (chunk.response.status === 429) {
+        return yield* Effect.fail(new TooManyRequests({}));
+      }
+      if (chunk.response.status !== 206) {
+        return yield* Effect.fail(
+          new DownloadError({
+            message: `Unexpected status ${chunk.response.status} for range request`,
+            downloadId: this.id,
+          })
+        );
+      }
+
+      const stream = yield* Effect.try({
+        try: () => {
+          chunk.fileStream = fs.createWriteStream(chunkPath, {
+            flags: chunk.currentBytes > 0 ? 'a' : 'w',
+          });
+          let throttle: ThrottleStream | undefined;
+          if (BANDWIDTH_LIMIT_BYTES_PER_SEC > 0) {
+            throttle = new ThrottleStream();
+            chunk.response!.data.pipe(throttle);
+            throttle.pipe(chunk.fileStream);
+          } else {
+            chunk.response!.data.pipe(chunk.fileStream);
+          }
+          return { stream: chunk.fileStream, throttle };
+        },
+        catch: (cause) =>
+          new FileSystemError({
+            message: `Failed to open chunk file: ${formatError(cause)}`,
+            path: chunkPath,
+            cause,
+          }),
+      });
+
+      yield* Effect.async<void, DownloadError>((resume) => {
+        let resolved = false;
+        stream.stream.on('finish', () => {
+          if (resolved) return;
+          resolved = true;
+          chunk.completed = true;
+          resume(Effect.void);
+        });
+        chunk.abortController.signal.addEventListener('abort', () => {
+          if (resolved) return;
+          resolved = true;
+          stream.throttle?.destroy();
+          chunk.fileStream?.close();
+          chunk.fileStream = undefined;
+          chunk.response = undefined;
+          stream.stream.destroy();
+          resume(
+            Effect.fail(
+              new DownloadError({
+                message: 'Chunk download aborted',
+                downloadId: this.id,
+              })
             )
           );
-          return;
-        }
-
-        chunk.fileStream = fs.createWriteStream(chunkPath, {
-          flags: chunk.currentBytes > 0 ? 'a' : 'w',
         });
-
-        let _chunkThrottle: ThrottleStream | undefined;
-        if (BANDWIDTH_LIMIT_BYTES_PER_SEC > 0) {
-          _chunkThrottle = new ThrottleStream();
-          chunk.response.data.pipe(_chunkThrottle);
-          _chunkThrottle.pipe(chunk.fileStream);
-        } else {
-          chunk.response.data.pipe(chunk.fileStream);
-        }
-        const stream = chunk.fileStream;
-
-        stream.on('finish', () => {
-          chunk.completed = true;
-          resolve();
+        stream.stream.on('error', (cause) => {
+          if (resolved) return;
+          resolved = true;
+          resume(
+            Effect.fail(
+              new DownloadError({
+                message: `Chunk stream failed: ${formatError(cause)}`,
+                downloadId: this.id,
+                cause,
+              })
+            )
+          );
         });
-
-        chunk.abortController.signal.addEventListener('abort', () => {
-          if (_chunkThrottle) _chunkThrottle.destroy();
-          if (chunk.fileStream) {
-            chunk.fileStream.close();
-            chunk.fileStream = undefined;
-          }
-          chunk.response = undefined;
-          stream.destroy();
-          reject(new Error('Aborted'));
-        });
-
-        stream.on('error', reject);
-
-        chunk.response.data.on('data', (data: Buffer) => {
+        chunk.response!.data.on('data', (data: Buffer) => {
           chunk.currentBytes += data.length;
           part.downloadedBytes = part.chunks.reduce(
-            (sum, c) => sum + c.currentBytes,
+            (sum, current) => sum + current.currentBytes,
             0
           );
           onProgress?.();
         });
-      } catch (error) {
-        if (error instanceof AxiosError) {
-          if (error.response?.status === 416) {
-            chunk.completed = true;
-            resolve();
-            return;
-          }
-          if (error.response?.status === 429) {
-            // Too many requests - disable parallelization for this part
-            console.log(
-              `[direct] Part ${part.index + 1} chunk ${chunk.index}: 429 Too Many Requests, disabling chunk parallelization`
-            );
-            reject(new Error('429_TOO_MANY_REQUESTS'));
-            return;
-          }
-        }
-        reject(error);
-      }
+      });
     });
   }
 
   /**
    * Merge chunk files for a part.
    */
-  private async mergeChunkFilesForPart(part: PartState): Promise<void> {
-    const finalStream = fs.createWriteStream(part.job.path, { flags: 'w' });
+  private mergeChunkFilesForPart(
+    part: PartState
+  ): Effect.Effect<void, FileSystemError> {
+    return Effect.gen(this, function* () {
+      const finalStream = yield* Effect.try({
+        try: () => fs.createWriteStream(part.job.path, { flags: 'w' }),
+        catch: (cause) =>
+          new FileSystemError({
+            message: `Failed to create merged part: ${formatError(cause)}`,
+            path: part.job.path,
+            cause,
+          }),
+      });
+      const effectiveChunkCount =
+        part.effectiveChunkCount ?? PARALLEL_CHUNK_COUNT;
 
-    // Use stored effective chunk count, fallback to PARALLEL_CHUNK_COUNT if not set
-    const effectiveChunkCount =
-      part.effectiveChunkCount ?? PARALLEL_CHUNK_COUNT;
-
-    return new Promise<void>((resolve, reject) => {
-      let currentChunkIndex = 0;
-
-      const writeNextChunk = () => {
-        if (currentChunkIndex >= effectiveChunkCount) {
-          finalStream.end(() => {
-            this.deleteChunkFiles(part.job.path)
-              .then(resolve)
-              .catch(() => resolve());
+      yield* Effect.async<void, FileSystemError>((resume) => {
+        let resolved = false;
+        let currentChunkIndex = 0;
+        const fail = (cause: unknown, path = part.job.path) => {
+          if (resolved) return;
+          resolved = true;
+          resume(
+            Effect.fail(
+              new FileSystemError({
+                message: `Failed to merge chunks: ${formatError(cause)}`,
+                path,
+                cause,
+              })
+            )
+          );
+        };
+        const writeNextChunk = () => {
+          if (currentChunkIndex >= effectiveChunkCount) {
+            finalStream.end(() => {
+              if (resolved) return;
+              resolved = true;
+              resume(Effect.void);
+            });
+            return;
+          }
+          const chunkPath = this.getChunkPath(part.job.path, currentChunkIndex);
+          if (!fs.existsSync(chunkPath)) {
+            fail(`Chunk file ${chunkPath} not found for merge`, chunkPath);
+            return;
+          }
+          const chunkStream = fs.createReadStream(chunkPath);
+          chunkStream.on('error', (cause) => {
+            finalStream.destroy();
+            fail(cause, chunkPath);
           });
-          return;
-        }
-
-        const chunkPath = this.getChunkPath(part.job.path, currentChunkIndex);
-
-        if (!fs.existsSync(chunkPath)) {
-          reject(new Error(`Chunk file ${chunkPath} not found for merge`));
-          return;
-        }
-
-        const chunkStream = fs.createReadStream(chunkPath);
-        chunkStream.on('error', (err) => {
-          finalStream.destroy();
-          reject(err);
-        });
-        chunkStream.on('end', () => {
-          currentChunkIndex++;
-          writeNextChunk();
-        });
-        chunkStream.pipe(finalStream, { end: false });
-      };
-
-      finalStream.on('error', reject);
-      writeNextChunk();
+          chunkStream.on('end', () => {
+            currentChunkIndex++;
+            writeNextChunk();
+          });
+          chunkStream.pipe(finalStream, { end: false });
+        };
+        finalStream.on('error', fail);
+        writeNextChunk();
+      });
+      yield* this.deleteChunkFiles(
+        part.job.path,
+        part.effectiveChunkCount
+      ).pipe(Effect.ignore);
     });
   }
 
   /**
    * Execute a standard (non-chunked) download for a part.
    */
-  private executePartDownload(part: PartState): Promise<void> {
-    return new Promise<void>(async (resolve, reject) => {
+  private executePartDownload(
+    part: PartState
+  ): Effect.Effect<void, DownloadError | FileSystemError | TooManyRequests> {
+    return Effect.gen(this, function* () {
       const job = part.job;
       let connectionRefreshRequested = false;
-      let connectionHealth: ConnectionHealthMonitor | undefined;
 
-      try {
-        // Check for existing file (resume)
-        let startByte = 0;
-        if (fs.existsSync(job.path)) {
-          startByte = fs.statSync(job.path).size;
-          part.downloadedBytes = startByte;
-        }
+      const startByte = yield* Effect.try({
+        try: () => {
+          let existingBytes = 0;
+          if (fs.existsSync(job.path)) {
+            existingBytes = fs.statSync(job.path).size;
+            part.downloadedBytes = existingBytes;
+          }
+          fs.mkdirSync(dirname(job.path), { recursive: true });
+          if (fs.existsSync(job.path) && fs.statSync(job.path).isDirectory()) {
+            return undefined;
+          }
+          part.fileStream = fs.createWriteStream(job.path, {
+            flags: existingBytes > 0 ? 'r+' : 'w',
+            start: existingBytes,
+          });
+          return existingBytes;
+        },
+        catch: (cause) =>
+          new FileSystemError({
+            message: `Failed to prepare download part: ${formatError(cause)}`,
+            path: job.path,
+            cause,
+          }),
+      });
+      if (startByte === undefined) {
+        return yield* Effect.fail(
+          new FileSystemError({
+            message: `Cannot write to path: ${job.path} is a directory`,
+            path: job.path,
+          })
+        );
+      }
 
-        fs.mkdirSync(dirname(job.path), { recursive: true });
-
-        // Ensure path is not a directory
-        if (fs.existsSync(job.path) && fs.statSync(job.path).isDirectory()) {
-          throw new Error(`Cannot write to path: ${job.path} is a directory`);
-        }
-
-        part.fileStream = fs.createWriteStream(job.path, {
-          flags: startByte > 0 ? 'r+' : 'w',
-          start: startByte,
-        });
-
-        const headers = {
-          ...job.headers,
-          'User-Agent': 'OpenGameInstaller Downloader/1.0.0',
-          'Accept-Encoding': 'identity',
-          ...(startByte > 0 && { Range: `bytes=${startByte}-` }),
-        };
-
-        const keepAliveAgent = job.link.startsWith('https')
-          ? new https.Agent({ keepAlive: true })
-          : new http.Agent({ keepAlive: true });
-
-        part.response = await axios.get<Readable>(job.link, {
-          responseType: 'stream',
-          headers,
-          httpAgent: keepAliveAgent,
-          httpsAgent: keepAliveAgent,
-          signal: part.abortController.signal,
-        });
-
-        if (startByte > 0 && part.response.status !== 206) {
-          // Server doesn't support range requests, restart
-          startByte = 0;
+      const keepAliveAgent = job.link.startsWith('https')
+        ? new https.Agent({ keepAlive: true })
+        : new http.Agent({ keepAlive: true });
+      const responseResult = yield* Effect.either(
+        Effect.tryPromise({
+          try: () =>
+            axios.get<Readable>(job.link, {
+              responseType: 'stream',
+              headers: {
+                ...job.headers,
+                'User-Agent': 'OpenGameInstaller Downloader/1.0.0',
+                'Accept-Encoding': 'identity',
+                ...(startByte > 0 && { Range: `bytes=${startByte}-` }),
+              },
+              httpAgent: keepAliveAgent,
+              httpsAgent: keepAliveAgent,
+              signal: part.abortController.signal,
+            }),
+          catch: (cause) =>
+            new DownloadError({
+              message: `Part request failed: ${formatError(cause)}`,
+              downloadId: this.id,
+              cause,
+            }),
+        })
+      );
+      if (responseResult._tag === 'Left') {
+        const cause = responseResult.left.cause;
+        if (cause instanceof AxiosError && cause.response?.status === 416) {
           part.downloadedBytes = 0;
-          if (part.fileStream) {
-            part.fileStream.close();
-          }
-          await rmAsync(job.path, { force: true });
-          this.executePartDownload(part).then(resolve).catch(reject);
-          return;
+          yield* Effect.tryPromise({
+            try: () => rmAsync(job.path, { force: true }),
+            catch: (error) =>
+              new FileSystemError({
+                message: `Failed to reset download part: ${formatError(error)}`,
+                path: job.path,
+                cause: error,
+              }),
+          });
+          return yield* this.executePartDownload(part);
         }
+        if (cause instanceof AxiosError && cause.response?.status === 429) {
+          return yield* Effect.fail(new TooManyRequests({}));
+        }
+        return yield* Effect.fail(responseResult.left);
+      }
+      part.response = responseResult.right;
 
-        const contentLength = part.response.headers['content-length']
-          ? parseInt(String(part.response.headers['content-length']), 10)
-          : 0;
-        part.totalBytes = startByte + contentLength;
-        this.updateMultiPartTotalBytes();
-        connectionHealth = this.createConnectionHealthMonitor({
-          label: `Part ${part.index + 1}`,
-          initialBytes: part.downloadedBytes,
-          onReconnect: ({ currentSpeed, baselineSpeed }) => {
-            if (connectionRefreshRequested || this.status !== 'downloading') {
-              return;
-            }
-            connectionRefreshRequested = true;
-            console.log(
-              `[direct] Part ${part.index + 1}: restarting ranged stream ` +
-                `after slowdown (${(currentSpeed / (1024 * 1024)).toFixed(2)}MB/s of ` +
-                `${(baselineSpeed / (1024 * 1024)).toFixed(2)}MB/s baseline)`
-            );
-            part.abortController.abort();
-          },
+      if (startByte > 0 && part.response.status !== 206) {
+        part.fileStream?.close();
+        part.downloadedBytes = 0;
+        yield* Effect.tryPromise({
+          try: () => rmAsync(job.path, { force: true }),
+          catch: (cause) =>
+            new FileSystemError({
+              message: `Failed to restart download part: ${formatError(cause)}`,
+              path: job.path,
+              cause,
+            }),
         });
+        return yield* this.executePartDownload(part);
+      }
 
-        let _partThrottle: ThrottleStream | undefined;
-        if (BANDWIDTH_LIMIT_BYTES_PER_SEC > 0) {
-          _partThrottle = new ThrottleStream();
-          part.response.data.pipe(_partThrottle);
-          _partThrottle.pipe(part.fileStream);
-        } else {
-          part.response.data.pipe(part.fileStream);
-        }
-        const stream = part.fileStream;
+      const contentLength = part.response.headers['content-length']
+        ? parseInt(String(part.response.headers['content-length']), 10)
+        : 0;
+      part.totalBytes = startByte + contentLength;
+      this.updateMultiPartTotalBytes();
+      const connectionHealth = this.createConnectionHealthMonitor({
+        label: `Part ${part.index + 1}`,
+        initialBytes: part.downloadedBytes,
+        onReconnect: ({ currentSpeed, baselineSpeed }) => {
+          if (connectionRefreshRequested || this.status !== 'downloading')
+            return;
+          connectionRefreshRequested = true;
+          console.log(
+            `[direct] Part ${part.index + 1}: restarting ranged stream after slowdown ` +
+              `(${(currentSpeed / (1024 * 1024)).toFixed(2)}MB/s of ` +
+              `${(baselineSpeed / (1024 * 1024)).toFixed(2)}MB/s baseline)`
+          );
+          part.abortController.abort();
+        },
+      });
 
-        stream.on('finish', () => {
-          connectionHealth?.dispose();
-          if (part.fileStream) {
-            part.fileStream.close();
-            part.fileStream = undefined;
+      const stream = yield* Effect.try({
+        try: () => {
+          let throttle: ThrottleStream | undefined;
+          if (BANDWIDTH_LIMIT_BYTES_PER_SEC > 0) {
+            throttle = new ThrottleStream();
+            part.response!.data.pipe(throttle);
+            throttle.pipe(part.fileStream!);
+          } else {
+            part.response!.data.pipe(part.fileStream!);
           }
+          return { file: part.fileStream!, throttle };
+        },
+        catch: (cause) =>
+          new FileSystemError({
+            message: `Failed to open part stream: ${formatError(cause)}`,
+            path: job.path,
+            cause,
+          }),
+      });
+
+      yield* Effect.async<void, DownloadError>((resume) => {
+        let resolved = false;
+        stream.file.on('finish', () => {
+          if (resolved) return;
+          resolved = true;
+          part.fileStream?.close();
+          part.fileStream = undefined;
           part.response = undefined;
-          resolve();
+          resume(Effect.void);
         });
-
         part.abortController.signal.addEventListener('abort', () => {
-          connectionHealth?.dispose();
-          if (_partThrottle) _partThrottle.destroy();
-          if (part.fileStream) {
-            part.fileStream.close();
-            part.fileStream = undefined;
-          }
+          if (resolved) return;
+          resolved = true;
+          stream.throttle?.destroy();
+          part.fileStream?.close();
+          part.fileStream = undefined;
           part.response = undefined;
-          stream.destroy();
-          reject(
-            new Error(
-              connectionRefreshRequested
-                ? 'CONNECTION_REFRESH_REQUESTED'
-                : 'Aborted'
+          stream.file.destroy();
+          resume(
+            Effect.fail(
+              new DownloadError({
+                message: connectionRefreshRequested
+                  ? 'CONNECTION_REFRESH_REQUESTED'
+                  : 'Aborted',
+                downloadId: this.id,
+              })
             )
           );
         });
-
-        stream.on('error', (error) => {
-          connectionHealth?.dispose();
-          if (part.fileStream) {
-            part.fileStream.close();
-            part.fileStream = undefined;
-          }
-          reject(error);
-        });
-
-        part.response.data.on('data', (data: Buffer) => {
-          part.downloadedBytes += data.length;
-          connectionHealth?.observe(part.downloadedBytes);
-        });
-      } catch (error) {
-        connectionHealth?.dispose();
-        if (part.fileStream) {
-          part.fileStream.close();
+        stream.file.on('error', (cause) => {
+          if (resolved) return;
+          resolved = true;
+          part.fileStream?.close();
           part.fileStream = undefined;
-        }
-        if (error instanceof AxiosError) {
-          if (error.response?.status === 416) {
-            part.downloadedBytes = 0;
-            await rmAsync(job.path, { force: true });
-            this.executePartDownload(part).then(resolve).catch(reject);
-            return;
-          } else if (error.response?.status === 404) {
-            reject(error);
-            return;
-          } else if (error.response?.status === 429) {
-            // Too many requests - already using standard download, just retry
-            console.log(
-              `[direct] Part ${part.index + 1}: 429 Too Many Requests, will retry`
-            );
-            reject(error);
-            return;
-          }
-        }
-        reject(error);
-      }
+          resume(
+            Effect.fail(
+              new DownloadError({
+                message: `Part stream failed: ${formatError(cause)}`,
+                downloadId: this.id,
+                cause,
+              })
+            )
+          );
+        });
+        part.response!.data.on('data', (data: Buffer) => {
+          part.downloadedBytes += data.length;
+          connectionHealth.observe(part.downloadedBytes);
+        });
+      }).pipe(Effect.ensuring(Effect.sync(() => connectionHealth.dispose())));
     });
   }
 
@@ -1351,7 +1534,7 @@ export class Download {
     }
 
     this.sendIpc('ddl:download-resumed', { id: this.id });
-    this.run();
+    Effect.runFork(this.run());
   }
 
   public cancel() {
@@ -1392,13 +1575,20 @@ export class Download {
       this.cleanupPart();
     }
 
-    this.cleanupAllFiles().then(() => {
-      this.removeCancelHandler();
-      this.sendIpc('ddl:download-cancelled', { id: this.id });
-      this.taskFinisher();
-      console.log('[direct] Download Cancelled', this.id);
-      downloads.delete(this.id);
-    });
+    Effect.runFork(
+      this.cleanupAllFiles().pipe(
+        Effect.tap(() =>
+          Effect.sync(() => {
+            this.removeCancelHandler();
+            this.sendIpc('ddl:download-cancelled', { id: this.id });
+            this.taskFinisher();
+            console.log('[direct] Download Cancelled', this.id);
+            downloads.delete(this.id);
+          })
+        ),
+        Effect.ignore
+      )
+    );
   }
 
   private complete() {
@@ -1489,277 +1679,341 @@ export class Download {
       this.cleanupPart();
     }
 
-    this.cleanupAllFiles().then(() => {
-      this.sendIpc('ddl:download-error', errorPayload);
-      sendNotification({
-        message: 'Download failed',
-        id: this.id,
-        type: 'error',
-      });
-      this.removeCancelHandler();
-      this.taskFinisher();
-      clearDownloadHandshake(this.id);
-      downloads.delete(this.id);
-    });
+    Effect.runFork(
+      this.cleanupAllFiles().pipe(
+        Effect.tap(() =>
+          Effect.sync(() => {
+            this.sendIpc('ddl:download-error', errorPayload);
+            sendNotification({
+              message: 'Download failed',
+              id: this.id,
+              type: 'error',
+            });
+            this.removeCancelHandler();
+            this.taskFinisher();
+            clearDownloadHandshake(this.id);
+            downloads.delete(this.id);
+          })
+        ),
+        Effect.ignore
+      )
+    );
   }
 
-  private async downloadPart(job: DownloadJob, retries = 5) {
-    let lastError: Error | undefined;
+  private downloadPart(
+    job: DownloadJob,
+    retries = 5
+  ): Effect.Effect<
+    void,
+    DownloadError | DownloadNotActive | TooManyRequests | FileSystemError
+  > {
+    return Effect.gen(this, function* () {
+      let lastError:
+        | DownloadError
+        | DownloadNotActive
+        | TooManyRequests
+        | FileSystemError
+        | undefined;
 
-    // Check if we should use parallel download (only for single-part downloads)
-    if (this.totalParts === 1) {
-      const parallelInfo = await this.shouldUseParallelDownload(job);
-      if (parallelInfo.useParallel) {
-        console.log('[direct] Using parallel download');
-        for (let i = 0; i < retries; i++) {
-          if (this.status !== 'downloading')
-            throw new Error('Download not active');
-          try {
-            await this.executeParallelDownload(job, parallelInfo.fileSize);
-            console.log('[direct] Parallel download completed');
-            return;
-          } catch (error) {
-            lastError = error as Error;
+      // Check if we should use parallel download (only for single-part downloads)
+      if (this.totalParts === 1) {
+        const parallelInfo = yield* this.shouldUseParallelDownload(job);
+        if (parallelInfo.useParallel) {
+          console.log('[direct] Using parallel download');
+          for (let i = 0; i < retries; i++) {
+            if (this.status !== 'downloading')
+              return yield* Effect.fail(
+                new DownloadNotActive({ downloadId: this.id })
+              );
+            const attempt = yield* Effect.either(
+              this.executeParallelDownload(job, parallelInfo.fileSize)
+            );
+            if (attempt._tag === 'Right') {
+              console.log('[direct] Parallel download completed');
+              return;
+            }
+            lastError = attempt.left;
             console.log(
               '[direct] Error in parallel download attempt',
               i,
               lastError
             );
-
-            // If 429 error, disable parallelization and retry as standard download
-            if (lastError.message === '429_TOO_MANY_REQUESTS') {
+            if (lastError instanceof TooManyRequests) {
               console.log(
                 '[direct] 429 detected, disabling parallelization and retrying as standard download'
               );
-              // Clean up any partial chunk files
-              try {
-                await this.deleteChunkFiles(job.path);
-              } catch (cleanupError) {
-                console.log(
-                  '[direct] Error cleaning up chunk files:',
-                  cleanupError
-                );
-              }
-              // Fall through to standard download
+              yield* this.deleteChunkFiles(job.path, this.effectiveChunkCount);
               break;
             }
+            if (this.status !== 'downloading') {
+              return yield* Effect.fail(lastError);
+            }
+            yield* Effect.sleep(`${1000 * (i + 1)} millis`);
+          }
 
-            if (this.status !== 'downloading') throw lastError;
-            await new Promise((resolve) => setTimeout(resolve, 1000 * (i + 1)));
+          // If we broke out due to 429, continue to standard download
+          if (
+            lastError instanceof TooManyRequests ||
+            lastError?.message === '429_TOO_MANY_REQUESTS'
+          ) {
+            // Reset lastError so we can try standard download
+            lastError = undefined;
+          } else {
+            return yield* Effect.fail(
+              lastError ??
+                new DownloadError({
+                  message: 'Parallel download failed',
+                  downloadId: this.id,
+                })
+            );
           }
         }
-
-        // If we broke out due to 429, continue to standard download
-        if (lastError?.message === '429_TOO_MANY_REQUESTS') {
-          // Reset lastError so we can try standard download
-          lastError = undefined;
-        } else {
-          throw lastError;
-        }
       }
-    }
 
-    // Standard download
-    for (let i = 0; i < retries; i++) {
-      if (this.status !== 'downloading') throw new Error('Download not active');
-      try {
+      // Standard download
+      for (let i = 0; i < retries; i++) {
+        if (this.status !== 'downloading') {
+          return yield* Effect.fail(
+            new DownloadNotActive({ downloadId: this.id })
+          );
+        }
         console.log('[direct] Attempting to download part', this.currentPart);
-        await this._executeDownloadPart(job);
-        console.log('[direct] Download Completed of Part', this.currentPart);
-        return;
-      } catch (error) {
-        lastError = error as Error;
-        console.log('[direct] Error downloading part', i, lastError);
-        if (this.status !== 'downloading') throw lastError;
-        if (lastError.message === 'CONNECTION_REFRESH_REQUESTED') {
-          continue;
-        }
-        await new Promise((resolve) => setTimeout(resolve, 1000 * (i + 1)));
-      }
-    }
-    throw lastError;
-  }
-
-  private _executeDownloadPart(job: DownloadJob) {
-    return new Promise<void>(async (resolve, reject) => {
-      this.sendProgress({ progress: 0, downloadSpeed: 0 });
-      let connectionRefreshRequested = false;
-      let connectionHealth: ConnectionHealthMonitor | undefined;
-      try {
-        this.abortController = new AbortController();
-        // send an alive progress to say that we're starting
-        if (fs.existsSync(job.path)) {
-          this.startByte = fs.statSync(job.path).size;
-          console.log('[direct] Existing file found, size: ', this.startByte);
-        } else {
-          this.startByte = 0;
-          console.log(
-            '[direct] No existing file found, starting from beginning'
-          );
-        }
-        this.currentBytes = this.startByte;
-
-        fs.mkdirSync(dirname(job.path), { recursive: true });
-
-        // Ensure path is not a directory
-        if (fs.existsSync(job.path) && fs.statSync(job.path).isDirectory()) {
-          throw new Error(`Cannot write to path: ${job.path} is a directory`);
-        }
-
-        this.fileStream = fs.createWriteStream(job.path, {
-          flags: this.startByte > 0 ? 'r+' : 'w',
-          start: this.startByte,
-        });
-        console.log('[direct] Created file stream');
-
-        const headers = {
-          ...job.headers,
-          'User-Agent': 'OpenGameInstaller Downloader/1.0.0',
-          'Accept-Encoding': 'identity',
-          ...(this.startByte > 0 && { Range: `bytes=${this.startByte}-` }),
-        };
-
-        const keepAliveAgent = job.link.startsWith('https')
-          ? new https.Agent({ keepAlive: true })
-          : new http.Agent({ keepAlive: true });
-
-        this.response = await axios.get<Readable>(job.link, {
-          responseType: 'stream',
-          headers,
-          httpAgent: keepAliveAgent,
-          httpsAgent: keepAliveAgent,
-          signal: this.abortController.signal,
-        });
-
-        console.log('[direct] Stream received');
-
-        if (this.startByte > 0 && this.response.status !== 206) {
-          // Server doesn't support range requests, restart download
-          this.startByte = 0;
-          this.currentBytes = 0;
-          if (this.fileStream) {
-            this.fileStream.close();
-          }
-          await rmAsync(job.path, { force: true });
-          // restart
-          console.log(
-            "[direct] Restarting download (doesn't support range requests)"
-          );
-          this._executeDownloadPart(job).then(resolve).catch(reject);
+        const attempt = yield* Effect.either(this._executeDownloadPart(job));
+        if (attempt._tag === 'Right') {
+          console.log('[direct] Download Completed of Part', this.currentPart);
           return;
         }
-
-        const contentLength = this.response.headers['content-length']
-          ? parseInt(String(this.response.headers['content-length']), 10)
-          : 0;
-        this.totalSize = this.startByte + contentLength;
-        this.startTime = Date.now();
-        this.startProgressTracker();
-        connectionHealth = this.createConnectionHealthMonitor({
-          label: `Part ${this.currentPart}`,
-          initialBytes: this.currentBytes,
-          onReconnect: ({ currentSpeed, baselineSpeed }) => {
-            if (
-              connectionRefreshRequested ||
-              !this.abortController ||
-              this.status !== 'downloading'
-            ) {
-              return;
-            }
-
-            connectionRefreshRequested = true;
-            console.log(
-              `[direct] Part ${this.currentPart}: restarting ranged stream ` +
-                `after slowdown (${(currentSpeed / (1024 * 1024)).toFixed(2)}MB/s of ` +
-                `${(baselineSpeed / (1024 * 1024)).toFixed(2)}MB/s baseline)`
-            );
-            this.abortController.abort();
-          },
-        });
-
-        let _throttle: ThrottleStream | undefined;
-        if (BANDWIDTH_LIMIT_BYTES_PER_SEC > 0) {
-          _throttle = new ThrottleStream();
-          this.response.data.pipe(_throttle);
-          _throttle.pipe(this.fileStream);
-        } else {
-          this.response.data.pipe(this.fileStream);
+        lastError = attempt.left;
+        console.log('[direct] Error downloading part', i, lastError);
+        if (this.status !== 'downloading') {
+          return yield* Effect.fail(lastError);
         }
-        const stream = this.fileStream;
+        if (lastError.message === 'CONNECTION_REFRESH_REQUESTED') continue;
+        yield* Effect.sleep(`${1000 * (i + 1)} millis`);
+      }
+      return yield* Effect.fail(
+        lastError ??
+          new DownloadError({
+            message: 'Download failed',
+            downloadId: this.id,
+          })
+      );
+    });
+  }
 
-        stream.on('finish', () => {
-          connectionHealth?.dispose();
+  private _executeDownloadPart(
+    job: DownloadJob
+  ): Effect.Effect<void, DownloadError | FileSystemError | TooManyRequests> {
+    return Effect.gen(this, function* () {
+      this.sendProgress({ progress: 0, downloadSpeed: 0 });
+      let connectionRefreshRequested = false;
+      this.abortController = new AbortController();
+
+      yield* Effect.try({
+        try: () => {
+          if (fs.existsSync(job.path)) {
+            this.startByte = fs.statSync(job.path).size;
+            console.log('[direct] Existing file found, size: ', this.startByte);
+          } else {
+            this.startByte = 0;
+          }
+          this.currentBytes = this.startByte;
+          fs.mkdirSync(dirname(job.path), { recursive: true });
+          if (fs.existsSync(job.path) && fs.statSync(job.path).isDirectory()) {
+            return false;
+          }
+          this.fileStream = fs.createWriteStream(job.path, {
+            flags: this.startByte > 0 ? 'r+' : 'w',
+            start: this.startByte,
+          });
+          return true;
+        },
+        catch: (cause) =>
+          new FileSystemError({
+            message: `Failed to prepare download: ${formatError(cause)}`,
+            path: job.path,
+            cause,
+          }),
+      }).pipe(
+        Effect.flatMap((valid) =>
+          valid
+            ? Effect.void
+            : Effect.fail(
+                new FileSystemError({
+                  message: `Cannot write to path: ${job.path} is a directory`,
+                  path: job.path,
+                })
+              )
+        )
+      );
+
+      const keepAliveAgent = job.link.startsWith('https')
+        ? new https.Agent({ keepAlive: true })
+        : new http.Agent({ keepAlive: true });
+      const responseResult = yield* Effect.either(
+        Effect.tryPromise({
+          try: () =>
+            axios.get<Readable>(job.link, {
+              responseType: 'stream',
+              headers: {
+                ...job.headers,
+                'User-Agent': 'OpenGameInstaller Downloader/1.0.0',
+                'Accept-Encoding': 'identity',
+                ...(this.startByte > 0 && {
+                  Range: `bytes=${this.startByte}-`,
+                }),
+              },
+              httpAgent: keepAliveAgent,
+              httpsAgent: keepAliveAgent,
+              signal: this.abortController!.signal,
+            }),
+          catch: (cause) =>
+            new DownloadError({
+              message: `Download request failed: ${formatError(cause)}`,
+              downloadId: this.id,
+              cause,
+            }),
+        })
+      );
+      if (responseResult._tag === 'Left') {
+        const cause = responseResult.left.cause;
+        if (cause instanceof AxiosError && cause.response?.status === 416) {
+          this.startByte = 0;
+          this.currentBytes = 0;
+          this.fileStream?.close();
+          yield* Effect.tryPromise({
+            try: () => rmAsync(job.path, { force: true }),
+            catch: (error) =>
+              new FileSystemError({
+                message: `Failed to reset download: ${formatError(error)}`,
+                path: job.path,
+                cause: error,
+              }),
+          });
+          return yield* this._executeDownloadPart(job);
+        }
+        if (cause instanceof AxiosError && cause.response?.status === 404) {
+          this.cancel();
+          yield* this.cleanupAllFiles();
+        }
+        if (cause instanceof AxiosError && cause.response?.status === 429) {
+          return yield* Effect.fail(new TooManyRequests({}));
+        }
+        this.cleanupPart();
+        return yield* Effect.fail(responseResult.left);
+      }
+      this.response = responseResult.right;
+
+      if (this.startByte > 0 && this.response.status !== 206) {
+        this.startByte = 0;
+        this.currentBytes = 0;
+        this.fileStream?.close();
+        yield* Effect.tryPromise({
+          try: () => rmAsync(job.path, { force: true }),
+          catch: (cause) =>
+            new FileSystemError({
+              message: `Failed to restart download: ${formatError(cause)}`,
+              path: job.path,
+              cause,
+            }),
+        });
+        return yield* this._executeDownloadPart(job);
+      }
+
+      const contentLength = this.response.headers['content-length']
+        ? parseInt(String(this.response.headers['content-length']), 10)
+        : 0;
+      this.totalSize = this.startByte + contentLength;
+      this.startTime = Date.now();
+      this.startProgressTracker();
+      const connectionHealth = this.createConnectionHealthMonitor({
+        label: `Part ${this.currentPart}`,
+        initialBytes: this.currentBytes,
+        onReconnect: ({ currentSpeed, baselineSpeed }) => {
+          if (
+            connectionRefreshRequested ||
+            !this.abortController ||
+            this.status !== 'downloading'
+          )
+            return;
+          connectionRefreshRequested = true;
+          console.log(
+            `[direct] Part ${this.currentPart}: restarting ranged stream after slowdown ` +
+              `(${(currentSpeed / (1024 * 1024)).toFixed(2)}MB/s of ` +
+              `${(baselineSpeed / (1024 * 1024)).toFixed(2)}MB/s baseline)`
+          );
+          this.abortController.abort();
+        },
+      });
+
+      const stream = yield* Effect.try({
+        try: () => {
+          let throttle: ThrottleStream | undefined;
+          if (BANDWIDTH_LIMIT_BYTES_PER_SEC > 0) {
+            throttle = new ThrottleStream();
+            this.response!.data.pipe(throttle);
+            throttle.pipe(this.fileStream!);
+          } else {
+            this.response!.data.pipe(this.fileStream!);
+          }
+          return { file: this.fileStream!, throttle };
+        },
+        catch: (cause) =>
+          new FileSystemError({
+            message: `Failed to open download stream: ${formatError(cause)}`,
+            path: job.path,
+            cause,
+          }),
+      });
+
+      yield* Effect.async<void, DownloadError>((resume) => {
+        let resolved = false;
+        stream.file.on('finish', () => {
+          if (resolved) return;
+          resolved = true;
           this.cleanupPart();
           console.log(
             '[direct] Stream finished (Downloaded bytes:',
             `${(this.currentBytes / (1024 * 1024)).toFixed(2)} MB)`
           );
-          resolve();
+          resume(Effect.void);
         });
-
-        this.abortController.signal.addEventListener('abort', () => {
-          connectionHealth?.dispose();
-          if (_throttle) _throttle.destroy();
+        this.abortController!.signal.addEventListener('abort', () => {
+          if (resolved) return;
+          resolved = true;
+          stream.throttle?.destroy();
           this.cleanupPart();
-          stream.destroy();
-          console.log('[direct] Aborted');
-          reject(
-            new Error(
-              connectionRefreshRequested
-                ? 'CONNECTION_REFRESH_REQUESTED'
-                : 'Aborted'
+          stream.file.destroy();
+          resume(
+            Effect.fail(
+              new DownloadError({
+                message: connectionRefreshRequested
+                  ? 'CONNECTION_REFRESH_REQUESTED'
+                  : 'Aborted',
+                downloadId: this.id,
+              })
             )
           );
         });
-
-        stream.on('error', (error) => {
-          connectionHealth?.dispose();
+        stream.file.on('error', (cause) => {
+          if (resolved) return;
+          resolved = true;
           this.cleanupPart();
-          console.log('[direct] Error', error);
-          reject(error);
+          resume(
+            Effect.fail(
+              new DownloadError({
+                message: `Download stream failed: ${formatError(cause)}`,
+                downloadId: this.id,
+                cause,
+              })
+            )
+          );
         });
-
-        this.response.data.on('data', (chunk: Buffer) => {
+        this.response!.data.on('data', (chunk: Buffer) => {
           this.currentBytes += chunk.length;
-          connectionHealth?.observe(this.currentBytes);
+          connectionHealth.observe(this.currentBytes);
         });
-      } catch (error) {
-        connectionHealth?.dispose();
-        if (!(error instanceof AxiosError)) {
-          this.cleanupPart();
-          reject(error);
-          return;
-        }
-        if (error.response?.status === 416) {
-          console.log('[direct] Range not satisfiable, restarting download');
-          this.startByte = 0;
-          this.currentBytes = 0;
-          if (this.fileStream) {
-            this.fileStream.close();
-          }
-          await rmAsync(job.path, { force: true });
-          // restart
-          console.log('[direct] Restarting download (Range not satisfiable)');
-          this._executeDownloadPart(job).then(resolve).catch(reject);
-          return;
-        } else if (error.response?.status === 404) {
-          console.log('[direct] File not found. Killing download');
-          this.cancel();
-          this.cleanupAllFiles().then(() => {
-            reject(error);
-          });
-          this.cleanupPart();
-          return;
-        } else if (error.response?.status === 429) {
-          // Too many requests - already using standard download, just retry
-          console.log('[direct] 429 Too Many Requests, will retry');
-          this.cleanupPart();
-          reject(error);
-          return;
-        }
-        this.cleanupPart();
-        reject(error);
-      }
+      }).pipe(Effect.ensuring(Effect.sync(() => connectionHealth.dispose())));
     });
   }
 
@@ -1852,183 +2106,137 @@ export class Download {
    * Check if parallel download should be used for this job.
    * Sends a HEAD request to get file size and check range support.
    */
-  private async shouldUseParallelDownload(
+  private shouldUseParallelDownload(
     job: DownloadJob
-  ): Promise<ParallelDownloadInfo> {
-    try {
-      const keepAliveAgent = job.link.startsWith('https')
-        ? new https.Agent({ keepAlive: true })
-        : new http.Agent({ keepAlive: true });
-
-      const headResponse = await axios.head(job.link, {
-        headers: {
-          ...job.headers,
-          'User-Agent': 'OpenGameInstaller Downloader/1.0.0',
-        },
-        httpAgent: keepAliveAgent,
-        httpsAgent: keepAliveAgent,
-        timeout: 10000,
-      });
-
-      const contentLength = headResponse.headers['content-length']
-        ? parseInt(String(headResponse.headers['content-length']), 10)
-        : 0;
-      const acceptRanges = headResponse.headers['accept-ranges'];
-      const supportsRange = acceptRanges === 'bytes';
-
-      const parallelLimit = mergeParallelLimits(
-        parseParallelLimitHeader(job.headers),
-        parseParallelLimitHeader(headResponse.headers)
-      );
+  ): Effect.Effect<ParallelDownloadInfo> {
+    return Effect.gen(this, function* () {
+      const info = yield* this.shouldUseParallelDownloadForPart(job);
       this.parallelLimit = mergeParallelLimits(
         this.parallelLimit,
-        parallelLimit
+        info.parallelLimit
       );
-
-      const useParallel =
-        supportsRange &&
-        contentLength > PARALLEL_DOWNLOAD_THRESHOLD &&
-        this.totalParts === 1 && // Only use parallel for single-file downloads
-        !(parallelLimit === 1);
-
+      const useParallel = info.useParallel && this.totalParts === 1;
       console.log(
-        `[direct] Parallel check: size=${(contentLength / (1024 * 1024 * 1024)).toFixed(2)}GB, ` +
-          `supportsRange=${supportsRange}, useParallel=${useParallel}, parallelLimit=${parallelLimit ?? 'none'}`
+        `[direct] Parallel check: size=${(info.fileSize / (1024 * 1024 * 1024)).toFixed(2)}GB, ` +
+          `supportsRange=${info.supportsRange}, useParallel=${useParallel}, ` +
+          `parallelLimit=${info.parallelLimit ?? 'none'}`
       );
-
-      return {
-        useParallel,
-        fileSize: contentLength,
-        supportsRange,
-        parallelLimit,
-      };
-    } catch (error) {
-      console.log(
-        '[direct] HEAD request failed, falling back to standard download:',
-        error
-      );
-      return {
-        useParallel: false,
-        fileSize: 0,
-        supportsRange: false,
-      };
-    }
+      return { ...info, useParallel };
+    });
   }
 
   /**
    * Execute a parallel download by splitting the file into chunks.
    * Each chunk downloads to a separate file, then merges at the end.
    */
-  private async executeParallelDownload(
+  private executeParallelDownload(
     job: DownloadJob,
     fileSize: number
-  ): Promise<void> {
-    this.useParallel = true;
-    this.parallelTotalSize = fileSize;
-    this.currentJobPath = job.path;
-    this.chunks = [];
+  ): Effect.Effect<void, DownloadError | TooManyRequests | FileSystemError> {
+    return Effect.gen(this, function* () {
+      this.useParallel = true;
+      this.parallelTotalSize = fileSize;
+      this.currentJobPath = job.path;
+      this.chunks = [];
 
-    const effectiveChunkCount =
-      mergeParallelLimits(PARALLEL_CHUNK_COUNT, this.parallelLimit) ??
-      PARALLEL_CHUNK_COUNT;
-    this.effectiveChunkCount = effectiveChunkCount;
+      const effectiveChunkCount =
+        mergeParallelLimits(PARALLEL_CHUNK_COUNT, this.parallelLimit) ??
+        PARALLEL_CHUNK_COUNT;
+      this.effectiveChunkCount = effectiveChunkCount;
 
-    // Calculate chunk sizes
-    const chunkSize = Math.ceil(fileSize / effectiveChunkCount);
+      // Calculate chunk sizes
+      const chunkSize = Math.ceil(fileSize / effectiveChunkCount);
 
-    // Create the target directory
-    fs.mkdirSync(dirname(job.path), { recursive: true });
+      // Create the target directory
+      fs.mkdirSync(dirname(job.path), { recursive: true });
 
-    // Initialize chunks - check each chunk file individually for resume
-    for (let i = 0; i < effectiveChunkCount; i++) {
-      const startByte = i * chunkSize;
-      const endByte = Math.min((i + 1) * chunkSize - 1, fileSize - 1);
-      const expectedChunkSize = endByte - startByte + 1;
-      const chunkPath = this.getChunkPath(job.path, i);
+      // Initialize chunks - check each chunk file individually for resume
+      for (let i = 0; i < effectiveChunkCount; i++) {
+        const startByte = i * chunkSize;
+        const endByte = Math.min((i + 1) * chunkSize - 1, fileSize - 1);
+        const expectedChunkSize = endByte - startByte + 1;
+        const chunkPath = this.getChunkPath(job.path, i);
 
-      // Check if this chunk file exists and how much was downloaded
-      let chunkCurrentBytes = 0;
-      if (fs.existsSync(chunkPath)) {
-        chunkCurrentBytes = fs.statSync(chunkPath).size;
-        console.log(
-          `[direct] Chunk ${i} file exists with ${chunkCurrentBytes} bytes`
-        );
+        // Check if this chunk file exists and how much was downloaded
+        let chunkCurrentBytes = 0;
+        if (fs.existsSync(chunkPath)) {
+          chunkCurrentBytes = fs.statSync(chunkPath).size;
+          console.log(
+            `[direct] Chunk ${i} file exists with ${chunkCurrentBytes} bytes`
+          );
+        }
+
+        this.chunks.push({
+          index: i,
+          startByte,
+          endByte,
+          currentBytes: chunkCurrentBytes,
+          abortController: new AbortController(),
+          completed: chunkCurrentBytes >= expectedChunkSize,
+        });
       }
 
-      this.chunks.push({
-        index: i,
-        startByte,
-        endByte,
-        currentBytes: chunkCurrentBytes,
-        abortController: new AbortController(),
-        completed: chunkCurrentBytes >= expectedChunkSize,
+      this.currentBytes = this.chunks.reduce(
+        (sum, chunk) => sum + chunk.currentBytes,
+        0
+      );
+
+      let connectionRefreshRequested = false;
+      const connectionHealth = this.createConnectionHealthMonitor({
+        label: `Part ${this.currentPart}`,
+        initialBytes: this.currentBytes,
+        onReconnect: ({ currentSpeed, baselineSpeed }) => {
+          if (connectionRefreshRequested || this.status !== 'downloading')
+            return;
+          connectionRefreshRequested = true;
+          console.log(
+            `[direct] Part ${this.currentPart}: restarting ranged chunk requests ` +
+              `after slowdown (${(currentSpeed / (1024 * 1024)).toFixed(2)}MB/s of ` +
+              `${(baselineSpeed / (1024 * 1024)).toFixed(2)}MB/s baseline)`
+          );
+          for (const activeChunk of this.chunks) {
+            activeChunk.abortController.abort();
+          }
+        },
       });
-    }
 
-    this.currentBytes = this.chunks.reduce(
-      (sum, chunk) => sum + chunk.currentBytes,
-      0
-    );
+      this.startTime = Date.now();
+      this.startProgressTracker();
 
-    let connectionRefreshRequested = false;
-    const connectionHealth = this.createConnectionHealthMonitor({
-      label: `Part ${this.currentPart}`,
-      initialBytes: this.currentBytes,
-      onReconnect: ({ currentSpeed, baselineSpeed }) => {
-        if (connectionRefreshRequested || this.status !== 'downloading') return;
-        connectionRefreshRequested = true;
-        console.log(
-          `[direct] Part ${this.currentPart}: restarting ranged chunk requests ` +
-            `after slowdown (${(currentSpeed / (1024 * 1024)).toFixed(2)}MB/s of ` +
-            `${(baselineSpeed / (1024 * 1024)).toFixed(2)}MB/s baseline)`
-        );
-        for (const activeChunk of this.chunks) {
-          activeChunk.abortController.abort();
-        }
-      },
-    });
+      console.log(
+        `[direct] Starting parallel download with ${effectiveChunkCount} chunks ` +
+          `(limit: ${this.parallelLimit ?? 'none'}), ` +
+          `chunk size: ${(chunkSize / (1024 * 1024)).toFixed(2)}MB`
+      );
 
-    this.startTime = Date.now();
-    this.startProgressTracker();
-
-    console.log(
-      `[direct] Starting parallel download with ${effectiveChunkCount} chunks ` +
-        `(limit: ${this.parallelLimit ?? 'none'}), ` +
-        `chunk size: ${(chunkSize / (1024 * 1024)).toFixed(2)}MB`
-    );
-
-    // Download all chunks in parallel
-    const chunkPromises = this.chunks.map((chunk) =>
-      this.downloadChunk(job, chunk, () =>
-        connectionHealth.observe(this.currentBytes)
-      )
-    );
-
-    try {
-      await Promise.all(chunkPromises);
+      yield* Effect.all(
+        this.chunks.map((chunk) =>
+          this.downloadChunk(job, chunk, () =>
+            connectionHealth.observe(this.currentBytes)
+          )
+        ),
+        { concurrency: 'unbounded', discard: true }
+      ).pipe(
+        Effect.tapError(() =>
+          Effect.sync(() => this.cleanupParallelChunks()).pipe(
+            Effect.zipRight(
+              this.deleteChunkFiles(job.path, effectiveChunkCount)
+            )
+          )
+        ),
+        Effect.ensuring(Effect.sync(() => connectionHealth.dispose()))
+      );
       console.log('[direct] All parallel chunks completed');
-    } catch (error) {
-      // Clean up all chunks on failure
+
       this.cleanupParallelChunks();
 
-      // If 429 error occurred, propagate it to disable parallelization
-      if (error instanceof Error && error.message === '429_TOO_MANY_REQUESTS') {
-        throw new Error('429_TOO_MANY_REQUESTS');
-      }
+      // Set status to merging before merging chunk files
+      this.status = 'merging';
+      this.sendProgress({ progress: this.currentBytes / this.totalSize });
 
-      throw error;
-    } finally {
-      connectionHealth.dispose();
-    }
-
-    this.cleanupParallelChunks();
-
-    // Set status to merging before merging chunk files
-    this.status = 'merging';
-    this.sendProgress({ progress: this.currentBytes / this.totalSize });
-
-    // Merge all chunk files into the final file
-    await this.mergeChunkFiles(job);
+      // Merge all chunk files into the final file
+      yield* this.mergeChunkFiles(job);
+    });
   }
 
   /**
@@ -2038,140 +2246,21 @@ export class Download {
     job: DownloadJob,
     chunk: ChunkState,
     onProgress?: () => void
-  ): Promise<void> {
-    return new Promise<void>(async (resolve, reject) => {
-      if (chunk.completed) {
-        console.log(`[direct] Chunk ${chunk.index} already complete, skipping`);
-        resolve();
-        return;
-      }
-
-      // Calculate the actual byte position in the remote file
-      const actualStartByte = chunk.startByte + chunk.currentBytes;
-
-      if (actualStartByte > chunk.endByte) {
-        console.log(`[direct] Chunk ${chunk.index} already downloaded`);
-        chunk.completed = true;
-        resolve();
-        return;
-      }
-
-      const chunkPath = this.getChunkPath(job.path, chunk.index);
-
-      try {
-        const keepAliveAgent = job.link.startsWith('https')
-          ? new https.Agent({ keepAlive: true })
-          : new http.Agent({ keepAlive: true });
-
-        const headers = {
-          ...job.headers,
-          'User-Agent': 'OpenGameInstaller Downloader/1.0.0',
-          'Accept-Encoding': 'identity',
-          Range: `bytes=${actualStartByte}-${chunk.endByte}`,
-        };
-
-        console.log(
-          `[direct] Chunk ${chunk.index}: downloading bytes ${actualStartByte}-${chunk.endByte} to ${chunkPath}`
-        );
-
-        chunk.response = await axios.get<Readable>(job.link, {
-          responseType: 'stream',
-          headers,
-          httpAgent: keepAliveAgent,
-          httpsAgent: keepAliveAgent,
-          signal: chunk.abortController.signal,
-        });
-
-        // Check for 206 Partial Content response
-        if (chunk.response.status === 429) {
-          console.log(
-            `[direct] Chunk ${chunk.index}: 429 Too Many Requests, disabling parallelization`
-          );
-          reject(new Error('429_TOO_MANY_REQUESTS'));
-          return;
-        }
-        if (chunk.response.status !== 206) {
-          console.log(
-            `[direct] Chunk ${chunk.index}: unexpected status ${chunk.response.status}`
-          );
-          reject(
-            new Error(
-              `Unexpected status ${chunk.response.status} for range request`
-            )
-          );
-          return;
-        }
-
-        // Create file stream for this chunk file
-        // Use append mode if resuming, write mode if starting fresh
-        chunk.fileStream = fs.createWriteStream(chunkPath, {
-          flags: chunk.currentBytes > 0 ? 'a' : 'w',
-        });
-
-        let _chunkThrottle: ThrottleStream | undefined;
-        if (BANDWIDTH_LIMIT_BYTES_PER_SEC > 0) {
-          _chunkThrottle = new ThrottleStream();
-          chunk.response.data.pipe(_chunkThrottle);
-          _chunkThrottle.pipe(chunk.fileStream);
-        } else {
-          chunk.response.data.pipe(chunk.fileStream);
-        }
-        const stream = chunk.fileStream;
-
-        stream.on('finish', () => {
-          chunk.completed = true;
-          console.log(`[direct] Chunk ${chunk.index} completed`);
-          resolve();
-        });
-
-        chunk.abortController.signal.addEventListener('abort', () => {
-          if (_chunkThrottle) _chunkThrottle.destroy();
-          if (chunk.fileStream) {
-            chunk.fileStream.close();
-            chunk.fileStream = undefined;
-          }
-          chunk.response = undefined;
-          stream.destroy();
-          console.log(`[direct] Chunk ${chunk.index} aborted`);
-          reject(new Error('Aborted'));
-        });
-
-        stream.on('error', (error) => {
-          console.log(`[direct] Chunk ${chunk.index} error:`, error);
-          reject(error);
-        });
-
-        chunk.response.data.on('data', (data: Buffer) => {
-          chunk.currentBytes += data.length;
-          this.currentBytes = this.chunks.reduce(
-            (sum, currentChunk) => sum + currentChunk.currentBytes,
-            0
-          );
-          onProgress?.();
-        });
-      } catch (error) {
-        if (error instanceof AxiosError) {
-          if (error.response?.status === 416) {
-            // Range not satisfiable - chunk is complete
-            console.log(
-              `[direct] Chunk ${chunk.index}: range not satisfiable, marking complete`
-            );
-            chunk.completed = true;
-            resolve();
-            return;
-          }
-          if (error.response?.status === 429) {
-            // Too many requests - disable parallelization and retry as standard download
-            console.log(
-              `[direct] Chunk ${chunk.index}: 429 Too Many Requests, disabling parallelization`
-            );
-            reject(new Error('429_TOO_MANY_REQUESTS'));
-            return;
-          }
-        }
-        console.log(`[direct] Chunk ${chunk.index} failed:`, error);
-        reject(error);
-      }
+  ): Effect.Effect<void, DownloadError | TooManyRequests | FileSystemError> {
+    const part: PartState = {
+      index: this.currentPart - 1,
+      job,
+      status: 'downloading',
+      downloadedBytes: this.currentBytes,
+      totalBytes: this.parallelTotalSize,
+      abortController: chunk.abortController,
+      useChunks: true,
+      chunks: this.chunks,
+      chunkJobPath: job.path,
+    };
+    return this.downloadChunkForPart(part, chunk, () => {
+      this.currentBytes = part.downloadedBytes;
+      onProgress?.();
     });
   }
 
@@ -2196,86 +2285,57 @@ export class Download {
   /**
    * Merge all chunk files into the final file and delete chunk files.
    */
-  private async mergeChunkFiles(job: DownloadJob): Promise<void> {
+  private mergeChunkFiles(
+    job: DownloadJob
+  ): Effect.Effect<void, FileSystemError> {
     console.log('[direct] Merging chunk files into final file...');
-
-    const effectiveChunkCount =
-      this.effectiveChunkCount ??
-      (this.chunks.length > 0 ? this.chunks.length : PARALLEL_CHUNK_COUNT);
-
-    // Create the final file write stream
-    const finalStream = fs.createWriteStream(job.path, { flags: 'w' });
-
-    return new Promise<void>((resolve, reject) => {
-      let currentChunkIndex = 0;
-
-      const writeNextChunk = () => {
-        if (currentChunkIndex >= effectiveChunkCount) {
-          // All chunks merged, close the stream
-          finalStream.end(() => {
-            console.log('[direct] Merge complete, deleting chunk files...');
-            // Delete all chunk files
-            this.deleteChunkFiles(job.path)
-              .then(() => {
-                console.log('[direct] Chunk files deleted');
-                resolve();
-              })
-              .catch((err) => {
-                console.error('[direct] Failed to delete chunk files:', err);
-                // Still resolve since merge succeeded
-                resolve();
-              });
-          });
-          return;
-        }
-
-        const chunkPath = this.getChunkPath(job.path, currentChunkIndex);
-
-        if (!fs.existsSync(chunkPath)) {
-          reject(new Error(`Chunk file ${chunkPath} not found for merge`));
-          return;
-        }
-
-        const chunkStream = fs.createReadStream(chunkPath);
-
-        chunkStream.on('error', (err) => {
-          finalStream.destroy();
-          reject(err);
-        });
-
-        chunkStream.on('end', () => {
-          currentChunkIndex++;
-          writeNextChunk();
-        });
-
-        chunkStream.pipe(finalStream, { end: false });
-      };
-
-      finalStream.on('error', (err) => {
-        reject(err);
-      });
-
-      writeNextChunk();
-    });
+    const part: PartState = {
+      index: this.currentPart - 1,
+      job,
+      status: 'merging',
+      downloadedBytes: this.currentBytes,
+      totalBytes: this.parallelTotalSize,
+      abortController: new AbortController(),
+      useChunks: true,
+      chunks: this.chunks,
+      chunkJobPath: job.path,
+      effectiveChunkCount:
+        this.effectiveChunkCount ??
+        (this.chunks.length > 0 ? this.chunks.length : PARALLEL_CHUNK_COUNT),
+    };
+    return this.mergeChunkFilesForPart(part).pipe(
+      Effect.tap(() =>
+        Effect.sync(() => console.log('[direct] Merge complete'))
+      )
+    );
   }
 
-  /**
-   * Delete all chunk files for a job.
-   */
-  private async deleteChunkFiles(basePath: string): Promise<void> {
-    // We need to delete up to PARALLEL_CHUNK_COUNT chunks since we don't know
-    // the effective count at cleanup time. This is safe as it will just fail
-    // silently for non-existent files.
-    const deletePromises: Promise<void>[] = [];
-    for (let i = 0; i < PARALLEL_CHUNK_COUNT; i++) {
-      const chunkPath = this.getChunkPath(basePath, i);
-      deletePromises.push(
-        rmAsync(chunkPath, { force: true }).catch((e) =>
-          console.error(`Failed to delete chunk file ${chunkPath}`, e)
-        )
-      );
-    }
-    await Promise.all(deletePromises);
+  /** Delete all chunk files for a job. */
+  private deleteChunkFiles(
+    basePath: string,
+    effectiveChunkCount?: number
+  ): Effect.Effect<void> {
+    const count = effectiveChunkCount ?? PARALLEL_CHUNK_COUNT;
+    return Effect.forEach(
+      Array.from({ length: count }, (_, index) =>
+        this.getChunkPath(basePath, index)
+      ),
+      (chunkPath) =>
+        Effect.tryPromise({
+          try: () => rmAsync(chunkPath, { force: true }),
+          catch: (cause) =>
+            new FileSystemError({
+              message: `Failed to delete chunk file: ${formatError(cause)}`,
+              path: chunkPath,
+              cause,
+            }),
+        }).pipe(
+          Effect.catchTag('FileSystemError', (error) =>
+            Effect.sync(() => console.error(error.message))
+          )
+        ),
+      { concurrency: 'unbounded', discard: true }
+    );
   }
 
   private sendProgress(data: {
@@ -2308,48 +2368,46 @@ export class Download {
     this.abortController = undefined;
   }
 
-  private async cleanupAllFiles() {
-    const cleanupPromises = this.jobs.map((job) =>
-      rmAsync(job.path, { force: true }).catch((e) =>
-        console.error(`Failed to delete ${job.path}`, e)
-      )
-    );
-
-    // Delete chunk files for single-file parallel downloads
+  private cleanupAllFiles(): Effect.Effect<void> {
+    const paths = this.jobs.map((job) => job.path);
     if (this.currentJobPath) {
-      for (let i = 0; i < PARALLEL_CHUNK_COUNT; i++) {
-        const chunkPath = this.getChunkPath(this.currentJobPath, i);
-        cleanupPromises.push(
-          rmAsync(chunkPath, { force: true }).catch((e) =>
-            console.error(`Failed to delete chunk file ${chunkPath}`, e)
-          )
-        );
+      const effectiveChunkCount =
+        this.effectiveChunkCount ?? PARALLEL_CHUNK_COUNT;
+      for (let i = 0; i < effectiveChunkCount; i++) {
+        paths.push(this.getChunkPath(this.currentJobPath, i));
       }
     }
-
-    // Delete chunk files for multi-part parallel downloads
     if (this.useParallelParts || this.parts.length > 0) {
       for (const part of this.parts) {
-        if (part.useChunks) {
-          for (let i = 0; i < PARALLEL_CHUNK_COUNT; i++) {
-            const chunkPath = this.getChunkPath(part.job.path, i);
-            cleanupPromises.push(
-              rmAsync(chunkPath, { force: true }).catch((e) =>
-                console.error(
-                  `Failed to delete part chunk file ${chunkPath}`,
-                  e
-                )
-              )
-            );
-          }
+        if (!part.useChunks) continue;
+        const effectiveChunkCount =
+          part.effectiveChunkCount ?? PARALLEL_CHUNK_COUNT;
+        for (let i = 0; i < effectiveChunkCount; i++) {
+          paths.push(this.getChunkPath(part.job.path, i));
         }
       }
     }
-
-    await Promise.all(cleanupPromises);
+    return Effect.forEach(
+      paths,
+      (path) =>
+        Effect.tryPromise({
+          try: () => rmAsync(path, { force: true }),
+          catch: (cause) =>
+            new FileSystemError({
+              message: `Failed to delete ${path}: ${formatError(cause)}`,
+              path,
+              cause,
+            }),
+        }).pipe(
+          Effect.catchTag('FileSystemError', (error) =>
+            Effect.sync(() => console.error(error.message))
+          )
+        ),
+      { concurrency: 'unbounded', discard: true }
+    );
   }
 
-  private sendIpc(channel: string, data: any) {
+  private sendIpc(channel: string, data: Record<string, unknown>) {
     if (this.mainWindow && !this.mainWindow.isDestroyed()) {
       this.mainWindow.webContents.send(channel, data);
     }
@@ -2363,70 +2421,142 @@ export class Download {
   }
 }
 
-async function checkParallelChunkCount() {
-  await refreshCached('general');
-  let val = Number(await getStoredValue('general', 'parallelChunkCount'));
-  // Ensure minimum of 1, default to 8 if invalid
-  const chunkCount = Math.max(1, Number.isFinite(val) ? val : 8);
-  console.log('[direct] parallel chunk count:', chunkCount);
+function checkParallelChunkCount(): Effect.Effect<void, ConfigError> {
+  return Effect.gen(function* () {
+    yield* refreshCached('general');
+    const val = Number(yield* getStoredValue('general', 'parallelChunkCount'));
+    // Ensure minimum of 1, default to 8 if invalid
+    const chunkCount = Math.max(1, Number.isFinite(val) ? val : 8);
+    console.log('[direct] parallel chunk count:', chunkCount);
 
-  // Coerce to safe positive integer, ensuring minimum of 1
-  PARALLEL_CHUNK_COUNT = chunkCount;
+    // Coerce to safe positive integer, ensuring minimum of 1
+    const oldChunkCount = PARALLEL_CHUNK_COUNT;
+    PARALLEL_CHUNK_COUNT = chunkCount;
 
-  if (PARALLEL_CHUNK_COUNT > 0 && PARALLEL_CHUNK_COUNT !== chunkCount) {
-    console.log(
-      '[direct] mismatched parallel chunk counts, will kill all downloads'
-    );
-    for (const download of downloads.values()) {
-      download.cancel();
-    }
-  }
-
-  const bwVal = Number(await getStoredValue('general', 'bandwidthLimit'));
-  BANDWIDTH_LIMIT_BYTES_PER_SEC =
-    Number.isFinite(bwVal) && bwVal > 0 ? Math.round(bwVal * 1024 * 1024) : 0;
-  globalTokenBucket.update(BANDWIDTH_LIMIT_BYTES_PER_SEC);
-  console.log(
-    '[direct] bandwidth limit (bytes/s):',
-    BANDWIDTH_LIMIT_BYTES_PER_SEC
-  );
-}
-
-export default function handler(mainWindow?: BrowserWindow) {
-  ipcMain.handle(
-    'ddl:download',
-    async (
-      _,
-      args: { link: string; path: string; headers?: Record<string, string> }[],
-      part?: number
-    ) => {
-      await checkParallelChunkCount();
-      const downloadWindow =
-        mainWindow ?? BrowserWindow.fromWebContents(_.sender);
-      if (!downloadWindow) {
-        throw new Error('Direct download requires an application window');
+    if (oldChunkCount > 0 && oldChunkCount !== chunkCount) {
+      console.log(
+        '[direct] mismatched parallel chunk counts, will kill all downloads'
+      );
+      for (const download of downloads.values()) {
+        download.cancel();
       }
-      const download = new Download(downloadWindow, args, part);
-      download.start();
-      return await download.waitForReady();
     }
-  );
 
-  ipcMain.handle('ddl:pause', async (_, id: string) => {
-    console.log('[direct] Pausing download', id);
-    downloads.get(id)?.pause();
-  });
-
-  ipcMain.handle('ddl:resume', async (_, id: string) => {
-    await checkParallelChunkCount();
-    console.log('[direct] Resuming download', id);
-    downloads.get(id)?.resume();
-  });
-
-  ipcMain.handle('ddl:abort', async (_, id: string) => {
-    console.log('[direct] Aborting download', id);
-    downloads.get(id)?.cancel();
+    const bwVal = Number(yield* getStoredValue('general', 'bandwidthLimit'));
+    BANDWIDTH_LIMIT_BYTES_PER_SEC =
+      Number.isFinite(bwVal) && bwVal > 0 ? Math.round(bwVal * 1024 * 1024) : 0;
+    globalTokenBucket.update(BANDWIDTH_LIMIT_BYTES_PER_SEC);
+    console.log(
+      '[direct] bandwidth limit (bytes/s):',
+      BANDWIDTH_LIMIT_BYTES_PER_SEC
+    );
   });
 }
 
-export { registerDownloadHandshakeHandlers } from '@/lib/download-handshake.js';
+export class DownloadService extends Context.Tag('DownloadService')<
+  DownloadService,
+  {
+    readonly start: (
+      jobs: DownloadJob[],
+      part?: number
+    ) => Effect.Effect<unknown, DownloadError>;
+    readonly pause: (id: string) => Effect.Effect<void, DownloadNotActive>;
+    readonly resume: (
+      id: string
+    ) => Effect.Effect<void, DownloadError | DownloadNotActive>;
+    readonly abort: (id: string) => Effect.Effect<void, DownloadNotActive>;
+    readonly statuses: Stream.Stream<
+      ReadonlyArray<{ id: string; status: DownloadStatus }>
+    >;
+  }
+>() {}
+
+/** Layer facade around the legacy transport internals while they are incrementally split into fibers. */
+export const DownloadServiceLive = (
+  mainWindow: BrowserWindow
+): Layer.Layer<DownloadService> =>
+  Layer.succeed(DownloadService, {
+    start: (jobs, part) =>
+      Effect.gen(function* () {
+        yield* checkParallelChunkCount().pipe(
+          Effect.mapError(
+            (cause) => new DownloadError({ message: cause.message, cause })
+          )
+        );
+        const download = new Download(mainWindow, jobs, part);
+        yield* download.start();
+        return yield* download.waitForReady();
+      }),
+    pause: (id) => {
+      const download = downloads.get(id);
+      return download
+        ? Effect.sync(() => download.pause())
+        : Effect.fail(new DownloadNotActive({ downloadId: id }));
+    },
+    resume: (id) =>
+      Effect.gen(function* () {
+        const download = downloads.get(id);
+        if (!download)
+          return yield* Effect.fail(new DownloadNotActive({ downloadId: id }));
+        yield* checkParallelChunkCount().pipe(
+          Effect.mapError(
+            (cause) =>
+              new DownloadError({
+                message: cause.message,
+                downloadId: id,
+                cause,
+              })
+          )
+        );
+        yield* Effect.sync(() => download.resume());
+      }),
+    abort: (id) => {
+      const download = downloads.get(id);
+      return download
+        ? Effect.sync(() => download.cancel())
+        : Effect.fail(new DownloadNotActive({ downloadId: id }));
+    },
+    statuses: Stream.repeatEffect(
+      Effect.sync(() =>
+        Array.from(downloads, ([id, download]) => ({
+          id,
+          status: download.status,
+        }))
+      )
+    ).pipe(Stream.schedule(Schedule.spaced('1 second'))),
+  });
+
+export default function handler(mainWindow: BrowserWindow): void {
+  const layer = DownloadServiceLive(mainWindow);
+  const run = <A, E>(effect: Effect.Effect<A, E, DownloadService>) =>
+    runEffectBoundary(effect.pipe(Effect.provide(layer)));
+
+  ipcMain.handle('ddl:download', (_, jobs: DownloadJob[], part?: number) =>
+    run(
+      Effect.gen(function* () {
+        return yield* (yield* DownloadService).start(jobs, part);
+      })
+    )
+  );
+  ipcMain.handle('ddl:pause', (_, id: string) =>
+    run(
+      Effect.gen(function* () {
+        yield* (yield* DownloadService).pause(id);
+      })
+    )
+  );
+  ipcMain.handle('ddl:resume', (_, id: string) =>
+    run(
+      Effect.gen(function* () {
+        yield* (yield* DownloadService).resume(id);
+      })
+    )
+  );
+  ipcMain.handle('ddl:abort', (_, id: string) =>
+    run(
+      Effect.gen(function* () {
+        yield* (yield* DownloadService).abort(id);
+      })
+    )
+  );
+}

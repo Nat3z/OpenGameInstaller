@@ -51,5 +51,9 @@
     "electron",
     "node-datachannel",
     "sharp"
-  ]
+  ],
+  "dependencies": {
+    "@effect/schema": "^0.75.5",
+    "effect": "^3.22.0"
+  }
 }

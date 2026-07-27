@@ -2,6 +2,7 @@
  * Library file operations
  */
 
+import { GameNotFound } from '@ogi/errors';
 import type { LibraryInfo } from '@ogi-sdk/connect';
 import * as fs from 'fs';
 import { join } from 'path';
@@ -23,7 +24,7 @@ export function loadLibraryInfo(appID: number): LibraryInfo | null {
 export function loadLibraryInfoOrThrow(appID: number): LibraryInfo {
   const appInfo = loadLibraryInfo(appID);
   if (!appInfo) {
-    throw new Error(`Game not found: ${appID}`);
+    throw new GameNotFound({ gameId: appID });
   }
   return appInfo;
 }

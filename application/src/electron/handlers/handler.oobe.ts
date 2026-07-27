@@ -1,444 +1,284 @@
+import { exec, execFile } from 'node:child_process';
+import * as fs from 'node:fs/promises';
+import os from 'node:os';
+import { join } from 'node:path';
+import {
+  FileSystemError,
+  formatError,
+  HttpError,
+  PlatformError,
+  runEffectBoundary,
+} from '@ogi/errors';
 import axios from 'axios';
-import { exec } from 'child_process';
+import { Effect } from 'effect';
 import { ipcMain } from 'electron';
-import fs from 'fs';
-import os from 'os';
-import { join } from 'path';
 import { sendIPCMessage, sendNotification } from '@/electron/main.js';
 import { __dirname } from '@/electron/manager/manager.paths.js';
 import { IS_NIXOS, STEAMTINKERLAUNCH_PATH } from '@/electron/startup.js';
 
-function sendOOBELog(content: string) {
+const log = (content: string): void => {
   sendIPCMessage('oobe:log', content);
-  console.log('[oobe]' + content);
-}
+  console.log(`[oobe]${content}`);
+};
 
-export default function OOBEHandler() {
-  const sevenZipDownload = 'https://7-zip.org/a/7z2407-x64.exe';
-
-  ipcMain.handle('oobe:download-tools', async (_) => {
-    // check if 7zip is installed
-    let cleanlyDownloadedAll = true;
-    let sevenZipPath = '';
-    let requireRestart = false;
-    if (process.platform === 'win32') {
-      sevenZipPath = '"C:\\Program Files\\7-Zip\\7z.exe"';
-      const sevenZipInstalled = await new Promise<boolean>((resolve, _) => {
-        exec(sevenZipPath + ' --help', (err, stdout, _) => {
-          if (err) {
-            resolve(false);
-          }
-          sendOOBELog(stdout);
-          resolve(true);
-        });
-      });
-      if (!sevenZipInstalled) {
-        await new Promise<void>((resolve, reject) =>
-          axios({
-            method: 'get',
-            url: sevenZipDownload,
-            responseType: 'stream',
-          })
-            .then((response) => {
-              const fileStream = fs.createWriteStream(
-                join(__dirname, '7z-install.exe')
-              );
-              response.data.pipe(fileStream);
-              fileStream.on('finish', async () => {
-                sendOOBELog('Downloaded 7zip');
-                fileStream.close();
-                exec(
-                  '7z-install.exe /S /D="C:\\Program Files\\7-Zip"',
-                  (err, stdout, stderr) => {
-                    if (err) {
-                      sendOOBELog(`Error: ${err}`);
-                      sendNotification({
-                        message:
-                          'Failed to install 7zip. Please allow the installer to run as administrator.',
-                        id: Math.random().toString(36).substring(7),
-                        type: 'error',
-                      });
-                      cleanlyDownloadedAll = false;
-                      reject();
-                      return;
-                    }
-                    sendOOBELog(stdout);
-                    sendOOBELog(stderr);
-                    fs.unlinkSync(join(__dirname, '7z-install.exe'));
-                    sendNotification({
-                      message: 'Successfully installed 7zip.',
-                      id: Math.random().toString(36).substring(7),
-                      type: 'info',
-                    });
-                    requireRestart = true;
-                    resolve();
-                  }
-                );
-              });
-
-              fileStream.on('error', (err) => {
-                sendOOBELog(`Error: ${err}`);
-                fileStream.close();
-                fs.unlinkSync(join(__dirname, '7z-install.exe'));
-                cleanlyDownloadedAll = false;
-              });
+const command = (
+  executable: string,
+  options?: { cwd?: string }
+): Effect.Effect<{ stdout: string; stderr: string }, PlatformError> =>
+  Effect.async<{ stdout: string; stderr: string }, PlatformError>((resume) => {
+    const child = exec(executable, options ?? {}, (error, stdout, stderr) => {
+      if (error) {
+        resume(
+          Effect.fail(
+            new PlatformError({
+              message: error.message,
+              platform: process.platform,
             })
-            .catch((err) => {
-              sendOOBELog(`Error: ${err}`);
-            })
-        );
-      }
-    }
-
-    // check if git is installed
-    const gitInstalled = await new Promise<boolean>((resolve, _) => {
-      exec('git --version', (err, stdout, _) => {
-        if (err) {
-          resolve(false);
-        }
-        sendOOBELog(stdout);
-        resolve(true);
-      });
-    });
-    if (!gitInstalled) {
-      if (process.platform === 'win32') {
-        sendNotification({
-          message: 'Git is not installed. Downloading git now.',
-          id: Math.random().toString(36).substring(7),
-          type: 'info',
-        });
-        const gitDownload =
-          'https://github.com/git-for-windows/git/releases/download/v2.46.0.windows.1/Git-2.46.0-64-bit.exe';
-        await new Promise<void>((resolve, reject) =>
-          axios({
-            method: 'get',
-            url: gitDownload,
-            responseType: 'stream',
-          })
-            .then((response) => {
-              const fileStream = fs.createWriteStream(
-                join(__dirname, 'git-install.exe')
-              );
-              response.data.pipe(fileStream);
-              fileStream.on('finish', async () => {
-                sendOOBELog('Downloaded git');
-                fileStream.close();
-
-                fs.writeFileSync(
-                  'git_options.ini',
-                  `
-    [Setup]
-    Lang=default
-    Dir=C:\\Program Files\\Git
-    Group=Git
-    NoIcons=0
-    SetupType=default
-    Components=gitlfs,assoc,assoc_sh,windowsterminal
-    Tasks=
-    EditorOption=VIM
-    CustomEditorPath=
-    DefaultBranchOption=main
-    PathOption=Cmd
-    SSHOption=OpenSSH
-    TortoiseOption=false
-    CURLOption=WinSSL
-    CRLFOption=CRLFCommitAsIs
-    BashTerminalOption=MinTTY
-    GitPullBehaviorOption=Merge
-    UseCredentialManager=Enabled
-    PerformanceTweaksFSCache=Enabled
-    EnableSymlinks=Disabled
-    EnablePseudoConsoleSupport=Disabled
-    EnableFSMonitor=Disabled
-                            `
-                );
-                exec(
-                  'git-install.exe /VERYSILENT /NORESTART /NOCANCEL /LOADINF=git_options.ini',
-                  (err, stdout, stderr) => {
-                    if (err) {
-                      sendOOBELog(`Error: ${err}`);
-                      reject();
-                      cleanlyDownloadedAll = false;
-                      return;
-                    }
-                    sendOOBELog(stdout);
-                    sendOOBELog(stderr);
-                    fs.unlinkSync(join(__dirname, 'git-install.exe'));
-                    sendNotification({
-                      message: 'Successfully installed git.',
-                      id: Math.random().toString(36).substring(7),
-                      type: 'info',
-                    });
-                    requireRestart = true;
-                    resolve();
-                  }
-                );
-              });
-
-              fileStream.on('error', (err) => {
-                sendOOBELog(`Error: ${err}`);
-                fileStream.close();
-                fs.unlinkSync(join(__dirname, 'git-install.exe'));
-              });
-            })
-            .catch((err) => {
-              sendOOBELog(`Error: ${err}`);
-            })
-        );
-      } else {
-        sendNotification({
-          id: Math.random().toString(36).substring(7),
-          message: 'Missing Git and auto-install is not supported for linux.',
-          type: 'error',
-        });
-      }
-    }
-
-    // check if steamtinkerlaunch is installed
-    if (
-      process.platform === 'linux' &&
-      STEAMTINKERLAUNCH_PATH ===
-        join(__dirname, 'bin/steamtinkerlaunch/steamtinkerlaunch')
-    ) {
-      if (
-        !fs.existsSync(
-          join(__dirname, 'bin/steamtinkerlaunch/steamtinkerlaunch')
-        )
-      ) {
-        await new Promise<void>((resolve, reject) => {
-          exec(
-            'git clone https://github.com/sonic2kk/steamtinkerlaunch ' +
-              join(__dirname, 'bin/steamtinkerlaunch'),
-            (err, stdout, stderr) => {
-              if (err) {
-                sendOOBELog(`Error: ${err}`);
-                reject();
-                cleanlyDownloadedAll = false;
-                return;
-              }
-              sendOOBELog(stdout);
-              sendOOBELog(stderr);
-              // run chmod +x on the file
-              exec(
-                'chmod +x ' +
-                  join(__dirname, 'bin/steamtinkerlaunch/steamtinkerlaunch'),
-                (err) => {
-                  if (err) {
-                    sendOOBELog(`Error: ${err}`);
-                    reject();
-                    cleanlyDownloadedAll = false;
-                    return;
-                  }
-
-                  // now executing steamtinkerlaunch
-                  exec(
-                    join(__dirname, 'bin/steamtinkerlaunch/steamtinkerlaunch'),
-                    (err, stdout, stderr) => {
-                      if (err) {
-                        sendOOBELog(`Error: ${err}`);
-                        reject();
-                        cleanlyDownloadedAll = false;
-                        return;
-                      }
-                      sendOOBELog(stdout);
-                      sendOOBELog(stderr);
-                      sendNotification({
-                        message: 'Successfully installed steamtinkerlaunch.',
-                        id: Math.random().toString(36).substring(7),
-                        type: 'info',
-                      });
-                      resolve();
-                    }
-                  );
-                }
-              );
-            }
-          );
-        });
-      } else {
-        await new Promise<void>((resolve, reject) => {
-          exec(
-            'git pull',
-            { cwd: join(__dirname, 'bin/steamtinkerlaunch') },
-            (err, stdout, stderr) => {
-              if (err) {
-                sendOOBELog(`Error: ${err}`);
-                reject();
-                cleanlyDownloadedAll = false;
-                return;
-              }
-              sendOOBELog(stdout);
-              sendOOBELog(stderr);
-              // run chmod +x on the file
-              exec(
-                'chmod +x ' +
-                  join(__dirname, 'bin/steamtinkerlaunch/steamtinkerlaunch'),
-                (err, stdout, stderr) => {
-                  if (err) {
-                    sendOOBELog(`Error: ${err}`);
-                    reject();
-                    cleanlyDownloadedAll = false;
-                    return;
-                  }
-                  sendOOBELog(stdout);
-                  sendOOBELog(stderr);
-                  sendNotification({
-                    message: 'Successfully updated steamtinkerlaunch.',
-                    id: Math.random().toString(36).substring(7),
-                    type: 'info',
-                  });
-                  resolve();
-                }
-              );
-            }
-          );
-        });
-      }
-    } else if (process.platform === 'linux') {
-      // check if steamtinkerlaunch is installed in that path
-      if (!fs.existsSync(STEAMTINKERLAUNCH_PATH)) {
-        sendNotification({
-          message:
-            'SteamTinkerLaunch is not installed. You are not on a supported OS. Please install it manually.',
-          id: Math.random().toString(36).substring(7),
-          type: 'error',
-        });
-        cleanlyDownloadedAll = false;
-      }
-    }
-
-    // check if bun is installed
-    const bunInstalled = await new Promise<boolean>((resolve, _) => {
-      exec('bun --version', (err, stdout, _) => {
-        if (err) {
-          resolve(false);
-        }
-        sendOOBELog(stdout);
-        resolve(true);
-      });
-    });
-
-    if (!bunInstalled) {
-      if (process.platform === 'win32') {
-        await new Promise<void>((resolve, reject) =>
-          exec(
-            'powershell -c "irm bun.sh/install.ps1 | iex"',
-            (err, stdout, stderr) => {
-              if (err) {
-                sendOOBELog(`Error: ${err}`);
-                reject();
-                cleanlyDownloadedAll = false;
-                return;
-              }
-              sendOOBELog(stdout);
-              sendOOBELog(stderr);
-              sendNotification({
-                message: 'Successfully installed bun.',
-                id: Math.random().toString(36).substring(7),
-                type: 'info',
-              });
-              requireRestart = true;
-              resolve();
-            }
           )
         );
-      } else if (process.platform === 'linux' && !IS_NIXOS) {
-        await new Promise<void>((resolve, reject) => {
-          exec(
-            'curl -fsSL https://bun.sh/install | bash',
-            (err, stdout, stderr) => {
-              // then export to path
-              if (err) {
-                sendOOBELog(`Error: ${err}`);
-                reject();
-                cleanlyDownloadedAll = false;
-                return;
-              }
-              sendOOBELog(stdout);
-              sendOOBELog(stderr);
-              // get linux name
-              const linuxName = os.userInfo().username;
-
-              exec(
-                'echo "export PATH=$PATH:/home/' +
-                  linuxName +
-                  '/.bun/bin" >> ~/.bashrc',
-                (err, stdout, stderr) => {
-                  if (err) {
-                    sendOOBELog(`Error: ${err}`);
-                    reject();
-                    cleanlyDownloadedAll = false;
-                    return;
-                  }
-                  sendOOBELog(stdout);
-                  sendOOBELog(stderr);
-                  sendNotification({
-                    message: 'Successfully installed bun and added to path.',
-                    id: Math.random().toString(36).substring(7),
-                    type: 'info',
-                  });
-                  resolve();
-                  requireRestart = true;
-                }
-              );
-            }
-          );
-        });
-      } else if (process.platform === 'linux' && IS_NIXOS) {
-        sendNotification({
-          message:
-            'Bun is not installed. You are not on a supported OS. Please install it manually.',
-          id: Math.random().toString(36).substring(7),
-          type: 'error',
-        });
-        cleanlyDownloadedAll = false;
+      } else {
+        resume(Effect.succeed({ stdout, stderr }));
       }
-    } else if (!IS_NIXOS) {
-      await new Promise<void>((resolve) =>
-        exec('bun upgrade', (err, stdout, stderr) => {
-          if (err) {
-            sendOOBELog(`Error: ${err}`);
-            // reject();
-            resolve();
-            return;
-          }
-          sendOOBELog(stdout);
-          sendOOBELog(stderr);
-          sendNotification({
-            message: 'Successfully upgraded bun.',
-            id: Math.random().toString(36).substring(7),
-            type: 'info',
-          });
-          resolve();
-        })
-      );
-    }
+    });
+    return Effect.sync(() => child.kill());
+  }).pipe(
+    Effect.tap(({ stdout, stderr }) =>
+      Effect.sync(() => {
+        log(stdout);
+        log(stderr);
+      })
+    )
+  );
 
-    return [cleanlyDownloadedAll, requireRestart];
+const commandArgs = (
+  executable: string,
+  args: string[]
+): Effect.Effect<{ stdout: string; stderr: string }, PlatformError> =>
+  Effect.async<{ stdout: string; stderr: string }, PlatformError>((resume) => {
+    const child = execFile(executable, args, (error, stdout, stderr) => {
+      if (error) {
+        resume(
+          Effect.fail(
+            new PlatformError({
+              message: error.message,
+              platform: process.platform,
+            })
+          )
+        );
+      } else {
+        resume(Effect.succeed({ stdout, stderr }));
+      }
+    });
+    return Effect.sync(() => child.kill());
+  }).pipe(
+    Effect.tap(({ stdout, stderr }) =>
+      Effect.sync(() => {
+        log(stdout);
+        log(stderr);
+      })
+    )
+  );
+
+const commandExists = (executable: string): Effect.Effect<boolean> =>
+  command(executable).pipe(
+    Effect.as(true),
+    Effect.catchAll(() => Effect.succeed(false))
+  );
+
+const download = (
+  url: string,
+  destination: string
+): Effect.Effect<void, HttpError | FileSystemError> =>
+  Effect.gen(function* () {
+    const response = yield* Effect.tryPromise({
+      try: () => axios.get<ArrayBuffer>(url, { responseType: 'arraybuffer' }),
+      catch: (cause: unknown) =>
+        new HttpError({
+          message: axios.isAxiosError(cause)
+            ? cause.message
+            : formatError(cause),
+          statusCode: axios.isAxiosError(cause)
+            ? (cause.response?.status ?? 0)
+            : 0,
+          url,
+        }),
+    });
+    yield* Effect.tryPromise({
+      try: () => fs.writeFile(destination, Buffer.from(response.data)),
+      catch: (cause) =>
+        new FileSystemError({
+          message: formatError(cause),
+          path: destination,
+          cause,
+        }),
+    });
   });
 
-  ipcMain.handle('oobe:set-steamgriddb-key', async (_, key: string) => {
-    // send to steamtinkerlaunch the new key using STEAMTINKERLAUNCH_PATH
-    try {
-      await new Promise<void>((resolve, reject) =>
-        exec(
-          STEAMTINKERLAUNCH_PATH + ' set SGDBAPIKEY global ' + key,
-          (err, stdout, stderr) => {
-            if (err) {
-              sendOOBELog(`Error: ${err}`);
-              reject();
-              return;
+const notify = (message: string, type: 'info' | 'error'): void =>
+  sendNotification({
+    message,
+    id: Math.random().toString(36).substring(7),
+    type,
+  });
+
+const runInstaller = (
+  installerUrl: string,
+  installerPath: string,
+  installCommand: string,
+  successMessage: string
+): Effect.Effect<void, HttpError | FileSystemError | PlatformError> =>
+  Effect.gen(function* () {
+    yield* download(installerUrl, installerPath);
+    log(`Downloaded ${installerPath}`);
+    yield* command(installCommand);
+    yield* Effect.tryPromise({
+      try: () => fs.rm(installerPath, { force: true }),
+      catch: (cause) =>
+        new FileSystemError({
+          message: formatError(cause),
+          path: installerPath,
+          cause,
+        }),
+    });
+    notify(successMessage, 'info');
+  });
+
+const downloadTools = (): Effect.Effect<readonly [boolean, boolean]> =>
+  Effect.gen(function* () {
+    let clean = true;
+    let restart = false;
+    const attempt = <E>(effect: Effect.Effect<void, E>) =>
+      effect.pipe(
+        Effect.either,
+        Effect.tap((result) =>
+          Effect.sync(() => {
+            if (result._tag === 'Left') {
+              clean = false;
+              log(`Error: ${formatError(result.left)}`);
             }
-            sendOOBELog(stdout);
-            sendOOBELog(stderr);
-            resolve();
-          }
+          })
         )
       );
-      return true;
-    } catch (err) {
-      sendOOBELog(`Error: ${err}`);
-      return false;
+
+    if (
+      process.platform === 'win32' &&
+      !(yield* commandExists('"C:\\Program Files\\7-Zip\\7z.exe" --help'))
+    ) {
+      const result = yield* attempt(
+        runInstaller(
+          'https://7-zip.org/a/7z2407-x64.exe',
+          join(__dirname, '7z-install.exe'),
+          '7z-install.exe /S /D="C:\\Program Files\\7-Zip"',
+          'Successfully installed 7zip.'
+        )
+      );
+      if (result._tag === 'Right') restart = true;
     }
+
+    if (!(yield* commandExists('git --version'))) {
+      if (process.platform === 'win32') {
+        const installerPath = join(__dirname, 'git-install.exe');
+        const result = yield* attempt(
+          runInstaller(
+            'https://github.com/git-for-windows/git/releases/download/v2.46.0.windows.1/Git-2.46.0-64-bit.exe',
+            installerPath,
+            `${installerPath} /VERYSILENT /NORESTART /NOCANCEL`,
+            'Successfully installed git.'
+          )
+        );
+        if (result._tag === 'Right') restart = true;
+      } else {
+        clean = false;
+        notify(
+          'Missing Git and automatic installation is not supported.',
+          'error'
+        );
+      }
+    }
+
+    if (process.platform === 'linux') {
+      const bundled = join(
+        __dirname,
+        'bin/steamtinkerlaunch/steamtinkerlaunch'
+      );
+      if (STEAMTINKERLAUNCH_PATH === bundled) {
+        if (!(yield* commandExists(`test -x "${bundled}"`))) {
+          yield* attempt(
+            command(
+              `git clone https://github.com/sonic2kk/steamtinkerlaunch "${join(__dirname, 'bin/steamtinkerlaunch')}"`
+            ).pipe(
+              Effect.zipRight(command(`chmod +x "${bundled}"`)),
+              Effect.zipRight(command(`"${bundled}"`)),
+              Effect.asVoid
+            )
+          );
+        } else {
+          yield* attempt(
+            command('git pull', {
+              cwd: join(__dirname, 'bin/steamtinkerlaunch'),
+            }).pipe(
+              Effect.zipRight(command(`chmod +x "${bundled}"`)),
+              Effect.asVoid
+            )
+          );
+        }
+      } else if (
+        !(yield* commandExists(`test -x "${STEAMTINKERLAUNCH_PATH}"`))
+      ) {
+        clean = false;
+        notify(
+          'SteamTinkerLaunch is not installed. Please install it manually.',
+          'error'
+        );
+      }
+    }
+
+    if (!(yield* commandExists('bun --version'))) {
+      const install =
+        process.platform === 'win32'
+          ? command('powershell -c "irm bun.sh/install.ps1 | iex"')
+          : process.platform === 'linux' && !IS_NIXOS
+            ? command('curl -fsSL https://bun.sh/install | bash').pipe(
+                Effect.zipRight(
+                  command(
+                    `echo "export PATH=$PATH:/home/${os.userInfo().username}/.bun/bin" >> ~/.bashrc`
+                  )
+                )
+              )
+            : Effect.fail(
+                new PlatformError({
+                  message: 'Automatic Bun installation is unsupported',
+                  platform: process.platform,
+                })
+              );
+      const result = yield* attempt(install.pipe(Effect.asVoid));
+      if (result._tag === 'Right') restart = true;
+    } else if (!IS_NIXOS) {
+      yield* command('bun upgrade').pipe(Effect.ignore);
+    }
+    return [clean, restart] as const;
   });
+
+export default function OOBEHandler(): void {
+  ipcMain.handle('oobe:download-tools', () =>
+    runEffectBoundary(downloadTools())
+  );
+  ipcMain.handle('oobe:set-steamgriddb-key', (_, key: string) =>
+    runEffectBoundary(
+      commandArgs(STEAMTINKERLAUNCH_PATH, [
+        'set',
+        'SGDBAPIKEY',
+        'global',
+        key,
+      ]).pipe(
+        Effect.as(true),
+        Effect.catchAll((error) =>
+          Effect.sync(() => {
+            log(`Error: ${formatError(error)}`);
+            return false;
+          })
+        )
+      )
+    )
+  );
 }

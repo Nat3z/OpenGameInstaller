@@ -1,3 +1,4 @@
+import type { NetworkError, ValidationError } from '@ogi/errors';
 import type {
   AddonClientToServerWebsocketMessage,
   AddonServerToClientEventArgs,
@@ -7,6 +8,7 @@ import type {
   OGIAddonSDKEventListener,
 } from '@ogi-sdk/connect';
 import { EventResponseSocket, type WebSocketLike } from '@ogi-sdk/connect';
+import { Deferred, Effect } from 'effect';
 import {
   buildEventMessage,
   eventAliases,
@@ -17,78 +19,111 @@ import type { ClientMessageHandlers } from '../handlers/types';
 import type { AddonConfig, AddonServer } from '../server';
 import { bindWebSocketLifecycle } from './websocket-lifecycle';
 
+export type AddonConnectionError = NetworkError | ValidationError;
+
+/** Effect-based connection to one addon process. */
 export class AddonConnection {
   public addonInfo: OGIAddonConfiguration | undefined;
-  public ws: WebSocketLike;
   public configTemplate: ConfigurationFile | undefined;
   public filePath: string | undefined;
   public addonLink: string | undefined;
   public eventsAvailable: OGIAddonSDKEventListener[] = [];
   public readonly events: SendEventProxy;
-  private transport: EventResponseSocket<
-    AddonClientToServerWebsocketMessage,
-    AddonServerToClientWebsocketMessage
-  >;
-  private config: AddonConfig;
-  private server: AddonServer;
-  private clientEventHandlers: ClientMessageHandlers;
 
-  constructor(ws: WebSocketLike, config: AddonConfig, server: AddonServer) {
-    this.ws = ws;
-    this.config = config;
-    this.server = server;
+  private constructor(
+    public readonly ws: WebSocketLike,
+    private readonly config: AddonConfig,
+    private readonly server: AddonServer,
+    private readonly transport: EventResponseSocket<
+      AddonClientToServerWebsocketMessage,
+      AddonServerToClientWebsocketMessage
+    >,
+    private readonly clientEventHandlers: ClientMessageHandlers
+  ) {
     this.events = this.createSendEventProxy(true);
-    this.transport = new EventResponseSocket(this.ws, {
-      onInvalidMessage: () => {
-        console.error('Failed to parse websocket message');
-        this.ws.close(1008, 'Invalid JSON message');
-      },
+  }
+
+  public static make(
+    ws: WebSocketLike,
+    config: AddonConfig,
+    server: AddonServer
+  ): Effect.Effect<AddonConnection, NetworkError> {
+    return Effect.gen(function* () {
+      const transport = yield* EventResponseSocket.make<
+        AddonClientToServerWebsocketMessage,
+        AddonServerToClientWebsocketMessage
+      >(ws, {
+        onInvalidMessage: () =>
+          Effect.sync(() => {
+            console.error('Failed to parse websocket message');
+            ws.close(1008, 'Invalid JSON message');
+          }),
+      });
+      return new AddonConnection(
+        ws,
+        config,
+        server,
+        transport,
+        createClientMessageHandlers()
+      );
     });
-    this.clientEventHandlers = createClientMessageHandlers();
   }
 
-  public configure(config: ConfigurationFile): void {
-    this.events.noResponse.configUpdate(config);
+  public configure(
+    config: ConfigurationFile
+  ): Effect.Effect<void, AddonConnectionError> {
+    return this.events.noResponse.configUpdate(config).pipe(Effect.asVoid);
   }
 
-  public async setupWebsocket(): Promise<boolean> {
-    return new Promise((resolve, _) => {
-      const authenticationTimeout = setTimeout(() => {
-        this.ws.close(1008, 'Authentication timeout');
-        console.error('Client kicked due to authentication timeout');
-        resolve(false);
-      }, 1000);
+  public setupWebsocket(): Effect.Effect<boolean, NetworkError> {
+    return Effect.gen(this, function* () {
+      const authentication = yield* Deferred.make<boolean>();
 
-      Object.entries(this.clientEventHandlers).forEach(([event, handler]) => {
-        this.transport.on(
+      for (const [event, handler] of Object.entries(this.clientEventHandlers)) {
+        if (!handler) continue;
+        yield* this.transport.on(
           event as AddonClientToServerWebsocketMessage['event'],
-          async (data) => {
-            await handler(
+          (message) =>
+            handler(
               {
                 connection: this,
                 config: this.config,
                 server: this.server,
-                authenticationTimeout,
-                resolveAuthentication: resolve,
+                resolveAuthentication: (authenticated) =>
+                  Deferred.succeed(authentication, authenticated).pipe(
+                    Effect.asVoid
+                  ),
               },
-              data as AddonClientToServerWebsocketMessage
-            );
-          }
+              message as AddonClientToServerWebsocketMessage
+            )
         );
-      });
+      }
 
-      bindWebSocketLifecycle(this.ws, {
+      yield* bindWebSocketLifecycle(this.ws, {
         onClose: () =>
           this.transport.rejectPendingResponses('Websocket closed'),
         onError: () => this.transport.rejectPendingResponses('Websocket error'),
       });
+
+      return yield* Deferred.await(authentication).pipe(
+        Effect.timeoutOption('1 second'),
+        Effect.flatMap((result) =>
+          result._tag === 'Some'
+            ? Effect.succeed(result.value)
+            : Effect.sync(() => {
+                this.ws.close(1008, 'Authentication timeout');
+                console.error('Client kicked due to authentication timeout');
+                return false;
+              })
+        )
+      );
     });
   }
 
   public sendEventMessage(
     message: AddonServerToClientWebsocketMessage,
-    expectResponse: boolean = true
-  ): Promise<AddonClientToServerWebsocketMessage> {
+    expectResponse = true
+  ): Effect.Effect<AddonClientToServerWebsocketMessage, AddonConnectionError> {
     return this.transport.send(message, { expectResponse });
   }
 
@@ -97,25 +132,18 @@ export class AddonConnection {
       {},
       {
         get: (_, property) => {
-          if (property === 'noResponse') {
+          if (property === 'noResponse')
             return this.createSendEventProxy(false);
-          }
-
-          if (typeof property !== 'string') {
-            return undefined;
-          }
+          if (typeof property !== 'string') return undefined;
 
           const event = eventAliases[property];
-          if (!event) {
-            return undefined;
-          }
+          if (!event) return undefined;
 
-          return (...args: AddonServerToClientEventArgs[typeof event]) => {
-            return this.sendEventMessage(
+          return (...args: AddonServerToClientEventArgs[typeof event]) =>
+            this.sendEventMessage(
               buildEventMessage(event, args),
               event === 'response' ? false : defaultExpectResponse
             );
-          };
         },
       }
     ) as SendEventProxy;

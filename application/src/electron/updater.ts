@@ -927,10 +927,10 @@ export function checkIfInstallerUpdateAvailable(
 
       // disable the release if we already have this version
       if (latestRelease) {
-        const wantedVersion = latestRelease
-          .body!.match(/Setup Version: (.*)/)![1]
-          .trim();
-        const version = semver.coerce(wantedVersion)?.version;
+        const wantedVersion = getSetupVersionFromRelease(latestRelease);
+        const version = wantedVersion
+          ? semver.coerce(wantedVersion)?.version
+          : undefined;
         if (!version || !semver.gt(version, local)) {
           latestRelease = undefined;
         }
@@ -959,9 +959,8 @@ export function checkIfInstallerUpdateAvailable(
         `[updater] Latest setup version url: ${latestSetupVersionUrl}`
       );
       // get the latest version of the setup from the description of the release
-      const latestVersionResults =
-        latestRelease.body!.match(/Setup Version: (.*)/);
-      if (!latestVersionResults || latestVersionResults.length < 2) {
+      const setupVersion = getSetupVersionFromRelease(latestRelease);
+      if (!setupVersion) {
         console.error(
           '[updater] No setup version found in the release description.'
         );
@@ -972,7 +971,7 @@ export function checkIfInstallerUpdateAvailable(
         });
         return;
       }
-      const latestSetupVersion = latestVersionResults[1];
+      const latestSetupVersion = setupVersion;
       console.log(`[updater] Latest setup version: ${latestSetupVersion}`);
       console.log(`[updater] Latest version: ${latestVersion}`);
 

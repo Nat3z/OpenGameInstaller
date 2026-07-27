@@ -8,6 +8,13 @@ export function oobeIncludesSteamGridDb(
   return platform !== 'win32';
 }
 
+export function clientOptionsIncludesSteamGridDb(
+  platform: NodeJS.Platform = process.platform
+): boolean {
+  // Client Options mirrors the production General setting condition.
+  return platform === 'linux';
+}
+
 export function getAccessibilityState(
   value = process.env.OGI_ACCESSIBILITY_STATE
 ): AccessibilityState {

@@ -1,5 +1,6 @@
 import { $, browser } from '@wdio/globals';
 import {
+  clientOptionsIncludesSteamGridDb,
   getAccessibilityState,
   oobeIncludesSteamGridDb,
 } from '../accessibility-states';
@@ -201,29 +202,33 @@ describe('application accessibility', () => {
           (await torrentClient.getAttribute('aria-expanded')) === 'false'
       );
 
-      const changeSteamGridDBKey = await $('aria/Change SteamGridDB API Key');
-      await changeSteamGridDBKey.click();
-      const dialog = await $(
-        '[role="dialog"][aria-label="SteamGridDB API key"]'
-      );
-      await dialog.waitForDisplayed();
-      const dialogOwnsFocus = await browser.execute(
-        (selector) =>
-          document.querySelector(selector)?.contains(document.activeElement) ??
-          false,
-        '[role="dialog"][aria-label="SteamGridDB API key"]'
-      );
-      if (!dialogOwnsFocus) {
-        throw new Error('SteamGridDB dialog did not receive focus');
-      }
-      await scan(
-        'SteamGridDB dialog',
-        '[role="dialog"][aria-label="SteamGridDB API key"]'
-      );
-      await activateByText('Cancel');
-      await dialog.waitForDisplayed({ reverse: true });
-      if (!(await changeSteamGridDBKey.isFocused())) {
-        throw new Error('Dialog did not restore focus to its trigger');
+      if (clientOptionsIncludesSteamGridDb()) {
+        const changeSteamGridDBKey = await $(
+          'aria/Change SteamGridDB API Key'
+        );
+        await changeSteamGridDBKey.click();
+        const dialog = await $(
+          '[role="dialog"][aria-label="SteamGridDB API key"]'
+        );
+        await dialog.waitForDisplayed();
+        const dialogOwnsFocus = await browser.execute(
+          (selector) =>
+            document.querySelector(selector)?.contains(document.activeElement) ??
+            false,
+          '[role="dialog"][aria-label="SteamGridDB API key"]'
+        );
+        if (!dialogOwnsFocus) {
+          throw new Error('SteamGridDB dialog did not receive focus');
+        }
+        await scan(
+          'SteamGridDB dialog',
+          '[role="dialog"][aria-label="SteamGridDB API key"]'
+        );
+        await activateByText('Cancel');
+        await dialog.waitForDisplayed({ reverse: true });
+        if (!(await changeSteamGridDBKey.isFocused())) {
+          throw new Error('Dialog did not restore focus to its trigger');
+        }
       }
 
       await activate('Downloads');

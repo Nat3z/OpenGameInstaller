@@ -25,8 +25,17 @@ app.whenReady().then(async () => {
       const options = {
         runOnly: { type: 'tag', values: ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'] }
       };
+      const waitForLiveService = async () => {
+        const deadline = Date.now() + 15_000;
+        while (Date.now() < deadline) {
+          const control = document.querySelector('input[value="live-service"]');
+          if (control) return control;
+          await new Promise((resolve) => setTimeout(resolve, 50));
+        }
+        throw new Error('Observer live-service control did not appear');
+      };
       const deterministic = await axe.run(document, options);
-      const liveService = document.querySelector('input[value="live-service"]');
+      const liveService = await waitForLiveService();
       liveService.click();
       await new Promise((resolve) => requestAnimationFrame(() => resolve()));
       const live = await axe.run(document, options);
@@ -36,4 +45,7 @@ app.whenReady().then(async () => {
   writeFileSync(resultPath, JSON.stringify(result, null, 2));
   await window.close();
   await app.quit();
+}).catch((error) => {
+  console.error(error);
+  app.exit(1);
 });

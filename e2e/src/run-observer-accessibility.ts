@@ -1,9 +1,9 @@
 import { spawn } from 'node:child_process';
 import { mkdtempSync, readFileSync } from 'node:fs';
-import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Cause, Data, Effect, Exit } from 'effect';
+import { resolveElectronExecutable } from '../electron-service-options';
 import { createObserverServer } from './observer-server';
 
 class ObserverAccessibilityError extends Data.TaggedError(
@@ -14,8 +14,7 @@ class ObserverAccessibilityError extends Data.TaggedError(
   }
 }
 
-const require = createRequire(import.meta.url);
-const electronPath = require('electron') as string;
+const electronPath = resolveElectronExecutable();
 const resultDirectory = mkdtempSync(join(tmpdir(), 'ogi-observer-axe-'));
 const resultPath = join(resultDirectory, 'violations.json');
 
@@ -31,6 +30,7 @@ const program = Effect.acquireUseRelease(
   (server) =>
     Effect.async<void, ObserverAccessibilityError>((resume) => {
       const electronArgs = [
+        '--disable-gpu',
         '--no-sandbox',
         join(import.meta.dir, 'observer-accessibility-main.cjs'),
         server.url,
@@ -43,7 +43,22 @@ const program = Effect.acquireUseRelease(
           : electronArgs;
       const child = spawn(command, args, {
         cwd: join(import.meta.dir, '..'),
-        stdio: 'inherit',
+        stdio: ['ignore', 'pipe', 'pipe'],
+        windowsHide: true,
+        env: {
+          ...process.env,
+          ELECTRON_ENABLE_LOGGING: '1',
+        },
+      });
+      let stdout = '';
+      let stderr = '';
+      child.stdout?.on('data', (chunk) => {
+        stdout += String(chunk);
+        process.stdout.write(chunk);
+      });
+      child.stderr?.on('data', (chunk) => {
+        stderr += String(chunk);
+        process.stderr.write(chunk);
       });
       const onError = (cause: Error) =>
         resume(
@@ -60,7 +75,9 @@ const program = Effect.acquireUseRelease(
             ? Effect.void
             : Effect.fail(
                 new ObserverAccessibilityError({
-                  detail: `Observer accessibility Electron process exited with status ${status}`,
+                  detail: `Observer accessibility Electron process exited with status ${status}${
+                    stderr.trim() ? `: ${stderr.trim()}` : ''
+                  }${stdout.trim() ? `; stdout: ${stdout.trim()}` : ''}`,
                 })
               )
         );

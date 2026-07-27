@@ -79,7 +79,7 @@
     "concurrently": "^7.6.0",
     "debug": "^4.4.3",
     "@electron/rebuild": "^3.7.2",
-    "electron": "^40.1.0",
+    "electron": "43.1.0",
     "electron-builder": "^23.6.0",
     "electron-vite": "^5.0.0",
     "nodemon": "^3.1.11",

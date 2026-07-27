@@ -505,13 +505,19 @@ function installOfflineTrafficGuard({
   return state;
 }
 
+function normalizeNodeRequirePath(modulePath) {
+  return String(modulePath).replaceAll('\\', '/');
+}
+
 function descendantGuardEnvironment({
   logPath,
   product,
   expectedEndpoints = [],
   recordListeners = false,
 }) {
-  const guardPath = __filename;
+  // NODE_OPTIONS parsing treats backslashes as escapes on Windows. Forward
+  // slashes remain valid absolute Windows paths and preserve the module name.
+  const guardPath = normalizeNodeRequirePath(__filename);
   const existingNodeOptions = process.env.NODE_OPTIONS?.trim();
   return {
     OGI_OFFLINE_TRAFFIC_GUARD_CONFIG: JSON.stringify({
@@ -568,4 +574,5 @@ module.exports = {
   descendantGuardEnvironment,
   requestUrl,
   installOfflineTrafficGuard,
+  normalizeNodeRequirePath,
 };

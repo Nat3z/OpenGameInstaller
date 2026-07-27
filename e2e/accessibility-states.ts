@@ -2,6 +2,12 @@ export const ACCESSIBILITY_STATES = ['welcome', 'oobe-resume', 'main'] as const;
 
 export type AccessibilityState = (typeof ACCESSIBILITY_STATES)[number];
 
+export function oobeIncludesSteamGridDb(
+  platform: NodeJS.Platform = process.platform
+): boolean {
+  return platform !== 'win32';
+}
+
 export function getAccessibilityState(
   value = process.env.OGI_ACCESSIBILITY_STATE
 ): AccessibilityState {

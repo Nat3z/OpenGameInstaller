@@ -263,6 +263,7 @@ export function createProductionDurabilityAdapter({
 } = {}) {
   if (platform !== 'win32') {
     return {
+      syncFile: fsyncSync,
       replace(from, to) {
         renameSync(from, to);
         syncPosixDirectories([dirname(from), dirname(to)]);
@@ -301,6 +302,9 @@ export function createProductionDurabilityAdapter({
     );
   };
   return {
+    // Windows file contents are flushed by the write-through replacement helper;
+    // Node's fsync support is not reliable for every Windows handle type.
+    syncFile: () => {},
     replace: (from, to) => move(from, to, true),
     durableRename: (from, to) => move(from, to, false),
     getRenameConfirmationPath: confirmationPath,
@@ -385,7 +389,7 @@ function atomicWrite(
     descriptor = openSync(temporaryPath, 'wx', 0o600);
     writeFileSync(descriptor, contents);
     fault('after-temp-write');
-    fsyncSync(descriptor);
+    durability.syncFile(descriptor);
     fault('after-file-fsync');
     closeSync(descriptor);
     descriptor = undefined;
@@ -415,7 +419,7 @@ export function writeTransactionJournal({
     copyFileSync(journalPath, previousTemporary);
     const descriptor = openSync(previousTemporary, 'r');
     try {
-      fsyncSync(descriptor);
+      durability.syncFile(descriptor);
     } finally {
       closeSync(descriptor);
     }

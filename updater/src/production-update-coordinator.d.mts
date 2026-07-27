@@ -71,6 +71,7 @@ export type TransactionJournal = {
   activeProcess?: ProcessIdentity;
 };
 export type ProductionDurabilityAdapter = {
+  syncFile(descriptor: number): void;
   replace(source: string, destination: string): void;
   durableRename(source: string, destination: string): void;
   getRenameConfirmationPath?(destination: string): string;

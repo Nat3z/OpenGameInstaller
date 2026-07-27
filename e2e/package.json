@@ -63,7 +63,7 @@
     "@wdio/xvfb": "9.27.1",
     "axe-core": "4.10.3",
     "effect": "^3.19.14",
-    "electron": "40.10.2",
+    "electron": "43.1.0",
     "puppeteer-core": "^24.39.1",
     "sharp": "^0.34.5",
     "svelte": "^5.49.1",

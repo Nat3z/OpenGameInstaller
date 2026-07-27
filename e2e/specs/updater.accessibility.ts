@@ -1,5 +1,12 @@
 import { $, browser } from '@wdio/globals';
-import { getUpdaterAccessibilityState } from '../updater-accessibility-states';
+
+type UpdaterStatusPayload = {
+  kind: 'progress' | 'failure' | 'recovery';
+  severity: 'polite' | 'assertive';
+  title: string;
+  detail?: string;
+  progress?: { value: number; max: number };
+};
 
 type AxeViolation = {
   id: string;
@@ -93,15 +100,27 @@ async function expectFocused(selector: string, description: string) {
   }
 }
 
-async function chooseStableChannel() {
-  const stable = await $('aria/Stable');
-  await stable.waitForClickable();
-  await stable.click();
+async function sendUpdaterStatus(payload: UpdaterStatusPayload) {
+  const electronBrowser = browser as typeof browser & {
+    electron: {
+      execute: (
+        callback: (
+          electron: typeof import('electron'),
+          nextPayload: UpdaterStatusPayload
+        ) => void,
+        nextPayload: UpdaterStatusPayload
+      ) => Promise<void>;
+    };
+  };
+  await electronBrowser.electron.execute((electron, nextPayload) => {
+    electron.BrowserWindow.getAllWindows()[0]?.webContents.send(
+      'updater-status',
+      nextPayload
+    );
+  }, payload);
 }
 
 describe('updater accessibility', () => {
-  const state = getUpdaterAccessibilityState();
-
   before(async () => {
     await browser.waitUntil(
       async () =>
@@ -117,124 +136,126 @@ describe('updater accessibility', () => {
   });
 
   it('exposes stable accessible semantics across updater states', async () => {
-    if (state === 'selection') {
-      const stable = await $('aria/Stable');
-      await stable.waitForClickable();
-      await expectFocused('aria/Stable', 'Default update channel');
-      await scan('Channel selection');
+    const stable = await $('aria/Stable');
+    await stable.waitForClickable();
+    await expectFocused('aria/Stable', 'Default update channel');
+    await scan('Channel selection');
 
-      await (await $('aria/Bleeding Edge')).click();
-      const branch = await $('[aria-label="Branch"]');
-      await branch.waitForEnabled({
-        timeoutMsg: 'Bleeding Edge branch selection did not become enabled',
-      });
-      await expectFocused('aria/Back', 'Bleeding Edge back control');
-      await (
-        await $('aria/Optional commit SHA, branch, or tag')
-      ).waitForDisplayed();
-      await (await $('[aria-label="Recent commits"]')).waitForDisplayed();
-      const fixtureCommit = await $(
-        'aria/Commit 0123456: Accessibility fixture commit'
-      );
-      await fixtureCommit.waitForClickable();
-      await expectAttribute(
-        'aria/Commit 0123456: Accessibility fixture commit',
-        'aria-pressed',
-        'false'
-      );
-      await fixtureCommit.click();
-      await expectAttribute(
-        'aria/Commit 0123456: Accessibility fixture commit',
-        'aria-pressed',
-        'true'
-      );
-      const commitInput = await $('aria/Optional commit SHA, branch, or tag');
-      await commitInput.setValue('  0123456789ABCDEF  ');
-      await expectAttribute(
-        'aria/Commit 0123456: Accessibility fixture commit',
-        'aria-pressed',
-        'true'
-      );
-      await expectAttribute(
-        'aria/Commit 0123456: Accessibility fixture commit',
-        'class',
-        'commit-item selected'
-      );
-      await branch.selectByVisibleText('accessibility-fixture');
-      await browser.waitUntil(
-        async () =>
-          (await (
-            await $('aria/Commit 0123456: Accessibility fixture commit')
-          ).getAttribute('aria-pressed')) === 'true',
-        {
-          timeoutMsg:
-            'Commit selection was not restored after the branch list refreshed',
-        }
-      );
-      await expectAttribute(
-        'aria/Commit 0123456: Accessibility fixture commit',
-        'class',
-        'commit-item selected'
-      );
-      await commitInput.setValue('manual-ref');
-      await expectAttribute(
-        'aria/Commit 0123456: Accessibility fixture commit',
-        'aria-pressed',
-        'false'
-      );
-      await scan('Bleeding Edge channel selection');
+    await (await $('aria/Bleeding Edge')).click();
+    const branch = await $('[aria-label="Branch"]');
+    await branch.waitForEnabled({
+      timeoutMsg: 'Bleeding Edge branch selection did not become enabled',
+    });
+    await expectFocused('aria/Back', 'Bleeding Edge back control');
+    await (
+      await $('aria/Optional commit SHA, branch, or tag')
+    ).waitForDisplayed();
+    await (await $('[aria-label="Recent commits"]')).waitForDisplayed();
+    const fixtureCommit = await $(
+      'aria/Commit 0123456: Accessibility fixture commit'
+    );
+    await fixtureCommit.waitForClickable();
+    await expectAttribute(
+      'aria/Commit 0123456: Accessibility fixture commit',
+      'aria-pressed',
+      'false'
+    );
+    await fixtureCommit.click();
+    await expectAttribute(
+      'aria/Commit 0123456: Accessibility fixture commit',
+      'aria-pressed',
+      'true'
+    );
+    const commitInput = await $('aria/Optional commit SHA, branch, or tag');
+    await commitInput.setValue('  0123456789ABCDEF  ');
+    await expectAttribute(
+      'aria/Commit 0123456: Accessibility fixture commit',
+      'aria-pressed',
+      'true'
+    );
+    await expectAttribute(
+      'aria/Commit 0123456: Accessibility fixture commit',
+      'class',
+      'commit-item selected'
+    );
+    await branch.selectByVisibleText('accessibility-fixture');
+    await browser.waitUntil(
+      async () =>
+        (await (
+          await $('aria/Commit 0123456: Accessibility fixture commit')
+        ).getAttribute('aria-pressed')) === 'true',
+      {
+        timeoutMsg:
+          'Commit selection was not restored after the branch list refreshed',
+      }
+    );
+    await expectAttribute(
+      'aria/Commit 0123456: Accessibility fixture commit',
+      'class',
+      'commit-item selected'
+    );
+    await commitInput.setValue('manual-ref');
+    await expectAttribute(
+      'aria/Commit 0123456: Accessibility fixture commit',
+      'aria-pressed',
+      'false'
+    );
+    await scan('Bleeding Edge channel selection');
 
-      await (await $('aria/Back')).click();
-      await stable.waitForClickable();
-      await expectFocused('aria/Stable', 'Returned update channel');
-      await (await $('aria/Unstable')).click();
-      await (await $('aria/Applying Channel')).waitForDisplayed();
-      await expectFocused('aria/Applying Channel', 'Applying channel heading');
-      return;
-    }
+    await (await $('aria/Back')).click();
+    await stable.waitForClickable();
+    await expectFocused('aria/Stable', 'Returned update channel');
+    await (await $('aria/Unstable')).click();
+    await (await $('aria/Applying Channel')).waitForDisplayed();
+    await expectFocused('aria/Applying Channel', 'Applying channel heading');
+    await scan('Applying channel');
 
-    await chooseStableChannel();
+    await sendUpdaterStatus({
+      kind: 'progress',
+      severity: 'polite',
+      title: 'Downloading Update',
+      detail: '2.2 MB of 8 MB',
+      progress: { value: 27, max: 100 },
+    });
+    await (await $('aria/Downloading Update')).waitForDisplayed();
+    await (await $('aria/Update progress')).waitForDisplayed();
+    await expectAttribute('[role="status"]', 'aria-live', 'polite', false);
+    await expectAttribute('aria/Update progress', 'value', '27');
+    await expectAttribute('aria/Update progress', 'max', '100');
+    await expectAttribute(
+      'aria/Update progress',
+      'aria-valuetext',
+      '2.2 MB of 8 MB'
+    );
+    await expectTextContent(
+      '[role="status"]',
+      'Downloading Update. 2.2 MB of 8 MB'
+    );
+    await scan('Update progress');
 
-    if (state === 'progress') {
-      await (await $('aria/Downloading Update')).waitForDisplayed();
-      await (await $('aria/Update progress')).waitForDisplayed();
-      await expectAttribute('[role="status"]', 'aria-live', 'polite', false);
-      await expectAttribute('aria/Update progress', 'value', '27');
-      await expectAttribute('aria/Update progress', 'max', '100');
-      await expectAttribute(
-        'aria/Update progress',
-        'aria-valuetext',
-        '2.2 MB of 8 MB'
-      );
-      await expectTextContent(
-        '[role="status"]',
-        'Downloading Update. 2 MB of 8 MB'
-      );
-      await scan('Update progress');
-      return;
-    }
+    await sendUpdaterStatus({
+      kind: 'failure',
+      severity: 'assertive',
+      title: 'Action required',
+      detail: 'The downloaded release is invalid.',
+    });
+    await (await $('aria/Action required')).waitForDisplayed();
+    await expectFocused('aria/Action required', 'Failure alert heading');
+    await expectAttribute('[role="alert"]', 'aria-live', 'assertive');
+    await scan('Update failure');
 
-    if (state === 'failure') {
-      await (await $('aria/Action required')).waitForDisplayed();
-      await expectFocused('aria/Action required', 'Failure alert heading');
-      await expectAttribute('[role="alert"]', 'aria-live', 'assertive');
-      await scan('Update failure');
-      return;
-    }
-
-    if (state === 'recovery') {
-      await (
-        await $('aria/Restoring Previous Installation')
-      ).waitForDisplayed();
-      await expectFocused(
-        'aria/Restoring Previous Installation',
-        'Recovery status heading'
-      );
-      await expectAttribute('[role="status"]', 'aria-live', 'polite', false);
-      await scan('Update recovery');
-      return;
-    }
-
-    throw new Error(`Unhandled updater accessibility state: ${state}`);
+    await sendUpdaterStatus({
+      kind: 'recovery',
+      severity: 'polite',
+      title: 'Restoring Previous Installation',
+      detail: 'Your last known-good installation is being restored.',
+    });
+    await (await $('aria/Restoring Previous Installation')).waitForDisplayed();
+    await expectFocused(
+      'aria/Restoring Previous Installation',
+      'Recovery status heading'
+    );
+    await expectAttribute('[role="status"]', 'aria-live', 'polite', false);
+    await scan('Update recovery');
   });
 });

@@ -5,10 +5,7 @@ import { dirname, join, resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 import { Cause, Data, Effect, Exit } from 'effect';
-import {
-  UPDATER_ACCESSIBILITY_STATES,
-  type UpdaterAccessibilityState,
-} from './updater-accessibility-states';
+import type { UpdaterAccessibilityState } from './updater-accessibility-states';
 
 class UpdaterAccessibilityProcessError extends Data.TaggedError(
   'UpdaterAccessibilityProcessError'
@@ -350,10 +347,10 @@ function runState(state: UpdaterAccessibilityState) {
 const program = Effect.scoped(
   Effect.gen(function* () {
     yield* verifyAxeSource;
-    yield* Effect.forEach(UPDATER_ACCESSIBILITY_STATES, runState, {
-      concurrency: 1,
-      discard: true,
-    });
+    // All deterministic updater states are exercised in one Electron session.
+    // Starting four ChromeDriver sessions made their identical shutdown cost
+    // dominate the PR budget without adding state isolation value.
+    yield* runState('selection');
   })
 );
 

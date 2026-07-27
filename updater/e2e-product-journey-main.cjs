@@ -518,36 +518,55 @@ async function launchInstalledApplication(
     entryPoint,
     `--ogi-update-transaction-token=${transactionToken}`,
   ];
+  const launchEnvironment = {
+    ...process.env,
+    ...applicationGuardEnvironment,
+    OGI_RUN_DESCRIPTOR: descriptorPath,
+    OGI_RECOVERY_STARTUP_HEALTH: recovery ? 'true' : 'false',
+    OGI_UPDATE_TRANSACTION_TOKEN: transactionToken,
+  };
+  // Linux proves AppImage-style exec ownership with an inherited proof fd.
+  // Windows launches Electron directly; Node fsync/extra stdio fds are unreliable there.
   const processProofPath = path.join(
     descriptor.sandboxDirectory,
     `.ogi-process-proof-${transactionToken}`
   );
-  fs.rmSync(processProofPath, { force: true });
-  const processProofDescriptor = fs.openSync(processProofPath, 'wx+', 0o600);
-  fs.writeFileSync(processProofDescriptor, transactionToken);
-  fs.fsyncSync(processProofDescriptor);
-  candidateApplication = spawn(
-    'python3',
-    [
-      '-c',
-      'import os,sys; os.execv(sys.argv[1], sys.argv[1:])',
-      process.execPath,
-      ...electronArgs,
-    ],
-    {
-      cwd: descriptor.installationDirectory,
-      env: {
-        ...process.env,
-        ...applicationGuardEnvironment,
-        OGI_RUN_DESCRIPTOR: descriptorPath,
-        OGI_RECOVERY_STARTUP_HEALTH: recovery ? 'true' : 'false',
-        OGI_UPDATE_TRANSACTION_TOKEN: transactionToken,
-      },
-      stdio: ['ignore', 'pipe', 'pipe', processProofDescriptor],
+  let processProofDescriptor;
+  if (process.platform === 'linux') {
+    fs.rmSync(processProofPath, { force: true });
+    processProofDescriptor = fs.openSync(processProofPath, 'wx+', 0o600);
+    fs.writeFileSync(processProofDescriptor, transactionToken);
+    fs.fsyncSync(processProofDescriptor);
+  }
+  try {
+    candidateApplication =
+      process.platform === 'win32'
+        ? spawn(process.execPath, electronArgs, {
+            cwd: descriptor.installationDirectory,
+            env: launchEnvironment,
+            stdio: ['ignore', 'pipe', 'pipe'],
+            windowsHide: true,
+          })
+        : spawn(
+            'python3',
+            [
+              '-c',
+              'import os,sys; os.execv(sys.argv[1], sys.argv[1:])',
+              process.execPath,
+              ...electronArgs,
+            ],
+            {
+              cwd: descriptor.installationDirectory,
+              env: launchEnvironment,
+              stdio: ['ignore', 'pipe', 'pipe', processProofDescriptor],
+            }
+          );
+  } finally {
+    if (processProofDescriptor !== undefined) {
+      fs.closeSync(processProofDescriptor);
+      fs.rmSync(processProofPath, { force: true });
     }
-  );
-  fs.closeSync(processProofDescriptor);
-  fs.rmSync(processProofPath, { force: true });
+  }
   candidateApplication.__ogiStartTime = Date.now();
   candidateApplication.stdout.pipe(
     fs.createWriteStream(mainLogPath, { flags: 'a' })
@@ -559,18 +578,20 @@ async function launchInstalledApplication(
     candidateApplication.once('spawn', resolve);
     candidateApplication.once('error', reject);
   });
-  const identityDeadline = Date.now() + 5000;
-  while (Date.now() < identityDeadline) {
-    try {
-      if (
-        path.resolve(
-          fs.readlinkSync(`/proc/${candidateApplication.pid}/exe`)
-        ) === path.resolve(process.execPath)
-      ) {
-        break;
-      }
-    } catch {}
-    await new Promise((resolve) => setTimeout(resolve, 10));
+  if (process.platform === 'linux') {
+    const identityDeadline = Date.now() + 5000;
+    while (Date.now() < identityDeadline) {
+      try {
+        if (
+          path.resolve(
+            fs.readlinkSync(`/proc/${candidateApplication.pid}/exe`)
+          ) === path.resolve(process.execPath)
+        ) {
+          break;
+        }
+      } catch {}
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
   }
   const processIdentity = await readFixtureProcessIdentity(
     candidateApplication.pid

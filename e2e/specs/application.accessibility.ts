@@ -1,5 +1,8 @@
 import { $, browser } from '@wdio/globals';
-import { getAccessibilityState } from '../accessibility-states';
+import {
+  getAccessibilityState,
+  oobeIncludesSteamGridDb,
+} from '../accessibility-states';
 
 type AxeViolation = {
   id: string;
@@ -155,9 +158,11 @@ describe('application accessibility', () => {
       await waitForHeading('Community Addons');
       await scan('Community addons');
       await activateByText('Continue');
-      await waitForHeading('SteamGridDB');
-      await scan('SteamGridDB');
-      await activateByText('Skip');
+      if (oobeIncludesSteamGridDb()) {
+        await waitForHeading('SteamGridDB');
+        await scan('SteamGridDB');
+        await activateByText('Skip');
+      }
       await waitForHeading("You're all set!");
       await scan('Setup complete');
       return;

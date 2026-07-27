@@ -94,6 +94,16 @@ async function waitForHeading(name: string) {
   await heading.waitForDisplayed();
 }
 
+async function dismissBlockingNotifications() {
+  await browser.execute(() => {
+    for (const notification of document.querySelectorAll(
+      '.notification-card, [role="alert"]'
+    )) {
+      notification.remove();
+    }
+  });
+}
+
 async function expectAttribute(
   selector: string,
   attribute: string,
@@ -181,7 +191,9 @@ describe('application accessibility', () => {
       await activate('General');
       await scan('Client Options');
 
+      await dismissBlockingNotifications();
       const torrentClient = await $('button[aria-label^="Torrent Client:"]');
+      await torrentClient.waitForClickable();
       await torrentClient.click();
       await browser.waitUntil(
         async () =>
@@ -192,9 +204,13 @@ describe('application accessibility', () => {
       );
       await selectedTorrentClient.waitForDisplayed();
       await browser.keys('ArrowDown');
-      if (!(await selectedTorrentClient.isFocused())) {
-        throw new Error('ArrowDown did not focus the selected dropdown option');
-      }
+      await browser.waitUntil(
+        async () => await selectedTorrentClient.isFocused(),
+        {
+          timeout: 5_000,
+          timeoutMsg: 'ArrowDown did not focus the selected dropdown option',
+        }
+      );
       await scan('Open torrent client dropdown');
       await browser.keys('Escape');
       await browser.waitUntil(

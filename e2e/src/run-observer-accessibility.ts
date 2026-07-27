@@ -1,5 +1,10 @@
 import { spawn } from 'node:child_process';
-import { mkdtempSync, readFileSync } from 'node:fs';
+import {
+  copyFileSync,
+  mkdtempSync,
+  readFileSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Cause, Data, Effect, Exit } from 'effect';
@@ -20,6 +25,26 @@ class ObserverAccessibilityError extends Data.TaggedError(
 const electronPath = resolveElectronExecutable();
 const resultDirectory = mkdtempSync(join(tmpdir(), 'ogi-observer-axe-'));
 const resultPath = join(resultDirectory, 'violations.json');
+const packagedAppDirectory = mkdtempSync(
+  join(tmpdir(), 'ogi-observer-electron-app-')
+);
+const packagedMainPath = join(packagedAppDirectory, 'main.cjs');
+copyFileSync(
+  join(import.meta.dir, 'observer-accessibility-main.cjs'),
+  packagedMainPath
+);
+writeFileSync(
+  join(packagedAppDirectory, 'package.json'),
+  `${JSON.stringify(
+    {
+      name: 'ogi-observer-accessibility',
+      private: true,
+      main: 'main.cjs',
+    },
+    null,
+    2
+  )}\n`
+);
 
 const program = Effect.acquireUseRelease(
   Effect.tryPromise({
@@ -32,13 +57,12 @@ const program = Effect.acquireUseRelease(
   }),
   (server) =>
     Effect.async<void, ObserverAccessibilityError>((resume) => {
-      const appEntryPoint = normalizeElectronArgumentPath(
-        join(import.meta.dir, 'observer-accessibility-main.cjs')
-      );
+      // Package the script under os.tmpdir() so Windows CI does not pass
+      // D:\a\... through Chromium argv parsing or Electron --app directory rules.
       const electronArgs = [
         '--disable-gpu',
         '--no-sandbox',
-        `--app=${appEntryPoint}`,
+        `--app=${normalizeElectronArgumentPath(packagedAppDirectory)}`,
         server.url,
         normalizeElectronArgumentPath(resultPath),
       ];
@@ -47,14 +71,17 @@ const program = Effect.acquireUseRelease(
         process.platform === 'linux'
           ? ['-a', electronPath, ...electronArgs]
           : electronArgs;
+      const childEnv: NodeJS.ProcessEnv = {
+        ...process.env,
+        ELECTRON_ENABLE_LOGGING: '1',
+      };
+      delete childEnv.NODE_OPTIONS;
+      delete childEnv.ELECTRON_RUN_AS_NODE;
       const child = spawn(command, args, {
         cwd: join(import.meta.dir, '..'),
         stdio: ['ignore', 'pipe', 'pipe'],
         windowsHide: true,
-        env: {
-          ...process.env,
-          ELECTRON_ENABLE_LOGGING: '1',
-        },
+        env: childEnv,
       });
       let stdout = '';
       let stderr = '';

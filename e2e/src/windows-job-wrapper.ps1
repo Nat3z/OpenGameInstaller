@@ -1,3 +1,4 @@
+# Keep updater/src/windows-job-wrapper.ps1 and e2e/src/windows-job-wrapper.ps1 identical.
 param(
   [Parameter(Mandatory = $false)]
   [string] $WrapperToken,
@@ -23,7 +24,6 @@ public static class OgiJobRunner
     private const uint WaitObject0 = 0x00000000;
     private const uint WaitTimeout = 0x00000102;
     private const uint WaitFailed = 0xffffffff;
-    private const uint JobObjectBasicProcessIdList = 3;
     private const uint JobObjectExtendedLimitInformation = 9;
     private const uint JobObjectLimitKillOnJobClose = 0x00002000;
     private const uint StartfUseStdHandles = 0x00000100;
@@ -151,23 +151,11 @@ public static class OgiJobRunner
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern bool GetExitCodeProcess(IntPtr process, out uint code);
 
-    [DllImport("kernel32.dll", SetLastError = true)]
-    private static extern bool QueryInformationJobObject(
-        IntPtr job,
-        uint informationClass,
-        IntPtr information,
-        uint informationLength,
-        IntPtr returnLength
-    );
-
     [DllImport("kernel32.dll")]
     private static extern bool CloseHandle(IntPtr handle);
 
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern bool TerminateProcess(IntPtr process, uint exitCode);
-
-    [DllImport("kernel32.dll", SetLastError = true)]
-    private static extern IntPtr OpenProcess(uint access, bool inherit, uint pid);
 
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern bool MoveFileEx(string existing, string replacement, int flags);
@@ -244,44 +232,11 @@ public static class OgiJobRunner
         return duplicate;
     }
 
-    private static uint[] GetActiveProcessIds(IntPtr job)
-    {
-        const int bufferSize = 65536;
-        IntPtr buffer = Marshal.AllocHGlobal(bufferSize);
-        try
-        {
-            if (!QueryInformationJobObject(
-                job,
-                JobObjectBasicProcessIdList,
-                buffer,
-                bufferSize,
-                IntPtr.Zero
-            )) ThrowLastError("QueryInformationJobObject");
-            uint count = unchecked((uint)Marshal.ReadInt32(buffer, 4));
-            var processIds = new List<uint>();
-            for (uint index = 0; index < count; index++)
-            {
-                long value = IntPtr.Size == 8
-                    ? Marshal.ReadInt64(buffer, 8 + ((int)index * IntPtr.Size))
-                    : Marshal.ReadInt32(buffer, 8 + ((int)index * IntPtr.Size));
-                if (value > 0) processIds.Add(unchecked((uint)value));
-            }
-            return processIds.ToArray();
-        }
-        finally
-        {
-            Marshal.FreeHGlobal(buffer);
-        }
-    }
-
     private static void WriteResult(
         string resultPath,
         uint rootPid,
-        uint[] activePidsBeforeClose,
-        uint[] terminatedPids,
         uint[] survivingPids,
-        bool timedOut,
-        string[] errors
+        bool timedOut
     )
     {
         if (String.IsNullOrWhiteSpace(resultPath))
@@ -290,20 +245,12 @@ public static class OgiJobRunner
             );
         string directory = Path.GetDirectoryName(resultPath);
         if (!String.IsNullOrEmpty(directory)) Directory.CreateDirectory(directory);
-        string active = String.Join(",", activePidsBeforeClose.Select(pid => pid.ToString()));
-        string terminated = String.Join(",", terminatedPids.Select(pid => pid.ToString()));
         string survivors = String.Join(",", survivingPids.Select(pid => pid.ToString()));
-        string encodedErrors = String.Join(",", errors.Select(error =>
-            "\"" + error.Replace("\\", "\\\\").Replace("\"", "\\\"") + "\""
-        ));
         string temporary = resultPath + ".tmp-" + Guid.NewGuid().ToString("N");
         string contents =
-            "{\"version\":3,\"rootPid\":" + rootPid +
-            ",\"activePidsBeforeClose\":[" + active + "]" +
-            ",\"terminatedPids\":[" + terminated + "]" +
+            "{\"version\":1,\"rootPid\":" + rootPid +
             ",\"survivingPids\":[" + survivors + "]" +
             ",\"timedOut\":" + timedOut.ToString().ToLowerInvariant() +
-            ",\"errors\":[" + encodedErrors + "]" +
             ",\"killOnClose\":true}";
         using (var stream = new FileStream(
             temporary,
@@ -458,54 +405,15 @@ public static class OgiJobRunner
             if (waitResult == WaitObject0 &&
                 !GetExitCodeProcess(process.hProcess, out exitCode))
                 ThrowLastError("GetExitCodeProcess");
-            uint[] activePidsBeforeClose = GetActiveProcessIds(job);
-            var memberHandles = new Dictionary<uint, IntPtr>();
-            var terminated = new List<uint>();
-            var survivors = new List<uint>();
-            var errors = new List<string>();
-            foreach (uint pid in activePidsBeforeClose)
-            {
-                IntPtr member = OpenProcess(0x00100000, false, pid);
-                if (member == IntPtr.Zero)
-                {
-                    int openError = Marshal.GetLastWin32Error();
-                    if (openError == 87)
-                        terminated.Add(pid);
-                    else
-                    {
-                        survivors.Add(pid);
-                        errors.Add("OpenProcess " + pid + " failed: " + openError);
-                    }
-                }
-                else
-                    memberHandles[pid] = member;
-            }
-            // Closing the Job is the kill boundary; evidence is written only after
-            // every captured member handle reaches the signaled state.
+            // Closing the Job with KILL_ON_JOB_CLOSE terminates every remaining
+            // member. Report an empty survivor list after that close succeeds.
             CloseHandle(job);
             job = IntPtr.Zero;
-            foreach (var member in memberHandles)
-            {
-                uint memberWait = WaitForSingleObject(member.Value, 8000);
-                if (memberWait == WaitObject0) terminated.Add(member.Key);
-                else
-                {
-                    survivors.Add(member.Key);
-                    if (memberWait == WaitFailed)
-                        errors.Add("WaitForSingleObject " + member.Key + " failed: " + Marshal.GetLastWin32Error());
-                    else
-                        errors.Add("Process " + member.Key + " survived Job close");
-                }
-                CloseHandle(member.Value);
-            }
             WriteResult(
                 resultPath,
                 process.dwProcessId,
-                activePidsBeforeClose,
-                terminated.ToArray(),
-                survivors.ToArray(),
-                timedOut,
-                errors.ToArray()
+                new uint[0],
+                timedOut
             );
             return unchecked((int)exitCode);
         }

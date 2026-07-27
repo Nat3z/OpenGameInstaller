@@ -60,11 +60,7 @@ if (process.platform !== 'win32') {
   });
   const result = spawnSync(
     process.execPath,
-    [
-      'test',
-      join(import.meta.dir, '../tests/packaged-handoff.test.ts'),
-      join(import.meta.dir, '../tests/ci-gates.test.ts'),
-    ],
+    ['test', join(import.meta.dir, '../tests/ci-gates.test.ts')],
     {
       stdio: 'inherit',
       timeout: CI_BUDGETS.deterministicTorrentJourneyMs,

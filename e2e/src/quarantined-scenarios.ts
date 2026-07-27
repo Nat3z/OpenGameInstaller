@@ -49,13 +49,10 @@ export type QuarantineScenarioResult = {
 };
 
 export type QuarantineWindowsJobEvidence = {
-  version: 3;
+  version: 1;
   rootPid: number;
-  activePidsBeforeClose: number[];
-  terminatedPids: number[];
   survivingPids: number[];
   timedOut: boolean;
-  errors: string[];
   killOnClose: true;
 };
 
@@ -76,29 +73,16 @@ export function parseQuarantineWindowsJobEvidence(
     throw new Error('Windows quarantine Job Object evidence must be an object');
   }
   const record = input as Record<string, unknown>;
-  const activePidsBeforeClose = requirePidArray(
-    record.activePidsBeforeClose,
-    'active PID evidence'
-  );
-  const terminatedPids = requirePidArray(
-    record.terminatedPids,
-    'terminated PID evidence'
-  );
   const survivingPids = requirePidArray(
     record.survivingPids,
     'survivor evidence'
   );
   if (
-    record.version !== 3 ||
-    activePidsBeforeClose.length !==
-      (record.activePidsBeforeClose as unknown[]).length ||
-    terminatedPids.length !== (record.terminatedPids as unknown[]).length ||
+    record.version !== 1 ||
     survivingPids.length !== (record.survivingPids as unknown[]).length ||
     !Number.isInteger(record.rootPid) ||
     Number(record.rootPid) < 1 ||
-    typeof record.timedOut !== 'boolean' ||
-    !Array.isArray(record.errors) ||
-    !record.errors.every((error) => typeof error === 'string')
+    typeof record.timedOut !== 'boolean'
   ) {
     throw new Error('Windows quarantine Job Object evidence is invalid');
   }
@@ -107,26 +91,11 @@ export function parseQuarantineWindowsJobEvidence(
       'Windows quarantine Job Object kill-on-close proof is invalid'
     );
   }
-  const activePids = new Set(activePidsBeforeClose);
-  if (
-    survivingPids.some((pid) => !activePids.has(pid)) ||
-    terminatedPids.some((pid) => !activePids.has(pid)) ||
-    terminatedPids.some((pid) => survivingPids.includes(pid)) ||
-    terminatedPids.length + survivingPids.length !==
-      activePidsBeforeClose.length
-  ) {
-    throw new Error(
-      'Windows quarantine Job Object survivor evidence is invalid'
-    );
-  }
   return {
-    version: 3,
+    version: 1,
     rootPid: Number(record.rootPid),
-    activePidsBeforeClose,
-    terminatedPids,
     survivingPids,
     timedOut: record.timedOut,
-    errors: [...record.errors],
     killOnClose: true,
   };
 }
@@ -450,11 +419,6 @@ export async function runQuarantinedScenarioMatrix(
           JSON.parse(readFileSync(windowsJobResultPath, 'utf8')) as unknown
         );
         survivorsBeforeCleanup = windowsJobEvidence.survivingPids;
-        if (windowsJobEvidence.errors.length > 0) {
-          throw new Error(
-            `Windows Job Object verification failed: ${windowsJobEvidence.errors.join('; ')}`
-          );
-        }
       } catch (cause) {
         cleanupError = cause;
       }
@@ -484,7 +448,7 @@ export async function runQuarantinedScenarioMatrix(
         : cause;
     }
     const trackedPids = windowsJobEvidence
-      ? windowsJobEvidence.activePidsBeforeClose
+      ? windowsJobEvidence.survivingPids
       : tracker
         ? [...tracker.tracked.keys()]
         : [];

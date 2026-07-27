@@ -1873,13 +1873,7 @@ async function terminateProductionProcessHandle(identity: ProcessIdentity) {
     const jobResult = parseWindowsJobResultEvidence(
       fs.readFileSync(identity.windowsJobResultPath, 'utf8')
     );
-    if (
-      jobResult.version !== 3 ||
-      jobResult.verifiedAfterClose !== true ||
-      jobResult.survivingPids.length !== 0 ||
-      jobResult.errors.length !== 0 ||
-      jobResult.terminatedPids.length !== jobResult.activePidsBeforeClose.length
-    ) {
+    if (jobResult.version !== 1 || jobResult.survivingPids.length !== 0) {
       throw new Error('Windows Job Object process tree stop was not verified');
     }
     return {

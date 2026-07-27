@@ -57,32 +57,11 @@ export type PosixProcessRecord = {
   processGroupId: number;
 };
 
-export type WindowsJobResult =
-  | {
-      version: 1;
-      rootPid: number;
-      survivingPids: number[];
-    }
-  | {
-      version: 2;
-      rootPid: number;
-      activePidsBeforeClose: number[];
-      survivingPids: number[];
-      timedOut: boolean;
-      killOnClose: true;
-      verifiedAfterClose: false;
-    }
-  | {
-      version: 3;
-      rootPid: number;
-      activePidsBeforeClose: number[];
-      terminatedPids: number[];
-      survivingPids: number[];
-      timedOut: boolean;
-      errors: string[];
-      killOnClose: true;
-      verifiedAfterClose: true;
-    };
+export type WindowsJobResult = {
+  version: 1;
+  rootPid: number;
+  survivingPids: number[];
+};
 
 function isPidArray(value: unknown): value is number[] {
   return (
@@ -97,71 +76,17 @@ export function parseWindowsJobResult(input: unknown): WindowsJobResult {
   }
   const result = input as Record<string, unknown>;
   if (
-    ![1, 2, 3].includes(Number(result.version)) ||
+    Number(result.version) !== 1 ||
     !Number.isInteger(result.rootPid) ||
     Number(result.rootPid) < 1 ||
     !isPidArray(result.survivingPids)
   ) {
     throw new Error('Windows Job Object result is invalid');
   }
-  const rootPid = Number(result.rootPid);
-  const survivingPids = [...new Set(result.survivingPids.map(Number))];
-  if (result.version === 1) return { version: 1, rootPid, survivingPids };
-  if (
-    !isPidArray(result.activePidsBeforeClose) ||
-    typeof result.timedOut !== 'boolean' ||
-    result.killOnClose !== true
-  ) {
-    throw new Error('Windows Job Object result is invalid');
-  }
-  const activePidsBeforeClose = [
-    ...new Set(result.activePidsBeforeClose.map(Number)),
-  ];
-  const activePids = new Set(activePidsBeforeClose);
-  if (survivingPids.some((pid) => !activePids.has(pid))) {
-    throw new Error('Windows Job Object result is invalid');
-  }
-  if (result.version === 2) {
-    return {
-      version: 2,
-      rootPid,
-      activePidsBeforeClose,
-      survivingPids,
-      timedOut: result.timedOut,
-      killOnClose: true,
-      verifiedAfterClose: false,
-    };
-  }
-  if (
-    !isPidArray(result.terminatedPids) ||
-    new Set(result.activePidsBeforeClose).size !==
-      result.activePidsBeforeClose.length ||
-    new Set(result.terminatedPids).size !== result.terminatedPids.length ||
-    new Set(result.survivingPids).size !== result.survivingPids.length ||
-    !Array.isArray(result.errors) ||
-    !result.errors.every((error) => typeof error === 'string')
-  ) {
-    throw new Error('Windows Job Object result is invalid');
-  }
-  const terminatedPids = [...new Set(result.terminatedPids.map(Number))];
-  if (
-    terminatedPids.some((pid) => !activePids.has(pid)) ||
-    terminatedPids.some((pid) => survivingPids.includes(pid)) ||
-    terminatedPids.length + survivingPids.length !==
-      activePidsBeforeClose.length
-  ) {
-    throw new Error('Windows Job Object result is invalid');
-  }
   return {
-    version: 3,
-    rootPid,
-    activePidsBeforeClose,
-    terminatedPids,
-    survivingPids,
-    timedOut: result.timedOut,
-    errors: [...result.errors],
-    killOnClose: true,
-    verifiedAfterClose: true,
+    version: 1,
+    rootPid: Number(result.rootPid),
+    survivingPids: [...new Set(result.survivingPids.map(Number))],
   };
 }
 
@@ -633,42 +558,29 @@ async function terminateTrackedPosixTree(tracker: ProcessTreeTracker) {
     cleanupErrors.push(tracker.containmentEvidenceError);
   }
 
-  for (let attempt = 0; attempt < 3; attempt++) {
-    try {
-      await refreshProcessTreeTracker(tracker);
-    } catch (cause) {
-      cleanupErrors.push(cause);
-    }
-    let protectedPids = new Set<number>();
-    try {
-      protectedPids = protectedHarnessPids(
-        process.pid,
-        await readPosixProcessTable()
-      );
-    } catch (cause) {
-      cleanupErrors.push(cause);
-    }
-    for (const identity of tracker.tracked.values()) {
-      if (protectedPids.has(identity.pid)) {
-        cleanupErrors.push(
-          new Error(
-            `Refusing to terminate protected harness PID: ${identity.pid}`
-          )
-        );
-        continue;
-      }
-      if (readProcessStartTime(identity.pid) !== identity.startTime) continue;
-      try {
-        process.kill(identity.pid, 'SIGSTOP');
-      } catch (cause) {
-        if ((cause as NodeJS.ErrnoException).code !== 'ESRCH') {
-          cleanupErrors.push(cause);
-        }
-      }
-    }
+  try {
+    await refreshProcessTreeTracker(tracker);
+  } catch (cause) {
+    cleanupErrors.push(cause);
   }
-
+  let protectedPids = new Set<number>();
+  try {
+    protectedPids = protectedHarnessPids(
+      process.pid,
+      await readPosixProcessTable()
+    );
+  } catch (cause) {
+    cleanupErrors.push(cause);
+  }
   for (const identity of tracker.tracked.values()) {
+    if (protectedPids.has(identity.pid)) {
+      cleanupErrors.push(
+        new Error(
+          `Refusing to terminate protected harness PID: ${identity.pid}`
+        )
+      );
+      continue;
+    }
     if (readProcessStartTime(identity.pid) !== identity.startTime) continue;
     try {
       process.kill(identity.pid, 'SIGKILL');

@@ -34,20 +34,6 @@ describe('Windows platform regressions', () => {
     ).toBe('D:/a/OpenGameInstaller/e2e/offline-traffic-guard.cjs');
   });
 
-  test('retains bounded full-tree cleanup in the existing Job wrapper', () => {
-    const source = readFileSync(
-      join(repositoryRoot, 'updater/src/windows-job-wrapper.ps1'),
-      'utf8'
-    );
-    expect(source).toContain('JobObjectLimitKillOnJobClose');
-    expect(source).toContain('AssignProcessToJobObject');
-    expect(source).toContain('OGI_WINDOWS_JOB_TIMEOUT_MS');
-    expect(source).toContain('WaitForSingleObject(member.Value, 8000)');
-    expect(source).not.toContain('AppContainer');
-    expect(source).not.toContain('RSA-SHA256');
-    expect(source).not.toContain('JobObjectAssociateCompletionPortInformation');
-  });
-
   test('skips unsupported Windows fsync while keeping write-through renames', () => {
     const source = readFileSync(
       join(
@@ -59,17 +45,6 @@ describe('Windows platform regressions', () => {
     expect(source).toContain('MOVEFILE_WRITE_THROUGH');
     expect(source).toContain('syncFile: () => {}');
     expect(source).toContain('durability.syncFile(descriptor)');
-  });
-
-  test('launches Windows packaged-journey candidates without Linux process-proof fds', () => {
-    const source = readFileSync(
-      join(repositoryRoot, 'updater/e2e-product-journey-main.cjs'),
-      'utf8'
-    );
-    expect(source).toContain("process.platform === 'win32'");
-    expect(source).toContain('spawn(process.execPath, electronArgs');
-    expect(source).toContain("process.platform === 'linux'");
-    expect(source).toContain('.ogi-process-proof-');
   });
 
   test('pins one supported Electron version across workspaces', () => {

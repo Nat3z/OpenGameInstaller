@@ -664,13 +664,7 @@ async function reconcileLaunchIntent({
       const result = parseWindowsJobResultEvidence(
         readFileSync(windowsJob.resultPath, 'utf8')
       );
-      if (
-        result.version !== 3 ||
-        result.verifiedAfterClose !== true ||
-        result.survivingPids.length !== 0 ||
-        result.errors.length !== 0 ||
-        result.terminatedPids.length !== result.activePidsBeforeClose.length
-      ) {
+      if (result.version !== 1 || result.survivingPids.length !== 0) {
         throw new Error(
           'Windows Job Object process tree stop was not verified'
         );

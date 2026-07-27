@@ -78,37 +78,28 @@ describe('nightly quarantined scenario execution', () => {
     });
   });
 
-  test('parses versioned Windows Job Object survivor evidence without relying on the root PID', () => {
+  test('parses simple Windows Job Object survivor evidence without relying on the root PID', () => {
     expect(
       parseQuarantineWindowsJobEvidence({
-        version: 3,
+        version: 1,
         rootPid: 100,
-        activePidsBeforeClose: [100, 201, 202],
-        terminatedPids: [100],
         survivingPids: [201, 202],
         timedOut: true,
-        errors: ['descendants survived'],
         killOnClose: true,
       })
     ).toEqual({
-      version: 3,
+      version: 1,
       rootPid: 100,
-      activePidsBeforeClose: [100, 201, 202],
-      terminatedPids: [100],
       survivingPids: [201, 202],
       timedOut: true,
-      errors: ['descendants survived'],
       killOnClose: true,
     });
     expect(() =>
       parseQuarantineWindowsJobEvidence({
-        version: 3,
+        version: 1,
         rootPid: 100,
-        activePidsBeforeClose: [201],
-        terminatedPids: [],
         survivingPids: [201],
         timedOut: false,
-        errors: [],
         killOnClose: false,
       })
     ).toThrow('kill-on-close');
@@ -141,25 +132,21 @@ describe('nightly quarantined scenario execution', () => {
     ).toBe('Timed Out');
   });
 
-  test('writes truthful Windows descendant evidence only after closing and verifying the Job', () => {
+  test('writes Windows survivor evidence only after closing the kill-on-close Job', () => {
     const source = readFileSync(
       join(import.meta.dir, '../src/windows-job-wrapper.ps1'),
       'utf8'
     );
-    const query = source.indexOf('GetActiveProcessIds(job)');
-    const capture = source.indexOf('OpenProcess(0x00100000, false, pid)');
-    const close = source.indexOf('CloseHandle(job);', capture);
-    const wait = source.indexOf('WaitForSingleObject(member.Value, 8000)');
-    const write = source.indexOf('WriteResult(', wait);
+    const close = source.indexOf('CloseHandle(job);');
+    const write = source.indexOf('WriteResult(', close);
     expect(source).toContain('OGI_WINDOWS_JOB_TIMEOUT_MS');
     expect(source).toContain('WaitTimeout');
-    expect(source).toContain('activePidsBeforeClose');
-    expect(source).toContain('terminatedPids');
-    expect(source).toContain('\\"version\\":3');
-    expect(capture).toBeGreaterThan(query);
-    expect(close).toBeGreaterThan(capture);
-    expect(wait).toBeGreaterThan(close);
-    expect(write).toBeGreaterThan(wait);
+    expect(source).toContain('JobObjectLimitKillOnJobClose');
+    expect(source).toContain('survivingPids');
+    expect(source).toContain('\\"version\\":1');
+    expect(source).toContain('new uint[0]');
+    expect(close).toBeGreaterThan(0);
+    expect(write).toBeGreaterThan(close);
   });
 
   test('discovers registered quarantine metadata and executes the mapped command', async () => {

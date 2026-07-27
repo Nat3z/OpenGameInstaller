@@ -26,10 +26,22 @@ describe('Electron service options', () => {
       appBinaryPath:
         'C:\\workspace\\e2e\\node_modules\\electron\\dist\\electron.exe',
       appArgs: [
-        '--app=C:\\workspace\\application\\e2e-main.cjs',
+        '--app=C:/workspace/application/e2e-main.cjs',
         '--disable-gpu',
       ],
     });
+  });
+
+  test('normalizes GitHub Actions Windows paths for Chromium argv', () => {
+    expect(
+      createElectronServiceOptions(
+        'D:\\a\\OpenGameInstaller\\e2e\\src\\observer-accessibility-main.cjs',
+        [],
+        'D:\\a\\OpenGameInstaller\\node_modules\\electron\\dist\\electron.exe'
+      ).appArgs[0]
+    ).toBe(
+      '--app=D:/a/OpenGameInstaller/e2e/src/observer-accessibility-main.cjs'
+    );
   });
 
   test('rejects command shims as Electron binaries', () => {

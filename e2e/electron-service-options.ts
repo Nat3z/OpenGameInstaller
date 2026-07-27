@@ -27,6 +27,10 @@ export function resolveElectronExecutable(
   return executable;
 }
 
+export function normalizeElectronArgumentPath(value: string): string {
+  return value.replaceAll('\\', '/');
+}
+
 export function createElectronServiceOptions(
   appEntryPoint: string,
   appArgs: string[],
@@ -34,6 +38,9 @@ export function createElectronServiceOptions(
 ): ElectronServiceOptions {
   return {
     appBinaryPath: electronExecutable,
-    appArgs: [`--app=${appEntryPoint}`, ...appArgs],
+    appArgs: [
+      `--app=${normalizeElectronArgumentPath(appEntryPoint)}`,
+      ...appArgs,
+    ],
   };
 }

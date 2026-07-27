@@ -3,7 +3,10 @@ import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Cause, Data, Effect, Exit } from 'effect';
-import { resolveElectronExecutable } from '../electron-service-options';
+import {
+  normalizeElectronArgumentPath,
+  resolveElectronExecutable,
+} from '../electron-service-options';
 import { createObserverServer } from './observer-server';
 
 class ObserverAccessibilityError extends Data.TaggedError(
@@ -29,12 +32,15 @@ const program = Effect.acquireUseRelease(
   }),
   (server) =>
     Effect.async<void, ObserverAccessibilityError>((resume) => {
+      const appEntryPoint = normalizeElectronArgumentPath(
+        join(import.meta.dir, 'observer-accessibility-main.cjs')
+      );
       const electronArgs = [
         '--disable-gpu',
         '--no-sandbox',
-        join(import.meta.dir, 'observer-accessibility-main.cjs'),
+        `--app=${appEntryPoint}`,
         server.url,
-        resultPath,
+        normalizeElectronArgumentPath(resultPath),
       ];
       const command = process.platform === 'linux' ? 'xvfb-run' : electronPath;
       const args =

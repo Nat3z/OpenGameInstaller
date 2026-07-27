@@ -2,8 +2,27 @@ import { TorrentError } from '@ogi/errors';
 import { Effect } from 'effect';
 import webtorrent from 'webtorrent';
 
-const client = new webtorrent();
-console.log(webtorrent);
+type WebTorrentOptions = ConstructorParameters<typeof webtorrent>[0] & {
+  torrentPort?: number;
+  natUpnp?: boolean;
+  natPmp?: boolean;
+  uploadLimit?: number;
+};
+
+let client: InstanceType<typeof webtorrent> | undefined;
+let clientOptions: WebTorrentOptions | undefined;
+
+export function configureWebTorrentClient(options: WebTorrentOptions): void {
+  if (client) {
+    throw new Error('WebTorrent client is already initialized');
+  }
+  clientOptions = { ...options };
+}
+
+function getClient(): InstanceType<typeof webtorrent> {
+  client ??= new webtorrent(clientOptions);
+  return client;
+}
 
 type TorrentControls = {
   pause: () => void;
@@ -25,7 +44,7 @@ export function torrent(torrentId: string | Buffer, path: string) {
     ): Effect.Effect<TorrentControls, TorrentError> =>
       Effect.async<TorrentControls, TorrentError>((resumeEffect) => {
         try {
-          client.add(torrentId, { path }, (activeTorrent) => {
+          getClient().add(torrentId, { path }, (activeTorrent) => {
             console.log('Added torrent to download system');
             const length = activeTorrent.files.reduce(
               (total, file) => total + file.length,
@@ -96,7 +115,7 @@ export function torrent(torrentId: string | Buffer, path: string) {
     seed: (): Effect.Effect<void, TorrentError> =>
       Effect.async<void, TorrentError>((resumeEffect) => {
         try {
-          client.seed(path, () => {
+          getClient().seed(path, () => {
             console.log('Seeding torrent finished');
             resumeEffect(Effect.void);
           });
@@ -117,7 +136,7 @@ export function torrent(torrentId: string | Buffer, path: string) {
 export function seedTorrent(buffer: Buffer): Effect.Effect<void, TorrentError> {
   return Effect.async<void, TorrentError>((resumeEffect) => {
     try {
-      client.seed(buffer, () => resumeEffect(Effect.void));
+      getClient().seed(buffer, () => resumeEffect(Effect.void));
     } catch (cause) {
       resumeEffect(
         Effect.fail(
@@ -134,7 +153,9 @@ export function seedTorrent(buffer: Buffer): Effect.Effect<void, TorrentError> {
 export function stopClient(): Effect.Effect<void, TorrentError> {
   return Effect.try({
     try: () => {
-      client.destroy();
+      const activeClient = client;
+      client = undefined;
+      activeClient?.destroy();
     },
     catch: (cause) =>
       new TorrentError({

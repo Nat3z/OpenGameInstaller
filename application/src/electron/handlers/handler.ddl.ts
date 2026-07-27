@@ -17,7 +17,7 @@ import * as https from 'https';
 import { dirname } from 'path';
 import { Readable, Transform, type TransformCallback } from 'stream';
 import { getEffectiveOnlineState } from '@/electron/lib/online.js';
-import { sendNotification } from '@/electron/main.js';
+import { sendNotification } from '@/electron/lib/renderer-notifications.js';
 import {
   getStoredValue,
   refreshCached,
@@ -2526,37 +2526,54 @@ export const DownloadServiceLive = (
     ).pipe(Stream.schedule(Schedule.spaced('1 second'))),
   });
 
-export default function handler(mainWindow: BrowserWindow): void {
-  const layer = DownloadServiceLive(mainWindow);
-  const run = <A, E>(effect: Effect.Effect<A, E, DownloadService>) =>
-    runEffectBoundary(effect.pipe(Effect.provide(layer)));
+export { registerDownloadHandshakeHandlers } from '@/lib/download-handshake.js';
 
-  ipcMain.handle('ddl:download', (_, jobs: DownloadJob[], part?: number) =>
+export default function handler(mainWindow?: BrowserWindow): void {
+  const run = <A, E>(
+    effect: Effect.Effect<A, E, DownloadService>,
+    downloadWindow: BrowserWindow | null
+  ) => {
+    if (!downloadWindow) {
+      return Promise.resolve({
+        status: 'error' as const,
+        error: 'Direct download requires an application window',
+      });
+    }
+    return runEffectBoundary(
+      effect.pipe(Effect.provide(DownloadServiceLive(downloadWindow)))
+    );
+  };
+
+  ipcMain.handle('ddl:download', (event, jobs: DownloadJob[], part?: number) =>
     run(
       Effect.gen(function* () {
         return yield* (yield* DownloadService).start(jobs, part);
-      })
+      }),
+      mainWindow ?? BrowserWindow.fromWebContents(event.sender)
     )
   );
-  ipcMain.handle('ddl:pause', (_, id: string) =>
+  ipcMain.handle('ddl:pause', (event, id: string) =>
     run(
       Effect.gen(function* () {
         yield* (yield* DownloadService).pause(id);
-      })
+      }),
+      mainWindow ?? BrowserWindow.fromWebContents(event.sender)
     )
   );
-  ipcMain.handle('ddl:resume', (_, id: string) =>
+  ipcMain.handle('ddl:resume', (event, id: string) =>
     run(
       Effect.gen(function* () {
         yield* (yield* DownloadService).resume(id);
-      })
+      }),
+      mainWindow ?? BrowserWindow.fromWebContents(event.sender)
     )
   );
-  ipcMain.handle('ddl:abort', (_, id: string) =>
+  ipcMain.handle('ddl:abort', (event, id: string) =>
     run(
       Effect.gen(function* () {
         yield* (yield* DownloadService).abort(id);
-      })
+      }),
+      mainWindow ?? BrowserWindow.fromWebContents(event.sender)
     )
   );
 }

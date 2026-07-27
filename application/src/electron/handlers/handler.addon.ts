@@ -11,16 +11,27 @@ import {
   parseAddonLink,
 } from '@/electron/lib/addon-links.js';
 import { AddonMarketplace } from '@/electron/lib/marketplace.js';
-import { sendIPCMessage, sendNotification } from '@/electron/main.js';
+import {
+  sendIPCMessage,
+  sendNotification,
+} from '@/electron/lib/renderer-notifications.js';
 import { Addon } from '@/electron/manager/manager.addon.js';
 import { waitForAddonsConfigured } from '@/electron/manager/manager.addon-readiness.js';
 import { __dirname } from '@/electron/manager/manager.paths.js';
 import { deleteInstalledAddon } from '@/electron/server/addon-lifecycle.js';
 import {
   port,
-  startAddonServer,
-  stopAddonServer,
+  startAddonServer as startAddonServerEffect,
+  stopAddonServer as stopAddonServerEffect,
 } from '@/electron/server/addon-server.js';
+
+export function startAddonServer(): Promise<void> {
+  return Effect.runPromise(startAddonServerEffect());
+}
+
+export function stopAddonServer(): Promise<void> {
+  return Effect.runPromise(stopAddonServerEffect());
+}
 
 function isGitRepository(addonPath: string): boolean {
   if (!fs.existsSync(addonPath)) {
@@ -123,10 +134,14 @@ const MAX_ATTEMPTS_HEALTH_CHECK = 60;
 const HEALTH_CHECK_TIMEOUT_MS =
   MAX_ATTEMPTS_HEALTH_CHECK * HEALTH_CHECK_INTERVAL_MS;
 
+export function startAddonsForFixture(): Promise<void> {
+  return Effect.runPromise(startAddons());
+}
+
 export function restartAddonServer(): Effect.Effect<void, AddonError> {
   return Effect.gen(function* () {
     console.log('Stopping server...');
-    yield* stopAddonServer().pipe(
+    yield* stopAddonServerEffect().pipe(
       Effect.mapError(
         (cause) =>
           new AddonError({
@@ -150,7 +165,7 @@ export function restartAddonServer(): Effect.Effect<void, AddonError> {
       { concurrency: 'unbounded', discard: true }
     );
 
-    yield* startAddonServer().pipe(
+    yield* startAddonServerEffect().pipe(
       Effect.mapError(
         (cause) =>
           new AddonError({

@@ -12,7 +12,7 @@ import {
   Addon as ExecutorAddon,
 } from '@ogi-sdk/executor';
 import { Effect, Schema } from 'effect';
-import { sendNotification } from '@/electron/main.js';
+import { sendNotification } from '@/electron/lib/renderer-notifications.js';
 import { addonServer, port } from '@/electron/server/addon-server.js';
 
 export class Addon extends ExecutorAddon {

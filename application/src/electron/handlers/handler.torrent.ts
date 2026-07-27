@@ -13,14 +13,25 @@ import * as fs from 'fs';
 import { readFile, rm as rmAsync } from 'fs/promises';
 import parseTorrent from 'parse-torrent';
 import { join } from 'path';
-import { sendNotification } from '@/electron/main.js';
+import { sendNotification } from '@/electron/lib/renderer-notifications.js';
 import {
   getStoredValue,
   refreshCached,
 } from '@/electron/manager/manager.config.js';
 import { __dirname } from '@/electron/manager/manager.paths.js';
 import { DOWNLOAD_QUEUE } from '@/electron/manager/manager.queue.js';
-import { torrent as wtConnect } from '@/electron/manager/manager.webtorrent.js';
+import {
+  configureWebTorrentClient,
+  stopClient as stopWebTorrentClientEffect,
+  torrent as wtConnect,
+} from '@/electron/manager/manager.webtorrent.js';
+
+export { configureWebTorrentClient };
+
+export function stopWebTorrentClient(): Promise<void> {
+  return Effect.runPromise(stopWebTorrentClientEffect());
+}
+
 import {
   clearDownloadHandshake,
   type DownloadHandshakeResult,

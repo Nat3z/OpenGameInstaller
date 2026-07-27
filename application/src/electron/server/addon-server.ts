@@ -5,11 +5,30 @@ import { AddonServer } from '@ogi-sdk/addon-server';
 import { Effect, Schema } from 'effect';
 import { __dirname } from '@/electron/manager/manager.paths.js';
 
-export const port = 7654;
+const defaultPort = 7654;
 const DeveloperConfigSchema = Schema.Struct({
   disableSecretCheck: Schema.optional(Schema.Boolean),
 });
 const developerPath = join(__dirname, 'config/option/developer.json');
+
+function readConfiguredPort(): number {
+  if (!existsSync(developerPath)) return defaultPort;
+  try {
+    const config = JSON.parse(readFileSync(developerPath, 'utf-8')) as {
+      clientSdkUrl?: unknown;
+    };
+    if (typeof config.clientSdkUrl !== 'string') return defaultPort;
+    const configuredPort = Number(new URL(config.clientSdkUrl).port);
+    return Number.isInteger(configuredPort) && configuredPort > 0
+      ? configuredPort
+      : defaultPort;
+  } catch {
+    console.warn('Ignoring invalid developer clientSdkUrl');
+    return defaultPort;
+  }
+}
+
+export const port = readConfiguredPort();
 
 const readSecurityConfig = (): Effect.Effect<boolean, ConfigError> => {
   if (!existsSync(developerPath)) return Effect.succeed(true);

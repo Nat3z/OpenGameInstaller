@@ -1,6 +1,7 @@
 const { app, BrowserWindow, ipcMain } = require('electron');
 const fs = require('node:fs');
 const path = require('node:path');
+const { WebSocketServer } = require('ws');
 const { registerFixtureService } = require('../e2e/fixture-service.cjs');
 const {
   validateApplicationRunDescriptor,
@@ -70,6 +71,28 @@ if (artifactDirectory) {
 
 registerFixtureService(ipcMain, sandboxDirectory);
 
+const addonServer = new WebSocketServer({ port: 7654 });
+addonServer.on('connection', (socket) => {
+  socket.on('message', (data) => {
+    const message = JSON.parse(data.toString());
+    if (!message.id) return;
+
+    const args =
+      message.event === 'query-connected-addons'
+        ? { addons: [] }
+        : message.event === 'get-deferred-tasks'
+          ? { tasks: [] }
+          : {};
+    socket.send(
+      JSON.stringify({
+        event: 'response',
+        id: message.id,
+        args,
+      })
+    );
+  });
+});
+
 app
   .whenReady()
   .then(async () => {
@@ -129,5 +152,6 @@ app
   });
 
 app.on('window-all-closed', () => {
+  addonServer.close();
   app.quit();
 });

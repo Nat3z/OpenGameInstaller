@@ -347,7 +347,9 @@ function registerFixtureService(
   let restoredAddonsReady;
   ipcMain.on('client-ready-for-events', (event) => {
     if (!fs.existsSync(installedStatePath)) return;
-    restoredAddonsReady ??= ready.then(() => addonRuntime.startAddons());
+    restoredAddonsReady ??= ready.then(() =>
+      addonRuntime.startAddonsForFixture()
+    );
     void restoredAddonsReady.then(() => {
       if (event.sender.isDestroyed()) return;
       event.sender.send('addon-runtime-ready');

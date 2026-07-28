@@ -13,7 +13,7 @@ import {
   decideUpdaterStartup,
   getRequestedOnlineState,
   resolveEffectiveOnlineState,
-} from './offline-decision.mjs';
+} from './offline-decision.js';
 import {
   installPreparedProductionUpdate as coordinatePreparedProductionUpdate,
   type ProcessIdentity,
@@ -1897,8 +1897,10 @@ async function launchAndWaitForProductionHealth({
   const token = randomUUID();
   const { stateRoot } = getProductionTransactionPaths();
   const healthPath = path.join(stateRoot, `startup-health-${token}.json`);
+  const healthRequestPath = `${healthPath}.request.json`;
   fs.mkdirSync(stateRoot, { recursive: true });
   fs.rmSync(healthPath, { force: true });
+  fs.rmSync(healthRequestPath, { force: true });
   const installationDirectory =
     process.platform === 'win32' ? workingPath : path.dirname(workingPath);
   const launcher = resolveApplicationLauncher(
@@ -1964,116 +1966,132 @@ async function launchAndWaitForProductionHealth({
         }
       : {}),
   };
+  fs.writeFileSync(
+    healthRequestPath,
+    JSON.stringify({
+      version: 1,
+      healthPath,
+      token,
+      transactionToken,
+    }),
+    { flag: 'wx', mode: 0o600 }
+  );
   try {
-    launchedApplication =
-      process.platform === 'win32'
-        ? spawn(
-            windowsJob.wrapperExecutable,
-            [
-              '-NoProfile',
-              '-NonInteractive',
-              '-File',
-              windowsJob.wrapperScript,
-              '-WrapperToken',
-              windowsJob.wrapperToken,
-              launcher,
-              ...args,
-            ],
-            {
+    try {
+      launchedApplication =
+        process.platform === 'win32'
+          ? spawn(
+              windowsJob.wrapperExecutable,
+              [
+                '-NoProfile',
+                '-NonInteractive',
+                '-File',
+                windowsJob.wrapperScript,
+                '-WrapperToken',
+                windowsJob.wrapperToken,
+                launcher,
+                ...args,
+              ],
+              {
+                cwd: installationDirectory,
+                detached: true,
+                stdio: ['ignore', logStream, logStream],
+                env: launchEnvironment,
+                windowsHide: true,
+              }
+            )
+          : spawn(launcher, args, {
               cwd: installationDirectory,
               detached: true,
-              stdio: ['ignore', logStream, logStream],
+              stdio: ['ignore', logStream, logStream, processProofDescriptor],
               env: launchEnvironment,
-              windowsHide: true,
-            }
-          )
-        : spawn(launcher, args, {
-            cwd: installationDirectory,
-            detached: true,
-            stdio: ['ignore', logStream, logStream, processProofDescriptor],
-            env: launchEnvironment,
-          });
-  } finally {
-    if (processProofDescriptor !== undefined) {
-      fs.closeSync(processProofDescriptor);
-      fs.rmSync(processProofPath, { force: true });
-    }
-  }
-  await new Promise<void>((resolvePromise, reject) => {
-    launchedApplication?.once('spawn', resolvePromise);
-    launchedApplication?.once('error', reject);
-  });
-  const child = launchedApplication;
-  if (!child?.pid) throw new Error('Application launch produced no process ID');
-  let processIdentity = await readProductionProcessIdentity(child.pid);
-  if (!processIdentity) {
-    throw new Error(
-      'Unable to establish non-reusable application process identity'
-    );
-  }
-  let applicationPid = child.pid;
-  if (process.platform === 'win32') {
-    const jobDeadline = Date.now() + 10_000;
-    while (!fs.existsSync(windowsJobLaunchPath) && Date.now() < jobDeadline) {
-      if (!applicationIsAlive(child)) break;
-      await sleep(25);
-    }
-    if (!fs.existsSync(windowsJobLaunchPath)) {
-      throw new Error('Windows Job Object launch handshake failed');
-    }
-    const jobLaunch = parseWindowsJobLaunchEvidence(
-      fs.readFileSync(windowsJobLaunchPath, 'utf8')
-    );
-    applicationPid = jobLaunch.rootPid;
-    processIdentity = {
-      ...processIdentity,
-      applicationPid,
-      windowsJobStopPath,
-      windowsJobResultPath,
-    };
-  }
-  onProcessStarted(processIdentity);
-  const timeoutMs = Number.parseInt(
-    process.env.OGI_STARTUP_HEALTH_TIMEOUT_MS ?? '45000',
-    10
-  );
-  const deadline =
-    Date.now() + (Number.isFinite(timeoutMs) ? timeoutMs : 45000);
-  try {
-    while (Date.now() < deadline) {
-      if (!applicationIsAlive(child)) {
-        throw new Error(
-          `Application exited before Startup Health with status ${child?.exitCode} and signal ${child?.signalCode}`
-        );
+            });
+    } finally {
+      if (processProofDescriptor !== undefined) {
+        fs.closeSync(processProofDescriptor);
+        fs.rmSync(processProofPath, { force: true });
       }
-      if (fs.existsSync(healthPath)) {
-        const health = JSON.parse(fs.readFileSync(healthPath, 'utf8'));
-        if (
-          health.version !== 1 ||
-          health.state !== 'interactive' ||
-          health.processAlive !== true ||
-          health.token !== token ||
-          health.transactionToken !== transactionToken ||
-          health.pid !== applicationPid
-        ) {
-          throw new Error('Startup Health payload is invalid');
-        }
-        await sleep(500);
+    }
+    await new Promise<void>((resolvePromise, reject) => {
+      launchedApplication?.once('spawn', resolvePromise);
+      launchedApplication?.once('error', reject);
+    });
+    const child = launchedApplication;
+    if (!child?.pid)
+      throw new Error('Application launch produced no process ID');
+    let processIdentity = await readProductionProcessIdentity(child.pid);
+    if (!processIdentity) {
+      throw new Error(
+        'Unable to establish non-reusable application process identity'
+      );
+    }
+    let applicationPid = child.pid;
+    if (process.platform === 'win32') {
+      const jobDeadline = Date.now() + 10_000;
+      while (!fs.existsSync(windowsJobLaunchPath) && Date.now() < jobDeadline) {
+        if (!applicationIsAlive(child)) break;
+        await sleep(25);
+      }
+      if (!fs.existsSync(windowsJobLaunchPath)) {
+        throw new Error('Windows Job Object launch handshake failed');
+      }
+      const jobLaunch = parseWindowsJobLaunchEvidence(
+        fs.readFileSync(windowsJobLaunchPath, 'utf8')
+      );
+      applicationPid = jobLaunch.rootPid;
+      processIdentity = {
+        ...processIdentity,
+        applicationPid,
+        windowsJobStopPath,
+        windowsJobResultPath,
+      };
+    }
+    onProcessStarted(processIdentity);
+    const timeoutMs = Number.parseInt(
+      process.env.OGI_STARTUP_HEALTH_TIMEOUT_MS ?? '45000',
+      10
+    );
+    const deadline =
+      Date.now() + (Number.isFinite(timeoutMs) ? timeoutMs : 45000);
+    try {
+      while (Date.now() < deadline) {
         if (!applicationIsAlive(child)) {
           throw new Error(
-            'Application exited immediately after Startup Health'
+            `Application exited before Startup Health with status ${child?.exitCode} and signal ${child?.signalCode}`
           );
         }
-        return {
-          health: { ...health, processAlive: true, recovery },
-          processIdentity,
-        };
+        if (fs.existsSync(healthPath)) {
+          const health = JSON.parse(fs.readFileSync(healthPath, 'utf8'));
+          if (
+            health.version !== 1 ||
+            health.state !== 'interactive' ||
+            health.processAlive !== true ||
+            health.token !== token ||
+            health.transactionToken !== transactionToken ||
+            health.pid !== applicationPid
+          ) {
+            throw new Error('Startup Health payload is invalid');
+          }
+          await sleep(500);
+          if (!applicationIsAlive(child)) {
+            throw new Error(
+              'Application exited immediately after Startup Health'
+            );
+          }
+          return {
+            health: { ...health, processAlive: true, recovery },
+            processIdentity,
+          };
+        }
+        await sleep(100);
       }
-      await sleep(100);
+      throw new Error('Startup Health deadline expired');
+    } finally {
+      fs.rmSync(healthPath, { force: true });
     }
-    throw new Error('Startup Health deadline expired');
   } finally {
     fs.rmSync(healthPath, { force: true });
+    fs.rmSync(healthRequestPath, { force: true });
   }
 }
 

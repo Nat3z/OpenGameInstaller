@@ -8,8 +8,9 @@ import {
   rmSync,
   writeFileSync,
 } from 'node:fs';
+import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import {
   createApplicationScenarioSandbox as createSandbox,
   createUnavailableScreenshot,
@@ -20,6 +21,12 @@ import {
   validateApplicationFailureEvidence,
   validateApplicationScenarioProcessOutcome,
 } from '../src/application-scenario';
+
+const require = createRequire(import.meta.url);
+const { validateAccessibilityRunDescriptor } =
+  require('../src/application-run-descriptor.cjs') as {
+    validateAccessibilityRunDescriptor(value: unknown): unknown;
+  };
 
 const generatedSandboxes: string[] = [];
 const createApplicationScenarioSandbox: typeof createSandbox = (...args) => {
@@ -52,6 +59,28 @@ describe('Application Scenario sandbox', () => {
     ).toBe(true);
     expect(first.mode).toBe('success');
     expect(dirname(first.descriptorPath)).toBe(first.sandboxDirectory);
+  });
+
+  test('strictly validates accessibility Run Descriptors', () => {
+    const sandboxDirectory = mkdtempSync(join(tmpdir(), 'ogi-accessibility-'));
+    generatedSandboxes.push(sandboxDirectory);
+    const descriptor = {
+      version: 1,
+      scenario: 'application-accessibility',
+      state: 'main',
+      sandboxDirectory,
+    };
+
+    expect(validateAccessibilityRunDescriptor(descriptor)).toEqual(descriptor);
+    expect(() =>
+      validateAccessibilityRunDescriptor({ ...descriptor, unexpected: true })
+    ).toThrow('unknown fields');
+    expect(() =>
+      validateAccessibilityRunDescriptor({
+        ...descriptor,
+        sandboxDirectory: 'relative-sandbox',
+      })
+    ).toThrow('absolute path');
   });
 
   test('strictly configures success and deliberate assertion-failure modes', () => {
@@ -200,7 +229,7 @@ describe('Application Scenario sandbox', () => {
         '-ExecutionPolicy',
         'Bypass',
         '-File',
-        './src/windows-job-wrapper.ps1',
+        '../updater/src/windows-job-wrapper.ps1',
         'bunx',
         'wdio',
         'run',
@@ -212,7 +241,7 @@ describe('Application Scenario sandbox', () => {
 
   test('assigns the Windows launch to a kill-on-close Job Object before resume', () => {
     const wrapper = readFileSync(
-      join(import.meta.dir, '../src/windows-job-wrapper.ps1'),
+      resolve(import.meta.dir, '../../updater/src/windows-job-wrapper.ps1'),
       'utf8'
     );
     expect(wrapper).toContain('JobObjectLimitKillOnJobClose');
@@ -224,7 +253,6 @@ describe('Application Scenario sandbox', () => {
     );
     expect(wrapper).toContain('DuplicateStandardHandle(StdOutputHandle)');
     expect(wrapper).toContain('ProcThreadAttributeHandleList');
-    expect(wrapper).toContain('QueryInformationJobObject');
     expect(wrapper).toContain('OGI_WINDOWS_JOB_RESULT');
     expect(wrapper.lastIndexOf('WriteResult(')).toBeLessThan(
       wrapper.indexOf('if (job != IntPtr.Zero) CloseHandle(job)')

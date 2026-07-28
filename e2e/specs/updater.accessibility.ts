@@ -237,7 +237,7 @@ describe('updater accessibility', () => {
       kind: 'failure',
       severity: 'assertive',
       title: 'Action required',
-      detail: 'The downloaded release is invalid.',
+      detail: 'The Verified Release is invalid.',
     });
     await (await $('aria/Action required')).waitForDisplayed();
     await expectFocused('aria/Action required', 'Failure alert heading');

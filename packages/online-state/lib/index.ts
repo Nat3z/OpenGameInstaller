@@ -1,4 +1,15 @@
-export function getRequestedOnlineState(argv = process.argv) {
+export type OnlineStateReason = 'network-offline' | 'cli-offline' | 'online';
+
+export type EffectiveOnlineState = {
+  requestedOnline: boolean | null;
+  networkOnline: boolean;
+  effectiveOnline: boolean;
+  reason: OnlineStateReason;
+};
+
+export function getRequestedOnlineState(
+  argv: readonly string[] = process.argv
+): boolean | null {
   const onlineArg = argv.find((argument) => argument.startsWith('--online='));
   if (!onlineArg) return null;
   const value = onlineArg.slice('--online='.length).trim().toLowerCase();
@@ -7,7 +18,10 @@ export function getRequestedOnlineState(argv = process.argv) {
   return null;
 }
 
-export function resolveEffectiveOnlineState(requestedOnline, networkOnline) {
+export function resolveEffectiveOnlineState(
+  requestedOnline: boolean | null,
+  networkOnline: boolean
+): EffectiveOnlineState {
   if (!networkOnline) {
     return {
       requestedOnline,
@@ -29,18 +43,5 @@ export function resolveEffectiveOnlineState(requestedOnline, networkOnline) {
     networkOnline,
     effectiveOnline: true,
     reason: 'online',
-  };
-}
-
-export function decideUpdaterStartup(argv, networkOnline) {
-  const onlineState = resolveEffectiveOnlineState(
-    getRequestedOnlineState(argv),
-    networkOnline
-  );
-  return {
-    onlineState,
-    action: onlineState.effectiveOnline
-      ? 'check-for-updates'
-      : 'skip-update-and-launch-offline',
   };
 }

@@ -17,6 +17,7 @@ import {
   classifyCiCheckOutcome,
   classifyWorkspacePreparationOutcome,
   collectTopLevelArtifactTypes,
+  collectTopLevelRunOutcomes,
   evaluateRunEventLogBudgets,
   renderCiHtmlSummary,
   renderCiSummary,
@@ -98,7 +99,7 @@ if (process.argv.includes('--publish')) {
     const elapsedBefore = Date.now() - startedAt;
     const remainingMs = jobBudgetMs - elapsedBefore;
     if (remainingMs <= 0) {
-      checks.push({ id: entry.id, outcome: 'Budget Failed', elapsedMs: 0 });
+      checks.push({ id: entry.id, outcome: 'Failed', elapsedMs: 0 });
       failed = true;
       break;
     }
@@ -127,6 +128,7 @@ if (process.argv.includes('--publish')) {
       timedOut,
       requiredArtifacts: entry.requiredArtifacts,
       observedArtifacts: collectTopLevelArtifactTypes(runRoot, newLogs),
+      observedOutcomes: collectTopLevelRunOutcomes(runRoot, newLogs),
     });
     for (const eventLogPath of newLogs) {
       try {
@@ -138,7 +140,7 @@ if (process.argv.includes('--publish')) {
         );
         budgetMeasurements.push(...budget.measurements);
         budgetViolations.push(...budget.violations);
-        if (!budget.passed) outcome = 'Budget Failed';
+        if (!budget.passed) outcome = 'Failed';
       } catch (cause) {
         const invalidLogMeasurement: BudgetMeasurement = {
           budget: 'ordinary-ui-step',

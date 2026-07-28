@@ -25,6 +25,7 @@
         "@ogi-sdk/connect": "workspace:*",
         "@ogi-sdk/executor": "workspace:*",
         "@ogi/errors": "workspace:*",
+        "@ogi/online-state": "workspace:*",
         "all-debrid-js": "workspace:*",
         "axios": "^1.13.4",
         "d3": "^7.9.0",
@@ -225,6 +226,14 @@
         "typescript": "^5.0.0",
       },
     },
+    "packages/online-state": {
+      "name": "@ogi/online-state",
+      "version": "1.0.0",
+      "devDependencies": {
+        "@types/node": "^22.15.0",
+        "typescript": "^5.9.3",
+      },
+    },
     "packages/real-debrid": {
       "name": "real-debrid-js",
       "version": "1.1.1",
@@ -256,6 +265,7 @@
       "name": "ogi-updater",
       "version": "2.0.0",
       "dependencies": {
+        "@ogi/online-state": "workspace:*",
         "axios": "^1.13.4",
         "blakejs": "^1.2.1",
         "yauzl": "^3.2.0",
@@ -631,6 +641,8 @@
     "@ogi/e2e": ["@ogi/e2e@workspace:e2e"],
 
     "@ogi/errors": ["@ogi/errors@workspace:packages/errors"],
+
+    "@ogi/online-state": ["@ogi/online-state@workspace:packages/online-state"],
 
     "@oslojs/encoding": ["@oslojs/encoding@1.1.0", "", {}, "sha512-70wQhgYmndg4GCPxPPxPGevRKqTIJ2Nh4OkiMWmDAVYsTQ+Ta7Sq+rPevXyXGdzr30/qZBnyOalCszoMxlyldQ=="],
 

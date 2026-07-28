@@ -4,7 +4,7 @@ import type {
   ConfigurationFile,
   OGIAddonConfiguration,
 } from '@ogi-sdk/connect';
-import { onMount } from 'svelte';
+import { onMount, tick } from 'svelte';
 import { quintOut } from 'svelte/easing';
 import { derived } from 'svelte/store';
 import { fade, fly, slide } from 'svelte/transition';
@@ -121,7 +121,7 @@ const unreadNotificationCount = derived(
   ([$history, $readIds]) => $history.filter((n) => !$readIds.has(n.id)).length
 );
 
-onMount(() => {
+onMount(async () => {
   // Parse launch params first (before other initialization)
   parseLaunchParams();
 
@@ -153,6 +153,9 @@ onMount(() => {
   // send client-ready-for-events
   window.electronAPI.app.clientReadyForEvents();
   console.log('client-ready-for-events sent');
+  await tick();
+  window.electronAPI.app.startupInteractive();
+  console.log('startup-interactive sent');
 });
 
 // Initialize when DOM is ready

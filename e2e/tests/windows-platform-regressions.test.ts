@@ -36,10 +36,7 @@ describe('Windows platform regressions', () => {
 
   test('skips unsupported Windows fsync while keeping write-through renames', () => {
     const source = readFileSync(
-      join(
-        repositoryRoot,
-        'updater/src/production-update-coordinator.mjs'
-      ),
+      join(repositoryRoot, 'updater/src/production-update-coordinator.mjs'),
       'utf8'
     );
     expect(source).toContain('MOVEFILE_WRITE_THROUGH');

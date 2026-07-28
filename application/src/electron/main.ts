@@ -3,7 +3,7 @@ import type { ConfigurationFile } from '@ogi-sdk/connect';
 import { Effect } from 'effect';
 import { app, BrowserWindow, globalShortcut, ipcMain, shell } from 'electron';
 import fs, { existsSync, readFileSync } from 'fs';
-import { join } from 'path';
+import { basename, dirname, isAbsolute, join } from 'path';
 import { quote as shellQuote } from 'shell-quote';
 import AddonManagerHandler, {
   startAddons,
@@ -377,27 +377,87 @@ const ogiDebug = () => (process.env.OGI_DEBUG ?? 'false') === 'true';
  */
 let handlersRegistered = false;
 
+const startupHealthTokenPattern =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+let startupHealthEmitted = false;
+
 function emitUpdaterStartupHealth() {
+  if (startupHealthEmitted) return;
   const healthPath = process.env.OGI_STARTUP_HEALTH_PATH;
   const token = process.env.OGI_STARTUP_HEALTH_TOKEN;
   const transactionToken = process.env.OGI_UPDATE_TRANSACTION_TOKEN;
-  if (!healthPath || !token || !transactionToken) return;
-  const temporaryPath = `${healthPath}.${process.pid}.tmp`;
-  fs.mkdirSync(join(healthPath, '..'), { recursive: true });
-  fs.writeFileSync(
-    temporaryPath,
-    JSON.stringify({
-      version: 1,
-      state: 'interactive',
-      processAlive: true,
-      pid: process.pid,
-      token,
-      transactionToken,
-      timestamp: new Date().toISOString(),
-    })
-  );
-  fs.renameSync(temporaryPath, healthPath);
-  console.log(`[updater-health] Startup Health emitted at ${healthPath}`);
+  const commandTransactionToken = process.argv
+    .find((argument) => argument.startsWith('--ogi-update-transaction-token='))
+    ?.slice('--ogi-update-transaction-token='.length);
+  if (!healthPath && !token && !transactionToken) return;
+  if (
+    !healthPath ||
+    !token ||
+    !transactionToken ||
+    commandTransactionToken !== transactionToken ||
+    !isAbsolute(healthPath) ||
+    !startupHealthTokenPattern.test(token) ||
+    !startupHealthTokenPattern.test(transactionToken) ||
+    basename(healthPath) !== `startup-health-${token}.json`
+  ) {
+    console.error('[updater-health] Ignoring invalid Startup Health request');
+    return;
+  }
+
+  const requestPath = `${healthPath}.request.json`;
+  try {
+    const requestStat = fs.lstatSync(requestPath);
+    if (!requestStat.isFile() || requestStat.isSymbolicLink()) {
+      throw new Error('Startup Health request proof is not a regular file');
+    }
+    if (
+      typeof process.getuid === 'function' &&
+      requestStat.uid !== process.getuid()
+    ) {
+      throw new Error('Startup Health request proof owner does not match');
+    }
+    const request = JSON.parse(fs.readFileSync(requestPath, 'utf8')) as Record<
+      string,
+      unknown
+    >;
+    const requestKeys = Object.keys(request).sort();
+    if (
+      JSON.stringify(requestKeys) !==
+        JSON.stringify(
+          ['healthPath', 'token', 'transactionToken', 'version'].sort()
+        ) ||
+      request.version !== 1 ||
+      request.healthPath !== healthPath ||
+      request.token !== token ||
+      request.transactionToken !== transactionToken ||
+      !fs.statSync(dirname(healthPath)).isDirectory()
+    ) {
+      throw new Error('Startup Health request proof is invalid');
+    }
+
+    const temporaryPath = `${healthPath}.${process.pid}.tmp`;
+    fs.writeFileSync(
+      temporaryPath,
+      JSON.stringify({
+        version: 1,
+        state: 'interactive',
+        processAlive: true,
+        pid: process.pid,
+        token,
+        transactionToken,
+        timestamp: new Date().toISOString(),
+      }),
+      { flag: 'wx', mode: 0o600 }
+    );
+    fs.renameSync(temporaryPath, healthPath);
+    startupHealthEmitted = true;
+    console.log(`[updater-health] Startup Health emitted at ${healthPath}`);
+  } catch (cause) {
+    console.error(
+      '[updater-health] Startup Health request was rejected',
+      cause
+    );
+  }
 }
 
 function registerMainHandlers(win: BrowserWindow) {
@@ -428,6 +488,7 @@ function registerClientReadyListener() {
     }
     readyForEventWaiters = [];
   });
+  ipcMain.on('startup-interactive', emitUpdaterStartupHealth);
 }
 
 async function ensureAddonServerRunning() {
@@ -511,7 +572,6 @@ async function onMainAppReady() {
   }
 
   convertLibrary();
-  emitUpdaterStartupHealth();
 
   mainWindow?.webContents?.setWindowOpenHandler((details) => {
     shell.openExternal(details.url);

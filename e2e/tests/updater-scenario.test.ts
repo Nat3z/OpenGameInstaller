@@ -316,6 +316,19 @@ await Bun.sleep(${testCase.phase === 'completion' ? 200 : 30_000});
           expect(existsSync(pidsPath)).toBe(true);
           if (testCase.phase === 'completion') await Bun.sleep(100);
         }
+        const containedProcesses = existsSync(pidsPath)
+          ? (JSON.parse(readFileSync(pidsPath, 'utf8')) as {
+              target: number;
+              detached: number;
+            })
+          : undefined;
+        const containedStartTimes = new Map(
+          containedProcesses
+            ? [containedProcesses.target, containedProcesses.detached].map(
+                (pid) => [pid, readProcProcessIdentity(pid)?.startTime] as const
+              )
+            : []
+        );
         runner.kill(testCase.signal);
         const status = await new Promise<number | null>((resolve, reject) => {
           runner.once('error', reject);
@@ -348,15 +361,28 @@ await Bun.sleep(${testCase.phase === 'completion' ? 200 : 30_000});
         expect([undefined, 'Z']).toContain(
           readProcProcessIdentity(supervisorPid)?.state
         );
-        if (existsSync(pidsPath)) {
-          const pids = JSON.parse(readFileSync(pidsPath, 'utf8')) as {
-            target: number;
-            detached: number;
-          };
-          for (const pid of [pids.target, pids.detached]) {
-            expect([undefined, 'Z']).toContain(
-              readProcProcessIdentity(pid)?.state
-            );
+        if (containedProcesses) {
+          for (const pid of [
+            containedProcesses.target,
+            containedProcesses.detached,
+          ]) {
+            const startTime = containedStartTimes.get(pid);
+            const stoppedDeadline = Date.now() + 2_000;
+            let identity = readProcProcessIdentity(pid);
+            while (
+              identity !== undefined &&
+              identity.startTime === startTime &&
+              identity.state !== 'Z' &&
+              Date.now() < stoppedDeadline
+            ) {
+              await Bun.sleep(10);
+              identity = readProcProcessIdentity(pid);
+            }
+            expect(
+              identity === undefined ||
+                identity.state === 'Z' ||
+                identity.startTime !== startTime
+            ).toBe(true);
           }
         }
         const report = readFileSync(join(sandbox, 'report.html'), 'utf8');
@@ -389,7 +415,7 @@ await Bun.sleep(${testCase.phase === 'completion' ? 200 : 30_000});
         '-ExecutionPolicy',
         'Bypass',
         '-File',
-        './src/windows-job-wrapper.ps1',
+        '../updater/src/windows-job-wrapper.ps1',
         'bunx',
         'wdio',
         'run',

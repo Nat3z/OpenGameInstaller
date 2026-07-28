@@ -10,6 +10,7 @@ import {
   classifyCiCheckOutcome,
   classifyWorkspacePreparationOutcome,
   collectTopLevelArtifactTypes,
+  collectTopLevelRunOutcomes,
   evaluateRunEventBudgets,
   renderCiHtmlSummary,
   renderCiSummary,
@@ -56,12 +57,12 @@ describe('CI and release gates', () => {
     );
   });
 
-  test('classifies workspace preparation timeouts as budget failures', () => {
+  test('classifies workspace preparation failures with the spec outcome', () => {
     expect(
       classifyWorkspacePreparationOutcome(
         Object.assign(new Error('timed out'), { code: 'ETIMEDOUT' })
       )
-    ).toBe('Budget Failed');
+    ).toBe('Failed');
     expect(classifyWorkspacePreparationOutcome(new Error('build failed'))).toBe(
       'Failed'
     );
@@ -224,6 +225,30 @@ describe('CI and release gates', () => {
     ).toEqual(artifactTypes);
   });
 
+  test('honors a top-level Flaky Run Event outcome when the command exits zero', () => {
+    const runRoot = mkdtempSync(join(tmpdir(), 'ogi-ci-outcome-'));
+    const aggregateDirectory = join(runRoot, 'application-reliable-run');
+    mkdirSync(aggregateDirectory, { recursive: true });
+    const eventPath = join(aggregateDirectory, 'events.jsonl');
+    writeFileSync(
+      eventPath,
+      `${JSON.stringify({
+        type: 'run.completed',
+        payload: { outcome: 'Flaky' },
+      })}\n`
+    );
+
+    const observedOutcomes = collectTopLevelRunOutcomes(runRoot, [eventPath]);
+    expect(observedOutcomes).toEqual(['Flaky']);
+    expect(
+      classifyCiCheckOutcome({
+        status: 0,
+        timedOut: false,
+        observedOutcomes,
+      })
+    ).toBe('Flaky');
+  });
+
   test('propagates torrent command failures, timeouts, and missing evidence', () => {
     const requiredArtifacts = [
       'torrent-network-containment-assertion',
@@ -245,7 +270,7 @@ describe('CI and release gates', () => {
         requiredArtifacts,
         observedArtifacts: requiredArtifacts,
       })
-    ).toBe('Budget Failed');
+    ).toBe('Failed');
     expect(
       classifyCiCheckOutcome({
         status: 0,

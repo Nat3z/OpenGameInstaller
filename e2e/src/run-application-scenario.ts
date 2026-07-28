@@ -11,6 +11,11 @@ import {
   parseApplicationScenarioMode,
 } from './application-scenario';
 import {
+  type ExecutionVideoRecording,
+  startExecutionVideo,
+  stopExecutionVideo,
+} from './execution-video';
+import {
   findTrackedProcessSurvivors,
   readWindowsJobSurvivors,
   spawnTrackedProcess,
@@ -122,6 +127,17 @@ writeEvent({
   payload: { scenarioId: descriptor.scenario, attempt: 1 },
 });
 
+const videoPath = join(descriptor.artifactDirectory, 'execution.webm');
+let videoRecording: ExecutionVideoRecording | undefined;
+let videoFailure = '';
+if (!process.env.OGI_E2E_RUNNER_PROBE_PATH) {
+  try {
+    videoRecording = await startExecutionVideo({ path: videoPath });
+  } catch (cause) {
+    videoFailure = cause instanceof Error ? cause.message : String(cause);
+  }
+}
+
 let cancellationRequested = false;
 let requestCancellation!: () => void;
 const cancellation = new Promise<void>((resolveCancellation) => {
@@ -191,13 +207,17 @@ function runScenarioAttempt(attempt: number) {
   return Effect.scoped(
     Effect.gen(function* () {
       const probeRunnerPath = process.env.OGI_E2E_RUNNER_PROBE_PATH;
-      const { command, args, detached } = probeRunnerPath
+      const launch = probeRunnerPath
         ? {
             command: process.execPath,
             args: [probeRunnerPath],
             detached: process.platform === 'linux',
           }
         : getApplicationScenarioLaunch(process.platform);
+      const { command, args, detached } =
+        videoRecording?.display && launch.command === 'xvfb-run'
+          ? { ...launch, command: launch.args[1]!, args: launch.args.slice(2) }
+          : launch;
       const commandLine = [command, ...args].join(' ');
       const windowsJobResultPath = join(
         descriptor.artifactDirectory,
@@ -215,6 +235,9 @@ function runScenarioAttempt(attempt: number) {
               detached,
               env: {
                 ...process.env,
+                ...(videoRecording?.display
+                  ? { DISPLAY: videoRecording.display }
+                  : {}),
                 OGI_RUN_DESCRIPTOR: descriptor.descriptorPath,
                 OGI_SCENARIO_ATTEMPT: String(attempt),
                 OGI_WINDOWS_JOB_RESULT: windowsJobResultPath,
@@ -367,6 +390,14 @@ const program = Effect.gen(function* () {
     }
     break;
   }
+  if (videoRecording) {
+    const videoExit = yield* Effect.exit(
+      Effect.tryPromise(() => stopExecutionVideo(videoRecording!))
+    );
+    if (Exit.isFailure(videoExit)) {
+      videoFailure = Cause.pretty(videoExit.cause);
+    }
+  }
   const processOutcome = classifyRunOutcome(recordedAttemptOutcomes);
   const detectedLeaks: Array<{ pid: number; name: string }> = [];
   if (descriptor.mode === 'helper-leak' && processOutcome === 'Passed') {
@@ -395,10 +426,12 @@ const program = Effect.gen(function* () {
       });
     }
   }
-  const outcome: TerminalOutcome =
-    descriptor.mode === 'helper-leak'
+  const outcome: TerminalOutcome = videoFailure
+    ? 'Infrastructure Failed'
+    : descriptor.mode === 'helper-leak'
       ? classifyRunOutcome(recordedAttemptOutcomes, { leaks: detectedLeaks })
       : processOutcome;
+  if (videoFailure) failureDetail = videoFailure;
   finalOutcome = outcome;
   if (outcome !== 'Passed' && outcome !== 'Flaky') {
     yield* Effect.tryPromise({
@@ -450,9 +483,11 @@ const program = Effect.gen(function* () {
       outcome,
       createdAt: startedAt,
       pinned: pinRequested,
+      videoPaths: [videoPath],
     });
   }
   const artifacts = [
+    ['video', videoPath],
     ['main-log', mainLogPath],
     ['renderer-log', rendererLogPath],
     ['run-descriptor', descriptor.descriptorPath],
@@ -529,6 +564,7 @@ const program = Effect.gen(function* () {
       sandboxDirectory: descriptor.sandboxDirectory,
       outcome,
       createdAt: startedAt,
+      videoPaths: [videoPath],
     });
     console.log('Scenario Sandbox deleted by successful-run retention policy');
   }
@@ -540,6 +576,9 @@ const program = Effect.gen(function* () {
 });
 
 const exit = await Effect.runPromiseExit(program);
+if (videoRecording && !videoRecording.stopped) {
+  await stopExecutionVideo(videoRecording).catch(() => undefined);
+}
 if (deliberateLeakedHelper) {
   await Effect.runPromise(terminateProcessTree(deliberateLeakedHelper));
 }

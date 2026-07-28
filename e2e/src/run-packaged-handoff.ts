@@ -15,10 +15,16 @@ import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Data, Effect, Exit } from 'effect';
 import {
+  type ExecutionVideoRecording,
+  startExecutionVideo,
+  stopExecutionVideo,
+} from './execution-video';
+import {
   assertProductionPackagingBoundary,
   buildPackagedHandoffArtifacts,
   copySyntheticOldInstallation,
   createPackagedHandoffSandbox,
+  findUnexpectedFixtureRequests,
   findUnexpectedOfflineTraffic,
   findUnexpectedRuntimeLogErrors,
   INCREMENTAL_UPDATE_MODES,
@@ -206,7 +212,7 @@ const builds = buildPackagedHandoffArtifacts({
   ),
   applicationOnlineStatePath: join(
     repositoryDirectory,
-    'application/src/electron/lib/online-state.mjs'
+    'packages/online-state/build/index.js'
   ),
   fixtureServicePath: join(repositoryDirectory, 'e2e/fixture-service.cjs'),
   trafficGuardPath: join(repositoryDirectory, 'e2e/offline-traffic-guard.cjs'),
@@ -222,7 +228,7 @@ const builds = buildPackagedHandoffArtifacts({
   ),
   updaterOfflineDecisionPath: join(
     repositoryDirectory,
-    'updater/src/offline-decision.mjs'
+    'updater/dist/offline-decision.js'
   ),
   fixtureAddonDirectory: join(repositoryDirectory, 'e2e/fixture-addon'),
   fixtureWebSocketModuleDirectory: join(repositoryDirectory, 'node_modules/ws'),
@@ -365,6 +371,13 @@ let processFailure: unknown;
 let fixtureCloseFailure: unknown;
 let leaked = false;
 let leakedProcessPids: number[] = [];
+const videoPath = join(descriptor.artifactDirectory, 'execution.webm');
+let videoRecording: ExecutionVideoRecording | undefined;
+try {
+  videoRecording = await startExecutionVideo({ path: videoPath });
+} catch (cause) {
+  failure = cause;
+}
 const windowsJobResultPath = join(
   descriptor.artifactDirectory,
   'windows-job-result.json'
@@ -374,17 +387,24 @@ const expectedAssertionExitPath = join(
   'expected-assertion-exit.json'
 );
 try {
-  const command = platform === 'linux' ? 'xvfb-run' : 'powershell.exe';
+  const command =
+    platform === 'linux'
+      ? videoRecording?.display
+        ? 'bunx'
+        : 'xvfb-run'
+      : 'powershell.exe';
   const args =
     platform === 'linux'
-      ? ['-a', 'bunx', 'wdio', 'run', './product-journey-wdio.conf.ts']
+      ? videoRecording?.display
+        ? ['wdio', 'run', './product-journey-wdio.conf.ts']
+        : ['-a', 'bunx', 'wdio', 'run', './product-journey-wdio.conf.ts']
       : [
           '-NoProfile',
           '-NonInteractive',
           '-ExecutionPolicy',
           'Bypass',
           '-File',
-          './src/windows-job-wrapper.ps1',
+          '../updater/src/windows-job-wrapper.ps1',
           'bunx',
           'wdio',
           'run',
@@ -396,6 +416,7 @@ try {
       detached: platform === 'linux',
       env: {
         ...process.env,
+        ...(videoRecording?.display ? { DISPLAY: videoRecording.display } : {}),
         OGI_RUN_DESCRIPTOR: descriptor.descriptorPath,
         OGI_WINDOWS_JOB_RESULT: windowsJobResultPath,
         OGI_EXPECTED_ASSERTION_EXIT: expectedAssertionExitPath,
@@ -457,6 +478,13 @@ try {
       });
     }
   }
+  if (videoRecording) {
+    try {
+      await stopExecutionVideo(videoRecording);
+    } catch (cause) {
+      if (!failure) failure = cause;
+    }
+  }
   try {
     await fixture.close();
   } catch (cause) {
@@ -492,6 +520,7 @@ const applicationRendererLogPath = join(
   'packaged-application-renderer.log'
 );
 const artifacts = [
+  ['video', videoPath],
   [
     'main-log',
     join(descriptor.artifactDirectory, 'packaged-application-main.log'),
@@ -552,6 +581,16 @@ if (unexpectedRuntimeErrors.length > 0 && !failure) {
           `${relative(descriptor.sandboxDirectory, path)}: ${line}`
       )
       .join('\n')}`
+  );
+}
+const unexpectedFixtureRequests = findUnexpectedFixtureRequests(
+  fixture.requestLogPath
+);
+if (unexpectedFixtureRequests.length > 0 && !failure) {
+  failure = new Error(
+    `Fixture Service received unexpected requests: ${JSON.stringify(
+      unexpectedFixtureRequests
+    )}`
   );
 }
 if (offlineProductBehavior) {
@@ -1022,6 +1061,7 @@ if (shouldRetain) {
     outcome,
     createdAt: startedAt,
     pinned: pinRequested,
+    videoPaths: [videoPath],
   });
 }
 writeEvent({
@@ -1077,6 +1117,7 @@ if (!shouldRetain) {
     sandboxDirectory: descriptor.sandboxDirectory,
     outcome,
     createdAt: startedAt,
+    videoPaths: [videoPath],
   });
   console.log('Scenario Sandbox deleted by successful-run retention policy');
 }

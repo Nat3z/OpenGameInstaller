@@ -61,7 +61,7 @@ app
   .whenReady()
   .then(async () => {
     const { getRequestedOnlineState, resolveEffectiveOnlineState } =
-      await import('../support/application-online-state.mjs');
+      await import('../support/application-online-state.js');
     const onlineState = resolveEffectiveOnlineState(
       getRequestedOnlineState(process.argv),
       true
@@ -146,7 +146,8 @@ app
       webPreferences: {
         preload: path.join(applicationDirectory, 'out/preload/index.mjs'),
         contextIsolation: true,
-        nodeIntegration: true,
+        nodeIntegration: false,
+        sandbox: false,
       },
     });
     window.webContents.on('console-message', (details) => {

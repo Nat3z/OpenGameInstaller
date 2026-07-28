@@ -5,6 +5,7 @@ import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { gzipSync } from 'node:zlib';
+import { productionForbiddenHookMarkers } from '../src/packaged-handoff-audit';
 import {
   assertProductionTrafficAudit,
   findProductionReleaseArtifacts,
@@ -354,6 +355,29 @@ describe('production release artifact smoke', () => {
     );
     expect(() => verifyExtractedProductionBoundary(root)).toThrow(
       'active E2E hook'
+    );
+  });
+
+  test('rejects every forbidden production hook marker', () => {
+    for (const marker of productionForbiddenHookMarkers) {
+      const root = makeRoot();
+      mkdirSync(join(root, 'resources', 'app'), { recursive: true });
+      writeFileSync(join(root, 'resources', 'app', 'main.js'), marker);
+      expect(() => verifyExtractedProductionBoundary(root)).toThrow(
+        'active E2E hook'
+      );
+    }
+  });
+
+  test('allows production Startup Health handshake identifiers', () => {
+    const root = makeRoot();
+    mkdirSync(join(root, 'resources', 'app'), { recursive: true });
+    writeFileSync(
+      join(root, 'resources', 'app', 'main.js'),
+      'OGI_STARTUP_HEALTH_PATH OGI_STARTUP_HEALTH_TOKEN OGI_UPDATE_TRANSACTION_TOKEN'
+    );
+    expect(verifyExtractedProductionBoundary(root).activeHookMatches).toEqual(
+      []
     );
   });
 

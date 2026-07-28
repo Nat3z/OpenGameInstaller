@@ -18,6 +18,7 @@ import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { basename, join, relative, resolve } from 'node:path';
 import { gunzipSync } from 'node:zlib';
+import { productionForbiddenHookMarkers } from './packaged-handoff-audit';
 import { terminatePidTree } from './process-tree';
 
 const require = createRequire(import.meta.url);
@@ -184,10 +185,9 @@ export function findProductionReleaseArtifacts(
   );
 }
 
-const activeHookMarkers = [
-  Buffer.from('OGI_RUN_DESCRIPTOR'),
-  Buffer.from('packaged-updater-application-handoff'),
-];
+const activeHookMarkers = productionForbiddenHookMarkers.map((marker) =>
+  Buffer.from(marker)
+);
 const scannedExtensions = new Set([
   '.asar',
   '.cjs',

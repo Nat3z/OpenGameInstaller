@@ -54,6 +54,7 @@
     "@ogi-sdk/connect": "workspace:*",
     "@ogi-sdk/executor": "workspace:*",
     "@ogi/errors": "workspace:*",
+    "@ogi/online-state": "workspace:*",
     "all-debrid-js": "workspace:*",
     "axios": "^1.13.4",
     "d3": "^7.9.0",

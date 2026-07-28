@@ -258,7 +258,7 @@ export function getApplicationScenarioLaunch(platform: NodeJS.Platform) {
         '-ExecutionPolicy',
         'Bypass',
         '-File',
-        './src/windows-job-wrapper.ps1',
+        '../updater/src/windows-job-wrapper.ps1',
         'bunx',
         'wdio',
         'run',

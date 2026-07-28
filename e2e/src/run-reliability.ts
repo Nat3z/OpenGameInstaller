@@ -121,6 +121,9 @@ export function resolveOfflineChromedriverPath(options: {
   if (!cacheRoot) return undefined;
   const driverRoot = join(cacheRoot, 'chromedriver');
   if (!existsSync(driverRoot)) return undefined;
+  if (options.platform !== 'linux' && options.platform !== 'win32') {
+    return undefined;
+  }
   const executableName =
     options.platform === 'win32' ? 'chromedriver.exe' : 'chromedriver';
   const candidates: string[] = [];
@@ -134,12 +137,7 @@ export function resolveOfflineChromedriverPath(options: {
     }
   };
   visit(driverRoot, 0);
-  const platformPrefix =
-    options.platform === 'win32'
-      ? 'win64'
-      : options.platform === 'darwin'
-        ? 'mac'
-        : 'linux';
+  const platformPrefix = options.platform === 'win32' ? 'win64' : 'linux';
   const compatibleCandidates = options.browserMajor
     ? candidates.filter((path) =>
         path.includes(`${platformPrefix}-${options.browserMajor}.`)

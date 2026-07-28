@@ -152,6 +152,7 @@ interface Window {
       showWindow: () => Promise<void>;
       minimize: () => Promise<void>;
       clientReadyForEvents: () => void;
+      startupInteractive: () => void;
       axios: <T>(
         options: AxiosRequestConfig
       ) => Promise<{ status: number; success: boolean; data: T }>;

@@ -150,7 +150,7 @@ export function getQuarantineCommandLaunch(
       '-ExecutionPolicy',
       'Bypass',
       '-File',
-      resolve(import.meta.dir, 'windows-job-wrapper.ps1'),
+      resolve(import.meta.dir, '../../updater/src/windows-job-wrapper.ps1'),
       executable,
       ...arguments_,
     ],

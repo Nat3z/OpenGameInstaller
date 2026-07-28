@@ -27,6 +27,7 @@ type EventPayloads = {
   'artifact.created': {
     artifactType:
       | 'screenshot'
+      | 'video'
       | 'main-log'
       | 'renderer-log'
       | 'updater-main-log'
@@ -194,6 +195,7 @@ function validatePayload(type: string, payload: Record<string, unknown>) {
         !isString(payload.artifactType) ||
         ![
           'screenshot',
+          'video',
           'main-log',
           'renderer-log',
           'updater-main-log',

@@ -245,6 +245,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     clientReadyForEvents: wrap(() =>
       ipcRenderer.send('client-ready-for-events')
     ),
+    startupInteractive: wrap(() => ipcRenderer.send('startup-interactive')),
     inputSend: wrap((id: string, data: any) =>
       ipcRenderer.invoke('app:screen-input', { id, data })
     ),

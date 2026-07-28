@@ -25,10 +25,7 @@ describe('Electron service options', () => {
     ).toEqual({
       appBinaryPath:
         'C:\\workspace\\e2e\\node_modules\\electron\\dist\\electron.exe',
-      appArgs: [
-        '--app=C:/workspace/application/e2e-main.cjs',
-        '--disable-gpu',
-      ],
+      appArgs: ['--app=C:/workspace/application/e2e-main.cjs', '--disable-gpu'],
     });
   });
 

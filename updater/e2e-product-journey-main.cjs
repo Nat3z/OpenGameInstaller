@@ -1099,7 +1099,7 @@ app
   .whenReady()
   .then(async () => {
     const { decideUpdaterStartup } = await import(
-      './support/updater-offline-decision.mjs'
+      './support/updater-offline-decision.js'
     );
     const startupDecision = decideUpdaterStartup(process.argv, true);
     if (

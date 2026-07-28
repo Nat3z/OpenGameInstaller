@@ -18,6 +18,7 @@ export const WORKSPACE_BUILD_OUTPUTS = {
   '@ogi-sdk/client-kit': ['packages/client-kit/build/index.mjs'],
   '@ogi-sdk/connect': ['packages/connection/build/index.mjs'],
   '@ogi-sdk/executor': ['packages/executor/build/index.mjs'],
+  '@ogi/online-state': ['packages/online-state/build/index.js'],
   'all-debrid-js': ['packages/all-debrid/build/main.mjs'],
   'ogi-addon': [
     'packages/ogi-addon/build/main.mjs',

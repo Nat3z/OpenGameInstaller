@@ -18,634 +18,68 @@ import { createRequire } from 'node:module';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { gunzipSync, gzipSync } from 'node:zlib';
 import { blake2b } from 'blakejs';
+import {
+  FIXTURE_GAME_CONTENT,
+  FIXTURE_GAME_MAIN,
+  FIXTURE_GAME_TERMINATION_BYTES,
+  FIXTURE_TORRENT_PAYLOAD_MANIFEST,
+  type FixturePayloadManifestEntry,
+  type PackagedHandoffPlatform,
+  verifyExactFixtureTree,
+} from './packaged-handoff-fixtures';
 import { getDefaultRunRoot } from './run-reliability';
 
-export type PackagedHandoffPlatform = 'linux' | 'win32';
+export type {
+  FixturePayloadManifestEntry,
+  PackagedHandoffPlatform,
+  TorrentLibraryRecord,
+} from './packaged-handoff-fixtures';
+export {
+  FIXTURE_GAME_CONTENT,
+  FIXTURE_GAME_MAIN,
+  FIXTURE_GAME_TERMINATION_BYTES,
+  FIXTURE_TORRENT_PAYLOAD_MANIFEST,
+  verifyExactFixtureTree,
+  verifyExactTorrentLibraryState,
+} from './packaged-handoff-fixtures';
 
-const fixtureGameLine =
-  'OpenGameInstaller interrupted download recovery fixture bytes\n';
-export const FIXTURE_GAME_CONTENT = Buffer.from(
-  fixtureGameLine.repeat(
-    Math.ceil((256 * 1024) / Buffer.byteLength(fixtureGameLine))
-  )
-).subarray(0, 256 * 1024);
-export const FIXTURE_GAME_TERMINATION_BYTES = 64 * 1024;
-export const FIXTURE_GAME_MAIN = `const fs = require('node:fs');
-const { app, BrowserWindow, ipcMain } = require('electron');
-const markerArgument = process.argv.find((argument) => argument.startsWith('--marker='));
-if (!markerArgument) throw new Error('Fixture game marker path is required');
-const markerPath = markerArgument.slice('--marker='.length);
-ipcMain.handle('fixture-game:close', () => app.quit());
-app.whenReady().then(() => {
-  const window = new BrowserWindow({
-    width: 640,
-    height: 420,
-    show: false,
-    title: 'OpenGameInstaller Fixture Game',
-    webPreferences: { contextIsolation: false, nodeIntegration: true },
-  });
-  window.once('ready-to-show', () => {
-    window.show();
-    fs.writeFileSync(markerPath, JSON.stringify({
-      version: 1,
-      pid: process.pid,
-      platform: process.platform,
-      title: 'OpenGameInstaller Fixture Game',
-      visible: window.isVisible(),
-    }, null, 2));
-  });
-  return window.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(
-    '<!doctype html><html><head><title>OpenGameInstaller Fixture Game</title></head>' +
-    '<body style="font-family:sans-serif;display:grid;place-items:center;height:100vh;margin:0">' +
-    '<main><h1>Golden Journey Fixture</h1><p>The fixture game is running.</p>' +
-    '<button aria-label="Close Fixture Game" onclick="require(&quot;electron&quot;).ipcRenderer.invoke(&quot;fixture-game:close&quot;)">Close Game</button>' +
-    '</main></body></html>'
-  ));
-}).catch((error) => {
-  console.error(error);
-  app.exit(1);
-});
-app.on('window-all-closed', () => app.quit());
-`;
+import {
+  type ArtifactFile,
+  artifactFile,
+  collectArtifactFiles,
+  compatibleBlockSizes,
+  fixtureBlockmap,
+  INCREMENTAL_UPDATE_MODES,
+  type IncrementalUpdateMode,
+  lastKnownGoodLauncherName,
+  launcherName,
+  type PackagedApplicationLaunch,
+  type PackagedHandoffArtifactInput,
+  type PackagedHandoffBuild,
+  type PackagedHandoffDescriptorWithPath,
+  type PackagedHandoffRunDescriptor,
+  parsePackagedHandoffRunDescriptor,
+  RECOVERY_FAILURE_CASES,
+  type RecoveryFailureCase,
+  readPackagedHandoffRunDescriptor,
+  type StartupHealth,
+} from './packaged-handoff-descriptor';
 
-export type FixturePayloadManifestEntry = {
-  relativePath: string;
-  size: number;
-  sha256: string;
-};
-
-function fixturePayloadEntry(
-  relativePath: string,
-  contents: Buffer | string
-): FixturePayloadManifestEntry {
-  const bytes = Buffer.isBuffer(contents) ? contents : Buffer.from(contents);
-  return {
-    relativePath,
-    size: bytes.byteLength,
-    sha256: createHash('sha256').update(bytes).digest('hex'),
-  };
-}
-
-export const FIXTURE_TORRENT_PAYLOAD_MANIFEST = [
-  fixturePayloadEntry('fixture-game.cjs', FIXTURE_GAME_MAIN),
-  fixturePayloadEntry('golden-journey.txt', FIXTURE_GAME_CONTENT),
-] satisfies FixturePayloadManifestEntry[];
-
-export function verifyExactFixtureTree(
-  root: string,
-  manifest: readonly FixturePayloadManifestEntry[]
-) {
-  const actualPaths: string[] = [];
-  const visit = (directory: string) => {
-    for (const entry of readdirSync(directory, { withFileTypes: true })) {
-      const path = join(directory, entry.name);
-      if (entry.isDirectory()) {
-        visit(path);
-      } else if (entry.isFile()) {
-        actualPaths.push(relative(root, path).replaceAll('\\', '/'));
-      } else {
-        throw new Error(`Fixture tree contains unsupported entry: ${path}`);
-      }
-    }
-  };
-  visit(root);
-  actualPaths.sort();
-  const expectedPaths = manifest.map((entry) => entry.relativePath).sort();
-  if (JSON.stringify(actualPaths) !== JSON.stringify(expectedPaths)) {
-    throw new Error(
-      `Fixture file set mismatch: expected ${JSON.stringify(expectedPaths)}, received ${JSON.stringify(actualPaths)}`
-    );
-  }
-  for (const entry of manifest) {
-    const path = join(root, entry.relativePath);
-    const bytes = readFileSync(path);
-    if (bytes.byteLength !== entry.size) {
-      throw new Error(
-        `${entry.relativePath} size mismatch: expected ${entry.size}, received ${bytes.byteLength}`
-      );
-    }
-    const digest = createHash('sha256').update(bytes).digest('hex');
-    if (digest !== entry.sha256) {
-      throw new Error(`${entry.relativePath} SHA-256 mismatch`);
-    }
-  }
-  return manifest;
-}
-
-export type TorrentLibraryRecord = {
-  cwd: string;
-  installDirectory: string;
-  launchExecutable: string;
-  version: '1.0.0';
-  installRoot: string;
-  capsuleImage: string;
-  coverImage: string;
-  name: 'Golden Journey Fixture';
-  appID: 7001;
-  storefront: 'ogi-e2e';
-  addonsource: 'ogi-e2e-fixture-addon';
-};
-
-const TORRENT_LIBRARY_RECORD_KEYS = [
-  'cwd',
-  'installDirectory',
-  'launchExecutable',
-  'version',
-  'installRoot',
-  'capsuleImage',
-  'coverImage',
-  'name',
-  'appID',
-  'storefront',
-  'addonsource',
-] as const;
-
-export function verifyExactTorrentLibraryState(options: {
-  sandboxDirectory: string;
-  libraryDirectory: string;
-  expectedInstallRoot: string;
-  fixtureBaseUrl: string;
-  visibleItems: readonly {
-    text: string;
-    imageAlts: readonly string[];
-  }[];
-  launcherName: string;
-}) {
-  if (options.visibleItems.length !== 1) {
-    throw new Error(
-      `Expected exactly one visible Library item, received ${options.visibleItems.length}`
-    );
-  }
-  const [visibleItem] = options.visibleItems;
-  if (
-    !visibleItem ||
-    (!visibleItem.text.includes('Golden Journey Fixture') &&
-      !visibleItem.imageAlts.includes('Golden Journey Fixture'))
-  ) {
-    throw new Error('Visible Library item is not Golden Journey Fixture');
-  }
-
-  const libraryEntries = readdirSync(options.libraryDirectory, {
-    withFileTypes: true,
-  });
-  if (libraryEntries.length !== 1) {
-    throw new Error(
-      `Expected exactly one Library record, received ${libraryEntries.length}`
-    );
-  }
-  const [libraryEntry] = libraryEntries;
-  if (!libraryEntry?.isFile() || libraryEntry.name !== '7001.json') {
-    throw new Error('Expected the only Library record to be 7001.json');
-  }
-  const libraryPath = join(options.libraryDirectory, libraryEntry.name);
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(readFileSync(libraryPath, 'utf8'));
-  } catch {
-    throw new Error('Torrent-installed Library record is malformed');
-  }
-  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-    throw new Error('Torrent-installed Library record is malformed');
-  }
-  const actualKeys = Object.keys(parsed).sort();
-  const expectedKeys = [...TORRENT_LIBRARY_RECORD_KEYS].sort();
-  if (JSON.stringify(actualKeys) !== JSON.stringify(expectedKeys)) {
-    throw new Error(
-      `Torrent-installed Library record has unknown or missing fields: expected ${JSON.stringify(expectedKeys)}, received ${JSON.stringify(actualKeys)}`
-    );
-  }
-
-  const library = parsed as Partial<TorrentLibraryRecord>;
-  const sandboxDirectory = resolve(options.sandboxDirectory);
-  const installRoot = resolve(options.expectedInstallRoot);
-  const sandboxInstallRoot = join(sandboxDirectory, 'downloads');
-  const installRootFromSandbox = relative(sandboxDirectory, installRoot);
-  if (
-    installRoot !== sandboxInstallRoot ||
-    installRootFromSandbox === '' ||
-    installRootFromSandbox === '..' ||
-    installRootFromSandbox.startsWith(`..${sep}`) ||
-    isAbsolute(installRootFromSandbox)
-  ) {
-    throw new Error(
-      'Expected torrent install root is not the sandbox-contained downloads directory'
-    );
-  }
-  const installDirectory = join(
-    installRoot,
-    'Golden Journey Fixture',
-    'installed'
-  );
-  const launchExecutable = join(installDirectory, options.launcherName);
-  let fixtureUrl: URL;
-  try {
-    fixtureUrl = new URL(options.fixtureBaseUrl);
-  } catch {
-    throw new Error('Torrent Fixture Service URL is invalid');
-  }
-  if (
-    fixtureUrl.protocol !== 'http:' ||
-    fixtureUrl.hostname !== '127.0.0.1' ||
-    !fixtureUrl.port ||
-    fixtureUrl.pathname !== '/' ||
-    fixtureUrl.username ||
-    fixtureUrl.password ||
-    fixtureUrl.search ||
-    fixtureUrl.hash
-  ) {
-    throw new Error(
-      'Torrent Fixture Service URL must be an exact loopback HTTP origin'
-    );
-  }
-  const expectedImageUrl = new URL('/images/golden-journey.svg', fixtureUrl)
-    .href;
-  if (
-    library.cwd !== installDirectory ||
-    library.installDirectory !== installDirectory ||
-    library.launchExecutable !== launchExecutable ||
-    library.version !== '1.0.0' ||
-    library.installRoot !== installRoot ||
-    library.capsuleImage !== expectedImageUrl ||
-    library.coverImage !== expectedImageUrl ||
-    library.name !== 'Golden Journey Fixture' ||
-    library.appID !== 7001 ||
-    library.storefront !== 'ogi-e2e' ||
-    library.addonsource !== 'ogi-e2e-fixture-addon'
-  ) {
-    throw new Error('Torrent-installed Library record is invalid');
-  }
-  return {
-    library: library as TorrentLibraryRecord,
-    libraryPath,
-    visibleLibraryItems: options.visibleItems.length,
-    libraryRecords: libraryEntries.length,
-  };
-}
-
-export const RECOVERY_FAILURE_CASES = [
-  'download',
-  'incomplete-content',
-  'unsafe-archive-path',
-  'missing-required-file',
-  'replacement',
-  'crash',
-  'pre-identity',
-  'immediate-root-exit',
-  'fork-during-scan',
-  'timeout',
-  'invalid-health',
-] as const;
-export type RecoveryFailureCase = (typeof RECOVERY_FAILURE_CASES)[number];
-export const INCREMENTAL_UPDATE_MODES = [
-  'none',
-  'valid',
-  'corrupt',
-  'interrupted',
-  'fallback-failure',
-] as const;
-export type IncrementalUpdateMode = (typeof INCREMENTAL_UPDATE_MODES)[number];
-
-export type PackagedHandoffRunDescriptor = {
-  version: 1;
-  scenario: 'packaged-updater-application-handoff';
-  runId: string;
-  platform: PackagedHandoffPlatform;
-  sandboxDirectory: string;
-  updaterUserDataDirectory: string;
-  applicationUserDataDirectory: string;
-  applicationStateDirectory: string;
-  packagedUpdaterDirectory: string;
-  installationDirectory: string;
-  applicationLauncherPath: string;
-  backupDirectory: string;
-  stagingDirectory: string;
-  artifactDirectory: string;
-  fixtureStateDirectory: string;
-  eventLogPath: string;
-  handoffLogPath: string;
-  startupHealthPath: string;
-  fixtureBaseUrl: string;
-  releaseApiUrl: string;
-  artifactUrl: string;
-  automationPort: number;
-  clientSdkPort: number;
-  gameAutomationPort: number;
-  healthTimeoutMs: number;
-  recoveryFailure: 'none' | RecoveryFailureCase;
-  incrementalUpdate: IncrementalUpdateMode;
-  gameDownloadRecovery: boolean;
-  fixtureGameLifecycle: boolean;
-  offlineProductBehavior: boolean;
-  deterministicTorrentInstallation: boolean;
-  torrentUrl: string | null;
-  torrentTrackerUrl: string | null;
-  torrentPeerPort: number | null;
-};
-
-type PackagedHandoffArtifactInput = {
-  outputDirectory: string;
-  applicationBundleDirectory: string;
-  applicationMainPath: string;
-  applicationOnlineStatePath: string;
-  fixtureServicePath: string;
-  trafficGuardPath: string;
-  descriptorValidatorPath: string;
-  updaterBundleDirectory: string;
-  updaterPublicDirectory: string;
-  updaterMainPath: string;
-  updaterOfflineDecisionPath: string;
-  fixtureAddonDirectory: string;
-  fixtureWebSocketModuleDirectory: string;
-  updaterUpdateEnginePath: string;
-  updaterProductionCoordinatorPath?: string;
-  updaterWindowsJobEvidencePath?: string;
-};
-
-export type PackagedHandoffBuild = {
-  platform: PackagedHandoffPlatform;
-  syntheticOldInstallationDirectory: string;
-  incrementalOldInstallationDirectory: string;
-  packagedUpdaterDirectory: string;
-  incrementalOldApplicationArtifactPath: string;
-  incrementalOldBlockmapPath: string;
-  currentApplicationArtifactPath: string;
-  incrementalPatchPath: string;
-};
-
-type PackagedHandoffDescriptorWithPath = PackagedHandoffRunDescriptor & {
-  descriptorPath: string;
-};
-
-export type PackagedApplicationLaunch = {
-  entryPoint: string;
-  args: string[];
-  environment: { OGI_RUN_DESCRIPTOR: string };
-};
-
-type StartupHealth = {
-  version: 1;
-  runId: string;
-  state: 'interactive';
-};
-
-type ArtifactFile = {
-  path: string;
-  mode: number;
-  contents: string;
-};
-
-const require = createRequire(import.meta.url);
-const { validatePackagedHandoffRunDescriptor } =
-  require('./packaged-handoff-run-descriptor.cjs') as {
-    validatePackagedHandoffRunDescriptor(
-      value: unknown
-    ): PackagedHandoffRunDescriptor;
-  };
-
-export function parsePackagedHandoffRunDescriptor(
-  value: unknown
-): PackagedHandoffRunDescriptor {
-  return validatePackagedHandoffRunDescriptor(value);
-}
-
-export function readPackagedHandoffRunDescriptor(path: string) {
-  return parsePackagedHandoffRunDescriptor(
-    JSON.parse(readFileSync(path, 'utf8'))
-  );
-}
-
-export function createPackagedHandoffSandbox(
-  runId: string,
-  platform: PackagedHandoffPlatform,
-  ownedSandboxDirectory?: string,
-  ownershipToken?: string
-) {
-  const runRoot = getDefaultRunRoot();
-  mkdirSync(runRoot, { recursive: true });
-  const sandboxDirectory = ownedSandboxDirectory
-    ? resolve(ownedSandboxDirectory)
-    : mkdtempSync(join(runRoot, `product-journey-${runId}-`));
-  if (ownedSandboxDirectory) {
-    if (!ownershipToken) {
-      throw new Error(
-        'Owned Product Journey sandbox requires an ownership token'
-      );
-    }
-    const relativeSandbox = relative(resolve(runRoot), sandboxDirectory);
-    if (
-      relativeSandbox === '' ||
-      relativeSandbox.startsWith('..') ||
-      isAbsolute(relativeSandbox)
-    ) {
-      throw new Error(
-        'Owned Product Journey sandbox must remain under the run root'
-      );
-    }
-    mkdirSync(sandboxDirectory);
-    writeFileSync(
-      join(sandboxDirectory, '.ogi-attempt-owner.json'),
-      JSON.stringify({
-        version: 1,
-        token: ownershipToken,
-        sandboxDirectory,
-      }),
-      { flag: 'wx', mode: 0o400 }
-    );
-  }
-  const descriptorPath = join(sandboxDirectory, 'run-descriptor.json');
-  const fixtureBaseUrl = 'http://127.0.0.1:1';
-  const descriptor = parsePackagedHandoffRunDescriptor({
-    version: 1,
-    scenario: 'packaged-updater-application-handoff',
-    runId,
-    platform,
-    sandboxDirectory,
-    updaterUserDataDirectory: join(sandboxDirectory, 'updater-user-data'),
-    applicationUserDataDirectory: join(
-      sandboxDirectory,
-      'application-user-data'
-    ),
-    applicationStateDirectory: join(sandboxDirectory, 'application-state'),
-    packagedUpdaterDirectory: join(sandboxDirectory, 'packaged-updater'),
-    installationDirectory: join(sandboxDirectory, 'installation'),
-    applicationLauncherPath: join(
-      sandboxDirectory,
-      'installation',
-      launcherName(platform)
-    ),
-    backupDirectory: join(sandboxDirectory, 'last-known-good'),
-    stagingDirectory: join(sandboxDirectory, 'staging'),
-    artifactDirectory: join(sandboxDirectory, 'artifacts'),
-    fixtureStateDirectory: join(sandboxDirectory, 'fixture-state'),
-    eventLogPath: join(sandboxDirectory, 'events.jsonl'),
-    handoffLogPath: join(sandboxDirectory, 'artifacts', 'handoff.jsonl'),
-    startupHealthPath: join(sandboxDirectory, 'startup-health.json'),
-    fixtureBaseUrl,
-    releaseApiUrl: `${fixtureBaseUrl}/releases`,
-    artifactUrl: `${fixtureBaseUrl}/artifacts/current.json`,
-    automationPort: 9222,
-    clientSdkPort: 7654,
-    gameAutomationPort: 9333,
-    healthTimeoutMs: 30000,
-    recoveryFailure: 'none',
-    incrementalUpdate: 'none',
-    gameDownloadRecovery: false,
-    fixtureGameLifecycle: false,
-    offlineProductBehavior: false,
-    deterministicTorrentInstallation: false,
-    torrentUrl: null,
-    torrentTrackerUrl: null,
-    torrentPeerPort: null,
-  });
-  for (const directory of [
-    descriptor.updaterUserDataDirectory,
-    descriptor.applicationUserDataDirectory,
-    descriptor.applicationStateDirectory,
-    descriptor.packagedUpdaterDirectory,
-    descriptor.installationDirectory,
-    descriptor.stagingDirectory,
-    descriptor.artifactDirectory,
-    descriptor.fixtureStateDirectory,
-  ]) {
-    mkdirSync(directory, { recursive: true });
-  }
-  writeFileSync(descriptorPath, JSON.stringify(descriptor, null, 2));
-  return { ...descriptor, descriptorPath };
-}
-
-export function writePackagedHandoffRunDescriptor(
-  descriptor: PackagedHandoffDescriptorWithPath,
-  fixtureBaseUrl: string,
-  automationPort: number,
-  clientSdkPort: number,
-  gameAutomationPort: number,
-  recoveryFailure: 'none' | RecoveryFailureCase = 'none',
-  gameDownloadRecovery = false,
-  fixtureGameLifecycle = false,
-  offlineProductBehavior = false,
-  incrementalUpdate: IncrementalUpdateMode = 'none',
-  deterministicTorrentInstallation = false,
-  torrent: {
-    torrentUrl: string;
-    trackerUrl: string;
-    peerPort: number;
-  } | null = null
-) {
-  const { descriptorPath, ...current } = descriptor;
-  const configured = parsePackagedHandoffRunDescriptor({
-    ...current,
-    fixtureBaseUrl,
-    releaseApiUrl: `${fixtureBaseUrl}/releases`,
-    artifactUrl: `${fixtureBaseUrl}/artifacts/current.json`,
-    automationPort,
-    clientSdkPort,
-    gameAutomationPort,
-    recoveryFailure,
-    incrementalUpdate,
-    gameDownloadRecovery,
-    fixtureGameLifecycle,
-    offlineProductBehavior,
-    deterministicTorrentInstallation,
-    torrentUrl: torrent?.torrentUrl ?? null,
-    torrentTrackerUrl: torrent?.trackerUrl ?? null,
-    torrentPeerPort: torrent?.peerPort ?? null,
-    healthTimeoutMs:
-      recoveryFailure === 'none'
-        ? current.healthTimeoutMs
-        : ['immediate-root-exit', 'fork-during-scan'].includes(recoveryFailure)
-          ? 5000
-          : 2000,
-  });
-  writeFileSync(descriptorPath, JSON.stringify(configured, null, 2));
-  return { ...configured, descriptorPath };
-}
-
-function collectArtifactFiles(root: string, destinationRoot: string) {
-  const files: ArtifactFile[] = [];
-  const visit = (directory: string) => {
-    for (const entry of readdirSync(directory, { withFileTypes: true })) {
-      const sourcePath = join(directory, entry.name);
-      if (entry.isDirectory()) {
-        visit(sourcePath);
-        continue;
-      }
-      const destinationPath = join(
-        destinationRoot,
-        relative(root, sourcePath)
-      ).replaceAll('\\', '/');
-      files.push({
-        path: destinationPath,
-        mode: statSync(sourcePath).mode & 0o777,
-        contents: readFileSync(sourcePath).toString('base64'),
-      });
-    }
-  };
-  visit(root);
-  return files;
-}
-
-function artifactFile(sourcePath: string, destinationPath: string) {
-  return {
-    path: destinationPath,
-    mode: statSync(sourcePath).mode & 0o777,
-    contents: readFileSync(sourcePath).toString('base64'),
-  };
-}
-
-function launcherName(platform: PackagedHandoffPlatform) {
-  return platform === 'win32'
-    ? 'OpenGameInstaller.exe'
-    : 'OpenGameInstaller.AppImage';
-}
-
-function lastKnownGoodLauncherName(platform: PackagedHandoffPlatform) {
-  return launcherName(platform);
-}
-
-function fixtureBlockmap(contents: Buffer, sizes: number[]) {
-  let offset = 0;
-  const normalizedSizes = sizes.filter((size) => size > 0);
-  const checksums = normalizedSizes.map((size) => {
-    const checksum = Buffer.from(
-      blake2b(contents.subarray(offset, offset + size), undefined, 18)
-    ).toString('base64');
-    offset += size;
-    return checksum;
-  });
-  if (offset !== contents.byteLength) {
-    throw new Error('Fixture blockmap sizes do not describe the artifact');
-  }
-  return gzipSync(
-    JSON.stringify({
-      version: '2',
-      files: [{ name: 'file', offset: 0, sizes: normalizedSizes, checksums }],
-    })
-  );
-}
-
-function compatibleBlockSizes(base: Buffer, target: Buffer) {
-  let prefix = 0;
-  while (
-    prefix < base.byteLength &&
-    prefix < target.byteLength &&
-    base[prefix] === target[prefix]
-  ) {
-    prefix += 1;
-  }
-  let suffix = 0;
-  while (
-    suffix < base.byteLength - prefix &&
-    suffix < target.byteLength - prefix &&
-    base[base.byteLength - suffix - 1] ===
-      target[target.byteLength - suffix - 1]
-  ) {
-    suffix += 1;
-  }
-  return {
-    base: [prefix, base.byteLength - prefix - suffix, suffix],
-    target: [prefix, target.byteLength - prefix - suffix, suffix],
-  };
-}
+export type {
+  IncrementalUpdateMode,
+  PackagedApplicationLaunch,
+  PackagedHandoffBuild,
+  PackagedHandoffRunDescriptor,
+  RecoveryFailureCase,
+} from './packaged-handoff-descriptor';
+export {
+  createPackagedHandoffSandbox,
+  INCREMENTAL_UPDATE_MODES,
+  parsePackagedHandoffRunDescriptor,
+  RECOVERY_FAILURE_CASES,
+  readPackagedHandoffRunDescriptor,
+  writePackagedHandoffRunDescriptor,
+} from './packaged-handoff-descriptor';
 
 export function buildPackagedHandoffArtifacts(
   input: PackagedHandoffArtifactInput
@@ -713,7 +147,23 @@ export function buildPackagedHandoffArtifacts(
     );
     cpSync(
       input.updaterOfflineDecisionPath,
-      join(packagedUpdaterDirectory, 'support/updater-offline-decision.mjs')
+      join(packagedUpdaterDirectory, 'support/updater-offline-decision.js')
+    );
+    const onlineStatePackageDirectory = join(
+      packagedUpdaterDirectory,
+      'node_modules/@ogi/online-state'
+    );
+    mkdirSync(join(onlineStatePackageDirectory, 'build'), { recursive: true });
+    cpSync(
+      input.applicationOnlineStatePath,
+      join(onlineStatePackageDirectory, 'build/index.js')
+    );
+    cpSync(
+      join(
+        resolve(dirname(input.applicationOnlineStatePath), '..'),
+        'package.json'
+      ),
+      join(onlineStatePackageDirectory, 'package.json')
     );
     cpSync(
       input.updaterUpdateEnginePath,
@@ -760,7 +210,7 @@ export function buildPackagedHandoffArtifacts(
       artifactFile(input.applicationMainPath, 'app/e2e-product-main.cjs'),
       artifactFile(
         input.applicationOnlineStatePath,
-        'support/application-online-state.mjs'
+        'support/application-online-state.js'
       ),
       artifactFile(input.fixtureServicePath, 'support/fixture-service.cjs'),
       artifactFile(input.trafficGuardPath, 'support/offline-traffic-guard.cjs'),
@@ -926,7 +376,7 @@ function stagePackagedApplication(
     artifact.entryPoint,
     'app/out/preload/index.mjs',
     'app/out/renderer/index.html',
-    'support/application-online-state.mjs',
+    'support/application-online-state.js',
     'support/fixture-service.cjs',
     'support/offline-traffic-guard.cjs',
     'support/packaged-handoff-run-descriptor.cjs',
@@ -1220,7 +670,7 @@ export async function startPackagedHandoffFixture(
       ['GET', 'HEAD'].includes(request.method ?? '') &&
       requestUrl.pathname === '/games/golden-journey.txt';
     const isFixtureGameMain =
-      request.method === 'GET' &&
+      ['GET', 'HEAD'].includes(request.method ?? '') &&
       requestUrl.pathname === '/games/fixture-game.cjs';
     const isTorrent =
       request.method === 'GET' &&
@@ -1478,7 +928,7 @@ export async function startPackagedHandoffFixture(
         'content-type': 'application/javascript',
         'content-length': Buffer.byteLength(FIXTURE_GAME_MAIN),
       });
-      response.end(FIXTURE_GAME_MAIN);
+      response.end(request.method === 'HEAD' ? undefined : FIXTURE_GAME_MAIN);
       return;
     }
     if (isTorrent && torrentContents) {
@@ -1685,125 +1135,11 @@ export async function startPackagedHandoffFixture(
   };
 }
 
-export function findUnexpectedOfflineTraffic(
-  trafficLogPaths: readonly string[],
-  fixtureRequestLogPath: string
-) {
-  const unexpectedTraffic = trafficLogPaths.flatMap((path) => {
-    if (!existsSync(path)) {
-      return [{ source: path, expected: false, error: 'traffic log missing' }];
-    }
-    return readFileSync(path, 'utf8')
-      .split(/\r?\n/)
-      .filter(Boolean)
-      .map((line) => JSON.parse(line) as { expected?: boolean })
-      .filter((entry) => entry.expected !== true)
-      .map((entry) => ({ source: path, ...entry }));
-  });
-  if (!existsSync(fixtureRequestLogPath)) {
-    return [
-      ...unexpectedTraffic,
-      {
-        source: fixtureRequestLogPath,
-        expected: false,
-        error: 'Fixture Service request log missing',
-      },
-    ];
-  }
-  const unexpectedFixtureRequests = readFileSync(fixtureRequestLogPath, 'utf8')
-    .split(/\r?\n/)
-    .filter(Boolean)
-    .map((line) => JSON.parse(line) as { unexpected?: boolean })
-    .filter((entry) => entry.unexpected === true)
-    .map((entry) => ({ source: fixtureRequestLogPath, ...entry }));
-  return [...unexpectedTraffic, ...unexpectedFixtureRequests];
-}
-
-const unexpectedRuntimeErrorPatterns = [
-  /UnhandledPromiseRejection/i,
-  /Uncaught Exception/i,
-  /ERR_UNHANDLED_REJECTION/i,
-  /\bFATAL\b/i,
-];
-
-export function findUnexpectedRuntimeLogErrors(logPaths: readonly string[]) {
-  return logPaths.flatMap((path) => {
-    if (!existsSync(path)) return [];
-    return readFileSync(path, 'utf8')
-      .split(/\r?\n/)
-      .filter((line) =>
-        unexpectedRuntimeErrorPatterns.some((pattern) => pattern.test(line))
-      )
-      .map((line) => ({ path, line }));
-  });
-}
-
-export type ProductionPackagingBoundary = {
-  applicationIncludedPaths: string[];
-  updaterIncludedPaths: string[];
-  activeHookMatches: string[];
-};
-
-export function assertProductionPackagingBoundary(
-  boundary: ProductionPackagingBoundary
-) {
-  if (boundary.activeHookMatches.length > 0) {
-    throw new Error(
-      `Production packaging contains active E2E hooks: ${boundary.activeHookMatches.join(', ')}`
-    );
-  }
-  return boundary;
-}
-
-export function verifyProductionPackagingBoundary(repositoryDirectory: string) {
-  const applicationPackage = JSON.parse(
-    readFileSync(join(repositoryDirectory, 'application/package.json'), 'utf8')
-  ) as { build?: { files?: string[] } };
-  const updaterPackage = JSON.parse(
-    readFileSync(join(repositoryDirectory, 'updater/package.json'), 'utf8')
-  ) as { build?: { files?: string[] } };
-  const applicationIncludedPaths = applicationPackage.build?.files ?? [];
-  const updaterIncludedPaths = updaterPackage.build?.files ?? [];
-  for (const includedPath of [
-    ...applicationIncludedPaths,
-    ...updaterIncludedPaths,
-  ]) {
-    if (/e2e|run-descriptor/i.test(includedPath)) {
-      throw new Error(
-        `Production packaging includes an E2E path: ${includedPath}`
-      );
-    }
-  }
-
-  const activeHookMatches: string[] = [];
-  const scan = (root: string) => {
-    if (!existsSync(root)) {
-      throw new Error(`Production packaging input is missing: ${root}`);
-    }
-    const visit = (directory: string) => {
-      for (const entry of readdirSync(directory, { withFileTypes: true })) {
-        const path = join(directory, entry.name);
-        if (entry.isDirectory()) {
-          visit(path);
-          continue;
-        }
-        if (entry.name.endsWith('.map')) continue;
-        const contents = readFileSync(path);
-        if (
-          contents.includes(Buffer.from('OGI_RUN_DESCRIPTOR')) ||
-          contents.includes(Buffer.from('packaged-updater-application-handoff'))
-        ) {
-          activeHookMatches.push(relative(repositoryDirectory, path));
-        }
-      }
-    };
-    visit(root);
-  };
-  scan(join(repositoryDirectory, 'application/out'));
-  scan(join(repositoryDirectory, 'updater/dist'));
-  return {
-    applicationIncludedPaths,
-    updaterIncludedPaths,
-    activeHookMatches,
-  };
-}
+export type { ProductionPackagingBoundary } from './packaged-handoff-audit';
+export {
+  assertProductionPackagingBoundary,
+  findUnexpectedFixtureRequests,
+  findUnexpectedOfflineTraffic,
+  findUnexpectedRuntimeLogErrors,
+  verifyProductionPackagingBoundary,
+} from './packaged-handoff-audit';

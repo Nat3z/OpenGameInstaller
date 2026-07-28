@@ -78,7 +78,7 @@ app
             'updater-status',
             updaterFailure(
               'Action required',
-              'The downloaded release is invalid.'
+              'The Verified Release is invalid.'
             )
           );
           return;
@@ -88,7 +88,7 @@ app
             'updater-status',
             updaterFailure(
               'Action required',
-              'The downloaded release is invalid.'
+              'The Verified Release is invalid.'
             )
           );
           await window.webContents.executeJavaScript(`

@@ -3,7 +3,7 @@ import {
   type EffectiveOnlineState,
   getRequestedOnlineState,
   resolveEffectiveOnlineState,
-} from './online-state.mjs';
+} from '@ogi/online-state';
 
 export { type EffectiveOnlineState, getRequestedOnlineState };
 

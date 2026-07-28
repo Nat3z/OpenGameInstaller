@@ -5,6 +5,11 @@ import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Cause, Data, Effect, Exit, Option } from 'effect';
 import {
+  type ExecutionVideoRecording,
+  startExecutionVideo,
+  stopExecutionVideo,
+} from './execution-video';
+import {
   findTrackedProcessSurvivors,
   readWindowsJobSurvivors,
   spawnTrackedProcess,
@@ -151,6 +156,17 @@ writeEvent({
 });
 writeEvent({ type: 'fixture.started', payload: { port: fixture.port } });
 
+const videoPath = join(descriptor.artifactDirectory, 'execution.webm');
+let videoRecording: ExecutionVideoRecording | undefined;
+let videoFailure = '';
+if (!process.env.OGI_E2E_RUNNER_PROBE_PATH) {
+  try {
+    videoRecording = await startExecutionVideo({ path: videoPath });
+  } catch (cause) {
+    videoFailure = cause instanceof Error ? cause.message : String(cause);
+  }
+}
+
 function waitForCancellation() {
   return Effect.promise(() => cancellation);
 }
@@ -159,13 +175,17 @@ function runScenarioAttempt(attempt: number) {
   return Effect.scoped(
     Effect.gen(function* () {
       const probeRunnerPath = process.env.OGI_E2E_RUNNER_PROBE_PATH;
-      const { command, args, detached } = probeRunnerPath
+      const launch = probeRunnerPath
         ? {
             command: process.execPath,
             args: [probeRunnerPath],
             detached: process.platform === 'linux',
           }
         : getUpdaterScenarioLaunch(process.platform);
+      const { command, args, detached } =
+        videoRecording?.display && launch.command === 'xvfb-run'
+          ? { ...launch, command: launch.args[1]!, args: launch.args.slice(2) }
+          : launch;
       const commandLine = [command, ...args].join(' ');
       const windowsJobResultPath = join(
         descriptor.artifactDirectory,
@@ -183,6 +203,9 @@ function runScenarioAttempt(attempt: number) {
               detached,
               env: {
                 ...process.env,
+                ...(videoRecording?.display
+                  ? { DISPLAY: videoRecording.display }
+                  : {}),
                 OGI_RUN_DESCRIPTOR: descriptor.descriptorPath,
                 OGI_SCENARIO_ATTEMPT: String(attempt),
                 OGI_WINDOWS_JOB_RESULT: windowsJobResultPath,
@@ -336,6 +359,15 @@ const program = Effect.gen(function* () {
     break;
   }
 
+  if (videoRecording) {
+    const videoExit = yield* Effect.exit(
+      Effect.tryPromise(() => stopExecutionVideo(videoRecording!))
+    );
+    if (Exit.isFailure(videoExit)) {
+      videoFailure = Cause.pretty(videoExit.cause);
+    }
+  }
+
   const fixtureCloseExit = yield* Effect.exit(
     Effect.tryPromise({
       try: () => fixture.close(),
@@ -437,9 +469,11 @@ const program = Effect.gen(function* () {
       outcome,
       createdAt: startedAt,
       pinned: pinRequested,
+      videoPaths: [videoPath],
     });
   }
   const artifacts = [
+    ['video', videoPath],
     [
       'updater-main-log',
       join(descriptor.artifactDirectory, 'updater-main.log'),
@@ -515,6 +549,7 @@ const program = Effect.gen(function* () {
       sandboxDirectory: descriptor.sandboxDirectory,
       outcome,
       createdAt: startedAt,
+      videoPaths: [videoPath],
     });
     console.log('Scenario Sandbox deleted by successful-run retention policy');
   }
@@ -526,6 +561,9 @@ const program = Effect.gen(function* () {
 });
 
 const exit = await Effect.runPromiseExit(program);
+if (videoRecording && !videoRecording.stopped) {
+  await stopExecutionVideo(videoRecording).catch(() => undefined);
+}
 process.off('SIGINT', cancel);
 process.off('SIGTERM', cancel);
 process.exitCode =

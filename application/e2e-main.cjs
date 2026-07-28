@@ -4,6 +4,7 @@ const path = require('node:path');
 const { WebSocketServer } = require('ws');
 const { registerFixtureService } = require('../e2e/fixture-service.cjs');
 const {
+  validateAccessibilityRunDescriptor,
   validateApplicationRunDescriptor,
 } = require('../e2e/src/application-run-descriptor.cjs');
 
@@ -18,14 +19,8 @@ let sandboxDirectory;
 let userDataDirectory;
 let artifactDirectory;
 if (rawDescriptor.scenario === 'application-accessibility') {
-  if (
-    rawDescriptor.version !== 1 ||
-    typeof rawDescriptor.sandboxDirectory !== 'string' ||
-    !['welcome', 'oobe-resume', 'main'].includes(rawDescriptor.state)
-  ) {
-    throw new Error('Invalid accessibility Run Descriptor');
-  }
-  sandboxDirectory = rawDescriptor.sandboxDirectory;
+  const descriptor = validateAccessibilityRunDescriptor(rawDescriptor);
+  sandboxDirectory = descriptor.sandboxDirectory;
 } else {
   const descriptor = validateApplicationRunDescriptor(rawDescriptor);
   sandboxDirectory = descriptor.applicationStateDirectory;
@@ -103,7 +98,8 @@ app
       webPreferences: {
         preload: path.join(applicationDirectory, 'out/preload/index.mjs'),
         contextIsolation: true,
-        nodeIntegration: true,
+        nodeIntegration: false,
+        sandbox: false,
       },
     });
     window.webContents.on(

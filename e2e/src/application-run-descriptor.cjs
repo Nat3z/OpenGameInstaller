@@ -11,6 +11,12 @@ const descriptorKeys = [
   'artifactDirectory',
   'eventLogPath',
 ];
+const accessibilityDescriptorKeys = [
+  'version',
+  'scenario',
+  'state',
+  'sandboxDirectory',
+];
 
 function isWithin(parent, candidate) {
   const pathFromParent = relative(resolve(parent), resolve(candidate));
@@ -20,20 +26,24 @@ function isWithin(parent, candidate) {
   );
 }
 
-function validateApplicationRunDescriptor(value) {
+function validateDescriptorShape(value, expectedKeys) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw new Error('Run Descriptor must be an object');
   }
   const unknown = Object.keys(value).filter(
-    (key) => !descriptorKeys.includes(key)
+    (key) => !expectedKeys.includes(key)
   );
   if (unknown.length > 0) {
     throw new Error(`Run Descriptor has unknown fields: ${unknown.join(', ')}`);
   }
-  const missing = descriptorKeys.filter((key) => !(key in value));
+  const missing = expectedKeys.filter((key) => !(key in value));
   if (missing.length > 0) {
     throw new Error(`Run Descriptor is missing fields: ${missing.join(', ')}`);
   }
+}
+
+function validateApplicationRunDescriptor(value) {
+  validateDescriptorShape(value, descriptorKeys);
   if (
     value.version !== 1 ||
     value.scenario !== 'application-visible-navigation' ||
@@ -60,4 +70,25 @@ function validateApplicationRunDescriptor(value) {
   return value;
 }
 
-module.exports = { validateApplicationRunDescriptor };
+function validateAccessibilityRunDescriptor(value) {
+  validateDescriptorShape(value, accessibilityDescriptorKeys);
+  if (
+    value.version !== 1 ||
+    value.scenario !== 'application-accessibility' ||
+    !['welcome', 'oobe-resume', 'main'].includes(value.state)
+  ) {
+    throw new Error('Accessibility Run Descriptor fields are invalid');
+  }
+  if (
+    typeof value.sandboxDirectory !== 'string' ||
+    !isAbsolute(value.sandboxDirectory)
+  ) {
+    throw new Error('Run Descriptor sandboxDirectory must be an absolute path');
+  }
+  return value;
+}
+
+module.exports = {
+  validateAccessibilityRunDescriptor,
+  validateApplicationRunDescriptor,
+};

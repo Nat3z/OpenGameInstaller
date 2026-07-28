@@ -1,4 +1,4 @@
-# Keep updater/src/windows-job-wrapper.ps1 and e2e/src/windows-job-wrapper.ps1 identical.
+# Shared by production updater launches and the E2E process-containment harness.
 param(
   [Parameter(Mandatory = $false)]
   [string] $WrapperToken,

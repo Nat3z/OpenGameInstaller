@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import {
   classifyQuarantineProcessOutcome,
   getQuarantineCommandLaunch,
@@ -51,7 +51,7 @@ describe('nightly quarantined scenario execution', () => {
         '-ExecutionPolicy',
         'Bypass',
         '-File',
-        join(import.meta.dir, '../src/windows-job-wrapper.ps1'),
+        resolve(import.meta.dir, '../../updater/src/windows-job-wrapper.ps1'),
         'C:\\Program Files\\Bun\\bun.exe',
         'test',
         '--filter',
@@ -134,7 +134,7 @@ describe('nightly quarantined scenario execution', () => {
 
   test('writes Windows survivor evidence only after closing the kill-on-close Job', () => {
     const source = readFileSync(
-      join(import.meta.dir, '../src/windows-job-wrapper.ps1'),
+      resolve(import.meta.dir, '../../updater/src/windows-job-wrapper.ps1'),
       'utf8'
     );
     const close = source.indexOf('CloseHandle(job);');

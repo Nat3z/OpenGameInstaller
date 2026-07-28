@@ -1,6 +1,10 @@
 import { readFileSync } from 'node:fs';
 import { relative } from 'node:path';
-import type { RunEvent } from './run-events';
+import {
+  type RunEvent,
+  TERMINAL_OUTCOMES,
+  type TerminalOutcome,
+} from './run-events';
 
 export const CI_BUDGETS = {
   ordinaryUiStepMs: 30_000,
@@ -16,11 +20,8 @@ export const CI_WORKFLOW_TIMEOUTS = {
   fullMinutes: 35,
 } as const;
 
-export function classifyWorkspacePreparationOutcome(cause: unknown) {
-  return cause instanceof Error &&
-    (cause as NodeJS.ErrnoException).code === 'ETIMEDOUT'
-    ? 'Budget Failed'
-    : 'Failed';
+export function classifyWorkspacePreparationOutcome(_cause: unknown) {
+  return 'Failed';
 }
 
 export function collectTopLevelArtifactTypes(
@@ -46,6 +47,34 @@ export function collectTopLevelArtifactTypes(
     }
   }
   return artifactTypes;
+}
+
+export function collectTopLevelRunOutcomes(
+  runRoot: string,
+  eventLogPaths: readonly string[]
+) {
+  const outcomes: TerminalOutcome[] = [];
+  for (const eventLogPath of eventLogPaths) {
+    if (relative(runRoot, eventLogPath).split(/[\\/]/).length !== 2) continue;
+    let latest: TerminalOutcome | undefined;
+    for (const line of readFileSync(eventLogPath, 'utf8')
+      .split(/\r?\n/)
+      .filter(Boolean)) {
+      const event = JSON.parse(line) as {
+        type?: string;
+        payload?: { outcome?: unknown };
+      };
+      if (
+        event.type === 'run.completed' &&
+        typeof event.payload?.outcome === 'string' &&
+        TERMINAL_OUTCOMES.includes(event.payload.outcome as TerminalOutcome)
+      ) {
+        latest = event.payload.outcome as TerminalOutcome;
+      }
+    }
+    if (latest) outcomes.push(latest);
+  }
+  return outcomes;
 }
 
 export type CiSuiteName = 'pullRequest' | 'nightly' | 'release';
@@ -193,9 +222,13 @@ export function classifyCiCheckOutcome(input: {
   timedOut: boolean;
   requiredArtifacts?: readonly string[];
   observedArtifacts?: readonly string[];
-}) {
-  if (input.timedOut) return 'Budget Failed';
-  if (input.status !== 0) return 'Failed';
+  observedOutcomes?: readonly TerminalOutcome[];
+}): TerminalOutcome {
+  if (input.timedOut || input.status !== 0) return 'Failed';
+  const nonPassingOutcome = input.observedOutcomes?.find(
+    (outcome) => outcome !== 'Passed'
+  );
+  if (nonPassingOutcome) return nonPassingOutcome;
   const observed = new Set(input.observedArtifacts ?? []);
   if (
     input.requiredArtifacts?.some((artifactType) => !observed.has(artifactType))

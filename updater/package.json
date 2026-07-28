@@ -30,13 +30,15 @@
   },
   "scripts": {
     "test": "bun test tests",
-    "build": "tsc -p tsconfig.json && node -e \"for (const file of ['offline-decision.mjs','update-engine.mjs','production-update-coordinator.mjs','windows-job-evidence.mjs','windows-job-wrapper.ps1']) require('node:fs').copyFileSync('src/' + file, 'dist/' + file)\"",
+    "prebuild": "bun run --cwd ../packages/online-state build",
+    "build": "tsc -p tsconfig.json && node -e \"for (const file of ['update-engine.mjs','production-update-coordinator.mjs','windows-job-evidence.mjs','windows-job-wrapper.ps1']) require('node:fs').copyFileSync('src/' + file, 'dist/' + file)\"",
     "dev": "bun run build && electron .",
     "preelectron-pack": "bun run build",
     "electron-pack": "electron-builder"
   },
   "license": "ISC",
   "dependencies": {
+    "@ogi/online-state": "workspace:*",
     "axios": "^1.13.4",
     "blakejs": "^1.2.1",
     "yauzl": "^3.2.0"

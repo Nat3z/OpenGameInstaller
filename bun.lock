@@ -1,5 +1,6 @@
 {
   "lockfileVersion": 1,
+  "configVersion": 0,
   "workspaces": {
     "": {
       "name": "ogi-monorepo",
@@ -160,6 +161,7 @@
         "effect": "^3.22.0",
       },
       "devDependencies": {
+        "tsdown": "^0.21.10",
         "typescript": "^5.9.3",
       },
     },

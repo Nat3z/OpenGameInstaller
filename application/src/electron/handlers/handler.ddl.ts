@@ -779,7 +779,10 @@ export class Download {
         | undefined;
 
       // Check if this part should use chunk parallelization
-      const parallelInfo = yield* this.shouldUseParallelDownloadForPart(job);
+      const parallelInfo = yield* this.shouldUseParallelDownloadForPart(
+        job,
+        part.abortController.signal
+      );
       part.totalBytes = parallelInfo.fileSize;
       part.parallelLimit = mergeParallelLimits(
         part.parallelLimit,
@@ -912,7 +915,8 @@ export class Download {
    * Check if parallel download should be used for a part in multi-part download.
    */
   private shouldUseParallelDownloadForPart(
-    job: DownloadJob
+    job: DownloadJob,
+    signal?: AbortSignal
   ): Effect.Effect<ParallelDownloadInfo> {
     return Effect.gen(function* () {
       const keepAliveAgent = job.link.startsWith('https')
@@ -968,6 +972,7 @@ export class Download {
                 httpAgent: keepAliveAgent,
                 httpsAgent: keepAliveAgent,
                 timeout: 10000,
+                signal,
               }),
             catch: (cause) =>
               new DownloadError({
@@ -1312,9 +1317,12 @@ export class Download {
       yield* Effect.async<void, FileSystemError>((resume) => {
         let resolved = false;
         let currentChunkIndex = 0;
+        let activeChunkStream: fs.ReadStream | undefined;
         const fail = (cause: unknown, path = part.job.path) => {
           if (resolved) return;
           resolved = true;
+          activeChunkStream?.destroy();
+          activeChunkStream = undefined;
           resume(
             Effect.fail(
               new FileSystemError({
@@ -1341,6 +1349,7 @@ export class Download {
             return;
           }
           const chunkStream = fs.createReadStream(chunkPath);
+          activeChunkStream = chunkStream;
           let ended = false;
           chunkStream.on('error', (cause) => {
             finalStream.destroy();
@@ -1348,6 +1357,7 @@ export class Download {
           });
           chunkStream.on('end', () => {
             ended = true;
+            activeChunkStream = undefined;
             currentChunkIndex++;
             writeNextChunk();
           });
@@ -1856,6 +1866,7 @@ export class Download {
 
       // Check if we should use parallel download (only for single-part downloads)
       if (this.totalParts === 1) {
+        this.abortController = new AbortController();
         const parallelInfo = yield* this.shouldUseParallelDownload(job);
         if (parallelInfo.useParallel) {
           console.log('[direct] Using parallel download');
@@ -2256,7 +2267,10 @@ export class Download {
     job: DownloadJob
   ): Effect.Effect<ParallelDownloadInfo> {
     return Effect.gen(this, function* () {
-      const info = yield* this.shouldUseParallelDownloadForPart(job);
+      const info = yield* this.shouldUseParallelDownloadForPart(
+        job,
+        this.abortController?.signal
+      );
       this.parallelLimit = mergeParallelLimits(
         this.parallelLimit,
         info.parallelLimit

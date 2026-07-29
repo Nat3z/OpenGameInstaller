@@ -3,6 +3,8 @@ import { createRequire } from 'node:module';
 import { join } from 'node:path';
 import { Data } from 'effect';
 import sharp from 'sharp';
+import { resolveElectronExecutable } from '../electron-service-options';
+import type { RunEvent } from './run-events';
 import { getDefaultRunRoot } from './run-reliability';
 
 export type ApplicationScenarioMode =
@@ -223,6 +225,12 @@ export async function validateApplicationFailureEvidence(
   >;
 }
 
+export function hasCompletedApplicationScenarioStep(
+  events: readonly RunEvent[]
+) {
+  return events.some((event) => event.type === 'step.completed');
+}
+
 export function validateApplicationScenarioProcessOutcome(
   mode: ApplicationScenarioMode,
   processFailed: boolean
@@ -235,7 +243,10 @@ export function validateApplicationScenarioProcessOutcome(
   }
 }
 
-export function getApplicationScenarioLaunch(platform: NodeJS.Platform) {
+export function getApplicationScenarioLaunch(
+  platform: NodeJS.Platform,
+  electronExecutable?: string
+) {
   if (platform === 'linux') {
     return {
       command: 'xvfb-run',
@@ -265,6 +276,19 @@ export function getApplicationScenarioLaunch(platform: NodeJS.Platform) {
         './application-scenario-wdio.conf.ts',
       ],
       detached: false,
+    };
+  }
+  if (platform === 'darwin') {
+    return {
+      command: electronExecutable ?? resolveElectronExecutable(),
+      args: [
+        '-e',
+        "import('@wdio/cli').then(({ run }) => run())",
+        '--',
+        'run',
+        './application-scenario-wdio.conf.ts',
+      ],
+      detached: true,
     };
   }
   return {

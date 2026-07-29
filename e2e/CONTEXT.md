@@ -56,6 +56,10 @@ _Avoid_: Process started, window ready
 A user-triggered scenario that exercises a real credentialed third-party provider and is excluded from required automated runs. Its result reports integration health but does not replace deterministic coverage.
 _Avoid_: Integration test, manual test
 
+**Deterministic Suite Check**:
+An Observer-visible wrapper around one canonical deterministic CI check. It preserves the check's child scenario steps and artifacts while giving suite presets a stable ordered progress unit.
+_Avoid_: Product Journey, unit test
+
 **Cancelled**:
 A terminal outcome produced when a user stops a run or scenario. It preserves diagnostic artifacts but does not imply that the product or assertion failed.
 _Avoid_: Failed, aborted

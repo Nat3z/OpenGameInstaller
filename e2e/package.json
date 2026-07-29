@@ -53,6 +53,7 @@
     "typecheck:observer": "svelte-check --tsconfig observer/tsconfig.json"
   },
   "devDependencies": {
+    "@electron/get": "^5.0.0",
     "@sveltejs/vite-plugin-svelte": "^5.1.1",
     "@tsconfig/svelte": "^5.0.6",
     "@wdio/cli": "9.27.1",
@@ -64,6 +65,7 @@
     "axe-core": "4.10.3",
     "effect": "^3.19.14",
     "electron": "43.1.0",
+    "extract-zip": "^2.0.1",
     "puppeteer-core": "^24.39.1",
     "sharp": "^0.34.5",
     "svelte": "^5.49.1",

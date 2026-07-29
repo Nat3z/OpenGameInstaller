@@ -217,6 +217,107 @@ export const CI_SUITES: Record<CiSuiteName, readonly CiSuiteEntry[]> = {
   ],
 };
 
+export const OBSERVER_PRESETS = [
+  {
+    id: 'preset:pull-request',
+    name: 'Pull request',
+    suite: 'pullRequest',
+    warning: 'Runs the required pull-request E2E checks.',
+  },
+  {
+    id: 'preset:nightly',
+    name: 'Nightly',
+    suite: 'nightly',
+    warning: 'Long-running deterministic matrix, including quarantined checks.',
+  },
+  {
+    id: 'preset:release',
+    name: 'Release',
+    suite: 'release',
+    warning:
+      'Requires production release artifacts and may take over 20 minutes.',
+  },
+] as const satisfies ReadonlyArray<{
+  id: string;
+  name: string;
+  suite: CiSuiteName;
+  warning: string;
+}>;
+
+export type ObserverPresetId = (typeof OBSERVER_PRESETS)[number]['id'];
+export type ObserverCheckId = `check:${string}`;
+export type ObserverSelectionId = ObserverPresetId | ObserverCheckId;
+
+export type ObserverCatalogEntry = {
+  id: ObserverSelectionId;
+  name: string;
+  type: 'preset' | 'check';
+  checkCount: number;
+  kind: 'deterministic' | 'quarantined' | 'mixed';
+  warning?: string;
+};
+
+export function getObserverCheckCatalog() {
+  const checks = new Map<string, CiSuiteEntry>();
+  for (const suite of Object.values(CI_SUITES)) {
+    for (const entry of suite)
+      checks.set(entry.id, checks.get(entry.id) ?? entry);
+  }
+  return [...checks.values()];
+}
+
+export function getObserverCatalog(): ObserverCatalogEntry[] {
+  const presets: ObserverCatalogEntry[] = OBSERVER_PRESETS.map((preset) => {
+    const checks = CI_SUITES[preset.suite];
+    const kinds = new Set(checks.map((entry) => entry.kind));
+    return {
+      id: preset.id,
+      name: preset.name,
+      type: 'preset',
+      checkCount: checks.length,
+      kind: kinds.size === 1 ? checks[0]!.kind : 'mixed',
+      warning: preset.warning,
+    };
+  });
+  const releaseOnlyIds = new Set(
+    CI_SUITES.release
+      .filter(
+        (entry) =>
+          !CI_SUITES.pullRequest.some(
+            (candidate) => candidate.id === entry.id
+          ) && !CI_SUITES.nightly.some((candidate) => candidate.id === entry.id)
+      )
+      .map((entry) => entry.id)
+  );
+  const checks: ObserverCatalogEntry[] = getObserverCheckCatalog().map(
+    (entry) => ({
+      id: `check:${entry.id}`,
+      name: entry.name,
+      type: 'check',
+      checkCount: 1,
+      kind: entry.kind,
+      ...(releaseOnlyIds.has(entry.id)
+        ? {
+            warning:
+              'Release-only check; production artifacts may be required.',
+          }
+        : {}),
+    })
+  );
+  return [...presets, ...checks];
+}
+
+export function resolveObserverSelection(selectionId: string) {
+  const preset = OBSERVER_PRESETS.find((entry) => entry.id === selectionId);
+  if (preset) return [...CI_SUITES[preset.suite]];
+  if (!selectionId.startsWith('check:')) return undefined;
+  const checkId = selectionId.slice('check:'.length);
+  const entry = getObserverCheckCatalog().find(
+    (candidate) => candidate.id === checkId
+  );
+  return entry ? [entry] : undefined;
+}
+
 export function classifyCiCheckOutcome(input: {
   status: number | null;
   timedOut: boolean;

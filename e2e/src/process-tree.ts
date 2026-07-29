@@ -3,6 +3,7 @@ import {
   execFile,
   type SpawnOptions,
   spawn,
+  spawnSync,
 } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import {
@@ -55,6 +56,8 @@ export type PosixProcessRecord = {
   pid: number;
   parentPid: number;
   processGroupId: number;
+  state?: string;
+  startTime?: string;
 };
 
 export type WindowsJobResult = {
@@ -111,6 +114,20 @@ export function parsePosixProcessTable(output: string): PosixProcessRecord[] {
     }));
 }
 
+export function parseDarwinProcessTable(output: string): PosixProcessRecord[] {
+  return output
+    .split(/\r?\n/)
+    .map((line) => line.match(/^\s*(\d+)\s+(\d+)\s+(\d+)\s+(\S+)\s+(.+?)\s*$/))
+    .filter((match): match is RegExpMatchArray => match !== null)
+    .map((match) => ({
+      pid: Number(match[1]),
+      parentPid: Number(match[2]),
+      processGroupId: Number(match[3]),
+      state: match[4],
+      startTime: match[5],
+    }));
+}
+
 export function getPosixPidTreeTerminationPlan(
   rootPid: number,
   currentPid: number,
@@ -153,8 +170,22 @@ export function getPosixPidTreeTerminationPlan(
 }
 
 async function readPosixProcessTable() {
-  const { stdout } = await execFileAsync('ps', ['-eo', 'pid=,ppid=,pgid=']);
-  return parsePosixProcessTable(stdout);
+  const args =
+    process.platform === 'linux'
+      ? ['-eo', 'pid=,ppid=,pgid=']
+      : ['-axo', 'pid=,ppid=,pgid=,state=,lstart='];
+  for (let attempt = 1; ; attempt++) {
+    try {
+      const { stdout } = await execFileAsync('ps', args);
+      return process.platform === 'linux'
+        ? parsePosixProcessTable(stdout)
+        : parseDarwinProcessTable(stdout);
+    } catch (cause) {
+      const detail = cause instanceof Error ? cause.message : String(cause);
+      if (attempt >= 3 || !/EPIPE|Broken pipe/i.test(detail)) throw cause;
+      await delay(10);
+    }
+  }
 }
 
 function parseProcStatFields(stat: string) {
@@ -200,8 +231,30 @@ export function readProcProcessIdentity(
   }
 }
 
+function readPosixProcessIdentity(
+  pid: number
+): ProcProcessIdentity | undefined {
+  if (process.platform === 'linux') return readProcProcessIdentity(pid);
+  const result = spawnSync('ps', ['-p', String(pid), '-o', 'state=,lstart='], {
+    encoding: 'utf8',
+  });
+  if (result.error) throw result.error;
+  if (result.status === 1) return undefined;
+  if (result.status !== 0 || typeof result.stdout !== 'string') {
+    throw new Error(`Process identity query failed for PID ${pid}`);
+  }
+  const match = result.stdout.trim().match(/^(\S+)\s+(.+)$/);
+  return match ? { state: match[1], startTime: match[2] } : undefined;
+}
+
 function readProcessStartTime(pid: number) {
-  return readProcProcessIdentity(pid)?.startTime;
+  return readPosixProcessIdentity(pid)?.startTime;
+}
+
+function processRecordStartTime(record: PosixProcessRecord | undefined) {
+  return (
+    record?.startTime ?? (record ? readProcessStartTime(record.pid) : undefined)
+  );
 }
 
 type TrackedProcessIdentity = {
@@ -277,6 +330,74 @@ if status < 0:
 sys.exit(status)
 `;
 
+const DARWIN_PROCESS_SUPERVISOR = `
+import ctypes, json, os, signal, subprocess, sys, time
+command, *args = sys.argv[1:]
+def write_result(value):
+    encoded = ('\\n' + json.dumps(value) + '\\n').encode('utf-8')
+    os.lseek(3, 0, os.SEEK_END)
+    os.write(3, encoded)
+    os.fsync(3)
+try:
+    libproc = ctypes.CDLL('/usr/lib/libproc.dylib')
+    libproc.proc_listchildpids.argtypes = [ctypes.c_int, ctypes.c_void_p, ctypes.c_int]
+    libproc.proc_listchildpids.restype = ctypes.c_int
+except BaseException as error:
+    write_result({'version': 1, 'error': str(error), 'survivors': []})
+    sys.exit(125)
+def child_pids(parent):
+    values = (ctypes.c_int * 4096)()
+    count = libproc.proc_listchildpids(parent, values, ctypes.sizeof(values))
+    return list(values[:max(0, count)])
+def start_time(pid):
+    try:
+        return subprocess.check_output(
+            ['ps', '-p', str(pid), '-o', 'lstart='],
+            text=True,
+            stderr=subprocess.DEVNULL,
+        ).strip()
+    except (subprocess.CalledProcessError, ProcessLookupError):
+        return None
+tracked = {}
+def capture_descendants(root_pid):
+    stack = [root_pid, *tracked.keys()]
+    visited = set()
+    while stack:
+        parent = stack.pop()
+        if parent in visited:
+            continue
+        visited.add(parent)
+        for pid in child_pids(parent):
+            if pid == root_pid:
+                continue
+            if pid not in tracked:
+                identity = start_time(pid)
+                if identity:
+                    tracked[pid] = identity
+            stack.append(pid)
+os.kill(os.getpid(), signal.SIGSTOP)
+try:
+    target = subprocess.Popen([command, *args])
+except BaseException as error:
+    write_result({'version': 1, 'error': 'target launch failed: ' + str(error), 'survivors': []})
+    sys.exit(127)
+while target.poll() is None:
+    capture_descendants(target.pid)
+    time.sleep(0.001)
+status = target.wait()
+capture_descendants(target.pid)
+time.sleep(0.05)
+capture_descendants(target.pid)
+survivors = []
+for pid, identity in tracked.items():
+    if start_time(pid) == identity:
+        survivors.append({'pid': pid, 'startTime': identity})
+write_result({'version': 1, 'survivors': survivors})
+if status < 0:
+    os.kill(os.getpid(), -status)
+sys.exit(status)
+`;
+
 function protectedHarnessPids(
   currentPid: number,
   records: readonly PosixProcessRecord[]
@@ -292,6 +413,7 @@ function protectedHarnessPids(
 }
 
 function ingestContainmentEvidence(tracker: ProcessTreeTracker) {
+  const platformName = process.platform === 'darwin' ? 'macOS' : 'Linux';
   const resultPath = tracker.containmentEvidencePath;
   if (!resultPath || !existsSync(resultPath)) return;
   const errors: unknown[] = [];
@@ -311,12 +433,14 @@ function ingestContainmentEvidence(tracker: ProcessTreeTracker) {
   }
   for (const result of results) {
     if (result.version !== 1 || !Array.isArray(result.survivors)) {
-      errors.push(new Error('Linux launch containment evidence is invalid'));
+      errors.push(
+        new Error(`${platformName} launch containment evidence is invalid`)
+      );
       continue;
     }
     if (typeof result.error === 'string') {
       errors.push(
-        new Error(`Linux launch containment failed: ${result.error}`)
+        new Error(`${platformName} launch containment failed: ${result.error}`)
       );
       continue;
     }
@@ -329,7 +453,9 @@ function ingestContainmentEvidence(tracker: ProcessTreeTracker) {
         typeof (survivor as { startTime?: unknown }).startTime !== 'string'
       ) {
         errors.push(
-          new Error('Linux launch containment survivor evidence is invalid')
+          new Error(
+            `${platformName} launch containment survivor evidence is invalid`
+          )
         );
         continue;
       }
@@ -339,10 +465,11 @@ function ingestContainmentEvidence(tracker: ProcessTreeTracker) {
       tracker.tracked.set(identity.pid, identity);
     }
   }
-  if (errors.length > 0) {
+  if (errors.length === 1) throw errors[0];
+  if (errors.length > 1) {
     throw new AggregateError(
       errors,
-      'Linux launch containment evidence is invalid'
+      `${platformName} launch containment evidence is invalid`
     );
   }
 }
@@ -355,11 +482,12 @@ async function refreshProcessTreeTracker(tracker: ProcessTreeTracker) {
   }
   const records = await readPosixProcessTable();
   const protectedPids = protectedHarnessPids(process.pid, records);
-  const rootRecord = records.find((record) => record.pid === tracker.rootPid);
+  const recordsByPid = new Map(records.map((record) => [record.pid, record]));
+  const rootRecord = recordsByPid.get(tracker.rootPid);
   const candidates = new Set<number>();
   if (
     rootRecord &&
-    readProcessStartTime(tracker.rootPid) === tracker.rootStartTime
+    processRecordStartTime(rootRecord) === tracker.rootStartTime
   ) {
     for (const pid of getPosixPidTreeTerminationPlan(
       tracker.rootPid,
@@ -380,7 +508,7 @@ async function refreshProcessTreeTracker(tracker: ProcessTreeTracker) {
     if (protectedPids.has(pid)) {
       throw new Error(`Refusing to track protected harness PID: ${pid}`);
     }
-    const startTime = readProcessStartTime(pid);
+    const startTime = processRecordStartTime(recordsByPid.get(pid));
     if (!startTime) continue;
     const existing = tracker.tracked.get(pid);
     if (existing && existing.startTime !== startTime) continue;
@@ -392,7 +520,7 @@ async function trackPidTree(rootPid: number) {
   const records = await readPosixProcessTable();
   const rootRecord = records.find((record) => record.pid === rootPid);
   const currentRecord = records.find((record) => record.pid === process.pid);
-  const rootStartTime = readProcessStartTime(rootPid);
+  const rootStartTime = processRecordStartTime(rootRecord);
   if (!rootRecord || !rootStartTime || !currentRecord) {
     throw new Error(`Cannot capture launched process identity: ${rootPid}`);
   }
@@ -448,6 +576,11 @@ export async function spawnTrackedProcess(
     return { child, tracker: await trackProcessTree(child) };
   }
 
+  const supervisor =
+    process.platform === 'darwin'
+      ? DARWIN_PROCESS_SUPERVISOR
+      : LINUX_SUBREAPER_SUPERVISOR;
+  const platformName = process.platform === 'darwin' ? 'macOS' : 'Linux';
   const containmentEvidencePath = join(
     tmpdir(),
     `ogi-process-containment-${randomUUID()}.json`
@@ -460,14 +593,10 @@ export async function spawnTrackedProcess(
   const evidenceFd = openSync(containmentEvidencePath, 'r+');
   let child: ChildProcess;
   try {
-    child = spawn(
-      'python3',
-      ['-c', LINUX_SUBREAPER_SUPERVISOR, command, ...args],
-      {
-        ...options,
-        stdio: withContainmentEvidenceFd(options.stdio, evidenceFd),
-      }
-    );
+    child = spawn('python3', ['-c', supervisor, command, ...args], {
+      ...options,
+      stdio: withContainmentEvidenceFd(options.stdio, evidenceFd),
+    });
   } catch (cause) {
     unlinkSync(containmentEvidencePath);
     throw cause;
@@ -481,30 +610,40 @@ export async function spawnTrackedProcess(
   try {
     if (!child.pid) {
       await delay(0);
-      throw new Error('Linux process supervisor did not start', {
+      throw new Error(`${platformName} process supervisor did not start`, {
         cause: launchError,
       });
     }
     const deadline = Date.now() + 5_000;
-    while (readProcProcessIdentity(child.pid)?.state !== 'T') {
+    while (!readPosixProcessIdentity(child.pid)?.state.startsWith('T')) {
       if (child.exitCode !== null || child.signalCode !== null) {
         if (existsSync(containmentEvidencePath)) {
-          const result = JSON.parse(
-            readFileSync(containmentEvidencePath, 'utf8')
-          ) as { error?: unknown };
-          if (typeof result.error === 'string') {
-            throw new Error(`Linux launch containment failed: ${result.error}`);
+          const result = readFileSync(containmentEvidencePath, 'utf8')
+            .split(/\r?\n/)
+            .filter(Boolean)
+            .map((line) => JSON.parse(line) as { error?: unknown })
+            .find((entry) => typeof entry.error === 'string');
+          if (typeof result?.error === 'string') {
+            throw new Error(
+              `${platformName} launch containment failed: ${result.error}`
+            );
           }
         }
-        throw new Error('Linux launch containment exited before attachment');
+        throw new Error(
+          `${platformName} launch containment exited before attachment`
+        );
       }
       if (Date.now() >= deadline) {
-        throw new Error('Linux launch containment handshake timed out');
+        throw new Error(
+          `${platformName} launch containment handshake timed out`
+        );
       }
       await delay(5);
     }
     const tracker = await trackProcessTree(child);
-    if (!tracker) throw new Error('Linux process tracker was not established');
+    if (!tracker) {
+      throw new Error(`${platformName} process tracker was not established`);
+    }
     tracker.containmentEvidencePath = containmentEvidencePath;
     process.kill(child.pid, 'SIGCONT');
     return { child, tracker };
@@ -533,10 +672,10 @@ export async function findTrackedProcessSurvivors(
   return [...tracker.tracked.values()]
     .filter((identity) => {
       if (excluded.has(identity.pid)) return false;
-      const currentIdentity = readProcProcessIdentity(identity.pid);
+      const currentIdentity = readPosixProcessIdentity(identity.pid);
       return (
         currentIdentity?.startTime === identity.startTime &&
-        currentIdentity.state !== 'Z' &&
+        !currentIdentity.state.startsWith('Z') &&
         processExists(identity.pid)
       );
     })
@@ -592,19 +731,19 @@ async function terminateTrackedPosixTree(tracker: ProcessTreeTracker) {
   }
   const originalProcessesRemain = () =>
     [...tracker.tracked.values()].some((identity) => {
-      const currentIdentity = readProcProcessIdentity(identity.pid);
+      const currentIdentity = readPosixProcessIdentity(identity.pid);
       return (
         currentIdentity?.startTime === identity.startTime &&
-        currentIdentity.state !== 'Z' &&
+        !currentIdentity.state.startsWith('Z') &&
         processExists(identity.pid)
       );
     });
   if (!(await waitUntilGone(originalProcessesRemain, 4_000))) {
     const survivors = [...tracker.tracked.values()].filter((identity) => {
-      const currentIdentity = readProcProcessIdentity(identity.pid);
+      const currentIdentity = readPosixProcessIdentity(identity.pid);
       return (
         currentIdentity?.startTime === identity.startTime &&
-        currentIdentity.state !== 'Z'
+        !currentIdentity.state.startsWith('Z')
       );
     });
     cleanupErrors.push(

@@ -31,6 +31,7 @@ import {
   getDefaultRunRoot,
   getRequiredCheckResult,
   hasExpectedAssertionExitConfirmation,
+  shouldApplyRunRetention,
   validateScenarioSourceDispositions,
 } from './run-reliability';
 import {
@@ -159,7 +160,10 @@ writeEvent({ type: 'fixture.started', payload: { port: fixture.port } });
 const videoPath = join(descriptor.artifactDirectory, 'execution.webm');
 let videoRecording: ExecutionVideoRecording | undefined;
 let videoFailure = '';
-if (!process.env.OGI_E2E_RUNNER_PROBE_PATH) {
+if (
+  !process.env.OGI_E2E_RUNNER_PROBE_PATH &&
+  process.env.OGI_DISABLE_EXECUTION_VIDEO !== '1'
+) {
   try {
     videoRecording = await startExecutionVideo({ path: videoPath });
   } catch (cause) {
@@ -553,9 +557,11 @@ const program = Effect.gen(function* () {
     });
     console.log('Scenario Sandbox deleted by successful-run retention policy');
   }
-  const retention = applyRunRetention(getDefaultRunRoot());
-  if (retention.deleted.length > 0) {
-    console.log(`Expired retained runs deleted: ${retention.deleted.length}`);
+  if (shouldApplyRunRetention(process.env)) {
+    const retention = applyRunRetention(getDefaultRunRoot());
+    if (retention.deleted.length > 0) {
+      console.log(`Expired retained runs deleted: ${retention.deleted.length}`);
+    }
   }
   if (failureDetail) console.error(failureDetail);
 });

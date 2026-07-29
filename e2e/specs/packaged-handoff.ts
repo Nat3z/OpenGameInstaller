@@ -19,6 +19,8 @@ import {
   type Browser as PuppeteerBrowser,
 } from 'puppeteer-core';
 import {
+  completeProductJourneyAutomation,
+  disconnectProductJourneyBrowser,
   FIXTURE_GAME_CONTENT,
   FIXTURE_TORRENT_PAYLOAD_MANIFEST,
   readPackagedHandoffRunDescriptor,
@@ -324,6 +326,7 @@ describe('packaged Golden Journey', () => {
     let applicationBrowser: PuppeteerBrowser | undefined;
     let fixtureGameBrowser: PuppeteerBrowser | undefined;
     let fixtureGamePage: Page | undefined;
+    let journeyCompleted = false;
     try {
       await browser.waitUntil(
         async () => await $('[aria-label="Update channel"]').isDisplayed(),
@@ -1667,9 +1670,19 @@ describe('packaged Golden Journey', () => {
           }
         );
       }
+      journeyCompleted = true;
     } finally {
-      await fixtureGameBrowser?.disconnect().catch(() => {});
-      await applicationBrowser?.close().catch(() => {});
+      await disconnectProductJourneyBrowser(fixtureGameBrowser).catch(() => {});
+      if (journeyCompleted) {
+        await completeProductJourneyAutomation(
+          applicationBrowser,
+          descriptor.fixtureStateDirectory
+        ).catch(() => {});
+      } else {
+        await disconnectProductJourneyBrowser(applicationBrowser).catch(
+          () => {}
+        );
+      }
     }
   });
 });

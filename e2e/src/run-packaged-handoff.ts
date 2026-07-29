@@ -14,6 +14,7 @@ import { networkInterfaces } from 'node:os';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Data, Effect, Exit } from 'effect';
+import { prepareElectronChromedriver } from './electron-chromedriver';
 import {
   type ExecutionVideoRecording,
   startExecutionVideo,
@@ -27,6 +28,7 @@ import {
   findUnexpectedFixtureRequests,
   findUnexpectedOfflineTraffic,
   findUnexpectedRuntimeLogErrors,
+  getProductJourneyLaunch,
   INCREMENTAL_UPDATE_MODES,
   type IncrementalUpdateMode,
   installPackagedApplicationArtifact,
@@ -34,6 +36,7 @@ import {
   type RecoveryFailureCase,
   seedOfflineFixtureGame,
   startPackagedHandoffFixture,
+  summarizeProductJourneyProcessFailure,
   verifyProductionPackagingBoundary,
   writePackagedHandoffRunDescriptor,
 } from './packaged-handoff';
@@ -58,6 +61,7 @@ import {
   getDefaultRunRoot,
   getRequiredCheckResult,
   hasExpectedAssertionExitConfirmation,
+  shouldApplyRunRetention,
   validateScenarioSourceDispositions,
 } from './run-reliability';
 
@@ -373,10 +377,12 @@ let leaked = false;
 let leakedProcessPids: number[] = [];
 const videoPath = join(descriptor.artifactDirectory, 'execution.webm');
 let videoRecording: ExecutionVideoRecording | undefined;
-try {
-  videoRecording = await startExecutionVideo({ path: videoPath });
-} catch (cause) {
-  failure = cause;
+if (process.env.OGI_DISABLE_EXECUTION_VIDEO !== '1') {
+  try {
+    videoRecording = await startExecutionVideo({ path: videoPath });
+  } catch (cause) {
+    failure = cause;
+  }
 }
 const windowsJobResultPath = join(
   descriptor.artifactDirectory,
@@ -387,37 +393,36 @@ const expectedAssertionExitPath = join(
   'expected-assertion-exit.json'
 );
 try {
-  const command =
-    platform === 'linux'
-      ? videoRecording?.display
-        ? 'bunx'
-        : 'xvfb-run'
-      : 'powershell.exe';
-  const args =
-    platform === 'linux'
-      ? videoRecording?.display
-        ? ['wdio', 'run', './product-journey-wdio.conf.ts']
-        : ['-a', 'bunx', 'wdio', 'run', './product-journey-wdio.conf.ts']
-      : [
-          '-NoProfile',
-          '-NonInteractive',
-          '-ExecutionPolicy',
-          'Bypass',
-          '-File',
-          '../updater/src/windows-job-wrapper.ps1',
-          'bunx',
-          'wdio',
-          'run',
-          './product-journey-wdio.conf.ts',
-        ];
+  const chromedriverPath = process.env.OGI_CHROMEDRIVER_PATH
+    ? process.env.OGI_CHROMEDRIVER_PATH
+    : await prepareElectronChromedriver({
+        destinationDirectory: join(
+          descriptor.sandboxDirectory,
+          'tools/electron-chromedriver'
+        ),
+      });
+  const configuredLaunch = getProductJourneyLaunch({
+    hostPlatform: process.platform,
+  });
+  const launch =
+    videoRecording?.display && configuredLaunch.command === 'xvfb-run'
+      ? {
+          ...configuredLaunch,
+          command: configuredLaunch.args[1]!,
+          args: configuredLaunch.args.slice(2),
+        }
+      : configuredLaunch;
+  const { command, args, detached, environment: launchEnvironment } = launch;
   try {
     const launched = await spawnTrackedProcess(command, args, {
       cwd: e2eDirectory,
-      detached: platform === 'linux',
+      detached,
       env: {
         ...process.env,
+        ...launchEnvironment,
         ...(videoRecording?.display ? { DISPLAY: videoRecording.display } : {}),
         OGI_RUN_DESCRIPTOR: descriptor.descriptorPath,
+        OGI_CHROMEDRIVER_PATH: chromedriverPath,
         OGI_WINDOWS_JOB_RESULT: windowsJobResultPath,
         OGI_EXPECTED_ASSERTION_EXIT: expectedAssertionExitPath,
       },
@@ -1028,9 +1033,7 @@ const outcome: TerminalOutcome = failure
   : 'Passed';
 const requiredCheck = getRequiredCheckResult(outcome);
 const failureDetail = failure
-  ? failure instanceof Error && failure.message
-    ? failure.message
-    : JSON.stringify(failure)
+  ? summarizeProductJourneyProcessFailure(failure, processFailure)
   : '';
 const shouldRetain = pinRequested || outcome !== 'Passed';
 const reliabilityReportPath = join(
@@ -1121,9 +1124,11 @@ if (!shouldRetain) {
   });
   console.log('Scenario Sandbox deleted by successful-run retention policy');
 }
-const retention = applyRunRetention(getDefaultRunRoot());
-if (retention.deleted.length > 0) {
-  console.log(`Expired retained runs deleted: ${retention.deleted.length}`);
+if (shouldApplyRunRetention(process.env)) {
+  const retention = applyRunRetention(getDefaultRunRoot());
+  if (retention.deleted.length > 0) {
+    console.log(`Expired retained runs deleted: ${retention.deleted.length}`);
+  }
 }
 if (attemptResultPath) {
   writeFileSync(

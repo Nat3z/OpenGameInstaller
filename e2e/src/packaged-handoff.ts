@@ -18,6 +18,7 @@ import { createRequire } from 'node:module';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { gunzipSync, gzipSync } from 'node:zlib';
 import { blake2b } from 'blakejs';
+import { resolveElectronExecutable } from '../electron-service-options';
 import {
   FIXTURE_GAME_CONTENT,
   FIXTURE_GAME_MAIN,
@@ -80,6 +81,117 @@ export {
   readPackagedHandoffRunDescriptor,
   writePackagedHandoffRunDescriptor,
 } from './packaged-handoff-descriptor';
+
+export function signalProductJourneyCompletion(fixtureStateDirectory: string) {
+  const path = join(fixtureStateDirectory, 'journey-complete.json');
+  writeFileSync(path, JSON.stringify({ version: 1, completed: true }));
+  return path;
+}
+
+export async function disconnectProductJourneyBrowser(
+  browser:
+    | {
+        disconnect: () => void | Promise<void>;
+        close?: () => void | Promise<void>;
+      }
+    | undefined
+) {
+  await browser?.disconnect();
+}
+
+export async function completeProductJourneyAutomation(
+  browser:
+    | {
+        disconnect: () => void | Promise<void>;
+      }
+    | undefined,
+  fixtureStateDirectory: string
+) {
+  await disconnectProductJourneyBrowser(browser);
+  return signalProductJourneyCompletion(fixtureStateDirectory);
+}
+
+export function getProductJourneyLaunch(options: {
+  hostPlatform: NodeJS.Platform;
+  electronExecutable?: string;
+}) {
+  if (options.hostPlatform === 'linux') {
+    return {
+      command: 'xvfb-run',
+      args: ['-a', 'bunx', 'wdio', 'run', './product-journey-wdio.conf.ts'],
+      detached: true,
+      environment: {},
+    };
+  }
+  if (options.hostPlatform === 'win32') {
+    return {
+      command: 'powershell.exe',
+      args: [
+        '-NoProfile',
+        '-NonInteractive',
+        '-ExecutionPolicy',
+        'Bypass',
+        '-File',
+        '../updater/src/windows-job-wrapper.ps1',
+        'bunx',
+        'wdio',
+        'run',
+        './product-journey-wdio.conf.ts',
+      ],
+      detached: false,
+      environment: {},
+    };
+  }
+  if (options.hostPlatform === 'darwin') {
+    return {
+      command: options.electronExecutable ?? resolveElectronExecutable(),
+      args: [
+        '-e',
+        "import('@wdio/cli').then(({ run }) => run())",
+        '--',
+        'run',
+        './product-journey-wdio.conf.ts',
+      ],
+      detached: true,
+      environment: { ELECTRON_RUN_AS_NODE: '1' },
+    };
+  }
+  return {
+    command: 'bunx',
+    args: ['wdio', 'run', './product-journey-wdio.conf.ts'],
+    detached: true,
+    environment: {},
+  };
+}
+
+function failureDetail(cause: unknown): string {
+  if (cause instanceof Error && cause.message) return cause.message;
+  if (typeof cause !== 'object' || cause === null) return String(cause ?? '');
+  const record = cause as {
+    _tag?: unknown;
+    status?: unknown;
+    signal?: unknown;
+    cause?: unknown;
+  };
+  const ownDetail =
+    typeof record._tag === 'string' && record._tag.endsWith('ProcessExitError')
+      ? `${record._tag} exited with status ${String(record.status)} and signal ${String(record.signal)}`
+      : JSON.stringify(cause);
+  const nestedDetail =
+    record.cause === undefined ? '' : failureDetail(record.cause);
+  return nestedDetail && nestedDetail !== ownDetail
+    ? `${ownDetail}; ${nestedDetail}`
+    : ownDetail;
+}
+
+export function summarizeProductJourneyProcessFailure(
+  failure: unknown,
+  processFailure?: unknown
+) {
+  const primary = failureDetail(failure);
+  const process = failureDetail(processFailure);
+  return process && process !== primary ? `${primary}; ${process}` : primary;
+}
 
 export function buildPackagedHandoffArtifacts(
   input: PackagedHandoffArtifactInput

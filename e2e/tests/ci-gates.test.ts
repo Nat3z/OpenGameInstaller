@@ -12,9 +12,12 @@ import {
   collectTopLevelArtifactTypes,
   collectTopLevelRunOutcomes,
   evaluateRunEventBudgets,
+  getObserverCatalog,
+  getObserverCheckCatalog,
   renderCiHtmlSummary,
   renderCiSummary,
   resolveCiArtifactIdentity,
+  resolveObserverSelection,
 } from '../src/ci-gates';
 import type { RunEvent } from '../src/run-events';
 
@@ -176,6 +179,33 @@ describe('CI and release gates', () => {
         false
       );
     }
+  });
+
+  test('exposes presets and every deterministic check to the Observer', () => {
+    const checks = getObserverCheckCatalog();
+    const catalog = getObserverCatalog();
+    const expectedCheckIds = [
+      ...new Set(
+        Object.values(CI_SUITES).flatMap((suite) =>
+          suite.map((entry) => entry.id)
+        )
+      ),
+    ];
+
+    expect(checks.map((entry) => entry.id)).toEqual(expectedCheckIds);
+    expect(catalog.filter((entry) => entry.type === 'preset')).toHaveLength(3);
+    expect(
+      catalog
+        .filter((entry) => entry.type === 'check')
+        .map((entry) => String(entry.id))
+    ).toEqual(expectedCheckIds.map((id) => `check:${id}`));
+    expect(
+      resolveObserverSelection('preset:pull-request')?.map((entry) => entry.id)
+    ).toEqual(CI_SUITES.pullRequest.map((entry) => entry.id));
+    expect(
+      resolveObserverSelection('check:golden-journey')?.map((entry) => entry.id)
+    ).toEqual(['golden-journey']);
+    expect(resolveObserverSelection('check:live-service')).toBeUndefined();
   });
 
   test('discovers required torrent assertions from the aggregate event log only', () => {

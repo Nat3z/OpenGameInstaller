@@ -15,6 +15,7 @@ if (!announcementPath) throw new Error('OGI_OBSERVER_ANNOUNCEMENT is required');
 const behavior = process.argv[2] ?? 'complete';
 const runId = randomUUID();
 const sandboxDirectory = mkdtempSync(join(tmpdir(), 'ogi-observer-runner-'));
+console.log(`Scenario Sandbox: ${sandboxDirectory}`);
 const artifactDirectory = join(sandboxDirectory, 'artifacts');
 const eventLogPath = join(sandboxDirectory, 'events.jsonl');
 mkdirSync(artifactDirectory);
@@ -25,6 +26,17 @@ writeFileSync(
 const writeEvent = makeRunEventWriter(eventLogPath, runId);
 writeEvent({ type: 'run.started', payload: { platform: process.platform } });
 const live = behavior === 'live';
+if (behavior === 'assert-selection') {
+  const expectedSelection = process.argv[3];
+  const selectionIndex = process.argv.indexOf('--selection');
+  if (
+    !expectedSelection ||
+    selectionIndex < 0 ||
+    process.argv[selectionIndex + 1] !== expectedSelection
+  ) {
+    throw new Error('Observer deterministic selection was not forwarded');
+  }
+}
 if (behavior === 'assert-no-live-env') {
   if (Object.keys(process.env).some((key) => key.startsWith('OGI_LIVE_'))) {
     throw new Error('deterministic runner inherited a Live Service credential');
@@ -103,6 +115,19 @@ if (live) {
   });
 }
 
+if (behavior === 'complete-retained-artifact') {
+  const screenshotPath = join(artifactDirectory, 'navigate-discovery.png');
+  writeFileSync(screenshotPath, 'observer artifact');
+  writeEvent({
+    type: 'artifact.created',
+    payload: {
+      artifactType: 'screenshot',
+      path: 'artifacts/navigate-discovery.png',
+      stepId: 'navigate-discovery',
+    },
+  });
+}
+
 const complete = (outcome: 'Passed' | 'Cancelled' | 'Failed') => {
   if (outcome === 'Passed') {
     writeEvent({
@@ -133,12 +158,18 @@ if (cancellationPath) {
 if (
   behavior === 'complete' ||
   behavior === 'complete-delete' ||
+  behavior === 'complete-retained-artifact' ||
   behavior === 'live' ||
-  behavior === 'assert-no-live-env'
+  behavior === 'assert-no-live-env' ||
+  behavior === 'assert-selection'
 ) {
   setTimeout(() => {
     complete('Passed');
-    if (behavior === 'complete-delete') {
+    if (
+      behavior === 'complete-delete' ||
+      (behavior === 'complete-retained-artifact' &&
+        process.env.OGI_OBSERVER_SESSION_RETENTION !== '1')
+    ) {
       writeFileSync(
         announcementPath,
         JSON.stringify({

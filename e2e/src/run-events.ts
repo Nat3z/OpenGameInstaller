@@ -20,7 +20,8 @@ type EventPayloads = {
       | 'Application Scenario'
       | 'Updater Scenario'
       | 'Product Journey'
-      | 'Live Service Scenario';
+      | 'Live Service Scenario'
+      | 'Deterministic Suite Check';
   };
   'attempt.started': { scenarioId: string; attempt: number };
   'step.started': { stepId: string; name: string };
@@ -170,6 +171,7 @@ function validatePayload(type: string, payload: Record<string, unknown>) {
           'Updater Scenario',
           'Product Journey',
           'Live Service Scenario',
+          'Deterministic Suite Check',
         ].includes(String(payload.kind))
       )
         throw new Error('scenarioId or kind is invalid');

@@ -42,6 +42,15 @@ type State = {
   processActive: boolean;
   canRerun: boolean;
   output: string[];
+  catalog: Array<{
+    id: string;
+    name: string;
+    type: 'preset' | 'check';
+    checkCount: number;
+    kind: 'deterministic' | 'quarantined' | 'mixed';
+    warning?: string;
+  }>;
+  selectedSuite: string;
 };
 
 const outcomes: Outcome[] = [
@@ -74,9 +83,11 @@ let state: State = {
   processActive: false,
   canRerun: false,
   output: [],
+  catalog: [],
+  selectedSuite: 'check:application-smoke',
 };
 let scenarioClass: 'deterministic' | 'live-service' = 'deterministic';
-let suite = 'application-smoke';
+let suite = 'check:application-smoke';
 let liveProvider = 'github';
 let liveCredential = '';
 let liveConfirmed = false;
@@ -95,6 +106,12 @@ function connect() {
     const value = JSON.parse(String(message.data));
     if (value.type === 'snapshot') {
       state = value.state;
+      if (
+        state.selectedSuite &&
+        state.catalog.some((entry) => entry.id === state.selectedSuite)
+      ) {
+        suite = state.selectedSuite;
+      }
       commandError = '';
     } else if (value.type === 'command-error') {
       commandError = value.message;
@@ -141,6 +158,7 @@ $: liveElapsed =
   state.processActive && state.startedAt
     ? Math.max(state.elapsedMilliseconds, now - Date.parse(state.startedAt))
     : state.elapsedMilliseconds;
+$: selectedCatalogEntry = state.catalog.find((entry) => entry.id === suite);
 
 connect();
 const timer = window.setInterval(() => (now = Date.now()), 1000);
@@ -180,9 +198,27 @@ window.addEventListener('beforeunload', () => window.clearInterval(timer), {
         <label>
           Deterministic suite
           <select bind:value={suite} disabled={state.processActive}>
-            <option value="application-smoke">Application smoke</option>
+            <optgroup label="Suite presets">
+              {#each state.catalog.filter((entry) => entry.type === 'preset') as entry}
+                <option value={entry.id}>{entry.name} ({entry.checkCount})</option>
+              {/each}
+            </optgroup>
+            <optgroup label="Individual checks">
+              {#each state.catalog.filter((entry) => entry.type === 'check') as entry}
+                <option value={entry.id}>{entry.name}</option>
+              {/each}
+            </optgroup>
           </select>
         </label>
+        {#if selectedCatalogEntry}
+          <div class="suite-selection" aria-live="polite">
+            <strong>{selectedCatalogEntry.checkCount} check{selectedCatalogEntry.checkCount === 1 ? '' : 's'}</strong>
+            <span>{selectedCatalogEntry.kind}</span>
+            {#if selectedCatalogEntry.warning}
+              <p>{selectedCatalogEntry.warning}</p>
+            {/if}
+          </div>
+        {/if}
       {:else}
         <div class="live-service-controls">
           <p class="live-warning">
@@ -269,7 +305,7 @@ window.addEventListener('beforeunload', () => window.clearInterval(timer), {
     <section class="workspace" aria-labelledby="current-step-heading">
       <div class="panel current-step">
         <p class="eyebrow">Current step</p>
-        <h2 id="current-step-heading">{state.activeStep?.name ?? (state.outcome ? 'Run complete' : 'Waiting to start')}</h2>
+        <h2 id="current-step-heading">{state.activeStep?.name ?? (state.outcome ? 'Run complete' : state.processActive && state.runId ? 'Finalizing run' : 'Waiting to start')}</h2>
         <p class="muted">
           {state.runId ? `Run ${state.runId}` : 'No run is active'}
         </p>

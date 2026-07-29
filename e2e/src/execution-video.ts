@@ -60,7 +60,18 @@ function ffmpegArguments(
         ]
       : platform === 'win32'
         ? ['-f', 'gdigrab', '-framerate', '15', '-i', 'desktop']
-        : undefined;
+        : platform === 'darwin'
+          ? [
+              '-f',
+              'avfoundation',
+              '-framerate',
+              '15',
+              '-capture_cursor',
+              '1',
+              '-i',
+              'Capture screen 0:none',
+            ]
+          : undefined;
   if (!input) {
     throw new Error(`Execution video capture is unsupported on ${platform}`);
   }

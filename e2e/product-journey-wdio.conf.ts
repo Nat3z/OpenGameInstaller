@@ -3,6 +3,8 @@ import { createElectronServiceOptions } from './electron-service-options';
 import { readPackagedHandoffRunDescriptor } from './src/packaged-handoff';
 import { writeExpectedAssertionExitConfirmation } from './src/run-reliability';
 
+delete process.env.ELECTRON_RUN_AS_NODE;
+
 const descriptorPath = process.env.OGI_RUN_DESCRIPTOR;
 if (!descriptorPath) throw new Error('OGI_RUN_DESCRIPTOR is required');
 const descriptor = readPackagedHandoffRunDescriptor(descriptorPath);

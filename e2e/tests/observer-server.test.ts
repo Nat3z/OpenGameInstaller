@@ -1,6 +1,12 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { randomBytes } from 'node:crypto';
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  writeFileSync,
+} from 'node:fs';
 import { createConnection } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -86,13 +92,21 @@ describe('Observer Window server', () => {
         })
       ).status
     ).toBe(200);
+    const stateResponse = await fetch(
+      `http://127.0.0.1:${server.port}/api/state`,
+      { headers: { cookie: cookie! } }
+    );
+    expect(stateResponse.status).toBe(200);
+    const state = (await stateResponse.json()) as {
+      selectedSuite: string;
+      catalog: Array<{ id: string; type: string }>;
+    };
+    expect(state.selectedSuite).toBe('check:application-smoke');
     expect(
-      (
-        await fetch(`http://127.0.0.1:${server.port}/api/state`, {
-          headers: { cookie: cookie! },
-        })
-      ).status
-    ).toBe(200);
+      state.catalog
+        .filter((entry) => entry.type === 'preset')
+        .map((entry) => entry.id)
+    ).toEqual(['preset:pull-request', 'preset:nightly', 'preset:release']);
   });
 
   test('requires the exact Observer Origin for WebSocket refresh and reconnect', async () => {
@@ -155,6 +169,34 @@ describe('Observer Window server', () => {
     expect(windowMain).not.toContain('kill(');
   });
 
+  test('validates and forwards deterministic catalog selections', async () => {
+    const selection = 'preset:nightly';
+    const server = await createObserverServer({
+      distDirectory: createDist(),
+      openWindow: false,
+      runnerCommand: [
+        process.execPath,
+        join(import.meta.dir, 'fixtures/observer-runner.ts'),
+        'assert-selection',
+        selection,
+      ],
+      pollIntervalMilliseconds: 20,
+    });
+    servers.push(server);
+
+    expect(() =>
+      server.command({ type: 'start', suite: 'check:not-real' })
+    ).toThrow('Unknown deterministic suite');
+    server.command({ type: 'start', suite: selection });
+    await waitUntil(
+      () =>
+        server.getState().status === 'Passed' &&
+        !server.getState().processActive,
+      'Observer did not forward the deterministic selection'
+    );
+    expect(server.getState().selectedSuite).toBe(selection);
+  });
+
   test('Stop records Cancelled and waits for process-tree cleanup', async () => {
     const server = await createObserverServer({
       distDirectory: createDist(),
@@ -168,7 +210,7 @@ describe('Observer Window server', () => {
     });
     servers.push(server);
 
-    server.command({ type: 'start', suite: 'application-smoke' });
+    server.command({ type: 'start', suite: 'check:application-smoke' });
     await waitUntil(
       () => server.getState().lastSequence >= 4,
       'Observer did not follow the active Run Event Log'
@@ -203,7 +245,7 @@ describe('Observer Window server', () => {
 
     const bootstrap = await fetch(server.url);
     const cookie = bootstrap.headers.get('set-cookie')?.split(';')[0];
-    server.command({ type: 'start', suite: 'application-smoke' });
+    server.command({ type: 'start', suite: 'check:application-smoke' });
     await waitUntil(
       () => server.getState().status === 'Running',
       'Run did not start'
@@ -237,7 +279,7 @@ describe('Observer Window server', () => {
     });
     servers.push(server);
 
-    server.command({ type: 'start', suite: 'application-smoke' });
+    server.command({ type: 'start', suite: 'check:application-smoke' });
     await waitUntil(
       () =>
         server.getState().status === 'Passed' &&
@@ -249,6 +291,54 @@ describe('Observer Window server', () => {
       outcome: 'Passed',
       totals: { Passed: 1 },
     });
+  });
+
+  test('keeps Observer artifacts available until the session closes', async () => {
+    const server = await createObserverServer({
+      distDirectory: createDist(),
+      openWindow: false,
+      runnerCommand: [
+        process.execPath,
+        join(import.meta.dir, 'fixtures/observer-runner.ts'),
+        'complete-retained-artifact',
+      ],
+      pollIntervalMilliseconds: 20,
+    });
+    servers.push(server);
+    const bootstrap = await fetch(server.url);
+    const cookie = bootstrap.headers.get('set-cookie')?.split(';')[0];
+
+    server.command({ type: 'start', suite: 'check:application-smoke' });
+    await waitUntil(
+      () =>
+        server.getState().status === 'Passed' &&
+        !server.getState().processActive,
+      'Observer artifact run did not complete'
+    );
+    const artifact = await fetch(
+      `http://127.0.0.1:${server.port}/artifact?path=${encodeURIComponent('artifacts/navigate-discovery.png')}`,
+      { headers: { cookie: cookie! } }
+    );
+    expect(artifact.status).toBe(200);
+    expect(await artifact.text()).toBe('observer artifact');
+    await waitUntil(
+      () =>
+        server
+          .getState()
+          .output.some((line) => line.startsWith('Scenario Sandbox: ')),
+      'Observer did not capture the retained sandbox path'
+    );
+    const sandboxDirectory = server
+      .getState()
+      .output.join('\n')
+      .match(/Scenario Sandbox: (.+)/)?.[1]
+      ?.trim();
+    expect(sandboxDirectory).toBeTruthy();
+    expect(existsSync(sandboxDirectory!)).toBe(true);
+
+    servers.splice(servers.indexOf(server), 1);
+    await server.close();
+    expect(existsSync(sandboxDirectory!)).toBe(false);
   });
 
   test('keeps Live Service selection separate, confirmed, credentialed, and redacted', async () => {
@@ -340,7 +430,7 @@ describe('Observer Window server', () => {
         pollIntervalMilliseconds: 20,
       });
       servers.push(server);
-      server.command({ type: 'start', suite: 'application-smoke' });
+      server.command({ type: 'start', suite: 'check:application-smoke' });
       await waitUntil(
         () =>
           server.getState().status === 'Passed' &&
@@ -366,7 +456,7 @@ describe('Observer Window server', () => {
     });
     servers.push(server);
 
-    server.command({ type: 'start', suite: 'application-smoke' });
+    server.command({ type: 'start', suite: 'check:application-smoke' });
     await waitUntil(
       () =>
         server.getState().status === 'Failed' &&

@@ -92,6 +92,26 @@ const program = Effect.acquireUseRelease(
           await page.waitForSelector('input[value="live-service"]', {
             timeout: 15_000,
           });
+          const suiteCatalog = await page.$eval('select', (select) => ({
+            groups: [...select.querySelectorAll('optgroup')].map(
+              (group) => group.label
+            ),
+            values: [...select.querySelectorAll('option')].map(
+              (option) => option.value
+            ),
+          }));
+          if (
+            suiteCatalog.groups.join('|') !==
+              'Suite presets|Individual checks' ||
+            !suiteCatalog.values.includes('preset:release') ||
+            !suiteCatalog.values.includes('check:application-smoke')
+          ) {
+            throw new Error(
+              'Observer deterministic suite catalog is incomplete'
+            );
+          }
+          await page.select('select', 'preset:release');
+          await page.waitForSelector('.suite-selection p');
           await page.evaluate(axeSource);
           const violations = await page.evaluate(async () => {
             const options = {

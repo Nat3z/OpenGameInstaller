@@ -8,8 +8,10 @@ import {
   createApplicationScenarioSandbox,
   ensureApplicationFailureEvidence,
   getApplicationScenarioLaunch,
+  hasCompletedApplicationScenarioStep,
   parseApplicationScenarioMode,
 } from './application-scenario';
+import { prepareElectronChromedriver } from './electron-chromedriver';
 import {
   type ExecutionVideoRecording,
   startExecutionVideo,
@@ -37,6 +39,7 @@ import {
   getDefaultRunRoot,
   getRequiredCheckResult,
   hasExpectedAssertionExitConfirmation,
+  shouldApplyRunRetention,
   validateScenarioSourceDispositions,
 } from './run-reliability';
 
@@ -84,6 +87,8 @@ validateScenarioSourceDispositions([
 const runId = randomUUID();
 const runnerArgs = process.argv.slice(2);
 const pinRequested = runnerArgs.includes('--pin');
+const observerSessionRetentionRequested =
+  process.env.OGI_OBSERVER_SESSION_RETENTION === '1';
 const mode = parseApplicationScenarioMode(
   runnerArgs.filter((argument) => argument !== '--pin')
 );
@@ -130,13 +135,24 @@ writeEvent({
 const videoPath = join(descriptor.artifactDirectory, 'execution.webm');
 let videoRecording: ExecutionVideoRecording | undefined;
 let videoFailure = '';
-if (!process.env.OGI_E2E_RUNNER_PROBE_PATH) {
+const runnerProbePath = process.env.OGI_E2E_RUNNER_PROBE_PATH;
+if (!runnerProbePath && process.env.OGI_DISABLE_EXECUTION_VIDEO !== '1') {
   try {
     videoRecording = await startExecutionVideo({ path: videoPath });
   } catch (cause) {
     videoFailure = cause instanceof Error ? cause.message : String(cause);
   }
 }
+const chromedriverPreparation = runnerProbePath
+  ? Promise.resolve(undefined)
+  : process.env.OGI_CHROMEDRIVER_PATH
+    ? Promise.resolve(process.env.OGI_CHROMEDRIVER_PATH)
+    : prepareElectronChromedriver({
+        destinationDirectory: join(
+          descriptor.sandboxDirectory,
+          'tools/electron-chromedriver'
+        ),
+      });
 
 let cancellationRequested = false;
 let requestCancellation!: () => void;
@@ -206,12 +222,19 @@ function waitForProcess(child: ChildProcess, command: string) {
 function runScenarioAttempt(attempt: number) {
   return Effect.scoped(
     Effect.gen(function* () {
-      const probeRunnerPath = process.env.OGI_E2E_RUNNER_PROBE_PATH;
-      const launch = probeRunnerPath
+      const chromedriverPath = yield* Effect.tryPromise({
+        try: () => chromedriverPreparation,
+        catch: (cause) =>
+          new ApplicationScenarioSpawnError({
+            command: 'matching Electron Chromedriver',
+            cause,
+          }),
+      });
+      const launch = runnerProbePath
         ? {
             command: process.execPath,
-            args: [probeRunnerPath],
-            detached: process.platform === 'linux',
+            args: [runnerProbePath],
+            detached: process.platform !== 'win32',
           }
         : getApplicationScenarioLaunch(process.platform);
       const { command, args, detached } =
@@ -235,11 +258,17 @@ function runScenarioAttempt(attempt: number) {
               detached,
               env: {
                 ...process.env,
+                ...(process.platform === 'darwin'
+                  ? { ELECTRON_RUN_AS_NODE: '1' }
+                  : {}),
                 ...(videoRecording?.display
                   ? { DISPLAY: videoRecording.display }
                   : {}),
                 OGI_RUN_DESCRIPTOR: descriptor.descriptorPath,
                 OGI_SCENARIO_ATTEMPT: String(attempt),
+                ...(chromedriverPath
+                  ? { OGI_CHROMEDRIVER_PATH: chromedriverPath }
+                  : {}),
                 OGI_WINDOWS_JOB_RESULT: windowsJobResultPath,
                 OGI_EXPECTED_ASSERTION_EXIT: expectedAssertionExitPath,
               },
@@ -335,9 +364,6 @@ const program = Effect.gen(function* () {
       failureDetail = Cause.pretty(attemptExit.cause);
     } else if (attemptExit.value.completion.kind === 'cancelled') {
       attemptOutcome = 'Cancelled';
-    } else if (attemptExit.value.unexpectedSurvivors.length > 0) {
-      attemptOutcome = 'Infrastructure Failed';
-      failureDetail = `Unexpected surviving product processes: ${attemptExit.value.unexpectedSurvivors.join(', ')}`;
     } else if (Exit.isFailure(attemptExit.value.cleanupExit)) {
       attemptOutcome = 'Infrastructure Failed';
       failureDetail = Cause.pretty(attemptExit.value.cleanupExit.cause);
@@ -350,15 +376,34 @@ const program = Effect.gen(function* () {
             `attempt-${attempt}-expected-assertion-exit.json`
           )
         );
-      attemptOutcome = classifyAttemptProcessFailure(
+      const processFailureOutcome = classifyAttemptProcessFailure(
         Option.getOrUndefined(
           Cause.failureOption(attemptExit.value.completion.processExit.cause)
         ),
         expectedAssertionExit
       );
-      failureDetail = Cause.pretty(
-        attemptExit.value.completion.processExit.cause
-      );
+      if (
+        processFailureOutcome !== 'Infrastructure Failed' &&
+        attemptExit.value.unexpectedSurvivors.length > 0
+      ) {
+        attemptOutcome = 'Infrastructure Failed';
+        failureDetail = `Unexpected surviving product processes: ${attemptExit.value.unexpectedSurvivors.join(', ')}`;
+      } else {
+        attemptOutcome = processFailureOutcome;
+        failureDetail = Cause.pretty(
+          attemptExit.value.completion.processExit.cause
+        );
+      }
+    } else if (
+      !runnerProbePath &&
+      !hasCompletedApplicationScenarioStep(attemptEvents)
+    ) {
+      attemptOutcome = 'Infrastructure Failed';
+      failureDetail =
+        'Application Scenario completed without any observable step evidence';
+    } else if (attemptExit.value.unexpectedSurvivors.length > 0) {
+      attemptOutcome = 'Infrastructure Failed';
+      failureDetail = `Unexpected surviving product processes: ${attemptExit.value.unexpectedSurvivors.join(', ')}`;
     } else if (failedAssertion) {
       attemptOutcome = 'Failed';
       failureDetail =
@@ -455,7 +500,9 @@ const program = Effect.gen(function* () {
   const htmlReportPath = join(descriptor.sandboxDirectory, 'report.html');
   const requiredCheck = getRequiredCheckResult(outcome);
   const shouldRetain =
-    pinRequested || (outcome !== 'Passed' && outcome !== 'Skipped');
+    pinRequested ||
+    observerSessionRetentionRequested ||
+    (outcome !== 'Passed' && outcome !== 'Skipped');
   writeFileSync(
     reliabilityReportPath,
     JSON.stringify(
@@ -483,6 +530,7 @@ const program = Effect.gen(function* () {
       outcome,
       createdAt: startedAt,
       pinned: pinRequested,
+      sessionRetained: observerSessionRetentionRequested,
       videoPaths: [videoPath],
     });
   }
@@ -568,9 +616,11 @@ const program = Effect.gen(function* () {
     });
     console.log('Scenario Sandbox deleted by successful-run retention policy');
   }
-  const retention = applyRunRetention(getDefaultRunRoot());
-  if (retention.deleted.length > 0) {
-    console.log(`Expired retained runs deleted: ${retention.deleted.length}`);
+  if (shouldApplyRunRetention(process.env)) {
+    const retention = applyRunRetention(getDefaultRunRoot());
+    if (retention.deleted.length > 0) {
+      console.log(`Expired retained runs deleted: ${retention.deleted.length}`);
+    }
   }
   if (failureDetail) console.error(failureDetail);
 });

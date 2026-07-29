@@ -42,6 +42,7 @@ import {
   readReliableAttemptEvidenceSummary,
   recordReliableAttemptEvidence,
   resolveOfflineChromedriverPath,
+  shouldApplyRunRetention,
   validateScenarioSourceDispositions,
 } from './run-reliability';
 
@@ -854,7 +855,9 @@ if (!shouldRetain) {
   });
   console.log('Scenario Sandbox deleted by successful-run retention policy');
 }
-applyRunRetention(getDefaultRunRoot());
+if (shouldApplyRunRetention(process.env)) {
+  applyRunRetention(getDefaultRunRoot());
+}
 process.off('SIGINT', cancel);
 process.off('SIGTERM', cancel);
 process.exitCode = requiredCheck.exitCode;

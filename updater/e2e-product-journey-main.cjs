@@ -174,7 +174,7 @@ function fixtureProcessIdIsAlive(pid) {
 
 async function readFixtureProcessIdentity(pid) {
   if (!fixtureProcessIdIsAlive(pid)) return null;
-  if (process.platform !== 'win32') {
+  if (process.platform === 'linux') {
     try {
       const stat = fs.readFileSync(`/proc/${pid}/stat`, 'utf8');
       const fields = stat.slice(stat.lastIndexOf(')') + 2).split(' ');
@@ -258,10 +258,14 @@ async function discoverFixtureProcesses(launchIntent) {
 }
 
 function resolveFixtureLaunchExecutable() {
+  const executable =
+    process.platform === 'linux'
+      ? descriptor.applicationLauncherPath
+      : process.execPath;
   return {
-    executable: path.resolve(descriptor.applicationLauncherPath),
+    executable: path.resolve(executable),
     launcherDigest: createHash('sha256')
-      .update(fs.readFileSync(descriptor.applicationLauncherPath))
+      .update(fs.readFileSync(executable))
       .digest('hex'),
     allowProofBoundExecTransition: process.platform === 'linux',
   };
@@ -275,6 +279,16 @@ async function fixtureProcessIsAlive(identity) {
 async function terminateFixtureOwnedProcess(identity) {
   if (!candidateApplication || candidateApplication.pid !== identity.pid) {
     throw new Error('Owned fixture process handle is unavailable');
+  }
+  if (process.platform !== 'linux') {
+    const actual = await readFixtureProcessIdentity(identity.pid);
+    if (!fixtureIdentitiesMatch(identity, actual)) {
+      throw new Error(
+        'Owned fixture process identity changed before termination'
+      );
+    }
+    const result = await stopCandidateApplication();
+    return { ...result, processTreeStopped: true };
   }
   const script = `
 import os, select, signal, sys, time
@@ -453,6 +467,24 @@ function quitUpdaterAfterEvidence() {
   setTimeout(() => app.quit(), 2000);
 }
 
+async function stopApplicationAfterJourneyCompletion(window, updaterStatus) {
+  const completionPath = path.join(
+    descriptor.fixtureStateDirectory,
+    'journey-complete.json'
+  );
+  while (!fs.existsSync(completionPath)) {
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  await stopCandidateApplication();
+  if (!window.isDestroyed()) {
+    window.webContents.send(
+      'updater-status',
+      updaterStatus('Journey Complete', 'Closing test-owned product processes.')
+    );
+    window.hide();
+  }
+}
+
 async function launchInstalledApplication(
   recovery = false,
   { transactionToken, onProcessStarted } = {}
@@ -526,7 +558,7 @@ async function launchInstalledApplication(
     OGI_UPDATE_TRANSACTION_TOKEN: transactionToken,
   };
   // Linux proves AppImage-style exec ownership with an inherited proof fd.
-  // Windows launches Electron directly; Node fsync/extra stdio fds are unreliable there.
+  // Other hosts launch Electron directly because Linux procfs proof is unavailable.
   const processProofPath = path.join(
     descriptor.sandboxDirectory,
     `.ogi-process-proof-${transactionToken}`
@@ -540,14 +572,8 @@ async function launchInstalledApplication(
   }
   try {
     candidateApplication =
-      process.platform === 'win32'
-        ? spawn(process.execPath, electronArgs, {
-            cwd: descriptor.installationDirectory,
-            env: launchEnvironment,
-            stdio: ['ignore', 'pipe', 'pipe'],
-            windowsHide: true,
-          })
-        : spawn(
+      process.platform === 'linux'
+        ? spawn(
             'python3',
             [
               '-c',
@@ -560,7 +586,13 @@ async function launchInstalledApplication(
               env: launchEnvironment,
               stdio: ['ignore', 'pipe', 'pipe', processProofDescriptor],
             }
-          );
+          )
+        : spawn(process.execPath, electronArgs, {
+            cwd: descriptor.installationDirectory,
+            env: launchEnvironment,
+            stdio: ['ignore', 'pipe', 'pipe'],
+            windowsHide: process.platform === 'win32',
+          });
   } finally {
     if (processProofDescriptor !== undefined) {
       fs.closeSync(processProofDescriptor);
@@ -1191,6 +1223,14 @@ app
             'Startup Health Confirmed',
             `${health.surface} UI is interactive`
           )
+        );
+        void stopApplicationAfterJourneyCompletion(window, updaterStatus).catch(
+          (error) => {
+            logMain('Journey completion cleanup failed', {
+              error: error instanceof Error ? error.message : String(error),
+            });
+            app.exit(1);
+          }
         );
       })().catch(async (error) => {
         logMain('Packaged handoff failed', { error: error.message });

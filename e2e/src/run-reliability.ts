@@ -26,7 +26,11 @@ type ArtifactType = Extract<
   { type: 'artifact.created' }
 >['payload']['artifactType'];
 
-function reliableAttemptArtifactType(name: string): ArtifactType | undefined {
+function reliableAttemptArtifactType(
+  attemptDirectory: string,
+  path: string
+): ArtifactType | undefined {
+  const name = basename(path);
   if (name === 'events.jsonl') return 'run-event-log';
   if (name === 'run-descriptor.json') return 'run-descriptor';
   if (name === 'report.html') return 'html-report';
@@ -40,8 +44,23 @@ function reliableAttemptArtifactType(name: string): ArtifactType | undefined {
     return 'torrent-network-isolation-assertion';
   if (name === 'torrent-payload-manifest-assertion.json')
     return 'torrent-payload-manifest-assertion';
-  if (name.endsWith('.png')) return 'screenshot';
-  if (name.endsWith('.log') || name.endsWith('.jsonl')) return 'main-log';
+  const artifactPath = relative(attemptDirectory, path).split(/[\\/]/);
+  if (
+    name.endsWith('.png') &&
+    artifactPath.length === 2 &&
+    artifactPath[0] === 'artifacts'
+  ) {
+    return 'screenshot';
+  }
+  if (
+    (name.endsWith('.log') || name.endsWith('.jsonl')) &&
+    (artifactPath[0] === 'artifacts' ||
+      artifactPath.join('/') === 'fixture-state/requests.jsonl' ||
+      artifactPath.join('/') ===
+        'installation/app/ogi-e2e-fixture-addon/installation.log')
+  ) {
+    return 'main-log';
+  }
   return undefined;
 }
 
@@ -63,7 +82,10 @@ export function recordReliableAttemptEvidence(options: {
         'Product Journey artifact link escaped its attempt directory'
       );
     }
-    const artifactType = reliableAttemptArtifactType(basename(path));
+    const artifactType = reliableAttemptArtifactType(
+      options.attemptDirectory,
+      path
+    );
     if (!artifactType) continue;
     const aggregateRelativePath = relative(options.aggregateDirectory, path);
     if (
@@ -291,6 +313,7 @@ export function finalizeRunRetention(options: {
   outcome: TerminalOutcome;
   createdAt?: string;
   pinned?: boolean;
+  sessionRetained?: boolean;
   videoPaths?: readonly string[];
 }) {
   const createdAt = options.createdAt ?? new Date().toISOString();
@@ -301,7 +324,11 @@ export function finalizeRunRetention(options: {
     outcome: options.outcome,
     pinned: options.pinned ?? false,
   };
-  if (!options.pinned && !FAILURE_CLASS_OUTCOMES.has(options.outcome)) {
+  if (
+    !options.pinned &&
+    !options.sessionRetained &&
+    !FAILURE_CLASS_OUTCOMES.has(options.outcome)
+  ) {
     for (const videoPath of options.videoPaths ?? []) {
       rmSync(videoPath, { force: true });
     }
@@ -349,6 +376,10 @@ function recoverAbortedManifest(sandboxDirectory: string) {
   } catch {
     return undefined;
   }
+}
+
+export function shouldApplyRunRetention(environment: NodeJS.ProcessEnv) {
+  return environment.OGI_OBSERVER_SESSION_RETENTION !== '1';
 }
 
 export function applyRunRetention(

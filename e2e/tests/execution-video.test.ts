@@ -10,6 +10,22 @@ import {
 import { finalizeRunRetention } from '../src/run-reliability';
 
 describe('execution video', () => {
+  test.skipIf(process.platform !== 'darwin')(
+    'starts macOS execution video capture through AVFoundation',
+    async () => {
+      const root = mkdtempSync(join(tmpdir(), 'ogi-video-darwin-'));
+      const videoPath = join(root, 'execution.webm');
+
+      await expect(
+        startExecutionVideo({
+          path: videoPath,
+          platform: 'darwin',
+          ffmpegPath: '/usr/bin/false',
+        })
+      ).rejects.toThrow('Execution video capture exited during startup');
+    }
+  );
+
   test.skipIf(process.platform !== 'linux')(
     'captures a non-empty playable Linux execution video',
     async () => {
@@ -53,6 +69,24 @@ describe('execution video', () => {
       }).retained
     ).toBe(false);
     expect(existsSync(root)).toBe(false);
+  });
+
+  test('retains successful videos for an active Observer session', () => {
+    const root = mkdtempSync(join(tmpdir(), 'ogi-video-observer-retention-'));
+    const videoPath = join(root, 'execution.webm');
+    writeFileSync(videoPath, Buffer.alloc(2_048));
+
+    expect(
+      finalizeRunRetention({
+        runId: 'observer-video-run',
+        sandboxDirectory: root,
+        outcome: 'Passed',
+        sessionRetained: true,
+        videoPaths: [videoPath],
+      }).retained
+    ).toBe(true);
+    expect(existsSync(videoPath)).toBe(true);
+    expect(existsSync(join(root, 'retention.json'))).toBe(true);
   });
 
   test('retains failure-class videos', () => {

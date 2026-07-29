@@ -16,11 +16,13 @@ import {
   createUnavailableScreenshot,
   ensureApplicationFailureEvidence,
   getApplicationScenarioLaunch,
+  hasCompletedApplicationScenarioStep,
   parseApplicationRunDescriptor,
   parseApplicationScenarioMode,
   validateApplicationFailureEvidence,
   validateApplicationScenarioProcessOutcome,
 } from '../src/application-scenario';
+import type { RunEvent } from '../src/run-events';
 
 const require = createRequire(import.meta.url);
 const { validateAccessibilityRunDescriptor } =
@@ -197,6 +199,22 @@ describe('Application Scenario sandbox', () => {
     ]);
   });
 
+  test('requires completed observable step evidence before passing', () => {
+    expect(hasCompletedApplicationScenarioStep([])).toBe(false);
+    expect(
+      hasCompletedApplicationScenarioStep([
+        {
+          version: 1,
+          runId: 'step-evidence',
+          sequence: 1,
+          timestamp: '2026-07-29T00:00:00.000Z',
+          type: 'step.completed',
+          payload: { stepId: 'navigate-discovery', outcome: 'Passed' },
+        } satisfies RunEvent,
+      ])
+    ).toBe(true);
+  });
+
   test('requires assertion-failure mode to produce a failed process outcome', () => {
     expect(() =>
       validateApplicationScenarioProcessOutcome('assertion-failure', false)
@@ -209,7 +227,7 @@ describe('Application Scenario sandbox', () => {
     ).toBeUndefined();
   });
 
-  test('provides deterministic Linux and Windows WebdriverIO launch commands', () => {
+  test('provides deterministic WebdriverIO launch commands', () => {
     expect(getApplicationScenarioLaunch('linux')).toEqual({
       command: 'xvfb-run',
       args: [
@@ -237,7 +255,49 @@ describe('Application Scenario sandbox', () => {
       ],
       detached: false,
     });
+    expect(getApplicationScenarioLaunch('darwin', '/electron')).toEqual({
+      command: '/electron',
+      args: [
+        '-e',
+        "import('@wdio/cli').then(({ run }) => run())",
+        '--',
+        'run',
+        './application-scenario-wdio.conf.ts',
+      ],
+      detached: true,
+    });
   });
+
+  test.skipIf(process.platform !== 'darwin')(
+    'tracks an Application Scenario process tree on macOS',
+    () => {
+      const root = mkdtempSync(join(tmpdir(), 'ogi-application-darwin-'));
+      const probePath = join(root, 'probe.ts');
+      writeFileSync(probePath, 'await Bun.sleep(250);');
+
+      try {
+        const result = spawnSync(
+          process.execPath,
+          [join(import.meta.dir, '../src/run-application-scenario.ts')],
+          {
+            env: {
+              ...process.env,
+              OGI_E2E_RUN_ROOT: root,
+              OGI_E2E_RUNNER_PROBE_PATH: probePath,
+            },
+            encoding: 'utf8',
+            timeout: 30_000,
+          }
+        );
+        expect(`${result.stdout}${result.stderr}`).not.toContain(
+          'Could not track the process tree'
+        );
+        expect(result.status).toBe(0);
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    }
+  );
 
   test('assigns the Windows launch to a kill-on-close Job Object before resume', () => {
     const wrapper = readFileSync(
@@ -272,6 +332,7 @@ const orphan = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { 
 if (!orphan.pid) throw new Error('orphan did not start');
 orphan.unref();
 writeFileSync(${JSON.stringify(pidPath)}, String(orphan.pid));
+await Bun.sleep(100);
 `
     );
 
@@ -313,6 +374,50 @@ writeFileSync(${JSON.stringify(pidPath)}, String(orphan.pid));
       expect(events).not.toContain('retry.scheduled');
       const orphanPid = Number(readFileSync(pidPath, 'utf8'));
       expect(() => process.kill(orphanPid, 0)).toThrow();
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test('reports a failed runner before contained child cleanup', () => {
+    if (process.platform === 'win32') return;
+    const root = mkdtempSync(join(tmpdir(), 'ogi-application-runner-failed-'));
+    const probePath = join(root, 'failed-with-child.ts');
+    const pidPath = join(root, 'child.pid');
+    writeFileSync(
+      probePath,
+      `import { spawn } from 'node:child_process';
+import { writeFileSync } from 'node:fs';
+const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { detached: true, stdio: 'ignore' });
+if (!child.pid) throw new Error('child did not start');
+child.unref();
+writeFileSync(${JSON.stringify(pidPath)}, String(child.pid));
+await Bun.sleep(100);
+process.exit(1);
+`
+    );
+
+    try {
+      const result = spawnSync(
+        process.execPath,
+        [join(import.meta.dir, '../src/run-application-scenario.ts')],
+        {
+          env: {
+            ...process.env,
+            OGI_E2E_RUN_ROOT: root,
+            OGI_E2E_RUNNER_PROBE_PATH: probePath,
+          },
+          encoding: 'utf8',
+          timeout: 30_000,
+        }
+      );
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain('exited with status 1');
+      expect(result.stderr).not.toContain(
+        'Unexpected surviving product processes'
+      );
+      const childPid = Number(readFileSync(pidPath, 'utf8'));
+      expect(() => process.kill(childPid, 0)).toThrow();
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

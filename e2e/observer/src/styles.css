@@ -211,6 +211,27 @@ h2 {
   font-size: 0.75rem;
 }
 
+.suite-selection {
+  display: grid;
+  min-width: 13rem;
+  padding: 0.45rem 0.65rem;
+  color: var(--muted);
+  font-size: 0.72rem;
+  background: #0d1016;
+  border: 1px solid var(--border);
+  border-radius: 0.55rem;
+}
+
+.suite-selection strong {
+  color: #f4f6fb;
+}
+
+.suite-selection p {
+  grid-column: 1 / -1;
+  margin: 0.2rem 0 0;
+  color: #ffe0a1;
+}
+
 .controls label {
   display: grid;
   gap: 0.2rem;

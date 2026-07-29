@@ -1,11 +1,18 @@
 import { type ChildProcess, spawn } from 'node:child_process';
 import { randomBytes, randomUUID } from 'node:crypto';
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { dirname, extname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { ServerWebSocket } from 'bun';
+import { getObserverCatalog, resolveObserverSelection } from './ci-gates';
 import {
   createSecretRedactor,
   type LiveServiceProviderId,
@@ -19,7 +26,7 @@ import {
 import { parseRunEvent, type RunEvent, readRunEvents } from './run-events';
 
 export type ObserverCommand =
-  | { type: 'start'; suite: 'application-smoke' }
+  | { type: 'start'; suite: string }
   | {
       type: 'start-live-service';
       provider: LiveServiceProviderId;
@@ -119,8 +126,10 @@ export async function createObserverServer(
   const runnerCommand = options.runnerCommand ?? [
     process.execPath,
     'run',
-    'src/run-application-scenario.ts',
+    'src/run-observer-suite.ts',
   ];
+  const catalog = getObserverCatalog();
+  const defaultSelectionId = 'check:application-smoke';
   const liveServiceRunnerCommand = options.liveServiceRunnerCommand ?? [
     process.execPath,
     'run',
@@ -139,6 +148,10 @@ export async function createObserverServer(
   let lastState: ObserverState | null = null;
   let activeRedactor: ReturnType<typeof createSecretRedactor> | null = null;
   let pollTimer: ReturnType<typeof setInterval> | null = null;
+  let activeRunUsesSessionRetention = false;
+  let sessionRetainedSandbox: string | null = null;
+  let selectedSuite = defaultSelectionId;
+  let lastSuite = defaultSelectionId;
 
   const authenticated = (request: Request) =>
     parseCookies(request.headers.get('cookie'))[sessionCookieName] ===
@@ -155,11 +168,24 @@ export async function createObserverServer(
         (scenario) => scenario.kind === 'Live Service Scenario'
       ),
     output: outputLines.slice(-400),
+    catalog,
+    selectedSuite,
   });
 
   const broadcast = () => {
     const message = JSON.stringify({ type: 'snapshot', state: snapshot() });
     for (const socket of sockets) socket.send(message);
+  };
+
+  const releaseSessionRetainedSandbox = () => {
+    const sandboxDirectory = sessionRetainedSandbox;
+    sessionRetainedSandbox = null;
+    if (
+      sandboxDirectory &&
+      (state.outcome === 'Passed' || state.outcome === 'Skipped')
+    ) {
+      rmSync(sandboxDirectory, { recursive: true, force: true });
+    }
   };
 
   const refreshState = () => {
@@ -218,6 +244,9 @@ export async function createObserverServer(
         'Runner announcement event log escapes its Scenario Sandbox'
       );
     }
+    if (activeRunUsesSessionRetention) {
+      sessionRetainedSandbox = candidate.sandboxDirectory;
+    }
     announcement = candidate;
   };
 
@@ -257,6 +286,7 @@ export async function createObserverServer(
   const startRun = (
     options: {
       command?: string[];
+      selectionId?: string;
       liveService?: {
         provider: LiveServiceProviderId;
         credential: string;
@@ -264,6 +294,12 @@ export async function createObserverServer(
     } = {}
   ) => {
     if (child) throw new Error('A run is already active');
+    releaseSessionRetainedSandbox();
+    activeRunUsesSessionRetention = !options.liveService;
+    if (options.selectionId) {
+      selectedSuite = options.selectionId;
+      lastSuite = options.selectionId;
+    }
     lastState = state.runId ? state : lastState;
     state = emptyObserverState();
     announcement = null;
@@ -278,6 +314,8 @@ export async function createObserverServer(
         options.liveService.provider,
         '--confirm-live-service'
       );
+    } else if (options.selectionId) {
+      args.push('--selection', options.selectionId);
     }
     activeRedactor = options.liveService
       ? createSecretRedactor([options.liveService.credential])
@@ -292,6 +330,9 @@ export async function createObserverServer(
         ...environment,
         OGI_OBSERVER_ANNOUNCEMENT: announcementPath,
         OGI_OBSERVER_CANCELLATION: cancellationPath,
+        ...(activeRunUsesSessionRetention
+          ? { OGI_OBSERVER_SESSION_RETENTION: '1' }
+          : {}),
       },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
@@ -322,6 +363,7 @@ export async function createObserverServer(
       clearForceStop();
       child = null;
       activeRedactor = null;
+      activeRunUsesSessionRetention = false;
       refreshState();
       broadcast();
     });
@@ -334,6 +376,7 @@ export async function createObserverServer(
       activeRedactor = null;
       readAnnouncement();
       refreshState();
+      activeRunUsesSessionRetention = false;
       lastState = state;
       broadcast();
     });
@@ -344,7 +387,10 @@ export async function createObserverServer(
   const handleCommand = (command: ObserverCommand) => {
     switch (command.type) {
       case 'start':
-        startRun();
+        if (!resolveObserverSelection(command.suite)) {
+          throw new Error(`Unknown deterministic suite: ${command.suite}`);
+        }
+        startRun({ selectionId: command.suite });
         return;
       case 'start-live-service':
         if (!command.confirmed) {
@@ -371,7 +417,7 @@ export async function createObserverServer(
         if (!prior?.outcome || !failureOutcomes.has(prior.outcome)) {
           throw new Error('The previous run did not fail');
         }
-        startRun();
+        startRun({ selectionId: lastSuite });
         return;
       }
     }
@@ -469,7 +515,7 @@ export async function createObserverServer(
             !['start', 'start-live-service', 'stop', 'rerun-failed'].includes(
               value.type
             ) ||
-            (value.type === 'start' && value.suite !== 'application-smoke') ||
+            (value.type === 'start' && typeof value.suite !== 'string') ||
             (value.type === 'start-live-service' &&
               (!['github', 'synthetic-local'].includes(value.provider) ||
                 typeof value.confirmed !== 'boolean' ||
@@ -548,8 +594,10 @@ export async function createObserverServer(
         });
       }
       clearForceStop();
+      releaseSessionRetainedSandbox();
       observerWindowProcess?.kill('SIGTERM');
       server.stop(true);
+      rmSync(observerDirectory, { recursive: true, force: true });
     },
   };
 }

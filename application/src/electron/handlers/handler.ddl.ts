@@ -215,7 +215,7 @@ function calculateBaselineSpeed(samples: number[]): number {
   return average(positiveSamples.slice(0, baselineSampleCount));
 }
 
-class Download {
+export class Download {
   public id: string;
   private _status: DownloadStatus = 'queued';
 
@@ -270,6 +270,22 @@ class Download {
 
     downloads.set(this.id, this);
     registerDownloadHandshake(this.id);
+  }
+
+  private observeParallelLimit(
+    headers: Record<string, unknown> | undefined,
+    part?: PartState
+  ): void {
+    const observedLimit = parseParallelLimitHeader(headers);
+    if (observedLimit === undefined) return;
+
+    this.parallelLimit = mergeParallelLimits(this.parallelLimit, observedLimit);
+    if (part) {
+      part.parallelLimit = mergeParallelLimits(
+        part.parallelLimit,
+        observedLimit
+      );
+    }
   }
 
   private reportHandshake(
@@ -632,9 +648,12 @@ class Download {
       this.startMultiPartProgressTracker();
 
       // Process parts in batches
-      const pendingParts = () =>
+      const unfinishedParts = () =>
         this.parts.filter(
-          (p) => p.status === 'pending' || p.status === 'downloading'
+          (p) =>
+            p.status === 'pending' ||
+            p.status === 'downloading' ||
+            p.status === 'merging'
         );
       const activeParts = () =>
         this.parts.filter((p) => p.status === 'downloading');
@@ -648,7 +667,7 @@ class Download {
       const completedParts = () =>
         this.parts.filter((p) => p.status === 'completed');
 
-      while (pendingParts().length > 0 || activeParts().length > 0) {
+      while (unfinishedParts().length > 0) {
         if (this.status !== 'downloading') {
           return yield* Effect.fail(
             new DownloadNotActive({ downloadId: this.id })
@@ -665,6 +684,7 @@ class Download {
         );
         const effectivePartLimit = mergeParallelLimits(
           PARALLEL_CHUNK_COUNT,
+          this.parallelLimit,
           ...knownParallelLimits
         );
         const availableSlots = Math.max(
@@ -785,6 +805,7 @@ class Download {
               new DownloadNotActive({ downloadId: this.id })
             );
           }
+          part.status = 'downloading';
           const attempt = yield* Effect.either(
             this.executeParallelDownloadForPart(part, parallelInfo.fileSize)
           );
@@ -798,6 +819,20 @@ class Download {
             `[direct] Part ${part.index + 1} chunk download attempt ${i} failed:`,
             lastError
           );
+          const failedChunkCount = part.effectiveChunkCount;
+          const nextChunkCount =
+            mergeParallelLimits(PARALLEL_CHUNK_COUNT, part.parallelLimit) ??
+            PARALLEL_CHUNK_COUNT;
+          // A failed attempt may have learned a stricter response limit. Its
+          // partial files use the old byte partition and cannot be resumed
+          // safely with the new count. Clear the whole failed layout even when
+          // the count is unchanged so corrupt chunks cannot poison every retry.
+          yield* this.deleteChunkFiles(
+            part.job.path,
+            Math.max(failedChunkCount ?? 0, nextChunkCount)
+          );
+          part.chunks = [];
+          part.effectiveChunkCount = nextChunkCount;
           if (lastError instanceof TooManyRequests) {
             console.log(
               `[direct] Part ${part.index + 1}: 429 detected, disabling chunk parallelization and retrying as standard download`
@@ -906,10 +941,49 @@ class Download {
         ? parseInt(String(headResponse.headers['content-length']), 10)
         : 0;
       const supportsRange = headResponse.headers['accept-ranges'] === 'bytes';
-      const parallelLimit = mergeParallelLimits(
+      let parallelLimit = mergeParallelLimits(
         parseParallelLimitHeader(job.headers),
         parseParallelLimitHeader(headResponse.headers)
       );
+
+      // Some hosts only send OGI-Parallel-Limit on GET responses. Probe one
+      // byte before chunk fan-out so that a GET-only cap is known before OGI
+      // opens all ranged connections.
+      if (
+        supportsRange &&
+        contentLength > PARALLEL_DOWNLOAD_THRESHOLD &&
+        parallelLimit !== 1
+      ) {
+        const probeResult = yield* Effect.either(
+          Effect.tryPromise({
+            try: () =>
+              axios.get<Readable>(job.link, {
+                responseType: 'stream',
+                headers: {
+                  ...job.headers,
+                  'User-Agent': 'OpenGameInstaller Downloader/1.0.0',
+                  'Accept-Encoding': 'identity',
+                  Range: 'bytes=0-0',
+                },
+                httpAgent: keepAliveAgent,
+                httpsAgent: keepAliveAgent,
+                timeout: 10000,
+              }),
+            catch: (cause) =>
+              new DownloadError({
+                message: `Parallel limit probe failed: ${formatError(cause)}`,
+                cause,
+              }),
+          })
+        );
+        if (probeResult._tag === 'Right') {
+          parallelLimit = mergeParallelLimits(
+            parallelLimit,
+            parseParallelLimitHeader(probeResult.right.headers)
+          );
+          probeResult.right.data.destroy();
+        }
+      }
 
       return {
         useParallel:
@@ -967,6 +1041,10 @@ class Download {
         let chunkCurrentBytes = 0;
         if (fs.existsSync(chunkPath)) {
           chunkCurrentBytes = fs.statSync(chunkPath).size;
+          if (chunkCurrentBytes > expectedChunkSize) {
+            fs.rmSync(chunkPath, { force: true });
+            chunkCurrentBytes = 0;
+          }
         }
 
         part.chunks.push({
@@ -975,7 +1053,7 @@ class Download {
           endByte,
           currentBytes: chunkCurrentBytes,
           abortController: new AbortController(),
-          completed: chunkCurrentBytes >= expectedChunkSize,
+          completed: chunkCurrentBytes === expectedChunkSize,
         });
       }
 
@@ -1073,6 +1151,12 @@ class Download {
       const responseResult = yield* Effect.either(request);
       if (responseResult._tag === 'Left') {
         const cause = responseResult.left.cause;
+        if (cause instanceof AxiosError) {
+          this.observeParallelLimit(
+            cause.response?.headers as Record<string, unknown> | undefined,
+            part
+          );
+        }
         if (cause instanceof AxiosError && cause.response?.status === 416) {
           chunk.completed = true;
           return;
@@ -1083,6 +1167,7 @@ class Download {
         return yield* Effect.fail(responseResult.left);
       }
       chunk.response = responseResult.right;
+      this.observeParallelLimit(chunk.response.headers, part);
 
       if (chunk.response.status === 429) {
         return yield* Effect.fail(new TooManyRequests({}));
@@ -1165,7 +1250,17 @@ class Download {
           );
           onProgress?.();
         });
-      });
+      }).pipe(
+        Effect.onInterrupt(() =>
+          Effect.sync(() => {
+            stream.throttle?.destroy();
+            chunk.response?.data.destroy();
+            chunk.fileStream?.destroy();
+            chunk.fileStream = undefined;
+            chunk.response = undefined;
+          })
+        )
+      );
     });
   }
 
@@ -1176,6 +1271,35 @@ class Download {
     part: PartState
   ): Effect.Effect<void, FileSystemError> {
     return Effect.gen(this, function* () {
+      const effectiveChunkCount =
+        part.effectiveChunkCount ?? PARALLEL_CHUNK_COUNT;
+      yield* Effect.try({
+        try: () => {
+          if (part.chunks.length !== effectiveChunkCount) {
+            throw new Error(
+              `Expected ${effectiveChunkCount} chunks, found ${part.chunks.length}`
+            );
+          }
+          for (let i = 0; i < effectiveChunkCount; i++) {
+            const chunk = part.chunks[i];
+            const chunkPath = this.getChunkPath(part.job.path, i);
+            const expectedSize = chunk.endByte - chunk.startByte + 1;
+            const actualSize = fs.statSync(chunkPath).size;
+            if (actualSize !== expectedSize) {
+              throw new Error(
+                `Chunk ${i} has ${actualSize} bytes; expected ${expectedSize}`
+              );
+            }
+          }
+        },
+        catch: (cause) =>
+          new FileSystemError({
+            message: `Cannot merge invalid chunks: ${formatError(cause)}`,
+            path: part.job.path,
+            cause,
+          }),
+      });
+
       const finalStream = yield* Effect.try({
         try: () => fs.createWriteStream(part.job.path, { flags: 'w' }),
         catch: (cause) =>
@@ -1185,9 +1309,6 @@ class Download {
             cause,
           }),
       });
-      const effectiveChunkCount =
-        part.effectiveChunkCount ?? PARALLEL_CHUNK_COUNT;
-
       yield* Effect.async<void, FileSystemError>((resume) => {
         let resolved = false;
         let currentChunkIndex = 0;
@@ -1205,6 +1326,7 @@ class Download {
           );
         };
         const writeNextChunk = () => {
+          if (resolved) return;
           if (currentChunkIndex >= effectiveChunkCount) {
             finalStream.end(() => {
               if (resolved) return;
@@ -1219,13 +1341,21 @@ class Download {
             return;
           }
           const chunkStream = fs.createReadStream(chunkPath);
+          let ended = false;
           chunkStream.on('error', (cause) => {
             finalStream.destroy();
             fail(cause, chunkPath);
           });
           chunkStream.on('end', () => {
+            ended = true;
             currentChunkIndex++;
             writeNextChunk();
+          });
+          chunkStream.on('close', () => {
+            if (!ended && !resolved) {
+              finalStream.destroy();
+              fail('Chunk stream closed before reaching the end', chunkPath);
+            }
           });
           chunkStream.pipe(finalStream, { end: false });
         };
@@ -1310,6 +1440,14 @@ class Download {
       );
       if (responseResult._tag === 'Left') {
         const cause = responseResult.left.cause;
+        part.fileStream?.destroy();
+        part.fileStream = undefined;
+        if (cause instanceof AxiosError) {
+          this.observeParallelLimit(
+            cause.response?.headers as Record<string, unknown> | undefined,
+            part
+          );
+        }
         if (cause instanceof AxiosError && cause.response?.status === 416) {
           part.downloadedBytes = 0;
           yield* Effect.tryPromise({
@@ -1329,6 +1467,7 @@ class Download {
         return yield* Effect.fail(responseResult.left);
       }
       part.response = responseResult.right;
+      this.observeParallelLimit(part.response.headers, part);
 
       if (startByte > 0 && part.response.status !== 206) {
         part.fileStream?.close();
@@ -1877,6 +2016,11 @@ class Download {
       );
       if (responseResult._tag === 'Left') {
         const cause = responseResult.left.cause;
+        if (cause instanceof AxiosError) {
+          this.observeParallelLimit(
+            cause.response?.headers as Record<string, unknown> | undefined
+          );
+        }
         if (cause instanceof AxiosError && cause.response?.status === 416) {
           this.startByte = 0;
           this.currentBytes = 0;
@@ -1897,12 +2041,14 @@ class Download {
           yield* this.cleanupAllFiles();
         }
         if (cause instanceof AxiosError && cause.response?.status === 429) {
+          this.cleanupPart();
           return yield* Effect.fail(new TooManyRequests({}));
         }
         this.cleanupPart();
         return yield* Effect.fail(responseResult.left);
       }
       this.response = responseResult.right;
+      this.observeParallelLimit(this.response.headers);
 
       if (this.startByte > 0 && this.response.status !== 206) {
         this.startByte = 0;
@@ -2161,6 +2307,10 @@ class Download {
         let chunkCurrentBytes = 0;
         if (fs.existsSync(chunkPath)) {
           chunkCurrentBytes = fs.statSync(chunkPath).size;
+          if (chunkCurrentBytes > expectedChunkSize) {
+            fs.rmSync(chunkPath, { force: true });
+            chunkCurrentBytes = 0;
+          }
           console.log(
             `[direct] Chunk ${i} file exists with ${chunkCurrentBytes} bytes`
           );
@@ -2172,7 +2322,7 @@ class Download {
           endByte,
           currentBytes: chunkCurrentBytes,
           abortController: new AbortController(),
-          completed: chunkCurrentBytes >= expectedChunkSize,
+          completed: chunkCurrentBytes === expectedChunkSize,
         });
       }
 

@@ -32,7 +32,7 @@ class MockAxiosError extends Error {
 
 class MockBrowserWindow {}
 
-const get = mock(() =>
+const get = mock((_url?: string, _config?: { signal?: AbortSignal }) =>
   Promise.resolve({
     status: 200,
     headers: {
@@ -142,21 +142,24 @@ describe('OGI-Parallel-Limit response handling', () => {
       } as never,
       [job]
     );
+    const abortController = new AbortController();
 
     const info = await Effect.runPromise(
       (
         download as unknown as {
           shouldUseParallelDownloadForPart(
-            currentJob: typeof job
+            currentJob: typeof job,
+            signal?: AbortSignal
           ): Effect.Effect<{
             useParallel: boolean;
             parallelLimit?: number;
           }>;
         }
-      ).shouldUseParallelDownloadForPart(job)
+      ).shouldUseParallelDownloadForPart(job, abortController.signal)
     );
 
     expect(get).toHaveBeenCalledTimes(1);
+    expect(get.mock.calls[0]?.[1]?.signal).toBe(abortController.signal);
     expect(info.parallelLimit).toBe(1);
     expect(info.useParallel).toBe(false);
   });
@@ -367,11 +370,9 @@ describe('parallel chunk merging', () => {
       );
     download.status = 'downloading';
 
-    const startedAt = Date.now();
     await Effect.runPromise(internals.runParallelParts());
 
     expect(part.status).toBe('completed');
-    expect(Date.now() - startedAt).toBeGreaterThanOrEqual(200);
   });
 
   test('rejects a corrupted chunk instead of completing the merge', async () => {

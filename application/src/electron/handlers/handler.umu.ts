@@ -24,6 +24,7 @@ import {
   getHomeDir,
   isLinux,
 } from '@/electron/handlers/helpers.app/platform.js';
+import { getUmuRedistributableEnvironment } from '@/electron/handlers/helpers.app/umu-environment.js';
 import { sendNotification } from '@/electron/main.js';
 import { __dirname } from '@/electron/manager/manager.paths.js';
 import { downloadLatestUmu } from '@/electron/startup.js';
@@ -717,16 +718,12 @@ export async function installRedistributablesWithUmu(
           resolve(result);
         };
 
-        const env: NodeJS.ProcessEnv = {
-          ...process.env,
-          GAMEID: gameId,
-          WINEPREFIX: winePrefix,
-          UMU_LOG: 'debug',
-        };
-
-        if (protonPath) {
-          env.PROTONPATH = protonPath;
-        }
+        const env = getUmuRedistributableEnvironment({
+          gameId,
+          winePrefix,
+          cwd: libraryInfo.cwd,
+          protonPath,
+        });
 
         let child: ReturnType<typeof spawn>;
 
@@ -736,10 +733,7 @@ export async function installRedistributablesWithUmu(
             umuRunExecutable,
             ['winetricks', '-q', '-f', redistributable.name],
             {
-              env: {
-                ...env,
-                PWD: libraryInfo.cwd,
-              },
+              env,
               stdio: ['ignore', 'pipe', 'pipe'],
             }
           );
@@ -771,10 +765,7 @@ export async function installRedistributablesWithUmu(
           const silentFlags = getSilentInstallFlags(redistFile);
 
           child = spawn(umuRunExecutable, [redistFile, ...silentFlags], {
-            env: {
-              ...env,
-              PWD: libraryInfo.cwd,
-            },
+            env,
             cwd: redistDir,
             stdio: ['ignore', 'pipe', 'pipe'],
           });
@@ -1115,6 +1106,11 @@ export async function installRedistributablesWithUmuForLegacy(
         };
 
         let child: ReturnType<typeof spawn>;
+        const env = getUmuRedistributableEnvironment({
+          gameId: `umu-${steamAppId}`,
+          winePrefix,
+          cwd: libraryInfo.cwd,
+        });
 
         if (redistributable.path === 'winetricks') {
           // Use winetricks verb via UMU
@@ -1122,13 +1118,7 @@ export async function installRedistributablesWithUmuForLegacy(
             umuRunExecutable,
             ['winetricks', '-q', '-f', redistributable.name],
             {
-              env: {
-                ...process.env,
-                UMU_LOG: 'debug',
-                GAMEID: `umu-${steamAppId}`,
-                WINEPREFIX: winePrefix,
-                PWD: libraryInfo.cwd,
-              },
+              env,
               stdio: ['ignore', 'pipe', 'pipe'],
             }
           );
@@ -1152,13 +1142,7 @@ export async function installRedistributablesWithUmuForLegacy(
           const silentFlags = getSilentInstallFlags(redistFile);
 
           child = spawn(umuRunExecutable, [redistFile, ...silentFlags], {
-            env: {
-              ...process.env,
-              UMU_LOG: 'debug',
-              GAMEID: `umu-${steamAppId}`,
-              WINEPREFIX: winePrefix,
-              PWD: libraryInfo.cwd,
-            },
+            env,
             cwd: redistDir,
             stdio: ['ignore', 'pipe', 'pipe'],
           });

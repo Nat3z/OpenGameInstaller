@@ -6,21 +6,29 @@ export type UmuRedistributableEnvironmentOptions = {
   protonPath?: string;
 };
 
-export function getUmuRedistributableEnvironment({
+export type UmuLaunchEnvironmentOptions =
+  UmuRedistributableEnvironmentOptions & {
+    launchEnvironment?: Record<string, string>;
+  };
+
+function getUmuEnvironment({
   baseEnvironment = process.env,
   gameId,
   winePrefix,
   cwd,
   protonPath,
-}: UmuRedistributableEnvironmentOptions): NodeJS.ProcessEnv {
+  additionalEnvironment = {},
+}: UmuRedistributableEnvironmentOptions & {
+  additionalEnvironment?: NodeJS.ProcessEnv;
+}): NodeJS.ProcessEnv {
   const environment: NodeJS.ProcessEnv = {
     ...baseEnvironment,
+    ...additionalEnvironment,
     GAMEID: gameId,
     WINEPREFIX: winePrefix,
     UMU_LOG: 'debug',
-    // Xalia is Proton-GE's .NET accessibility helper. Letting it start while
-    // Winetricks is replacing .NET can display a framework prompt and block an
-    // otherwise unattended redistributable installation.
+    // Xalia is Proton-GE's accessibility helper. Its own VC++/.NET dependency
+    // prompts can be mistaken for game prerequisites and block unattended work.
     PROTON_USE_XALIA: '0',
     PWD: cwd,
   };
@@ -30,4 +38,20 @@ export function getUmuRedistributableEnvironment({
   }
 
   return environment;
+}
+
+export function getUmuLaunchEnvironment({
+  launchEnvironment,
+  ...options
+}: UmuLaunchEnvironmentOptions): NodeJS.ProcessEnv {
+  return getUmuEnvironment({
+    ...options,
+    additionalEnvironment: launchEnvironment,
+  });
+}
+
+export function getUmuRedistributableEnvironment(
+  options: UmuRedistributableEnvironmentOptions
+): NodeJS.ProcessEnv {
+  return getUmuEnvironment(options);
 }

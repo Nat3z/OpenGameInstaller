@@ -24,7 +24,10 @@ import {
   getHomeDir,
   isLinux,
 } from '@/electron/handlers/helpers.app/platform.js';
-import { getUmuRedistributableEnvironment } from '@/electron/handlers/helpers.app/umu-environment.js';
+import {
+  getUmuLaunchEnvironment,
+  getUmuRedistributableEnvironment,
+} from '@/electron/handlers/helpers.app/umu-environment.js';
 import { sendNotification } from '@/electron/main.js';
 import { __dirname } from '@/electron/manager/manager.paths.js';
 import { downloadLatestUmu } from '@/electron/startup.js';
@@ -499,16 +502,13 @@ export async function launchWithUmu(
   const dllOverrideStr = buildDllOverrides(dllOverrides);
 
   // Build environment variables
-  const env: NodeJS.ProcessEnv = {
-    ...process.env,
-    ...launchEnv,
-    GAMEID: gameId,
-    WINEPREFIX: winePrefix,
-  };
-
-  if (protonPath) {
-    env.PROTONPATH = protonPath;
-  }
+  const env = getUmuLaunchEnvironment({
+    launchEnvironment: launchEnv,
+    gameId,
+    winePrefix,
+    cwd: libraryInfo.cwd,
+    protonPath,
+  });
 
   if (store) {
     env.STORE = store;

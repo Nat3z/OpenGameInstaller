@@ -383,10 +383,8 @@ export async function runQuarantinedScenarioMatrix(
       windowsJobResultPath,
       timeoutMs
     );
-    const { child, tracker } = await spawnTrackedProcess(
-      launch.command,
-      launch.args,
-      {
+    const { child, tracker } = await Effect.runPromise(
+      spawnTrackedProcess(launch.command, launch.args, {
         cwd: resolve(import.meta.dir, '../..'),
         detached: launch.detached,
         env: {
@@ -397,7 +395,7 @@ export async function runQuarantinedScenarioMatrix(
           OGI_E2E_QUARANTINE_RESULT_PATH: outcomeEvidencePath,
         },
         stdio: ['ignore', 'pipe', 'pipe'],
-      }
+      })
     );
     const stdoutChunks: Buffer[] = [];
     const stderrChunks: Buffer[] = [];
@@ -424,9 +422,8 @@ export async function runQuarantinedScenarioMatrix(
       }
     } else {
       try {
-        survivorsBeforeCleanup = await findTrackedProcessSurvivors(
-          tracker,
-          child.pid ? [child.pid] : []
+        survivorsBeforeCleanup = await Effect.runPromise(
+          findTrackedProcessSurvivors(tracker, child.pid ? [child.pid] : [])
         );
       } catch (cause) {
         cleanupError = cause;
@@ -441,7 +438,9 @@ export async function runQuarantinedScenarioMatrix(
     }
     let survivorsAfterCleanup: number[] = [];
     try {
-      survivorsAfterCleanup = await findTrackedProcessSurvivors(tracker);
+      survivorsAfterCleanup = await Effect.runPromise(
+        findTrackedProcessSurvivors(tracker)
+      );
     } catch (cause) {
       cleanupError = cleanupError
         ? new AggregateError([cleanupError, cause], 'Quarantine cleanup failed')

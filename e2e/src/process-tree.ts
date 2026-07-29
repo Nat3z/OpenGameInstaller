@@ -42,6 +42,18 @@ export class ProcessTreeCleanupError extends Data.TaggedError(
   }
 }
 
+export class ProcessTreeTrackingError extends Data.TaggedError(
+  'ProcessTreeTrackingError'
+)<{
+  readonly operation: 'spawn' | 'track' | 'inspect';
+  readonly detail: string;
+  readonly cause?: unknown;
+}> {
+  override get message() {
+    return this.detail;
+  }
+}
+
 function processExists(pid: number) {
   try {
     process.kill(pid, 0);
@@ -419,7 +431,7 @@ async function trackPidTree(rootPid: number) {
   return tracker;
 }
 
-export async function trackProcessTree(child: ChildProcess) {
+async function trackProcessTreePromise(child: ChildProcess) {
   if (!child.pid) throw new Error('Cannot track a process without a PID');
   if (process.platform === 'win32') return undefined;
   const tracker = await trackPidTree(child.pid);
@@ -438,14 +450,14 @@ function withContainmentEvidenceFd(
   return standard as SpawnOptions['stdio'];
 }
 
-export async function spawnTrackedProcess(
+async function spawnTrackedProcessPromise(
   command: string,
   args: readonly string[],
   options: SpawnOptions
 ): Promise<{ child: ChildProcess; tracker: ProcessTreeTracker | undefined }> {
   if (process.platform === 'win32') {
     const child = spawn(command, args, options);
-    return { child, tracker: await trackProcessTree(child) };
+    return { child, tracker: await trackProcessTreePromise(child) };
   }
 
   const containmentEvidencePath = join(
@@ -503,7 +515,7 @@ export async function spawnTrackedProcess(
       }
       await delay(5);
     }
-    const tracker = await trackProcessTree(child);
+    const tracker = await trackProcessTreePromise(child);
     if (!tracker) throw new Error('Linux process tracker was not established');
     tracker.containmentEvidencePath = containmentEvidencePath;
     process.kill(child.pid, 'SIGCONT');
@@ -518,7 +530,7 @@ export async function spawnTrackedProcess(
   }
 }
 
-export async function findTrackedProcessSurvivors(
+async function findTrackedProcessSurvivorsPromise(
   tracker: ProcessTreeTracker | undefined,
   excludePids: readonly number[] = []
 ) {
@@ -626,7 +638,7 @@ async function terminateTrackedPosixTree(tracker: ProcessTreeTracker) {
   }
 }
 
-export async function terminatePidTree(pid: number) {
+async function terminatePidTreePromise(pid: number) {
   if (!Number.isInteger(pid) || pid < 1) {
     throw new Error(`Invalid product process PID: ${pid}`);
   }
@@ -697,7 +709,7 @@ async function terminate(child: ChildProcess, tracker?: ProcessTreeTracker) {
     if (retainedTracker) {
       await terminateTrackedPosixTree(retainedTracker);
     } else {
-      await terminatePidTree(pid);
+      await terminatePidTreePromise(pid);
     }
     await waitForExit(child, 2_000);
   } finally {
@@ -728,6 +740,70 @@ export const terminateProcessTree = (
       onTimeout: () =>
         new ProcessTreeCleanupError({
           pid: child.pid ?? -1,
+          platform: process.platform,
+          detail: 'Process tree cleanup exceeded 15 seconds',
+        }),
+    })
+  );
+
+export const trackProcessTree = (child: ChildProcess) =>
+  Effect.tryPromise({
+    try: () => trackProcessTreePromise(child),
+    catch: (cause) =>
+      new ProcessTreeTrackingError({
+        operation: 'track',
+        detail: `Could not track process tree for PID ${child.pid ?? 'unknown'}`,
+        cause,
+      }),
+  });
+
+export const spawnTrackedProcess = (
+  command: string,
+  args: readonly string[],
+  options: SpawnOptions
+) =>
+  Effect.tryPromise({
+    try: () => spawnTrackedProcessPromise(command, args, options),
+    catch: (cause) =>
+      new ProcessTreeTrackingError({
+        operation: 'spawn',
+        detail: `Could not spawn and track ${[command, ...args].join(' ')}`,
+        cause,
+      }),
+  });
+
+export const findTrackedProcessSurvivors = (
+  tracker: ProcessTreeTracker | undefined,
+  excludePids: readonly number[] = []
+) =>
+  Effect.tryPromise({
+    try: () => findTrackedProcessSurvivorsPromise(tracker, excludePids),
+    catch: (cause) =>
+      new ProcessTreeTrackingError({
+        operation: 'inspect',
+        detail: `Could not inspect tracked process tree for PID ${tracker?.rootPid ?? 'unknown'}`,
+        cause,
+      }),
+  });
+
+export const terminatePidTree = (pid: number) =>
+  Effect.tryPromise({
+    try: () => terminatePidTreePromise(pid),
+    catch: (cause) =>
+      cause instanceof ProcessTreeCleanupError
+        ? cause
+        : new ProcessTreeCleanupError({
+            pid,
+            platform: process.platform,
+            detail: `Failed to remove process tree: ${(cause as Error).message}`,
+            cause,
+          }),
+  }).pipe(
+    Effect.timeoutFail({
+      duration: '15 seconds',
+      onTimeout: () =>
+        new ProcessTreeCleanupError({
+          pid,
           platform: process.platform,
           detail: 'Process tree cleanup exceeded 15 seconds',
         }),

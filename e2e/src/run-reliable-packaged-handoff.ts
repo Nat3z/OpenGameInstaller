@@ -475,14 +475,12 @@ async function startAttempt(
       ),
     });
   }
-  const { child, tracker } = await spawnTrackedProcess(
-    command,
-    commandArguments,
-    {
+  const { child, tracker } = await Effect.runPromise(
+    spawnTrackedProcess(command, commandArguments, {
       detached: process.platform === 'linux',
       stdio: 'inherit',
       env: environment,
-    }
+    })
   );
   if (!child.pid)
     throw new Error('Product Journey attempt worker did not start');
@@ -607,9 +605,10 @@ for (let attempt = 1; attempt <= 2; attempt++) {
   let unexpectedSurvivors: number[] = [];
   if (!cancellationRequested && processResult) {
     try {
-      unexpectedSurvivors = await findTrackedProcessSurvivors(
-        attemptProcess.tracker,
-        [attemptProcess.child.pid!]
+      unexpectedSurvivors = await Effect.runPromise(
+        findTrackedProcessSurvivors(attemptProcess.tracker, [
+          attemptProcess.child.pid!,
+        ])
       );
     } catch (cause) {
       processFailure = cause;

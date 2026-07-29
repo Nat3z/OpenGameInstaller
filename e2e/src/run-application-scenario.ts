@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { existsSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { Cause, Data, Effect, Exit, Option } from 'effect';
+import { Cause, Effect, Exit, Option } from 'effect';
 import {
   createApplicationScenarioSandbox,
   ensureApplicationFailureEvidence,
@@ -15,12 +15,7 @@ import {
   startExecutionVideo,
   stopExecutionVideo,
 } from './execution-video';
-import {
-  findTrackedProcessSurvivors,
-  readWindowsJobSurvivors,
-  spawnTrackedProcess,
-  terminateProcessTree,
-} from './process-tree';
+import { terminateProcessTree } from './process-tree';
 import {
   makeRunEventWriter,
   readRunEvents,
@@ -39,42 +34,7 @@ import {
   hasExpectedAssertionExitConfirmation,
   validateScenarioSourceDispositions,
 } from './run-reliability';
-
-class ApplicationScenarioSpawnError extends Data.TaggedError(
-  'ApplicationScenarioSpawnError'
-)<{ readonly command: string; readonly cause?: unknown }> {
-  override get message() {
-    return `Could not start ${this.command}`;
-  }
-}
-
-class ApplicationScenarioProcessExitError extends Data.TaggedError(
-  'ApplicationScenarioProcessExitError'
-)<{
-  readonly command: string;
-  readonly status: number | null;
-  readonly signal: NodeJS.Signals | null;
-}> {
-  override get message() {
-    return `${this.command} exited with status ${this.status} and signal ${this.signal}`;
-  }
-}
-
-class ApplicationScenarioTrackingError extends Data.TaggedError(
-  'ApplicationScenarioTrackingError'
-)<{ readonly command: string; readonly cause: unknown }> {
-  override get message() {
-    return `Could not track the process tree for ${this.command}`;
-  }
-}
-
-class ApplicationScenarioTimeoutError extends Data.TaggedError(
-  'ApplicationScenarioTimeoutError'
-)<{ readonly condition: string; readonly timeout: string }> {
-  override get message() {
-    return `${this.condition} was not met within ${this.timeout}`;
-  }
-}
+import { runTrackedAttempt } from './run-tracked-attempt';
 
 const currentDirectory = dirname(fileURLToPath(import.meta.url));
 const e2eDirectory = resolve(currentDirectory, '..');
@@ -156,141 +116,58 @@ const cancellationPoll = observerCancellationPath
     }, 100)
   : null;
 
-function waitForCancellation() {
-  return Effect.promise(() => cancellation);
-}
-
-function waitForProcess(child: ChildProcess, command: string) {
-  return Effect.async<
-    void,
-    ApplicationScenarioSpawnError | ApplicationScenarioProcessExitError
-  >((resume) => {
-    const onError = (cause: Error) =>
-      resume(
-        Effect.fail(new ApplicationScenarioSpawnError({ command, cause }))
-      );
-    const onExit = (status: number | null, signal: NodeJS.Signals | null) =>
-      resume(
-        status === 0
-          ? Effect.void
-          : Effect.fail(
-              new ApplicationScenarioProcessExitError({
-                command,
-                status,
-                signal,
-              })
-            )
-      );
-    if (child.exitCode !== null || child.signalCode !== null) {
-      onExit(child.exitCode, child.signalCode);
-      return;
-    }
-    child.once('error', onError);
-    child.once('exit', onExit);
-    return Effect.sync(() => {
-      child.off('error', onError);
-      child.off('exit', onExit);
-    });
-  }).pipe(
-    Effect.timeoutFail({
-      duration: '2 minutes',
-      onTimeout: () =>
-        new ApplicationScenarioTimeoutError({
-          condition: 'observable Application Scenario completion',
-          timeout: '2 minutes',
-        }),
-    })
-  );
-}
-
 function runScenarioAttempt(attempt: number) {
-  return Effect.scoped(
-    Effect.gen(function* () {
-      const probeRunnerPath = process.env.OGI_E2E_RUNNER_PROBE_PATH;
-      const launch = probeRunnerPath
-        ? {
-            command: process.execPath,
-            args: [probeRunnerPath],
-            detached: process.platform === 'linux',
-          }
-        : getApplicationScenarioLaunch(process.platform);
-      const { command, args, detached } =
-        videoRecording?.display && launch.command === 'xvfb-run'
-          ? { ...launch, command: launch.args[1]!, args: launch.args.slice(2) }
-          : launch;
-      const commandLine = [command, ...args].join(' ');
-      const windowsJobResultPath = join(
-        descriptor.artifactDirectory,
-        `attempt-${attempt}-windows-job.json`
-      );
-      const expectedAssertionExitPath = join(
-        descriptor.artifactDirectory,
-        `attempt-${attempt}-expected-assertion-exit.json`
-      );
-      const launched = yield* Effect.acquireRelease(
-        Effect.tryPromise({
-          try: () =>
-            spawnTrackedProcess(command, args, {
-              cwd: e2eDirectory,
-              detached,
-              env: {
-                ...process.env,
-                ...(videoRecording?.display
-                  ? { DISPLAY: videoRecording.display }
-                  : {}),
-                OGI_RUN_DESCRIPTOR: descriptor.descriptorPath,
-                OGI_SCENARIO_ATTEMPT: String(attempt),
-                OGI_WINDOWS_JOB_RESULT: windowsJobResultPath,
-                OGI_EXPECTED_ASSERTION_EXIT: expectedAssertionExitPath,
-              },
-              stdio: 'inherit',
-            }),
-          catch: (cause) =>
-            new ApplicationScenarioTrackingError({
-              command: commandLine,
-              cause,
-            }),
-        }),
-        ({ child }) => terminateProcessTree(child).pipe(Effect.orDie)
-      );
-      const { child, tracker } = launched;
-      if (child.pid === undefined) {
-        return yield* new ApplicationScenarioSpawnError({
-          command: commandLine,
-        });
+  const probeRunnerPath = process.env.OGI_E2E_RUNNER_PROBE_PATH;
+  const launch = probeRunnerPath
+    ? {
+        command: process.execPath,
+        args: [probeRunnerPath],
+        detached: process.platform === 'linux',
       }
+    : getApplicationScenarioLaunch(process.platform);
+  const { command, args, detached } =
+    videoRecording?.display && launch.command === 'xvfb-run'
+      ? { ...launch, command: launch.args[1]!, args: launch.args.slice(2) }
+      : launch;
+  const windowsJobResultPath = join(
+    descriptor.artifactDirectory,
+    `attempt-${attempt}-windows-job.json`
+  );
+  const expectedAssertionExitPath = join(
+    descriptor.artifactDirectory,
+    `attempt-${attempt}-expected-assertion-exit.json`
+  );
+  return runTrackedAttempt({
+    launch: {
+      command,
+      args,
+      options: {
+        cwd: e2eDirectory,
+        detached,
+        env: {
+          ...process.env,
+          ...(videoRecording?.display
+            ? { DISPLAY: videoRecording.display }
+            : {}),
+          OGI_RUN_DESCRIPTOR: descriptor.descriptorPath,
+          OGI_SCENARIO_ATTEMPT: String(attempt),
+          OGI_WINDOWS_JOB_RESULT: windowsJobResultPath,
+          OGI_EXPECTED_ASSERTION_EXIT: expectedAssertionExitPath,
+        },
+        stdio: 'inherit',
+      },
+    },
+    cancellation: Effect.promise(() => cancellation),
+    completionTimeout: '2 minutes',
+    completionCondition: 'observable Application Scenario completion',
+    windowsJobResultPath,
+    onStarted: (child) => {
       writeEvent({
         type: 'process.started',
-        payload: { pid: child.pid, name: 'WebdriverIO Application Scenario' },
+        payload: { pid: child.pid!, name: 'WebdriverIO Application Scenario' },
       });
-      const completion = yield* Effect.race(
-        Effect.exit(waitForProcess(child, commandLine)).pipe(
-          Effect.map((processExit) => ({
-            kind: 'process' as const,
-            processExit,
-          }))
-        ),
-        waitForCancellation().pipe(Effect.as({ kind: 'cancelled' as const }))
-      );
-      const unexpectedSurvivors =
-        completion.kind === 'process'
-          ? yield* Effect.tryPromise({
-              try: () =>
-                process.platform === 'win32'
-                  ? Promise.resolve(
-                      readWindowsJobSurvivors(windowsJobResultPath)
-                    )
-                  : findTrackedProcessSurvivors(tracker, [child.pid!]),
-              catch: (cause) =>
-                new ApplicationScenarioTrackingError({
-                  command: commandLine,
-                  cause,
-                }),
-            })
-          : [];
-      const cleanupExit = yield* Effect.exit(
-        terminateProcessTree(child, tracker)
-      );
+    },
+    onStopped: ({ child, leaked }) => {
       writeEvent = makeRunEventWriter(
         descriptor.eventLogPath,
         runId,
@@ -299,13 +176,12 @@ function runScenarioAttempt(attempt: number) {
       writeEvent({
         type: 'process.stopped',
         payload: {
-          pid: child.pid,
-          leaked: unexpectedSurvivors.length > 0 || Exit.isFailure(cleanupExit),
+          pid: child.pid!,
+          leaked,
         },
       });
-      return { completion, cleanupExit, unexpectedSurvivors };
-    })
-  );
+    },
+  });
 }
 
 let finalOutcome: TerminalOutcome = 'Aborted';
@@ -333,6 +209,9 @@ const program = Effect.gen(function* () {
     if (Exit.isFailure(attemptExit)) {
       attemptOutcome = 'Infrastructure Failed';
       failureDetail = Cause.pretty(attemptExit.cause);
+    } else if (Exit.isFailure(attemptExit.value.inspectionExit)) {
+      attemptOutcome = 'Infrastructure Failed';
+      failureDetail = Cause.pretty(attemptExit.value.inspectionExit.cause);
     } else if (attemptExit.value.completion.kind === 'cancelled') {
       attemptOutcome = 'Cancelled';
     } else if (attemptExit.value.unexpectedSurvivors.length > 0) {

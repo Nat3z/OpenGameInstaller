@@ -18,6 +18,7 @@ import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { basename, join, relative, resolve } from 'node:path';
 import { gunzipSync } from 'node:zlib';
+import { Effect } from 'effect';
 import { productionForbiddenHookMarkers } from './packaged-handoff-audit';
 import { terminatePidTree } from './process-tree';
 
@@ -681,7 +682,7 @@ async function launchAndStop(
             // The isolated process group exited after SIGTERM.
           }
         } else {
-          await terminatePidTree(child.pid);
+          await Effect.runPromise(terminatePidTree(child.pid));
         }
       }
     }

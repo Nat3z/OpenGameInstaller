@@ -13,6 +13,7 @@ import {
 import { createRequire } from 'node:module';
 import { dirname, join, relative, resolve } from 'node:path';
 import { $, browser } from '@wdio/globals';
+import { Effect } from 'effect';
 import {
   connect,
   type Page,
@@ -1070,7 +1071,7 @@ describe('packaged Golden Journey', () => {
         });
         await applicationBrowser.disconnect();
         applicationBrowser = undefined;
-        await terminatePidTree(initialApplicationPid);
+        await Effect.runPromise(terminatePidTree(initialApplicationPid));
         writeEvent({
           type: 'process.stopped',
           payload: { pid: initialApplicationPid, leaked: false },

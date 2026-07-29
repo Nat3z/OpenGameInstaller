@@ -1,4 +1,3 @@
-import type { ChildProcess } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import {
   cpSync,
@@ -13,7 +12,7 @@ import { createServer } from 'node:http';
 import { networkInterfaces } from 'node:os';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { Data, Effect, Exit } from 'effect';
+import { Cause, Data, Effect, Exit } from 'effect';
 import {
   type ExecutionVideoRecording,
   startExecutionVideo,
@@ -38,13 +37,6 @@ import {
   writePackagedHandoffRunDescriptor,
 } from './packaged-handoff';
 import {
-  findTrackedProcessSurvivors,
-  type ProcessTreeTracker,
-  readWindowsJobSurvivors,
-  spawnTrackedProcess,
-  terminateProcessTree,
-} from './process-tree';
-import {
   makeRunEventWriter,
   readRunEvents,
   renderRunHtmlReport,
@@ -60,25 +52,7 @@ import {
   hasExpectedAssertionExitConfirmation,
   validateScenarioSourceDispositions,
 } from './run-reliability';
-
-class ProductJourneySpawnError extends Data.TaggedError(
-  'ProductJourneySpawnError'
-)<{ readonly command: string; readonly cause?: unknown }> {}
-
-class ProductJourneyProcessExitError extends Data.TaggedError(
-  'ProductJourneyProcessExitError'
-)<{
-  readonly status: number | null;
-  readonly signal: NodeJS.Signals | null;
-}> {}
-
-class ProductJourneyTimeoutError extends Data.TaggedError(
-  'ProductJourneyTimeoutError'
-)<{ readonly timeout: string }> {}
-
-class ProductJourneyTrackingError extends Data.TaggedError(
-  'ProductJourneyTrackingError'
-)<{ readonly cause: unknown }> {}
+import { runTrackedAttempt } from './run-tracked-attempt';
 
 class ProductJourneyFixtureError extends Data.TaggedError(
   'ProductJourneyFixtureError'
@@ -103,28 +77,6 @@ async function allocateLoopbackPort() {
     server.close((error) => (error ? rejectClose(error) : resolveClose()));
   });
   return port;
-}
-
-function waitForProcess(child: ChildProcess) {
-  return new Promise<void>((resolveExit, rejectExit) => {
-    const timeout = setTimeout(() => {
-      rejectExit(new ProductJourneyTimeoutError({ timeout: '5 minutes' }));
-    }, 300_000);
-    child.once('error', (cause) => {
-      clearTimeout(timeout);
-      rejectExit(
-        new ProductJourneySpawnError({ command: child.spawnfile, cause })
-      );
-    });
-    child.once('exit', (status, signal) => {
-      clearTimeout(timeout);
-      if (status === 0) {
-        resolveExit();
-      } else {
-        rejectExit(new ProductJourneyProcessExitError({ status, signal }));
-      }
-    });
-  });
 }
 
 const currentDirectory = dirname(fileURLToPath(import.meta.url));
@@ -364,13 +316,9 @@ writeEvent({
   payload: { port: Number(new URL(fixture.baseUrl).port) },
 });
 
-let child: ChildProcess | undefined;
-let processTracker: ProcessTreeTracker | undefined;
 let failure: unknown;
 let processFailure: unknown;
 let fixtureCloseFailure: unknown;
-let leaked = false;
-let leakedProcessPids: number[] = [];
 const videoPath = join(descriptor.artifactDirectory, 'execution.webm');
 let videoRecording: ExecutionVideoRecording | undefined;
 try {
@@ -386,111 +334,123 @@ const expectedAssertionExitPath = join(
   descriptor.artifactDirectory,
   'expected-assertion-exit.json'
 );
-try {
-  const command =
-    platform === 'linux'
-      ? videoRecording?.display
-        ? 'bunx'
-        : 'xvfb-run'
-      : 'powershell.exe';
-  const args =
-    platform === 'linux'
-      ? videoRecording?.display
-        ? ['wdio', 'run', './product-journey-wdio.conf.ts']
-        : ['-a', 'bunx', 'wdio', 'run', './product-journey-wdio.conf.ts']
-      : [
-          '-NoProfile',
-          '-NonInteractive',
-          '-ExecutionPolicy',
-          'Bypass',
-          '-File',
-          '../updater/src/windows-job-wrapper.ps1',
-          'bunx',
-          'wdio',
-          'run',
-          './product-journey-wdio.conf.ts',
-        ];
-  try {
-    const launched = await spawnTrackedProcess(command, args, {
-      cwd: e2eDirectory,
-      detached: platform === 'linux',
-      env: {
-        ...process.env,
-        ...(videoRecording?.display ? { DISPLAY: videoRecording.display } : {}),
-        OGI_RUN_DESCRIPTOR: descriptor.descriptorPath,
-        OGI_WINDOWS_JOB_RESULT: windowsJobResultPath,
-        OGI_EXPECTED_ASSERTION_EXIT: expectedAssertionExitPath,
+const command =
+  platform === 'linux'
+    ? videoRecording?.display
+      ? 'bunx'
+      : 'xvfb-run'
+    : 'powershell.exe';
+const args =
+  platform === 'linux'
+    ? videoRecording?.display
+      ? ['wdio', 'run', './product-journey-wdio.conf.ts']
+      : ['-a', 'bunx', 'wdio', 'run', './product-journey-wdio.conf.ts']
+    : [
+        '-NoProfile',
+        '-NonInteractive',
+        '-ExecutionPolicy',
+        'Bypass',
+        '-File',
+        '../updater/src/windows-job-wrapper.ps1',
+        'bunx',
+        'wdio',
+        'run',
+        './product-journey-wdio.conf.ts',
+      ];
+const attemptExit = await Effect.runPromise(
+  Effect.exit(
+    runTrackedAttempt({
+      launch: {
+        command,
+        args,
+        options: {
+          cwd: e2eDirectory,
+          detached: platform === 'linux',
+          env: {
+            ...process.env,
+            ...(videoRecording?.display
+              ? { DISPLAY: videoRecording.display }
+              : {}),
+            OGI_RUN_DESCRIPTOR: descriptor.descriptorPath,
+            OGI_WINDOWS_JOB_RESULT: windowsJobResultPath,
+            OGI_EXPECTED_ASSERTION_EXIT: expectedAssertionExitPath,
+          },
+          stdio: 'inherit',
+        },
       },
-      stdio: 'inherit',
-    });
-    child = launched.child;
-    processTracker = launched.tracker;
-  } catch (cause) {
-    throw new ProductJourneyTrackingError({ cause });
-  }
-  if (!child.pid) throw new ProductJourneySpawnError({ command });
-  writeEvent({
-    type: 'process.started',
-    payload: { pid: child.pid, name: 'WebdriverIO Product Journey' },
-  });
-  await waitForProcess(child);
-} catch (cause) {
-  processFailure = cause;
-  failure = cause;
-} finally {
-  writeEvent = makeRunEventWriter(
-    descriptor.eventLogPath,
-    descriptor.runId,
-    replayRunEventLog(descriptor.eventLogPath).lastSequence
-  );
-  if (child) {
-    let unexpectedSurvivors: number[] = [];
-    if (
-      (process.platform === 'win32' || processTracker) &&
-      (child.exitCode !== null || child.signalCode !== null)
-    ) {
-      try {
-        if (process.platform !== 'win32') await Bun.sleep(500);
-        unexpectedSurvivors =
-          process.platform === 'win32'
-            ? readWindowsJobSurvivors(windowsJobResultPath)
-            : await findTrackedProcessSurvivors(
-                processTracker,
-                child.pid ? [child.pid] : []
-              );
-      } catch (cause) {
-        processFailure = new ProductJourneyTrackingError({ cause });
-        if (!failure) failure = processFailure;
-      }
-    }
-    const cleanup = await Effect.runPromiseExit(
-      terminateProcessTree(child, processTracker)
+      completionTimeout: '5 minutes',
+      completionCondition: 'Product Journey completion',
+      windowsJobResultPath,
+      survivorSettleDuration:
+        process.platform === 'win32' ? undefined : '500 millis',
+      onStarted: (child) => {
+        writeEvent({
+          type: 'process.started',
+          payload: { pid: child.pid!, name: 'WebdriverIO Product Journey' },
+        });
+      },
+      onStopped: ({ child, leaked }) => {
+        writeEvent = makeRunEventWriter(
+          descriptor.eventLogPath,
+          descriptor.runId,
+          replayRunEventLog(descriptor.eventLogPath).lastSequence
+        );
+        writeEvent({
+          type: 'process.stopped',
+          payload: { pid: child.pid ?? 0, leaked },
+        });
+      },
+    })
+  )
+);
+const attemptResult = Exit.isSuccess(attemptExit)
+  ? attemptExit.value
+  : undefined;
+const leakedProcessPids = attemptResult?.unexpectedSurvivors ?? [];
+const leaked =
+  attemptResult !== undefined &&
+  (leakedProcessPids.length > 0 || Exit.isFailure(attemptResult.cleanupExit));
+if (Exit.isFailure(attemptExit)) {
+  processFailure = Cause.squash(attemptExit.cause);
+} else {
+  const result = attemptExit.value;
+  if (Exit.isFailure(result.inspectionExit)) {
+    processFailure = Cause.squash(result.inspectionExit.cause);
+  } else if (Exit.isFailure(result.cleanupExit)) {
+    processFailure = Cause.squash(result.cleanupExit.cause);
+  } else if (result.unexpectedSurvivors.length > 0) {
+    processFailure = new Error(
+      `Unexpected surviving product processes: ${result.unexpectedSurvivors.join(', ')}`
     );
-    leakedProcessPids = unexpectedSurvivors;
-    leaked = unexpectedSurvivors.length > 0 || Exit.isFailure(cleanup);
-    writeEvent({
-      type: 'process.stopped',
-      payload: { pid: child.pid ?? 0, leaked },
-    });
-    if (leaked && !failure) {
-      failure = new ProductJourneyTrackingError({
-        cause: `Unexpected surviving product processes: ${unexpectedSurvivors.join(', ')}`,
-      });
-    }
+  } else if (
+    result.completion.kind === 'process' &&
+    Exit.isFailure(result.completion.processExit)
+  ) {
+    processFailure = Cause.squash(result.completion.processExit.cause);
   }
-  if (videoRecording) {
-    try {
-      await stopExecutionVideo(videoRecording);
-    } catch (cause) {
-      if (!failure) failure = cause;
-    }
+}
+if (processFailure !== undefined && failure === undefined) {
+  failure = processFailure;
+}
+if (videoRecording) {
+  const videoExit = await Effect.runPromise(
+    Effect.exit(Effect.tryPromise(() => stopExecutionVideo(videoRecording!)))
+  );
+  if (Exit.isFailure(videoExit) && failure === undefined) {
+    failure = Cause.squash(videoExit.cause);
   }
-  try {
-    await fixture.close();
-  } catch (cause) {
-    fixtureCloseFailure = new ProductJourneyFixtureError({ cause });
-    if (!failure) failure = fixtureCloseFailure;
-  }
+}
+const fixtureCloseExit = await Effect.runPromise(
+  Effect.exit(
+    Effect.tryPromise({
+      try: () => fixture.close(),
+      catch: (cause) => new ProductJourneyFixtureError({ cause }),
+    })
+  )
+);
+if (Exit.isFailure(fixtureCloseExit)) {
+  fixtureCloseFailure = Cause.squash(fixtureCloseExit.cause);
+  if (failure === undefined) failure = fixtureCloseFailure;
 }
 
 const requestLines = readFileSync(fixture.requestLogPath, 'utf8')

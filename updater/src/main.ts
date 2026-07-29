@@ -11,6 +11,10 @@ import path, { join } from 'path';
 import yauzl, { type ZipFile } from 'yauzl';
 import zlib from 'zlib';
 import pjson from '../package.json' with { type: 'json' };
+import {
+  type BleedingEdgeSyncResult,
+  syncBleedingEdgeRepo as syncBleedingEdgeGitRepo,
+} from './git-sync.js';
 
 class UpdateError extends Data.TaggedError('UpdateError')<{
   readonly message: string;
@@ -247,13 +251,6 @@ function getApplicationBuildCommand() {
 }
 
 type CommandResult = { stdout: string; stderr: string };
-type BleedingEdgeSyncResult = {
-  beforePullSha: string;
-  afterPullSha: string;
-  pullOutput: string;
-  pullWasNoop: boolean;
-};
-
 type RunCommandOptions = {
   cwd?: string;
   /** Skip UI status updates (e.g. git metadata for branch/commit picker). */
@@ -311,25 +308,13 @@ async function syncBleedingEdgeRepo(
   repoDir: string,
   branch: string
 ): Promise<BleedingEdgeSyncResult> {
-  const targetBranch = branch || DEFAULT_BLEEDING_EDGE_BRANCH;
-  await runCommand(
-    'git',
-    ['fetch', '--prune', '--tags', 'origin', ALL_ORIGIN_HEADS_REFSPEC],
-    { cwd: repoDir }
+  return syncBleedingEdgeGitRepo(
+    repoDir,
+    branch,
+    DEFAULT_BLEEDING_EDGE_BRANCH,
+    runCommand,
+    getRepoHeadSha
   );
-  await runCommand('git', ['checkout', targetBranch], { cwd: repoDir });
-  const beforePullSha = await getRepoHeadSha(repoDir);
-  const pullResult = await runCommand(
-    'git',
-    ['pull', '--ff-only', 'origin', targetBranch],
-    { cwd: repoDir }
-  );
-  const afterPullSha = await getRepoHeadSha(repoDir);
-  const pullOutput = `${pullResult.stdout}\n${pullResult.stderr}`;
-  const pullWasNoop =
-    /already up[ -]to[ -]date/i.test(pullOutput) &&
-    beforePullSha === afterPullSha;
-  return { beforePullSha, afterPullSha, pullOutput, pullWasNoop };
 }
 
 /** Match .github/workflows/build-release.yml after hoisted `bun install`. */
@@ -396,7 +381,7 @@ function ensureBleedingEdgeBuild(
     );
     if (
       !commit &&
-      syncResult?.pullWasNoop &&
+      syncResult?.syncWasNoop &&
       shouldSkipBranchOnlyBleedingEdgeBuild(targetBranch, headSha)
     ) {
       sendUpdaterStatus(

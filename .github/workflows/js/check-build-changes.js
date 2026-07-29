@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 
+// Decide whether a push affects the desktop release artifacts.
+
 const { execSync } = require('child_process');
 const fs = require('fs');
 
@@ -8,10 +10,19 @@ const eventBefore = process.env.GITHUB_EVENT_BEFORE;
 const githubSha = process.env.GITHUB_SHA;
 const githubOutput = process.env.GITHUB_OUTPUT;
 
-function checkApplicationChanges() {
+function hasReleaseBuildChanges(changedFiles) {
+  return changedFiles.some(
+    (file) =>
+      file.startsWith('application/') ||
+      file.startsWith('updater/') ||
+      file.startsWith('.github/workflows/')
+  );
+}
+
+function checkReleaseBuildChanges() {
   // For tags or workflow_dispatch, assume changes exist
   if (eventName !== 'push' || !eventBefore) {
-    setOutput('has_application_changes', 'true');
+    setOutput('has_build_changes', 'true');
     console.log('Not a push event or no before commit, assuming changes exist');
     return;
   }
@@ -26,25 +37,16 @@ function checkApplicationChanges() {
       .split('\n')
       .filter(Boolean);
 
-    // Check if any file starts with application/
-    const hasChanges = changedFiles.some((file) =>
-      file.startsWith('application/')
-    );
-
-    const hasWorkflowChanges = changedFiles.some((file) =>
-      file.startsWith('.github/workflows/')
-    );
-
-    if (hasChanges || hasWorkflowChanges) {
-      setOutput('has_application_changes', 'true');
-      console.log('Found changes in application directory');
+    if (hasReleaseBuildChanges(changedFiles)) {
+      setOutput('has_build_changes', 'true');
+      console.log('Found release build changes');
     } else {
-      setOutput('has_application_changes', 'false');
-      console.log('No changes in application directory');
+      setOutput('has_build_changes', 'false');
+      console.log('No release build changes');
     }
   } catch (error) {
     // If git diff fails, assume changes exist to be safe
-    setOutput('has_application_changes', 'true');
+    setOutput('has_build_changes', 'true');
     console.log(
       'Error checking changes, assuming changes exist:',
       error.message
@@ -60,4 +62,8 @@ function setOutput(name, value) {
   }
 }
 
-checkApplicationChanges();
+if (require.main === module) {
+  checkReleaseBuildChanges();
+}
+
+module.exports = { hasReleaseBuildChanges };

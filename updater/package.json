@@ -29,7 +29,7 @@
     "mac": {}
   },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "bun test",
     "build": "tsc -p tsconfig.json",
     "dev": "bun run build && electron .",
     "preelectron-pack": "bun run build",

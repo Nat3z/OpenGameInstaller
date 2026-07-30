@@ -66,11 +66,9 @@ If your catalog is Steam-based and you have a Steam app ID, you can use `umuId: 
 
 In most addons, do not set `protonVersion` at all. Let UMU handle its normal Proton selection unless your game only works with a specific override and you know the target environment provides it.
 
-## Legacy mode
+## Default UMU configuration
 
-If you do **not** return `umu` on Linux, OGI sets the game to **legacy mode**: it is added to Steam and launched via Steam/Proton (and SteamTinkerLaunch if configured). The in-app library will not launch that game; the user launches it from Steam.
-
-To force legacy mode even when you could pass `umu`, you can set `legacyMode: true` in the resolved `LibraryInfo`. Use this only if you need the old Steam-centric flow.
+If you do **not** return `umu` for a Windows executable on Linux, OGI supplies a stable `umu:<appID>` configuration automatically. Native Linux executables continue to launch directly.
 
 ## Update setup and UMU
 

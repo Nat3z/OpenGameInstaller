@@ -41,7 +41,6 @@ import {
   checkForAddonUpdates,
   convertLibrary,
   IS_NIXOS,
-  STEAMTINKERLAUNCH_PATH,
   startupEnvironmentReady,
 } from '@/electron/startup.js';
 import {
@@ -246,13 +245,6 @@ if (IS_NIXOS) {
     'NixOS detected, but startup logic has been moved. If you have issues, please check startup.ts'
   );
 }
-if (STEAMTINKERLAUNCH_PATH === '') {
-  console.error(
-    'STEAMTINKERLAUNCH_PATH is empty. This should be handled in startup.ts'
-  );
-}
-
-console.log('STEAMTINKERLAUNCH_PATH: ' + STEAMTINKERLAUNCH_PATH);
 console.log('Running in directory: ' + __dirname);
 
 /* Sync IPC for initial theme: must be registered before renderer loads to avoid flash */

@@ -6,7 +6,7 @@ part: 6
 section: User's Guide
 ---
 
-On **Linux**, OpenGameInstaller uses **UMU** (Unified Launcher for Windows Games on Linux) to run Windows games. UMU replaces the previous Steam + Proton + SteamTinkerLaunch workflow and lets you **launch games directly from the OpenGameInstaller library** without adding them to Steam.
+On **Linux**, OpenGameInstaller uses **UMU** (Unified Launcher for Windows Games on Linux) to run Windows games and lets you **launch games directly from the OpenGameInstaller library** without adding them to Steam.
 
 ## What is UMU?
 
@@ -19,11 +19,11 @@ UMU is an open-source launcher from [Open-Wine-Components](https://github.com/Op
 - **In-app library**: You can launch UMU-backed games from the OpenGameInstaller library. No need to add them to Steam or use Game Mode for the library.
 - **Proton**: UMU handles the Proton runtime. Addons should usually avoid forcing a `PROTONPATH` override unless a game truly requires one.
 
-## Do I need Steam or SteamTinkerLaunch?
+## Do I need Steam?
 
-For **new installations** on Linux, you do **not** need Steam or SteamTinkerLaunch. UMU is used by default and games run from OGI’s library.
+For **new installations** on Linux, you do **not** need Steam. UMU is used by default and games run from OGI’s library.
 
-If you have older games that were set up with the **legacy** Steam/Proton flow, those will keep using Steam until you reinstall or migrate them. Manual setup steps (e.g. installing Wine via Flatpak or SteamTinkerLaunch) are only needed if you use or support that legacy flow.
+Older games that used Steam/Proton can be migrated to an OGI-managed UMU prefix. OGI copies a compatible existing prefix when it can identify one and otherwise initializes a fresh prefix.
 
 ## Redistributables (vcredist, .NET, etc.)
 
@@ -44,9 +44,9 @@ OGI downloads UMU from GitHub. If installation or update fails:
 - Ensure required redistributables are installed (see above).
 - Check the log file (e.g. `update/latest.log` next to your Setup.AppImage or in the OGI data directory) for `[umu]` messages; they often indicate prefix or launch errors.
 
-### I want to use Steam/Proton instead (legacy)
+### I have an older Steam/Proton library entry
 
-Some games may still be configured in **legacy mode**, which uses Steam and Proton outside of UMU. If you need to use that flow, you would need to set up Steam, Proton, and (historically) SteamTinkerLaunch as described in the [Installation](/docs/guide/installation) guide under the Linux-only sections. New games are configured for UMU by default.
+Some older games may initially be configured in **legacy mode**. Migrate those entries from the game configuration to use OGI-managed UMU launching. New Windows games are configured for UMU by default.
 
 ## Where are UMU files stored?
 

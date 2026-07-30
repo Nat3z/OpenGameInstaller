@@ -9,7 +9,7 @@ import { Effect } from 'effect';
 import { ipcMain } from 'electron';
 import {
   installRedistributablesWithUmu,
-  installRedistributablesWithUmuForLegacy,
+  migrateToUmu,
   type RedistributableInstallProgress,
 } from '@/electron/handlers/handler.umu.js';
 import { loadLibraryInfo } from '@/electron/handlers/helpers.app/library.js';
@@ -88,13 +88,21 @@ const installRedistributables = (appID: number, downloadId?: string) =>
         });
       })
     );
+    const migration = yield* Effect.tryPromise({
+      try: () => migrateToUmu(appID, steamAppId),
+      catch: (cause) =>
+        new LibraryError({ message: formatError(cause), gameId: appID }),
+    });
+    if (!migration.success) {
+      return yield* Effect.fail(
+        new LibraryError({
+          message: migration.error ?? 'Failed to migrate legacy prefix to UMU',
+          gameId: appID,
+        })
+      );
+    }
     return yield* Effect.tryPromise({
-      try: () =>
-        installRedistributablesWithUmuForLegacy(
-          appID,
-          steamAppId,
-          emitProgress
-        ),
+      try: () => installRedistributablesWithUmu(appID, emitProgress),
       catch: (cause) =>
         new LibraryError({ message: formatError(cause), gameId: appID }),
     });

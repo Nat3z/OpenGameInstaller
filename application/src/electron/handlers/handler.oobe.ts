@@ -1,4 +1,4 @@
-import { exec, execFile } from 'node:child_process';
+import { exec } from 'node:child_process';
 import * as fs from 'node:fs/promises';
 import os from 'node:os';
 import { join } from 'node:path';
@@ -14,7 +14,7 @@ import { Effect } from 'effect';
 import { ipcMain } from 'electron';
 import { sendIPCMessage, sendNotification } from '@/electron/main.js';
 import { __dirname } from '@/electron/manager/manager.paths.js';
-import { IS_NIXOS, STEAMTINKERLAUNCH_PATH } from '@/electron/startup.js';
+import { IS_NIXOS } from '@/electron/startup.js';
 
 const log = (content: string): void => {
   sendIPCMessage('oobe:log', content);
@@ -27,35 +27,6 @@ const command = (
 ): Effect.Effect<{ stdout: string; stderr: string }, PlatformError> =>
   Effect.async<{ stdout: string; stderr: string }, PlatformError>((resume) => {
     const child = exec(executable, options ?? {}, (error, stdout, stderr) => {
-      if (error) {
-        resume(
-          Effect.fail(
-            new PlatformError({
-              message: error.message,
-              platform: process.platform,
-            })
-          )
-        );
-      } else {
-        resume(Effect.succeed({ stdout, stderr }));
-      }
-    });
-    return Effect.sync(() => child.kill());
-  }).pipe(
-    Effect.tap(({ stdout, stderr }) =>
-      Effect.sync(() => {
-        log(stdout);
-        log(stderr);
-      })
-    )
-  );
-
-const commandArgs = (
-  executable: string,
-  args: string[]
-): Effect.Effect<{ stdout: string; stderr: string }, PlatformError> =>
-  Effect.async<{ stdout: string; stderr: string }, PlatformError>((resume) => {
-    const child = execFile(executable, args, (error, stdout, stderr) => {
       if (error) {
         resume(
           Effect.fail(
@@ -196,43 +167,6 @@ const downloadTools = (): Effect.Effect<readonly [boolean, boolean]> =>
       }
     }
 
-    if (process.platform === 'linux') {
-      const bundled = join(
-        __dirname,
-        'bin/steamtinkerlaunch/steamtinkerlaunch'
-      );
-      if (STEAMTINKERLAUNCH_PATH === bundled) {
-        if (!(yield* commandExists(`test -x "${bundled}"`))) {
-          yield* attempt(
-            command(
-              `git clone https://github.com/sonic2kk/steamtinkerlaunch "${join(__dirname, 'bin/steamtinkerlaunch')}"`
-            ).pipe(
-              Effect.zipRight(command(`chmod +x "${bundled}"`)),
-              Effect.zipRight(command(`"${bundled}"`)),
-              Effect.asVoid
-            )
-          );
-        } else {
-          yield* attempt(
-            command('git pull', {
-              cwd: join(__dirname, 'bin/steamtinkerlaunch'),
-            }).pipe(
-              Effect.zipRight(command(`chmod +x "${bundled}"`)),
-              Effect.asVoid
-            )
-          );
-        }
-      } else if (
-        !(yield* commandExists(`test -x "${STEAMTINKERLAUNCH_PATH}"`))
-      ) {
-        clean = false;
-        notify(
-          'SteamTinkerLaunch is not installed. Please install it manually.',
-          'error'
-        );
-      }
-    }
-
     if (!(yield* commandExists('bun --version'))) {
       const install =
         process.platform === 'win32'
@@ -265,12 +199,22 @@ export default function OOBEHandler(): void {
   );
   ipcMain.handle('oobe:set-steamgriddb-key', (_, key: string) =>
     runEffectBoundary(
-      commandArgs(STEAMTINKERLAUNCH_PATH, [
-        'set',
-        'SGDBAPIKEY',
-        'global',
-        key,
-      ]).pipe(
+      Effect.tryPromise({
+        try: async () => {
+          const configDir = join(__dirname, 'config/option');
+          await fs.mkdir(configDir, { recursive: true });
+          await fs.writeFile(
+            join(configDir, 'steamgriddb.json'),
+            JSON.stringify({ apiKey: key })
+          );
+        },
+        catch: (cause) =>
+          new FileSystemError({
+            message: formatError(cause),
+            path: join(__dirname, 'config/option/steamgriddb.json'),
+            cause,
+          }),
+      }).pipe(
         Effect.as(true),
         Effect.catchAll((error) =>
           Effect.sync(() => {

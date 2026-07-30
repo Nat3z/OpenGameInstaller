@@ -4,7 +4,7 @@
  */
 
 import { FileSystemError, formatError, ipcBoundary } from '@ogi/errors';
-import { exec, spawn } from 'child_process';
+import { exec, execFile, spawn } from 'child_process';
 import { Effect } from 'effect';
 import { ipcMain } from 'electron';
 import * as fs from 'fs';
@@ -23,50 +23,12 @@ import {
 } from '@/electron/handlers/helpers.app/platform.js';
 import {
   addGameToSteam,
-  getNonSteamGameAppID,
   getSteamAppIdWithFallback,
   getVersionedGameName,
+  removeGameFromSteam,
 } from '@/electron/handlers/helpers.app/steam.js';
+import { getNonSteamLaunchId } from '@/electron/lib/steam-vdf.js';
 import { sendNotification } from '@/electron/main.js';
-
-const copyRecursiveSync = (source: string, destination: string): void => {
-  const stats = fs.lstatSync(source);
-  if (stats.isSymbolicLink()) {
-    fs.symlinkSync(fs.readlinkSync(source), destination);
-  } else if (stats.isDirectory()) {
-    fs.mkdirSync(destination, { recursive: true });
-    for (const child of fs.readdirSync(source)) {
-      copyRecursiveSync(join(source, child), join(destination, child));
-    }
-  } else {
-    fs.copyFileSync(source, destination);
-  }
-};
-
-const migrateCompatData = (
-  source: string,
-  destination: string
-): Effect.Effect<void, FileSystemError> =>
-  Effect.try({
-    try: () => fs.renameSync(source, destination),
-    catch: (cause) =>
-      new FileSystemError({ message: formatError(cause), path: source, cause }),
-  }).pipe(
-    Effect.orElse(() =>
-      Effect.try({
-        try: () => {
-          copyRecursiveSync(source, destination);
-          fs.rmSync(source, { recursive: true, force: true });
-        },
-        catch: (cause) =>
-          new FileSystemError({
-            message: formatError(cause),
-            path: source,
-            cause,
-          }),
-      })
-    )
-  );
 
 /**
  * Add a UMU game to Steam using OGI wrapper launches.
@@ -93,7 +55,6 @@ export function addUmuGameToSteam(params: {
       cwd: appInfo.cwd,
       wrapperCommand: '%command%',
       appID: params.appID,
-      compatibilityTool: 'proton_experimental',
     });
 
     if (!result) {
@@ -105,6 +66,11 @@ export function addUmuGameToSteam(params: {
       params.version,
       'addGameToSteam'
     ).pipe(Effect.catchAll(() => Effect.succeed(undefined)));
+
+    if (steamAppId) {
+      appInfo.umu.steamShortcutId = steamAppId;
+      saveLibraryInfo(params.appID, appInfo);
+    }
 
     return steamAppId ? { success: true, steamAppId } : { success: true };
   });
@@ -120,7 +86,8 @@ function launchViaSteam(appId: number): Effect.Effect<{
   error?: string;
 }> {
   return Effect.async((resume) => {
-    exec(`xdg-open steam://rungameid/${appId}`, (error) => {
+    const launchId = getNonSteamLaunchId(appId);
+    execFile('xdg-open', [`steam://rungameid/${launchId}`], (error) => {
       if (error) {
         console.error('[steam] Failed to launch app via Steam:', error);
         resume(Effect.succeed({ success: false, error: error.message }));
@@ -134,7 +101,7 @@ function launchViaSteam(appId: number): Effect.Effect<{
 
 /**
  * Create a .desktop entry for Steam shortcut that launches OGI with --game-id
- * This is an alternative to steamtinkerlaunch
+ * This does not modify Steam and is useful for desktop environments.
  */
 export function createSteamShortcutDesktop(params: {
   appID: number;
@@ -192,30 +159,29 @@ export function registerSteamHandlers() {
   // Get Steam app ID (legacy - for backward compatibility)
   ipcMain.handle(
     'app:get-steam-app-id',
-    ipcBoundary(
-      (_, appID: number) =>
-        Effect.gen(function* () {
-          if (!isLinux()) {
-            return { success: false, error: 'Only available on Linux' };
-          }
-          const appInfo = loadLibraryInfo(appID);
-          if (!appInfo) {
-            return { success: false, error: 'Game not found' };
-          }
-          return yield* getSteamAppIdWithFallback(
-            appInfo.name,
-            appInfo.version,
-            'app:get-steam-app-id'
-          ).pipe(
-            Effect.map((appId) => ({ success: true as const, appId })),
-            Effect.catchAll((error) =>
-              Effect.succeed({
-                success: false as const,
-                error: formatError(error),
-              })
-            )
-          );
-        })
+    ipcBoundary((_, appID: number) =>
+      Effect.gen(function* () {
+        if (!isLinux()) {
+          return { success: false, error: 'Only available on Linux' };
+        }
+        let appInfo = loadLibraryInfo(appID);
+        if (!appInfo) {
+          return { success: false, error: 'Game not found' };
+        }
+        return yield* getSteamAppIdWithFallback(
+          appInfo.name,
+          appInfo.version,
+          'app:get-steam-app-id'
+        ).pipe(
+          Effect.map((appId) => ({ success: true as const, appId })),
+          Effect.catchAll((error) =>
+            Effect.succeed({
+              success: false as const,
+              error: formatError(error),
+            })
+          )
+        );
+      })
     )
   );
 
@@ -259,7 +225,10 @@ export function registerSteamHandlers() {
           return { success: false, error: 'Only available on Linux' };
         }
         console.log('[steam] Starting Steam...');
-        const result = yield* Effect.async<{ success: boolean; error?: string }, never>((resume) => {
+        const result = yield* Effect.async<
+          { success: boolean; error?: string },
+          never
+        >((resume) => {
           const child = spawn('steam', [], { detached: true, stdio: 'ignore' });
           child.unref();
           let timeoutId: NodeJS.Timeout | null = setTimeout(() => {
@@ -269,14 +238,25 @@ export function registerSteamHandlers() {
           }, 1000);
           child.on('error', (error) => {
             console.error('[steam] Failed to start Steam:', error);
-            if (timeoutId) { clearTimeout(timeoutId); timeoutId = null; }
+            if (timeoutId) {
+              clearTimeout(timeoutId);
+              timeoutId = null;
+            }
             resume(Effect.succeed({ success: false, error: error.message }));
           });
           child.on('exit', (code) => {
             if (code !== 0 && code !== null) {
               console.error(`[steam] Steam process exited with code ${code}`);
-              if (timeoutId) { clearTimeout(timeoutId); timeoutId = null; }
-              resume(Effect.succeed({ success: false, error: `Steam process exited with code ${code}` }));
+              if (timeoutId) {
+                clearTimeout(timeoutId);
+                timeoutId = null;
+              }
+              resume(
+                Effect.succeed({
+                  success: false,
+                  error: `Steam process exited with code ${code}`,
+                })
+              );
             }
           });
         });
@@ -293,21 +273,57 @@ export function registerSteamHandlers() {
         if (!isLinux()) {
           return { success: false, error: 'Only available on Linux' };
         }
-        const appInfo = loadLibraryInfo(appID);
+        let appInfo = loadLibraryInfo(appID);
         if (!appInfo) {
           return { success: false, error: 'Game not found' };
         }
+        if (
+          !appInfo.umu &&
+          appInfo.launchExecutable.toLowerCase().endsWith('.exe')
+        ) {
+          const detectedSteamAppId = yield* getSteamAppIdWithFallback(
+            appInfo.name,
+            appInfo.version,
+            'launch-steam-migration'
+          ).pipe(Effect.catchAll(() => Effect.succeed(undefined)));
+          const migration = yield* Effect.tryPromise({
+            try: async () => {
+              const { migrateToUmu } = await import(
+                '@/electron/handlers/handler.umu.js'
+              );
+              return migrateToUmu(appID, detectedSteamAppId);
+            },
+            catch: (cause) => new Error(formatError(cause)),
+          }).pipe(
+            Effect.catchAll((error) =>
+              Effect.succeed({ success: false, error: error.message })
+            )
+          );
+          if (!migration.success) return migration;
+          appInfo = loadLibraryInfo(appID);
+          if (!appInfo)
+            return {
+              success: false,
+              error: 'Game disappeared during migration',
+            };
+        }
         if (appInfo.umu) {
           let appId = yield* getSteamAppIdWithFallback(
-            appInfo.name, appInfo.version, 'steam'
+            appInfo.name,
+            appInfo.version,
+            'steam'
           ).pipe(Effect.catchAll(() => Effect.succeed(undefined)));
           if (!appId) {
             const result = yield* addUmuGameToSteam({
-              appID, name: appInfo.name, version: appInfo.version,
+              appID,
+              name: appInfo.name,
+              version: appInfo.version,
             });
             if (!result.success) return result;
             appId = yield* getSteamAppIdWithFallback(
-              appInfo.name, appInfo.version, 'steam'
+              appInfo.name,
+              appInfo.version,
+              'steam'
             ).pipe(Effect.catchAll(() => Effect.succeed(undefined)));
           }
           if (!appId) {
@@ -316,12 +332,16 @@ export function registerSteamHandlers() {
           return yield* launchViaSteam(appId);
         }
         const appId = yield* getSteamAppIdWithFallback(
-          appInfo.name, appInfo.version, 'steam'
+          appInfo.name,
+          appInfo.version,
+          'steam'
         ).pipe(Effect.catchAll(() => Effect.succeed(undefined)));
         if (appId == null) {
           return { success: false, error: 'Failed to get Steam shortcut ID' };
         }
-        console.log(`[steam] Launching app via Steam: ${appInfo.name} (shortcut ID: ${appId})`);
+        console.log(
+          `[steam] Launching app via Steam: ${appInfo.name} (shortcut ID: ${appId})`
+        );
         return yield* launchViaSteam(appId);
       })
     )
@@ -343,7 +363,9 @@ export function registerSteamHandlers() {
           return { exists, prefixPath: libraryInfo.umu.winePrefixPath };
         }
         const appId = yield* getSteamAppIdWithFallback(
-          libraryInfo.name, libraryInfo.version, 'prefix'
+          libraryInfo.name,
+          libraryInfo.version,
+          'prefix'
         ).pipe(Effect.catchAll(() => Effect.succeed(undefined)));
         const homeDir = getHomeDir();
         if (!homeDir) {
@@ -354,7 +376,9 @@ export function registerSteamHandlers() {
         }
         const prefixPath = getProtonPrefixPath(appId);
         const exists = fs.existsSync(prefixPath);
-        console.log(`[prefix] Checking prefix for appID ${appID}: ${exists ? 'exists' : 'not found'} at ${prefixPath}`);
+        console.log(
+          `[prefix] Checking prefix for appID ${appID}: ${exists ? 'exists' : 'not found'} at ${prefixPath}`
+        );
         return { exists, prefixPath };
       })
     )
@@ -369,13 +393,45 @@ export function registerSteamHandlers() {
           return { success: false, error: 'Only available on Linux' };
         }
         ensureLibraryDir();
-        const appInfo = loadLibraryInfo(appID);
+        let appInfo = loadLibraryInfo(appID);
         if (!appInfo) {
           return { success: false, error: 'Game not found' };
         }
+        if (
+          !appInfo.umu &&
+          appInfo.launchExecutable.toLowerCase().endsWith('.exe')
+        ) {
+          const detectedSteamAppId = yield* getSteamAppIdWithFallback(
+            appInfo.name,
+            appInfo.version,
+            'add-to-steam-migration'
+          ).pipe(Effect.catchAll(() => Effect.succeed(undefined)));
+          const migration = yield* Effect.tryPromise({
+            try: async () => {
+              const { migrateToUmu } = await import(
+                '@/electron/handlers/handler.umu.js'
+              );
+              return migrateToUmu(appID, oldSteamAppId || detectedSteamAppId);
+            },
+            catch: (cause) => new Error(formatError(cause)),
+          }).pipe(
+            Effect.catchAll((error) =>
+              Effect.succeed({ success: false, error: error.message })
+            )
+          );
+          if (!migration.success) return migration;
+          appInfo = loadLibraryInfo(appID);
+          if (!appInfo)
+            return {
+              success: false,
+              error: 'Game disappeared during migration',
+            };
+        }
         if (appInfo.umu) {
           const result = yield* addUmuGameToSteam({
-            appID, name: appInfo.name, version: appInfo.version,
+            appID,
+            name: appInfo.name,
+            version: appInfo.version,
           });
           if (result.success && result.steamAppId) {
             sendNotification({
@@ -386,77 +442,35 @@ export function registerSteamHandlers() {
           }
           return result;
         }
-        let launchOptions = appInfo.launchArguments ?? '';
-        launchOptions = launchOptions.replace(/WINEPREFIX=\S*\s?/g, '').trim();
-        const versionedGameName = getVersionedGameName(appInfo.name, appInfo.version);
         const result = yield* addGameToSteam({
-          name: appInfo.name, version: appInfo.version,
-          launchExecutable: appInfo.launchExecutable, cwd: appInfo.cwd,
-          wrapperCommand: launchOptions || '%command%',
-          appID, compatibilityTool: 'proton_experimental',
+          name: appInfo.name,
+          version: appInfo.version,
+          launchExecutable: appInfo.launchExecutable,
+          cwd: appInfo.cwd,
+          wrapperCommand: appInfo.launchArguments || '%command%',
+          appID,
         });
         if (!result) {
           return { success: false };
         }
-        const newSteamAppId = yield* getNonSteamGameAppID(versionedGameName).pipe(
-          Effect.catchAll(() => Effect.succeed(undefined))
+        return { success: result };
+      })
+    )
+  );
+
+  ipcMain.handle(
+    'app:remove-from-steam',
+    ipcBoundary((_, appID: number) =>
+      Effect.gen(function* () {
+        const appInfo = loadLibraryInfo(appID);
+        if (!appInfo) return { success: false, error: 'Game not found' };
+        const removed = yield* removeGameFromSteam(
+          appInfo.name,
+          appInfo.version
         );
-        if (!newSteamAppId) {
-          console.warn(`[add-to-steam] Failed to get new Steam app ID for "${versionedGameName}"`);
-          return { success: true };
-        }
-        const originalLaunchArguments = appInfo.launchArguments;
-        let shouldUpdateLaunchArguments = true;
-        console.log('oldSteamAppId', oldSteamAppId);
-        console.log('newSteamAppId', newSteamAppId);
-        console.log('oldSteamAppId !== 0', oldSteamAppId !== 0);
-        console.log('oldSteamAppId !== newSteamAppId', oldSteamAppId !== newSteamAppId);
-        if (oldSteamAppId && oldSteamAppId !== 0 && oldSteamAppId !== newSteamAppId) {
-          const homeDir = getHomeDir();
-          if (!homeDir) {
-            console.warn('[add-to-steam] Home directory not found, skipping prefix migration');
-            shouldUpdateLaunchArguments = false;
-          } else {
-            const compatDataDir = `${homeDir}/.steam/steam/steamapps/compatdata`;
-            const oldAppIdDir = `${compatDataDir}/${oldSteamAppId}`;
-            const newAppIdDir = `${compatDataDir}/${newSteamAppId}`;
-            if (!fs.existsSync(oldAppIdDir)) {
-              sendNotification({
-                message: 'Old prefix not found, skipping migration',
-                id: generateNotificationId(),
-                type: 'error',
-              });
-            } else if (fs.existsSync(newAppIdDir)) {
-              console.warn(`[add-to-steam] New compatdata directory exists at ${newAppIdDir}`);
-            } else {
-              const migration = Effect.runSync(
-                Effect.either(migrateCompatData(oldAppIdDir, newAppIdDir))
-              );
-              if (migration._tag === 'Left') {
-                sendNotification({
-                  message: `Error migrating prefix: ${migration.left.message}`,
-                  id: generateNotificationId(),
-                  type: 'error',
-                });
-                shouldUpdateLaunchArguments = false;
-                appInfo.launchArguments = originalLaunchArguments;
-              } else {
-                sendNotification({
-                  message: 'Successfully migrated prefix to new version.',
-                  id: generateNotificationId(),
-                  type: 'success',
-                });
-              }
-            }
-          }
-        }
-        if (shouldUpdateLaunchArguments) {
-          const protonPath = getProtonPrefixPath(newSteamAppId);
-          const normalizedLaunchOptions = launchOptions || '%command%';
-          appInfo.launchArguments = 'WINEPREFIX=' + protonPath + ' ' + normalizedLaunchOptions;
-        }
-        saveLibraryInfo(appID, appInfo);
-        return { success: true };
+        return removed
+          ? { success: true }
+          : { success: false, error: 'Shortcut not found or Steam is running' };
       })
     )
   );

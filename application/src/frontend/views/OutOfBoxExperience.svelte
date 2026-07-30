@@ -403,16 +403,7 @@ function getRequiredTools(osName: string): OOBETool[] {
             icon: 'text',
           },
         ]
-      : osName === 'linux'
-        ? [
-            {
-              shortLabel: 'stl',
-              name: 'SteamTinkerLaunch',
-              purpose: 'Handles Steam-side integration for legacy flows.',
-              icon: 'text',
-            },
-          ]
-        : [];
+      : [];
 
   return [
     ...platformTools,

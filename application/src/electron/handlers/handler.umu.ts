@@ -21,6 +21,7 @@ import {
 } from '@/electron/handlers/helpers.app/library.js';
 import { generateNotificationId } from '@/electron/handlers/helpers.app/notifications.js';
 import {
+  getCompatDataDir,
   getHomeDir,
   isLinux,
 } from '@/electron/handlers/helpers.app/platform.js';
@@ -895,388 +896,6 @@ export async function installRedistributablesWithUmu(
 
   return anyFailed ? 'failed' : 'success';
 }
-
-/**
- * Install redistributables for legacy games using UMU with Steam prefix
- * This creates the prefix at the Steam compatdata location using UMU
- */
-export async function installRedistributablesWithUmuForLegacy(
-  appID: number,
-  steamAppId: number,
-  reportProgress?: RedistributableProgressReporter
-): Promise<'success' | 'failed' | 'not-found'> {
-  if (!isLinux()) {
-    reportProgress?.({
-      kind: 'done',
-      total: 0,
-      completedCount: 0,
-      failedCount: 0,
-      overallProgress: 100,
-      result: 'failed',
-      error: 'UMU redistributables are only available on Linux',
-    });
-    return 'failed';
-  }
-
-  const libraryInfo = loadLibraryInfo(appID);
-  if (!libraryInfo) {
-    reportProgress?.({
-      kind: 'done',
-      total: 0,
-      completedCount: 0,
-      failedCount: 0,
-      overallProgress: 100,
-      result: 'not-found',
-      error: `Game not found for appID ${appID}`,
-    });
-    return 'not-found';
-  }
-
-  if (
-    !libraryInfo.redistributables ||
-    libraryInfo.redistributables.length === 0
-  ) {
-    console.log('[umu-legacy] No redistributables to install');
-    reportProgress?.({
-      kind: 'done',
-      total: 0,
-      completedCount: 0,
-      failedCount: 0,
-      overallProgress: 100,
-      result: 'success',
-    });
-    return 'success';
-  }
-
-  // Ensure UMU is installed
-  const umuInstalled = await isUmuInstalled();
-  if (!umuInstalled) {
-    console.log('[umu-legacy] UMU not found, attempting auto-install...');
-    const installResult = await installUmu();
-    if (!installResult.success) {
-      console.error(
-        '[umu-legacy] UMU auto-install failed:',
-        installResult.error
-      );
-      reportProgress?.({
-        kind: 'done',
-        total: libraryInfo.redistributables.length,
-        completedCount: 0,
-        failedCount: libraryInfo.redistributables.length,
-        overallProgress: 100,
-        result: 'failed',
-        error: installResult.error ?? 'Failed to install UMU',
-      });
-      return 'failed';
-    }
-  }
-
-  // Get the Steam compatdata prefix path
-  const homeDir = getHomeDir();
-  if (!homeDir) {
-    console.error('[umu-legacy] Cannot determine home directory');
-    reportProgress?.({
-      kind: 'done',
-      total: libraryInfo.redistributables.length,
-      completedCount: 0,
-      failedCount: libraryInfo.redistributables.length,
-      overallProgress: 100,
-      result: 'failed',
-      error: 'Cannot determine home directory',
-    });
-    return 'failed';
-  }
-
-  const winePrefix = path.join(
-    homeDir,
-    '.steam',
-    'steam',
-    'steamapps',
-    'compatdata',
-    steamAppId.toString()
-  );
-
-  // Create the prefix directory if it doesn't exist
-  if (!fs.existsSync(winePrefix)) {
-    console.log('[umu-legacy] Creating Steam prefix directory:', winePrefix);
-    fs.mkdirSync(winePrefix, { recursive: true });
-  }
-
-  // Use UMU to initialize the prefix first
-  console.log('[umu-legacy] Initializing prefix with UMU:', winePrefix);
-  sendNotification({
-    message: `Initializing Wine prefix for ${libraryInfo.name}`,
-    id: generateNotificationId(),
-    type: 'info',
-  });
-
-  const initSuccess = await new Promise<boolean>((resolve) => {
-    const initChild = spawn(
-      umuRunExecutable,
-      ['wine', 'cmd', '/c', 'echo', 'Prefix initialized'],
-      {
-        env: {
-          ...process.env,
-          UMU_LOG: 'debug',
-          GAMEID: `umu-${steamAppId}`,
-          WINEPREFIX: winePrefix,
-          PWD: libraryInfo.cwd,
-        },
-        stdio: ['ignore', 'pipe', 'pipe'],
-      }
-    );
-    streamChildProcessOutput(initChild, '[umu-legacy prefix-init]');
-
-    const timeout = setTimeout(
-      () => {
-        if (initChild.pid) {
-          initChild.kill('SIGTERM');
-        }
-        resolve(false);
-      },
-      5 * 60 * 1000
-    ); // 5 minute timeout for prefix init
-
-    initChild.on('close', (code: number | null) => {
-      clearTimeout(timeout);
-      resolve(code === 0);
-    });
-
-    initChild.on('error', (error) => {
-      clearTimeout(timeout);
-      console.error('[umu-legacy] Prefix init error:', error);
-      resolve(false);
-    });
-  });
-
-  if (!initSuccess) {
-    console.error('[umu-legacy] Failed to initialize prefix');
-    reportProgress?.({
-      kind: 'done',
-      total: libraryInfo.redistributables.length,
-      completedCount: 0,
-      failedCount: libraryInfo.redistributables.length,
-      overallProgress: 100,
-      result: 'failed',
-      error: 'Failed to initialize Wine prefix with UMU',
-    });
-    return 'failed';
-  }
-
-  console.log('[umu-legacy] Prefix initialized successfully');
-
-  // Now install redistributables using UMU winetricks
-  const redistributables = libraryInfo.redistributables;
-  const totalRedistributables = redistributables.length;
-  let anyFailed = false;
-  let completedCount = 0;
-  let failedCount = 0;
-
-  for (const [index, redistributable] of redistributables.entries()) {
-    reportProgress?.({
-      kind: 'item',
-      total: totalRedistributables,
-      completedCount,
-      failedCount,
-      overallProgress:
-        totalRedistributables === 0
-          ? 100
-          : ((completedCount + failedCount) / totalRedistributables) * 100,
-      redistributableName: redistributable.name,
-      redistributablePath: redistributable.path,
-      index,
-      status: 'installing',
-    });
-
-    try {
-      sendNotification({
-        message: `Installing ${redistributable.name} for ${libraryInfo.name}`,
-        id: generateNotificationId(),
-        type: 'info',
-      });
-
-      console.log('[umu-legacy] Installing:', redistributable.name);
-
-      const success = await new Promise<boolean>((resolve) => {
-        let resolved = false;
-        const finalize = (result: boolean) => {
-          if (resolved) return;
-          resolved = true;
-          resolve(result);
-        };
-
-        let child: ReturnType<typeof spawn>;
-        const env = getUmuRedistributableEnvironment({
-          gameId: `umu-${steamAppId}`,
-          winePrefix,
-          cwd: libraryInfo.cwd,
-        });
-
-        if (redistributable.path === 'winetricks') {
-          // Use winetricks verb via UMU
-          child = spawn(
-            umuRunExecutable,
-            ['winetricks', '-q', '-f', redistributable.name],
-            {
-              env,
-              stdio: ['ignore', 'pipe', 'pipe'],
-            }
-          );
-        } else {
-          // Regular redistributable file - run with UMU (resolve relative to game cwd)
-          const redistPath = path.resolve(
-            libraryInfo.cwd,
-            redistributable.path
-          );
-          if (!fs.existsSync(redistPath)) {
-            console.error(
-              '[umu-legacy] Redistributable not found:',
-              redistPath
-            );
-            finalize(false);
-            return;
-          }
-
-          const redistDir = path.dirname(redistPath);
-          const redistFile = path.basename(redistPath);
-          const silentFlags = getSilentInstallFlags(redistFile);
-
-          child = spawn(umuRunExecutable, [redistFile, ...silentFlags], {
-            env,
-            cwd: redistDir,
-            stdio: ['ignore', 'pipe', 'pipe'],
-          });
-        }
-
-        streamChildProcessOutput(
-          child,
-          `[umu-legacy redist:${redistributable.name}]`
-        );
-
-        child.on(
-          'close',
-          (code: number | null, signal: NodeJS.Signals | null) => {
-            const success = code === 0 && signal == null && !!child.pid;
-            if (!success && signal != null) {
-              console.error(`[umu-legacy] Process killed by signal: ${signal}`);
-            }
-            finalize(success);
-          }
-        );
-
-        child.on('error', (error) => {
-          console.error('[umu-legacy] Redistributable error:', error);
-          finalize(false);
-        });
-      });
-
-      if (success) {
-        completedCount++;
-        sendNotification({
-          message: `Installed ${redistributable.name} for ${libraryInfo.name}`,
-          id: generateNotificationId(),
-          type: 'success',
-        });
-        reportProgress?.({
-          kind: 'item',
-          total: totalRedistributables,
-          completedCount,
-          failedCount,
-          overallProgress:
-            totalRedistributables === 0
-              ? 100
-              : ((completedCount + failedCount) / totalRedistributables) * 100,
-          redistributableName: redistributable.name,
-          redistributablePath: redistributable.path,
-          index,
-          status: 'completed',
-        });
-      } else {
-        anyFailed = true;
-        failedCount++;
-        sendNotification({
-          message: `Failed to install ${redistributable.name} for ${libraryInfo.name}`,
-          id: generateNotificationId(),
-          type: 'error',
-        });
-        reportProgress?.({
-          kind: 'item',
-          total: totalRedistributables,
-          completedCount,
-          failedCount,
-          overallProgress:
-            totalRedistributables === 0
-              ? 100
-              : ((completedCount + failedCount) / totalRedistributables) * 100,
-          redistributableName: redistributable.name,
-          redistributablePath: redistributable.path,
-          index,
-          status: 'failed',
-        });
-      }
-    } catch (error) {
-      anyFailed = true;
-      failedCount++;
-      console.error(
-        `[umu-legacy] Error installing ${redistributable.name}:`,
-        error
-      );
-      sendNotification({
-        message: `Failed to install ${redistributable.name} for ${libraryInfo.name}`,
-        id: generateNotificationId(),
-        type: 'error',
-      });
-      reportProgress?.({
-        kind: 'item',
-        total: totalRedistributables,
-        completedCount,
-        failedCount,
-        overallProgress:
-          totalRedistributables === 0
-            ? 100
-            : ((completedCount + failedCount) / totalRedistributables) * 100,
-        redistributableName: redistributable.name,
-        redistributablePath: redistributable.path,
-        index,
-        status: 'failed',
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
-  }
-
-  // Clear redistributables from the library file
-  if (!anyFailed) {
-    const updatedInfo = loadLibraryInfo(appID);
-    if (updatedInfo) {
-      delete updatedInfo.redistributables;
-      saveLibraryInfo(appID, updatedInfo);
-    }
-  }
-
-  sendNotification({
-    message: anyFailed
-      ? `Finished installing dependencies for ${libraryInfo.name} (some failed)`
-      : `Finished installing dependencies for ${libraryInfo.name}`,
-    id: generateNotificationId(),
-    type: anyFailed ? 'warning' : 'success',
-  });
-
-  const unresolvedCount = Math.max(
-    0,
-    totalRedistributables - completedCount - failedCount
-  );
-  reportProgress?.({
-    kind: 'done',
-    total: totalRedistributables,
-    completedCount,
-    failedCount: anyFailed ? failedCount + unresolvedCount : failedCount,
-    overallProgress: 100,
-    result: anyFailed ? 'failed' : 'success',
-  });
-
-  return anyFailed ? 'failed' : 'success';
-}
-
 async function initializePrefixWithUmuRun(
   libraryInfo: LibraryInfo,
   umuId: string,
@@ -1306,7 +925,7 @@ async function initializePrefixWithUmuRun(
   const cwd = libraryInfo.cwd || process.cwd();
   const protonPath = normalizeProtonPathValue(libraryInfo.umu?.protonVersion);
 
-  await new Promise<boolean>((resolve) => {
+  const initialized = await new Promise<boolean>((resolve) => {
     let resolved = false;
     const finalize = (result: boolean) => {
       if (resolved) return;
@@ -1357,7 +976,9 @@ async function initializePrefixWithUmuRun(
     });
   });
 
-  return { success: true };
+  return initialized
+    ? { success: true }
+    : { success: false, error: 'UMU could not initialize the Wine prefix' };
 }
 
 /**
@@ -1381,9 +1002,23 @@ export async function migrateToUmu(
     return { success: false, error: 'Game not found' };
   }
 
+  const legacyLaunchEnv = parseLeadingLaunchEnvFromArguments(
+    libraryInfo.launchArguments
+  );
+  const configuredLegacyPrefix =
+    libraryInfo.launchEnv?.WINEPREFIX ?? legacyLaunchEnv.WINEPREFIX;
+
+  if (libraryInfo.launchEnv) {
+    const migratedLaunchEnv = { ...libraryInfo.launchEnv };
+    delete migratedLaunchEnv.WINEPREFIX;
+    delete migratedLaunchEnv.STEAM_COMPAT_DATA_PATH;
+    libraryInfo.launchEnv =
+      Object.keys(migratedLaunchEnv).length > 0 ? migratedLaunchEnv : undefined;
+  }
+
   if (!libraryInfo.umu) {
     const fallbackUmuId = oldSteamAppId
-      ? (`steam:${appID}` as const)
+      ? (`steam:${oldSteamAppId}` as const)
       : (`umu:${appID}` as const);
     libraryInfo.umu = {
       umuId: fallbackUmuId,
@@ -1404,7 +1039,10 @@ export async function migrateToUmu(
   // Remove any wineprefix=... from launch arguments (UMU uses its own prefix)
   if (libraryInfo.launchArguments) {
     libraryInfo.launchArguments = libraryInfo.launchArguments
-      .replace(/WINEPREFIX=\S*\s?/gi, '')
+      .replace(
+        /(?:^|\s)WINEPREFIX=(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|[^\s]*)/gi,
+        ' '
+      )
       .replace(/\s+/g, ' ')
       .trim();
   }
@@ -1419,14 +1057,12 @@ export async function migrateToUmu(
   let oldPrefixPath: string | undefined;
 
   if (oldSteamAppId) {
-    oldPrefixPath = path.join(
-      homeDir,
-      '.steam',
-      'steam',
-      'steamapps',
-      'compatdata',
-      oldSteamAppId.toString()
-    );
+    oldPrefixPath = path.join(getCompatDataDir(), oldSteamAppId.toString());
+  } else if (configuredLegacyPrefix) {
+    oldPrefixPath =
+      path.basename(configuredLegacyPrefix).toLowerCase() === 'pfx'
+        ? path.dirname(configuredLegacyPrefix)
+        : configuredLegacyPrefix;
   }
 
   if (!oldPrefixPath) {
@@ -1472,6 +1108,16 @@ export async function migrateToUmu(
   }
 
   try {
+    if (
+      fs.existsSync(newPrefixPath) &&
+      fs.readdirSync(newPrefixPath).length > 0
+    ) {
+      return {
+        success: false,
+        error: `UMU prefix destination already contains data: ${newPrefixPath}. It was not overwritten.`,
+      };
+    }
+
     // Ensure parent directory exists
     const parentDir = path.dirname(newPrefixPath);
     if (!fs.existsSync(parentDir)) {

@@ -1,165 +1,90 @@
-/**
- * Steam/Proton helper functions
- */
+/** Native Steam shortcut helpers. */
 
+import * as fs from 'node:fs';
+import { dirname, extname, join } from 'node:path';
 import { PlatformError } from '@ogi/errors';
-import { exec, execFile } from 'child_process';
 import { Effect } from 'effect';
-import {
-  notifyError,
-  notifySuccess,
-} from '@/electron/handlers/helpers.app/notifications.js';
 import { getOgiExecutablePath } from '@/electron/handlers/helpers.app/platform.js';
+import {
+  findShortcut,
+  generateNonSteamAppId,
+  isSteamRunning,
+  locateSteam,
+  readShortcuts,
+  removeShortcut,
+  updateShortcutsFile,
+  upsertShortcut,
+  writeFileAtomic,
+} from '@/electron/lib/steam-vdf.js';
 import { __dirname } from '@/electron/manager/manager.paths.js';
-import { STEAMTINKERLAUNCH_PATH } from '@/electron/startup.js';
 
-/**
- * Escapes a string for safe use in shell commands by escaping special characters
- */
-function escapeShellArg(arg: string): string {
-  // Replace any backslashes first (to avoid double-escaping)
-  // Then escape double quotes, dollar signs, backticks, and backslashes
-  return arg
-    .replace(/\\/g, '\\\\')
-    .replace(/"/g, '\\"')
-    .replace(/\$/g, '\\$')
-    .replace(/`/g, '\\`');
-}
-
-/**
- * Escapes a value so it can be safely embedded inside a double-quoted argument.
- * Escapes backslashes, double quotes, $ and backticks to prevent shell expansion.
- */
-function escapeDoubleQuotedValue(value: string): string {
-  return value
-    .replace(/\\/g, '\\\\')
-    .replace(/"/g, '\\"')
-    .replace(/\$/g, '\\$')
-    .replace(/`/g, '\\`');
-}
-
-const cachedAppIds: Record<string, number> = {};
-
-/**
- * Helper function to format game name with version
- * Returns plain name if version is falsy/blank to support legacy app IDs
- */
 export function getVersionedGameName(
   name: string,
   version?: string | null
 ): string {
-  // Guard for falsy/blank version (undefined, null, empty string, whitespace)
-  if (!version || !version.trim()) {
-    return name;
-  }
+  if (!version || !version.trim()) return name;
   return `${name} (${version})`;
 }
 
-/**
- * Get the Steam App ID for a non-Steam game using steamtinkerlaunch
- * Output format from STL: "<appid>\t(<game name>)" or "<appid> (<game name>)"
- */
+const steamError = (message: string): PlatformError =>
+  new PlatformError({ message, platform: process.platform });
+
+/** Resolve an existing shortcut by its exact display name. */
 export function getNonSteamGameAppID(
   gameName: string
 ): Effect.Effect<number, PlatformError> {
-  return Effect.gen(function* () {
-    if (cachedAppIds[gameName]) {
-      return cachedAppIds[gameName];
-    }
-
-    return yield* Effect.async<number, PlatformError>((resume) => {
-      execFile(
-        STEAMTINKERLAUNCH_PATH,
-        ['getid', gameName],
-        { cwd: __dirname },
-        (error, stdout, _stderr) => {
-          if (error) {
-            console.error('[getNonSteamGameAppID] Error:', error);
-            resume(
-              Effect.fail(
-                new PlatformError({
-                  message: error.message,
-                  platform: process.platform,
-                })
-              )
-            );
-            return;
-          }
-
-          const output = stdout.trim();
-          const appIdLine = output
-            .split('\n')
-            .find((line) => line.includes('(' + gameName + ')'));
-          if (!appIdLine) {
-            console.error(
-              '[getNonSteamGameAppID] Could not find app ID for game:',
-              gameName
-            );
-            resume(
-              Effect.fail(
-                new PlatformError({
-                  message: `Could not find Steam app ID for "${gameName}"`,
-                  platform: process.platform,
-                })
-              )
-            );
-            return;
-          }
-
-          const appId = parseInt(appIdLine.split('(')[0].trim(), 10);
-          if (Number.isNaN(appId)) {
-            resume(
-              Effect.fail(
-                new PlatformError({
-                  message: `Invalid Steam app ID returned for "${gameName}"`,
-                  platform: process.platform,
-                })
-              )
-            );
-            return;
-          }
-
-          console.log(
-            `[getNonSteamGameAppID] Found app ID ${appId} for "${gameName}"`
-          );
-          cachedAppIds[gameName] = appId;
-          resume(Effect.succeed(appId));
-        }
+  return Effect.try({
+    try: () => {
+      const steam = locateSteam();
+      if (!steam)
+        throw new Error(
+          'No Steam installation with a userdata account was found'
+        );
+      if (!fs.existsSync(steam.user.shortcutsPath)) {
+        throw new Error(
+          `Steam shortcuts file does not exist for account ${steam.user.accountId}`
+        );
+      }
+      const { shortcuts } = readShortcuts(
+        fs.readFileSync(steam.user.shortcutsPath)
       );
-    });
+      const shortcut = findShortcut(shortcuts, [gameName]);
+      if (!shortcut)
+        throw new Error(`Could not find Steam shortcut "${gameName}"`);
+      return shortcut.appId;
+    },
+    catch: (cause) =>
+      steamError(cause instanceof Error ? cause.message : String(cause)),
   });
 }
 
-/**
- * Consolidated Steam app ID lookup with fallback
- * Tries versioned name first, then falls back to plain name if that fails
- */
+/** Prefer the current versioned shortcut while retaining legacy plain-name lookup. */
 export function getSteamAppIdWithFallback(
   name: string,
   version?: string | null,
   context?: string
 ): Effect.Effect<number, PlatformError> {
-  const versionedGameName = getVersionedGameName(name, version);
-
-  return getNonSteamGameAppID(versionedGameName).pipe(
+  const versionedName = getVersionedGameName(name, version);
+  return getNonSteamGameAppID(versionedName).pipe(
     Effect.catchAll(() =>
-      getNonSteamGameAppID(name).pipe(
-        Effect.tap(() =>
-          Effect.sync(() => {
-            const contextPrefix = context ? `[${context}] ` : '';
-            console.log(
-              `${contextPrefix}Found Steam app ID using plain name "${name}" after versioned lookup failed.`
-            );
-          })
-        )
-      )
+      versionedName === name
+        ? Effect.fail(steamError(`Could not find Steam shortcut "${name}"`))
+        : getNonSteamGameAppID(name).pipe(
+            Effect.tap(() =>
+              Effect.sync(() =>
+                console.log(
+                  `${context ? `[${context}] ` : ''}Using legacy plain-name Steam shortcut "${name}"`
+                )
+              )
+            )
+          )
     )
   );
 }
 
 /**
- * Add game to Steam via SteamTinkerLaunch using OGI wrapper mode.
- * Steam launches OGI, then OGI executes the wrapper command.
+ * Add or update an OGI-owned non-Steam shortcut without touching unrelated
+ * entries. Steam must be closed because it rewrites shortcuts.vdf on exit.
  */
 export function addGameToSteam(params: {
   name: string;
@@ -168,36 +93,147 @@ export function addGameToSteam(params: {
   cwd: string;
   wrapperCommand?: string;
   appID: number;
-  compatibilityTool?: string;
 }): Effect.Effect<boolean> {
-  return Effect.gen(function* () {
-    const ogiPath = getOgiExecutablePath();
-    const wrapperCommand =
-      params.wrapperCommand && params.wrapperCommand.length > 0
-        ? params.wrapperCommand
-        : '%command%';
-    const launchOptions = `"${ogiPath}" --game-id=${params.appID} --no-sandbox -- "${escapeDoubleQuotedValue(wrapperCommand)}"`;
-    const compatibilityToolArg = params.compatibilityTool
-      ? ` --compatibilitytool="${escapeShellArg(params.compatibilityTool)}"`
-      : '';
-
-    return yield* Effect.async<boolean>((resume) => {
-      exec(
-        `${STEAMTINKERLAUNCH_PATH} addnonsteamgame --appname="${escapeShellArg(params.name)}" --exepath="${escapeShellArg(params.launchExecutable)}" --startdir="${escapeShellArg(params.cwd)}" --launchoptions="${escapeShellArg(launchOptions)}"${compatibilityToolArg} --use-steamgriddb`,
-        { cwd: __dirname },
-        (error, stdout, stderr) => {
-          if (error) {
-            console.error(error);
-            notifyError('Failed to add game to Steam');
-            resume(Effect.succeed(false));
-            return;
-          }
-          console.log(stdout);
-          console.log(stderr);
-          notifySuccess('Game added to Steam');
-          resume(Effect.succeed(true));
-        }
+  return Effect.promise(async () => {
+    try {
+      const steam = locateSteam();
+      if (!steam)
+        throw new Error(
+          'No Steam installation with a userdata account was found'
+        );
+      const appName = getVersionedGameName(params.name, params.version);
+      const ogiExecutable = getOgiExecutablePath();
+      updateShortcutsFile(steam.user.shortcutsPath, (root) => {
+        upsertShortcut(root, {
+          appName,
+          previousNames: appName === params.name ? [] : [params.name],
+          executable: ogiExecutable,
+          startDir: dirname(ogiExecutable),
+          launchOptions: `--game-id=${params.appID} --no-sandbox`,
+          tags: ['OpenGameInstaller'],
+        });
+      });
+      const shortcutId = generateNonSteamAppId(ogiExecutable, appName);
+      console.log(
+        `[steam] ${appName} is configured for account ${steam.user.accountId} as ${shortcutId}`
       );
-    });
+      await downloadSteamGridArtwork(
+        appName,
+        shortcutId,
+        steam.user.userdataPath
+      );
+      return true;
+    } catch (error) {
+      console.error('[steam] Failed to add shortcut:', error);
+      return false;
+    }
+  });
+}
+
+type SteamGridDbResponse<T> = { success: boolean; data: T };
+type SteamGridDbGame = { id: number };
+type SteamGridDbImage = { url: string };
+
+const readSteamGridDbKey = (): string | undefined => {
+  const configPath = join(__dirname, 'config/option/steamgriddb.json');
+  if (!fs.existsSync(configPath)) return undefined;
+  try {
+    const parsed = JSON.parse(fs.readFileSync(configPath, 'utf8')) as {
+      apiKey?: unknown;
+    };
+    return typeof parsed.apiKey === 'string' && parsed.apiKey.trim()
+      ? parsed.apiKey.trim()
+      : undefined;
+  } catch (error) {
+    console.warn(
+      '[steam] Could not read native SteamGridDB configuration:',
+      error
+    );
+    return undefined;
+  }
+};
+
+const fetchSteamGridDb = async <T>(url: string, apiKey: string): Promise<T> => {
+  const response = await fetch(url, {
+    headers: { Authorization: `Bearer ${apiKey}` },
+  });
+  if (!response.ok)
+    throw new Error(`SteamGridDB request failed with ${response.status}`);
+  const body = (await response.json()) as SteamGridDbResponse<T>;
+  if (!body.success) throw new Error('SteamGridDB request was unsuccessful');
+  return body.data;
+};
+
+const downloadSteamGridArtwork = async (
+  appName: string,
+  appId: number,
+  userdataPath: string
+): Promise<void> => {
+  const apiKey = readSteamGridDbKey();
+  if (!apiKey) return;
+  try {
+    const games = await fetchSteamGridDb<SteamGridDbGame[]>(
+      `https://www.steamgriddb.com/api/v2/search/autocomplete/${encodeURIComponent(appName)}`,
+      apiKey
+    );
+    const game = games[0];
+    if (!game) return;
+    const requests = [
+      { endpoint: `grids/game/${game.id}?dimensions=600x900`, suffix: 'p' },
+      { endpoint: `grids/game/${game.id}?dimensions=920x430`, suffix: '' },
+      { endpoint: `heroes/game/${game.id}`, suffix: '_hero' },
+      { endpoint: `logos/game/${game.id}`, suffix: '_logo' },
+      { endpoint: `icons/game/${game.id}`, suffix: '_icon' },
+    ];
+    const gridDirectory = join(userdataPath, 'config/grid');
+    await Promise.all(
+      requests.map(async ({ endpoint, suffix }) => {
+        const images = await fetchSteamGridDb<SteamGridDbImage[]>(
+          `https://www.steamgriddb.com/api/v2/${endpoint}`,
+          apiKey
+        );
+        const artwork = images[0];
+        if (!artwork) return;
+        const response = await fetch(artwork.url);
+        if (!response.ok) return;
+        if (isSteamRunning())
+          throw new Error('Steam started while artwork was downloading');
+        const extension = extname(new URL(artwork.url).pathname).toLowerCase();
+        const safeExtension = ['.png', '.jpg', '.jpeg', '.webp'].includes(
+          extension
+        )
+          ? extension
+          : '.png';
+        writeFileAtomic(
+          join(gridDirectory, `${appId}${suffix}${safeExtension}`),
+          Buffer.from(await response.arrayBuffer())
+        );
+      })
+    );
+  } catch (error) {
+    console.warn(`[steam] Could not download artwork for ${appName}:`, error);
+  }
+};
+
+export function removeGameFromSteam(
+  name: string,
+  version?: string | null
+): Effect.Effect<boolean> {
+  return Effect.sync(() => {
+    try {
+      const steam = locateSteam();
+      if (!steam || !fs.existsSync(steam.user.shortcutsPath)) return false;
+      const names = [getVersionedGameName(name, version), name];
+      let removed = false;
+      updateShortcutsFile(steam.user.shortcutsPath, (root) => {
+        removed = removeShortcut(root, (shortcut) =>
+          names.includes(shortcut.appName)
+        );
+      });
+      return removed;
+    } catch (error) {
+      console.error('[steam] Failed to remove shortcut:', error);
+      return false;
+    }
   });
 }

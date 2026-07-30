@@ -198,6 +198,10 @@ interface Window {
         success: boolean;
         error?: string;
       }>;
+      removeFromSteam: (appID: number) => Promise<{
+        success: boolean;
+        error?: string;
+      }>;
       getSteamAppId: (appID: number) => Promise<{
         success: boolean;
         appId?: number;

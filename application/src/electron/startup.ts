@@ -289,10 +289,6 @@ export function stopUmuBackgroundUpdater() {
 
 // check if NixOS using command -v nixos-rebuild
 export let IS_NIXOS = false;
-export let STEAMTINKERLAUNCH_PATH = join(
-  __dirname,
-  'bin/steamtinkerlaunch/steamtinkerlaunch'
-);
 
 function detectNixOS(): Promise<boolean> {
   return new Promise<boolean>((resolve) => {
@@ -310,45 +306,9 @@ function detectNixOS(): Promise<boolean> {
   });
 }
 
-async function fetch_STLPath() {
-  return new Promise<void>((resolve) => {
-    exec('which steamtinkerlaunch', (error, stdout, stderr) => {
-      if (error) {
-        console.error(`exec error: ${error}`);
-        resolve();
-        return;
-      }
-      if (stderr) {
-        console.error(`stderr: ${stderr}`);
-        resolve();
-        return;
-      }
-
-      // The path will be returned as a string in stdout.
-      const path = stdout.trim(); // Remove any extra newlines or spaces.
-      STEAMTINKERLAUNCH_PATH = path;
-      resolve();
-    });
-  });
-}
-
 export const startupEnvironmentReady = (async () => {
   IS_NIXOS = await detectNixOS();
   console.log('NIXOS: ' + IS_NIXOS);
-
-  if (IS_NIXOS) {
-    await fetch_STLPath();
-  }
-
-  if (STEAMTINKERLAUNCH_PATH === '') {
-    STEAMTINKERLAUNCH_PATH = join(
-      __dirname,
-      'bin/steamtinkerlaunch/steamtinkerlaunch'
-    );
-    console.error(
-      'STEAMTINKERLAUNCH_PATH is empty. Using default path to prevent issues.'
-    );
-  }
 })();
 
 // Directories to skip during restore (same as backup - node_modules will be reinstalled)

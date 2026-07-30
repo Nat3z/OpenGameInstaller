@@ -4,6 +4,10 @@
 import { PlatformError } from '@ogi/errors';
 import * as fs from 'fs';
 import { basename, join } from 'path';
+import {
+  getSteamCompatDataPath,
+  locateSteam,
+} from '@/electron/lib/steam-vdf.js';
 import { __dirname } from '@/electron/manager/manager.paths.js';
 
 export function isLinux(): boolean {
@@ -22,6 +26,8 @@ export function getCurrentUsername(): string | null {
 }
 
 export function getCompatDataDir(): string {
+  const steam = locateSteam();
+  if (steam) return getSteamCompatDataPath(steam.root);
   const homeDir = getHomeDir();
   if (!homeDir) {
     throw new PlatformError({

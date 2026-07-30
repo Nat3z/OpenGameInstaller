@@ -56,27 +56,6 @@ at the top on [bun.sh](https://bun.sh).
 If there are any issues with installing Bun through this script, please don't go to us for support. Resort to GitHub discussions
 or issues on the [Bun GitHub repository](https://github.com/oven-sh/bun) instead.
 
-### Installing Wine (LINUX ONLY – legacy / optional)
+### Windows games on Linux
 
-New games on Linux use **UMU**, which OGI downloads automatically. You do **not** need to install Wine or SteamTinkerLaunch for UMU-based games. See [UMU Launcher (Linux)](/docs/guide/umu).
-
-If you use or support the **legacy** Steam + Proton workflow, Wine must be installed via Flatpak. If OGI’s automatic download fails, run:
-
-```sh
-flatpak install --system flathub org.winehq.Wine
-```
-
-### Installing SteamTinkerLaunch (LINUX ONLY – legacy / optional)
-
-Only needed for the **legacy** Steam/Proton flow. For UMU-based games, skip this.
-
-To install SteamTinkerLaunch manually, go to `~/.local/share/OpenGameInstaller/bin/` (create the folder if it does not exist), then run:
-
-```sh
-git clone https://github.com/sonic2kk/steamtinkerlaunch
-cd steamtinkerlaunch
-chmod +x ./steamtinkerlaunch
-./steamtinkerlaunch
-```
-
-If you get notifications, SteamTinkerLaunch installed successfully.
+Windows games on Linux use **UMU**, which OGI downloads and updates automatically. You do not need to install Wine separately. See [UMU Launcher (Linux)](/docs/guide/umu).

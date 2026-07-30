@@ -302,6 +302,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     addToSteam: wrap((appID: number, oldSteamAppId?: number) =>
       ipcRenderer.invoke('app:add-to-steam', appID, oldSteamAppId)
     ),
+    removeFromSteam: wrap((appID: number) =>
+      ipcRenderer.invoke('app:remove-from-steam', appID)
+    ),
     killSteam: wrap(() => ipcRenderer.invoke('app:kill-steam')),
     startSteam: wrap(() => ipcRenderer.invoke('app:start-steam')),
     launchSteamApp: wrap((appID: number) =>

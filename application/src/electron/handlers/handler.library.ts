@@ -36,15 +36,9 @@ import {
 import { generateNotificationId } from '@/electron/handlers/helpers.app/notifications.js';
 import {
   getCurrentUsername,
-  getProtonPrefixPath,
   isLinux,
 } from '@/electron/handlers/helpers.app/platform.js';
-import {
-  addGameToSteam,
-  getNonSteamGameAppID,
-  getSteamAppIdWithFallback,
-  getVersionedGameName,
-} from '@/electron/handlers/helpers.app/steam.js';
+import { getSteamAppIdWithFallback } from '@/electron/handlers/helpers.app/steam.js';
 import { sendNotification } from '@/electron/main.js';
 
 /**
@@ -83,10 +77,34 @@ export function launchGameFromLibrary(
       return { success: false, error: 'Invalid app ID' };
     }
 
-    const appInfo = loadLibraryInfo(parsedAppId);
+    let appInfo = loadLibraryInfo(parsedAppId);
     if (!appInfo) {
       console.log('[launch] Game not found');
       return { success: false, error: 'Game not found' };
+    }
+
+    if (
+      isLinux() &&
+      !appInfo.umu &&
+      appInfo.launchExecutable.toLowerCase().endsWith('.exe')
+    ) {
+      const oldSteamAppId = yield* getSteamAppIdWithFallback(
+        appInfo.name,
+        appInfo.version,
+        'legacy-migration'
+      ).pipe(Effect.catchAll(() => Effect.succeed(undefined)));
+      const migration = yield* Effect.tryPromise({
+        try: () => migrateToUmu(parsedAppId, oldSteamAppId),
+        catch: (cause) =>
+          new LibraryError({
+            message: `Failed to migrate legacy game to UMU: ${String(cause)}`,
+            gameId: parsedAppId,
+          }),
+      });
+      if (!migration.success) return migration;
+      appInfo = loadLibraryInfo(parsedAppId);
+      if (!appInfo)
+        return { success: false, error: 'Game disappeared during migration' };
     }
 
     // Check if we should use UMU mode
@@ -407,7 +425,9 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
         const result = yield* launchGameFromLibrary(appid, mainWindow);
         if (!result.success) {
           return yield* Effect.fail(
-            new LibraryError({ message: result.error ?? 'Failed to launch game' })
+            new LibraryError({
+              message: result.error ?? 'Failed to launch game',
+            })
           );
         }
       })
@@ -425,219 +445,203 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
     'app:remove-app',
     ipcBoundary((_, appid: number) =>
       Effect.gen(function* () {
-        yield* Effect.try({ try: () => { ensureLibraryDir(); ensureInternalsDir(); }, catch: () => {} });
+        yield* Effect.try({
+          try: () => {
+            ensureLibraryDir();
+            ensureInternalsDir();
+          },
+          catch: () => {},
+        });
         const appInfo = yield* Effect.sync(() => loadLibraryInfo(appid));
         if (!appInfo) return;
-        yield* Effect.try({ try: () => { removeLibraryFile(appid); removeFromInternalsApps(appid); }, catch: () => {} });
+        yield* Effect.try({
+          try: () => {
+            removeLibraryFile(appid);
+            removeFromInternalsApps(appid);
+          },
+          catch: () => {},
+        });
       })
     )
   );
 
   ipcMain.handle(
     'app:insert-app',
-    ipcBoundary((
+    ipcBoundary(
+      (
         _,
         data: LibraryInfo & {
           redistributables?: { name: string; path: string }[];
         }
       ) =>
-      Effect.gen(function* () {
-        yield* Effect.try({ try: () => { ensureLibraryDir(); ensureInternalsDir(); }, catch: () => {} });
-
-        // Check if UMU is available and should be used (Linux only; macOS uses legacy)
-        const umuAvailable = isLinux();
-        const isDeckUser =
-          isLinux() && getCurrentUsername()?.toLowerCase() === 'deck';
-
-        if (umuAvailable && data.umu) {
-          console.log('[setup] Using UMU mode for new game');
-
-          // Ensure UMU is installed (if not, try to install)
-          const umuInstalled = yield* Effect.tryPromise({ try: isUmuInstalled, catch: (cause: unknown) => new LibraryError({ message: `Failed to check UMU: ${String(cause)}`, gameId: data.appID }) });
-          if (!umuInstalled) {
-            sendNotification({
-              message: 'Installing UMU...',
-              id: generateNotificationId(),
-              type: 'info',
-            });
-            const installResult = yield* Effect.tryPromise({ try: installUmu, catch: (cause: unknown) => new LibraryError({ message: `Failed to install UMU: ${String(cause)}`, gameId: data.appID }) });
-            if (!installResult.success) {
-              console.error(
-                '[setup] UMU auto-install failed:',
-                installResult.error
-              );
-              sendNotification({
-                message: 'Failed to install UMU',
-                id: generateNotificationId(),
-                type: 'error',
-              });
-              data.umu = undefined;
-              return 'setup-failed';
-            }
-          }
-
-          // Set up UMU-specific paths only when UMU is still configured (install succeeded or was already present)
-          if (data.umu) {
-            const { umuId } = data.umu;
-            const winePrefixPath = getUmuWinePrefix(umuId);
-            data.umu.winePrefixPath = winePrefixPath;
-
-            // Ensure prefix directory exists
-            if (!fs.existsSync(winePrefixPath)) {
-              fs.mkdirSync(winePrefixPath, { recursive: true });
-            }
-
-            // Save the library info with UMU config
-            saveLibraryInfo(data.appID, data);
-            addToInternalsApps(data.appID);
-
-            // On Steam Deck (user "deck"), add a Steam shortcut so the game appears in Game Mode
-            if (isDeckUser) {
-              const steamResult = yield* addUmuGameToSteam({
-                appID: data.appID, name: data.name, version: data.version,
-              });
-              if (!steamResult.success) {
-                console.warn(
-                  '[setup] Failed to add UMU game to Steam for Deck:',
-                  steamResult.error
-                );
-              }
-            }
-
-            if (data.redistributables && data.redistributables.length > 0) {
-              console.log(
-                '[setup] Redistributables detected, need to install them for:',
-                data.name
-              );
-              return 'setup-prefix-required';
-            }
-            return 'setup-success';
-          }
-        }
-
-        // Linux if not using UMU (legacy mode)
-        saveLibraryInfo(data.appID, data);
-        addToInternalsApps(data.appID);
-
-        // linux case (legacy)
-        if (isLinux()) {
-          // make the launch executable use / instead of \
-          data.launchExecutable = data.launchExecutable.replace(/\\/g, '/');
-
-          // Add game to Steam first via steamtinkerlaunch
-          const launchOptions = data.launchArguments ?? '';
-
-          // Format game name with version for unique Steam shortcut
-          const versionedGameName = getVersionedGameName(
-            data.name,
-            data.version
-          );
-
-          const result = yield* addGameToSteam({
-            name: versionedGameName, version: data.version,
-            launchExecutable: data.launchExecutable, cwd: data.cwd,
-            wrapperCommand: launchOptions || '%command%',
-            appID: data.appID, compatibilityTool: 'proton_experimental',
+        Effect.gen(function* () {
+          yield* Effect.try({
+            try: () => {
+              ensureLibraryDir();
+              ensureInternalsDir();
+            },
+            catch: () => {},
           });
 
-          // add to the {appid}.json file the launch options
-          const steamAppId = yield* getNonSteamGameAppID(versionedGameName).pipe(
-            Effect.catchAll(() => Effect.succeed(undefined))
-          );
-          if (steamAppId == null) {
-            return 'setup-failed';
-          }
-          const protonPath = getProtonPrefixPath(steamAppId);
-          const normalizedLaunchOptions = launchOptions || '%command%';
-          data.launchArguments =
-            'WINEPREFIX=' + protonPath + ' ' + normalizedLaunchOptions;
+          // Check if UMU is available and should be used (Linux only; macOS uses legacy)
+          const umuAvailable = isLinux();
+          const isDeckUser =
+            isLinux() && getCurrentUsername()?.toLowerCase() === 'deck';
 
-          saveLibraryInfo(data.appID, data);
-
-          if (!result) {
-            return 'setup-failed';
-          }
-
-          // Check if this is a Windows executable (.exe)
-          // If so, UMU will automatically create the prefix and handle redistributables
-          const isWindowsExecutable = data.launchExecutable
-            .toLowerCase()
-            .endsWith('.exe');
-
-          if (isWindowsExecutable) {
+          if (
+            umuAvailable &&
+            !data.umu &&
+            data.launchExecutable.toLowerCase().endsWith('.exe')
+          ) {
+            data.umu = { umuId: `umu:${data.appID}` };
             console.log(
-              '[setup] Windows executable (.exe) detected. UMU will create the prefix using Steam App ID from steamtinkerlaunch.'
-            );
-
-            if (data.redistributables && data.redistributables.length > 0) {
-              console.log(
-                '[setup] Redistributables also detected. Returning setup-prefix-required status.'
-              );
-
-              // Re-save the data with redistributables preserved for later installation
-              saveLibraryInfo(data.appID, data);
-
-              return 'setup-prefix-required';
-            }
-
-            // Even without redistributables, the prefix will be created on first launch
-            console.log(
-              '[setup] Prefix will be created automatically on first game launch via UMU.'
+              `[setup] Added native UMU configuration for Windows game ${data.appID}`
             );
           }
-        } else if (process.platform === 'win32') {
-          // if there are redistributables, we need to install them
-          if (data.redistributables && data.redistributables.length > 0) {
-            let redistributableFailed = false;
-            for (const redistributable of data.redistributables) {
-              const result = Effect.runSync(
-                Effect.either(
-                  Effect.gen(function* () {
-                    if (!fs.existsSync(redistributable.path)) {
-                      return yield* Effect.fail(
-                        new LibraryError({
-                          message: `Redistributable path does not exist: ${redistributable.path}`,
-                          gameId: data.appID,
-                        })
-                      );
-                    }
-                    const installResult = spawnSync(redistributable.path, [], {
-                      stdio: 'inherit',
-                      shell: false,
-                    });
-                    if (installResult.error || installResult.status !== 0) {
-                      return yield* Effect.fail(
-                        new LibraryError({
-                          message:
-                            installResult.error?.message ??
-                            `Redistributable installer exited with status ${installResult.status ?? 'unknown'}`,
-                          gameId: data.appID,
-                        })
-                      );
-                    }
-                    sendNotification({
-                      message: `Installed ${redistributable.name} for ${data.name}`,
-                      id: generateNotificationId(),
-                      type: 'success',
-                    });
-                  })
-                )
-              );
-              if (result._tag === 'Left') {
-                redistributableFailed = true;
+
+          if (umuAvailable && data.umu) {
+            console.log('[setup] Using UMU mode for new game');
+
+            // Ensure UMU is installed (if not, try to install)
+            const umuInstalled = yield* Effect.tryPromise({
+              try: isUmuInstalled,
+              catch: (cause: unknown) =>
+                new LibraryError({
+                  message: `Failed to check UMU: ${String(cause)}`,
+                  gameId: data.appID,
+                }),
+            });
+            if (!umuInstalled) {
+              sendNotification({
+                message: 'Installing UMU...',
+                id: generateNotificationId(),
+                type: 'info',
+              });
+              const installResult = yield* Effect.tryPromise({
+                try: installUmu,
+                catch: (cause: unknown) =>
+                  new LibraryError({
+                    message: `Failed to install UMU: ${String(cause)}`,
+                    gameId: data.appID,
+                  }),
+              });
+              if (!installResult.success) {
                 console.error(
-                  `[redistributable] failed to install ${redistributable.name}: ${result.left.message}`
+                  '[setup] UMU auto-install failed:',
+                  installResult.error
                 );
+                sendNotification({
+                  message: 'Failed to install UMU',
+                  id: generateNotificationId(),
+                  type: 'error',
+                });
+                data.umu = undefined;
+                return 'setup-failed';
               }
             }
-            if (redistributableFailed) {
-              return 'setup-redistributables-failed';
+
+            // Set up UMU-specific paths only when UMU is still configured (install succeeded or was already present)
+            if (data.umu) {
+              const { umuId } = data.umu;
+              const winePrefixPath = getUmuWinePrefix(umuId);
+              data.umu.winePrefixPath = winePrefixPath;
+
+              // Ensure prefix directory exists
+              if (!fs.existsSync(winePrefixPath)) {
+                fs.mkdirSync(winePrefixPath, { recursive: true });
+              }
+
+              // Save the library info with UMU config
+              saveLibraryInfo(data.appID, data);
+              addToInternalsApps(data.appID);
+
+              // On Steam Deck (user "deck"), add a Steam shortcut so the game appears in Game Mode
+              if (isDeckUser) {
+                const steamResult = yield* addUmuGameToSteam({
+                  appID: data.appID,
+                  name: data.name,
+                  version: data.version,
+                });
+                if (!steamResult.success) {
+                  console.warn(
+                    '[setup] Failed to add UMU game to Steam for Deck:',
+                    steamResult.error
+                  );
+                }
+              }
+
+              if (data.redistributables && data.redistributables.length > 0) {
+                console.log(
+                  '[setup] Redistributables detected, need to install them for:',
+                  data.name
+                );
+                return 'setup-prefix-required';
+              }
+              return 'setup-success';
             }
           }
-        }
 
-        return 'setup-success';
-      })
+          // Native applications do not need a Wine prefix.
+          saveLibraryInfo(data.appID, data);
+          addToInternalsApps(data.appID);
+
+          if (process.platform === 'win32') {
+            // if there are redistributables, we need to install them
+            if (data.redistributables && data.redistributables.length > 0) {
+              let redistributableFailed = false;
+              for (const redistributable of data.redistributables) {
+                const result = Effect.runSync(
+                  Effect.either(
+                    Effect.gen(function* () {
+                      if (!fs.existsSync(redistributable.path)) {
+                        return yield* Effect.fail(
+                          new LibraryError({
+                            message: `Redistributable path does not exist: ${redistributable.path}`,
+                            gameId: data.appID,
+                          })
+                        );
+                      }
+                      const installResult = spawnSync(
+                        redistributable.path,
+                        [],
+                        {
+                          stdio: 'inherit',
+                          shell: false,
+                        }
+                      );
+                      if (installResult.error || installResult.status !== 0) {
+                        return yield* Effect.fail(
+                          new LibraryError({
+                            message:
+                              installResult.error?.message ??
+                              `Redistributable installer exited with status ${installResult.status ?? 'unknown'}`,
+                            gameId: data.appID,
+                          })
+                        );
+                      }
+                      sendNotification({
+                        message: `Installed ${redistributable.name} for ${data.name}`,
+                        id: generateNotificationId(),
+                        type: 'success',
+                      });
+                    })
+                  )
+                );
+                if (result._tag === 'Left') {
+                  redistributableFailed = true;
+                  console.error(
+                    `[redistributable] failed to install ${redistributable.name}: ${result.left.message}`
+                  );
+                }
+              }
+              if (redistributableFailed) {
+                return 'setup-redistributables-failed';
+              }
+            }
+          }
+
+          return 'setup-success';
+        })
     )
   );
 
@@ -648,7 +652,8 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
 
   ipcMain.handle(
     'app:update-app-version',
-    ipcBoundary((
+    ipcBoundary(
+      (
         _,
         data: {
           appID: number;
@@ -661,103 +666,81 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
           launchEnv?: LibraryInfo['launchEnv'];
         }
       ) =>
-      Effect.gen(function* () {
-        const appData = yield* Effect.sync(() => loadLibraryInfo(data.appID));
-        if (!appData) {
-          return 'app-not-found';
-        }
-
-        if (data.addonSource) {
-          appData.addonsource = data.addonSource;
-        }
-
-        // Capture old version before updating for migration lookup
-        const oldVersion = appData.version;
-
-        appData.version = data.version;
-        appData.cwd = data.cwd;
-        appData.launchExecutable = data.launchExecutable;
-        if (data.launchEnv !== undefined) {
-          appData.launchEnv = data.launchEnv;
-        }
-
-        // Handle UMU config if provided
-        const prevUmu = appData.umu;
-        if (data.umu) {
-          appData.umu = data.umu;
-          // Update wine prefix path
-          appData.umu.winePrefixPath = getUmuWinePrefix(data.umu.umuId);
-
-          // Check if we need to migrate from legacy mode (first-time UMU or coming from legacy)
-          if (prevUmu === undefined) {
-            console.log('[update] Migrating game from legacy to UMU mode');
-
-            // Get the old Steam app ID for migration (use old version)
-            const oldSteamAppId = yield* getSteamAppIdWithFallback(
-              appData.name, oldVersion, 'migration'
-            ).pipe(Effect.catchAll(() => Effect.succeed(undefined)));
-
-            if (!oldSteamAppId) {
-              console.warn(
-                '[update] Could not detect old Steam app ID during migration. Falling back to UMU prefix initialization.'
-              );
-            }
-
-            const migrationResult = yield* Effect.tryPromise({
-              try: () => migrateToUmu(data.appID, oldSteamAppId),
-              catch: (cause: unknown) => new LibraryError({ message: `Migration failed: ${String(cause)}`, gameId: data.appID })
-            });
-            if (!migrationResult.success) {
-              console.warn('[update] Migration failed:', migrationResult.error);
-              // Continue anyway - UMU will create a fresh prefix
-            }
+        Effect.gen(function* () {
+          const appData = yield* Effect.sync(() => loadLibraryInfo(data.appID));
+          if (!appData) {
+            return 'app-not-found';
           }
-        }
 
-        // On Linux, handle legacy mode updates
-        if (isLinux() && appData.umu === undefined) {
-          // Preserve the original launch arguments before any modifications
-          // Prefer incoming update over existing appData to avoid discarding newly provided edits
-          const originalLaunchArguments =
-            data.launchArguments ?? appData.launchArguments ?? '';
+          if (data.addonSource) {
+            appData.addonsource = data.addonSource;
+          }
 
-          // Get the Steam app ID and construct the proton path
-          // First try with versioned name, then fallback to plain name if that fails
-          const appId = yield* getSteamAppIdWithFallback(
-            appData.name, appData.version, 'app:update-app-version'
-          ).pipe(Effect.catchAll(() => Effect.succeed(undefined)));
+          // Capture old version before updating for migration lookup
+          const oldVersion = appData.version;
 
-          if (appId) {
-            // Only modify WINEPREFIX when we successfully get the Steam app ID
-            let launchOptions = originalLaunchArguments;
+          appData.version = data.version;
+          appData.cwd = data.cwd;
+          appData.launchExecutable = data.launchExecutable;
+          if (data.launchEnv !== undefined) {
+            appData.launchEnv = data.launchEnv;
+          }
 
-            // Remove any existing WINEPREFIX from launch options
-            launchOptions = launchOptions
-              .replace(/WINEPREFIX=\S*\s?/g, '')
-              .trim();
+          if (
+            isLinux() &&
+            !data.umu &&
+            data.launchExecutable.toLowerCase().endsWith('.exe')
+          ) {
+            data.umu = { umuId: `umu:${data.appID}` };
+          }
 
-            const protonPath = getProtonPrefixPath(appId);
-            appData.launchArguments =
-              'WINEPREFIX=' + protonPath + ' ' + launchOptions;
-          } else {
-            // If we can't get the Steam app ID, preserve the original launch arguments unchanged
-            appData.launchArguments = originalLaunchArguments;
-            console.warn(
-              `[app:update-app-version] Failed to get Steam app ID for "${getVersionedGameName(
+          // Handle UMU config if provided
+          const prevUmu = appData.umu;
+          if (data.umu) {
+            appData.umu = data.umu;
+            // Update wine prefix path
+            appData.umu.winePrefixPath = getUmuWinePrefix(data.umu.umuId);
+
+            // Check if we need to migrate from legacy mode (first-time UMU or coming from legacy)
+            if (prevUmu === undefined) {
+              console.log('[update] Migrating game from legacy to UMU mode');
+
+              // Get the old Steam app ID for migration (use old version)
+              const oldSteamAppId = yield* getSteamAppIdWithFallback(
                 appData.name,
-                appData.version
-              )}"${
-                appData.version ? ` and fallback "${appData.name}"` : ''
-              }. Preserving original launch arguments (including any existing WINEPREFIX).`
-            );
-          }
-        } else {
-          appData.launchArguments = data.launchArguments;
-        }
+                oldVersion,
+                'migration'
+              ).pipe(Effect.catchAll(() => Effect.succeed(undefined)));
 
-        saveLibraryInfo(data.appID, appData);
-        return 'success';
-      })
+              if (!oldSteamAppId) {
+                console.warn(
+                  '[update] Could not detect old Steam app ID during migration. Falling back to UMU prefix initialization.'
+                );
+              }
+
+              const migrationResult = yield* Effect.tryPromise({
+                try: () => migrateToUmu(data.appID, oldSteamAppId),
+                catch: (cause: unknown) =>
+                  new LibraryError({
+                    message: `Migration failed: ${String(cause)}`,
+                    gameId: data.appID,
+                  }),
+              });
+              if (!migrationResult.success) {
+                console.warn(
+                  '[update] Migration failed:',
+                  migrationResult.error
+                );
+                // Continue anyway - UMU will create a fresh prefix
+              }
+            }
+          }
+
+          appData.launchArguments = data.launchArguments;
+
+          saveLibraryInfo(data.appID, appData);
+          return 'success';
+        })
     )
   );
 

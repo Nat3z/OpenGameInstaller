@@ -114,7 +114,15 @@ export class Git {
   public fetchRef(
     remote: string,
     ref: string
-  ): Effect.Effect<void, AddonError> {
+  ): Effect.Effect<void, AddonError | ValidationError> {
+    if (!ref || ref.startsWith('-')) {
+      return Effect.fail(
+        new ValidationError({
+          field: 'ref',
+          message: `Refusing unsafe git ref: ${ref}`,
+        })
+      );
+    }
     return this.fetch([remote, ref]).pipe(Effect.asVoid);
   }
 
@@ -164,6 +172,23 @@ export class Git {
 
   public getCurrentHash(): Effect.Effect<string, AddonError> {
     return this.execGit(['rev-parse', 'HEAD'], 'get commit hash');
+  }
+
+  public resolveRef(
+    ref: string
+  ): Effect.Effect<string, AddonError | ValidationError> {
+    if (!ref || ref.startsWith('-')) {
+      return Effect.fail(
+        new ValidationError({
+          field: 'ref',
+          message: `Refusing unsafe git ref: ${ref}`,
+        })
+      );
+    }
+    return this.execGit(
+      ['rev-parse', '--verify', '--end-of-options', `${ref}^{commit}`],
+      `resolve ref ${ref}`
+    );
   }
 
   public resetHard(ref: string): Effect.Effect<void, AddonError> {

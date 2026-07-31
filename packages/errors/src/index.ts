@@ -26,6 +26,10 @@ export class ConnectionRefreshRequested extends Data.TaggedError(
   readonly downloadId: string;
 }> {}
 
+export class DownloadAborted extends Data.TaggedError('DownloadAborted')<{
+  readonly downloadId: string;
+}> {}
+
 // =============================================================================
 // Network Errors
 // =============================================================================

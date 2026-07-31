@@ -401,14 +401,20 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
                   return;
                 }
 
-                if (
+                if (parsedAddon.explicitRef) {
+                  yield* unloadedAddon.fetchRef(
+                    'origin',
+                    parsedAddon.explicitRef
+                  );
+                  yield* unloadedAddon.checkoutCommit('FETCH_HEAD');
+                } else if (
                   addonFromMarketplace.pinnedCommit &&
                   addonFromMarketplace.pinnedCommit !== 'latest'
-                )
+                ) {
                   yield* unloadedAddon.checkoutCommit(
                     addonFromMarketplace.pinnedCommit
                   );
-                else {
+                } else {
                   console.log('Defaulting to latest commit.');
                 }
               }
@@ -694,7 +700,14 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
                   return yield* Effect.fail(new AddonNotFound({ addonName }));
                 }
 
-                const pinnedCommit = marketplaceAddon.pinnedCommit ?? 'latest';
+                let pinnedCommit = marketplaceAddon.pinnedCommit ?? 'latest';
+                if (parsedAddon.explicitRef) {
+                  yield* addonSetup.git.fetchRef(
+                    'origin',
+                    parsedAddon.explicitRef
+                  );
+                  pinnedCommit = yield* addonSetup.git.resolveRef('FETCH_HEAD');
+                }
                 alreadyUpToDate =
                   pinnedCommit === 'latest'
                     ? fetchData.alreadyUpToDate
@@ -713,7 +726,9 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
                 }
 
                 if (pinnedCommit !== 'latest') {
-                  yield* addonSetup.git.checkoutCommit(pinnedCommit);
+                  yield* addonSetup.git.checkoutCommit(
+                    parsedAddon.explicitRef ? 'FETCH_HEAD' : pinnedCommit
+                  );
                 } else if (!alreadyUpToDate) {
                   yield* addonSetup.git.pull();
                 }

@@ -1,5 +1,6 @@
 import {
   ConfigError,
+  DownloadAborted,
   DownloadError,
   DownloadNotActive,
   FileSystemError,
@@ -767,7 +768,11 @@ export class Download {
     retries = 5
   ): Effect.Effect<
     void,
-    DownloadError | DownloadNotActive | TooManyRequests | FileSystemError
+    | DownloadError
+    | DownloadNotActive
+    | TooManyRequests
+    | FileSystemError
+    | DownloadAborted
   > {
     return Effect.gen(this, function* () {
       const job = part.job;
@@ -776,6 +781,7 @@ export class Download {
         | DownloadNotActive
         | TooManyRequests
         | FileSystemError
+        | DownloadAborted
         | undefined;
 
       // Check if this part should use chunk parallelization
@@ -887,10 +893,13 @@ export class Download {
           return;
         }
         lastError = attempt.left;
-        console.log(
-          `[direct] Part ${part.index + 1} download attempt ${i} failed:`,
-          lastError
-        );
+
+        if (attempt.left._tag)
+          if (attempt.left._tag !== 'DownloadAborted')
+            console.log(
+              `[direct] Part ${part.index + 1} download attempt ${i} failed:`,
+              lastError
+            );
         if (this.status !== 'downloading') {
           return yield* Effect.fail(lastError);
         }
@@ -1022,7 +1031,10 @@ export class Download {
   private executeParallelDownloadForPart(
     part: PartState,
     fileSize: number
-  ): Effect.Effect<void, DownloadError | TooManyRequests | FileSystemError> {
+  ): Effect.Effect<
+    void,
+    DownloadError | TooManyRequests | FileSystemError | DownloadAborted
+  > {
     return Effect.gen(this, function* () {
       const job = part.job;
       part.chunks = [];
@@ -1118,7 +1130,10 @@ export class Download {
     part: PartState,
     chunk: ChunkState,
     onProgress?: () => void
-  ): Effect.Effect<void, DownloadError | TooManyRequests | FileSystemError> {
+  ): Effect.Effect<
+    void,
+    DownloadError | TooManyRequests | FileSystemError | DownloadAborted
+  > {
     return Effect.gen(this, function* () {
       if (chunk.completed) return;
 
@@ -1209,7 +1224,7 @@ export class Download {
           }),
       });
 
-      yield* Effect.async<void, DownloadError>((resume) => {
+      yield* Effect.async<void, DownloadError | DownloadAborted>((resume) => {
         let resolved = false;
         stream.stream.on('finish', () => {
           if (resolved) return;
@@ -1227,8 +1242,7 @@ export class Download {
           stream.stream.destroy();
           resume(
             Effect.fail(
-              new DownloadError({
-                message: 'Chunk download aborted',
+              new DownloadAborted({
                 downloadId: this.id,
               })
             )
@@ -1384,7 +1398,10 @@ export class Download {
    */
   private executePartDownload(
     part: PartState
-  ): Effect.Effect<void, DownloadError | FileSystemError | TooManyRequests> {
+  ): Effect.Effect<
+    void,
+    DownloadError | FileSystemError | TooManyRequests | DownloadAborted
+  > {
     return Effect.gen(this, function* () {
       const job = part.job;
       let connectionRefreshRequested = false;
@@ -1535,7 +1552,7 @@ export class Download {
           }),
       });
 
-      yield* Effect.async<void, DownloadError>((resume) => {
+      yield* Effect.async<void, DownloadError | DownloadAborted>((resume) => {
         let resolved = false;
         stream.file.on('finish', () => {
           if (resolved) return;
@@ -1555,10 +1572,7 @@ export class Download {
           stream.file.destroy();
           resume(
             Effect.fail(
-              new DownloadError({
-                message: connectionRefreshRequested
-                  ? 'CONNECTION_REFRESH_REQUESTED'
-                  : 'Aborted',
+              new DownloadAborted({
                 downloadId: this.id,
               })
             )
@@ -1854,7 +1868,11 @@ export class Download {
     retries = 5
   ): Effect.Effect<
     void,
-    DownloadError | DownloadNotActive | TooManyRequests | FileSystemError
+    | DownloadError
+    | DownloadNotActive
+    | TooManyRequests
+    | FileSystemError
+    | DownloadAborted
   > {
     return Effect.gen(this, function* () {
       let lastError:
@@ -1862,6 +1880,7 @@ export class Download {
         | DownloadNotActive
         | TooManyRequests
         | FileSystemError
+        | DownloadAborted
         | undefined;
 
       // Check if we should use parallel download (only for single-part downloads)
@@ -1953,7 +1972,10 @@ export class Download {
 
   private _executeDownloadPart(
     job: DownloadJob
-  ): Effect.Effect<void, DownloadError | FileSystemError | TooManyRequests> {
+  ): Effect.Effect<
+    void,
+    DownloadError | FileSystemError | TooManyRequests | DownloadAborted
+  > {
     return Effect.gen(this, function* () {
       this.sendProgress({ progress: 0, downloadSpeed: 0 });
       let connectionRefreshRequested = false;
@@ -2123,7 +2145,7 @@ export class Download {
           }),
       });
 
-      yield* Effect.async<void, DownloadError>((resume) => {
+      yield* Effect.async<void, DownloadError | DownloadAborted>((resume) => {
         let resolved = false;
         stream.file.on('finish', () => {
           if (resolved) return;
@@ -2143,10 +2165,7 @@ export class Download {
           stream.file.destroy();
           resume(
             Effect.fail(
-              new DownloadError({
-                message: connectionRefreshRequested
-                  ? 'CONNECTION_REFRESH_REQUESTED'
-                  : 'Aborted',
+              new DownloadAborted({
                 downloadId: this.id,
               })
             )
@@ -2292,7 +2311,10 @@ export class Download {
   private executeParallelDownload(
     job: DownloadJob,
     fileSize: number
-  ): Effect.Effect<void, DownloadError | TooManyRequests | FileSystemError> {
+  ): Effect.Effect<
+    void,
+    DownloadError | TooManyRequests | FileSystemError | DownloadAborted
+  > {
     return Effect.gen(this, function* () {
       this.useParallel = true;
       this.parallelTotalSize = fileSize;
@@ -2410,7 +2432,10 @@ export class Download {
     job: DownloadJob,
     chunk: ChunkState,
     onProgress?: () => void
-  ): Effect.Effect<void, DownloadError | TooManyRequests | FileSystemError> {
+  ): Effect.Effect<
+    void,
+    DownloadError | TooManyRequests | FileSystemError | DownloadAborted
+  > {
     const part: PartState = {
       index: this.currentPart - 1,
       job,

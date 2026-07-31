@@ -1,401 +1,410 @@
 <script lang="ts">
-import type { LibraryInfo, SearchResult, StoreData } from '@ogi-sdk/connect';
-import { onMount } from 'svelte';
-import { fly, slide } from 'svelte/transition';
-import AddonPicture from '@/frontend/components/AddonPicture.svelte';
-import HeaderModal from '@/frontend/components/modal/HeaderModal.svelte';
-import Modal from '@/frontend/components/modal/Modal.svelte';
-import SectionModal from '@/frontend/components/modal/SectionModal.svelte';
-import TextModal from '@/frontend/components/modal/TextModal.svelte';
-import TitleModal from '@/frontend/components/modal/TitleModal.svelte';
-import {
-  createNotification,
-  currentDownloads,
-  currentStorePageOpened,
-  currentStorePageOpenedStorefront,
-  gameFocused,
-  launchGameTrigger,
-  selectedView,
-  viewOpenedWhenChanged,
-} from '@/frontend/store.svelte';
-import {
-  addonServer,
-  fetchAddonsWithConfigure,
-  findAddonsSupportingStorefront,
-  isAddonEventAvailable,
-  runTask,
-  type SearchResultWithAddon,
-  startDownload,
-} from '@/frontend/utils';
-import { supportsStorefront } from '@/lib/storefronts';
+  import type { LibraryInfo, SearchResult, StoreData } from "@ogi-sdk/connect";
+  import { onMount } from "svelte";
+  import { fly, slide } from "svelte/transition";
+  import AddonPicture from "@/frontend/components/AddonPicture.svelte";
+  import HeaderModal from "@/frontend/components/modal/HeaderModal.svelte";
+  import Modal from "@/frontend/components/modal/Modal.svelte";
+  import SectionModal from "@/frontend/components/modal/SectionModal.svelte";
+  import TextModal from "@/frontend/components/modal/TextModal.svelte";
+  import TitleModal from "@/frontend/components/modal/TitleModal.svelte";
+  import {
+    createNotification,
+    currentDownloads,
+    currentStorePageOpened,
+    currentStorePageOpenedStorefront,
+    gameFocused,
+    launchGameTrigger,
+    selectedView,
+    viewOpenedWhenChanged,
+  } from "@/frontend/store.svelte";
+  import {
+    addonServer,
+    fetchAddonsWithConfigure,
+    findAddonsSupportingStorefront,
+    isAddonEventAvailable,
+    runTask,
+    type SearchResultWithAddon,
+    startDownload,
+  } from "@/frontend/utils";
+  import { supportsStorefront } from "@/lib/storefronts";
 
-interface Props {
-  appID: number;
-  storefront: string;
-}
-
-let { appID, storefront }: Props = $props();
-
-let results: SearchResultWithAddon[] = $state([]);
-let gameData: StoreData | undefined = $state();
-let loading = $state(true);
-let queryingSources = $state(false);
-let selectedResult: SearchResultWithAddon | undefined = $state();
-let isOnline = $state(true);
-function queuePositionLabel(position?: number) {
-  if (!position || position <= 1) return '';
-  return position >= 999 ? 'Waiting in queue' : `Queue position: ${position}`;
-}
-
-let loadingAddons: Map<string, string> = $state(new Map());
-let emptyAddons: Set<string> = $state(new Set());
-let collapsedAddons: Set<string> = $state(new Set());
-let originalFilePath: string | undefined = $derived.by(() => {
-  try {
-    if (alreadyOwns) {
-      const libraryEntryUnSerialized = window.electronAPI.fs.read(
-        './library/' + appID + '.json'
-      );
-      if (libraryEntryUnSerialized) {
-        const libraryEntry = JSON.parse(libraryEntryUnSerialized);
-        return libraryEntry.cwd;
-      }
-    }
-    return undefined;
-  } catch (ex) {
-    console.error(ex);
-    return undefined;
-  }
-});
-
-let originalExecutable: string | undefined = $derived.by(() => {
-  try {
-    if (alreadyOwns) {
-      const libraryEntryUnSerialized = window.electronAPI.fs.read(
-        './library/' + appID + '.json'
-      );
-      if (libraryEntryUnSerialized) {
-        const libraryEntry = JSON.parse(libraryEntryUnSerialized);
-        return libraryEntry.launchExecutable;
-      }
-    }
-    return undefined;
-  } catch (ex) {
-    console.error(ex);
-    return undefined;
-  }
-});
-
-let libraryInfo: LibraryInfo | undefined = $derived.by(() => {
-  try {
-    if (alreadyOwns) {
-      const libraryEntryUnSerialized = window.electronAPI.fs.read(
-        './library/' + appID + '.json'
-      );
-      if (libraryEntryUnSerialized) {
-        return JSON.parse(libraryEntryUnSerialized) as LibraryInfo;
-      }
-    }
-    return undefined;
-  } catch (ex) {
-    console.error(ex);
-    return undefined;
-  }
-});
-
-let alreadyOwns = $state(false);
-
-// Check for active downloads for this game
-let activeDownload = $derived(
-  $currentDownloads.find(
-    (download) => download.appID === appID && download.status !== 'error'
-  )
-);
-
-// Helper function to format download speed
-function formatSpeed(speed: number): string {
-  if (speed < 1024) {
-    return speed.toFixed(0) + ' B/s';
-  } else if (speed < 1024 * 1024) {
-    return (speed / 1024).toFixed(2) + ' KB/s';
-  } else {
-    return (speed / (1024 * 1024)).toFixed(2) + ' MB/s';
-  }
-}
-
-// Helper function to format file size
-function formatSize(size: number): string {
-  if (size < 1024) {
-    return size + ' B';
-  } else if (size < 1024 * 1024) {
-    return (size / 1024).toFixed(2) + ' KB';
-  } else if (size < 1024 * 1024 * 1024) {
-    return (size / (1024 * 1024)).toFixed(2) + ' MB';
-  } else {
-    return (size / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
-  }
-}
-
-onMount(async () => {
-  isOnline = await window.electronAPI.app.isOnline();
-  if (!isOnline) {
-    loading = false;
-    return;
+  interface Props {
+    appID: number;
+    storefront: string;
   }
 
-  try {
-    await loadCustomStoreData();
-  } catch (ex) {
-    console.error(ex);
-    createNotification({
-      id: Math.random().toString(36).substring(7),
-      message: `Failed to fetch store page`,
-      type: 'error',
-    });
-    currentStorePageOpened.set(undefined);
-    currentStorePageOpenedStorefront.set(undefined);
+  let { appID, storefront }: Props = $props();
+
+  let results: SearchResultWithAddon[] = $state([]);
+  let gameData: StoreData | undefined = $state();
+  let loading = $state(true);
+  let queryingSources = $state(false);
+  let selectedResult: SearchResultWithAddon | undefined = $state();
+  let isOnline = $state(true);
+  function queuePositionLabel(position?: number) {
+    if (!position || position <= 1) return "";
+    return position >= 999 ? "Waiting in queue" : `Queue position: ${position}`;
   }
-});
 
-// Group results by addon
-let resultsByAddon = $derived.by(() => {
-  const grouped: Array<{
-    addonId: string;
-    addonName: string;
-    results: SearchResultWithAddon[];
-  }> = [];
-
-  const addonMap = new Map<string, SearchResultWithAddon[]>();
-
-  results.forEach((result) => {
-    if (!addonMap.has(result.addonSource)) {
-      addonMap.set(result.addonSource, []);
-    }
-    addonMap.get(result.addonSource)!.push(result);
-  });
-
-  addonMap.forEach((results, addonId) => {
-    grouped.push({
-      addonId,
-      addonName: results[0].addonName,
-      results,
-    });
-  });
-
-  return grouped;
-});
-
-async function loadCustomStoreData() {
-  results = [];
-  alreadyOwns = window.electronAPI.fs.exists('./library/' + appID + '.json');
-  originalExecutable = window.electronAPI.fs.read(
-    './library/' + appID + '.json'
-  );
-  if (alreadyOwns && originalExecutable) {
-    originalExecutable = JSON.parse(originalExecutable).launchExecutable;
-  } else {
-    originalExecutable = undefined;
-  }
-  const detailAddons = await findAddonsSupportingStorefront(
-    storefront,
-    'game-details'
-  );
-  let response: StoreData | undefined;
-  for (const addon of detailAddons) {
+  let loadingAddons: Map<string, string> = $state(new Map());
+  let emptyAddons: Set<string> = $state(new Set());
+  let collapsedAddons: Set<string> = $state(new Set());
+  let originalFilePath: string | undefined = $derived.by(() => {
     try {
-      response = (await addonServer.addon(addon.id).gameDetails({
-        appID,
-        storefront,
-      })) as StoreData | undefined;
-    } catch (error) {
-      console.error(`Failed to load game details from ${addon.id}:`, error);
-      continue;
+      if (alreadyOwns) {
+        const libraryEntryUnSerialized = window.electronAPI.fs.read(
+          "./library/" + appID + ".json",
+        );
+        if (libraryEntryUnSerialized) {
+          const libraryEntry = JSON.parse(libraryEntryUnSerialized);
+          return libraryEntry.cwd;
+        }
+      }
+      return undefined;
+    } catch (ex) {
+      console.error(ex);
+      return undefined;
     }
-    if (response) break;
+  });
+
+  let originalExecutable: string | undefined = $derived.by(() => {
+    try {
+      if (alreadyOwns) {
+        const libraryEntryUnSerialized = window.electronAPI.fs.read(
+          "./library/" + appID + ".json",
+        );
+        if (libraryEntryUnSerialized) {
+          const libraryEntry = JSON.parse(libraryEntryUnSerialized);
+          return libraryEntry.launchExecutable;
+        }
+      }
+      return undefined;
+    } catch (ex) {
+      console.error(ex);
+      return undefined;
+    }
+  });
+
+  let libraryInfo: LibraryInfo | undefined = $derived.by(() => {
+    try {
+      if (alreadyOwns) {
+        const libraryEntryUnSerialized = window.electronAPI.fs.read(
+          "./library/" + appID + ".json",
+        );
+        if (libraryEntryUnSerialized) {
+          return JSON.parse(libraryEntryUnSerialized) as LibraryInfo;
+        }
+      }
+      return undefined;
+    } catch (ex) {
+      console.error(ex);
+      return undefined;
+    }
+  });
+
+  let alreadyOwns = $state(false);
+
+  // Check for active downloads for this game
+  let activeDownload = $derived(
+    $currentDownloads.find(
+      (download) => download.appID === appID && download.status !== "error",
+    ),
+  );
+
+  // Helper function to format download speed
+  function formatSpeed(speed: number): string {
+    if (speed < 1024) {
+      return speed.toFixed(0) + " B/s";
+    } else if (speed < 1024 * 1024) {
+      return (speed / 1024).toFixed(2) + " KB/s";
+    } else {
+      return (speed / (1024 * 1024)).toFixed(2) + " MB/s";
+    }
   }
 
-  gameData = response;
-  loading = false;
-
-  // Fetch search results for custom store
-  // if (alreadyOwns) return;
-
-  let addons = await fetchAddonsWithConfigure();
-  queryingSources = true;
-
-  if (addons.length === 0) {
-    queryingSources = false;
-    return;
+  // Helper function to format file size
+  function formatSize(size: number): string {
+    if (size < 1024) {
+      return size + " B";
+    } else if (size < 1024 * 1024) {
+      return (size / 1024).toFixed(2) + " KB";
+    } else if (size < 1024 * 1024 * 1024) {
+      return (size / (1024 * 1024)).toFixed(2) + " MB";
+    } else {
+      return (size / (1024 * 1024 * 1024)).toFixed(2) + " GB";
+    }
   }
 
-  // Reset loading states
-  loadingAddons = new Map(addons.map((addon) => [addon.id, addon.name]));
-  emptyAddons = new Set();
-
-  const searchPromises = [];
-  for (const addon of addons) {
-    if (!supportsStorefront(addon.storefronts, storefront)) {
-      loadingAddons.delete(addon.id);
-      continue;
+  onMount(async () => {
+    isOnline = await window.electronAPI.app.isOnline();
+    if (!isOnline) {
+      loading = false;
+      return;
     }
 
-    if (!isAddonEventAvailable(addon, 'search')) {
-      loadingAddons.delete(addon.id);
-      continue;
+    try {
+      await loadCustomStoreData();
+    } catch (ex) {
+      console.error(ex);
+      createNotification({
+        id: Math.random().toString(36).substring(7),
+        message: `Failed to fetch store page`,
+        type: "error",
+      });
+      currentStorePageOpened.set(undefined);
+      currentStorePageOpenedStorefront.set(undefined);
+    }
+  });
+
+  // Group results by addon
+  let resultsByAddon = $derived.by(() => {
+    const grouped: Array<{
+      addonId: string;
+      addonName: string;
+      results: SearchResultWithAddon[];
+    }> = [];
+
+    const addonMap = new Map<string, SearchResultWithAddon[]>();
+
+    results.forEach((result) => {
+      if (!addonMap.has(result.addonSource)) {
+        addonMap.set(result.addonSource, []);
+      }
+      addonMap.get(result.addonSource)!.push(result);
+    });
+
+    addonMap.forEach((results, addonId) => {
+      grouped.push({
+        addonId,
+        addonName: results[0].addonName,
+        results,
+      });
+    });
+
+    return grouped;
+  });
+
+  async function loadCustomStoreData() {
+    results = [];
+    alreadyOwns = window.electronAPI.fs.exists("./library/" + appID + ".json");
+    originalExecutable = window.electronAPI.fs.read(
+      "./library/" + appID + ".json",
+    );
+    if (alreadyOwns && originalExecutable) {
+      originalExecutable = JSON.parse(originalExecutable).launchExecutable;
+    } else {
+      originalExecutable = undefined;
+    }
+    const detailAddons = await findAddonsSupportingStorefront(
+      storefront,
+      "game-details",
+    );
+    let response: StoreData | undefined;
+    for (const addon of detailAddons) {
+      try {
+        response = (await addonServer.addon(addon.id).gameDetails({
+          appID,
+          storefront,
+        })) as StoreData | undefined;
+      } catch (error) {
+        console.error(`Failed to load game details from ${addon.id}:`, error);
+        continue;
+      }
+      if (response) break;
     }
 
-    searchPromises.push(
-      (
-        addonServer.addon(addon.id).search({
-          appID: appID,
-          storefront: storefront,
-          for: alreadyOwns ? 'task' : 'game',
-        }) as Promise<SearchResult[]>
-      )
-        .then((searchResults = []) => {
-          const mappedResults = searchResults.map((result: SearchResult) => {
-            return {
-              ...result,
-              coverImage: gameData?.coverImage ?? '',
-              capsuleImage: gameData?.capsuleImage ?? '',
-              name: result.name,
-              addonSource: addon.id,
-              addonName: addon.name,
-              storefront: storefront,
-            };
-          });
+    gameData = response;
+    loading = false;
 
-          if (mappedResults.length > 0) {
-            // Remove from loading set immediately for addons with results
-            loadingAddons.delete(addon.id);
-            loadingAddons = new Map(loadingAddons);
+    // Fetch search results for custom store
+    // if (alreadyOwns) return;
 
-            results = [...results, ...mappedResults];
-          } else {
-            // For empty results, add to empty set and animate out after delay
-            emptyAddons.add(addon.id);
-            emptyAddons = new Set(emptyAddons);
+    let addons = await fetchAddonsWithConfigure();
+    queryingSources = true;
 
-            setTimeout(() => {
+    if (addons.length === 0) {
+      queryingSources = false;
+      return;
+    }
+
+    // Reset loading states
+    loadingAddons = new Map(
+      addons
+        .map((addon): [string, string] => [addon.id, addon.name])
+        .sort((a, b) => a[1].localeCompare(b[1])),
+    );
+    emptyAddons = new Set();
+
+    const searchPromises = [];
+    for (const addon of addons) {
+      if (!supportsStorefront(addon.storefronts, storefront)) {
+        loadingAddons.delete(addon.id);
+        continue;
+      }
+
+      if (!isAddonEventAvailable(addon, "search")) {
+        loadingAddons.delete(addon.id);
+        continue;
+      }
+
+      searchPromises.push(
+        (
+          addonServer.addon(addon.id).search({
+            appID: appID,
+            storefront: storefront,
+            for: alreadyOwns ? "task" : "game",
+          }) as Promise<SearchResult[]>
+        )
+          .then((searchResults = []) => {
+            const mappedResults = searchResults.map((result: SearchResult) => {
+              return {
+                ...result,
+                coverImage: gameData?.coverImage ?? "",
+                capsuleImage: gameData?.capsuleImage ?? "",
+                name: result.name,
+                addonSource: addon.id,
+                addonName: addon.name,
+                storefront: storefront,
+              };
+            });
+
+            if (mappedResults.length > 0) {
+              // Remove from loading set immediately for addons with results
               loadingAddons.delete(addon.id);
               loadingAddons = new Map(loadingAddons);
 
-              // Clean up empty addon after another delay
+              results = [...results, ...mappedResults];
+            } else {
+              // For empty results, add to empty set and animate out after delay
+              emptyAddons.add(addon.id);
+              emptyAddons = new Set(emptyAddons);
+
               setTimeout(() => {
-                emptyAddons.delete(addon.id);
-                emptyAddons = new Set(emptyAddons);
-              }, 300);
-            }, 1000);
-          }
-        })
-        .catch((ex) => {
-          // Remove from loading set even on error
-          loadingAddons.delete(addon.id);
-          loadingAddons = new Map(loadingAddons);
-          console.error(ex);
-        })
-    );
-  }
-  await Promise.allSettled(searchPromises);
-  queryingSources = false;
-  // Ensure all addons are removed from loading state
-  loadingAddons = new Map();
-}
+                loadingAddons.delete(addon.id);
+                loadingAddons = new Map(loadingAddons);
 
-function playGame() {
-  if (!gameData) return;
-
-  const gameID = (gameData as StoreData).appID;
-
-  selectedView.set('library');
-  viewOpenedWhenChanged.set('library');
-  currentStorePageOpened.set(undefined);
-  currentStorePageOpenedStorefront.set(undefined);
-  gameFocused.set(gameID);
-  setTimeout(() => {
-    launchGameTrigger.set(gameID);
-  }, 5);
-}
-
-function showSourceInfo(result: SearchResultWithAddon) {
-  selectedResult = result;
-}
-
-function handleDownloadClick(result: SearchResultWithAddon, event: MouseEvent) {
-  // Check if there's already an active download for this game
-  if (activeDownload) {
-    createNotification({
-      id: Math.random().toString(36).substring(7),
-      message: `Download already in progress for ${gameData?.name}`,
-      type: 'warning',
-    });
-    return;
+                // Clean up empty addon after another delay
+                setTimeout(() => {
+                  emptyAddons.delete(addon.id);
+                  emptyAddons = new Set(emptyAddons);
+                }, 300);
+              }, 1000);
+            }
+          })
+          .catch((ex) => {
+            // Remove from loading set even on error
+            loadingAddons.delete(addon.id);
+            loadingAddons = new Map(loadingAddons);
+            console.error(ex);
+          }),
+      );
+    }
+    await Promise.allSettled(searchPromises);
+    queryingSources = false;
+    // Ensure all addons are removed from loading state
+    loadingAddons = new Map();
   }
 
-  // Proceed with download
-  if (result.downloadType === 'task') {
-    runTask(result, alreadyOwns ? originalFilePath || '' : '', libraryInfo);
-  } else {
-    startDownload(
-      {
-        ...result,
-        name: (gameData as StoreData).name!,
-      },
-      appID,
-      event
-    );
+  function playGame() {
+    if (!gameData) return;
+
+    const gameID = (gameData as StoreData).appID;
+
+    selectedView.set("library");
+    viewOpenedWhenChanged.set("library");
+    currentStorePageOpened.set(undefined);
+    currentStorePageOpenedStorefront.set(undefined);
+    gameFocused.set(gameID);
+    setTimeout(() => {
+      launchGameTrigger.set(gameID);
+    }, 5);
   }
-}
 
-function closeInfoModal() {
-  selectedResult = undefined;
-}
-
-async function viewInLibrary() {
-  if (!gameData) return;
-  selectedView.set('library');
-  viewOpenedWhenChanged.set('library');
-  currentStorePageOpened.set(undefined);
-  currentStorePageOpenedStorefront.set(undefined);
-  gameFocused.set(appID);
-}
-
-function toggleAddonCollapse(addonId: string) {
-  if (collapsedAddons.has(addonId)) {
-    collapsedAddons.delete(addonId);
-  } else {
-    collapsedAddons.add(addonId);
+  function showSourceInfo(result: SearchResultWithAddon) {
+    selectedResult = result;
   }
-  // Trigger reactivity
-  collapsedAddons = new Set(collapsedAddons);
-}
 
-// Watch for download completion and refresh store data
-let matchedDownload = $state(false);
-$effect(() => {
-  if (
-    activeDownload &&
-    (activeDownload.status === 'seeding' ||
-      activeDownload.status === 'setup-complete') &&
-    !alreadyOwns &&
-    !matchedDownload
+  function handleDownloadClick(
+    result: SearchResultWithAddon,
+    event: MouseEvent,
   ) {
-    // Refresh the alreadyOwns status
-    alreadyOwns = window.electronAPI.fs.exists('./library/' + appID + '.json');
-    matchedDownload = true;
-    // Reload store data to reflect the new ownership status
-    loadCustomStoreData();
-
-    if (alreadyOwns) {
-      // Notify user that the game is now available
+    // Check if there's already an active download for this game
+    if (activeDownload) {
       createNotification({
         id: Math.random().toString(36).substring(7),
-        message: `${gameData?.name || 'Game'} is now ready to play!`,
-        type: 'success',
+        message: `Download already in progress for ${gameData?.name}`,
+        type: "warning",
       });
+      return;
+    }
+
+    // Proceed with download
+    if (result.downloadType === "task") {
+      runTask(result, alreadyOwns ? originalFilePath || "" : "", libraryInfo);
+    } else {
+      startDownload(
+        {
+          ...result,
+          name: (gameData as StoreData).name!,
+        },
+        appID,
+        event,
+      );
     }
   }
-});
+
+  function closeInfoModal() {
+    selectedResult = undefined;
+  }
+
+  async function viewInLibrary() {
+    if (!gameData) return;
+    selectedView.set("library");
+    viewOpenedWhenChanged.set("library");
+    currentStorePageOpened.set(undefined);
+    currentStorePageOpenedStorefront.set(undefined);
+    gameFocused.set(appID);
+  }
+
+  function toggleAddonCollapse(addonId: string) {
+    if (collapsedAddons.has(addonId)) {
+      collapsedAddons.delete(addonId);
+    } else {
+      collapsedAddons.add(addonId);
+    }
+    // Trigger reactivity
+    collapsedAddons = new Set(collapsedAddons);
+  }
+
+  // Watch for download completion and refresh store data
+  let matchedDownload = $state(false);
+  $effect(() => {
+    if (
+      activeDownload &&
+      (activeDownload.status === "seeding" ||
+        activeDownload.status === "setup-complete") &&
+      !alreadyOwns &&
+      !matchedDownload
+    ) {
+      // Refresh the alreadyOwns status
+      alreadyOwns = window.electronAPI.fs.exists(
+        "./library/" + appID + ".json",
+      );
+      matchedDownload = true;
+      // Reload store data to reflect the new ownership status
+      loadCustomStoreData();
+
+      if (alreadyOwns) {
+        // Notify user that the game is now available
+        createNotification({
+          id: Math.random().toString(36).substring(7),
+          message: `${gameData?.name || "Game"} is now ready to play!`,
+          type: "success",
+        });
+      }
+    }
+  });
 </script>
 
 {#if gameData}
@@ -480,10 +489,10 @@ $effect(() => {
               style="color: var(--color-overlay-text); opacity: 0.9;"
             >
               <span style="opacity: 0.7;">Publisher:</span>
-              {(gameData.publishers ?? []).join(', ')}
+              {(gameData.publishers ?? []).join(", ")}
               <span class="mx-4"></span>
               <span style="opacity: 0.7;">Developer:</span>
-              {(gameData.developers ?? []).join(', ')}
+              {(gameData.developers ?? []).join(", ")}
               <br />
               <span style="opacity: 0.7;">Release Date:</span>
               {gameData.releaseDate}
@@ -524,23 +533,23 @@ $effect(() => {
               <div class="flex items-center justify-between mb-3">
                 <h3 class="font-medium text-accent-dark">Downloading</h3>
                 <span class="text-sm text-text-secondary">
-                  {activeDownload.status === 'downloading' ||
-                  activeDownload.status === 'rd-downloading'
-                    ? Math.round(activeDownload.progress * 100) + '%'
-                    : activeDownload.status === 'merging'
-                      ? 'Merging files...'
-                      : activeDownload.status === 'completed' ||
-                          activeDownload.status === 'redistr-downloading'
-                        ? 'Setting up...'
-                        : activeDownload.status === 'paused'
-                          ? 'Paused'
-                          : activeDownload.status === 'requesting'
-                            ? 'Requesting...'
-                            : activeDownload.status === 'setup-complete'
-                              ? 'Setup Complete'
+                  {activeDownload.status === "downloading" ||
+                  activeDownload.status === "rd-downloading"
+                    ? Math.round(activeDownload.progress * 100) + "%"
+                    : activeDownload.status === "merging"
+                      ? "Merging files..."
+                      : activeDownload.status === "completed" ||
+                          activeDownload.status === "redistr-downloading"
+                        ? "Setting up..."
+                        : activeDownload.status === "paused"
+                          ? "Paused"
+                          : activeDownload.status === "requesting"
+                            ? "Requesting..."
+                            : activeDownload.status === "setup-complete"
+                              ? "Setup Complete"
                               : activeDownload.status ===
-                                  'installing-redistributables'
-                                ? 'Installing Dependencies...'
+                                  "installing-redistributables"
+                                ? "Installing Dependencies..."
                                 : activeDownload.status}
                 </span>
               </div>
@@ -556,7 +565,7 @@ $effect(() => {
               </div>
 
               <!-- Download Stats -->
-              {#if activeDownload.status === 'downloading' || activeDownload.status === 'rd-downloading' || activeDownload.status === 'merging'}
+              {#if activeDownload.status === "downloading" || activeDownload.status === "rd-downloading" || activeDownload.status === "merging"}
                 <div class="flex justify-between text-xs text-accent-dark">
                   <span>
                     {#if activeDownload.downloadSpeed > 0}
@@ -671,12 +680,14 @@ $effect(() => {
 
                 <!-- Actual results grouped by addon -->
                 {#if resultsByAddon.length > 0}
-                  {#each resultsByAddon.filter( (group) => group.results.some( (result) => (alreadyOwns ? result.downloadType === 'task' : result.downloadType !== 'task') ) ) as addonGroup, groupIndex (addonGroup.addonId)}
+                  {#each resultsByAddon
+                    .filter( (group) => group.results.some( (result) => (alreadyOwns ? result.downloadType === "task" : result.downloadType !== "task"), ), )
+                    .sort( (a, b) => a.addonId.localeCompare(b.addonId), ) as addonGroup, groupIndex (addonGroup.addonId)}
                     {@const filteredResults = addonGroup.results.filter(
                       (result) =>
                         alreadyOwns
-                          ? result.downloadType === 'task'
-                          : result.downloadType !== 'task'
+                          ? result.downloadType === "task"
+                          : result.downloadType !== "task",
                     )}
                     {#if filteredResults.length > 0}
                       <div
@@ -705,15 +716,15 @@ $effect(() => {
                               <span class="text-xs text-text-secondary"
                                 >{filteredResults.length} result{filteredResults.length ===
                                 1
-                                  ? ''
-                                  : 's'}</span
+                                  ? ""
+                                  : "s"}</span
                               >
                             </div>
                           </div>
                           <svg
                             class="w-4 h-4 text-text-secondary transition-transform duration-200"
                             class:rotate-180={!collapsedAddons.has(
-                              addonGroup.addonId
+                              addonGroup.addonId,
                             )}
                             viewBox="0 0 24 24"
                             fill="none"
@@ -750,33 +761,33 @@ $effect(() => {
                                     class="font-medium text-text-primary text-sm"
                                     >{result.name.slice(0, 25)}{result.name
                                       .length > 25
-                                      ? '...'
-                                      : ''}</span
+                                      ? "..."
+                                      : ""}</span
                                   >
                                   <div
                                     class="flex items-center gap-1 text-xs text-text-muted"
                                   >
-                                    {#if result.downloadType === 'magnet'}
+                                    {#if result.downloadType === "magnet"}
                                       <img
                                         class="w-4 h-4"
                                         src="./magnet-icon.gif"
                                         alt="Magnet"
                                       />
                                       <span>Magnet</span>
-                                    {:else if result.downloadType === 'torrent'}
+                                    {:else if result.downloadType === "torrent"}
                                       <img
                                         class="w-4 h-4"
                                         src="./torrent.png"
                                         alt="Torrent"
                                       />
                                       <span>Torrent</span>
-                                    {:else if result.downloadType === 'direct'}
+                                    {:else if result.downloadType === "direct"}
                                       <span>Direct</span>
-                                    {:else if result.downloadType === 'request'}
+                                    {:else if result.downloadType === "request"}
                                       <span>Request</span>
-                                    {:else if result.downloadType === 'task'}
+                                    {:else if result.downloadType === "task"}
                                       <span>Task</span>
-                                    {:else if result.downloadType === 'empty'}
+                                    {:else if result.downloadType === "empty"}
                                       <span>Empty</span>
                                     {/if}
                                   </div>
@@ -794,10 +805,10 @@ $effect(() => {
                                       handleDownloadClick(result, event)}
                                   >
                                     {activeDownload && !alreadyOwns
-                                      ? 'Download in Progress'
-                                      : result.downloadType === 'task'
-                                        ? 'Run Task'
-                                        : 'Download'}
+                                      ? "Download in Progress"
+                                      : result.downloadType === "task"
+                                        ? "Run Task"
+                                        : "Download"}
                                   </button>
                                   <button
                                     class="text-sm border-none w-12 bg-accent-light hover:bg-accent-light/80 text-accent-dark font-medium py-3 rounded-lg flex items-center justify-center gap-2 transition-colors duration-200"
@@ -846,8 +857,8 @@ $effect(() => {
                   <div class="text-center py-8">
                     <p class="text-text-secondary">
                       {alreadyOwns
-                        ? 'No tasks available'
-                        : 'No sources available'}
+                        ? "No tasks available"
+                        : "No sources available"}
                     </p>
                   </div>
                 {/if}
@@ -966,28 +977,28 @@ $effect(() => {
             <div>
               <TextModal text="Download Type" variant="caption" />
               <div class="flex items-center gap-2">
-                {#if selectedResult.downloadType === 'magnet'}
+                {#if selectedResult.downloadType === "magnet"}
                   <img class="w-5 h-5" src="./magnet-icon.gif" alt="Magnet" />
                   <span class="text-sm font-medium text-text-primary"
                     >Magnet Link</span
                   >
-                {:else if selectedResult.downloadType === 'torrent'}
+                {:else if selectedResult.downloadType === "torrent"}
                   <img class="w-5 h-5" src="./torrent.png" alt="Torrent" />
                   <span class="text-sm font-medium text-text-primary"
                     >Torrent File</span
                   >
-                {:else if selectedResult.downloadType === 'direct'}
+                {:else if selectedResult.downloadType === "direct"}
                   <span class="text-sm font-medium text-text-primary"
                     >Direct Download</span
                   >
-                {:else if selectedResult.downloadType === 'request'}
+                {:else if selectedResult.downloadType === "request"}
                   <span class="text-sm font-medium text-text-primary"
                     >Request</span
                   >
-                {:else if selectedResult.downloadType === 'task'}
+                {:else if selectedResult.downloadType === "task"}
                   <span class="text-sm font-medium text-text-primary">Task</span
                   >
-                {:else if selectedResult.downloadType === 'empty'}
+                {:else if selectedResult.downloadType === "empty"}
                   <span class="text-sm font-medium text-text-primary"
                     >Empty</span
                   >

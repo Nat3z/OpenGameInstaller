@@ -808,8 +808,17 @@ export async function checkForAddonUpdates(
           const marketplace = await Effect.runPromise(
             loadMarketplace(parsedAddon.marketplaceUrl)
           );
-          remoteHash =
-            marketplace.getAddon(parsedAddon.gitUrl)?.pinnedCommit ?? 'latest';
+          const marketplaceAddon = marketplace.getAddon(parsedAddon.gitUrl);
+          if (parsedAddon.explicitRef) {
+            await Effect.runPromise(
+              addonGit.fetchRef('origin', parsedAddon.explicitRef)
+            );
+            remoteHash = await Effect.runPromise(
+              addonGit.resolveRef('FETCH_HEAD')
+            );
+          } else {
+            remoteHash = marketplaceAddon?.pinnedCommit ?? 'latest';
+          }
           isUpdate = localHash !== remoteHash;
         }
 

@@ -43,6 +43,7 @@ export type ParsedAddonLink =
       normalized: string;
       marketplaceUrl: string;
       gitUrl: string;
+      explicitRef?: string;
       addonName: string;
     };
 
@@ -140,13 +141,38 @@ export function parseAddonLink(addonLink: string): ParsedAddonLink {
   }
 
   const marketplaceUrl = normalized.slice(0, separatorIndex);
-  const gitUrl = normalized.slice(separatorIndex + 1);
+  const gitUrlWithRef = normalized.slice(separatorIndex + 1);
+  const refSeparatorIndex = gitUrlWithRef.lastIndexOf(':');
+  // The override separator must appear after the repository path begins. This excludes
+  // URL schemes, ports, and the host separator in git@host:owner/repository.
+  const schemeSeparatorIndex = gitUrlWithRef.indexOf('://');
+  const repositoryPathIndex =
+    schemeSeparatorIndex === -1
+      ? Math.min(
+          ...[gitUrlWithRef.indexOf('/'), gitUrlWithRef.indexOf('\\')].filter(
+            (index) => index !== -1
+          )
+        )
+      : gitUrlWithRef.indexOf('/', schemeSeparatorIndex + 3);
+  const sshHostSeparatorIndex = /^git@/.test(gitUrlWithRef)
+    ? gitUrlWithRef.indexOf(':')
+    : -1;
+  const hasExplicitRef =
+    refSeparatorIndex > Math.max(repositoryPathIndex, sshHostSeparatorIndex) &&
+    refSeparatorIndex < gitUrlWithRef.length - 1;
+  const gitUrl = hasExplicitRef
+    ? gitUrlWithRef.slice(0, refSeparatorIndex)
+    : gitUrlWithRef;
+  const explicitRef = hasExplicitRef
+    ? gitUrlWithRef.slice(refSeparatorIndex + 1)
+    : undefined;
   return {
     kind: 'marketplace',
     original: addonLink,
     normalized,
     marketplaceUrl,
     gitUrl,
+    explicitRef,
     addonName: getAddonNameFromGitUrl(gitUrl),
   };
 }

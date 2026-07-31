@@ -29,6 +29,10 @@ import {
   getUmuLaunchEnvironment,
   getUmuRedistributableEnvironment,
 } from '@/electron/handlers/helpers.app/umu-environment.js';
+import {
+  resolveLegacyPrefixSource,
+  stagedPrefixMigration as runStagedPrefixMigration,
+} from '@/electron/lib/umu-prefix-migration.js';
 import { sendNotification } from '@/electron/main.js';
 import { __dirname } from '@/electron/manager/manager.paths.js';
 import { downloadLatestUmu } from '@/electron/startup.js';
@@ -347,8 +351,7 @@ export function buildUmuWrapperCommandTemplate(
     });
   }
 
-  const { umuId } = libraryInfo.umu;
-  const winePrefix = getUmuWinePrefix(umuId);
+  const winePrefix = getLibraryUmuWinePrefix(libraryInfo);
   const dllOverrides = getEffectiveDllOverrides(libraryInfo);
   const dllOverrideString = buildDllOverrides(dllOverrides);
   const parsedLaunchArgs = parseLaunchArguments(libraryInfo.launchArguments);
@@ -424,6 +427,20 @@ export function getUmuWinePrefix(gameId: string): string {
   return path.join(getUmuPrefixBase(), `umu-${gameIdClean}`);
 }
 
+export function getLibraryUmuWinePrefix(
+  libraryInfo: Pick<LibraryInfo, 'umu'>
+): string {
+  if (!libraryInfo.umu) {
+    throw new PlatformError({
+      message: 'No UMU configuration found',
+      platform: process.platform,
+    });
+  }
+  return (
+    libraryInfo.umu.winePrefixPath ?? getUmuWinePrefix(libraryInfo.umu.umuId)
+  );
+}
+
 /**
  * Ensure UMU prefix base directory exists
  */
@@ -497,7 +514,7 @@ export async function launchWithUmu(
   const { umuId, protonVersion, store } = libraryInfo.umu;
   const protonPath = normalizeProtonPathValue(protonVersion);
   const gameId = convertUmuId(umuId);
-  const winePrefix = getUmuWinePrefix(umuId);
+  const winePrefix = getLibraryUmuWinePrefix(libraryInfo);
   const launchEnv = getEffectiveLaunchEnv(libraryInfo);
   const dllOverrides = getEffectiveDllOverrides(libraryInfo);
   const dllOverrideStr = buildDllOverrides(dllOverrides);
@@ -674,9 +691,7 @@ export async function installRedistributablesWithUmu(
   const { umuId, protonVersion } = libraryInfo.umu || {};
   const protonPath = normalizeProtonPathValue(protonVersion);
   const gameId = umuId ? convertUmuId(umuId) : 'umu-default';
-  const winePrefix = umuId
-    ? getUmuWinePrefix(umuId)
-    : path.join(getUmuPrefixBase(), 'umu-default');
+  const winePrefix = getLibraryUmuWinePrefix(libraryInfo);
 
   const redistributables = libraryInfo.redistributables || [];
   const totalRedistributables = redistributables.length;
@@ -900,7 +915,8 @@ async function initializePrefixWithUmuRun(
   libraryInfo: LibraryInfo,
   umuId: string,
   winePrefix: string,
-  logPrefix: string
+  logPrefix: string,
+  signal?: AbortSignal
 ): Promise<{ success: boolean; error?: string }> {
   const umuInstalled = await isUmuInstalled();
   if (!umuInstalled) {
@@ -916,6 +932,10 @@ async function initializePrefixWithUmuRun(
     }
   }
 
+  if (signal?.aborted) {
+    return { success: false, error: 'UMU prefix initialization was cancelled' };
+  }
+
   ensureUmuPrefixBase();
   if (!fs.existsSync(winePrefix)) {
     fs.mkdirSync(winePrefix, { recursive: true });
@@ -927,12 +947,7 @@ async function initializePrefixWithUmuRun(
 
   const initialized = await new Promise<boolean>((resolve) => {
     let resolved = false;
-    const finalize = (result: boolean) => {
-      if (resolved) return;
-      resolved = true;
-      resolve(result);
-    };
-
+    let forceKillTimeout: ReturnType<typeof setTimeout> | undefined;
     const initChildEnv: NodeJS.ProcessEnv = {
       ...process.env,
       UMU_LOG: 'debug',
@@ -951,26 +966,36 @@ async function initializePrefixWithUmuRun(
     });
     streamChildProcessOutput(initChild, logPrefix);
 
-    const timeout = setTimeout(
-      () => {
-        if (initChild.pid) {
-          initChild.kill('SIGTERM');
+    const handleAbort = () => {
+      if (!initChild.pid) return;
+      initChild.kill('SIGTERM');
+      forceKillTimeout = setTimeout(() => {
+        if (initChild.exitCode === null && initChild.signalCode === null) {
+          initChild.kill('SIGKILL');
         }
-        finalize(false);
-      },
-      5 * 60 * 1000
-    );
+      }, 5_000);
+    };
+    const timeout = setTimeout(handleAbort, 5 * 60 * 1000);
+    const finalize = (result: boolean) => {
+      if (resolved) return;
+      resolved = true;
+      clearTimeout(timeout);
+      if (forceKillTimeout) clearTimeout(forceKillTimeout);
+      signal?.removeEventListener('abort', handleAbort);
+      resolve(result);
+    };
+
+    signal?.addEventListener('abort', handleAbort, { once: true });
+    if (signal?.aborted) handleAbort();
 
     initChild.on(
       'close',
-      (code: number | null, signal: NodeJS.Signals | null) => {
-        clearTimeout(timeout);
-        finalize(code === 0 && signal == null);
+      (code: number | null, childSignal: NodeJS.Signals | null) => {
+        finalize(code === 0 && childSignal == null && !signal?.aborted);
       }
     );
 
     initChild.on('error', (error) => {
-      clearTimeout(timeout);
       console.error('[umu] Prefix init error:', error);
       finalize(false);
     });
@@ -981,33 +1006,61 @@ async function initializePrefixWithUmuRun(
     : { success: false, error: 'UMU could not initialize the Wine prefix' };
 }
 
-/**
- * Migrate an existing game from legacy mode to UMU
- * This copies the existing Steam prefix to the new UMU location
- */
+export const stagedPrefixMigration = (params: {
+  appID: number;
+  libraryInfo: LibraryInfo;
+  sourcePath?: string;
+  finalPath: string;
+  umuId: string;
+  commit?: (libraryInfo: LibraryInfo) => void;
+}): Effect.Effect<LibraryInfo, PlatformError> =>
+  runStagedPrefixMigration({
+    libraryInfo: params.libraryInfo,
+    sourcePath: params.sourcePath,
+    finalPath: params.finalPath,
+    initialize: params.sourcePath
+      ? undefined
+      : async (stagingPath, signal) => {
+          console.log('[umu] Initializing a fresh staged UMU prefix');
+          const initialized = await initializePrefixWithUmuRun(
+            params.libraryInfo,
+            params.umuId,
+            stagingPath,
+            '[umu migration prefix-init]',
+            signal
+          );
+          if (!initialized.success) {
+            throw new Error(
+              initialized.error ?? 'UMU could not initialize the Wine prefix'
+            );
+          }
+        },
+    commit: params.commit ?? ((info) => saveLibraryInfo(params.appID, info)),
+  });
+
+/** Migrate a legacy prefix through a validated sibling staging directory. */
 export async function migrateToUmu(
   appID: number,
-  oldSteamAppId?: number
-): Promise<{ success: boolean; error?: string }> {
-  console.log(
-    `[umu] Migrating game ${appID} from legacy Steam prefix to UMU...`
-  );
-
-  if (!isLinux()) {
-    return { success: false, error: 'Only available on Linux' };
-  }
-
+  oldSteamAppId?: number,
+  updates?: Partial<LibraryInfo>
+): Promise<{ success: boolean; error?: string; libraryInfo?: LibraryInfo }> {
+  if (!isLinux()) return { success: false, error: 'Only available on Linux' };
   const libraryInfo = loadLibraryInfo(appID);
-  if (!libraryInfo) {
-    return { success: false, error: 'Game not found' };
-  }
+  if (!libraryInfo) return { success: false, error: 'Game not found' };
 
   const legacyLaunchEnv = parseLeadingLaunchEnvFromArguments(
     libraryInfo.launchArguments
   );
   const configuredLegacyPrefix =
     libraryInfo.launchEnv?.WINEPREFIX ?? legacyLaunchEnv.WINEPREFIX;
-
+  const configuredCompatDataPath =
+    libraryInfo.launchEnv?.STEAM_COMPAT_DATA_PATH ??
+    legacyLaunchEnv.STEAM_COMPAT_DATA_PATH;
+  const legacyShortcutExecutable = libraryInfo.launchExecutable;
+  const legacyShortcutName = libraryInfo.version?.trim()
+    ? `${libraryInfo.name} (${libraryInfo.version})`
+    : libraryInfo.name;
+  Object.assign(libraryInfo, updates);
   if (libraryInfo.launchEnv) {
     const migratedLaunchEnv = { ...libraryInfo.launchEnv };
     delete migratedLaunchEnv.WINEPREFIX;
@@ -1020,13 +1073,12 @@ export async function migrateToUmu(
     const fallbackUmuId = oldSteamAppId
       ? (`steam:${oldSteamAppId}` as const)
       : (`umu:${appID}` as const);
-    libraryInfo.umu = {
-      umuId: fallbackUmuId,
-      winePrefixPath: getUmuWinePrefix(fallbackUmuId),
-    };
-    console.log(
-      `[umu] No UMU configuration found for ${appID}, created fallback config with umuId=${fallbackUmuId}`
-    );
+    libraryInfo.umu = { umuId: fallbackUmuId };
+  }
+  if (oldSteamAppId !== undefined) {
+    libraryInfo.umu.steamShortcutReaddId = oldSteamAppId;
+    libraryInfo.umu.steamShortcutLegacyExecutable = legacyShortcutExecutable;
+    libraryInfo.umu.steamShortcutLegacyName = legacyShortcutName;
   }
   const effectiveDllOverrides = getEffectiveDllOverrides(libraryInfo);
   if (effectiveDllOverrides.length > 0) {
@@ -1035,8 +1087,6 @@ export async function migrateToUmu(
       dllOverrides: effectiveDllOverrides,
     };
   }
-
-  // Remove any wineprefix=... from launch arguments (UMU uses its own prefix)
   if (libraryInfo.launchArguments) {
     libraryInfo.launchArguments = libraryInfo.launchArguments
       .replace(
@@ -1047,130 +1097,33 @@ export async function migrateToUmu(
       .trim();
   }
 
-  const homeDir = getHomeDir();
-  if (!homeDir) {
-    return { success: false, error: 'Home directory not found' };
-  }
-
   const { umuId } = libraryInfo.umu;
-  const newPrefixPath = getUmuWinePrefix(umuId);
-  let oldPrefixPath: string | undefined;
+  const finalPath = getLibraryUmuWinePrefix(libraryInfo);
+  const sourcePath = resolveLegacyPrefixSource({
+    steamCompatDataPath: oldSteamAppId
+      ? path.join(getCompatDataDir(oldSteamAppId), oldSteamAppId.toString())
+      : undefined,
+    configuredCompatDataPath,
+    configuredPrefix: configuredLegacyPrefix,
+  });
 
-  if (oldSteamAppId) {
-    oldPrefixPath = path.join(getCompatDataDir(), oldSteamAppId.toString());
-  } else if (configuredLegacyPrefix) {
-    oldPrefixPath =
-      path.basename(configuredLegacyPrefix).toLowerCase() === 'pfx'
-        ? path.dirname(configuredLegacyPrefix)
-        : configuredLegacyPrefix;
+  const result = await Effect.runPromise(
+    Effect.either(
+      stagedPrefixMigration({
+        appID,
+        libraryInfo,
+        sourcePath,
+        finalPath,
+        umuId,
+      })
+    )
+  );
+  if (result._tag === 'Left') {
+    console.error('[umu] Migration failed:', result.left);
+    return { success: false, error: result.left.message };
   }
-
-  if (!oldPrefixPath) {
-    console.log(
-      '[umu] Old Steam app ID not provided, initializing fresh UMU prefix with umu-run'
-    );
-    const initResult = await initializePrefixWithUmuRun(
-      libraryInfo,
-      umuId,
-      newPrefixPath,
-      '[umu migration prefix-init]'
-    );
-    if (!initResult.success) {
-      return { success: false, error: initResult.error };
-    }
-    libraryInfo.umu = {
-      ...libraryInfo.umu,
-      winePrefixPath: newPrefixPath,
-    };
-    saveLibraryInfo(appID, libraryInfo);
-    return { success: true };
-  }
-
-  if (!fs.existsSync(oldPrefixPath)) {
-    console.log(
-      '[umu] Old prefix not found, initializing fresh UMU prefix with umu-run'
-    );
-    const initResult = await initializePrefixWithUmuRun(
-      libraryInfo,
-      umuId,
-      newPrefixPath,
-      '[umu migration prefix-init]'
-    );
-    if (!initResult.success) {
-      return { success: false, error: initResult.error };
-    }
-    libraryInfo.umu = {
-      ...libraryInfo.umu,
-      winePrefixPath: newPrefixPath,
-    };
-    saveLibraryInfo(appID, libraryInfo);
-    return { success: true };
-  }
-
-  try {
-    if (
-      fs.existsSync(newPrefixPath) &&
-      fs.readdirSync(newPrefixPath).length > 0
-    ) {
-      return {
-        success: false,
-        error: `UMU prefix destination already contains data: ${newPrefixPath}. It was not overwritten.`,
-      };
-    }
-
-    // Ensure parent directory exists
-    const parentDir = path.dirname(newPrefixPath);
-    if (!fs.existsSync(parentDir)) {
-      fs.mkdirSync(parentDir, { recursive: true });
-    }
-
-    // Copy the prefix
-    console.log(
-      `[umu] Copying prefix from ${oldPrefixPath} to ${newPrefixPath}`
-    );
-    await copyDirectory(oldPrefixPath, newPrefixPath);
-
-    // Update library info
-    libraryInfo.umu = {
-      ...libraryInfo.umu,
-      winePrefixPath: newPrefixPath,
-    };
-    saveLibraryInfo(appID, libraryInfo);
-
-    console.log('[umu] Migration completed successfully');
-    return { success: true };
-  } catch (error) {
-    console.error('[umu] Migration failed:', error);
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : String(error),
-    };
-  }
-}
-
-/**
- * Copy directory recursively
- */
-async function copyDirectory(src: string, dest: string): Promise<void> {
-  if (!fs.existsSync(dest)) {
-    fs.mkdirSync(dest, { recursive: true });
-  }
-
-  const entries = fs.readdirSync(src, { withFileTypes: true });
-
-  for (const entry of entries) {
-    const srcPath = path.join(src, entry.name);
-    const destPath = path.join(dest, entry.name);
-
-    if (entry.isSymbolicLink()) {
-      const linkTarget = fs.readlinkSync(srcPath);
-      fs.symlinkSync(linkTarget, destPath);
-    } else if (entry.isDirectory()) {
-      await copyDirectory(srcPath, destPath);
-    } else {
-      fs.copyFileSync(srcPath, destPath);
-    }
-  }
+  console.log('[umu] Migration completed successfully');
+  return { success: true, libraryInfo: result.right };
 }
 
 const withUmuBoundary = <A>(

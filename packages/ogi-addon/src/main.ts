@@ -509,6 +509,9 @@ export const LibraryInfoSchema: Schema.Schema<LibraryInfo> = Schema.Struct({
       store: Schema.optional(Schema.String),
       winePrefixPath: Schema.optional(Schema.String),
       steamShortcutId: Schema.optional(Schema.Number),
+      steamShortcutReaddId: Schema.optional(Schema.Number),
+      steamShortcutLegacyExecutable: Schema.optional(Schema.String),
+      steamShortcutLegacyName: Schema.optional(Schema.String),
     })
   ),
   redistributables: Schema.optional(

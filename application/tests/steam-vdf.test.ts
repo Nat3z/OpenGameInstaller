@@ -2,28 +2,36 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { Effect } from 'effect';
 import {
-  assertSteamClosed,
-  type BinaryVdfObject,
-  type BinaryVdfValue,
-  findShortcut,
+  getSteamCompatDataPath,
+  getSteamRootCandidates,
+  locateSteam,
+  locateSteamLocations,
+  selectSteamUser,
+  writeFileAtomic,
+} from '../src/electron/lib/steam-installation.js';
+import {
+  detectSteamRunning,
+  findSteamProcessIds,
+} from '../src/electron/lib/steam-process.js';
+import {
+  findOwnedShortcut,
   generateNonSteamAppId,
   getNonSteamLaunchId,
-  getSteamCompatDataPath,
-  locateSteam,
-  parseTextVdf,
   readShortcuts,
-  removeShortcut,
-  selectSteamUser,
-  serializeBinaryVdf,
-  serializeTextVdf,
-  setCompatibilityTool,
-  updateShortcutsFile,
+  removeOwnedShortcut,
   upsertShortcut,
+} from '../src/electron/lib/steam-shortcuts.js';
+import {
+  type BinaryVdfObject,
+  type BinaryVdfValue,
+  parseBinaryVdf,
+  parseLoginUsers,
+  serializeBinaryVdf,
 } from '../src/electron/lib/steam-vdf.js';
 
 const temporaryDirectories: string[] = [];
-
 const temporaryDirectory = (): string => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'ogi-steam-test-'));
   temporaryDirectories.push(directory);
@@ -39,6 +47,30 @@ afterEach(() => {
 const field = (value: string | number): BinaryVdfValue =>
   typeof value === 'string' ? { type: 1, value } : { type: 2, value };
 
+const shortcutFields = (params: {
+  appId: BinaryVdfValue;
+  name: string;
+  executable: string;
+  launchOptions?: string;
+  ogiTagged?: boolean;
+}): BinaryVdfObject =>
+  new Map([
+    ['appid', params.appId],
+    ['AppName', field(params.name)],
+    ['Exe', field(`"${params.executable}"`)],
+    ['LaunchOptions', field(params.launchOptions ?? '')],
+    ['CustomField', field('preserve me')],
+    [
+      'tags',
+      {
+        type: 0,
+        value: params.ogiTagged
+          ? new Map([['0', field('OpenGameInstaller')]])
+          : new Map(),
+      },
+    ],
+  ]);
+
 const shortcutRoot = (): BinaryVdfObject =>
   new Map([
     [
@@ -50,12 +82,24 @@ const shortcutRoot = (): BinaryVdfObject =>
             '0',
             {
               type: 0,
-              value: new Map([
-                ['appid', field(0x81234567 | 0)],
-                ['AppName', field('Existing Game')],
-                ['Exe', field('"/games/existing.exe"')],
-                ['CustomField', field('preserve me')],
-              ]),
+              value: shortcutFields({
+                appId: { type: 4, value: 0x81234567 },
+                name: 'Same Name',
+                executable: '/games/manual.exe',
+              }),
+            },
+          ],
+          [
+            '1',
+            {
+              type: 0,
+              value: shortcutFields({
+                appId: { type: 6, value: 0x82345678 },
+                name: 'OGI Game (1.0)',
+                executable: '/opt/OpenGameInstaller.AppImage',
+                launchOptions: '--game-id=99 --no-sandbox',
+                ogiTagged: true,
+              }),
             },
           ],
         ]),
@@ -64,74 +108,193 @@ const shortcutRoot = (): BinaryVdfObject =>
     ['FutureRootField', { type: 7, value: 42n }],
   ]);
 
-describe('Steam binary VDF shortcuts', () => {
-  test('preserves existing entries and unknown fields while adding and updating', () => {
+describe('Steam binary VDF codec and shortcut ownership', () => {
+  test('parses Steam integer variants and preserves unknown fields', () => {
+    const parsed = readShortcuts(serializeBinaryVdf(shortcutRoot()));
+    expect(parsed.shortcuts.map((shortcut) => shortcut.appId)).toEqual([
+      0x81234567, 0x82345678,
+    ]);
+    expect(parsed.root.get('FutureRootField')).toEqual({ type: 7, value: 42n });
+    expect(parsed.shortcuts[0].fields.get('CustomField')).toEqual(
+      field('preserve me')
+    );
+  });
+
+  test('rejects truncated binary VDF', () => {
+    const serialized = serializeBinaryVdf(shortcutRoot());
+    expect(() => parseBinaryVdf(serialized.subarray(0, -2))).toThrow(
+      'unexpected end of file'
+    );
+  });
+
+  test('updates the OGI-owned shortcut and leaves a same-name user entry alone', () => {
     const root = shortcutRoot();
-    upsertShortcut(root, {
-      appName: 'New Game (2.0)',
-      executable: '/opt/OpenGameInstaller.AppImage',
-      startDir: '/opt',
-      launchOptions: '--game-id=99',
-    });
-
-    const firstPass = readShortcuts(serializeBinaryVdf(root));
-    expect(firstPass.shortcuts).toHaveLength(2);
-    expect(
-      findShortcut(firstPass.shortcuts, ['Existing Game'])?.fields.get(
-        'CustomField'
-      )
-    ).toEqual(field('preserve me'));
-    expect(firstPass.root.get('FutureRootField')).toEqual({
-      type: 7,
-      value: 42n,
-    });
-
-    upsertShortcut(firstPass.root, {
-      appName: 'New Game (2.1)',
-      previousNames: ['New Game (2.0)'],
+    const result = upsertShortcut(root, {
+      gameId: 99,
+      appName: 'Same Name',
       executable: '/opt/OpenGameInstaller.AppImage',
       startDir: '/opt',
       launchOptions: '--game-id=99 --no-sandbox',
+      tags: ['OpenGameInstaller'],
+      legacyNames: ['OGI Game (1.0)'],
     });
-    const updated = readShortcuts(serializeBinaryVdf(firstPass.root));
-    expect(updated.shortcuts).toHaveLength(2);
-    expect(findShortcut(updated.shortcuts, ['New Game (2.1)'])).toBeDefined();
+    const shortcuts = readShortcuts(serializeBinaryVdf(root)).shortcuts;
+    expect(shortcuts).toHaveLength(2);
+    expect(shortcuts[0].executable).toBe('"/games/manual.exe"');
+    expect(
+      findOwnedShortcut(shortcuts, {
+        gameId: 99,
+        executable: '/opt/OpenGameInstaller.AppImage',
+      })?.appName
+    ).toBe('Same Name');
+    expect(result.appId).toBe(
+      generateNonSteamAppId('/opt/OpenGameInstaller.AppImage', 'Same Name', 99)
+    );
   });
 
-  test('generates stable shortcut and launch IDs for versioned names and gui paths', () => {
+  test('claims a known shortcut using its pre-update identity', () => {
+    const root: BinaryVdfObject = new Map([
+      [
+        'shortcuts',
+        {
+          type: 0,
+          value: new Map([
+            [
+              '0',
+              {
+                type: 0,
+                value: shortcutFields({
+                  appId: { type: 2, value: 0x81234567 | 0 },
+                  name: 'OGI Game (1.0)',
+                  executable: '/games/old/game.exe',
+                  launchOptions:
+                    '"/opt/OpenGameInstaller.AppImage" --game-id=99',
+                }),
+              },
+            ],
+          ]),
+        },
+      ],
+    ]);
+
+    const result = upsertShortcut(root, {
+      gameId: 99,
+      knownAppId: 0x81234567,
+      appName: 'OGI Game (2.0)',
+      executable: '/opt/OpenGameInstaller.AppImage',
+      startDir: '/opt',
+      launchOptions: '--game-id=99 --no-sandbox',
+      tags: ['OpenGameInstaller'],
+      legacyExecutables: ['/games/new/game.exe', '/games/old/game.exe'],
+      legacyNames: ['OGI Game (2.0)', 'OGI Game', 'OGI Game (1.0)'],
+    });
+
+    expect(result.created).toBe(false);
+    expect(readShortcuts(serializeBinaryVdf(root)).shortcuts).toHaveLength(1);
+    expect(
+      findOwnedShortcut(readShortcuts(serializeBinaryVdf(root)).shortcuts, {
+        gameId: 99,
+        executable: '/opt/OpenGameInstaller.AppImage',
+      })?.appName
+    ).toBe('OGI Game (2.0)');
+  });
+
+  test('does not claim a manual shortcut with the same legacy identity', () => {
+    const root: BinaryVdfObject = new Map([
+      [
+        'shortcuts',
+        {
+          type: 0,
+          value: new Map([
+            [
+              '0',
+              {
+                type: 0,
+                value: shortcutFields({
+                  appId: { type: 2, value: 0x81234567 | 0 },
+                  name: 'OGI Game (1.0)',
+                  executable: '/games/old/game.exe',
+                }),
+              },
+            ],
+          ]),
+        },
+      ],
+    ]);
+
+    expect(() =>
+      upsertShortcut(root, {
+        gameId: 99,
+        knownAppId: 0x81234567,
+        appName: 'OGI Game (2.0)',
+        executable: '/opt/OpenGameInstaller.AppImage',
+        startDir: '/opt',
+        legacyExecutables: ['/games/old/game.exe'],
+        legacyNames: ['OGI Game (1.0)'],
+      })
+    ).toThrow('is not owned by OpenGameInstaller');
+  });
+
+  test('rejects a known app ID owned by an unrelated shortcut', () => {
+    const root = shortcutRoot();
+    const before = serializeBinaryVdf(root);
+    const identity = {
+      gameId: 99,
+      knownAppId: 0x81234567,
+      executable: '/opt/OpenGameInstaller.AppImage',
+    };
+
+    expect(() =>
+      upsertShortcut(root, {
+        ...identity,
+        appName: 'Same Name',
+        startDir: '/opt',
+        launchOptions: '--game-id=99 --no-sandbox',
+        tags: ['OpenGameInstaller'],
+      })
+    ).toThrow('is not owned by OpenGameInstaller');
+    expect(() => removeOwnedShortcut(root, identity)).toThrow(
+      'is not owned by OpenGameInstaller'
+    );
+    expect(serializeBinaryVdf(root)).toEqual(before);
+  });
+
+  test('removes only the exact OGI-owned shortcut', () => {
+    const root = shortcutRoot();
+    expect(
+      removeOwnedShortcut(root, {
+        gameId: 99,
+        executable: '/opt/OpenGameInstaller.AppImage',
+      }).removed
+    ).toBe(true);
+    const shortcuts = readShortcuts(serializeBinaryVdf(root)).shortcuts;
+    expect(shortcuts.map((shortcut) => shortcut.executable)).toEqual([
+      '"/games/manual.exe"',
+    ]);
+  });
+
+  test('generates distinct shortcut IDs for same-name games', () => {
+    const first = generateNonSteamAppId(
+      '/opt/OpenGameInstaller.AppImage',
+      'Duplicate (1.0)',
+      1
+    );
+    const second = generateNonSteamAppId(
+      '/opt/OpenGameInstaller.AppImage',
+      'Duplicate (1.0)',
+      2
+    );
+
+    expect(first).not.toBe(second);
+    expect(getNonSteamLaunchId(first)).not.toBe(getNonSteamLaunchId(second));
+  });
+
+  test('generates stable shortcut and launch IDs', () => {
     const appId = generateNonSteamAppId('/games/gui/Game.exe', 'Game (1.2.3)');
     expect(appId).toBe(2504465288);
     expect(getNonSteamLaunchId(appId)).toBe(
       ((2504465288n << 32n) | 0x02000000n).toString()
     );
-
-    const root = shortcutRoot();
-    upsertShortcut(root, {
-      appName: 'Game (1.2.3)',
-      executable: '/games/gui/Game.exe',
-      startDir: '/games/gui',
-    });
-    const { shortcuts } = readShortcuts(serializeBinaryVdf(root));
-    expect(
-      findShortcut(shortcuts, ['Game (1.2.3)'], '/games/gui/Game.exe')?.appId
-    ).toBe(appId);
-    expect(findShortcut(shortcuts, ['Game'])).toBeUndefined();
-  });
-
-  test('removes only the selected shortcut', () => {
-    const root = shortcutRoot();
-    upsertShortcut(root, {
-      appName: 'Remove Me',
-      executable: '/opt/ogi',
-      startDir: '/opt',
-    });
-    expect(
-      removeShortcut(root, (shortcut) => shortcut.appName === 'Remove Me')
-    ).toBe(true);
-    const { shortcuts } = readShortcuts(serializeBinaryVdf(root));
-    expect(shortcuts.map((shortcut) => shortcut.appName)).toEqual([
-      'Existing Game',
-    ]);
   });
 });
 
@@ -139,7 +302,6 @@ const writeLoginUsers = (
   root: string,
   users: Array<{
     steamId: string;
-    name: string;
     timestamp: number;
     mostRecent?: boolean;
   }>
@@ -148,7 +310,7 @@ const writeLoginUsers = (
   const body = users
     .map(
       (user) =>
-        `"${user.steamId}"\n{\n"AccountName" "${user.name}"\n"Timestamp" "${user.timestamp}"\n${
+        `"${user.steamId}"\n{\n"Timestamp" "${user.timestamp}"\n${
           user.mostRecent === undefined
             ? ''
             : `"MostRecent" "${user.mostRecent ? 1 : 0}"\n`
@@ -161,48 +323,22 @@ const writeLoginUsers = (
   );
 };
 
-describe('Steam installation and account discovery', () => {
-  test('selects MostRecent from multiple userdata accounts', () => {
-    const root = path.join(temporaryDirectory(), 'Steam gui install');
-    fs.mkdirSync(path.join(root, 'userdata/100/config'), { recursive: true });
-    fs.mkdirSync(path.join(root, 'userdata/200/config'), { recursive: true });
-    writeLoginUsers(root, [
-      {
-        steamId: '76561197960265828',
-        name: 'older',
-        timestamp: 500,
-        mostRecent: false,
-      },
-      {
-        steamId: '76561197960265928',
-        name: 'active',
-        timestamp: 100,
-        mostRecent: true,
-      },
-    ]);
-    expect(selectSteamUser(root)?.accountId).toBe('200');
-    expect(locateSteam(['/missing', root])?.root).toBe(root);
-  });
-
-  test('uses newest timestamp when loginusers has no MostRecent fields', () => {
-    const root = path.join(temporaryDirectory(), 'gui/Steam');
-    fs.mkdirSync(path.join(root, 'userdata/0/config'), { recursive: true });
-    fs.mkdirSync(path.join(root, 'userdata/100/config'), { recursive: true });
-    fs.mkdirSync(path.join(root, 'userdata/200/config'), { recursive: true });
-    writeLoginUsers(root, [
-      { steamId: '76561197960265828', name: 'old', timestamp: 100 },
-      { steamId: '76561197960265928', name: 'new', timestamp: 900 },
-    ]);
-    expect(selectSteamUser(root)?.accountId).toBe('200');
-    expect(getSteamCompatDataPath(root, 1234)).toBe(
-      path.join(root, 'steamapps/compatdata/1234')
+describe('Steam installation repository', () => {
+  test('only enumerates lifecycle-supported Linux installations', () => {
+    const candidates = getSteamRootCandidates('/home/test', 'linux');
+    expect(candidates).toContain('/home/test/.steam/steam');
+    expect(candidates).toContain(
+      '/home/test/.var/app/com.valvesoftware.Steam/.local/share/Steam'
+    );
+    expect(candidates.some((candidate) => candidate.includes('/snap/'))).toBe(
+      false
     );
   });
 
-  test('chooses the active account across multiple Steam installations', () => {
+  test('selects the most recent account and installation', async () => {
     const parent = temporaryDirectory();
-    const oldRoot = path.join(parent, 'old Steam');
-    const activeRoot = path.join(parent, 'gui/current Steam');
+    const oldRoot = path.join(parent, 'old');
+    const activeRoot = path.join(parent, 'active');
     fs.mkdirSync(path.join(oldRoot, 'userdata/100/config'), {
       recursive: true,
     });
@@ -210,73 +346,128 @@ describe('Steam installation and account discovery', () => {
       recursive: true,
     });
     writeLoginUsers(oldRoot, [
-      {
-        steamId: '76561197960265828',
-        name: 'old',
-        timestamp: 800,
-        mostRecent: false,
-      },
+      { steamId: '76561197960265828', timestamp: 800, mostRecent: false },
     ]);
     writeLoginUsers(activeRoot, [
-      {
-        steamId: '76561197960265928',
-        name: 'active',
-        timestamp: 100,
-        mostRecent: true,
-      },
+      { steamId: '76561197960265928', timestamp: 100, mostRecent: true },
     ]);
-    expect(locateSteam([oldRoot, activeRoot])?.root).toBe(activeRoot);
+    expect(
+      (await Effect.runPromise(selectSteamUser(activeRoot))).accountId
+    ).toBe('200');
+    expect(
+      (await Effect.runPromise(locateSteam([oldRoot, activeRoot]))).root
+    ).toBe(activeRoot);
+    expect(getSteamCompatDataPath(activeRoot, 123)).toBe(
+      path.join(activeRoot, 'steamapps/compatdata/123')
+    );
+  });
+
+  test('enumerates every Steam installation and userdata account', async () => {
+    const parent = temporaryDirectory();
+    const nativeRoot = path.join(parent, 'native');
+    const flatpakRoot = path.join(parent, 'flatpak');
+    fs.mkdirSync(path.join(nativeRoot, 'userdata/100/config'), {
+      recursive: true,
+    });
+    fs.mkdirSync(path.join(nativeRoot, 'userdata/200/config'), {
+      recursive: true,
+    });
+    fs.mkdirSync(path.join(flatpakRoot, 'userdata/300/config'), {
+      recursive: true,
+    });
+    writeLoginUsers(nativeRoot, [
+      { steamId: '76561197960265828', timestamp: 100 },
+      { steamId: '76561197960265928', timestamp: 300, mostRecent: true },
+    ]);
+    writeLoginUsers(flatpakRoot, [
+      { steamId: '76561197960266028', timestamp: 200 },
+    ]);
+
+    const locations = await Effect.runPromise(
+      locateSteamLocations([nativeRoot, flatpakRoot])
+    );
+
+    expect(locations.map((location) => location.user.accountId)).toEqual([
+      '200',
+      '300',
+      '100',
+    ]);
+  });
+
+  test('reports malformed loginusers instead of silently selecting an account', async () => {
+    const root = temporaryDirectory();
+    fs.mkdirSync(path.join(root, 'userdata/100/config'), { recursive: true });
+    fs.mkdirSync(path.join(root, 'config'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'config/loginusers.vdf'), '"users" {');
+    const result = await Effect.runPromise(Effect.either(locateSteam([root])));
+    expect(result._tag).toBe('Left');
+    if (result._tag === 'Left')
+      expect(result.left._tag).toBe('SteamVdfParseError');
+  });
+
+  test('writes atomically and leaves no temporary file', async () => {
+    const directory = temporaryDirectory();
+    const filePath = path.join(directory, 'config/shortcuts.vdf');
+    await Effect.runPromise(writeFileAtomic(filePath, Buffer.from('fixture')));
+    expect(fs.readFileSync(filePath, 'utf8')).toBe('fixture');
+    expect(fs.readdirSync(path.dirname(filePath))).toEqual(['shortcuts.vdf']);
+  });
+
+  test('parses representative loginusers text with Unicode persona data', () => {
+    const users = parseLoginUsers(
+      '"users"\n{\n"76561197960265828"\n{\n"PersonaName" "測試"\n"MostRecent" "1"\n}\n}\n'
+    );
+    expect(users[0].personaName).toBe('測試');
+    expect(users[0].mostRecent).toBe(true);
   });
 });
 
-describe('safe Steam configuration writes', () => {
-  test('refuses shortcut writes while Steam is open and leaves the file unchanged', () => {
-    const filePath = path.join(temporaryDirectory(), 'shortcuts.vdf');
-    const original = serializeBinaryVdf(shortcutRoot());
-    fs.writeFileSync(filePath, original);
-    expect(() => updateShortcutsFile(filePath, () => {}, true)).toThrow(
-      'Close Steam'
+describe('Steam process detection', () => {
+  test('detects Steam in a proc-style fixture', async () => {
+    const procRoot = temporaryDirectory();
+    fs.mkdirSync(path.join(procRoot, '100'));
+    fs.writeFileSync(path.join(procRoot, '100/comm'), 'steam\n');
+    expect(await Effect.runPromise(detectSteamRunning('linux', procRoot))).toBe(
+      true
     );
-    expect(fs.readFileSync(filePath)).toEqual(original);
-    expect(() => assertSteamClosed(true)).toThrow('shortcuts.vdf');
   });
 
-  test('updates one compatibility mapping while preserving other configuration', () => {
-    const configPath = path.join(temporaryDirectory(), 'config.vdf');
-    const initial = new Map([
-      ['Unrelated', 'keep'],
-      [
-        'InstallConfigStore',
-        new Map([
-          [
-            'Software',
-            new Map([
-              [
-                'Valve',
-                new Map([
-                  [
-                    'Steam',
-                    new Map([
-                      ['OtherSetting', 'keep too'],
-                      [
-                        'CompatToolMapping',
-                        new Map([['123', new Map([['name', 'GE-Proton']])]]),
-                      ],
-                    ]),
-                  ],
-                ]),
-              ],
-            ]),
-          ],
-        ]),
-      ],
-    ]);
-    fs.writeFileSync(configPath, serializeTextVdf(initial));
-    setCompatibilityTool(configPath, 456, 'proton_experimental', false);
-    const parsed = parseTextVdf(fs.readFileSync(configPath, 'utf8'));
-    expect(parsed.get('Unrelated')).toBe('keep');
-    const serialized = serializeTextVdf(parsed);
-    expect(serialized).toContain('GE-Proton');
-    expect(serialized).toContain('proton_experimental');
+  test('distinguishes native and Flatpak Steam processes', async () => {
+    const procRoot = temporaryDirectory();
+    fs.mkdirSync(path.join(procRoot, '100'));
+    fs.writeFileSync(path.join(procRoot, '100/comm'), 'steam\n');
+    fs.writeFileSync(path.join(procRoot, '100/cmdline'), '/usr/bin/steam');
+    fs.mkdirSync(path.join(procRoot, '200'));
+    fs.writeFileSync(path.join(procRoot, '200/comm'), 'steam\n');
+    fs.writeFileSync(
+      path.join(procRoot, '200/cgroup'),
+      '/app.slice/app-flatpak-com.valvesoftware.Steam.scope'
+    );
+
+    expect(
+      await Effect.runPromise(detectSteamRunning('linux', procRoot, 'native'))
+    ).toBe(true);
+    expect(
+      await Effect.runPromise(detectSteamRunning('linux', procRoot, 'flatpak'))
+    ).toBe(true);
+    expect(
+      await Effect.runPromise(findSteamProcessIds('linux', procRoot, 'native'))
+    ).toEqual([100]);
+    expect(
+      await Effect.runPromise(findSteamProcessIds('linux', procRoot, 'flatpak'))
+    ).toEqual([200]);
+    fs.rmSync(path.join(procRoot, '100'), { recursive: true });
+    expect(
+      await Effect.runPromise(detectSteamRunning('linux', procRoot, 'native'))
+    ).toBe(false);
+  });
+
+  test('surfaces failure to inspect the process table', async () => {
+    const result = await Effect.runPromise(
+      Effect.either(detectSteamRunning('linux', '/missing-ogi-proc'))
+    );
+    expect(result._tag).toBe('Left');
+    if (result._tag === 'Left')
+      expect(result.left._tag).toBe('SteamProcessError');
   });
 });

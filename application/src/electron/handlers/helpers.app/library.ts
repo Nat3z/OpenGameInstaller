@@ -5,12 +5,29 @@
 import { GameNotFound } from '@ogi/errors';
 import type { LibraryInfo } from '@ogi-sdk/connect';
 import * as fs from 'fs';
-import { join } from 'path';
+import { dirname, join } from 'path';
 import { __dirname } from '@/electron/manager/manager.paths.js';
 
 export function getLibraryPath(appID: number): string {
   return join(__dirname, `library/${appID}.json`);
 }
+
+const writeJsonAtomic = (filePath: string, value: unknown): void => {
+  fs.mkdirSync(dirname(filePath), { recursive: true });
+  const temporary = `${filePath}.ogi-${process.pid}-${Date.now()}.tmp`;
+  try {
+    const descriptor = fs.openSync(temporary, 'w');
+    try {
+      fs.writeFileSync(descriptor, JSON.stringify(value, null, 2));
+      fs.fsyncSync(descriptor);
+    } finally {
+      fs.closeSync(descriptor);
+    }
+    fs.renameSync(temporary, filePath);
+  } finally {
+    if (fs.existsSync(temporary)) fs.rmSync(temporary, { force: true });
+  }
+};
 
 export function loadLibraryInfo(appID: number): LibraryInfo | null {
   const appPath = getLibraryPath(appID);
@@ -29,15 +46,37 @@ export function loadLibraryInfoOrThrow(appID: number): LibraryInfo {
 }
 
 export function saveLibraryInfo(appID: number, data: LibraryInfo): void {
-  const appPath = getLibraryPath(appID);
-  fs.writeFileSync(appPath, JSON.stringify(data, null, 2));
+  writeJsonAtomic(getLibraryPath(appID), data);
 }
+
+const recoverLibraryTransactions = (libraryDir: string): void => {
+  for (const file of fs.readdirSync(libraryDir)) {
+    const removing = file.match(/^(\d+\.json)\.ogi-removing-(\d+)-\d+$/);
+    if (removing) {
+      if (Number(removing[2]) === process.pid) continue;
+      const tombstonePath = join(libraryDir, file);
+      const appPath = join(libraryDir, removing[1]);
+      const appID = Number.parseInt(removing[1], 10);
+      if (fs.existsSync(appPath)) {
+        fs.rmSync(tombstonePath, { force: true });
+      } else {
+        fs.renameSync(tombstonePath, appPath);
+        addToInternalsApps(appID);
+      }
+      continue;
+    }
+    if (/^\d+\.json\.ogi-deleted-\d+-\d+$/.test(file)) {
+      fs.rmSync(join(libraryDir, file), { force: true });
+    }
+  }
+};
 
 export function ensureLibraryDir(): void {
   const libraryDir = join(__dirname, 'library');
   if (!fs.existsSync(libraryDir)) {
     fs.mkdirSync(libraryDir, { recursive: true });
   }
+  recoverLibraryTransactions(libraryDir);
 }
 
 export function ensureInternalsDir(): void {
@@ -52,7 +91,10 @@ export function getAllLibraryFiles(): LibraryInfo[] {
   if (!fs.existsSync(libraryDir)) {
     return [];
   }
-  const files = fs.readdirSync(libraryDir);
+  recoverLibraryTransactions(libraryDir);
+  const files = fs
+    .readdirSync(libraryDir)
+    .filter((file) => /^\d+\.json$/.test(file));
   const apps: LibraryInfo[] = [];
   for (const file of files) {
     const data = fs.readFileSync(join(libraryDir, file), 'utf-8');
@@ -66,6 +108,52 @@ export function removeLibraryFile(appID: number): void {
   if (fs.existsSync(appPath)) {
     fs.unlinkSync(appPath);
   }
+}
+
+export type LibraryRemovalTransaction = {
+  commit: () => void;
+  rollback: () => void;
+};
+
+export function stageLibraryRemoval(appID: number): LibraryRemovalTransaction {
+  const appPath = getLibraryPath(appID);
+  const transactionId = `${process.pid}-${Date.now()}`;
+  const tombstonePath = `${appPath}.ogi-removing-${transactionId}`;
+  const deletedPath = `${appPath}.ogi-deleted-${transactionId}`;
+  const originalApps = loadInternalsApps();
+  fs.renameSync(appPath, tombstonePath);
+  try {
+    saveInternalsApps(originalApps.filter((candidate) => candidate !== appID));
+  } catch (cause) {
+    fs.renameSync(tombstonePath, appPath);
+    throw cause;
+  }
+
+  let settled = false;
+  return {
+    commit: () => {
+      if (settled) return;
+      let cleanupPath = tombstonePath;
+      try {
+        fs.renameSync(tombstonePath, deletedPath);
+        cleanupPath = deletedPath;
+      } catch (cause) {
+        console.warn('[library] Could not mark deletion tombstone', cause);
+      }
+      settled = true;
+      try {
+        fs.rmSync(cleanupPath, { force: true });
+      } catch (cause) {
+        console.warn('[library] Could not remove deletion tombstone', cause);
+      }
+    },
+    rollback: () => {
+      if (settled) return;
+      fs.renameSync(tombstonePath, appPath);
+      saveInternalsApps(originalApps);
+      settled = true;
+    },
+  };
 }
 
 export function getInternalsAppsPath(): string {
@@ -82,8 +170,7 @@ export function loadInternalsApps(): number[] {
 
 export function saveInternalsApps(appIDs: number[]): void {
   ensureInternalsDir();
-  const appsPath = getInternalsAppsPath();
-  fs.writeFileSync(appsPath, JSON.stringify(appIDs, null, 2));
+  writeJsonAtomic(getInternalsAppsPath(), appIDs);
 }
 
 export function addToInternalsApps(appID: number): void {

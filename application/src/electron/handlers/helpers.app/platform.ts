@@ -4,10 +4,7 @@
 import { PlatformError } from '@ogi/errors';
 import * as fs from 'fs';
 import { basename, join } from 'path';
-import {
-  getSteamCompatDataPath,
-  locateSteam,
-} from '@/electron/lib/steam-vdf.js';
+import { findSteamCompatDataPath } from '@/electron/lib/steam-installation.js';
 import { __dirname } from '@/electron/manager/manager.paths.js';
 
 export function isLinux(): boolean {
@@ -25,9 +22,9 @@ export function getCurrentUsername(): string | null {
   return home ? basename(home) : null;
 }
 
-export function getCompatDataDir(): string {
-  const steam = locateSteam();
-  if (steam) return getSteamCompatDataPath(steam.root);
+export function getCompatDataDir(steamAppId?: number): string {
+  const compatDataPath = findSteamCompatDataPath(steamAppId);
+  if (compatDataPath) return compatDataPath;
   const homeDir = getHomeDir();
   if (!homeDir) {
     throw new PlatformError({
@@ -39,8 +36,7 @@ export function getCompatDataDir(): string {
 }
 
 export function getProtonPrefixPath(steamAppId: number): string {
-  const compatDataDir = getCompatDataDir();
-  return `${compatDataDir}/${steamAppId}/pfx`;
+  return `${getCompatDataDir(steamAppId)}/${steamAppId}/pfx`;
 }
 
 /**

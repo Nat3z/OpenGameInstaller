@@ -131,6 +131,9 @@ export interface LibraryInfo {
     store?: string;
     winePrefixPath?: string;
     steamShortcutId?: number;
+    steamShortcutReaddId?: number;
+    steamShortcutLegacyExecutable?: string;
+    steamShortcutLegacyName?: string;
   };
   redistributables?: {
     name: string;
@@ -158,6 +161,9 @@ export type SetupResponse = Omit<
     protonVersion?: string;
     store?: string;
     steamShortcutId?: number;
+    steamShortcutReaddId?: number;
+    steamShortcutLegacyExecutable?: string;
+    steamShortcutLegacyName?: string;
   };
 };
 

@@ -11,7 +11,13 @@ import Image from '@/frontend/components/Image.svelte';
 import PlayIcon from '@/frontend/Icons/PlayIcon.svelte';
 import SettingsFilled from '@/frontend/Icons/SettingsFilled.svelte';
 import UpdateIcon from '@/frontend/Icons/UpdateIcon.svelte';
-import { appUpdates, updatesManager } from '@/frontend/states.svelte';
+import {
+  appUpdates,
+  completeRequiredReadd,
+  getRequiredReadd,
+  queueRequiredReadd,
+  updatesManager,
+} from '@/frontend/states.svelte';
 import {
   clearHeaderBackButton,
   createNotification,
@@ -65,7 +71,8 @@ interface Props {
 let { libraryInfo = $bindable(), exitPlayPage }: Props = $props();
 
 let requiresSteamReadd = $derived(
-  appUpdates.requiredReadds.some((r) => r.appID === libraryInfo.appID)
+  libraryInfo.umu?.steamShortcutReaddId !== undefined ||
+    appUpdates.requiredReadds.some((r) => r.appID === libraryInfo.appID)
 );
 let os = $state('');
 let isMigratingToUmu = $state(false);
@@ -251,9 +258,10 @@ async function migrateToUmu() {
     const steamAppIdResult = await window.electronAPI.app.getSteamAppId(
       libraryInfo.appID
     );
-    const oldSteamAppId = steamAppIdResult.success
-      ? steamAppIdResult.appId
-      : undefined;
+    const oldSteamAppId =
+      steamAppIdResult.status === 'success'
+        ? steamAppIdResult.appId
+        : undefined;
 
     const migrationResult = await window.electronAPI.app.migrateToUmu(
       libraryInfo.appID,
@@ -278,13 +286,7 @@ async function migrateToUmu() {
 
     // Queue Steam re-add requirement so the existing banner appears
     // and persistence writes update-state.json automatically.
-    appUpdates.requiredReadds = [
-      ...appUpdates.requiredReadds.filter((r) => r.appID !== libraryInfo.appID),
-      {
-        appID: libraryInfo.appID,
-        steamAppId: oldSteamAppId ?? 0,
-      },
-    ];
+    queueRequiredReadd(libraryInfo.appID, oldSteamAppId);
 
     createNotification({
       id: Math.random().toString(36).substring(7),
@@ -655,24 +657,37 @@ function handleRunTask(task: SearchResult, addonID: string) {
                 try {
                   button.disabled = true;
 
-                  // Get the old Steam app ID from requiredReadds if available
-                  const requiredReadd = appUpdates.requiredReadds.find(
-                    (r) => r.appID === libraryInfo.appID
-                  );
-                  const oldSteamAppId =
-                    requiredReadd?.steamAppId && requiredReadd.steamAppId !== 0
-                      ? requiredReadd.steamAppId
-                      : undefined;
-
-                  await window.electronAPI.app.addToSteam(
+                  const requiredReadd = getRequiredReadd(libraryInfo.appID);
+                  const result = await window.electronAPI.app.addToSteam(
                     libraryInfo.appID,
-                    oldSteamAppId
+                    requiredReadd?.steamAppId ??
+                      libraryInfo.umu?.steamShortcutReaddId
                   );
 
-                  // Only remove from requiredReadds on success
-                  appUpdates.requiredReadds = appUpdates.requiredReadds.filter(
-                    (r) => r.appID !== libraryInfo.appID
-                  );
+                  if (result.status === 'success') {
+                    completeRequiredReadd(libraryInfo.appID);
+                    if (libraryInfo.umu) {
+                      delete libraryInfo.umu.steamShortcutReaddId;
+                      libraryInfo = { ...libraryInfo };
+                    }
+                    if (result.warning) {
+                      createNotification({
+                        id: Math.random().toString(36).substring(7),
+                        message: result.warning,
+                        type: 'warning',
+                      });
+                    }
+                  } else {
+                    createNotification({
+                      id: Math.random().toString(36).substring(7),
+                      message:
+                        result.status === 'cancelled'
+                          ? result.message
+                          : result.error,
+                      type: result.status === 'cancelled' ? 'info' : 'error',
+                    });
+                    button.disabled = false;
+                  }
                 } catch (error) {
                   console.error(error);
                   // Re-enable button on error

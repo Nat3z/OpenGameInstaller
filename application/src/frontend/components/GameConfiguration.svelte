@@ -16,7 +16,10 @@ import InputModal from '@/frontend/components/modal/InputModal.svelte';
 import Modal from '@/frontend/components/modal/Modal.svelte';
 import TitleModal from '@/frontend/components/modal/TitleModal.svelte';
 import WineDllOverridesModal from '@/frontend/components/modal/WineDllOverridesModal.svelte';
-import { appUpdates } from '@/frontend/states.svelte';
+import {
+  completeRequiredReadd,
+  getRequiredReadd,
+} from '@/frontend/states.svelte';
 import { createNotification, currentDownloads } from '@/frontend/store.svelte';
 
 interface Props {
@@ -117,13 +120,23 @@ let dllOverridesCount = $derived.by(() => {
 });
 
 async function removeFromList() {
-  await window.electronAPI.app.removeApp(gameInfo.appID);
+  const result = await window.electronAPI.app.removeApp(gameInfo.appID);
+  if (result.status !== 'success') {
+    createNotification({
+      id: Math.random().toString(36).substring(7),
+      message: result.status === 'cancelled' ? result.message : result.error,
+      type: result.status === 'cancelled' ? 'info' : 'error',
+    });
+    return;
+  }
+
+  completeRequiredReadd(gameInfo.appID);
   createNotification({
     id: Math.random().toString(36).substring(7),
-    message: 'Game removed from library. (Not deleted from disk)',
-    type: 'success',
+    message:
+      result.warning ?? 'Game removed from library. (Not deleted from disk)',
+    type: result.warning ? 'info' : 'success',
   });
-  // remove the download from the downloads list
   currentDownloads.update((downloads) =>
     downloads.filter((download) => download.appID !== gameInfo.appID)
   );
@@ -133,21 +146,26 @@ async function removeFromList() {
 async function addToSteam(button: HTMLButtonElement) {
   button.disabled = true;
   try {
-    // Get the old Steam app ID from requiredReadds if available
-    const requiredReadd = appUpdates.requiredReadds.find(
-      (r) => r.appID === gameInfo.appID
+    const requiredReadd = getRequiredReadd(gameInfo.appID);
+    const result = await window.electronAPI.app.addToSteam(
+      gameInfo.appID,
+      requiredReadd?.steamAppId ?? gameInfo.umu?.steamShortcutReaddId
     );
-    const oldSteamAppId =
-      requiredReadd?.steamAppId && requiredReadd.steamAppId !== 0
-        ? requiredReadd.steamAppId
-        : undefined;
 
-    await window.electronAPI.app.addToSteam(gameInfo.appID, oldSteamAppId);
-
-    // Remove from requiredReadds if it was there
-    appUpdates.requiredReadds = appUpdates.requiredReadds.filter(
-      (r) => r.appID !== gameInfo.appID
-    );
+    if (result.status === 'success') {
+      completeRequiredReadd(gameInfo.appID);
+      createNotification({
+        id: Math.random().toString(36).substring(7),
+        message: result.warning ?? 'Game added to Steam',
+        type: result.warning ? 'warning' : 'success',
+      });
+    } else {
+      createNotification({
+        id: Math.random().toString(36).substring(7),
+        message: result.status === 'cancelled' ? result.message : result.error,
+        type: result.status === 'cancelled' ? 'info' : 'error',
+      });
+    }
   } catch (error) {
     console.error(error);
     createNotification({

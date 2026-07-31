@@ -1,410 +1,405 @@
 <script lang="ts">
-  import type { LibraryInfo, SearchResult, StoreData } from "@ogi-sdk/connect";
-  import { onMount } from "svelte";
-  import { fly, slide } from "svelte/transition";
-  import AddonPicture from "@/frontend/components/AddonPicture.svelte";
-  import HeaderModal from "@/frontend/components/modal/HeaderModal.svelte";
-  import Modal from "@/frontend/components/modal/Modal.svelte";
-  import SectionModal from "@/frontend/components/modal/SectionModal.svelte";
-  import TextModal from "@/frontend/components/modal/TextModal.svelte";
-  import TitleModal from "@/frontend/components/modal/TitleModal.svelte";
-  import {
-    createNotification,
-    currentDownloads,
-    currentStorePageOpened,
-    currentStorePageOpenedStorefront,
-    gameFocused,
-    launchGameTrigger,
-    selectedView,
-    viewOpenedWhenChanged,
-  } from "@/frontend/store.svelte";
-  import {
-    addonServer,
-    fetchAddonsWithConfigure,
-    findAddonsSupportingStorefront,
-    isAddonEventAvailable,
-    runTask,
-    type SearchResultWithAddon,
-    startDownload,
-  } from "@/frontend/utils";
-  import { supportsStorefront } from "@/lib/storefronts";
+import type { LibraryInfo, SearchResult, StoreData } from '@ogi-sdk/connect';
+import { onMount } from 'svelte';
+import { fly, slide } from 'svelte/transition';
+import AddonPicture from '@/frontend/components/AddonPicture.svelte';
+import HeaderModal from '@/frontend/components/modal/HeaderModal.svelte';
+import Modal from '@/frontend/components/modal/Modal.svelte';
+import SectionModal from '@/frontend/components/modal/SectionModal.svelte';
+import TextModal from '@/frontend/components/modal/TextModal.svelte';
+import TitleModal from '@/frontend/components/modal/TitleModal.svelte';
+import {
+  createNotification,
+  currentDownloads,
+  currentStorePageOpened,
+  currentStorePageOpenedStorefront,
+  gameFocused,
+  launchGameTrigger,
+  selectedView,
+  viewOpenedWhenChanged,
+} from '@/frontend/store.svelte';
+import {
+  addonServer,
+  fetchAddonsWithConfigure,
+  findAddonsSupportingStorefront,
+  isAddonEventAvailable,
+  runTask,
+  type SearchResultWithAddon,
+  startDownload,
+} from '@/frontend/utils';
+import { supportsStorefront } from '@/lib/storefronts';
 
-  interface Props {
-    appID: number;
-    storefront: string;
+interface Props {
+  appID: number;
+  storefront: string;
+}
+
+let { appID, storefront }: Props = $props();
+
+let results: SearchResultWithAddon[] = $state([]);
+let gameData: StoreData | undefined = $state();
+let loading = $state(true);
+let queryingSources = $state(false);
+let selectedResult: SearchResultWithAddon | undefined = $state();
+let isOnline = $state(true);
+function queuePositionLabel(position?: number) {
+  if (!position || position <= 1) return '';
+  return position >= 999 ? 'Waiting in queue' : `Queue position: ${position}`;
+}
+
+let loadingAddons: Map<string, string> = $state(new Map());
+let emptyAddons: Set<string> = $state(new Set());
+let collapsedAddons: Set<string> = $state(new Set());
+let originalFilePath: string | undefined = $derived.by(() => {
+  try {
+    if (alreadyOwns) {
+      const libraryEntryUnSerialized = window.electronAPI.fs.read(
+        './library/' + appID + '.json'
+      );
+      if (libraryEntryUnSerialized) {
+        const libraryEntry = JSON.parse(libraryEntryUnSerialized);
+        return libraryEntry.cwd;
+      }
+    }
+    return undefined;
+  } catch (ex) {
+    console.error(ex);
+    return undefined;
   }
+});
 
-  let { appID, storefront }: Props = $props();
-
-  let results: SearchResultWithAddon[] = $state([]);
-  let gameData: StoreData | undefined = $state();
-  let loading = $state(true);
-  let queryingSources = $state(false);
-  let selectedResult: SearchResultWithAddon | undefined = $state();
-  let isOnline = $state(true);
-  function queuePositionLabel(position?: number) {
-    if (!position || position <= 1) return "";
-    return position >= 999 ? "Waiting in queue" : `Queue position: ${position}`;
+let originalExecutable: string | undefined = $derived.by(() => {
+  try {
+    if (alreadyOwns) {
+      const libraryEntryUnSerialized = window.electronAPI.fs.read(
+        './library/' + appID + '.json'
+      );
+      if (libraryEntryUnSerialized) {
+        const libraryEntry = JSON.parse(libraryEntryUnSerialized);
+        return libraryEntry.launchExecutable;
+      }
+    }
+    return undefined;
+  } catch (ex) {
+    console.error(ex);
+    return undefined;
   }
+});
 
-  let loadingAddons: Map<string, string> = $state(new Map());
-  let emptyAddons: Set<string> = $state(new Set());
-  let collapsedAddons: Set<string> = $state(new Set());
-  let originalFilePath: string | undefined = $derived.by(() => {
-    try {
-      if (alreadyOwns) {
-        const libraryEntryUnSerialized = window.electronAPI.fs.read(
-          "./library/" + appID + ".json",
-        );
-        if (libraryEntryUnSerialized) {
-          const libraryEntry = JSON.parse(libraryEntryUnSerialized);
-          return libraryEntry.cwd;
-        }
+let libraryInfo: LibraryInfo | undefined = $derived.by(() => {
+  try {
+    if (alreadyOwns) {
+      const libraryEntryUnSerialized = window.electronAPI.fs.read(
+        './library/' + appID + '.json'
+      );
+      if (libraryEntryUnSerialized) {
+        return JSON.parse(libraryEntryUnSerialized) as LibraryInfo;
       }
-      return undefined;
-    } catch (ex) {
-      console.error(ex);
-      return undefined;
     }
-  });
-
-  let originalExecutable: string | undefined = $derived.by(() => {
-    try {
-      if (alreadyOwns) {
-        const libraryEntryUnSerialized = window.electronAPI.fs.read(
-          "./library/" + appID + ".json",
-        );
-        if (libraryEntryUnSerialized) {
-          const libraryEntry = JSON.parse(libraryEntryUnSerialized);
-          return libraryEntry.launchExecutable;
-        }
-      }
-      return undefined;
-    } catch (ex) {
-      console.error(ex);
-      return undefined;
-    }
-  });
-
-  let libraryInfo: LibraryInfo | undefined = $derived.by(() => {
-    try {
-      if (alreadyOwns) {
-        const libraryEntryUnSerialized = window.electronAPI.fs.read(
-          "./library/" + appID + ".json",
-        );
-        if (libraryEntryUnSerialized) {
-          return JSON.parse(libraryEntryUnSerialized) as LibraryInfo;
-        }
-      }
-      return undefined;
-    } catch (ex) {
-      console.error(ex);
-      return undefined;
-    }
-  });
-
-  let alreadyOwns = $state(false);
-
-  // Check for active downloads for this game
-  let activeDownload = $derived(
-    $currentDownloads.find(
-      (download) => download.appID === appID && download.status !== "error",
-    ),
-  );
-
-  // Helper function to format download speed
-  function formatSpeed(speed: number): string {
-    if (speed < 1024) {
-      return speed.toFixed(0) + " B/s";
-    } else if (speed < 1024 * 1024) {
-      return (speed / 1024).toFixed(2) + " KB/s";
-    } else {
-      return (speed / (1024 * 1024)).toFixed(2) + " MB/s";
-    }
+    return undefined;
+  } catch (ex) {
+    console.error(ex);
+    return undefined;
   }
+});
 
-  // Helper function to format file size
-  function formatSize(size: number): string {
-    if (size < 1024) {
-      return size + " B";
-    } else if (size < 1024 * 1024) {
-      return (size / 1024).toFixed(2) + " KB";
-    } else if (size < 1024 * 1024 * 1024) {
-      return (size / (1024 * 1024)).toFixed(2) + " MB";
-    } else {
-      return (size / (1024 * 1024 * 1024)).toFixed(2) + " GB";
-    }
+let alreadyOwns = $state(false);
+
+// Check for active downloads for this game
+let activeDownload = $derived(
+  $currentDownloads.find(
+    (download) => download.appID === appID && download.status !== 'error'
+  )
+);
+
+// Helper function to format download speed
+function formatSpeed(speed: number): string {
+  if (speed < 1024) {
+    return speed.toFixed(0) + ' B/s';
+  } else if (speed < 1024 * 1024) {
+    return (speed / 1024).toFixed(2) + ' KB/s';
+  } else {
+    return (speed / (1024 * 1024)).toFixed(2) + ' MB/s';
   }
+}
 
-  onMount(async () => {
-    isOnline = await window.electronAPI.app.isOnline();
-    if (!isOnline) {
-      loading = false;
-      return;
-    }
+// Helper function to format file size
+function formatSize(size: number): string {
+  if (size < 1024) {
+    return size + ' B';
+  } else if (size < 1024 * 1024) {
+    return (size / 1024).toFixed(2) + ' KB';
+  } else if (size < 1024 * 1024 * 1024) {
+    return (size / (1024 * 1024)).toFixed(2) + ' MB';
+  } else {
+    return (size / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
+  }
+}
 
-    try {
-      await loadCustomStoreData();
-    } catch (ex) {
-      console.error(ex);
-      createNotification({
-        id: Math.random().toString(36).substring(7),
-        message: `Failed to fetch store page`,
-        type: "error",
-      });
-      currentStorePageOpened.set(undefined);
-      currentStorePageOpenedStorefront.set(undefined);
-    }
-  });
-
-  // Group results by addon
-  let resultsByAddon = $derived.by(() => {
-    const grouped: Array<{
-      addonId: string;
-      addonName: string;
-      results: SearchResultWithAddon[];
-    }> = [];
-
-    const addonMap = new Map<string, SearchResultWithAddon[]>();
-
-    results.forEach((result) => {
-      if (!addonMap.has(result.addonSource)) {
-        addonMap.set(result.addonSource, []);
-      }
-      addonMap.get(result.addonSource)!.push(result);
-    });
-
-    addonMap.forEach((results, addonId) => {
-      grouped.push({
-        addonId,
-        addonName: results[0].addonName,
-        results,
-      });
-    });
-
-    return grouped;
-  });
-
-  async function loadCustomStoreData() {
-    results = [];
-    alreadyOwns = window.electronAPI.fs.exists("./library/" + appID + ".json");
-    originalExecutable = window.electronAPI.fs.read(
-      "./library/" + appID + ".json",
-    );
-    if (alreadyOwns && originalExecutable) {
-      originalExecutable = JSON.parse(originalExecutable).launchExecutable;
-    } else {
-      originalExecutable = undefined;
-    }
-    const detailAddons = await findAddonsSupportingStorefront(
-      storefront,
-      "game-details",
-    );
-    let response: StoreData | undefined;
-    for (const addon of detailAddons) {
-      try {
-        response = (await addonServer.addon(addon.id).gameDetails({
-          appID,
-          storefront,
-        })) as StoreData | undefined;
-      } catch (error) {
-        console.error(`Failed to load game details from ${addon.id}:`, error);
-        continue;
-      }
-      if (response) break;
-    }
-
-    gameData = response;
+onMount(async () => {
+  isOnline = await window.electronAPI.app.isOnline();
+  if (!isOnline) {
     loading = false;
+    return;
+  }
 
-    // Fetch search results for custom store
-    // if (alreadyOwns) return;
+  try {
+    await loadCustomStoreData();
+  } catch (ex) {
+    console.error(ex);
+    createNotification({
+      id: Math.random().toString(36).substring(7),
+      message: `Failed to fetch store page`,
+      type: 'error',
+    });
+    currentStorePageOpened.set(undefined);
+    currentStorePageOpenedStorefront.set(undefined);
+  }
+});
 
-    let addons = await fetchAddonsWithConfigure();
-    queryingSources = true;
+// Group results by addon
+let resultsByAddon = $derived.by(() => {
+  const grouped: Array<{
+    addonId: string;
+    addonName: string;
+    results: SearchResultWithAddon[];
+  }> = [];
 
-    if (addons.length === 0) {
-      queryingSources = false;
-      return;
+  const addonMap = new Map<string, SearchResultWithAddon[]>();
+
+  results.forEach((result) => {
+    if (!addonMap.has(result.addonSource)) {
+      addonMap.set(result.addonSource, []);
+    }
+    addonMap.get(result.addonSource)!.push(result);
+  });
+
+  addonMap.forEach((results, addonId) => {
+    grouped.push({
+      addonId,
+      addonName: results[0].addonName,
+      results,
+    });
+  });
+
+  return grouped;
+});
+
+async function loadCustomStoreData() {
+  results = [];
+  alreadyOwns = window.electronAPI.fs.exists('./library/' + appID + '.json');
+  originalExecutable = window.electronAPI.fs.read(
+    './library/' + appID + '.json'
+  );
+  if (alreadyOwns && originalExecutable) {
+    originalExecutable = JSON.parse(originalExecutable).launchExecutable;
+  } else {
+    originalExecutable = undefined;
+  }
+  const detailAddons = await findAddonsSupportingStorefront(
+    storefront,
+    'game-details'
+  );
+  let response: StoreData | undefined;
+  for (const addon of detailAddons) {
+    try {
+      response = (await addonServer.addon(addon.id).gameDetails({
+        appID,
+        storefront,
+      })) as StoreData | undefined;
+    } catch (error) {
+      console.error(`Failed to load game details from ${addon.id}:`, error);
+      continue;
+    }
+    if (response) break;
+  }
+
+  gameData = response;
+  loading = false;
+
+  // Fetch search results for custom store
+  // if (alreadyOwns) return;
+
+  let addons = await fetchAddonsWithConfigure();
+  queryingSources = true;
+
+  if (addons.length === 0) {
+    queryingSources = false;
+    return;
+  }
+
+  // Reset loading states
+  loadingAddons = new Map(
+    addons
+      .map((addon): [string, string] => [addon.id, addon.name])
+      .sort((a, b) => a[1].localeCompare(b[1]))
+  );
+  emptyAddons = new Set();
+
+  const searchPromises = [];
+  for (const addon of addons) {
+    if (!supportsStorefront(addon.storefronts, storefront)) {
+      loadingAddons.delete(addon.id);
+      continue;
     }
 
-    // Reset loading states
-    loadingAddons = new Map(
-      addons
-        .map((addon): [string, string] => [addon.id, addon.name])
-        .sort((a, b) => a[1].localeCompare(b[1])),
-    );
-    emptyAddons = new Set();
+    if (!isAddonEventAvailable(addon, 'search')) {
+      loadingAddons.delete(addon.id);
+      continue;
+    }
 
-    const searchPromises = [];
-    for (const addon of addons) {
-      if (!supportsStorefront(addon.storefronts, storefront)) {
-        loadingAddons.delete(addon.id);
-        continue;
-      }
+    searchPromises.push(
+      (
+        addonServer.addon(addon.id).search({
+          appID: appID,
+          storefront: storefront,
+          for: alreadyOwns ? 'task' : 'game',
+        }) as Promise<SearchResult[]>
+      )
+        .then((searchResults = []) => {
+          const mappedResults = searchResults.map((result: SearchResult) => {
+            return {
+              ...result,
+              coverImage: gameData?.coverImage ?? '',
+              capsuleImage: gameData?.capsuleImage ?? '',
+              name: result.name,
+              addonSource: addon.id,
+              addonName: addon.name,
+              storefront: storefront,
+            };
+          });
 
-      if (!isAddonEventAvailable(addon, "search")) {
-        loadingAddons.delete(addon.id);
-        continue;
-      }
+          if (mappedResults.length > 0) {
+            // Remove from loading set immediately for addons with results
+            loadingAddons.delete(addon.id);
+            loadingAddons = new Map(loadingAddons);
 
-      searchPromises.push(
-        (
-          addonServer.addon(addon.id).search({
-            appID: appID,
-            storefront: storefront,
-            for: alreadyOwns ? "task" : "game",
-          }) as Promise<SearchResult[]>
-        )
-          .then((searchResults = []) => {
-            const mappedResults = searchResults.map((result: SearchResult) => {
-              return {
-                ...result,
-                coverImage: gameData?.coverImage ?? "",
-                capsuleImage: gameData?.capsuleImage ?? "",
-                name: result.name,
-                addonSource: addon.id,
-                addonName: addon.name,
-                storefront: storefront,
-              };
-            });
+            results = [...results, ...mappedResults];
+          } else {
+            // For empty results, add to empty set and animate out after delay
+            emptyAddons.add(addon.id);
+            emptyAddons = new Set(emptyAddons);
 
-            if (mappedResults.length > 0) {
-              // Remove from loading set immediately for addons with results
+            setTimeout(() => {
               loadingAddons.delete(addon.id);
               loadingAddons = new Map(loadingAddons);
 
-              results = [...results, ...mappedResults];
-            } else {
-              // For empty results, add to empty set and animate out after delay
-              emptyAddons.add(addon.id);
-              emptyAddons = new Set(emptyAddons);
-
+              // Clean up empty addon after another delay
               setTimeout(() => {
-                loadingAddons.delete(addon.id);
-                loadingAddons = new Map(loadingAddons);
+                emptyAddons.delete(addon.id);
+                emptyAddons = new Set(emptyAddons);
+              }, 300);
+            }, 1000);
+          }
+        })
+        .catch((ex) => {
+          // Remove from loading set even on error
+          loadingAddons.delete(addon.id);
+          loadingAddons = new Map(loadingAddons);
+          console.error(ex);
+        })
+    );
+  }
+  await Promise.allSettled(searchPromises);
+  queryingSources = false;
+  // Ensure all addons are removed from loading state
+  loadingAddons = new Map();
+}
 
-                // Clean up empty addon after another delay
-                setTimeout(() => {
-                  emptyAddons.delete(addon.id);
-                  emptyAddons = new Set(emptyAddons);
-                }, 300);
-              }, 1000);
-            }
-          })
-          .catch((ex) => {
-            // Remove from loading set even on error
-            loadingAddons.delete(addon.id);
-            loadingAddons = new Map(loadingAddons);
-            console.error(ex);
-          }),
-      );
-    }
-    await Promise.allSettled(searchPromises);
-    queryingSources = false;
-    // Ensure all addons are removed from loading state
-    loadingAddons = new Map();
+function playGame() {
+  if (!gameData) return;
+
+  const gameID = (gameData as StoreData).appID;
+
+  selectedView.set('library');
+  viewOpenedWhenChanged.set('library');
+  currentStorePageOpened.set(undefined);
+  currentStorePageOpenedStorefront.set(undefined);
+  gameFocused.set(gameID);
+  setTimeout(() => {
+    launchGameTrigger.set(gameID);
+  }, 5);
+}
+
+function showSourceInfo(result: SearchResultWithAddon) {
+  selectedResult = result;
+}
+
+function handleDownloadClick(result: SearchResultWithAddon, event: MouseEvent) {
+  // Check if there's already an active download for this game
+  if (activeDownload) {
+    createNotification({
+      id: Math.random().toString(36).substring(7),
+      message: `Download already in progress for ${gameData?.name}`,
+      type: 'warning',
+    });
+    return;
   }
 
-  function playGame() {
-    if (!gameData) return;
-
-    const gameID = (gameData as StoreData).appID;
-
-    selectedView.set("library");
-    viewOpenedWhenChanged.set("library");
-    currentStorePageOpened.set(undefined);
-    currentStorePageOpenedStorefront.set(undefined);
-    gameFocused.set(gameID);
-    setTimeout(() => {
-      launchGameTrigger.set(gameID);
-    }, 5);
+  // Proceed with download
+  if (result.downloadType === 'task') {
+    runTask(result, alreadyOwns ? originalFilePath || '' : '', libraryInfo);
+  } else {
+    startDownload(
+      {
+        ...result,
+        name: (gameData as StoreData).name!,
+      },
+      appID,
+      event
+    );
   }
+}
 
-  function showSourceInfo(result: SearchResultWithAddon) {
-    selectedResult = result;
+function closeInfoModal() {
+  selectedResult = undefined;
+}
+
+async function viewInLibrary() {
+  if (!gameData) return;
+  selectedView.set('library');
+  viewOpenedWhenChanged.set('library');
+  currentStorePageOpened.set(undefined);
+  currentStorePageOpenedStorefront.set(undefined);
+  gameFocused.set(appID);
+}
+
+function toggleAddonCollapse(addonId: string) {
+  if (collapsedAddons.has(addonId)) {
+    collapsedAddons.delete(addonId);
+  } else {
+    collapsedAddons.add(addonId);
   }
+  // Trigger reactivity
+  collapsedAddons = new Set(collapsedAddons);
+}
 
-  function handleDownloadClick(
-    result: SearchResultWithAddon,
-    event: MouseEvent,
+// Watch for download completion and refresh store data
+let matchedDownload = $state(false);
+$effect(() => {
+  if (
+    activeDownload &&
+    (activeDownload.status === 'seeding' ||
+      activeDownload.status === 'setup-complete') &&
+    !alreadyOwns &&
+    !matchedDownload
   ) {
-    // Check if there's already an active download for this game
-    if (activeDownload) {
+    // Refresh the alreadyOwns status
+    alreadyOwns = window.electronAPI.fs.exists('./library/' + appID + '.json');
+    matchedDownload = true;
+    // Reload store data to reflect the new ownership status
+    loadCustomStoreData();
+
+    if (alreadyOwns) {
+      // Notify user that the game is now available
       createNotification({
         id: Math.random().toString(36).substring(7),
-        message: `Download already in progress for ${gameData?.name}`,
-        type: "warning",
+        message: `${gameData?.name || 'Game'} is now ready to play!`,
+        type: 'success',
       });
-      return;
-    }
-
-    // Proceed with download
-    if (result.downloadType === "task") {
-      runTask(result, alreadyOwns ? originalFilePath || "" : "", libraryInfo);
-    } else {
-      startDownload(
-        {
-          ...result,
-          name: (gameData as StoreData).name!,
-        },
-        appID,
-        event,
-      );
     }
   }
-
-  function closeInfoModal() {
-    selectedResult = undefined;
-  }
-
-  async function viewInLibrary() {
-    if (!gameData) return;
-    selectedView.set("library");
-    viewOpenedWhenChanged.set("library");
-    currentStorePageOpened.set(undefined);
-    currentStorePageOpenedStorefront.set(undefined);
-    gameFocused.set(appID);
-  }
-
-  function toggleAddonCollapse(addonId: string) {
-    if (collapsedAddons.has(addonId)) {
-      collapsedAddons.delete(addonId);
-    } else {
-      collapsedAddons.add(addonId);
-    }
-    // Trigger reactivity
-    collapsedAddons = new Set(collapsedAddons);
-  }
-
-  // Watch for download completion and refresh store data
-  let matchedDownload = $state(false);
-  $effect(() => {
-    if (
-      activeDownload &&
-      (activeDownload.status === "seeding" ||
-        activeDownload.status === "setup-complete") &&
-      !alreadyOwns &&
-      !matchedDownload
-    ) {
-      // Refresh the alreadyOwns status
-      alreadyOwns = window.electronAPI.fs.exists(
-        "./library/" + appID + ".json",
-      );
-      matchedDownload = true;
-      // Reload store data to reflect the new ownership status
-      loadCustomStoreData();
-
-      if (alreadyOwns) {
-        // Notify user that the game is now available
-        createNotification({
-          id: Math.random().toString(36).substring(7),
-          message: `${gameData?.name || "Game"} is now ready to play!`,
-          type: "success",
-        });
-      }
-    }
-  });
+});
 </script>
 
 {#if gameData}
@@ -682,7 +677,7 @@
                 {#if resultsByAddon.length > 0}
                   {#each resultsByAddon
                     .filter( (group) => group.results.some( (result) => (alreadyOwns ? result.downloadType === "task" : result.downloadType !== "task"), ), )
-                    .sort( (a, b) => a.addonId.localeCompare(b.addonId), ) as addonGroup, groupIndex (addonGroup.addonId)}
+                    .sort( (a, b) => a.addonName.localeCompare(b.addonName), ) as addonGroup, groupIndex (addonGroup.addonId)}
                     {@const filteredResults = addonGroup.results.filter(
                       (result) =>
                         alreadyOwns

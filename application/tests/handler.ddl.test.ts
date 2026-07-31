@@ -7,6 +7,7 @@ import {
   mock,
   test,
 } from 'bun:test';
+import { DownloadAborted } from '@ogi/errors';
 import { Effect } from 'effect';
 import {
   existsSync,
@@ -45,7 +46,7 @@ const get = mock((_url?: string, _config?: { signal?: AbortSignal }) =>
 const head = mock(() => Promise.reject(new Error('unused')));
 
 mock.module('axios', () => ({
-  default: { get, head },
+  default: { get, head, isCancel: () => false },
   AxiosError: MockAxiosError,
 }));
 mock.module('electron', () => ({
@@ -315,6 +316,45 @@ describe('OGI-Parallel-Limit response handling', () => {
     expect(part.effectiveChunkCount).toBe(2);
     expect(staleChunksFound).toBe(false);
     expect(part.status).toBe('completed');
+  });
+});
+
+describe('parallel chunk persistence', () => {
+  test('preserves partial chunks when a download is paused', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'ogi-paused-chunks-'));
+    testDirectories.push(directory);
+    const path = join(directory, 'download.bin');
+    const job = { link: 'https://example.test/file', path };
+    writeFileSync(`${path}.chunk0`, 'partial');
+    writeFileSync(`${path}.chunk1`, 'partial');
+
+    const download = new Download(
+      {
+        isDestroyed: () => false,
+        webContents: { send: () => {} },
+      } as never,
+      [job]
+    );
+    const internals = download as unknown as {
+      parallelLimit?: number;
+      downloadChunk(): Effect.Effect<void, DownloadAborted>;
+      executeParallelDownload(
+        currentJob: typeof job,
+        fileSize: number
+      ): Effect.Effect<void, DownloadAborted>;
+    };
+    internals.parallelLimit = 2;
+    internals.downloadChunk = () =>
+      Effect.fail(new DownloadAborted({ downloadId: download.id }));
+    download.status = 'paused';
+
+    const result = await Effect.runPromise(
+      Effect.either(internals.executeParallelDownload(job, 20))
+    );
+
+    expect(result._tag).toBe('Left');
+    expect(existsSync(`${path}.chunk0`)).toBe(true);
+    expect(existsSync(`${path}.chunk1`)).toBe(true);
   });
 });
 

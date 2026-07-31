@@ -779,7 +779,6 @@ export async function checkForAddonUpdates(
   );
   const addons = generalConfig.addons as string[];
   const normalizedAddons = addons.map((addon) => normalizeAddonLink(addon));
-  const promises: Promise<void>[] = [];
   for (const addonWithMarketplaceUrl of normalizedAddons) {
     const parsedAddon = parseAddonLink(addonWithMarketplaceUrl);
     if (parsedAddon.kind === 'local') continue;
@@ -793,76 +792,76 @@ export async function checkForAddonUpdates(
       continue;
     }
 
-    promises.push(
-      (async () => {
-        // get the addon and compare the commit hashes
-        const addonGit = new Addon.Git({
-          path: addonPath,
-        });
+    // Get the addon and compare the commit hashes sequentially so duplicate
+    // addon paths cannot race through the shared FETCH_HEAD ref.
+    const addonGit = new Addon.Git({
+      path: addonPath,
+    });
 
-        const localHash = await Effect.runPromise(addonGit.getCurrentHash());
-        let remoteHash = 'latest';
-        let isUpdate = false;
+    const localHash = await Effect.runPromise(addonGit.getCurrentHash());
+    let remoteHash = 'latest';
+    let isUpdate = false;
 
-        if (parsedAddon.kind === 'marketplace') {
-          const marketplace = await Effect.runPromise(
-            loadMarketplace(parsedAddon.marketplaceUrl)
-          );
-          const marketplaceAddon = marketplace.getAddon(parsedAddon.gitUrl);
-          if (parsedAddon.explicitRef) {
-            await Effect.runPromise(
-              addonGit.fetchRef('origin', parsedAddon.explicitRef)
-            );
-            remoteHash = await Effect.runPromise(
-              addonGit.resolveRef('FETCH_HEAD')
-            );
-          } else {
-            remoteHash = marketplaceAddon?.pinnedCommit ?? 'latest';
-          }
-          isUpdate = localHash !== remoteHash;
-        }
-
-        console.log(
-          '[startup] Checking update for',
-          addonName,
-          'local:',
-          localHash,
-          'remote:',
-          remoteHash
+    if (parsedAddon.kind === 'marketplace') {
+      const marketplace = await Effect.runPromise(
+        loadMarketplace(parsedAddon.marketplaceUrl)
+      );
+      const marketplaceAddon = marketplace.getAddon(parsedAddon.gitUrl);
+      const explicitRef = parsedAddon.explicitRef;
+      if (explicitRef) {
+        const explicitRefResult = await Effect.runPromise(
+          Effect.either(addonGit.resolveRemoteRef('origin', explicitRef))
         );
+        if (explicitRefResult._tag === 'Left') {
+          console.error(
+            `[startup] Failed to resolve ${explicitRef} for ${addonName}:`,
+            explicitRefResult.left
+          );
+          continue;
+        }
+        remoteHash = explicitRefResult.right;
+      } else {
+        remoteHash = marketplaceAddon?.pinnedCommit ?? 'latest';
+      }
+      isUpdate = localHash !== remoteHash;
+    }
 
-        if (remoteHash === 'latest') {
-          // dry fetch dry run - check if updates are available
-          const status = await Effect.runPromise(
-            Effect.either(addonGit.fetch())
-          );
-          if (status._tag === 'Left') {
-            console.error(
-              `[startup] Error checking updates for ${addonName}:`,
-              status.left
-            );
-            return;
-          }
-          isUpdate = !status.right.alreadyUpToDate;
-        }
-        if (isUpdate) {
-          sendNotification({
-            message: `Addon ${addonName} has updates.`,
-            id: Math.random().toString(36).substring(7),
-            type: 'info',
-          });
-          mainWindow?.webContents.send(
-            'addon:update-available',
-            addonWithMarketplaceUrl
-          );
-          console.log(`Addon ${addonName} has updates.`);
-        } else {
-          console.log(`Addon ${addonName} is up to date.`);
-        }
-      })()
+    console.log(
+      '[startup] Checking update for',
+      addonName,
+      'local:',
+      localHash,
+      'remote:',
+      remoteHash
     );
+
+    if (remoteHash === 'latest') {
+      // dry fetch dry run - check if updates are available
+      const status = await Effect.runPromise(Effect.either(addonGit.fetch()));
+      if (status._tag === 'Left') {
+        console.error(
+          `[startup] Error checking updates for ${addonName}:`,
+          status.left
+        );
+        continue;
+      }
+      isUpdate = !status.right.alreadyUpToDate;
+    }
+    if (isUpdate) {
+      sendNotification({
+        message: `Addon ${addonName} has updates.`,
+        id: Math.random().toString(36).substring(7),
+        type: 'info',
+      });
+      mainWindow?.webContents.send(
+        'addon:update-available',
+        addonWithMarketplaceUrl
+      );
+      console.log(`Addon ${addonName} has updates.`);
+    } else {
+      console.log(`Addon ${addonName} is up to date.`);
+    }
   }
-  await Promise.all(promises);
 }
 
 export async function removeCachedAppUpdates() {

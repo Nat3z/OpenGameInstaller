@@ -1,5 +1,6 @@
 import {
   ConfigError,
+  ConnectionRefreshRequested,
   DownloadAborted,
   DownloadError,
   DownloadNotActive,
@@ -324,6 +325,24 @@ export class Download {
     });
   }
 
+  private classifyDownloadRequestError(
+    message: string,
+    cause: unknown,
+    connectionRefreshRequested = false
+  ): DownloadError | ConnectionRefreshRequested | DownloadAborted {
+    if (axios.isCancel(cause)) {
+      return connectionRefreshRequested
+        ? new ConnectionRefreshRequested({ downloadId: this.id })
+        : new DownloadAborted({ downloadId: this.id });
+    }
+
+    return new DownloadError({
+      message: `${message}: ${formatError(cause)}`,
+      downloadId: this.id,
+      cause,
+    });
+  }
+
   private createConnectionHealthMonitor(options: {
     label: string;
     initialBytes: number;
@@ -514,7 +533,7 @@ export class Download {
    */
   private runParallelParts(): Effect.Effect<
     void,
-    DownloadError | DownloadNotActive
+    DownloadError | DownloadNotActive | DownloadAborted
   > {
     return Effect.gen(this, function* () {
       this.useParallelParts = true;
@@ -772,6 +791,7 @@ export class Download {
     | DownloadNotActive
     | TooManyRequests
     | FileSystemError
+    | ConnectionRefreshRequested
     | DownloadAborted
   > {
     return Effect.gen(this, function* () {
@@ -781,6 +801,7 @@ export class Download {
         | DownloadNotActive
         | TooManyRequests
         | FileSystemError
+        | ConnectionRefreshRequested
         | DownloadAborted
         | undefined;
 
@@ -824,10 +845,20 @@ export class Download {
             return;
           }
           lastError = attempt.left;
-          console.log(
-            `[direct] Part ${part.index + 1} chunk download attempt ${i} failed:`,
-            lastError
-          );
+          if (
+            lastError._tag !== 'DownloadAborted' &&
+            lastError._tag !== 'ConnectionRefreshRequested'
+          ) {
+            console.log(
+              `[direct] Part ${part.index + 1} chunk download attempt ${i} failed:`,
+              lastError
+            );
+          }
+          if (this.status !== 'downloading') {
+            return yield* Effect.fail(lastError);
+          }
+          if (lastError._tag === 'ConnectionRefreshRequested') continue;
+
           const failedChunkCount = part.effectiveChunkCount;
           const nextChunkCount =
             mergeParallelLimits(PARALLEL_CHUNK_COUNT, part.parallelLimit) ??
@@ -852,9 +883,6 @@ export class Download {
               part.effectiveChunkCount
             );
             break;
-          }
-          if (this.status !== 'downloading') {
-            return yield* Effect.fail(lastError);
           }
           yield* Effect.sleep(`${1000 * (i + 1)} millis`);
         }
@@ -894,16 +922,19 @@ export class Download {
         }
         lastError = attempt.left;
 
-        if (attempt.left._tag)
-          if (attempt.left._tag !== 'DownloadAborted')
-            console.log(
-              `[direct] Part ${part.index + 1} download attempt ${i} failed:`,
-              lastError
-            );
+        if (
+          lastError._tag !== 'DownloadAborted' &&
+          lastError._tag !== 'ConnectionRefreshRequested'
+        ) {
+          console.log(
+            `[direct] Part ${part.index + 1} download attempt ${i} failed:`,
+            lastError
+          );
+        }
         if (this.status !== 'downloading') {
           return yield* Effect.fail(lastError);
         }
-        if (lastError.message === 'CONNECTION_REFRESH_REQUESTED') {
+        if (lastError._tag === 'ConnectionRefreshRequested') {
           part.abortController = new AbortController();
           continue;
         }
@@ -926,8 +957,8 @@ export class Download {
   private shouldUseParallelDownloadForPart(
     job: DownloadJob,
     signal?: AbortSignal
-  ): Effect.Effect<ParallelDownloadInfo> {
-    return Effect.gen(function* () {
+  ): Effect.Effect<ParallelDownloadInfo, DownloadAborted> {
+    return Effect.gen(this, function* () {
       const keepAliveAgent = job.link.startsWith('https')
         ? new https.Agent({ keepAlive: true })
         : new http.Agent({ keepAlive: true });
@@ -942,12 +973,16 @@ export class Download {
             httpAgent: keepAliveAgent,
             httpsAgent: keepAliveAgent,
             timeout: 10000,
+            signal,
           }),
         catch: (cause) =>
-          new DownloadError({
-            message: `HEAD request failed: ${formatError(cause)}`,
-            cause,
-          }),
+          axios.isCancel(cause)
+            ? new DownloadAborted({ downloadId: this.id })
+            : new DownloadError({
+                message: `HEAD request failed: ${formatError(cause)}`,
+                downloadId: this.id,
+                cause,
+              }),
       });
 
       const contentLength = headResponse.headers['content-length']
@@ -984,12 +1019,21 @@ export class Download {
                 signal,
               }),
             catch: (cause) =>
-              new DownloadError({
-                message: `Parallel limit probe failed: ${formatError(cause)}`,
-                cause,
-              }),
+              axios.isCancel(cause)
+                ? new DownloadAborted({ downloadId: this.id })
+                : new DownloadError({
+                    message: `Parallel limit probe failed: ${formatError(cause)}`,
+                    downloadId: this.id,
+                    cause,
+                  }),
           })
         );
+        if (
+          probeResult._tag === 'Left' &&
+          probeResult.left._tag === 'DownloadAborted'
+        ) {
+          return yield* Effect.fail(probeResult.left);
+        }
         if (probeResult._tag === 'Right') {
           parallelLimit = mergeParallelLimits(
             parallelLimit,
@@ -1033,7 +1077,11 @@ export class Download {
     fileSize: number
   ): Effect.Effect<
     void,
-    DownloadError | TooManyRequests | FileSystemError | DownloadAborted
+    | DownloadError
+    | TooManyRequests
+    | FileSystemError
+    | ConnectionRefreshRequested
+    | DownloadAborted
   > {
     return Effect.gen(this, function* () {
       const job = part.job;
@@ -1101,8 +1149,11 @@ export class Download {
       // Download all chunks in parallel and always dispose the health monitor.
       yield* Effect.all(
         part.chunks.map((chunk) =>
-          this.downloadChunkForPart(part, chunk, () =>
-            connectionHealth.observe(part.downloadedBytes)
+          this.downloadChunkForPart(
+            part,
+            chunk,
+            () => connectionHealth.observe(part.downloadedBytes),
+            () => connectionRefreshRequested
           )
         ),
         { concurrency: 'unbounded', discard: true }
@@ -1129,10 +1180,15 @@ export class Download {
   private downloadChunkForPart(
     part: PartState,
     chunk: ChunkState,
-    onProgress?: () => void
+    onProgress?: () => void,
+    isConnectionRefreshRequested: () => boolean = () => false
   ): Effect.Effect<
     void,
-    DownloadError | TooManyRequests | FileSystemError | DownloadAborted
+    | DownloadError
+    | TooManyRequests
+    | FileSystemError
+    | ConnectionRefreshRequested
+    | DownloadAborted
   > {
     return Effect.gen(this, function* () {
       if (chunk.completed) return;
@@ -1162,15 +1218,19 @@ export class Download {
             signal: chunk.abortController.signal,
           }),
         catch: (cause) =>
-          new DownloadError({
-            message: `Chunk request failed: ${formatError(cause)}`,
-            downloadId: this.id,
+          this.classifyDownloadRequestError(
+            'Chunk request failed',
             cause,
-          }),
+            isConnectionRefreshRequested()
+          ),
       });
       const responseResult = yield* Effect.either(request);
       if (responseResult._tag === 'Left') {
-        const cause = responseResult.left.cause;
+        const requestError = responseResult.left;
+        if (requestError._tag !== 'DownloadError') {
+          return yield* Effect.fail(requestError);
+        }
+        const cause = requestError.cause;
         if (cause instanceof AxiosError) {
           this.observeParallelLimit(
             cause.response?.headers as Record<string, unknown> | undefined,
@@ -1184,7 +1244,7 @@ export class Download {
         if (cause instanceof AxiosError && cause.response?.status === 429) {
           return yield* Effect.fail(new TooManyRequests({}));
         }
-        return yield* Effect.fail(responseResult.left);
+        return yield* Effect.fail(requestError);
       }
       chunk.response = responseResult.right;
       this.observeParallelLimit(chunk.response.headers, part);
@@ -1224,7 +1284,10 @@ export class Download {
           }),
       });
 
-      yield* Effect.async<void, DownloadError | DownloadAborted>((resume) => {
+      yield* Effect.async<
+        void,
+        DownloadError | ConnectionRefreshRequested | DownloadAborted
+      >((resume) => {
         let resolved = false;
         stream.stream.on('finish', () => {
           if (resolved) return;
@@ -1242,9 +1305,9 @@ export class Download {
           stream.stream.destroy();
           resume(
             Effect.fail(
-              new DownloadAborted({
-                downloadId: this.id,
-              })
+              isConnectionRefreshRequested()
+                ? new ConnectionRefreshRequested({ downloadId: this.id })
+                : new DownloadAborted({ downloadId: this.id })
             )
           );
         });
@@ -1400,7 +1463,11 @@ export class Download {
     part: PartState
   ): Effect.Effect<
     void,
-    DownloadError | FileSystemError | TooManyRequests | DownloadAborted
+    | DownloadError
+    | FileSystemError
+    | TooManyRequests
+    | ConnectionRefreshRequested
+    | DownloadAborted
   > {
     return Effect.gen(this, function* () {
       const job = part.job;
@@ -1458,17 +1525,21 @@ export class Download {
               signal: part.abortController.signal,
             }),
           catch: (cause) =>
-            new DownloadError({
-              message: `Part request failed: ${formatError(cause)}`,
-              downloadId: this.id,
+            this.classifyDownloadRequestError(
+              'Part request failed',
               cause,
-            }),
+              connectionRefreshRequested
+            ),
         })
       );
       if (responseResult._tag === 'Left') {
-        const cause = responseResult.left.cause;
+        const requestError = responseResult.left;
         part.fileStream?.destroy();
         part.fileStream = undefined;
+        if (requestError._tag !== 'DownloadError') {
+          return yield* Effect.fail(requestError);
+        }
+        const cause = requestError.cause;
         if (cause instanceof AxiosError) {
           this.observeParallelLimit(
             cause.response?.headers as Record<string, unknown> | undefined,
@@ -1491,7 +1562,7 @@ export class Download {
         if (cause instanceof AxiosError && cause.response?.status === 429) {
           return yield* Effect.fail(new TooManyRequests({}));
         }
-        return yield* Effect.fail(responseResult.left);
+        return yield* Effect.fail(requestError);
       }
       part.response = responseResult.right;
       this.observeParallelLimit(part.response.headers, part);
@@ -1552,7 +1623,10 @@ export class Download {
           }),
       });
 
-      yield* Effect.async<void, DownloadError | DownloadAborted>((resume) => {
+      yield* Effect.async<
+        void,
+        DownloadError | ConnectionRefreshRequested | DownloadAborted
+      >((resume) => {
         let resolved = false;
         stream.file.on('finish', () => {
           if (resolved) return;
@@ -1572,9 +1646,9 @@ export class Download {
           stream.file.destroy();
           resume(
             Effect.fail(
-              new DownloadAborted({
-                downloadId: this.id,
-              })
+              connectionRefreshRequested
+                ? new ConnectionRefreshRequested({ downloadId: this.id })
+                : new DownloadAborted({ downloadId: this.id })
             )
           );
         });
@@ -1872,6 +1946,7 @@ export class Download {
     | DownloadNotActive
     | TooManyRequests
     | FileSystemError
+    | ConnectionRefreshRequested
     | DownloadAborted
   > {
     return Effect.gen(this, function* () {
@@ -1880,6 +1955,7 @@ export class Download {
         | DownloadNotActive
         | TooManyRequests
         | FileSystemError
+        | ConnectionRefreshRequested
         | DownloadAborted
         | undefined;
 
@@ -1902,20 +1978,26 @@ export class Download {
               return;
             }
             lastError = attempt.left;
-            console.log(
-              '[direct] Error in parallel download attempt',
-              i,
-              lastError
-            );
+            if (
+              lastError._tag !== 'DownloadAborted' &&
+              lastError._tag !== 'ConnectionRefreshRequested'
+            ) {
+              console.log(
+                '[direct] Error in parallel download attempt',
+                i,
+                lastError
+              );
+            }
+            if (this.status !== 'downloading') {
+              return yield* Effect.fail(lastError);
+            }
+            if (lastError._tag === 'ConnectionRefreshRequested') continue;
             if (lastError instanceof TooManyRequests) {
               console.log(
                 '[direct] 429 detected, disabling parallelization and retrying as standard download'
               );
               yield* this.deleteChunkFiles(job.path, this.effectiveChunkCount);
               break;
-            }
-            if (this.status !== 'downloading') {
-              return yield* Effect.fail(lastError);
             }
             yield* Effect.sleep(`${1000 * (i + 1)} millis`);
           }
@@ -1953,11 +2035,16 @@ export class Download {
           return;
         }
         lastError = attempt.left;
-        console.log('[direct] Error downloading part', i, lastError);
+        if (
+          lastError._tag !== 'DownloadAborted' &&
+          lastError._tag !== 'ConnectionRefreshRequested'
+        ) {
+          console.log('[direct] Error downloading part', i, lastError);
+        }
         if (this.status !== 'downloading') {
           return yield* Effect.fail(lastError);
         }
-        if (lastError.message === 'CONNECTION_REFRESH_REQUESTED') continue;
+        if (lastError._tag === 'ConnectionRefreshRequested') continue;
         yield* Effect.sleep(`${1000 * (i + 1)} millis`);
       }
       return yield* Effect.fail(
@@ -1974,7 +2061,11 @@ export class Download {
     job: DownloadJob
   ): Effect.Effect<
     void,
-    DownloadError | FileSystemError | TooManyRequests | DownloadAborted
+    | DownloadError
+    | FileSystemError
+    | TooManyRequests
+    | ConnectionRefreshRequested
+    | DownloadAborted
   > {
     return Effect.gen(this, function* () {
       this.sendProgress({ progress: 0, downloadSpeed: 0 });
@@ -2040,15 +2131,20 @@ export class Download {
               signal: this.abortController!.signal,
             }),
           catch: (cause) =>
-            new DownloadError({
-              message: `Download request failed: ${formatError(cause)}`,
-              downloadId: this.id,
+            this.classifyDownloadRequestError(
+              'Download request failed',
               cause,
-            }),
+              connectionRefreshRequested
+            ),
         })
       );
       if (responseResult._tag === 'Left') {
-        const cause = responseResult.left.cause;
+        const requestError = responseResult.left;
+        if (requestError._tag !== 'DownloadError') {
+          this.cleanupPart();
+          return yield* Effect.fail(requestError);
+        }
+        const cause = requestError.cause;
         if (cause instanceof AxiosError) {
           this.observeParallelLimit(
             cause.response?.headers as Record<string, unknown> | undefined
@@ -2078,7 +2174,7 @@ export class Download {
           return yield* Effect.fail(new TooManyRequests({}));
         }
         this.cleanupPart();
-        return yield* Effect.fail(responseResult.left);
+        return yield* Effect.fail(requestError);
       }
       this.response = responseResult.right;
       this.observeParallelLimit(this.response.headers);
@@ -2145,7 +2241,10 @@ export class Download {
           }),
       });
 
-      yield* Effect.async<void, DownloadError | DownloadAborted>((resume) => {
+      yield* Effect.async<
+        void,
+        DownloadError | ConnectionRefreshRequested | DownloadAborted
+      >((resume) => {
         let resolved = false;
         stream.file.on('finish', () => {
           if (resolved) return;
@@ -2165,9 +2264,9 @@ export class Download {
           stream.file.destroy();
           resume(
             Effect.fail(
-              new DownloadAborted({
-                downloadId: this.id,
-              })
+              connectionRefreshRequested
+                ? new ConnectionRefreshRequested({ downloadId: this.id })
+                : new DownloadAborted({ downloadId: this.id })
             )
           );
         });
@@ -2284,7 +2383,7 @@ export class Download {
    */
   private shouldUseParallelDownload(
     job: DownloadJob
-  ): Effect.Effect<ParallelDownloadInfo> {
+  ): Effect.Effect<ParallelDownloadInfo, DownloadAborted> {
     return Effect.gen(this, function* () {
       const info = yield* this.shouldUseParallelDownloadForPart(
         job,
@@ -2313,7 +2412,11 @@ export class Download {
     fileSize: number
   ): Effect.Effect<
     void,
-    DownloadError | TooManyRequests | FileSystemError | DownloadAborted
+    | DownloadError
+    | TooManyRequests
+    | FileSystemError
+    | ConnectionRefreshRequested
+    | DownloadAborted
   > {
     return Effect.gen(this, function* () {
       this.useParallel = true;
@@ -2397,19 +2500,28 @@ export class Download {
 
       yield* Effect.all(
         this.chunks.map((chunk) =>
-          this.downloadChunk(job, chunk, () =>
-            connectionHealth.observe(this.currentBytes)
+          this.downloadChunk(
+            job,
+            chunk,
+            () => connectionHealth.observe(this.currentBytes),
+            () => connectionRefreshRequested
           )
         ),
         { concurrency: 'unbounded', discard: true }
       ).pipe(
-        Effect.tapError(() =>
-          Effect.sync(() => this.cleanupParallelChunks()).pipe(
-            Effect.zipRight(
-              this.deleteChunkFiles(job.path, effectiveChunkCount)
-            )
-          )
-        ),
+        Effect.tapError((error) => {
+          const cleanup = Effect.sync(() => this.cleanupParallelChunks());
+          const preserveChunks =
+            error._tag === 'ConnectionRefreshRequested' ||
+            (error._tag === 'DownloadAborted' && this.status === 'paused');
+          return preserveChunks
+            ? cleanup
+            : cleanup.pipe(
+                Effect.zipRight(
+                  this.deleteChunkFiles(job.path, effectiveChunkCount)
+                )
+              );
+        }),
         Effect.ensuring(Effect.sync(() => connectionHealth.dispose()))
       );
       console.log('[direct] All parallel chunks completed');
@@ -2431,10 +2543,15 @@ export class Download {
   private downloadChunk(
     job: DownloadJob,
     chunk: ChunkState,
-    onProgress?: () => void
+    onProgress?: () => void,
+    isConnectionRefreshRequested: () => boolean = () => false
   ): Effect.Effect<
     void,
-    DownloadError | TooManyRequests | FileSystemError | DownloadAborted
+    | DownloadError
+    | TooManyRequests
+    | FileSystemError
+    | ConnectionRefreshRequested
+    | DownloadAborted
   > {
     const part: PartState = {
       index: this.currentPart - 1,
@@ -2447,10 +2564,15 @@ export class Download {
       chunks: this.chunks,
       chunkJobPath: job.path,
     };
-    return this.downloadChunkForPart(part, chunk, () => {
-      this.currentBytes = part.downloadedBytes;
-      onProgress?.();
-    });
+    return this.downloadChunkForPart(
+      part,
+      chunk,
+      () => {
+        this.currentBytes = part.downloadedBytes;
+        onProgress?.();
+      },
+      isConnectionRefreshRequested
+    );
   }
 
   /**

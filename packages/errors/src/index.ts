@@ -138,6 +138,69 @@ export class PlatformError extends Data.TaggedError('PlatformError')<{
 }> {}
 
 // =============================================================================
+// Steam Errors
+// =============================================================================
+
+export class SteamNotFoundError extends Data.TaggedError('SteamNotFoundError')<{
+  readonly message: string;
+}> {}
+
+export class SteamUserNotFoundError extends Data.TaggedError(
+  'SteamUserNotFoundError'
+)<{
+  readonly message: string;
+}> {}
+
+export class SteamRunningError extends Data.TaggedError('SteamRunningError')<{
+  readonly message: string;
+}> {}
+
+export class SteamShortcutNotFoundError extends Data.TaggedError(
+  'SteamShortcutNotFoundError'
+)<{
+  readonly message: string;
+  readonly gameId?: number;
+}> {}
+
+export class SteamShortcutConflictError extends Data.TaggedError(
+  'SteamShortcutConflictError'
+)<{
+  readonly message: string;
+  readonly gameId: number;
+}> {}
+
+export class SteamVdfParseError extends Data.TaggedError('SteamVdfParseError')<{
+  readonly message: string;
+  readonly path?: string;
+  readonly cause?: unknown;
+}> {}
+
+export class SteamVdfWriteError extends Data.TaggedError('SteamVdfWriteError')<{
+  readonly message: string;
+  readonly path: string;
+  readonly cause?: unknown;
+}> {}
+
+export class SteamProcessError extends Data.TaggedError('SteamProcessError')<{
+  readonly message: string;
+  readonly operation: 'status' | 'shutdown' | 'start' | 'wait';
+  readonly cause?: unknown;
+}> {}
+
+export class SteamProcessTimeoutError extends Data.TaggedError(
+  'SteamProcessTimeoutError'
+)<{
+  readonly message: string;
+  readonly expected: 'running' | 'stopped';
+  readonly timeoutMs: number;
+}> {}
+
+export class SteamArtworkError extends Data.TaggedError('SteamArtworkError')<{
+  readonly message: string;
+  readonly cause?: unknown;
+}> {}
+
+// =============================================================================
 // Updater Errors
 // =============================================================================
 
@@ -170,6 +233,16 @@ export type OgiError =
   | TorrentError
   | ValidationError
   | PlatformError
+  | SteamNotFoundError
+  | SteamUserNotFoundError
+  | SteamRunningError
+  | SteamShortcutNotFoundError
+  | SteamShortcutConflictError
+  | SteamVdfParseError
+  | SteamVdfWriteError
+  | SteamProcessError
+  | SteamProcessTimeoutError
+  | SteamArtworkError
   | UpdateError;
 
 // =============================================================================

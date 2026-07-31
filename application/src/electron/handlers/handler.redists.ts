@@ -7,6 +7,7 @@ import {
 import type { LibraryInfo } from '@ogi-sdk/connect';
 import { Effect } from 'effect';
 import { ipcMain } from 'electron';
+import { findSteamAppIdForGame } from '@/electron/handlers/handler.steam.js';
 import {
   installRedistributablesWithUmu,
   migrateToUmu,
@@ -14,10 +15,6 @@ import {
 } from '@/electron/handlers/handler.umu.js';
 import { loadLibraryInfo } from '@/electron/handlers/helpers.app/library.js';
 import { isLinux } from '@/electron/handlers/helpers.app/platform.js';
-import {
-  getNonSteamGameAppID,
-  getVersionedGameName,
-} from '@/electron/handlers/helpers.app/steam.js';
 import { sendIPCMessage } from '@/electron/main.js';
 
 const installRedistributables = (appID: number, downloadId?: string) =>
@@ -70,8 +67,7 @@ const installRedistributables = (appID: number, downloadId?: string) =>
           new LibraryError({ message: formatError(cause), gameId: appID }),
       });
     }
-    const versionedName = getVersionedGameName(appInfo.name, appInfo.version);
-    const steamAppId = yield* getNonSteamGameAppID(versionedName).pipe(
+    const steamAppId = yield* findSteamAppIdForGame(appID).pipe(
       Effect.mapError(() => {
         emitProgress({
           kind: 'done',
@@ -94,11 +90,18 @@ const installRedistributables = (appID: number, downloadId?: string) =>
         new LibraryError({ message: formatError(cause), gameId: appID }),
     });
     if (!migration.success) {
+      const error = migration.error ?? 'Failed to migrate legacy prefix to UMU';
+      emitProgress({
+        kind: 'done',
+        total: appInfo.redistributables?.length ?? 0,
+        completedCount: 0,
+        failedCount: appInfo.redistributables?.length ?? 0,
+        overallProgress: 100,
+        result: 'failed',
+        error,
+      });
       return yield* Effect.fail(
-        new LibraryError({
-          message: migration.error ?? 'Failed to migrate legacy prefix to UMU',
-          gameId: appID,
-        })
+        new LibraryError({ message: error, gameId: appID })
       );
     }
     return yield* Effect.tryPromise({

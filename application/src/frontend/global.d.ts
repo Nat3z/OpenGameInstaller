@@ -167,7 +167,13 @@ interface Window {
       >;
       getAllApps: () => Promise<LibraryInfo[]>;
       launchGame: (appid: string) => Promise<void>;
-      removeApp: (appid: number) => Promise<void>;
+      removeApp: (
+        appid: number
+      ) => Promise<
+        | { status: 'success'; warning?: string }
+        | { status: 'cancelled'; message: string }
+        | { status: 'error'; error: string }
+      >;
       getOS: () => Promise<string>;
       isSteamDeck: () => Promise<boolean>;
       isOnline: () => Promise<boolean>;
@@ -194,32 +200,39 @@ interface Window {
       addToSteam: (
         appID: number,
         oldSteamAppId?: number
-      ) => Promise<{
-        success: boolean;
-        error?: string;
-      }>;
-      removeFromSteam: (appID: number) => Promise<{
-        success: boolean;
-        error?: string;
-      }>;
-      getSteamAppId: (appID: number) => Promise<{
-        success: boolean;
-        appId?: number;
-        error?: string;
-      }>;
-      killSteam: () => Promise<{
-        success: boolean;
-        error?: string;
-      }>;
-      startSteam: () => Promise<{
-        success: boolean;
-        error?: string;
-      }>;
-      launchSteamApp: (appID: number) => Promise<{
-        success: boolean;
-        shortcutId?: number;
-        error?: string;
-      }>;
+      ) => Promise<
+        | {
+            status: 'success';
+            steamAppId?: number;
+            installation: 'native' | 'flatpak';
+            warning?: string;
+          }
+        | { status: 'cancelled'; message: string }
+        | { status: 'error'; error: string }
+      >;
+      removeFromSteam: (appID: number) => Promise<
+        | {
+            status: 'success';
+            steamAppId?: number;
+            installation: 'native' | 'flatpak';
+            warning?: string;
+          }
+        | { status: 'cancelled'; message: string }
+        | { status: 'error'; error: string }
+      >;
+      getSteamAppId: (
+        appID: number
+      ) => Promise<
+        | { status: 'success'; appId: number }
+        | { status: 'error'; error: string }
+      >;
+      launchSteamApp: (
+        appID: number
+      ) => Promise<
+        | { status: 'success'; shortcutId: number }
+        | { status: 'cancelled'; message: string }
+        | { status: 'error'; error: string }
+      >;
       checkPrefixExists: (appID: number) => Promise<{
         exists: boolean;
         prefixPath?: string;

@@ -274,7 +274,7 @@ export default function handler(mainWindow: Electron.BrowserWindow): void {
   );
 
   ipcMain.handle('app:add-to-desktop', () => runBoundary(addToDesktop()));
-  registerSteamHandlers();
+  registerSteamHandlers(mainWindow);
   registerLibraryHandlers(mainWindow);
   registerRedistributableHandlers();
 }

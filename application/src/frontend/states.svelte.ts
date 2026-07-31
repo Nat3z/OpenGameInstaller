@@ -1,6 +1,6 @@
 type RequiredReadd = {
   appID: number;
-  steamAppId: number;
+  steamAppId?: number;
 };
 
 type DismissedUpdate = {
@@ -26,14 +26,23 @@ export function loadPersistedUpdateState(): {
         if (stored) {
           const parsed = JSON.parse(stored);
           const requiredReadds = Array.isArray(parsed.requiredReadds)
-            ? parsed.requiredReadds.filter((v: unknown): v is RequiredReadd => {
-                return (
-                  typeof v === 'object' &&
-                  v !== null &&
-                  typeof (v as Record<string, unknown>).appID === 'number' &&
-                  typeof (v as Record<string, unknown>).steamAppId === 'number'
-                );
-              })
+            ? parsed.requiredReadds
+                .filter((v: unknown): v is RequiredReadd => {
+                  if (typeof v !== 'object' || v === null) return false;
+                  const record = v as Record<string, unknown>;
+                  return (
+                    typeof record.appID === 'number' &&
+                    (record.steamAppId === undefined ||
+                      typeof record.steamAppId === 'number')
+                  );
+                })
+                .map((entry: RequiredReadd) => ({
+                  appID: entry.appID,
+                  steamAppId:
+                    entry.steamAppId && entry.steamAppId !== 0
+                      ? entry.steamAppId
+                      : undefined,
+                }))
             : [];
           const dismissedUpdates = Array.isArray(parsed.dismissedUpdates)
             ? parsed.dismissedUpdates.filter(
@@ -68,6 +77,23 @@ export let appUpdates = $state({
   requiredReadds: [] as RequiredReadd[],
   dismissedUpdates: [] as DismissedUpdate[],
 });
+
+export function queueRequiredReadd(appID: number, steamAppId?: number): void {
+  appUpdates.requiredReadds = [
+    ...appUpdates.requiredReadds.filter((entry) => entry.appID !== appID),
+    { appID, steamAppId },
+  ];
+}
+
+export function getRequiredReadd(appID: number): RequiredReadd | undefined {
+  return appUpdates.requiredReadds.find((entry) => entry.appID === appID);
+}
+
+export function completeRequiredReadd(appID: number): void {
+  appUpdates.requiredReadds = appUpdates.requiredReadds.filter(
+    (entry) => entry.appID !== appID
+  );
+}
 
 let initTimeout = true;
 $effect.root(() => {

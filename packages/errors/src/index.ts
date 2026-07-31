@@ -155,6 +155,7 @@ export type OgiError =
   | DownloadNotActive
   | TooManyRequests
   | ConnectionRefreshRequested
+  | DownloadAborted
   | NetworkError
   | HttpError
   | FileSystemError

@@ -80,6 +80,35 @@ export function normalizeAddonLink(addonLink: string): string {
   return trimmed;
 }
 
+function getAddonLinkIdentity(addonLink: string): string {
+  const parsedAddon = parseAddonLink(addonLink);
+  if (parsedAddon.kind === 'local') {
+    return `local:${parsedAddon.path}`;
+  }
+  return `git:${canonicalizeAddonSource(parsedAddon.gitUrl)}`;
+}
+
+export function replaceAddonLink(
+  addons: readonly string[],
+  addonLink: string
+): string[] {
+  const identity = getAddonLinkIdentity(addonLink);
+  const updatedAddons: string[] = [];
+  let inserted = false;
+
+  for (const existingAddon of addons) {
+    if (getAddonLinkIdentity(existingAddon) !== identity) {
+      updatedAddons.push(existingAddon);
+    } else if (!inserted) {
+      updatedAddons.push(addonLink);
+      inserted = true;
+    }
+  }
+
+  if (!inserted) updatedAddons.push(addonLink);
+  return updatedAddons;
+}
+
 export function parseAddonLink(addonLink: string): ParsedAddonLink {
   const normalized = normalizeAddonLink(addonLink);
 
@@ -146,18 +175,21 @@ export function parseAddonLink(addonLink: string): ParsedAddonLink {
   // The override separator must appear after the repository path begins. This excludes
   // URL schemes, ports, and the host separator in git@host:owner/repository.
   const schemeSeparatorIndex = gitUrlWithRef.indexOf('://');
-  const repositoryPathIndex =
-    schemeSeparatorIndex === -1
-      ? Math.min(
-          ...[gitUrlWithRef.indexOf('/'), gitUrlWithRef.indexOf('\\')].filter(
-            (index) => index !== -1
-          )
-        )
-      : gitUrlWithRef.indexOf('/', schemeSeparatorIndex + 3);
   const sshHostSeparatorIndex = /^git@/.test(gitUrlWithRef)
     ? gitUrlWithRef.indexOf(':')
     : -1;
+  const pathSeparators = [
+    gitUrlWithRef.indexOf('/'),
+    gitUrlWithRef.indexOf('\\'),
+  ].filter((index) => index !== -1);
+  const repositoryPathIndex =
+    schemeSeparatorIndex === -1
+      ? pathSeparators.length > 0
+        ? Math.min(...pathSeparators)
+        : sshHostSeparatorIndex
+      : gitUrlWithRef.indexOf('/', schemeSeparatorIndex + 3);
   const hasExplicitRef =
+    repositoryPathIndex !== -1 &&
     refSeparatorIndex > Math.max(repositoryPathIndex, sshHostSeparatorIndex) &&
     refSeparatorIndex < gitUrlWithRef.length - 1;
   const gitUrl = hasExplicitRef

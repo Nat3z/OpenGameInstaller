@@ -9,6 +9,7 @@ import { dirname, isAbsolute, join, resolve } from 'path';
 import {
   normalizeAddonLink,
   parseAddonLink,
+  replaceAddonLink,
 } from '@/electron/lib/addon-links.js';
 import { AddonMarketplace } from '@/electron/lib/marketplace.js';
 import { sendIPCMessage, sendNotification } from '@/electron/main.js';
@@ -320,6 +321,26 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
             addonPath = parsedAddon.path;
           }
           let clonedThisInstall = false;
+          let previousCheckoutHash: string | undefined;
+          let checkoutChanged = false;
+          const restorePreviousCheckout = (): Effect.Effect<void> =>
+            Effect.gen(function* () {
+              if (!checkoutChanged || !previousCheckoutHash) return;
+
+              const restoreResult = yield* Effect.either(
+                new Addon.Git({ path: addonPath }).checkoutCommit(
+                  previousCheckoutHash
+                )
+              );
+              if (restoreResult._tag === 'Left') {
+                console.error(
+                  `Failed to restore ${addonName} to ${previousCheckoutHash}:`,
+                  restoreResult.left
+                );
+                return;
+              }
+              checkoutChanged = false;
+            });
 
           yield* Effect.gen(function* () {
             const isInstalled = yield* Effect.try({
@@ -330,25 +351,103 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
                   addonName,
                 }),
             });
+            const isRepository = yield* Effect.try({
+              try: () => !isLocal && isGitRepository(addonPath),
+              catch: (cause) =>
+                new AddonError({
+                  message: `Failed to inspect addon ${addonName}: ${String(cause)}`,
+                  addonName,
+                }),
+            });
+            let requestedCheckoutAlreadySelected = false;
+            if (parsedAddon.kind === 'marketplace' && isRepository) {
+              const installedAddon = new Addon.Git({ path: addonPath });
+              if (parsedAddon.explicitRef) {
+                const targetHash = yield* installedAddon.resolveRemoteRef(
+                  'origin',
+                  parsedAddon.explicitRef
+                );
+                const currentHash = yield* installedAddon.getCurrentHash();
+                requestedCheckoutAlreadySelected = currentHash === targetHash;
+                if (!requestedCheckoutAlreadySelected) {
+                  previousCheckoutHash = currentHash;
+                  yield* installedAddon.checkoutCommit(targetHash);
+                  checkoutChanged = true;
+                }
+              } else if (isInstalled) {
+                const marketplace = yield* loadMarketplace(
+                  parsedAddon.marketplaceUrl
+                );
+                const marketplaceAddon = marketplace.getAddon(
+                  parsedAddon.gitUrl
+                );
+                if (!marketplaceAddon) {
+                  return yield* Effect.fail(new AddonNotFound({ addonName }));
+                }
+
+                const pinnedCommit = marketplaceAddon.pinnedCommit ?? 'latest';
+                const currentHash = yield* installedAddon.getCurrentHash();
+                if (pinnedCommit === 'latest') {
+                  const currentBranch =
+                    yield* installedAddon.getCurrentBranch();
+                  if (currentBranch) {
+                    requestedCheckoutAlreadySelected = true;
+                  } else {
+                    previousCheckoutHash = currentHash;
+                    const targetHash =
+                      yield* installedAddon.switchToRemoteDefaultBranch(
+                        'origin'
+                      );
+                    requestedCheckoutAlreadySelected =
+                      currentHash === targetHash;
+                    checkoutChanged = !requestedCheckoutAlreadySelected;
+                  }
+                } else {
+                  yield* installedAddon.fetch();
+                  const targetHash =
+                    yield* installedAddon.resolveRef(pinnedCommit);
+                  requestedCheckoutAlreadySelected = currentHash === targetHash;
+                  if (!requestedCheckoutAlreadySelected) {
+                    previousCheckoutHash = currentHash;
+                    yield* installedAddon.checkoutCommit(targetHash);
+                    checkoutChanged = true;
+                  }
+                }
+              }
+            }
+
             if (isInstalled) {
-              const alreadyRegistered = stagedUpdate.addons.includes(
+              const updatedAddons = replaceAddonLink(
+                stagedUpdate.addons,
                 parsedAddon.normalized
               );
-              if (!alreadyRegistered) {
-                stagedUpdate.addons.push(parsedAddon.normalized);
+              const registrationChanged =
+                updatedAddons.join('\0') !== stagedUpdate.addons.join('\0');
+
+              if (
+                parsedAddon.kind !== 'marketplace' ||
+                (!isRepository && !parsedAddon.explicitRef) ||
+                requestedCheckoutAlreadySelected
+              ) {
+                stagedUpdate.addons = updatedAddons;
                 sendNotification({
-                  message: `Re-registered ${addonName} in addon config.`,
+                  message: registrationChanged
+                    ? `Re-registered ${addonName} in addon config.`
+                    : `Addon ${addonName} already installed and setup.`,
                   id: Math.random().toString(36).substring(7),
                   type: 'info',
                 });
-              } else {
-                sendNotification({
-                  message: `Addon ${addonName} already installed and setup.`,
-                  id: Math.random().toString(36).substring(7),
-                  type: 'info',
-                });
+                return;
               }
-              return;
+
+              if (!isRepository) {
+                return yield* Effect.fail(
+                  new AddonError({
+                    message: `Cannot switch ${addonName} to ${parsedAddon.explicitRef}: the installed addon is not a git repository`,
+                    addonName,
+                  })
+                );
+              }
             }
 
             const hasAddonConfig = yield* Effect.try({
@@ -359,6 +458,19 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
                   addonName,
                 }),
             });
+            if (
+              parsedAddon.kind === 'marketplace' &&
+              parsedAddon.explicitRef &&
+              hasAddonConfig &&
+              !isRepository
+            ) {
+              return yield* Effect.fail(
+                new AddonError({
+                  message: `Cannot switch ${addonName} to ${parsedAddon.explicitRef}: the existing addon is not a git repository`,
+                  addonName,
+                })
+              );
+            }
             if (!isLocal && !hasAddonConfig) {
               // Validate git URL/SSH pattern before cloning
               const gitUrlPattern = /^(https?:\/\/|git@|ssh:\/\/)[^\s]+$/;
@@ -402,11 +514,11 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
                 }
 
                 if (parsedAddon.explicitRef) {
-                  yield* unloadedAddon.fetchRef(
+                  const targetHash = yield* unloadedAddon.resolveRemoteRef(
                     'origin',
                     parsedAddon.explicitRef
                   );
-                  yield* unloadedAddon.checkoutCommit('FETCH_HEAD');
+                  yield* unloadedAddon.checkoutCommit(targetHash);
                 } else if (
                   addonFromMarketplace.pinnedCommit &&
                   addonFromMarketplace.pinnedCommit !== 'latest'
@@ -427,6 +539,7 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
               ? yield* instance.install()
               : false;
             if (!hasAddonBeenSetup) {
+              yield* restorePreviousCheckout();
               sendNotification({
                 message: `An error occurred when setting up ${addonName}`,
                 id: Math.random().toString(36).substring(7),
@@ -449,9 +562,10 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
                 id: Math.random().toString(36).substring(7),
                 type: 'success',
               });
-              if (!stagedUpdate.addons.includes(parsedAddon.normalized)) {
-                stagedUpdate.addons.push(parsedAddon.normalized);
-              }
+              stagedUpdate.addons = replaceAddonLink(
+                stagedUpdate.addons,
+                parsedAddon.normalized
+              );
             }
           }).pipe(
             Effect.catchAll((installErr) =>
@@ -465,6 +579,7 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
                   id: Math.random().toString(36).substring(7),
                   type: 'error',
                 });
+                yield* restorePreviousCheckout();
                 if (clonedThisInstall) {
                   // Clean up a partial clone so retries do not install from an unpinned default branch.
                   yield* Effect.try({
@@ -681,6 +796,60 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
                 return yield* Effect.fail(fetchResult.left);
               }
               const fetchData = fetchResult.right;
+              const installationLogPath = join(addonPath, 'installation.log');
+              const previousInstallationLog = yield* Effect.try({
+                try: () =>
+                  fs.existsSync(installationLogPath)
+                    ? fs.readFileSync(installationLogPath)
+                    : undefined,
+                catch: (cause) =>
+                  new AddonError({
+                    message: `Failed to preserve addon ${addonName} state: ${String(cause)}`,
+                    addonName,
+                  }),
+              });
+              let checkoutChanged = false;
+              const rollbackSetup = (): Effect.Effect<void> =>
+                Effect.gen(function* () {
+                  if (checkoutChanged) {
+                    const checkoutResult = yield* Effect.either(
+                      addonSetup.git.checkoutCommit(fetchData.currentHash)
+                    );
+                    if (checkoutResult._tag === 'Left') {
+                      console.error(
+                        `Failed to restore ${addonName} to ${fetchData.currentHash}:`,
+                        checkoutResult.left
+                      );
+                    }
+                  }
+
+                  const installationLogResult = yield* Effect.either(
+                    Effect.try({
+                      try: () => {
+                        if (previousInstallationLog !== undefined) {
+                          fs.writeFileSync(
+                            installationLogPath,
+                            previousInstallationLog
+                          );
+                        } else {
+                          fs.rmSync(installationLogPath, { force: true });
+                        }
+                      },
+                      catch: (cause) =>
+                        new AddonError({
+                          message: `Failed to restore addon ${addonName} state: ${String(cause)}`,
+                          addonName,
+                        }),
+                    })
+                  );
+                  if (installationLogResult._tag === 'Left') {
+                    console.error(
+                      `Failed to restore ${addonName} installation state:`,
+                      installationLogResult.left
+                    );
+                  }
+                });
+
               console.log(marketplaceUrl, addonName, gitUrl);
               let alreadyUpToDate = fetchData.alreadyUpToDate;
 
@@ -702,11 +871,10 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
 
                 let pinnedCommit = marketplaceAddon.pinnedCommit ?? 'latest';
                 if (parsedAddon.explicitRef) {
-                  yield* addonSetup.git.fetchRef(
+                  pinnedCommit = yield* addonSetup.git.resolveRemoteRef(
                     'origin',
                     parsedAddon.explicitRef
                   );
-                  pinnedCommit = yield* addonSetup.git.resolveRef('FETCH_HEAD');
                 }
                 alreadyUpToDate =
                   pinnedCommit === 'latest'
@@ -726,9 +894,8 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
                 }
 
                 if (pinnedCommit !== 'latest') {
-                  yield* addonSetup.git.checkoutCommit(
-                    parsedAddon.explicitRef ? 'FETCH_HEAD' : pinnedCommit
-                  );
+                  yield* addonSetup.git.checkoutCommit(pinnedCommit);
+                  checkoutChanged = true;
                 } else if (!alreadyUpToDate) {
                   yield* addonSetup.git.pull();
                 }
@@ -754,7 +921,7 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
               } else if (yield* addonSetup.isInstalled()) {
                 // get rid of the installation log because not up-to-date
                 yield* Effect.try({
-                  try: () => fs.unlinkSync(join(addonPath, 'installation.log')),
+                  try: () => fs.unlinkSync(installationLogPath),
                   catch: (cause) =>
                     new AddonError({
                       message: `Failed to reset addon ${addonName}: ${String(cause)}`,
@@ -763,19 +930,19 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
                 });
               }
 
-              const instance = yield* Addon.load(addonPath).pipe(
-                Effect.catchAll(() => Effect.succeed(null))
-              );
-              if (!instance) {
-                return yield* Effect.fail(
-                  new AddonError({
-                    message: `Failed to load addon ${addonName}`,
-                    addonName,
-                  })
-                );
-              }
-
               yield* Effect.gen(function* () {
+                const instance = yield* Addon.load(addonPath).pipe(
+                  Effect.catchAll(() => Effect.succeed(null))
+                );
+                if (!instance) {
+                  return yield* Effect.fail(
+                    new AddonError({
+                      message: `Failed to load addon ${addonName}`,
+                      addonName,
+                    })
+                  );
+                }
+
                 const success = yield* instance.install();
                 if (!success || !(yield* instance.setup.isInstalled())) {
                   return yield* Effect.fail(
@@ -802,17 +969,21 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
                 );
               }).pipe(
                 Effect.tapError(() =>
-                  Effect.sync(() =>
-                    sendNotification({
-                      message: `An error occurred when setting up ${addonName}`,
-                      id: Math.random().toString(36).substring(7),
-                      type: 'error',
-                    })
+                  rollbackSetup().pipe(
+                    Effect.zipRight(
+                      Effect.sync(() =>
+                        sendNotification({
+                          message: `An error occurred when setting up ${addonName}`,
+                          id: Math.random().toString(36).substring(7),
+                          type: 'error',
+                        })
+                      )
+                    )
                   )
                 )
               );
             }).pipe(Effect.either),
-          { concurrency: 'unbounded' }
+          { concurrency: 1 }
         );
 
         let failedCount = 0;

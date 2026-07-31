@@ -126,6 +126,62 @@ export class Git {
     return this.fetch([remote, ref]).pipe(Effect.asVoid);
   }
 
+  public resolveRemoteRef(
+    remote: string,
+    ref: string
+  ): Effect.Effect<string, AddonError | ValidationError> {
+    return Effect.gen(this, function* () {
+      if (/^[0-9a-f]{4,40}$/i.test(ref)) {
+        const localCommit = yield* Effect.either(this.resolveRef(ref));
+        if (localCommit._tag === 'Right') return localCommit.right;
+      }
+
+      yield* this.fetchRef(remote, ref);
+      return yield* this.resolveRef('FETCH_HEAD');
+    });
+  }
+
+  public getCurrentBranch(): Effect.Effect<string | undefined, AddonError> {
+    return this.execGit(
+      ['branch', '--show-current'],
+      'get current branch'
+    ).pipe(Effect.map((branch) => branch || undefined));
+  }
+
+  public switchToRemoteDefaultBranch(
+    remote: string
+  ): Effect.Effect<string, AddonError | ValidationError> {
+    return Effect.gen(this, function* () {
+      if (!remote || remote.startsWith('-')) {
+        return yield* Effect.fail(
+          new ValidationError({
+            field: 'remote',
+            message: `Refusing unsafe git remote: ${remote}`,
+          })
+        );
+      }
+
+      yield* this.fetch([remote]);
+      const trackingBranch = yield* this.execGit(
+        ['symbolic-ref', '--short', `refs/remotes/${remote}/HEAD`],
+        `resolve ${remote} default branch`
+      );
+      const prefix = `${remote}/`;
+      if (!trackingBranch.startsWith(prefix)) {
+        return yield* Effect.fail(
+          new ValidationError({
+            field: 'remote',
+            message: `Unexpected default branch for ${remote}: ${trackingBranch}`,
+          })
+        );
+      }
+
+      yield* this.switchBranch(trackingBranch.slice(prefix.length));
+      yield* this.pull();
+      return yield* this.getCurrentHash();
+    });
+  }
+
   public pull(
     options: { readonly force?: boolean } = {}
   ): Effect.Effect<void, AddonError> {

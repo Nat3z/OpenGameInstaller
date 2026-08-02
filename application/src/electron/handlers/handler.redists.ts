@@ -68,7 +68,7 @@ const installRedistributables = (appID: number, downloadId?: string) =>
       });
     }
     const steamAppId = yield* findSteamAppIdForGame(appID).pipe(
-      Effect.mapError(() => {
+      Effect.mapError((cause) => {
         emitProgress({
           kind: 'done',
           total: appInfo.redistributables?.length ?? 0,
@@ -76,10 +76,10 @@ const installRedistributables = (appID: number, downloadId?: string) =>
           failedCount: appInfo.redistributables?.length ?? 0,
           overallProgress: 100,
           result: 'failed',
-          error: 'Failed to resolve Steam App ID',
+          error: 'Failed to inspect the Steam shortcut',
         });
         return new LibraryError({
-          message: 'Failed to resolve Steam App ID',
+          message: formatError(cause),
           gameId: appID,
         });
       })

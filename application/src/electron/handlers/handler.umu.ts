@@ -966,6 +966,7 @@ async function initializePrefixWithUmuRun(
     });
     streamChildProcessOutput(initChild, logPrefix);
 
+    let timedOut = false;
     const handleAbort = () => {
       if (!initChild.pid) return;
       initChild.kill('SIGTERM');
@@ -975,7 +976,13 @@ async function initializePrefixWithUmuRun(
         }
       }, 5_000);
     };
-    const timeout = setTimeout(handleAbort, 5 * 60 * 1000);
+    const timeout = setTimeout(
+      () => {
+        timedOut = true;
+        handleAbort();
+      },
+      5 * 60 * 1000
+    );
     const finalize = (result: boolean) => {
       if (resolved) return;
       resolved = true;
@@ -991,7 +998,9 @@ async function initializePrefixWithUmuRun(
     initChild.on(
       'close',
       (code: number | null, childSignal: NodeJS.Signals | null) => {
-        finalize(code === 0 && childSignal == null && !signal?.aborted);
+        finalize(
+          code === 0 && childSignal == null && !signal?.aborted && !timedOut
+        );
       }
     );
 

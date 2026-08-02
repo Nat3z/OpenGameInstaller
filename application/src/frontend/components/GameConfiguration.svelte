@@ -163,7 +163,7 @@ async function addToSteam(button: HTMLButtonElement) {
       createNotification({
         id: Math.random().toString(36).substring(7),
         message: result.status === 'cancelled' ? result.message : result.error,
-        type: result.status === 'cancelled' ? 'info' : 'error',
+        type: result.status === 'cancelled' ? 'warning' : 'error',
       });
     }
   } catch (error) {

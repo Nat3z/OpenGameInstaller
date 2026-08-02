@@ -50,6 +50,7 @@ mock.module('axios', () => ({
   AxiosError: MockAxiosError,
 }));
 mock.module('electron', () => ({
+  app: { isPackaged: false, getAppPath: () => process.cwd() },
   BrowserWindow: MockBrowserWindow,
   ipcMain: {
     handle: mock(() => {}),

@@ -1,8 +1,7 @@
 import * as fs from 'node:fs';
-import { dirname, extname, join } from 'node:path';
+import { dirname, resolve } from 'node:path';
 import {
   GameNotFound,
-  SteamArtworkError,
   SteamRunningError,
   SteamShortcutConflictError,
   SteamShortcutNotFoundError,
@@ -18,10 +17,13 @@ import {
 } from '@/electron/handlers/helpers.app/library.js';
 import { getOgiExecutablePath } from '@/electron/handlers/helpers.app/platform.js';
 import {
+  copySteamGridArtwork,
+  downloadSteamGridArtwork,
+} from '@/electron/lib/steam-grid-db.js';
+import {
   type SteamLocation,
   SteamRepository,
   type SteamRepositoryError,
-  writeFileAtomic,
 } from '@/electron/lib/steam-installation.js';
 import {
   getSteamInstallationKind,
@@ -37,9 +39,8 @@ import {
   upsertShortcut,
 } from '@/electron/lib/steam-shortcuts.js';
 import { serializeBinaryVdf } from '@/electron/lib/steam-vdf.js';
-import { __dirname } from '@/electron/manager/manager.paths.js';
 
-export function getVersionedGameName(
+export function getLegacyVersionedGameName(
   name: string,
   version?: string | null
 ): string {
@@ -80,104 +81,6 @@ export interface SteamMutationOptions {
 // The service layer is provided at separate IPC runtime boundaries, so this
 // module-level semaphore keeps Steam closed for one complete mutation at a time.
 const steamMutationLock = Effect.unsafeMakeSemaphore(1);
-
-type SteamGridDbResponse<T> = { success: boolean; data: T };
-type SteamGridDbGame = { id: number };
-type SteamGridDbImage = { url: string };
-
-const readSteamGridDbKey = (): string | undefined => {
-  const configPath = join(__dirname, 'config/option/steamgriddb.json');
-  if (!fs.existsSync(configPath)) return undefined;
-  const parsed = JSON.parse(fs.readFileSync(configPath, 'utf8')) as {
-    apiKey?: unknown;
-  };
-  return typeof parsed.apiKey === 'string' && parsed.apiKey.trim()
-    ? parsed.apiKey.trim()
-    : undefined;
-};
-
-const fetchSteamGridDb = async <T>(url: string, apiKey: string): Promise<T> => {
-  const response = await fetch(url, {
-    headers: { Authorization: `Bearer ${apiKey}` },
-    signal: AbortSignal.timeout(15_000),
-  });
-  if (!response.ok) {
-    throw new Error(`SteamGridDB request failed with ${response.status}`);
-  }
-  const body = (await response.json()) as SteamGridDbResponse<T>;
-  if (!body.success) throw new Error('SteamGridDB request was unsuccessful');
-  return body.data;
-};
-
-const downloadSteamGridArtwork = (
-  appName: string,
-  appId: number,
-  userdataPath: string
-): Effect.Effect<void, SteamArtworkError> =>
-  Effect.tryPromise({
-    try: async () => {
-      const apiKey = readSteamGridDbKey();
-      if (!apiKey) return;
-      const games = await fetchSteamGridDb<SteamGridDbGame[]>(
-        `https://www.steamgriddb.com/api/v2/search/autocomplete/${encodeURIComponent(appName)}`,
-        apiKey
-      );
-      const game = games[0];
-      if (!game) return;
-      const requests = [
-        { endpoint: `grids/game/${game.id}?dimensions=600x900`, suffix: 'p' },
-        { endpoint: `grids/game/${game.id}?dimensions=920x430`, suffix: '' },
-        { endpoint: `heroes/game/${game.id}`, suffix: '_hero' },
-        { endpoint: `logos/game/${game.id}`, suffix: '_logo' },
-        { endpoint: `icons/game/${game.id}`, suffix: '_icon' },
-      ];
-      const gridDirectory = join(userdataPath, 'config/grid');
-      await Promise.all(
-        requests.map(async ({ endpoint, suffix }) => {
-          const images = await fetchSteamGridDb<SteamGridDbImage[]>(
-            `https://www.steamgriddb.com/api/v2/${endpoint}`,
-            apiKey
-          );
-          const artwork = images[0];
-          if (!artwork) return;
-          const response = await fetch(artwork.url, {
-            signal: AbortSignal.timeout(15_000),
-          });
-          if (!response.ok) return;
-          const contentLength = Number(response.headers.get('content-length'));
-          if (
-            Number.isFinite(contentLength) &&
-            contentLength > 20 * 1024 * 1024
-          ) {
-            throw new Error('SteamGridDB artwork exceeds the 20 MiB limit');
-          }
-          const bytes = Buffer.from(await response.arrayBuffer());
-          if (bytes.length > 20 * 1024 * 1024) {
-            throw new Error('SteamGridDB artwork exceeds the 20 MiB limit');
-          }
-          const extension = extname(
-            new URL(artwork.url).pathname
-          ).toLowerCase();
-          const safeExtension = ['.png', '.jpg', '.jpeg', '.webp'].includes(
-            extension
-          )
-            ? extension
-            : '.png';
-          await Effect.runPromise(
-            writeFileAtomic(
-              join(gridDirectory, `${appId}${suffix}${safeExtension}`),
-              bytes
-            )
-          );
-        })
-      );
-    },
-    catch: (cause) =>
-      new SteamArtworkError({
-        message: `Could not download artwork for ${appName}`,
-        cause,
-      }),
-  });
 
 const loadGame = (appID: number) =>
   Effect.try({
@@ -254,7 +157,7 @@ export const SteamServiceLive: Layer.Layer<
           appInfo.umu?.steamShortcutLegacyExecutable,
         ].filter((value): value is string => value !== undefined),
         legacyNames: [
-          getVersionedGameName(appInfo.name, appInfo.version),
+          getLegacyVersionedGameName(appInfo.name, appInfo.version),
           appInfo.name,
           appInfo.umu?.steamShortcutLegacyName,
         ].filter((value): value is string => value !== undefined),
@@ -268,7 +171,10 @@ export const SteamServiceLive: Layer.Layer<
     ) =>
       Effect.gen(function* () {
         const locations = yield* repository.locateAll;
-        const matches: Array<{ appId: number; location: SteamLocation }> = [];
+        const matches = new Map<
+          string,
+          { appId: number; location: SteamLocation }
+        >();
         let inspectionFailure:
           | SteamShortcutConflictError
           | SteamVdfParseError
@@ -304,11 +210,36 @@ export const SteamServiceLive: Layer.Layer<
           if (shortcut._tag === 'Left') {
             inspectionFailure ??= shortcut.left;
           } else if (shortcut.right) {
-            matches.push({ appId: shortcut.right.appId, location });
+            const shortcutsPath = document.right.shortcutsPath;
+            const canonicalPath = yield* Effect.try({
+              try: () =>
+                fs.existsSync(shortcutsPath)
+                  ? fs.realpathSync.native(shortcutsPath)
+                  : resolve(shortcutsPath),
+              catch: (cause) =>
+                new SteamVdfParseError({
+                  message: `Could not resolve ${shortcutsPath}`,
+                  path: shortcutsPath,
+                  cause,
+                }),
+            });
+            const existingMatch = matches.get(canonicalPath);
+            if (existingMatch && existingMatch.appId !== shortcut.right.appId) {
+              return yield* Effect.fail(
+                new SteamShortcutConflictError({
+                  message: `Steam shortcut data for game ${appID} is inconsistent`,
+                  gameId: appID,
+                })
+              );
+            }
+            matches.set(canonicalPath, {
+              appId: shortcut.right.appId,
+              location,
+            });
           }
         }
 
-        if (matches.length > 1) {
+        if (matches.size > 1) {
           return yield* Effect.fail(
             new SteamShortcutConflictError({
               message: `Multiple Steam users contain a shortcut for game ${appID}`,
@@ -316,7 +247,7 @@ export const SteamServiceLive: Layer.Layer<
             })
           );
         }
-        if (matches.length === 1) return matches[0];
+        if (matches.size === 1) return [...matches.values()][0];
         if (inspectionFailure) return yield* Effect.fail(inspectionFailure);
         return yield* Effect.fail(
           new SteamShortcutNotFoundError({
@@ -349,7 +280,13 @@ export const SteamServiceLive: Layer.Layer<
               ? yield* repository.locate
               : yield* Effect.fail(existing.left);
         const installation = getSteamInstallationKind(location.root);
-        const appName = getVersionedGameName(appInfo.name, appInfo.version);
+        const appName = appInfo.name;
+        const oldAppId =
+          existing._tag === 'Right'
+            ? existing.right.appId
+            : (options.oldSteamAppId ??
+              appInfo.umu?.steamShortcutReaddId ??
+              appInfo.umu?.steamShortcutId);
         const mutation = repository.modifyShortcuts(
           location,
           ({ root, shortcutsPath, commit, rollback }) =>
@@ -393,28 +330,47 @@ export const SteamServiceLive: Layer.Layer<
               return upserted.appId;
             })
         );
+        const operation = Effect.gen(function* () {
+          const appId = yield* mutation;
+          const warnings: string[] = [];
+          const copiedArtwork = yield* Effect.either(
+            copySteamGridArtwork({
+              oldAppId,
+              newAppId: appId,
+              userdataPath: location.user.userdataPath,
+            })
+          );
+          if (copiedArtwork._tag === 'Left') {
+            warnings.push(copiedArtwork.left.message);
+          }
+          const downloadedArtwork = yield* Effect.either(
+            downloadSteamGridArtwork({
+              appName,
+              appId,
+              userdataPath: location.user.userdataPath,
+            })
+          );
+          if (downloadedArtwork._tag === 'Left') {
+            warnings.push(downloadedArtwork.left.message);
+          }
+          return {
+            appId,
+            artworkWarning: warnings.join(' ') || undefined,
+          };
+        });
         const committed = yield* runWithSteamLifecycle({
           allowSteamShutdown: options.allowSteamShutdown ?? false,
           status: steamProcess.status(installation),
           shutdownAndWait: steamProcess.shutdownAndWait(installation),
           startAndWait: steamProcess.startAndWait(installation),
-          operation: mutation,
+          operation,
         });
-        const artwork = yield* Effect.either(
-          downloadSteamGridArtwork(
-            appName,
-            committed.value,
-            location.user.userdataPath
-          )
-        );
-        const artworkWarning =
-          artwork._tag === 'Left' ? artwork.left.message : undefined;
         return {
           status: 'success' as const,
-          steamAppId: committed.value,
+          steamAppId: committed.value.appId,
           installation,
           warning:
-            [committed.restartWarning, artworkWarning]
+            [committed.restartWarning, committed.value.artworkWarning]
               .filter(Boolean)
               .join(' ') || undefined,
         };

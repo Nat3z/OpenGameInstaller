@@ -20,7 +20,6 @@ import {
   isLinux,
 } from '@/electron/handlers/helpers.app/platform.js';
 import {
-  getVersionedGameName,
   type SteamMutationOptions,
   type SteamMutationResult,
   SteamService,
@@ -183,8 +182,7 @@ export function createSteamShortcutDesktop(params: {
       new FileSystemError({ message: 'Home directory not found' })
     );
   }
-  const versionedGameName = getVersionedGameName(params.name, params.version);
-  const sanitizedGameName = versionedGameName
+  const sanitizedGameName = params.name
     .replace(new RegExp('[\\r\\n\\x00-\\x1F=]', 'g'), ' ')
     .replace(/\s+/g, ' ')
     .trim();

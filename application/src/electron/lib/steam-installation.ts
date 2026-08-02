@@ -190,7 +190,30 @@ export function locateSteamLocations(
       SteamLocation & { rootIndex: number; userIndex: number }
     > = [];
     let parseFailure: SteamVdfParseError | undefined;
-    for (const [rootIndex, root] of candidates.entries()) {
+    const seenRoots = new Set<string>();
+    for (const [rootIndex, candidate] of candidates.entries()) {
+      const root = yield* Effect.try({
+        try: () => {
+          const resolved = path.resolve(candidate);
+          return fs.existsSync(resolved)
+            ? fs.realpathSync.native(resolved)
+            : resolved;
+        },
+        catch: (cause) =>
+          new SteamVdfParseError({
+            message: `Could not resolve Steam installation ${candidate}`,
+            path: candidate,
+            cause,
+          }),
+      }).pipe(
+        Effect.catchAll((cause) => {
+          parseFailure ??= cause;
+          return Effect.succeed(undefined);
+        })
+      );
+      if (!root || seenRoots.has(root)) continue;
+      seenRoots.add(root);
+
       const users = yield* Effect.try({
         try: () => listSteamUsersSync(root),
         catch: (cause) =>

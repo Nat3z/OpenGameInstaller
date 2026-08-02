@@ -194,11 +194,9 @@ describe('staged UMU prefix migration', () => {
     const result = await Effect.runPromise(
       Effect.either(
         stagedPrefixMigration({
-          appID: info.appID,
           libraryInfo: info,
           sourcePath: source,
           finalPath,
-          umuId: info.umu!.umuId,
           commit: () => {},
         })
       )
@@ -253,11 +251,15 @@ describe('staged UMU prefix migration', () => {
     let committed = false;
     let signalStarted: (() => void) | undefined;
     let finishInitialization: (() => void) | undefined;
+    let signalFinished: (() => void) | undefined;
     const started = new Promise<void>((resolve) => {
       signalStarted = resolve;
     });
     const finish = new Promise<void>((resolve) => {
       finishInitialization = resolve;
+    });
+    const finished = new Promise<void>((resolve) => {
+      signalFinished = resolve;
     });
     const fiber = Effect.runFork(
       stagedPrefixMigration({
@@ -266,8 +268,10 @@ describe('staged UMU prefix migration', () => {
         initialize: async (stagingPath) => {
           signalStarted?.();
           await finish;
-          fs.mkdirSync(stagingPath, { recursive: true });
-          fs.writeFileSync(path.join(stagingPath, 'system.reg'), 'registry');
+          if (fs.existsSync(stagingPath)) {
+            fs.writeFileSync(path.join(stagingPath, 'system.reg'), 'registry');
+          }
+          signalFinished?.();
         },
         commit: () => {
           committed = true;
@@ -278,7 +282,7 @@ describe('staged UMU prefix migration', () => {
     await started;
     await Effect.runPromise(Fiber.interrupt(fiber));
     finishInitialization?.();
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    await finished;
 
     expect(committed).toBe(false);
     expect(fs.existsSync(finalPath)).toBe(false);
@@ -296,11 +300,9 @@ describe('staged UMU prefix migration', () => {
     const result = await Effect.runPromise(
       Effect.either(
         stagedPrefixMigration({
-          appID: info.appID,
           libraryInfo: info,
           sourcePath: source,
           finalPath,
-          umuId: info.umu!.umuId,
           commit: () => {
             throw new Error('metadata write failed');
           },

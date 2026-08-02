@@ -8,7 +8,10 @@ import {
   SteamRepository,
   SteamRepositoryLive,
 } from '../src/electron/lib/steam-installation.js';
-import { parseBinaryVdf } from '../src/electron/lib/steam-vdf.js';
+import {
+  parseBinaryVdf,
+  serializeBinaryVdf,
+} from '../src/electron/lib/steam-vdf.js';
 
 const temporaryDirectories: string[] = [];
 
@@ -107,5 +110,34 @@ describe('Steam shortcuts repository', () => {
     await Effect.runPromise(transaction.pipe(Effect.provide(layer)));
 
     expect(fs.existsSync(location.user.shortcutsPath)).toBe(false);
+  });
+
+  test('rollback restores an existing shortcuts file', async () => {
+    const location = createLocation();
+    const original = serializeBinaryVdf(
+      new Map([['transaction-test', { type: 2 as const, value: 7 }]])
+    );
+    fs.mkdirSync(path.dirname(location.user.shortcutsPath), {
+      recursive: true,
+    });
+    fs.writeFileSync(location.user.shortcutsPath, original);
+    const layer = SteamRepositoryLive([]);
+
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const repository = yield* SteamRepository;
+        yield* repository.modifyShortcuts(
+          location,
+          ({ root, commit, rollback }) =>
+            Effect.gen(function* () {
+              root.set('transaction-test', { type: 2, value: 8 });
+              yield* commit();
+              yield* rollback;
+            })
+        );
+      }).pipe(Effect.provide(layer))
+    );
+
+    expect(fs.readFileSync(location.user.shortcutsPath)).toEqual(original);
   });
 });

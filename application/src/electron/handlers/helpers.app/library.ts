@@ -49,12 +49,14 @@ export function saveLibraryInfo(appID: number, data: LibraryInfo): void {
   writeJsonAtomic(getLibraryPath(appID), data);
 }
 
+const activeLibraryRemovalTombstones = new Set<string>();
+
 const recoverLibraryTransactions = (libraryDir: string): void => {
   for (const file of fs.readdirSync(libraryDir)) {
     const removing = file.match(/^(\d+\.json)\.ogi-removing-(\d+)-\d+$/);
     if (removing) {
-      if (Number(removing[2]) === process.pid) continue;
       const tombstonePath = join(libraryDir, file);
+      if (activeLibraryRemovalTombstones.has(tombstonePath)) continue;
       const appPath = join(libraryDir, removing[1]);
       const appID = Number.parseInt(removing[1], 10);
       if (fs.existsSync(appPath)) {
@@ -122,9 +124,11 @@ export function stageLibraryRemoval(appID: number): LibraryRemovalTransaction {
   const deletedPath = `${appPath}.ogi-deleted-${transactionId}`;
   const originalApps = loadInternalsApps();
   fs.renameSync(appPath, tombstonePath);
+  activeLibraryRemovalTombstones.add(tombstonePath);
   try {
     saveInternalsApps(originalApps.filter((candidate) => candidate !== appID));
   } catch (cause) {
+    activeLibraryRemovalTombstones.delete(tombstonePath);
     fs.renameSync(tombstonePath, appPath);
     throw cause;
   }
@@ -141,6 +145,7 @@ export function stageLibraryRemoval(appID: number): LibraryRemovalTransaction {
         console.warn('[library] Could not mark deletion tombstone', cause);
       }
       settled = true;
+      activeLibraryRemovalTombstones.delete(tombstonePath);
       try {
         fs.rmSync(cleanupPath, { force: true });
       } catch (cause) {
@@ -150,7 +155,13 @@ export function stageLibraryRemoval(appID: number): LibraryRemovalTransaction {
     rollback: () => {
       if (settled) return;
       fs.renameSync(tombstonePath, appPath);
-      saveInternalsApps(originalApps);
+      try {
+        addToInternalsApps(appID);
+      } catch (cause) {
+        fs.renameSync(appPath, tombstonePath);
+        throw cause;
+      }
+      activeLibraryRemovalTombstones.delete(tombstonePath);
       settled = true;
     },
   };

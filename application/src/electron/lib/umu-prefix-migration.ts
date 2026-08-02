@@ -5,6 +5,7 @@ import type { LibraryInfo } from '@ogi-sdk/connect';
 import { Effect } from 'effect';
 
 const migrationMarkerName = '.ogi-prefix-migration.json';
+const activeStagingPaths = new Set<string>();
 
 type PrefixMigrationState = {
   stagingPath: string;
@@ -163,16 +164,9 @@ export const stagedPrefixMigration = (params: {
         const stagingPrefix = `.${basename}.ogi-migrate-`;
         for (const entry of fs.readdirSync(parent)) {
           if (!entry.startsWith(stagingPrefix)) continue;
-          const ownerPid = Number.parseInt(
-            entry.slice(stagingPrefix.length).split('-', 1)[0],
-            10
-          );
-          if (Number.isSafeInteger(ownerPid) && ownerPid !== process.pid) {
-            fs.rmSync(path.join(parent, entry), {
-              recursive: true,
-              force: true,
-            });
-          }
+          const stagingPath = path.join(parent, entry);
+          if (activeStagingPaths.has(stagingPath)) continue;
+          fs.rmSync(stagingPath, { recursive: true, force: true });
         }
 
         if (fs.existsSync(params.finalPath)) {
@@ -203,10 +197,12 @@ export const stagedPrefixMigration = (params: {
           }
           fs.rmdirSync(params.finalPath);
         }
+        const stagingPath = fs.mkdtempSync(
+          path.join(parent, `${stagingPrefix}${process.pid}-`)
+        );
+        activeStagingPaths.add(stagingPath);
         const state: PrefixMigrationState = {
-          stagingPath: fs.mkdtempSync(
-            path.join(parent, `${stagingPrefix}${process.pid}-`)
-          ),
+          stagingPath,
           finalPath: params.finalPath,
           promoted: false,
           committed: false,
@@ -285,6 +281,7 @@ export const stagedPrefixMigration = (params: {
       }),
     (state) =>
       Effect.sync(() => {
+        activeStagingPaths.delete(state.stagingPath);
         state.cancelled = !state.committed;
         if (fs.existsSync(state.stagingPath)) {
           fs.rmSync(state.stagingPath, { recursive: true, force: true });

@@ -145,20 +145,26 @@ const launchViaSteam = (
     const launchId = getNonSteamLaunchId(appId);
     const url = `steam://rungameid/${launchId}`;
     const [candidate] = getSteamCommandCandidates([url], installation);
-    execFile(candidate.command, candidate.args, (cause) => {
-      if (cause) {
-        resume(
-          Effect.fail(
-            new FileSystemError({
-              message: `Failed to launch the ${installation} Steam shortcut`,
-              cause,
-            })
-          )
-        );
-      } else {
-        resume(Effect.succeed({ status: 'success', shortcutId: appId }));
+    const child = execFile(
+      candidate.command,
+      candidate.args,
+      { timeout: 15_000 },
+      (cause) => {
+        if (cause) {
+          resume(
+            Effect.fail(
+              new FileSystemError({
+                message: `Failed to launch the ${installation} Steam shortcut`,
+                cause,
+              })
+            )
+          );
+        } else {
+          resume(Effect.succeed({ status: 'success', shortcutId: appId }));
+        }
       }
-    });
+    );
+    return Effect.sync(() => child.kill());
   });
 
 export function createSteamShortcutDesktop(params: {
@@ -271,7 +277,8 @@ export function registerSteamHandlers(mainWindow: BrowserWindow): void {
         const shouldUpsertShortcut =
           existingSteamAppId === undefined ||
           migrated ||
-          appInfo.umu?.steamShortcutId === undefined;
+          (appInfo.umu !== undefined &&
+            appInfo.umu.steamShortcutId === undefined);
         if (shouldUpsertShortcut) {
           const added = yield* runSteamMutationWithConfirmation(
             mainWindow,
@@ -317,8 +324,11 @@ export function registerSteamHandlers(mainWindow: BrowserWindow): void {
             prefixPath: appInfo.umu.winePrefixPath,
           };
         }
-        const appId = yield* getSteamAppIdForGame(appID);
-        const prefixPath = getProtonPrefixPath(appId);
+        const lookup = yield* Effect.either(getSteamAppIdForGame(appID));
+        if (lookup._tag === 'Left') {
+          return { exists: false, error: lookup.left.message };
+        }
+        const prefixPath = getProtonPrefixPath(lookup.right);
         return { exists: fs.existsSync(prefixPath), prefixPath };
       })
     )

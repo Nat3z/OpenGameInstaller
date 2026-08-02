@@ -521,6 +521,14 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
                 if (steamResult._tag === 'Left') {
                   warning = `The game was removed from the library, but its Steam shortcut could not be removed: ${steamResult.left.message}`;
                 } else if (steamResult.right.status === 'cancelled') {
+                  yield* Effect.try({
+                    try: removal.rollback,
+                    catch: (cause) =>
+                      new FileSystemError({
+                        message: 'Could not restore the staged library removal',
+                        cause,
+                      }),
+                  });
                   return steamResult.right;
                 }
               }
@@ -536,7 +544,13 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
                   message: 'Could not restore the staged library removal',
                   cause,
                 }),
-            }).pipe(Effect.orDie)
+            }).pipe(
+              Effect.catchAll((error) =>
+                Effect.sync(() =>
+                  console.error('[library] Could not roll back removal', error)
+                )
+              )
+            )
         );
       })
     )

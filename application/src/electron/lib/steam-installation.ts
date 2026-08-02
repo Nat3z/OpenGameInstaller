@@ -129,7 +129,9 @@ const listSteamUsersSync = (root: string): SteamUser[] => {
       const user = knownUsers.get(accountId) ?? {
         accountId,
         mostRecent: false,
-        timestamp: fs.statSync(path.join(userdataRoot, accountId)).mtimeMs,
+        timestamp: Math.floor(
+          fs.statSync(path.join(userdataRoot, accountId)).mtimeMs / 1_000
+        ),
       };
       const userdataPath = path.join(userdataRoot, accountId);
       return {
@@ -276,6 +278,8 @@ export function writeFileAtomic(
   });
 }
 
+const shortcutsLock = Effect.unsafeMakeSemaphore(1);
+
 export class SteamRepository extends Context.Tag('SteamRepository')<
   SteamRepository,
   {
@@ -301,11 +305,8 @@ export class SteamRepository extends Context.Tag('SteamRepository')<
 >() {}
 
 export const SteamRepositoryLive = (
-  candidates = getSteamRootCandidates()
+  candidates?: string[]
 ): Layer.Layer<SteamRepository> => {
-  // This semaphore is created with the layer value, so the module-level Steam
-  // layer shares one transaction lock across independent IPC runtimes.
-  const shortcutsLock = Effect.unsafeMakeSemaphore(1);
   const read = (
     location: SteamLocation
   ): Effect.Effect<
@@ -343,8 +344,12 @@ export const SteamRepositoryLive = (
     writeFileAtomic(shortcutsPath, serializeBinaryVdf(root));
 
   return Layer.succeed(SteamRepository, {
-    locate: locateSteam(candidates),
-    locateAll: locateSteamLocations(candidates),
+    locate: Effect.suspend(() =>
+      locateSteam(candidates ?? getSteamRootCandidates())
+    ),
+    locateAll: Effect.suspend(() =>
+      locateSteamLocations(candidates ?? getSteamRootCandidates())
+    ),
     readShortcuts: (location) =>
       read(location).pipe(
         Effect.map(({ root, shortcutsPath }) => ({ root, shortcutsPath }))

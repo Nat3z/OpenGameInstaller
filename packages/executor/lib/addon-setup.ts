@@ -67,7 +67,10 @@ export class AddonSetup {
   ): Effect.Effect<string, AddonError | ValidationError> {
     return Effect.gen(this, function* () {
       const startCommand = yield* Addon.intoExecutor(script);
-      const { command, args } = yield* Addon.getScriptSpawnCommand(script);
+      const { command, args } =
+        process.platform === 'win32'
+          ? yield* Addon.getScriptSpawnCommand(script)
+          : { command: '/bin/sh', args: ['-c', startCommand] };
       const child = yield* Effect.try({
         try: () =>
           spawn(command, args, {

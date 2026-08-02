@@ -67,6 +67,12 @@ export class AddonSetup {
   ): Effect.Effect<string, AddonError | ValidationError> {
     return Effect.gen(this, function* () {
       const startCommand = yield* Addon.intoExecutor(script);
+      if (startCommand.trim() === '') {
+        return yield* Effect.fail(
+          new ValidationError({ message: 'Addon command is empty' })
+        );
+      }
+
       const { command, args } =
         process.platform === 'win32'
           ? yield* Addon.getScriptSpawnCommand(script)

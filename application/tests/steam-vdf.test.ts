@@ -394,6 +394,24 @@ describe('Steam installation repository', () => {
     ]);
   });
 
+  test('deduplicates aliased Steam roots', async () => {
+    const parent = temporaryDirectory();
+    const root = path.join(parent, 'steam');
+    const alias = path.join(parent, 'steam-alias');
+    fs.mkdirSync(path.join(root, 'userdata/100/config'), { recursive: true });
+    writeLoginUsers(root, [
+      { steamId: '76561197960265828', timestamp: 100, mostRecent: true },
+    ]);
+    fs.symlinkSync(root, alias, 'dir');
+
+    const locations = await Effect.runPromise(
+      locateSteamLocations([root, alias])
+    );
+
+    expect(locations).toHaveLength(1);
+    expect(locations[0].root).toBe(fs.realpathSync.native(root));
+  });
+
   test('reports malformed loginusers instead of silently selecting an account', async () => {
     const root = temporaryDirectory();
     fs.mkdirSync(path.join(root, 'userdata/100/config'), { recursive: true });

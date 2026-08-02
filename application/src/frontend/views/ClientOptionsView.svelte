@@ -537,6 +537,24 @@ async function restartAddonServer() {
 
 let showPassword: { [key: string]: boolean } = $state({});
 let doSteamGridDBReconfigure: boolean = $state(false);
+
+async function saveSteamGridDbKey(): Promise<void> {
+  const input = document.getElementById(
+    'steamgriddb-api-key'
+  ) as HTMLInputElement | null;
+  const saved = await window.electronAPI.oobe.setSteamGridDBKey(
+    input?.value.trim() ?? ''
+  );
+  if (saved) {
+    doSteamGridDBReconfigure = false;
+    return;
+  }
+  createNotification({
+    id: Math.random().toString(36).substring(7),
+    message: 'Could not save the SteamGridDB API key',
+    type: 'error',
+  });
+}
 let selectedTorrentClientId: string = $state('webtorrent'); // Track selection reactively
 let selectedTheme: string = $state('light');
 
@@ -720,13 +738,7 @@ onMount(() => {
       <ButtonModal
         variant="primary"
         text="Save"
-        onclick={() => {
-          window.electronAPI.oobe.setSteamGridDBKey(
-            (document.getElementById('steamgriddb-api-key') as HTMLInputElement)
-              .value
-          );
-          doSteamGridDBReconfigure = false;
-        }}
+        onclick={saveSteamGridDbKey}
       />
       <ButtonModal
         variant="secondary"

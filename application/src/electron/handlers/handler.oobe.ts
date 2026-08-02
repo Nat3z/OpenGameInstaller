@@ -12,6 +12,10 @@ import {
 import axios from 'axios';
 import { Effect } from 'effect';
 import { ipcMain } from 'electron';
+import {
+  getSteamGridDbConfigPath,
+  writeSteamGridDbKey,
+} from '@/electron/lib/steam-grid-db.js';
 import { sendIPCMessage, sendNotification } from '@/electron/main.js';
 import { __dirname } from '@/electron/manager/manager.paths.js';
 import { IS_NIXOS } from '@/electron/startup.js';
@@ -199,19 +203,12 @@ export default function OOBEHandler(): void {
   );
   ipcMain.handle('oobe:set-steamgriddb-key', (_, key: string) =>
     runEffectBoundary(
-      Effect.tryPromise({
-        try: async () => {
-          const configDir = join(__dirname, 'config/option');
-          await fs.mkdir(configDir, { recursive: true });
-          await fs.writeFile(
-            join(configDir, 'steamgriddb.json'),
-            JSON.stringify({ apiKey: key })
-          );
-        },
+      Effect.try({
+        try: () => writeSteamGridDbKey(key),
         catch: (cause) =>
           new FileSystemError({
             message: formatError(cause),
-            path: join(__dirname, 'config/option/steamgriddb.json'),
+            path: getSteamGridDbConfigPath(),
             cause,
           }),
       }).pipe(

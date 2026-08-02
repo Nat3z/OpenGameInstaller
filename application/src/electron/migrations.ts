@@ -6,6 +6,7 @@ import { join } from 'path';
 import semver from 'semver';
 import { addToDesktop } from '@/electron/handlers/handler.app.js';
 import { normalizeAddonLink } from '@/electron/lib/addon-links.js';
+import { migrateLegacySteamGridDbKey } from '@/electron/lib/steam-grid-db.js';
 import { sendIPCMessage, sendNotification, VERSION } from '@/electron/main.js';
 import { __dirname } from '@/electron/manager/manager.paths.js';
 
@@ -301,6 +302,17 @@ let migrations: {
       generalConfigObj.addons = [...new Set(migratedAddons)];
       await fs.writeFile(configPath, JSON.stringify(generalConfigObj));
       console.log('[migration] migrated addon source associations');
+    },
+  },
+  'migrate-steamtinkerlaunch-steamgriddb-key': {
+    from: '0.0.0',
+    to: '4.1.0',
+    description:
+      'Migrates the SteamGridDB API key from the legacy SteamTinkerLaunch configuration.',
+    platform: 'linux',
+    run: async () => {
+      const status = migrateLegacySteamGridDbKey();
+      console.log(`[migration] SteamGridDB key: ${status}`);
     },
   },
   'migrate-update-state-format': {

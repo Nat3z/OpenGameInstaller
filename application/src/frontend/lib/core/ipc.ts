@@ -1,6 +1,6 @@
 import { AddonError, NetworkError } from '@ogi/errors';
 import { type ConnectedAddonInfo, Connection } from '@ogi-sdk/client-kit';
-import { Effect } from 'effect';
+import { Effect, Schedule } from 'effect';
 import { getConfigClientOption } from '@/frontend/lib/config/client';
 
 export type AddonInfo = ConnectedAddonInfo;
@@ -56,8 +56,15 @@ export function connectClientSdk() {
   }).pipe(Effect.tap(initialize));
 }
 
-// Module initialization is the runtime boundary for the long-lived SDK client.
-export let addonServer = await Effect.runPromise(connectClientSdk());
+// The addon server may still be starting when the renderer loads.
+export let addonServer = await Effect.runPromise(
+  connectClientSdk().pipe(
+    Effect.tapError((error) =>
+      Effect.sync(() => console.warn('Waiting for addon server:', error))
+    ),
+    Effect.retry(Schedule.spaced('1 second'))
+  )
+);
 
 export function queryConnectedAddons<T = AddonInfo>() {
   return Effect.tryPromise({

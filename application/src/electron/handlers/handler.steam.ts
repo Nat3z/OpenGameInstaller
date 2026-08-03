@@ -13,7 +13,9 @@ import {
   ensureLibraryDir,
   loadLibraryInfo,
 } from '@/electron/handlers/helpers.app/library.js';
+import { generateNotificationId } from '@/electron/handlers/helpers.app/notifications.js';
 import {
+  getCurrentUsername,
   getHomeDir,
   getOgiExecutablePath,
   getProtonPrefixPath,
@@ -34,6 +36,7 @@ import {
   SteamProcessLive,
 } from '@/electron/lib/steam-process.js';
 import { getNonSteamLaunchId } from '@/electron/lib/steam-shortcuts.js';
+import { sendNotification } from '@/electron/main.js';
 
 export type SteamOperationResult =
   | SteamMutationResult
@@ -134,6 +137,33 @@ export function addUmuGameToSteam(
   params: { appID: number; oldSteamAppId?: number }
 ): Effect.Effect<SteamOperationResult, SteamServiceError | FileSystemError> {
   return runSteamMutationWithConfirmation(mainWindow, 'add', params);
+}
+
+export function addDeckGameToSteam(
+  mainWindow: BrowserWindow,
+  appID: number
+): Effect.Effect<void, SteamServiceError | FileSystemError> {
+  if (!isLinux() || getCurrentUsername()?.toLowerCase() !== 'deck') {
+    return Effect.void;
+  }
+
+  return Effect.gen(function* () {
+    const result = yield* addUmuGameToSteam(mainWindow, { appID });
+    if (result.status === 'cancelled') {
+      sendNotification({
+        message:
+          'Steam shortcut setup was cancelled. Add the game to Steam later from its configuration page.',
+        id: generateNotificationId(),
+        type: 'info',
+      });
+    } else if (result.warning) {
+      sendNotification({
+        message: result.warning,
+        id: generateNotificationId(),
+        type: 'warning',
+      });
+    }
+  });
 }
 
 const launchViaSteam = (

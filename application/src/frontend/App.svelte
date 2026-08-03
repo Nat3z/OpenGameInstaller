@@ -4,6 +4,7 @@ import type {
   ConfigurationFile,
   OGIAddonConfiguration,
 } from '@ogi-sdk/connect';
+import { Effect } from 'effect';
 import { onMount } from 'svelte';
 import { quintOut } from 'svelte/easing';
 import { derived } from 'svelte/store';
@@ -145,8 +146,8 @@ onMount(() => {
 
   // Initialize search-related data
   initializeSearch();
-  initDownloadPersistence();
-  initSleepLock();
+  void Effect.runPromise(initDownloadPersistence());
+  initSleepLock((effect) => void Effect.runPromise(effect));
   const persistedUpdateState = loadPersistedUpdateState();
   appUpdates.requiredReadds = persistedUpdateState.requiredReadds;
   appUpdates.dismissedUpdates = persistedUpdateState.dismissedUpdates;
@@ -163,7 +164,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
 async function initializeSearch() {
   try {
-    const addonData = await queryConnectedAddons<ConfigTemplateAndInfo>();
+    const addonData = await Effect.runPromise(
+      queryConnectedAddons<ConfigTemplateAndInfo>()
+    );
     addons = addonData;
 
     const online = await window.electronAPI.app.isOnline();
@@ -203,7 +206,9 @@ async function performSearch(query: string) {
     loadingResults.set(true);
     showSearchResults = true;
     const connectedAddonIds = new Set(addons.map((addon) => addon.id));
-    const configuredAddons = await fetchAddonsWithConfigure();
+    const configuredAddons = await Effect.runPromise(
+      fetchAddonsWithConfigure()
+    );
     const searchAddons = configuredAddons.filter(
       (addon) =>
         connectedAddonIds.has(addon.id) &&
@@ -407,7 +412,7 @@ document.addEventListener('all-addons-started', async () => {
     addonUpdates.set([]);
     // restart the addon server
     await window.electronAPI.restartAddonServer();
-    await reconnectClientSdk();
+    await Effect.runPromise(reconnectClientSdk());
   }
 });
 document.addEventListener('addon:updated', (event) => {
@@ -421,7 +426,7 @@ document.addEventListener('addon:updated', (event) => {
 });
 document.addEventListener('addon-connected', (event) => {
   if (event instanceof CustomEvent) {
-    fetchAddonsWithConfigure();
+    void Effect.runPromise(fetchAddonsWithConfigure());
   }
 });
 currentStorePageOpened.subscribe((value) => {

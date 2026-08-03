@@ -1,4 +1,5 @@
 <script lang="ts">
+import { Effect } from 'effect';
 import { onDestroy, onMount } from 'svelte';
 import { quintOut } from 'svelte/easing';
 import { fade, fly } from 'svelte/transition';
@@ -19,9 +20,19 @@ let logContainers: Map<string, HTMLDivElement> = $state(new Map());
 let previousLogLengths: Map<string, number> = new Map();
 let closeTimeout = $state(false);
 
+function refreshDeferredTasks(tasksToRemove: string[] = []) {
+  return loadDeferredTasks(tasksToRemove).pipe(
+    Effect.catchAll((error) =>
+      Effect.sync(() => {
+        console.error('Failed to refresh deferred tasks:', error);
+      })
+    )
+  );
+}
+
 function startTaskPolling() {
-  const pollInterval = setInterval(async () => {
-    await loadDeferredTasks($removedTasks);
+  const pollInterval = setInterval(() => {
+    void Effect.runPromise(refreshDeferredTasks($removedTasks));
   }, 1000);
 
   return pollInterval;
@@ -32,8 +43,8 @@ function stopTaskPolling(intervalId: ReturnType<typeof setInterval>) {
 }
 
 // Load tasks when component mounts
-onMount(async () => {
-  await loadDeferredTasks();
+onMount(() => {
+  void Effect.runPromise(refreshDeferredTasks());
   setTimeout(() => {
     closeTimeout = true;
     console.log('closeTimeout', closeTimeout);

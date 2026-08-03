@@ -1,6 +1,6 @@
-import { FileSystemError } from '@ogi/errors';
+import { FileSystemError, formatError } from '@ogi/errors';
 import type { SetupCommandData } from '@ogi-sdk/connect';
-import { Effect } from 'effect';
+import { Effect, Schedule } from 'effect';
 import {
   unrarAndReturnOutputDir,
   unzipAndReturnOutputDir,
@@ -15,55 +15,65 @@ import {
   setupLogs,
 } from '@/frontend/store.svelte';
 
-export async function loadFailedSetups() {
-  try {
-    if (!window.electronAPI.fs.exists('./failed-setups')) {
-      window.electronAPI.fs.mkdir('./failed-setups');
-      return;
-    }
+const FAILED_SETUPS_DIR = './failed-setups';
 
-    const files = await window.electronAPI.fs.getFilesInDir('./failed-setups');
-    const byDownloadId = new Map<string, FailedSetup>();
+function failedSetupPath(id: string): string {
+  return `${FAILED_SETUPS_DIR}/${id}.json`;
+}
 
-    files.forEach((file: string) => {
-      if (file.endsWith('.json')) {
+function ensureFailedSetupsDir(): void {
+  if (!window.electronAPI.fs.exists(FAILED_SETUPS_DIR)) {
+    window.electronAPI.fs.mkdir(FAILED_SETUPS_DIR);
+  }
+}
+
+export function loadFailedSetups() {
+  return Effect.tryPromise({
+    try: () => window.electronAPI.fs.getFilesInDir(FAILED_SETUPS_DIR),
+    catch: (cause) =>
+      new FileSystemError({
+        message: 'Failed to list saved setup recoveries.',
+        path: FAILED_SETUPS_DIR,
+        cause,
+      }),
+  }).pipe(
+    Effect.tap(() => Effect.sync(ensureFailedSetupsDir)),
+    Effect.map((files) => {
+      const byDownloadId = new Map<string, FailedSetup>();
+      for (const file of files) {
+        if (!file.endsWith('.json')) continue;
         try {
-          const content = window.electronAPI.fs.read(`./failed-setups/${file}`);
-          const setupData: FailedSetup = JSON.parse(content);
-          const key =
-            (setupData &&
-              setupData.downloadInfo &&
-              setupData.downloadInfo.id) ||
-            setupData.id;
-          if (!key) return;
+          const setup = JSON.parse(
+            window.electronAPI.fs.read(`${FAILED_SETUPS_DIR}/${file}`)
+          ) as FailedSetup;
+          const key = setup.downloadInfo?.id ?? setup.id;
+          if (!key) continue;
           const existing = byDownloadId.get(key);
-          if (
-            !existing ||
-            (setupData.timestamp ?? 0) > (existing.timestamp ?? 0)
-          ) {
-            byDownloadId.set(key, setupData);
+          if (!existing || (setup.timestamp ?? 0) > (existing.timestamp ?? 0)) {
+            byDownloadId.set(key, setup);
           }
         } catch (error) {
           console.error('Error loading failed setup file:', file, error);
         }
       }
-    });
-
-    const loadedSetups = Array.from(byDownloadId.values());
-    console.log('loadedSetups', loadedSetups);
-    failedSetups.set(loadedSetups);
-  } catch (error) {
-    console.error('Error loading failed setups:', error);
-  }
+      failedSetups.set(Array.from(byDownloadId.values()));
+    }),
+    Effect.catchAll((error) =>
+      Effect.sync(() => {
+        if (!window.electronAPI.fs.exists(FAILED_SETUPS_DIR)) {
+          ensureFailedSetupsDir();
+          return;
+        }
+        console.error('Error loading failed setups:', error);
+      })
+    )
+  );
 }
 
-export function removeFailedSetup(setupId: string) {
+export function removeFailedSetup(setupId: string): void {
   try {
-    const filePath = `./failed-setups/${setupId}.json`;
-    if (window.electronAPI.fs.exists(filePath)) {
-      window.electronAPI.fs.delete(filePath);
-    }
-
+    const path = failedSetupPath(setupId);
+    if (window.electronAPI.fs.exists(path)) window.electronAPI.fs.delete(path);
     failedSetups.update((setups) =>
       setups.filter((setup) => setup.id !== setupId)
     );
@@ -77,195 +87,123 @@ export function saveFailedSetup(setupInfo: {
   setupData: SetupCommandData;
   error: string;
   should: 'call-addon' | 'call-unrar' | 'call-unzip';
-}) {
+}): void {
   try {
-    if (!window.electronAPI.fs.exists('./failed-setups')) {
-      window.electronAPI.fs.mkdir('./failed-setups');
-    }
-
-    // Use a stable id keyed to the original download to avoid duplicates
-    const failedSetupId = setupInfo.downloadInfo.id;
-    const failedSetupData: FailedSetup = {
-      id: failedSetupId,
+    ensureFailedSetupsDir();
+    const id = setupInfo.downloadInfo.id;
+    const saved: FailedSetup = {
+      id,
       timestamp: Date.now(),
       ...setupInfo,
       retryCount: 0,
     };
-
     window.electronAPI.fs.write(
-      `./failed-setups/${failedSetupId}.json`,
-      JSON.stringify(failedSetupData, null, 2)
+      failedSetupPath(id),
+      JSON.stringify(saved, null, 2)
     );
-
     failedSetups.update((setups) => {
-      const index = setups.findIndex(
-        (s) => (s.downloadInfo && s.downloadInfo.id) === failedSetupId
-      );
-      if (index !== -1) {
-        const updated = setups.slice();
-        updated[index] = failedSetupData;
-        return updated;
-      }
-      return [...setups, failedSetupData];
+      const index = setups.findIndex((setup) => setup.downloadInfo?.id === id);
+      if (index < 0) return [...setups, saved];
+      const updated = [...setups];
+      updated[index] = saved;
+      return updated;
     });
-    console.log('Saved failed setup info:', failedSetupId);
   } catch (error) {
     console.error('Failed to save setup info:', error);
   }
 }
 
-export async function retryFailedSetup(failedSetup: FailedSetup) {
-  const updateRetry = (newSetup: FailedSetup, error: string) => {
-    const updatedSetup = {
-      ...newSetup,
-      id: failedSetup.id,
-      retryCount: failedSetup.retryCount + 1,
-      error: error as string,
-    };
-    console.log('newSetup', newSetup);
-    console.log('failedSetup', failedSetup);
-
-    window.electronAPI.fs.write(
-      `./failed-setups/${failedSetup.id}.json`,
-      JSON.stringify(updatedSetup, null, 2)
-    );
-
-    failedSetups.update((setups) =>
-      setups.map((setup) =>
-        setup.id === failedSetup.id ? updatedSetup : setup
-      )
-    );
+function updateRetry(failedSetup: FailedSetup, error: unknown): void {
+  const updated = {
+    ...failedSetup,
+    retryCount: failedSetup.retryCount + 1,
+    error: formatError(error),
   };
+  window.electronAPI.fs.write(
+    failedSetupPath(failedSetup.id),
+    JSON.stringify(updated, null, 2)
+  );
+  failedSetups.update((setups) =>
+    setups.map((setup) => (setup.id === failedSetup.id ? updated : setup))
+  );
+}
 
-  try {
-    console.log('Retrying setup for:', failedSetup.downloadInfo.name);
+function requiredArchiveFilename(
+  failedSetup: FailedSetup,
+  kind: 'RAR' | 'ZIP'
+) {
+  const download = failedSetup.downloadInfo;
+  if (
+    (download.downloadType === 'torrent' ||
+      download.downloadType === 'magnet') &&
+    download.filename
+  ) {
+    return Effect.succeed(download.filename);
+  }
+  return Effect.fail(
+    new FileSystemError({
+      message: `Cannot extract ${kind}: filename not available for this download type`,
+      path: download.downloadPath,
+    })
+  );
+}
+
+export function retryFailedSetup(failedSetup: FailedSetup) {
+  const tempId = Math.random().toString(36).substring(7);
+
+  return Effect.gen(function* () {
     failedSetups.update((setups) =>
       setups.filter((setup) => setup.id !== failedSetup.id)
     );
+    currentDownloads.update((downloads) => [
+      ...downloads,
+      { ...failedSetup.downloadInfo, id: tempId, status: 'completed' },
+    ]);
 
     const setupData = failedSetup.setupData;
-    const isUpdateRetry =
-      failedSetup.downloadInfo.isUpdate === true ||
-      failedSetup.setupData.for === 'update';
-    console.log('setupData', setupData);
-    // const addonSource = failedSetup.downloadInfo.addonSource;
-
-    // Create a temporary download entry to show progress
-    const tempId = Math.random().toString(36).substring(7);
-    currentDownloads.update((downloads) => {
-      return [
-        ...downloads,
-        {
-          ...failedSetup.downloadInfo,
-          id: tempId,
-          status: 'completed' as const,
-        },
-      ];
-    });
     if (failedSetup.should === 'call-unrar') {
-      const filename =
-        failedSetup.downloadInfo.downloadType === 'torrent' ||
-        failedSetup.downloadInfo.downloadType === 'magnet'
-          ? failedSetup.downloadInfo.filename
-          : undefined;
-      if (!filename) {
-        return await Effect.runPromise(
-          Effect.fail(
-            new FileSystemError({
-              message:
-                'Cannot extract RAR: filename not available for this download type',
-              path: failedSetup.downloadInfo.downloadPath,
-            })
-          )
-        );
-      }
-      const rarFilePath =
-        failedSetup.downloadInfo.downloadPath.replace(/(\/|\\)$/g, '') +
-        '/' +
-        filename;
-      const outputBase =
-        failedSetup.downloadInfo.downloadPath.replace(/(\/|\\)$/g, '') +
-        '/' +
-        failedSetup.downloadInfo.name;
-      const extractedDir = await unrarAndReturnOutputDir({
-        rarFilePath,
-        outputBaseDir: outputBase,
+      const filename = yield* requiredArchiveFilename(failedSetup, 'RAR');
+      const base = failedSetup.downloadInfo.downloadPath.replace(
+        /(\/|\\)$/g,
+        ''
+      );
+      const extractedDir = yield* unrarAndReturnOutputDir({
+        rarFilePath: `${base}/${filename}`,
+        outputBaseDir: `${base}/${failedSetup.downloadInfo.name}`,
         downloadId: tempId,
       });
       setupData.path = extractedDir;
       failedSetup.downloadInfo.downloadPath = extractedDir;
-      failedSetup.setupData.path = extractedDir;
       failedSetup.should = 'call-addon';
     }
 
     if (failedSetup.should === 'call-unzip') {
-      // Build the absolute path to the ZIP file using the directory + filename
-      const filename =
-        failedSetup.downloadInfo.downloadType === 'torrent' ||
-        failedSetup.downloadInfo.downloadType === 'magnet'
-          ? failedSetup.downloadInfo.filename
-          : undefined;
-      if (!filename) {
-        return await Effect.runPromise(
-          Effect.fail(
-            new FileSystemError({
-              message:
-                'Cannot extract ZIP: filename not available for this download type',
-              path: failedSetup.downloadInfo.downloadPath,
-            })
-          )
-        );
-      }
-      const originalZipFilePath =
-        failedSetup.downloadInfo.downloadPath.replace(/(\/|\\)$/g, '') +
-        '/' +
-        filename;
-      const outputBase = originalZipFilePath.replace(/\.zip$/g, '');
-      const attemptUnzip: () => Promise<string | undefined> = async () => {
-        const output = await unzipAndReturnOutputDir({
-          zipFilePath: originalZipFilePath,
-          outputDirBase: outputBase,
-          downloadId: tempId,
-        });
-        if (!output) return undefined;
-        return output;
-      };
-
-      let outputDir: string | undefined;
-      for (let i = 0; i < 3; i++) {
-        try {
-          outputDir = await attemptUnzip();
-          if (outputDir) {
-            break; // Success, exit loop
-          }
-        } catch (error) {
-          console.log('Failed to extract ZIP file (attempt ' + (i + 1) + ')');
-          console.error('Failed to process ZIP file: ', error);
-          if (i < 2) {
-            // Wait before retrying (except on last attempt)
-            await new Promise((resolve) => setTimeout(resolve, 1000));
-          }
-        }
-      }
-
-      if (!outputDir) {
-        return await Effect.runPromise(
-          Effect.fail(
-            new FileSystemError({
-              message: 'Failed to extract ZIP file after 3 attempts',
-              path: originalZipFilePath,
-            })
-          )
-        );
-      }
-
+      const filename = yield* requiredArchiveFilename(failedSetup, 'ZIP');
+      const zipPath = `${failedSetup.downloadInfo.downloadPath.replace(/(\/|\\)$/g, '')}/${filename}`;
+      const outputDir = yield* unzipAndReturnOutputDir({
+        zipFilePath: zipPath,
+        outputDirBase: zipPath.replace(/\.zip$/g, ''),
+        downloadId: tempId,
+      }).pipe(
+        Effect.flatMap((output) =>
+          output
+            ? Effect.succeed(output)
+            : Effect.fail(
+                new FileSystemError({
+                  message: 'ZIP extraction returned no output directory.',
+                  path: zipPath,
+                })
+              )
+        ),
+        Effect.retry(
+          Schedule.intersect(Schedule.recurs(2), Schedule.spaced(1000))
+        )
+      );
       failedSetup.downloadInfo.downloadPath = outputDir;
-      setupData.path = failedSetup.downloadInfo.downloadPath;
-      failedSetup.setupData.path = failedSetup.downloadInfo.downloadPath;
+      setupData.path = outputDir;
       failedSetup.should = 'call-addon';
     }
 
-    // now add to setup logs
     setupLogs.update((logs) => ({
       ...logs,
       [tempId]: {
@@ -276,71 +214,49 @@ export async function retryFailedSetup(failedSetup: FailedSetup) {
       },
     }));
 
-    try {
-      const downloadItem: DownloadStatusAndInfo = {
-        ...failedSetup.downloadInfo,
-        id: tempId,
-      };
-      const isTorrent =
-        downloadItem.downloadType === 'torrent' ||
-        downloadItem.downloadType === 'magnet';
-      const additionalData: Record<string, unknown> = {};
-      if (!isTorrent && downloadItem.files?.length) {
-        additionalData.multiPartFiles = JSON.parse(
-          JSON.stringify(downloadItem.files)
-        );
-      }
-
-      if (isUpdateRetry) {
-        await runSetupAppUpdate(
-          downloadItem,
-          setupData.path,
-          isTorrent,
-          additionalData
-        );
-      } else {
-        await runSetupApp(
-          downloadItem,
-          setupData.path,
-          isTorrent,
-          additionalData
-        );
-      }
-      removeFailedSetup(failedSetup.id);
-      createNotification({
-        id: Math.random().toString(36).substring(7),
-        type: 'success',
-        message: `Successfully set up ${failedSetup.downloadInfo.name}`,
-      });
-    } catch (error) {
-      console.error('Error retrying setup:', error);
-      currentDownloads.update((downloads) => {
-        return downloads.filter((download) => download.id !== tempId);
-      });
-      createNotification({
-        id: Math.random().toString(36).substring(7),
-        type: 'error',
-        message: `Failed to retry setup for ${failedSetup.downloadInfo.name}`,
-      });
-      updateRetry(
-        {
-          ...failedSetup,
-          downloadInfo: failedSetup.downloadInfo,
-          setupData: failedSetup.setupData,
-          should: failedSetup.should,
-        },
-        error as string
-      );
+    const downloadItem: DownloadStatusAndInfo = {
+      ...failedSetup.downloadInfo,
+      id: tempId,
+    };
+    const isTorrent =
+      downloadItem.downloadType === 'torrent' ||
+      downloadItem.downloadType === 'magnet';
+    const additionalData: Record<string, unknown> = {};
+    if (!isTorrent && downloadItem.files?.length) {
+      additionalData.multiPartFiles = structuredClone(downloadItem.files);
     }
-  } catch (error: unknown) {
-    console.error('Unknown error retrying setup:', error);
 
+    const isUpdate =
+      downloadItem.isUpdate === true || failedSetup.setupData.for === 'update';
+    yield* isUpdate
+      ? runSetupAppUpdate(
+          downloadItem,
+          setupData.path,
+          isTorrent,
+          additionalData
+        )
+      : runSetupApp(downloadItem, setupData.path, isTorrent, additionalData);
+
+    removeFailedSetup(failedSetup.id);
     createNotification({
       id: Math.random().toString(36).substring(7),
-      type: 'error',
-      message: `Failed to retry setup for ${failedSetup.downloadInfo.name}`,
+      type: 'success',
+      message: `Successfully set up ${failedSetup.downloadInfo.name}`,
     });
-
-    updateRetry(failedSetup, error as string);
-  }
+  }).pipe(
+    Effect.tapError((error) =>
+      Effect.sync(() => {
+        console.error('Error retrying setup:', error);
+        currentDownloads.update((downloads) =>
+          downloads.filter((download) => download.id !== tempId)
+        );
+        createNotification({
+          id: Math.random().toString(36).substring(7),
+          type: 'error',
+          message: `Failed to retry setup for ${failedSetup.downloadInfo.name}`,
+        });
+        updateRetry(failedSetup, error);
+      })
+    )
+  );
 }

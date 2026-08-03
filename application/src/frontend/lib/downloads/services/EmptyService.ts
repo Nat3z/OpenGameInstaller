@@ -1,4 +1,3 @@
-import { DownloadError } from '@ogi/errors';
 import { Effect } from 'effect';
 import { getDownloadPath } from '@/frontend/lib/core/fs';
 import { updateDownloadStatus } from '@/frontend/lib/downloads/lifecycle';
@@ -44,18 +43,9 @@ export class EmptyService extends BaseService {
       currentDownloads.update((downloads) => [...downloads, downloadedItem]);
       updateDownloadStatus(downloadId, downloadedItem);
 
-      yield* Effect.tryPromise({
-        try: () =>
-          downloadedItem.isUpdate
-            ? runSetupAppUpdate(downloadedItem, downloadFolder, false, {})
-            : runSetupApp(downloadedItem, downloadFolder, false, {}),
-        catch: (cause) =>
-          new DownloadError({
-            message: 'Failed to run download setup.',
-            downloadId,
-            cause,
-          }),
-      });
+      yield* downloadedItem.isUpdate
+        ? runSetupAppUpdate(downloadedItem, downloadFolder, false, {})
+        : runSetupApp(downloadedItem, downloadFolder, false, {});
     }).pipe(
       Effect.ensuring(
         Effect.sync(() => {

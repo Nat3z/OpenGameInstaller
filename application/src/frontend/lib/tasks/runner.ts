@@ -1,4 +1,6 @@
+import { AddonError, formatError } from '@ogi/errors';
 import type { LibraryInfo, SearchResult } from '@ogi-sdk/connect';
+import { Effect } from 'effect';
 import { get } from 'svelte/store';
 import { addonServer } from '@/frontend/lib/core/ipc';
 import { createNotification, deferredTasks } from '@/frontend/store.svelte';
@@ -9,117 +11,117 @@ export type SearchResultWithAddon = SearchResult & {
   capsuleImage: string;
   coverImage: string;
   storefront: string;
-  // Update-specific optional fields
   isUpdate?: boolean;
   updateVersion?: string;
   clearOldFilesBeforeUpdate?: boolean;
 } & (
-    | {
-        downloadType: 'task';
-        taskName: string;
-      }
-    | {
-        downloadType?: 'torrent' | 'magnet' | 'direct' | 'request' | 'empty';
-      }
+    | { downloadType: 'task'; taskName: string }
+    | { downloadType?: 'torrent' | 'magnet' | 'direct' | 'request' | 'empty' }
   );
 
-export async function runTask(
+export function runTask(
   result: SearchResultWithAddon,
   originalFilePath: string,
   libraryInfo?: LibraryInfo
 ) {
-  let taskID: string;
-  const args: {
-    addonID: string;
-    manifest: Record<string, unknown>;
-    downloadPath: string;
-    name: string;
-    taskName?: string;
-    libraryInfo?: LibraryInfo;
-  } = {
-    addonID: result.addonSource,
-    manifest: JSON.parse(JSON.stringify(result.manifest || {})),
-    downloadPath: originalFilePath,
-    name: result.name,
-  };
-
-  // Include libraryInfo if provided
-  if (libraryInfo) {
-    args.libraryInfo = JSON.parse(JSON.stringify(libraryInfo));
-  }
-
-  // If this is a task-type result, include the taskName
-  if (result.downloadType === 'task') {
-    args.taskName = result.taskName;
-    // Also ensure manifest has __taskName for backward compatibility
-    args.manifest = {
-      ...args.manifest,
-      __taskName: result.taskName,
+  return Effect.gen(function* () {
+    let taskID: string | undefined;
+    const manifest = structuredClone(result.manifest ?? {}) as Record<
+      string,
+      unknown
+    >;
+    const args = {
+      addonID: result.addonSource,
+      manifest:
+        result.downloadType === 'task'
+          ? { ...manifest, __taskName: result.taskName }
+          : manifest,
+      downloadPath: originalFilePath,
+      name: result.name,
+      ...(result.downloadType === 'task' ? { taskName: result.taskName } : {}),
+      ...(libraryInfo ? { libraryInfo: structuredClone(libraryInfo) } : {}),
     };
-  }
 
-  const response = await addonServer
-    .addon(result.addonSource, {
-      onTaskStarted: (newTaskId: string) => {
-        taskID = newTaskId;
-        deferredTasks.update((tasks) => [
-          ...tasks,
-          {
-            id: taskID,
-            name: `Task: ${result.name}`,
-            description: 'Running task',
-            addonOwner: result.addonSource,
-            status: 'running',
-            progress: 0,
-            logs: [],
-            timestamp: Date.now(),
-            type: 'other',
-          },
-        ]);
-        createNotification({
-          id: Math.random().toString(36).substring(7),
-          type: 'info',
-          message:
-            'Task started. You can view the progress in the Notifications tab.',
-        });
-      },
-      onLogs: (logs: string[]) => {
-        if (!taskID) return;
-        deferredTasks.update((tasks) =>
-          tasks.map((t) => (t.id === taskID ? { ...t, logs } : t))
-        );
-      },
-      onProgress: (progress: number) => {
-        if (!taskID) return;
-        deferredTasks.update((tasks) =>
-          tasks.map((t) => (t.id === taskID ? { ...t, progress } : t))
-        );
-      },
-      onFailed: (error: string) => {
-        if (!taskID) return;
-        deferredTasks.update((tasks) =>
-          tasks.map((t) =>
-            t.id === taskID ? { ...t, error, status: 'error' } : t
-          )
-        );
-        createNotification({
-          id: Math.random().toString(36).substring(7),
-          type: 'error',
-          message: error,
-        });
-      },
-    })
-    .taskRun(args);
-
-  const finalTask = get(deferredTasks).find((t) => t.id === taskID);
-  if (finalTask?.status !== 'error') {
-    deferredTasks.update((tasks) => tasks.filter((t) => t.id !== taskID));
-    createNotification({
-      id: Math.random().toString(36).substring(7),
-      type: 'success',
-      message: 'Task completed',
+    const response = yield* Effect.tryPromise({
+      try: () =>
+        addonServer
+          .addon(result.addonSource, {
+            onTaskStarted: (id: string) => {
+              taskID = id;
+              deferredTasks.update((tasks) => [
+                ...tasks,
+                {
+                  id,
+                  name: `Task: ${result.name}`,
+                  description: 'Running task',
+                  addonOwner: result.addonSource,
+                  status: 'running',
+                  progress: 0,
+                  logs: [],
+                  timestamp: Date.now(),
+                  type: 'other',
+                },
+              ]);
+              createNotification({
+                id: Math.random().toString(36).substring(7),
+                type: 'info',
+                message:
+                  'Task started. You can view progress in the Notifications tab.',
+              });
+            },
+            onLogs: (logs: string[]) => {
+              if (!taskID) return;
+              deferredTasks.update((tasks) =>
+                tasks.map((task) =>
+                  task.id === taskID ? { ...task, logs } : task
+                )
+              );
+            },
+            onProgress: (progress: number) => {
+              if (!taskID) return;
+              deferredTasks.update((tasks) =>
+                tasks.map((task) =>
+                  task.id === taskID ? { ...task, progress } : task
+                )
+              );
+            },
+            onFailed: (error: string) => {
+              if (!taskID) return;
+              deferredTasks.update((tasks) =>
+                tasks.map((task) =>
+                  task.id === taskID
+                    ? { ...task, error, status: 'error' }
+                    : task
+                )
+              );
+              createNotification({
+                id: Math.random().toString(36).substring(7),
+                type: 'error',
+                message: error,
+              });
+            },
+          })
+          .taskRun(args),
+      catch: (cause) =>
+        new AddonError({
+          message: `Task failed: ${formatError(cause)}`,
+          addonName: result.addonSource,
+        }),
     });
-  }
 
-  return response;
+    if (
+      taskID &&
+      get(deferredTasks).find((task) => task.id === taskID)?.status !== 'error'
+    ) {
+      deferredTasks.update((tasks) =>
+        tasks.filter((task) => task.id !== taskID)
+      );
+      createNotification({
+        id: Math.random().toString(36).substring(7),
+        type: 'success',
+        message: 'Task completed',
+      });
+    }
+    return response;
+  });
 }

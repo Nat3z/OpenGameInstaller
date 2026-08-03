@@ -7,6 +7,7 @@ import type {
   ConfigurationFile,
   OGIAddonConfiguration,
 } from '@ogi-sdk/connect';
+import { Effect } from 'effect';
 import { onMount } from 'svelte';
 import AddonPicture from '@/frontend/components/AddonPicture.svelte';
 import {
@@ -217,7 +218,9 @@ function openFeaturedCarouselItem(item: DiscoverCarouselItem) {
 async function loadCatalogs() {
   try {
     loading = true;
-    addons = await queryConnectedAddons<ConfigTemplateAndInfo>();
+    addons = await Effect.runPromise(
+      queryConnectedAddons<ConfigTemplateAndInfo>()
+    );
 
     const catalogPromises = addons.map(async (addonInfo) => {
       const addon = addonServer.addon(addonInfo.id);

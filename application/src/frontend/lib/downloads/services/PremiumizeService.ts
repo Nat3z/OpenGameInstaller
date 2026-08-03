@@ -267,10 +267,7 @@ export class PremiumizeService extends BaseService {
           },
         ]
       );
-      yield* premiumizePromise(
-        () => finalizeDownloadCard(handshake.id),
-        'Failed to finalize Premiumize download'
-      );
+      yield* finalizeDownloadCard(handshake.id);
     }).pipe(
       Effect.ensuring(
         Effect.sync(() => {

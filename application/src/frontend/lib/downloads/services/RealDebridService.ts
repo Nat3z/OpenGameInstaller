@@ -255,10 +255,7 @@ export class RealDebridService extends BaseService {
         result,
         persistedFiles
       );
-      yield* realDebridPromise(
-        () => finalizeDownloadCard(handshake.id),
-        'Failed to finalize Real-Debrid download'
-      );
+      yield* finalizeDownloadCard(handshake.id);
     });
   }
 }

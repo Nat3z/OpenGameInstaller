@@ -242,10 +242,7 @@ export class TorboxService extends BaseService {
         result,
         [{ name: zipFilename, path: targetPath, downloadURL: downloadUrl }]
       );
-      yield* torboxPromise(
-        () => finalizeDownloadCard(handshake.id),
-        'Failed to finalize TorBox download'
-      );
+      yield* finalizeDownloadCard(handshake.id);
     }).pipe(
       Effect.ensuring(
         Effect.sync(() => {

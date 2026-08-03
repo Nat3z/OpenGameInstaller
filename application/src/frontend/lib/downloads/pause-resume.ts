@@ -1,3 +1,5 @@
+import { DownloadError, formatError } from '@ogi/errors';
+import { Effect } from 'effect';
 import { get } from 'svelte/store';
 import {
   getDownloadItem,
@@ -7,7 +9,10 @@ import {
   deleteDownloadedItems,
   deletePersistedDownload,
 } from '@/frontend/lib/downloads/persistence';
-import { restartDownload } from '@/frontend/lib/downloads/restart';
+import {
+  type PausedDownloadState,
+  restartDownload,
+} from '@/frontend/lib/downloads/restart';
 import { startRedistributableInstallation } from '@/frontend/lib/setup/setup';
 import {
   createNotification,
@@ -16,353 +21,217 @@ import {
   redistributableInstalls,
 } from '@/frontend/store.svelte';
 
-interface PausedDownloadState {
-  id: string;
-  downloadInfo: DownloadStatusAndInfo;
-  pausedAt: number;
-  originalDownloadURL?: string;
-  files?: any[];
-}
-
-const pausedDownloadStates: Map<string, PausedDownloadState> = new Map();
-
-// Rebuild restored queues once per app session and avoid concurrent rebuild races.
+const pausedDownloadStates = new Map<string, PausedDownloadState>();
 let hasBulkQueuedRestoredDownloads = false;
-let bulkQueuePromise: Promise<void> | null = null;
-const resumeInFlight: Set<string> = new Set();
+let bulkQueueRunning = false;
+const resumeInFlight = new Set<string>();
 
-async function enqueueRemainingPausedDownloads(
-  resumedId: string,
-  pausedStates: Map<string, PausedDownloadState>
-) {
-  if (hasBulkQueuedRestoredDownloads) return;
-  if (bulkQueuePromise) {
-    await bulkQueuePromise;
-    return;
-  }
-
-  bulkQueuePromise = (async () => {
-    // Build an ordered list of other paused items to enqueue behind the active one
-    let downloadsSnapshot: DownloadStatusAndInfo[] = [];
-    currentDownloads.subscribe((d) => (downloadsSnapshot = d))();
-    const toQueue = downloadsSnapshot.filter(
-      (d) => d.id !== resumedId && d.status === 'paused'
-    );
-
-    // Enqueue sequentially to preserve order
-    for (const item of toQueue) {
-      try {
-        // Re-read each item before restart to avoid stale-snapshot duplicate restarts
-        const latest = getDownloadItem(item.id);
-        if (!latest || latest.status !== 'paused') {
-          continue;
-        }
-
-        const itemDownloadURL =
-          latest.downloadType === 'torrent' || latest.downloadType === 'magnet'
-            ? latest.downloadURL
-            : undefined;
-        const effectiveUrl = latest.usedDebridService
-          ? itemDownloadURL || latest.originalDownloadURL
-          : latest.originalDownloadURL || itemDownloadURL;
-        const hasFiles =
-          latest.downloadType === 'direct' &&
-          Array.isArray(latest.files) &&
-          latest.files.length > 0;
-        if (!effectiveUrl && !hasFiles) {
-          continue;
-        }
-
-        const state: PausedDownloadState = {
-          id: latest.id,
-          downloadInfo: { ...latest },
-          pausedAt: Date.now(),
-          originalDownloadURL: latest.originalDownloadURL || itemDownloadURL,
-          files: latest.downloadType === 'direct' ? latest.files : undefined,
-        };
-        pausedStates.set(latest.id, state);
-        // Restart to join the Electron queue; this will mark as 'downloading' and assign queue positions
-        await restartDownload(state, pausedStates);
-      } catch (e) {
-        console.error(
-          'Failed to enqueue paused download after resume:',
-          item.id,
-          e
-        );
-      }
-    }
-  })();
-
-  try {
-    await bulkQueuePromise;
-    hasBulkQueuedRestoredDownloads = true;
-  } finally {
-    bulkQueuePromise = null;
-  }
+function pausedStateFor(download: DownloadStatusAndInfo): PausedDownloadState {
+  const downloadURL =
+    download.downloadType === 'torrent' || download.downloadType === 'magnet'
+      ? download.downloadURL
+      : undefined;
+  return {
+    id: download.id,
+    downloadInfo: { ...download },
+    pausedAt: Date.now(),
+    originalDownloadURL: download.originalDownloadURL || downloadURL,
+    files: download.downloadType === 'direct' ? download.files : undefined,
+  };
 }
 
-export async function pauseDownload(downloadId: string): Promise<boolean> {
-  try {
-    const download = getDownloadItem(downloadId);
-    if (!download) {
-      console.log('No download found for ID:', downloadId);
-      return false;
+function backendAction(
+  download: DownloadStatusAndInfo,
+  action: 'pause' | 'resume'
+) {
+  const operation =
+    download.downloadType === 'direct' || download.usedDebridService
+      ? () =>
+          action === 'pause'
+            ? window.electronAPI.ddl.pauseDownload(download.id)
+            : window.electronAPI.ddl.resumeDownload(download.id)
+      : download.downloadType === 'torrent' ||
+          download.downloadType === 'magnet'
+        ? () =>
+            action === 'pause'
+              ? window.electronAPI.torrent.pauseDownload(download.id)
+              : window.electronAPI.torrent.resumeDownload(download.id)
+        : undefined;
+
+  return operation
+    ? Effect.tryPromise({
+        try: () => operation().then(() => undefined),
+        catch: (cause) =>
+          new DownloadError({
+            message: `Failed to ${action} download: ${formatError(cause)}`,
+            downloadId: download.id,
+            cause,
+          }),
+      }).pipe(Effect.as(true))
+    : Effect.succeed(false);
+}
+
+function enqueueRemainingPausedDownloads(resumedId: string) {
+  return Effect.gen(function* () {
+    if (hasBulkQueuedRestoredDownloads) return;
+    while (bulkQueueRunning) yield* Effect.sleep(25);
+    if (hasBulkQueuedRestoredDownloads) return;
+
+    bulkQueueRunning = true;
+    const downloads = get(currentDownloads).filter(
+      (download) => download.id !== resumedId && download.status === 'paused'
+    );
+    for (const download of downloads) {
+      const latest = getDownloadItem(download.id);
+      if (!latest || latest.status !== 'paused') continue;
+      const state = pausedStateFor(latest);
+      const hasFiles =
+        latest.downloadType === 'direct' && !!latest.files?.length;
+      if (!state.originalDownloadURL && !hasFiles) continue;
+      pausedDownloadStates.set(latest.id, state);
+      yield* restartDownload(state, pausedDownloadStates);
     }
+    hasBulkQueuedRestoredDownloads = true;
+  }).pipe(
+    Effect.ensuring(
+      Effect.sync(() => {
+        bulkQueueRunning = false;
+      })
+    )
+  );
+}
 
-    console.log('Pausing download:', downloadId, download.name);
+export function pauseDownload(downloadId: string) {
+  return Effect.gen(function* () {
+    const download = getDownloadItem(downloadId);
+    if (!download) return false;
 
-    const pausedState: PausedDownloadState = {
-      id: downloadId,
-      downloadInfo: { ...download },
-      pausedAt: Date.now(),
-      originalDownloadURL:
-        download.originalDownloadURL ||
-        (download.downloadType === 'torrent' ||
-        download.downloadType === 'magnet'
-          ? download.downloadURL
-          : undefined),
-      files: download.downloadType === 'direct' ? download.files : undefined,
-    };
-
+    const pausedState = pausedStateFor(download);
     pausedDownloadStates.set(downloadId, pausedState);
     updateDownloadStatus(downloadId, { status: 'paused' });
-
-    let pauseResult = false;
-    if (download.downloadType === 'direct' || download.usedDebridService) {
-      try {
-        await window.electronAPI.ddl.pauseDownload(downloadId);
-        pauseResult = true;
-      } catch (error) {
-        console.error('Failed to pause direct download:', error);
-        pauseResult = false;
-      }
-    } else if (
-      download.downloadType === 'torrent' ||
-      download.downloadType === 'magnet'
-    ) {
-      try {
-        await window.electronAPI.torrent.pauseDownload(downloadId);
-        pauseResult = true;
-      } catch (error) {
-        console.error('Failed to pause torrent download:', error);
-        pauseResult = false;
-      }
-    }
-
-    if (pauseResult) {
-      createNotification({
-        id: Math.random().toString(36).substring(2, 9),
-        type: 'info',
-        message: `Paused download: ${download.name}`,
-      });
-      return true;
-    } else {
+    const paused = yield* backendAction(download, 'pause').pipe(
+      Effect.catchAll((error) =>
+        Effect.sync(() => {
+          console.error(formatError(error));
+          return false;
+        })
+      )
+    );
+    if (!paused) {
       pausedDownloadStates.delete(downloadId);
       updateDownloadStatus(downloadId, { status: 'downloading' });
       return false;
     }
-  } catch (error) {
-    console.error('Error pausing download:', error);
+
     createNotification({
       id: Math.random().toString(36).substring(2, 9),
-      type: 'error',
-      message: 'Failed to pause download',
+      type: 'info',
+      message: `Paused download: ${download.name}`,
     });
-    return false;
-  }
+    return true;
+  });
 }
 
-export async function resumeDownload(downloadId: string): Promise<boolean> {
-  if (resumeInFlight.has(downloadId)) {
-    console.log('Resume already in progress for', downloadId);
-    return false;
-  }
+export function resumeDownload(downloadId: string) {
+  if (resumeInFlight.has(downloadId)) return Effect.succeed(false);
   resumeInFlight.add(downloadId);
 
-  try {
-    console.log('Attempting to resume download:', downloadId);
-
+  return Effect.gen(function* () {
     let pausedState = pausedDownloadStates.get(downloadId);
-    const wasReconstructed = !pausedState;
+    const reconstructed = !pausedState;
     if (!pausedState) {
-      // Fallback: reconstruct paused state from current store (e.g., after app restart)
-      const fallback = getDownloadItem(downloadId);
-      if (!fallback) {
-        console.log('No paused download state found for', downloadId);
-        return false;
-      }
-      pausedState = {
-        id: downloadId,
-        downloadInfo: { ...fallback },
-        pausedAt: Date.now(),
-        originalDownloadURL:
-          fallback.originalDownloadURL ||
-          (fallback.downloadType === 'torrent' ||
-          fallback.downloadType === 'magnet'
-            ? fallback.downloadURL
-            : undefined),
-        files: fallback.downloadType === 'direct' ? fallback.files : undefined,
-      };
+      const download = getDownloadItem(downloadId);
+      if (!download) return false;
+      pausedState = pausedStateFor(download);
       pausedDownloadStates.set(downloadId, pausedState);
     }
 
     const download = pausedState.downloadInfo;
-    console.log(
-      'Resuming download:',
-      download.name,
-      'Type:',
-      download.downloadType
-    );
-
     const redistributableInstall = get(redistributableInstalls)[downloadId];
     if (redistributableInstall && !redistributableInstall.isComplete) {
       updateDownloadStatus(downloadId, {
         status: 'installing-redistributables',
       });
       pausedDownloadStates.delete(downloadId);
-
       createNotification({
         id: Math.random().toString(36).substring(2, 9),
         type: 'info',
         message: `Resuming dependency installation: ${download.name}`,
       });
-
-      startRedistributableInstallation(
-        downloadId,
-        redistributableInstall.appID
-      ).catch((error) => {
-        console.error(
-          '[resume] Failed to restart redistributable installation:',
-          error
-        );
-      });
-
+      yield* Effect.forkDaemon(
+        startRedistributableInstallation(
+          downloadId,
+          redistributableInstall.appID
+        )
+      );
       return true;
     }
 
     updateDownloadStatus(downloadId, { status: 'downloading' });
-
-    // If this paused state was reconstructed after app restart, the backend has no handlers.
-    // Skip in-place resume and restart the download directly.
-    if (wasReconstructed) {
-      console.log(
-        'Reconstructed paused state with no backend context; restarting download instead of resuming.'
+    if (reconstructed) {
+      const restarted = yield* restartDownload(
+        pausedState,
+        pausedDownloadStates
       );
-      const ok = await restartDownload(pausedState, pausedDownloadStates);
-      if (ok) {
-        // Once one is set to downloading from persisted state, enqueue others in calculated order
-        await enqueueRemainingPausedDownloads(downloadId, pausedDownloadStates);
-      }
-      return ok;
+      if (restarted) yield* enqueueRemainingPausedDownloads(downloadId);
+      return restarted;
     }
 
-    let resumeResult = false;
-    if (download.downloadType === 'direct' || download.usedDebridService) {
-      try {
-        await window.electronAPI.ddl.resumeDownload(downloadId);
-        resumeResult = true;
-      } catch (error) {
-        console.error('Failed to resume direct download:', error);
-        resumeResult = false;
-      }
-    } else if (
-      download.downloadType === 'torrent' ||
-      download.downloadType === 'magnet'
-    ) {
-      try {
-        await window.electronAPI.torrent.resumeDownload(downloadId);
-        resumeResult = true;
-      } catch (error) {
-        console.error('Failed to resume torrent download:', error);
-        resumeResult = false;
-      }
-    }
-
-    if (resumeResult) {
+    const resumed = yield* backendAction(download, 'resume').pipe(
+      Effect.catchAll(() => Effect.succeed(false))
+    );
+    if (resumed) {
       pausedDownloadStates.delete(downloadId);
-
+      deletePersistedDownload(downloadId);
       createNotification({
         id: Math.random().toString(36).substring(2, 9),
         type: 'info',
         message: `Resumed download: ${download.name}`,
       });
-      // ensure only the current ID persists
-      deletePersistedDownload(downloadId);
-      // Enqueue others only when resuming a reconstructed paused state
-      // (No-op here for native resumes)
       return true;
-    } else {
-      console.log('In-place resume failed, attempting restart...');
-      const ok = await restartDownload(pausedState, pausedDownloadStates);
-      if (ok) {
-        await enqueueRemainingPausedDownloads(downloadId, pausedDownloadStates);
-      }
-      return ok;
     }
-  } catch (error) {
-    console.error('Error resuming download:', error);
 
-    updateDownloadStatus(downloadId, {
-      status: 'error',
-      error:
-        error instanceof Error ? error.message : 'Failed to resume download',
-    });
-
-    createNotification({
-      id: Math.random().toString(36).substring(2, 9),
-      type: 'error',
-      message:
-        error instanceof Error ? error.message : 'Failed to resume download',
-    });
-    return false;
-  } finally {
-    resumeInFlight.delete(downloadId);
-  }
+    const restarted = yield* restartDownload(pausedState, pausedDownloadStates);
+    if (restarted) yield* enqueueRemainingPausedDownloads(downloadId);
+    return restarted;
+  }).pipe(
+    Effect.catchAll((error) =>
+      Effect.sync(() => {
+        const message = formatError(error) || 'Failed to resume download';
+        updateDownloadStatus(downloadId, { status: 'error', error: message });
+        createNotification({
+          id: Math.random().toString(36).substring(2, 9),
+          type: 'error',
+          message,
+        });
+        return false;
+      })
+    ),
+    Effect.ensuring(
+      Effect.sync(() => {
+        resumeInFlight.delete(downloadId);
+      })
+    )
+  );
 }
 
 export function cancelPausedDownload(downloadId: string) {
-  try {
+  return Effect.gen(function* () {
     const pausedState = pausedDownloadStates.get(downloadId);
-    if (!pausedState) {
-      // Handle persisted paused downloads after app restart (no in-memory state)
-      const item = getDownloadItem(downloadId);
-      window.electronAPI.queue.cancel(downloadId);
-      deleteDownloadedItems(downloadId);
-      deletePersistedDownload(downloadId);
-      currentDownloads.update((downloads) => {
-        return downloads.filter((d) => d.id !== downloadId);
-      });
-      if (item) {
-        createNotification({
-          id: Math.random().toString(36).substring(2, 9),
-          type: 'info',
-          message: `Cancelled download: ${item.name}`,
-        });
-      }
-      return;
-    }
-
+    const item = pausedState?.downloadInfo ?? getDownloadItem(downloadId);
     pausedDownloadStates.delete(downloadId);
-
-    currentDownloads.update((downloads) => {
-      return downloads.filter((d) => d.id !== downloadId);
-    });
-
     window.electronAPI.queue.cancel(downloadId);
-    deleteDownloadedItems(downloadId);
+    yield* deleteDownloadedItems(downloadId);
     deletePersistedDownload(downloadId);
-
-    createNotification({
-      id: Math.random().toString(36).substring(2, 9),
-      type: 'info',
-      message: `Cancelled download: ${pausedState.downloadInfo.name}`,
-    });
-  } catch (error) {
-    console.error('Error cancelling paused download:', error);
-    createNotification({
-      id: Math.random().toString(36).substring(2, 9),
-      type: 'error',
-      message: 'Failed to cancel download',
-    });
-  }
+    currentDownloads.update((downloads) =>
+      downloads.filter((download) => download.id !== downloadId)
+    );
+    if (item) {
+      createNotification({
+        id: Math.random().toString(36).substring(2, 9),
+        type: 'info',
+        message: `Cancelled download: ${item.name}`,
+      });
+    }
+  });
 }

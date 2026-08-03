@@ -100,17 +100,7 @@ export function startDownloadEffect(
   );
 }
 
-/** Promise bridge used by Svelte event handlers. */
-export function startDownload(
-  result: SearchResultWithAddon,
-  appID: number,
-  event: MouseEvent | null,
-  htmlButton?: HTMLButtonElement
-): Promise<void> {
-  return Effect.runPromise(
-    startDownloadEffect(result, appID, event, htmlButton)
-  );
-}
+export const startDownload = startDownloadEffect;
 
 /**
  * Updates a download's status and optional fields in the currentDownloads store.

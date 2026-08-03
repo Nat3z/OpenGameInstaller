@@ -1,3 +1,5 @@
+import { PlatformError } from '@ogi/errors';
+import { Effect } from 'effect';
 import { get } from 'svelte/store';
 import {
   currentDownloads,
@@ -42,27 +44,38 @@ function syncSleepBlock(
   logs: Record<string, SetupLog>
 ) {
   const shouldBlock = shouldBlockSleep(downloads, logs);
-  if (shouldBlock === sleepBlockActive) return;
+  if (shouldBlock === sleepBlockActive) return Effect.void;
 
   sleepBlockActive = shouldBlock;
-  window.electronAPI.powerSave.setActive(shouldBlock).catch((error) => {
-    console.error('Failed to update sleep lock:', error);
-  });
+  return Effect.tryPromise({
+    try: () => window.electronAPI.powerSave.setActive(shouldBlock),
+    catch: (cause) =>
+      new PlatformError({
+        message: `Failed to update sleep lock: ${cause instanceof Error ? cause.message : String(cause)}`,
+      }),
+  }).pipe(
+    Effect.tapError((error) =>
+      Effect.sync(() => console.error('Failed to update sleep lock:', error))
+    ),
+    Effect.ignore
+  );
 }
 
-export function initSleepLock() {
+export function initSleepLock(
+  run: (effect: Effect.Effect<void>) => void
+): void {
   let latestDownloads = get(currentDownloads);
   let latestSetupLogs = get(setupLogs);
 
   currentDownloads.subscribe((downloads) => {
     latestDownloads = downloads;
-    syncSleepBlock(latestDownloads, latestSetupLogs);
+    run(syncSleepBlock(latestDownloads, latestSetupLogs));
   });
 
   setupLogs.subscribe((logs) => {
     latestSetupLogs = logs;
-    syncSleepBlock(latestDownloads, latestSetupLogs);
+    run(syncSleepBlock(latestDownloads, latestSetupLogs));
   });
 
-  syncSleepBlock(latestDownloads, latestSetupLogs);
+  run(syncSleepBlock(latestDownloads, latestSetupLogs));
 }

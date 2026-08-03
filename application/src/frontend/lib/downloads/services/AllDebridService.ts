@@ -306,10 +306,7 @@ export class AllDebridService extends BaseService {
         error: handshake.error,
         files,
       });
-      yield* allDebridPromise(
-        () => finalizeDownloadCard(handshake.id),
-        'Failed to finalize AllDebrid download'
-      );
+      yield* finalizeDownloadCard(handshake.id);
     });
   }
 }

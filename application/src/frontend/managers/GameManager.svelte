@@ -1,4 +1,5 @@
 <script lang="ts">
+import { Effect } from 'effect';
 import { getAllApps } from '@/frontend/lib/core/library';
 import { gamesLaunched } from '@/frontend/store.svelte';
 import { runLaunchAppAddons } from '@/frontend/utils';
@@ -59,7 +60,7 @@ document.addEventListener('game:exit', async (event: Event) => {
       return;
     }
 
-    await runLaunchAppAddons(libraryInfo, 'post');
+    await Effect.runPromise(runLaunchAppAddons(libraryInfo, 'post'));
   } catch (error) {
     console.error(error);
   } finally {

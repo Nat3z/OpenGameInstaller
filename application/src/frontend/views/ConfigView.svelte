@@ -3,6 +3,7 @@ import type {
   ConfigurationFile,
   OGIAddonConfiguration,
 } from '@ogi-sdk/connect';
+import { Effect } from 'effect';
 import { onDestroy, onMount } from 'svelte';
 import { quintOut } from 'svelte/easing';
 import { writable } from 'svelte/store';
@@ -40,7 +41,7 @@ let view = writable<'my-addons' | 'community-addons'>('my-addons');
 
 onMount(() => {
   // Initial fetch
-  queryConnectedAddons<ConfigTemplateAndInfo>()
+  Effect.runPromise(queryConnectedAddons<ConfigTemplateAndInfo>())
     .then((data) => {
       addons = data;
     })
@@ -49,7 +50,7 @@ onMount(() => {
     );
   // Start polling every 3 seconds
   pollingInterval = setInterval(() => {
-    queryConnectedAddons<ConfigTemplateAndInfo>()
+    Effect.runPromise(queryConnectedAddons<ConfigTemplateAndInfo>())
       .then((data) => {
         addons = data;
       })
@@ -86,7 +87,7 @@ async function updateAddons() {
     await window.electronAPI.updateAddons();
     addonUpdates.set([]);
     await window.electronAPI.restartAddonServer();
-    await reconnectClientSdk();
+    await Effect.runPromise(reconnectClientSdk());
     createNotification({
       id: Math.random().toString(36).substring(7),
       message: 'Addons updated successfully',
@@ -115,7 +116,7 @@ async function addAddon() {
   });
   await window.electronAPI.installAddons([addonUrl]);
   addonUrl = '';
-  await reconnectClientSdk();
+  await Effect.runPromise(reconnectClientSdk());
 }
 
 function openMarketplaceSourceManager() {

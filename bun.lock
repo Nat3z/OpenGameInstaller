@@ -5,7 +5,6 @@
     "": {
       "name": "ogi-monorepo",
       "dependencies": {
-        "@effect/schema": "^0.75.5",
         "effect": "^3.22.0",
       },
       "devDependencies": {
@@ -19,7 +18,6 @@
       "version": "4.1.0",
       "dependencies": {
         "@ctrl/qbittorrent": "^9.11.0",
-        "@effect/schema": "^0.75.5",
         "@ogi-sdk/addon-server": "workspace:*",
         "@ogi-sdk/client-kit": "workspace:*",
         "@ogi-sdk/connect": "workspace:*",
@@ -38,7 +36,6 @@
         "shell-quote": "^1.8.3",
         "utp-native": "^2.5.3",
         "webtorrent": "^2.8.5",
-        "zod": "^3.25.76",
       },
       "devDependencies": {
         "@electron/rebuild": "^3.7.2",
@@ -75,7 +72,6 @@
       "name": "@ogi-sdk/addon-server",
       "version": "1.0.2",
       "dependencies": {
-        "@effect/schema": "^0.75.5",
         "@ogi-sdk/connect": "^1.0.2",
         "@ogi/errors": "workspace:*",
         "effect": "^3.22.0",
@@ -98,7 +94,6 @@
       "name": "all-debrid-js",
       "version": "1.0.0",
       "dependencies": {
-        "@effect/schema": "^0.75.5",
         "@ogi/errors": "workspace:*",
         "axios": "^1.7.2",
         "effect": "^3.22.0",
@@ -114,7 +109,6 @@
       "name": "@ogi-sdk/client-kit",
       "version": "1.0.2",
       "dependencies": {
-        "@effect/schema": "^0.75.5",
         "@ogi-sdk/connect": "^1.0.2",
         "@ogi/errors": "workspace:*",
         "effect": "^3.22.0",
@@ -134,7 +128,6 @@
       "name": "@ogi-sdk/connect",
       "version": "1.0.2",
       "dependencies": {
-        "@effect/schema": "^0.75.5",
         "@ogi/errors": "workspace:*",
         "effect": "^3.22.0",
       },
@@ -169,7 +162,6 @@
       "name": "@ogi-sdk/executor",
       "version": "1.3.0",
       "dependencies": {
-        "@effect/schema": "^0.75.5",
         "@ogi/errors": "workspace:*",
         "effect": "^3.22.0",
         "string-argv": "^0.3.2",
@@ -186,7 +178,6 @@
       "name": "ogi-addon",
       "version": "4.1.0",
       "dependencies": {
-        "@effect/schema": "^0.75.5",
         "@ogi-sdk/connect": "^1.0.2",
         "@ogi/errors": "workspace:*",
         "effect": "^3.22.0",
@@ -203,7 +194,6 @@
       "name": "real-debrid-js",
       "version": "1.1.1",
       "dependencies": {
-        "@effect/schema": "^0.75.5",
         "@ogi/errors": "workspace:*",
         "axios": "^1.7.2",
         "effect": "^3.22.0",
@@ -230,7 +220,6 @@
       "name": "ogi-updater",
       "version": "2.0.0",
       "dependencies": {
-        "@effect/schema": "^0.75.5",
         "axios": "^1.13.4",
         "effect": "^3.22.0",
         "yauzl": "^3.2.0",
@@ -366,8 +355,6 @@
     "@ctrl/torrent-file": ["@ctrl/torrent-file@4.5.0", "", {}, "sha512-ECzdbioAXLx7E3w/G9wMBz64K7MD5gRH6A2ypDcax+3cDmELdlKQfJIzX7q+if7E2TO+nbcabx76g0su3t01mQ=="],
 
     "@develar/schema-utils": ["@develar/schema-utils@2.6.5", "", { "dependencies": { "ajv": "^6.12.0", "ajv-keywords": "^3.4.1" } }, "sha512-0cp4PsWQ/9avqTVMCtZ+GirikIA36ikvjtHweU4/j8yLtgObI0+JUPhYFScgwlteveGB1rt3Cm8UhN04XayDig=="],
-
-    "@effect/schema": ["@effect/schema@0.75.5", "", { "dependencies": { "fast-check": "^3.21.0" }, "peerDependencies": { "effect": "^3.9.2" } }, "sha512-TQInulTVCuF+9EIbJpyLP6dvxbQJMphrnRqgexm/Ze39rSjfhJuufF7XvU3SxTgg3HnL7B/kpORTJbHhlE6thw=="],
 
     "@electron-internal/extract-zip": ["@electron-internal/extract-zip@1.0.4", "", {}, "sha512-Zr1Vs7E9tpCNhZHDAbFVXc2gEVCG9RqPDjrno5+bdgB6LRAuvgyMHJut4NCVyYwtAieapMzc3fiQ3CSTi75ARg=="],
 

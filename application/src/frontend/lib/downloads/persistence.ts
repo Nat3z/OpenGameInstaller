@@ -1,3 +1,5 @@
+import { FileSystemError, formatError } from '@ogi/errors';
+import { Effect } from 'effect';
 import { get } from 'svelte/store';
 import { getPersistedFilePaths } from '@/frontend/lib/downloads/paths';
 import {
@@ -109,195 +111,169 @@ function isRedistributableInstall(
   );
 }
 
-export async function loadPersistedDownloads(): Promise<{
-  downloads: DownloadStatusAndInfo[];
-  redistributableInstallByDownloadId: Record<string, RedistributableInstall>;
-}> {
-  try {
-    ensureDir();
-    // Do not pre-assign queue positions on restore. All items will be paused
-    // and queue positions are resolved when a resume occurs.
-    const files: string[] =
-      (await window.electronAPI.fs.getFilesInDir(PERSIST_DIR)) || [];
-    const restored: DownloadStatusAndInfo[] = [];
-    const redistributableInstallByDownloadId: Record<
-      string,
-      RedistributableInstall
-    > = {};
+export function loadPersistedDownloads() {
+  ensureDir();
+  return Effect.tryPromise({
+    try: () => window.electronAPI.fs.getFilesInDir(PERSIST_DIR),
+    catch: (cause) =>
+      new FileSystemError({
+        message: `Failed to load persisted downloads: ${formatError(cause)}`,
+        path: PERSIST_DIR,
+        cause,
+      }),
+  }).pipe(
+    Effect.map((files) => {
+      const restored: DownloadStatusAndInfo[] = [];
+      const redistributableInstallByDownloadId: Record<
+        string,
+        RedistributableInstall
+      > = {};
 
-    for (const file of files) {
-      if (!file.endsWith('.json')) continue;
-      try {
-        const content = window.electronAPI.fs.read(`${PERSIST_DIR}/${file}`);
-        const parsed = JSON.parse(content) as PersistedRecord;
-        if (!parsed || !parsed.downloadInfo) continue;
-        const info = parsed.downloadInfo;
-        if (!isPersistableStatus(info.status)) continue;
+      for (const file of files ?? []) {
+        if (!file.endsWith('.json')) continue;
+        try {
+          const parsed = JSON.parse(
+            window.electronAPI.fs.read(`${PERSIST_DIR}/${file}`)
+          ) as PersistedRecord;
+          if (!parsed?.downloadInfo) continue;
+          const info = parsed.downloadInfo;
+          if (!isPersistableStatus(info.status)) continue;
 
-        if (info.status === 'installing-redistributables') {
-          if (isRedistributableInstall(parsed.redistributableInstall)) {
-            redistributableInstallByDownloadId[info.id] =
-              parsed.redistributableInstall;
+          if (info.status === 'installing-redistributables') {
+            if (isRedistributableInstall(parsed.redistributableInstall)) {
+              redistributableInstallByDownloadId[info.id] =
+                parsed.redistributableInstall;
+            }
+            info.status = 'paused';
+            restored.push(info);
+            continue;
           }
-          // Mark as paused on restore - will auto-resume installation
+          if (
+            info.usedDebridService &&
+            (info.downloadType === 'torrent' ||
+              info.downloadType === 'magnet') &&
+            (!info.downloadURL || info.downloadURL === info.originalDownloadURL)
+          ) {
+            continue;
+          }
           info.status = 'paused';
+          info.queuePosition = undefined;
           restored.push(info);
-          continue;
+        } catch (error) {
+          console.error('Failed to parse persisted download:', file, error);
         }
-
-        // If this was a Debrid job but we never captured a resolved link, skip restoring it
-        if (
-          info.usedDebridService &&
-          (info.downloadType === 'torrent' || info.downloadType === 'magnet') &&
-          (!info.downloadURL || info.downloadURL === info.originalDownloadURL)
-        ) {
-          // No resolved URL persisted; restoring this could fail on resume. Drop it.
-          continue;
-        }
-        // After app restart, there is no live backend process bound to the ID; mark as paused for safety
-        info.status = 'paused';
-        // Drop any stale queue position; it will be resolved on resume
-        info.queuePosition = undefined;
-        restored.push(info);
-      } catch (e) {
-        console.error('Failed to parse persisted download:', file, e);
       }
-    }
-    return { downloads: restored, redistributableInstallByDownloadId };
-  } catch (e) {
-    console.error('Failed to load persisted downloads:', e);
-    return { downloads: [], redistributableInstallByDownloadId: {} };
-  }
+      return { downloads: restored, redistributableInstallByDownloadId };
+    })
+  );
 }
 
-export async function initDownloadPersistence() {
-  ensureDir();
-
-  // 1) Hydrate store with any persisted in-progress downloads (mark as paused)
-  try {
-    const restoredState = await loadPersistedDownloads();
-    if (restoredState.downloads.length > 0) {
-      currentDownloads.update((downloads) => {
-        const byId = new Map(downloads.map((d) => [d.id, d] as const));
-        restoredState.downloads.forEach((r) => {
-          if (!byId.has(r.id)) {
-            byId.set(r.id, r);
-          } else {
-            const existing = byId.get(r.id)!;
-            byId.set(r.id, { ...existing, ...r });
-          }
-        });
-        return Array.from(byId.values());
-      });
-    }
-
-    // Restore redistributable install states
-    const restoredRedistributableIds = Object.keys(
-      restoredState.redistributableInstallByDownloadId
+export function initDownloadPersistence() {
+  return Effect.gen(function* () {
+    ensureDir();
+    const restoredState = yield* loadPersistedDownloads().pipe(
+      Effect.catchAll((error) =>
+        Effect.sync(() => {
+          console.error('Failed to hydrate persisted downloads:', error);
+          return {
+            downloads: [],
+            redistributableInstallByDownloadId: {},
+          };
+        })
+      )
     );
-    if (restoredRedistributableIds.length > 0) {
-      redistributableInstalls.update((setups) => ({
-        ...setups,
-        ...restoredState.redistributableInstallByDownloadId,
-      }));
 
-      // Auto-resume redistributable installations that were in progress
-      // Mark downloads as complete since installation state is restored
-      for (const downloadId of restoredRedistributableIds) {
-        const install =
-          restoredState.redistributableInstallByDownloadId[downloadId];
-        if (install.isComplete) {
-          // Already complete, mark download as setup-complete
-          currentDownloads.update((downloads) => {
-            const download = downloads.find((d) => d.id === downloadId);
-            if (download && download.status === 'paused') {
-              download.status = 'setup-complete';
-            }
-            return downloads;
-          });
-        }
+    currentDownloads.update((downloads) => {
+      const byId = new Map(
+        downloads.map((download) => [download.id, download])
+      );
+      for (const restored of restoredState.downloads) {
+        byId.set(restored.id, { ...byId.get(restored.id), ...restored });
       }
+      return Array.from(byId.values());
+    });
+    redistributableInstalls.update((setups) => ({
+      ...setups,
+      ...restoredState.redistributableInstallByDownloadId,
+    }));
+    for (const [downloadId, install] of Object.entries(
+      restoredState.redistributableInstallByDownloadId
+    )) {
+      if (!install.isComplete) continue;
+      currentDownloads.update((downloads) =>
+        downloads.map((download) =>
+          download.id === downloadId && download.status === 'paused'
+            ? { ...download, status: 'setup-complete' }
+            : download
+        )
+      );
     }
-  } catch (e) {
-    console.error('Failed to hydrate persisted downloads:', e);
-  }
 
-  // 2) Subscribe to store and persist relevant states, cleanup completed/errored
-  let lastSnapshot: Record<string, string> = {};
-  let lastRedistributableSnapshotById: Record<string, string> = {};
-  let latestDownloads: DownloadStatusAndInfo[] = [];
-
-  currentDownloads.subscribe((downloads) => {
-    try {
+    let lastSnapshot: Record<string, string> = {};
+    let lastRedistributableSnapshotById: Record<string, string> = {};
+    let latestDownloads: DownloadStatusAndInfo[] = [];
+    currentDownloads.subscribe((downloads) => {
       latestDownloads = downloads;
       const nextSnapshot: Record<string, string> = {};
-      downloads.forEach((d) => {
-        if (isPersistableStatus(d.status)) {
-          const serialized = JSON.stringify(d);
-          nextSnapshot[d.id] = serialized;
-          if (lastSnapshot[d.id] !== serialized) {
-            saveRecord(d);
-          }
-        }
-      });
-      // Remove records for downloads that no longer exist in the store
-      Object.keys(lastSnapshot).forEach((prevId) => {
-        if (!(prevId in nextSnapshot)) {
-          console.log('[persistence] Removing record for download:', prevId);
-          removeRecord(prevId);
-          delete lastRedistributableSnapshotById[prevId];
-        }
-      });
+      for (const download of downloads) {
+        if (!isPersistableStatus(download.status)) continue;
+        const serialized = JSON.stringify(download);
+        nextSnapshot[download.id] = serialized;
+        if (lastSnapshot[download.id] !== serialized) saveRecord(download);
+      }
+      for (const previousId of Object.keys(lastSnapshot)) {
+        if (previousId in nextSnapshot) continue;
+        removeRecord(previousId);
+        delete lastRedistributableSnapshotById[previousId];
+      }
       lastSnapshot = nextSnapshot;
-    } catch (e) {
-      console.error('Error while persisting in-progress downloads:', e);
-    }
-  });
-
-  redistributableInstalls.subscribe((setups) => {
-    try {
+    });
+    redistributableInstalls.subscribe((setups) => {
       const downloadsById = new Map(
-        latestDownloads.map((download) => [download.id, download] as const)
+        latestDownloads.map((download) => [download.id, download])
       );
-      Object.entries(setups).forEach(([downloadId, setup]) => {
+      for (const [downloadId, setup] of Object.entries(setups)) {
         const download = downloadsById.get(downloadId);
         if (!download || download.status !== 'installing-redistributables')
-          return;
-
+          continue;
         const serialized = JSON.stringify(setup);
         if (lastRedistributableSnapshotById[downloadId] !== serialized) {
           saveRecord(download, true);
           lastRedistributableSnapshotById[downloadId] = serialized;
         }
-      });
-
-      Object.keys(lastRedistributableSnapshotById).forEach((downloadId) => {
-        if (!setups[downloadId]) {
-          delete lastRedistributableSnapshotById[downloadId];
-        }
-      });
-    } catch (e) {
-      console.error('Error while persisting redistributable install state:', e);
-    }
+      }
+    });
   });
 }
 
-export async function deleteDownloadedItems(id: string) {
+export function deleteDownloadedItems(id: string) {
   const record = recordPath(id);
-  if (!window.electronAPI.fs.exists(record)) return;
-  const content = window.electronAPI.fs.read(record);
-  const parsed = JSON.parse(content) as PersistedRecord;
-  const downloadInfo = parsed.downloadInfo;
+  if (!window.electronAPI.fs.exists(record)) return Effect.void;
+  const parsed = JSON.parse(
+    window.electronAPI.fs.read(record)
+  ) as PersistedRecord;
 
-  const filesToDelete = getPersistedFilePaths(downloadInfo);
-
-  for (const filePath of filesToDelete) {
-    try {
-      await window.electronAPI.fs.deleteAsync(filePath);
-    } catch (err) {
-      console.error('Failed to delete file:', filePath, err);
-    }
-  }
+  return Effect.forEach(
+    getPersistedFilePaths(parsed.downloadInfo),
+    (filePath) =>
+      Effect.tryPromise({
+        try: () => window.electronAPI.fs.deleteAsync(filePath),
+        catch: (cause) =>
+          new FileSystemError({
+            message: `Failed to delete downloaded file: ${formatError(cause)}`,
+            path: filePath,
+            cause,
+          }),
+      }).pipe(
+        Effect.tapError((error) =>
+          Effect.sync(() =>
+            console.error(error.message, error.path, error.cause)
+          )
+        ),
+        Effect.ignore
+      ),
+    { discard: true }
+  );
 }
 
 export function deletePersistedDownload(id: string) {

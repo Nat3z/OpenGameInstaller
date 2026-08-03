@@ -90,15 +90,7 @@ export class DirectService extends BaseService {
           files: persistedFiles,
         },
       ]);
-      yield* Effect.tryPromise({
-        try: () => finalizeDownloadCard(handshake.id),
-        catch: (cause) =>
-          new DownloadError({
-            message: 'Failed to finalize direct download card.',
-            downloadId: handshake.id,
-            cause,
-          }),
-      });
+      yield* finalizeDownloadCard(handshake.id);
     }).pipe(
       Effect.tapError((error) =>
         Effect.sync(() => console.error('Direct download error:', error))

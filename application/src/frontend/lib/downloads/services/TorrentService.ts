@@ -91,15 +91,7 @@ export class TorrentService extends BaseService {
           originalDownloadURL: result.downloadURL,
         },
       ]);
-      yield* Effect.tryPromise({
-        try: () => finalizeDownloadCard(handshake.id),
-        catch: (cause) =>
-          new DownloadError({
-            message: 'Failed to finalize torrent download card.',
-            downloadId: handshake.id,
-            cause,
-          }),
-      });
+      yield* finalizeDownloadCard(handshake.id);
     }).pipe(
       Effect.tapError((error) =>
         Effect.sync(() => console.error('Torrent download error:', error))

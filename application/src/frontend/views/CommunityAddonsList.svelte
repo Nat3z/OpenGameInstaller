@@ -1,4 +1,5 @@
 <script lang="ts">
+import { Effect } from 'effect';
 import { fade } from 'svelte/transition';
 import { parseAddonLink } from '@/electron/lib/addon-links';
 import DeleteAddonWarningModal from '@/frontend/components/built/DeleteAddonWarningModal.svelte';
@@ -37,7 +38,7 @@ async function installAddon(marketplaceURL: string, addon: CommunityAddon) {
     ...currentAddons,
     addons: await window.electronAPI.installAddons([addonWithMarketplace]),
   };
-  await reconnectClientSdk();
+  await Effect.runPromise(reconnectClientSdk());
 }
 
 function addonConfigMatchesSource(configAddon: string, addonSource: string) {
@@ -77,7 +78,7 @@ async function deleteAddon(addon: CommunityAddon) {
   currentAddons = JSON.parse(
     window.electronAPI.fs.read('./config/option/general.json')
   );
-  await reconnectClientSdk();
+  await Effect.runPromise(reconnectClientSdk());
   deleteConfirmationModalAddon = null;
 }
 

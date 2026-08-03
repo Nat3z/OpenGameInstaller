@@ -1,5 +1,6 @@
 <script lang="ts">
 import type { LibraryInfo, SearchResult } from '@ogi-sdk/connect';
+import { Effect } from 'effect';
 import { ConfigurationBuilder } from 'ogi-addon/config';
 import { onDestroy, onMount, tick } from 'svelte';
 import { quintOut } from 'svelte/easing';
@@ -120,7 +121,7 @@ async function launchGame() {
   try {
     console.log('launching pre-launch');
     console.log('launchApp', libraryInfo);
-    await runLaunchAppAddons(libraryInfo, 'pre');
+    await Effect.runPromise(runLaunchAppAddons(libraryInfo, 'pre'));
   } catch (error) {
     console.error(error);
     // remove the game from the gamesLaunched state first so the play button is restored
@@ -340,7 +341,7 @@ onMount(async () => {
     exitPlayPage();
   }, 'Back to library');
 
-  const addons = await fetchAddonsWithConfigure();
+  const addons = await Effect.runPromise(fetchAddonsWithConfigure());
   addonsMap = new Map(
     addons.map((addon) => [addon.id, { id: addon.id, name: addon.name }])
   );
@@ -375,17 +376,19 @@ onMount(async () => {
 function handleRunTask(task: SearchResult, addonID: string) {
   console.log('Running task: ' + task.name);
   const addon = addonsMap.get(addonID);
-  runTask(
-    {
-      ...task,
-      addonSource: addonID,
-      addonName: addon?.name || addonID,
-      coverImage: libraryInfo.coverImage,
-      storefront: libraryInfo.storefront,
-      capsuleImage: libraryInfo.capsuleImage,
-    },
-    libraryInfo.cwd,
-    libraryInfo
+  void Effect.runPromise(
+    runTask(
+      {
+        ...task,
+        addonSource: addonID,
+        addonName: addon?.name || addonID,
+        coverImage: libraryInfo.coverImage,
+        storefront: libraryInfo.storefront,
+        capsuleImage: libraryInfo.capsuleImage,
+      },
+      libraryInfo.cwd,
+      libraryInfo
+    )
   );
 }
 </script>

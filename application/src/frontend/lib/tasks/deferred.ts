@@ -1,4 +1,6 @@
+import { AddonError, formatError } from '@ogi/errors';
 import type { DeferredTaskSnapshot } from '@ogi-sdk/client-kit';
+import { Effect } from 'effect';
 import { addonServer } from '@/frontend/lib/core/ipc';
 import {
   type DeferredTask,
@@ -6,58 +8,58 @@ import {
   removedTasks,
 } from '@/frontend/store.svelte';
 
-export async function loadDeferredTasks(tasksToRemove: string[] = []) {
-  try {
-    const tasks = await addonServer.getDeferredTasks();
-    deferredTasks.set(
-      tasks
-        .filter(
-          (task: DeferredTaskSnapshot) => !tasksToRemove.includes(task.id)
-        )
-        .map((task: DeferredTaskSnapshot) => ({
-          id: task.id,
-          name: `Task ${task.id}`,
-          description: 'Background task',
-          addonOwner: task.addonOwner,
-          status: task.finished
-            ? task.failed
-              ? 'error'
-              : 'completed'
-            : 'running',
-          progress: task.progress || 0,
-          logs: task.logs || [],
-          timestamp: Date.now(),
-          duration: undefined,
-          // Only surface an explicit failure message as the task error. Logs are
-          // shown separately and should not be promoted to errors.
-          error: task.failed || undefined,
-          type: 'other',
-        }))
-    );
-  } catch (error) {
-    console.error('Error loading deferred tasks:', error);
-  }
+export function loadDeferredTasks(tasksToRemove: string[] = []) {
+  return Effect.tryPromise({
+    try: () => addonServer.getDeferredTasks(),
+    catch: (cause) =>
+      new AddonError({
+        message: `Failed to load deferred tasks: ${formatError(cause)}`,
+      }),
+  }).pipe(
+    Effect.tap((tasks) =>
+      Effect.sync(() => {
+        deferredTasks.set(
+          tasks
+            .filter(
+              (task: DeferredTaskSnapshot) => !tasksToRemove.includes(task.id)
+            )
+            .map((task: DeferredTaskSnapshot) => ({
+              id: task.id,
+              name: `Task ${task.id}`,
+              description: 'Background task',
+              addonOwner: task.addonOwner,
+              status: task.finished
+                ? task.failed
+                  ? 'error'
+                  : 'completed'
+                : 'running',
+              progress: task.progress || 0,
+              logs: task.logs || [],
+              timestamp: Date.now(),
+              duration: undefined,
+              error: task.failed || undefined,
+              type: 'other',
+            }))
+        );
+      })
+    ),
+    Effect.asVoid
+  );
 }
 
-export async function cancelTask(taskId: string) {
-  try {
-    // Note: Cancel functionality is not implemented in the defer API
-    // Tasks cannot be cancelled once started
+export function cancelTask(taskId: string): Effect.Effect<void> {
+  return Effect.sync(() => {
     console.warn('Task cancellation is not supported');
-
-    // Optionally remove the task from the local state
     deferredTasks.update((tasks: DeferredTask[]) =>
-      tasks.filter((task: DeferredTask) => task.id !== taskId)
+      tasks.filter((task) => task.id !== taskId)
     );
-  } catch (error) {
-    console.error('Error cancelling task:', error);
-  }
+  });
 }
 
-export function clearCompletedTasks() {
+export function clearCompletedTasks(): void {
   deferredTasks.update((tasks: DeferredTask[]) =>
     tasks.filter(
-      (task: DeferredTask) =>
+      (task) =>
         task.status !== 'completed' &&
         task.status !== 'error' &&
         task.status !== 'cancelled'
@@ -65,13 +67,13 @@ export function clearCompletedTasks() {
   );
 }
 
-export function clearAllTasks(tasks: string[]) {
-  removedTasks.update((removedTasks: string[]) =>
-    [...removedTasks, ...tasks].filter(
+export function clearAllTasks(tasks: string[]): void {
+  removedTasks.update((removed) =>
+    [...removed, ...tasks].filter(
       (task, index, self) => self.indexOf(task) === index
     )
   );
-  deferredTasks.update((deferredTasks: DeferredTask[]) =>
-    deferredTasks.filter((task: DeferredTask) => !tasks.includes(task.id))
+  deferredTasks.update((current) =>
+    current.filter((task) => !tasks.includes(task.id))
   );
 }

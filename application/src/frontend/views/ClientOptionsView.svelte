@@ -1,4 +1,5 @@
 <script lang="ts">
+import { Effect } from 'effect';
 import { onMount } from 'svelte';
 import { fly } from 'svelte/transition';
 import { parseAddonLink } from '@/electron/lib/addon-links';
@@ -537,7 +538,7 @@ async function restartAddonServer() {
   isRestartingServer = true;
   try {
     await window.electronAPI.restartAddonServer();
-    await reconnectClientSdk();
+    await Effect.runPromise(reconnectClientSdk());
   } catch (err) {
     console.error('Failed to restart addon server:', err);
   } finally {
@@ -693,7 +694,7 @@ onMount(() => {
   }
   async function handleAddonConnected() {
     try {
-      await fetchAddonsWithConfigure();
+      await Effect.runPromise(fetchAddonsWithConfigure());
     } catch (error) {
       console.error('Failed to configure addons after reconnect:', error);
     } finally {

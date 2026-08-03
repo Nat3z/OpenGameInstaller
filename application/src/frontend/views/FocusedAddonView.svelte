@@ -3,6 +3,7 @@ import type {
   ConfigurationFile,
   OGIAddonConfiguration,
 } from '@ogi-sdk/connect';
+import { Effect } from 'effect';
 import {
   isActionOption,
   isBooleanOption,
@@ -41,25 +42,28 @@ let selectedValues: Record<string, string> = $state({});
 let runningActions: Record<string, boolean> = $state({});
 
 onMount(() => {
-  queryConnectedAddons<ConfigTemplateAndInfo>().then((data) => {
-    const addon = data.find((a: ConfigTemplateAndInfo) => a.id === addonId);
-    if (addon) {
-      selectedAddon = addon;
-      if (selectedAddon) {
-        Object.keys(selectedAddon.configTemplate).forEach((key) => {
-          if (
-            isStringOption(selectedAddon!.configTemplate[key]) &&
-            (selectedAddon!.configTemplate[key].allowedValues?.length ?? 0) > 0
-          ) {
-            selectedValues[key] = getStoredOrDefaultValue(key);
-          }
-        });
+  Effect.runPromise(queryConnectedAddons<ConfigTemplateAndInfo>()).then(
+    (data) => {
+      const addon = data.find((a: ConfigTemplateAndInfo) => a.id === addonId);
+      if (addon) {
+        selectedAddon = addon;
+        if (selectedAddon) {
+          Object.keys(selectedAddon.configTemplate).forEach((key) => {
+            if (
+              isStringOption(selectedAddon!.configTemplate[key]) &&
+              (selectedAddon!.configTemplate[key].allowedValues?.length ?? 0) >
+                0
+            ) {
+              selectedValues[key] = getStoredOrDefaultValue(key);
+            }
+          });
+        }
+        setTimeout(() => {
+          updateConfig();
+        }, 100);
       }
-      setTimeout(() => {
-        updateConfig();
-      }, 100);
     }
-  });
+  );
 });
 
 function updateConfig() {
@@ -360,19 +364,21 @@ async function handleActionClick(key: string) {
 
   runningActions = { ...runningActions, [key]: true };
   try {
-    await runTask(
-      {
-        addonSource: selectedAddon.id,
-        addonName: selectedAddon.name,
-        manifest: manifest,
-        name: actionOption.displayName,
-        downloadType: 'task' as const,
-        taskName: taskName,
-        capsuleImage: '',
-        coverImage: '',
-        storefront: '',
-      },
-      ''
+    await Effect.runPromise(
+      runTask(
+        {
+          addonSource: selectedAddon.id,
+          addonName: selectedAddon.name,
+          manifest,
+          name: actionOption.displayName,
+          downloadType: 'task' as const,
+          taskName,
+          capsuleImage: '',
+          coverImage: '',
+          storefront: '',
+        },
+        ''
+      )
     );
   } catch (error) {
     notifications.update((update) => [

@@ -1,5 +1,6 @@
 <script lang="ts">
 import type { LibraryInfo, SearchResult, StoreData } from '@ogi-sdk/connect';
+import { Effect } from 'effect';
 import { onMount } from 'svelte';
 import { fly, slide } from 'svelte/transition';
 import AddonPicture from '@/frontend/components/AddonPicture.svelte';
@@ -196,9 +197,8 @@ async function loadCustomStoreData() {
   } else {
     originalExecutable = undefined;
   }
-  const detailAddons = await findAddonsSupportingStorefront(
-    storefront,
-    'game-details'
+  const detailAddons = await Effect.runPromise(
+    findAddonsSupportingStorefront(storefront, 'game-details')
   );
   let response: StoreData | undefined;
   for (const addon of detailAddons) {
@@ -220,7 +220,7 @@ async function loadCustomStoreData() {
   // Fetch search results for custom store
   // if (alreadyOwns) return;
 
-  let addons = await fetchAddonsWithConfigure();
+  let addons = await Effect.runPromise(fetchAddonsWithConfigure());
   queryingSources = true;
 
   if (addons.length === 0) {
@@ -338,15 +338,19 @@ function handleDownloadClick(result: SearchResultWithAddon, event: MouseEvent) {
 
   // Proceed with download
   if (result.downloadType === 'task') {
-    runTask(result, alreadyOwns ? originalFilePath || '' : '', libraryInfo);
+    void Effect.runPromise(
+      runTask(result, alreadyOwns ? originalFilePath || '' : '', libraryInfo)
+    );
   } else {
-    startDownload(
-      {
-        ...result,
-        name: (gameData as StoreData).name!,
-      },
-      appID,
-      event
+    void Effect.runPromise(
+      startDownload(
+        {
+          ...result,
+          name: (gameData as StoreData).name!,
+        },
+        appID,
+        event
+      )
     );
   }
 }

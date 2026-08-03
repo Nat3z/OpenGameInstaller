@@ -1,7 +1,9 @@
+import { AddonError, formatError } from '@ogi/errors';
 import type {
   ConfigurationFile,
   ConfigurationOptionWire,
 } from '@ogi-sdk/connect';
+import { Effect } from 'effect';
 import {
   isBooleanOption,
   isNumberOption,
@@ -77,71 +79,69 @@ export function getConfigClientOption<T>(id: string): T | null {
   );
   return JSON.parse(config) as T;
 }
-async function waitForConfiguredAddons(
-  maxWaitMs = 15_000,
-  pollMs = 100
-): Promise<ConfigTemplateAndInfo[]> {
+function waitForConfiguredAddons(maxWaitMs = 15_000, pollMs = 100) {
   const deadline = Date.now() + maxWaitMs;
-  while (Date.now() < deadline) {
-    const addons = await queryConnectedAddons<ConfigTemplateAndInfo>();
-    if (addons.length === 0) {
-      return addons;
+  return Effect.gen(function* () {
+    while (Date.now() < deadline) {
+      const addons = yield* queryConnectedAddons<ConfigTemplateAndInfo>();
+      if (
+        addons.length === 0 ||
+        addons.every((addon) => addon.configTemplate !== undefined)
+      ) {
+        return addons;
+      }
+      yield* Effect.sleep(pollMs);
     }
-    if (addons.every((addon) => addon.configTemplate !== undefined)) {
-      return addons;
-    }
-    await new Promise((resolve) => setTimeout(resolve, pollMs));
-  }
-  return queryConnectedAddons<ConfigTemplateAndInfo>();
+    return yield* queryConnectedAddons<ConfigTemplateAndInfo>();
+  });
 }
 
-export async function fetchAddonsWithConfigure() {
-  const addons = await waitForConfiguredAddons();
+export function fetchAddonsWithConfigure() {
+  return Effect.gen(function* () {
+    const addons = yield* waitForConfiguredAddons();
+    yield* Effect.forEach(
+      addons,
+      (addon) =>
+        Effect.gen(function* () {
+          const safeId = validateAddonId(addon.id);
+          if (!safeId || !addon.configTemplate) return;
 
-  await Promise.all(
-    addons.map(async (addon) => {
-      const safeId = validateAddonId(addon.id);
-      if (!safeId) return;
+          const configPath = addonConfigPath(safeId);
+          let config: Record<string, number | boolean | string>;
+          if (!window.electronAPI.fs.exists(configPath)) {
+            config = buildDefaultConfig(addon.configTemplate);
+            window.electronAPI.fs.write(
+              configPath,
+              JSON.stringify(config, null, 2)
+            );
+          } else {
+            config = yield* Effect.try({
+              try: () => JSON.parse(window.electronAPI.fs.read(configPath)),
+              catch: () => {
+                const defaults = buildDefaultConfig(addon.configTemplate);
+                window.electronAPI.fs.write(
+                  configPath,
+                  JSON.stringify(defaults, null, 2)
+                );
+                return defaults;
+              },
+            }).pipe(Effect.merge);
+          }
 
-      const configPath = addonConfigPath(safeId);
-      let config: Record<string, number | boolean | string>;
-
-      if (!addon.configTemplate) {
-        console.warn(
-          `Skipping config update for ${safeId}: configure template not ready`
-        );
-        return;
-      }
-
-      if (!window.electronAPI.fs.exists(configPath)) {
-        config = buildDefaultConfig(addon.configTemplate);
-        window.electronAPI.fs.write(
-          configPath,
-          JSON.stringify(config, null, 2)
-        );
-      } else {
-        try {
-          config = JSON.parse(window.electronAPI.fs.read(configPath));
-        } catch (e) {
-          console.error(
-            `Failed to parse config for ${safeId}, regenerating defaults:`,
-            e
-          );
-          config = buildDefaultConfig(addon.configTemplate);
-          window.electronAPI.fs.write(
-            configPath,
-            JSON.stringify(config, null, 2)
-          );
-        }
-      }
-
-      console.log('Posting stored config for addon', safeId, config);
-      // The wire type models config templates, but this endpoint receives values.
-      await addonServer
-        .addon(safeId)
-        .configUpdate(config as unknown as ConfigurationFile);
-    })
-  );
-
-  return addons;
+          yield* Effect.tryPromise({
+            try: () =>
+              addonServer
+                .addon(safeId)
+                .configUpdate(config as unknown as ConfigurationFile),
+            catch: (cause) =>
+              new AddonError({
+                message: `Failed to configure addon: ${formatError(cause)}`,
+                addonName: safeId,
+              }),
+          });
+        }),
+      { concurrency: 'unbounded' }
+    );
+    return addons;
+  });
 }

@@ -1,302 +1,210 @@
-import { DownloadError } from '@ogi/errors';
+import { DownloadError, formatError } from '@ogi/errors';
 import { Effect } from 'effect';
 import { getDownloadPath } from '@/frontend/lib/core/fs';
 import {
   getDownloadItem,
   updateDownloadStatus,
 } from '@/frontend/lib/downloads/lifecycle';
-import {
-  safeDownloadPath,
-  sanitizePathSegment,
-} from '@/frontend/lib/downloads/paths';
+import { safeDownloadPath } from '@/frontend/lib/downloads/paths';
 import {
   createNotification,
   type DownloadStatusAndInfo,
 } from '@/frontend/store.svelte';
 
-interface PausedDownloadState {
+export interface PausedDownloadState {
   id: string;
   downloadInfo: DownloadStatusAndInfo;
   pausedAt: number;
   originalDownloadURL?: string;
-  files?: any[];
+  files?: unknown[];
 }
 
-async function restartDirectDownload(
+const downloadPromise = <A>(
+  operation: () => Promise<A>,
+  download: DownloadStatusAndInfo,
+  message: string
+) =>
+  Effect.tryPromise({
+    try: operation,
+    catch: (cause) =>
+      new DownloadError({
+        message: `${message}: ${formatError(cause)}`,
+        downloadId: download.id,
+        cause,
+      }),
+  });
+
+function effectiveDownloadUrl(
   download: DownloadStatusAndInfo
-): Promise<string> {
+): string | undefined {
   const downloadURL =
     download.downloadType === 'torrent' || download.downloadType === 'magnet'
       ? download.downloadURL
       : undefined;
-  const effectiveUrl = download.usedDebridService
+  return download.usedDebridService
     ? downloadURL || download.originalDownloadURL
     : download.originalDownloadURL || downloadURL;
+}
 
-  let files: {
-    link: string;
-    path: string;
-    headers?: Record<string, string>;
-  }[] = [];
+function restartDirectDownload(download: DownloadStatusAndInfo) {
+  return Effect.gen(function* () {
+    const effectiveUrl = effectiveDownloadUrl(download);
+    const downloadFiles = download.files?.length ? download.files : undefined;
+    let files: Array<{
+      link: string;
+      path: string;
+      headers?: Record<string, string>;
+    }>;
 
-  const downloadFiles =
-    download.files && download.files.length > 0 ? download.files : undefined;
-  if (downloadFiles && downloadFiles.length > 0) {
-    const baseDir = getDownloadPath();
-    files = downloadFiles.map((file) => ({
-      link: file.downloadURL,
-      path: file.path ?? safeDownloadPath(baseDir, download.name, file.name),
-      headers: file.headers,
-    }));
-  } else if (effectiveUrl) {
-    const deriveFilenameFromUrl = (url?: string): string | undefined => {
-      if (!url) return undefined;
-      try {
-        const u = new URL(url);
-        const last = u.pathname.split('/').pop();
-        return last && last.length > 0 ? decodeURIComponent(last) : undefined;
-      } catch (e) {
-        const parts = url.split(/[\\\/]/);
-        return parts.length > 0 ? parts[parts.length - 1] : undefined;
-      }
-    };
-    const urlFilename = deriveFilenameFromUrl(effectiveUrl);
-
-    const isFilePath =
-      typeof download.downloadPath === 'string' &&
-      !download.downloadPath.endsWith('/') &&
-      !download.downloadPath.endsWith('\\');
-
-    let targetPath: string;
-    if (isFilePath) {
-      targetPath = download.downloadPath;
-    } else {
-      const downloadFilename =
-        download.downloadType === 'torrent' ||
-        download.downloadType === 'magnet'
-          ? download.filename
-          : undefined;
-      const filenameHasExt =
-        !!downloadFilename && /\.[A-Za-z0-9]{1,8}$/.test(downloadFilename);
-      const chosenFilename =
+    if (downloadFiles) {
+      const baseDir = getDownloadPath();
+      files = downloadFiles.map((file) => ({
+        link: file.downloadURL,
+        path: file.path ?? safeDownloadPath(baseDir, download.name, file.name),
+        headers: file.headers,
+      }));
+    } else if (effectiveUrl) {
+      const urlFilename = yield* Effect.try({
+        try: () => {
+          const url = new URL(effectiveUrl);
+          const last = url.pathname.split('/').pop();
+          return last ? decodeURIComponent(last) : undefined;
+        },
+        catch: () => undefined,
+      });
+      const isFilePath =
+        !download.downloadPath.endsWith('/') &&
+        !download.downloadPath.endsWith('\\');
+      const filename =
         (urlFilename && /\.[A-Za-z0-9]{1,8}$/.test(urlFilename)
           ? urlFilename
-          : undefined) ||
-        (filenameHasExt ? downloadFilename : undefined) ||
-        downloadFilename ||
-        urlFilename ||
-        'download';
-      targetPath = safeDownloadPath(
-        getDownloadPath(),
-        download.name,
-        chosenFilename
-      );
-    }
-    files = [
-      {
-        link: effectiveUrl,
-        path: targetPath,
-      },
-    ];
-  } else {
-    return Effect.runPromise(
-      Effect.fail(
+          : 'filename' in download
+            ? download.filename
+            : undefined) ?? 'download';
+      files = [
+        {
+          link: effectiveUrl,
+          path: isFilePath
+            ? download.downloadPath
+            : safeDownloadPath(getDownloadPath(), download.name, filename),
+        },
+      ];
+    } else {
+      return yield* Effect.fail(
         new DownloadError({
           message: 'No download URL available for restart',
           downloadId: download.id,
         })
-      )
-    );
-  }
+      );
+    }
 
-  console.log('Restarting direct download with files:', files);
-  console.log('Download part:', download.part);
-  console.log('Download total parts:', download.totalParts);
-  const handshake = await window.electronAPI.ddl.download(files, download.part);
-  return handshake.id;
+    const handshake = yield* downloadPromise(
+      () => window.electronAPI.ddl.download(files, download.part),
+      download,
+      'Failed to restart direct download'
+    );
+    return handshake.id;
+  });
 }
 
-async function restartTorrentDownload(
-  download: DownloadStatusAndInfo
-): Promise<string> {
-  const downloadURL =
-    download.downloadType === 'torrent' || download.downloadType === 'magnet'
-      ? download.downloadURL
-      : undefined;
-  const effectiveUrl = download.usedDebridService
-    ? downloadURL || download.originalDownloadURL
-    : download.originalDownloadURL || downloadURL;
-  if (!effectiveUrl) {
-    return Effect.runPromise(
-      Effect.fail(
+function restartTorrentDownload(download: DownloadStatusAndInfo) {
+  return Effect.gen(function* () {
+    const effectiveUrl = effectiveDownloadUrl(download);
+    if (!effectiveUrl) {
+      return yield* Effect.fail(
         new DownloadError({
           message: 'No torrent URL available for restart',
           downloadId: download.id,
         })
-      )
-    );
-  }
-
-  const persistedFilePath = download.files?.[0]?.path;
-  const folderPath =
-    download.downloadPath.endsWith('/') || download.downloadPath.endsWith('\\')
-      ? download.downloadPath
-      : persistedFilePath
-        ? persistedFilePath.replace(/[/\\][^/\\]+$/, '/')
-        : safeDownloadPath(getDownloadPath(), download.name);
-
-  if (folderPath) {
-    console.log(
-      'Restarting torrent download:',
-      effectiveUrl,
-      'to path:',
-      folderPath
-    );
-    if (download.downloadType === 'torrent') {
-      const handshake = await window.electronAPI.torrent.downloadTorrent(
-        effectiveUrl,
-        folderPath
       );
-      return handshake.id;
-    } else if (download.downloadType === 'magnet') {
-      const handshake = await window.electronAPI.torrent.downloadMagnet(
-        effectiveUrl,
-        folderPath
-      );
-      return handshake.id;
     }
-  }
-
-  let filename =
-    download.downloadType === 'torrent' || download.downloadType === 'magnet'
-      ? download.filename
-      : undefined;
-  if (!filename) {
-    if (download.downloadType === 'magnet') {
-      const magnetMatch = effectiveUrl.match(/dn=([^&]*)/);
-      if (magnetMatch) {
-        filename = decodeURIComponent(magnetMatch[1]);
-      } else {
-        filename = download.name || 'torrent_download';
-      }
-    } else {
-      const urlParts = effectiveUrl.split(/[\\/]/);
-      const lastPart = urlParts[urlParts.length - 1];
-      if (lastPart && lastPart.includes('.')) {
-        filename = lastPart;
-      } else {
-        filename = download.name || 'torrent_download';
-      }
-    }
-    filename = sanitizePathSegment(filename);
-  }
-
-  const path = safeDownloadPath(getDownloadPath(), download.name);
-
-  console.log('Restarting torrent download:', effectiveUrl, 'to path:', path);
-
-  if (download.downloadType === 'torrent') {
-    const handshake = await window.electronAPI.torrent.downloadTorrent(
-      effectiveUrl,
-      path
-    );
-    return handshake.id;
-  } else if (download.downloadType === 'magnet') {
-    const handshake = await window.electronAPI.torrent.downloadMagnet(
-      effectiveUrl,
-      path
-    );
-    return handshake.id;
-  } else {
-    return Effect.runPromise(
-      Effect.fail(
+    if (
+      download.downloadType !== 'torrent' &&
+      download.downloadType !== 'magnet'
+    ) {
+      return yield* Effect.fail(
         new DownloadError({
           message: `Unsupported torrent download type: ${download.downloadType}`,
           downloadId: download.id,
         })
-      )
-    );
-  }
-}
-
-export async function restartDownload(
-  pausedState: PausedDownloadState,
-  pausedDownloadStates: Map<string, PausedDownloadState>
-): Promise<boolean> {
-  let newDownloadId = '';
-  try {
-    const latestDownload = getDownloadItem(pausedState.id);
-    if (!latestDownload) {
-      console.warn(
-        'Skipping restart for missing download state:',
-        pausedState.id
       );
-      return false;
     }
 
-    const download = { ...pausedState.downloadInfo, ...latestDownload };
-    console.log('Restarting download:', download.name);
+    const persistedFilePath = download.files?.[0]?.path;
+    const folderPath =
+      download.downloadPath.endsWith('/') ||
+      download.downloadPath.endsWith('\\')
+        ? download.downloadPath
+        : persistedFilePath
+          ? persistedFilePath.replace(/[/\\][^/\\]+$/, '/')
+          : safeDownloadPath(getDownloadPath(), download.name);
+    const path =
+      folderPath || safeDownloadPath(getDownloadPath(), download.name);
+    const operation =
+      download.downloadType === 'torrent'
+        ? () => window.electronAPI.torrent.downloadTorrent(effectiveUrl, path)
+        : () => window.electronAPI.torrent.downloadMagnet(effectiveUrl, path);
+    const handshake = yield* downloadPromise(
+      operation,
+      download,
+      'Failed to restart torrent download'
+    );
+    return handshake.id;
+  });
+}
 
+export function restartDownload(
+  pausedState: PausedDownloadState,
+  pausedDownloadStates: Map<string, PausedDownloadState>
+) {
+  let newDownloadId = '';
+  return Effect.gen(function* () {
+    const latest = getDownloadItem(pausedState.id);
+    if (!latest) return false;
+
+    const download = { ...pausedState.downloadInfo, ...latest };
     newDownloadId = Math.random().toString(36).substring(7);
-
     pausedDownloadStates.delete(pausedState.id);
-
     updateDownloadStatus(pausedState.id, {
       id: newDownloadId,
       status: 'downloading',
       progress: download.progress || 0,
     });
 
-    let newActualDownloadId: string;
-
-    if (download.downloadType === 'direct' || download.usedDebridService) {
-      newActualDownloadId = await restartDirectDownload(download);
-    } else if (
-      download.downloadType === 'torrent' ||
-      download.downloadType === 'magnet'
-    ) {
-      newActualDownloadId = await restartTorrentDownload(download);
-    } else {
-      return await Effect.runPromise(
-        Effect.fail(
-          new DownloadError({
-            message: `Unsupported download type: ${download.downloadType}`,
-            downloadId: download.id,
-          })
-        )
-      );
-    }
-
-    updateDownloadStatus(newDownloadId, { id: newActualDownloadId });
-
+    const actualId =
+      download.downloadType === 'direct' || download.usedDebridService
+        ? yield* restartDirectDownload(download)
+        : download.downloadType === 'torrent' ||
+            download.downloadType === 'magnet'
+          ? yield* restartTorrentDownload(download)
+          : yield* Effect.fail(
+              new DownloadError({
+                message: `Unsupported download type: ${download.downloadType}`,
+                downloadId: download.id,
+              })
+            );
+    updateDownloadStatus(newDownloadId, { id: actualId });
     createNotification({
       id: Math.random().toString(36).substring(2, 9),
       type: 'info',
       message: `Restarted download: ${download.name}`,
     });
-
     return true;
-  } catch (error) {
-    console.error('Error restarting download:', error);
-
-    if (newDownloadId) {
-      updateDownloadStatus(newDownloadId, {
-        status: 'error',
-        error: 'Failed to restart download',
-      });
-    } else {
-      updateDownloadStatus(pausedState.id, {
-        status: 'error',
-        error: 'Failed to restart download',
-      });
-    }
-
-    createNotification({
-      id: Math.random().toString(36).substring(2, 9),
-      type: 'error',
-      message: `Failed to restart download: ${pausedState.downloadInfo.name}`,
-    });
-
-    return false;
-  }
+  }).pipe(
+    Effect.catchAll((error) =>
+      Effect.sync(() => {
+        console.error('Error restarting download:', error);
+        updateDownloadStatus(newDownloadId || pausedState.id, {
+          status: 'error',
+          error: 'Failed to restart download',
+        });
+        createNotification({
+          id: Math.random().toString(36).substring(2, 9),
+          type: 'error',
+          message: `Failed to restart download: ${pausedState.downloadInfo.name}`,
+        });
+        return false;
+      })
+    )
+  );
 }

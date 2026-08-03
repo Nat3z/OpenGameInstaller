@@ -199,9 +199,11 @@ async function processDownloadComplete(
     !isTorrent &&
     (downloadedItem.usedDebridService === 'realdebrid' ||
       downloadedItem.usedDebridService === 'alldebrid')
-      ? await resolveRarArchivePath(
-          downloadedItem.downloadPath,
-          downloadedItem.files
+      ? await Effect.runPromise(
+          resolveRarArchivePath(
+            downloadedItem.downloadPath,
+            downloadedItem.files
+          )
         )
       : null;
 
@@ -224,11 +226,13 @@ async function processDownloadComplete(
     const attemptUnrar = async () => {
       try {
         const outputBase = dirname(rarArchivePath);
-        const extractedDir = await unrarAndReturnOutputDir({
-          rarFilePath: rarArchivePath,
-          outputBaseDir: outputBase,
-          downloadId: downloadedItem.id,
-        });
+        const extractedDir = await Effect.runPromise(
+          unrarAndReturnOutputDir({
+            rarFilePath: rarArchivePath,
+            outputBaseDir: outputBase,
+            downloadId: downloadedItem.id,
+          })
+        );
         outputDir = extractedDir;
         downloadedItem.downloadPath = extractedDir;
         return true;
@@ -243,7 +247,7 @@ async function processDownloadComplete(
     for (let i = 0; i < 3; i++) {
       success = await attemptUnrar();
       if (success) break; // if successful, break the loop
-      await new Promise((resolve) => setTimeout(resolve, 1000)); // wait 1 second before retrying
+      await Effect.runPromise(Effect.sleep(1000)); // wait before retrying
     }
 
     if (!success) {
@@ -307,11 +311,13 @@ async function processDownloadComplete(
 
     const attemptUnzip = async () => {
       try {
-        const output = await unzipAndReturnOutputDir({
-          zipFilePath: originalZipFilePath,
-          outputDirBase: originalZipFilePath.replace(/\.zip$/g, ''),
-          downloadId: downloadedItem.id,
-        });
+        const output = await Effect.runPromise(
+          unzipAndReturnOutputDir({
+            zipFilePath: originalZipFilePath,
+            outputDirBase: originalZipFilePath.replace(/\.zip$/g, ''),
+            downloadId: downloadedItem.id,
+          })
+        );
         if (!output) return false;
         outputDir = output;
         downloadedItem.downloadPath = outputDir;
@@ -329,7 +335,7 @@ async function processDownloadComplete(
       try {
         success = await attemptUnzip();
         if (success) break; // if successful, break the loop
-        await new Promise((resolve) => setTimeout(resolve, 1000)); // wait 1 second before retrying
+        await Effect.runPromise(Effect.sleep(1000)); // wait before retrying
       } catch (error) {
         console.log('Failed to extract ZIP file');
         console.error('Failed to process ZIP file: ', error);
@@ -394,14 +400,13 @@ async function processDownloadComplete(
     // Check if this is an update download and route to appropriate setup function
     updateDownloadStatus(downloadedItem.id, { status: 'completed' });
     if (downloadedItem.isUpdate) {
-      await runSetupAppUpdate(
-        downloadedItem,
-        outputDir,
-        isTorrent,
-        additionalData
+      await Effect.runPromise(
+        runSetupAppUpdate(downloadedItem, outputDir, isTorrent, additionalData)
       );
     } else {
-      await runSetupApp(downloadedItem, outputDir, isTorrent, additionalData);
+      await Effect.runPromise(
+        runSetupApp(downloadedItem, outputDir, isTorrent, additionalData)
+      );
     }
 
     // delete the old_files directory

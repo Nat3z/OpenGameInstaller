@@ -1,4 +1,6 @@
+import { AddonError, formatError } from '@ogi/errors';
 import type { LibraryInfo, OGIAddonSDKEventListener } from '@ogi-sdk/connect';
+import { Effect } from 'effect';
 import { supportsStorefront } from '@/lib/storefronts';
 import { type AddonInfo, addonServer, queryConnectedAddons } from './ipc';
 
@@ -9,52 +11,61 @@ export function isAddonEventAvailable(
   return addon?.eventsAvailable?.includes(event) === true;
 }
 
-export async function getAddonIfEventAvailable(
+export function getAddonIfEventAvailable(
   addonID: string,
   event: OGIAddonSDKEventListener
-): Promise<AddonInfo | undefined> {
-  return (await queryConnectedAddons()).find(
-    (addon) => addon.id === addonID && isAddonEventAvailable(addon, event)
+) {
+  return queryConnectedAddons().pipe(
+    Effect.map((addons) =>
+      addons.find(
+        (addon) => addon.id === addonID && isAddonEventAvailable(addon, event)
+      )
+    )
   );
 }
 
-export async function runLaunchAppAddons(
+export function runLaunchAppAddons(
   libraryInfo: LibraryInfo,
   launchType: 'pre' | 'post'
 ) {
-  const addons = (await queryConnectedAddons()).filter((addon) =>
-    isAddonEventAvailable(addon, 'launch-app')
-  );
+  return Effect.gen(function* () {
+    const addons = (yield* queryConnectedAddons()).filter((addon) =>
+      isAddonEventAvailable(addon, 'launch-app')
+    );
+    const results = yield* Effect.forEach(
+      addons,
+      (addon) =>
+        Effect.tryPromise({
+          try: () =>
+            addonServer.addon(addon.id).launchApp({ libraryInfo, launchType }),
+          catch: (cause) =>
+            new AddonError({
+              message: `Launch hook failed: ${formatError(cause)}`,
+              addonName: addon.name,
+            }),
+        }).pipe(Effect.either),
+      { concurrency: 'unbounded' }
+    );
+    const failure = results.find((result) => result._tag === 'Left');
+    if (failure?._tag === 'Left') yield* Effect.fail(failure.left);
 
-  const results = await Promise.allSettled(
-    addons.map((addon) =>
-      addonServer.addon(addon.id).launchApp({
-        libraryInfo,
-        launchType,
-      })
-    )
-  );
-
-  const firstFailure = results.find((result) => result.status === 'rejected');
-  if (firstFailure?.status === 'rejected') {
-    throw firstFailure.reason;
-  }
-
-  return {
-    success: true,
-    results,
-  };
+    return { success: true } as const;
+  });
 }
 
-export async function findAddonsSupportingStorefront(
+export function findAddonsSupportingStorefront(
   storefront: string,
   event: string
-): Promise<AddonInfo[]> {
-  return (await queryConnectedAddons()).filter(
-    (addon) =>
-      supportsStorefront(
-        addon.storefronts as readonly string[] | undefined,
-        storefront
-      ) && isAddonEventAvailable(addon, event as OGIAddonSDKEventListener)
+) {
+  return queryConnectedAddons().pipe(
+    Effect.map((addons) =>
+      addons.filter(
+        (addon) =>
+          supportsStorefront(
+            addon.storefronts as readonly string[] | undefined,
+            storefront
+          ) && isAddonEventAvailable(addon, event as OGIAddonSDKEventListener)
+      )
+    )
   );
 }

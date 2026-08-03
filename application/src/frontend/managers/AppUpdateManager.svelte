@@ -18,8 +18,8 @@ document.addEventListener('addon-runtime-ready', () => {
 
 async function onAddonRuntimeReady() {
   try {
-    await reconnectClientSdk();
-    await fetchAddonsWithConfigure();
+    await Effect.runPromise(reconnectClientSdk());
+    await Effect.runPromise(fetchAddonsWithConfigure());
     await checkForAppUpdates();
   } catch (error) {
     console.error('Failed to refresh addon runtime for update checks:', error);
@@ -27,70 +27,63 @@ async function onAddonRuntimeReady() {
 }
 
 async function checkForAppUpdates() {
-  let library;
-  let runId;
-  try {
-    runId = ++updateCheckRunId;
-    // clear the app updates every time the addon runtime comes up, then repopulate
-    updatesManager.clearAppUpdates();
-    console.log('checking for app updates');
-    library = await core.library.getAllApps();
-  } catch (error) {
-    console.error('Failed to initialize app update check:', error);
-    return;
-  }
-  for (const app of library) {
-    Effect.runPromise(
-      Effect.either(
-        Effect.tryPromise({
-          try: async () => {
-            const addons = await findAddonsSupportingStorefront(
-              app.storefront,
-              'check-for-updates'
+  const runId = ++updateCheckRunId;
+  updatesManager.clearAppUpdates();
+  console.log('checking for app updates');
+
+  const workflow = Effect.gen(function* () {
+    const library = yield* Effect.tryPromise({
+      try: () => core.library.getAllApps(),
+      catch: (cause) => cause,
+    });
+    yield* Effect.forEach(
+      library,
+      (app) =>
+        Effect.gen(function* () {
+          const addons = yield* findAddonsSupportingStorefront(
+            app.storefront,
+            'check-for-updates'
+          );
+          if (addons.length === 0) return;
+          if (addons.length > 1) {
+            return yield* Effect.fail(
+              new UpdateError({
+                message: 'Multiple clients found to serve this storefront',
+              })
             );
-            if (addons.length === 0) return undefined;
-            if (addons.length > 1) {
-              return await Effect.runPromise(
-                Effect.fail(
-                  new UpdateError({
-                    message: 'Multiple clients found to serve this storefront',
-                  })
-                )
-              );
-            }
-            const update = (await addonServer
-              .addon(addons[0].id)
-              .checkForUpdates({
+          }
+          const update = yield* Effect.tryPromise({
+            try: () =>
+              addonServer.addon(addons[0].id).checkForUpdates({
                 appID: app.appID,
                 storefront: app.storefront,
                 currentVersion: app.version,
-              })) as { available: boolean; version: string };
-            if (update.available) {
-              return { available: true, version: update.version };
-            }
-            return undefined;
-          },
-          catch: (cause) => cause,
-        })
-      )
-    ).then((result) => {
-      if (runId !== updateCheckRunId) return;
+              }) as Promise<{ available: boolean; version: string }>,
+            catch: (cause) => cause,
+          });
+          if (runId === updateCheckRunId && update.available) {
+            updatesManager.addAppUpdate({
+              appID: app.appID,
+              name: app.name,
+              updateAvailable: true,
+              updateVersion: update.version,
+            });
+          }
+        }).pipe(
+          Effect.catchAll((error) =>
+            Effect.sync(() =>
+              console.error(
+                'Error checking for updates for app',
+                app.name,
+                error
+              )
+            )
+          )
+        ),
+      { concurrency: 'unbounded' }
+    );
+  });
 
-      if (result._tag === 'Left') {
-        console.error(
-          'Error checking for updates for app',
-          app.name,
-          result.left
-        );
-      } else if (result.right !== undefined) {
-        updatesManager.addAppUpdate({
-          appID: app.appID,
-          name: app.name,
-          updateAvailable: result.right.available,
-          updateVersion: result.right.version,
-        });
-      }
-    });
-  }
+  await Effect.runPromise(workflow);
 }
 </script>

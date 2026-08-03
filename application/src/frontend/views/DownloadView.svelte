@@ -1,5 +1,6 @@
 <script lang="ts">
 import * as d3 from 'd3';
+import { Effect } from 'effect';
 import { onDestroy, onMount } from 'svelte';
 import RedistributablesProgress from '@/frontend/components/RedistributablesProgress.svelte';
 import SetupPrompt from '@/frontend/components/SetupPrompt.svelte';
@@ -127,7 +128,7 @@ function setupProgress(event: Event) {
 
 // Load failed setups and paused downloads when component mounts
 onMount(() => {
-  loadFailedSetups();
+  void Effect.runPromise(loadFailedSetups());
   document.addEventListener('setup:log', setupLog);
   document.addEventListener('setup:progress', setupProgress);
 
@@ -138,7 +139,7 @@ onMount(() => {
 });
 
 async function handleRetry(failedSetup: FailedSetup) {
-  await retryFailedSetup(failedSetup);
+  await Effect.runPromise(retryFailedSetup(failedSetup));
 }
 
 function handleRemove(setupId: string) {
@@ -747,7 +748,7 @@ onDestroy(() => {
                     if (isQueued(download)) {
                       window.electronAPI.queue.cancel(download.id);
                     } else {
-                      await pauseDownload(download.id);
+                      await Effect.runPromise(pauseDownload(download.id));
                     }
                   }}
                 >
@@ -768,7 +769,7 @@ onDestroy(() => {
                   class="text-overlay-text border-none p-3 rounded-lg bg-success hover:bg-success-hover transition-colors mr-2"
                   aria-label="Resume Download"
                   onclick={async () => {
-                    await resumeDownload(download.id);
+                    await Effect.runPromise(resumeDownload(download.id));
                   }}
                 >
                   <svg
@@ -786,7 +787,8 @@ onDestroy(() => {
                 <button
                   class="text-overlay-text border-none p-3 rounded-lg bg-error hover:bg-error-hover transition-colors"
                   aria-label="Cancel Download"
-                  onclick={() => cancelPausedDownload(download.id)}
+                  onclick={() =>
+                    void Effect.runPromise(cancelPausedDownload(download.id))}
                 >
                   <svg
                     fill="currentColor"

@@ -1,4 +1,5 @@
 <script lang="ts">
+import { Effect } from 'effect';
 import { onDestroy, onMount } from 'svelte';
 import {
   gameFocused,
@@ -63,7 +64,7 @@ onMount(async () => {
       );
 
       try {
-        await runLaunchAppAddons(libraryInfo, hookType);
+        await Effect.runPromise(runLaunchAppAddons(libraryInfo, hookType));
 
         status = 'success';
         console.log(`[GameLaunchOverlay] ${hookType}-launch hooks completed`);
@@ -97,7 +98,7 @@ onMount(async () => {
       );
 
       try {
-        await runLaunchAppAddons(libraryInfo, 'pre');
+        await Effect.runPromise(runLaunchAppAddons(libraryInfo, 'pre'));
       } catch (error) {
         console.error('[GameLaunchOverlay] Pre-launch hooks failed:', error);
         status = 'error';
@@ -124,7 +125,7 @@ onMount(async () => {
 
       let postLaunchError: string | null = null;
       try {
-        await runLaunchAppAddons(libraryInfo, 'post');
+        await Effect.runPromise(runLaunchAppAddons(libraryInfo, 'post'));
       } catch (error) {
         console.error('[GameLaunchOverlay] Post-launch hooks failed:', error);
         postLaunchError =

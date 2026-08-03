@@ -115,28 +115,25 @@ export function runLaunchAppHooks(
     return Effect.succeed({ success: true });
   }
 
-  return Effect.forEach(
-    clientsWithEvent,
-    (client) =>
-      isAddonEventAvailable(client, 'launch-app')
-        ? client.events.launchApp({ libraryInfo, launchType }).pipe(
-            Effect.mapError(
-              (cause) =>
-                new AddonError({
-                  message: `Launch hook failed: ${String(cause)}`,
-                  addonName: client.addonInfo?.name,
-                })
-            )
-          )
-        : Effect.void,
-    { concurrency: 'unbounded', discard: true }
-  ).pipe(
-    Effect.as<RunLaunchAppHooksResult>({ success: true }),
-    Effect.catchTag('AddonError', (error) =>
-      Effect.succeed<RunLaunchAppHooksResult>({
-        success: false,
-        error: error.message,
-      })
-    )
-  );
+  return Effect.gen(function* () {
+    const results = yield* Effect.forEach(
+      clientsWithEvent,
+      (client) =>
+        client.events.launchApp({ libraryInfo, launchType }).pipe(
+          Effect.mapError(
+            (cause) =>
+              new AddonError({
+                message: `Launch hook failed: ${String(cause)}`,
+                addonName: client.addonInfo?.name,
+              })
+          ),
+          Effect.either
+        ),
+      { concurrency: 'unbounded' }
+    );
+    const failure = results.find((result) => result._tag === 'Left');
+    return failure?._tag === 'Left'
+      ? { success: false, error: failure.left.message }
+      : { success: true };
+  });
 }

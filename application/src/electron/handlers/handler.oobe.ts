@@ -7,7 +7,6 @@ import {
   formatError,
   HttpError,
   PlatformError,
-  runEffectBoundary,
 } from '@ogi/errors';
 import axios from 'axios';
 import { Effect } from 'effect';
@@ -18,6 +17,7 @@ import {
 } from '@/electron/lib/steam-grid-db.js';
 import { sendIPCMessage, sendNotification } from '@/electron/main.js';
 import { __dirname } from '@/electron/manager/manager.paths.js';
+import { runEffectBoundary } from '@/electron/runtime.js';
 import { IS_NIXOS } from '@/electron/startup.js';
 
 const log = (content: string): void => {

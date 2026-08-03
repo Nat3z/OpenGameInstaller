@@ -1,17 +1,16 @@
 import * as fs from 'node:fs';
 import * as fsAsync from 'node:fs/promises';
 import { join } from 'node:path';
-import {
-  FileSystemError,
-  formatError,
-  runEffectBoundary as runBoundary,
-  runSyncBoundary,
-} from '@ogi/errors';
+import { FileSystemError, formatError } from '@ogi/errors';
 import { Effect } from 'effect';
 import { dialog, ipcMain, shell } from 'electron';
 import { extraction } from 'ogi-addon';
 import { sendIPCMessage } from '@/electron/main.js';
 import { __dirname } from '@/electron/manager/manager.paths.js';
+import {
+  runEffectBoundary as runBoundary,
+  runSyncBoundary,
+} from '@/electron/runtime.js';
 
 const resolvePath = (value: string): string =>
   value.startsWith('./') ? join(__dirname, value) : value;

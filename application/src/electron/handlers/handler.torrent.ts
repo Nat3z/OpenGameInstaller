@@ -2,23 +2,18 @@ import { QBittorrent } from '@ctrl/qbittorrent';
 import {
   formatError,
   HttpError,
-  NetworkError,
   runEffectBoundary as run,
   TorrentError,
 } from '@ogi/errors';
 import axios from 'axios';
-import { Effect } from 'effect';
+import { Deferred, Effect, Fiber } from 'effect';
 import { BrowserWindow, ipcMain } from 'electron';
-import * as fs from 'fs';
-import { readFile, rm as rmAsync } from 'fs/promises';
 import parseTorrent from 'parse-torrent';
-import { join } from 'path';
 import { sendNotification } from '@/electron/main.js';
 import {
   getStoredValue,
   refreshCached,
 } from '@/electron/manager/manager.config.js';
-import { __dirname } from '@/electron/manager/manager.paths.js';
 import { DOWNLOAD_QUEUE } from '@/electron/manager/manager.queue.js';
 import { torrent as wtConnect } from '@/electron/manager/manager.webtorrent.js';
 import {
@@ -29,20 +24,21 @@ import {
   waitForDownloadHandshake,
 } from '@/lib/download-handshake.js';
 
-let qbitClient: QBittorrent | undefined = undefined;
+function torrentError(message: string, cause?: unknown): TorrentError {
+  if (cause instanceof TorrentError) return cause;
+  return new TorrentError({ message, cause });
+}
 
 function getTorrentInfoHash(
   input: string | Buffer | Uint8Array
-): Effect.Effect<string, NetworkError> {
+): Effect.Effect<string, TorrentError> {
   return Effect.try({
     try: () => {
       const parsed = parseTorrent(input);
       return (parsed as { infoHash: string }).infoHash;
     },
     catch: (cause) =>
-      new NetworkError({
-        message: `Failed to parse torrent: ${formatError(cause)}`,
-      }),
+      torrentError(`Failed to parse torrent: ${formatError(cause)}`, cause),
   });
 }
 
@@ -84,56 +80,51 @@ type TorrentDownloadStatus =
   | 'cancelled'
   | 'seeding';
 
+type TorrentClientType = 'webtorrent' | 'qbittorrent' | 'unselected';
+
 interface TorrentJob {
   link: string;
   path: string;
   type: 'torrent' | 'magnet';
 }
 
+interface WebTorrentControls {
+  pause: () => void;
+  resume: () => void;
+  destroy: () => void;
+}
+
 const downloads = new Map<string, TorrentDownload>();
 
 class TorrentDownload {
-  public id: string;
+  public readonly id: string;
   private _status: TorrentDownloadStatus = 'queued';
 
   public get status(): TorrentDownloadStatus {
     return this._status;
   }
 
-  public set status(newStatus: TorrentDownloadStatus) {
-    this._status = newStatus;
-  }
-
-  private mainWindow: BrowserWindow;
-  private job: TorrentJob;
+  private readonly mainWindow: BrowserWindow;
+  private readonly job: TorrentJob;
   private taskFinisher: () => void = () => {};
   private queueReleased = false;
-  private torrentClientType: 'webtorrent' | 'qbittorrent' | 'unselected' =
-    'unselected';
+  private torrentClientType: TorrentClientType = 'unselected';
+  private lifecycleFiber?: Fiber.RuntimeFiber<void, never>;
 
-  // WebTorrent specific
   private wtInstance?: ReturnType<typeof wtConnect>;
-  private wtBlock?: {
-    pause: () => void;
-    resume: () => void;
-    destroy: () => void;
-  };
+  private wtBlock?: WebTorrentControls;
 
-  // qBittorrent specific
+  private qbitClient?: QBittorrent;
   private qbitTorrentHash?: string;
   private expectedInfoHash?: string;
   private qbitNotFoundTicks = 0;
-  private qbitCheckInterval?: NodeJS.Timeout;
-  private qbitProgressInterval?: NodeJS.Timeout;
 
   private static readonly QBIT_LOOKUP_TIMEOUT_TICKS = 60;
 
-  private progressInterval?: NodeJS.Timeout;
-
-  private totalSize: number = 0;
-  private downloadSpeed: number = 0;
-  private progress: number = 0;
-  private ratio: number = 0;
+  private totalSize = 0;
+  private downloadSpeed = 0;
+  private progress = 0;
+  private ratio = 0;
 
   constructor(mainWindow: BrowserWindow, job: TorrentJob) {
     this.id = Math.random().toString(36).substring(7);
@@ -144,10 +135,14 @@ class TorrentDownload {
     registerDownloadHandshake(this.id);
   }
 
+  private setStatus(status: TorrentDownloadStatus): void {
+    this._status = status;
+  }
+
   private reportHandshake(
     update: Partial<DownloadHandshakeResult> = {},
     terminalEvent?: { channel: string; data: unknown }
-  ) {
+  ): void {
     const status =
       update.status ??
       (this.status === 'failed'
@@ -169,431 +164,324 @@ class TorrentDownload {
     );
   }
 
-  public waitForReady(): Promise<DownloadHandshakeResult> {
-    return waitForDownloadHandshake(this.id);
+  public waitForReady(): Effect.Effect<DownloadHandshakeResult, TorrentError> {
+    return Effect.tryPromise({
+      try: () => waitForDownloadHandshake(this.id),
+      catch: (cause) =>
+        torrentError(
+          `Failed to wait for torrent download readiness: ${formatError(cause)}`,
+          cause
+        ),
+    });
   }
 
-  public async start() {
-    const { wait, finish, cancelHandler } = DOWNLOAD_QUEUE.enqueue(this.id, {
-      type: 'torrent',
+  public start(): Effect.Effect<void> {
+    return Effect.gen(this, function* () {
+      this.lifecycleFiber = yield* Effect.forkDaemon(this.lifecycle());
     });
-    this.taskFinisher = finish;
+  }
 
-    cancelHandler((cancel) => {
-      ipcMain.handleOnce(`queue:${this.id}:cancel`, (_) => {
-        cancel();
-        this.cancel();
-      });
-    });
+  private lifecycle(): Effect.Effect<void, never> {
+    const download = Effect.scoped(
+      Effect.gen(this, function* () {
+        const queue = yield* Effect.acquireRelease(
+          Effect.sync(() => {
+            const entry = DOWNLOAD_QUEUE.enqueue(this.id, { type: 'torrent' });
+            this.taskFinisher = entry.finish;
+            entry.cancelHandler((cancel) => {
+              ipcMain.handleOnce(`queue:${this.id}:cancel`, () => {
+                cancel();
+                return run(this.cancel());
+              });
+            });
+            return entry;
+          }),
+          () =>
+            Effect.sync(() => {
+              this.removeCancelHandler();
+              this.releaseQueueSlot();
+            })
+        );
 
-    const result = await Effect.runPromise(
-      wait((queuePosition) => {
-        this.sendProgress({ queuePosition });
-        this.reportHandshake({ status: 'queued', queuePosition });
-      })
+        const queueResult = yield* queue.wait((queuePosition) => {
+          this.sendProgress({ queuePosition });
+          this.reportHandshake({ status: 'queued', queuePosition });
+        });
+
+        if (queueResult === 'cancelled') return;
+
+        console.log('[torrent] Starting download...');
+        this.setStatus('downloading');
+        this.reportHandshake({ status: 'downloading' });
+
+        this.torrentClientType = yield* this.readTorrentClientType();
+        if (this.torrentClientType === 'webtorrent') {
+          yield* this.runWebTorrent();
+          return;
+        }
+        if (this.torrentClientType === 'qbittorrent') {
+          yield* this.runQbittorrent();
+          return;
+        }
+
+        return yield* Effect.fail(
+          new TorrentError({ message: 'No torrent client configured' })
+        );
+      }).pipe(Effect.tapError((error) => this.fail(error)))
     );
 
-    if (result === 'cancelled') {
-      this.removeCancelHandler();
-      this.releaseQueueSlot();
-      this.reportHandshake({ status: 'error', error: 'Download cancelled' });
-      clearDownloadHandshake(this.id);
-      downloads.delete(this.id);
-      return;
-    }
-
-    console.log('[torrent] Starting download...');
-    this.run();
-  }
-
-  private removeCancelHandler() {
-    ipcMain.removeHandler(`queue:${this.id}:cancel`);
-  }
-
-  private async run() {
-    this.status = 'downloading';
-    this.reportHandshake({ status: 'downloading' });
-    try {
-      await Effect.runPromise(refreshCached('general'));
-      this.torrentClientType =
-        ((await Effect.runPromise(
-          getStoredValue('general', 'torrentClient')
-        )) as 'webtorrent' | 'qbittorrent') ?? 'webtorrent';
-
-      if (this.torrentClientType === 'webtorrent') {
-        await this.runWebTorrent();
-      } else if (this.torrentClientType === 'qbittorrent') {
-        await this.runQbittorrent();
-      } else {
-        throw new TorrentError({ message: 'No torrent client configured' });
-      }
-    } catch (error) {
-      this.fail(error as Error);
-    }
-  }
-
-  private async runWebTorrent() {
-    let torrentId: string | Buffer = this.job.link;
-    if (this.job.type === 'torrent') {
-      torrentId = await this.downloadTorrentFile(this.job.link);
-    }
-
-    this.wtInstance = wtConnect(torrentId, this.job.path + '.torrent');
-
-    this.startProgressTracker();
-
-    this.wtBlock = await Effect.runPromise(
-      this.wtInstance.start(
-        (
-          _: any,
-          speed: number,
-          progress: number,
-          length: number,
-          ratio: number
-        ) => {
-          this.downloadSpeed = speed;
-          this.progress = progress;
-          this.totalSize = length;
-          this.ratio = ratio;
-        },
-        () => {
-          if (
-            this.status === 'cancelled' ||
-            this.status === 'failed' ||
-            this.status === 'completed'
-          ) {
-            return;
-          }
-          this.releaseQueueSlot();
-          setTimeout(() => {
-            if (this.status === 'cancelled' || this.status === 'failed') {
-              return;
-            }
-            this.status = 'seeding';
-            this.progress = 1;
-            this.sendProgress({ progress: 1, downloadSpeed: 0, ratio: 0 });
-            this.sendIpc('torrent:download-complete', { id: this.id });
-            sendNotification({
-              message: 'Download completed, now seeding.',
-              id: this.id,
-              type: 'success',
-            });
-            if (this.wtInstance) Effect.runFork(this.wtInstance.seed());
-          }, 1000);
-        }
+    return download.pipe(
+      Effect.catchAll(() => Effect.void),
+      Effect.ensuring(
+        Effect.sync(() => {
+          this.lifecycleFiber = undefined;
+        })
       )
     );
   }
 
-  private async runQbittorrent() {
-    try {
-      qbitClient = await this.setupQbitClient();
+  private readTorrentClientType(): Effect.Effect<
+    TorrentClientType,
+    TorrentError
+  > {
+    return Effect.gen(function* () {
+      yield* refreshCached('general');
+      const configured: unknown = yield* getStoredValue(
+        'general',
+        'torrentClient'
+      );
+      if (configured === undefined) return 'webtorrent';
+      if (configured === 'webtorrent' || configured === 'qbittorrent') {
+        return configured;
+      }
+      return 'unselected';
+    }).pipe(
+      Effect.mapError((cause) =>
+        torrentError(
+          `Failed to read torrent client configuration: ${formatError(cause)}`,
+          cause
+        )
+      )
+    );
+  }
+
+  private runWebTorrent(): Effect.Effect<void, TorrentError> {
+    return Effect.gen(this, function* () {
+      const shouldSeed = yield* Effect.scoped(
+        Effect.gen(this, function* () {
+          const torrentId =
+            this.job.type === 'torrent'
+              ? yield* this.downloadTorrentFile(this.job.link)
+              : this.job.link;
+          this.wtInstance = wtConnect(torrentId, this.job.path + '.torrent');
+
+          const completed = yield* Deferred.make<void>();
+          this.wtBlock = yield* Effect.acquireRelease(
+            this.wtInstance.start(
+              (_, speed, progress, length, ratio) => {
+                this.downloadSpeed = speed;
+                this.progress = progress;
+                this.totalSize = length;
+                this.ratio = ratio;
+              },
+              () => {
+                Effect.runFork(Deferred.succeed(completed, undefined));
+              }
+            ),
+            (controls) =>
+              Effect.sync(() => {
+                try {
+                  controls.destroy();
+                } catch (cause) {
+                  console.error(
+                    '[torrent] Failed to release WebTorrent download:',
+                    torrentError(
+                      `Failed to release WebTorrent download: ${formatError(cause)}`,
+                      cause
+                    )
+                  );
+                } finally {
+                  this.wtBlock = undefined;
+                }
+              })
+          );
+
+          yield* Effect.forkScoped(this.trackProgress());
+          yield* Deferred.await(completed);
+          yield* Effect.sleep('1 second');
+
+          if (this.status === 'cancelled' || this.status === 'failed') {
+            return false;
+          }
+
+          yield* this.complete();
+          return true;
+        })
+      );
+
+      if (shouldSeed && this.wtInstance) {
+        yield* Effect.forkDaemon(
+          this.wtInstance.seed().pipe(
+            Effect.catchAll((error) =>
+              Effect.sync(() => {
+                console.error('[torrent] Failed to seed WebTorrent:', error);
+              })
+            )
+          )
+        );
+      }
+    });
+  }
+
+  private runQbittorrent(): Effect.Effect<void, TorrentError> {
+    return Effect.scoped(
+      Effect.gen(this, function* () {
+        yield* Effect.acquireRelease(this.addQbitTorrent(), () =>
+          this.releaseQbitTorrent().pipe(
+            Effect.catchAll((error) =>
+              Effect.sync(() => {
+                console.error(
+                  '[torrent] Failed to clean up qBittorrent torrent:',
+                  error
+                );
+              })
+            )
+          )
+        );
+        yield* Effect.forkScoped(this.trackProgress());
+        yield* this.pollQbittorrent();
+      })
+    );
+  }
+
+  private setupQbitClient(): Effect.Effect<QBittorrent, TorrentError> {
+    return Effect.gen(function* () {
+      yield* refreshCached('qbittorrent');
+      const host: unknown = yield* getStoredValue('qbittorrent', 'qbitHost');
+      const port: unknown = yield* getStoredValue('qbittorrent', 'qbitPort');
+      const username: unknown = yield* getStoredValue(
+        'qbittorrent',
+        'qbitUsername'
+      );
+      const password: unknown = yield* getStoredValue(
+        'qbittorrent',
+        'qbitPassword'
+      );
+
+      const configuredPort =
+        typeof port === 'string' || typeof port === 'number'
+          ? String(port)
+          : '8080';
+      return new QBittorrent({
+        baseUrl: `${typeof host === 'string' ? host : 'http://127.0.0.1'}:${configuredPort}`,
+        username: typeof username === 'string' ? username : 'admin',
+        password: typeof password === 'string' ? password : '',
+      });
+    }).pipe(
+      Effect.mapError((cause) =>
+        torrentError(
+          `Failed to read qBittorrent configuration: ${formatError(cause)}`,
+          cause
+        )
+      )
+    );
+  }
+
+  private addQbitTorrent(): Effect.Effect<void, TorrentError> {
+    return Effect.gen(this, function* () {
+      this.qbitClient = yield* this.setupQbitClient();
 
       if (this.job.type === 'torrent') {
-        const torrentData = await this.downloadTorrentFile(this.job.link);
-        this.expectedInfoHash = await Effect.runPromise(
-          getTorrentInfoHash(torrentData)
-        );
-        // turn torrent data into a Uint8Array<ArrayBuffer>
-        const torrentDataUint8Array = new Uint8Array(torrentData);
-        await qbitClient.addTorrent(torrentDataUint8Array, {
-          savepath: this.job.path,
+        const torrentData = yield* this.downloadTorrentFile(this.job.link);
+        this.expectedInfoHash = yield* getTorrentInfoHash(torrentData);
+        const data = new Uint8Array(torrentData);
+        yield* Effect.tryPromise({
+          try: () =>
+            this.qbitClient!.addTorrent(data, { savepath: this.job.path }),
+          catch: (cause) => torrentError(getQbitErrorMessage(cause), cause),
         });
-      } else {
-        this.expectedInfoHash = await Effect.runPromise(
-          getTorrentInfoHash(this.job.link)
-        );
-        await qbitClient.addMagnet(this.job.link, {
-          savepath: this.job.path,
-        });
+        return;
       }
 
-      this.startQbitProgressTracker();
-    } catch (error) {
-      throw new TorrentError({
-        message: getQbitErrorMessage(error),
-        cause: error,
-      });
-    }
-  }
-
-  private async setupQbitClient() {
-    await Effect.runPromise(refreshCached('qbittorrent'));
-    return new QBittorrent({
-      baseUrl:
-        ((await Effect.runPromise(getStoredValue('qbittorrent', 'qbitHost'))) ??
-          'http://127.0.0.1') +
-        ':' +
-        ((await Effect.runPromise(getStoredValue('qbittorrent', 'qbitPort'))) ??
-          '8080'),
-      username:
-        (await Effect.runPromise(
-          getStoredValue('qbittorrent', 'qbitUsername')
-        )) ?? 'admin',
-      password:
-        (await Effect.runPromise(
-          getStoredValue('qbittorrent', 'qbitPassword')
-        )) ?? '',
-    });
-  }
-
-  private async downloadTorrentFile(link: string): Promise<Buffer> {
-    const tempPath = join(__dirname, `temp-${this.id}.torrent`);
-    const response = await axios({
-      method: 'get',
-      url: link,
-      responseType: 'stream',
-    });
-
-    const fileStream = fs.createWriteStream(tempPath);
-    response.data.pipe(fileStream);
-
-    return new Promise((resolve, reject) => {
-      fileStream.on('finish', async () => {
-        fileStream.close();
-        const buffer = await readFile(tempPath);
-        await rmAsync(tempPath, { force: true });
-        resolve(buffer);
-      });
-      fileStream.on('error', (err) => {
-        fileStream.close();
-        rmAsync(tempPath, { force: true });
-        reject(err);
+      this.expectedInfoHash = yield* getTorrentInfoHash(this.job.link);
+      yield* Effect.tryPromise({
+        try: () =>
+          this.qbitClient!.addMagnet(this.job.link, {
+            savepath: this.job.path,
+          }),
+        catch: (cause) => torrentError(getQbitErrorMessage(cause), cause),
       });
     });
   }
 
-  public pause() {
-    if (this.status !== 'downloading') return;
-    this.status = 'paused';
-
-    if (this.torrentClientType === 'webtorrent') {
-      this.wtBlock?.pause();
-    } else if (
-      this.torrentClientType === 'qbittorrent' &&
-      this.qbitTorrentHash
-    ) {
-      qbitClient?.stopTorrent(this.qbitTorrentHash).catch((error) => {
-        this.fail(
-          new TorrentError({
-            message: getQbitErrorMessage(error),
-            cause: error,
-          })
-        );
-      });
+  private findQbitTorrent<T extends { id: string; savePath: string }>(
+    torrents: readonly T[]
+  ): T | undefined {
+    if (this.qbitTorrentHash) {
+      return torrents.find((torrent) => torrent.id === this.qbitTorrentHash);
     }
 
-    this.sendIpc('torrent:download-paused', { id: this.id });
-    sendNotification({
-      message: 'Download paused',
-      id: this.id,
-      type: 'info',
-    });
-  }
-
-  public resume() {
-    if (this.status !== 'paused') return;
-    this.status = 'downloading';
-
-    if (this.torrentClientType === 'webtorrent') {
-      this.wtBlock?.resume();
-    } else if (
-      this.torrentClientType === 'qbittorrent' &&
-      this.qbitTorrentHash
-    ) {
-      qbitClient?.startTorrent(this.qbitTorrentHash).catch((error) => {
-        this.fail(
-          new TorrentError({
-            message: getQbitErrorMessage(error),
-            cause: error,
-          })
-        );
-      });
-    }
-
-    this.sendIpc('torrent:download-resumed', { id: this.id });
-    sendNotification({
-      message: 'Download resumed',
-      id: this.id,
-      type: 'info',
-    });
-  }
-
-  public cancel() {
-    if (
-      this.status === 'cancelled' ||
-      this.status === 'completed' ||
-      this.status === 'seeding' ||
-      this.status === 'failed'
-    ) {
-      return;
-    }
-    this.status = 'cancelled';
-
-    if (this.torrentClientType === 'webtorrent') {
-      this.wtBlock?.destroy();
-    } else if (
-      this.torrentClientType === 'qbittorrent' &&
-      this.qbitTorrentHash
-    ) {
-      qbitClient?.removeTorrent(this.qbitTorrentHash, true).catch((error) => {
-        console.error('[torrent] Failed to remove qBittorrent torrent:', error);
-      });
-    }
-
-    this.cleanup();
-    this.removeCancelHandler();
-
-    this.sendIpc('torrent:download-cancelled', { id: this.id });
-    console.log('[torrent] Download Cancelled', this.id);
-    this.releaseQueueSlot();
-    downloads.delete(this.id);
-  }
-
-  private complete() {
-    if (
-      this.status === 'completed' ||
-      this.status === 'seeding' ||
-      this.status === 'cancelled' ||
-      this.status === 'failed'
-    ) {
-      return;
-    }
-    // Use 'seeding' (not 'completed') so the frontend does not treat the torrent
-    // as entering the addon setup phase before torrent:download-complete fires.
-    this.status = 'seeding';
-    this.sendProgress({ progress: 1, downloadSpeed: 0 });
-    const completePayload = { id: this.id };
-    this.reportHandshake(
-      { status: 'seeding' },
-      {
-        channel: 'torrent:download-complete',
-        data: completePayload,
+    const normalizedJobPath = this.job.path.replace(/[/\\]+$/, '');
+    return torrents.find((torrent) => {
+      if (
+        this.expectedInfoHash &&
+        (torrent.id === this.expectedInfoHash ||
+          (torrent as { hash?: string }).hash === this.expectedInfoHash)
+      ) {
+        return true;
       }
-    );
-    this.sendIpc('torrent:download-complete', completePayload);
-    sendNotification({
-      message: 'Download completed, now seeding.',
-      id: this.id,
-      type: 'success',
+      const normalizedSavePath = torrent.savePath.replace(/[/\\]+$/, '');
+      return (
+        normalizedSavePath === normalizedJobPath.replace(/\//g, '\\') ||
+        normalizedSavePath === normalizedJobPath
+      );
     });
-    this.cleanup();
-    this.removeCancelHandler();
-    this.releaseQueueSlot();
-    clearDownloadHandshake(this.id);
-    downloads.delete(this.id);
   }
 
-  private fail(error: Error) {
-    if (
-      this.status === 'failed' ||
-      this.status === 'cancelled' ||
-      this.status === 'completed' ||
-      this.status === 'seeding'
-    ) {
-      return;
+  private getQbitTorrents(): Effect.Effect<
+    Awaited<ReturnType<QBittorrent['getAllData']>>['torrents'],
+    TorrentError
+  > {
+    if (!this.qbitClient) {
+      return Effect.fail(
+        new TorrentError({ message: 'qBittorrent client is not initialized' })
+      );
     }
-    this.status = 'failed';
-    const errorPayload = { id: this.id, error: error.message };
-    this.reportHandshake(
-      { status: 'error', error: error.message },
-      {
-        channel: 'torrent:download-error',
-        data: errorPayload,
-      }
-    );
-    this.sendIpc('torrent:download-error', errorPayload);
-    sendNotification({
-      message: error.message || 'Download failed',
-      id: this.id,
-      type: 'error',
+    return Effect.tryPromise({
+      try: () => this.qbitClient!.getAllData().then((data) => data.torrents),
+      catch: (cause) => torrentError(getQbitErrorMessage(cause), cause),
     });
-    console.error(`[torrent] Download ${this.id} failed:`, error);
-    this.cleanup();
-    this.removeCancelHandler();
-    this.releaseQueueSlot();
-    // Defer full cleanup until after the renderer IPC round-trip
-    setImmediate(() => clearDownloadHandshake(this.id));
-    downloads.delete(this.id);
   }
 
-  private releaseQueueSlot() {
-    if (this.queueReleased) return;
-    this.queueReleased = true;
-    this.taskFinisher();
-  }
-
-  private startProgressTracker() {
-    this.progressInterval = setInterval(() => {
-      if (this.status === 'downloading') {
-        this.sendProgress({
-          progress: this.progress,
-          downloadSpeed: this.downloadSpeed,
-          ratio: this.ratio,
-          queuePosition: 1,
-        });
-      } else if (this.status === 'seeding') {
-        this.sendProgress({
-          progress: this.progress,
-          downloadSpeed: this.downloadSpeed,
-          ratio: this.ratio,
-        });
-      }
-    }, 500);
-  }
-
-  private startQbitProgressTracker() {
-    this.qbitCheckInterval = setInterval(async () => {
-      if (!qbitClient) return;
-
-      try {
-        const torrents = (await qbitClient.getAllData()).torrents;
-        let torrent: (typeof torrents)[number] | undefined;
-
-        if (!this.qbitTorrentHash) {
-          torrent = torrents.find((t) => {
-            if (
-              this.expectedInfoHash &&
-              (t.id === this.expectedInfoHash ||
-                (t as { hash?: string }).hash === this.expectedInfoHash)
-            ) {
-              return true;
-            }
-            const normalizedJobPath = this.job.path.replace(/[/\\]+$/, '');
-            const normalizedSavePath = t.savePath.replace(/[/\\]+$/, '');
-            return (
-              normalizedSavePath === normalizedJobPath.replace(/\//g, '\\') ||
-              normalizedSavePath === normalizedJobPath
-            );
-          });
-          if (torrent) {
-            this.qbitTorrentHash = torrent.id;
-            this.qbitNotFoundTicks = 0;
-            console.log(
-              `[torrent-handler] Found torrent hash: ${this.qbitTorrentHash}`
-            );
-          }
-        } else {
-          torrent = torrents.find((t) => t.id === this.qbitTorrentHash);
-        }
+  private pollQbittorrent(): Effect.Effect<void, TorrentError> {
+    return Effect.gen(this, function* () {
+      while (this.status !== 'cancelled' && this.status !== 'failed') {
+        const torrents = yield* this.getQbitTorrents();
+        const torrent = this.findQbitTorrent(torrents);
 
         if (!torrent) {
           this.qbitNotFoundTicks++;
           if (
             this.qbitNotFoundTicks >= TorrentDownload.QBIT_LOOKUP_TIMEOUT_TICKS
           ) {
-            this.fail(
+            return yield* Effect.fail(
               new TorrentError({
                 message:
                   'Timed out waiting for qBittorrent to register the torrent.',
               })
             );
           }
-          return;
+          yield* Effect.sleep('1 second');
+          continue;
         }
 
+        if (!this.qbitTorrentHash) {
+          this.qbitTorrentHash = torrent.id;
+          console.log(
+            `[torrent-handler] Found torrent hash: ${this.qbitTorrentHash}`
+          );
+        }
         this.qbitNotFoundTicks = 0;
-
         this.downloadSpeed = torrent.downloadSpeed;
         this.progress = torrent.progress;
         this.totalSize = torrent.totalSize;
@@ -602,29 +490,261 @@ class TorrentDownload {
           : 0;
 
         if (torrent.isCompleted || torrent.progress >= 1) {
-          this.complete();
+          yield* this.complete();
+          return;
         }
-      } catch (error) {
-        console.error('[torrent] Error getting qBittorrent data:', error);
-        this.fail(
-          new TorrentError({
-            message: getQbitErrorMessage(error),
-            cause: error,
-          })
-        );
-      }
-    }, 1000);
 
-    this.qbitProgressInterval = setInterval(() => {
-      if (this.status === 'downloading') {
-        this.sendProgress({
-          progress: this.progress,
-          downloadSpeed: this.downloadSpeed,
-          ratio: this.ratio,
-          queuePosition: 1,
+        yield* Effect.sleep('1 second');
+      }
+    });
+  }
+
+  private releaseQbitTorrent(): Effect.Effect<void, TorrentError> {
+    if (
+      !this.qbitClient ||
+      (this.status !== 'cancelled' && this.status !== 'failed')
+    ) {
+      return Effect.void;
+    }
+
+    return Effect.gen(this, function* () {
+      let hash = this.qbitTorrentHash;
+      if (!hash) {
+        const torrents = yield* this.getQbitTorrents();
+        hash = this.findQbitTorrent(torrents)?.id;
+      }
+      if (!hash) return;
+
+      yield* Effect.tryPromise({
+        try: () => this.qbitClient!.removeTorrent(hash, true),
+        catch: (cause) =>
+          torrentError(
+            `Failed to remove qBittorrent torrent: ${getQbitErrorMessage(cause)}`,
+            cause
+          ),
+      });
+    });
+  }
+
+  private downloadTorrentFile(
+    link: string
+  ): Effect.Effect<Buffer, TorrentError> {
+    return Effect.tryPromise({
+      try: () => axios.get<ArrayBuffer>(link, { responseType: 'arraybuffer' }),
+      catch: (cause) =>
+        torrentError(
+          axios.isAxiosError(cause)
+            ? `Failed to download torrent file (${cause.response?.status ?? 'network error'}): ${cause.message}`
+            : `Failed to download torrent file: ${formatError(cause)}`,
+          cause
+        ),
+    }).pipe(Effect.map((response) => Buffer.from(response.data)));
+  }
+
+  public pause(): Effect.Effect<void, TorrentError> {
+    if (this.status !== 'downloading') return Effect.void;
+
+    return Effect.gen(this, function* () {
+      if (this.torrentClientType === 'webtorrent') {
+        yield* Effect.try({
+          try: () => this.wtBlock?.pause(),
+          catch: (cause) =>
+            torrentError(
+              `Failed to pause WebTorrent download: ${formatError(cause)}`,
+              cause
+            ),
+        });
+      } else if (
+        this.torrentClientType === 'qbittorrent' &&
+        this.qbitTorrentHash &&
+        this.qbitClient
+      ) {
+        yield* Effect.tryPromise({
+          try: () => this.qbitClient!.stopTorrent(this.qbitTorrentHash!),
+          catch: (cause) => torrentError(getQbitErrorMessage(cause), cause),
         });
       }
-    }, 500);
+
+      this.setStatus('paused');
+      this.sendIpc('torrent:download-paused', { id: this.id });
+      sendNotification({
+        message: 'Download paused',
+        id: this.id,
+        type: 'info',
+      });
+    }).pipe(Effect.catchAll((error) => this.failAndReturn(error)));
+  }
+
+  public resume(): Effect.Effect<void, TorrentError> {
+    if (this.status !== 'paused') return Effect.void;
+
+    return Effect.gen(this, function* () {
+      if (this.torrentClientType === 'webtorrent') {
+        yield* Effect.try({
+          try: () => this.wtBlock?.resume(),
+          catch: (cause) =>
+            torrentError(
+              `Failed to resume WebTorrent download: ${formatError(cause)}`,
+              cause
+            ),
+        });
+      } else if (
+        this.torrentClientType === 'qbittorrent' &&
+        this.qbitTorrentHash &&
+        this.qbitClient
+      ) {
+        yield* Effect.tryPromise({
+          try: () => this.qbitClient!.startTorrent(this.qbitTorrentHash!),
+          catch: (cause) => torrentError(getQbitErrorMessage(cause), cause),
+        });
+      }
+
+      this.setStatus('downloading');
+      this.sendIpc('torrent:download-resumed', { id: this.id });
+      sendNotification({
+        message: 'Download resumed',
+        id: this.id,
+        type: 'info',
+      });
+    }).pipe(Effect.catchAll((error) => this.failAndReturn(error)));
+  }
+
+  public cancel(): Effect.Effect<void, TorrentError> {
+    if (
+      this.status === 'cancelled' ||
+      this.status === 'completed' ||
+      this.status === 'seeding' ||
+      this.status === 'failed'
+    ) {
+      return Effect.void;
+    }
+
+    return Effect.gen(this, function* () {
+      this.setStatus('cancelled');
+      const payload = { id: this.id };
+      this.reportHandshake(
+        { status: 'error', error: 'Download cancelled' },
+        { channel: 'torrent:download-cancelled', data: payload }
+      );
+      this.sendIpc('torrent:download-cancelled', payload);
+      console.log('[torrent] Download Cancelled', this.id);
+
+      if (this.lifecycleFiber) {
+        yield* Fiber.interrupt(this.lifecycleFiber);
+      } else {
+        this.removeCancelHandler();
+        this.releaseQueueSlot();
+      }
+
+      setImmediate(() => clearDownloadHandshake(this.id));
+      downloads.delete(this.id);
+    });
+  }
+
+  private complete(): Effect.Effect<void> {
+    if (
+      this.status === 'completed' ||
+      this.status === 'seeding' ||
+      this.status === 'cancelled' ||
+      this.status === 'failed'
+    ) {
+      return Effect.void;
+    }
+
+    return Effect.sync(() => {
+      // Keep the seeding state until the completion IPC event is emitted so the
+      // renderer does not enter addon setup early.
+      this.setStatus('seeding');
+      this.progress = 1;
+      this.sendProgress({ progress: 1, downloadSpeed: 0, ratio: this.ratio });
+      const payload = { id: this.id };
+      this.reportHandshake(
+        { status: 'seeding' },
+        { channel: 'torrent:download-complete', data: payload }
+      );
+      this.sendIpc('torrent:download-complete', payload);
+      sendNotification({
+        message: 'Download completed, now seeding.',
+        id: this.id,
+        type: 'success',
+      });
+      clearDownloadHandshake(this.id);
+      downloads.delete(this.id);
+    });
+  }
+
+  private fail(error: TorrentError): Effect.Effect<void> {
+    if (
+      this.status === 'failed' ||
+      this.status === 'cancelled' ||
+      this.status === 'completed' ||
+      this.status === 'seeding'
+    ) {
+      return Effect.void;
+    }
+
+    return Effect.sync(() => {
+      this.setStatus('failed');
+      const payload = { id: this.id, error: error.message };
+      this.reportHandshake(
+        { status: 'error', error: error.message },
+        { channel: 'torrent:download-error', data: payload }
+      );
+      this.sendIpc('torrent:download-error', payload);
+      sendNotification({
+        message: error.message || 'Download failed',
+        id: this.id,
+        type: 'error',
+      });
+      console.error(`[torrent] Download ${this.id} failed:`, error);
+      setImmediate(() => clearDownloadHandshake(this.id));
+      downloads.delete(this.id);
+    });
+  }
+
+  private failAndReturn(
+    error: TorrentError
+  ): Effect.Effect<void, TorrentError> {
+    return Effect.gen(this, function* () {
+      yield* this.fail(error);
+      if (this.lifecycleFiber) yield* Fiber.interrupt(this.lifecycleFiber);
+      return yield* Effect.fail(error);
+    });
+  }
+
+  private trackProgress(): Effect.Effect<never> {
+    return Effect.forever(
+      Effect.sleep('500 millis').pipe(
+        Effect.tap(() =>
+          Effect.sync(() => {
+            if (this.status === 'downloading') {
+              this.sendProgress({
+                progress: this.progress,
+                downloadSpeed: this.downloadSpeed,
+                ratio: this.ratio,
+                queuePosition: 1,
+              });
+            } else if (this.status === 'seeding') {
+              this.sendProgress({
+                progress: this.progress,
+                downloadSpeed: this.downloadSpeed,
+                ratio: this.ratio,
+              });
+            }
+          })
+        )
+      )
+    );
+  }
+
+  private removeCancelHandler(): void {
+    ipcMain.removeHandler(`queue:${this.id}:cancel`);
+  }
+
+  private releaseQueueSlot(): void {
+    if (this.queueReleased) return;
+    this.queueReleased = true;
+    this.taskFinisher();
   }
 
   private sendProgress(data: {
@@ -632,7 +752,7 @@ class TorrentDownload {
     downloadSpeed?: number;
     queuePosition?: number;
     ratio?: number;
-  }) {
+  }): void {
     this.sendIpc('torrent:download-progress', {
       id: this.id,
       progress: data.progress ?? this.progress,
@@ -644,13 +764,7 @@ class TorrentDownload {
     });
   }
 
-  private cleanup() {
-    if (this.progressInterval) clearInterval(this.progressInterval);
-    if (this.qbitCheckInterval) clearInterval(this.qbitCheckInterval);
-    if (this.qbitProgressInterval) clearInterval(this.qbitProgressInterval);
-  }
-
-  private sendIpc(channel: string, data: any) {
+  private sendIpc(channel: string, data: unknown): void {
     if (this.mainWindow && !this.mainWindow.isDestroyed()) {
       this.mainWindow.webContents.send(channel, data);
     }
@@ -661,36 +775,30 @@ export default function handler(mainWindow: BrowserWindow): void {
   const startDownload = (job: TorrentJob) =>
     Effect.gen(function* () {
       const download = new TorrentDownload(mainWindow, job);
-      yield* Effect.sync(() => download.start());
-      return yield* Effect.tryPromise({
-        try: () => download.waitForReady(),
-        catch: (cause) =>
-          new TorrentError({ message: formatError(cause), cause }),
-      });
+      yield* download.start();
+      return yield* download.waitForReady();
     });
 
   ipcMain.handle(
     'torrent:download-torrent',
-    (_, arg: { link: string; path: string }) => {
-      return run(startDownload({ ...arg, type: 'torrent' }));
-    }
+    (_, arg: { link: string; path: string }) =>
+      run(startDownload({ ...arg, type: 'torrent' }))
   );
 
   ipcMain.handle(
     'torrent:download-magnet',
-    (_, arg: { link: string; path: string }) => {
-      return run(startDownload({ ...arg, type: 'magnet' }));
-    }
+    (_, arg: { link: string; path: string }) =>
+      run(startDownload({ ...arg, type: 'magnet' }))
   );
 
   ipcMain.handle('torrent:pause', (_, id: string) =>
-    run(Effect.sync(() => downloads.get(id)?.pause()))
+    run(downloads.get(id)?.pause() ?? Effect.void)
   );
   ipcMain.handle('torrent:resume', (_, id: string) =>
-    run(Effect.sync(() => downloads.get(id)?.resume()))
+    run(downloads.get(id)?.resume() ?? Effect.void)
   );
   ipcMain.handle('torrent:abort', (_, id: string) =>
-    run(Effect.sync(() => downloads.get(id)?.cancel()))
+    run(downloads.get(id)?.cancel() ?? Effect.void)
   );
 
   ipcMain.handle('download-torrent-into', (_, link: string) =>

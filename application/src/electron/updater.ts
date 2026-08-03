@@ -27,6 +27,7 @@ import semver from 'semver';
 import { setTimeout as setTimeoutPromise } from 'timers/promises';
 import * as zlib from 'zlib';
 import { getEffectiveOnlineState } from '@/electron/lib/online.js';
+import { runElectronEffect } from '@/electron/runtime.js';
 
 function isDev() {
   return !app.isPackaged;
@@ -252,10 +253,25 @@ async function downloadFileWithProgress(
       if (settled) return;
       settled = true;
       if (error) {
+        response.data.unpipe(writer);
+        const writerClosed = new Promise<void>((close) => {
+          if (writer.closed) close();
+          else writer.once('close', close);
+        });
+        const responseClosed = new Promise<void>((close) => {
+          if (response.data.closed) close();
+          else response.data.once('close', close);
+        });
         writer.destroy();
         response.data.destroy(error);
-        rmSync(destination, { force: true });
-        reject(error);
+        void Promise.all([writerClosed, responseClosed]).then(() => {
+          try {
+            rmSync(destination, { force: true });
+            reject(error);
+          } catch (cleanupError) {
+            reject(cleanupError);
+          }
+        });
         return;
       }
       resolve();
@@ -691,7 +707,7 @@ async function downloadSetupAppImageWithDifferentialFallback(params: {
         params.updateStatus,
         params.updateProgress
       );
-      await Effect.runPromise(
+      await runElectronEffect(
         applyBlockmapPatch({
           sourceArtifact: currentSetupPath,
           oldBlockmapPath,

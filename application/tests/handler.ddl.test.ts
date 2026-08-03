@@ -18,7 +18,7 @@ import {
 } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { Readable } from 'stream';
+import { PassThrough, Readable } from 'stream';
 
 class MockAxiosError extends Error {
   constructor(
@@ -32,6 +32,12 @@ class MockAxiosError extends Error {
 }
 
 class MockBrowserWindow {}
+
+const ipcHandlers = new Map<
+  string,
+  (event: unknown, ...args: unknown[]) => unknown
+>();
+const registerDownloadHandshake = mock((_id: string) => {});
 
 const get = mock((_url?: string, _config?: { signal?: AbortSignal }) =>
   Promise.resolve({
@@ -53,7 +59,14 @@ mock.module('electron', () => ({
   app: { isPackaged: false, getAppPath: () => process.cwd() },
   BrowserWindow: MockBrowserWindow,
   ipcMain: {
-    handle: mock(() => {}),
+    handle: mock(
+      (
+        channel: string,
+        callback: (event: unknown, ...args: unknown[]) => unknown
+      ) => {
+        ipcHandlers.set(channel, callback);
+      }
+    ),
     handleOnce: mock(() => {}),
     removeHandler: mock(() => {}),
   },
@@ -93,7 +106,7 @@ mock.module('@/electron/manager/manager.queue.js', () => ({
 }));
 mock.module('@/lib/download-handshake.js', () => ({
   clearDownloadHandshake: mock(() => {}),
-  registerDownloadHandshake: mock(() => {}),
+  registerDownloadHandshake,
   updateDownloadHandshake: mock(() => {}),
   waitForDownloadHandshake: mock(() =>
     Promise.resolve({ status: 'downloading' })
@@ -101,15 +114,19 @@ mock.module('@/lib/download-handshake.js', () => ({
 }));
 
 let Download: typeof import('../src/electron/handlers/handler.ddl.js').Download;
+let registerDdlHandler: typeof import('../src/electron/handlers/handler.ddl.js').default;
 const testDirectories: string[] = [];
 
 beforeAll(async () => {
-  ({ Download } = await import('../src/electron/handlers/handler.ddl.js'));
+  ({ Download, default: registerDdlHandler } = await import(
+    '../src/electron/handlers/handler.ddl.js'
+  ));
 });
 
 beforeEach(() => {
   get.mockClear();
   head.mockClear();
+  registerDownloadHandshake.mockClear();
   get.mockImplementation(() =>
     Promise.resolve({
       status: 200,
@@ -127,6 +144,76 @@ afterEach(() => {
   for (const directory of testDirectories.splice(0)) {
     rmSync(directory, { recursive: true, force: true });
   }
+});
+
+describe('download resume coordination', () => {
+  test('forks only one continuation for concurrent resume calls', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'ogi-concurrent-resume-'));
+    testDirectories.push(directory);
+    const streams: PassThrough[] = [];
+    get.mockImplementation(() => {
+      const stream = new PassThrough();
+      streams.push(stream);
+      return Promise.resolve({
+        status: 200,
+        headers: {
+          'content-length': '7',
+          'ogi-parallel-limit': '1',
+        },
+        data: stream,
+      });
+    });
+
+    ipcHandlers.clear();
+    registerDdlHandler({
+      once: () => {},
+      isDestroyed: () => false,
+      webContents: { send: () => {} },
+    } as never);
+
+    const download = ipcHandlers.get('ddl:download');
+    const pause = ipcHandlers.get('ddl:pause');
+    const resume = ipcHandlers.get('ddl:resume');
+    const abort = ipcHandlers.get('ddl:abort');
+    expect(download).toBeDefined();
+    expect(pause).toBeDefined();
+    expect(resume).toBeDefined();
+    expect(abort).toBeDefined();
+
+    await download?.(undefined, [
+      {
+        link: 'https://example.test/file',
+        path: join(directory, 'download.bin'),
+      },
+    ]);
+    const id = registerDownloadHandshake.mock.calls[0]?.[0];
+    expect(id).toBeDefined();
+
+    for (
+      let attempt = 0;
+      get.mock.calls.length < 1 && attempt < 100;
+      attempt++
+    ) {
+      await new Promise((resolve) => setTimeout(resolve, 1));
+    }
+    expect(get).toHaveBeenCalledTimes(1);
+
+    await pause?.(undefined, id);
+    await Promise.all([resume?.(undefined, id), resume?.(undefined, id)]);
+
+    for (
+      let attempt = 0;
+      get.mock.calls.length < 2 && attempt < 100;
+      attempt++
+    ) {
+      await new Promise((resolve) => setTimeout(resolve, 1));
+    }
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(get).toHaveBeenCalledTimes(2);
+
+    await abort?.(undefined, id);
+    for (const stream of streams) stream.destroy();
+  });
 });
 
 describe('OGI-Parallel-Limit response handling', () => {

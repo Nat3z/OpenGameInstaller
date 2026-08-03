@@ -4,6 +4,7 @@ import * as path from 'node:path';
 import { SteamArtworkError } from '@ogi/errors';
 import { Effect } from 'effect';
 import { __dirname } from '@/electron/manager/manager.paths.js';
+import { runElectronEffect } from '@/electron/runtime.js';
 import { writeFileAtomic } from './steam-installation.js';
 
 const CONFIG_RELATIVE_PATH = 'config/option/steamgriddb.json';
@@ -228,7 +229,7 @@ export const downloadSteamGridArtwork = (options: {
           const safeExtension = ARTWORK_EXTENSIONS.has(extension)
             ? extension
             : '.png';
-          await Effect.runPromise(
+          await runElectronEffect(
             writeFileAtomic(
               path.join(
                 gridDirectory,

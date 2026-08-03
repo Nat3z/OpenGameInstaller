@@ -1,12 +1,7 @@
 import * as fs from 'node:fs';
 import * as fsAsync from 'node:fs/promises';
 import { join } from 'node:path';
-import {
-  FileSystemError,
-  formatError,
-  HttpError,
-  runEffectBoundary,
-} from '@ogi/errors';
+import { FileSystemError, formatError, HttpError } from '@ogi/errors';
 import axios from 'axios';
 import { Effect, Schema } from 'effect';
 import { ipcMain } from 'electron';
@@ -14,6 +9,7 @@ import type { ReadStream } from 'original-fs';
 import RealDebrid from 'real-debrid-js';
 import { sendNotification } from '@/electron/main.js';
 import { __dirname } from '@/electron/manager/manager.paths.js';
+import { runEffectBoundary } from '@/electron/runtime.js';
 
 const CONFIG_PATH = join(__dirname, 'config/option/realdebrid.json');
 const ConfigSchema = Schema.Struct({ debridApiKey: Schema.String });

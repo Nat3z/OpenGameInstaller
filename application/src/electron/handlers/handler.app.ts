@@ -8,7 +8,6 @@ import {
   formatError,
   HttpError,
   PlatformError,
-  runEffectBoundary as runBoundary,
 } from '@ogi/errors';
 import axios, { type AxiosRequestConfig } from 'axios';
 import { Effect } from 'effect';
@@ -19,6 +18,7 @@ import { registerSteamHandlers } from '@/electron/handlers/handler.steam.js';
 import { getEffectiveOnlineState } from '@/electron/lib/online.js';
 import { currentScreens, screenInputCallbacks } from '@/electron/main.js';
 import { __dirname, isDev } from '@/electron/manager/manager.paths.js';
+import { runEffectBoundary as runBoundary } from '@/electron/runtime.js';
 import { addonServer } from '@/electron/server/addon-server.js';
 import { getCurrentUsername } from './helpers.app/platform.js';
 
@@ -145,7 +145,7 @@ export default function handler(mainWindow: Electron.BrowserWindow): void {
   ipcMain.handle('app:quit', () => app.quit());
 
   ipcMain.handle('app:axios', (_, options: AxiosRequestConfig) =>
-    Effect.runPromise(
+    runBoundary(
       axiosRequest(options).pipe(
         Effect.catchAll((error) =>
           Effect.succeed({

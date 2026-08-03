@@ -10,7 +10,16 @@ import {
   TooManyRequests,
 } from '@ogi/errors';
 import axios, { AxiosError, type AxiosResponse } from 'axios';
-import { Context, Effect, Layer, Schedule, Stream } from 'effect';
+import {
+  Context,
+  Effect,
+  Exit,
+  Fiber,
+  Layer,
+  Schedule,
+  Scope,
+  Stream,
+} from 'effect';
 import { BrowserWindow, ipcMain } from 'electron';
 import * as fs from 'fs';
 import { rm as rmAsync } from 'fs/promises';
@@ -86,12 +95,16 @@ class GlobalTokenBucket {
 const globalTokenBucket = new GlobalTokenBucket(0);
 
 class ThrottleStream extends Transform {
+  constructor(private readonly runEffect: DownloadEffectRunner) {
+    super();
+  }
+
   _transform(chunk: Buffer, _encoding: string, callback: TransformCallback) {
     if (this.destroyed) {
       callback();
       return;
     }
-    Effect.runFork(
+    this.runEffect(
       globalTokenBucket.consume(chunk.length).pipe(
         Effect.tap(() =>
           Effect.sync(() => {
@@ -153,7 +166,7 @@ interface ConnectionHealthSnapshot {
 
 interface ConnectionHealthMonitor {
   observe(totalBytes: number): void;
-  dispose(): void;
+  readonly run: Effect.Effect<never>;
 }
 
 type DownloadStatus =
@@ -165,7 +178,21 @@ type DownloadStatus =
   | 'failed'
   | 'cancelled';
 
-const downloads = new Map<string, Download>();
+type DownloadEffectRunner = <E>(effect: Effect.Effect<void, E>) => void;
+
+interface DownloadLifecycle {
+  readonly runEffect: DownloadEffectRunner;
+  readonly onStatusChange: () => void;
+  readonly onTerminal: (id: string) => void;
+}
+
+const standaloneDownloadLifecycle: DownloadLifecycle = {
+  runEffect: (effect) => {
+    Effect.runSync(effect);
+  },
+  onStatusChange: () => {},
+  onTerminal: () => {},
+};
 
 function average(values: number[]): number {
   if (values.length === 0) return 0;
@@ -227,6 +254,7 @@ export class Download {
 
   public set status(newStatus: DownloadStatus) {
     this._status = newStatus;
+    this.lifecycle.onStatusChange();
   }
 
   private mainWindow: BrowserWindow;
@@ -237,7 +265,6 @@ export class Download {
 
   private response?: AxiosResponse<Readable>;
   private fileStream?: fs.WriteStream;
-  private progressInterval?: NodeJS.Timeout;
   private abortController?: AbortController;
 
   private currentBytes: number = 0;
@@ -262,7 +289,8 @@ export class Download {
   constructor(
     mainWindow: BrowserWindow,
     jobs: DownloadJob[],
-    startPart: number = 1
+    startPart: number = 1,
+    private readonly lifecycle: DownloadLifecycle = standaloneDownloadLifecycle
   ) {
     this.id = Math.random().toString(36).substring(7);
     this.mainWindow = mainWindow;
@@ -270,7 +298,6 @@ export class Download {
     this.totalParts = jobs.length;
     this.currentPart = startPart || 1;
 
-    downloads.set(this.id, this);
     registerDownloadHandshake(this.id);
   }
 
@@ -356,7 +383,7 @@ export class Download {
     let lastReconnectAt = 0;
     const samples: number[] = [];
 
-    const interval = setInterval(() => {
+    const sample = Effect.sync(() => {
       const now = Date.now();
       const elapsedMs = now - lastObservedAt;
       if (elapsedMs <= 0) return;
@@ -378,22 +405,18 @@ export class Download {
         return;
       }
 
-      const positiveSamples = samples.filter((sample) => sample > 0);
-      if (positiveSamples.length < CONNECTION_HEALTH_MIN_POSITIVE_SAMPLES) {
+      const positiveSamples = samples.filter((current) => current > 0);
+      if (positiveSamples.length < CONNECTION_HEALTH_MIN_POSITIVE_SAMPLES)
         return;
-      }
 
       const baselineSpeed = calculateBaselineSpeed(samples);
-      if (baselineSpeed <= 0) {
-        return;
-      }
+      if (baselineSpeed <= 0) return;
 
       const currentWindow = samples.slice(-3);
       const previousWindow = samples.slice(-6, -3);
       const currentSpeed = average(currentWindow);
       const previousSpeed =
         previousWindow.length > 0 ? average(previousWindow) : baselineSpeed;
-
       const lowRelativeSpeed =
         currentSpeed <= baselineSpeed * CONNECTION_HEALTH_LOW_SPEED_RATIO;
       const trendingTowardZero =
@@ -401,16 +424,11 @@ export class Download {
         (previousSpeed > 0 &&
           currentSpeed <= previousSpeed * CONNECTION_HEALTH_DECLINE_RATIO);
 
-      if (lowRelativeSpeed && trendingTowardZero) {
-        lowSpeedSince ??= now;
-      } else {
-        lowSpeedSince = undefined;
-      }
-
-      if (!lowSpeedSince) {
-        return;
-      }
-
+      lowSpeedSince =
+        lowRelativeSpeed && trendingTowardZero
+          ? (lowSpeedSince ?? now)
+          : undefined;
+      if (!lowSpeedSince) return;
       if (!getEffectiveOnlineState().effectiveOnline) {
         lowSpeedSince = undefined;
         return;
@@ -420,7 +438,6 @@ export class Download {
         now - lastReconnectAt < CONNECTION_HEALTH_RECONNECT_COOLDOWN_MS;
       const slowLongEnough =
         now - lowSpeedSince >= CONNECTION_HEALTH_PERSISTENCE_MS;
-
       if (
         reconnectAttempts >= CONNECTION_HEALTH_MAX_RECOVERIES ||
         inCooldown ||
@@ -432,27 +449,22 @@ export class Download {
       reconnectAttempts++;
       lastReconnectAt = now;
       lowSpeedSince = undefined;
-
       console.log(
         `[direct] ${options.label}: throughput collapsed, recycling connection ` +
           `(current=${(currentSpeed / (1024 * 1024)).toFixed(2)}MB/s, ` +
           `baseline=${(baselineSpeed / (1024 * 1024)).toFixed(2)}MB/s)`
       );
-
-      options.onReconnect({
-        baselineSpeed,
-        currentSpeed,
-        previousSpeed,
-      });
-    }, CONNECTION_HEALTH_SAMPLE_INTERVAL_MS);
+      options.onReconnect({ baselineSpeed, currentSpeed, previousSpeed });
+    });
 
     return {
       observe(totalBytes: number) {
         observedBytes = totalBytes;
       },
-      dispose() {
-        clearInterval(interval);
-      },
+      run: Effect.sleep(`${CONNECTION_HEALTH_SAMPLE_INTERVAL_MS} millis`).pipe(
+        Effect.zipRight(sample),
+        Effect.forever
+      ),
     };
   }
 
@@ -464,9 +476,9 @@ export class Download {
       this.taskFinisher = finish;
 
       cancelHandler((cancel) => {
-        ipcMain.handleOnce(`queue:${this.id}:cancel`, (_) => {
+        ipcMain.handleOnce(`queue:${this.id}:cancel`, () => {
           cancel();
-          this.cancel();
+          this.lifecycle.runEffect(this.cancel());
         });
       });
 
@@ -480,12 +492,12 @@ export class Download {
         this.removeCancelHandler();
         this.reportHandshake({ status: 'error', error: 'Download cancelled' });
         clearDownloadHandshake(this.id);
-        downloads.delete(this.id);
+        this.lifecycle.onTerminal(this.id);
         return;
       }
 
       console.log('[direct] Starting download...');
-      yield* Effect.forkDaemon(this.run());
+      yield* this.run();
     });
   }
 
@@ -507,12 +519,12 @@ export class Download {
         console.log('[direct] Completed downloading single part');
       }
       console.log('[direct] Completed downloading all parts');
-      this.complete();
+      yield* this.complete();
     }).pipe(
       Effect.catchAll((error) =>
-        Effect.sync(() => {
-          if (!['paused', 'cancelled'].includes(this.status)) {
-            this.fail(
+        ['paused', 'cancelled'].includes(this.status)
+          ? Effect.void
+          : this.fail(
               error instanceof Error
                 ? error
                 : new DownloadError({
@@ -520,9 +532,7 @@ export class Download {
                     downloadId: this.id,
                     cause: error,
                   })
-            );
-          }
-        })
+            )
       )
     );
   }
@@ -665,7 +675,7 @@ export class Download {
       this.updateMultiPartTotalBytes();
 
       this.multiPartStartTime = Date.now();
-      this.startMultiPartProgressTracker();
+      yield* Effect.forkScoped(this.trackMultiPartProgress());
 
       // Process parts in batches
       const unfinishedParts = () =>
@@ -726,7 +736,7 @@ export class Download {
           // Start downloads without waiting
           for (const part of partsToStart) {
             part.status = 'downloading';
-            yield* Effect.forkDaemon(
+            yield* Effect.forkScoped(
               this.downloadPartWithState(part).pipe(
                 Effect.catchAll((error) =>
                   Effect.sync(() => {
@@ -757,12 +767,6 @@ export class Download {
         }
       }
 
-      // Clean up progress tracker
-      if (this.progressInterval) {
-        clearInterval(this.progressInterval);
-        this.progressInterval = undefined;
-      }
-
       // Check for any failed parts
       const failedParts = this.parts.filter((p) => p.status === 'failed');
       if (failedParts.length > 0) {
@@ -775,7 +779,7 @@ export class Download {
       }
 
       console.log('[direct] All parallel parts completed');
-    });
+    }).pipe(Effect.scoped);
   }
 
   /**
@@ -1146,7 +1150,7 @@ export class Download {
         },
       });
 
-      // Download all chunks in parallel and always dispose the health monitor.
+      yield* Effect.forkScoped(connectionHealth.run);
       yield* Effect.all(
         part.chunks.map((chunk) =>
           this.downloadChunkForPart(
@@ -1157,7 +1161,7 @@ export class Download {
           )
         ),
         { concurrency: 'unbounded', discard: true }
-      ).pipe(Effect.ensuring(Effect.sync(() => connectionHealth.dispose())));
+      );
 
       // Mark only this part as merging (don't change global status)
       part.status = 'merging';
@@ -1171,7 +1175,7 @@ export class Download {
 
       // Update part's downloaded bytes
       part.downloadedBytes = fileSize;
-    });
+    }).pipe(Effect.scoped);
   }
 
   /**
@@ -1268,7 +1272,7 @@ export class Download {
           });
           let throttle: ThrottleStream | undefined;
           if (BANDWIDTH_LIMIT_BYTES_PER_SEC > 0) {
-            throttle = new ThrottleStream();
+            throttle = new ThrottleStream(this.lifecycle.runEffect);
             chunk.response!.data.pipe(throttle);
             throttle.pipe(chunk.fileStream);
           } else {
@@ -1448,6 +1452,13 @@ export class Download {
         };
         finalStream.on('error', fail);
         writeNextChunk();
+        return Effect.sync(() => {
+          if (resolved) return;
+          resolved = true;
+          activeChunkStream?.destroy();
+          activeChunkStream = undefined;
+          finalStream.destroy();
+        });
       });
       yield* this.deleteChunkFiles(
         part.job.path,
@@ -1602,12 +1613,13 @@ export class Download {
           part.abortController.abort();
         },
       });
+      yield* Effect.forkScoped(connectionHealth.run);
 
       const stream = yield* Effect.try({
         try: () => {
           let throttle: ThrottleStream | undefined;
           if (BANDWIDTH_LIMIT_BYTES_PER_SEC > 0) {
-            throttle = new ThrottleStream();
+            throttle = new ThrottleStream(this.lifecycle.runEffect);
             part.response!.data.pipe(throttle);
             throttle.pipe(part.fileStream!);
           } else {
@@ -1671,8 +1683,8 @@ export class Download {
           part.downloadedBytes += data.length;
           connectionHealth.observe(part.downloadedBytes);
         });
-      }).pipe(Effect.ensuring(Effect.sync(() => connectionHealth.dispose())));
-    });
+      });
+    }).pipe(Effect.scoped);
   }
 
   /**
@@ -1712,10 +1724,6 @@ export class Download {
           part.status = 'pending'; // Reset to pending so it can resume
         }
       }
-      if (this.progressInterval) {
-        clearInterval(this.progressInterval);
-        this.progressInterval = undefined;
-      }
     } else if (this.useParallel) {
       // Abort all chunk downloads (single file)
       for (const chunk of this.chunks) {
@@ -1725,10 +1733,6 @@ export class Download {
           chunk.fileStream = undefined;
         }
         chunk.response = undefined;
-      }
-      if (this.progressInterval) {
-        clearInterval(this.progressInterval);
-        this.progressInterval = undefined;
       }
     } else {
       this.abortController?.abort();
@@ -1771,113 +1775,100 @@ export class Download {
     }
 
     this.sendIpc('ddl:download-resumed', { id: this.id });
-    Effect.runFork(this.run());
   }
 
-  public cancel() {
-    if (this.status === 'cancelled' || this.status === 'completed') return;
+  public continue(): Effect.Effect<void> {
+    return this.run();
+  }
 
-    this.status = 'cancelled';
+  public cancel(): Effect.Effect<void> {
+    if (this.status === 'cancelled' || this.status === 'completed') {
+      return Effect.void;
+    }
 
-    if (this.useParallelParts) {
-      // Abort all part downloads and their chunks
-      for (const part of this.parts) {
-        part.abortController.abort();
-        if (part.fileStream) {
-          part.fileStream.close();
+    return Effect.gen(this, function* () {
+      this.status = 'cancelled';
+      if (this.useParallelParts) {
+        for (const part of this.parts) {
+          part.abortController.abort();
+          part.fileStream?.destroy();
           part.fileStream = undefined;
-        }
-        part.response = undefined;
-        for (const chunk of part.chunks) {
-          chunk.abortController.abort();
-          if (chunk.fileStream) {
-            chunk.fileStream.close();
+          part.response?.data.destroy();
+          part.response = undefined;
+          for (const chunk of part.chunks) {
+            chunk.abortController.abort();
+            chunk.fileStream?.destroy();
             chunk.fileStream = undefined;
+            chunk.response?.data.destroy();
+            chunk.response = undefined;
           }
-          chunk.response = undefined;
         }
+      } else if (this.useParallel) {
+        for (const chunk of this.chunks) chunk.abortController.abort();
+        this.cleanupParallelChunks();
+      } else {
+        this.abortController?.abort();
+        this.cleanupPart();
       }
-      if (this.progressInterval) {
-        clearInterval(this.progressInterval);
-        this.progressInterval = undefined;
-      }
-    } else if (this.useParallel) {
-      // Abort all chunk downloads (single file)
-      for (const chunk of this.chunks) {
-        chunk.abortController.abort();
-      }
-      this.cleanupParallelChunks();
-    } else {
-      this.abortController?.abort();
-      this.cleanupPart();
-    }
 
-    Effect.runFork(
-      this.cleanupAllFiles().pipe(
-        Effect.tap(() =>
-          Effect.sync(() => {
-            this.removeCancelHandler();
-            this.sendIpc('ddl:download-cancelled', { id: this.id });
-            this.taskFinisher();
-            console.log('[direct] Download Cancelled', this.id);
-            downloads.delete(this.id);
-          })
-        ),
-        Effect.ignore
-      )
-    );
+      yield* this.cleanupAllFiles();
+      this.removeCancelHandler();
+      this.sendIpc('ddl:download-cancelled', { id: this.id });
+      this.taskFinisher();
+      clearDownloadHandshake(this.id);
+      this.lifecycle.onTerminal(this.id);
+      console.log('[direct] Download Cancelled', this.id);
+    }).pipe(Effect.ignore);
   }
 
-  private complete() {
-    console.log('[direct] Download completed');
-    // Keep status as 'downloading' (not 'completed') so the frontend does not
-    // enter the addon setup phase before ddl:download-complete fires.
-    // The frontend sets 'completed' when setup actually starts. This also clears
-    // the temporary parallel chunk merge status before the completion event.
-    this.status = 'downloading';
+  private complete(): Effect.Effect<void> {
+    return Effect.sync(() => {
+      console.log('[direct] Download completed');
+      // Keep status as 'downloading' (not 'completed') so the frontend does not
+      // enter the addon setup phase before ddl:download-complete fires.
+      // The frontend sets 'completed' when setup actually starts. This also clears
+      // the temporary parallel chunk merge status before the completion event.
+      this.status = 'downloading';
 
-    // Clean up any remaining resources
-    if (this.useParallelParts) {
-      // Clean up multi-part parallel downloads
-      if (this.progressInterval) {
-        clearInterval(this.progressInterval);
-        this.progressInterval = undefined;
-      }
-      for (const part of this.parts) {
-        if (part.fileStream) {
-          part.fileStream.close();
-          part.fileStream = undefined;
+      // Clean up any remaining resources
+      if (this.useParallelParts) {
+        // Clean up multi-part parallel downloads
+        for (const part of this.parts) {
+          if (part.fileStream) {
+            part.fileStream.close();
+            part.fileStream = undefined;
+          }
+          part.response = undefined;
         }
-        part.response = undefined;
+      } else if (this.useParallel) {
+        this.cleanupParallelChunks();
+      } else {
+        this.cleanupPart();
       }
-    } else if (this.useParallel) {
-      this.cleanupParallelChunks();
-    } else {
-      this.cleanupPart();
-    }
 
-    this.sendProgress({ progress: 1, downloadSpeed: 0 });
-    const completePayload = { id: this.id };
-    this.reportHandshake(
-      { status: 'completed' },
-      {
-        channel: 'ddl:download-complete',
-        data: completePayload,
-      }
-    );
-    this.sendIpc('ddl:download-complete', completePayload);
-    sendNotification({
-      message: 'Download completed',
-      id: this.id,
-      type: 'success',
+      this.sendProgress({ progress: 1, downloadSpeed: 0 });
+      const completePayload = { id: this.id };
+      this.reportHandshake(
+        { status: 'completed' },
+        {
+          channel: 'ddl:download-complete',
+          data: completePayload,
+        }
+      );
+      this.sendIpc('ddl:download-complete', completePayload);
+      sendNotification({
+        message: 'Download completed',
+        id: this.id,
+        type: 'success',
+      });
+      this.removeCancelHandler();
+      this.taskFinisher();
+      clearDownloadHandshake(this.id);
+      this.lifecycle.onTerminal(this.id);
     });
-    this.removeCancelHandler();
-    this.taskFinisher();
-    clearDownloadHandshake(this.id);
-    downloads.delete(this.id);
   }
 
-  private fail(error: Error) {
+  private fail(error: Error): Effect.Effect<void> {
     this.status = 'failed';
     const errorPayload = { id: this.id, error: error.message };
     this.reportHandshake(
@@ -1890,10 +1881,6 @@ export class Download {
 
     if (this.useParallelParts) {
       // Clean up multi-part parallel downloads
-      if (this.progressInterval) {
-        clearInterval(this.progressInterval);
-        this.progressInterval = undefined;
-      }
       for (const part of this.parts) {
         part.abortController.abort();
         if (part.fileStream) {
@@ -1916,24 +1903,22 @@ export class Download {
       this.cleanupPart();
     }
 
-    Effect.runFork(
-      this.cleanupAllFiles().pipe(
-        Effect.tap(() =>
-          Effect.sync(() => {
-            this.sendIpc('ddl:download-error', errorPayload);
-            sendNotification({
-              message: 'Download failed',
-              id: this.id,
-              type: 'error',
-            });
-            this.removeCancelHandler();
-            this.taskFinisher();
-            clearDownloadHandshake(this.id);
-            downloads.delete(this.id);
-          })
-        ),
-        Effect.ignore
-      )
+    return this.cleanupAllFiles().pipe(
+      Effect.tap(() =>
+        Effect.sync(() => {
+          this.sendIpc('ddl:download-error', errorPayload);
+          sendNotification({
+            message: 'Download failed',
+            id: this.id,
+            type: 'error',
+          });
+          this.removeCancelHandler();
+          this.taskFinisher();
+          clearDownloadHandshake(this.id);
+          this.lifecycle.onTerminal(this.id);
+        })
+      ),
+      Effect.ignore
     );
   }
 
@@ -2166,8 +2151,7 @@ export class Download {
           return yield* this._executeDownloadPart(job);
         }
         if (cause instanceof AxiosError && cause.response?.status === 404) {
-          this.cancel();
-          yield* this.cleanupAllFiles();
+          yield* this.cancel();
         }
         if (cause instanceof AxiosError && cause.response?.status === 429) {
           this.cleanupPart();
@@ -2200,7 +2184,7 @@ export class Download {
         : 0;
       this.totalSize = this.startByte + contentLength;
       this.startTime = Date.now();
-      this.startProgressTracker();
+      yield* Effect.forkScoped(this.trackProgress());
       const connectionHealth = this.createConnectionHealthMonitor({
         label: `Part ${this.currentPart}`,
         initialBytes: this.currentBytes,
@@ -2220,12 +2204,13 @@ export class Download {
           this.abortController.abort();
         },
       });
+      yield* Effect.forkScoped(connectionHealth.run);
 
       const stream = yield* Effect.try({
         try: () => {
           let throttle: ThrottleStream | undefined;
           if (BANDWIDTH_LIMIT_BYTES_PER_SEC > 0) {
-            throttle = new ThrottleStream();
+            throttle = new ThrottleStream(this.lifecycle.runEffect);
             this.response!.data.pipe(throttle);
             throttle.pipe(this.fileStream!);
           } else {
@@ -2288,93 +2273,91 @@ export class Download {
           this.currentBytes += chunk.length;
           connectionHealth.observe(this.currentBytes);
         });
-      }).pipe(Effect.ensuring(Effect.sync(() => connectionHealth.dispose())));
-    });
-  }
-
-  private startProgressTracker() {
-    this.progressInterval = setInterval(() => {
-      if (this.useParallel) {
-        // Aggregate progress from all chunks
-        const totalDownloaded = this.chunks.reduce(
-          (sum, chunk) => sum + chunk.currentBytes,
-          0
-        );
-        const elapsedTime = (Date.now() - this.startTime) / 1000;
-        const downloadSpeed =
-          elapsedTime > 0 ? totalDownloaded / elapsedTime : 0;
-        const progress =
-          this.parallelTotalSize > 0
-            ? totalDownloaded / this.parallelTotalSize
-            : 0;
-
-        this.sendProgress({ progress, downloadSpeed });
-      } else {
-        const elapsedTime = (Date.now() - this.startTime) / 1000;
-        const downloadSpeed =
-          elapsedTime > 0
-            ? (this.currentBytes - this.startByte) / elapsedTime
-            : 0;
-        const progress =
-          this.totalSize > 0 ? this.currentBytes / this.totalSize : 0;
-
-        this.sendProgress({ progress, downloadSpeed });
-      }
-    }, 500);
-  }
-
-  /**
-   * Start progress tracker for multi-part parallel downloads.
-   */
-  private startMultiPartProgressTracker() {
-    this.progressInterval = setInterval(() => {
-      // Aggregate progress from all parts
-      const totalDownloaded = this.parts.reduce(
-        (sum, part) => sum + part.downloadedBytes,
-        0
-      );
-      const elapsedTime = (Date.now() - this.multiPartStartTime) / 1000;
-      const downloadSpeed = elapsedTime > 0 ? totalDownloaded / elapsedTime : 0;
-      const progress =
-        this.multiPartTotalBytes > 0
-          ? totalDownloaded / this.multiPartTotalBytes
-          : 0;
-
-      // Find the highest part number that's currently downloading or pending
-      // This represents the "current" part being worked on
-      const downloadingParts = this.parts.filter(
-        (p) => p.status === 'downloading' || p.status === 'pending'
-      );
-      const completedParts = this.parts.filter((p) => p.status === 'completed');
-
-      // Use the highest downloading/pending part index + 1 (1-indexed for display)
-      // If all parts are completed, use totalParts
-      // If no parts are downloading yet, use 1
-      let currentPartNumber = 1;
-      if (downloadingParts.length > 0) {
-        const maxIndex = Math.max(...downloadingParts.map((p) => p.index));
-        currentPartNumber = maxIndex + 1; // Convert to 1-indexed
-      } else if (completedParts.length === this.totalParts) {
-        currentPartNumber = this.totalParts;
-      } else {
-        // Find the first incomplete part
-        const incompletePart = this.parts.find((p) => p.status !== 'completed');
-        if (incompletePart) {
-          currentPartNumber = incompletePart.index + 1;
-        }
-      }
-
-      this.sendIpc('ddl:download-progress', {
-        id: this.id,
-        progress: progress,
-        downloadSpeed: downloadSpeed,
-        fileSize: this.multiPartTotalBytes,
-        part: currentPartNumber,
-        status: this.status,
-        totalParts: this.totalParts,
-        queuePosition: 1,
       });
-    }, 500);
+    }).pipe(Effect.scoped);
+  }
+
+  private trackProgress(): Effect.Effect<never> {
+    return Effect.sleep('500 millis').pipe(
+      Effect.tap(() =>
+        Effect.sync(() => {
+          if (this.useParallel) {
+            const totalDownloaded = this.chunks.reduce(
+              (sum, chunk) => sum + chunk.currentBytes,
+              0
+            );
+            const elapsedTime = (Date.now() - this.startTime) / 1000;
+            this.sendProgress({
+              progress:
+                this.parallelTotalSize > 0
+                  ? totalDownloaded / this.parallelTotalSize
+                  : 0,
+              downloadSpeed:
+                elapsedTime > 0 ? totalDownloaded / elapsedTime : 0,
+            });
+            return;
+          }
+
+          const elapsedTime = (Date.now() - this.startTime) / 1000;
+          this.sendProgress({
+            progress:
+              this.totalSize > 0 ? this.currentBytes / this.totalSize : 0,
+            downloadSpeed:
+              elapsedTime > 0
+                ? (this.currentBytes - this.startByte) / elapsedTime
+                : 0,
+          });
+        })
+      ),
+      Effect.forever
+    );
+  }
+
+  private trackMultiPartProgress(): Effect.Effect<never> {
+    return Effect.sleep('500 millis').pipe(
+      Effect.tap(() =>
+        Effect.sync(() => {
+          const totalDownloaded = this.parts.reduce(
+            (sum, part) => sum + part.downloadedBytes,
+            0
+          );
+          const elapsedTime = (Date.now() - this.multiPartStartTime) / 1000;
+          const downloadingParts = this.parts.filter(
+            (part) => part.status === 'downloading' || part.status === 'pending'
+          );
+          const completedParts = this.parts.filter(
+            (part) => part.status === 'completed'
+          );
+          let currentPartNumber = 1;
+          if (downloadingParts.length > 0) {
+            currentPartNumber =
+              Math.max(...downloadingParts.map((part) => part.index)) + 1;
+          } else if (completedParts.length === this.totalParts) {
+            currentPartNumber = this.totalParts;
+          } else {
+            const incompletePart = this.parts.find(
+              (part) => part.status !== 'completed'
+            );
+            if (incompletePart) currentPartNumber = incompletePart.index + 1;
+          }
+
+          this.sendIpc('ddl:download-progress', {
+            id: this.id,
+            progress:
+              this.multiPartTotalBytes > 0
+                ? totalDownloaded / this.multiPartTotalBytes
+                : 0,
+            downloadSpeed: elapsedTime > 0 ? totalDownloaded / elapsedTime : 0,
+            fileSize: this.multiPartTotalBytes,
+            part: currentPartNumber,
+            status: this.status,
+            totalParts: this.totalParts,
+            queuePosition: 1,
+          });
+        })
+      ),
+      Effect.forever
+    );
   }
 
   /**
@@ -2490,7 +2473,7 @@ export class Download {
       });
 
       this.startTime = Date.now();
-      this.startProgressTracker();
+      yield* Effect.forkScoped(this.trackProgress());
 
       console.log(
         `[direct] Starting parallel download with ${effectiveChunkCount} chunks ` +
@@ -2498,6 +2481,7 @@ export class Download {
           `chunk size: ${(chunkSize / (1024 * 1024)).toFixed(2)}MB`
       );
 
+      yield* Effect.forkScoped(connectionHealth.run);
       yield* Effect.all(
         this.chunks.map((chunk) =>
           this.downloadChunk(
@@ -2521,8 +2505,7 @@ export class Download {
                   this.deleteChunkFiles(job.path, effectiveChunkCount)
                 )
               );
-        }),
-        Effect.ensuring(Effect.sync(() => connectionHealth.dispose()))
+        })
       );
       console.log('[direct] All parallel chunks completed');
 
@@ -2534,7 +2517,7 @@ export class Download {
 
       // Merge all chunk files into the final file
       yield* this.mergeChunkFiles(job);
-    });
+    }).pipe(Effect.scoped);
   }
 
   /**
@@ -2579,16 +2562,10 @@ export class Download {
    * Clean up all parallel chunk resources.
    */
   private cleanupParallelChunks() {
-    if (this.progressInterval) {
-      clearInterval(this.progressInterval);
-      this.progressInterval = undefined;
-    }
-
     for (const chunk of this.chunks) {
-      if (chunk.fileStream) {
-        chunk.fileStream.close();
-        chunk.fileStream = undefined;
-      }
+      chunk.response?.data.destroy();
+      chunk.fileStream?.destroy();
+      chunk.fileStream = undefined;
       chunk.response = undefined;
     }
   }
@@ -2667,13 +2644,8 @@ export class Download {
   }
 
   private cleanupPart() {
-    if (this.progressInterval) {
-      clearInterval(this.progressInterval);
-      this.progressInterval = undefined;
-    }
-    if (this.fileStream) {
-      this.fileStream.close();
-    }
+    this.response?.data.destroy();
+    this.fileStream?.destroy();
     this.response = undefined;
     this.fileStream = undefined;
     this.abortController = undefined;
@@ -2732,7 +2704,9 @@ export class Download {
   }
 }
 
-function checkParallelChunkCount(): Effect.Effect<void, ConfigError> {
+function checkParallelChunkCount(
+  activeDownloads: Iterable<Download>
+): Effect.Effect<void, ConfigError> {
   return Effect.gen(function* () {
     yield* refreshCached('general');
     const val = Number(yield* getStoredValue('general', 'parallelChunkCount'));
@@ -2748,9 +2722,10 @@ function checkParallelChunkCount(): Effect.Effect<void, ConfigError> {
       console.log(
         '[direct] mismatched parallel chunk counts, will kill all downloads'
       );
-      for (const download of downloads.values()) {
-        download.cancel();
-      }
+      yield* Effect.forEach(activeDownloads, (download) => download.cancel(), {
+        concurrency: 'unbounded',
+        discard: true,
+      });
     }
 
     const bwVal = Number(yield* getStoredValue('general', 'bandwidthLimit'));
@@ -2764,83 +2739,171 @@ function checkParallelChunkCount(): Effect.Effect<void, ConfigError> {
   });
 }
 
+interface ActiveDownload {
+  readonly download: Download;
+  readonly operationLock: Effect.Semaphore;
+  fiber?: Fiber.RuntimeFiber<void, DownloadError>;
+}
+
+interface DownloadServiceShape {
+  readonly start: (
+    jobs: DownloadJob[],
+    part?: number
+  ) => Effect.Effect<unknown, DownloadError>;
+  readonly pause: (id: string) => Effect.Effect<void, DownloadNotActive>;
+  readonly resume: (
+    id: string
+  ) => Effect.Effect<void, DownloadError | DownloadNotActive>;
+  readonly abort: (id: string) => Effect.Effect<void, DownloadNotActive>;
+  readonly statuses: Stream.Stream<
+    ReadonlyArray<{ id: string; status: DownloadStatus }>
+  >;
+  readonly shutdown: Effect.Effect<void>;
+}
+
 export class DownloadService extends Context.Tag('DownloadService')<
   DownloadService,
-  {
-    readonly start: (
-      jobs: DownloadJob[],
-      part?: number
-    ) => Effect.Effect<unknown, DownloadError>;
-    readonly pause: (id: string) => Effect.Effect<void, DownloadNotActive>;
-    readonly resume: (
-      id: string
-    ) => Effect.Effect<void, DownloadError | DownloadNotActive>;
-    readonly abort: (id: string) => Effect.Effect<void, DownloadNotActive>;
-    readonly statuses: Stream.Stream<
-      ReadonlyArray<{ id: string; status: DownloadStatus }>
-    >;
-  }
+  DownloadServiceShape
 >() {}
 
-/** Layer facade around the legacy transport internals while they are incrementally split into fibers. */
+const makeDownloadService = (
+  mainWindow: BrowserWindow
+): Effect.Effect<DownloadServiceShape> =>
+  Effect.gen(function* () {
+    const scope = yield* Scope.make();
+    const activeDownloads = new Map<string, ActiveDownload>();
+    const downloads = () =>
+      Array.from(activeDownloads.values(), ({ download }) => download);
+    const runInScope: DownloadEffectRunner = (effect) => {
+      void runEffectBoundary(
+        Effect.forkIn(effect, scope).pipe(Effect.flatMap(Fiber.join))
+      );
+    };
+    const snapshot = () =>
+      Array.from(activeDownloads, ([id, { download }]) => ({
+        id,
+        status: download.status,
+      }));
+
+    const service: DownloadServiceShape = {
+      start: (jobs, part) =>
+        Effect.gen(function* () {
+          yield* checkParallelChunkCount(downloads()).pipe(
+            Effect.mapError(
+              (cause) => new DownloadError({ message: cause.message, cause })
+            )
+          );
+          const download = new Download(mainWindow, jobs, part, {
+            runEffect: runInScope,
+            onStatusChange: () => {},
+            onTerminal: (id) => activeDownloads.delete(id),
+          });
+          const active: ActiveDownload = {
+            download,
+            operationLock: Effect.unsafeMakeSemaphore(1),
+          };
+          activeDownloads.set(download.id, active);
+          active.fiber = yield* Effect.forkIn(download.start(), scope);
+          return yield* download.waitForReady();
+        }),
+      pause: (id) => {
+        const active = activeDownloads.get(id);
+        if (!active) {
+          return Effect.fail(new DownloadNotActive({ downloadId: id }));
+        }
+        return active.operationLock.withPermits(1)(
+          Effect.uninterruptible(
+            Effect.gen(function* () {
+              yield* Effect.sync(() => active.download.pause());
+              if (active.fiber) yield* Fiber.interrupt(active.fiber);
+            })
+          )
+        );
+      },
+      resume: (id) => {
+        const active = activeDownloads.get(id);
+        if (!active) {
+          return Effect.fail(new DownloadNotActive({ downloadId: id }));
+        }
+        return active.operationLock.withPermits(1)(
+          Effect.gen(function* () {
+            const { download } = active;
+            if (download.status !== 'paused') return;
+
+            yield* checkParallelChunkCount(downloads()).pipe(
+              Effect.mapError(
+                (cause) =>
+                  new DownloadError({
+                    message: cause.message,
+                    downloadId: id,
+                    cause,
+                  })
+              )
+            );
+
+            yield* Effect.uninterruptibleMask((restore) =>
+              Effect.gen(function* () {
+                if (download.status !== 'paused') return;
+                yield* Effect.sync(() => download.resume());
+                const fiber = yield* Effect.forkIn(
+                  restore(download.continue()),
+                  scope
+                );
+                active.fiber = fiber;
+              })
+            );
+          })
+        );
+      },
+      abort: (id) => {
+        const active = activeDownloads.get(id);
+        if (!active) {
+          return Effect.fail(new DownloadNotActive({ downloadId: id }));
+        }
+        return active.operationLock.withPermits(1)(
+          Effect.uninterruptible(
+            Effect.gen(function* () {
+              yield* active.download.cancel();
+              if (active.fiber) yield* Fiber.interrupt(active.fiber);
+            })
+          )
+        );
+      },
+      statuses: Stream.repeatEffect(Effect.sync(snapshot)).pipe(
+        Stream.schedule(Schedule.spaced('1 second'))
+      ),
+      shutdown: Effect.gen(function* () {
+        yield* Effect.forEach(
+          activeDownloads.values(),
+          ({ download }) => download.cancel(),
+          { concurrency: 'unbounded', discard: true }
+        );
+        yield* Scope.close(scope, Exit.void);
+      }).pipe(Effect.ignore),
+    };
+
+    return service;
+  });
+
 export const DownloadServiceLive = (
   mainWindow: BrowserWindow
 ): Layer.Layer<DownloadService> =>
-  Layer.succeed(DownloadService, {
-    start: (jobs, part) =>
-      Effect.gen(function* () {
-        yield* checkParallelChunkCount().pipe(
-          Effect.mapError(
-            (cause) => new DownloadError({ message: cause.message, cause })
-          )
-        );
-        const download = new Download(mainWindow, jobs, part);
-        yield* download.start();
-        return yield* download.waitForReady();
-      }),
-    pause: (id) => {
-      const download = downloads.get(id);
-      return download
-        ? Effect.sync(() => download.pause())
-        : Effect.fail(new DownloadNotActive({ downloadId: id }));
-    },
-    resume: (id) =>
-      Effect.gen(function* () {
-        const download = downloads.get(id);
-        if (!download)
-          return yield* Effect.fail(new DownloadNotActive({ downloadId: id }));
-        yield* checkParallelChunkCount().pipe(
-          Effect.mapError(
-            (cause) =>
-              new DownloadError({
-                message: cause.message,
-                downloadId: id,
-                cause,
-              })
-          )
-        );
-        yield* Effect.sync(() => download.resume());
-      }),
-    abort: (id) => {
-      const download = downloads.get(id);
-      return download
-        ? Effect.sync(() => download.cancel())
-        : Effect.fail(new DownloadNotActive({ downloadId: id }));
-    },
-    statuses: Stream.repeatEffect(
-      Effect.sync(() =>
-        Array.from(downloads, ([id, download]) => ({
-          id,
-          status: download.status,
-        }))
-      )
-    ).pipe(Stream.schedule(Schedule.spaced('1 second'))),
-  });
+  Layer.scoped(
+    DownloadService,
+    makeDownloadService(mainWindow).pipe(
+      Effect.tap((service) => Effect.addFinalizer(() => service.shutdown))
+    )
+  );
 
 export default function handler(mainWindow: BrowserWindow): void {
-  const layer = DownloadServiceLive(mainWindow);
+  const service = Effect.runSync(makeDownloadService(mainWindow));
+  const layer = Layer.succeed(DownloadService, service);
   const run = <A, E>(effect: Effect.Effect<A, E, DownloadService>) =>
     runEffectBoundary(effect.pipe(Effect.provide(layer)));
+
+  mainWindow.once('closed', () => {
+    void runEffectBoundary(service.shutdown);
+  });
 
   ipcMain.handle('ddl:download', (_, jobs: DownloadJob[], part?: number) =>
     run(

@@ -4,6 +4,7 @@ import { ConfigError, formatError } from '@ogi/errors';
 import { AddonServer } from '@ogi-sdk/addon-server';
 import { Effect, Schema } from 'effect';
 import { __dirname } from '@/electron/manager/manager.paths.js';
+import { runElectronSync } from '@/electron/runtime.js';
 
 export const port = 7654;
 const DeveloperConfigSchema = Schema.Struct({
@@ -34,7 +35,7 @@ const readSecurityConfig = (): Effect.Effect<boolean, ConfigError> => {
   });
 };
 
-export const isSecurityCheckEnabled = Effect.runSync(
+export const isSecurityCheckEnabled = runElectronSync(
   readSecurityConfig().pipe(Effect.catchAll(() => Effect.succeed(true)))
 );
 if (!isSecurityCheckEnabled) {

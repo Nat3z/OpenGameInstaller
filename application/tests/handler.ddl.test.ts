@@ -65,6 +65,20 @@ mock.module('@/electron/main.js', () => ({
   sendNotification: mock(() => {}),
 }));
 mock.module('@/electron/manager/manager.config.js', () => ({
+  getSteamCompatibilityTool: () =>
+    Effect.sync(() => {
+      const configPath = join(
+        process.env.OGI_DIRECTORY ?? '',
+        'config/option/general.json'
+      );
+      if (!existsSync(configPath)) return 'proton_experimental';
+      const config = JSON.parse(readFileSync(configPath, 'utf8')) as {
+        steamCompatibilityTool?: unknown;
+      };
+      return typeof config.steamCompatibilityTool === 'string'
+        ? config.steamCompatibilityTool.trim()
+        : 'proton_experimental';
+    }),
   getStoredValue: () => Effect.succeed(8),
   refreshCached: () => Effect.void,
 }));

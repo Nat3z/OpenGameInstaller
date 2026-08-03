@@ -1,6 +1,7 @@
 import * as fs from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import {
+  ConfigError,
   GameNotFound,
   SteamRunningError,
   SteamShortcutConflictError,
@@ -34,11 +35,16 @@ import {
 } from '@/electron/lib/steam-process.js';
 import {
   findOwnedShortcut,
+  quoteSteamPath,
   readShortcuts,
   removeOwnedShortcut,
   upsertShortcut,
 } from '@/electron/lib/steam-shortcuts.js';
-import { serializeBinaryVdf } from '@/electron/lib/steam-vdf.js';
+import {
+  serializeBinaryVdf,
+  updateSteamCompatToolMapping,
+} from '@/electron/lib/steam-vdf.js';
+import { getSteamCompatibilityTool } from '@/electron/manager/manager.config.js';
 
 export function getLegacyVersionedGameName(
   name: string,
@@ -49,6 +55,7 @@ export function getLegacyVersionedGameName(
 }
 
 export type SteamServiceError =
+  | ConfigError
   | GameNotFound
   | SteamRepositoryError
   | SteamProcessFailure
@@ -145,15 +152,19 @@ export const SteamServiceLive: Layer.Layer<
       oldSteamAppId?: number
     ) => {
       const ogiExecutable = getOgiExecutablePath();
+      const executable =
+        process.platform === 'linux' ? appInfo.launchExecutable : ogiExecutable;
       return {
         gameId: appID,
         knownAppId:
           oldSteamAppId ??
           appInfo.umu?.steamShortcutReaddId ??
           appInfo.umu?.steamShortcutId,
-        executable: ogiExecutable,
+        executable,
         legacyExecutables: [
-          appInfo.launchExecutable,
+          process.platform === 'linux'
+            ? ogiExecutable
+            : appInfo.launchExecutable,
           appInfo.umu?.steamShortcutLegacyExecutable,
         ].filter((value): value is string => value !== undefined),
         legacyNames: [
@@ -287,9 +298,24 @@ export const SteamServiceLive: Layer.Layer<
             : (options.oldSteamAppId ??
               appInfo.umu?.steamShortcutReaddId ??
               appInfo.umu?.steamShortcutId);
+        const compatibilityTool =
+          process.platform === 'linux'
+            ? yield* getSteamCompatibilityTool()
+            : undefined;
+        const ogiExecutable = getOgiExecutablePath();
+        const startDir =
+          appInfo.cwd.trim() || dirname(appInfo.launchExecutable);
+        const launchOptions = `${quoteSteamPath(ogiExecutable)} --game-id=${options.appID} --no-sandbox -- %command%`;
         const mutation = repository.modifyShortcuts(
           location,
-          ({ root, shortcutsPath, commit, rollback }) =>
+          ({
+            root,
+            shortcutsPath,
+            configPath,
+            configSource,
+            commit,
+            rollback,
+          }) =>
             Effect.gen(function* () {
               const upserted = yield* Effect.try({
                 try: () =>
@@ -300,8 +326,14 @@ export const SteamServiceLive: Layer.Layer<
                       options.oldSteamAppId
                     ),
                     appName,
-                    startDir: dirname(getOgiExecutablePath()),
-                    launchOptions: `--game-id=${options.appID} --no-sandbox`,
+                    startDir:
+                      process.platform === 'linux'
+                        ? startDir
+                        : dirname(ogiExecutable),
+                    launchOptions:
+                      process.platform === 'linux'
+                        ? launchOptions
+                        : `--game-id=${options.appID} --no-sandbox`,
                     tags: ['OpenGameInstaller'],
                   }),
                 catch: (cause) =>
@@ -313,7 +345,38 @@ export const SteamServiceLive: Layer.Layer<
                         cause,
                       }),
               });
-              yield* commit();
+              let updatedConfig = configSource;
+              if (process.platform === 'linux') {
+                const compatibilityUpdate = yield* Effect.try({
+                  try: () => {
+                    let source = configSource;
+                    if (oldAppId !== undefined && oldAppId !== upserted.appId) {
+                      source = updateSteamCompatToolMapping(
+                        source,
+                        oldAppId,
+                        null
+                      );
+                    }
+                    return updateSteamCompatToolMapping(
+                      source,
+                      upserted.appId,
+                      compatibilityTool ? compatibilityTool : null
+                    );
+                  },
+                  catch: (cause) =>
+                    new SteamVdfParseError({
+                      message: 'Could not update Steam compatibility settings',
+                      path: configPath,
+                      cause,
+                    }),
+                });
+                updatedConfig = compatibilityUpdate;
+              }
+              yield* commit(
+                process.platform === 'linux'
+                  ? { configSource: updatedConfig }
+                  : undefined
+              );
               if (appInfo.umu) {
                 appInfo.umu.steamShortcutId = upserted.appId;
                 delete appInfo.umu.steamShortcutReaddId;
@@ -391,7 +454,14 @@ export const SteamServiceLive: Layer.Layer<
         const installation = getSteamInstallationKind(location.root);
         const mutation = repository.modifyShortcuts(
           location,
-          ({ root, shortcutsPath, commit, rollback }) =>
+          ({
+            root,
+            shortcutsPath,
+            configPath,
+            configSource,
+            commit,
+            rollback,
+          }) =>
             Effect.gen(function* () {
               const removed = yield* Effect.try({
                 try: () =>
@@ -409,7 +479,36 @@ export const SteamServiceLive: Layer.Layer<
                         cause,
                       }),
               });
-              if (removed.removed) yield* commit();
+              const mappingAppId =
+                removed.appId ??
+                options.oldSteamAppId ??
+                appInfo.umu?.steamShortcutReaddId ??
+                appInfo.umu?.steamShortcutId;
+              const updatedConfig = yield* Effect.try({
+                try: () =>
+                  process.platform === 'linux' && mappingAppId !== undefined
+                    ? updateSteamCompatToolMapping(
+                        configSource,
+                        mappingAppId,
+                        null
+                      )
+                    : configSource,
+                catch: (cause) =>
+                  new SteamVdfParseError({
+                    message: 'Could not update Steam compatibility settings',
+                    path: configPath,
+                    cause,
+                  }),
+              });
+              const configChanged = updatedConfig !== configSource;
+              const committed = removed.removed || configChanged;
+              if (committed) {
+                yield* commit(
+                  process.platform === 'linux' && configChanged
+                    ? { configSource: updatedConfig }
+                    : undefined
+                );
+              }
               if (
                 appInfo.umu?.steamShortcutId !== undefined ||
                 appInfo.umu?.steamShortcutReaddId !== undefined
@@ -423,7 +522,7 @@ export const SteamServiceLive: Layer.Layer<
                     saveGame(options.appID, appInfo)
                   );
                   if (saved._tag === 'Left') {
-                    if (removed.removed) yield* rollback;
+                    if (committed) yield* rollback;
                     return yield* Effect.fail(saved.left);
                   }
                 }

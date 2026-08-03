@@ -28,7 +28,9 @@ import {
   type BinaryVdfValue,
   parseBinaryVdf,
   parseLoginUsers,
+  parseTextVdf,
   serializeBinaryVdf,
+  updateSteamCompatToolMapping,
 } from '../src/electron/lib/steam-vdf.js';
 
 const temporaryDirectories: string[] = [];
@@ -295,6 +297,77 @@ describe('Steam binary VDF codec and shortcut ownership', () => {
     expect(getNonSteamLaunchId(appId)).toBe(
       ((2504465288n << 32n) | 0x02000000n).toString()
     );
+  });
+});
+
+describe('Steam compatibility tool mappings', () => {
+  const config = `// preserve this comment
+"InstallConfigStore"
+{
+	"Software"
+	{
+		"Valve"
+		{
+			"Steam"
+			{
+				"Unrelated" "preserve me"
+				"CompatToolMapping"
+				{
+					"100"
+					{
+						"name" "proton_8"
+						"config" ""
+						"priority" "250"
+					}
+					"200"
+					{
+						"name" "proton_experimental"
+					}
+				}
+			}
+		}
+	}
+}
+`;
+
+  test('adds and updates one mapping without rewriting unrelated config', () => {
+    const added = updateSteamCompatToolMapping(config, 300, 'GE-Proton9-20');
+    const updated = updateSteamCompatToolMapping(added, 100, 'custom\\"tool');
+
+    expect(updated).toContain('// preserve this comment');
+    expect(updated).toContain('"Unrelated" "preserve me"');
+    expect(updated).toContain('"200"');
+    expect(updated).toContain('"300"');
+    expect(updated).toContain('"name"\t"GE-Proton9-20"');
+    expect(updated).toContain('"name"\t"custom\\\\\\"tool"');
+    expect(parseTextVdf(updated)).toBeInstanceOf(Map);
+  });
+
+  test('removes only the selected mapping', () => {
+    const updated = updateSteamCompatToolMapping(config, 100, null);
+
+    expect(updated).not.toContain('"100"');
+    expect(updated).toContain('"200"');
+    expect(updated).toContain('"Unrelated" "preserve me"');
+  });
+
+  test('creates missing compatibility mapping ancestors', () => {
+    const updated = updateSteamCompatToolMapping(
+      '',
+      300,
+      'proton_experimental'
+    );
+    const parsed = parseTextVdf(updated);
+
+    expect(parsed.has('InstallConfigStore')).toBe(true);
+    expect(updated).toContain('"CompatToolMapping"');
+    expect(updated).toContain('"300"');
+  });
+
+  test('rejects malformed source without returning a replacement', () => {
+    expect(() =>
+      updateSteamCompatToolMapping('"InstallConfigStore" {', 300, 'proton_9')
+    ).toThrow('Missing VDF object terminator');
   });
 });
 

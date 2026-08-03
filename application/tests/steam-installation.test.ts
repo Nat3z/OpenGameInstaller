@@ -64,6 +64,64 @@ describe('Steam shortcuts repository', () => {
     expect(root.get('transaction-test')).toEqual({ type: 2, value: 2 });
   });
 
+  test('commits shortcuts and Steam config together', async () => {
+    const location = createLocation();
+    const layer = SteamRepositoryLive([]);
+    const configSource = '"InstallConfigStore"\n{\n}\n';
+
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const repository = yield* SteamRepository;
+        yield* repository.modifyShortcuts(
+          location,
+          ({ root, configPath, commit }) =>
+            Effect.gen(function* () {
+              root.set('transaction-test', { type: 2, value: 1 });
+              yield* commit({ configSource });
+              expect(fs.readFileSync(configPath, 'utf8')).toBe(configSource);
+            })
+        );
+      }).pipe(Effect.provide(layer))
+    );
+
+    expect(
+      parseBinaryVdf(fs.readFileSync(location.user.shortcutsPath)).get(
+        'transaction-test'
+      )
+    ).toEqual({ type: 2, value: 1 });
+  });
+
+  test('restores Steam config when the shortcuts write fails', async () => {
+    const location = createLocation();
+    const layer = SteamRepositoryLive([]);
+    const originalConfig = '"existing" "value"\n';
+    const configPath = path.join(location.root, 'config/config.vdf');
+    fs.mkdirSync(path.dirname(configPath), { recursive: true });
+    fs.writeFileSync(configPath, originalConfig);
+
+    const result = await Effect.runPromise(
+      Effect.either(
+        Effect.gen(function* () {
+          const repository = yield* SteamRepository;
+          yield* repository.modifyShortcuts(
+            location,
+            ({ root, shortcutsPath, configSource, commit }) =>
+              Effect.gen(function* () {
+                root.set('transaction-test', { type: 2, value: 1 });
+                fs.mkdirSync(shortcutsPath);
+                yield* commit({
+                  configSource: `${configSource}"changed" "1"\n`,
+                });
+              })
+          );
+        }).pipe(Effect.provide(layer))
+      )
+    );
+
+    expect(result._tag).toBe('Left');
+    expect(fs.readFileSync(configPath, 'utf8')).toBe(originalConfig);
+  });
+
   test('rolls back a committed shortcuts file when interrupted', async () => {
     const location = createLocation();
     const layer = SteamRepositoryLive([]);
@@ -109,6 +167,33 @@ describe('Steam shortcuts repository', () => {
 
     await Effect.runPromise(transaction.pipe(Effect.provide(layer)));
 
+    expect(fs.existsSync(location.user.shortcutsPath)).toBe(false);
+  });
+
+  test('rollback restores missing Steam config', async () => {
+    const location = createLocation();
+    const layer = SteamRepositoryLive([]);
+    const configPath = path.join(location.root, 'config/config.vdf');
+
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const repository = yield* SteamRepository;
+        yield* repository.modifyShortcuts(
+          location,
+          ({ root, commit, rollback }) =>
+            Effect.gen(function* () {
+              root.set('transaction-test', { type: 2, value: 1 });
+              yield* commit({
+                configSource: '"InstallConfigStore"\n{\n}\n',
+              });
+              expect(fs.existsSync(configPath)).toBe(true);
+              yield* rollback;
+            })
+        );
+      }).pipe(Effect.provide(layer))
+    );
+
+    expect(fs.existsSync(configPath)).toBe(false);
     expect(fs.existsSync(location.user.shortcutsPath)).toBe(false);
   });
 

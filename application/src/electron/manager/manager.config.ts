@@ -39,6 +39,29 @@ export function getStoredValue(
   });
 }
 
+export function getSteamCompatibilityTool(): Effect.Effect<
+  string,
+  ConfigError
+> {
+  return Effect.gen(function* () {
+    yield* refreshCached('general');
+    const value: unknown = yield* getStoredValue(
+      'general',
+      'steamCompatibilityTool'
+    );
+    if (value === undefined) return 'proton_experimental';
+    if (typeof value !== 'string') {
+      return yield* Effect.fail(
+        new ConfigError({
+          message: 'Steam compatibility tool must be a string',
+          key: 'steamCompatibilityTool',
+        })
+      );
+    }
+    return value.trim();
+  });
+}
+
 export function refreshCached(
   optionName: string
 ): Effect.Effect<void, ConfigError> {
@@ -64,6 +87,8 @@ export function refreshCached(
           }),
       });
       cachedValues[optionName] = selectedAddon;
+    } else {
+      delete cachedValues[optionName];
     }
   });
 }

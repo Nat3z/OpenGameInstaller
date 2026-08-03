@@ -41,7 +41,12 @@ export type SteamRepositoryError =
 export interface SteamShortcutsTransaction {
   root: BinaryVdfObject;
   shortcutsPath: string;
-  commit: (root?: BinaryVdfObject) => Effect.Effect<void, SteamVdfWriteError>;
+  configPath: string;
+  configSource: string;
+  commit: (options?: {
+    root?: BinaryVdfObject;
+    configSource?: string;
+  }) => Effect.Effect<void, SteamVdfWriteError>;
   rollback: Effect.Effect<void, SteamVdfWriteError>;
 }
 
@@ -383,43 +388,82 @@ export const SteamRepositoryLive = (
         Effect.gen(function* () {
           const { root, shortcutsPath, original, existed } =
             yield* read(location);
-          let committed = false;
-          const rollback = (
-            existed
-              ? writeFileAtomic(shortcutsPath, original)
+          const configPath = path.join(location.root, 'config/config.vdf');
+          const config = yield* Effect.try({
+            try: () => {
+              const existed = fs.existsSync(configPath);
+              return {
+                existed,
+                source: existed ? fs.readFileSync(configPath, 'utf8') : '',
+              };
+            },
+            catch: (cause) =>
+              new SteamVdfParseError({
+                message: `Could not read ${configPath}`,
+                path: configPath,
+                cause,
+              }),
+          });
+          const configSource = config.source;
+          const configExisted = config.existed;
+          let shortcutsCommitted = false;
+          let configCommitted = false;
+          const restore = (
+            filePath: string,
+            fileExisted: boolean,
+            contents: Buffer | string
+          ): Effect.Effect<void, SteamVdfWriteError> =>
+            fileExisted
+              ? writeFileAtomic(filePath, contents)
               : Effect.try({
                   try: () => {
-                    if (fs.existsSync(shortcutsPath)) fs.rmSync(shortcutsPath);
+                    if (fs.existsSync(filePath)) fs.rmSync(filePath);
                   },
                   catch: (cause) =>
                     new SteamVdfWriteError({
-                      message: `Could not restore missing ${shortcutsPath}`,
-                      path: shortcutsPath,
+                      message: `Could not restore missing ${filePath}`,
+                      path: filePath,
                       cause,
                     }),
-                })
-          ).pipe(
-            Effect.tap(() =>
-              Effect.sync(() => {
-                committed = false;
-              })
-            )
-          );
+                });
+          const rollback = Effect.gen(function* () {
+            if (shortcutsCommitted) {
+              yield* restore(shortcutsPath, existed, original);
+            }
+            if (configCommitted) {
+              yield* restore(configPath, configExisted, configSource);
+            }
+            shortcutsCommitted = false;
+            configCommitted = false;
+          });
           return yield* mutation({
             root,
             shortcutsPath,
-            commit: (updated = root) =>
-              write(shortcutsPath, updated).pipe(
-                Effect.tap(() =>
-                  Effect.sync(() => {
-                    committed = true;
-                  })
-                )
-              ),
+            configPath,
+            configSource,
+            commit: (options) =>
+              Effect.gen(function* () {
+                const updatedRoot = options?.root ?? root;
+                if (options?.configSource !== undefined) {
+                  yield* writeFileAtomic(configPath, options.configSource);
+                  configCommitted = true;
+                }
+                const written = yield* Effect.either(
+                  write(shortcutsPath, updatedRoot)
+                );
+                if (written._tag === 'Left') {
+                  if (configCommitted) {
+                    yield* restore(configPath, configExisted, configSource);
+                    configCommitted = false;
+                  }
+                  return yield* Effect.fail(written.left);
+                }
+                shortcutsCommitted = true;
+              }),
             rollback,
           }).pipe(
             Effect.onExit((exit) =>
-              Exit.isFailure(exit) && committed
+              Exit.isFailure(exit) && (shortcutsCommitted || configCommitted)
                 ? rollback.pipe(Effect.orDie)
                 : Effect.void
             )

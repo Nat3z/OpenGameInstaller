@@ -25,6 +25,7 @@ import {
 import {
   type BinaryVdfObject,
   serializeBinaryVdf,
+  updateSteamCompatToolMapping,
 } from '../src/electron/lib/steam-vdf.js';
 
 const ogiDirectory = fs.mkdtempSync(
@@ -75,6 +76,15 @@ const writeLibraryInfo = (appInfo: LibraryInfo): void => {
   fs.writeFileSync(
     path.join(ogiDirectory, `library/${appInfo.appID}.json`),
     JSON.stringify(appInfo)
+  );
+};
+
+const writeCompatibilityTool = (value: string): void => {
+  const configPath = path.join(ogiDirectory, 'config/option/general.json');
+  fs.mkdirSync(path.dirname(configPath), { recursive: true });
+  fs.writeFileSync(
+    configPath,
+    JSON.stringify({ steamCompatibilityTool: value })
   );
 };
 
@@ -146,6 +156,8 @@ describe('Steam service', () => {
         mutation({
           root,
           shortcutsPath,
+          configPath: path.join(location.root, 'config/config.vdf'),
+          configSource: '',
           commit: () => Effect.void,
           rollback: Effect.void,
         }),
@@ -255,6 +267,7 @@ describe('Steam service', () => {
         headers: { 'content-type': 'application/json' },
       });
     }) as typeof fetch;
+    let committedConfig = '';
     const repositoryLayer = Layer.succeed(SteamRepository, {
       locate: Effect.succeed(location),
       locateAll: Effect.succeed([location]),
@@ -264,12 +277,17 @@ describe('Steam service', () => {
         mutation({
           root,
           shortcutsPath,
-          commit: () => Effect.void,
+          configPath: path.join(location.root, 'config/config.vdf'),
+          configSource: '',
+          commit: (options) =>
+            Effect.sync(() => {
+              committedConfig = options?.configSource ?? '';
+            }),
           rollback: Effect.void,
         }),
     });
     const expectedAppId = generateNonSteamAppId(
-      process.execPath,
+      appInfo.launchExecutable,
       appInfo.name,
       appID
     );
@@ -305,6 +323,16 @@ describe('Steam service', () => {
 
     const [shortcut] = readShortcuts(serializeBinaryVdf(root)).shortcuts;
     expect(shortcut.appName).toBe(appInfo.name);
+    expect(shortcut.executable).toBe(`"${appInfo.launchExecutable}"`);
+    expect(shortcut.fields.get('StartDir')).toEqual({
+      type: 1,
+      value: `"${appInfo.cwd}"`,
+    });
+    expect(shortcut.launchOptions).toBe(
+      `"${process.execPath}" --game-id=${appID} --no-sandbox -- %command%`
+    );
+    expect(committedConfig).toContain(`"${result.steamAppId}"`);
+    expect(committedConfig).toContain('"name"\t"proton_experimental"');
     expect(
       fs.readFileSync(
         path.join(gridDirectory, `${result.steamAppId}p.png`),
@@ -315,5 +343,175 @@ describe('Steam service', () => {
       fs.existsSync(path.join(gridDirectory, `${existing.appId}p.png`))
     ).toBe(true);
     expect(calls).toEqual(['shutdown', 'start']);
+  });
+
+  test('moves compatibility mappings to the game executable shortcut and clears them', async () => {
+    const appID = 3631293;
+    const appInfo = libraryInfo(appID);
+    writeLibraryInfo(appInfo);
+    writeCompatibilityTool('GE-Proton9-20');
+
+    const steamRoot = path.join(ogiDirectory, 'compatibility-steam');
+    const shortcutsPath = path.join(
+      steamRoot,
+      'userdata/100/config/shortcuts.vdf'
+    );
+    const location = locationFor(steamRoot, '100', shortcutsPath);
+    const root: BinaryVdfObject = new Map();
+    const legacy = upsertShortcut(root, {
+      gameId: appID,
+      executable: process.execPath,
+      appName: appInfo.name,
+      startDir: path.dirname(process.execPath),
+      launchOptions: `--game-id=${appID} --no-sandbox`,
+      tags: ['OpenGameInstaller'],
+    });
+    let currentConfig = updateSteamCompatToolMapping(
+      '',
+      legacy.appId,
+      'proton_experimental'
+    );
+    const repositoryLayer = Layer.succeed(SteamRepository, {
+      locate: Effect.succeed(location),
+      locateAll: Effect.succeed([location]),
+      readShortcuts: () => Effect.succeed({ root, shortcutsPath }),
+      writeShortcuts: () => Effect.void,
+      modifyShortcuts: (_location, mutation) =>
+        mutation({
+          root,
+          shortcutsPath,
+          configPath: path.join(location.root, 'config/config.vdf'),
+          configSource: currentConfig,
+          commit: (options) =>
+            Effect.sync(() => {
+              currentConfig = options?.configSource ?? currentConfig;
+            }),
+          rollback: Effect.void,
+        }),
+    });
+    const layer = SteamServiceLive.pipe(
+      Layer.provide(Layer.merge(repositoryLayer, processLayer))
+    );
+
+    const added = await Effect.runPromise(
+      Effect.gen(function* () {
+        return yield* (yield* SteamService).add({ appID });
+      }).pipe(Effect.provide(layer))
+    );
+
+    expect(added.steamAppId).toBe(
+      generateNonSteamAppId(appInfo.launchExecutable, appInfo.name, appID)
+    );
+    expect(currentConfig).not.toContain(`"${legacy.appId}"`);
+    expect(currentConfig).toContain(`"${added.steamAppId}"`);
+    expect(currentConfig).toContain('"name"\t"GE-Proton9-20"');
+
+    writeCompatibilityTool('');
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        yield* (yield* SteamService).add({ appID });
+      }).pipe(Effect.provide(layer))
+    );
+
+    expect(currentConfig).not.toContain(`"${added.steamAppId}"`);
+  });
+
+  test('removes the compatibility mapping with the shortcut', async () => {
+    const appID = 3631295;
+    const appInfo = libraryInfo(appID);
+    writeLibraryInfo(appInfo);
+    const steamRoot = path.join(ogiDirectory, 'remove-compatibility-steam');
+    const shortcutsPath = path.join(
+      steamRoot,
+      'userdata/100/config/shortcuts.vdf'
+    );
+    const location = locationFor(steamRoot, '100', shortcutsPath);
+    const root: BinaryVdfObject = new Map();
+    const shortcut = upsertShortcut(root, {
+      gameId: appID,
+      executable: appInfo.launchExecutable,
+      appName: appInfo.name,
+      startDir: appInfo.cwd,
+      launchOptions: `"${process.execPath}" --game-id=${appID} --no-sandbox -- %command%`,
+      tags: ['OpenGameInstaller'],
+    });
+    let currentConfig = updateSteamCompatToolMapping(
+      '',
+      shortcut.appId,
+      'proton_experimental'
+    );
+    const repositoryLayer = Layer.succeed(SteamRepository, {
+      locate: Effect.succeed(location),
+      locateAll: Effect.succeed([location]),
+      readShortcuts: () => Effect.succeed({ root, shortcutsPath }),
+      writeShortcuts: () => Effect.void,
+      modifyShortcuts: (_location, mutation) =>
+        mutation({
+          root,
+          shortcutsPath,
+          configPath: path.join(location.root, 'config/config.vdf'),
+          configSource: currentConfig,
+          commit: (options) =>
+            Effect.sync(() => {
+              currentConfig = options?.configSource ?? currentConfig;
+            }),
+          rollback: Effect.void,
+        }),
+    });
+    const layer = SteamServiceLive.pipe(
+      Layer.provide(Layer.merge(repositoryLayer, processLayer))
+    );
+
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        yield* (yield* SteamService).remove({ appID });
+      }).pipe(Effect.provide(layer))
+    );
+
+    expect(readShortcuts(serializeBinaryVdf(root)).shortcuts).toHaveLength(0);
+    expect(currentConfig).not.toContain(`"${shortcut.appId}"`);
+  });
+
+  test('uses the executable directory when the game directory is blank', async () => {
+    const appID = 3631294;
+    const appInfo = { ...libraryInfo(appID), cwd: '   ' };
+    writeLibraryInfo(appInfo);
+    const steamRoot = path.join(ogiDirectory, 'start-dir-steam');
+    const shortcutsPath = path.join(
+      steamRoot,
+      'userdata/100/config/shortcuts.vdf'
+    );
+    const location = locationFor(steamRoot, '100', shortcutsPath);
+    const root: BinaryVdfObject = new Map();
+    const repositoryLayer = Layer.succeed(SteamRepository, {
+      locate: Effect.succeed(location),
+      locateAll: Effect.succeed([location]),
+      readShortcuts: () => Effect.succeed({ root, shortcutsPath }),
+      writeShortcuts: () => Effect.void,
+      modifyShortcuts: (_location, mutation) =>
+        mutation({
+          root,
+          shortcutsPath,
+          configPath: path.join(location.root, 'config/config.vdf'),
+          configSource: '',
+          commit: () => Effect.void,
+          rollback: Effect.void,
+        }),
+    });
+    const layer = SteamServiceLive.pipe(
+      Layer.provide(Layer.merge(repositoryLayer, processLayer))
+    );
+
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        yield* (yield* SteamService).add({ appID });
+      }).pipe(Effect.provide(layer))
+    );
+
+    const [shortcut] = readShortcuts(serializeBinaryVdf(root)).shortcuts;
+    expect(shortcut.fields.get('StartDir')).toEqual({
+      type: 1,
+      value: `"${path.dirname(appInfo.launchExecutable)}"`,
+    });
   });
 });

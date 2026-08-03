@@ -232,6 +232,312 @@ export function parseTextVdf(source: string): TextVdfObject {
   return parseObject(false);
 }
 
+type TextVdfSpanToken = {
+  kind: 'brace' | 'value';
+  value: string;
+  start: number;
+  end: number;
+};
+
+type TextVdfSpanEntry = {
+  key: string;
+  start: number;
+  end: number;
+  object?: TextVdfSpanObject;
+};
+
+type TextVdfSpanObject = {
+  entries: TextVdfSpanEntry[];
+  closeStart?: number;
+};
+
+const tokenizeTextVdfSpans = (source: string): TextVdfSpanToken[] => {
+  const tokens: TextVdfSpanToken[] = [];
+  const expression =
+    /\s*(?:\/\/[^\r\n]*|([{}])|"((?:\\.|[^"\\])*)"|([^\s{}"]+))/gy;
+  let offset = 0;
+  while (offset < source.length) {
+    expression.lastIndex = offset;
+    const match = expression.exec(source);
+    if (!match) {
+      if (/\s/.test(source[offset])) {
+        offset++;
+        continue;
+      }
+      throw new Error(`Invalid text VDF at offset ${offset}`);
+    }
+    offset = expression.lastIndex;
+    const tokenStart =
+      match.index +
+      match[0].length -
+      (match[1] ?? match[2] ?? match[3] ?? '').length;
+    if (match[1]) {
+      tokens.push({
+        kind: 'brace',
+        value: match[1],
+        start: tokenStart,
+        end: expression.lastIndex,
+      });
+    } else if (match[2] !== undefined) {
+      tokens.push({
+        kind: 'value',
+        value: match[2].replace(/\\([\\"])/g, '$1'),
+        start: tokenStart - 2,
+        end: expression.lastIndex,
+      });
+    } else if (match[3]) {
+      tokens.push({
+        kind: 'value',
+        value: match[3],
+        start: tokenStart,
+        end: expression.lastIndex,
+      });
+    }
+  }
+  return tokens;
+};
+
+const parseTextVdfSpans = (source: string): TextVdfSpanObject => {
+  const tokens = tokenizeTextVdfSpans(source);
+  let offset = 0;
+  const parseObject = (nested: boolean): TextVdfSpanObject => {
+    const entries: TextVdfSpanEntry[] = [];
+    while (offset < tokens.length) {
+      const token = tokens[offset];
+      if (token.kind === 'brace' && token.value === '}') {
+        if (!nested) throw new Error('Unexpected VDF object terminator');
+        offset++;
+        return { entries, closeStart: token.start };
+      }
+      if (token.kind !== 'value') {
+        throw new Error(`Invalid VDF key at offset ${token.start}`);
+      }
+      const key = token;
+      const value = tokens[++offset];
+      if (!value) throw new Error(`Missing VDF value for ${key.value}`);
+      offset++;
+      if (value.kind === 'brace' && value.value === '{') {
+        const object = parseObject(true);
+        const close = tokens[offset - 1];
+        entries.push({
+          key: key.value,
+          start: key.start,
+          end: close.end,
+          object,
+        });
+      } else if (value.kind === 'value') {
+        entries.push({
+          key: key.value,
+          start: key.start,
+          end: value.end,
+        });
+      } else {
+        throw new Error(`Missing VDF value for ${key.value}`);
+      }
+    }
+    if (nested) throw new Error('Missing VDF object terminator');
+    return { entries };
+  };
+  return parseObject(false);
+};
+
+const findSpanEntry = (
+  object: TextVdfSpanObject,
+  key: string
+): TextVdfSpanEntry | undefined => {
+  const lowerKey = key.toLowerCase();
+  return object.entries.find((entry) => entry.key.toLowerCase() === lowerKey);
+};
+
+const lineStart = (source: string, offset: number): number => {
+  const newline = source.lastIndexOf('\n', offset - 1);
+  return newline < 0 ? 0 : newline + 1;
+};
+
+const indentationAt = (source: string, offset: number): string => {
+  const start = lineStart(source, offset);
+  const indentation = source.slice(start, offset);
+  return /^[\t ]*$/.test(indentation) ? indentation : '';
+};
+
+const detectIndentUnit = (
+  source: string,
+  object: TextVdfSpanObject,
+  parentIndent: string
+): string => {
+  const child = object.entries[0];
+  if (!child) return '\t';
+  const childIndent = indentationAt(source, child.start);
+  return childIndent.startsWith(parentIndent)
+    ? childIndent.slice(parentIndent.length) || '\t'
+    : '\t';
+};
+
+const quoteTextVdf = (value: string): string =>
+  `"${value.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"`;
+
+const formatCompatMapping = (
+  appId: number,
+  tool: string,
+  baseIndent: string,
+  indentUnit: string,
+  newline: string
+): string =>
+  [
+    quoteTextVdf(String(appId >>> 0)),
+    `${baseIndent}{`,
+    `${baseIndent}${indentUnit}"name"${indentUnit}${quoteTextVdf(tool)}`,
+    `${baseIndent}${indentUnit}"config"${indentUnit}""`,
+    `${baseIndent}${indentUnit}"priority"${indentUnit}"250"`,
+    `${baseIndent}}`,
+  ].join(newline);
+
+const formatNestedObject = (
+  keys: readonly string[],
+  leaf: string,
+  baseIndent: string,
+  indentUnit: string,
+  newline: string
+): string => {
+  if (keys.length === 0) return leaf;
+  const [key, ...rest] = keys;
+  const childIndent = `${baseIndent}${indentUnit}`;
+  const nested = formatNestedObject(
+    rest,
+    leaf,
+    childIndent,
+    indentUnit,
+    newline
+  );
+  return [
+    quoteTextVdf(key),
+    `${baseIndent}{`,
+    `${childIndent}${nested}`,
+    `${baseIndent}}`,
+  ].join(newline);
+};
+
+const insertionAtObjectEnd = (
+  source: string,
+  object: TextVdfSpanObject,
+  block: string,
+  indent: string,
+  newline: string
+): string => {
+  const offset =
+    object.closeStart === undefined
+      ? source.length
+      : lineStart(source, object.closeStart);
+  const prefix = source.slice(0, offset);
+  const separator = prefix.length > 0 && !prefix.endsWith('\n') ? newline : '';
+  return `${prefix}${separator}${indent}${block}${newline}${source.slice(offset)}`;
+};
+
+const removeEntry = (source: string, entry: TextVdfSpanEntry): string => {
+  const start = lineStart(source, entry.start);
+  const before = source.slice(start, entry.start);
+  let end = entry.end;
+  while (end < source.length && /[\t ]/.test(source[end])) end++;
+  if (
+    /^[\t ]*$/.test(before) &&
+    (source[end] === '\r' || source[end] === '\n')
+  ) {
+    if (source[end] === '\r') end++;
+    if (source[end] === '\n') end++;
+    return source.slice(0, start) + source.slice(end);
+  }
+  return source.slice(0, entry.start) + source.slice(entry.end);
+};
+
+export function updateSteamCompatToolMapping(
+  source: string,
+  appId: number,
+  tool: string | null
+): string {
+  parseTextVdf(source);
+  const root = parseTextVdfSpans(source);
+  const path = [
+    'InstallConfigStore',
+    'Software',
+    'Valve',
+    'Steam',
+    'CompatToolMapping',
+  ];
+  let object = root;
+  let foundDepth = 0;
+  for (const key of path) {
+    const entry = findSpanEntry(object, key);
+    if (!entry) break;
+    if (!entry.object)
+      throw new Error(`Steam VDF path ${key} is not an object`);
+    object = entry.object;
+    foundDepth++;
+  }
+
+  const existing =
+    foundDepth === path.length
+      ? findSpanEntry(object, String(appId >>> 0))
+      : undefined;
+  let updated = source;
+  if (tool === null) {
+    if (existing) updated = removeEntry(source, existing);
+  } else {
+    const trimmed = tool.trim();
+    if (!trimmed) throw new Error('Steam compatibility tool cannot be blank');
+    if (existing) {
+      const baseIndent = indentationAt(source, existing.start);
+      const indentUnit = detectIndentUnit(
+        source,
+        existing.object ?? object,
+        baseIndent
+      );
+      const newline = source.includes('\r\n') ? '\r\n' : '\n';
+      const replacement = formatCompatMapping(
+        appId,
+        trimmed,
+        baseIndent,
+        indentUnit,
+        newline
+      );
+      updated =
+        source.slice(0, existing.start) +
+        replacement +
+        source.slice(existing.end);
+    } else {
+      const newline = source.includes('\r\n') ? '\r\n' : '\n';
+      const parentIndent =
+        object.closeStart === undefined
+          ? ''
+          : indentationAt(source, object.closeStart);
+      const indentUnit = detectIndentUnit(source, object, parentIndent);
+      const childIndent = `${parentIndent}${indentUnit}`;
+      const mapping = formatCompatMapping(
+        appId,
+        trimmed,
+        childIndent,
+        indentUnit,
+        newline
+      );
+      const block = formatNestedObject(
+        path.slice(foundDepth),
+        mapping,
+        childIndent,
+        indentUnit,
+        newline
+      );
+      updated = insertionAtObjectEnd(
+        source,
+        object,
+        block,
+        childIndent,
+        newline
+      );
+    }
+  }
+  parseTextVdf(updated);
+  return updated;
+}
+
 const getTextObject = (
   object: TextVdfObject,
   key: string

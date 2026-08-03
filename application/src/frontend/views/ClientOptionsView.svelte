@@ -114,6 +114,16 @@ let options: OptionsCategory[] = [
         min: 0,
         max: 100,
       },
+      steamCompatibilityTool: {
+        displayName: 'Steam Compatibility Tool',
+        description:
+          "Steam's internal compatibility tool name, such as proton_experimental or a GE-Proton identifier. Leave blank to clear the forced tool when updating a shortcut.",
+        defaultValue: 'proton_experimental',
+        value: 'proton_experimental',
+        type: 'string',
+        condition: async () =>
+          (await window.electronAPI.app.getOS()) === 'linux',
+      },
       reconfigurSteamGridDb: {
         displayName: 'Change SteamGridDB API Key',
         description: 'Reconfigure your SteamGridDB API Key',

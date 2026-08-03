@@ -129,18 +129,25 @@ export default class EventResponse<T> {
         new AddonError({ message: 'No input callback is registered' })
       );
     }
-    return Effect.suspend(() => {
-      const result = this.onInputAsked!(screen, name, description);
-      return Effect.isEffect(result)
-        ? result
-        : Effect.tryPromise({
-            try: () => result,
-            catch: (cause) =>
-              new AddonError({
-                message: `Input request failed: ${String(cause)}`,
-              }),
-          });
-    });
+    return Effect.try({
+      try: () => this.onInputAsked!(screen, name, description),
+      catch: (cause) =>
+        new AddonError({
+          message: `Input request failed: ${String(cause)}`,
+        }),
+    }).pipe(
+      Effect.flatMap((result) =>
+        Effect.isEffect(result)
+          ? result
+          : Effect.tryPromise({
+              try: () => result,
+              catch: (cause) =>
+                new AddonError({
+                  message: `Input request failed: ${String(cause)}`,
+                }),
+            })
+      )
+    );
   }
 
   /** Promise compatibility adapter for existing addon implementations. */

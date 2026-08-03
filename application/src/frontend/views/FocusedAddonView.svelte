@@ -42,8 +42,8 @@ let selectedValues: Record<string, string> = $state({});
 let runningActions: Record<string, boolean> = $state({});
 
 onMount(() => {
-  Effect.runPromise(queryConnectedAddons<ConfigTemplateAndInfo>()).then(
-    (data) => {
+  Effect.runPromise(queryConnectedAddons<ConfigTemplateAndInfo>())
+    .then((data) => {
       const addon = data.find((a: ConfigTemplateAndInfo) => a.id === addonId);
       if (addon) {
         selectedAddon = addon;
@@ -62,8 +62,18 @@ onMount(() => {
           updateConfig();
         }, 100);
       }
-    }
-  );
+    })
+    .catch((error) => {
+      console.error('Failed to load addon configuration:', error);
+      notifications.update((items) => [
+        ...items,
+        {
+          id: Math.random().toString(36).substring(7),
+          type: 'error',
+          message: 'Failed to load addon configuration',
+        },
+      ]);
+    });
 });
 
 function updateConfig() {

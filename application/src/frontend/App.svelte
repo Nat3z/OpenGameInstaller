@@ -13,6 +13,7 @@ import GameLaunchOverlay from '@/frontend/components/GameLaunchOverlay.svelte';
 import ConfigurationModal from '@/frontend/components/modal/ConfigurationModal.svelte';
 import NotificationSideView from '@/frontend/components/NotificationSideView.svelte';
 import StorePage from '@/frontend/components/StorePage.svelte';
+import { runDetached } from '@/frontend/lib/core/runtime';
 import AppUpdateManager from '@/frontend/managers/AppUpdateManager.svelte';
 import ChangelogManager from '@/frontend/managers/ChangelogManager.svelte';
 import Debug from '@/frontend/managers/Debug.svelte';
@@ -146,8 +147,13 @@ onMount(() => {
 
   // Initialize search-related data
   initializeSearch();
-  void Effect.runPromise(initDownloadPersistence());
-  initSleepLock((effect) => void Effect.runPromise(effect));
+  runDetached(
+    initDownloadPersistence(),
+    'Failed to initialize download persistence'
+  );
+  initSleepLock((effect) =>
+    runDetached(effect, 'Failed to synchronize sleep lock')
+  );
   const persistedUpdateState = loadPersistedUpdateState();
   appUpdates.requiredReadds = persistedUpdateState.requiredReadds;
   appUpdates.dismissedUpdates = persistedUpdateState.dismissedUpdates;
@@ -412,7 +418,16 @@ document.addEventListener('all-addons-started', async () => {
     addonUpdates.set([]);
     // restart the addon server
     await window.electronAPI.restartAddonServer();
-    await Effect.runPromise(reconnectClientSdk());
+    try {
+      await Effect.runPromise(reconnectClientSdk());
+    } catch (error) {
+      console.error('Failed to reconnect to the addon server:', error);
+      createNotification({
+        id: Math.random().toString(36).substring(7),
+        message: 'Failed to reconnect to the addon server',
+        type: 'error',
+      });
+    }
   }
 });
 document.addEventListener('addon:updated', (event) => {
@@ -426,7 +441,10 @@ document.addEventListener('addon:updated', (event) => {
 });
 document.addEventListener('addon-connected', (event) => {
   if (event instanceof CustomEvent) {
-    void Effect.runPromise(fetchAddonsWithConfigure());
+    runDetached(
+      fetchAddonsWithConfigure().pipe(Effect.asVoid),
+      'Failed to refresh addons'
+    );
   }
 });
 currentStorePageOpened.subscribe((value) => {

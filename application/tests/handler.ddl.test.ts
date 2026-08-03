@@ -189,30 +189,32 @@ describe('download resume coordination', () => {
     const id = registerDownloadHandshake.mock.calls[0]?.[0];
     expect(id).toBeDefined();
 
-    for (
-      let attempt = 0;
-      get.mock.calls.length < 1 && attempt < 100;
-      attempt++
-    ) {
-      await new Promise((resolve) => setTimeout(resolve, 1));
+    try {
+      for (
+        let attempt = 0;
+        get.mock.calls.length < 1 && attempt < 100;
+        attempt++
+      ) {
+        await new Promise((resolve) => setTimeout(resolve, 1));
+      }
+      expect(get).toHaveBeenCalledTimes(1);
+
+      await pause?.(undefined, id);
+      await Promise.all([resume?.(undefined, id), resume?.(undefined, id)]);
+
+      for (
+        let attempt = 0;
+        get.mock.calls.length < 2 && attempt < 100;
+        attempt++
+      ) {
+        await new Promise((resolve) => setTimeout(resolve, 1));
+      }
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      expect(get).toHaveBeenCalledTimes(2);
+    } finally {
+      await abort?.(undefined, id);
+      for (const stream of streams) stream.destroy();
     }
-    expect(get).toHaveBeenCalledTimes(1);
-
-    await pause?.(undefined, id);
-    await Promise.all([resume?.(undefined, id), resume?.(undefined, id)]);
-
-    for (
-      let attempt = 0;
-      get.mock.calls.length < 2 && attempt < 100;
-      attempt++
-    ) {
-      await new Promise((resolve) => setTimeout(resolve, 1));
-    }
-    await new Promise((resolve) => setTimeout(resolve, 10));
-    expect(get).toHaveBeenCalledTimes(2);
-
-    await abort?.(undefined, id);
-    for (const stream of streams) stream.destroy();
   });
 });
 

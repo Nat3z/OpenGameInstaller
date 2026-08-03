@@ -390,7 +390,7 @@ export class Task {
     id: string,
     progress: number,
     logs: string[],
-    schedule?: EffectScheduler
+    schedule: EffectScheduler
   );
 
   constructor(
@@ -715,7 +715,9 @@ class OGIAddonWSListener {
           Effect.zipRight(
             Effect.sync(() => {
               const message =
-                event instanceof ErrorEvent ? event.message : event.type;
+                typeof ErrorEvent !== 'undefined' && event instanceof ErrorEvent
+                  ? event.message
+                  : event.type;
               console.error(
                 message.includes('Failed to connect')
                   ? 'OGI Addon Server is not running or is unreachable.'

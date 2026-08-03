@@ -71,7 +71,7 @@ export class DeferredTasksManager {
     return this.tasks;
   }
 
-  public addTask(task: DeferrableTask<unknown>): Effect.Effect<void> {
+  private addTask(task: DeferrableTask<unknown>): Effect.Effect<void> {
     return Effect.sync(() => {
       this.tasks[task.id] = task;
     });
@@ -83,6 +83,7 @@ export class DeferredTasksManager {
       yield* this.addTask(task);
       const fiber = yield* Effect.forkDaemon(task.run());
       this.fibers.set(task.id, fiber);
+      fiber.addObserver(() => this.fibers.delete(task.id));
     });
   }
 
@@ -98,6 +99,7 @@ export class DeferredTasksManager {
   public shutdown(): Effect.Effect<void> {
     return Effect.gen(this, function* () {
       yield* Effect.forEach(this.fibers.values(), Fiber.interrupt, {
+        concurrency: 'unbounded',
         discard: true,
       });
       this.fibers.clear();

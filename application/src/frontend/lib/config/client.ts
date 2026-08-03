@@ -80,8 +80,8 @@ export function getConfigClientOption<T>(id: string): T | null {
   return JSON.parse(config) as T;
 }
 function waitForConfiguredAddons(maxWaitMs = 15_000, pollMs = 100) {
-  const deadline = Date.now() + maxWaitMs;
   return Effect.gen(function* () {
+    const deadline = Date.now() + maxWaitMs;
     while (Date.now() < deadline) {
       const addons = yield* queryConnectedAddons<ConfigTemplateAndInfo>();
       if (
@@ -99,7 +99,7 @@ function waitForConfiguredAddons(maxWaitMs = 15_000, pollMs = 100) {
 export function fetchAddonsWithConfigure() {
   return Effect.gen(function* () {
     const addons = yield* waitForConfiguredAddons();
-    yield* Effect.forEach(
+    const results = yield* Effect.forEach(
       addons,
       (addon) =>
         Effect.gen(function* () {
@@ -116,16 +116,28 @@ export function fetchAddonsWithConfigure() {
             );
           } else {
             config = yield* Effect.try({
-              try: () => JSON.parse(window.electronAPI.fs.read(configPath)),
-              catch: () => {
-                const defaults = buildDefaultConfig(addon.configTemplate);
-                window.electronAPI.fs.write(
-                  configPath,
-                  JSON.stringify(defaults, null, 2)
+              try: () => {
+                const parsed: unknown = JSON.parse(
+                  window.electronAPI.fs.read(configPath)
                 );
-                return defaults;
+                if (typeof parsed !== 'object' || parsed === null) {
+                  throw new Error('Expected addon configuration object');
+                }
+                return parsed as Record<string, number | boolean | string>;
               },
-            }).pipe(Effect.merge);
+              catch: (cause) => cause,
+            }).pipe(
+              Effect.catchAll(() =>
+                Effect.sync(() => {
+                  const defaults = buildDefaultConfig(addon.configTemplate);
+                  window.electronAPI.fs.write(
+                    configPath,
+                    JSON.stringify(defaults, null, 2)
+                  );
+                  return defaults;
+                })
+              )
+            );
           }
 
           yield* Effect.tryPromise({
@@ -139,9 +151,14 @@ export function fetchAddonsWithConfigure() {
                 addonName: safeId,
               }),
           });
-        }),
+        }).pipe(Effect.either),
       { concurrency: 'unbounded' }
     );
+    for (const result of results) {
+      if (result._tag === 'Left') {
+        console.error('Failed to configure addon:', result.left);
+      }
+    }
     return addons;
   });
 }

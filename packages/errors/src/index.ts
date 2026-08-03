@@ -110,6 +110,7 @@ export class DebridError extends Data.TaggedError('DebridError')<{
 
 export class DebridAuthError extends Data.TaggedError('DebridAuthError')<{
   readonly service: DebridService;
+  readonly message: string;
 }> {}
 
 export class DebridApiError extends Data.TaggedError('DebridApiError')<{
@@ -132,6 +133,7 @@ export class DebridTimeoutError extends Data.TaggedError('DebridTimeoutError')<{
   readonly service: DebridService;
   readonly operation: string;
   readonly timeoutMs: number;
+  readonly message: string;
 }> {}
 
 // =============================================================================

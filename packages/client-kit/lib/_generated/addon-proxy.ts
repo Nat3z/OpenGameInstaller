@@ -135,7 +135,7 @@ export const addonEventAliases = [
     aliases[toCamelCaseEvent(event)] = event as AddonServerToClientEventName;
     return aliases;
   },
-  {} as Record<string, AddonServerToClientEventName>
+  Object.create(null) as Record<string, AddonServerToClientEventName>
 );
 
 const deferredAddonEvents = new Set<AddonServerToClientEventName>([
@@ -164,8 +164,8 @@ export const createEffectAddonProxy = <E>(
         return addonMetadataGetters[property as keyof AddonProxyMetadata](info);
       }
 
-      const event = addonEventAliases[property];
-      if (!event) return undefined;
+      if (!Object.hasOwn(addonEventAliases, property)) return undefined;
+      const event = addonEventAliases[property]!;
 
       return (...args: AddonServerToClientEventArgs[typeof event]) => {
         if (deferredAddonEvents.has(event)) {

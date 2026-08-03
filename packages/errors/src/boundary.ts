@@ -1,4 +1,4 @@
-import { Effect } from 'effect';
+import { Cause, Effect } from 'effect';
 import { formatErrorResponse } from './index.js';
 
 export type ErrorResponse = {
@@ -11,7 +11,11 @@ export const effectBoundary = <A, E>(
   effect: Effect.Effect<A, E>
 ): Effect.Effect<A | ErrorResponse> =>
   effect.pipe(
-    Effect.catchAll((error) => Effect.succeed(formatErrorResponse(error)))
+    Effect.catchAllCause((cause) =>
+      Cause.isInterruptedOnly(cause)
+        ? Effect.interrupt
+        : Effect.succeed(formatErrorResponse(Cause.squash(cause)))
+    )
   );
 
 /** Explicit Promise adapter for legacy callers and framework callbacks. */

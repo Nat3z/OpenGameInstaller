@@ -195,17 +195,26 @@ async function processDownloadComplete(
   }
 
   // Real-Debrid / AllDebrid: extract RAR when present (skip if DDL was a non-RAR file)
-  const rarArchivePath =
+  let rarArchivePath: string | null = null;
+  if (
     !isTorrent &&
     (downloadedItem.usedDebridService === 'realdebrid' ||
       downloadedItem.usedDebridService === 'alldebrid')
-      ? await Effect.runPromise(
-          resolveRarArchivePath(
-            downloadedItem.downloadPath,
-            downloadedItem.files
-          )
-        )
-      : null;
+  ) {
+    try {
+      rarArchivePath = await Effect.runPromise(
+        resolveRarArchivePath(downloadedItem.downloadPath, downloadedItem.files)
+      );
+    } catch (error) {
+      console.error('Failed to resolve RAR archive path:', error);
+      processingDownloadCompletions.delete(downloadID);
+      updateDownloadStatus(downloadID, {
+        status: 'error',
+        error: 'Failed to resolve RAR archive path',
+      });
+      return;
+    }
+  }
 
   if (rarArchivePath) {
     // Initialize setup logs for this download

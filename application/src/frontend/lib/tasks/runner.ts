@@ -1,6 +1,6 @@
 import { AddonError, formatError } from '@ogi/errors';
 import type { LibraryInfo, SearchResult } from '@ogi-sdk/connect';
-import { Effect } from 'effect';
+import { Effect, Exit } from 'effect';
 import { get } from 'svelte/store';
 import { addonServer } from '@/frontend/lib/core/ipc';
 import { createNotification, deferredTasks } from '@/frontend/store.svelte';
@@ -24,8 +24,8 @@ export function runTask(
   originalFilePath: string,
   libraryInfo?: LibraryInfo
 ) {
+  let taskID: string | undefined;
   return Effect.gen(function* () {
-    let taskID: string | undefined;
     const manifest = structuredClone(result.manifest ?? {}) as Record<
       string,
       unknown
@@ -123,5 +123,15 @@ export function runTask(
       });
     }
     return response;
-  });
+  }).pipe(
+    Effect.onExit((exit) =>
+      Exit.isSuccess(exit) || !taskID
+        ? Effect.void
+        : Effect.sync(() => {
+            deferredTasks.update((tasks) =>
+              tasks.filter((task) => task.id !== taskID)
+            );
+          })
+    )
+  );
 }

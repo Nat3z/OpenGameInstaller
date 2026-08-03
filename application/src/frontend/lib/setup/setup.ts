@@ -330,15 +330,22 @@ export function runSetupApp(
   isTorrent: boolean,
   additionalData: AdditionalSetupData = {}
 ) {
-  const payload = createSetupPayload(
-    downloadedItem,
-    outputDir,
-    'game',
-    undefined,
-    additionalData
-  );
-
   return Effect.gen(function* () {
+    const payload = yield* Effect.try({
+      try: () =>
+        createSetupPayload(
+          downloadedItem,
+          outputDir,
+          'game',
+          undefined,
+          additionalData
+        ),
+      catch: (cause) =>
+        new AddonError({
+          message: `Failed to create setup payload: ${formatError(cause)}`,
+          addonName: downloadedItem.addonSource,
+        }),
+    });
     const data = yield* runAddonSetup(
       payload,
       createSetupCallbacks(downloadedItem)
@@ -367,7 +374,11 @@ export function runSetupApp(
           message: `Failed to insert app: ${formatError(cause)}`,
           addonName: downloadedItem.addonSource,
         }),
-    });
+    }).pipe(
+      Effect.tapError((error) =>
+        Effect.sync(() => handleSetupError(error, downloadedItem, 'game'))
+      )
+    );
 
     if (
       result === 'setup-failed' ||
@@ -491,7 +502,7 @@ export function runSetupAppUpdate(
         type: 'error',
         message: `Failed to update ${downloadedItem.name} to target version`,
       });
-      return data;
+      return yield* Effect.fail(new UpdateError({ message }));
     }
 
     updateDownloadStatus(downloadedItem.id, {

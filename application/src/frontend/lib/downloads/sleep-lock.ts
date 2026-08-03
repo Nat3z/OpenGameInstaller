@@ -46,7 +46,6 @@ function syncSleepBlock(
   const shouldBlock = shouldBlockSleep(downloads, logs);
   if (shouldBlock === sleepBlockActive) return Effect.void;
 
-  sleepBlockActive = shouldBlock;
   return Effect.tryPromise({
     try: () => window.electronAPI.powerSave.setActive(shouldBlock),
     catch: (cause) =>
@@ -54,6 +53,11 @@ function syncSleepBlock(
         message: `Failed to update sleep lock: ${cause instanceof Error ? cause.message : String(cause)}`,
       }),
   }).pipe(
+    Effect.tap(() =>
+      Effect.sync(() => {
+        sleepBlockActive = shouldBlock;
+      })
+    ),
     Effect.tapError((error) =>
       Effect.sync(() => console.error('Failed to update sleep lock:', error))
     ),

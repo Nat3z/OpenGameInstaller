@@ -24,15 +24,23 @@ interface PersistedRecord {
 }
 
 const lastSavedAtById: Map<string, number> = new Map();
+let unsubscribeDownloads: (() => void) | undefined;
+let unsubscribeRedistributables: (() => void) | undefined;
 
-function ensureDir() {
-  try {
-    if (!window.electronAPI.fs.exists(PERSIST_DIR)) {
-      window.electronAPI.fs.mkdir(PERSIST_DIR);
-    }
-  } catch (e) {
-    console.error('Failed to ensure persist dir:', e);
-  }
+function ensureDir(): Effect.Effect<void, FileSystemError> {
+  return Effect.try({
+    try: () => {
+      if (!window.electronAPI.fs.exists(PERSIST_DIR)) {
+        window.electronAPI.fs.mkdir(PERSIST_DIR);
+      }
+    },
+    catch: (cause) =>
+      new FileSystemError({
+        message: `Failed to ensure persistence directory: ${formatError(cause)}`,
+        path: PERSIST_DIR,
+        cause,
+      }),
+  });
 }
 
 function isPersistableStatus(
@@ -112,16 +120,18 @@ function isRedistributableInstall(
 }
 
 export function loadPersistedDownloads() {
-  ensureDir();
-  return Effect.tryPromise({
-    try: () => window.electronAPI.fs.getFilesInDir(PERSIST_DIR),
-    catch: (cause) =>
-      new FileSystemError({
-        message: `Failed to load persisted downloads: ${formatError(cause)}`,
-        path: PERSIST_DIR,
-        cause,
-      }),
-  }).pipe(
+  return ensureDir().pipe(
+    Effect.zipRight(
+      Effect.tryPromise({
+        try: () => window.electronAPI.fs.getFilesInDir(PERSIST_DIR),
+        catch: (cause) =>
+          new FileSystemError({
+            message: `Failed to load persisted downloads: ${formatError(cause)}`,
+            path: PERSIST_DIR,
+            cause,
+          }),
+      })
+    ),
     Effect.map((files) => {
       const restored: DownloadStatusAndInfo[] = [];
       const redistributableInstallByDownloadId: Record<
@@ -170,7 +180,6 @@ export function loadPersistedDownloads() {
 
 export function initDownloadPersistence() {
   return Effect.gen(function* () {
-    ensureDir();
     const restoredState = yield* loadPersistedDownloads().pipe(
       Effect.catchAll((error) =>
         Effect.sync(() => {
@@ -209,10 +218,13 @@ export function initDownloadPersistence() {
       );
     }
 
+    unsubscribeDownloads?.();
+    unsubscribeRedistributables?.();
+
     let lastSnapshot: Record<string, string> = {};
     let lastRedistributableSnapshotById: Record<string, string> = {};
     let latestDownloads: DownloadStatusAndInfo[] = [];
-    currentDownloads.subscribe((downloads) => {
+    unsubscribeDownloads = currentDownloads.subscribe((downloads) => {
       latestDownloads = downloads;
       const nextSnapshot: Record<string, string> = {};
       for (const download of downloads) {
@@ -228,51 +240,65 @@ export function initDownloadPersistence() {
       }
       lastSnapshot = nextSnapshot;
     });
-    redistributableInstalls.subscribe((setups) => {
-      const downloadsById = new Map(
-        latestDownloads.map((download) => [download.id, download])
-      );
-      for (const [downloadId, setup] of Object.entries(setups)) {
-        const download = downloadsById.get(downloadId);
-        if (!download || download.status !== 'installing-redistributables')
-          continue;
-        const serialized = JSON.stringify(setup);
-        if (lastRedistributableSnapshotById[downloadId] !== serialized) {
-          saveRecord(download, true);
-          lastRedistributableSnapshotById[downloadId] = serialized;
+    unsubscribeRedistributables = redistributableInstalls.subscribe(
+      (setups) => {
+        const downloadsById = new Map(
+          latestDownloads.map((download) => [download.id, download])
+        );
+        for (const [downloadId, setup] of Object.entries(setups)) {
+          const download = downloadsById.get(downloadId);
+          if (!download || download.status !== 'installing-redistributables')
+            continue;
+          const serialized = JSON.stringify(setup);
+          if (lastRedistributableSnapshotById[downloadId] !== serialized) {
+            saveRecord(download, true);
+            lastRedistributableSnapshotById[downloadId] = serialized;
+          }
         }
       }
-    });
+    );
   });
 }
 
 export function deleteDownloadedItems(id: string) {
   const record = recordPath(id);
-  if (!window.electronAPI.fs.exists(record)) return Effect.void;
-  const parsed = JSON.parse(
-    window.electronAPI.fs.read(record)
-  ) as PersistedRecord;
-
-  return Effect.forEach(
-    getPersistedFilePaths(parsed.downloadInfo),
-    (filePath) =>
-      Effect.tryPromise({
-        try: () => window.electronAPI.fs.deleteAsync(filePath),
-        catch: (cause) =>
-          new FileSystemError({
-            message: `Failed to delete downloaded file: ${formatError(cause)}`,
-            path: filePath,
-            cause,
-          }),
-      }).pipe(
-        Effect.tapError((error) =>
-          Effect.sync(() =>
-            console.error(error.message, error.path, error.cause)
+  return Effect.try({
+    try: () => {
+      if (!window.electronAPI.fs.exists(record)) return undefined;
+      return JSON.parse(window.electronAPI.fs.read(record)) as PersistedRecord;
+    },
+    catch: (cause) =>
+      new FileSystemError({
+        message: `Failed to read persisted download: ${formatError(cause)}`,
+        path: record,
+        cause,
+      }),
+  }).pipe(
+    Effect.flatMap((parsed) =>
+      parsed
+        ? Effect.forEach(
+            getPersistedFilePaths(parsed.downloadInfo),
+            (filePath) =>
+              Effect.tryPromise({
+                try: () => window.electronAPI.fs.deleteAsync(filePath),
+                catch: (cause) =>
+                  new FileSystemError({
+                    message: `Failed to delete downloaded file: ${formatError(cause)}`,
+                    path: filePath,
+                    cause,
+                  }),
+              }).pipe(
+                Effect.tapError((error) =>
+                  Effect.sync(() =>
+                    console.error(error.message, error.path, error.cause)
+                  )
+                ),
+                Effect.ignore
+              ),
+            { discard: true }
           )
-        ),
-        Effect.ignore
-      ),
-    { discard: true }
+        : Effect.void
+    )
   );
 }
 

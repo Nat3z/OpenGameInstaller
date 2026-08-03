@@ -8,7 +8,7 @@ import type {
   SDKRequestName,
   SDKResponseMessage,
 } from '@ogi-sdk/connect';
-import { Effect, Stream } from 'effect';
+import { Effect, Fiber, Stream } from 'effect';
 import type {
   AddonProxyMetadata,
   EffectAddonProxy,
@@ -67,7 +67,12 @@ const callbackEffect = (callback: () => MaybePromise): Effect.Effect<void> =>
   Effect.tryPromise({
     try: async () => callback(),
     catch: (cause) => cause,
-  }).pipe(Effect.orDie);
+  }).pipe(
+    Effect.tapError((error) =>
+      Effect.sync(() => console.error('Deferred task callback failed:', error))
+    ),
+    Effect.ignore
+  );
 
 const toEffectOptions = <T>(
   options: DeferredTaskOptions<T>
@@ -92,7 +97,7 @@ const toPromiseAddonProxy = (proxy: EffectAddonProxy): AddonProxy =>
   new Proxy({} as AddonProxy, {
     get(_target, property) {
       if (typeof property !== 'string') return undefined;
-      if (property in addonEventAliases) {
+      if (Object.hasOwn(addonEventAliases, property)) {
         const method = (
           proxy as unknown as Record<
             string,
@@ -204,11 +209,13 @@ export class Connection {
     callback: (
       args: PromiseSDKEventArgs<Event>
     ) => Effect.Effect<void, E> | void
-  ) {
-    return this.effect.on(event, (args) => {
-      const result = callback(this.toPromiseEventArgs(event, args));
-      return Effect.isEffect(result) ? result : Effect.void;
-    });
+  ): Promise<Fiber.RuntimeFiber<void, E>> {
+    return Effect.runPromise(
+      this.effect.on(event, (args) => {
+        const result = callback(this.toPromiseEventArgs(event, args));
+        return Effect.isEffect(result) ? result : Effect.void;
+      })
+    );
   }
 
   public close(): Promise<void> {

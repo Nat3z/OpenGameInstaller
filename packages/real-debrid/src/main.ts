@@ -6,7 +6,7 @@ import {
   HttpError,
 } from '@ogi/errors';
 import axios, { type AxiosRequestConfig, type AxiosResponse } from 'axios';
-import { Context, Effect, Layer, Option, Schema } from 'effect';
+import { Cause, Context, Effect, Exit, Layer, Option, Schema } from 'effect';
 
 export interface RealDebridConfiguration {
   readonly apiKey: string;
@@ -144,7 +144,10 @@ const apiError = (
   fallback: string
 ): DebridApiError | DebridAuthError => {
   if (response.status === 401 || response.status === 403) {
-    return new DebridAuthError({ service: SERVICE });
+    return new DebridAuthError({
+      service: SERVICE,
+      message: `${SERVICE} authentication failed`,
+    });
   }
 
   const payload = Option.getOrUndefined(
@@ -388,6 +391,14 @@ export const RealDebridClientLayer = (
 ): Layer.Layer<RealDebridClientResource> =>
   Layer.succeed(RealDebridClientResource, makeRealDebridClient(configuration));
 
+const runLegacyPromise = async <A, E>(
+  effect: Effect.Effect<A, E>
+): Promise<A> => {
+  const exit = await Effect.runPromiseExit(effect);
+  if (Exit.isSuccess(exit)) return exit.value;
+  throw Cause.squash(exit.cause);
+};
+
 /** Promise adapter for consumers that have not migrated to Effect. */
 export class LegacyRealDebridPromiseClient {
   private readonly client: RealDebridClient;
@@ -397,43 +408,43 @@ export class LegacyRealDebridPromiseClient {
   }
 
   public getUserInfo(): Promise<$UserInfo> {
-    return Effect.runPromise(this.client.getUserInfo());
+    return runLegacyPromise(this.client.getUserInfo());
   }
 
   public unrestrictLink(
     link: string,
     password?: string
   ): Promise<$UnrestrictLink> {
-    return Effect.runPromise(this.client.unrestrictLink(link, password));
+    return runLegacyPromise(this.client.unrestrictLink(link, password));
   }
 
   public addTorrent(
     torrent: ReadStream,
     host?: RealDebridHostInput
   ): Promise<$AddTorrentOrMagnet> {
-    return Effect.runPromise(this.client.addTorrent(torrent, host));
+    return runLegacyPromise(this.client.addTorrent(torrent, host));
   }
 
   public getTorrentInfo(id: string): Promise<$TorrentInfo> {
-    return Effect.runPromise(this.client.getTorrentInfo(id));
+    return runLegacyPromise(this.client.getTorrentInfo(id));
   }
 
   public addMagnet(
     magnet: string,
     host?: RealDebridHostInput
   ): Promise<$AddTorrentOrMagnet> {
-    return Effect.runPromise(this.client.addMagnet(magnet, host));
+    return runLegacyPromise(this.client.addMagnet(magnet, host));
   }
 
   public selectTorrents(id: string): Promise<boolean> {
-    return Effect.runPromise(this.client.selectTorrents(id));
+    return runLegacyPromise(this.client.selectTorrents(id));
   }
 
   public isTorrentReady(id: string): Promise<boolean> {
-    return Effect.runPromise(this.client.isTorrentReady(id));
+    return runLegacyPromise(this.client.isTorrentReady(id));
   }
 
   public getHosts(): Promise<ReadonlyArray<$Hosts>> {
-    return Effect.runPromise(this.client.getHosts());
+    return runLegacyPromise(this.client.getHosts());
   }
 }

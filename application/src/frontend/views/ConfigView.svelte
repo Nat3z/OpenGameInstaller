@@ -114,9 +114,18 @@ async function addAddon() {
     message: 'Installing addon...',
     type: 'info',
   });
-  await window.electronAPI.installAddons([addonUrl]);
-  addonUrl = '';
-  await Effect.runPromise(reconnectClientSdk());
+  try {
+    await window.electronAPI.installAddons([addonUrl]);
+    addonUrl = '';
+    await Effect.runPromise(reconnectClientSdk());
+  } catch (error) {
+    console.error('Failed to add addon:', error);
+    createNotification({
+      id: Math.random().toString(36).substring(7),
+      message: 'Failed to add addon',
+      type: 'error',
+    });
+  }
 }
 
 function openMarketplaceSourceManager() {

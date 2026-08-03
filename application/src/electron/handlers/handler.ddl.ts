@@ -188,7 +188,15 @@ interface DownloadLifecycle {
 
 const standaloneDownloadLifecycle: DownloadLifecycle = {
   runEffect: (effect) => {
-    Effect.runSync(effect);
+    Effect.runFork(
+      effect.pipe(
+        Effect.catchAll((error) =>
+          Effect.sync(() =>
+            console.error('[download] Lifecycle failed:', error)
+          )
+        )
+      )
+    );
   },
   onStatusChange: () => {},
   onTerminal: () => {},
@@ -2874,7 +2882,7 @@ const makeDownloadService = (
       ),
       shutdown: Effect.gen(function* () {
         yield* Effect.forEach(
-          activeDownloads.values(),
+          Array.from(activeDownloads.values()),
           ({ download }) => download.cancel(),
           { concurrency: 'unbounded', discard: true }
         );

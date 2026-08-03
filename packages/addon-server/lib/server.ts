@@ -6,7 +6,7 @@ import type {
   ConfigurationFile,
 } from '@ogi-sdk/connect';
 import { randomUUID } from 'crypto';
-import { Effect, Fiber } from 'effect';
+import { Effect, Fiber, Runtime } from 'effect';
 import { EventEmitter } from 'events';
 import http from 'http';
 import { type WebSocket, WebSocketServer } from 'ws';
@@ -45,6 +45,7 @@ export class AddonServer {
     req: http.IncomingMessage,
     res: http.ServerResponse
   ) => void;
+  private runtime?: Runtime.Runtime<never>;
 
   public constructor(private readonly config: AddonConfig) {
     this.config.secret ??= randomUUID();
@@ -88,7 +89,15 @@ export class AddonServer {
               .askInput(name, description, config)
               .pipe(Effect.catchAll(() => Effect.succeed({})))
           : {};
-        yield* Effect.promise(() => Promise.resolve(reply(answer)));
+        yield* Effect.tryPromise({
+          try: () => Promise.resolve(reply(answer)),
+          catch: (cause) => cause,
+        }).pipe(
+          Effect.tapError((error) =>
+            Effect.sync(() => console.error('Failed to reply to input:', error))
+          ),
+          Effect.ignore
+        );
       }
       this.eventEmitter.emit(event, ...args);
     });
@@ -231,6 +240,7 @@ export class AddonServer {
 
   public start(): Effect.Effect<void, NetworkError> {
     return Effect.gen(this, function* () {
+      this.runtime = yield* Effect.runtime<never>();
       this.detachListeners();
       this.wss?.close();
       this.wss = new WebSocketServer({ noServer: true });
@@ -266,7 +276,9 @@ export class AddonServer {
 
   /** Supervises Effects launched by EventEmitter and websocket callbacks. */
   private supervise<E>(effect: Effect.Effect<void, E>): void {
-    const fiber = Effect.runFork(effect);
+    const fiber = this.runtime
+      ? Runtime.runFork(this.runtime)(effect)
+      : Effect.runFork(effect);
     this.boundaryFibers.add(fiber);
     fiber.addObserver(() => this.boundaryFibers.delete(fiber));
   }

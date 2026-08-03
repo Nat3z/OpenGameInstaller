@@ -138,7 +138,7 @@ const handleTaskUpdate: ClientMessageHandler = (context, message) =>
         context.connection.addonInfo!.id
       );
       task.id = args.id;
-      yield* manager.addTask(task);
+      yield* manager.startTask(task);
     }
     task.progress = args.progress;
     task.logs = args.logs;

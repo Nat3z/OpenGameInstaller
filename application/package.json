@@ -47,7 +47,6 @@
   },
   "dependencies": {
     "@ctrl/qbittorrent": "^9.11.0",
-    "@effect/schema": "^0.75.5",
     "@ogi-sdk/addon-server": "workspace:*",
     "@ogi-sdk/client-kit": "workspace:*",
     "@ogi-sdk/connect": "workspace:*",
@@ -65,8 +64,7 @@
     "semver": "^7.7.3",
     "shell-quote": "^1.8.3",
     "utp-native": "^2.5.3",
-    "webtorrent": "^2.8.5",
-    "zod": "^3.25.76"
+    "webtorrent": "^2.8.5"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^5.1.1",

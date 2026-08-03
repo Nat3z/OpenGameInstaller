@@ -1,3 +1,4 @@
+import { AddonError, FileSystemError, formatError } from '@ogi/errors';
 import type { LibraryInfo } from '@ogi-sdk/connect';
 import { exec } from 'child_process';
 import { Effect } from 'effect';
@@ -572,20 +573,25 @@ export async function restoreBackup(
  * Reinstalls addon dependencies by running setup scripts for each addon.
  * This is called after an update that skipped node_modules during backup.
  */
-export async function reinstallAddonDependencies(
+export function reinstallAddonDependencies(
   onProgress?: (addon: string, current: number, total: number) => void
-): Promise<void> {
-  console.log('[startup] Reinstalling addon dependencies...');
+): Effect.Effect<void> {
+  return Effect.gen(function* () {
+    console.log('[startup] Reinstalling addon dependencies...');
 
-  // Check if general config exists
-  const configPath = join(__dirname, 'config/option/general.json');
-  if (!fs.existsSync(configPath)) {
-    console.log('[startup] No general config found, skipping addon reinstall');
-    return;
-  }
+    // Check if general config exists
+    const configPath = join(__dirname, 'config/option/general.json');
+    if (!fs.existsSync(configPath)) {
+      console.log(
+        '[startup] No general config found, skipping addon reinstall'
+      );
+      return;
+    }
 
-  try {
-    const generalConfig = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+    const generalConfig = yield* Effect.try({
+      try: () => JSON.parse(fs.readFileSync(configPath, 'utf-8')),
+      catch: (cause) => cause,
+    });
     const addons = generalConfig.addons as string[] | undefined;
 
     if (!addons || addons.length === 0) {
@@ -597,14 +603,11 @@ export async function reinstallAddonDependencies(
     for (const addon of addons) {
       current++;
       const parsedAddon = parseAddonLink(addon);
-      let addonPath = '';
-      let addonName = parsedAddon.addonName || 'unknown';
-
-      if (parsedAddon.kind === 'local') {
-        addonPath = parsedAddon.path;
-      } else {
-        addonPath = join(__dirname, 'addons', addonName);
-      }
+      const addonName = parsedAddon.addonName || 'unknown';
+      const addonPath =
+        parsedAddon.kind === 'local'
+          ? parsedAddon.path
+          : join(__dirname, 'addons', addonName);
 
       if (!fs.existsSync(addonPath)) {
         console.log(
@@ -622,15 +625,24 @@ export async function reinstallAddonDependencies(
       // Remove the old installation.log to force setup to run
       const installLogPath = join(addonPath, 'installation.log');
       if (fs.existsSync(installLogPath)) {
-        try {
-          fs.unlinkSync(installLogPath);
-          console.log(`[startup] Removed installation.log for ${addonName}`);
-        } catch (err: any) {
-          console.warn(
-            `[startup] Could not remove installation.log for ${addonName}:`,
-            err.message
-          );
-        }
+        yield* Effect.try({
+          try: () => fs.unlinkSync(installLogPath),
+          catch: (error) => error,
+        }).pipe(
+          Effect.tap(() =>
+            Effect.sync(() =>
+              console.log(`[startup] Removed installation.log for ${addonName}`)
+            )
+          ),
+          Effect.catchAll((error) =>
+            Effect.sync(() =>
+              console.warn(
+                `[startup] Could not remove installation.log for ${addonName}:`,
+                error
+              )
+            )
+          )
+        );
       }
 
       onProgress?.(addonName, current, addons.length);
@@ -638,36 +650,37 @@ export async function reinstallAddonDependencies(
       console.log(
         `[startup] Running setup for addon ${addonName} (${current}/${addons.length})`
       );
-      try {
-        const instance = await Effect.runPromise(
-          Addon.load(addonPath).pipe(
-            Effect.catchAll(() => Effect.succeed(null))
-          )
-        );
-        const success = instance
-          ? await Effect.runPromise(instance.install())
-          : false;
-        if (success) {
-          console.log(`[startup] Successfully set up ${addonName}`);
-        } else {
-          console.error(`[startup] Failed to set up ${addonName}`);
-        }
-      } catch (setupError: any) {
-        console.error(
-          `[startup] Error setting up ${addonName}:`,
-          setupError.message
-        );
-        // Continue with other addons
+      const success = yield* Addon.load(addonPath).pipe(
+        Effect.flatMap((instance) => instance.install()),
+        Effect.catchAll((setupError) =>
+          Effect.sync(() => {
+            console.error(
+              `[startup] Error setting up ${addonName}:`,
+              setupError
+            );
+            // Continue with other addons
+            return false;
+          })
+        )
+      );
+      if (success) {
+        console.log(`[startup] Successfully set up ${addonName}`);
+      } else {
+        console.error(`[startup] Failed to set up ${addonName}`);
       }
     }
 
     console.log('[startup] Addon dependency reinstallation complete');
-  } catch (error: any) {
-    console.error(
-      '[startup] Failed to reinstall addon dependencies:',
-      error.message
-    );
-  }
+  }).pipe(
+    Effect.catchAll((error) =>
+      Effect.sync(() =>
+        console.error(
+          '[startup] Failed to reinstall addon dependencies:',
+          error
+        )
+      )
+    )
+  );
 }
 
 export async function convertLibrary() {
@@ -728,100 +741,107 @@ function isGitRepository(repoPath: string): boolean {
   return false;
 }
 
-export async function checkForAddonUpdates(
+export function checkForAddonUpdates(
   mainWindow: BrowserWindow
-): Promise<void> {
-  if (!fs.existsSync(join(__dirname, 'addons'))) {
-    return;
-  }
-  const generalConfig = JSON.parse(
-    fs.readFileSync(join(__dirname, 'config/option/general.json'), 'utf-8')
-  );
-  const addons = generalConfig.addons as string[];
-  const normalizedAddons = addons.map((addon) => normalizeAddonLink(addon));
-  for (const addonWithMarketplaceUrl of normalizedAddons) {
-    const parsedAddon = parseAddonLink(addonWithMarketplaceUrl);
-    if (parsedAddon.kind === 'local') continue;
-    let addonPath = join(__dirname, 'addons', parsedAddon.addonName);
-    const addonName = parsedAddon.addonName;
-
-    if (!isGitRepository(addonPath)) {
-      console.log(
-        `Skipping addon update check for ${addonName}: ${addonPath} is not a valid git repository`
-      );
-      continue;
+): Effect.Effect<void, AddonError | FileSystemError> {
+  return Effect.gen(function* () {
+    if (!fs.existsSync(join(__dirname, 'addons'))) {
+      return;
     }
-
-    // Get the addon and compare the commit hashes sequentially so duplicate
-    // addon paths cannot race through the shared FETCH_HEAD ref.
-    const addonGit = new Addon.Git({
-      path: addonPath,
+    const configPath = join(__dirname, 'config/option/general.json');
+    const generalConfig = yield* Effect.try({
+      try: () => JSON.parse(fs.readFileSync(configPath, 'utf-8')),
+      catch: (cause) =>
+        new FileSystemError({
+          message: `Failed to read addon update configuration: ${formatError(cause)}`,
+          path: configPath,
+          cause,
+        }),
     });
+    const addons = generalConfig.addons as string[];
+    const normalizedAddons = addons.map((addon) => normalizeAddonLink(addon));
+    for (const addonWithMarketplaceUrl of normalizedAddons) {
+      const parsedAddon = parseAddonLink(addonWithMarketplaceUrl);
+      if (parsedAddon.kind === 'local') continue;
+      const addonPath = join(__dirname, 'addons', parsedAddon.addonName);
+      const addonName = parsedAddon.addonName;
 
-    const localHash = await Effect.runPromise(addonGit.getCurrentHash());
-    let remoteHash = 'latest';
-    let isUpdate = false;
-
-    if (parsedAddon.kind === 'marketplace') {
-      const marketplace = await Effect.runPromise(
-        loadMarketplace(parsedAddon.marketplaceUrl)
-      );
-      const marketplaceAddon = marketplace.getAddon(parsedAddon.gitUrl);
-      const explicitRef = parsedAddon.explicitRef;
-      if (explicitRef) {
-        const explicitRefResult = await Effect.runPromise(
-          Effect.either(addonGit.resolveRemoteRef('origin', explicitRef))
-        );
-        if (explicitRefResult._tag === 'Left') {
-          console.error(
-            `[startup] Failed to resolve ${explicitRef} for ${addonName}:`,
-            explicitRefResult.left
-          );
-          continue;
-        }
-        remoteHash = explicitRefResult.right;
-      } else {
-        remoteHash = marketplaceAddon?.pinnedCommit ?? 'latest';
-      }
-      isUpdate = localHash !== remoteHash;
-    }
-
-    console.log(
-      '[startup] Checking update for',
-      addonName,
-      'local:',
-      localHash,
-      'remote:',
-      remoteHash
-    );
-
-    if (remoteHash === 'latest') {
-      // dry fetch dry run - check if updates are available
-      const status = await Effect.runPromise(Effect.either(addonGit.fetch()));
-      if (status._tag === 'Left') {
-        console.error(
-          `[startup] Error checking updates for ${addonName}:`,
-          status.left
+      if (!isGitRepository(addonPath)) {
+        console.log(
+          `Skipping addon update check for ${addonName}: ${addonPath} is not a valid git repository`
         );
         continue;
       }
-      isUpdate = !status.right.alreadyUpToDate;
-    }
-    if (isUpdate) {
-      sendNotification({
-        message: `Addon ${addonName} has updates.`,
-        id: Math.random().toString(36).substring(7),
-        type: 'info',
+
+      // Get the addon and compare the commit hashes sequentially so duplicate
+      // addon paths cannot race through the shared FETCH_HEAD ref.
+      const addonGit = new Addon.Git({
+        path: addonPath,
       });
-      mainWindow?.webContents.send(
-        'addon:update-available',
-        addonWithMarketplaceUrl
+
+      const localHash = yield* addonGit.getCurrentHash();
+      let remoteHash = 'latest';
+      let isUpdate = false;
+
+      if (parsedAddon.kind === 'marketplace') {
+        const marketplace = yield* loadMarketplace(parsedAddon.marketplaceUrl);
+        const marketplaceAddon = marketplace.getAddon(parsedAddon.gitUrl);
+        const explicitRef = parsedAddon.explicitRef;
+        if (explicitRef) {
+          const explicitRefResult = yield* Effect.either(
+            addonGit.resolveRemoteRef('origin', explicitRef)
+          );
+          if (explicitRefResult._tag === 'Left') {
+            console.error(
+              `[startup] Failed to resolve ${explicitRef} for ${addonName}:`,
+              explicitRefResult.left
+            );
+            continue;
+          }
+          remoteHash = explicitRefResult.right;
+        } else {
+          remoteHash = marketplaceAddon?.pinnedCommit ?? 'latest';
+        }
+        isUpdate = localHash !== remoteHash;
+      }
+
+      console.log(
+        '[startup] Checking update for',
+        addonName,
+        'local:',
+        localHash,
+        'remote:',
+        remoteHash
       );
-      console.log(`Addon ${addonName} has updates.`);
-    } else {
-      console.log(`Addon ${addonName} is up to date.`);
+
+      if (remoteHash === 'latest') {
+        // dry fetch dry run - check if updates are available
+        const status = yield* Effect.either(addonGit.fetch());
+        if (status._tag === 'Left') {
+          console.error(
+            `[startup] Error checking updates for ${addonName}:`,
+            status.left
+          );
+          continue;
+        }
+        isUpdate = !status.right.alreadyUpToDate;
+      }
+      if (isUpdate) {
+        sendNotification({
+          message: `Addon ${addonName} has updates.`,
+          id: Math.random().toString(36).substring(7),
+          type: 'info',
+        });
+        mainWindow?.webContents.send(
+          'addon:update-available',
+          addonWithMarketplaceUrl
+        );
+        console.log(`Addon ${addonName} has updates.`);
+      } else {
+        console.log(`Addon ${addonName} is up to date.`);
+      }
     }
-  }
+  });
 }
 
 export async function removeCachedAppUpdates() {

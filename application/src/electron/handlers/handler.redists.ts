@@ -1,9 +1,4 @@
-import {
-  formatError,
-  LibraryError,
-  PlatformError,
-  runEffectBoundary,
-} from '@ogi/errors';
+import { formatError, LibraryError, PlatformError } from '@ogi/errors';
 import type { LibraryInfo } from '@ogi-sdk/connect';
 import { Effect } from 'effect';
 import { type BrowserWindow, ipcMain } from 'electron';
@@ -19,6 +14,7 @@ import {
 import { loadLibraryInfo } from '@/electron/handlers/helpers.app/library.js';
 import { isLinux } from '@/electron/handlers/helpers.app/platform.js';
 import { sendIPCMessage } from '@/electron/main.js';
+import { runEffectBoundary } from '@/electron/runtime.js';
 
 const installRedistributables = (
   mainWindow: BrowserWindow,

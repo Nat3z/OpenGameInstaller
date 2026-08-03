@@ -1,3 +1,5 @@
+import { formatError, UpdateError } from '@ogi/errors';
+import { Effect } from 'effect';
 import { app, BrowserWindow } from 'electron';
 import { join } from 'path';
 import { execute as executeMigrations } from '@/electron/migrations.js';
@@ -113,89 +115,114 @@ function isShutdownPendingFromUpdates(results: SystemUpdateResult[]): boolean {
  *
  * @param mainWindow - Optional. When provided, use this window for splash UI instead of creating a separate splash window.
  */
-export async function runStartupTasks(
+export function runStartupTasks(
   mainWindow?: BrowserWindow | null
-): Promise<StartupTasksResult> {
+): Effect.Effect<StartupTasksResult, UpdateError> {
   let shutdownPending = false;
-  try {
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      splashTargetWindow = mainWindow;
-    } else {
-      // Legacy: separate splash window (e.g. if run without main window)
-      splashWindow = createSplashWindow();
-    }
 
-    // Restore backup if it exists
-    updateSplashStatus('Restoring backup...');
-    const backupResult = await restoreBackup((file, current, total) => {
-      updateSplashStatus('Restoring backup', `${file} (${current}/${total})`);
-      updateSplashProgress(current, total, '');
-    });
+  return Effect.scoped(
+    Effect.gen(function* () {
+      yield* Effect.acquireRelease(
+        Effect.sync(() => {
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            splashTargetWindow = mainWindow;
+          } else {
+            // Legacy: separate splash window (e.g. if run without main window)
+            splashWindow = createSplashWindow();
+          }
+        }),
+        () =>
+          Effect.sync(() => {
+            if (!shutdownPending) {
+              splashTargetWindow = null;
+              // Ensure splash window is closed if it was created
+              closeSplashWindow();
+            }
+          })
+      );
 
-    // Run any migrations if necessary
-    updateSplashStatus('Running migrations...');
-    // not async because it relies on the app being open
-    executeMigrations();
+      // Restore backup if it exists
+      updateSplashStatus('Restoring backup...');
+      const backupResult = yield* Effect.tryPromise({
+        try: () =>
+          restoreBackup((file, current, total) => {
+            updateSplashStatus(
+              'Restoring backup',
+              `${file} (${current}/${total})`
+            );
+            updateSplashProgress(current, total, '');
+          }),
+        catch: (cause) =>
+          new UpdateError({
+            message: `Failed to restore startup backup: ${formatError(cause)}`,
+            cause,
+          }),
+      });
 
-    // Remove cached app updates
-    updateSplashStatus('Cleaning up...');
-    await new Promise((resolve, _) =>
-      removeCachedAppUpdates()
-        .then(resolve)
-        .catch(() => {
-          console.error('[chore] Failed to remove cached app updates');
-          resolve(void 0);
-        })
-    );
+      // Run any migrations if necessary
+      updateSplashStatus('Running migrations...');
+      yield* executeMigrations().pipe(
+        Effect.mapError(
+          (cause) =>
+            new UpdateError({
+              message: `Failed to run startup migrations: ${cause.message}`,
+              cause,
+            })
+        )
+      );
 
-    // If addons need reinstallation (node_modules were skipped during backup)
-    if (backupResult.needsAddonReinstall) {
-      updateSplashStatus('Reinstalling addon dependencies...');
-      try {
-        await reinstallAddonDependencies((addonName, current, total) => {
+      // Remove cached app updates
+      updateSplashStatus('Cleaning up...');
+      yield* Effect.tryPromise({
+        try: () => removeCachedAppUpdates(),
+        catch: (cause) =>
+          new UpdateError({
+            message: `Failed to remove cached app updates: ${formatError(cause)}`,
+            cause,
+          }),
+      }).pipe(
+        Effect.catchAll((error) =>
+          Effect.sync(() =>
+            console.error('[chore] Failed to remove cached app updates', error)
+          )
+        )
+      );
+
+      // If addons need reinstallation (node_modules were skipped during backup)
+      if (backupResult.needsAddonReinstall) {
+        updateSplashStatus('Reinstalling addon dependencies...');
+        yield* reinstallAddonDependencies((addonName, current, total) => {
           updateSplashStatus(
             'Installing addon dependencies',
             `${addonName} (${current}/${total})`
           );
           updateSplashProgress(current, total, '');
         });
-      } catch (error) {
-        console.error(
-          '[startup] Failed to reinstall addon dependencies:',
-          error
-        );
-        // Continue anyway - addons may still work or can be reinstalled later
       }
-    }
 
-    // Dedicated online system update task (installer/setup, UMU, and future system updaters)
-    updateSplashStatus('Checking for system updates...');
-    const updaterCallbacks: UpdaterCallbacks = {
-      onStatus: (text: string, subtext?: string) => {
-        updateSplashStatus(text, subtext);
-      },
-      onProgress: (current: number, total: number, speed: string) => {
-        updateSplashProgress(current, total, speed);
-      },
-    };
-    const updateResults =
-      await createDefaultSystemUpdateManager().updateOnlineSystem(
-        updaterCallbacks
-      );
+      // Dedicated online system update task (installer/setup, UMU, and future system updaters)
+      updateSplashStatus('Checking for system updates...');
+      const updaterCallbacks: UpdaterCallbacks = {
+        onStatus: (text: string, subtext?: string) => {
+          updateSplashStatus(text, subtext);
+        },
+        onProgress: (current: number, total: number, speed: string) => {
+          updateSplashProgress(current, total, speed);
+        },
+      };
+      const updateResults =
+        yield* createDefaultSystemUpdateManager().updateOnlineSystem(
+          updaterCallbacks
+        );
 
-    shutdownPending = isShutdownPendingFromUpdates(updateResults);
+      shutdownPending = isShutdownPendingFromUpdates(updateResults);
 
-    // Final status before main window loads (skip when installer update will exit)
-    if (!shutdownPending) {
-      updateSplashStatus('Starting application...');
-    }
-  } finally {
-    if (!shutdownPending) {
-      splashTargetWindow = null;
-      // Ensure splash window is closed if it was created
-      closeSplashWindow();
-    }
-  }
+      // Final status before main window loads (skip when installer update will exit)
+      if (!shutdownPending) {
+        updateSplashStatus('Starting application...');
+      }
 
-  return { shutdownPending };
+      return { shutdownPending };
+    })
+  );
 }

@@ -28,6 +28,10 @@ import { Addon } from '@/electron/manager/manager.addon.js';
 import { waitForAddonsConfigured } from '@/electron/manager/manager.addon-readiness.js';
 import { __dirname, isDev } from '@/electron/manager/manager.paths.js';
 import { stopClient } from '@/electron/manager/manager.webtorrent.js';
+import {
+  disposeElectronRuntime,
+  runElectronEffect,
+} from '@/electron/runtime.js';
 import { runLaunchAppHooks } from '@/electron/server/addon-lifecycle.js';
 import {
   addonServer,
@@ -170,7 +174,7 @@ async function handleLaunchHooks(
   if (mainWindow) {
     registerMainHandlers(mainWindow);
     await startAddonRuntime();
-    const startupResult = await runStartupTasks(mainWindow);
+    const startupResult = await runElectronEffect(runStartupTasks(mainWindow));
     if (startupResult.shutdownPending) {
       return;
     }
@@ -208,7 +212,7 @@ async function launchGameById(gameId: number, wrapperCommand?: string | null) {
     registerMainHandlers(mainWindow);
     await startAddonRuntime();
     // Run startup tasks first
-    const startupResult = await runStartupTasks(mainWindow);
+    const startupResult = await runElectronEffect(runStartupTasks(mainWindow));
     if (startupResult.shutdownPending) {
       return;
     }
@@ -403,7 +407,7 @@ async function ensureAddonServerRunning() {
   if (isAddonServerListening) return;
 
   try {
-    await Effect.runPromise(startAddonServer());
+    await runElectronEffect(startAddonServer());
     console.log(`Addon Server is running on http://localhost:${port}`);
     console.log(`Server is being executed by electron!`);
   } catch (error) {
@@ -425,7 +429,7 @@ async function startAddonRuntime() {
     id: Math.random().toString(36).substring(7),
     type: 'success',
   });
-  await Effect.runPromise(startAddons());
+  await runElectronEffect(startAddons());
 }
 
 async function onMainAppReady() {
@@ -435,10 +439,10 @@ async function onMainAppReady() {
   // Run addon update check first so addon:update-available is sent before all-addons-started.
   // That way the frontend receives updates in addonUpdates before the handler runs and can auto-update.
   if (mainWindow && !mainWindow.isDestroyed()) {
-    await checkForAddonUpdates(mainWindow);
+    await runElectronEffect(checkForAddonUpdates(mainWindow));
   }
   await sendIPCMessage('all-addons-started');
-  const configuredAddons = await Effect.runPromise(waitForAddonsConfigured());
+  const configuredAddons = await runElectronEffect(waitForAddonsConfigured());
   for (const connection of configuredAddons) {
     await sendIPCMessage('addon-connected', connection.addonInfo!.id);
   }
@@ -567,7 +571,7 @@ async function startAppFlow(win: BrowserWindow) {
   // Run startup tasks; splash updates go to the main window
   let shutdownPending = false;
   if (win && !win.isDestroyed()) {
-    const startupResult = await runStartupTasks(win);
+    const startupResult = await runElectronEffect(runStartupTasks(win));
     shutdownPending = startupResult.shutdownPending;
   }
 
@@ -636,7 +640,7 @@ async function runAddonLaunchEvent(
     return { success: false, error: 'Game not found in library' };
   }
 
-  return Effect.runPromise(runLaunchAppHooks(libraryInfo, launchType));
+  return runElectronEffect(runLaunchAppHooks(libraryInfo, launchType));
 }
 
 async function handleRemoteLaunchRequest(
@@ -689,7 +693,7 @@ async function handleRemoteLaunchRequest(
 
     let wrapperResult: ExecuteWrapperResult | null = null;
     if (payload.wrapperCommand.includes('steam-launch-wrapper')) {
-      wrapperResult = await Effect.runPromise(
+      wrapperResult = await runElectronEffect(
         executeWrapperCommandForApp(
           payload.gameId,
           payload.wrapperCommand,
@@ -698,7 +702,7 @@ async function handleRemoteLaunchRequest(
         )
       );
     } else {
-      wrapperResult = await Effect.runPromise(
+      wrapperResult = await runElectronEffect(
         executeWrapperCommandForApp(
           payload.gameId,
           payload.wrapperCommand,
@@ -736,7 +740,7 @@ async function handleRemoteLaunchRequest(
     return preResult;
   }
 
-  const launchResult = await Effect.runPromise(
+  const launchResult = await runElectronEffect(
     launchGameFromLibrary(payload.gameId, mainWindow, payload.launchEnv)
   );
 
@@ -828,7 +832,7 @@ app.on('ready', async () => {
 // Quit when all windows are closed.
 app.on('window-all-closed', () => {
   if (!gotTheLock || process.platform === 'darwin') return;
-  Effect.runFork(
+  void runElectronEffect(
     Effect.gen(function* () {
       releasePowerSaveBlock();
       console.log('Stopping torrent client...');
@@ -842,10 +846,11 @@ app.on('window-all-closed', () => {
     }).pipe(
       Effect.catchAll((error) =>
         Effect.sync(() => console.error('Error during cleanup:', error))
-      ),
-      Effect.ensuring(Effect.sync(() => app.quit()))
+      )
     )
-  );
+  ).finally(() => {
+    void disposeElectronRuntime().finally(() => app.quit());
+  });
 });
 
 app.on('activate', async function () {

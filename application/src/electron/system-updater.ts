@@ -1,3 +1,5 @@
+import { formatError, UpdateError } from '@ogi/errors';
+import { Effect } from 'effect';
 import { getEffectiveOnlineState } from '@/electron/lib/online.js';
 import { downloadLatestUmu } from '@/electron/startup.js';
 import {
@@ -15,8 +17,10 @@ export type SystemUpdateResult = {
 export interface SystemUpdater {
   id: string;
   label: string;
-  shouldRun(): boolean | Promise<boolean>;
-  update(callbacks: UpdaterCallbacks): Promise<SystemUpdateResult>;
+  shouldRun(): Effect.Effect<boolean, UpdateError>;
+  update(
+    callbacks: UpdaterCallbacks
+  ): Effect.Effect<SystemUpdateResult, UpdateError>;
 }
 
 export class SystemUpdateManager {
@@ -30,36 +34,55 @@ export class SystemUpdateManager {
     this.updaters.push(updater);
   }
 
-  async updateOnlineSystem(
+  updateOnlineSystem(
     callbacks: UpdaterCallbacks
-  ): Promise<SystemUpdateResult[]> {
-    const onlineState = getEffectiveOnlineState();
-    if (!onlineState.effectiveOnline) {
-      console.log(
-        `[system-updater] Offline mode enabled (${onlineState.reason}), skipping updates`
-      );
-      return [];
-    }
-
-    const results: SystemUpdateResult[] = [];
-    for (const updater of this.updaters) {
-      const shouldRun = await updater.shouldRun();
-      if (!shouldRun) {
-        console.log(`[system-updater] Skipping ${updater.id}`);
-        continue;
+  ): Effect.Effect<SystemUpdateResult[]> {
+    return Effect.gen(this, function* () {
+      const onlineState = getEffectiveOnlineState();
+      if (!onlineState.effectiveOnline) {
+        console.log(
+          `[system-updater] Offline mode enabled (${onlineState.reason}), skipping updates`
+        );
+        return [];
       }
 
-      callbacks.onStatus(`Checking ${updater.label} updates...`);
-      try {
-        results.push(await updater.update(callbacks));
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        console.error(`[system-updater] ${updater.id} failed:`, error);
-        results.push({ id: updater.id, success: false, error: message });
-      }
-    }
+      const results: SystemUpdateResult[] = [];
+      for (const updater of this.updaters) {
+        const shouldRun = yield* updater.shouldRun().pipe(
+          Effect.catchAll((error) => {
+            console.error(
+              `[system-updater] Could not determine whether ${updater.id} should run:`,
+              error
+            );
+            results.push({
+              id: updater.id,
+              success: false,
+              error: error.message,
+            });
+            return Effect.succeed(false);
+          })
+        );
+        if (!shouldRun) {
+          console.log(`[system-updater] Skipping ${updater.id}`);
+          continue;
+        }
 
-    return results;
+        callbacks.onStatus(`Checking ${updater.label} updates...`);
+        const result = yield* updater.update(callbacks).pipe(
+          Effect.catchAll((error) => {
+            console.error(`[system-updater] ${updater.id} failed:`, error);
+            return Effect.succeed<SystemUpdateResult>({
+              id: updater.id,
+              success: false,
+              error: error.message,
+            });
+          })
+        );
+        results.push(result);
+      }
+
+      return results;
+    });
   }
 }
 
@@ -67,18 +90,28 @@ export class SetupAppImageUpdater implements SystemUpdater {
   id = 'setup-appimage';
   label = 'installer';
 
-  shouldRun(): boolean {
-    return true;
+  shouldRun(): Effect.Effect<boolean> {
+    return Effect.succeed(true);
   }
 
-  async update(callbacks: UpdaterCallbacks): Promise<SystemUpdateResult> {
-    const result = await checkIfInstallerUpdateAvailable(callbacks);
-    return {
-      id: this.id,
-      success: result.success,
-      updated: result.updated,
-      error: result.error,
-    };
+  update(
+    callbacks: UpdaterCallbacks
+  ): Effect.Effect<SystemUpdateResult, UpdateError> {
+    return Effect.tryPromise({
+      try: () => checkIfInstallerUpdateAvailable(callbacks),
+      catch: (cause) =>
+        new UpdateError({
+          message: `Failed to check installer updates: ${formatError(cause)}`,
+          cause,
+        }),
+    }).pipe(
+      Effect.map((result) => ({
+        id: this.id,
+        success: result.success,
+        updated: result.updated,
+        error: result.error,
+      }))
+    );
   }
 }
 
@@ -86,18 +119,26 @@ export class UmuLauncherUpdater implements SystemUpdater {
   id = 'umu-launcher';
   label = 'UMU launcher';
 
-  shouldRun(): boolean {
-    return process.platform === 'linux';
+  shouldRun(): Effect.Effect<boolean> {
+    return Effect.succeed(process.platform === 'linux');
   }
 
-  async update(): Promise<SystemUpdateResult> {
-    const result = await downloadLatestUmu();
-    return {
-      id: this.id,
-      success: result.success,
-      updated: result.updated,
-      error: result.error,
-    };
+  update(): Effect.Effect<SystemUpdateResult, UpdateError> {
+    return Effect.tryPromise({
+      try: () => downloadLatestUmu(),
+      catch: (cause) =>
+        new UpdateError({
+          message: `Failed to update UMU launcher: ${formatError(cause)}`,
+          cause,
+        }),
+    }).pipe(
+      Effect.map((result) => ({
+        id: this.id,
+        success: result.success,
+        updated: result.updated,
+        error: result.error,
+      }))
+    );
   }
 }
 

@@ -3,11 +3,7 @@
  * Replaces the legacy Steam/flatpak wine system with UMU Launcher
  */
 
-import {
-  formatError,
-  PlatformError,
-  runEffectBoundary as runUmuBoundary,
-} from '@ogi/errors';
+import { formatError, PlatformError } from '@ogi/errors';
 import type { LibraryInfo } from '@ogi-sdk/connect';
 import { spawn } from 'child_process';
 import { Effect } from 'effect';
@@ -35,6 +31,10 @@ import {
 } from '@/electron/lib/umu-prefix-migration.js';
 import { sendNotification } from '@/electron/main.js';
 import { __dirname } from '@/electron/manager/manager.paths.js';
+import {
+  runElectronEffect,
+  runEffectBoundary as runUmuBoundary,
+} from '@/electron/runtime.js';
 import { downloadLatestUmu } from '@/electron/startup.js';
 
 /**
@@ -1116,7 +1116,7 @@ export async function migrateToUmu(
     configuredPrefix: configuredLegacyPrefix,
   });
 
-  const result = await Effect.runPromise(
+  const result = await runElectronEffect(
     Effect.either(
       stagedPrefixMigration({
         appID,

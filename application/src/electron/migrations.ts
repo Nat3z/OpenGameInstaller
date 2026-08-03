@@ -1,3 +1,4 @@
+import { FileSystemError, formatError } from '@ogi/errors';
 import { exec, spawn } from 'child_process';
 import { Effect } from 'effect';
 import * as fsSync from 'fs';
@@ -16,7 +17,7 @@ let migrations: {
     to: string;
     description: string;
     platform: 'linux' | 'win32' | 'all';
-    run: () => Promise<void>;
+    run: () => Promise<void> | Effect.Effect<void, unknown>;
   };
 } = {
   'add-theme-to-general': {
@@ -259,15 +260,19 @@ let migrations: {
     to: '2.5.0',
     description: 'Adds a desktop shortcut for OpenGameInstaller',
     platform: 'linux',
-    run: async () => {
-      await Effect.runPromise(addToDesktop());
-      sendNotification({
-        message:
-          'Desktop shortcut created successfully. You can now find OpenGameInstaller in your Desktop.',
-        id: Math.random().toString(36).substring(7),
-        type: 'success',
-      });
-    },
+    run: () =>
+      addToDesktop().pipe(
+        Effect.tap(() =>
+          Effect.sync(() =>
+            sendNotification({
+              message:
+                'Desktop shortcut created successfully. You can now find OpenGameInstaller in your Desktop.',
+              id: Math.random().toString(36).substring(7),
+              type: 'success',
+            })
+          )
+        )
+      ),
   },
   'migrate-addon-source-associations': {
     from: '0.0.0',
@@ -419,44 +424,82 @@ let migrations: {
  *
  * Reads the last applied version from config/option/lastVersion.txt (defaults to "0.0.0"), skips running migrations if the installation marker config/option/installed.json is missing, executes each migration whose version range applies to the stored last version and whose platform matches the current process, and updates config/option/lastVersion.txt to the current VERSION when finished.
  */
-export async function execute() {
-  // check if the thing is even installed, if not, don't run any migrations because it was just installed
-  const configDir = join(__dirname, 'config/option');
-  if (!fsSync.existsSync(join(configDir, 'installed.json'))) {
-    // generate the folder path too
-    await fs.mkdir(configDir, { recursive: true });
-    // no need to run migrations, the person hasn't even launched anything.
-    await fs.writeFile(join(configDir, 'lastVersion.txt'), VERSION, 'utf-8');
-    return;
-  }
+export function execute(): Effect.Effect<void, FileSystemError> {
+  return Effect.gen(function* () {
+    // check if the thing is even installed, if not, don't run any migrations because it was just installed
+    const configDir = join(__dirname, 'config/option');
+    if (!fsSync.existsSync(join(configDir, 'installed.json'))) {
+      // generate the folder path too
+      yield* Effect.tryPromise({
+        try: async () => {
+          await fs.mkdir(configDir, { recursive: true });
+          // no need to run migrations, the person hasn't even launched anything.
+          await fs.writeFile(
+            join(configDir, 'lastVersion.txt'),
+            VERSION,
+            'utf-8'
+          );
+        },
+        catch: (cause) =>
+          new FileSystemError({
+            message: `Failed to initialize migration state: ${formatError(cause)}`,
+            path: configDir,
+            cause,
+          }),
+      });
+      return;
+    }
 
-  let lastVersion: string = '0.0.0';
-  if (fsSync.existsSync(join(__dirname, 'config/option/lastVersion.txt'))) {
-    lastVersion = await fs.readFile(
-      join(__dirname, 'config/option/lastVersion.txt'),
-      'utf-8'
-    );
-  }
+    let lastVersion: string = '0.0.0';
+    const lastVersionPath = join(configDir, 'lastVersion.txt');
+    if (fsSync.existsSync(lastVersionPath)) {
+      lastVersion = yield* Effect.tryPromise({
+        try: () => fs.readFile(lastVersionPath, 'utf-8'),
+        catch: (cause) =>
+          new FileSystemError({
+            message: `Failed to read migration state: ${formatError(cause)}`,
+            path: lastVersionPath,
+            cause,
+          }),
+      });
+    }
 
-  console.log('[migration] local version:', lastVersion);
-  // enroll into certain migrations
-  for (const migration of Object.keys(migrations)) {
-    if (
-      semver.gte(lastVersion, migrations[migration].from) &&
-      semver.lt(lastVersion, migrations[migration].to) &&
-      (migrations[migration].platform === 'all' ||
-        migrations[migration].platform === process.platform)
-    ) {
-      console.log(
-        `[migration] ${migrations[migration].description}\n - from: ${migrations[migration].from}\n - to: ${migrations[migration].to}`
-      );
-      try {
-        await migrations[migration].run();
-        console.log(`[migration] completed`);
-      } catch (error) {
-        console.error(`[migration] failed: ${error}`);
+    console.log('[migration] local version:', lastVersion);
+    // enroll into certain migrations
+    for (const migration of Object.values(migrations)) {
+      if (
+        semver.gte(lastVersion, migration.from) &&
+        semver.lt(lastVersion, migration.to) &&
+        (migration.platform === 'all' ||
+          migration.platform === process.platform)
+      ) {
+        console.log(
+          `[migration] ${migration.description}\n - from: ${migration.from}\n - to: ${migration.to}`
+        );
+        const operation = migration.run();
+        yield* (
+          Effect.isEffect(operation)
+            ? operation
+            : Effect.promise(() => operation)
+        ).pipe(
+          Effect.tap(() =>
+            Effect.sync(() => console.log('[migration] completed'))
+          ),
+          Effect.catchAll((error) =>
+            Effect.sync(() => console.error(`[migration] failed: ${error}`))
+          )
+        );
       }
     }
-  }
-  await fs.writeFile(join(__dirname, 'config/option/lastVersion.txt'), VERSION);
+
+    yield* Effect.tryPromise({
+      try: () => fs.writeFile(lastVersionPath, VERSION),
+      catch: (cause) =>
+        new FileSystemError({
+          message: `Failed to save migration state: ${formatError(cause)}`,
+          path: lastVersionPath,
+          cause,
+        }),
+    });
+  });
 }

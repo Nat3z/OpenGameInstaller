@@ -8,11 +8,16 @@ export class GitSyncError extends Data.TaggedError('GitSyncError')<{
   readonly cause?: unknown;
 }> {}
 
+type GitCommandError = {
+  readonly message: string;
+  readonly cause?: unknown;
+};
+
 export type GitCommandRunner = (
   command: string,
   args: string[],
   options: { cwd: string }
-) => Effect.Effect<CommandResult, GitSyncError>;
+) => Effect.Effect<CommandResult, GitCommandError>;
 
 export type BleedingEdgeSyncResult = {
   beforeSyncSha: string;
@@ -24,11 +29,16 @@ const ALL_ORIGIN_HEADS_REFSPEC = '+refs/heads/*:refs/remotes/origin/*';
 
 const withOperation = <A>(
   operation: GitSyncError['operation'],
-  effect: Effect.Effect<A, GitSyncError>
+  effect: Effect.Effect<A, GitCommandError>
 ): Effect.Effect<A, GitSyncError> =>
   Effect.mapError(
     effect,
-    (cause) => new GitSyncError({ message: cause.message, operation, cause })
+    (error) =>
+      new GitSyncError({
+        message: error.message,
+        operation,
+        cause: error.cause ?? error,
+      })
   );
 
 export function syncBleedingEdgeRepo(

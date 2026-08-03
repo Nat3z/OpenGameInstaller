@@ -23,9 +23,9 @@ export class DirectService extends BaseService {
     event: MouseEvent | null,
     htmlButton?: HTMLButtonElement
   ) {
+    const button = htmlButton ?? event?.currentTarget ?? null;
     return Effect.gen(function* () {
       if (result.downloadType !== 'direct') return;
-      const button = htmlButton ?? event?.currentTarget ?? null;
       if (!(button instanceof HTMLButtonElement)) return;
 
       if (!result.files?.length) {
@@ -94,6 +94,14 @@ export class DirectService extends BaseService {
     }).pipe(
       Effect.tapError((error) =>
         Effect.sync(() => console.error('Direct download error:', error))
+      ),
+      Effect.ensuring(
+        Effect.sync(() => {
+          if (button instanceof HTMLButtonElement) {
+            button.textContent = 'Download';
+            button.disabled = false;
+          }
+        })
       )
     );
   }

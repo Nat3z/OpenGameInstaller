@@ -5,32 +5,39 @@ import { getConfigClientOption } from '@/frontend/lib/config/client';
 
 export type AddonInfo = ConnectedAddonInfo;
 
-function initialize(server: Connection) {
-  return Effect.all([
-    server.on('notification', (notification) =>
-      Effect.sync(() => {
-        console.log('notification', notification);
-        document.dispatchEvent(
-          new CustomEvent('new-notification', { detail: notification })
-        );
-      })
-    ),
-    server.on('input-asked', ({ config, name, description, reply }) =>
-      Effect.sync(() => {
-        document.dispatchEvent(
-          new CustomEvent('input-asked', {
-            detail: {
-              id: Math.random().toString(36).substring(7),
-              config,
-              name,
-              description,
-              reply,
-            },
+function initialize(server: Connection): Effect.Effect<void, NetworkError> {
+  return Effect.tryPromise({
+    try: () =>
+      Promise.all([
+        server.on('notification', (notification) =>
+          Effect.sync(() => {
+            console.log('notification', notification);
+            document.dispatchEvent(
+              new CustomEvent('new-notification', { detail: notification })
+            );
           })
-        );
-      })
-    ),
-  ]).pipe(Effect.asVoid);
+        ),
+        server.on('input-asked', ({ config, name, description, reply }) =>
+          Effect.sync(() => {
+            document.dispatchEvent(
+              new CustomEvent('input-asked', {
+                detail: {
+                  id: Math.random().toString(36).substring(7),
+                  config,
+                  name,
+                  description,
+                  reply,
+                },
+              })
+            );
+          })
+        ),
+      ]).then(() => undefined),
+    catch: (cause) =>
+      new NetworkError({
+        message: `Failed to initialize the addon server connection: ${cause instanceof Error ? cause.message : String(cause)}`,
+      }),
+  });
 }
 
 export function connectClientSdk() {
@@ -71,36 +78,30 @@ export function queryConnectedAddons<T = AddonInfo>() {
   );
 }
 
-let reconnectInFlight: Promise<void> | null = null;
+let reconnectInFlight: Effect.Effect<void, NetworkError> | null = null;
 
-export function reconnectClientSdk() {
-  return Effect.tryPromise({
-    try: () => {
-      if (reconnectInFlight) return reconnectInFlight;
+export function reconnectClientSdk(): Effect.Effect<void, NetworkError> {
+  return Effect.suspend(() => {
+    if (reconnectInFlight) return reconnectInFlight;
 
-      const reconnect = Effect.runPromise(
-        Effect.gen(function* () {
-          yield* Effect.tryPromise({
-            try: () => addonServer.close(),
-            catch: (cause) =>
-              new NetworkError({
-                message: `Failed to close the addon server connection: ${cause instanceof Error ? cause.message : String(cause)}`,
-              }),
-          });
-          addonServer = yield* connectClientSdk();
-        })
-      );
-      const sharedReconnect = reconnect.finally(() => {
-        if (reconnectInFlight === sharedReconnect) reconnectInFlight = null;
-      });
-      reconnectInFlight = sharedReconnect;
-      return sharedReconnect;
-    },
-    catch: (cause) =>
-      cause instanceof NetworkError
-        ? cause
-        : new NetworkError({
-            message: `Failed to reconnect to the addon server: ${cause instanceof Error ? cause.message : String(cause)}`,
+    const reconnect = Effect.gen(function* () {
+      yield* Effect.tryPromise({
+        try: () => addonServer.close(),
+        catch: (cause) =>
+          new NetworkError({
+            message: `Failed to close the addon server connection: ${cause instanceof Error ? cause.message : String(cause)}`,
           }),
+      });
+      addonServer = yield* connectClientSdk();
+    });
+    const sharedReconnect = Effect.runSync(Effect.cached(reconnect)).pipe(
+      Effect.ensuring(
+        Effect.sync(() => {
+          if (reconnectInFlight === sharedReconnect) reconnectInFlight = null;
+        })
+      )
+    );
+    reconnectInFlight = sharedReconnect;
+    return sharedReconnect;
   });
 }

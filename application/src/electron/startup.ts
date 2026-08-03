@@ -779,7 +779,15 @@ export function checkForAddonUpdates(
         path: addonPath,
       });
 
-      const localHash = yield* addonGit.getCurrentHash();
+      const localHashResult = yield* Effect.either(addonGit.getCurrentHash());
+      if (localHashResult._tag === 'Left') {
+        console.error(
+          `[startup] Failed to read the current hash for ${addonName}:`,
+          localHashResult.left
+        );
+        continue;
+      }
+      const localHash = localHashResult.right;
       let remoteHash = 'latest';
       let isUpdate = false;
 

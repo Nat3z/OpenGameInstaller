@@ -50,6 +50,9 @@ export function loadDeferredTasks(tasksToRemove: string[] = []) {
 export function cancelTask(taskId: string): Effect.Effect<void> {
   return Effect.sync(() => {
     console.warn('Task cancellation is not supported');
+    removedTasks.update((removed) =>
+      removed.includes(taskId) ? removed : [...removed, taskId]
+    );
     deferredTasks.update((tasks: DeferredTask[]) =>
       tasks.filter((task) => task.id !== taskId)
     );

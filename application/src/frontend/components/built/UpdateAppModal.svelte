@@ -219,7 +219,17 @@ async function handleDownloadClick(
     updateVersion: updateVersion,
   } as SearchResultWithAddon & { isUpdate: boolean; updateVersion: string };
 
-  void Effect.runPromise(startDownload(updateResult, appID, event));
+  try {
+    await Effect.runPromise(startDownload(updateResult, appID, event));
+  } catch (error) {
+    console.error('Failed to start update download:', error);
+    createNotification({
+      id: Math.random().toString(36).substring(7),
+      message: `Failed to start update download for ${gameName}`,
+      type: 'error',
+    });
+    return;
+  }
   onClose();
 
   createNotification({

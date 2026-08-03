@@ -64,15 +64,17 @@ function restartDirectDownload(download: DownloadStatusAndInfo) {
         headers: file.headers,
       }));
     } else if (effectiveUrl) {
-      const urlFilename = yield* Effect.try({
-        try: () => {
+      const urlFilename = yield* Effect.sync(() => {
+        try {
           const url = new URL(effectiveUrl);
           const last = url.pathname.split('/').pop();
           return last ? decodeURIComponent(last) : undefined;
-        },
-        catch: () => undefined,
+        } catch {
+          return undefined;
+        }
       });
       const isFilePath =
+        typeof download.downloadPath === 'string' &&
         !download.downloadPath.endsWith('/') &&
         !download.downloadPath.endsWith('\\');
       const filename =
@@ -138,8 +140,7 @@ function restartTorrentDownload(download: DownloadStatusAndInfo) {
         : persistedFilePath
           ? persistedFilePath.replace(/[/\\][^/\\]+$/, '/')
           : safeDownloadPath(getDownloadPath(), download.name);
-    const path =
-      folderPath || safeDownloadPath(getDownloadPath(), download.name);
+    const path = folderPath;
     const operation =
       download.downloadType === 'torrent'
         ? () => window.electronAPI.torrent.downloadTorrent(effectiveUrl, path)

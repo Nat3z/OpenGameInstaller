@@ -298,10 +298,7 @@ function runCommand(
 
   return Effect.async<CommandResult, UpdateError>((resume) => {
     logUpdater(`Running command: ${command} ${args.join(' ')}`);
-    const child = spawn(command, args, {
-      ...spawnOptions,
-      shell: process.platform === 'win32',
-    });
+    const child = spawn(command, args, spawnOptions);
     let stdout = '';
     let stderr = '';
     let settled = false;
@@ -377,14 +374,10 @@ function syncBleedingEdgeRepo(
     DEFAULT_BLEEDING_EDGE_BRANCH,
     (command, args, options) =>
       runCommand(command, args, options).pipe(
-        Effect.mapError(
-          (cause) =>
-            new GitSyncError({
-              message: cause.message,
-              operation: 'fetch',
-              cause,
-            })
-        )
+        Effect.mapError((cause) => ({
+          message: cause.message,
+          cause: cause.cause ?? cause,
+        }))
       ),
     getRepoHeadSha
   );
@@ -481,11 +474,47 @@ function ensureBleedingEdgeBuild(
 
     yield* runCommand('bun', ['install', '--linker=hoisted'], {
       cwd: repoDir,
-    });
-    yield* syncHoistedElectronPackages(repoDir);
-    yield* runCommand('bun', ['run', 'build'], { cwd: repoDir });
+    }).pipe(
+      Effect.mapError(
+        (cause) =>
+          new UpdateError({
+            message: cause.message,
+            phase: 'install-dependencies',
+            cause,
+          })
+      )
+    );
+    yield* syncHoistedElectronPackages(repoDir).pipe(
+      Effect.mapError(
+        (cause) =>
+          new UpdateError({
+            message: cause.message,
+            phase: 'install-dependencies',
+            cause,
+          })
+      )
+    );
+    yield* runCommand('bun', ['run', 'build'], { cwd: repoDir }).pipe(
+      Effect.mapError(
+        (cause) =>
+          new UpdateError({
+            message: cause.message,
+            phase: 'build-packages',
+            cause,
+          })
+      )
+    );
     const [buildCommand, buildArgs] = getApplicationBuildCommand();
-    yield* runCommand(buildCommand, buildArgs, { cwd: repoDir });
+    yield* runCommand(buildCommand, buildArgs, { cwd: repoDir }).pipe(
+      Effect.mapError(
+        (cause) =>
+          new UpdateError({
+            message: cause.message,
+            phase: 'package-application',
+            cause,
+          })
+      )
+    );
 
     const destRoot = path.join(__dirname, 'update');
     yield* tryUpdate('prepare-update', () =>
@@ -1044,11 +1073,18 @@ function createWindow(): Effect.Effect<void, UpdaterError> {
       mainWindow.webContents.send('show-channel-picker');
       const choice: any = yield* tryUpdatePromise(
         'choose-update-channel',
-        () =>
-          new Promise((resolve) => {
-            ipcMain.once('choose-channel', (_event, payload) =>
-              resolve(payload)
-            );
+        (signal) =>
+          new Promise((resolve, reject) => {
+            const onChoice = (_event, payload): void => {
+              signal.removeEventListener('abort', onAbort);
+              resolve(payload);
+            };
+            const onAbort = (): void => {
+              ipcMain.removeListener('choose-channel', onChoice);
+              reject(signal.reason ?? new Error('Channel selection cancelled'));
+            };
+            ipcMain.once('choose-channel', onChoice);
+            signal.addEventListener('abort', onAbort, { once: true });
           })
       );
       const channel = choice?.channel || 'stable';
@@ -1230,13 +1266,16 @@ function getPersistentArtifactPath(assetName) {
   return path.join(getPersistentArtifactDir(), assetName);
 }
 
-function persistSourceArtifact(assetName, sourcePath) {
-  if (process.platform !== 'win32') {
-    return;
-  }
+function persistSourceArtifact(
+  assetName: string,
+  sourcePath: string
+): Effect.Effect<void, FileSystemError> {
+  if (process.platform !== 'win32') return Effect.void;
   const persistentPath = getPersistentArtifactPath(assetName);
-  fs.mkdirSync(path.dirname(persistentPath), { recursive: true });
-  fs.copyFileSync(sourcePath, persistentPath);
+  return tryFileSystem('persist-source-artifact', persistentPath, () => {
+    fs.mkdirSync(path.dirname(persistentPath), { recursive: true });
+    fs.copyFileSync(sourcePath, persistentPath);
+  });
 }
 
 function cleanOldArtifacts(currentAssetName) {
@@ -1299,11 +1338,16 @@ function getBlockKey(checksum, size) {
 function ensureCachedSourceArtifact(cacheDir, release, asset) {
   return Effect.gen(function* () {
     const sourceArtifactPath = path.join(cacheDir, asset.name);
-    if (fs.existsSync(sourceArtifactPath)) {
-      return sourceArtifactPath;
-    }
+    const cached = yield* tryFileSystem(
+      'inspect-source-artifact-cache',
+      sourceArtifactPath,
+      () => fs.existsSync(sourceArtifactPath)
+    );
+    if (cached) return sourceArtifactPath;
 
-    fs.mkdirSync(cacheDir, { recursive: true });
+    yield* tryFileSystem('prepare-source-artifact-cache', cacheDir, () =>
+      fs.mkdirSync(cacheDir, { recursive: true })
+    );
 
     // On Linux we usually have the currently installed AppImage available locally.
     if (process.platform === 'linux') {
@@ -1312,22 +1356,47 @@ function ensureCachedSourceArtifact(cacheDir, release, asset) {
         'update',
         'OpenGameInstaller.AppImage'
       );
-      if (fs.existsSync(installedAppImage)) {
-        fs.copyFileSync(installedAppImage, sourceArtifactPath);
+      const installed = yield* tryFileSystem(
+        'inspect-installed-artifact',
+        installedAppImage,
+        () => fs.existsSync(installedAppImage)
+      );
+      if (installed) {
+        yield* tryFileSystem(
+          'copy-installed-artifact',
+          sourceArtifactPath,
+          () => fs.copyFileSync(installedAppImage, sourceArtifactPath)
+        );
         return sourceArtifactPath;
       }
     }
     if (process.platform === 'win32') {
       const persistentArtifact = getPersistentArtifactPath(asset.name);
-      if (fs.existsSync(persistentArtifact)) {
-        fs.copyFileSync(persistentArtifact, sourceArtifactPath);
+      const persistent = yield* tryFileSystem(
+        'inspect-persistent-artifact',
+        persistentArtifact,
+        () => fs.existsSync(persistentArtifact)
+      );
+      if (persistent) {
+        yield* tryFileSystem(
+          'copy-persistent-artifact',
+          sourceArtifactPath,
+          () => fs.copyFileSync(persistentArtifact, sourceArtifactPath)
+        );
         return sourceArtifactPath;
       }
       // Compatibility with older updater versions that may have copied archives
       // into ./update directly.
       const legacyArtifact = path.join(__dirname, 'update', asset.name);
-      if (fs.existsSync(legacyArtifact)) {
-        fs.copyFileSync(legacyArtifact, sourceArtifactPath);
+      const legacy = yield* tryFileSystem(
+        'inspect-legacy-artifact',
+        legacyArtifact,
+        () => fs.existsSync(legacyArtifact)
+      );
+      if (legacy) {
+        yield* tryFileSystem('copy-legacy-artifact', sourceArtifactPath, () =>
+          fs.copyFileSync(legacyArtifact, sourceArtifactPath)
+        );
         return sourceArtifactPath;
       }
     }
@@ -1337,7 +1406,7 @@ function ensureCachedSourceArtifact(cacheDir, release, asset) {
       sourceArtifactPath,
       `Downloading base artifact ${release.tag_name}`
     );
-    persistSourceArtifact(asset.name, sourceArtifactPath);
+    yield* persistSourceArtifact(asset.name, sourceArtifactPath);
     return sourceArtifactPath;
   });
 }
@@ -1595,9 +1664,7 @@ function downloadFullRelease(release: any) {
 
     if (process.platform === 'win32') {
       const zipPath = path.join(__dirname, 'update.zip');
-      yield* tryUpdate('persist-release', () =>
-        persistSourceArtifact(assetWithPortable.name, zipPath)
-      );
+      yield* persistSourceArtifact(assetWithPortable.name, zipPath);
       sendUpdaterStatus('Extracting Update');
       yield* unzip(zipPath, localCache);
       sendUpdaterStatus('Copying Update Files');
@@ -1739,7 +1806,7 @@ function applyBlockmapPath(releasePath: any, releases: any) {
       );
 
       if (process.platform === 'win32') {
-        persistSourceArtifact(nextAsset.name, outputArtifact);
+        yield* persistSourceArtifact(nextAsset.name, outputArtifact);
         logUpdater('Extracting patched Windows artifact', {
           artifact: outputArtifact,
           destination: nextCache,

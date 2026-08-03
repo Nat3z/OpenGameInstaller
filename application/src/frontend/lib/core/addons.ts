@@ -47,15 +47,15 @@ export function runLaunchAppAddons(
       { concurrency: 'unbounded' }
     );
     const failure = results.find((result) => result._tag === 'Left');
-    if (failure?._tag === 'Left') yield* Effect.fail(failure.left);
-
-    return { success: true } as const;
+    return failure?._tag === 'Left'
+      ? ({ success: false, error: failure.left } as const)
+      : ({ success: true } as const);
   });
 }
 
 export function findAddonsSupportingStorefront(
   storefront: string,
-  event: string
+  event: OGIAddonSDKEventListener
 ) {
   return queryConnectedAddons().pipe(
     Effect.map((addons) =>
@@ -64,7 +64,7 @@ export function findAddonsSupportingStorefront(
           supportsStorefront(
             addon.storefronts as readonly string[] | undefined,
             storefront
-          ) && isAddonEventAvailable(addon, event as OGIAddonSDKEventListener)
+          ) && isAddonEventAvailable(addon, event)
       )
     )
   );

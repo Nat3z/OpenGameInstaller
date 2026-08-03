@@ -7,7 +7,7 @@ import {
   HttpError,
 } from '@ogi/errors';
 import axios, { type AxiosResponse } from 'axios';
-import { Context, Effect, Layer, Schema } from 'effect';
+import { Cause, Context, Effect, Exit, Layer, Option, Schema } from 'effect';
 import FormData from 'form-data';
 
 const BASE_V4 = 'https://api.alldebrid.com/v4';
@@ -215,7 +215,27 @@ const checkResponse = <A, I>(
 ): Effect.Effect<A, DebridApiError | DebridAuthError | DebridResponseError> =>
   Effect.gen(function* () {
     if (response.status === 401 || response.status === 403) {
-      return yield* Effect.fail(new DebridAuthError({ service: SERVICE }));
+      return yield* Effect.fail(
+        new DebridAuthError({
+          service: SERVICE,
+          message: `${SERVICE} authentication failed`,
+        })
+      );
+    }
+    if (response.status < 200 || response.status >= 300) {
+      const parsed = Option.getOrUndefined(
+        Schema.decodeUnknownOption(ApiResponseError)(response.data)
+      );
+      return yield* Effect.fail(
+        new DebridApiError({
+          service: SERVICE,
+          message:
+            parsed?.error.message ??
+            `AllDebrid request failed with status ${response.status}`,
+          apiCode: parsed?.error.code,
+          statusCode: response.status,
+        })
+      );
     }
 
     const status = yield* decodeUnknown(
@@ -610,6 +630,7 @@ export default class AllDebrid implements AllDebridClient {
           service: SERVICE,
           operation: 'unlock delayed link',
           timeoutMs: 300_000,
+          message: `${SERVICE} timed out while unlocking a delayed link`,
         })
       );
     });
@@ -625,6 +646,14 @@ export const AllDebridClientLayer = (
 ): Layer.Layer<AllDebridClientResource> =>
   Layer.succeed(AllDebridClientResource, makeAllDebridClient(configuration));
 
+const runLegacyPromise = async <A, E>(
+  effect: Effect.Effect<A, E>
+): Promise<A> => {
+  const exit = await Effect.runPromiseExit(effect);
+  if (Exit.isSuccess(exit)) return exit.value;
+  throw Cause.squash(exit.cause);
+};
+
 /** Promise adapter for consumers that have not migrated to Effect. */
 export class LegacyAllDebridPromiseClient {
   private readonly client: AllDebridClient;
@@ -634,40 +663,40 @@ export class LegacyAllDebridPromiseClient {
   }
 
   public getUserInfo(): Promise<$UserInfo> {
-    return Effect.runPromise(this.client.getUserInfo());
+    return runLegacyPromise(this.client.getUserInfo());
   }
 
   public getHosts(): Promise<$Hosts> {
-    return Effect.runPromise(this.client.getHosts());
+    return runLegacyPromise(this.client.getHosts());
   }
 
   public addMagnet(
     magnet: string,
     host?: string
   ): Promise<$AddMagnetOrTorrent> {
-    return Effect.runPromise(this.client.addMagnet(magnet, host));
+    return runLegacyPromise(this.client.addMagnet(magnet, host));
   }
 
   public addTorrent(torrent: ReadStream): Promise<$AddMagnetOrTorrent> {
-    return Effect.runPromise(this.client.addTorrent(torrent));
+    return runLegacyPromise(this.client.addTorrent(torrent));
   }
 
   public getMagnetStatus(id: string): Promise<{ readonly statusCode: number }> {
-    return Effect.runPromise(this.client.getMagnetStatus(id));
+    return runLegacyPromise(this.client.getMagnetStatus(id));
   }
 
   public isTorrentReady(id: string): Promise<boolean> {
-    return Effect.runPromise(this.client.isTorrentReady(id));
+    return runLegacyPromise(this.client.isTorrentReady(id));
   }
 
   public getMagnetFiles(id: string): Promise<$AllDebridTorrentInfo> {
-    return Effect.runPromise(this.client.getMagnetFiles(id));
+    return runLegacyPromise(this.client.getMagnetFiles(id));
   }
 
   public unrestrictLink(
     link: string,
     password?: string
   ): Promise<$UnrestrictLink> {
-    return Effect.runPromise(this.client.unrestrictLink(link, password));
+    return runLegacyPromise(this.client.unrestrictLink(link, password));
   }
 }

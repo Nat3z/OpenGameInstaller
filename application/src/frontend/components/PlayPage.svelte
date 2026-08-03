@@ -12,6 +12,7 @@ import Image from '@/frontend/components/Image.svelte';
 import PlayIcon from '@/frontend/Icons/PlayIcon.svelte';
 import SettingsFilled from '@/frontend/Icons/SettingsFilled.svelte';
 import UpdateIcon from '@/frontend/Icons/UpdateIcon.svelte';
+import { runDetached } from '@/frontend/lib/core/runtime';
 import {
   appUpdates,
   completeRequiredReadd,
@@ -341,7 +342,19 @@ onMount(async () => {
     exitPlayPage();
   }, 'Back to library');
 
-  const addons = await Effect.runPromise(fetchAddonsWithConfigure());
+  const addonsResult = await Effect.runPromise(
+    fetchAddonsWithConfigure().pipe(Effect.either)
+  );
+  if (addonsResult._tag === 'Left') {
+    console.error('Failed to load configured addons:', addonsResult.left);
+    createNotification({
+      id: Math.random().toString(36).substring(7),
+      message: 'Failed to load configured addons',
+      type: 'error',
+    });
+    return;
+  }
+  const addons = addonsResult.right;
   addonsMap = new Map(
     addons.map((addon) => [addon.id, { id: addon.id, name: addon.name }])
   );
@@ -376,7 +389,7 @@ onMount(async () => {
 function handleRunTask(task: SearchResult, addonID: string) {
   console.log('Running task: ' + task.name);
   const addon = addonsMap.get(addonID);
-  void Effect.runPromise(
+  runDetached(
     runTask(
       {
         ...task,
@@ -388,7 +401,8 @@ function handleRunTask(task: SearchResult, addonID: string) {
       },
       libraryInfo.cwd,
       libraryInfo
-    )
+    ).pipe(Effect.asVoid),
+    'Failed to run addon task'
   );
 }
 </script>

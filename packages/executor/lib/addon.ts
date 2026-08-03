@@ -1,5 +1,5 @@
 import type { ChildProcess } from 'node:child_process';
-import { execFileSync, spawn } from 'node:child_process';
+import { execFile, execFileSync, spawn } from 'node:child_process';
 import { join } from 'node:path';
 import { AddonError, FileSystemError, ValidationError } from '@ogi/errors';
 import { Deferred, Effect, Exit, Schema, Scope } from 'effect';
@@ -167,30 +167,46 @@ export class Addon {
     });
 
     if (process.platform !== 'win32' || !child.pid) return killChild;
-    return Effect.try({
-      try: () =>
-        void execFileSync('taskkill.exe', [
-          '/pid',
-          String(child.pid),
-          '/T',
-          '/F',
-        ]),
-      catch: (cause) =>
-        new AddonError({
-          addonName: this.config.name,
-          message: `Unable to terminate addon process tree: ${String(cause)}`,
-        }),
+    return Effect.async<void, AddonError>((resume) => {
+      execFile(
+        'taskkill.exe',
+        ['/pid', String(child.pid), '/T', '/F'],
+        (cause) =>
+          resume(
+            cause
+              ? Effect.fail(
+                  new AddonError({
+                    addonName: this.config.name,
+                    message: `Unable to terminate addon process tree: ${String(cause)}`,
+                  })
+                )
+              : Effect.void
+          )
+      );
     }).pipe(Effect.catchAll(() => killChild));
   }
 
   private monitorProcess(child: ChildProcess): Effect.Effect<void, AddonError> {
     const name = this.config.name;
     return Effect.async<void, AddonError>((resume) => {
+      let settled = false;
       const onStdout = (data: Buffer): void => console.log(`[${name}] ${data}`);
       const onStderr = (data: Buffer): void =>
         console.error(`[${name}] ${data}`);
+      const cleanup = (): void => {
+        child.stdout?.off('data', onStdout);
+        child.stderr?.off('data', onStderr);
+        child.off('error', onError);
+        child.off('exit', onExit);
+      };
+      const finish = (effect: Effect.Effect<void, AddonError>): void => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        resume(effect);
+      };
       const onError = (cause: Error): void =>
-        resume(
+        finish(
           Effect.fail(
             new AddonError({
               addonName: name,
@@ -202,19 +218,13 @@ export class Addon {
         code: number | null,
         signal: NodeJS.Signals | null
       ): void =>
-        resume(
+        finish(
           Effect.sync(() => {
             const message = `[${name}] Exited with code ${code} and signal ${signal}`;
             if (code === 0) console.log(message);
             else console.error(message);
           })
         );
-      const cleanup = (): void => {
-        child.stdout?.off('data', onStdout);
-        child.stderr?.off('data', onStderr);
-        child.off('error', onError);
-        child.off('exit', onExit);
-      };
 
       child.stdout?.on('data', onStdout);
       child.stderr?.on('data', onStderr);
@@ -247,7 +257,10 @@ export class Addon {
             const lifecycle = Effect.acquireUseRelease(
               this.spawnProcess(command, args),
               (child) =>
-                Deferred.succeed(started, child).pipe(
+                Effect.sync(() => {
+                  this.childProcess = child;
+                }).pipe(
+                  Effect.zipRight(Deferred.succeed(started, child)),
                   Effect.zipRight(this.monitorProcess(child))
                 ),
               (child) => this.stopProcess(child).pipe(Effect.ignore)
@@ -267,7 +280,6 @@ export class Addon {
             )
           );
           this.processScope = scope;
-          this.childProcess = child;
         })
       );
     });
@@ -278,17 +290,19 @@ export class Addon {
   }
 
   public stop(): Effect.Effect<void, AddonError> {
-    const scope = this.processScope;
-    if (!scope) return Effect.void;
+    return Effect.suspend(() => {
+      const scope = this.processScope;
+      if (!scope) return Effect.void;
 
-    return Scope.close(scope, Exit.void).pipe(
-      Effect.ensuring(
-        Effect.sync(() => {
-          this.childProcess = null;
-          this.processScope = null;
-        })
-      )
-    );
+      return Scope.close(scope, Exit.void).pipe(
+        Effect.ensuring(
+          Effect.sync(() => {
+            this.childProcess = null;
+            this.processScope = null;
+          })
+        )
+      );
+    });
   }
 
   public restart(): Effect.Effect<void, AddonLifecycleError> {

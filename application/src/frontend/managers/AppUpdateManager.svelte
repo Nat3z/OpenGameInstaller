@@ -1,14 +1,16 @@
 <script lang="ts">
-import { UpdateError } from '@ogi/errors';
+import { formatError, UpdateError } from '@ogi/errors';
 import { Effect } from 'effect';
 import core from '@/frontend/lib/core';
 import { updatesManager } from '@/frontend/states.svelte';
 import {
   addonServer,
   fetchAddonsWithConfigure,
-  findAddonsSupportingStorefront,
+  isAddonEventAvailable,
+  queryConnectedAddons,
   reconnectClientSdk,
 } from '@/frontend/utils';
+import { supportsStorefront } from '@/lib/storefronts';
 
 let updateCheckRunId = 0;
 
@@ -34,15 +36,20 @@ async function checkForAppUpdates() {
   const workflow = Effect.gen(function* () {
     const library = yield* Effect.tryPromise({
       try: () => core.library.getAllApps(),
-      catch: (cause) => cause,
+      catch: (cause) =>
+        new UpdateError({
+          message: `Failed to load library: ${formatError(cause)}`,
+        }),
     });
+    const connectedAddons = yield* queryConnectedAddons();
     yield* Effect.forEach(
       library,
       (app) =>
         Effect.gen(function* () {
-          const addons = yield* findAddonsSupportingStorefront(
-            app.storefront,
-            'check-for-updates'
+          const addons = connectedAddons.filter(
+            (addon) =>
+              supportsStorefront(addon.storefronts, app.storefront) &&
+              isAddonEventAvailable(addon, 'check-for-updates')
           );
           if (addons.length === 0) return;
           if (addons.length > 1) {
@@ -59,7 +66,10 @@ async function checkForAppUpdates() {
                 storefront: app.storefront,
                 currentVersion: app.version,
               }) as Promise<{ available: boolean; version: string }>,
-            catch: (cause) => cause,
+            catch: (cause) =>
+              new UpdateError({
+                message: `Failed to check for updates: ${formatError(cause)}`,
+              }),
           });
           if (runId === updateCheckRunId && update.available) {
             updatesManager.addAppUpdate({
@@ -80,7 +90,7 @@ async function checkForAppUpdates() {
             )
           )
         ),
-      { concurrency: 'unbounded' }
+      { concurrency: 4 }
     );
   });
 

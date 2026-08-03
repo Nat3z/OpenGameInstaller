@@ -1,5 +1,5 @@
 import { DownloadError, formatError } from '@ogi/errors';
-import { Effect } from 'effect';
+import { Deferred, Effect } from 'effect';
 import { get } from 'svelte/store';
 import {
   getDownloadItem,
@@ -24,6 +24,7 @@ import {
 const pausedDownloadStates = new Map<string, PausedDownloadState>();
 let hasBulkQueuedRestoredDownloads = false;
 let bulkQueueRunning = false;
+let bulkQueueDeferred: Deferred.Deferred<void> | null = null;
 const resumeInFlight = new Set<string>();
 
 function pausedStateFor(download: DownloadStatusAndInfo): PausedDownloadState {
@@ -72,12 +73,21 @@ function backendAction(
 }
 
 function enqueueRemainingPausedDownloads(resumedId: string) {
+  let ownsQueue = false;
+  let completion: Deferred.Deferred<void> | null = null;
+
   return Effect.gen(function* () {
     if (hasBulkQueuedRestoredDownloads) return;
-    while (bulkQueueRunning) yield* Effect.sleep(25);
+    if (bulkQueueRunning && bulkQueueDeferred) {
+      yield* Deferred.await(bulkQueueDeferred);
+      return;
+    }
     if (hasBulkQueuedRestoredDownloads) return;
 
+    completion = yield* Deferred.make<void>();
     bulkQueueRunning = true;
+    bulkQueueDeferred = completion;
+    ownsQueue = true;
     const downloads = get(currentDownloads).filter(
       (download) => download.id !== resumedId && download.status === 'paused'
     );
@@ -94,8 +104,11 @@ function enqueueRemainingPausedDownloads(resumedId: string) {
     hasBulkQueuedRestoredDownloads = true;
   }).pipe(
     Effect.ensuring(
-      Effect.sync(() => {
+      Effect.gen(function* () {
+        if (!ownsQueue || !completion) return;
         bulkQueueRunning = false;
+        bulkQueueDeferred = null;
+        yield* Deferred.succeed(completion, undefined);
       })
     )
   );
@@ -133,86 +146,91 @@ export function pauseDownload(downloadId: string) {
 }
 
 export function resumeDownload(downloadId: string) {
-  if (resumeInFlight.has(downloadId)) return Effect.succeed(false);
-  resumeInFlight.add(downloadId);
+  return Effect.suspend(() => {
+    if (resumeInFlight.has(downloadId)) return Effect.succeed(false);
+    resumeInFlight.add(downloadId);
 
-  return Effect.gen(function* () {
-    let pausedState = pausedDownloadStates.get(downloadId);
-    const reconstructed = !pausedState;
-    if (!pausedState) {
-      const download = getDownloadItem(downloadId);
-      if (!download) return false;
-      pausedState = pausedStateFor(download);
-      pausedDownloadStates.set(downloadId, pausedState);
-    }
+    return Effect.gen(function* () {
+      let pausedState = pausedDownloadStates.get(downloadId);
+      const reconstructed = !pausedState;
+      if (!pausedState) {
+        const download = getDownloadItem(downloadId);
+        if (!download) return false;
+        pausedState = pausedStateFor(download);
+        pausedDownloadStates.set(downloadId, pausedState);
+      }
 
-    const download = pausedState.downloadInfo;
-    const redistributableInstall = get(redistributableInstalls)[downloadId];
-    if (redistributableInstall && !redistributableInstall.isComplete) {
-      updateDownloadStatus(downloadId, {
-        status: 'installing-redistributables',
-      });
-      pausedDownloadStates.delete(downloadId);
-      createNotification({
-        id: Math.random().toString(36).substring(2, 9),
-        type: 'info',
-        message: `Resuming dependency installation: ${download.name}`,
-      });
-      yield* Effect.forkDaemon(
-        startRedistributableInstallation(
-          downloadId,
-          redistributableInstall.appID
-        )
+      const download = pausedState.downloadInfo;
+      const redistributableInstall = get(redistributableInstalls)[downloadId];
+      if (redistributableInstall && !redistributableInstall.isComplete) {
+        updateDownloadStatus(downloadId, {
+          status: 'installing-redistributables',
+        });
+        pausedDownloadStates.delete(downloadId);
+        createNotification({
+          id: Math.random().toString(36).substring(2, 9),
+          type: 'info',
+          message: `Resuming dependency installation: ${download.name}`,
+        });
+        yield* Effect.forkDaemon(
+          startRedistributableInstallation(
+            downloadId,
+            redistributableInstall.appID
+          )
+        );
+        return true;
+      }
+
+      updateDownloadStatus(downloadId, { status: 'downloading' });
+      if (reconstructed) {
+        const restarted = yield* restartDownload(
+          pausedState,
+          pausedDownloadStates
+        );
+        if (restarted) yield* enqueueRemainingPausedDownloads(downloadId);
+        return restarted;
+      }
+
+      const resumed = yield* backendAction(download, 'resume').pipe(
+        Effect.catchAll(() => Effect.succeed(false))
       );
-      return true;
-    }
+      if (resumed) {
+        pausedDownloadStates.delete(downloadId);
+        deletePersistedDownload(downloadId);
+        createNotification({
+          id: Math.random().toString(36).substring(2, 9),
+          type: 'info',
+          message: `Resumed download: ${download.name}`,
+        });
+        return true;
+      }
 
-    updateDownloadStatus(downloadId, { status: 'downloading' });
-    if (reconstructed) {
       const restarted = yield* restartDownload(
         pausedState,
         pausedDownloadStates
       );
       if (restarted) yield* enqueueRemainingPausedDownloads(downloadId);
       return restarted;
-    }
-
-    const resumed = yield* backendAction(download, 'resume').pipe(
-      Effect.catchAll(() => Effect.succeed(false))
+    }).pipe(
+      Effect.catchAll((error) =>
+        Effect.sync(() => {
+          const message = formatError(error) || 'Failed to resume download';
+          updateDownloadStatus(downloadId, { status: 'error', error: message });
+          createNotification({
+            id: Math.random().toString(36).substring(2, 9),
+            type: 'error',
+            message,
+          });
+          return false;
+        })
+      ),
+      Effect.ensuring(
+        Effect.sync(() => {
+          resumeInFlight.delete(downloadId);
+        })
+      )
     );
-    if (resumed) {
-      pausedDownloadStates.delete(downloadId);
-      deletePersistedDownload(downloadId);
-      createNotification({
-        id: Math.random().toString(36).substring(2, 9),
-        type: 'info',
-        message: `Resumed download: ${download.name}`,
-      });
-      return true;
-    }
-
-    const restarted = yield* restartDownload(pausedState, pausedDownloadStates);
-    if (restarted) yield* enqueueRemainingPausedDownloads(downloadId);
-    return restarted;
-  }).pipe(
-    Effect.catchAll((error) =>
-      Effect.sync(() => {
-        const message = formatError(error) || 'Failed to resume download';
-        updateDownloadStatus(downloadId, { status: 'error', error: message });
-        createNotification({
-          id: Math.random().toString(36).substring(2, 9),
-          type: 'error',
-          message,
-        });
-        return false;
-      })
-    ),
-    Effect.ensuring(
-      Effect.sync(() => {
-        resumeInFlight.delete(downloadId);
-      })
-    )
-  );
+  });
 }
 
 export function cancelPausedDownload(downloadId: string) {

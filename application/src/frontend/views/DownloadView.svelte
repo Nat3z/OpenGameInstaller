@@ -4,7 +4,9 @@ import { Effect } from 'effect';
 import { onDestroy, onMount } from 'svelte';
 import RedistributablesProgress from '@/frontend/components/RedistributablesProgress.svelte';
 import SetupPrompt from '@/frontend/components/SetupPrompt.svelte';
+import { runDetached } from '@/frontend/lib/core/runtime';
 import {
+  createNotification,
   currentDownloads,
   type FailedSetup,
   failedSetups,
@@ -128,7 +130,7 @@ function setupProgress(event: Event) {
 
 // Load failed setups and paused downloads when component mounts
 onMount(() => {
-  void Effect.runPromise(loadFailedSetups());
+  runDetached(loadFailedSetups(), 'Failed to load failed setups');
   document.addEventListener('setup:log', setupLog);
   document.addEventListener('setup:progress', setupProgress);
 
@@ -138,8 +140,28 @@ onMount(() => {
   };
 });
 
+async function runDownloadAction<A, E>(
+  effect: Effect.Effect<A, E>,
+  description: string
+): Promise<A | undefined> {
+  try {
+    return await Effect.runPromise(effect);
+  } catch (error) {
+    console.error(`${description}:`, error);
+    createNotification({
+      id: Math.random().toString(36).substring(7),
+      message: description,
+      type: 'error',
+    });
+    return undefined;
+  }
+}
+
 async function handleRetry(failedSetup: FailedSetup) {
-  await Effect.runPromise(retryFailedSetup(failedSetup));
+  await runDownloadAction(
+    retryFailedSetup(failedSetup),
+    'Failed to retry setup'
+  );
 }
 
 function handleRemove(setupId: string) {
@@ -748,7 +770,10 @@ onDestroy(() => {
                     if (isQueued(download)) {
                       window.electronAPI.queue.cancel(download.id);
                     } else {
-                      await Effect.runPromise(pauseDownload(download.id));
+                      await runDownloadAction(
+                        pauseDownload(download.id),
+                        'Failed to pause download'
+                      );
                     }
                   }}
                 >
@@ -769,7 +794,10 @@ onDestroy(() => {
                   class="text-overlay-text border-none p-3 rounded-lg bg-success hover:bg-success-hover transition-colors mr-2"
                   aria-label="Resume Download"
                   onclick={async () => {
-                    await Effect.runPromise(resumeDownload(download.id));
+                    await runDownloadAction(
+                      resumeDownload(download.id),
+                      'Failed to resume download'
+                    );
                   }}
                 >
                   <svg
@@ -788,7 +816,10 @@ onDestroy(() => {
                   class="text-overlay-text border-none p-3 rounded-lg bg-error hover:bg-error-hover transition-colors"
                   aria-label="Cancel Download"
                   onclick={() =>
-                    void Effect.runPromise(cancelPausedDownload(download.id))}
+                    void runDownloadAction(
+                      cancelPausedDownload(download.id),
+                      'Failed to cancel download'
+                    )}
                 >
                   <svg
                     fill="currentColor"

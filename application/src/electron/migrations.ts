@@ -480,7 +480,10 @@ export function execute(): Effect.Effect<void, FileSystemError> {
         yield* (
           Effect.isEffect(operation)
             ? operation
-            : Effect.promise(() => operation)
+            : Effect.tryPromise({
+                try: () => operation,
+                catch: (cause) => cause,
+              })
         ).pipe(
           Effect.tap(() =>
             Effect.sync(() => console.log('[migration] completed'))

@@ -15,7 +15,7 @@ import type {
   WebSocketLike,
 } from '@ogi-sdk/connect';
 import { EventResponseSocket } from '@ogi-sdk/connect';
-import { Effect, Fiber, PubSub, Stream } from 'effect';
+import { Effect, Exit, Fiber, PubSub, Stream } from 'effect';
 import type {
   AddonForwardResponseMessage,
   EffectAddonProxy,
@@ -134,23 +134,24 @@ export class EffectConnection {
         yield* connection.connect();
         return connection;
       }).pipe(
-        Effect.catchAll((error) =>
-          Effect.gen(function* () {
-            if (transport) {
-              yield* transport
-                .shutdown('Connection failed')
-                .pipe(Effect.ignore);
-            }
-            yield* PubSub.shutdown(eventPubSub);
-            yield* Effect.sync(() => {
-              try {
-                socket.close();
-              } catch {
-                // Preserve the original connection error if closing fails.
-              }
-            });
-            return yield* Effect.fail(error);
-          })
+        Effect.onExit((exit) =>
+          Exit.isSuccess(exit)
+            ? Effect.void
+            : Effect.gen(function* () {
+                if (transport) {
+                  yield* transport
+                    .shutdown('Connection failed')
+                    .pipe(Effect.ignore);
+                }
+                yield* PubSub.shutdown(eventPubSub);
+                yield* Effect.sync(() => {
+                  try {
+                    socket.close();
+                  } catch {
+                    // Preserve the original connection failure if closing fails.
+                  }
+                });
+              })
         )
       );
     });
@@ -457,7 +458,13 @@ export class EffectConnection {
             E
           >
         );
-        return result as AddonForwardResponse<Event>['args'];
+        return result === undefined
+          ? yield* Effect.fail(
+              new NetworkError({
+                message: `Deferred task ${taskID} completed without data`,
+              })
+            )
+          : result;
       });
   }
 

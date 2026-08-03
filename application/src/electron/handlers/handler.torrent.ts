@@ -110,6 +110,8 @@ class TorrentDownload {
   private queueReleased = false;
   private torrentClientType: TorrentClientType = 'unselected';
   private lifecycleFiber?: Fiber.RuntimeFiber<void, never>;
+  private progressFiber?: Fiber.RuntimeFiber<never, never>;
+  private seedingFiber?: Fiber.RuntimeFiber<void, never>;
 
   private wtInstance?: ReturnType<typeof wtConnect>;
   private wtBlock?: WebTorrentControls;
@@ -267,6 +269,7 @@ class TorrentDownload {
 
   private runWebTorrent(): Effect.Effect<void, TorrentError> {
     return Effect.gen(this, function* () {
+      this.progressFiber = yield* Effect.forkDaemon(this.trackProgress());
       const shouldSeed = yield* Effect.scoped(
         Effect.gen(this, function* () {
           const torrentId =
@@ -306,7 +309,6 @@ class TorrentDownload {
               })
           );
 
-          yield* Effect.forkScoped(this.trackProgress());
           yield* Deferred.await(completed);
           yield* Effect.sleep('1 second');
 
@@ -320,11 +322,16 @@ class TorrentDownload {
       );
 
       if (shouldSeed && this.wtInstance) {
-        yield* Effect.forkDaemon(
+        this.seedingFiber = yield* Effect.forkDaemon(
           this.wtInstance.seed().pipe(
             Effect.catchAll((error) =>
               Effect.sync(() => {
                 console.error('[torrent] Failed to seed WebTorrent:', error);
+              })
+            ),
+            Effect.ensuring(
+              Effect.sync(() => {
+                this.seedingFiber = undefined;
               })
             )
           )
@@ -613,7 +620,6 @@ class TorrentDownload {
     if (
       this.status === 'cancelled' ||
       this.status === 'completed' ||
-      this.status === 'seeding' ||
       this.status === 'failed'
     ) {
       return Effect.void;
@@ -635,6 +641,10 @@ class TorrentDownload {
         this.removeCancelHandler();
         this.releaseQueueSlot();
       }
+      if (this.seedingFiber) yield* Fiber.interrupt(this.seedingFiber);
+      if (this.progressFiber) yield* Fiber.interrupt(this.progressFiber);
+      this.seedingFiber = undefined;
+      this.progressFiber = undefined;
 
       setImmediate(() => clearDownloadHandshake(this.id));
       downloads.delete(this.id);
@@ -669,7 +679,6 @@ class TorrentDownload {
         type: 'success',
       });
       clearDownloadHandshake(this.id);
-      downloads.delete(this.id);
     });
   }
 

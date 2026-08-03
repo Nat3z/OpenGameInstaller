@@ -203,7 +203,17 @@ export class EventResponseSocket<
 
   /** Runs an external websocket callback under this transport's supervision. */
   public run<E>(effect: Effect.Effect<void, E>): void {
-    Effect.runFork(this.fork(effect));
+    Effect.runFork(
+      this.fork(
+        effect.pipe(
+          Effect.tapError((error) =>
+            Effect.sync(() =>
+              console.error('WebSocket callback failed:', error)
+            )
+          )
+        )
+      )
+    );
   }
 
   /** Completes a matching request Deferred when a response arrives. */

@@ -28,16 +28,18 @@ function ensureFailedSetupsDir(): void {
 }
 
 export function loadFailedSetups() {
-  return Effect.tryPromise({
-    try: () => window.electronAPI.fs.getFilesInDir(FAILED_SETUPS_DIR),
-    catch: (cause) =>
-      new FileSystemError({
-        message: 'Failed to list saved setup recoveries.',
-        path: FAILED_SETUPS_DIR,
-        cause,
-      }),
-  }).pipe(
-    Effect.tap(() => Effect.sync(ensureFailedSetupsDir)),
+  return Effect.sync(ensureFailedSetupsDir).pipe(
+    Effect.andThen(
+      Effect.tryPromise({
+        try: () => window.electronAPI.fs.getFilesInDir(FAILED_SETUPS_DIR),
+        catch: (cause) =>
+          new FileSystemError({
+            message: 'Failed to list saved setup recoveries.',
+            path: FAILED_SETUPS_DIR,
+            cause,
+          }),
+      })
+    ),
     Effect.map((files) => {
       const byDownloadId = new Map<string, FailedSetup>();
       for (const file of files) {
@@ -59,13 +61,7 @@ export function loadFailedSetups() {
       failedSetups.set(Array.from(byDownloadId.values()));
     }),
     Effect.catchAll((error) =>
-      Effect.sync(() => {
-        if (!window.electronAPI.fs.exists(FAILED_SETUPS_DIR)) {
-          ensureFailedSetupsDir();
-          return;
-        }
-        console.error('Error loading failed setups:', error);
-      })
+      Effect.sync(() => console.error('Error loading failed setups:', error))
     )
   );
 }
@@ -119,10 +115,14 @@ function updateRetry(failedSetup: FailedSetup, error: unknown): void {
     retryCount: failedSetup.retryCount + 1,
     error: formatError(error),
   };
-  window.electronAPI.fs.write(
-    failedSetupPath(failedSetup.id),
-    JSON.stringify(updated, null, 2)
-  );
+  try {
+    window.electronAPI.fs.write(
+      failedSetupPath(failedSetup.id),
+      JSON.stringify(updated, null, 2)
+    );
+  } catch (writeError) {
+    console.error('Failed to persist setup retry:', writeError);
+  }
   failedSetups.update((setups) =>
     setups.map((setup) => (setup.id === failedSetup.id ? updated : setup))
   );
@@ -133,13 +133,13 @@ function requiredArchiveFilename(
   kind: 'RAR' | 'ZIP'
 ) {
   const download = failedSetup.downloadInfo;
-  if (
-    (download.downloadType === 'torrent' ||
-      download.downloadType === 'magnet') &&
-    download.filename
-  ) {
-    return Effect.succeed(download.filename);
-  }
+  const persistedPath = download.files?.[0]?.path;
+  const filename =
+    ('filename' in download ? download.filename : undefined) ??
+    download.files?.[0]?.name ??
+    persistedPath?.split(/[/\\]/).pop() ??
+    download.downloadPath?.split(/[/\\]/).pop();
+  if (filename) return Effect.succeed(filename);
   return Effect.fail(
     new FileSystemError({
       message: `Cannot extract ${kind}: filename not available for this download type`,

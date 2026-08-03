@@ -38,7 +38,16 @@ async function installAddon(marketplaceURL: string, addon: CommunityAddon) {
     ...currentAddons,
     addons: await window.electronAPI.installAddons([addonWithMarketplace]),
   };
-  await Effect.runPromise(reconnectClientSdk());
+  try {
+    await Effect.runPromise(reconnectClientSdk());
+  } catch (error) {
+    console.error('Failed to reconnect after installing addon:', error);
+    createNotification({
+      id: Math.random().toString(36).substring(7),
+      message: `Failed to finish installing ${addon.name}`,
+      type: 'error',
+    });
+  }
 }
 
 function addonConfigMatchesSource(configAddon: string, addonSource: string) {
@@ -78,8 +87,18 @@ async function deleteAddon(addon: CommunityAddon) {
   currentAddons = JSON.parse(
     window.electronAPI.fs.read('./config/option/general.json')
   );
-  await Effect.runPromise(reconnectClientSdk());
-  deleteConfirmationModalAddon = null;
+  try {
+    await Effect.runPromise(reconnectClientSdk());
+  } catch (error) {
+    console.error('Failed to reconnect after deleting addon:', error);
+    createNotification({
+      id: Math.random().toString(36).substring(7),
+      message: `Deleted ${addon.name}, but failed to reconnect`,
+      type: 'error',
+    });
+  } finally {
+    deleteConfirmationModalAddon = null;
+  }
 }
 
 async function deleteAddonWarning(addon: CommunityAddon) {

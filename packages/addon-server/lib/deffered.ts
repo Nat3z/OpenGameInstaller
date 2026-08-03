@@ -1,5 +1,5 @@
 import { formatError, ValidationError } from '@ogi/errors';
-import { Effect } from 'effect';
+import { Effect, Fiber } from 'effect';
 
 /** Safely serializes task data and removes Proxy wrappers. */
 const safeSerialize = <T>(data: T): Effect.Effect<T, ValidationError> =>
@@ -65,6 +65,7 @@ export class DeferrableTask<T> {
 
 export class DeferredTasksManager {
   private readonly tasks: Record<string, DeferrableTask<unknown>> = {};
+  private readonly fibers = new Map<string, Fiber.RuntimeFiber<void, never>>();
 
   public getTasks(): Record<string, DeferrableTask<unknown>> {
     return this.tasks;
@@ -76,9 +77,31 @@ export class DeferredTasksManager {
     });
   }
 
+  /** Starts a task and retains its fiber until removal or server shutdown. */
+  public startTask(task: DeferrableTask<unknown>): Effect.Effect<void> {
+    return Effect.gen(this, function* () {
+      yield* this.addTask(task);
+      const fiber = yield* Effect.forkDaemon(task.run());
+      this.fibers.set(task.id, fiber);
+    });
+  }
+
   public removeTask(id: string): Effect.Effect<void> {
-    return Effect.sync(() => {
+    return Effect.gen(this, function* () {
+      const fiber = this.fibers.get(id);
+      if (fiber) yield* Fiber.interrupt(fiber);
+      this.fibers.delete(id);
       delete this.tasks[id];
+    });
+  }
+
+  public shutdown(): Effect.Effect<void> {
+    return Effect.gen(this, function* () {
+      yield* Effect.forEach(this.fibers.values(), Fiber.interrupt, {
+        discard: true,
+      });
+      this.fibers.clear();
+      for (const id of Object.keys(this.tasks)) delete this.tasks[id];
     });
   }
 }

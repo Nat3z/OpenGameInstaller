@@ -1,12 +1,12 @@
 import type { ReadStream } from 'node:fs';
 import {
+  DebridApiError,
   DebridAuthError,
-  DebridError,
+  DebridResponseError,
   HttpError,
-  ValidationError,
 } from '@ogi/errors';
 import axios, { type AxiosRequestConfig, type AxiosResponse } from 'axios';
-import { Effect, Schema } from 'effect';
+import { Context, Effect, Layer, Option, Schema } from 'effect';
 
 export interface RealDebridConfiguration {
   readonly apiKey: string;
@@ -102,9 +102,15 @@ export type $TorrentInfo = Schema.Schema.Type<typeof TorrentInfoSchema>;
 const REAL_DEBRID_API_URL = 'https://api.real-debrid.com/rest/1.0';
 const SERVICE = 'realdebrid' as const;
 
-type RealDebridHostInput = string | { readonly host: string } | undefined;
-type ApiError = DebridError | DebridAuthError | ValidationError;
-type ClientError = HttpError | ApiError;
+export type RealDebridHostInput =
+  | string
+  | { readonly host: string }
+  | undefined;
+export type RealDebridClientError =
+  | HttpError
+  | DebridApiError
+  | DebridAuthError
+  | DebridResponseError;
 
 const normalizeHost = (host: RealDebridHostInput): string | undefined => {
   if (!host) return undefined;
@@ -113,41 +119,47 @@ const normalizeHost = (host: RealDebridHostInput): string | undefined => {
 
 const decodeUnknown = <A, I>(
   schema: Schema.Schema<A, I>,
-  input: unknown
-): Effect.Effect<A, ValidationError> =>
+  input: unknown,
+  endpoint: string
+): Effect.Effect<A, DebridResponseError> =>
   Schema.decodeUnknown(schema)(input).pipe(
     Effect.mapError(
-      (error) =>
-        new ValidationError({
-          message: `Invalid Real-Debrid API response: ${String(error)}`,
+      (cause) =>
+        new DebridResponseError({
+          service: SERVICE,
+          endpoint,
+          message: `Invalid Real-Debrid API response from ${endpoint}`,
+          cause,
         })
     )
   );
 
-const responseField = (data: unknown, key: string): unknown => {
-  if (typeof data !== 'object' || data === null || !(key in data)) {
-    return undefined;
-  }
-  return data[key as keyof typeof data];
-};
+const ApiErrorResponseSchema = Schema.Struct({
+  error: Schema.optional(Schema.String),
+  error_code: Schema.optional(Schema.Union(Schema.String, Schema.Number)),
+});
 
 const apiError = (
   response: AxiosResponse<unknown>,
   fallback: string
-): DebridError | DebridAuthError => {
+): DebridApiError | DebridAuthError => {
   if (response.status === 401 || response.status === 403) {
     return new DebridAuthError({ service: SERVICE });
   }
 
-  const rawMessage = responseField(response.data, 'error');
-  const rawCode = responseField(response.data, 'error_code');
-  return new DebridError({
+  const payload = Option.getOrUndefined(
+    Schema.decodeUnknownOption(ApiErrorResponseSchema)(response.data)
+  );
+  return new DebridApiError({
     service: SERVICE,
     message:
-      typeof rawMessage === 'string'
-        ? rawMessage
-        : `${fallback}: ${response.statusText || response.status}`,
-    apiCode: rawCode === undefined ? undefined : String(rawCode),
+      payload?.error ??
+      `${fallback}: ${response.statusText || response.status}`,
+    apiCode:
+      payload?.error_code === undefined
+        ? undefined
+        : String(payload.error_code),
+    statusCode: response.status,
   });
 };
 
@@ -155,13 +167,46 @@ const expectStatus = (
   response: AxiosResponse<unknown>,
   acceptedStatuses: ReadonlyArray<number>,
   fallback: string
-): Effect.Effect<void, DebridError | DebridAuthError> =>
+): Effect.Effect<void, DebridApiError | DebridAuthError> =>
   acceptedStatuses.includes(response.status)
     ? Effect.void
     : Effect.fail(apiError(response, fallback));
 
+export interface RealDebridClient {
+  readonly getUserInfo: () => Effect.Effect<$UserInfo, RealDebridClientError>;
+  readonly unrestrictLink: (
+    link: string,
+    password?: string
+  ) => Effect.Effect<$UnrestrictLink, RealDebridClientError>;
+  readonly addTorrent: (
+    torrent: ReadStream,
+    host?: RealDebridHostInput
+  ) => Effect.Effect<$AddTorrentOrMagnet, RealDebridClientError>;
+  readonly getTorrentInfo: (
+    id: string
+  ) => Effect.Effect<$TorrentInfo, RealDebridClientError>;
+  readonly addMagnet: (
+    magnet: string,
+    host?: RealDebridHostInput
+  ) => Effect.Effect<$AddTorrentOrMagnet, RealDebridClientError>;
+  readonly selectTorrents: (
+    id: string
+  ) => Effect.Effect<boolean, RealDebridClientError>;
+  readonly isTorrentReady: (
+    id: string
+  ) => Effect.Effect<boolean, RealDebridClientError>;
+  readonly getHosts: () => Effect.Effect<
+    ReadonlyArray<$Hosts>,
+    RealDebridClientError
+  >;
+}
+
+export class RealDebridClientResource extends Context.Tag(
+  'real-debrid-js/RealDebridClient'
+)<RealDebridClientResource, RealDebridClient>() {}
+
 /** Effect-based client for the Real-Debrid REST API. */
-export default class RealDebrid {
+export default class RealDebrid implements RealDebridClient {
   constructor(public readonly configuration: RealDebridConfiguration) {}
 
   private request(
@@ -185,7 +230,7 @@ export default class RealDebrid {
     return { Authorization: `Bearer ${this.configuration.apiKey}` };
   }
 
-  public getUserInfo(): Effect.Effect<$UserInfo, ClientError> {
+  public getUserInfo(): Effect.Effect<$UserInfo, RealDebridClientError> {
     const url = `${REAL_DEBRID_API_URL}/user`;
     return Effect.gen(this, function* () {
       const response = yield* this.request(url, {
@@ -193,14 +238,14 @@ export default class RealDebrid {
         validateStatus: () => true,
       });
       yield* expectStatus(response, [200], 'Failed to fetch user info');
-      return yield* decodeUnknown(UserInfoSchema, response.data);
+      return yield* decodeUnknown(UserInfoSchema, response.data, url);
     });
   }
 
   public unrestrictLink(
     link: string,
     password = ''
-  ): Effect.Effect<$UnrestrictLink, ClientError> {
+  ): Effect.Effect<$UnrestrictLink, RealDebridClientError> {
     const url = `${REAL_DEBRID_API_URL}/unrestrict/link`;
     return Effect.gen(this, function* () {
       const formData = new URLSearchParams({ link });
@@ -216,14 +261,14 @@ export default class RealDebrid {
         validateStatus: () => true,
       });
       yield* expectStatus(response, [200], 'Failed to unrestrict link');
-      return yield* decodeUnknown(UnrestrictLinkSchema, response.data);
+      return yield* decodeUnknown(UnrestrictLinkSchema, response.data, url);
     });
   }
 
   public addTorrent(
     torrent: ReadStream,
     host?: RealDebridHostInput
-  ): Effect.Effect<$AddTorrentOrMagnet, ClientError> {
+  ): Effect.Effect<$AddTorrentOrMagnet, RealDebridClientError> {
     const url = new URL(`${REAL_DEBRID_API_URL}/torrents/addTorrent`);
     const normalizedHost = normalizeHost(host);
     if (normalizedHost) url.searchParams.append('host', normalizedHost);
@@ -240,19 +285,17 @@ export default class RealDebrid {
         validateStatus: () => true,
       });
       yield* expectStatus(response, [201], 'Failed to add torrent');
-      yield* Effect.try({
-        try: () => torrent.close(),
-        catch: (cause) =>
-          new DebridError({
-            service: SERVICE,
-            message: `Failed to close torrent stream: ${String(cause)}`,
-          }),
-      });
-      return yield* decodeUnknown(AddTorrentOrMagnetSchema, response.data);
+      return yield* decodeUnknown(
+        AddTorrentOrMagnetSchema,
+        response.data,
+        requestUrl
+      );
     });
   }
 
-  public getTorrentInfo(id: string): Effect.Effect<$TorrentInfo, ClientError> {
+  public getTorrentInfo(
+    id: string
+  ): Effect.Effect<$TorrentInfo, RealDebridClientError> {
     const url = `${REAL_DEBRID_API_URL}/torrents/info/${id}`;
     return Effect.gen(this, function* () {
       const response = yield* this.request(url, {
@@ -260,14 +303,14 @@ export default class RealDebrid {
         validateStatus: () => true,
       });
       yield* expectStatus(response, [200], 'Failed to fetch torrent info');
-      return yield* decodeUnknown(TorrentInfoSchema, response.data);
+      return yield* decodeUnknown(TorrentInfoSchema, response.data, url);
     });
   }
 
   public addMagnet(
     magnet: string,
     host?: RealDebridHostInput
-  ): Effect.Effect<$AddTorrentOrMagnet, ClientError> {
+  ): Effect.Effect<$AddTorrentOrMagnet, RealDebridClientError> {
     const url = `${REAL_DEBRID_API_URL}/torrents/addMagnet`;
     return Effect.gen(this, function* () {
       const formData = new URLSearchParams({ magnet });
@@ -284,11 +327,13 @@ export default class RealDebrid {
         validateStatus: () => true,
       });
       yield* expectStatus(response, [201], 'Failed to add magnet');
-      return yield* decodeUnknown(AddTorrentOrMagnetSchema, response.data);
+      return yield* decodeUnknown(AddTorrentOrMagnetSchema, response.data, url);
     });
   }
 
-  public selectTorrents(id: string): Effect.Effect<boolean, ClientError> {
+  public selectTorrents(
+    id: string
+  ): Effect.Effect<boolean, RealDebridClientError> {
     const url = `${REAL_DEBRID_API_URL}/torrents/selectFiles/${id}`;
     return Effect.gen(this, function* () {
       const response = yield* this.request(url, {
@@ -305,14 +350,19 @@ export default class RealDebrid {
     });
   }
 
-  public isTorrentReady(id: string): Effect.Effect<boolean, ClientError> {
+  public isTorrentReady(
+    id: string
+  ): Effect.Effect<boolean, RealDebridClientError> {
     return Effect.gen(this, function* () {
       const torrentInfo = yield* this.getTorrentInfo(id);
       return torrentInfo.status === 'downloaded';
     });
   }
 
-  public getHosts(): Effect.Effect<ReadonlyArray<$Hosts>, ClientError> {
+  public getHosts(): Effect.Effect<
+    ReadonlyArray<$Hosts>,
+    RealDebridClientError
+  > {
     const url = `${REAL_DEBRID_API_URL}/torrents/availableHosts`;
     return Effect.gen(this, function* () {
       const response = yield* this.request(url, {
@@ -320,7 +370,70 @@ export default class RealDebrid {
         validateStatus: () => true,
       });
       yield* expectStatus(response, [200], 'Failed to fetch hosts');
-      return yield* decodeUnknown(Schema.Array(HostsSchema), response.data);
+      return yield* decodeUnknown(
+        Schema.Array(HostsSchema),
+        response.data,
+        url
+      );
     });
+  }
+}
+
+export const makeRealDebridClient = (
+  configuration: RealDebridConfiguration
+): RealDebridClient => new RealDebrid(configuration);
+
+export const RealDebridClientLayer = (
+  configuration: RealDebridConfiguration
+): Layer.Layer<RealDebridClientResource> =>
+  Layer.succeed(RealDebridClientResource, makeRealDebridClient(configuration));
+
+/** Promise adapter for consumers that have not migrated to Effect. */
+export class LegacyRealDebridPromiseClient {
+  private readonly client: RealDebridClient;
+
+  constructor(configuration: RealDebridConfiguration) {
+    this.client = makeRealDebridClient(configuration);
+  }
+
+  public getUserInfo(): Promise<$UserInfo> {
+    return Effect.runPromise(this.client.getUserInfo());
+  }
+
+  public unrestrictLink(
+    link: string,
+    password?: string
+  ): Promise<$UnrestrictLink> {
+    return Effect.runPromise(this.client.unrestrictLink(link, password));
+  }
+
+  public addTorrent(
+    torrent: ReadStream,
+    host?: RealDebridHostInput
+  ): Promise<$AddTorrentOrMagnet> {
+    return Effect.runPromise(this.client.addTorrent(torrent, host));
+  }
+
+  public getTorrentInfo(id: string): Promise<$TorrentInfo> {
+    return Effect.runPromise(this.client.getTorrentInfo(id));
+  }
+
+  public addMagnet(
+    magnet: string,
+    host?: RealDebridHostInput
+  ): Promise<$AddTorrentOrMagnet> {
+    return Effect.runPromise(this.client.addMagnet(magnet, host));
+  }
+
+  public selectTorrents(id: string): Promise<boolean> {
+    return Effect.runPromise(this.client.selectTorrents(id));
+  }
+
+  public isTorrentReady(id: string): Promise<boolean> {
+    return Effect.runPromise(this.client.isTorrentReady(id));
+  }
+
+  public getHosts(): Promise<ReadonlyArray<$Hosts>> {
+    return Effect.runPromise(this.client.getHosts());
   }
 }

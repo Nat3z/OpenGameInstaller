@@ -1,6 +1,14 @@
 import { Data } from 'effect';
 
-export { ipcBoundary, runEffectBoundary, runSyncBoundary } from './boundary.js';
+export {
+  type ErrorResponse,
+  effectBoundary,
+  ipcBoundary,
+  ipcEffectBoundary,
+  runEffectBoundary,
+  runEffectBoundaryPromise,
+  runSyncBoundary,
+} from './boundary.js';
 
 // =============================================================================
 // Download Errors
@@ -87,14 +95,43 @@ export class ConfigError extends Data.TaggedError('ConfigError')<{
 // Debrid Service Errors
 // =============================================================================
 
+export type DebridService =
+  | 'alldebrid'
+  | 'realdebrid'
+  | 'premiumize'
+  | 'torbox';
+
+/** @deprecated Prefer a precise debrid error for new Effect interfaces. */
 export class DebridError extends Data.TaggedError('DebridError')<{
   readonly message: string;
-  readonly service: 'alldebrid' | 'realdebrid' | 'premiumize' | 'torbox';
+  readonly service: DebridService;
   readonly apiCode?: string;
 }> {}
 
 export class DebridAuthError extends Data.TaggedError('DebridAuthError')<{
-  readonly service: 'alldebrid' | 'realdebrid' | 'premiumize' | 'torbox';
+  readonly service: DebridService;
+}> {}
+
+export class DebridApiError extends Data.TaggedError('DebridApiError')<{
+  readonly service: DebridService;
+  readonly message: string;
+  readonly apiCode?: string;
+  readonly statusCode?: number;
+}> {}
+
+export class DebridResponseError extends Data.TaggedError(
+  'DebridResponseError'
+)<{
+  readonly service: DebridService;
+  readonly message: string;
+  readonly endpoint: string;
+  readonly cause?: unknown;
+}> {}
+
+export class DebridTimeoutError extends Data.TaggedError('DebridTimeoutError')<{
+  readonly service: DebridService;
+  readonly operation: string;
+  readonly timeoutMs: number;
 }> {}
 
 // =============================================================================
@@ -228,6 +265,9 @@ export type OgiError =
   | ConfigError
   | DebridError
   | DebridAuthError
+  | DebridApiError
+  | DebridResponseError
+  | DebridTimeoutError
   | LibraryError
   | GameNotFound
   | TorrentError

@@ -2,7 +2,7 @@ import type { ChildProcess } from 'node:child_process';
 import { execFileSync, spawn } from 'node:child_process';
 import { join } from 'node:path';
 import { AddonError, FileSystemError, ValidationError } from '@ogi/errors';
-import { Effect, Schema } from 'effect';
+import { Deferred, Effect, Exit, Schema, Scope } from 'effect';
 import parseArgsStringToArgv from 'string-argv';
 import { AddonSetup } from '@/addon-setup';
 import { Git } from './git';
@@ -34,11 +34,13 @@ export type ScriptSpawnCommand = {
   readonly args: string[];
 };
 
+type AddonLifecycleError = AddonError | FileSystemError | ValidationError;
+
 /** Effect-based addon process lifecycle. */
 export class Addon {
   public readonly setup: AddonSetup;
   private childProcess: ChildProcess | null = null;
-  private abortController = new AbortController();
+  private processScope: Scope.CloseableScope | null = null;
 
   constructor(public readonly config: AddonConfig) {
     this.setup = new AddonSetup(config);
@@ -136,11 +138,95 @@ export class Addon {
     });
   }
 
-  public start(): Effect.Effect<
-    void,
-    AddonError | FileSystemError | ValidationError
-  > {
+  private spawnProcess(
+    command: string,
+    args: string[]
+  ): Effect.Effect<ChildProcess, AddonError> {
+    return Effect.try({
+      try: () =>
+        spawn(command, args, {
+          cwd: this.config.path,
+          stdio: ['ignore', 'pipe', 'pipe'],
+        }),
+      catch: (cause) =>
+        new AddonError({
+          addonName: this.config.name,
+          message: `Unable to start addon: ${String(cause)}`,
+        }),
+    });
+  }
+
+  private stopProcess(child: ChildProcess): Effect.Effect<void, AddonError> {
+    const killChild = Effect.try({
+      try: () => void child.kill(),
+      catch: (cause) =>
+        new AddonError({
+          addonName: this.config.name,
+          message: `Unable to stop addon: ${String(cause)}`,
+        }),
+    });
+
+    if (process.platform !== 'win32' || !child.pid) return killChild;
+    return Effect.try({
+      try: () =>
+        void execFileSync('taskkill.exe', [
+          '/pid',
+          String(child.pid),
+          '/T',
+          '/F',
+        ]),
+      catch: (cause) =>
+        new AddonError({
+          addonName: this.config.name,
+          message: `Unable to terminate addon process tree: ${String(cause)}`,
+        }),
+    }).pipe(Effect.catchAll(() => killChild));
+  }
+
+  private monitorProcess(child: ChildProcess): Effect.Effect<void, AddonError> {
+    const name = this.config.name;
+    return Effect.async<void, AddonError>((resume) => {
+      const onStdout = (data: Buffer): void => console.log(`[${name}] ${data}`);
+      const onStderr = (data: Buffer): void =>
+        console.error(`[${name}] ${data}`);
+      const onError = (cause: Error): void =>
+        resume(
+          Effect.fail(
+            new AddonError({
+              addonName: name,
+              message: `Addon process failed: ${String(cause)}`,
+            })
+          )
+        );
+      const onExit = (
+        code: number | null,
+        signal: NodeJS.Signals | null
+      ): void =>
+        resume(
+          Effect.sync(() => {
+            const message = `[${name}] Exited with code ${code} and signal ${signal}`;
+            if (code === 0) console.log(message);
+            else console.error(message);
+          })
+        );
+      const cleanup = (): void => {
+        child.stdout?.off('data', onStdout);
+        child.stderr?.off('data', onStderr);
+        child.off('error', onError);
+        child.off('exit', onExit);
+      };
+
+      child.stdout?.on('data', onStdout);
+      child.stderr?.on('data', onStderr);
+      child.once('error', onError);
+      child.once('exit', onExit);
+      return Effect.sync(cleanup);
+    });
+  }
+
+  public start(): Effect.Effect<void, AddonLifecycleError> {
     return Effect.gen(this, function* () {
+      if (this.processScope) yield* this.stop();
       if (!this.config.scripts?.run) {
         const addonConfig = yield* AddonSetup.loadAddonConfig(this.config.path);
         this.config.scripts = addonConfig.scripts;
@@ -153,47 +239,37 @@ export class Addon {
           `--addonSecret=${this.config.secret}`,
         ]
       );
-      const child = yield* Effect.try({
-        try: () =>
-          spawn(command, args, {
-            cwd: this.config.path,
-            stdio: ['ignore', 'pipe', 'pipe'],
-            signal: this.abortController.signal,
-          }),
-        catch: (cause) =>
-          new AddonError({
-            addonName: this.config.name,
-            message: `Unable to start addon: ${String(cause)}`,
-          }),
-      });
-
-      child.stdout?.on('data', (data) => {
-        Effect.runFork(
-          Effect.sync(() => console.log(`[${this.config.name}] ${data}`))
-        );
-      });
-      child.stderr?.on('data', (data) => {
-        Effect.runFork(
-          Effect.sync(() => console.error(`[${this.config.name}] ${data}`))
-        );
-      });
-      child.on('error', (cause) => {
-        Effect.runFork(
-          Effect.sync(() =>
-            console.error(`[${this.config.name}] ${String(cause)}`)
-          )
-        );
-      });
-      child.on('exit', (code, signal) => {
-        Effect.runFork(
-          Effect.sync(() => {
-            const message = `[${this.config.name}] Exited with code ${code} and signal ${signal}`;
-            if (code === 0) console.log(message);
-            else console.error(message);
-          })
-        );
-      });
-      this.childProcess = child;
+      yield* Effect.uninterruptibleMask((restore) =>
+        Effect.gen(this, function* () {
+          const scope = yield* Scope.make();
+          const child = yield* Effect.gen(this, function* () {
+            const started = yield* Deferred.make<ChildProcess, AddonError>();
+            const lifecycle = Effect.acquireUseRelease(
+              this.spawnProcess(command, args),
+              (child) =>
+                Deferred.succeed(started, child).pipe(
+                  Effect.zipRight(this.monitorProcess(child))
+                ),
+              (child) => this.stopProcess(child).pipe(Effect.ignore)
+            ).pipe(
+              Effect.tapError((error) => Deferred.fail(started, error)),
+              Effect.ensuring(
+                Effect.sync(() => {
+                  this.childProcess = null;
+                })
+              )
+            );
+            yield* Effect.forkIn(Effect.interruptible(lifecycle), scope);
+            return yield* restore(Deferred.await(started));
+          }).pipe(
+            Effect.onExit((exit) =>
+              Exit.isSuccess(exit) ? Effect.void : Scope.close(scope, exit)
+            )
+          );
+          this.processScope = scope;
+          this.childProcess = child;
+        })
+      );
     });
   }
 
@@ -202,52 +278,20 @@ export class Addon {
   }
 
   public stop(): Effect.Effect<void, AddonError> {
-    const child = this.childProcess;
-    if (!child) return Effect.void;
+    const scope = this.processScope;
+    if (!scope) return Effect.void;
 
-    return Effect.gen(this, function* () {
-      yield* Effect.sync(() => this.abortController.abort());
-
-      const killChild = Effect.try({
-        try: () => void child.kill(),
-        catch: (cause) =>
-          new AddonError({
-            addonName: this.config.name,
-            message: `Unable to stop addon: ${String(cause)}`,
-          }),
-      });
-
-      if (process.platform === 'win32' && child.pid) {
-        yield* Effect.try({
-          try: () =>
-            void execFileSync('taskkill.exe', [
-              '/pid',
-              String(child.pid),
-              '/T',
-              '/F',
-            ]),
-          catch: (cause) =>
-            new AddonError({
-              addonName: this.config.name,
-              message: `Unable to terminate addon process tree: ${String(cause)}`,
-            }),
-        }).pipe(Effect.catchAll(() => killChild));
-      } else {
-        yield* killChild;
-      }
-
-      this.childProcess = null;
-      this.abortController = new AbortController();
-    });
+    return Scope.close(scope, Exit.void).pipe(
+      Effect.ensuring(
+        Effect.sync(() => {
+          this.childProcess = null;
+          this.processScope = null;
+        })
+      )
+    );
   }
 
-  public restart(): Effect.Effect<
-    void,
-    AddonError | FileSystemError | ValidationError
-  > {
-    return Effect.gen(this, function* () {
-      yield* this.stop();
-      yield* this.start();
-    });
+  public restart(): Effect.Effect<void, AddonLifecycleError> {
+    return this.stop().pipe(Effect.zipRight(this.start()));
   }
 }

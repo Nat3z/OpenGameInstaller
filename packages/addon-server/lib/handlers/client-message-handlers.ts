@@ -15,18 +15,15 @@ import {
 } from './helpers';
 import type { ClientMessageHandler, ClientMessageHandlers } from './types';
 
-const handleNotification: ClientMessageHandler = ({ server }, message) =>
-  Effect.sync(() => {
-    const args = message.args as AddonClientToServerEventArgs['notification'];
-    const notification: AddonNotificationMessage | undefined = Array.isArray(
-      args
-    )
-      ? args[0]
-      : args;
-    if (notification?.type && notification.message) {
-      server.emit('notification', notification);
-    }
-  });
+const handleNotification: ClientMessageHandler = ({ server }, message) => {
+  const args = message.args as AddonClientToServerEventArgs['notification'];
+  const notification: AddonNotificationMessage | undefined = Array.isArray(args)
+    ? args[0]
+    : args;
+  return notification?.type && notification.message
+    ? server.emitEffect('notification', notification)
+    : Effect.void;
+};
 
 const handleAuthenticate: ClientMessageHandler = (context, message) =>
   Effect.gen(function* () {
@@ -97,7 +94,7 @@ const handleDeferUpdate: ClientMessageHandler = (context, message) =>
   });
 
 const handleInputAsked: ClientMessageHandler = (context, message) =>
-  Effect.sync(() => {
+  Effect.gen(function* () {
     if (!requireAuthenticated(context, 'input-asked') || !message.args) return;
     const args = message.args as AddonClientToServerEventArgs['input-asked'];
     if (!args.config || !args.name || !args.description) {
@@ -108,18 +105,17 @@ const handleInputAsked: ClientMessageHandler = (context, message) =>
       return;
     }
     if (!requireMessageId(context, 'input-asked', message.id)) return;
-    context.server.emit(
+    yield* context.server.emitEffect(
       'input-asked',
       args.name,
       args.description,
       args.config,
-      (reply) => {
-        Effect.runFork(
+      (reply) =>
+        Effect.runPromise(
           context.connection.events
             .response(message.id!, reply)
             .pipe(Effect.asVoid)
-        );
-      }
+        )
     );
   });
 

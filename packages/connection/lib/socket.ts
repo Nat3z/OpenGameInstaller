@@ -2,10 +2,12 @@ import { NetworkError, ValidationError } from '@ogi/errors';
 import {
   Deferred,
   Effect,
+  Exit,
   Fiber,
   PubSub,
   Random,
   Schema,
+  Scope,
   Stream,
 } from 'effect';
 
@@ -37,6 +39,15 @@ export type WebSocketLike = {
     listener: (message: { readonly data: unknown }) => void
   ): unknown;
   addEventListener?(
+    event: 'open' | 'close' | 'error',
+    listener: (...args: unknown[]) => void
+  ): unknown;
+  off?(event: string, listener: (...args: unknown[]) => void): unknown;
+  removeEventListener?(
+    event: 'message',
+    listener: (message: { readonly data: unknown }) => void
+  ): unknown;
+  removeEventListener?(
     event: 'open' | 'close' | 'error',
     listener: (...args: unknown[]) => void
   ): unknown;
@@ -94,6 +105,7 @@ export class EventResponseSocket<
   private constructor(
     private readonly socket: WebSocketLike,
     private readonly messagePubSub: PubSub.PubSub<IncomingMessage>,
+    private readonly scope: Scope.CloseableScope,
     private readonly options: EventResponseSocketOptions
   ) {
     this.messages = Stream.fromPubSub(messagePubSub);
@@ -109,12 +121,16 @@ export class EventResponseSocket<
   ): Effect.Effect<EventResponseSocket<Incoming, Outgoing>, NetworkError> {
     return Effect.gen(function* () {
       const pubsub = yield* PubSub.unbounded<Incoming>();
+      const scope = yield* Scope.make();
       const transport = new EventResponseSocket<Incoming, Outgoing>(
         socket,
         pubsub,
+        scope,
         options
       );
-      yield* transport.attach();
+      yield* transport
+        .attach()
+        .pipe(Effect.tapError(() => Scope.close(scope, Exit.void)));
       return transport;
     });
   }
@@ -160,7 +176,7 @@ export class EventResponseSocket<
     );
   }
 
-  /** Forks an Effect listener for one event stream. */
+  /** Forks a listener supervised by this transport's lifetime. */
   public on<Event extends IncomingMessage['event'], E>(
     event: Event,
     listener: (
@@ -169,8 +185,25 @@ export class EventResponseSocket<
   ): Effect.Effect<Fiber.RuntimeFiber<void, E>> {
     return this.stream(event).pipe(
       Stream.runForEach(listener),
-      Effect.forkDaemon
+      Effect.forkIn(this.scope)
     );
+  }
+
+  /** Registers cleanup to run when this transport shuts down. */
+  public addFinalizer(finalizer: Effect.Effect<void>): Effect.Effect<void> {
+    return Scope.addFinalizer(this.scope, finalizer);
+  }
+
+  /** Forks any Effect under this transport's lifetime. */
+  public fork<A, E>(
+    effect: Effect.Effect<A, E>
+  ): Effect.Effect<Fiber.RuntimeFiber<A, E>> {
+    return Effect.forkIn(effect, this.scope);
+  }
+
+  /** Runs an external websocket callback under this transport's supervision. */
+  public run<E>(effect: Effect.Effect<void, E>): void {
+    Effect.runFork(this.fork(effect));
   }
 
   /** Completes a matching request Deferred when a response arrives. */
@@ -283,6 +316,7 @@ export class EventResponseSocket<
     return Effect.gen(this, function* () {
       yield* this.rejectPendingResponses(reason);
       yield* PubSub.shutdown(this.messagePubSub);
+      yield* Scope.close(this.scope, Exit.void);
       yield* Effect.try({
         try: () => this.socket.close(),
         catch: (cause) =>
@@ -294,28 +328,38 @@ export class EventResponseSocket<
   }
 
   private attach(): Effect.Effect<void, NetworkError> {
-    return Effect.try({
-      try: () => {
-        const runMessage = (rawMessage: unknown): void => {
-          Effect.runFork(this.handleRawMessage(rawMessage));
-        };
+    return Effect.gen(this, function* () {
+      const runMessage = (rawMessage: unknown): void => {
+        this.run(this.handleRawMessage(rawMessage));
+      };
+      const browserMessage = (message: { readonly data: unknown }): void =>
+        runMessage(message.data);
 
-        if (this.socket.on) {
-          this.socket.on('message', runMessage);
-          return;
-        }
-        if (this.socket.addEventListener) {
-          this.socket.addEventListener('message', (message) =>
-            runMessage(message.data)
-          );
-          return;
-        }
-        throw new TypeError('Unsupported websocket implementation');
-      },
-      catch: (cause) =>
-        new NetworkError({
-          message: `Unable to attach websocket listener: ${String(cause)}`,
-        }),
+      const removeListener = yield* Effect.try({
+        try: () => {
+          if (this.socket.on) {
+            this.socket.on('message', runMessage);
+            return () => this.socket.off?.('message', runMessage);
+          }
+          if (this.socket.addEventListener) {
+            this.socket.addEventListener('message', browserMessage);
+            return () =>
+              this.socket.removeEventListener?.('message', browserMessage);
+          }
+          throw new TypeError('Unsupported websocket implementation');
+        },
+        catch: (cause) =>
+          new NetworkError({
+            message: `Unable to attach websocket listener: ${String(cause)}`,
+          }),
+      });
+
+      yield* Scope.addFinalizer(
+        this.scope,
+        Effect.sync(() => {
+          removeListener();
+        })
+      );
     });
   }
 

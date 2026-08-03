@@ -93,11 +93,17 @@ export class ClientConnection {
       yield* this.transport.on('get-deferred-task', (message) =>
         this.handleDeferredTask(message)
       );
-      yield* bindWebSocketLifecycle(this.socket, {
-        onClose: () =>
-          this.transport.rejectPendingResponses('Websocket closed'),
-        onError: () => this.transport.rejectPendingResponses('Websocket error'),
-      });
+      const unbindLifecycle = yield* bindWebSocketLifecycle(
+        this.socket,
+        (effect) => this.transport.run(effect),
+        {
+          onClose: () =>
+            this.transport.shutdown('Websocket closed').pipe(Effect.ignore),
+          onError: () =>
+            this.transport.shutdown('Websocket error').pipe(Effect.ignore),
+        }
+      );
+      yield* this.transport.addFinalizer(Effect.sync(unbindLifecycle));
     });
   }
 
@@ -202,8 +208,7 @@ export class ClientConnection {
         addonId
       );
       task.id = taskID;
-      yield* this.server.getDeferredTasksManager().addTask(task);
-      yield* Effect.forkDaemon(task.run());
+      yield* this.server.getDeferredTasksManager().startTask(task);
       yield* this.sendQueryResponse(message.id, { taskID }).pipe(Effect.ignore);
     });
   }

@@ -1,7 +1,13 @@
 import type { ReadStream } from 'node:fs';
-import { DebridError, HttpError, ValidationError } from '@ogi/errors';
-import axios from 'axios';
-import { Effect, Schema } from 'effect';
+import {
+  DebridApiError,
+  DebridAuthError,
+  DebridResponseError,
+  DebridTimeoutError,
+  HttpError,
+} from '@ogi/errors';
+import axios, { type AxiosResponse } from 'axios';
+import { Context, Effect, Layer, Schema } from 'effect';
 import FormData from 'form-data';
 
 const BASE_V4 = 'https://api.alldebrid.com/v4';
@@ -15,6 +21,10 @@ export interface AllDebridConfiguration {
 
 const ApiResponseSuccess = <A, I, R>(dataSchema: Schema.Schema<A, I, R>) =>
   Schema.Struct({ status: Schema.Literal('success'), data: dataSchema });
+
+const ApiResponseStatus = Schema.Struct({
+  status: Schema.Union(Schema.Literal('success'), Schema.Literal('error')),
+});
 
 const ApiResponseError = Schema.Struct({
   status: Schema.Literal('error'),
@@ -175,55 +185,62 @@ export type $DelayedLinkStatus = Schema.Schema.Type<
   typeof DelayedLinkResponseSchema
 >;
 
-type ApiError = DebridError | ValidationError;
-type ClientError = HttpError | ApiError;
+export type AllDebridClientError =
+  | HttpError
+  | DebridApiError
+  | DebridAuthError
+  | DebridResponseError
+  | DebridTimeoutError;
 
 const decodeUnknown =
-  <A, I>(schema: Schema.Schema<A, I>) =>
-  (input: unknown): Effect.Effect<A, ValidationError> =>
+  <A, I>(schema: Schema.Schema<A, I>, endpoint: string) =>
+  (input: unknown): Effect.Effect<A, DebridResponseError> =>
     Schema.decodeUnknown(schema)(input).pipe(
       Effect.mapError(
-        (error) =>
-          new ValidationError({
-            message: `Invalid AllDebrid API response: ${String(error)}`,
+        (cause) =>
+          new DebridResponseError({
+            service: SERVICE,
+            endpoint,
+            message: `Invalid AllDebrid API response from ${endpoint}`,
+            cause,
           })
       )
     );
 
-/** Parses and validates an AllDebrid API response. */
+/** Parses the response envelope and decodes its payload at the client seam. */
 const checkResponse = <A, I>(
-  response: { readonly data: unknown },
-  dataSchema: Schema.Schema<A, I>
-): Effect.Effect<A, ApiError> =>
+  response: AxiosResponse<unknown>,
+  dataSchema: Schema.Schema<A, I>,
+  endpoint: string
+): Effect.Effect<A, DebridApiError | DebridAuthError | DebridResponseError> =>
   Effect.gen(function* () {
-    const body = response.data;
-    if (typeof body !== 'object' || body === null || !('status' in body)) {
-      return yield* Effect.fail(
-        new ValidationError({ message: 'Invalid AllDebrid API response' })
-      );
+    if (response.status === 401 || response.status === 403) {
+      return yield* Effect.fail(new DebridAuthError({ service: SERVICE }));
     }
 
-    if (body.status === 'error') {
-      const parsed = yield* decodeUnknown(ApiResponseError)(body);
+    const status = yield* decodeUnknown(
+      ApiResponseStatus,
+      endpoint
+    )(response.data);
+    if (status.status === 'error') {
+      const parsed = yield* decodeUnknown(
+        ApiResponseError,
+        endpoint
+      )(response.data);
       return yield* Effect.fail(
-        new DebridError({
+        new DebridApiError({
           service: SERVICE,
           message: parsed.error.message,
           apiCode: parsed.error.code,
+          statusCode: response.status,
         })
       );
     }
 
-    if (body.status !== 'success') {
-      return yield* Effect.fail(
-        new ValidationError({
-          message: `Invalid AllDebrid API status: ${String(body.status)}`,
-          field: 'status',
-        })
-      );
-    }
-
-    const parsed = yield* decodeUnknown(ApiResponseSuccess(dataSchema))(body);
+    const parsed = yield* decodeUnknown(
+      ApiResponseSuccess(dataSchema),
+      endpoint
+    )(response.data);
     return parsed.data;
   });
 
@@ -239,8 +256,37 @@ const collectLinks = (
   return output;
 };
 
+export interface AllDebridClient {
+  readonly getUserInfo: () => Effect.Effect<$UserInfo, AllDebridClientError>;
+  readonly getHosts: () => Effect.Effect<$Hosts, AllDebridClientError>;
+  readonly addMagnet: (
+    magnet: string,
+    host?: string
+  ) => Effect.Effect<$AddMagnetOrTorrent, AllDebridClientError>;
+  readonly addTorrent: (
+    torrent: ReadStream
+  ) => Effect.Effect<$AddMagnetOrTorrent, AllDebridClientError>;
+  readonly getMagnetStatus: (
+    id: string
+  ) => Effect.Effect<{ readonly statusCode: number }, AllDebridClientError>;
+  readonly isTorrentReady: (
+    id: string
+  ) => Effect.Effect<boolean, AllDebridClientError>;
+  readonly getMagnetFiles: (
+    id: string
+  ) => Effect.Effect<$AllDebridTorrentInfo, AllDebridClientError>;
+  readonly unrestrictLink: (
+    link: string,
+    password?: string
+  ) => Effect.Effect<$UnrestrictLink, AllDebridClientError>;
+}
+
+export class AllDebridClientResource extends Context.Tag(
+  'all-debrid-js/AllDebridClient'
+)<AllDebridClientResource, AllDebridClient>() {}
+
 /** Client for the AllDebrid API (v4 / v4.1). */
-export default class AllDebrid {
+export default class AllDebrid implements AllDebridClient {
   constructor(public readonly configuration: AllDebridConfiguration) {}
 
   private headers(): { readonly Authorization: string } {
@@ -249,8 +295,8 @@ export default class AllDebrid {
 
   private request(
     url: string,
-    request: () => Promise<{ readonly data: unknown }>
-  ): Effect.Effect<{ readonly data: unknown }, HttpError> {
+    request: () => Promise<AxiosResponse<unknown>>
+  ): Effect.Effect<AxiosResponse<unknown>, HttpError> {
     return Effect.tryPromise({
       try: request,
       catch: (cause) =>
@@ -265,7 +311,7 @@ export default class AllDebrid {
   }
 
   /** Fetches the current user's account info. */
-  public getUserInfo(): Effect.Effect<$UserInfo, ClientError> {
+  public getUserInfo(): Effect.Effect<$UserInfo, AllDebridClientError> {
     const url = `${BASE_V4}/user`;
     return Effect.gen(this, function* () {
       const response = yield* this.request(url, () =>
@@ -276,14 +322,15 @@ export default class AllDebrid {
       );
       const data = yield* checkResponse(
         response,
-        Schema.Struct({ user: UserSchema })
+        Schema.Struct({ user: UserSchema }),
+        url
       );
       return data.user;
     });
   }
 
   /** Returns the currently supported hosts. */
-  public getHosts(): Effect.Effect<$Hosts, ClientError> {
+  public getHosts(): Effect.Effect<$Hosts, AllDebridClientError> {
     const url = `${BASE_V4_1}/user/hosts`;
     return Effect.gen(this, function* () {
       const response = yield* this.request(url, () =>
@@ -292,7 +339,7 @@ export default class AllDebrid {
           validateStatus: () => true,
         })
       );
-      const data = yield* checkResponse(response, HostsResponseSchema);
+      const data = yield* checkResponse(response, HostsResponseSchema, url);
       return Object.values(data.hosts);
     });
   }
@@ -301,7 +348,7 @@ export default class AllDebrid {
   public addMagnet(
     magnet: string,
     _host?: string
-  ): Effect.Effect<$AddMagnetOrTorrent, ClientError> {
+  ): Effect.Effect<$AddMagnetOrTorrent, AllDebridClientError> {
     const url = `${BASE_V4}/magnet/upload`;
     return Effect.gen(this, function* () {
       const response = yield* this.request(url, () =>
@@ -313,11 +360,11 @@ export default class AllDebrid {
           validateStatus: () => true,
         })
       );
-      const data = yield* checkResponse(response, AddMagnetResponseSchema);
+      const data = yield* checkResponse(response, AddMagnetResponseSchema, url);
       const first = data.magnets[0];
       if (!first || first.error) {
         return yield* Effect.fail(
-          new DebridError({
+          new DebridApiError({
             service: SERVICE,
             message: first?.error?.message ?? 'No magnet returned',
             apiCode: first?.error?.code,
@@ -331,7 +378,7 @@ export default class AllDebrid {
   /** Uploads a torrent file and returns its AllDebrid id and magnet URI. */
   public addTorrent(
     torrent: ReadStream
-  ): Effect.Effect<$AddMagnetOrTorrent, ClientError> {
+  ): Effect.Effect<$AddMagnetOrTorrent, AllDebridClientError> {
     const url = `${BASE_V4}/magnet/upload/file`;
     return Effect.gen(this, function* () {
       const form = yield* Effect.try({
@@ -341,7 +388,7 @@ export default class AllDebrid {
           return body;
         },
         catch: (cause) =>
-          new DebridError({
+          new DebridApiError({
             service: SERVICE,
             message: `Unable to prepare torrent upload: ${String(cause)}`,
           }),
@@ -354,11 +401,15 @@ export default class AllDebrid {
           maxContentLength: Infinity,
         })
       );
-      const data = yield* checkResponse(response, AddTorrentResponseSchema);
+      const data = yield* checkResponse(
+        response,
+        AddTorrentResponseSchema,
+        url
+      );
       const first = data.files[0];
       if (!first || first.error) {
         return yield* Effect.fail(
-          new DebridError({
+          new DebridApiError({
             service: SERVICE,
             message: first?.error?.message ?? 'No file returned',
             apiCode: first?.error?.code,
@@ -367,7 +418,7 @@ export default class AllDebrid {
       }
       if (!first.hash) {
         return yield* Effect.fail(
-          new DebridError({
+          new DebridApiError({
             service: SERVICE,
             message: 'Torrent upload did not return a hash',
           })
@@ -380,7 +431,7 @@ export default class AllDebrid {
   /** Gets magnet status. statusCode 4 means ready. */
   public getMagnetStatus(
     id: string
-  ): Effect.Effect<{ readonly statusCode: number }, ClientError> {
+  ): Effect.Effect<{ readonly statusCode: number }, AllDebridClientError> {
     const url = `${BASE_V4_1}/magnet/status`;
     return Effect.gen(this, function* () {
       const response = yield* this.request(url, () =>
@@ -392,13 +443,17 @@ export default class AllDebrid {
           validateStatus: () => true,
         })
       );
-      const data = yield* checkResponse(response, MagnetStatusResponseSchema);
+      const data = yield* checkResponse(
+        response,
+        MagnetStatusResponseSchema,
+        url
+      );
       const magnet = Array.isArray(data.magnets)
         ? data.magnets[0]
         : data.magnets;
       if (!magnet) {
         return yield* Effect.fail(
-          new DebridError({ service: SERVICE, message: 'Magnet not found' })
+          new DebridApiError({ service: SERVICE, message: 'Magnet not found' })
         );
       }
       return { statusCode: magnet.statusCode };
@@ -406,7 +461,9 @@ export default class AllDebrid {
   }
 
   /** Returns whether a magnet/torrent is ready for download. */
-  public isTorrentReady(id: string): Effect.Effect<boolean, ClientError> {
+  public isTorrentReady(
+    id: string
+  ): Effect.Effect<boolean, AllDebridClientError> {
     return Effect.gen(this, function* () {
       const { statusCode } = yield* this.getMagnetStatus(id);
       return statusCode === 4;
@@ -416,7 +473,7 @@ export default class AllDebrid {
   /** Gets the files and direct links for a magnet. */
   public getMagnetFiles(
     id: string
-  ): Effect.Effect<$AllDebridTorrentInfo, ClientError> {
+  ): Effect.Effect<$AllDebridTorrentInfo, AllDebridClientError> {
     const url = `${BASE_V4}/magnet/files`;
     return Effect.gen(this, function* () {
       const response = yield* this.request(url, () =>
@@ -428,11 +485,15 @@ export default class AllDebrid {
           validateStatus: () => true,
         })
       );
-      const data = yield* checkResponse(response, MagnetFilesResponseSchema);
+      const data = yield* checkResponse(
+        response,
+        MagnetFilesResponseSchema,
+        url
+      );
       const magnet = data.magnets[0];
       if (!magnet || magnet.error) {
         return yield* Effect.fail(
-          new DebridError({
+          new DebridApiError({
             service: SERVICE,
             message: magnet?.error?.message ?? 'Magnet files not found',
             apiCode: magnet?.error?.code,
@@ -446,7 +507,7 @@ export default class AllDebrid {
 
   private getDelayedLink(
     delayedId: number
-  ): Effect.Effect<string | null, ClientError> {
+  ): Effect.Effect<string | null, AllDebridClientError> {
     const url = `${BASE_V4}/link/delayed`;
     return Effect.gen(this, function* () {
       const response = yield* this.request(url, () =>
@@ -458,12 +519,16 @@ export default class AllDebrid {
           validateStatus: () => true,
         })
       );
-      const data = yield* checkResponse(response, DelayedLinkResponseSchema);
+      const data = yield* checkResponse(
+        response,
+        DelayedLinkResponseSchema,
+        url
+      );
 
       if (data.status === 2) {
         if (!data.link) {
           return yield* Effect.fail(
-            new DebridError({
+            new DebridApiError({
               service: SERVICE,
               message: 'Delayed link is ready but no link was returned',
             })
@@ -473,7 +538,7 @@ export default class AllDebrid {
       }
       if (data.status === 3) {
         return yield* Effect.fail(
-          new DebridError({
+          new DebridApiError({
             service: SERVICE,
             message: `Failed to generate delayed link (time_left: ${data.time_left})`,
           })
@@ -487,7 +552,7 @@ export default class AllDebrid {
   public unrestrictLink(
     link: string,
     password = ''
-  ): Effect.Effect<$UnrestrictLink, ClientError> {
+  ): Effect.Effect<$UnrestrictLink, AllDebridClientError> {
     const url = `${BASE_V4}/link/unlock`;
     return Effect.gen(this, function* () {
       const params = new URLSearchParams({ link });
@@ -502,7 +567,11 @@ export default class AllDebrid {
           validateStatus: () => true,
         })
       );
-      const data = yield* checkResponse(response, UnrestrictLinkResponseSchema);
+      const data = yield* checkResponse(
+        response,
+        UnrestrictLinkResponseSchema,
+        url
+      );
 
       if (data.link) {
         return {
@@ -515,7 +584,7 @@ export default class AllDebrid {
 
       if (data.delayed === undefined) {
         return yield* Effect.fail(
-          new DebridError({
+          new DebridApiError({
             service: SERVICE,
             message:
               'Unlock response contained neither a link nor a delayed id',
@@ -537,11 +606,68 @@ export default class AllDebrid {
       }
 
       return yield* Effect.fail(
-        new DebridError({
+        new DebridTimeoutError({
           service: SERVICE,
-          message: 'Delayed link was not ready after 300 seconds',
+          operation: 'unlock delayed link',
+          timeoutMs: 300_000,
         })
       );
     });
+  }
+}
+
+export const makeAllDebridClient = (
+  configuration: AllDebridConfiguration
+): AllDebridClient => new AllDebrid(configuration);
+
+export const AllDebridClientLayer = (
+  configuration: AllDebridConfiguration
+): Layer.Layer<AllDebridClientResource> =>
+  Layer.succeed(AllDebridClientResource, makeAllDebridClient(configuration));
+
+/** Promise adapter for consumers that have not migrated to Effect. */
+export class LegacyAllDebridPromiseClient {
+  private readonly client: AllDebridClient;
+
+  constructor(configuration: AllDebridConfiguration) {
+    this.client = makeAllDebridClient(configuration);
+  }
+
+  public getUserInfo(): Promise<$UserInfo> {
+    return Effect.runPromise(this.client.getUserInfo());
+  }
+
+  public getHosts(): Promise<$Hosts> {
+    return Effect.runPromise(this.client.getHosts());
+  }
+
+  public addMagnet(
+    magnet: string,
+    host?: string
+  ): Promise<$AddMagnetOrTorrent> {
+    return Effect.runPromise(this.client.addMagnet(magnet, host));
+  }
+
+  public addTorrent(torrent: ReadStream): Promise<$AddMagnetOrTorrent> {
+    return Effect.runPromise(this.client.addTorrent(torrent));
+  }
+
+  public getMagnetStatus(id: string): Promise<{ readonly statusCode: number }> {
+    return Effect.runPromise(this.client.getMagnetStatus(id));
+  }
+
+  public isTorrentReady(id: string): Promise<boolean> {
+    return Effect.runPromise(this.client.isTorrentReady(id));
+  }
+
+  public getMagnetFiles(id: string): Promise<$AllDebridTorrentInfo> {
+    return Effect.runPromise(this.client.getMagnetFiles(id));
+  }
+
+  public unrestrictLink(
+    link: string,
+    password?: string
+  ): Promise<$UnrestrictLink> {
+    return Effect.runPromise(this.client.unrestrictLink(link, password));
   }
 }

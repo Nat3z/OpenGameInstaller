@@ -11,6 +11,7 @@ import { ipcMain } from 'electron';
 import * as fs from 'fs';
 import { parse as shellQuoteParse } from 'shell-quote';
 import {
+  addDeckGameToSteam,
   addUmuGameToSteam,
   findSteamAppIdForGame,
   runSteamMutationWithConfirmation,
@@ -38,10 +39,7 @@ import {
   stageLibraryRemoval,
 } from '@/electron/handlers/helpers.app/library.js';
 import { generateNotificationId } from '@/electron/handlers/helpers.app/notifications.js';
-import {
-  getCurrentUsername,
-  isLinux,
-} from '@/electron/handlers/helpers.app/platform.js';
+import { isLinux } from '@/electron/handlers/helpers.app/platform.js';
 import { sendNotification } from '@/electron/main.js';
 
 /**
@@ -580,8 +578,6 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
 
           // Check if UMU is available and should be used (Linux only; macOS uses legacy)
           const umuAvailable = isLinux();
-          const isDeckUser =
-            isLinux() && getCurrentUsername()?.toLowerCase() === 'deck';
 
           if (
             umuAvailable &&
@@ -652,27 +648,6 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
               saveLibraryInfo(data.appID, data);
               addToInternalsApps(data.appID);
 
-              // On Steam Deck (user "deck"), add a Steam shortcut so the game appears in Game Mode
-              if (isDeckUser) {
-                const steamResult = yield* addUmuGameToSteam(mainWindow, {
-                  appID: data.appID,
-                });
-                if (steamResult.status === 'cancelled') {
-                  sendNotification({
-                    message:
-                      'Steam shortcut setup was cancelled. Add the game to Steam later from its configuration page.',
-                    id: generateNotificationId(),
-                    type: 'info',
-                  });
-                } else if (steamResult.warning) {
-                  sendNotification({
-                    message: steamResult.warning,
-                    id: generateNotificationId(),
-                    type: 'warning',
-                  });
-                }
-              }
-
               if (data.redistributables && data.redistributables.length > 0) {
                 console.log(
                   '[setup] Redistributables detected, need to install them for:',
@@ -680,6 +655,8 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
                 );
                 return 'setup-prefix-required';
               }
+
+              yield* addDeckGameToSteam(mainWindow, data.appID);
               return 'setup-success';
             }
           }

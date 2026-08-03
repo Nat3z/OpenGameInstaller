@@ -6,8 +6,11 @@ import {
 } from '@ogi/errors';
 import type { LibraryInfo } from '@ogi-sdk/connect';
 import { Effect } from 'effect';
-import { ipcMain } from 'electron';
-import { findSteamAppIdForGame } from '@/electron/handlers/handler.steam.js';
+import { type BrowserWindow, ipcMain } from 'electron';
+import {
+  addDeckGameToSteam,
+  findSteamAppIdForGame,
+} from '@/electron/handlers/handler.steam.js';
 import {
   installRedistributablesWithUmu,
   migrateToUmu,
@@ -17,7 +20,11 @@ import { loadLibraryInfo } from '@/electron/handlers/helpers.app/library.js';
 import { isLinux } from '@/electron/handlers/helpers.app/platform.js';
 import { sendIPCMessage } from '@/electron/main.js';
 
-const installRedistributables = (appID: number, downloadId?: string) =>
+const installRedistributables = (
+  mainWindow: BrowserWindow,
+  appID: number,
+  downloadId?: string
+) =>
   Effect.gen(function* () {
     const emitProgress = (progress: RedistributableInstallProgress): void => {
       sendIPCMessage('app:redistributable-progress', {
@@ -60,15 +67,32 @@ const installRedistributables = (appID: number, downloadId?: string) =>
         new LibraryError({ message: 'Game not found', gameId: appID })
       );
     }
-    if (appInfo.umu) {
-      return yield* Effect.tryPromise({
-        try: () => installRedistributablesWithUmu(appID, emitProgress),
+    if (!appInfo.umu) {
+      const steamAppId = yield* findSteamAppIdForGame(appID).pipe(
+        Effect.mapError((cause) => {
+          emitProgress({
+            kind: 'done',
+            total: appInfo.redistributables?.length ?? 0,
+            completedCount: 0,
+            failedCount: appInfo.redistributables?.length ?? 0,
+            overallProgress: 100,
+            result: 'failed',
+            error: 'Failed to inspect the Steam shortcut',
+          });
+          return new LibraryError({
+            message: formatError(cause),
+            gameId: appID,
+          });
+        })
+      );
+      const migration = yield* Effect.tryPromise({
+        try: () => migrateToUmu(appID, steamAppId),
         catch: (cause) =>
           new LibraryError({ message: formatError(cause), gameId: appID }),
       });
-    }
-    const steamAppId = yield* findSteamAppIdForGame(appID).pipe(
-      Effect.mapError((cause) => {
+      if (!migration.success) {
+        const error =
+          migration.error ?? 'Failed to migrate legacy prefix to UMU';
         emitProgress({
           kind: 'done',
           total: appInfo.redistributables?.length ?? 0,
@@ -76,47 +100,33 @@ const installRedistributables = (appID: number, downloadId?: string) =>
           failedCount: appInfo.redistributables?.length ?? 0,
           overallProgress: 100,
           result: 'failed',
-          error: 'Failed to inspect the Steam shortcut',
+          error,
         });
-        return new LibraryError({
-          message: formatError(cause),
-          gameId: appID,
-        });
-      })
-    );
-    const migration = yield* Effect.tryPromise({
-      try: () => migrateToUmu(appID, steamAppId),
-      catch: (cause) =>
-        new LibraryError({ message: formatError(cause), gameId: appID }),
-    });
-    if (!migration.success) {
-      const error = migration.error ?? 'Failed to migrate legacy prefix to UMU';
-      emitProgress({
-        kind: 'done',
-        total: appInfo.redistributables?.length ?? 0,
-        completedCount: 0,
-        failedCount: appInfo.redistributables?.length ?? 0,
-        overallProgress: 100,
-        result: 'failed',
-        error,
-      });
-      return yield* Effect.fail(
-        new LibraryError({ message: error, gameId: appID })
-      );
+        return yield* Effect.fail(
+          new LibraryError({ message: error, gameId: appID })
+        );
+      }
     }
-    return yield* Effect.tryPromise({
+
+    const result = yield* Effect.tryPromise({
       try: () => installRedistributablesWithUmu(appID, emitProgress),
       catch: (cause) =>
         new LibraryError({ message: formatError(cause), gameId: appID }),
     });
+    if (result === 'success') {
+      yield* addDeckGameToSteam(mainWindow, appID);
+    }
+    return result;
   });
 
-export function registerRedistributableHandlers(): void {
+export function registerRedistributableHandlers(
+  mainWindow: BrowserWindow
+): void {
   ipcMain.handle(
     'app:install-redistributables',
     (_, appID: number, downloadId?: string) =>
       runEffectBoundary(
-        installRedistributables(appID, downloadId).pipe(
+        installRedistributables(mainWindow, appID, downloadId).pipe(
           Effect.catchTags({
             PlatformError: () => Effect.succeed('failed' as const),
             LibraryError: (error) =>

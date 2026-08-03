@@ -1,7 +1,6 @@
-import type { WriteStream } from 'node:fs';
 import http from 'node:http';
 import https from 'node:https';
-import axios, { type AxiosResponse } from 'axios';
+import axios from 'axios';
 import { spawn } from 'child_process';
 import { createHash } from 'crypto';
 import { Data, Effect } from 'effect';
@@ -13,13 +12,24 @@ import zlib from 'zlib';
 import pjson from '../package.json' with { type: 'json' };
 import {
   type BleedingEdgeSyncResult,
+  GitSyncError,
   syncBleedingEdgeRepo as syncBleedingEdgeGitRepo,
 } from './git-sync.js';
 
 class UpdateError extends Data.TaggedError('UpdateError')<{
   readonly message: string;
   readonly phase?: string;
+  readonly cause?: unknown;
 }> {}
+
+class FileSystemError extends Data.TaggedError('FileSystemError')<{
+  readonly message: string;
+  readonly operation: string;
+  readonly path?: string;
+  readonly cause?: unknown;
+}> {}
+
+type UpdaterError = UpdateError | FileSystemError | GitSyncError;
 
 const formatCause = (cause: unknown): string =>
   cause instanceof Error ? cause.message : String(cause);
@@ -30,11 +40,34 @@ const tryUpdate = <A>(phase: string, operation: () => A) =>
     catch: (cause) => new UpdateError({ message: formatCause(cause), phase }),
   });
 
-const tryUpdatePromise = <A>(phase: string, operation: () => PromiseLike<A>) =>
+const tryUpdatePromise = <A>(
+  phase: string,
+  operation: (signal: AbortSignal) => PromiseLike<A>
+) =>
   Effect.tryPromise({
     try: operation,
-    catch: (cause) => new UpdateError({ message: formatCause(cause), phase }),
+    catch: (cause) =>
+      new UpdateError({ message: formatCause(cause), phase, cause }),
   });
+
+const tryFileSystem = <A>(
+  operation: string,
+  filePath: string | undefined,
+  evaluate: () => A
+): Effect.Effect<A, FileSystemError> =>
+  Effect.try({
+    try: evaluate,
+    catch: (cause) =>
+      new FileSystemError({
+        message: formatCause(cause),
+        operation,
+        path: filePath,
+        cause,
+      }),
+  });
+
+const runUpdater = <A>(effect: Effect.Effect<A, UpdaterError>): Promise<A> =>
+  Effect.runPromise(effect);
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -184,22 +217,21 @@ function readStoredCommitEdgeTarget(): CommitEdgeTarget | null {
   return parseCommitEdgeFile(fs.readFileSync('./COMMIT_EDGE.txt', 'utf8'));
 }
 
-function getRepoHeadSha(repoDir: string): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const child = spawn('git', ['rev-parse', 'HEAD'], { cwd: repoDir });
-    let stdout = '';
-    child.stdout?.on('data', (data) => {
-      stdout += data.toString();
-    });
-    child.on('error', reject);
-    child.on('close', (code) => {
-      if (code !== 0) {
-        reject(new Error('git rev-parse HEAD failed'));
-        return;
-      }
-      resolve(stdout.trim());
-    });
-  });
+function getRepoHeadSha(repoDir: string): Effect.Effect<string, GitSyncError> {
+  return runCommand('git', ['rev-parse', 'HEAD'], {
+    cwd: repoDir,
+    quiet: true,
+  }).pipe(
+    Effect.map(({ stdout }) => stdout.trim()),
+    Effect.mapError(
+      (cause) =>
+        new GitSyncError({
+          message: cause.message,
+          operation: 'resolve-head',
+          cause,
+        })
+    )
+  );
 }
 
 function shouldSkipBranchOnlyBleedingEdgeBuild(
@@ -244,7 +276,7 @@ function getBleedingEdgeRepoDir() {
   return path.join(app.getPath('home'), '.local', 'share', 'ogi-repo');
 }
 
-function getApplicationBuildCommand() {
+function getApplicationBuildCommand(): [string, string[]] {
   return process.platform === 'win32'
     ? ['bun', ['run', '--cwd', 'application', 'electron-pack']]
     : ['bun', ['run', '--cwd', 'application', 'electron-pack:linux']];
@@ -258,12 +290,13 @@ type RunCommandOptions = {
 };
 
 function runCommand(
-  command,
-  args,
+  command: string,
+  args: string[],
   options: RunCommandOptions = {}
-): Promise<CommandResult> {
+): Effect.Effect<CommandResult, UpdateError> {
   const { quiet = false, ...spawnOptions } = options;
-  return new Promise((resolve, reject) => {
+
+  return Effect.async<CommandResult, UpdateError>((resume) => {
     logUpdater(`Running command: ${command} ${args.join(' ')}`);
     const child = spawn(command, args, {
       ...spawnOptions,
@@ -271,6 +304,13 @@ function runCommand(
     });
     let stdout = '';
     let stderr = '';
+    let settled = false;
+    const finish = (effect: Effect.Effect<CommandResult, UpdateError>) => {
+      if (!settled) {
+        settled = true;
+        resume(effect);
+      }
+    };
     child.stdout?.on('data', (data) => {
       const text = data.toString();
       stdout += text;
@@ -295,24 +335,57 @@ function runCommand(
         );
       }
     });
-    child.on('error', reject);
-    child.on('close', (code) =>
-      code === 0
-        ? resolve({ stdout, stderr })
-        : reject(new Error(`${command} exited with code ${code}`))
+    child.once('error', (cause) =>
+      finish(
+        Effect.fail(
+          new UpdateError({
+            message: formatCause(cause),
+            phase: 'run-command',
+            cause,
+          })
+        )
+      )
     );
+    child.once('close', (code) =>
+      finish(
+        code === 0
+          ? Effect.succeed({ stdout, stderr })
+          : Effect.fail(
+              new UpdateError({
+                message: `${command} exited with code ${code}`,
+                phase: 'run-command',
+              })
+            )
+      )
+    );
+
+    return Effect.sync(() => {
+      if (!settled && child.exitCode === null) {
+        child.kill();
+      }
+    });
   });
 }
 
-async function syncBleedingEdgeRepo(
+function syncBleedingEdgeRepo(
   repoDir: string,
   branch: string
-): Promise<BleedingEdgeSyncResult> {
+): Effect.Effect<BleedingEdgeSyncResult, GitSyncError> {
   return syncBleedingEdgeGitRepo(
     repoDir,
     branch,
     DEFAULT_BLEEDING_EDGE_BRANCH,
-    runCommand,
+    (command, args, options) =>
+      runCommand(command, args, options).pipe(
+        Effect.mapError(
+          (cause) =>
+            new GitSyncError({
+              message: cause.message,
+              operation: 'fetch',
+              cause,
+            })
+        )
+      ),
     getRepoHeadSha
   );
 }
@@ -356,29 +429,39 @@ function ensureBleedingEdgeBuild(
       yield* tryUpdate('clone-repository', () =>
         fs.rmSync(repoDir, { recursive: true, force: true })
       );
-      yield* tryUpdatePromise('clone-repository', () =>
-        runCommand('git', [
-          'clone',
-          '--branch',
-          targetBranch,
-          OGI_REPO_URL,
-          repoDir,
-        ])
+      yield* runCommand('git', [
+        'clone',
+        '--branch',
+        targetBranch,
+        OGI_REPO_URL,
+        repoDir,
+      ]).pipe(
+        Effect.mapError(
+          (cause) =>
+            new UpdateError({
+              message: cause.message,
+              phase: 'clone-repository',
+              cause,
+            })
+        )
       );
     } else {
-      syncResult = yield* tryUpdatePromise('sync-repository', () =>
-        syncBleedingEdgeRepo(repoDir, targetBranch)
-      );
+      syncResult = yield* syncBleedingEdgeRepo(repoDir, targetBranch);
     }
     if (commit) {
-      yield* tryUpdatePromise('checkout-commit', () =>
-        runCommand('git', ['checkout', commit], { cwd: repoDir })
+      yield* runCommand('git', ['checkout', commit], { cwd: repoDir }).pipe(
+        Effect.mapError(
+          (cause) =>
+            new UpdateError({
+              message: cause.message,
+              phase: 'checkout-commit',
+              cause,
+            })
+        )
       );
     }
 
-    const headSha = yield* tryUpdatePromise('resolve-commit', () =>
-      getRepoHeadSha(repoDir)
-    );
+    const headSha = yield* getRepoHeadSha(repoDir);
     if (
       !commit &&
       syncResult?.syncWasNoop &&
@@ -396,17 +479,13 @@ function ensureBleedingEdgeBuild(
       return;
     }
 
-    yield* tryUpdatePromise('install-dependencies', () =>
-      runCommand('bun', ['install', '--linker=hoisted'], { cwd: repoDir })
-    );
+    yield* runCommand('bun', ['install', '--linker=hoisted'], {
+      cwd: repoDir,
+    });
     yield* syncHoistedElectronPackages(repoDir);
-    yield* tryUpdatePromise('build-application', () =>
-      runCommand('bun', ['run', 'build'], { cwd: repoDir })
-    );
+    yield* runCommand('bun', ['run', 'build'], { cwd: repoDir });
     const [buildCommand, buildArgs] = getApplicationBuildCommand();
-    yield* tryUpdatePromise('package-application', () =>
-      runCommand(buildCommand, buildArgs, { cwd: repoDir })
-    );
+    yield* runCommand(buildCommand, buildArgs, { cwd: repoDir });
 
     const destRoot = path.join(__dirname, 'update');
     yield* tryUpdate('prepare-update', () =>
@@ -472,76 +551,73 @@ function parseRemoteBranchName(ref: string): string | null {
   return null;
 }
 
-async function getBranches(): Promise<string[]> {
+function getBranches(): Effect.Effect<string[], UpdateError> {
   const repoDir = getBleedingEdgeRepoDir();
-  if (fs.existsSync(path.join(repoDir, '.git'))) {
-    try {
-      await runCommand(
-        'git',
-        ['fetch', '--prune', 'origin', ALL_ORIGIN_HEADS_REFSPEC],
-        {
-          cwd: repoDir,
-          quiet: true,
-        }
-      );
-      const { stdout } = await runCommand(
-        'git',
-        [
-          'for-each-ref',
-          'refs/remotes/origin',
-          '--format=%(refname:short)\t%(committerdate:iso8601)',
-          '--sort=-committerdate',
-        ],
-        { cwd: repoDir, quiet: true }
-      );
-      const datedBranches: { name: string; date: string }[] = [];
-      for (const line of stdout.split('\n')) {
-        const trimmed = line.trim();
-        if (!trimmed) continue;
-        const tab = trimmed.indexOf('\t');
-        const ref = tab === -1 ? trimmed : trimmed.slice(0, tab);
-        const date = tab === -1 ? '' : trimmed.slice(tab + 1);
-        const name = parseRemoteBranchName(ref);
-        if (name && name !== 'HEAD') {
-          datedBranches.push({ name, date });
-        }
-      }
-      if (datedBranches.length) {
-        const others = datedBranches
-          .filter((branch) => branch.name !== 'main')
-          .map((branch) => branch.name);
-        return datedBranches.some((branch) => branch.name === 'main')
-          ? ['main', ...others]
-          : others;
-      }
-    } catch (error) {
-      logUpdater('Local git branch listing failed, using ls-remote:', error);
+  const remoteBranches = Effect.gen(function* () {
+    const { stdout } = yield* runCommand(
+      'git',
+      ['ls-remote', '--heads', OGI_REPO_URL],
+      { quiet: true }
+    );
+    const names = new Set<string>();
+    for (const line of stdout.split('\n')) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      const tab = trimmed.lastIndexOf('\t');
+      if (tab === -1) continue;
+      const name = parseRemoteBranchName(trimmed.slice(tab + 1));
+      if (name) names.add(name);
     }
+    const unique = [...names];
+    const others = unique
+      .filter((name) => name !== 'main')
+      .sort((a, b) => a.localeCompare(b));
+    return unique.includes('main') ? ['main', ...others] : others;
+  });
+
+  if (!fs.existsSync(path.join(repoDir, '.git'))) {
+    return remoteBranches;
   }
 
-  const { stdout } = await runCommand(
-    'git',
-    ['ls-remote', '--heads', OGI_REPO_URL],
-    {
-      quiet: true,
+  return Effect.gen(function* () {
+    yield* runCommand(
+      'git',
+      ['fetch', '--prune', 'origin', ALL_ORIGIN_HEADS_REFSPEC],
+      { cwd: repoDir, quiet: true }
+    );
+    const { stdout } = yield* runCommand(
+      'git',
+      [
+        'for-each-ref',
+        'refs/remotes/origin',
+        '--format=%(refname:short)\t%(committerdate:iso8601)',
+        '--sort=-committerdate',
+      ],
+      { cwd: repoDir, quiet: true }
+    );
+    const datedBranches: { name: string; date: string }[] = [];
+    for (const line of stdout.split('\n')) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      const tab = trimmed.indexOf('\t');
+      const ref = tab === -1 ? trimmed : trimmed.slice(0, tab);
+      const date = tab === -1 ? '' : trimmed.slice(tab + 1);
+      const name = parseRemoteBranchName(ref);
+      if (name && name !== 'HEAD') datedBranches.push({ name, date });
     }
+    if (!datedBranches.length) return yield* remoteBranches;
+    const others = datedBranches
+      .filter((branch) => branch.name !== 'main')
+      .map((branch) => branch.name);
+    return datedBranches.some((branch) => branch.name === 'main')
+      ? ['main', ...others]
+      : others;
+  }).pipe(
+    Effect.catchAll((error) => {
+      logUpdater('Local git branch listing failed, using ls-remote:', error);
+      return remoteBranches;
+    })
   );
-  const names = new Set<string>();
-  for (const line of stdout.split('\n')) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-    const tab = trimmed.lastIndexOf('\t');
-    if (tab === -1) continue;
-    const name = parseRemoteBranchName(trimmed.slice(tab + 1));
-    if (name) {
-      names.add(name);
-    }
-  }
-  const unique = [...names];
-  const others = unique
-    .filter((name) => name !== 'main')
-    .sort((a, b) => a.localeCompare(b));
-  return unique.includes('main') ? ['main', ...others] : others;
 }
 
 type RecentCommit = {
@@ -574,15 +650,57 @@ function parseGitLogCommits(stdout: string): RecentCommit[] {
     .filter((commit) => commit.sha);
 }
 
-async function getRecentCommits(
+function getRecentCommits(
   branch = DEFAULT_BLEEDING_EDGE_BRANCH
-): Promise<RecentCommit[]> {
+): Effect.Effect<RecentCommit[], UpdaterError> {
   const targetBranch = branch || DEFAULT_BLEEDING_EDGE_BRANCH;
   const logFormat = '%H%x1f%an%x1f%cI%x1f%s';
   const repoDir = getBleedingEdgeRepoDir();
 
-  if (fs.existsSync(path.join(repoDir, '.git'))) {
-    await runCommand(
+  const cloneAndRead = Effect.acquireUseRelease(
+    tryFileSystem('remove-temporary-repository', undefined, () => {
+      const tmpDir = path.join(
+        app.getPath('temp'),
+        `ogi-updater-commits-${process.pid}-${Date.now()}`
+      );
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+      return tmpDir;
+    }),
+    (tmpDir) =>
+      Effect.gen(function* () {
+        yield* runCommand(
+          'git',
+          [
+            'clone',
+            '--depth',
+            '12',
+            '--branch',
+            targetBranch,
+            '--single-branch',
+            OGI_REPO_URL,
+            tmpDir,
+          ],
+          { quiet: true }
+        );
+        const { stdout } = yield* runCommand(
+          'git',
+          ['log', 'HEAD', '-12', `--format=${logFormat}`],
+          { cwd: tmpDir, quiet: true }
+        );
+        return parseGitLogCommits(stdout);
+      }),
+    (tmpDir) =>
+      tryFileSystem('remove-temporary-repository', tmpDir, () =>
+        fs.rmSync(tmpDir, { recursive: true, force: true })
+      ).pipe(Effect.orElseSucceed(() => undefined))
+  );
+
+  if (!fs.existsSync(path.join(repoDir, '.git'))) {
+    return cloneAndRead;
+  }
+
+  return Effect.gen(function* () {
+    yield* runCommand(
       'git',
       [
         'fetch',
@@ -591,56 +709,21 @@ async function getRecentCommits(
         '--depth',
         '12',
       ],
-      {
-        cwd: repoDir,
-        quiet: true,
-      }
+      { cwd: repoDir, quiet: true }
     );
-    const { stdout } = await runCommand(
+    const { stdout } = yield* runCommand(
       'git',
       ['log', `origin/${targetBranch}`, '-12', `--format=${logFormat}`],
       { cwd: repoDir, quiet: true }
     );
     const commits = parseGitLogCommits(stdout);
-    if (commits.length) {
-      return commits;
-    }
-  }
-
-  const tmpDir = path.join(
-    app.getPath('temp'),
-    `ogi-updater-commits-${process.pid}-${Date.now()}`
-  );
-  fs.rmSync(tmpDir, { recursive: true, force: true });
-  try {
-    await runCommand(
-      'git',
-      [
-        'clone',
-        '--depth',
-        '12',
-        '--branch',
-        targetBranch,
-        '--single-branch',
-        OGI_REPO_URL,
-        tmpDir,
-      ],
-      { quiet: true }
-    );
-    const { stdout } = await runCommand(
-      'git',
-      ['log', 'HEAD', '-12', `--format=${logFormat}`],
-      { cwd: tmpDir, quiet: true }
-    );
-    return parseGitLogCommits(stdout);
-  } finally {
-    fs.rmSync(tmpDir, { recursive: true, force: true });
-  }
+    return commits.length ? commits : yield* cloneAndRead;
+  });
 }
 
 ipcMain.handle('get-branches', async () => {
   try {
-    const branches = await getBranches();
+    const branches = await runUpdater(getBranches());
     logUpdater('Loaded branches via git');
     return { ok: true, branches };
   } catch (error) {
@@ -659,7 +742,7 @@ ipcMain.handle('get-recent-commits', async (_event, branch) => {
       ? branch
       : DEFAULT_BLEEDING_EDGE_BRANCH;
   try {
-    const commits = await getRecentCommits(targetBranch);
+    const commits = await runUpdater(getRecentCommits(targetBranch));
     logUpdater('Loaded commits via git');
     return { ok: true, commits };
   } catch (error) {
@@ -827,7 +910,7 @@ function prepareUpdateDestination(destRoot: string) {
 }
 
 function nextUiTick() {
-  return new Promise((resolve) => setImmediate(resolve));
+  return Effect.yieldNow();
 }
 
 function logUpdater(message: string, ...args: unknown[]) {
@@ -835,7 +918,7 @@ function logUpdater(message: string, ...args: unknown[]) {
 }
 
 function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+  return Effect.sleep(ms);
 }
 
 function getRetryDelay(attempt: number) {
@@ -893,11 +976,15 @@ function getAxiosTransportOptions(url: string) {
  * - May spawn the OpenGameInstaller process and exit the host app.
  * - Sends status messages to the renderer via mainWindow.webContents.send.
  */
-async function createWindow() {
-  // check if port 7654 is open, if not, start the server
-  try {
-    const port_check = await fetch('http://localhost:7654');
-    if (port_check.ok) {
+function createWindow(): Effect.Effect<void, UpdaterError> {
+  return Effect.gen(function* () {
+    // check if port 7654 is open, if not, start the server
+    const portCheck = yield* Effect.either(
+      tryUpdatePromise('check-running-instance', (signal) =>
+        fetch('http://localhost:7654', { signal })
+      )
+    );
+    if (portCheck._tag === 'Right' && portCheck.right.ok) {
       console.error(
         'Port 7654 is already in use, meaning OpenGameInstaller is already running. Exiting.'
       );
@@ -906,117 +993,148 @@ async function createWindow() {
         'OpenGameInstaller is already running. Please close the other instance before launching OpenGameInstaller again.'
       );
       app.exit(1);
+      return;
     }
-  } catch {
-    console.log("Port isn't in use! Launching....");
-  }
+    if (portCheck._tag === 'Left') {
+      console.log("Port isn't in use! Launching....");
+    }
 
-  mainWindow = new BrowserWindow({
-    width: 300,
-    height: 400,
-    frame: false,
-    resizable: false,
-    webPreferences: {
-      preload: isDev()
-        ? `${app.getAppPath()}/dist/preload.js`
-        : `${app.getAppPath()}/dist/preload.js`,
-      nodeIntegration: true,
-      devTools: false,
-      contextIsolation: true,
-    },
-  });
-  await mainWindow.loadURL(`file://${app.getAppPath()}/public/index.html`);
-  mainWindow.on('closed', () => {
-    mainWindow = null;
-  });
-  // disable opening devtools
-  mainWindow.webContents.on('devtools-opened', () => {
-    mainWindow.webContents.closeDevTools();
-  });
-
-  const initialOnlineState = getEffectiveOnlineState();
-  if (!initialOnlineState.effectiveOnline) {
-    console.log(
-      initialOnlineState.reason === 'cli-offline'
-        ? 'Updater requested offline mode, skipping update check'
-        : 'Device is offline, skipping update check'
-    );
-    mainWindow.webContents.send(
-      'text',
-      'Launching OpenGameInstaller',
-      'Offline Mode'
-    );
-    launchApp(false);
-    return;
-  }
-
-  if (hasArg('--gui')) {
-    mainWindow.webContents.send('show-channel-picker');
-    const choice: any = await new Promise((resolve) => {
-      ipcMain.once('choose-channel', (_event, payload) => resolve(payload));
+    mainWindow = new BrowserWindow({
+      width: 300,
+      height: 400,
+      frame: false,
+      resizable: false,
+      webPreferences: {
+        preload: isDev()
+          ? `${app.getAppPath()}/dist/preload.js`
+          : `${app.getAppPath()}/dist/preload.js`,
+        nodeIntegration: true,
+        devTools: false,
+        contextIsolation: true,
+      },
     });
-    const channel = choice?.channel || 'stable';
-    if (channel === 'stable') {
-      fs.rmSync('./bleeding-edge.txt', { force: true });
-      fs.rmSync('./COMMIT_EDGE.txt', { force: true });
-      usingBleedingEdge = false;
-    } else if (channel === 'unstable') {
-      fs.writeFileSync('./bleeding-edge.txt', 'true');
-      fs.rmSync('./COMMIT_EDGE.txt', { force: true });
-      usingBleedingEdge = true;
-    } else if (channel === 'bleeding-edge') {
-      try {
-        await ensureBleedingEdgeBuild(
-          (choice?.commit || '').trim(),
-          (choice?.branch || DEFAULT_BLEEDING_EDGE_BRANCH).trim()
+    yield* tryUpdatePromise('load-updater-window', () =>
+      mainWindow.loadURL(`file://${app.getAppPath()}/public/index.html`)
+    );
+    mainWindow.on('closed', () => {
+      mainWindow = null;
+    });
+    // disable opening devtools
+    mainWindow.webContents.on('devtools-opened', () => {
+      mainWindow.webContents.closeDevTools();
+    });
+
+    const initialOnlineState = getEffectiveOnlineState();
+    if (!initialOnlineState.effectiveOnline) {
+      console.log(
+        initialOnlineState.reason === 'cli-offline'
+          ? 'Updater requested offline mode, skipping update check'
+          : 'Device is offline, skipping update check'
+      );
+      mainWindow.webContents.send(
+        'text',
+        'Launching OpenGameInstaller',
+        'Offline Mode'
+      );
+      launchApp(false);
+      return;
+    }
+
+    if (hasArg('--gui')) {
+      mainWindow.webContents.send('show-channel-picker');
+      const choice: any = yield* tryUpdatePromise(
+        'choose-update-channel',
+        () =>
+          new Promise((resolve) => {
+            ipcMain.once('choose-channel', (_event, payload) =>
+              resolve(payload)
+            );
+          })
+      );
+      const channel = choice?.channel || 'stable';
+      if (channel === 'stable') {
+        yield* tryFileSystem('select-stable-channel', undefined, () => {
+          fs.rmSync('./bleeding-edge.txt', { force: true });
+          fs.rmSync('./COMMIT_EDGE.txt', { force: true });
+        });
+        usingBleedingEdge = false;
+      } else if (channel === 'unstable') {
+        yield* tryFileSystem('select-unstable-channel', undefined, () => {
+          fs.writeFileSync('./bleeding-edge.txt', 'true');
+          fs.rmSync('./COMMIT_EDGE.txt', { force: true });
+        });
+        usingBleedingEdge = true;
+      } else if (channel === 'bleeding-edge') {
+        const buildResult = yield* Effect.either(
+          ensureBleedingEdgeBuild(
+            (choice?.commit || '').trim(),
+            (choice?.branch || DEFAULT_BLEEDING_EDGE_BRANCH).trim()
+          )
         );
-        mainWindow.webContents.send('text', 'Launching OpenGameInstaller');
-        launchApp(true);
-        return;
-      } catch (err) {
-        console.error(err);
-        mainWindow.webContents.send(
-          'text',
-          'Bleeding Edge Failed',
-          err.message
-        );
+        if (buildResult._tag === 'Left') {
+          console.error(buildResult.left);
+          mainWindow.webContents.send(
+            'text',
+            'Bleeding Edge Failed',
+            buildResult.left.message
+          );
+        } else {
+          mainWindow.webContents.send('text', 'Launching OpenGameInstaller');
+        }
         launchApp(true);
         return;
       }
-    }
-  } else if (updateChannel === 'bleeding-edge') {
-    try {
+    } else if (updateChannel === 'bleeding-edge') {
       const { branch, commit } = getCommitEdgeTarget();
-      await ensureBleedingEdgeBuild(commit, branch);
-      mainWindow.webContents.send('text', 'Launching OpenGameInstaller');
-      launchApp(true);
-      return;
-    } catch (err) {
-      console.error(err);
-      mainWindow.webContents.send('text', 'Bleeding Edge Failed', err.message);
+      const buildResult = yield* Effect.either(
+        ensureBleedingEdgeBuild(commit, branch)
+      );
+      if (buildResult._tag === 'Left') {
+        console.error(buildResult.left);
+        mainWindow.webContents.send(
+          'text',
+          'Bleeding Edge Failed',
+          buildResult.left.message
+        );
+      } else {
+        mainWindow.webContents.send('text', 'Launching OpenGameInstaller');
+      }
       launchApp(true);
       return;
     }
-  }
 
-  // check for updates
-  const gitRepo = 'Nat3z/OpenGameInstaller';
-
-  // check the github releases
-  try {
-    const response = await axios.get(
-      `https://api.github.com/repos/${gitRepo}/releases`,
-      { timeout: 10000 } // 10 second timeout for update check
+    const gitRepo = 'Nat3z/OpenGameInstaller';
+    const releaseResult = yield* Effect.either(
+      tryUpdatePromise('check-for-updates', (signal) =>
+        axios.get(`https://api.github.com/repos/${gitRepo}/releases`, {
+          signal,
+          timeout: 10000,
+        })
+      )
     );
+    if (releaseResult._tag === 'Left') {
+      console.error(releaseResult.left);
+      const onlineState = getEffectiveOnlineState();
+      mainWindow.webContents.send(
+        'text',
+        'Launching OpenGameInstaller',
+        onlineState.effectiveOnline
+          ? 'Failed to check for updates'
+          : 'Offline Mode'
+      );
+      launchApp(onlineState.effectiveOnline);
+      return;
+    }
+
     mainWindow.webContents.send('text', 'Checking for Updates');
-    const releases = response.data
+    const releases = releaseResult.right.data
       .filter((rel) => usingBleedingEdge || !rel.prerelease)
       .sort(compareReleaseOrder);
     const localIndex = releases.findIndex(
       (rel) => rel.tag_name === localVersion
     );
     const targetRelease = releases[0];
-    let updating = Boolean(targetRelease) && localIndex !== 0;
+    const updating = Boolean(targetRelease) && localIndex !== 0;
     if (targetRelease && updating) {
       const releasePath =
         localIndex > 0
@@ -1031,66 +1149,50 @@ async function createWindow() {
           'text',
           'Preparing incremental update path'
         );
-        try {
-          await applyBlockmapPath(releasePath, releases);
+        const patchResult = yield* Effect.either(
+          applyBlockmapPath(releasePath, releases)
+        );
+        if (patchResult._tag === 'Right') {
           updateApplied = true;
-        } catch (patchErr) {
-          console.error('Incremental patching failed, falling back:', patchErr);
+        } else {
+          console.error(
+            'Incremental patching failed, falling back:',
+            patchResult.left
+          );
           mainWindow.webContents.send(
             'text',
             'Falling back to full download',
-            patchErr.message
+            patchResult.left.message
           );
         }
-      } else if (!Number.isFinite(gap)) {
-        mainWindow.webContents.send(
-          'text',
-          'Falling back to full download',
-          'Local version missing from release feed'
-        );
       } else {
         mainWindow.webContents.send(
           'text',
           'Falling back to full download',
-          'Version too old for incremental update'
+          Number.isFinite(gap)
+            ? 'Version too old for incremental update'
+            : 'Local version missing from release feed'
         );
       }
 
       if (!updateApplied) {
-        await downloadFullRelease(targetRelease);
+        yield* downloadFullRelease(targetRelease);
       }
-      fs.writeFileSync(`./version.txt`, targetRelease.tag_name);
+      yield* tryFileSystem('write-version', './version.txt', () =>
+        fs.writeFileSync('./version.txt', targetRelease.tag_name)
+      );
       mainWindow.webContents.send('text', 'Launching OpenGameInstaller');
       launchApp(true);
       return;
     }
-    if (!updating) {
-      mainWindow.webContents.send(
-        'text',
-        'Launching OpenGameInstaller',
-        'No Updates Found'
-      );
-      launchApp(true);
-    }
-  } catch (e) {
-    console.error(e);
-    const onlineState = getEffectiveOnlineState();
-    if (!onlineState.effectiveOnline) {
-      mainWindow.webContents.send(
-        'text',
-        'Launching OpenGameInstaller',
-        'Offline Mode'
-      );
-      launchApp(false);
-      return;
-    }
+
     mainWindow.webContents.send(
       'text',
       'Launching OpenGameInstaller',
-      'Failed to check for updates'
+      'No Updates Found'
     );
     launchApp(true);
-  }
+  });
 }
 
 function getVersionCache(tagName) {
@@ -1194,48 +1296,50 @@ function getBlockKey(checksum, size) {
   return `${checksum}:${size}`;
 }
 
-async function ensureCachedSourceArtifact(cacheDir, release, asset) {
-  const sourceArtifactPath = path.join(cacheDir, asset.name);
-  if (fs.existsSync(sourceArtifactPath)) {
-    return sourceArtifactPath;
-  }
+function ensureCachedSourceArtifact(cacheDir, release, asset) {
+  return Effect.gen(function* () {
+    const sourceArtifactPath = path.join(cacheDir, asset.name);
+    if (fs.existsSync(sourceArtifactPath)) {
+      return sourceArtifactPath;
+    }
 
-  fs.mkdirSync(cacheDir, { recursive: true });
+    fs.mkdirSync(cacheDir, { recursive: true });
 
-  // On Linux we usually have the currently installed AppImage available locally.
-  if (process.platform === 'linux') {
-    const installedAppImage = path.join(
-      __dirname,
-      'update',
-      'OpenGameInstaller.AppImage'
+    // On Linux we usually have the currently installed AppImage available locally.
+    if (process.platform === 'linux') {
+      const installedAppImage = path.join(
+        __dirname,
+        'update',
+        'OpenGameInstaller.AppImage'
+      );
+      if (fs.existsSync(installedAppImage)) {
+        fs.copyFileSync(installedAppImage, sourceArtifactPath);
+        return sourceArtifactPath;
+      }
+    }
+    if (process.platform === 'win32') {
+      const persistentArtifact = getPersistentArtifactPath(asset.name);
+      if (fs.existsSync(persistentArtifact)) {
+        fs.copyFileSync(persistentArtifact, sourceArtifactPath);
+        return sourceArtifactPath;
+      }
+      // Compatibility with older updater versions that may have copied archives
+      // into ./update directly.
+      const legacyArtifact = path.join(__dirname, 'update', asset.name);
+      if (fs.existsSync(legacyArtifact)) {
+        fs.copyFileSync(legacyArtifact, sourceArtifactPath);
+        return sourceArtifactPath;
+      }
+    }
+
+    yield* downloadToFile(
+      asset.browser_download_url,
+      sourceArtifactPath,
+      `Downloading base artifact ${release.tag_name}`
     );
-    if (fs.existsSync(installedAppImage)) {
-      fs.copyFileSync(installedAppImage, sourceArtifactPath);
-      return sourceArtifactPath;
-    }
-  }
-  if (process.platform === 'win32') {
-    const persistentArtifact = getPersistentArtifactPath(asset.name);
-    if (fs.existsSync(persistentArtifact)) {
-      fs.copyFileSync(persistentArtifact, sourceArtifactPath);
-      return sourceArtifactPath;
-    }
-    // Compatibility with older updater versions that may have copied archives
-    // into ./update directly.
-    const legacyArtifact = path.join(__dirname, 'update', asset.name);
-    if (fs.existsSync(legacyArtifact)) {
-      fs.copyFileSync(legacyArtifact, sourceArtifactPath);
-      return sourceArtifactPath;
-    }
-  }
-
-  await downloadToFile(
-    asset.browser_download_url,
-    sourceArtifactPath,
-    `Downloading base artifact ${release.tag_name}`
-  );
-  persistSourceArtifact(asset.name, sourceArtifactPath);
-  return sourceArtifactPath;
+    persistSourceArtifact(asset.name, sourceArtifactPath);
+    return sourceArtifactPath;
+  });
 }
 
 function ensureCachedBlockmap(cacheDir: string, release: any, asset: any) {
@@ -1261,38 +1365,41 @@ function ensureCachedBlockmap(cacheDir: string, release: any, asset: any) {
     yield* tryUpdate('prepare-blockmap-cache', () =>
       fs.mkdirSync(cacheDir, { recursive: true })
     );
-    yield* tryUpdatePromise('download-blockmap', () =>
-      downloadToFile(
-        blockmapAsset.browser_download_url,
-        blockmapPath,
-        `Downloading blockmap ${release.tag_name}`
-      )
+    yield* downloadToFile(
+      blockmapAsset.browser_download_url,
+      blockmapPath,
+      `Downloading blockmap ${release.tag_name}`
     );
     return blockmapPath;
   });
 }
 
-async function downloadToFile(
+function downloadToFile(
   url: string,
   destination: string,
   status: string
-) {
-  logUpdater(`Starting download: ${status}`, { url, destination });
-  for (let attempt = 1; attempt <= HTTP_RETRY_ATTEMPTS; attempt++) {
-    let writer: WriteStream | undefined;
-    let response: AxiosResponse | undefined;
-    try {
-      fs.rmSync(destination, { force: true });
-      writer = fs.createWriteStream(destination);
-      response = await axios({
-        url,
-        method: 'GET',
-        responseType: 'stream',
-        timeout: HTTP_REQUEST_TIMEOUT_MS,
-        ...getAxiosTransportOptions(url),
-      });
-      response.data.pipe(writer);
-      const startTime = Date.now();
+): Effect.Effect<void, UpdaterError> {
+  const attemptDownload = (
+    attempt: number
+  ): Effect.Effect<void, UpdaterError> =>
+    Effect.gen(function* () {
+      logUpdater(`Starting download: ${status}`, { url, destination, attempt });
+      yield* tryFileSystem('prepare-download', destination, () =>
+        fs.rmSync(destination, { force: true })
+      );
+      const response = yield* tryUpdatePromise('start-download', (signal) =>
+        axios({
+          signal,
+          url,
+          method: 'GET',
+          responseType: 'stream',
+          timeout: HTTP_REQUEST_TIMEOUT_MS,
+          ...getAxiosTransportOptions(url),
+        })
+      );
+      const writer = yield* tryFileSystem('open-download', destination, () =>
+        fs.createWriteStream(destination)
+      );
       const contentLength = response.headers['content-length'];
       const fileSize =
         contentLength === undefined
@@ -1300,54 +1407,114 @@ async function downloadToFile(
           : Number(
               Array.isArray(contentLength) ? contentLength[0] : contentLength
             );
-      response.data.on('data', () => {
-        const elapsedTime = (Date.now() - startTime) / 1000;
-        const downloadSpeed = writer.bytesWritten / Math.max(elapsedTime, 1);
-        sendUpdaterStatus(
-          status,
-          writer.bytesWritten,
-          Number.isFinite(fileSize) ? fileSize : undefined,
-          correctParsingSize(downloadSpeed) + '/s'
+      const startTime = Date.now();
+
+      yield* Effect.async<void, UpdateError>((resume) => {
+        let settled = false;
+        const destroyStreams = () => {
+          response.data.destroy?.();
+          writer.destroy();
+        };
+        const finish = (effect: Effect.Effect<void, UpdateError>) => {
+          if (!settled) {
+            settled = true;
+            resume(effect);
+          }
+        };
+        const failAfterClose = (effect: Effect.Effect<void, UpdateError>) => {
+          if (settled) {
+            return;
+          }
+          settled = true;
+          const openStreams = [response.data, writer].filter(
+            (stream) => !stream.closed
+          );
+          let remaining = openStreams.length;
+          if (remaining === 0) {
+            resume(effect);
+            return;
+          }
+          for (const stream of openStreams) {
+            stream.once('close', () => {
+              remaining--;
+              if (remaining === 0) {
+                resume(effect);
+              }
+            });
+          }
+          destroyStreams();
+        };
+        response.data.on('data', () => {
+          const elapsedTime = (Date.now() - startTime) / 1000;
+          const downloadSpeed = writer.bytesWritten / Math.max(elapsedTime, 1);
+          sendUpdaterStatus(
+            status,
+            writer.bytesWritten,
+            Number.isFinite(fileSize) ? fileSize : undefined,
+            correctParsingSize(downloadSpeed) + '/s'
+          );
+        });
+        writer.once('finish', () => finish(Effect.void));
+        writer.once('error', (cause) =>
+          failAfterClose(
+            Effect.fail(
+              new UpdateError({
+                message: formatCause(cause),
+                phase: 'write-download',
+                cause,
+              })
+            )
+          )
         );
-      });
-      await new Promise<void>((resolve, reject) => {
-        writer.on('finish', resolve);
-        writer.on('error', reject);
-        response.data.on('error', reject);
+        response.data.once('error', (cause) =>
+          failAfterClose(
+            Effect.fail(
+              new UpdateError({
+                message: formatCause(cause),
+                phase: 'read-download',
+                cause,
+              })
+            )
+          )
+        );
+        response.data.pipe(writer);
+
+        return Effect.sync(destroyStreams);
       });
       logUpdater(`Finished download: ${status}`, {
         destination,
         bytesWritten: writer.bytesWritten,
         attempt,
       });
-      return;
-    } catch (error) {
-      writer?.destroy();
-      response?.data?.destroy?.();
-      fs.rmSync(destination, { force: true });
+    }).pipe(
+      Effect.catchAll((error) =>
+        Effect.gen(function* () {
+          yield* tryFileSystem('clean-failed-download', destination, () =>
+            fs.rmSync(destination, { force: true })
+          ).pipe(Effect.orElseSucceed(() => undefined));
+          const retryable = shouldRetryHttpError(error.cause ?? error);
+          logUpdater(`Download attempt failed: ${status}`, {
+            destination,
+            attempt,
+            retryable,
+            error: error.message,
+          });
+          if (!retryable || attempt === HTTP_RETRY_ATTEMPTS) {
+            return yield* Effect.fail(error);
+          }
+          sendUpdaterStatus(
+            status,
+            undefined,
+            undefined,
+            `Retrying (${attempt + 1}/${HTTP_RETRY_ATTEMPTS})`
+          );
+          yield* sleep(getRetryDelay(attempt));
+          return yield* attemptDownload(attempt + 1);
+        })
+      )
+    );
 
-      const retryable = shouldRetryHttpError(error);
-      logUpdater(`Download attempt failed: ${status}`, {
-        destination,
-        attempt,
-        retryable,
-        error: error?.message,
-        code: error?.code,
-        statusCode: error?.response?.status,
-      });
-      if (!retryable || attempt === HTTP_RETRY_ATTEMPTS) {
-        throw error;
-      }
-      const delayMs = getRetryDelay(attempt);
-      sendUpdaterStatus(
-        status,
-        undefined,
-        undefined,
-        `Retrying (${attempt + 1}/${HTTP_RETRY_ATTEMPTS})`
-      );
-      await sleep(delayMs);
-    }
-  }
+  return attemptDownload(1);
 }
 
 function copyCacheToUpdate(cacheDir: string) {
@@ -1403,12 +1570,10 @@ function downloadFullRelease(release: any) {
         fs.mkdirSync('./update', { recursive: true })
       );
     }
-    yield* tryUpdatePromise('download-release', () =>
-      downloadToFile(
-        assetWithPortable.browser_download_url,
-        downloadPath,
-        'Downloading Update'
-      )
+    yield* downloadToFile(
+      assetWithPortable.browser_download_url,
+      downloadPath,
+      'Downloading Update'
     );
     sendUpdaterStatus('Verifying Download');
     yield* verifyReleaseArtifact(
@@ -1420,12 +1585,10 @@ function downloadFullRelease(release: any) {
       'downloaded release artifact'
     );
     if (blockmapAsset) {
-      yield* tryUpdatePromise('download-blockmap', () =>
-        downloadToFile(
-          blockmapAsset.browser_download_url,
-          path.join(localCache, `${assetWithPortable.name}.blockmap`),
-          'Downloading blockmap'
-        )
+      yield* downloadToFile(
+        blockmapAsset.browser_download_url,
+        path.join(localCache, `${assetWithPortable.name}.blockmap`),
+        'Downloading blockmap'
       );
     }
     sendUpdaterStatus('Download Complete');
@@ -1436,9 +1599,7 @@ function downloadFullRelease(release: any) {
         persistSourceArtifact(assetWithPortable.name, zipPath)
       );
       sendUpdaterStatus('Extracting Update');
-      yield* tryUpdatePromise('extract-release', () =>
-        unzip(zipPath, localCache)
-      );
+      yield* unzip(zipPath, localCache);
       sendUpdaterStatus('Copying Update Files');
       yield* tryUpdate('copy-release', () => {
         copyCacheToUpdate(localCache);
@@ -1518,10 +1679,10 @@ function applyBlockmapPath(releasePath: any, releases: any) {
           })
         );
       }
-      const sourceArtifact = yield* tryUpdatePromise(
-        'cache-source-artifact',
-        () =>
-          ensureCachedSourceArtifact(fromCache, currentRelease, currentAsset)
+      const sourceArtifact = yield* ensureCachedSourceArtifact(
+        fromCache,
+        currentRelease,
+        currentAsset
       );
       sendUpdaterStatus('Verifying base artifact');
       yield* verifyReleaseArtifact(
@@ -1543,12 +1704,10 @@ function applyBlockmapPath(releasePath: any, releases: any) {
         `${nextAsset.name}.blockmap`
       );
       if (!fs.existsSync(newBlockmapPath)) {
-        yield* tryUpdatePromise('download-blockmap', () =>
-          downloadToFile(
-            newBlockmapAsset.browser_download_url,
-            newBlockmapPath,
-            'Downloading blockmap'
-          )
+        yield* downloadToFile(
+          newBlockmapAsset.browser_download_url,
+          newBlockmapPath,
+          'Downloading blockmap'
         );
       }
       const outputArtifact = path.join(nextCache, nextAsset.name);
@@ -1564,7 +1723,7 @@ function applyBlockmapPath(releasePath: any, releases: any) {
         1,
         nextRelease.tag_name
       );
-      yield* tryUpdatePromise('update-ui', () => nextUiTick());
+      yield* nextUiTick();
       yield* applyBlockmapPatch(
         sourceArtifact,
         oldBlockmapPath,
@@ -1591,10 +1750,8 @@ function applyBlockmapPath(releasePath: any, releases: any) {
           1,
           nextRelease.tag_name
         );
-        yield* tryUpdatePromise('update-ui', () => nextUiTick());
-        yield* tryUpdatePromise('extract-patch', () =>
-          unzip(outputArtifact, nextCache)
-        );
+        yield* nextUiTick();
+        yield* unzip(outputArtifact, nextCache);
       } else {
         logUpdater('Finalizing patched Linux artifact', {
           artifact: outputArtifact,
@@ -1649,7 +1806,7 @@ function applyBlockmapPatch(
   targetUrl,
   expectedArtifact = {},
   statusLabels: any = {}
-): Effect.Effect<void, UpdateError> {
+): Effect.Effect<void, UpdaterError> {
   return Effect.gen(function* () {
     const patchLabel = statusLabels.patchLabel || 'Building patch';
     const verifyLabel = statusLabels.verifyLabel || 'Verifying patch';
@@ -1709,7 +1866,7 @@ function applyBlockmapPatch(
 
       if (writeOffset > 0) {
         sendUpdaterStatus(patchLabel, 0, newFile.checksums.length, releaseTag);
-        yield* tryUpdatePromise('update-ui', () => nextUiTick());
+        yield* nextUiTick();
         const headerChunk = yield* downloadRangeChunk(
           targetUrl,
           0,
@@ -1766,7 +1923,7 @@ function applyBlockmapPatch(
             newFile.checksums.length,
             releaseTag
           );
-          yield* tryUpdatePromise('update-ui', () => nextUiTick());
+          yield* nextUiTick();
         }
       }
 
@@ -1836,7 +1993,7 @@ function applyBlockmapPatch(
       );
     }
     sendUpdaterStatus(verifyLabel, 0, newFile.checksums.length, releaseTag);
-    yield* tryUpdatePromise('update-ui', () => nextUiTick());
+    yield* nextUiTick();
     logUpdater('Starting patched artifact verification', {
       outputArtifact,
       releaseTag,
@@ -1999,8 +2156,9 @@ function downloadRangeChunk(
       logUpdater('Requesting HTTP range', { url, requestedRange, attempt });
       const responseResult = yield* Effect.either(
         Effect.tryPromise({
-          try: () =>
+          try: (signal) =>
             axios({
+              signal,
               url,
               method: 'GET',
               responseType: 'arraybuffer',
@@ -2033,9 +2191,7 @@ function downloadRangeChunk(
             })
           );
         }
-        yield* tryUpdatePromise('retry-patch-range', () =>
-          sleep(getRetryDelay(attempt))
-        );
+        yield* sleep(getRetryDelay(attempt));
         continue;
       }
 
@@ -2105,13 +2261,25 @@ function parseDigest(digest) {
   return { algorithm: normalizedAlgorithm, value: value.toLowerCase() };
 }
 
-async function hashFile(filePath, algorithm) {
-  return await new Promise((resolve, reject) => {
+function hashFile(filePath, algorithm): Effect.Effect<string, FileSystemError> {
+  return Effect.async<string, FileSystemError>((resume) => {
     const hash = createHash(algorithm);
     const stream = fs.createReadStream(filePath);
-    stream.on('error', reject);
+    stream.once('error', (cause) =>
+      resume(
+        Effect.fail(
+          new FileSystemError({
+            message: formatCause(cause),
+            operation: 'hash-file',
+            path: filePath,
+            cause,
+          })
+        )
+      )
+    );
     stream.on('data', (chunk) => hash.update(chunk));
-    stream.on('end', () => resolve(hash.digest('hex')));
+    stream.once('end', () => resume(Effect.succeed(hash.digest('hex'))));
+    return Effect.sync(() => stream.destroy());
   });
 }
 
@@ -2119,7 +2287,7 @@ function verifyReleaseArtifact(
   artifactPath,
   expectedArtifact,
   logLabel = 'release artifact'
-): Effect.Effect<void, UpdateError> {
+): Effect.Effect<void, UpdaterError> {
   return Effect.gen(function* () {
     const stat = yield* tryUpdate('verify-release-artifact', () =>
       fs.statSync(artifactPath)
@@ -2157,10 +2325,7 @@ function verifyReleaseArtifact(
       return;
     }
 
-    const actualDigest = yield* tryUpdatePromise(
-      'verify-release-artifact',
-      () => hashFile(artifactPath, parsedDigest.algorithm)
-    );
+    const actualDigest = yield* hashFile(artifactPath, parsedDigest.algorithm);
     if (actualDigest !== parsedDigest.value) {
       return yield* Effect.fail(
         new UpdateError({
@@ -2178,7 +2343,7 @@ function verifyPatchedArtifact(
   expectedArtifact,
   verifyLabel = 'Verifying patch',
   releaseTag
-): Effect.Effect<void, UpdateError> {
+): Effect.Effect<void, UpdaterError> {
   return Effect.gen(function* () {
     logUpdater('Verifying patched artifact metadata', {
       outputArtifact,
@@ -2256,7 +2421,7 @@ function verifyPatchedArtifact(
             newFile.checksums.length,
             releaseTag
           );
-          yield* tryUpdatePromise('update-ui', () => nextUiTick());
+          yield* nextUiTick();
         }
       }
     } finally {
@@ -2279,9 +2444,9 @@ function verifyPatchedArtifact(
       );
       return;
     }
-    const actualDigest = yield* tryUpdatePromise(
-      'verify-patched-artifact',
-      () => hashFile(outputArtifact, parsedDigest.algorithm)
+    const actualDigest = yield* hashFile(
+      outputArtifact,
+      parsedDigest.algorithm
     );
     if (actualDigest !== parsedDigest.value) {
       return yield* Effect.fail(
@@ -2304,7 +2469,7 @@ function verifyPatchedArtifact(
  * Spawns OpenGameInstaller with `--online=<online>` as an argument.
  * @param {boolean} online - If true, start the application in online mode; otherwise start in offline mode.
  */
-async function launchApp(online) {
+function launchApp(online) {
   const effectiveOnline = getEffectiveOnlineState(online).effectiveOnline;
   console.log(
     'Launching in ' + (effectiveOnline ? 'online' : 'offline') + ' mode'
@@ -2396,171 +2561,131 @@ async function launchApp(online) {
   }
 }
 
-function resolveZipEntryPath(
-  unzipToDir,
-  entryName
-): Effect.Effect<string, UpdateError> {
-  return Effect.gen(function* () {
-    const root = path.resolve(unzipToDir);
-    const normalizedEntryName = entryName.replace(/\//g, path.sep);
-    const fullPath = path.resolve(root, normalizedEntryName);
-    const relativePath = path.relative(root, fullPath);
-
-    if (
-      relativePath.startsWith('..') ||
-      path.isAbsolute(relativePath) ||
-      relativePath === ''
-    ) {
-      return yield* Effect.fail(
-        new UpdateError({ message: `Unsafe zip entry path: ${entryName}` })
-      );
-    }
-
-    return fullPath;
-  });
+function resolveZipEntryPath(unzipToDir, entryName): string {
+  const root = path.resolve(unzipToDir);
+  const normalizedEntryName = entryName.replace(/\//g, path.sep);
+  const fullPath = path.resolve(root, normalizedEntryName);
+  const relativePath = path.relative(root, fullPath);
+  if (
+    relativePath.startsWith('..') ||
+    path.isAbsolute(relativePath) ||
+    relativePath === ''
+  ) {
+    throw new UpdateError({
+      message: `Unsafe zip entry path: ${entryName}`,
+      phase: 'extract-release',
+    });
+  }
+  return fullPath;
 }
 
-app.on('ready', createWindow);
-// taken from https://stackoverflow.com/questions/63932027/how-to-unzip-to-a-folder-using-yauzl
-const unzip = (zipPath, unzipToDir) => {
-  return new Promise<void>((resolve, reject) => {
+const unzip = (zipPath, unzipToDir): Effect.Effect<void, UpdaterError> =>
+  Effect.async<void, UpdaterError>((resume) => {
     let zipFile: ZipFile | null = null;
+    let activeFile: fs.WriteStream | null = null;
+    let activeReadStream:
+      | (NodeJS.ReadableStream & {
+          destroy(): void;
+        })
+      | null = null;
     let filesProcessed = 0;
     let totalFiles = 0;
+    let settled = false;
     logUpdater('Starting unzip', { zipPath, unzipToDir });
 
-    try {
-      // Create folder if not exists
-      fs.mkdirSync(unzipToDir, { recursive: true });
+    const finish = (effect: Effect.Effect<void, UpdaterError>) => {
+      if (settled) return;
+      settled = true;
+      activeFile?.destroy();
+      activeReadStream?.destroy?.();
+      zipFile?.close();
+      resume(effect);
+    };
+    const fail = (cause: unknown) =>
+      finish(
+        Effect.fail(
+          cause instanceof UpdateError
+            ? cause
+            : new UpdateError({
+                message: formatCause(cause),
+                phase: 'extract-release',
+                cause,
+              })
+        )
+      );
+    const completeEntry = () => {
+      filesProcessed++;
+      sendUpdaterStatus('Extracting Update', filesProcessed, totalFiles);
+      if (filesProcessed >= totalFiles) {
+        logUpdater('Completed unzip', { zipPath, unzipToDir, totalFiles });
+        finish(Effect.void);
+      } else {
+        zipFile?.readEntry();
+      }
+    };
 
-      // Same as example we open the zip.
-      yauzl.open(zipPath, { lazyEntries: true }, (err, zip) => {
-        if (err) {
-          reject(err);
+    try {
+      fs.mkdirSync(unzipToDir, { recursive: true });
+      yauzl.open(zipPath, { lazyEntries: true }, (openError, zip) => {
+        if (openError || !zip) {
+          fail(openError ?? new Error('Unable to open zip archive'));
           return;
         }
-
         zipFile = zip;
-        totalFiles = zipFile.entryCount;
+        totalFiles = zip.entryCount;
         logUpdater('Opened zip archive', { zipPath, totalFiles });
-
-        // This is the key. We start by reading the first entry.
-        zipFile.readEntry();
-
-        // Now for every entry, we will write a file or dir
-        // to disk. Then call zipFile.readEntry() again to
-        // trigger the next cycle.
-        zipFile.on('entry', async (entry) => {
+        zip.on('entry', (entry) => {
           try {
             sendUpdaterStatus('Extracting Update', filesProcessed, totalFiles);
-            const fullPath = await Effect.runPromise(
-              resolveZipEntryPath(unzipToDir, entry.fileName)
-            );
-
-            // Ensure the directory exists
-            const dir = path.dirname(fullPath);
-            if (!fs.existsSync(dir)) {
-              fs.mkdirSync(dir, { recursive: true });
-            }
-
-            // check if entry is a directory
+            const fullPath = resolveZipEntryPath(unzipToDir, entry.fileName);
+            fs.mkdirSync(path.dirname(fullPath), { recursive: true });
             if (/\/$/.test(entry.fileName)) {
-              filesProcessed++;
-              sendUpdaterStatus(
-                'Extracting Update',
-                filesProcessed,
-                totalFiles
-              );
-              if (filesProcessed >= totalFiles) {
-                logUpdater('Completed unzip', {
-                  zipPath,
-                  unzipToDir,
-                  totalFiles,
-                });
-                zipFile.close();
-                resolve();
-                return;
-              }
-              zipFile.readEntry();
+              completeEntry();
               return;
             }
-
-            // Files
-            zipFile.openReadStream(entry, (readErr, readStream) => {
-              if (readErr) {
-                zipFile.close();
-                reject(readErr);
+            zip.openReadStream(entry, (readError, readStream) => {
+              if (readError || !readStream) {
+                fail(readError ?? new Error('Unable to read zip entry'));
                 return;
               }
-
+              activeReadStream = readStream;
               const file = fs.createWriteStream(fullPath);
+              activeFile = file;
               readStream.pipe(file);
-
-              file.on('finish', () => {
-                // Wait until the file is finished writing, then read the next entry.
-                file.close((closeErr) => {
-                  if (closeErr) {
-                    zipFile.close();
-                    reject(closeErr);
-                    return;
-                  }
-
-                  filesProcessed++;
-                  sendUpdaterStatus(
-                    'Extracting Update',
-                    filesProcessed,
-                    totalFiles
-                  );
-                  if (filesProcessed >= totalFiles) {
-                    logUpdater('Completed unzip', {
-                      zipPath,
-                      unzipToDir,
-                      totalFiles,
-                    });
-                    zipFile.close();
-                    resolve();
-                    return;
-                  }
-                  zipFile.readEntry();
-                });
-              });
-
-              file.on('error', (fileErr) => {
-                zipFile.close();
-                reject(fileErr);
-              });
-
-              readStream.on('error', (streamErr) => {
-                file.destroy();
-                zipFile.close();
-                reject(streamErr);
-              });
+              file.once('finish', () =>
+                file.close((closeError) => {
+                  activeFile = null;
+                  activeReadStream = null;
+                  if (closeError) fail(closeError);
+                  else completeEntry();
+                })
+              );
+              file.once('error', fail);
+              readStream.once('error', fail);
             });
-          } catch (e) {
-            zipFile.close();
-            reject(e);
+          } catch (cause) {
+            fail(cause);
           }
         });
-
-        zipFile.on('end', () => {
-          if (zipFile) {
-            zipFile.close();
-          }
-          resolve();
-        });
-
-        zipFile.on('error', (zipErr) => {
-          if (zipFile) {
-            zipFile.close();
-          }
-          reject(zipErr);
-        });
+        zip.once('end', () => finish(Effect.void));
+        zip.once('error', fail);
+        zip.readEntry();
       });
-    } catch (e) {
-      if (zipFile) {
-        zipFile.close();
-      }
-      reject(e);
+    } catch (cause) {
+      fail(cause);
     }
+
+    return Effect.sync(() => {
+      activeFile?.destroy();
+      activeReadStream?.destroy?.();
+      zipFile?.close();
+    });
   });
-};
+
+app.on('ready', () => {
+  void runUpdater(createWindow()).catch((error) => {
+    console.error('Updater workflow failed:', error);
+    dialog.showErrorBox('OpenGameInstaller updater failed', error.message);
+    app.exit(1);
+  });
+});

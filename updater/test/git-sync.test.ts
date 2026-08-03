@@ -4,7 +4,12 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
-import { type CommandResult, syncBleedingEdgeRepo } from '../src/git-sync.js';
+import { Effect } from 'effect';
+import {
+  type CommandResult,
+  GitSyncError,
+  syncBleedingEdgeRepo,
+} from '../src/git-sync.js';
 
 const execFileAsync = promisify(execFile);
 const temporaryDirectories: string[] = [];
@@ -17,19 +22,37 @@ async function git(cwd: string, ...args: string[]): Promise<CommandResult> {
   };
 }
 
-async function getHeadSha(repoDir: string): Promise<string> {
-  return (await git(repoDir, 'rev-parse', 'HEAD')).stdout.trim();
+function getHeadSha(repoDir: string): Effect.Effect<string, GitSyncError> {
+  return Effect.tryPromise({
+    try: async () => (await git(repoDir, 'rev-parse', 'HEAD')).stdout.trim(),
+    catch: (cause) =>
+      new GitSyncError({
+        message: String(cause),
+        operation: 'resolve-head',
+        cause,
+      }),
+  });
 }
 
-async function runCommand(
+function runCommand(
   command: string,
   args: string[],
   options: { cwd: string }
-): Promise<CommandResult> {
-  if (command !== 'git') {
-    throw new Error(`Unexpected command: ${command}`);
-  }
-  return git(options.cwd, ...args);
+): Effect.Effect<CommandResult, GitSyncError> {
+  return Effect.tryPromise({
+    try: () => {
+      if (command !== 'git') {
+        throw new Error(`Unexpected command: ${command}`);
+      }
+      return git(options.cwd, ...args);
+    },
+    catch: (cause) =>
+      new GitSyncError({
+        message: String(cause),
+        operation: 'fetch',
+        cause,
+      }),
+  });
 }
 
 afterEach(async () => {
@@ -68,16 +91,12 @@ test('synchronizes a cached branch after the remote branch is force-pushed', asy
   await git(seed, 'add', 'file.txt');
   await git(seed, 'commit', '-m', 'rewritten branch');
   await git(seed, 'push', '--force', 'origin', branch);
-  const remoteSha = await getHeadSha(seed);
+  const remoteSha = await Effect.runPromise(getHeadSha(seed));
 
-  const result = await syncBleedingEdgeRepo(
-    client,
-    branch,
-    'main',
-    runCommand,
-    getHeadSha
+  const result = await Effect.runPromise(
+    syncBleedingEdgeRepo(client, branch, 'main', runCommand, getHeadSha)
   );
 
   expect(result.afterSyncSha).toBe(remoteSha);
-  expect(await getHeadSha(client)).toBe(remoteSha);
+  expect(await Effect.runPromise(getHeadSha(client))).toBe(remoteSha);
 });

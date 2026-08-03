@@ -54,7 +54,10 @@ const waitForChildProcess = (
     };
     child.once('error', onError);
     child.once('close', onClose);
-    return Effect.sync(cleanup);
+    return Effect.sync(() => {
+      cleanup();
+      if (child.exitCode === null && !child.killed) child.kill();
+    });
   });
 
 const detectUnrarType = (): Effect.Effect<
@@ -64,16 +67,25 @@ const detectUnrarType = (): Effect.Effect<
   Effect.gen(function* () {
     const child = yield* spawnProcess('unrar', []);
     let output = '';
-    child.stdout?.on('data', (data: Buffer) => {
+    const collectOutput = (data: Buffer): void => {
       output += data.toString();
-    });
-    child.stderr?.on('data', (data: Buffer) => {
-      output += data.toString();
-    });
-    yield* waitForChildProcess(
-      child,
-      'Unable to detect unrar implementation'
-    ).pipe(Effect.catchAll(() => Effect.void));
+    };
+    yield* Effect.acquireUseRelease(
+      Effect.sync(() => {
+        child.stdout?.on('data', collectOutput);
+        child.stderr?.on('data', collectOutput);
+      }),
+      () =>
+        waitForChildProcess(
+          child,
+          'Unable to detect unrar implementation'
+        ).pipe(Effect.catchAll(() => Effect.void)),
+      () =>
+        Effect.sync(() => {
+          child.stdout?.off('data', collectOutput);
+          child.stderr?.off('data', collectOutput);
+        })
+    );
     return output.includes('unrar-free')
       ? 'unrar-free'
       : output.includes('unrar-nonfree')

@@ -99,11 +99,17 @@ export class AddonConnection {
         );
       }
 
-      yield* bindWebSocketLifecycle(this.ws, {
-        onClose: () =>
-          this.transport.rejectPendingResponses('Websocket closed'),
-        onError: () => this.transport.rejectPendingResponses('Websocket error'),
-      });
+      const unbindLifecycle = yield* bindWebSocketLifecycle(
+        this.ws,
+        (effect) => this.transport.run(effect),
+        {
+          onClose: () =>
+            this.transport.shutdown('Websocket closed').pipe(Effect.ignore),
+          onError: () =>
+            this.transport.shutdown('Websocket error').pipe(Effect.ignore),
+        }
+      );
+      yield* this.transport.addFinalizer(Effect.sync(unbindLifecycle));
 
       return yield* Deferred.await(authentication).pipe(
         Effect.timeoutOption('1 second'),

@@ -4,8 +4,9 @@ export type {
 } from '@ogi-sdk/connect';
 export type {
   AddonForwardResponseMessage,
-  AddonProxy,
   AddonProxyMetadata,
+  EffectAddonProxy,
 } from './_generated/addon-proxy';
 export * from './connection';
+export * from './promise';
 export * from './types';

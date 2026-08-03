@@ -31,7 +31,6 @@
     "typescript": "^5"
   },
   "dependencies": {
-    "@effect/schema": "^0.75.5",
     "@ogi-sdk/connect": "^1.0.2",
     "@ogi/errors": "workspace:*",
     "effect": "^3.22.0",

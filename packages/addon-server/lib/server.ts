@@ -6,7 +6,7 @@ import type {
   ConfigurationFile,
 } from '@ogi-sdk/connect';
 import { randomUUID } from 'crypto';
-import { Effect } from 'effect';
+import { Effect, Fiber } from 'effect';
 import { EventEmitter } from 'events';
 import http from 'http';
 import { type WebSocket, WebSocketServer } from 'ws';
@@ -31,6 +31,9 @@ export class AddonServer {
   private readonly clients = new Map<string, AddonConnection>();
   private readonly deferredTasksManager = new DeferredTasksManager();
   private readonly eventEmitter = new EventEmitter();
+  private readonly boundaryFibers = new Set<
+    Fiber.RuntimeFiber<void, unknown>
+  >();
   private server = http.createServer();
   private wss: WebSocketServer | undefined;
   private upgradeListener?: (
@@ -52,7 +55,7 @@ export class AddonServer {
     event: T,
     ...args: Parameters<AddonServerEventListeners[T]>
   ): this {
-    Effect.runFork(this.emitEffect(event, ...args));
+    this.supervise(this.emitEffect(event, ...args));
     return this;
   }
 
@@ -75,7 +78,9 @@ export class AddonServer {
           string,
           string,
           ConfigurationFile,
-          (value: Record<string, string | number | boolean>) => void,
+          (
+            value: Record<string, string | number | boolean>
+          ) => void | Promise<void>,
         ];
         const [connection] = this.sdkConnections;
         const answer = connection
@@ -83,7 +88,7 @@ export class AddonServer {
               .askInput(name, description, config)
               .pipe(Effect.catchAll(() => Effect.succeed({})))
           : {};
-        reply(answer);
+        yield* Effect.promise(() => Promise.resolve(reply(answer)));
       }
       this.eventEmitter.emit(event, ...args);
     });
@@ -130,6 +135,11 @@ export class AddonServer {
       for (const connection of this.connections) connection.ws.close();
       for (const connection of this.sdkConnections)
         yield* connection.close().pipe(Effect.ignore);
+      yield* this.deferredTasksManager.shutdown();
+      yield* Effect.forEach(this.boundaryFibers, Fiber.interrupt, {
+        discard: true,
+      });
+      this.boundaryFibers.clear();
 
       if (this.wss) {
         const wss = this.wss;
@@ -226,7 +236,7 @@ export class AddonServer {
       this.wss = new WebSocketServer({ noServer: true });
       this.upgradeListener = (req, socket, head) => {
         this.wss!.handleUpgrade(req, socket, head, (ws) => {
-          Effect.runFork(this.handleWebSocketConnection(ws, req));
+          this.supervise(this.handleWebSocketConnection(ws, req));
         });
       };
       this.server.on('upgrade', this.upgradeListener);
@@ -252,6 +262,13 @@ export class AddonServer {
         });
       });
     });
+  }
+
+  /** Supervises Effects launched by EventEmitter and websocket callbacks. */
+  private supervise<E>(effect: Effect.Effect<void, E>): void {
+    const fiber = Effect.runFork(effect);
+    this.boundaryFibers.add(fiber);
+    fiber.addObserver(() => this.boundaryFibers.delete(fiber));
   }
 
   private detachListeners(): void {

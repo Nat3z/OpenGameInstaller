@@ -1,40 +1,54 @@
 import { Effect } from 'effect';
 import { formatErrorResponse } from './index.js';
 
-export const runEffectBoundary = <A, E>(
+export type ErrorResponse = {
+  readonly status: 'error';
+  readonly error: string;
+};
+
+/** Keeps error formatting inside Effect until the application boundary. */
+export const effectBoundary = <A, E>(
   effect: Effect.Effect<A, E>
-): Promise<{ status: 'error'; error: string } | A> =>
-  Effect.runPromise(
-    effect.pipe(
-      Effect.catchAll((error) => Effect.succeed(formatErrorResponse(error)))
-    )
+): Effect.Effect<A | ErrorResponse> =>
+  effect.pipe(
+    Effect.catchAll((error) => Effect.succeed(formatErrorResponse(error)))
   );
+
+/** Explicit Promise adapter for legacy callers and framework callbacks. */
+export const runEffectBoundaryPromise = <A, E>(
+  effect: Effect.Effect<A, E>
+): Promise<A | ErrorResponse> => Effect.runPromise(effectBoundary(effect));
+
+/** @deprecated Use effectBoundary or runEffectBoundaryPromise. */
+export const runEffectBoundary = runEffectBoundaryPromise;
 
 export const runSyncBoundary = <A, E>(
   effect: Effect.Effect<A, E>
-): { status: 'error'; error: string } | A =>
-  Effect.runSync(
-    effect.pipe(
-      Effect.catchAll((error) => Effect.succeed(formatErrorResponse(error)))
-    )
-  );
+): A | ErrorResponse => Effect.runSync(effectBoundary(effect));
+
+/** Adapts an Effect-returning operation to an ipcMain.handle callback. */
+export const ipcEffectBoundary =
+  <Args extends readonly unknown[], A, E>(
+    operation: (...args: Args) => Effect.Effect<A, E>
+  ) =>
+  (...args: Args): Promise<A | ErrorResponse> =>
+    runEffectBoundaryPromise(
+      Effect.try({
+        try: () => operation(...args),
+        catch: (cause) => cause,
+      }).pipe(Effect.flatten)
+    );
 
 /**
- * Shared IPC handler boundary. Wraps an Effect, async operation, or sync
- * operation into an ipcMain.handle-compatible handler that catches all errors
- * and formats them as `{ status: 'error', error: string }`.
- *
- * @example
- * ```ts
- * ipcMain.handle('my-channel', ipcBoundary((_, arg) => doWork(arg)));
- * ```
+ * Legacy IPC adapter for Promise and synchronous operations. New handlers should
+ * return Effect and use ipcEffectBoundary so failures stay in the error channel.
  */
 export const ipcBoundary =
   <Args extends readonly unknown[], A, E = never>(
     operation: (...args: Args) => Effect.Effect<A, E> | Promise<A> | A
   ) =>
-  (...args: Args): Promise<{ status: 'error'; error: string } | A> =>
-    Effect.runPromise(
+  (...args: Args): Promise<A | ErrorResponse> =>
+    runEffectBoundaryPromise(
       Effect.try({
         try: () => operation(...args),
         catch: (cause) => cause,
@@ -46,9 +60,6 @@ export const ipcBoundary =
                 try: () => Promise.resolve(result),
                 catch: (cause) => cause,
               })
-        ),
-        Effect.catchAll((error) =>
-          Effect.succeed(formatErrorResponse(error))
         )
       )
     );

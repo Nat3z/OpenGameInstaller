@@ -28,6 +28,7 @@ import { Addon } from '@/electron/manager/manager.addon.js';
 import { waitForAddonsConfigured } from '@/electron/manager/manager.addon-readiness.js';
 import { __dirname, isDev } from '@/electron/manager/manager.paths.js';
 import { stopClient } from '@/electron/manager/manager.webtorrent.js';
+import { registerElectronRpcHandlers } from '@/electron/rpc/server.js';
 import {
   disposeElectronRuntime,
   runElectronEffect,
@@ -378,6 +379,7 @@ function registerMainHandlers(win: BrowserWindow) {
   handlersRegistered = true;
 
   registerDownloadHandshakeHandlers();
+  registerElectronRpcHandlers();
   AppEventHandler(win);
   FSEventHandler();
   RealdDebridHandler(win);

@@ -1,6 +1,9 @@
+import { randomUUID } from 'node:crypto';
 import type { LibraryInfo } from '@ogi-sdk/connect';
 import { AxiosRequestConfig } from 'axios';
 import { contextBridge, ipcRenderer } from 'electron';
+import { makeElectronRpcClient } from '@/electron/rpc/client.js';
+import { ELECTRON_RPC_CHANNEL } from '@/lib/electron-rpc.js';
 
 // === Debug: Events Processed/sec Counter ===
 let dbg_eventsProcessed = 0;
@@ -21,6 +24,14 @@ const wrap = (fn: (...args: any[]) => any) => {
     }
   };
 };
+const rpcSessionId = randomUUID();
+const electronRpc = makeElectronRpcClient((message) =>
+  ipcRenderer.invoke(ELECTRON_RPC_CHANNEL, {
+    sessionId: rpcSessionId,
+    message,
+  })
+);
+
 setInterval(() => {
   const now = Date.now();
   const elapsed = (now - dbg_lastReportTime) / 1000;
@@ -258,7 +269,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     removeApp: wrap((appid: number) =>
       ipcRenderer.invoke('app:remove-app', appid)
     ),
-    getOS: wrap(() => ipcRenderer.invoke('app:get-os')),
+    getOS: wrap(() => electronRpc.getOperatingSystem()),
     isSteamDeck: wrap(() => ipcRenderer.invoke('app:is-steam-deck')),
     isOnline: wrap(() => ipcRenderer.invoke('app:is-online')),
     getAddonPath: wrap((addonID: string) =>

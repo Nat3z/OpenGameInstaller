@@ -23,7 +23,8 @@
   },
   "overrides": {
     "@types/minimatch": "5.1.2",
-    "@types/node": "^22.15.0"
+    "@types/node": "^22.15.0",
+    "effect": "3.22.0"
   },
   "trustedDependencies": [
     "electron",
@@ -31,6 +32,6 @@
     "sharp"
   ],
   "dependencies": {
-    "effect": "^3.22.0"
+    "effect": "3.22.0"
   }
 }

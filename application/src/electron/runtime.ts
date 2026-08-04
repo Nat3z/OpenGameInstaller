@@ -1,14 +1,18 @@
 import { formatErrorResponse } from '@ogi/errors';
-import { Effect, Layer, ManagedRuntime } from 'effect';
+import { Effect, Fiber, Layer, ManagedRuntime } from 'effect';
 
 const electronRuntime = ManagedRuntime.make(Layer.empty);
+const backgroundFibers = new Set<Fiber.RuntimeFiber<unknown, unknown>>();
 
 export const runElectronEffect = <A, E>(
   effect: Effect.Effect<A, E>
 ): Promise<A> => electronRuntime.runPromise(effect);
 
 export const forkElectronEffect = <A, E>(effect: Effect.Effect<A, E>): void => {
-  electronRuntime.runFork(effect);
+  const fiber = electronRuntime.runFork(effect);
+  const trackedFiber = fiber as Fiber.RuntimeFiber<unknown, unknown>;
+  backgroundFibers.add(trackedFiber);
+  fiber.addObserver(() => backgroundFibers.delete(trackedFiber));
 };
 
 export const runElectronSync = <A, E>(effect: Effect.Effect<A, E>): A =>
@@ -32,5 +36,11 @@ export const runSyncBoundary = <A, E>(
     )
   );
 
-export const disposeElectronRuntime = (): Promise<void> =>
-  electronRuntime.dispose();
+export const disposeElectronRuntime = async (): Promise<void> => {
+  await Promise.all(
+    Array.from(backgroundFibers, (fiber) =>
+      electronRuntime.runPromise(Fiber.interrupt(fiber))
+    )
+  );
+  await electronRuntime.dispose();
+};

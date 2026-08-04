@@ -18,6 +18,7 @@ type $GamepadNavigator =
   import('@/frontend/managers/GamepadManager').GamepadNavigator;
 type DownloadHandshakeResult =
   import('@/lib/download-handshake').DownloadHandshakeResult;
+type OperatingSystem = import('@/lib/electron-rpc').OperatingSystem;
 
 /** Shared type for app insertion (insertApp) to avoid duplicating LibraryInfo + redistributables. */
 type InsertAppInfo = LibraryInfo & {
@@ -174,7 +175,7 @@ interface Window {
         | { status: 'cancelled'; message: string }
         | { status: 'error'; error: string }
       >;
-      getOS: () => Promise<string>;
+      getOS: () => Promise<OperatingSystem>;
       isSteamDeck: () => Promise<boolean>;
       isOnline: () => Promise<boolean>;
       getAddonPath: (addonID: string) => Promise<string>;

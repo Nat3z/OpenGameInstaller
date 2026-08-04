@@ -152,9 +152,6 @@ export function retryFailedSetup(failedSetup: FailedSetup) {
   const tempId = Math.random().toString(36).substring(7);
 
   return Effect.gen(function* () {
-    failedSetups.update((setups) =>
-      setups.filter((setup) => setup.id !== failedSetup.id)
-    );
     currentDownloads.update((downloads) => [
       ...downloads,
       { ...failedSetup.downloadInfo, id: tempId, status: 'completed' },

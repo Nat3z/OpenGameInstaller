@@ -34,5 +34,3 @@ export function createElectronRouter(mainWindow: BrowserWindow) {
     )
   );
 }
-
-export type ElectronRouter = ReturnType<typeof createElectronRouter>;

@@ -294,6 +294,7 @@ async function processDownloadComplete(
         error: 'Failed to extract RAR file',
         should: 'call-unrar',
       });
+      processingDownloadCompletions.delete(downloadID);
       return;
     }
   }

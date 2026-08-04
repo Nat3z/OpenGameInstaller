@@ -1,7 +1,7 @@
 {
   "name": "@ogi-sdk/addon-server",
   "type": "module",
-  "version": "1.0.2",
+  "version": "1.1.0",
   "module": "./build/index.mjs",
   "main": "./build/index.cjs",
   "exports": {

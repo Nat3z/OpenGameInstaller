@@ -7,7 +7,7 @@ import {
 } from '@ogi/errors';
 import axios from 'axios';
 import { Deferred, Effect, Fiber } from 'effect';
-import { BrowserWindow, ipcMain } from 'electron';
+import { BrowserWindow } from 'electron';
 import parseTorrent from 'parse-torrent';
 import { sendNotification } from '@/electron/main.js';
 import {
@@ -16,6 +16,7 @@ import {
 } from '@/electron/manager/manager.config.js';
 import { DOWNLOAD_QUEUE } from '@/electron/manager/manager.queue.js';
 import { torrent as wtConnect } from '@/electron/manager/manager.webtorrent.js';
+import { electronIpcMain } from '@/electron/rpc/handlers.js';
 import {
   clearDownloadHandshake,
   type DownloadHandshakeResult,
@@ -191,7 +192,7 @@ class TorrentDownload {
             const entry = DOWNLOAD_QUEUE.enqueue(this.id, { type: 'torrent' });
             this.taskFinisher = entry.finish;
             entry.cancelHandler((cancel) => {
-              ipcMain.handleOnce(`queue:${this.id}:cancel`, () => {
+              electronIpcMain.handleOnce(`queue:${this.id}:cancel`, () => {
                 cancel();
                 return run(this.cancel());
               });
@@ -747,7 +748,7 @@ class TorrentDownload {
   }
 
   private removeCancelHandler(): void {
-    ipcMain.removeHandler(`queue:${this.id}:cancel`);
+    electronIpcMain.removeHandler(`queue:${this.id}:cancel`);
   }
 
   private releaseQueueSlot(): void {
@@ -788,29 +789,29 @@ export default function handler(mainWindow: BrowserWindow): void {
       return yield* download.waitForReady();
     });
 
-  ipcMain.handle(
+  electronIpcMain.handle(
     'torrent:download-torrent',
     (_, arg: { link: string; path: string }) =>
       run(startDownload({ ...arg, type: 'torrent' }))
   );
 
-  ipcMain.handle(
+  electronIpcMain.handle(
     'torrent:download-magnet',
     (_, arg: { link: string; path: string }) =>
       run(startDownload({ ...arg, type: 'magnet' }))
   );
 
-  ipcMain.handle('torrent:pause', (_, id: string) =>
+  electronIpcMain.handle('torrent:pause', (_, id: string) =>
     run(downloads.get(id)?.pause() ?? Effect.void)
   );
-  ipcMain.handle('torrent:resume', (_, id: string) =>
+  electronIpcMain.handle('torrent:resume', (_, id: string) =>
     run(downloads.get(id)?.resume() ?? Effect.void)
   );
-  ipcMain.handle('torrent:abort', (_, id: string) =>
+  electronIpcMain.handle('torrent:abort', (_, id: string) =>
     run(downloads.get(id)?.cancel() ?? Effect.void)
   );
 
-  ipcMain.handle('download-torrent-into', (_, link: string) =>
+  electronIpcMain.handle('download-torrent-into', (_, link: string) =>
     run(
       Effect.tryPromise({
         try: () =>
@@ -829,7 +830,8 @@ export default function handler(mainWindow: BrowserWindow): void {
     )
   );
 
-  ipcMain.handle('torrent:get-hash', (_, item: string | Buffer | Uint8Array) =>
-    run(getTorrentInfoHash(item))
+  electronIpcMain.handle(
+    'torrent:get-hash',
+    (_, item: string | Buffer | Uint8Array) => run(getTorrentInfoHash(item))
   );
 }

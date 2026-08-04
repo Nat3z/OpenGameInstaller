@@ -4,11 +4,11 @@ import { join } from 'node:path';
 import { FileSystemError, formatError, HttpError } from '@ogi/errors';
 import axios from 'axios';
 import { Effect, Schema } from 'effect';
-import { ipcMain } from 'electron';
 import type { ReadStream } from 'original-fs';
 import RealDebrid from 'real-debrid-js';
 import { sendNotification } from '@/electron/main.js';
 import { __dirname } from '@/electron/manager/manager.paths.js';
+import { electronIpcMain } from '@/electron/rpc/handlers.js';
 import { runEffectBoundary } from '@/electron/runtime.js';
 
 const CONFIG_PATH = join(__dirname, 'config/option/realdebrid.json');
@@ -107,7 +107,7 @@ const downloadTorrent = (url: string, path: string) =>
   });
 
 export default function handler(mainWindow: Electron.BrowserWindow): void {
-  ipcMain.handle('real-debrid:set-key', (_, key: string) =>
+  electronIpcMain.handle('real-debrid:set-key', (_, key: string) =>
     run(
       Effect.sync(() => {
         realDebridClient = new RealDebrid({ apiKey: key });
@@ -116,46 +116,46 @@ export default function handler(mainWindow: Electron.BrowserWindow): void {
       'Failed to set Real-Debrid key'
     )
   );
-  ipcMain.handle('real-debrid:update-key', () =>
+  electronIpcMain.handle('real-debrid:update-key', () =>
     run(updateKey(), 'Failed to update Real-Debrid key')
   );
-  ipcMain.handle('real-debrid:add-magnet', (_, arg) =>
+  electronIpcMain.handle('real-debrid:add-magnet', (_, arg) =>
     run(
       realDebridClient.addMagnet(arg.url, hostName(arg.host)),
       'Failed to add Real-Debrid magnet'
     )
   );
-  ipcMain.handle('real-debrid:get-user-info', () =>
+  electronIpcMain.handle('real-debrid:get-user-info', () =>
     run(realDebridClient.getUserInfo(), 'Failed to fetch Real-Debrid user info')
   );
-  ipcMain.handle('real-debrid:unrestrict-link', (_, link) =>
+  electronIpcMain.handle('real-debrid:unrestrict-link', (_, link) =>
     run(
       realDebridClient.unrestrictLink(link),
       'Failed to unrestrict Real-Debrid link'
     )
   );
-  ipcMain.handle('real-debrid:get-hosts', () =>
+  electronIpcMain.handle('real-debrid:get-hosts', () =>
     run(realDebridClient.getHosts(), 'Failed to fetch Real-Debrid hosts')
   );
-  ipcMain.handle('real-debrid:get-torrent-info', (_, id) =>
+  electronIpcMain.handle('real-debrid:get-torrent-info', (_, id) =>
     run(
       realDebridClient.getTorrentInfo(id),
       'Failed to fetch Real-Debrid torrent info'
     )
   );
-  ipcMain.handle('real-debrid:is-torrent-ready', (_, id) =>
+  electronIpcMain.handle('real-debrid:is-torrent-ready', (_, id) =>
     run(
       realDebridClient.isTorrentReady(id),
       'Failed to check Real-Debrid torrent status'
     )
   );
-  ipcMain.handle('real-debrid:select-torrent', (_, id) =>
+  electronIpcMain.handle('real-debrid:select-torrent', (_, id) =>
     run(
       realDebridClient.selectTorrents(id),
       'Failed to select Real-Debrid torrent'
     )
   );
-  ipcMain.handle('real-debrid:add-torrent', (_, arg) => {
+  electronIpcMain.handle('real-debrid:add-torrent', (_, arg) => {
     const tempPath = join(__dirname, `temp-realdebrid-${Date.now()}.torrent`);
     const operation = Effect.gen(function* () {
       yield* downloadTorrent(arg.torrent, tempPath);

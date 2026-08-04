@@ -5,10 +5,10 @@ import { FileSystemError, formatError, HttpError } from '@ogi/errors';
 import AllDebrid from 'all-debrid-js';
 import axios from 'axios';
 import { Effect, Schema } from 'effect';
-import { ipcMain } from 'electron';
 import type { ReadStream } from 'original-fs';
 import { sendNotification } from '@/electron/main.js';
 import { __dirname } from '@/electron/manager/manager.paths.js';
+import { electronIpcMain } from '@/electron/rpc/handlers.js';
 import { runEffectBoundary } from '@/electron/runtime.js';
 
 const CONFIG_PATH = join(__dirname, 'config/option/realdebrid.json');
@@ -108,7 +108,7 @@ const run = <A, E>(effect: Effect.Effect<A, E>, message: string) =>
   runEffectBoundary(notifyFailure(effect, message));
 
 export default function handler(_mainWindow: Electron.BrowserWindow): void {
-  ipcMain.handle('all-debrid:set-key', (_, key: string) =>
+  electronIpcMain.handle('all-debrid:set-key', (_, key: string) =>
     run(
       Effect.sync(() => {
         allDebridClient = new AllDebrid({ apiKey: key });
@@ -117,7 +117,7 @@ export default function handler(_mainWindow: Electron.BrowserWindow): void {
       'Failed to set AllDebrid key'
     )
   );
-  ipcMain.handle('all-debrid:update-key', () =>
+  electronIpcMain.handle('all-debrid:update-key', () =>
     run(
       readKey().pipe(
         Effect.map((key) => {
@@ -129,13 +129,13 @@ export default function handler(_mainWindow: Electron.BrowserWindow): void {
       'Failed to update AllDebrid key'
     )
   );
-  ipcMain.handle('all-debrid:get-user-info', () =>
+  electronIpcMain.handle('all-debrid:get-user-info', () =>
     run(allDebridClient.getUserInfo(), 'Failed to fetch AllDebrid user info')
   );
-  ipcMain.handle('all-debrid:get-hosts', () =>
+  electronIpcMain.handle('all-debrid:get-hosts', () =>
     run(allDebridClient.getHosts(), 'Failed to fetch AllDebrid hosts')
   );
-  ipcMain.handle(
+  electronIpcMain.handle(
     'all-debrid:add-magnet',
     (_, arg: { url: string; host?: string }) =>
       run(
@@ -143,40 +143,43 @@ export default function handler(_mainWindow: Electron.BrowserWindow): void {
         'Failed to add magnet to AllDebrid'
       )
   );
-  ipcMain.handle('all-debrid:is-torrent-ready', (_, id: string) =>
+  electronIpcMain.handle('all-debrid:is-torrent-ready', (_, id: string) =>
     run(
       allDebridClient.isTorrentReady(id),
       'Failed to check AllDebrid torrent status'
     )
   );
-  ipcMain.handle('all-debrid:get-torrent-info', (_, id: string) =>
+  electronIpcMain.handle('all-debrid:get-torrent-info', (_, id: string) =>
     run(
       allDebridClient.getMagnetFiles(id),
       'Failed to fetch AllDebrid torrent info'
     )
   );
-  ipcMain.handle('all-debrid:unrestrict-link', (_, link: string) =>
+  electronIpcMain.handle('all-debrid:unrestrict-link', (_, link: string) =>
     run(
       allDebridClient.unrestrictLink(link),
       'Failed to unrestrict AllDebrid link'
     )
   );
-  ipcMain.handle('all-debrid:select-torrent', () =>
+  electronIpcMain.handle('all-debrid:select-torrent', () =>
     runEffectBoundary(Effect.succeed(true))
   );
-  ipcMain.handle('all-debrid:add-torrent', (_, arg: { torrent: string }) => {
-    const tempPath = join(__dirname, `temp-alldebrid-${Date.now()}.torrent`);
-    const operation = Effect.gen(function* () {
-      yield* downloadTorrent(arg.torrent, tempPath);
-      const stream = fs.createReadStream(tempPath) as ReadStream;
-      return yield* allDebridClient
-        .addTorrent(stream)
-        .pipe(Effect.ensuring(Effect.sync(() => stream.destroy())));
-    }).pipe(
-      Effect.ensuring(
-        Effect.promise(() => fsAsync.rm(tempPath, { force: true }))
-      )
-    );
-    return run(operation, 'Failed to add torrent to AllDebrid');
-  });
+  electronIpcMain.handle(
+    'all-debrid:add-torrent',
+    (_, arg: { torrent: string }) => {
+      const tempPath = join(__dirname, `temp-alldebrid-${Date.now()}.torrent`);
+      const operation = Effect.gen(function* () {
+        yield* downloadTorrent(arg.torrent, tempPath);
+        const stream = fs.createReadStream(tempPath) as ReadStream;
+        return yield* allDebridClient
+          .addTorrent(stream)
+          .pipe(Effect.ensuring(Effect.sync(() => stream.destroy())));
+      }).pipe(
+        Effect.ensuring(
+          Effect.promise(() => fsAsync.rm(tempPath, { force: true }))
+        )
+      );
+      return run(operation, 'Failed to add torrent to AllDebrid');
+    }
+  );
 }

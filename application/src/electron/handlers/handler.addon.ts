@@ -2,7 +2,7 @@ import { AddonError, AddonNotFound, ipcBoundary } from '@ogi/errors';
 import axios from 'axios';
 import { exec } from 'child_process';
 import { Effect, Schedule } from 'effect';
-import { BrowserWindow, ipcMain } from 'electron';
+import { BrowserWindow } from 'electron';
 import fs from 'fs';
 import fsAsync from 'fs/promises';
 import { dirname, isAbsolute, join, resolve } from 'path';
@@ -16,6 +16,7 @@ import { sendIPCMessage, sendNotification } from '@/electron/main.js';
 import { Addon } from '@/electron/manager/manager.addon.js';
 import { waitForAddonsConfigured } from '@/electron/manager/manager.addon-readiness.js';
 import { __dirname } from '@/electron/manager/manager.paths.js';
+import { electronIpcMain } from '@/electron/rpc/handlers.js';
 import { deleteInstalledAddon } from '@/electron/server/addon-lifecycle.js';
 import {
   port,
@@ -236,7 +237,7 @@ export function loadMarketplace(
 }
 
 export default function AddonManagerHandler(mainWindow: BrowserWindow) {
-  ipcMain.handle(
+  electronIpcMain.handle(
     'install-addons',
     ipcBoundary((_, addons: string[]) =>
       Effect.gen(function* () {
@@ -614,12 +615,12 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
     )
   );
 
-  ipcMain.handle(
+  electronIpcMain.handle(
     'restart-addon-server',
     ipcBoundary(() => restartAddonServer())
   );
 
-  ipcMain.handle(
+  electronIpcMain.handle(
     'addon:delete-installed',
     ipcBoundary((_, addonID: string) =>
       Effect.gen(function* () {
@@ -631,7 +632,7 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
     )
   );
 
-  ipcMain.handle(
+  electronIpcMain.handle(
     'clean-addons',
     ipcBoundary((_, marketplaceUrls: string[]) =>
       Effect.gen(function* () {
@@ -676,7 +677,7 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
     )
   );
 
-  ipcMain.handle(
+  electronIpcMain.handle(
     'update-addons',
     ipcBoundary((_) =>
       Effect.gen(function* () {

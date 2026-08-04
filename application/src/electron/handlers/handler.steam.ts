@@ -8,7 +8,7 @@ import {
   SteamRunningError,
 } from '@ogi/errors';
 import { Effect, Layer } from 'effect';
-import { type BrowserWindow, dialog, ipcMain } from 'electron';
+import { type BrowserWindow, dialog } from 'electron';
 import {
   ensureLibraryDir,
   loadLibraryInfo,
@@ -37,6 +37,7 @@ import {
 } from '@/electron/lib/steam-process.js';
 import { getNonSteamLaunchId } from '@/electron/lib/steam-shortcuts.js';
 import { sendNotification } from '@/electron/main.js';
+import { electronIpcMain } from '@/electron/rpc/handlers.js';
 
 export type SteamOperationResult =
   | SteamMutationResult
@@ -242,7 +243,7 @@ Icon=steam_icon_${params.appID}
 }
 
 export function registerSteamHandlers(mainWindow: BrowserWindow): void {
-  ipcMain.handle(
+  electronIpcMain.handle(
     'app:get-steam-app-id',
     ipcBoundary((_, appID: number) =>
       getSteamAppIdForGame(appID).pipe(
@@ -251,7 +252,7 @@ export function registerSteamHandlers(mainWindow: BrowserWindow): void {
     )
   );
 
-  ipcMain.handle(
+  electronIpcMain.handle(
     'app:launch-steam-app',
     ipcBoundary((_, appID: number) =>
       Effect.gen(function* () {
@@ -340,7 +341,7 @@ export function registerSteamHandlers(mainWindow: BrowserWindow): void {
     )
   );
 
-  ipcMain.handle(
+  electronIpcMain.handle(
     'app:check-prefix-exists',
     ipcBoundary((_, appID: number) =>
       Effect.gen(function* () {
@@ -362,7 +363,7 @@ export function registerSteamHandlers(mainWindow: BrowserWindow): void {
     )
   );
 
-  ipcMain.handle(
+  electronIpcMain.handle(
     'app:add-to-steam',
     ipcBoundary((_, appID: number, oldSteamAppId: number | undefined) =>
       Effect.gen(function* () {
@@ -418,7 +419,7 @@ export function registerSteamHandlers(mainWindow: BrowserWindow): void {
     )
   );
 
-  ipcMain.handle(
+  electronIpcMain.handle(
     'app:remove-from-steam',
     ipcBoundary((_, appID: number) => {
       if (!isLinux()) {

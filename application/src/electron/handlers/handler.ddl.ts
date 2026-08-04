@@ -20,7 +20,7 @@ import {
   Scope,
   Stream,
 } from 'effect';
-import { BrowserWindow, ipcMain } from 'electron';
+import { BrowserWindow } from 'electron';
 import * as fs from 'fs';
 import { rm as rmAsync } from 'fs/promises';
 import * as http from 'http';
@@ -34,6 +34,7 @@ import {
   refreshCached,
 } from '@/electron/manager/manager.config.js';
 import { DOWNLOAD_QUEUE } from '@/electron/manager/manager.queue.js';
+import { electronIpcMain } from '@/electron/rpc/handlers.js';
 import {
   clearDownloadHandshake,
   type DownloadHandshakeResult,
@@ -484,7 +485,7 @@ export class Download {
       this.taskFinisher = finish;
 
       cancelHandler((cancel) => {
-        ipcMain.handleOnce(`queue:${this.id}:cancel`, () => {
+        electronIpcMain.handleOnce(`queue:${this.id}:cancel`, () => {
           cancel();
           this.lifecycle.runEffect(this.cancel());
         });
@@ -510,7 +511,7 @@ export class Download {
   }
 
   private removeCancelHandler() {
-    ipcMain.removeHandler(`queue:${this.id}:cancel`);
+    electronIpcMain.removeHandler(`queue:${this.id}:cancel`);
   }
 
   private run(): Effect.Effect<void> {
@@ -2913,28 +2914,30 @@ export default function handler(mainWindow: BrowserWindow): void {
     void runEffectBoundary(service.shutdown);
   });
 
-  ipcMain.handle('ddl:download', (_, jobs: DownloadJob[], part?: number) =>
-    run(
-      Effect.gen(function* () {
-        return yield* (yield* DownloadService).start(jobs, part);
-      })
-    )
+  electronIpcMain.handle(
+    'ddl:download',
+    (_, jobs: DownloadJob[], part?: number) =>
+      run(
+        Effect.gen(function* () {
+          return yield* (yield* DownloadService).start(jobs, part);
+        })
+      )
   );
-  ipcMain.handle('ddl:pause', (_, id: string) =>
+  electronIpcMain.handle('ddl:pause', (_, id: string) =>
     run(
       Effect.gen(function* () {
         yield* (yield* DownloadService).pause(id);
       })
     )
   );
-  ipcMain.handle('ddl:resume', (_, id: string) =>
+  electronIpcMain.handle('ddl:resume', (_, id: string) =>
     run(
       Effect.gen(function* () {
         yield* (yield* DownloadService).resume(id);
       })
     )
   );
-  ipcMain.handle('ddl:abort', (_, id: string) =>
+  electronIpcMain.handle('ddl:abort', (_, id: string) =>
     run(
       Effect.gen(function* () {
         yield* (yield* DownloadService).abort(id);

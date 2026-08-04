@@ -3,6 +3,8 @@ import { fileURLToPath } from 'node:url';
 import { type RpcMessage, RpcServer } from '@effect/rpc';
 import { Effect, Mailbox, Option } from 'effect';
 import { app, BrowserWindow, ipcMain, type WebContents } from 'electron';
+import { isDev } from '@/electron/manager/manager.paths.js';
+import { invokeElectronRpcHandler } from '@/electron/rpc/handlers.js';
 import { forkElectronEffect, runElectronEffect } from '@/electron/runtime.js';
 import {
   ELECTRON_RPC_CHANNEL,
@@ -36,7 +38,7 @@ let registered = false;
 function isAllowedSenderUrl(url: string): boolean {
   try {
     const parsed = new URL(url);
-    if (parsed.origin === 'http://localhost:8080') return true;
+    if (isDev() && parsed.origin === 'http://localhost:8080') return true;
     if (parsed.protocol !== 'file:') return false;
 
     const senderPath = path.resolve(fileURLToPath(parsed));
@@ -68,12 +70,15 @@ function isRequestId(value: unknown): value is string {
 function isHeaders(value: unknown): value is ReadonlyArray<[string, string]> {
   return (
     Array.isArray(value) &&
+    value.length <= 64 &&
     value.every(
       (header) =>
         Array.isArray(header) &&
         header.length === 2 &&
         typeof header[0] === 'string' &&
-        typeof header[1] === 'string'
+        header[0].length <= 1024 &&
+        typeof header[1] === 'string' &&
+        header[1].length <= 8192
     )
   );
 }
@@ -135,6 +140,8 @@ function parseRequest(value: unknown): ElectronRpcRequest {
 
 const handlers = ElectronRpcs.toLayer({
   GetOperatingSystem: () => Effect.succeed(process.platform),
+  InvokeElectronHandler: ({ channel, args }) =>
+    invokeElectronRpcHandler(channel, args),
 });
 
 const server = Effect.scoped(
@@ -184,10 +191,10 @@ const server = Effect.scoped(
       const onNavigation = (
         _event: Electron.Event,
         _url: string,
-        _isInPlace: boolean,
+        isInPlace: boolean,
         isMainFrame: boolean
       ) => {
-        if (isMainFrame) {
+        if (isMainFrame && !isInPlace) {
           closeWebContentsSessions(
             webContents.id,
             new Error('Electron renderer navigated')
@@ -252,6 +259,12 @@ const server = Effect.scoped(
         response._tag === 'ClientProtocolError'
       ) {
         for (const reply of replies.values()) reply.resolve(response);
+        replies.clear();
+      } else {
+        const cause = new Error(
+          `Unsupported Electron RPC response: ${response._tag}`
+        );
+        for (const reply of replies.values()) reply.reject(cause);
         replies.clear();
       }
 
@@ -359,6 +372,9 @@ const server = Effect.scoped(
     );
   })
 ).pipe(
+  Effect.tapErrorCause((cause) =>
+    Effect.logError('Electron RPC server stopped with a failure', cause)
+  ),
   Effect.ensuring(
     Effect.sync(() => {
       registered = false;

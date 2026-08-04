@@ -1,4 +1,4 @@
-import { ipcMain } from 'electron';
+import { electronIpcMain } from '@/electron/rpc/handlers.js';
 
 export type DownloadHandshakeStatus =
   | 'queued'
@@ -156,11 +156,11 @@ export function registerDownloadHandshakeHandlers() {
   }
   handshakeHandlersRegistered = true;
 
-  ipcMain.handle('download:consume-replay-events', (_, id: string) => {
+  electronIpcMain.handle('download:consume-replay-events', (_, id: string) => {
     return consumeDownloadReplayEvents(id);
   });
 
-  ipcMain.handle('download:get-handshake-state', (_, id: string) => {
+  electronIpcMain.handle('download:get-handshake-state', (_, id: string) => {
     return getDownloadHandshakeState(id);
   });
 }

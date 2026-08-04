@@ -1,9 +1,14 @@
 import { RpcClient, RpcClientError, type RpcMessage } from '@effect/rpc';
-import { Effect } from 'effect';
+import { Effect, Exit, Scope } from 'effect';
 import { ElectronRpcs, type OperatingSystem } from '@/lib/electron-rpc.js';
 
 export interface ElectronRpcClient {
-  getOperatingSystem: () => Promise<OperatingSystem>;
+  readonly close: () => Promise<void>;
+  readonly getOperatingSystem: () => Promise<OperatingSystem>;
+  readonly invoke: <A>(
+    channel: string,
+    ...args: ReadonlyArray<unknown>
+  ) => Promise<A>;
 }
 
 export function makeElectronRpcClient(
@@ -32,17 +37,35 @@ export function makeElectronRpcClient(
     })
   );
 
+  const client = Effect.runPromise(
+    Effect.gen(function* () {
+      const scope = yield* Scope.make();
+      const protocolService = yield* protocol.pipe(
+        Effect.provideService(Scope.Scope, scope)
+      );
+      const rpcClient = yield* RpcClient.make(ElectronRpcs).pipe(
+        Effect.provideService(RpcClient.Protocol, protocolService),
+        Effect.provideService(Scope.Scope, scope)
+      );
+      return { rpcClient, scope };
+    })
+  );
+
   return {
+    close: () =>
+      client.then(({ scope }) =>
+        Effect.runPromise(Scope.close(scope, Exit.void))
+      ),
     getOperatingSystem: () =>
-      Effect.runPromise(
-        Effect.scoped(
-          Effect.gen(function* () {
-            const protocolService = yield* protocol;
-            const client = yield* RpcClient.make(ElectronRpcs).pipe(
-              Effect.provideService(RpcClient.Protocol, protocolService)
-            );
-            return yield* client.GetOperatingSystem();
-          })
+      client.then(({ rpcClient }) =>
+        Effect.runPromise(rpcClient.GetOperatingSystem())
+      ),
+    invoke: <A>(channel: string, ...args: ReadonlyArray<unknown>) =>
+      client.then(({ rpcClient }) =>
+        Effect.runPromise(
+          rpcClient
+            .InvokeElectronHandler({ channel, args })
+            .pipe(Effect.map((result) => result as A))
         )
       ),
   };

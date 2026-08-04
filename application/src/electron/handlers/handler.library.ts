@@ -1,3 +1,4 @@
+import { electronIpcMain } from '@/electron/rpc/handlers.js';
 /**
  * Library CRUD IPC handlers
  * Updated to support UMU (Unified Launcher for Windows Games on Linux)
@@ -7,7 +8,6 @@ import { FileSystemError, ipcBoundary, LibraryError } from '@ogi/errors';
 import type { LibraryInfo } from '@ogi-sdk/connect';
 import { spawn, spawnSync } from 'child_process';
 import { Effect } from 'effect';
-import { ipcMain } from 'electron';
 import * as fs from 'fs';
 import { parse as shellQuoteParse } from 'shell-quote';
 import {
@@ -443,7 +443,7 @@ function executeWrapperCommandForAppSteam(
 }
 
 export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
-  ipcMain.handle(
+  electronIpcMain.handle(
     'app:launch-game',
     ipcBoundary((_, appid: number) =>
       Effect.gen(function* () {
@@ -459,14 +459,14 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
     )
   );
 
-  ipcMain.handle(
+  electronIpcMain.handle(
     'app:execute-wrapper-command',
     ipcBoundary((_, appid: number, wrapperCommand: string) =>
       executeWrapperCommandForAppSteam(appid, wrapperCommand)
     )
   );
 
-  ipcMain.handle(
+  electronIpcMain.handle(
     'app:remove-app',
     ipcBoundary((_, appid: number) =>
       Effect.gen(function* () {
@@ -554,7 +554,7 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
     )
   );
 
-  ipcMain.handle(
+  electronIpcMain.handle(
     'app:insert-app',
     ipcBoundary(
       (
@@ -719,12 +719,12 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
     )
   );
 
-  ipcMain.handle(
+  electronIpcMain.handle(
     'app:get-all-apps',
     ipcBoundary(() => Effect.succeed(getAllLibraryFiles()))
   );
 
-  ipcMain.handle(
+  electronIpcMain.handle(
     'app:update-app-version',
     ipcBoundary(
       (
@@ -809,7 +809,7 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
     )
   );
 
-  ipcMain.handle(
+  electronIpcMain.handle(
     'app:get-library-info',
     ipcBoundary((_, appID: number) => Effect.succeed(loadLibraryInfo(appID)))
   );

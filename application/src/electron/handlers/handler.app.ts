@@ -157,9 +157,6 @@ export default function handler(mainWindow: Electron.BrowserWindow): void {
       )
     )
   );
-  ipcMain.handle('app:get-os', () =>
-    runBoundary(Effect.succeed(process.platform))
-  );
   ipcMain.handle('app:is-steam-deck', () =>
     runBoundary(
       Effect.try({

@@ -16,7 +16,7 @@ import {
 } from '@/electron/lib/steam-grid-db.js';
 import { sendIPCMessage, sendNotification } from '@/electron/main.js';
 import { __dirname } from '@/electron/manager/manager.paths.js';
-import { electronIpcMain } from '@/electron/rpc/handlers.js';
+import { procedure, router } from '@/electron/rpc/router-core.js';
 import { runEffectBoundary } from '@/electron/runtime.js';
 import { IS_NIXOS } from '@/electron/startup.js';
 
@@ -197,27 +197,27 @@ const downloadTools = (): Effect.Effect<readonly [boolean, boolean]> =>
     return [clean, restart] as const;
   });
 
-export default function OOBEHandler(): void {
-  electronIpcMain.handle('oobe:download-tools', () =>
-    runEffectBoundary(downloadTools())
-  );
-  electronIpcMain.handle('oobe:set-steamgriddb-key', (_, key: string) =>
-    runEffectBoundary(
-      Effect.try({
-        try: () => writeSteamGridDbKey(key),
-        catch: (cause) =>
-          new FileSystemError({
-            message: formatError(cause),
-            path: getSteamGridDbConfigPath(),
-            cause,
-          }),
-      }).pipe(
-        Effect.as(true),
-        Effect.catchAll((error) =>
-          Effect.sync(() => {
-            log(`Error: ${formatError(error)}`);
-            return false;
-          })
+export default function OOBEHandler() {
+  return router(
+    procedure('oobe.downloadTools', () => runEffectBoundary(downloadTools())),
+    procedure('oobe.setSteamGridDBKey', (key: string) =>
+      runEffectBoundary(
+        Effect.try({
+          try: () => writeSteamGridDbKey(key),
+          catch: (cause) =>
+            new FileSystemError({
+              message: formatError(cause),
+              path: getSteamGridDbConfigPath(),
+              cause,
+            }),
+        }).pipe(
+          Effect.as(true),
+          Effect.catchAll((error) =>
+            Effect.sync(() => {
+              log(`Error: ${formatError(error)}`);
+              return false;
+            })
+          )
         )
       )
     )

@@ -1,4 +1,4 @@
-import { electronIpcMain } from '@/electron/rpc/handlers.js';
+import { ipcProcedure, router } from '@/electron/rpc/router-core.js';
 /**
  * Library CRUD IPC handlers
  * Updated to support UMU (Unified Launcher for Windows Games on Linux)
@@ -443,11 +443,11 @@ function executeWrapperCommandForAppSteam(
 }
 
 export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
-  electronIpcMain.handle(
-    'app:launch-game',
-    ipcBoundary((_, appid: number) =>
+  const launchGame = ipcProcedure(
+    'app.launchGame',
+    ipcBoundary((_, appid: string) =>
       Effect.gen(function* () {
-        const result = yield* launchGameFromLibrary(appid, mainWindow);
+        const result = yield* launchGameFromLibrary(Number(appid), mainWindow);
         if (!result.success) {
           return yield* Effect.fail(
             new LibraryError({
@@ -459,15 +459,15 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
     )
   );
 
-  electronIpcMain.handle(
-    'app:execute-wrapper-command',
+  const executeWrapperCommand = ipcProcedure(
+    'app.executeWrapperCommand',
     ipcBoundary((_, appid: number, wrapperCommand: string) =>
       executeWrapperCommandForAppSteam(appid, wrapperCommand)
     )
   );
 
-  electronIpcMain.handle(
-    'app:remove-app',
+  const removeApp = ipcProcedure(
+    'app.removeApp',
     ipcBoundary((_, appid: number) =>
       Effect.gen(function* () {
         yield* Effect.try({
@@ -554,8 +554,8 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
     )
   );
 
-  electronIpcMain.handle(
-    'app:insert-app',
+  const insertApp = ipcProcedure(
+    'app.insertApp',
     ipcBoundary(
       (
         _,
@@ -719,13 +719,13 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
     )
   );
 
-  electronIpcMain.handle(
-    'app:get-all-apps',
+  const getAllApps = ipcProcedure(
+    'app.getAllApps',
     ipcBoundary(() => Effect.succeed(getAllLibraryFiles()))
   );
 
-  electronIpcMain.handle(
-    'app:update-app-version',
+  const updateAppVersion = ipcProcedure(
+    'app.updateAppVersion',
     ipcBoundary(
       (
         _,
@@ -809,8 +809,18 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
     )
   );
 
-  electronIpcMain.handle(
-    'app:get-library-info',
+  const getLibraryInfo = ipcProcedure(
+    'app.getLibraryInfo',
     ipcBoundary((_, appID: number) => Effect.succeed(loadLibraryInfo(appID)))
+  );
+
+  return router(
+    launchGame,
+    executeWrapperCommand,
+    removeApp,
+    insertApp,
+    getAllApps,
+    updateAppVersion,
+    getLibraryInfo
   );
 }

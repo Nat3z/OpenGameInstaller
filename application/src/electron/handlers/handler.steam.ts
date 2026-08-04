@@ -37,7 +37,7 @@ import {
 } from '@/electron/lib/steam-process.js';
 import { getNonSteamLaunchId } from '@/electron/lib/steam-shortcuts.js';
 import { sendNotification } from '@/electron/main.js';
-import { electronIpcMain } from '@/electron/rpc/handlers.js';
+import { ipcProcedure, router } from '@/electron/rpc/router-core.js';
 
 export type SteamOperationResult =
   | SteamMutationResult
@@ -242,9 +242,9 @@ Icon=steam_icon_${params.appID}
   });
 }
 
-export function registerSteamHandlers(mainWindow: BrowserWindow): void {
-  electronIpcMain.handle(
-    'app:get-steam-app-id',
+export function registerSteamHandlers(mainWindow: BrowserWindow) {
+  const getSteamAppId = ipcProcedure(
+    'app.getSteamAppId',
     ipcBoundary((_, appID: number) =>
       getSteamAppIdForGame(appID).pipe(
         Effect.map((appId) => ({ status: 'success' as const, appId }))
@@ -252,8 +252,8 @@ export function registerSteamHandlers(mainWindow: BrowserWindow): void {
     )
   );
 
-  electronIpcMain.handle(
-    'app:launch-steam-app',
+  const launchSteamApp = ipcProcedure(
+    'app.launchSteamApp',
     ipcBoundary((_, appID: number) =>
       Effect.gen(function* () {
         if (!isLinux()) {
@@ -341,8 +341,8 @@ export function registerSteamHandlers(mainWindow: BrowserWindow): void {
     )
   );
 
-  electronIpcMain.handle(
-    'app:check-prefix-exists',
+  const checkPrefixExists = ipcProcedure(
+    'app.checkPrefixExists',
     ipcBoundary((_, appID: number) =>
       Effect.gen(function* () {
         const appInfo = loadLibraryInfo(appID);
@@ -363,8 +363,8 @@ export function registerSteamHandlers(mainWindow: BrowserWindow): void {
     )
   );
 
-  electronIpcMain.handle(
-    'app:add-to-steam',
+  const addToSteam = ipcProcedure(
+    'app.addToSteam',
     ipcBoundary((_, appID: number, oldSteamAppId: number | undefined) =>
       Effect.gen(function* () {
         if (!isLinux()) {
@@ -419,8 +419,8 @@ export function registerSteamHandlers(mainWindow: BrowserWindow): void {
     )
   );
 
-  electronIpcMain.handle(
-    'app:remove-from-steam',
+  const removeFromSteam = ipcProcedure(
+    'app.removeFromSteam',
     ipcBoundary((_, appID: number) => {
       if (!isLinux()) {
         return Effect.fail(
@@ -429,5 +429,13 @@ export function registerSteamHandlers(mainWindow: BrowserWindow): void {
       }
       return runSteamMutationWithConfirmation(mainWindow, 'remove', { appID });
     })
+  );
+
+  return router(
+    getSteamAppId,
+    launchSteamApp,
+    checkPrefixExists,
+    addToSteam,
+    removeFromSteam
   );
 }

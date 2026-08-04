@@ -16,7 +16,11 @@ import {
 } from '@/electron/manager/manager.config.js';
 import { DOWNLOAD_QUEUE } from '@/electron/manager/manager.queue.js';
 import { torrent as wtConnect } from '@/electron/manager/manager.webtorrent.js';
-import { electronIpcMain } from '@/electron/rpc/handlers.js';
+import {
+  registerQueueCancel,
+  removeQueueCancel,
+} from '@/electron/rpc/queue-cancel.js';
+import { procedure, router } from '@/electron/rpc/router-core.js';
 import {
   clearDownloadHandshake,
   type DownloadHandshakeResult,
@@ -192,7 +196,7 @@ class TorrentDownload {
             const entry = DOWNLOAD_QUEUE.enqueue(this.id, { type: 'torrent' });
             this.taskFinisher = entry.finish;
             entry.cancelHandler((cancel) => {
-              electronIpcMain.handleOnce(`queue:${this.id}:cancel`, () => {
+              registerQueueCancel(this.id, () => {
                 cancel();
                 return run(this.cancel());
               });
@@ -748,7 +752,7 @@ class TorrentDownload {
   }
 
   private removeCancelHandler(): void {
-    electronIpcMain.removeHandler(`queue:${this.id}:cancel`);
+    removeQueueCancel(this.id);
   }
 
   private releaseQueueSlot(): void {
@@ -781,7 +785,7 @@ class TorrentDownload {
   }
 }
 
-export default function handler(mainWindow: BrowserWindow): void {
+export default function handler(mainWindow: BrowserWindow) {
   const startDownload = (job: TorrentJob) =>
     Effect.gen(function* () {
       const download = new TorrentDownload(mainWindow, job);
@@ -789,49 +793,44 @@ export default function handler(mainWindow: BrowserWindow): void {
       return yield* download.waitForReady();
     });
 
-  electronIpcMain.handle(
-    'torrent:download-torrent',
-    (_, arg: { link: string; path: string }) =>
-      run(startDownload({ ...arg, type: 'torrent' }))
-  );
-
-  electronIpcMain.handle(
-    'torrent:download-magnet',
-    (_, arg: { link: string; path: string }) =>
+  return router(
+    procedure(
+      'torrent.downloadTorrent',
+      (arg: { link: string; path: string }) =>
+        run(startDownload({ ...arg, type: 'torrent' }))
+    ),
+    procedure('torrent.downloadMagnet', (arg: { link: string; path: string }) =>
       run(startDownload({ ...arg, type: 'magnet' }))
-  );
-
-  electronIpcMain.handle('torrent:pause', (_, id: string) =>
-    run(downloads.get(id)?.pause() ?? Effect.void)
-  );
-  electronIpcMain.handle('torrent:resume', (_, id: string) =>
-    run(downloads.get(id)?.resume() ?? Effect.void)
-  );
-  electronIpcMain.handle('torrent:abort', (_, id: string) =>
-    run(downloads.get(id)?.cancel() ?? Effect.void)
-  );
-
-  electronIpcMain.handle('download-torrent-into', (_, link: string) =>
-    run(
-      Effect.tryPromise({
-        try: () =>
-          axios.get<ArrayBuffer>(link, { responseType: 'arraybuffer' }),
-        catch: (cause: unknown) =>
-          new HttpError({
-            message: axios.isAxiosError(cause)
-              ? cause.message
-              : formatError(cause),
-            statusCode: axios.isAxiosError(cause)
-              ? (cause.response?.status ?? 0)
-              : 0,
-            url: link,
-          }),
-      }).pipe(Effect.map((response) => Buffer.from(response.data)))
+    ),
+    procedure('torrent.pauseDownload', (id: string) =>
+      run(downloads.get(id)?.pause() ?? Effect.void)
+    ),
+    procedure('torrent.resumeDownload', (id: string) =>
+      run(downloads.get(id)?.resume() ?? Effect.void)
+    ),
+    procedure('torrent.abortDownload', (id: string) =>
+      run(downloads.get(id)?.cancel() ?? Effect.void)
+    ),
+    procedure('downloadTorrentInto', (link: string) =>
+      run(
+        Effect.tryPromise({
+          try: () =>
+            axios.get<ArrayBuffer>(link, { responseType: 'arraybuffer' }),
+          catch: (cause: unknown) =>
+            new HttpError({
+              message: axios.isAxiosError(cause)
+                ? cause.message
+                : formatError(cause),
+              statusCode: axios.isAxiosError(cause)
+                ? (cause.response?.status ?? 0)
+                : 0,
+              url: link,
+            }),
+        }).pipe(Effect.map((response) => Buffer.from(response.data)))
+      )
+    ),
+    procedure('getTorrentHash', (item: string | Buffer | Uint8Array) =>
+      run(getTorrentInfoHash(item))
     )
-  );
-
-  electronIpcMain.handle(
-    'torrent:get-hash',
-    (_, item: string | Buffer | Uint8Array) => run(getTorrentInfoHash(item))
   );
 }

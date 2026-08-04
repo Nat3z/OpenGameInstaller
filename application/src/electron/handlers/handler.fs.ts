@@ -7,7 +7,7 @@ import { dialog, ipcMain, shell } from 'electron';
 import { extraction } from 'ogi-addon';
 import { sendIPCMessage } from '@/electron/main.js';
 import { __dirname } from '@/electron/manager/manager.paths.js';
-import { electronIpcMain } from '@/electron/rpc/handlers.js';
+import { procedure, router } from '@/electron/rpc/router-core.js';
 import {
   runEffectBoundary as runBoundary,
   runSyncBoundary,
@@ -91,7 +91,7 @@ const extractArchive = (arg: {
     return arg.outputDir;
   });
 
-export default function handler(): void {
+export default function handler() {
   ipcMain.on('fs:read', (event, arg: string) => {
     const path = resolvePath(String(arg));
     event.returnValue = runSyncBoundary(
@@ -138,43 +138,42 @@ export default function handler(): void {
     );
   });
 
-  electronIpcMain.handle('fs:dialog:show-open-dialog', (_, options) =>
-    runBoundary(
-      Effect.tryPromise({
-        try: () => dialog.showOpenDialog(options),
-        catch: (cause) =>
-          new FileSystemError({ message: formatError(cause), cause }),
-      }).pipe(Effect.map((result) => result.filePaths))
-    )
-  );
-
-  electronIpcMain.handle('fs:dialog:show-save-dialog', (_, options) =>
-    runBoundary(
-      Effect.tryPromise({
-        try: () => dialog.showSaveDialog(options),
-        catch: (cause) =>
-          new FileSystemError({ message: formatError(cause), cause }),
-      }).pipe(Effect.map((result) => result.filePath))
-    )
-  );
-
-  electronIpcMain.handle('fs:get-files-in-dir', (_, arg: string) => {
-    const path = resolvePath(String(arg));
-    return runBoundary(fsTry(path, () => fs.readdirSync(path)));
-  });
-
-  electronIpcMain.handle('fs:delete', (_, arg: string) => {
-    const path = resolvePath(String(arg));
-    return runBoundary(
-      fsTryPromise(path, () =>
-        fsAsync.rm(path, { recursive: true, force: true })
-      ).pipe(Effect.as('success' as const))
-    );
-  });
-
-  electronIpcMain.handle(
-    'fs:move',
-    (_, arg: { source: string; destination: string }) => {
+  const asyncRouter = router(
+    procedure(
+      'fs.dialog.showOpenDialog',
+      (options: Electron.OpenDialogOptions) =>
+        runBoundary(
+          Effect.tryPromise({
+            try: () => dialog.showOpenDialog(options),
+            catch: (cause) =>
+              new FileSystemError({ message: formatError(cause), cause }),
+          }).pipe(Effect.map((result) => result.filePaths))
+        )
+    ),
+    procedure(
+      'fs.dialog.showSaveDialog',
+      (options: Electron.SaveDialogOptions) =>
+        runBoundary(
+          Effect.tryPromise({
+            try: () => dialog.showSaveDialog(options),
+            catch: (cause) =>
+              new FileSystemError({ message: formatError(cause), cause }),
+          }).pipe(Effect.map((result) => result.filePath))
+        )
+    ),
+    procedure('fs.getFilesInDir', (arg: string) => {
+      const path = resolvePath(String(arg));
+      return runBoundary(fsTry(path, () => fs.readdirSync(path)));
+    }),
+    procedure('fs.deleteAsync', (arg: string) => {
+      const path = resolvePath(String(arg));
+      return runBoundary(
+        fsTryPromise(path, () =>
+          fsAsync.rm(path, { recursive: true, force: true })
+        ).pipe(Effect.as('success' as const))
+      );
+    }),
+    procedure('fs.move', (arg: { source: string; destination: string }) => {
       const source = resolvePath(arg.source);
       const destination = resolvePath(arg.destination);
       return runBoundary(
@@ -182,7 +181,13 @@ export default function handler(): void {
           Effect.as('success' as const)
         )
       );
-    }
+    }),
+    procedure('fs.unrar', (arg: Parameters<typeof extractArchive>[0]) =>
+      runBoundary(extractArchive(arg))
+    ),
+    procedure('fs.unzip', (arg: Parameters<typeof extractArchive>[0]) =>
+      runBoundary(extractArchive(arg))
+    )
   );
 
   ipcMain.on('fs:delete:sync', (event, arg: string) => {
@@ -194,10 +199,6 @@ export default function handler(): void {
       })
     );
   });
-
-  electronIpcMain.handle('fs:extract-rar', (_, arg) =>
-    runBoundary(extractArchive(arg))
-  );
 
   ipcMain.on('fs:stat', (event, arg: { path: string }) => {
     event.returnValue = runSyncBoundary(
@@ -216,7 +217,5 @@ export default function handler(): void {
     );
   });
 
-  electronIpcMain.handle('fs:extract-zip', (_, arg) =>
-    runBoundary(extractArchive(arg))
-  );
+  return asyncRouter;
 }

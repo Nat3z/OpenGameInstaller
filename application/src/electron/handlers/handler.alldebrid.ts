@@ -8,7 +8,7 @@ import { Effect, Schema } from 'effect';
 import type { ReadStream } from 'original-fs';
 import { sendNotification } from '@/electron/main.js';
 import { __dirname } from '@/electron/manager/manager.paths.js';
-import { electronIpcMain } from '@/electron/rpc/handlers.js';
+import { procedure, router } from '@/electron/rpc/router-core.js';
 import { runEffectBoundary } from '@/electron/runtime.js';
 
 const CONFIG_PATH = join(__dirname, 'config/option/realdebrid.json');
@@ -107,66 +107,63 @@ const downloadTorrent = (url: string, path: string) =>
 const run = <A, E>(effect: Effect.Effect<A, E>, message: string) =>
   runEffectBoundary(notifyFailure(effect, message));
 
-export default function handler(_mainWindow: Electron.BrowserWindow): void {
-  electronIpcMain.handle('all-debrid:set-key', (_, key: string) =>
-    run(
-      Effect.sync(() => {
-        allDebridClient = new AllDebrid({ apiKey: key });
-        return 'success' as const;
-      }),
-      'Failed to set AllDebrid key'
-    )
-  );
-  electronIpcMain.handle('all-debrid:update-key', () =>
-    run(
-      readKey().pipe(
-        Effect.map((key) => {
-          if (!key) return false;
+export default function handler(_mainWindow: Electron.BrowserWindow) {
+  return router(
+    procedure('alldebrid.setKey', (key: string) =>
+      run(
+        Effect.sync(() => {
           allDebridClient = new AllDebrid({ apiKey: key });
-          return true;
-        })
-      ),
-      'Failed to update AllDebrid key'
-    )
-  );
-  electronIpcMain.handle('all-debrid:get-user-info', () =>
-    run(allDebridClient.getUserInfo(), 'Failed to fetch AllDebrid user info')
-  );
-  electronIpcMain.handle('all-debrid:get-hosts', () =>
-    run(allDebridClient.getHosts(), 'Failed to fetch AllDebrid hosts')
-  );
-  electronIpcMain.handle(
-    'all-debrid:add-magnet',
-    (_, arg: { url: string; host?: string }) =>
+          return 'success' as const;
+        }),
+        'Failed to set AllDebrid key'
+      )
+    ),
+    procedure('alldebrid.updateKey', () =>
+      run(
+        readKey().pipe(
+          Effect.map((key) => {
+            if (!key) return false;
+            allDebridClient = new AllDebrid({ apiKey: key });
+            return true;
+          })
+        ),
+        'Failed to update AllDebrid key'
+      )
+    ),
+    procedure('alldebrid.getUserInfo', () =>
+      run(allDebridClient.getUserInfo(), 'Failed to fetch AllDebrid user info')
+    ),
+    procedure('alldebrid.getHosts', () =>
+      run(allDebridClient.getHosts(), 'Failed to fetch AllDebrid hosts')
+    ),
+    procedure('alldebrid.addMagnet', (arg: { url: string; host?: string }) =>
       run(
         allDebridClient.addMagnet(arg.url, arg.host),
         'Failed to add magnet to AllDebrid'
       )
-  );
-  electronIpcMain.handle('all-debrid:is-torrent-ready', (_, id: string) =>
-    run(
-      allDebridClient.isTorrentReady(id),
-      'Failed to check AllDebrid torrent status'
-    )
-  );
-  electronIpcMain.handle('all-debrid:get-torrent-info', (_, id: string) =>
-    run(
-      allDebridClient.getMagnetFiles(id),
-      'Failed to fetch AllDebrid torrent info'
-    )
-  );
-  electronIpcMain.handle('all-debrid:unrestrict-link', (_, link: string) =>
-    run(
-      allDebridClient.unrestrictLink(link),
-      'Failed to unrestrict AllDebrid link'
-    )
-  );
-  electronIpcMain.handle('all-debrid:select-torrent', () =>
-    runEffectBoundary(Effect.succeed(true))
-  );
-  electronIpcMain.handle(
-    'all-debrid:add-torrent',
-    (_, arg: { torrent: string }) => {
+    ),
+    procedure('alldebrid.isTorrentReady', (id: string) =>
+      run(
+        allDebridClient.isTorrentReady(id),
+        'Failed to check AllDebrid torrent status'
+      )
+    ),
+    procedure('alldebrid.getTorrentInfo', (id: string) =>
+      run(
+        allDebridClient.getMagnetFiles(id),
+        'Failed to fetch AllDebrid torrent info'
+      )
+    ),
+    procedure('alldebrid.unrestrictLink', (link: string) =>
+      run(
+        allDebridClient.unrestrictLink(link),
+        'Failed to unrestrict AllDebrid link'
+      )
+    ),
+    procedure('alldebrid.selectTorrent', () =>
+      runEffectBoundary(Effect.succeed(true))
+    ),
+    procedure('alldebrid.addTorrent', (arg: { torrent: string }) => {
       const tempPath = join(__dirname, `temp-alldebrid-${Date.now()}.torrent`);
       const operation = Effect.gen(function* () {
         yield* downloadTorrent(arg.torrent, tempPath);
@@ -180,6 +177,6 @@ export default function handler(_mainWindow: Electron.BrowserWindow): void {
         )
       );
       return run(operation, 'Failed to add torrent to AllDebrid');
-    }
+    })
   );
 }

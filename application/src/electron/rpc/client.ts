@@ -1,21 +1,22 @@
 import { RpcClient, RpcClientError, type RpcMessage } from '@effect/rpc';
 import { Effect, Exit, Scope } from 'effect';
-import { ElectronRpcs, type OperatingSystem } from '@/lib/electron-rpc.js';
+import {
+  type ElectronRouter,
+  type ElectronRouterClient,
+  makeElectronRouterClient,
+} from '@/electron/rpc/router-core.js';
+import { ElectronRpcs } from '@/lib/electron-rpc.js';
 
-export interface ElectronRpcClient {
+export interface ElectronRpcClient<Router extends ElectronRouter> {
   readonly close: () => Promise<void>;
-  readonly getOperatingSystem: () => Promise<OperatingSystem>;
-  readonly invoke: <A>(
-    channel: string,
-    ...args: ReadonlyArray<unknown>
-  ) => Promise<A>;
+  readonly router: ElectronRouterClient<Router>;
 }
 
-export function makeElectronRpcClient(
+export function makeElectronRpcClient<Router extends ElectronRouter>(
   invoke: (
     request: RpcMessage.FromClientEncoded
   ) => Promise<RpcMessage.FromServerEncoded | undefined>
-): ElectronRpcClient {
+): ElectronRpcClient<Router> {
   const protocol = RpcClient.Protocol.make((writeResponse) =>
     Effect.succeed({
       send: (request: RpcMessage.FromClientEncoded) =>
@@ -56,17 +57,10 @@ export function makeElectronRpcClient(
       client.then(({ scope }) =>
         Effect.runPromise(Scope.close(scope, Exit.void))
       ),
-    getOperatingSystem: () =>
+    router: makeElectronRouterClient((path, args) =>
       client.then(({ rpcClient }) =>
-        Effect.runPromise(rpcClient.GetOperatingSystem())
-      ),
-    invoke: <A>(channel: string, ...args: ReadonlyArray<unknown>) =>
-      client.then(({ rpcClient }) =>
-        Effect.runPromise(
-          rpcClient
-            .InvokeElectronHandler({ channel, args })
-            .pipe(Effect.map((result) => result as A))
-        )
-      ),
+        Effect.runPromise(rpcClient.CallElectronProcedure({ path, args }))
+      )
+    ),
   };
 }

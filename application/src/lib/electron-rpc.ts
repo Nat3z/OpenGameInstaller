@@ -25,19 +25,7 @@ export interface ElectronRpcRequest {
   readonly message: RpcMessage.FromClientEncoded;
 }
 
-export const OperatingSystem = Schema.Literal(
-  'aix',
-  'android',
-  'darwin',
-  'freebsd',
-  'haiku',
-  'linux',
-  'netbsd',
-  'openbsd',
-  'sunos',
-  'win32',
-  'cygwin'
-);
+export const OperatingSystem = Schema.Literal('darwin', 'linux', 'win32');
 
 export type OperatingSystem = typeof OperatingSystem.Type;
 

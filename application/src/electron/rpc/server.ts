@@ -4,10 +4,14 @@ import { type RpcMessage, RpcServer } from '@effect/rpc';
 import { Effect, Mailbox, Option } from 'effect';
 import { app, BrowserWindow, ipcMain, type WebContents } from 'electron';
 import { isDev } from '@/electron/manager/manager.paths.js';
-import { invokeElectronRpcHandler } from '@/electron/rpc/handlers.js';
+import type {
+  AnyElectronProcedure,
+  ElectronRouter,
+} from '@/electron/rpc/router-core.js';
 import { forkElectronEffect, runElectronEffect } from '@/electron/runtime.js';
 import {
   ELECTRON_RPC_CHANNEL,
+  ElectronRpcError,
   type ElectronRpcRequest,
   ElectronRpcs,
 } from '@/lib/electron-rpc.js';
@@ -138,10 +142,24 @@ function parseRequest(value: unknown): ElectronRpcRequest {
   };
 }
 
+let procedures = new Map<string, AnyElectronProcedure>();
+
 const handlers = ElectronRpcs.toLayer({
-  GetOperatingSystem: () => Effect.succeed(process.platform),
-  InvokeElectronHandler: ({ channel, args }) =>
-    invokeElectronRpcHandler(channel, args),
+  CallElectronProcedure: ({ path, args }) =>
+    Effect.tryPromise({
+      try: async () => {
+        const procedure = procedures.get(path);
+        if (!procedure) {
+          throw new Error(`Unknown Electron RPC procedure '${path}'`);
+        }
+        return await procedure.handler(...args);
+      },
+      catch: (cause) =>
+        new ElectronRpcError({
+          procedure: path,
+          message: cause instanceof Error ? cause.message : String(cause),
+        }),
+    }),
 });
 
 const server = Effect.scoped(
@@ -382,8 +400,18 @@ const server = Effect.scoped(
   )
 );
 
-export function registerElectronRpcHandlers(): void {
+export function registerElectronRpcHandlers(router: ElectronRouter): void {
   if (registered) return;
+
+  const nextProcedures = new Map<string, AnyElectronProcedure>();
+  for (const procedure of router) {
+    if (nextProcedures.has(procedure.path)) {
+      throw new Error(`Duplicate Electron RPC procedure '${procedure.path}'`);
+    }
+    nextProcedures.set(procedure.path, procedure);
+  }
+
+  procedures = nextProcedures;
   registered = true;
   forkElectronEffect(server);
 }

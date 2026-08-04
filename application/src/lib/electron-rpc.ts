@@ -27,25 +27,18 @@ export type OperatingSystem = typeof OperatingSystem.Type;
 export class ElectronRpcError extends Schema.TaggedError<ElectronRpcError>()(
   'ElectronRpcError',
   {
-    channel: Schema.String,
+    procedure: Schema.String,
     message: Schema.String,
   }
 ) {}
 
-export const GetOperatingSystem = Rpc.make('GetOperatingSystem', {
-  success: OperatingSystem,
-});
-
-export const InvokeElectronHandler = Rpc.make('InvokeElectronHandler', {
+export const CallElectronProcedure = Rpc.make('CallElectronProcedure', {
   payload: {
-    channel: Schema.String,
+    path: Schema.String,
     args: Schema.Array(Schema.Unknown),
   },
   success: Schema.Unknown,
   error: ElectronRpcError,
 });
 
-export const ElectronRpcs = RpcGroup.make(
-  GetOperatingSystem,
-  InvokeElectronHandler
-);
+export const ElectronRpcs = RpcGroup.make(CallElectronProcedure);

@@ -5,29 +5,19 @@ import { app, BrowserWindow, globalShortcut, ipcMain, shell } from 'electron';
 import fs, { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { quote as shellQuote } from 'shell-quote';
-import AddonManagerHandler, {
-  startAddons,
-} from '@/electron/handlers/handler.addon.js';
-import AllDebridHandler from '@/electron/handlers/handler.alldebrid.js';
-import AppEventHandler from '@/electron/handlers/handler.app.js';
-import DirectDownloadHandler from '@/electron/handlers/handler.ddl.js';
-import FSEventHandler from '@/electron/handlers/handler.fs.js';
+import { startAddons } from '@/electron/handlers/handler.addon.js';
 import {
   type ExecuteWrapperResult,
   executeWrapperCommandForApp,
   launchGameFromLibrary,
 } from '@/electron/handlers/handler.library.js';
-import OOBEHandler from '@/electron/handlers/handler.oobe.js';
-import { registerPowerSaveHandlers } from '@/electron/handlers/handler.power-save.js';
-import RealdDebridHandler from '@/electron/handlers/handler.realdebrid.js';
-import TorrentHandler from '@/electron/handlers/handler.torrent.js';
-import { registerUmuHandlers } from '@/electron/handlers/handler.umu.js';
 import { loadLibraryInfo } from '@/electron/handlers/helpers.app/library.js';
 import { releasePowerSaveBlock } from '@/electron/lib/power-save.js';
 import { Addon } from '@/electron/manager/manager.addon.js';
 import { waitForAddonsConfigured } from '@/electron/manager/manager.addon-readiness.js';
 import { __dirname, isDev } from '@/electron/manager/manager.paths.js';
 import { stopClient } from '@/electron/manager/manager.webtorrent.js';
+import { createElectronRouter } from '@/electron/rpc/router.js';
 import { registerElectronRpcHandlers } from '@/electron/rpc/server.js';
 import {
   disposeElectronRuntime,
@@ -52,7 +42,6 @@ import {
   closeSplashWindow,
   runStartupTasks,
 } from '@/electron/startup-runner.js';
-import { registerDownloadHandshakeHandlers } from '@/lib/download-handshake.js';
 
 // import steamworks from 'steamworks.js';
 
@@ -378,18 +367,7 @@ function registerMainHandlers(win: BrowserWindow) {
   if (handlersRegistered) return;
   handlersRegistered = true;
 
-  registerDownloadHandshakeHandlers();
-  registerElectronRpcHandlers();
-  AppEventHandler(win);
-  FSEventHandler();
-  RealdDebridHandler(win);
-  AllDebridHandler(win);
-  TorrentHandler(win);
-  DirectDownloadHandler(win);
-  AddonManagerHandler(win);
-  OOBEHandler();
-  registerUmuHandlers();
-  registerPowerSaveHandlers();
+  registerElectronRpcHandlers(createElectronRouter(win));
 }
 
 function registerClientReadyListener() {

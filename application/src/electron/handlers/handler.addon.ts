@@ -16,7 +16,7 @@ import { sendIPCMessage, sendNotification } from '@/electron/main.js';
 import { Addon } from '@/electron/manager/manager.addon.js';
 import { waitForAddonsConfigured } from '@/electron/manager/manager.addon-readiness.js';
 import { __dirname } from '@/electron/manager/manager.paths.js';
-import { electronIpcMain } from '@/electron/rpc/handlers.js';
+import { ipcProcedure, router } from '@/electron/rpc/router-core.js';
 import { deleteInstalledAddon } from '@/electron/server/addon-lifecycle.js';
 import {
   port,
@@ -237,8 +237,8 @@ export function loadMarketplace(
 }
 
 export default function AddonManagerHandler(mainWindow: BrowserWindow) {
-  electronIpcMain.handle(
-    'install-addons',
+  const installAddons = ipcProcedure(
+    'installAddons',
     ipcBoundary((_, addons: string[]) =>
       Effect.gen(function* () {
         // addons is an array of URLs to the addons to install. these should be valid git repositories
@@ -615,13 +615,13 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
     )
   );
 
-  electronIpcMain.handle(
-    'restart-addon-server',
+  const restartAddonServerProcedure = ipcProcedure(
+    'restartAddonServer',
     ipcBoundary(() => restartAddonServer())
   );
 
-  electronIpcMain.handle(
-    'addon:delete-installed',
+  const deleteInstalledAddonProcedure = ipcProcedure(
+    'deleteInstalledAddon',
     ipcBoundary((_, addonID: string) =>
       Effect.gen(function* () {
         if (typeof addonID !== 'string' || addonID.trim().length === 0) {
@@ -632,8 +632,8 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
     )
   );
 
-  electronIpcMain.handle(
-    'clean-addons',
+  const cleanAddons = ipcProcedure(
+    'cleanAddons',
     ipcBoundary((_, marketplaceUrls: string[]) =>
       Effect.gen(function* () {
         yield* Effect.forEach(
@@ -677,8 +677,8 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
     )
   );
 
-  electronIpcMain.handle(
-    'update-addons',
+  const updateAddons = ipcProcedure(
+    'updateAddons',
     ipcBoundary((_) =>
       Effect.gen(function* () {
         // check if wifi is available
@@ -1026,5 +1026,13 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
         }
       })
     )
+  );
+
+  return router(
+    installAddons,
+    restartAddonServerProcedure,
+    deleteInstalledAddonProcedure,
+    cleanAddons,
+    updateAddons
   );
 }

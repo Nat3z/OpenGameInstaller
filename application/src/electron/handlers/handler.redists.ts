@@ -14,7 +14,7 @@ import {
 import { loadLibraryInfo } from '@/electron/handlers/helpers.app/library.js';
 import { isLinux } from '@/electron/handlers/helpers.app/platform.js';
 import { sendIPCMessage } from '@/electron/main.js';
-import { electronIpcMain } from '@/electron/rpc/handlers.js';
+import { ipcProcedure, router } from '@/electron/rpc/router-core.js';
 import { runEffectBoundary } from '@/electron/runtime.js';
 
 const installRedistributables = (
@@ -116,24 +116,24 @@ const installRedistributables = (
     return result;
   });
 
-export function registerRedistributableHandlers(
-  mainWindow: BrowserWindow
-): void {
-  electronIpcMain.handle(
-    'app:install-redistributables',
-    (_, appID: number, downloadId?: string) =>
-      runEffectBoundary(
-        installRedistributables(mainWindow, appID, downloadId).pipe(
-          Effect.catchTags({
-            PlatformError: () => Effect.succeed('failed' as const),
-            LibraryError: (error) =>
-              Effect.succeed(
-                error.message === 'Game not found'
-                  ? ('not-found' as const)
-                  : ('failed' as const)
-              ),
-          })
+export function registerRedistributableHandlers(mainWindow: BrowserWindow) {
+  return router(
+    ipcProcedure(
+      'app.installRedistributables',
+      (_, appID: number, downloadId?: string) =>
+        runEffectBoundary(
+          installRedistributables(mainWindow, appID, downloadId).pipe(
+            Effect.catchTags({
+              PlatformError: () => Effect.succeed('failed' as const),
+              LibraryError: (error) =>
+                Effect.succeed(
+                  error.message === 'Game not found'
+                    ? ('not-found' as const)
+                    : ('failed' as const)
+                ),
+            })
+          )
         )
-      )
+    )
   );
 }

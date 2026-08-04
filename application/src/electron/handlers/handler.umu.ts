@@ -1,4 +1,4 @@
-import { electronIpcMain } from '@/electron/rpc/handlers.js';
+import { ipcProcedure, procedure, router } from '@/electron/rpc/router-core.js';
 /**
  * UMU (Unified Launcher for Windows Games on Linux) IPC handlers
  * Replaces the legacy Steam/flatpak wine system with UMU Launcher
@@ -1147,49 +1147,42 @@ const withUmuBoundary = <A>(
       }),
   });
 
-/** Register UMU IPC boundaries. */
-export function registerUmuHandlers(): void {
-  // Check if UMU is installed
-  electronIpcMain.handle('app:check-umu-installed', () =>
-    runUmuBoundary(withUmuBoundary(isUmuInstalled))
-  );
-
-  // Install UMU
-  electronIpcMain.handle('app:install-umu', () =>
-    runUmuBoundary(withUmuBoundary(installUmu))
-  );
-
-  // Launch game with UMU
-  electronIpcMain.handle('app:launch-with-umu', (_, appID: number) =>
-    runUmuBoundary(
-      Effect.gen(function* () {
-        const libraryInfo = loadLibraryInfo(appID);
-        if (!libraryInfo?.umu) {
-          return yield* Effect.fail(
-            new PlatformError({
-              message: 'Game is not configured for UMU',
-              platform: process.platform,
-            })
-          );
-        }
-        return yield* withUmuBoundary(() => launchWithUmu(libraryInfo));
-      })
-    )
-  );
-
-  // Install redistributables with UMU
-  electronIpcMain.handle(
-    'app:install-redistributables-umu',
-    (_, appID: number) =>
+/** Define UMU procedures. */
+export function registerUmuHandlers() {
+  return router(
+    procedure('app.checkUmuInstalled', () =>
+      runUmuBoundary(withUmuBoundary(isUmuInstalled))
+    ),
+    procedure('app.installUmu', () =>
+      runUmuBoundary(withUmuBoundary(installUmu))
+    ),
+    procedure('app.launchWithUmu', (appID: number) =>
+      runUmuBoundary(
+        Effect.gen(function* () {
+          const libraryInfo = loadLibraryInfo(appID);
+          if (!libraryInfo?.umu) {
+            return yield* Effect.fail(
+              new PlatformError({
+                message: 'Game is not configured for UMU',
+                platform: process.platform,
+              })
+            );
+          }
+          return yield* withUmuBoundary(() => launchWithUmu(libraryInfo));
+        })
+      )
+    ),
+    ipcProcedure('app.installRedistributablesUmu', (_, appID: number) =>
       runUmuBoundary(
         withUmuBoundary(() => installRedistributablesWithUmu(appID))
       )
-  );
-
-  // Migrate game to UMU
-  electronIpcMain.handle(
-    'app:migrate-to-umu',
-    (_, appID: number, oldSteamAppId?: number) =>
-      runUmuBoundary(withUmuBoundary(() => migrateToUmu(appID, oldSteamAppId)))
+    ),
+    ipcProcedure(
+      'app.migrateToUmu',
+      (_, appID: number, oldSteamAppId?: number) =>
+        runUmuBoundary(
+          withUmuBoundary(() => migrateToUmu(appID, oldSteamAppId))
+        )
+    )
   );
 }

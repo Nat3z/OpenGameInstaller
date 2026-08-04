@@ -1,4 +1,4 @@
-import { electronIpcMain } from '@/electron/rpc/handlers.js';
+import { procedure, router } from '@/electron/rpc/router-core.js';
 
 export type DownloadHandshakeStatus =
   | 'queued'
@@ -152,15 +152,16 @@ export function clearDownloadHandshake(id: string) {
 
 export function registerDownloadHandshakeHandlers() {
   if (handshakeHandlersRegistered) {
-    return;
+    throw new Error('Download handshake router already created');
   }
   handshakeHandlersRegistered = true;
 
-  electronIpcMain.handle('download:consume-replay-events', (_, id: string) => {
-    return consumeDownloadReplayEvents(id);
-  });
-
-  electronIpcMain.handle('download:get-handshake-state', (_, id: string) => {
-    return getDownloadHandshakeState(id);
-  });
+  return router(
+    procedure('download.consumeReplayEvents', (id: string) =>
+      consumeDownloadReplayEvents(id)
+    ),
+    procedure('download.getHandshakeState', (id: string) =>
+      getDownloadHandshakeState(id)
+    )
+  );
 }

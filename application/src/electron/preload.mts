@@ -3,6 +3,7 @@ import type { LibraryInfo } from '@ogi-sdk/connect';
 import { AxiosRequestConfig } from 'axios';
 import { contextBridge, ipcRenderer } from 'electron';
 import { makeElectronRpcClient } from '@/electron/rpc/client.js';
+import type { ElectronRouter } from '@/electron/rpc/router.js';
 import { ELECTRON_RPC_CHANNEL } from '@/lib/electron-rpc.js';
 
 // === Debug: Events Processed/sec Counter ===
@@ -25,15 +26,16 @@ const wrap = (fn: (...args: any[]) => any) => {
   };
 };
 const rpcSessionId = randomUUID();
-const electronRpc = makeElectronRpcClient((message) =>
+const rpcClient = makeElectronRpcClient<ElectronRouter>((message) =>
   ipcRenderer.invoke(ELECTRON_RPC_CHANNEL, {
     sessionId: rpcSessionId,
     message,
   })
 );
+const electronRpc = rpcClient.router;
 
 window.addEventListener('unload', () => {
-  void electronRpc.close();
+  void rpcClient.close();
 });
 
 setInterval(() => {
@@ -76,7 +78,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     }),
     deleteAsync: wrap((path: string) => {
       console.log('fs:delete called with path:', path);
-      return electronRpc.invoke('fs:delete', path);
+      return electronRpc.fs.deleteAsync(path);
     }),
     move: wrap((data: { source: string; destination: string }) => {
       console.log(
@@ -85,7 +87,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
         'destination:',
         data.destination
       );
-      return electronRpc.invoke('fs:move', data);
+      return electronRpc.fs.move(data);
     }),
     showFileLoc: wrap((path: string) => {
       console.log('fs:showFileLoc called with path:', path);
@@ -105,7 +107,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
           'downloadId:',
           data.downloadId
         );
-        return electronRpc.invoke('fs:extract-rar', data);
+        return electronRpc.fs.unrar(data);
       }
     ),
     unzip: wrap(
@@ -122,12 +124,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
           'downloadId:',
           data.downloadId
         );
-        return electronRpc.invoke('fs:extract-zip', data);
+        return electronRpc.fs.unzip(data);
       }
     ),
     getFilesInDir: wrap((path: string) => {
       console.log('fs:getFilesInDir called with path:', path);
-      return electronRpc.invoke('fs:get-files-in-dir', path);
+      return electronRpc.fs.getFilesInDir(path);
     }),
     stat: wrap((path: string) => {
       console.log('fs:stat called with path:', path);
@@ -136,62 +138,58 @@ contextBridge.exposeInMainWorld('electronAPI', {
     dialog: {
       showOpenDialog: wrap((options: Electron.OpenDialogOptions) => {
         console.log('fs:dialog:showOpenDialog called with options:', options);
-        return electronRpc.invoke('fs:dialog:show-open-dialog', options);
+        return electronRpc.fs.dialog.showOpenDialog(options);
       }),
       showSaveDialog: wrap((options: Electron.SaveDialogOptions) => {
         console.log('fs:dialog:showSaveDialog called with options:', options);
-        return electronRpc.invoke('fs:dialog:show-save-dialog', options);
+        return electronRpc.fs.dialog.showSaveDialog(options);
       }),
     },
   },
   realdebrid: {
-    setKey: wrap((key: string) =>
-      electronRpc.invoke('real-debrid:set-key', key)
-    ),
-    getUserInfo: wrap(() => electronRpc.invoke('real-debrid:get-user-info')),
+    setKey: wrap((key: string) => electronRpc.realdebrid.setKey(key)),
+    getUserInfo: wrap(() => electronRpc.realdebrid.getUserInfo()),
     unrestrictLink: wrap((link: string) =>
-      electronRpc.invoke('real-debrid:unrestrict-link', link)
+      electronRpc.realdebrid.unrestrictLink(link)
     ),
     addMagnet: wrap((url: string, host?: string) =>
-      electronRpc.invoke('real-debrid:add-magnet', { url, host })
+      electronRpc.realdebrid.addMagnet({ url, host })
     ),
-    getHosts: wrap(() => electronRpc.invoke('real-debrid:get-hosts')),
-    updateKey: wrap(() => electronRpc.invoke('real-debrid:update-key')),
+    getHosts: wrap(() => electronRpc.realdebrid.getHosts()),
+    updateKey: wrap(() => electronRpc.realdebrid.updateKey()),
     addTorrent: wrap((torrent: string, host?: string) =>
-      electronRpc.invoke('real-debrid:add-torrent', { torrent, host })
+      electronRpc.realdebrid.addTorrent({ torrent, host })
     ),
     selectTorrent: wrap((torrent: string) =>
-      electronRpc.invoke('real-debrid:select-torrent', torrent)
+      electronRpc.realdebrid.selectTorrent(torrent)
     ),
     isTorrentReady: wrap((id: string) =>
-      electronRpc.invoke('real-debrid:is-torrent-ready', id)
+      electronRpc.realdebrid.isTorrentReady(id)
     ),
     getTorrentInfo: wrap((id: string) =>
-      electronRpc.invoke('real-debrid:get-torrent-info', id)
+      electronRpc.realdebrid.getTorrentInfo(id)
     ),
   },
   alldebrid: {
-    setKey: wrap((key: string) =>
-      electronRpc.invoke('all-debrid:set-key', key)
-    ),
-    getUserInfo: wrap(() => electronRpc.invoke('all-debrid:get-user-info')),
+    setKey: wrap((key: string) => electronRpc.alldebrid.setKey(key)),
+    getUserInfo: wrap(() => electronRpc.alldebrid.getUserInfo()),
     unrestrictLink: wrap((link: string) =>
-      electronRpc.invoke('all-debrid:unrestrict-link', link)
+      electronRpc.alldebrid.unrestrictLink(link)
     ),
     addMagnet: wrap((url: string, host?: string) =>
-      electronRpc.invoke('all-debrid:add-magnet', { url, host })
+      electronRpc.alldebrid.addMagnet({ url, host })
     ),
-    getHosts: wrap(() => electronRpc.invoke('all-debrid:get-hosts')),
-    updateKey: wrap(() => electronRpc.invoke('all-debrid:update-key')),
+    getHosts: wrap(() => electronRpc.alldebrid.getHosts()),
+    updateKey: wrap(() => electronRpc.alldebrid.updateKey()),
     addTorrent: wrap((torrent: string) =>
-      electronRpc.invoke('all-debrid:add-torrent', { torrent })
+      electronRpc.alldebrid.addTorrent({ torrent })
     ),
-    selectTorrent: wrap(() => electronRpc.invoke('all-debrid:select-torrent')),
+    selectTorrent: wrap(() => electronRpc.alldebrid.selectTorrent()),
     isTorrentReady: wrap((id: string) =>
-      electronRpc.invoke('all-debrid:is-torrent-ready', id)
+      electronRpc.alldebrid.isTorrentReady(id)
     ),
     getTorrentInfo: wrap((id: string) =>
-      electronRpc.invoke('all-debrid:get-torrent-info', id)
+      electronRpc.alldebrid.getTorrentInfo(id)
     ),
   },
   ddl: {
@@ -203,94 +201,84 @@ contextBridge.exposeInMainWorld('electronAPI', {
           headers?: Record<string, string>;
         }[],
         part?: number
-      ) => electronRpc.invoke('ddl:download', downloads, part)
+      ) => electronRpc.ddl.download(downloads, part)
     ),
     abortDownload: wrap((downloadID: string) =>
-      electronRpc.invoke('ddl:abort', downloadID)
+      electronRpc.ddl.abortDownload(downloadID)
     ),
     pauseDownload: wrap((downloadID: string) =>
-      electronRpc.invoke('ddl:pause', downloadID)
+      electronRpc.ddl.pauseDownload(downloadID)
     ),
     resumeDownload: wrap((downloadID: string) =>
-      electronRpc.invoke('ddl:resume', downloadID)
+      electronRpc.ddl.resumeDownload(downloadID)
     ),
   },
   download: {
     consumeReplayEvents: wrap((id: string) =>
-      electronRpc.invoke('download:consume-replay-events', id)
+      electronRpc.download.consumeReplayEvents(id)
     ),
     getHandshakeState: wrap((id: string) =>
-      electronRpc.invoke('download:get-handshake-state', id)
+      electronRpc.download.getHandshakeState(id)
     ),
   },
   queue: {
-    cancel: wrap((downloadID: string) =>
-      electronRpc.invoke(`queue:${downloadID}:cancel`)
-    ),
+    cancel: wrap((downloadID: string) => electronRpc.queue.cancel(downloadID)),
   },
   torrent: {
     downloadTorrent: wrap((torrent: string, path: string) =>
-      electronRpc.invoke('torrent:download-torrent', { link: torrent, path })
+      electronRpc.torrent.downloadTorrent({ link: torrent, path })
     ),
     downloadMagnet: wrap((magnet: string, path: string) =>
-      electronRpc.invoke('torrent:download-magnet', { link: magnet, path })
+      electronRpc.torrent.downloadMagnet({ link: magnet, path })
     ),
     pauseDownload: wrap((downloadID: string) =>
-      electronRpc.invoke(`torrent:pause`, downloadID)
+      electronRpc.torrent.pauseDownload(downloadID)
     ),
     resumeDownload: wrap((downloadID: string) =>
-      electronRpc.invoke(`torrent:resume`, downloadID)
+      electronRpc.torrent.resumeDownload(downloadID)
     ),
   },
   oobe: {
-    downloadTools: wrap(() => electronRpc.invoke('oobe:download-tools')),
+    downloadTools: wrap(() => electronRpc.oobe.downloadTools()),
     setSteamGridDBKey: wrap((key: string) =>
-      electronRpc.invoke('oobe:set-steamgriddb-key', key)
+      electronRpc.oobe.setSteamGridDBKey(key)
     ),
   },
   app: {
-    close: wrap(() => electronRpc.invoke('app:close')),
-    hideWindow: wrap(() => electronRpc.invoke('app:hide-window')),
-    showWindow: wrap(() => electronRpc.invoke('app:show-window')),
-    minimize: wrap(() => electronRpc.invoke('app:minimize')),
-    quit: wrap(() => electronRpc.invoke('app:quit')),
+    close: wrap(() => electronRpc.app.close()),
+    hideWindow: wrap(() => electronRpc.app.hideWindow()),
+    showWindow: wrap(() => electronRpc.app.showWindow()),
+    minimize: wrap(() => electronRpc.app.minimize()),
+    quit: wrap(() => electronRpc.app.quit()),
     axios: wrap((options: AxiosRequestConfig) =>
-      electronRpc.invoke('app:axios', options)
+      electronRpc.app.axios(options)
     ),
     clientReadyForEvents: wrap(() =>
       ipcRenderer.send('client-ready-for-events')
     ),
     inputSend: wrap((id: string, data: any) =>
-      electronRpc.invoke('app:screen-input', { id, data })
+      electronRpc.app.inputSend({ id, data })
     ),
-    insertApp: wrap((info: LibraryInfo) =>
-      electronRpc.invoke('app:insert-app', info)
-    ),
-    getAllApps: wrap(() => electronRpc.invoke('app:get-all-apps')),
-    launchGame: wrap((appid: string) =>
-      electronRpc.invoke('app:launch-game', appid)
-    ),
-    removeApp: wrap((appid: number) =>
-      electronRpc.invoke('app:remove-app', appid)
-    ),
-    getOS: wrap(() => electronRpc.getOperatingSystem()),
-    isSteamDeck: wrap(() => electronRpc.invoke('app:is-steam-deck')),
-    isOnline: wrap(() => electronRpc.invoke('app:is-online')),
+    insertApp: wrap((info: LibraryInfo) => electronRpc.app.insertApp(info)),
+    getAllApps: wrap(() => electronRpc.app.getAllApps()),
+    launchGame: wrap((appid: string) => electronRpc.app.launchGame(appid)),
+    removeApp: wrap((appid: number) => electronRpc.app.removeApp(appid)),
+    getOS: wrap(() => electronRpc.app.getOS()),
+    isSteamDeck: wrap(() => electronRpc.app.isSteamDeck()),
+    isOnline: wrap(() => electronRpc.app.isOnline()),
     getAddonPath: wrap((addonID: string) =>
-      electronRpc.invoke('app:get-addon-path', addonID)
+      electronRpc.app.getAddonPath(addonID)
     ),
     getAddonIcon: wrap((addonID: string) =>
-      electronRpc.invoke('app:get-addon-icon', addonID)
+      electronRpc.app.getAddonIcon(addonID)
     ),
-    getLocalImage: wrap((path: string) =>
-      electronRpc.invoke('app:get-local-image', path)
-    ),
+    getLocalImage: wrap((path: string) => electronRpc.app.getLocalImage(path)),
     grantRootPassword: wrap((password: string) =>
-      electronRpc.invoke('app:root-password-granted', password)
+      electronRpc.app.grantRootPassword(password)
     ),
     openSteamKeyboard: wrap(
-      (options: { previousText: string; title: string; maxChars: number }) =>
-        electronRpc.invoke('app:open-steam-keyboard', options)
+      (options: { x: number; y: number; width: number; height: number }) =>
+        electronRpc.app.openSteamKeyboard(options)
     ),
     updateAppVersion: wrap(
       (
@@ -303,7 +291,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
         umu?: LibraryInfo['umu'],
         launchEnv?: LibraryInfo['launchEnv']
       ) =>
-        electronRpc.invoke('app:update-app-version', {
+        electronRpc.app.updateAppVersion({
           appID,
           version,
           cwd,
@@ -315,67 +303,63 @@ contextBridge.exposeInMainWorld('electronAPI', {
         })
     ),
     addToSteam: wrap((appID: number, oldSteamAppId?: number) =>
-      electronRpc.invoke('app:add-to-steam', appID, oldSteamAppId)
+      electronRpc.app.addToSteam(appID, oldSteamAppId)
     ),
     removeFromSteam: wrap((appID: number) =>
-      electronRpc.invoke('app:remove-from-steam', appID)
+      electronRpc.app.removeFromSteam(appID)
     ),
     launchSteamApp: wrap((appID: number) =>
-      electronRpc.invoke('app:launch-steam-app', appID)
+      electronRpc.app.launchSteamApp(appID)
     ),
     checkPrefixExists: wrap((appID: number) =>
-      electronRpc.invoke('app:check-prefix-exists', appID)
+      electronRpc.app.checkPrefixExists(appID)
     ),
     installRedistributables: wrap((appID: number, downloadId?: string) =>
-      electronRpc.invoke('app:install-redistributables', appID, downloadId)
+      electronRpc.app.installRedistributables(appID, downloadId)
     ),
     getSteamAppId: wrap((appID: number) =>
-      electronRpc.invoke('app:get-steam-app-id', appID)
+      electronRpc.app.getSteamAppId(appID)
     ),
-    addToDesktop: wrap(() => electronRpc.invoke('app:add-to-desktop')),
+    addToDesktop: wrap(() => electronRpc.app.addToDesktop()),
     getLibraryInfo: wrap((appID: number) =>
-      electronRpc.invoke('app:get-library-info', appID)
+      electronRpc.app.getLibraryInfo(appID)
     ),
     executeWrapperCommand: wrap((appID: number, wrapperCommand: string) =>
-      electronRpc.invoke('app:execute-wrapper-command', appID, wrapperCommand)
+      electronRpc.app.executeWrapperCommand(appID, wrapperCommand)
     ),
-    checkUmuInstalled: wrap(() =>
-      electronRpc.invoke('app:check-umu-installed')
-    ),
-    installUmu: wrap(() => electronRpc.invoke('app:install-umu')),
+    checkUmuInstalled: wrap(() => electronRpc.app.checkUmuInstalled()),
+    installUmu: wrap(() => electronRpc.app.installUmu()),
     launchWithUmu: wrap((appID: number) =>
-      electronRpc.invoke('app:launch-with-umu', appID)
+      electronRpc.app.launchWithUmu(appID)
     ),
     installRedistributablesUmu: wrap((appID: number) =>
-      electronRpc.invoke('app:install-redistributables-umu', appID)
+      electronRpc.app.installRedistributablesUmu(appID)
     ),
     migrateToUmu: wrap((appID: number, oldSteamAppId?: number) =>
-      electronRpc.invoke('app:migrate-to-umu', appID, oldSteamAppId)
+      electronRpc.app.migrateToUmu(appID, oldSteamAppId)
     ),
   },
   getVersion: wrap(() => ipcRenderer.sendSync('get-version')),
   getTheme: wrap(() => ipcRenderer.sendSync('get-initial-theme')),
-  updateAddons: wrap(() => electronRpc.invoke('update-addons')),
-  installAddons: wrap((addons: string[]) =>
-    electronRpc.invoke('install-addons', addons)
-  ),
+  updateAddons: wrap(() => electronRpc.updateAddons()),
+  installAddons: wrap((addons: string[]) => electronRpc.installAddons(addons)),
   isDev: wrap(() => ipcRenderer.sendSync('is-dev')),
-  restartAddonServer: wrap(() => electronRpc.invoke('restart-addon-server')),
+  restartAddonServer: wrap(() => electronRpc.restartAddonServer()),
   deleteInstalledAddon: wrap((addonID: string) =>
-    electronRpc.invoke('addon:delete-installed', addonID)
+    electronRpc.deleteInstalledAddon(addonID)
   ),
   cleanAddons: wrap((marketplaceUrls: string[]) =>
-    electronRpc.invoke('clean-addons', marketplaceUrls)
+    electronRpc.cleanAddons(marketplaceUrls)
   ),
   downloadTorrentInto: wrap((link: string) =>
-    electronRpc.invoke('download-torrent-into', link)
+    electronRpc.downloadTorrentInto(link)
   ),
   getTorrentHash: wrap((torrent: string | Buffer | Uint8Array) =>
-    electronRpc.invoke('torrent:get-hash', torrent)
+    electronRpc.getTorrentHash(torrent)
   ),
   powerSave: {
     setActive: wrap((active: boolean) =>
-      electronRpc.invoke('power-save:set-active', active)
+      electronRpc.powerSave.setActive(active)
     ),
   },
 });

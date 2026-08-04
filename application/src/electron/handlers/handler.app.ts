@@ -18,9 +18,15 @@ import { registerSteamHandlers } from '@/electron/handlers/handler.steam.js';
 import { getEffectiveOnlineState } from '@/electron/lib/online.js';
 import { currentScreens, screenInputCallbacks } from '@/electron/main.js';
 import { __dirname, isDev } from '@/electron/manager/manager.paths.js';
-import { electronIpcMain } from '@/electron/rpc/handlers.js';
+import {
+  ipcProcedure,
+  mergeRouters,
+  procedure,
+  router,
+} from '@/electron/rpc/router-core.js';
 import { runEffectBoundary as runBoundary } from '@/electron/runtime.js';
 import { addonServer } from '@/electron/server/addon-server.js';
+import type { OperatingSystem } from '@/lib/electron-rpc.js';
 import { getCurrentUsername } from './helpers.app/platform.js';
 
 export function escapeShellArg(arg: string): string {
@@ -133,148 +139,166 @@ const axiosRequest = (
       }),
   });
 
-export default function handler(mainWindow: Electron.BrowserWindow): void {
-  electronIpcMain.handle('app:close', () => mainWindow?.close());
-  electronIpcMain.handle('app:hide-window', () => mainWindow?.hide());
-  electronIpcMain.handle('app:show-window', () => {
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.show();
-      mainWindow.focus();
-    }
-  });
-  electronIpcMain.handle('app:minimize', () => mainWindow?.minimize());
-  electronIpcMain.handle('app:quit', () => app.quit());
-
-  electronIpcMain.handle('app:axios', (_, options: AxiosRequestConfig) =>
-    runBoundary(
-      axiosRequest(options).pipe(
-        Effect.catchAll((error) =>
-          Effect.succeed({
-            data: error.message,
-            status: error.statusCode,
-            success: false,
-          })
+export default function handler(mainWindow: Electron.BrowserWindow) {
+  const appRouter = router(
+    procedure('app.close', () => mainWindow?.close()),
+    procedure('app.hideWindow', () => mainWindow?.hide()),
+    procedure('app.showWindow', () => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.show();
+        mainWindow.focus();
+      }
+    }),
+    procedure('app.minimize', () => mainWindow?.minimize()),
+    procedure('app.quit', () => app.quit()),
+    procedure('app.getOS', (): OperatingSystem => {
+      if (
+        process.platform === 'darwin' ||
+        process.platform === 'linux' ||
+        process.platform === 'win32'
+      ) {
+        return process.platform;
+      }
+      throw new Error(`Unsupported Electron platform '${process.platform}'`);
+    }),
+    procedure('app.grantRootPassword', (_password: string) => {
+      throw new Error('Root password grants are not implemented');
+    }),
+    procedure(
+      'app.openSteamKeyboard',
+      (_options: { x: number; y: number; width: number; height: number }) =>
+        false
+    ),
+    ipcProcedure('app.axios', (_, options: AxiosRequestConfig) =>
+      runBoundary(
+        axiosRequest(options).pipe(
+          Effect.catchAll((error) =>
+            Effect.succeed({
+              data: error.message,
+              status: error.statusCode,
+              success: false,
+            })
+          )
         )
       )
-    )
-  );
-  electronIpcMain.handle('app:is-steam-deck', () =>
-    runBoundary(
-      Effect.try({
-        try: () =>
-          process.platform === 'linux' &&
-          getCurrentUsername()?.toLowerCase() === 'deck',
-        catch: (cause) =>
-          new PlatformError({
-            message: formatError(cause),
-            platform: process.platform,
-          }),
-      })
-    )
-  );
-  electronIpcMain.handle('app:screen-input', (_, data) =>
-    runBoundary(
-      Effect.sync(() => {
-        currentScreens.set(data.id, data.data);
-        screenInputCallbacks.get(data.id)?.(data.data);
-        screenInputCallbacks.delete(data.id);
-      })
-    )
-  );
-  electronIpcMain.handle('app:is-online', () =>
-    runBoundary(Effect.sync(() => getEffectiveOnlineState().effectiveOnline))
-  );
-
-  electronIpcMain.handle('app:get-addon-path', (_, addonID: string) =>
-    runBoundary(
-      Effect.sync(() => addonServer.getClient(addonID)?.filePath ?? null)
-    )
-  );
-  electronIpcMain.handle('app:get-addon-icon', (_, addonID: string) =>
-    runBoundary(
-      Effect.try({
-        try: () => {
-          const client = addonServer.getClient(addonID);
-          if (!client?.filePath) return null;
-          const addonJson = JSON.parse(
-            fs.readFileSync(join(client.filePath, 'addon.json'), 'utf-8')
-          ) as { icon?: string };
-          if (!addonJson.icon) return null;
-          const iconPath = join(client.filePath, addonJson.icon);
-          return fs.existsSync(iconPath) ? iconPath : null;
-        },
-        catch: (cause) =>
-          new FileSystemError({ message: formatError(cause), cause }),
-      })
-    )
-  );
-
-  electronIpcMain.handle('app:get-local-image', (_, requestPath: string) =>
-    runBoundary(
-      Effect.gen(function* () {
-        if (!fs.existsSync(requestPath)) return null;
-        const allowedDirs = [
-          join(__dirname, 'addons'),
-          join(__dirname, 'public'),
-          join(__dirname, 'config'),
-          ...Array.from(addonServer.getConnections()).flatMap((connection) =>
-            connection.filePath ? [connection.filePath] : []
-          ),
-        ].map((directory) => path.resolve(directory));
-        const realPath = yield* Effect.try({
-          try: () => fs.realpathSync(requestPath),
+    ),
+    procedure('app.isSteamDeck', () =>
+      runBoundary(
+        Effect.try({
+          try: () =>
+            process.platform === 'linux' &&
+            getCurrentUsername()?.toLowerCase() === 'deck',
           catch: (cause) =>
-            new FileSystemError({
+            new PlatformError({
               message: formatError(cause),
-              path: requestPath,
-              cause,
+              platform: process.platform,
             }),
-        });
-        const allowed = allowedDirs.some((directory) => {
-          const relative = path.relative(directory, realPath);
-          return (
-            relative === '' ||
-            (!relative.startsWith('..') && !path.isAbsolute(relative))
-          );
-        });
-        if (!allowed)
-          return yield* Effect.fail(
-            new FileSystemError({
-              message: 'Path is outside allowed directories',
-              path: realPath,
-            })
-          );
-        const ext = path.extname(realPath).slice(1).toLowerCase();
-        const mimeType =
-          (
-            {
-              jpg: 'image/jpeg',
-              jpeg: 'image/jpeg',
-              png: 'image/png',
-              gif: 'image/gif',
-              webp: 'image/webp',
-              bmp: 'image/bmp',
-              svg: 'image/svg+xml',
-            } as Record<string, string>
-          )[ext] ?? 'image/png';
-        const buffer = yield* Effect.tryPromise({
-          try: () => fsAsync.readFile(realPath),
+        })
+      )
+    ),
+    ipcProcedure('app.inputSend', (_, data: { id: string; data: any }) =>
+      runBoundary(
+        Effect.sync(() => {
+          currentScreens.set(data.id, data.data);
+          screenInputCallbacks.get(data.id)?.(data.data);
+          screenInputCallbacks.delete(data.id);
+        })
+      )
+    ),
+    procedure('app.isOnline', () =>
+      runBoundary(Effect.sync(() => getEffectiveOnlineState().effectiveOnline))
+    ),
+    procedure('app.getAddonPath', (addonID: string) =>
+      runBoundary(
+        Effect.sync(() => addonServer.getClient(addonID)?.filePath ?? null)
+      )
+    ),
+    procedure('app.getAddonIcon', (addonID: string) =>
+      runBoundary(
+        Effect.try({
+          try: () => {
+            const client = addonServer.getClient(addonID);
+            if (!client?.filePath) return null;
+            const addonJson = JSON.parse(
+              fs.readFileSync(join(client.filePath, 'addon.json'), 'utf-8')
+            ) as { icon?: string };
+            if (!addonJson.icon) return null;
+            const iconPath = join(client.filePath, addonJson.icon);
+            return fs.existsSync(iconPath) ? iconPath : null;
+          },
           catch: (cause) =>
-            new FileSystemError({
-              message: formatError(cause),
-              path: realPath,
-              cause,
-            }),
-        });
-        return `data:${mimeType};base64,${buffer.toString('base64')}`;
-      })
-    )
+            new FileSystemError({ message: formatError(cause), cause }),
+        })
+      )
+    ),
+    procedure('app.getLocalImage', (requestPath: string) =>
+      runBoundary(
+        Effect.gen(function* () {
+          if (!fs.existsSync(requestPath)) return null;
+          const allowedDirs = [
+            join(__dirname, 'addons'),
+            join(__dirname, 'public'),
+            join(__dirname, 'config'),
+            ...Array.from(addonServer.getConnections()).flatMap((connection) =>
+              connection.filePath ? [connection.filePath] : []
+            ),
+          ].map((directory) => path.resolve(directory));
+          const realPath = yield* Effect.try({
+            try: () => fs.realpathSync(requestPath),
+            catch: (cause) =>
+              new FileSystemError({
+                message: formatError(cause),
+                path: requestPath,
+                cause,
+              }),
+          });
+          const allowed = allowedDirs.some((directory) => {
+            const relative = path.relative(directory, realPath);
+            return (
+              relative === '' ||
+              (!relative.startsWith('..') && !path.isAbsolute(relative))
+            );
+          });
+          if (!allowed)
+            return yield* Effect.fail(
+              new FileSystemError({
+                message: 'Path is outside allowed directories',
+                path: realPath,
+              })
+            );
+          const ext = path.extname(realPath).slice(1).toLowerCase();
+          const mimeType =
+            (
+              {
+                jpg: 'image/jpeg',
+                jpeg: 'image/jpeg',
+                png: 'image/png',
+                gif: 'image/gif',
+                webp: 'image/webp',
+                bmp: 'image/bmp',
+                svg: 'image/svg+xml',
+              } as Record<string, string>
+            )[ext] ?? 'image/png';
+          const buffer = yield* Effect.tryPromise({
+            try: () => fsAsync.readFile(realPath),
+            catch: (cause) =>
+              new FileSystemError({
+                message: formatError(cause),
+                path: realPath,
+                cause,
+              }),
+          });
+          return `data:${mimeType};base64,${buffer.toString('base64')}`;
+        })
+      )
+    ),
+    procedure('app.addToDesktop', () => runBoundary(addToDesktop()))
   );
 
-  electronIpcMain.handle('app:add-to-desktop', () =>
-    runBoundary(addToDesktop())
+  return mergeRouters(
+    appRouter,
+    registerSteamHandlers(mainWindow),
+    registerLibraryHandlers(mainWindow),
+    registerRedistributableHandlers(mainWindow)
   );
-  registerSteamHandlers(mainWindow);
-  registerLibraryHandlers(mainWindow);
-  registerRedistributableHandlers(mainWindow);
 }

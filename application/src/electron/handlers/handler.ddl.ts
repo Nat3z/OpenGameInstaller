@@ -46,6 +46,7 @@ import {
   updateDownloadHandshake,
   waitForDownloadHandshake,
 } from '@/lib/download-handshake.js';
+import { ElectronRpc } from '@/lib/electron-rpc.js';
 
 // Parallel download configuration
 const PARALLEL_DOWNLOAD_THRESHOLD = 100 * 1024 * 1024; // 100MB in bytes
@@ -2919,28 +2920,28 @@ export default function handler(mainWindow: BrowserWindow) {
   });
 
   return router(
-    procedure('ddl.download', (jobs: DownloadJob[], part?: number) =>
+    procedure(ElectronRpc.ddl.download, (jobs: DownloadJob[], part?: number) =>
       run(
         Effect.gen(function* () {
           return yield* (yield* DownloadService).start(jobs, part);
         })
       )
     ),
-    procedure('ddl.pauseDownload', (id: string) =>
+    procedure(ElectronRpc.ddl.pauseDownload, (id: string) =>
       run(
         Effect.gen(function* () {
           yield* (yield* DownloadService).pause(id);
         })
       )
     ),
-    procedure('ddl.resumeDownload', (id: string) =>
+    procedure(ElectronRpc.ddl.resumeDownload, (id: string) =>
       run(
         Effect.gen(function* () {
           yield* (yield* DownloadService).resume(id);
         })
       )
     ),
-    procedure('ddl.abortDownload', (id: string) =>
+    procedure(ElectronRpc.ddl.abortDownload, (id: string) =>
       run(
         Effect.gen(function* () {
           yield* (yield* DownloadService).abort(id);

@@ -38,6 +38,7 @@ import {
 import { getNonSteamLaunchId } from '@/electron/lib/steam-shortcuts.js';
 import { sendNotification } from '@/electron/main.js';
 import { ipcProcedure, router } from '@/electron/rpc/router-core.js';
+import { ElectronRpc } from '@/lib/electron-rpc.js';
 
 export type SteamOperationResult =
   | SteamMutationResult
@@ -244,7 +245,7 @@ Icon=steam_icon_${params.appID}
 
 export function registerSteamHandlers(mainWindow: BrowserWindow) {
   const getSteamAppId = ipcProcedure(
-    'app.getSteamAppId',
+    ElectronRpc.app.getSteamAppId,
     ipcBoundary((_, appID: number) =>
       getSteamAppIdForGame(appID).pipe(
         Effect.map((appId) => ({ status: 'success' as const, appId }))
@@ -253,7 +254,7 @@ export function registerSteamHandlers(mainWindow: BrowserWindow) {
   );
 
   const launchSteamApp = ipcProcedure(
-    'app.launchSteamApp',
+    ElectronRpc.app.launchSteamApp,
     ipcBoundary((_, appID: number) =>
       Effect.gen(function* () {
         if (!isLinux()) {
@@ -342,7 +343,7 @@ export function registerSteamHandlers(mainWindow: BrowserWindow) {
   );
 
   const checkPrefixExists = ipcProcedure(
-    'app.checkPrefixExists',
+    ElectronRpc.app.checkPrefixExists,
     ipcBoundary((_, appID: number) =>
       Effect.gen(function* () {
         const appInfo = loadLibraryInfo(appID);
@@ -364,7 +365,7 @@ export function registerSteamHandlers(mainWindow: BrowserWindow) {
   );
 
   const addToSteam = ipcProcedure(
-    'app.addToSteam',
+    ElectronRpc.app.addToSteam,
     ipcBoundary((_, appID: number, oldSteamAppId: number | undefined) =>
       Effect.gen(function* () {
         if (!isLinux()) {
@@ -420,7 +421,7 @@ export function registerSteamHandlers(mainWindow: BrowserWindow) {
   );
 
   const removeFromSteam = ipcProcedure(
-    'app.removeFromSteam',
+    ElectronRpc.app.removeFromSteam,
     ipcBoundary((_, appID: number) => {
       if (!isLinux()) {
         return Effect.fail(

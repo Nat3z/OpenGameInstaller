@@ -19,6 +19,7 @@ import { __dirname } from '@/electron/manager/manager.paths.js';
 import { procedure, router } from '@/electron/rpc/router-core.js';
 import { runEffectBoundary } from '@/electron/runtime.js';
 import { IS_NIXOS } from '@/electron/startup.js';
+import { ElectronRpc } from '@/lib/electron-rpc.js';
 
 const log = (content: string): void => {
   sendIPCMessage('oobe:log', content);
@@ -199,8 +200,10 @@ const downloadTools = (): Effect.Effect<readonly [boolean, boolean]> =>
 
 export default function OOBEHandler() {
   return router(
-    procedure('oobe.downloadTools', () => runEffectBoundary(downloadTools())),
-    procedure('oobe.setSteamGridDBKey', (key: string) =>
+    procedure(ElectronRpc.oobe.downloadTools, () =>
+      runEffectBoundary(downloadTools())
+    ),
+    procedure(ElectronRpc.oobe.setSteamGridDBKey, (key: string) =>
       runEffectBoundary(
         Effect.try({
           try: () => writeSteamGridDbKey(key),

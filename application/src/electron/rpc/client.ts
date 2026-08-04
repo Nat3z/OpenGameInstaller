@@ -1,22 +1,49 @@
+import type { Rpc, RpcGroup } from '@effect/rpc';
 import { RpcClient, RpcClientError, type RpcMessage } from '@effect/rpc';
 import { Effect, Exit, Scope } from 'effect';
-import {
-  type ElectronRouter,
-  type ElectronRouterClient,
-  makeElectronRouterClient,
-} from '@/electron/rpc/router-core.js';
 import { ElectronRpcs } from '@/lib/electron-rpc.js';
 
-export interface ElectronRpcClient<Router extends ElectronRouter> {
+type ProcedureApi<Procedure extends Rpc.Any> = Procedure extends Rpc.Any
+  ? Procedure['_tag'] extends `${infer Head}.${infer Tail}`
+    ? { readonly [Key in Head]: ProcedureApiAt<Tail, Procedure> }
+    : ProcedureApiAt<Procedure['_tag'], Procedure>
+  : never;
+
+type ProcedureApiAt<
+  Path extends string,
+  Procedure extends Rpc.Any,
+> = Path extends `${infer Head}.${infer Tail}`
+  ? { readonly [Key in Head]: ProcedureApiAt<Tail, Procedure> }
+  : {
+      readonly [Key in Path]: Procedure extends {
+        readonly _Client: infer Client;
+      }
+        ? Client
+        : (...args: Rpc.Payload<Procedure>) => Promise<Rpc.Success<Procedure>>;
+    };
+
+type UnionToIntersection<Union> = (
+  Union extends unknown
+    ? (value: Union) => void
+    : never
+) extends (value: infer Intersection) => void
+  ? Intersection
+  : never;
+
+export type ElectronRpcApi = UnionToIntersection<
+  ProcedureApi<RpcGroup.Rpcs<typeof ElectronRpcs>>
+>;
+
+export interface ElectronRpcClient {
+  readonly api: ElectronRpcApi;
   readonly close: () => Promise<void>;
-  readonly router: ElectronRouterClient<Router>;
 }
 
-export function makeElectronRpcClient<Router extends ElectronRouter>(
+export function makeElectronRpcClient(
   invoke: (
     request: RpcMessage.FromClientEncoded
   ) => Promise<RpcMessage.FromServerEncoded | undefined>
-): ElectronRpcClient<Router> {
+): ElectronRpcClient {
   const protocol = RpcClient.Protocol.make((writeResponse) =>
     Effect.succeed({
       send: (request: RpcMessage.FromClientEncoded) =>
@@ -52,15 +79,48 @@ export function makeElectronRpcClient<Router extends ElectronRouter>(
     })
   );
 
+  const api: Record<string, unknown> = {};
+  for (const tag of ElectronRpcs.requests.keys()) {
+    const segments = tag.split('.');
+    const method = segments.pop() as string;
+    let branch = api;
+    for (const segment of segments) {
+      const child = branch[segment];
+      if (typeof child === 'object' && child !== null) {
+        branch = child as Record<string, unknown>;
+      } else {
+        const next: Record<string, unknown> = {};
+        branch[segment] = next;
+        branch = next;
+      }
+    }
+    branch[method] = (...args: ReadonlyArray<unknown>) =>
+      client.then(({ rpcClient }) => {
+        const [prefix, ...rest] = tag.split('.');
+        const rpcMethod =
+          rest.length === 0
+            ? rpcClient[tag as keyof typeof rpcClient]
+            : (
+                rpcClient[prefix as keyof typeof rpcClient] as Record<
+                  string,
+                  unknown
+                >
+              )[rest.join('.')];
+        return Effect.runPromise(
+          (
+            rpcMethod as (
+              payload: ReadonlyArray<unknown>
+            ) => Effect.Effect<unknown>
+          )(args)
+        );
+      });
+  }
+
   return {
+    api: api as ElectronRpcApi,
     close: () =>
       client.then(({ scope }) =>
         Effect.runPromise(Scope.close(scope, Exit.void))
       ),
-    router: makeElectronRouterClient((path, args) =>
-      client.then(({ rpcClient }) =>
-        Effect.runPromise(rpcClient.CallElectronProcedure({ path, args }))
-      )
-    ),
   };
 }

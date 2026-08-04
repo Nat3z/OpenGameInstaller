@@ -27,6 +27,7 @@ import {
 import { runEffectBoundary as runBoundary } from '@/electron/runtime.js';
 import { addonServer } from '@/electron/server/addon-server.js';
 import type { OperatingSystem } from '@/lib/electron-rpc.js';
+import { ElectronRpc } from '@/lib/electron-rpc.js';
 import { getCurrentUsername } from './helpers.app/platform.js';
 
 export function escapeShellArg(arg: string): string {
@@ -141,17 +142,17 @@ const axiosRequest = (
 
 export default function handler(mainWindow: Electron.BrowserWindow) {
   const appRouter = router(
-    procedure('app.close', () => mainWindow?.close()),
-    procedure('app.hideWindow', () => mainWindow?.hide()),
-    procedure('app.showWindow', () => {
+    procedure(ElectronRpc.app.close, () => mainWindow?.close()),
+    procedure(ElectronRpc.app.hideWindow, () => mainWindow?.hide()),
+    procedure(ElectronRpc.app.showWindow, () => {
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.show();
         mainWindow.focus();
       }
     }),
-    procedure('app.minimize', () => mainWindow?.minimize()),
-    procedure('app.quit', () => app.quit()),
-    procedure('app.getOS', (): OperatingSystem => {
+    procedure(ElectronRpc.app.minimize, () => mainWindow?.minimize()),
+    procedure(ElectronRpc.app.quit, () => app.quit()),
+    procedure(ElectronRpc.app.getOS, (): OperatingSystem => {
       if (
         process.platform === 'darwin' ||
         process.platform === 'linux' ||
@@ -161,15 +162,15 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
       }
       throw new Error(`Unsupported Electron platform '${process.platform}'`);
     }),
-    procedure('app.grantRootPassword', (_password: string) => {
+    procedure(ElectronRpc.app.grantRootPassword, (_password: string) => {
       throw new Error('Root password grants are not implemented');
     }),
     procedure(
-      'app.openSteamKeyboard',
+      ElectronRpc.app.openSteamKeyboard,
       (_options: { x: number; y: number; width: number; height: number }) =>
         false
     ),
-    ipcProcedure('app.axios', (_, options: AxiosRequestConfig) =>
+    ipcProcedure(ElectronRpc.app.axios, (_, options: AxiosRequestConfig) =>
       runBoundary(
         axiosRequest(options).pipe(
           Effect.catchAll((error) =>
@@ -182,7 +183,7 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
         )
       )
     ),
-    procedure('app.isSteamDeck', () =>
+    procedure(ElectronRpc.app.isSteamDeck, () =>
       runBoundary(
         Effect.try({
           try: () =>
@@ -196,24 +197,24 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
         })
       )
     ),
-    ipcProcedure('app.inputSend', (_, data: { id: string; data: any }) =>
+    ipcProcedure(ElectronRpc.app.inputSend, (_, id: string, data: any) =>
       runBoundary(
         Effect.sync(() => {
-          currentScreens.set(data.id, data.data);
-          screenInputCallbacks.get(data.id)?.(data.data);
-          screenInputCallbacks.delete(data.id);
+          currentScreens.set(id, data);
+          screenInputCallbacks.get(id)?.(data);
+          screenInputCallbacks.delete(id);
         })
       )
     ),
-    procedure('app.isOnline', () =>
+    procedure(ElectronRpc.app.isOnline, () =>
       runBoundary(Effect.sync(() => getEffectiveOnlineState().effectiveOnline))
     ),
-    procedure('app.getAddonPath', (addonID: string) =>
+    procedure(ElectronRpc.app.getAddonPath, (addonID: string) =>
       runBoundary(
         Effect.sync(() => addonServer.getClient(addonID)?.filePath ?? null)
       )
     ),
-    procedure('app.getAddonIcon', (addonID: string) =>
+    procedure(ElectronRpc.app.getAddonIcon, (addonID: string) =>
       runBoundary(
         Effect.try({
           try: () => {
@@ -231,7 +232,7 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
         })
       )
     ),
-    procedure('app.getLocalImage', (requestPath: string) =>
+    procedure(ElectronRpc.app.getLocalImage, (requestPath: string) =>
       runBoundary(
         Effect.gen(function* () {
           if (!fs.existsSync(requestPath)) return null;
@@ -292,7 +293,7 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
         })
       )
     ),
-    procedure('app.addToDesktop', () => runBoundary(addToDesktop()))
+    procedure(ElectronRpc.app.addToDesktop, () => runBoundary(addToDesktop()))
   );
 
   return mergeRouters(

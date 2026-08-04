@@ -12,6 +12,7 @@ import {
   runEffectBoundary as runBoundary,
   runSyncBoundary,
 } from '@/electron/runtime.js';
+import { ElectronRpc } from '@/lib/electron-rpc.js';
 
 const resolvePath = (value: string): string =>
   value.startsWith('./') ? join(__dirname, value) : value;
@@ -140,18 +141,18 @@ export default function handler() {
 
   const asyncRouter = router(
     procedure(
-      'fs.dialog.showOpenDialog',
+      ElectronRpc.fs.dialog.showOpenDialog,
       (options: Electron.OpenDialogOptions) =>
         runBoundary(
           Effect.tryPromise({
             try: () => dialog.showOpenDialog(options),
             catch: (cause) =>
               new FileSystemError({ message: formatError(cause), cause }),
-          }).pipe(Effect.map((result) => result.filePaths))
+          }).pipe(Effect.map((result) => result.filePaths[0]))
         )
     ),
     procedure(
-      'fs.dialog.showSaveDialog',
+      ElectronRpc.fs.dialog.showSaveDialog,
       (options: Electron.SaveDialogOptions) =>
         runBoundary(
           Effect.tryPromise({
@@ -161,11 +162,11 @@ export default function handler() {
           }).pipe(Effect.map((result) => result.filePath))
         )
     ),
-    procedure('fs.getFilesInDir', (arg: string) => {
+    procedure(ElectronRpc.fs.getFilesInDir, (arg: string) => {
       const path = resolvePath(String(arg));
       return runBoundary(fsTry(path, () => fs.readdirSync(path)));
     }),
-    procedure('fs.deleteAsync', (arg: string) => {
+    procedure(ElectronRpc.fs.deleteAsync, (arg: string) => {
       const path = resolvePath(String(arg));
       return runBoundary(
         fsTryPromise(path, () =>
@@ -173,20 +174,27 @@ export default function handler() {
         ).pipe(Effect.as('success' as const))
       );
     }),
-    procedure('fs.move', (arg: { source: string; destination: string }) => {
-      const source = resolvePath(arg.source);
-      const destination = resolvePath(arg.destination);
-      return runBoundary(
-        fsTryPromise(source, () => fsAsync.rename(source, destination)).pipe(
-          Effect.as('success' as const)
-        )
-      );
-    }),
-    procedure('fs.unrar', (arg: Parameters<typeof extractArchive>[0]) =>
-      runBoundary(extractArchive(arg))
+    procedure(
+      ElectronRpc.fs.move,
+      (arg: { source: string; destination: string }) => {
+        const source = resolvePath(arg.source);
+        const destination = resolvePath(arg.destination);
+        return runBoundary(
+          fsTryPromise(source, () => fsAsync.rename(source, destination)).pipe(
+            Effect.as('success' as const)
+          )
+        );
+      }
     ),
-    procedure('fs.unzip', (arg: Parameters<typeof extractArchive>[0]) =>
-      runBoundary(extractArchive(arg))
+    procedure(
+      ElectronRpc.fs.unrar,
+      (arg: Parameters<typeof extractArchive>[0]) =>
+        runBoundary(extractArchive(arg))
+    ),
+    procedure(
+      ElectronRpc.fs.unzip,
+      (arg: Parameters<typeof extractArchive>[0]) =>
+        runBoundary(extractArchive(arg))
     )
   );
 

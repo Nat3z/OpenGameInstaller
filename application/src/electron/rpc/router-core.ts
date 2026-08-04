@@ -1,45 +1,34 @@
-export interface ElectronProcedure<
-  Path extends string = string,
-  Args extends ReadonlyArray<unknown> = ReadonlyArray<unknown>,
-  Result = unknown,
-> {
-  readonly path: Path;
-  readonly handler: (...args: Args) => Result;
+import type { Rpc } from '@effect/rpc';
+
+export interface ElectronProcedure<Procedure extends Rpc.Any = Rpc.Any> {
+  readonly rpc: Procedure;
+  readonly handler: (...args: Rpc.Payload<Procedure>) => unknown;
 }
 
-export type AnyElectronProcedure = ElectronProcedure<
-  string,
-  ReadonlyArray<any>,
-  any
->;
+export interface AnyElectronProcedure {
+  readonly rpc: Rpc.Any;
+  readonly handler: (...args: any[]) => unknown;
+}
 
 export type ElectronRouter = ReadonlyArray<AnyElectronProcedure>;
 
-export function procedure<
-  const Path extends string,
-  const Args extends ReadonlyArray<unknown>,
-  Result,
->(
-  path: Path,
-  handler: (...args: Args) => Result
-): ElectronProcedure<Path, Args, Result> {
-  return { path, handler };
+export function procedure<const Procedure extends Rpc.Any>(
+  rpc: Procedure,
+  handler: (...args: Rpc.Payload<Procedure>) => unknown
+): ElectronProcedure<Procedure> {
+  return { rpc, handler };
 }
 
-type IpcHandler<Args extends ReadonlyArray<unknown>, Result> = (
+type IpcHandler<Procedure extends Rpc.Any> = (
   event: undefined,
-  ...args: Args
-) => Result;
+  ...args: Rpc.Payload<Procedure>
+) => unknown;
 
-export function ipcProcedure<
-  const Path extends string,
-  const Args extends ReadonlyArray<unknown>,
-  Result,
->(
-  path: Path,
-  handler: IpcHandler<Args, Result>
-): ElectronProcedure<Path, Args, Result> {
-  return procedure(path, (...args: Args) => handler(undefined, ...args));
+export function ipcProcedure<const Procedure extends Rpc.Any>(
+  rpc: Procedure,
+  handler: IpcHandler<Procedure>
+): ElectronProcedure<Procedure> {
+  return procedure(rpc, (...args) => handler(undefined, ...args));
 }
 
 export function router<const Procedures extends ElectronRouter>(
@@ -63,44 +52,3 @@ type MergeRouters<
 ]
   ? MergeRouters<Tail, readonly [...Result, ...Head]>
   : Result;
-
-type ProcedureClient<Procedure> =
-  Procedure extends ElectronProcedure<string, infer Args, infer Result>
-    ? (...args: Args) => Promise<Awaited<Result>>
-    : never;
-
-type ClientBranch<
-  Path extends string,
-  Procedure extends ElectronProcedure,
-> = Path extends `${infer Head}.${infer Tail}`
-  ? { readonly [Key in Head]: ClientBranch<Tail, Procedure> }
-  : { readonly [Key in Path]: ProcedureClient<Procedure> };
-
-type UnionToIntersection<Union> = (
-  Union extends unknown
-    ? (value: Union) => void
-    : never
-) extends (value: infer Intersection) => void
-  ? Intersection
-  : never;
-
-type RouterClientBranch<Procedure> = Procedure extends AnyElectronProcedure
-  ? ClientBranch<Procedure['path'], Procedure>
-  : never;
-
-export type ElectronRouterClient<Router extends ElectronRouter> =
-  UnionToIntersection<RouterClientBranch<Router[number]>>;
-
-export function makeElectronRouterClient<Router extends ElectronRouter>(
-  call: (path: string, args: ReadonlyArray<unknown>) => Promise<unknown>
-): ElectronRouterClient<Router> {
-  const makeProxy = (path: string): unknown =>
-    new Proxy(() => undefined, {
-      get: (_target, property) =>
-        makeProxy(path ? `${path}.${String(property)}` : String(property)),
-      apply: (_target, _thisArg, args: ReadonlyArray<unknown>) =>
-        call(path, args),
-    });
-
-  return makeProxy('') as ElectronRouterClient<Router>;
-}

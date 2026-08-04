@@ -1,4 +1,5 @@
 import { procedure, router } from '@/electron/rpc/router-core.js';
+import { ElectronRpc } from '@/lib/electron-rpc.js';
 
 export type DownloadHandshakeStatus =
   | 'queued'
@@ -157,10 +158,10 @@ export function registerDownloadHandshakeHandlers() {
   handshakeHandlersRegistered = true;
 
   return router(
-    procedure('download.consumeReplayEvents', (id: string) =>
+    procedure(ElectronRpc.download.consumeReplayEvents, (id: string) =>
       consumeDownloadReplayEvents(id)
     ),
-    procedure('download.getHandshakeState', (id: string) =>
+    procedure(ElectronRpc.download.getHandshakeState, (id: string) =>
       getDownloadHandshakeState(id)
     )
   );

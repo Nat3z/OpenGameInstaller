@@ -242,6 +242,9 @@ async function processDownloadComplete(
             downloadId: downloadedItem.id,
           })
         );
+        if (extractedDir === null) {
+          throw new Error('RAR extraction did not return an output directory');
+        }
         outputDir = extractedDir;
         downloadedItem.downloadPath = extractedDir;
         return true;

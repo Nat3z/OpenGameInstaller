@@ -23,6 +23,7 @@ import {
   startAddonServer,
   stopAddonServer,
 } from '@/electron/server/addon-server.js';
+import { ElectronRpc } from '@/lib/electron-rpc.js';
 
 function isGitRepository(addonPath: string): boolean {
   if (!fs.existsSync(addonPath)) {
@@ -238,7 +239,7 @@ export function loadMarketplace(
 
 export default function AddonManagerHandler(mainWindow: BrowserWindow) {
   const installAddons = ipcProcedure(
-    'installAddons',
+    ElectronRpc.installAddons,
     ipcBoundary((_, addons: string[]) =>
       Effect.gen(function* () {
         // addons is an array of URLs to the addons to install. these should be valid git repositories
@@ -616,12 +617,12 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
   );
 
   const restartAddonServerProcedure = ipcProcedure(
-    'restartAddonServer',
+    ElectronRpc.restartAddonServer,
     ipcBoundary(() => restartAddonServer())
   );
 
   const deleteInstalledAddonProcedure = ipcProcedure(
-    'deleteInstalledAddon',
+    ElectronRpc.deleteInstalledAddon,
     ipcBoundary((_, addonID: string) =>
       Effect.gen(function* () {
         if (typeof addonID !== 'string' || addonID.trim().length === 0) {
@@ -633,7 +634,7 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
   );
 
   const cleanAddons = ipcProcedure(
-    'cleanAddons',
+    ElectronRpc.cleanAddons,
     ipcBoundary((_, marketplaceUrls: string[]) =>
       Effect.gen(function* () {
         yield* Effect.forEach(
@@ -678,7 +679,7 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
   );
 
   const updateAddons = ipcProcedure(
-    'updateAddons',
+    ElectronRpc.updateAddons,
     ipcBoundary((_) =>
       Effect.gen(function* () {
         // check if wifi is available

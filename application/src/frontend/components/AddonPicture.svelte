@@ -10,7 +10,8 @@ $effect(() => {
   console.log('Getting addon icon for: ' + addonId);
   window.electronAPI.app.getAddonIcon(addonId).then(async (iconPath) => {
     if (iconPath) {
-      image = await window.electronAPI.app.getLocalImage(iconPath);
+      image =
+        (await window.electronAPI.app.getLocalImage(iconPath)) ?? undefined;
     }
   });
 });

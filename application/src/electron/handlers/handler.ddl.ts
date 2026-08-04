@@ -183,7 +183,9 @@ type DownloadStatus =
   | 'failed'
   | 'cancelled';
 
-type DownloadEffectRunner = <E>(effect: Effect.Effect<void, E>) => void;
+type DownloadEffectRunner = <E>(
+  effect: Effect.Effect<void, E>
+) => Promise<unknown>;
 
 interface DownloadLifecycle {
   readonly runEffect: DownloadEffectRunner;
@@ -192,8 +194,8 @@ interface DownloadLifecycle {
 }
 
 const standaloneDownloadLifecycle: DownloadLifecycle = {
-  runEffect: (effect) => {
-    Effect.runFork(
+  runEffect: (effect) =>
+    runEffectBoundary(
       effect.pipe(
         Effect.catchAll((error) =>
           Effect.sync(() =>
@@ -201,8 +203,7 @@ const standaloneDownloadLifecycle: DownloadLifecycle = {
           )
         )
       )
-    );
-  },
+    ),
   onStatusChange: () => {},
   onTerminal: () => {},
 };
@@ -2787,11 +2788,10 @@ const makeDownloadService = (
     const activeDownloads = new Map<string, ActiveDownload>();
     const downloads = () =>
       Array.from(activeDownloads.values(), ({ download }) => download);
-    const runInScope: DownloadEffectRunner = (effect) => {
-      void runEffectBoundary(
+    const runInScope: DownloadEffectRunner = (effect) =>
+      runEffectBoundary(
         Effect.forkIn(effect, scope).pipe(Effect.flatMap(Fiber.join))
       );
-    };
     const snapshot = () =>
       Array.from(activeDownloads, ([id, { download }]) => ({
         id,

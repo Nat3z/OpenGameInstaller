@@ -13,6 +13,7 @@ import PlayIcon from '@/frontend/Icons/PlayIcon.svelte';
 import SettingsFilled from '@/frontend/Icons/SettingsFilled.svelte';
 import UpdateIcon from '@/frontend/Icons/UpdateIcon.svelte';
 import { runDetached } from '@/frontend/lib/core/runtime';
+import { electronRpc } from '@/frontend/lib/electron-rpc';
 import {
   appUpdates,
   completeRequiredReadd,
@@ -90,13 +91,15 @@ let needsUmuMigration = $derived(needsUmuSetup);
 
 async function doesLinkExist(url: string | undefined) {
   if (!url) return false;
-  const response = await window.electronAPI.app.axios({
-    method: 'get',
-    url: url,
-    headers: {
-      'Accept-Language': 'en-US,en;q=0.5',
-    },
-  });
+  const response = await Effect.runPromise(
+    electronRpc.app.axios({
+      method: 'get',
+      url: url,
+      headers: {
+        'Accept-Language': 'en-US,en;q=0.5',
+      },
+    })
+  );
   return response.status === 200;
 }
 
@@ -140,7 +143,7 @@ async function launchGame() {
 
   console.log('pre-launch complete');
 
-  await window.electronAPI.app.launchGame('' + libraryInfo.appID);
+  await Effect.runPromise(electronRpc.app.launchGame('' + libraryInfo.appID));
 
   console.log('launchGame complete');
   if (!window.electronAPI.fs.exists('./internals')) {
@@ -257,17 +260,16 @@ async function migrateToUmu() {
   isMigratingToUmu = true;
 
   try {
-    const steamAppIdResult = await window.electronAPI.app.getSteamAppId(
-      libraryInfo.appID
+    const steamAppIdResult = await Effect.runPromise(
+      electronRpc.app.getSteamAppId(libraryInfo.appID)
     );
     const oldSteamAppId =
       steamAppIdResult.status === 'success'
         ? steamAppIdResult.appId
         : undefined;
 
-    const migrationResult = await window.electronAPI.app.migrateToUmu(
-      libraryInfo.appID,
-      oldSteamAppId
+    const migrationResult = await Effect.runPromise(
+      electronRpc.app.migrateToUmu(libraryInfo.appID, oldSteamAppId)
     );
 
     if (!migrationResult.success) {
@@ -279,8 +281,8 @@ async function migrateToUmu() {
       return;
     }
 
-    const updatedLibraryInfo = await window.electronAPI.app.getLibraryInfo(
-      libraryInfo.appID
+    const updatedLibraryInfo = await Effect.runPromise(
+      electronRpc.app.getLibraryInfo(libraryInfo.appID)
     );
     if (updatedLibraryInfo) {
       libraryInfo = updatedLibraryInfo;
@@ -333,7 +335,7 @@ $effect(() => {
 });
 
 onMount(async () => {
-  os = await window.electronAPI.app.getOS();
+  os = await Effect.runPromise(electronRpc.app.getOS());
 
   // Set up the header back button
   console.log('PlayPage mounted, setting header back button');
@@ -675,11 +677,11 @@ function handleRunTask(task: SearchResult, addonID: string) {
                   button.disabled = true;
 
                   const requiredReadd = getRequiredReadd(libraryInfo.appID);
-                  const result = await window.electronAPI.app.addToSteam(
+                  const result = await Effect.runPromise(electronRpc.app.addToSteam(
                     libraryInfo.appID,
                     requiredReadd?.steamAppId ??
                       libraryInfo.umu?.steamShortcutReaddId
-                  );
+                  ));
 
                   if (result.status === 'success') {
                     completeRequiredReadd(libraryInfo.appID);

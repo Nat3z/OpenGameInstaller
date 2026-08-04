@@ -1,5 +1,6 @@
 <script lang="ts">
 import type { LibraryInfo } from '@ogi-sdk/connect';
+import { Effect } from 'effect';
 import { onDestroy, onMount, tick } from 'svelte';
 import { type Writable, writable } from 'svelte/store';
 import Image from '@/frontend/components/Image.svelte';
@@ -12,6 +13,7 @@ import {
   getRecentlyPlayed,
   sortLibraryAlphabetically,
 } from '@/frontend/lib/core/library';
+import { electronRpc } from '@/frontend/lib/electron-rpc';
 import { updatesManager } from '@/frontend/states.svelte';
 import { gameFocused } from '@/frontend/store.svelte';
 
@@ -99,8 +101,8 @@ function hasVisibleAppUpdate(app: LibraryInfo): boolean {
 }
 
 async function openPlayPage(app: LibraryInfo) {
-  const freshLibraryInfo = await window.electronAPI.app.getLibraryInfo(
-    app.appID
+  const freshLibraryInfo = await Effect.runPromise(
+    electronRpc.app.getLibraryInfo(app.appID)
   );
   $selectedApp = freshLibraryInfo ?? app;
 }
@@ -112,7 +114,9 @@ async function openPlayPageByAppID(appID: number) {
     return;
   }
 
-  const freshLibraryInfo = await window.electronAPI.app.getLibraryInfo(appID);
+  const freshLibraryInfo = await Effect.runPromise(
+    electronRpc.app.getLibraryInfo(appID)
+  );
   if (freshLibraryInfo) {
     $selectedApp = freshLibraryInfo;
   }
@@ -134,7 +138,7 @@ $effect(() => {
 
 onMount(async () => {
   const [resolvedOs] = await Promise.all([
-    window.electronAPI.app.getOS(),
+    Effect.runPromise(electronRpc.app.getOS()),
     reloadLibrary(),
   ]);
 

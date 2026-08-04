@@ -1,4 +1,5 @@
 import { Rpc, RpcGroup, type RpcMessage } from '@effect/rpc';
+import type * as RpcClientError from '@effect/rpc/RpcClientError';
 import type { LibraryInfo } from '@ogi-sdk/connect';
 import type {
   $AddMagnetOrTorrent,
@@ -8,6 +9,7 @@ import type {
 } from 'all-debrid-js';
 import type { AxiosRequestConfig } from 'axios';
 import { Schema } from 'effect';
+import type * as Effect from 'effect/Effect';
 import type { OpenDialogOptions, SaveDialogOptions } from 'electron';
 import type {
   $AddTorrentOrMagnet,
@@ -25,6 +27,12 @@ export interface ElectronRpcRequest {
   readonly message: RpcMessage.FromClientEncoded;
 }
 
+export interface ElectronRpcTransport {
+  readonly invoke: (
+    message: RpcMessage.FromClientEncoded
+  ) => Promise<RpcMessage.FromServerEncoded | undefined>;
+}
+
 export const OperatingSystem = Schema.Literal('darwin', 'linux', 'win32');
 
 export type OperatingSystem = typeof OperatingSystem.Type;
@@ -39,7 +47,10 @@ export class ElectronRpcError extends Schema.TaggedError<ElectronRpcError>()(
 
 export type ElectronAxiosMethod = <A = unknown>(
   options: AxiosRequestConfig
-) => Promise<{ data: A; status: number; success: boolean }>;
+) => Effect.Effect<
+  { data: A; status: number; success: boolean },
+  ElectronRpcError | RpcClientError.RpcClientError
+>;
 
 const opaque = <A>(): Schema.Schema<A> => Schema.Unknown as Schema.Schema<A>;
 const withClient =

@@ -3,7 +3,7 @@ import type {
   SearchResult,
   SetupCommandData,
 } from '@ogi-sdk/connect';
-import { Either, Schema } from 'effect';
+import { Effect, Either, Schema } from 'effect';
 import { type Writable, writable } from 'svelte/store';
 import {
   assertMarketplaceUrlProtocol,
@@ -11,6 +11,7 @@ import {
   type CommunityAddon,
   communityAddonArraySchema,
 } from '@/electron/lib/marketplace-schema';
+import { electronRpc } from '@/frontend/lib/electron-rpc';
 
 export type { CommunityAddon };
 
@@ -327,14 +328,16 @@ export async function fetchCommunityAddons() {
           ? source
           : `${source}/api/marketplace.json`;
         assertMarketplaceUrlProtocol(url);
-        const response = await window.electronAPI.app.axios({
-          method: 'GET',
-          url,
-          headers: {
-            'Content-Type': 'application/json',
-            'User-Agent': 'OpenGameInstaller Client/Rest1.0',
-          },
-        });
+        const response = await Effect.runPromise(
+          electronRpc.app.axios({
+            method: 'GET',
+            url,
+            headers: {
+              'Content-Type': 'application/json',
+              'User-Agent': 'OpenGameInstaller Client/Rest1.0',
+            },
+          })
+        );
         const parsed = Schema.decodeUnknownEither(communityAddonArraySchema)(
           response.data
         );

@@ -4,6 +4,7 @@ import type {
   ConfigurationOptionWire,
   LibraryInfo,
 } from '@ogi-sdk/connect';
+import { Effect } from 'effect';
 import {
   ConfigurationBuilder,
   isBooleanOption,
@@ -16,6 +17,7 @@ import InputModal from '@/frontend/components/modal/InputModal.svelte';
 import Modal from '@/frontend/components/modal/Modal.svelte';
 import TitleModal from '@/frontend/components/modal/TitleModal.svelte';
 import WineDllOverridesModal from '@/frontend/components/modal/WineDllOverridesModal.svelte';
+import { electronRpc } from '@/frontend/lib/electron-rpc';
 import {
   completeRequiredReadd,
   getRequiredReadd,
@@ -35,7 +37,7 @@ let showDllOverridesModal = $state(false);
 
 // Get OS platform
 $effect(() => {
-  window.electronAPI.app.getOS().then((os) => {
+  Effect.runPromise(electronRpc.app.getOS()).then((os) => {
     platform = os;
   });
 });
@@ -120,7 +122,9 @@ let dllOverridesCount = $derived.by(() => {
 });
 
 async function removeFromList() {
-  const result = await window.electronAPI.app.removeApp(gameInfo.appID);
+  const result = await Effect.runPromise(
+    electronRpc.app.removeApp(gameInfo.appID)
+  );
   if (result.status !== 'success') {
     createNotification({
       id: Math.random().toString(36).substring(7),
@@ -147,9 +151,11 @@ async function addToSteam(button: HTMLButtonElement) {
   button.disabled = true;
   try {
     const requiredReadd = getRequiredReadd(gameInfo.appID);
-    const result = await window.electronAPI.app.addToSteam(
-      gameInfo.appID,
-      requiredReadd?.steamAppId ?? gameInfo.umu?.steamShortcutReaddId
+    const result = await Effect.runPromise(
+      electronRpc.app.addToSteam(
+        gameInfo.appID,
+        requiredReadd?.steamAppId ?? gameInfo.umu?.steamShortcutReaddId
+      )
     );
 
     if (result.status === 'success') {

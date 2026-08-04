@@ -1,5 +1,6 @@
 import { DownloadError, formatError } from '@ogi/errors';
 import { Effect } from 'effect';
+import { electronRpc } from '@/frontend/lib/electron-rpc';
 import type { DownloadStatusAndInfo } from '@/frontend/store.svelte';
 import type { DownloadHandshakeResult } from '@/lib/download-handshake';
 
@@ -19,15 +20,15 @@ export function cardStatusFromHandshake(
 }
 
 export function replayDownloadEvents(id: string) {
-  return Effect.tryPromise({
-    try: () => window.electronAPI.download.consumeReplayEvents(id),
-    catch: (cause) =>
-      new DownloadError({
-        message: `Failed to replay download events: ${formatError(cause)}`,
-        downloadId: id,
-        cause,
-      }),
-  }).pipe(
+  return electronRpc.download.consumeReplayEvents(id).pipe(
+    Effect.mapError(
+      (cause) =>
+        new DownloadError({
+          message: `Failed to replay download events: ${formatError(cause)}`,
+          downloadId: id,
+          cause,
+        })
+    ),
     Effect.tap((events) =>
       Effect.sync(() => {
         for (const event of events) {

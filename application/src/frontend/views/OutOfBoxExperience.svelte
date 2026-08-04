@@ -6,6 +6,7 @@ import { preventDefault } from 'svelte/legacy';
 import { fade } from 'svelte/transition';
 import { communityAddonArraySchema } from '@/electron/lib/marketplace-schema';
 import ThemePicker from '@/frontend/components/ThemePicker.svelte';
+import { electronRpc } from '@/frontend/lib/electron-rpc';
 import {
   type CommunityAddon,
   createNotification,
@@ -103,14 +104,16 @@ async function loadCommunityAddonsFromMarketplaces(sources: string[]) {
   try {
     const results = await Promise.allSettled(
       normalizedSources.map(async (marketplaceUrl) => {
-        const response = await window.electronAPI.app.axios({
-          method: 'GET',
-          url: marketplaceCatalogUrl(marketplaceUrl),
-          headers: {
-            'Content-Type': 'application/json',
-            'User-Agent': 'OpenGameInstaller Client/Rest1.0',
-          },
-        });
+        const response = await Effect.runPromise(
+          electronRpc.app.axios({
+            method: 'GET',
+            url: marketplaceCatalogUrl(marketplaceUrl),
+            headers: {
+              'Content-Type': 'application/json',
+              'User-Agent': 'OpenGameInstaller Client/Rest1.0',
+            },
+          })
+        );
         const parsed = Schema.decodeUnknownEither(communityAddonArraySchema)(
           response.data
         );
@@ -218,7 +221,7 @@ async function downloadTools() {
     logs: [],
   }));
 
-  const result = await window.electronAPI.oobe.downloadTools();
+  const result = await Effect.runPromise(electronRpc.oobe.downloadTools());
   if (!result[0]) {
     oobeLog.update((currentLog) => ({
       ...currentLog,
@@ -343,17 +346,15 @@ function submitTorrenter() {
 let downloadLocation = '';
 
 async function updateDownloadLocation() {
-  window.electronAPI.fs.dialog
-    .showOpenDialog({ properties: ['openDirectory'] })
-    .then((result) => {
-      if (result) {
-        const htmlElement = document.querySelector(
-          'input[data-dwloc]'
-        )!! as HTMLInputElement;
-        htmlElement.value = result;
-        downloadLocation = result;
-      }
-    });
+  const path = await Effect.runPromise(
+    electronRpc.fs.dialog.showOpenDialog({ properties: ['openDirectory'] })
+  );
+  if (!path) return;
+  const htmlElement = document.querySelector(
+    'input[data-dwloc]'
+  )!! as HTMLInputElement;
+  htmlElement.value = path;
+  downloadLocation = path;
 }
 
 function sendDownloadLocation(event: MouseEvent) {
@@ -454,7 +455,7 @@ async function finishSetup() {
     './config/option/installed.json',
     JSON.stringify({ installed: true })
   );
-  await window.electronAPI.installAddons(allAddons);
+  await Effect.runPromise(electronRpc.installAddons(allAddons));
   completedSetup = true;
 }
 
@@ -521,8 +522,8 @@ onMount(async () => {
 
   // Initialize previous log length
   previousLogLength = $oobeLog.logs.length;
-  currentOS = await window.electronAPI.app.getOS();
-  isSteamDeck = await window.electronAPI.app.isSteamDeck();
+  currentOS = await Effect.runPromise(electronRpc.app.getOS());
+  isSteamDeck = await Effect.runPromise(electronRpc.app.isSteamDeck());
 
   if (window.electronAPI.fs.exists('./config/option/installed.json')) {
     const installed = JSON.parse(
@@ -695,7 +696,7 @@ onDestroy(() => {
         setup process.
       </h2>
       <button
-        onclick={() => window.electronAPI.app.close()}
+        onclick={() => Effect.runPromise(electronRpc.app.close())}
         class="bg-accent hover:bg-accent-dark text-white font-open-sans font-semibold py-3 px-6 rounded-lg transition-colors duration-200"
         >Close</button
       >
@@ -1134,7 +1135,7 @@ onDestroy(() => {
       <button
         onclick={async () => {
           // check if the user is on windows or linux
-          const os = await window.electronAPI.app.getOS();
+          const os = await Effect.runPromise(electronRpc.app.getOS());
           if (os === 'win32') {
             finishSetup();
             stage = 6;
@@ -1183,11 +1184,11 @@ onDestroy(() => {
           onclick={async () => {
             isSettingKey = true;
             await new Promise((resolve) => setTimeout(resolve, 1000));
-            const result = await window.electronAPI.oobe.setSteamGridDBKey(
+            const result = await Effect.runPromise(electronRpc.oobe.setSteamGridDBKey(
               (
                 document.querySelector('[data-sgdb-key]') as HTMLInputElement
               ).value.trim()
-            );
+            ));
 
             if (!result) {
               createNotification({

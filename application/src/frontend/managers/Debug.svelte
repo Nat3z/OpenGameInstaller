@@ -1,5 +1,6 @@
 <script lang="ts">
 import type { ConfigurationFile } from '@ogi-sdk/connect';
+import { Effect } from 'effect';
 import { ConfigurationBuilder } from 'ogi-addon/config';
 import { onMount } from 'svelte';
 import ButtonModal from '@/frontend/components/modal/ButtonModal.svelte';
@@ -10,6 +11,7 @@ import Modal from '@/frontend/components/modal/Modal.svelte';
 import SectionModal from '@/frontend/components/modal/SectionModal.svelte';
 import TextModal from '@/frontend/components/modal/TextModal.svelte';
 import TitleModal from '@/frontend/components/modal/TitleModal.svelte';
+import { electronRpc } from '@/frontend/lib/electron-rpc';
 import {
   createNotification,
   notificationHistory,
@@ -205,7 +207,7 @@ onMount(() => {
             ],
           };
 
-          const result = await window.electronAPI.app.insertApp(mockAppData);
+          const result = await Effect.runPromise(electronRpc.app.insertApp(mockAppData));
 
           createNotification({
             id: Math.random().toString(36).substring(2, 9),
@@ -245,7 +247,7 @@ onMount(() => {
             addonsource: 'test-addon',
           };
 
-          const result = await window.electronAPI.app.insertApp(mockAppData);
+          const result = await Effect.runPromise(electronRpc.app.insertApp(mockAppData));
 
           createNotification({
             id: Math.random().toString(36).substring(2, 9),

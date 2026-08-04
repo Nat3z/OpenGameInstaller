@@ -2,6 +2,7 @@ import { FileSystemError, formatError } from '@ogi/errors';
 import { Effect } from 'effect';
 import { get } from 'svelte/store';
 import { getPersistedFilePaths } from '@/frontend/lib/downloads/paths';
+import { electronRpc } from '@/frontend/lib/electron-rpc';
 import {
   currentDownloads,
   type DownloadStatusAndInfo,
@@ -122,15 +123,16 @@ function isRedistributableInstall(
 export function loadPersistedDownloads() {
   return ensureDir().pipe(
     Effect.zipRight(
-      Effect.tryPromise({
-        try: () => window.electronAPI.fs.getFilesInDir(PERSIST_DIR),
-        catch: (cause) =>
-          new FileSystemError({
-            message: `Failed to load persisted downloads: ${formatError(cause)}`,
-            path: PERSIST_DIR,
-            cause,
-          }),
-      })
+      electronRpc.fs.getFilesInDir(PERSIST_DIR).pipe(
+        Effect.mapError(
+          (cause) =>
+            new FileSystemError({
+              message: `Failed to load persisted downloads: ${formatError(cause)}`,
+              path: PERSIST_DIR,
+              cause,
+            })
+        )
+      )
     ),
     Effect.map((files) => {
       const restored: DownloadStatusAndInfo[] = [];
@@ -279,15 +281,15 @@ export function deleteDownloadedItems(id: string) {
         ? Effect.forEach(
             getPersistedFilePaths(parsed.downloadInfo),
             (filePath) =>
-              Effect.tryPromise({
-                try: () => window.electronAPI.fs.deleteAsync(filePath),
-                catch: (cause) =>
-                  new FileSystemError({
-                    message: `Failed to delete downloaded file: ${formatError(cause)}`,
-                    path: filePath,
-                    cause,
-                  }),
-              }).pipe(
+              electronRpc.fs.deleteAsync(filePath).pipe(
+                Effect.mapError(
+                  (cause) =>
+                    new FileSystemError({
+                      message: `Failed to delete downloaded file: ${formatError(cause)}`,
+                      path: filePath,
+                      cause,
+                    })
+                ),
                 Effect.tapError((error) =>
                   Effect.sync(() =>
                     console.error(error.message, error.path, error.cause)

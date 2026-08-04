@@ -10,6 +10,7 @@ import {
   sanitizePathSegment,
 } from '@/frontend/lib/downloads/paths';
 import { BaseService } from '@/frontend/lib/downloads/services/BaseService';
+import { electronRpc } from '@/frontend/lib/electron-rpc';
 import type { SearchResultWithAddon } from '@/frontend/lib/tasks/runner';
 import { currentDownloads } from '@/frontend/store.svelte';
 
@@ -66,14 +67,15 @@ export class DirectService extends BaseService {
       button.textContent = 'Downloading...';
       button.disabled = true;
 
-      const handshake = yield* Effect.tryPromise({
-        try: () => window.electronAPI.ddl.download(collectedFiles),
-        catch: (cause) =>
-          new DownloadError({
-            message: 'Failed to start direct download.',
-            cause,
-          }),
-      });
+      const handshake = yield* electronRpc.ddl.download(collectedFiles).pipe(
+        Effect.mapError(
+          (cause) =>
+            new DownloadError({
+              message: 'Failed to start direct download.',
+              cause,
+            })
+        )
+      );
       currentDownloads.update((downloads) => [
         ...downloads,
         {

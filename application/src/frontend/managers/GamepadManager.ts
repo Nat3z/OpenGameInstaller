@@ -1,3 +1,6 @@
+import { Effect } from 'effect';
+import { electronRpc } from '@/frontend/lib/electron-rpc';
+
 const FOCUSABLE_SELECTOR =
   'button, [role="button"], a, input, select, textarea, [tabindex]:not([tabindex="-1"])';
 
@@ -729,12 +732,14 @@ export class GamepadNavigator {
     try {
       // Try to open Steam keyboard overlay
       // The keyboard injects text directly into the focused input
-      const opened = await window.electronAPI.app.openSteamKeyboard({
-        x: 0,
-        y: 0,
-        width: 500,
-        height: 500,
-      });
+      const opened = await Effect.runPromise(
+        electronRpc.app.openSteamKeyboard({
+          x: 0,
+          y: 0,
+          width: 500,
+          height: 500,
+        })
+      );
 
       if (!opened) {
         // Steam keyboard not available (not on Steam Deck/Big Picture)

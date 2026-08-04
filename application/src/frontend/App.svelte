@@ -14,6 +14,7 @@ import ConfigurationModal from '@/frontend/components/modal/ConfigurationModal.s
 import NotificationSideView from '@/frontend/components/NotificationSideView.svelte';
 import StorePage from '@/frontend/components/StorePage.svelte';
 import { runDetached } from '@/frontend/lib/core/runtime';
+import { electronRpc } from '@/frontend/lib/electron-rpc';
 import AppUpdateManager from '@/frontend/managers/AppUpdateManager.svelte';
 import ChangelogManager from '@/frontend/managers/ChangelogManager.svelte';
 import Debug from '@/frontend/managers/Debug.svelte';
@@ -175,7 +176,7 @@ async function initializeSearch() {
     );
     addons = addonData;
 
-    const online = await window.electronAPI.app.isOnline();
+    const online = await Effect.runPromise(electronRpc.app.isOnline());
     isOnline.set(online);
   } catch (error) {
     console.error('Failed to initialize search:', error);
@@ -409,7 +410,7 @@ document.addEventListener('addon:update-available', (event) => {
 });
 document.addEventListener('all-addons-started', async () => {
   if ($addonUpdates.length > 0) {
-    await window.electronAPI.updateAddons();
+    await Effect.runPromise(electronRpc.updateAddons());
     createNotification({
       id: Math.random().toString(36).substring(7),
       message: 'Addons updated successfully',
@@ -417,7 +418,7 @@ document.addEventListener('all-addons-started', async () => {
     });
     addonUpdates.set([]);
     // restart the addon server
-    await window.electronAPI.restartAddonServer();
+    await Effect.runPromise(electronRpc.restartAddonServer());
     try {
       await Effect.runPromise(reconnectClientSdk());
     } catch (error) {
@@ -534,9 +535,9 @@ document.addEventListener('migration:event:steamgriddb-launch', () => {
 });
 document.addEventListener('migration:event:install-steam-addon', async () => {
   // go install steam-integration addon
-  await window.electronAPI.installAddons([
-    'https://github.com/Nat3z/steam-integration',
-  ]);
+  await Effect.runPromise(
+    electronRpc.installAddons(['https://github.com/Nat3z/steam-integration'])
+  );
 });
 </script>
 
@@ -546,8 +547,8 @@ document.addEventListener('migration:event:install-steam-addon', async () => {
   <OOBE
     finishedSetup={async () => {
       finishedOOBE = true;
-      if ((await window.electronAPI.app.getOS()) !== 'win32') {
-        const result = await window.electronAPI.app.addToDesktop();
+      if ((await Effect.runPromise(electronRpc.app.getOS())) !== 'win32') {
+        const result = await Effect.runPromise(electronRpc.app.addToDesktop());
         if (result.success) {
           createNotification({
             id: Math.random().toString(36).substring(7),

@@ -14,6 +14,7 @@ import { get } from 'svelte/store';
 import { addonServer } from '@/frontend/lib/core/ipc';
 import { getApp } from '@/frontend/lib/core/library';
 import { updateDownloadStatus } from '@/frontend/lib/downloads/lifecycle';
+import { electronRpc } from '@/frontend/lib/electron-rpc';
 import { saveFailedSetup } from '@/frontend/lib/recovery/failedSetups';
 import { updatesManager } from '@/frontend/states.svelte';
 import {
@@ -245,29 +246,30 @@ export function startRedistributableInstallation(
     };
 
     document.addEventListener('app:redistributable-progress', onProgress);
-    const result = yield* Effect.tryPromise({
-      try: () =>
-        window.electronAPI.app.installRedistributables(appID, downloadId),
-      catch: (cause) =>
-        new AddonError({
-          message: `Redistributable installation failed: ${formatError(cause)}`,
-        }),
-    }).pipe(
-      Effect.catchAll((error) =>
-        Effect.sync(() => {
-          console.error('[setup] Redistributable installation error:', error);
-          return 'failed' as const;
-        })
-      ),
-      Effect.ensuring(
-        Effect.sync(() =>
-          document.removeEventListener(
-            'app:redistributable-progress',
-            onProgress
+    const result = yield* electronRpc.app
+      .installRedistributables(appID, downloadId)
+      .pipe(
+        Effect.mapError(
+          (cause) =>
+            new AddonError({
+              message: `Redistributable installation failed: ${formatError(cause)}`,
+            })
+        ),
+        Effect.catchAll((error) =>
+          Effect.sync(() => {
+            console.error('[setup] Redistributable installation error:', error);
+            return 'failed' as const;
+          })
+        ),
+        Effect.ensuring(
+          Effect.sync(() =>
+            document.removeEventListener(
+              'app:redistributable-progress',
+              onProgress
+            )
           )
         )
-      )
-    );
+      );
 
     if (!sawBackendProgress) {
       const status = result === 'success' ? 'completed' : 'failed';
@@ -357,28 +359,29 @@ export function runSetupApp(
     }
     markSetupLogInactive(downloadedItem.id);
 
-    const result = yield* Effect.tryPromise({
-      try: () =>
-        window.electronAPI.app.insertApp({
-          ...data,
-          capsuleImage: downloadedItem.capsuleImage,
-          coverImage: downloadedItem.coverImage,
-          name: downloadedItem.name,
-          appID: downloadedItem.appID,
-          storefront: downloadedItem.storefront,
-          addonsource: downloadedItem.addonSource,
-          redistributables: data.redistributables,
-        }),
-      catch: (cause) =>
-        new AddonError({
-          message: `Failed to insert app: ${formatError(cause)}`,
-          addonName: downloadedItem.addonSource,
-        }),
-    }).pipe(
-      Effect.tapError((error) =>
-        Effect.sync(() => handleSetupError(error, downloadedItem, 'game'))
-      )
-    );
+    const result = yield* electronRpc.app
+      .insertApp({
+        ...data,
+        capsuleImage: downloadedItem.capsuleImage,
+        coverImage: downloadedItem.coverImage,
+        name: downloadedItem.name,
+        appID: downloadedItem.appID,
+        storefront: downloadedItem.storefront,
+        addonsource: downloadedItem.addonSource,
+        redistributables: data.redistributables,
+      })
+      .pipe(
+        Effect.mapError(
+          (cause) =>
+            new AddonError({
+              message: `Failed to insert app: ${formatError(cause)}`,
+              addonName: downloadedItem.addonSource,
+            })
+        ),
+        Effect.tapError((error) =>
+          Effect.sync(() => handleSetupError(error, downloadedItem, 'game'))
+        )
+      );
 
     if (
       result === 'setup-failed' ||
@@ -460,20 +463,22 @@ export function runSetupAppUpdate(
     );
     markSetupLogInactive(downloadedItem.id);
 
-    const result = yield* Effect.tryPromise({
-      try: () =>
-        window.electronAPI.app.updateAppVersion(
-          downloadedItem.appID,
-          data.version,
-          data.cwd,
-          data.launchExecutable,
-          data.launchArguments,
-          downloadedItem.addonSource,
-          data.umu,
-          data.launchEnv
-        ),
-      catch: (cause) => new UpdateError({ message: formatError(cause), cause }),
-    });
+    const result = yield* electronRpc.app
+      .updateAppVersion(
+        downloadedItem.appID,
+        data.version,
+        data.cwd,
+        data.launchExecutable,
+        data.launchArguments,
+        downloadedItem.addonSource,
+        data.umu,
+        data.launchEnv
+      )
+      .pipe(
+        Effect.mapError(
+          (cause) => new UpdateError({ message: formatError(cause), cause })
+        )
+      );
     if (result === 'app-not-found') {
       updateDownloadStatus(downloadedItem.id, {
         status: 'error',

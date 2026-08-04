@@ -10,6 +10,7 @@ import {
   sanitizePathSegment,
 } from '@/frontend/lib/downloads/paths';
 import { BaseService } from '@/frontend/lib/downloads/services/BaseService';
+import { electronRpc } from '@/frontend/lib/electron-rpc';
 import type { SearchResultWithAddon } from '@/frontend/lib/tasks/runner';
 import { currentDownloads } from '@/frontend/store.svelte';
 
@@ -56,23 +57,25 @@ export class TorrentService extends BaseService {
         resolvedButton.disabled = true;
       }
 
-      const handshake = yield* Effect.tryPromise({
-        try: () =>
-          result.downloadType === 'torrent'
-            ? window.electronAPI.torrent.downloadTorrent(
-                result.downloadURL!,
-                downloadPath
-              )
-            : window.electronAPI.torrent.downloadMagnet(
-                result.downloadURL!,
-                downloadPath
-              ),
-        catch: (cause) =>
-          new DownloadError({
-            message: 'Failed to start torrent download.',
-            cause,
-          }),
-      });
+      const handshake = yield* (
+        result.downloadType === 'torrent'
+          ? electronRpc.torrent.downloadTorrent(
+              result.downloadURL!,
+              downloadPath
+            )
+          : electronRpc.torrent.downloadMagnet(
+              result.downloadURL!,
+              downloadPath
+            )
+      ).pipe(
+        Effect.mapError(
+          (cause) =>
+            new DownloadError({
+              message: 'Failed to start torrent download.',
+              cause,
+            })
+        )
+      );
 
       currentDownloads.update((downloads) => [
         ...downloads,

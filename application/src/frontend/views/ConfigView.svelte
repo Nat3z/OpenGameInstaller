@@ -17,6 +17,7 @@ import Modal from '@/frontend/components/modal/Modal.svelte';
 import SectionModal from '@/frontend/components/modal/SectionModal.svelte';
 import TextModal from '@/frontend/components/modal/TextModal.svelte';
 import TitleModal from '@/frontend/components/modal/TitleModal.svelte';
+import { electronRpc } from '@/frontend/lib/electron-rpc';
 import {
   addonUpdates,
   createNotification,
@@ -84,9 +85,9 @@ async function updateAddons() {
   });
 
   try {
-    await window.electronAPI.updateAddons();
+    await Effect.runPromise(electronRpc.updateAddons());
     addonUpdates.set([]);
-    await window.electronAPI.restartAddonServer();
+    await Effect.runPromise(electronRpc.restartAddonServer());
     await Effect.runPromise(reconnectClientSdk());
     createNotification({
       id: Math.random().toString(36).substring(7),
@@ -115,7 +116,7 @@ async function addAddon() {
     type: 'info',
   });
   try {
-    await window.electronAPI.installAddons([addonUrl]);
+    await Effect.runPromise(electronRpc.installAddons([addonUrl]));
     addonUrl = '';
     await Effect.runPromise(reconnectClientSdk());
   } catch (error) {

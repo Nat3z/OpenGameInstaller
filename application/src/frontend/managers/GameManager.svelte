@@ -1,6 +1,7 @@
 <script lang="ts">
 import { Effect } from 'effect';
 import { getAllApps } from '@/frontend/lib/core/library';
+import { electronRpc } from '@/frontend/lib/electron-rpc';
 import { gamesLaunched } from '@/frontend/store.svelte';
 import { runLaunchAppAddons } from '@/frontend/utils';
 
@@ -31,7 +32,7 @@ document.addEventListener('game:launch', (event: Event) => {
   });
 
   if (isShortcutLaunchForGame(appID)) {
-    window.electronAPI.app.hideWindow();
+    Effect.runPromise(electronRpc.app.hideWindow());
   }
 });
 
@@ -50,7 +51,7 @@ document.addEventListener('game:exit', async (event: Event) => {
   try {
     // For Steam shortcut launches, unhide first so post-launch UI is visible.
     if (isShortcutLaunch) {
-      await window.electronAPI.app.showWindow();
+      await Effect.runPromise(electronRpc.app.showWindow());
     }
     // run the addon launch-app event with launchType 'post'
     let library = await getAllApps();
@@ -70,7 +71,7 @@ document.addEventListener('game:exit', async (event: Event) => {
     });
 
     if (isShortcutLaunch) {
-      await window.electronAPI.app.close();
+      await Effect.runPromise(electronRpc.app.close());
     }
   }
 });

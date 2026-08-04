@@ -1,4 +1,6 @@
 import type { LibraryInfo } from '@ogi-sdk/connect';
+import { Effect } from 'effect';
+import { electronRpc } from '@/frontend/lib/electron-rpc';
 
 /**
  * Loads all apps and orders them according to the apps.json file if it exists.
@@ -7,7 +9,7 @@ import type { LibraryInfo } from '@ogi-sdk/connect';
  * @returns A promise that resolves to an ordered array of LibraryInfo
  */
 export async function getAllApps(): Promise<LibraryInfo[]> {
-  const apps = await window.electronAPI.app.getAllApps();
+  const apps = await Effect.runPromise(electronRpc.app.getAllApps());
 
   if (window.electronAPI.fs.exists('./internals/apps.json')) {
     const appsOrdered: number[] = JSON.parse(

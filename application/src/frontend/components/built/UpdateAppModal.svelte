@@ -7,6 +7,7 @@ import AddonPicture from '@/frontend/components/AddonPicture.svelte';
 import Modal from '@/frontend/components/modal/Modal.svelte';
 import SectionModal from '@/frontend/components/modal/SectionModal.svelte';
 import TitleModal from '@/frontend/components/modal/TitleModal.svelte';
+import { electronRpc } from '@/frontend/lib/electron-rpc';
 import { createNotification } from '@/frontend/store.svelte';
 import {
   addonServer,
@@ -37,7 +38,7 @@ let emptyAddons: Set<string> = $state(new Set());
 let collapsedAddons: Set<string> = $state(new Set());
 
 onMount(async () => {
-  const isOnline = await window.electronAPI.app.isOnline();
+  const isOnline = await Effect.runPromise(electronRpc.app.isOnline());
   if (!isOnline) {
     loading = false;
     createNotification({

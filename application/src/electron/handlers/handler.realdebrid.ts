@@ -10,6 +10,7 @@ import { sendNotification } from '@/electron/main.js';
 import { __dirname } from '@/electron/manager/manager.paths.js';
 import { procedure, router } from '@/electron/rpc/router-core.js';
 import { runEffectBoundary } from '@/electron/runtime.js';
+import { ElectronRpc } from '@/lib/electron-rpc.js';
 
 const CONFIG_PATH = join(__dirname, 'config/option/realdebrid.json');
 const ConfigSchema = Schema.Struct({ debridApiKey: Schema.String });
@@ -108,7 +109,7 @@ const downloadTorrent = (url: string, path: string) =>
 
 export default function handler(mainWindow: Electron.BrowserWindow) {
   return router(
-    procedure('realdebrid.setKey', (key: string) =>
+    procedure(ElectronRpc.realdebrid.setKey, (key: string) =>
       run(
         Effect.sync(() => {
           realDebridClient = new RealDebrid({ apiKey: key });
@@ -117,60 +118,60 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
         'Failed to set Real-Debrid key'
       )
     ),
-    procedure('realdebrid.updateKey', () =>
+    procedure(ElectronRpc.realdebrid.updateKey, () =>
       run(updateKey(), 'Failed to update Real-Debrid key')
     ),
-    procedure('realdebrid.addMagnet', (arg: { url: string; host?: string }) =>
+    procedure(ElectronRpc.realdebrid.addMagnet, (url: string, host?: string) =>
       run(
-        realDebridClient.addMagnet(arg.url, hostName(arg.host)),
+        realDebridClient.addMagnet(url, hostName(host)),
         'Failed to add Real-Debrid magnet'
       )
     ),
-    procedure('realdebrid.getUserInfo', () =>
+    procedure(ElectronRpc.realdebrid.getUserInfo, () =>
       run(
         realDebridClient.getUserInfo(),
         'Failed to fetch Real-Debrid user info'
       )
     ),
-    procedure('realdebrid.unrestrictLink', (link: string) =>
+    procedure(ElectronRpc.realdebrid.unrestrictLink, (link: string) =>
       run(
         realDebridClient.unrestrictLink(link),
         'Failed to unrestrict Real-Debrid link'
       )
     ),
-    procedure('realdebrid.getHosts', () =>
+    procedure(ElectronRpc.realdebrid.getHosts, () =>
       run(realDebridClient.getHosts(), 'Failed to fetch Real-Debrid hosts')
     ),
-    procedure('realdebrid.getTorrentInfo', (id: string) =>
+    procedure(ElectronRpc.realdebrid.getTorrentInfo, (id: string) =>
       run(
         realDebridClient.getTorrentInfo(id),
         'Failed to fetch Real-Debrid torrent info'
       )
     ),
-    procedure('realdebrid.isTorrentReady', (id: string) =>
+    procedure(ElectronRpc.realdebrid.isTorrentReady, (id: string) =>
       run(
         realDebridClient.isTorrentReady(id),
         'Failed to check Real-Debrid torrent status'
       )
     ),
-    procedure('realdebrid.selectTorrent', (id: string) =>
+    procedure(ElectronRpc.realdebrid.selectTorrent, (id: string) =>
       run(
         realDebridClient.selectTorrents(id),
         'Failed to select Real-Debrid torrent'
       )
     ),
     procedure(
-      'realdebrid.addTorrent',
-      (arg: { torrent: string; host?: string }) => {
+      ElectronRpc.realdebrid.addTorrent,
+      (torrent: string, host?: string) => {
         const tempPath = join(
           __dirname,
           `temp-realdebrid-${Date.now()}.torrent`
         );
         const operation = Effect.gen(function* () {
-          yield* downloadTorrent(arg.torrent, tempPath);
+          yield* downloadTorrent(torrent, tempPath);
           const stream = fs.createReadStream(tempPath) as ReadStream;
           return yield* realDebridClient
-            .addTorrent(stream, hostName(arg.host))
+            .addTorrent(stream, hostName(host))
             .pipe(Effect.ensuring(Effect.sync(() => stream.destroy())));
         }).pipe(
           Effect.tapError((error) =>

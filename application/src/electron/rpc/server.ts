@@ -1,14 +1,15 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { type RpcMessage, RpcServer } from '@effect/rpc';
+import { RpcGroup, type RpcMessage, RpcServer } from '@effect/rpc';
 import { Effect, Mailbox, Option } from 'effect';
 import { app, BrowserWindow, ipcMain, type WebContents } from 'electron';
 import { isDev } from '@/electron/manager/manager.paths.js';
-import type {
-  AnyElectronProcedure,
-  ElectronRouter,
-} from '@/electron/rpc/router-core.js';
-import { forkElectronEffect, runElectronEffect } from '@/electron/runtime.js';
+import type { ElectronRouter } from '@/electron/rpc/router-core.js';
+import {
+  EffectBoundaryError,
+  forkElectronEffect,
+  runElectronEffect,
+} from '@/electron/runtime.js';
 import {
   ELECTRON_RPC_CHANNEL,
   ElectronRpcError,
@@ -142,276 +143,299 @@ function parseRequest(value: unknown): ElectronRpcRequest {
   };
 }
 
-let procedures = new Map<string, AnyElectronProcedure>();
+type ElectronHandlers = RpcGroup.HandlersFrom<
+  RpcGroup.Rpcs<typeof ElectronRpcs>
+>;
 
-const handlers = ElectronRpcs.toLayer({
-  CallElectronProcedure: ({ path, args }) =>
-    Effect.tryPromise({
-      try: async () => {
-        const procedure = procedures.get(path);
-        if (!procedure) {
-          throw new Error(`Unknown Electron RPC procedure '${path}'`);
-        }
-        return await procedure.handler(...args);
-      },
-      catch: (cause) =>
-        new ElectronRpcError({
-          procedure: path,
-          message: cause instanceof Error ? cause.message : String(cause),
+const makeHandlers = (router: ElectronRouter): ElectronHandlers =>
+  Object.fromEntries(
+    router.map((procedure) => [
+      procedure.rpc._tag,
+      (args: ReadonlyArray<unknown>) =>
+        Effect.tryPromise({
+          try: async () => {
+            const result = await procedure.handler(...args);
+            if (result instanceof EffectBoundaryError) throw result;
+            return result;
+          },
+          catch: (cause) =>
+            new ElectronRpcError({
+              procedure: procedure.rpc._tag,
+              message:
+                cause instanceof EffectBoundaryError
+                  ? cause.error
+                  : cause instanceof Error
+                    ? cause.message
+                    : String(cause),
+            }),
         }),
-    }),
-});
+    ])
+  ) as unknown as ElectronHandlers;
 
-const server = Effect.scoped(
-  Effect.gen(function* () {
-    const disconnects = yield* Mailbox.make<number>();
-    const pendingReplies = new Map<number, Map<string, PendingReply>>();
-    const sessions = new Map<string, RpcSession>();
-    const activeSessions = new Map<number, string>();
-    const observedWebContents = new Map<number, ObservedWebContents>();
-    let nextClientId = 1;
+const makeServer = (router: ElectronRouter) =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const disconnects = yield* Mailbox.make<number>();
+      const pendingReplies = new Map<number, Map<string, PendingReply>>();
+      const sessions = new Map<string, RpcSession>();
+      const activeSessions = new Map<number, string>();
+      const observedWebContents = new Map<number, ObservedWebContents>();
+      let nextClientId = 1;
 
-    const rejectPendingReplies = (clientId: number, cause: unknown): void => {
-      const replies = pendingReplies.get(clientId);
-      if (!replies) return;
-      for (const reply of replies.values()) reply.reject(cause);
-      pendingReplies.delete(clientId);
-    };
+      const rejectPendingReplies = (clientId: number, cause: unknown): void => {
+        const replies = pendingReplies.get(clientId);
+        if (!replies) return;
+        for (const reply of replies.values()) reply.reject(cause);
+        pendingReplies.delete(clientId);
+      };
 
-    const closeSession = (
-      key: string,
-      cause: unknown,
-      notifyDisconnect = true
-    ): void => {
-      const session = sessions.get(key);
-      if (!session) return;
+      const closeSession = (
+        key: string,
+        cause: unknown,
+        notifyDisconnect = true
+      ): void => {
+        const session = sessions.get(key);
+        if (!session) return;
 
-      sessions.delete(key);
-      if (activeSessions.get(session.webContentsId) === key) {
-        activeSessions.delete(session.webContentsId);
-      }
-      rejectPendingReplies(session.clientId, cause);
-      if (notifyDisconnect) disconnects.unsafeOffer(session.clientId);
-    };
+        sessions.delete(key);
+        if (activeSessions.get(session.webContentsId) === key) {
+          activeSessions.delete(session.webContentsId);
+        }
+        rejectPendingReplies(session.clientId, cause);
+        if (notifyDisconnect) disconnects.unsafeOffer(session.clientId);
+      };
 
-    const closeWebContentsSessions = (
-      webContentsId: number,
-      cause: unknown
-    ): void => {
-      for (const [key, session] of sessions) {
-        if (session.webContentsId === webContentsId) closeSession(key, cause);
-      }
-    };
+      const closeWebContentsSessions = (
+        webContentsId: number,
+        cause: unknown
+      ): void => {
+        for (const [key, session] of sessions) {
+          if (session.webContentsId === webContentsId) closeSession(key, cause);
+        }
+      };
 
-    const observeWebContents = (webContents: WebContents): void => {
-      if (observedWebContents.has(webContents.id)) return;
+      const observeWebContents = (webContents: WebContents): void => {
+        if (observedWebContents.has(webContents.id)) return;
 
-      const onNavigation = (
-        _event: Electron.Event,
-        _url: string,
-        isInPlace: boolean,
-        isMainFrame: boolean
-      ) => {
-        if (isMainFrame && !isInPlace) {
+        const onNavigation = (
+          _event: Electron.Event,
+          _url: string,
+          isInPlace: boolean,
+          isMainFrame: boolean
+        ) => {
+          if (isMainFrame && !isInPlace) {
+            closeWebContentsSessions(
+              webContents.id,
+              new Error('Electron renderer navigated')
+            );
+          }
+        };
+        const onDestroyed = () => {
+          observedWebContents.delete(webContents.id);
           closeWebContentsSessions(
             webContents.id,
-            new Error('Electron renderer navigated')
+            new Error('Electron renderer disconnected')
           );
-        }
-      };
-      const onDestroyed = () => {
-        observedWebContents.delete(webContents.id);
-        closeWebContentsSessions(
-          webContents.id,
-          new Error('Electron renderer disconnected')
-        );
-      };
-
-      webContents.on('did-start-navigation', onNavigation);
-      webContents.once('destroyed', onDestroyed);
-      observedWebContents.set(webContents.id, {
-        webContents,
-        onNavigation,
-        onDestroyed,
-      });
-    };
-
-    const getSession = (
-      webContents: WebContents,
-      sessionId: string
-    ): RpcSession => {
-      observeWebContents(webContents);
-
-      const key = `${webContents.id}:${sessionId}`;
-      const existing = sessions.get(key);
-      if (existing) return existing;
-
-      const previousKey = activeSessions.get(webContents.id);
-      if (previousKey) {
-        closeSession(previousKey, new Error('Electron renderer reloaded'));
-      }
-
-      const session = {
-        clientId: nextClientId++,
-        webContentsId: webContents.id,
-      };
-      sessions.set(key, session);
-      activeSessions.set(webContents.id, key);
-      return session;
-    };
-
-    const resolvePendingReply = (
-      clientId: number,
-      response: RpcMessage.FromServerEncoded
-    ): void => {
-      const replies = pendingReplies.get(clientId);
-      if (!replies) return;
-
-      if (response._tag === 'Exit') {
-        const reply = replies.get(response.requestId);
-        if (!reply) return;
-        replies.delete(response.requestId);
-        reply.resolve(response);
-      } else if (
-        response._tag === 'Defect' ||
-        response._tag === 'ClientProtocolError'
-      ) {
-        for (const reply of replies.values()) reply.resolve(response);
-        replies.clear();
-      } else {
-        const cause = new Error(
-          `Unsupported Electron RPC response: ${response._tag}`
-        );
-        for (const reply of replies.values()) reply.reject(cause);
-        replies.clear();
-      }
-
-      if (replies.size === 0) pendingReplies.delete(clientId);
-    };
-
-    const protocol = yield* RpcServer.Protocol.make((writeRequest) =>
-      Effect.gen(function* () {
-        yield* Effect.acquireRelease(
-          Effect.sync(() => {
-            ipcMain.handle(ELECTRON_RPC_CHANNEL, (event, value: unknown) => {
-              if (
-                BrowserWindow.fromWebContents(event.sender) === null ||
-                event.senderFrame !== event.sender.mainFrame ||
-                !isAllowedSenderUrl(event.senderFrame.url)
-              ) {
-                throw new Error('Unauthorized Electron RPC sender');
-              }
-
-              const { message, sessionId } = parseRequest(value);
-              const session = getSession(event.sender, sessionId);
-
-              if (message._tag !== 'Request') {
-                return runElectronEffect(
-                  writeRequest(session.clientId, message)
-                ).then(() => undefined);
-              }
-
-              return new Promise<RpcMessage.FromServerEncoded>(
-                (resolve, reject) => {
-                  const replies =
-                    pendingReplies.get(session.clientId) ?? new Map();
-                  if (replies.has(message.id)) {
-                    reject(new Error('Duplicate Electron RPC request ID'));
-                    return;
-                  }
-                  replies.set(message.id, { resolve, reject });
-                  pendingReplies.set(session.clientId, replies);
-
-                  void runElectronEffect(
-                    writeRequest(session.clientId, message)
-                  ).catch((cause) => {
-                    replies.delete(message.id);
-                    if (replies.size === 0) {
-                      pendingReplies.delete(session.clientId);
-                    }
-                    reject(cause);
-                  });
-                }
-              );
-            });
-          }),
-          () =>
-            Effect.sync(() => {
-              ipcMain.removeHandler(ELECTRON_RPC_CHANNEL);
-              for (const observed of observedWebContents.values()) {
-                observed.webContents.removeListener(
-                  'did-start-navigation',
-                  observed.onNavigation
-                );
-                observed.webContents.removeListener(
-                  'destroyed',
-                  observed.onDestroyed
-                );
-                closeWebContentsSessions(
-                  observed.webContents.id,
-                  new Error('Effect RPC server stopped')
-                );
-              }
-              observedWebContents.clear();
-            })
-        );
-
-        return {
-          disconnects,
-          send: (clientId: number, response: RpcMessage.FromServerEncoded) =>
-            Effect.sync(() => resolvePendingReply(clientId, response)),
-          end: (clientId: number) =>
-            Effect.sync(() => {
-              for (const [key, session] of sessions) {
-                if (session.clientId === clientId) {
-                  closeSession(
-                    key,
-                    new Error('Effect RPC client ended'),
-                    false
-                  );
-                  break;
-                }
-              }
-            }),
-          clientIds: Effect.sync(
-            () => new Set(Array.from(sessions.values(), (s) => s.clientId))
-          ),
-          initialMessage: Effect.succeed(Option.none()),
-          supportsAck: false,
-          supportsTransferables: false,
-          supportsSpanPropagation: false,
         };
-      })
-    );
 
-    return yield* RpcServer.make(ElectronRpcs).pipe(
-      Effect.provide(handlers),
-      Effect.provideService(RpcServer.Protocol, protocol)
-    );
-  })
-).pipe(
-  Effect.tapErrorCause((cause) =>
-    Effect.logError('Electron RPC server stopped with a failure', cause)
-  ),
-  Effect.ensuring(
-    Effect.sync(() => {
-      registered = false;
+        webContents.on('did-start-navigation', onNavigation);
+        webContents.once('destroyed', onDestroyed);
+        observedWebContents.set(webContents.id, {
+          webContents,
+          onNavigation,
+          onDestroyed,
+        });
+      };
+
+      const getSession = (
+        webContents: WebContents,
+        sessionId: string
+      ): RpcSession => {
+        observeWebContents(webContents);
+
+        const key = `${webContents.id}:${sessionId}`;
+        const existing = sessions.get(key);
+        if (existing) return existing;
+
+        const previousKey = activeSessions.get(webContents.id);
+        if (previousKey) {
+          closeSession(previousKey, new Error('Electron renderer reloaded'));
+        }
+
+        const session = {
+          clientId: nextClientId++,
+          webContentsId: webContents.id,
+        };
+        sessions.set(key, session);
+        activeSessions.set(webContents.id, key);
+        return session;
+      };
+
+      const resolvePendingReply = (
+        clientId: number,
+        response: RpcMessage.FromServerEncoded
+      ): void => {
+        const replies = pendingReplies.get(clientId);
+        if (!replies) return;
+
+        if (response._tag === 'Exit') {
+          const reply = replies.get(response.requestId);
+          if (!reply) return;
+          replies.delete(response.requestId);
+          reply.resolve(response);
+        } else if (
+          response._tag === 'Defect' ||
+          response._tag === 'ClientProtocolError'
+        ) {
+          for (const reply of replies.values()) reply.resolve(response);
+          replies.clear();
+        } else {
+          const cause = new Error(
+            `Unsupported Electron RPC response: ${response._tag}`
+          );
+          for (const reply of replies.values()) reply.reject(cause);
+          replies.clear();
+        }
+
+        if (replies.size === 0) pendingReplies.delete(clientId);
+      };
+
+      const protocol = yield* RpcServer.Protocol.make((writeRequest) =>
+        Effect.gen(function* () {
+          yield* Effect.acquireRelease(
+            Effect.sync(() => {
+              ipcMain.handle(ELECTRON_RPC_CHANNEL, (event, value: unknown) => {
+                if (
+                  BrowserWindow.fromWebContents(event.sender) === null ||
+                  event.senderFrame !== event.sender.mainFrame ||
+                  !isAllowedSenderUrl(event.senderFrame.url)
+                ) {
+                  throw new Error('Unauthorized Electron RPC sender');
+                }
+
+                const { message, sessionId } = parseRequest(value);
+                const session = getSession(event.sender, sessionId);
+
+                if (message._tag !== 'Request') {
+                  return runElectronEffect(
+                    writeRequest(session.clientId, message)
+                  ).then(() => undefined);
+                }
+
+                return new Promise<RpcMessage.FromServerEncoded>(
+                  (resolve, reject) => {
+                    const replies =
+                      pendingReplies.get(session.clientId) ?? new Map();
+                    if (replies.has(message.id)) {
+                      reject(new Error('Duplicate Electron RPC request ID'));
+                      return;
+                    }
+                    replies.set(message.id, { resolve, reject });
+                    pendingReplies.set(session.clientId, replies);
+
+                    void runElectronEffect(
+                      writeRequest(session.clientId, message)
+                    ).catch((cause) => {
+                      replies.delete(message.id);
+                      if (replies.size === 0) {
+                        pendingReplies.delete(session.clientId);
+                      }
+                      reject(cause);
+                    });
+                  }
+                );
+              });
+            }),
+            () =>
+              Effect.sync(() => {
+                ipcMain.removeHandler(ELECTRON_RPC_CHANNEL);
+                for (const observed of observedWebContents.values()) {
+                  observed.webContents.removeListener(
+                    'did-start-navigation',
+                    observed.onNavigation
+                  );
+                  observed.webContents.removeListener(
+                    'destroyed',
+                    observed.onDestroyed
+                  );
+                  closeWebContentsSessions(
+                    observed.webContents.id,
+                    new Error('Effect RPC server stopped')
+                  );
+                }
+                observedWebContents.clear();
+              })
+          );
+
+          return {
+            disconnects,
+            send: (clientId: number, response: RpcMessage.FromServerEncoded) =>
+              Effect.sync(() => resolvePendingReply(clientId, response)),
+            end: (clientId: number) =>
+              Effect.sync(() => {
+                for (const [key, session] of sessions) {
+                  if (session.clientId === clientId) {
+                    closeSession(
+                      key,
+                      new Error('Effect RPC client ended'),
+                      false
+                    );
+                    break;
+                  }
+                }
+              }),
+            clientIds: Effect.sync(
+              () => new Set(Array.from(sessions.values(), (s) => s.clientId))
+            ),
+            initialMessage: Effect.succeed(Option.none()),
+            supportsAck: false,
+            supportsTransferables: false,
+            supportsSpanPropagation: false,
+          };
+        })
+      );
+
+      return yield* RpcServer.make(ElectronRpcs).pipe(
+        Effect.provide(ElectronRpcs.toLayer(makeHandlers(router))),
+        Effect.provideService(RpcServer.Protocol, protocol)
+      );
     })
-  )
-);
+  ).pipe(
+    Effect.tapErrorCause((cause) =>
+      Effect.logError('Electron RPC server stopped with a failure', cause)
+    ),
+    Effect.ensuring(
+      Effect.sync(() => {
+        registered = false;
+      })
+    )
+  );
 
 export function registerElectronRpcHandlers(router: ElectronRouter): void {
   if (registered) return;
 
-  const nextProcedures = new Map<string, AnyElectronProcedure>();
+  const tags = new Set<string>();
   for (const procedure of router) {
-    if (nextProcedures.has(procedure.path)) {
-      throw new Error(`Duplicate Electron RPC procedure '${procedure.path}'`);
+    if (tags.has(procedure.rpc._tag)) {
+      throw new Error(
+        `Duplicate Electron RPC procedure '${procedure.rpc._tag}'`
+      );
     }
-    nextProcedures.set(procedure.path, procedure);
+    tags.add(procedure.rpc._tag);
   }
 
-  procedures = nextProcedures;
+  const missing = Array.from(ElectronRpcs.requests.keys()).filter(
+    (tag) => !tags.has(tag)
+  );
+  const unexpected = Array.from(tags).filter(
+    (tag) => !ElectronRpcs.requests.has(tag)
+  );
+  if (missing.length > 0 || unexpected.length > 0) {
+    throw new Error(
+      `Electron RPC handler mismatch: missing [${missing.join(', ')}], unexpected [${unexpected.join(', ')}]`
+    );
+  }
+
   registered = true;
-  forkElectronEffect(server);
+  forkElectronEffect(makeServer(router) as Effect.Effect<never, never>);
 }

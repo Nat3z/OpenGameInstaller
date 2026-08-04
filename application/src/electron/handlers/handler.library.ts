@@ -41,6 +41,7 @@ import {
 import { generateNotificationId } from '@/electron/handlers/helpers.app/notifications.js';
 import { isLinux } from '@/electron/handlers/helpers.app/platform.js';
 import { sendNotification } from '@/electron/main.js';
+import { ElectronRpc } from '@/lib/electron-rpc.js';
 
 /**
  * Determine if a game should use UMU mode
@@ -444,7 +445,7 @@ function executeWrapperCommandForAppSteam(
 
 export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
   const launchGame = ipcProcedure(
-    'app.launchGame',
+    ElectronRpc.app.launchGame,
     ipcBoundary((_, appid: string) =>
       Effect.gen(function* () {
         const result = yield* launchGameFromLibrary(Number(appid), mainWindow);
@@ -460,14 +461,14 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
   );
 
   const executeWrapperCommand = ipcProcedure(
-    'app.executeWrapperCommand',
+    ElectronRpc.app.executeWrapperCommand,
     ipcBoundary((_, appid: number, wrapperCommand: string) =>
       executeWrapperCommandForAppSteam(appid, wrapperCommand)
     )
   );
 
   const removeApp = ipcProcedure(
-    'app.removeApp',
+    ElectronRpc.app.removeApp,
     ipcBoundary((_, appid: number) =>
       Effect.gen(function* () {
         yield* Effect.try({
@@ -555,7 +556,7 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
   );
 
   const insertApp = ipcProcedure(
-    'app.insertApp',
+    ElectronRpc.app.insertApp,
     ipcBoundary(
       (
         _,
@@ -720,27 +721,35 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
   );
 
   const getAllApps = ipcProcedure(
-    'app.getAllApps',
+    ElectronRpc.app.getAllApps,
     ipcBoundary(() => Effect.succeed(getAllLibraryFiles()))
   );
 
   const updateAppVersion = ipcProcedure(
-    'app.updateAppVersion',
+    ElectronRpc.app.updateAppVersion,
     ipcBoundary(
       (
         _,
-        data: {
-          appID: number;
-          version: string;
-          cwd: string;
-          launchExecutable: string;
-          launchArguments?: string;
-          addonSource?: string;
-          umu?: LibraryInfo['umu'];
-          launchEnv?: LibraryInfo['launchEnv'];
-        }
-      ) =>
-        Effect.gen(function* () {
+        appID: number,
+        version: string,
+        cwd: string,
+        launchExecutable: string,
+        launchArguments?: string,
+        addonSource?: string,
+        umu?: LibraryInfo['umu'],
+        launchEnv?: LibraryInfo['launchEnv']
+      ) => {
+        const data = {
+          appID,
+          version,
+          cwd,
+          launchExecutable,
+          launchArguments,
+          addonSource,
+          umu,
+          launchEnv,
+        };
+        return Effect.gen(function* () {
           const existing = yield* Effect.sync(() =>
             loadLibraryInfo(data.appID)
           );
@@ -805,12 +814,13 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
 
           saveLibraryInfo(data.appID, appData);
           return 'success';
-        })
+        });
+      }
     )
   );
 
   const getLibraryInfo = ipcProcedure(
-    'app.getLibraryInfo',
+    ElectronRpc.app.getLibraryInfo,
     ipcBoundary((_, appID: number) => Effect.succeed(loadLibraryInfo(appID)))
   );
 

@@ -16,6 +16,7 @@ import { isLinux } from '@/electron/handlers/helpers.app/platform.js';
 import { sendIPCMessage } from '@/electron/main.js';
 import { ipcProcedure, router } from '@/electron/rpc/router-core.js';
 import { runEffectBoundary } from '@/electron/runtime.js';
+import { ElectronRpc } from '@/lib/electron-rpc.js';
 
 const installRedistributables = (
   mainWindow: BrowserWindow,
@@ -119,7 +120,7 @@ const installRedistributables = (
 export function registerRedistributableHandlers(mainWindow: BrowserWindow) {
   return router(
     ipcProcedure(
-      'app.installRedistributables',
+      ElectronRpc.app.installRedistributables,
       (_, appID: number, downloadId?: string) =>
         runEffectBoundary(
           installRedistributables(mainWindow, appID, downloadId).pipe(

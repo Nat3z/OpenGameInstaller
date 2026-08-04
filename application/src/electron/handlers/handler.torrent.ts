@@ -28,6 +28,7 @@ import {
   updateDownloadHandshake,
   waitForDownloadHandshake,
 } from '@/lib/download-handshake.js';
+import { ElectronRpc } from '@/lib/electron-rpc.js';
 
 function torrentError(message: string, cause?: unknown): TorrentError {
   if (cause instanceof TorrentError) return cause;
@@ -795,23 +796,25 @@ export default function handler(mainWindow: BrowserWindow) {
 
   return router(
     procedure(
-      'torrent.downloadTorrent',
-      (arg: { link: string; path: string }) =>
-        run(startDownload({ ...arg, type: 'torrent' }))
+      ElectronRpc.torrent.downloadTorrent,
+      (link: string, path: string) =>
+        run(startDownload({ link, path, type: 'torrent' }))
     ),
-    procedure('torrent.downloadMagnet', (arg: { link: string; path: string }) =>
-      run(startDownload({ ...arg, type: 'magnet' }))
+    procedure(
+      ElectronRpc.torrent.downloadMagnet,
+      (link: string, path: string) =>
+        run(startDownload({ link, path, type: 'magnet' }))
     ),
-    procedure('torrent.pauseDownload', (id: string) =>
+    procedure(ElectronRpc.torrent.pauseDownload, (id: string) =>
       run(downloads.get(id)?.pause() ?? Effect.void)
     ),
-    procedure('torrent.resumeDownload', (id: string) =>
+    procedure(ElectronRpc.torrent.resumeDownload, (id: string) =>
       run(downloads.get(id)?.resume() ?? Effect.void)
     ),
-    procedure('torrent.abortDownload', (id: string) =>
+    procedure(ElectronRpc.torrent.abortDownload, (id: string) =>
       run(downloads.get(id)?.cancel() ?? Effect.void)
     ),
-    procedure('downloadTorrentInto', (link: string) =>
+    procedure(ElectronRpc.downloadTorrentInto, (link: string) =>
       run(
         Effect.tryPromise({
           try: () =>
@@ -829,8 +832,9 @@ export default function handler(mainWindow: BrowserWindow) {
         }).pipe(Effect.map((response) => Buffer.from(response.data)))
       )
     ),
-    procedure('getTorrentHash', (item: string | Buffer | Uint8Array) =>
-      run(getTorrentInfoHash(item))
+    procedure(
+      ElectronRpc.getTorrentHash,
+      (item: string | Buffer | Uint8Array) => run(getTorrentInfoHash(item))
     )
   );
 }

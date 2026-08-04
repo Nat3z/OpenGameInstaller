@@ -172,6 +172,14 @@ export function retryFailedSetup(failedSetup: FailedSetup) {
         outputBaseDir: `${base}/${failedSetup.downloadInfo.name}`,
         downloadId: tempId,
       });
+      if (extractedDir === null) {
+        return yield* Effect.fail(
+          new FileSystemError({
+            message: 'RAR extraction did not return an output directory.',
+            path: `${base}/${filename}`,
+          })
+        );
+      }
       setupData.path = extractedDir;
       failedSetup.downloadInfo.downloadPath = extractedDir;
       failedSetup.should = 'call-addon';

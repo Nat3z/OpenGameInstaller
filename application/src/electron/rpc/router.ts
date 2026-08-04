@@ -12,6 +12,7 @@ import { registerUmuHandlers } from '@/electron/handlers/handler.umu.js';
 import { cancelQueuedDownload } from '@/electron/rpc/queue-cancel.js';
 import { mergeRouters, procedure, router } from '@/electron/rpc/router-core.js';
 import { registerDownloadHandshakeHandlers } from '@/lib/download-handshake.js';
+import { ElectronRpc } from '@/lib/electron-rpc.js';
 
 export function createElectronRouter(mainWindow: BrowserWindow) {
   return mergeRouters(
@@ -27,7 +28,7 @@ export function createElectronRouter(mainWindow: BrowserWindow) {
     registerPowerSaveHandlers(),
     registerDownloadHandshakeHandlers(),
     router(
-      procedure('queue.cancel', (downloadID: string) =>
+      procedure(ElectronRpc.queue.cancel, (downloadID: string) =>
         cancelQueuedDownload(downloadID)
       )
     )

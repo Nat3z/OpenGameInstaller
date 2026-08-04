@@ -10,6 +10,7 @@ import { sendNotification } from '@/electron/main.js';
 import { __dirname } from '@/electron/manager/manager.paths.js';
 import { procedure, router } from '@/electron/rpc/router-core.js';
 import { runEffectBoundary } from '@/electron/runtime.js';
+import { ElectronRpc } from '@/lib/electron-rpc.js';
 
 const CONFIG_PATH = join(__dirname, 'config/option/realdebrid.json');
 const ConfigSchema = Schema.Struct({
@@ -109,7 +110,7 @@ const run = <A, E>(effect: Effect.Effect<A, E>, message: string) =>
 
 export default function handler(_mainWindow: Electron.BrowserWindow) {
   return router(
-    procedure('alldebrid.setKey', (key: string) =>
+    procedure(ElectronRpc.alldebrid.setKey, (key: string) =>
       run(
         Effect.sync(() => {
           allDebridClient = new AllDebrid({ apiKey: key });
@@ -118,7 +119,7 @@ export default function handler(_mainWindow: Electron.BrowserWindow) {
         'Failed to set AllDebrid key'
       )
     ),
-    procedure('alldebrid.updateKey', () =>
+    procedure(ElectronRpc.alldebrid.updateKey, () =>
       run(
         readKey().pipe(
           Effect.map((key) => {
@@ -130,43 +131,43 @@ export default function handler(_mainWindow: Electron.BrowserWindow) {
         'Failed to update AllDebrid key'
       )
     ),
-    procedure('alldebrid.getUserInfo', () =>
+    procedure(ElectronRpc.alldebrid.getUserInfo, () =>
       run(allDebridClient.getUserInfo(), 'Failed to fetch AllDebrid user info')
     ),
-    procedure('alldebrid.getHosts', () =>
+    procedure(ElectronRpc.alldebrid.getHosts, () =>
       run(allDebridClient.getHosts(), 'Failed to fetch AllDebrid hosts')
     ),
-    procedure('alldebrid.addMagnet', (arg: { url: string; host?: string }) =>
+    procedure(ElectronRpc.alldebrid.addMagnet, (url: string, host?: string) =>
       run(
-        allDebridClient.addMagnet(arg.url, arg.host),
+        allDebridClient.addMagnet(url, host),
         'Failed to add magnet to AllDebrid'
       )
     ),
-    procedure('alldebrid.isTorrentReady', (id: string) =>
+    procedure(ElectronRpc.alldebrid.isTorrentReady, (id: string) =>
       run(
         allDebridClient.isTorrentReady(id),
         'Failed to check AllDebrid torrent status'
       )
     ),
-    procedure('alldebrid.getTorrentInfo', (id: string) =>
+    procedure(ElectronRpc.alldebrid.getTorrentInfo, (id: string) =>
       run(
         allDebridClient.getMagnetFiles(id),
         'Failed to fetch AllDebrid torrent info'
       )
     ),
-    procedure('alldebrid.unrestrictLink', (link: string) =>
+    procedure(ElectronRpc.alldebrid.unrestrictLink, (link: string) =>
       run(
         allDebridClient.unrestrictLink(link),
         'Failed to unrestrict AllDebrid link'
       )
     ),
-    procedure('alldebrid.selectTorrent', () =>
+    procedure(ElectronRpc.alldebrid.selectTorrent, () =>
       runEffectBoundary(Effect.succeed(true))
     ),
-    procedure('alldebrid.addTorrent', (arg: { torrent: string }) => {
+    procedure(ElectronRpc.alldebrid.addTorrent, (torrent: string) => {
       const tempPath = join(__dirname, `temp-alldebrid-${Date.now()}.torrent`);
       const operation = Effect.gen(function* () {
-        yield* downloadTorrent(arg.torrent, tempPath);
+        yield* downloadTorrent(torrent, tempPath);
         const stream = fs.createReadStream(tempPath) as ReadStream;
         return yield* allDebridClient
           .addTorrent(stream)

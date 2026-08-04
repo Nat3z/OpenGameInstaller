@@ -36,6 +36,7 @@ import {
   runEffectBoundary as runUmuBoundary,
 } from '@/electron/runtime.js';
 import { downloadLatestUmu } from '@/electron/startup.js';
+import { ElectronRpc } from '@/lib/electron-rpc.js';
 
 /**
  * Get the UMU prefix base directory
@@ -1150,13 +1151,13 @@ const withUmuBoundary = <A>(
 /** Define UMU procedures. */
 export function registerUmuHandlers() {
   return router(
-    procedure('app.checkUmuInstalled', () =>
+    procedure(ElectronRpc.app.checkUmuInstalled, () =>
       runUmuBoundary(withUmuBoundary(isUmuInstalled))
     ),
-    procedure('app.installUmu', () =>
+    procedure(ElectronRpc.app.installUmu, () =>
       runUmuBoundary(withUmuBoundary(installUmu))
     ),
-    procedure('app.launchWithUmu', (appID: number) =>
+    procedure(ElectronRpc.app.launchWithUmu, (appID: number) =>
       runUmuBoundary(
         Effect.gen(function* () {
           const libraryInfo = loadLibraryInfo(appID);
@@ -1172,13 +1173,15 @@ export function registerUmuHandlers() {
         })
       )
     ),
-    ipcProcedure('app.installRedistributablesUmu', (_, appID: number) =>
-      runUmuBoundary(
-        withUmuBoundary(() => installRedistributablesWithUmu(appID))
-      )
+    ipcProcedure(
+      ElectronRpc.app.installRedistributablesUmu,
+      (_, appID: number) =>
+        runUmuBoundary(
+          withUmuBoundary(() => installRedistributablesWithUmu(appID))
+        )
     ),
     ipcProcedure(
-      'app.migrateToUmu',
+      ElectronRpc.app.migrateToUmu,
       (_, appID: number, oldSteamAppId?: number) =>
         runUmuBoundary(
           withUmuBoundary(() => migrateToUmu(appID, oldSteamAppId))

@@ -11,13 +11,14 @@ import {
 } from '@ogi/errors';
 import axios, { type AxiosRequestConfig } from 'axios';
 import { Effect } from 'effect';
-import { app, ipcMain } from 'electron';
+import { app } from 'electron';
 import { registerLibraryHandlers } from '@/electron/handlers/handler.library.js';
 import { registerRedistributableHandlers } from '@/electron/handlers/handler.redists.js';
 import { registerSteamHandlers } from '@/electron/handlers/handler.steam.js';
 import { getEffectiveOnlineState } from '@/electron/lib/online.js';
 import { currentScreens, screenInputCallbacks } from '@/electron/main.js';
 import { __dirname, isDev } from '@/electron/manager/manager.paths.js';
+import { electronIpcMain } from '@/electron/rpc/handlers.js';
 import { runEffectBoundary as runBoundary } from '@/electron/runtime.js';
 import { addonServer } from '@/electron/server/addon-server.js';
 import { getCurrentUsername } from './helpers.app/platform.js';
@@ -133,18 +134,18 @@ const axiosRequest = (
   });
 
 export default function handler(mainWindow: Electron.BrowserWindow): void {
-  ipcMain.handle('app:close', () => mainWindow?.close());
-  ipcMain.handle('app:hide-window', () => mainWindow?.hide());
-  ipcMain.handle('app:show-window', () => {
+  electronIpcMain.handle('app:close', () => mainWindow?.close());
+  electronIpcMain.handle('app:hide-window', () => mainWindow?.hide());
+  electronIpcMain.handle('app:show-window', () => {
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.show();
       mainWindow.focus();
     }
   });
-  ipcMain.handle('app:minimize', () => mainWindow?.minimize());
-  ipcMain.handle('app:quit', () => app.quit());
+  electronIpcMain.handle('app:minimize', () => mainWindow?.minimize());
+  electronIpcMain.handle('app:quit', () => app.quit());
 
-  ipcMain.handle('app:axios', (_, options: AxiosRequestConfig) =>
+  electronIpcMain.handle('app:axios', (_, options: AxiosRequestConfig) =>
     runBoundary(
       axiosRequest(options).pipe(
         Effect.catchAll((error) =>
@@ -157,7 +158,7 @@ export default function handler(mainWindow: Electron.BrowserWindow): void {
       )
     )
   );
-  ipcMain.handle('app:is-steam-deck', () =>
+  electronIpcMain.handle('app:is-steam-deck', () =>
     runBoundary(
       Effect.try({
         try: () =>
@@ -171,7 +172,7 @@ export default function handler(mainWindow: Electron.BrowserWindow): void {
       })
     )
   );
-  ipcMain.handle('app:screen-input', (_, data) =>
+  electronIpcMain.handle('app:screen-input', (_, data) =>
     runBoundary(
       Effect.sync(() => {
         currentScreens.set(data.id, data.data);
@@ -180,16 +181,16 @@ export default function handler(mainWindow: Electron.BrowserWindow): void {
       })
     )
   );
-  ipcMain.handle('app:is-online', () =>
+  electronIpcMain.handle('app:is-online', () =>
     runBoundary(Effect.sync(() => getEffectiveOnlineState().effectiveOnline))
   );
 
-  ipcMain.handle('app:get-addon-path', (_, addonID: string) =>
+  electronIpcMain.handle('app:get-addon-path', (_, addonID: string) =>
     runBoundary(
       Effect.sync(() => addonServer.getClient(addonID)?.filePath ?? null)
     )
   );
-  ipcMain.handle('app:get-addon-icon', (_, addonID: string) =>
+  electronIpcMain.handle('app:get-addon-icon', (_, addonID: string) =>
     runBoundary(
       Effect.try({
         try: () => {
@@ -208,7 +209,7 @@ export default function handler(mainWindow: Electron.BrowserWindow): void {
     )
   );
 
-  ipcMain.handle('app:get-local-image', (_, requestPath: string) =>
+  electronIpcMain.handle('app:get-local-image', (_, requestPath: string) =>
     runBoundary(
       Effect.gen(function* () {
         if (!fs.existsSync(requestPath)) return null;
@@ -270,7 +271,9 @@ export default function handler(mainWindow: Electron.BrowserWindow): void {
     )
   );
 
-  ipcMain.handle('app:add-to-desktop', () => runBoundary(addToDesktop()));
+  electronIpcMain.handle('app:add-to-desktop', () =>
+    runBoundary(addToDesktop())
+  );
   registerSteamHandlers(mainWindow);
   registerLibraryHandlers(mainWindow);
   registerRedistributableHandlers(mainWindow);

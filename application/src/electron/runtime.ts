@@ -37,10 +37,18 @@ export const runSyncBoundary = <A, E>(
   );
 
 export const disposeElectronRuntime = async (): Promise<void> => {
-  await Promise.all(
-    Array.from(backgroundFibers, (fiber) =>
-      electronRuntime.runPromise(Fiber.interrupt(fiber))
-    )
-  );
-  await electronRuntime.dispose();
+  try {
+    await Promise.allSettled(
+      Array.from(backgroundFibers, (fiber) =>
+        electronRuntime.runPromise(
+          Fiber.interrupt(fiber).pipe(
+            Effect.timeout('5 seconds'),
+            Effect.ignore
+          )
+        )
+      )
+    );
+  } finally {
+    await electronRuntime.dispose();
+  }
 };

@@ -24,8 +24,28 @@ export const OperatingSystem = Schema.Literal(
 
 export type OperatingSystem = typeof OperatingSystem.Type;
 
+export class ElectronRpcError extends Schema.TaggedError<ElectronRpcError>()(
+  'ElectronRpcError',
+  {
+    channel: Schema.String,
+    message: Schema.String,
+  }
+) {}
+
 export const GetOperatingSystem = Rpc.make('GetOperatingSystem', {
   success: OperatingSystem,
 });
 
-export const ElectronRpcs = RpcGroup.make(GetOperatingSystem);
+export const InvokeElectronHandler = Rpc.make('InvokeElectronHandler', {
+  payload: {
+    channel: Schema.String,
+    args: Schema.Array(Schema.Unknown),
+  },
+  success: Schema.Unknown,
+  error: ElectronRpcError,
+});
+
+export const ElectronRpcs = RpcGroup.make(
+  GetOperatingSystem,
+  InvokeElectronHandler
+);

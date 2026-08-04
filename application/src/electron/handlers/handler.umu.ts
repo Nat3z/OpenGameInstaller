@@ -1,3 +1,4 @@
+import { electronIpcMain } from '@/electron/rpc/handlers.js';
 /**
  * UMU (Unified Launcher for Windows Games on Linux) IPC handlers
  * Replaces the legacy Steam/flatpak wine system with UMU Launcher
@@ -7,7 +8,6 @@ import { formatError, PlatformError } from '@ogi/errors';
 import type { LibraryInfo } from '@ogi-sdk/connect';
 import { spawn } from 'child_process';
 import { Effect } from 'effect';
-import { ipcMain } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
 import { getSilentInstallFlags } from '@/electron/handlers/helpers.app/install-flags.js';
@@ -1150,17 +1150,17 @@ const withUmuBoundary = <A>(
 /** Register UMU IPC boundaries. */
 export function registerUmuHandlers(): void {
   // Check if UMU is installed
-  ipcMain.handle('app:check-umu-installed', () =>
+  electronIpcMain.handle('app:check-umu-installed', () =>
     runUmuBoundary(withUmuBoundary(isUmuInstalled))
   );
 
   // Install UMU
-  ipcMain.handle('app:install-umu', () =>
+  electronIpcMain.handle('app:install-umu', () =>
     runUmuBoundary(withUmuBoundary(installUmu))
   );
 
   // Launch game with UMU
-  ipcMain.handle('app:launch-with-umu', (_, appID: number) =>
+  electronIpcMain.handle('app:launch-with-umu', (_, appID: number) =>
     runUmuBoundary(
       Effect.gen(function* () {
         const libraryInfo = loadLibraryInfo(appID);
@@ -1178,12 +1178,16 @@ export function registerUmuHandlers(): void {
   );
 
   // Install redistributables with UMU
-  ipcMain.handle('app:install-redistributables-umu', (_, appID: number) =>
-    runUmuBoundary(withUmuBoundary(() => installRedistributablesWithUmu(appID)))
+  electronIpcMain.handle(
+    'app:install-redistributables-umu',
+    (_, appID: number) =>
+      runUmuBoundary(
+        withUmuBoundary(() => installRedistributablesWithUmu(appID))
+      )
   );
 
   // Migrate game to UMU
-  ipcMain.handle(
+  electronIpcMain.handle(
     'app:migrate-to-umu',
     (_, appID: number, oldSteamAppId?: number) =>
       runUmuBoundary(withUmuBoundary(() => migrateToUmu(appID, oldSteamAppId)))

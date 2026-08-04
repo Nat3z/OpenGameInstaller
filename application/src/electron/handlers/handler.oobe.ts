@@ -10,13 +10,13 @@ import {
 } from '@ogi/errors';
 import axios from 'axios';
 import { Effect } from 'effect';
-import { ipcMain } from 'electron';
 import {
   getSteamGridDbConfigPath,
   writeSteamGridDbKey,
 } from '@/electron/lib/steam-grid-db.js';
 import { sendIPCMessage, sendNotification } from '@/electron/main.js';
 import { __dirname } from '@/electron/manager/manager.paths.js';
+import { electronIpcMain } from '@/electron/rpc/handlers.js';
 import { runEffectBoundary } from '@/electron/runtime.js';
 import { IS_NIXOS } from '@/electron/startup.js';
 
@@ -198,10 +198,10 @@ const downloadTools = (): Effect.Effect<readonly [boolean, boolean]> =>
   });
 
 export default function OOBEHandler(): void {
-  ipcMain.handle('oobe:download-tools', () =>
+  electronIpcMain.handle('oobe:download-tools', () =>
     runEffectBoundary(downloadTools())
   );
-  ipcMain.handle('oobe:set-steamgriddb-key', (_, key: string) =>
+  electronIpcMain.handle('oobe:set-steamgriddb-key', (_, key: string) =>
     runEffectBoundary(
       Effect.try({
         try: () => writeSteamGridDbKey(key),

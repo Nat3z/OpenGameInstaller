@@ -7,6 +7,7 @@ import { dialog, ipcMain, shell } from 'electron';
 import { extraction } from 'ogi-addon';
 import { sendIPCMessage } from '@/electron/main.js';
 import { __dirname } from '@/electron/manager/manager.paths.js';
+import { electronIpcMain } from '@/electron/rpc/handlers.js';
 import {
   runEffectBoundary as runBoundary,
   runSyncBoundary,
@@ -137,7 +138,7 @@ export default function handler(): void {
     );
   });
 
-  ipcMain.handle('fs:dialog:show-open-dialog', (_, options) =>
+  electronIpcMain.handle('fs:dialog:show-open-dialog', (_, options) =>
     runBoundary(
       Effect.tryPromise({
         try: () => dialog.showOpenDialog(options),
@@ -147,7 +148,7 @@ export default function handler(): void {
     )
   );
 
-  ipcMain.handle('fs:dialog:show-save-dialog', (_, options) =>
+  electronIpcMain.handle('fs:dialog:show-save-dialog', (_, options) =>
     runBoundary(
       Effect.tryPromise({
         try: () => dialog.showSaveDialog(options),
@@ -157,12 +158,12 @@ export default function handler(): void {
     )
   );
 
-  ipcMain.handle('fs:get-files-in-dir', (_, arg: string) => {
+  electronIpcMain.handle('fs:get-files-in-dir', (_, arg: string) => {
     const path = resolvePath(String(arg));
     return runBoundary(fsTry(path, () => fs.readdirSync(path)));
   });
 
-  ipcMain.handle('fs:delete', (_, arg: string) => {
+  electronIpcMain.handle('fs:delete', (_, arg: string) => {
     const path = resolvePath(String(arg));
     return runBoundary(
       fsTryPromise(path, () =>
@@ -171,7 +172,7 @@ export default function handler(): void {
     );
   });
 
-  ipcMain.handle(
+  electronIpcMain.handle(
     'fs:move',
     (_, arg: { source: string; destination: string }) => {
       const source = resolvePath(arg.source);
@@ -194,7 +195,7 @@ export default function handler(): void {
     );
   });
 
-  ipcMain.handle('fs:extract-rar', (_, arg) =>
+  electronIpcMain.handle('fs:extract-rar', (_, arg) =>
     runBoundary(extractArchive(arg))
   );
 
@@ -215,7 +216,7 @@ export default function handler(): void {
     );
   });
 
-  ipcMain.handle('fs:extract-zip', (_, arg) =>
+  electronIpcMain.handle('fs:extract-zip', (_, arg) =>
     runBoundary(extractArchive(arg))
   );
 }

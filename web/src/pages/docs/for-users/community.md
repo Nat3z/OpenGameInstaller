@@ -11,16 +11,14 @@ Adding your addon to the Community Addons list is the best way to get your addon
 
 # Steps
 
-1. Go and [fork](https://github.com/Nat3z/OpenGameInstaller/fork) our GitHub repository.
-1. Navigate to `web/community` and copy the **template.md** file.
-1. Fill out the details for your addon and provide a **BRIEF** description of your addon.
-1. Now, go to the [Pull Request](https://github.com/Nat3z/OpenGameInstaller/compare) composer and attach your fork of the repository.
-1. Title the PR with: `[submission] {addon title}` and provide a description as to what your addon does.
-1. Once everything is verified, the addon is merged to the main repository.
+1. Open the official marketplace's [addon submission form](https://github.com/OpenGameInstaller/marketplace/issues/new?template=addon-create.yml).
+1. Fill in your addon's name, author, public repository URL, image URL, and a brief description.
+1. Optionally choose a target commit, tag, or branch. If omitted, the marketplace uses the latest tag.
+1. Submit the issue and wait for maintainer review.
+1. Once approved, the marketplace publishes the addon and it appears in the Community Addons list.
 
 # Guidelines
 
-- No explicit images.
-- No links to other sites in description.
-- No modifying other addons.
-- You **must own** the addon in order to add it to the community listing.
+- Use a public Git repository and a publicly accessible addon image.
+- Keep the marketplace description brief.
+- You **must own or maintain** the addon in order to add it to the community listing.

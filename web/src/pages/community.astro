@@ -1,12 +1,22 @@
 ---
 import Header from '../components/Header.astro';
 import Layout from '../layouts/Layout.astro';
+import {
+  COMMUNITY_MARKETPLACE_URL,
+  getCommunityAddons,
+  getCommunityAddonUrl,
+} from '../lib/community-addons';
 
-let addons = await Astro.glob(`../../community/*.{md,mdx}`);
-addons = addons.filter((addon) => addon.frontmatter.name !== 'YOUR ADDON NAME');
-addons = addons.sort((a, b) =>
-  a.frontmatter.name.localeCompare(b.frontmatter.name)
-);
+let marketplaceLoadFailed = false;
+const addons = await getCommunityAddons()
+  .then((loadedAddons) =>
+    loadedAddons.sort((a, b) => a.name.localeCompare(b.name))
+  )
+  .catch((error: unknown) => {
+    marketplaceLoadFailed = true;
+    console.error('Failed to load community marketplace:', error);
+    return [];
+  });
 ---
 
 <Layout
@@ -20,7 +30,8 @@ addons = addons.sort((a, b) =>
     <div class="mx-auto max-w-7xl w-full px-4 lg:px-8 flex flex-col gap-6 items-center">
       <div class="w-full text-center flex flex-col gap-2">
         <h1 class="text-3xl lg:text-5xl font-archivo font-bold text-slate-800">Community Addons</h1>
-        <p class="text-slate-600 lg:text-lg">Community addons are not affiliated with OpenGameInstaller. This is a community listing and anyone can add to this list.</p>
+        <p class="text-slate-600 lg:text-lg">Community addons are not affiliated with OpenGameInstaller. Listings are provided by the official community marketplace.</p>
+        <a href={COMMUNITY_MARKETPLACE_URL} class="text-sm font-mono text-slate-600 underline underline-offset-2 hover:text-accent transition-colors">{COMMUNITY_MARKETPLACE_URL}</a>
         <a href="/docs/for-users/community" class="text-accent-dark underline underline-offset-2 hover:text-accent transition-colors">Learn how to add your addon to this list</a>
       </div>
 
@@ -28,21 +39,36 @@ addons = addons.sort((a, b) =>
         <input id="addon-search" type="search" placeholder="Search addons by name, author, or description" class="w-full px-4 py-2 rounded-lg ring-1 ring-accent-light focus:ring-accent outline-none bg-white/80" />
       </div>
 
+      {marketplaceLoadFailed && (
+        <div class="w-full rounded-xl p-4 bg-white/80 ring-1 ring-accent-light text-slate-700">
+          The community marketplace could not be loaded. Please try again later.
+        </div>
+      )}
+
+      {!marketplaceLoadFailed && addons.length === 0 && (
+        <div class="w-full rounded-xl p-4 bg-white/80 ring-1 ring-accent-light text-slate-700">
+          No community addons are currently listed.
+        </div>
+      )}
+
       <div id="addons-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 w-full">
         {addons.map((addon) => (
-          <div class="flex flex-col gap-3 rounded-xl p-4 bg-white/80 ring-1 ring-accent-light shadow-sm hover:shadow-md transition" data-name={addon.frontmatter.name} data-author={addon.frontmatter.author}>
+          <div class="flex flex-col gap-3 rounded-xl p-4 bg-white/80 ring-1 ring-accent-light shadow-sm hover:shadow-md transition" data-name={addon.name} data-author={addon.author}>
             <div class="flex items-center gap-3">
-              <img src={addon.frontmatter.img} alt={addon.frontmatter.name} class="w-14 h-14 rounded-lg object-cover" />
+              <img src={addon.img} alt={`${addon.name} icon`} class="w-14 h-14 rounded-lg object-cover" />
               <div class="flex flex-col">
-                <h2 class="text-xl font-bold text-slate-800">{addon.frontmatter.name}</h2>
-                <p class="text-slate-500 text-sm">by {addon.frontmatter.author}</p>
+                <h2 class="text-xl font-bold text-slate-800">{addon.name}</h2>
+                <p class="text-slate-500 text-sm">by {addon.author}</p>
               </div>
             </div>
-            <div class="flex items-center gap-2">
-              <button type="button" class="text-xs px-2 py-1 rounded-md ring-1 ring-accent-light bg-accent-lighter text-slate-700 hover:bg-accent-light transition" data-source>{addon.frontmatter.source}</button>
-              <a href={addon.frontmatter.source} target="_blank" rel="noreferrer" class="text-xs px-2 py-1 rounded-md ring-1 ring-accent-light hover:bg-accent-lighter transition text-slate-700">Open</a>
+            <div class="flex flex-col gap-2">
+              <code class="text-xs break-all text-slate-600">{getCommunityAddonUrl(addon)}</code>
+              <div class="flex items-center gap-2">
+                <button type="button" class="text-xs px-2 py-1 rounded-md ring-1 ring-accent-light bg-accent-lighter text-slate-700 hover:bg-accent-light transition" data-source={getCommunityAddonUrl(addon)}>Copy install URL</button>
+                <a href={addon.source} target="_blank" rel="noreferrer" class="text-xs px-2 py-1 rounded-md ring-1 ring-accent-light hover:bg-accent-lighter transition text-slate-700">Open repository</a>
+              </div>
             </div>
-            <div class="prose prose-slate max-w-none" set:html={addon.compiledContent()}></div>
+            <p class="text-slate-700">{addon.description}</p>
           </div>
         ))}
       </div>
@@ -51,21 +77,26 @@ addons = addons.sort((a, b) =>
 
 </Layout>
 <script>
-  function copyToClipboard(text: string, target: HTMLElement) {
+  async function copyToClipboard(text: string, target: HTMLElement) {
+    const originalText = target.textContent;
+    if (navigator.clipboard) {
+      await navigator.clipboard.writeText(text);
+    } else {
     const dummy = document.createElement("textarea");
     document.body.appendChild(dummy);
     dummy.value = text;
     dummy.select();
     document.execCommand("copy");
     document.body.removeChild(dummy);
+    }
 
-    target.insertAdjacentHTML('beforeend', ` <img src="/check-icon.svg" class="w-4 h-4 inline ml-1" />`);
-    setTimeout(() => { target.textContent = text; }, 1500);
+    target.textContent = 'Copied';
+    setTimeout(() => { target.textContent = originalText; }, 1500);
   }
 
   document.addEventListener("click", (e) => {
-    if (e.target instanceof HTMLElement && e.target.getAttribute("data-source") !== null) {
-      copyToClipboard(e.target.textContent!!, e.target);
+    if (e.target instanceof HTMLElement && e.target.dataset.source) {
+      void copyToClipboard(e.target.dataset.source, e.target);
     }
   });
 

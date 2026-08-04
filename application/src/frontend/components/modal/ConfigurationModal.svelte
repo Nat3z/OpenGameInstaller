@@ -3,6 +3,7 @@ import type {
   ConfigurationFile,
   ConfigurationOptionWire,
 } from '@ogi-sdk/connect';
+import { Effect } from 'effect';
 import {
   isActionOption,
   isBooleanOption,
@@ -16,6 +17,7 @@ import HeaderModal from '@/frontend/components/modal/HeaderModal.svelte';
 import InputModal from '@/frontend/components/modal/InputModal.svelte';
 import Modal from '@/frontend/components/modal/Modal.svelte';
 import TitleModal from '@/frontend/components/modal/TitleModal.svelte';
+import { electronRpc } from '@/frontend/lib/electron-rpc';
 
 type PendingInputScreen = {
   config: ConfigurationFile;
@@ -147,7 +149,7 @@ async function handleSubmit(actionKey?: string) {
     if (activeScreen.reply) {
       await activeScreen.reply(data);
     } else {
-      await window.electronAPI.app.inputSend(activeScreen.id, data);
+      await Effect.runPromise(electronRpc.app.inputSend(activeScreen.id, data));
     }
     closeModal();
   } catch (error) {

@@ -1,6 +1,7 @@
 <script lang="ts">
 import { Effect } from 'effect';
 import { onDestroy, onMount } from 'svelte';
+import { electronRpc } from '@/frontend/lib/electron-rpc';
 import {
   gameFocused,
   launchGameTrigger,
@@ -45,7 +46,9 @@ onMount(async () => {
 
   try {
     // Load library info
-    const libraryInfo = await window.electronAPI.app.getLibraryInfo(gameId);
+    const libraryInfo = await Effect.runPromise(
+      electronRpc.app.getLibraryInfo(gameId)
+    );
 
     if (!libraryInfo) {
       status = 'error';
@@ -72,7 +75,7 @@ onMount(async () => {
         const t = setTimeout(() => {
           if (isMounted) {
             onComplete();
-            window.electronAPI.app.quit();
+            Effect.runPromise(electronRpc.app.quit());
           }
         }, 2000);
         timeouts.push(t);
@@ -87,7 +90,7 @@ onMount(async () => {
         onError(errorMessage);
 
         const t = setTimeout(() => {
-          if (isMounted) window.electronAPI.app.quit();
+          if (isMounted) Effect.runPromise(electronRpc.app.quit());
         }, 5000);
         timeouts.push(t);
       }
@@ -106,22 +109,21 @@ onMount(async () => {
           error instanceof Error ? error.message : 'Pre-launch failed';
         onError(errorMessage);
         const t = setTimeout(() => {
-          if (isMounted) window.electronAPI.app.quit();
+          if (isMounted) Effect.runPromise(electronRpc.app.quit());
         }, 5000);
         timeouts.push(t);
         return;
       }
 
       let wrapperError: string | null = null;
-      await window.electronAPI.app.hideWindow();
-      const wrapperResult = await window.electronAPI.app.executeWrapperCommand(
-        gameId,
-        wrapperCommand
+      await Effect.runPromise(electronRpc.app.hideWindow());
+      const wrapperResult = await Effect.runPromise(
+        electronRpc.app.executeWrapperCommand(gameId, wrapperCommand)
       );
       if (!wrapperResult.success) {
         wrapperError = wrapperResult.error || 'Wrapped command failed';
       }
-      await window.electronAPI.app.showWindow();
+      await Effect.runPromise(electronRpc.app.showWindow());
 
       let postLaunchError: string | null = null;
       try {
@@ -140,7 +142,7 @@ onMount(async () => {
             : (wrapperError ?? postLaunchError ?? 'Wrapped launch failed');
         onError(errorMessage);
         const t2 = setTimeout(() => {
-          if (isMounted) window.electronAPI.app.quit();
+          if (isMounted) Effect.runPromise(electronRpc.app.quit());
         }, 5000);
         timeouts.push(t2);
         return;
@@ -150,7 +152,7 @@ onMount(async () => {
       const t3 = setTimeout(() => {
         if (isMounted) {
           onComplete();
-          window.electronAPI.app.quit();
+          Effect.runPromise(electronRpc.app.quit());
         }
       }, 2000);
       timeouts.push(t3);

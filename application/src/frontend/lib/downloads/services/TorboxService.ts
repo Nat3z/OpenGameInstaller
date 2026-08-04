@@ -5,6 +5,7 @@ import { getDownloadPath } from '@/frontend/lib/core/fs';
 import { finalizeDownloadCard } from '@/frontend/lib/downloads/events';
 import { safeDownloadPath } from '@/frontend/lib/downloads/paths';
 import { BaseService } from '@/frontend/lib/downloads/services/BaseService';
+import { electronRpc } from '@/frontend/lib/electron-rpc';
 import type { SearchResultWithAddon } from '@/frontend/lib/tasks/runner';
 import { currentDownloads } from '@/frontend/store.svelte';
 
@@ -69,18 +70,22 @@ export class TorboxService extends BaseService {
       let torrentHash = '';
       if (result.downloadType === 'torrent') {
         const torrentData = yield* torboxPromise(
-          () => window.electronAPI.downloadTorrentInto(result.downloadURL!),
+          () =>
+            Effect.runPromise(
+              electronRpc.downloadTorrentInto(result.downloadURL!)
+            ),
           'Failed to load torrent data'
         );
         formData.append('file', new Blob([torrentData.buffer as ArrayBuffer]));
         torrentHash = yield* torboxPromise(
-          () => window.electronAPI.getTorrentHash(torrentData),
+          () => Effect.runPromise(electronRpc.getTorrentHash(torrentData)),
           'Failed to hash torrent'
         );
       } else {
         formData.append('magnet', result.downloadURL!);
         torrentHash = yield* torboxPromise(
-          () => window.electronAPI.getTorrentHash(result.downloadURL!),
+          () =>
+            Effect.runPromise(electronRpc.getTorrentHash(result.downloadURL!)),
           'Failed to hash magnet'
         );
       }
@@ -90,22 +95,24 @@ export class TorboxService extends BaseService {
 
       const response = yield* torboxPromise(
         () =>
-          window.electronAPI.app.axios<{
-            success: boolean;
-            error: string | null;
-            detail: string;
-            data:
-              | { hash: string; queued_id?: number; torrent_id?: number }
-              | { cooldown_until: number };
-          }>({
-            url: `${BASE_URL}/api/torrents/createtorrent`,
-            method: 'post',
-            data: Object.fromEntries(formData.entries()),
-            headers: {
-              'Content-Type': 'multipart/form-data',
-              Authorization: `Bearer ${torboxApiKey}`,
-            },
-          }),
+          Effect.runPromise(
+            electronRpc.app.axios<{
+              success: boolean;
+              error: string | null;
+              detail: string;
+              data:
+                | { hash: string; queued_id?: number; torrent_id?: number }
+                | { cooldown_until: number };
+            }>({
+              url: `${BASE_URL}/api/torrents/createtorrent`,
+              method: 'post',
+              data: Object.fromEntries(formData.entries()),
+              headers: {
+                'Content-Type': 'multipart/form-data',
+                Authorization: `Bearer ${torboxApiKey}`,
+              },
+            })
+          ),
         'Failed to create TorBox torrent'
       );
       if (response.status !== 200) {
@@ -149,12 +156,14 @@ export class TorboxService extends BaseService {
       if (queued_id) {
         const startResponse = yield* torboxPromise(
           () =>
-            window.electronAPI.app.axios({
-              url: `${BASE_URL}/api/queued/controlqueued`,
-              method: 'post',
-              data: { queued_id, operation: 'start', all: false },
-              headers: { Authorization: `Bearer ${torboxApiKey}` },
-            }),
+            Effect.runPromise(
+              electronRpc.app.axios({
+                url: `${BASE_URL}/api/queued/controlqueued`,
+                method: 'post',
+                data: { queued_id, operation: 'start', all: false },
+                headers: { Authorization: `Bearer ${torboxApiKey}` },
+              })
+            ),
           'Failed to start queued TorBox torrent'
         );
         if (startResponse.status !== 200) {
@@ -173,11 +182,13 @@ export class TorboxService extends BaseService {
         for (let attempt = 0; attempt < 217; attempt++) {
           const list = yield* torboxPromise(
             () =>
-              window.electronAPI.app.axios<TorboxTorrentListResponse>({
-                url: `${BASE_URL}/api/torrents/mylist?bypass_cache=true`,
-                method: 'get',
-                headers: { Authorization: `Bearer ${torboxApiKey}` },
-              }),
+              Effect.runPromise(
+                electronRpc.app.axios<TorboxTorrentListResponse>({
+                  url: `${BASE_URL}/api/torrents/mylist?bypass_cache=true`,
+                  method: 'get',
+                  headers: { Authorization: `Bearer ${torboxApiKey}` },
+                })
+              ),
             'Failed to poll TorBox torrent'
           );
           const torrent = list.data.success
@@ -213,13 +224,15 @@ export class TorboxService extends BaseService {
       );
       const handshake = yield* torboxPromise(
         () =>
-          window.electronAPI.ddl.download([
-            {
-              link: downloadUrl,
-              path: targetPath,
-              headers: { 'OGI-Parallel-Limit': '1' },
-            },
-          ]),
+          Effect.runPromise(
+            electronRpc.ddl.download([
+              {
+                link: downloadUrl,
+                path: targetPath,
+                headers: { 'OGI-Parallel-Limit': '1' },
+              },
+            ])
+          ),
         'Failed to start TorBox download'
       );
       if (handshake.status === 'error' || !handshake.id) {

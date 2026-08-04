@@ -1,7 +1,9 @@
 <script lang="ts">
+import { Effect } from 'effect';
 import CustomDropdown from '@/frontend/components/CustomDropdown.svelte';
 import TextModal from '@/frontend/components/modal/TextModal.svelte';
 import RangeInput from '@/frontend/components/RangeInput.svelte';
+import { electronRpc } from '@/frontend/lib/electron-rpc';
 
 let {
   id,
@@ -84,18 +86,15 @@ function handleDropdownChange(detail: { selectedId: string }) {
 }
 
 function browseForPath(browseType: 'file' | 'folder') {
-  const dialog = window.electronAPI.fs.dialog;
   const properties: ('openDirectory' | 'openFile')[] =
     browseType === 'folder' ? ['openDirectory'] : ['openFile'];
-  dialog.showOpenDialog({ properties }).then((result) => {
-    if (result && result.length > 0) {
-      const path = result[0];
+  Effect.runPromise(electronRpc.fs.dialog.showOpenDialog({ properties })).then(
+    (path) => {
+      if (!path) return;
       displayValue = path;
-      if (onchange) {
-        onchange(id, path);
-      }
+      onchange?.(id, path);
     }
-  });
+  );
 }
 </script>
 

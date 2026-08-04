@@ -5,6 +5,7 @@ import { getDownloadPath } from '@/frontend/lib/core/fs';
 import { finalizeDownloadCard } from '@/frontend/lib/downloads/events';
 import { safeDownloadPath } from '@/frontend/lib/downloads/paths';
 import { BaseService } from '@/frontend/lib/downloads/services/BaseService';
+import { electronRpc } from '@/frontend/lib/electron-rpc';
 import type { SearchResultWithAddon } from '@/frontend/lib/tasks/runner';
 import { currentDownloads } from '@/frontend/store.svelte';
 
@@ -89,15 +90,17 @@ export class PremiumizeService extends BaseService {
 
       const responseFolder = yield* premiumizePromise(
         () =>
-          window.electronAPI.app.axios({
-            method: 'POST',
-            url: `${BASE_URL}/folder/create?apikey=${premiumizeApiKey}`,
-            data: { name: 'OpenGameInstaller' },
-            headers: {
-              'Content-Type': 'application/x-www-form-urlencoded',
-              Accept: 'application/json',
-            },
-          }),
+          Effect.runPromise(
+            electronRpc.app.axios({
+              method: 'POST',
+              url: `${BASE_URL}/folder/create?apikey=${premiumizeApiKey}`,
+              data: { name: 'OpenGameInstaller' },
+              headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                Accept: 'application/json',
+              },
+            })
+          ),
         'Failed to create Premiumize folder'
       );
       const folderData = responseFolder.data as ResponseFolder;
@@ -105,11 +108,13 @@ export class PremiumizeService extends BaseService {
       if (folderData.status === 'error') {
         const searchResponse = yield* premiumizePromise(
           () =>
-            window.electronAPI.app.axios({
-              method: 'GET',
-              url: `${BASE_URL}/folder/search?apikey=${premiumizeApiKey}&q=OpenGameInstaller`,
-              headers: { Accept: 'application/json' },
-            }),
+            Effect.runPromise(
+              electronRpc.app.axios({
+                method: 'GET',
+                url: `${BASE_URL}/folder/search?apikey=${premiumizeApiKey}&q=OpenGameInstaller`,
+                headers: { Accept: 'application/json' },
+              })
+            ),
           'Failed to search Premiumize folders'
         );
         const searchData = searchResponse.data as PremiumizeFolderResponse;
@@ -137,7 +142,10 @@ export class PremiumizeService extends BaseService {
       const formData = new FormData();
       if (result.downloadType === 'torrent') {
         const torrentData = yield* premiumizePromise(
-          () => window.electronAPI.downloadTorrentInto(result.downloadURL!),
+          () =>
+            Effect.runPromise(
+              electronRpc.downloadTorrentInto(result.downloadURL!)
+            ),
           'Failed to download torrent data'
         );
         formData.append('file', new Blob([torrentData.buffer as ArrayBuffer]));
@@ -147,15 +155,17 @@ export class PremiumizeService extends BaseService {
       formData.append('folder_id', folderId);
       const transferResponse = yield* premiumizePromise(
         () =>
-          window.electronAPI.app.axios<PremiumizeTransferResponse>({
-            method: 'POST',
-            url: `${BASE_URL}/transfer/create?apikey=${premiumizeApiKey}`,
-            data: Object.fromEntries(formData.entries()),
-            headers: {
-              'Content-Type': 'multipart/form-data',
-              Accept: 'application/json',
-            },
-          }),
+          Effect.runPromise(
+            electronRpc.app.axios<PremiumizeTransferResponse>({
+              method: 'POST',
+              url: `${BASE_URL}/transfer/create?apikey=${premiumizeApiKey}`,
+              data: Object.fromEntries(formData.entries()),
+              headers: {
+                'Content-Type': 'multipart/form-data',
+                Accept: 'application/json',
+              },
+            })
+          ),
         'Failed to create Premiumize transfer'
       );
       if (transferResponse.data.status === 'error') {
@@ -172,10 +182,12 @@ export class PremiumizeService extends BaseService {
       for (let attempt = 0; attempt <= 120; attempt++) {
         const transfersResponse = yield* premiumizePromise(
           () =>
-            window.electronAPI.app.axios<PremiumizeTransfersListResponse>({
-              method: 'GET',
-              url: `${BASE_URL}/transfer/list?apikey=${premiumizeApiKey}`,
-            }),
+            Effect.runPromise(
+              electronRpc.app.axios<PremiumizeTransfersListResponse>({
+                method: 'GET',
+                url: `${BASE_URL}/transfer/list?apikey=${premiumizeApiKey}`,
+              })
+            ),
           'Failed to check Premiumize transfer'
         );
         if (
@@ -203,15 +215,17 @@ export class PremiumizeService extends BaseService {
 
       const zipResponse = yield* premiumizePromise(
         () =>
-          window.electronAPI.app.axios<PremiumizeZipGenerateResponse>({
-            method: 'POST',
-            url: `${BASE_URL}/zip/generate?apikey=${premiumizeApiKey}`,
-            data: { 'folders[]': foundFolderId },
-            headers: {
-              'Content-Type': 'application/x-www-form-urlencoded',
-              Accept: 'application/json',
-            },
-          }),
+          Effect.runPromise(
+            electronRpc.app.axios<PremiumizeZipGenerateResponse>({
+              method: 'POST',
+              url: `${BASE_URL}/zip/generate?apikey=${premiumizeApiKey}`,
+              data: { 'folders[]': foundFolderId },
+              headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                Accept: 'application/json',
+              },
+            })
+          ),
         'Failed to generate Premiumize download'
       );
       if (zipResponse.status !== 200 || zipResponse.data.status === 'error') {
@@ -235,13 +249,15 @@ export class PremiumizeService extends BaseService {
       );
       const handshake = yield* premiumizePromise(
         () =>
-          window.electronAPI.ddl.download([
-            {
-              link: directDownloadUrl,
-              path: targetPath,
-              headers: { 'OGI-Parallel-Limit': '1' },
-            },
-          ]),
+          Effect.runPromise(
+            electronRpc.ddl.download([
+              {
+                link: directDownloadUrl,
+                path: targetPath,
+                headers: { 'OGI-Parallel-Limit': '1' },
+              },
+            ])
+          ),
         'Failed to start Premiumize download'
       );
       if (handshake.status === 'error' || !handshake.id) {

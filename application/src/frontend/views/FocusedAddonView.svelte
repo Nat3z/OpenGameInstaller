@@ -20,6 +20,7 @@ import Modal from '@/frontend/components/modal/Modal.svelte';
 import TextModal from '@/frontend/components/modal/TextModal.svelte';
 import TitleModal from '@/frontend/components/modal/TitleModal.svelte';
 import RangeInput from '@/frontend/components/RangeInput.svelte';
+import { electronRpc } from '@/frontend/lib/electron-rpc';
 import { notifications } from '@/frontend/store.svelte';
 import { addonServer, queryConnectedAddons, runTask } from '@/frontend/utils';
 
@@ -190,22 +191,18 @@ function getStoredOrDefaultValue(key: string): any {
 }
 
 function browseForFolder(event: MouseEvent, type: 'file' | 'folder') {
-  const dialog = window.electronAPI.fs.dialog;
   const element = (event.target as HTMLElement).parentElement!!.querySelector(
     'input'
   ) as HTMLInputElement;
-  dialog
-    .showOpenDialog({
+  Effect.runPromise(
+    electronRpc.fs.dialog.showOpenDialog({
       properties: type === 'file' ? ['openFile'] : ['openDirectory'],
     })
-    .then((result) => {
-      if (result && result.length > 0) {
-        if (element) {
-          element.value = result[0];
-        }
-        updateConfig();
-      }
-    });
+  ).then((path) => {
+    if (!path) return;
+    element.value = path;
+    updateConfig();
+  });
 }
 
 function showDescription(event: MouseEvent | FocusEvent) {
@@ -300,8 +297,8 @@ async function deleteAddon() {
 async function deleteAddonGO() {
   if (!selectedAddon) return;
   try {
-    const result = await window.electronAPI.deleteInstalledAddon(
-      selectedAddon.id
+    const result = await Effect.runPromise(
+      electronRpc.deleteInstalledAddon(selectedAddon.id)
     );
     if (result.success) {
       notifications.update((update) => [

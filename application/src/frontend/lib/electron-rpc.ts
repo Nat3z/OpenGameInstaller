@@ -19,7 +19,12 @@ type ProcedureApiAt<
         readonly _Client: infer Client;
       }
         ? Client
-        : (...args: Rpc.Payload<Procedure>) => Promise<Rpc.Success<Procedure>>;
+        : (
+            ...args: Rpc.Payload<Procedure>
+          ) => Effect.Effect<
+            Rpc.Success<Procedure>,
+            Rpc.Error<Procedure> | RpcClientError.RpcClientError
+          >;
     };
 
 type UnionToIntersection<Union> = (
@@ -30,16 +35,16 @@ type UnionToIntersection<Union> = (
   ? Intersection
   : never;
 
-export type ElectronRpcApi = UnionToIntersection<
+type ElectronRpcApi = UnionToIntersection<
   ProcedureApi<RpcGroup.Rpcs<typeof ElectronRpcs>>
 >;
 
-export interface ElectronRpcClient {
+interface ElectronRpcClient {
   readonly api: ElectronRpcApi;
-  readonly close: () => Promise<void>;
+  readonly close: Effect.Effect<void>;
 }
 
-export function makeElectronRpcClient(
+function makeElectronRpcClient(
   invoke: (
     request: RpcMessage.FromClientEncoded
   ) => Promise<RpcMessage.FromServerEncoded | undefined>
@@ -95,32 +100,41 @@ export function makeElectronRpcClient(
       }
     }
     branch[method] = (...args: ReadonlyArray<unknown>) =>
-      client.then(({ rpcClient }) => {
-        const [prefix, ...rest] = tag.split('.');
-        const rpcMethod =
-          rest.length === 0
-            ? rpcClient[tag as keyof typeof rpcClient]
-            : (
-                rpcClient[prefix as keyof typeof rpcClient] as Record<
-                  string,
-                  unknown
-                >
-              )[rest.join('.')];
-        return Effect.runPromise(
-          (
+      Effect.promise(() => client).pipe(
+        Effect.flatMap(({ rpcClient }) => {
+          const [prefix, ...rest] = tag.split('.');
+          const rpcMethod =
+            rest.length === 0
+              ? rpcClient[tag as keyof typeof rpcClient]
+              : (
+                  rpcClient[prefix as keyof typeof rpcClient] as Record<
+                    string,
+                    unknown
+                  >
+                )[rest.join('.')];
+          return (
             rpcMethod as (
               payload: ReadonlyArray<unknown>
-            ) => Effect.Effect<unknown>
-          )(args)
-        );
-      });
+            ) => Effect.Effect<unknown, unknown>
+          )(args);
+        })
+      );
   }
 
   return {
     api: api as ElectronRpcApi,
-    close: () =>
-      client.then(({ scope }) =>
-        Effect.runPromise(Scope.close(scope, Exit.void))
-      ),
+    close: Effect.promise(() => client).pipe(
+      Effect.flatMap(({ scope }) => Scope.close(scope, Exit.void))
+    ),
   };
 }
+
+const client = makeElectronRpcClient((message) =>
+  window.electronRpcTransport.invoke(message)
+);
+
+export const electronRpc = client.api;
+
+window.addEventListener('unload', () => {
+  Effect.runFork(client.close);
+});

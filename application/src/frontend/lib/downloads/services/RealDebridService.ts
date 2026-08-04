@@ -4,6 +4,7 @@ import { getDownloadPath } from '@/frontend/lib/core/fs';
 import { finalizeDownloadCard } from '@/frontend/lib/downloads/events';
 import { safeDownloadPath } from '@/frontend/lib/downloads/paths';
 import { BaseService } from '@/frontend/lib/downloads/services/BaseService';
+import { electronRpc } from '@/frontend/lib/electron-rpc';
 import type { SearchResultWithAddon } from '@/frontend/lib/tasks/runner';
 import { currentDownloads } from '@/frontend/store.svelte';
 
@@ -31,7 +32,7 @@ function waitForTorrentReady(id: string) {
     for (let attempt = 0; attempt < 200; attempt++) {
       if (
         yield* realDebridPromise(
-          () => window.electronAPI.realdebrid.isTorrentReady(id),
+          () => Effect.runPromise(electronRpc.realdebrid.isTorrentReady(id)),
           'Failed to check Real-Debrid torrent status'
         )
       ) {
@@ -72,7 +73,7 @@ export class RealDebridService extends BaseService {
       }
 
       const worked = yield* realDebridPromise(
-        () => window.electronAPI.realdebrid.updateKey(),
+        () => Effect.runPromise(electronRpc.realdebrid.updateKey()),
         'Failed to update Real-Debrid API key'
       );
       if (!worked) {
@@ -85,7 +86,7 @@ export class RealDebridService extends BaseService {
       }
 
       const hosts = yield* realDebridPromise(
-        () => window.electronAPI.realdebrid.getHosts(),
+        () => Effect.runPromise(electronRpc.realdebrid.getHosts()),
         'Failed to load Real-Debrid hosts'
       );
       const debridResult = result as RealDebridSearchResult;
@@ -132,7 +133,9 @@ export class RealDebridService extends BaseService {
       if (result.downloadType !== 'magnet') return;
       const magnet = yield* realDebridPromise(
         () =>
-          window.electronAPI.realdebrid.addMagnet(result.downloadURL!, host),
+          Effect.runPromise(
+            electronRpc.realdebrid.addMagnet(result.downloadURL!, host)
+          ),
         'Failed to add magnet to Real-Debrid'
       );
       yield* this.finishDebridDownload(result, appID, tempId, magnet.id);
@@ -159,7 +162,9 @@ export class RealDebridService extends BaseService {
       }
       const torrent = yield* realDebridPromise(
         () =>
-          window.electronAPI.realdebrid.addTorrent(result.downloadURL!, host),
+          Effect.runPromise(
+            electronRpc.realdebrid.addTorrent(result.downloadURL!, host)
+          ),
         'Failed to add torrent to Real-Debrid'
       );
       yield* this.finishDebridDownload(result, appID, tempId, torrent.id);
@@ -174,24 +179,29 @@ export class RealDebridService extends BaseService {
   ) {
     return Effect.gen(this, function* () {
       const isReady = yield* realDebridPromise(
-        () => window.electronAPI.realdebrid.isTorrentReady(torrentId),
+        () =>
+          Effect.runPromise(electronRpc.realdebrid.isTorrentReady(torrentId)),
         'Failed to check Real-Debrid torrent status'
       );
       if (!isReady) {
         yield* realDebridPromise(
-          () => window.electronAPI.realdebrid.selectTorrent(torrentId),
+          () =>
+            Effect.runPromise(electronRpc.realdebrid.selectTorrent(torrentId)),
           'Failed to select Real-Debrid torrent files'
         );
         yield* waitForTorrentReady(torrentId);
       }
 
       const torrentInfo = yield* realDebridPromise(
-        () => window.electronAPI.realdebrid.getTorrentInfo(torrentId),
+        () =>
+          Effect.runPromise(electronRpc.realdebrid.getTorrentInfo(torrentId)),
         'Failed to load Real-Debrid torrent info'
       );
       const download = yield* realDebridPromise(
         () =>
-          window.electronAPI.realdebrid.unrestrictLink(torrentInfo.links[0]),
+          Effect.runPromise(
+            electronRpc.realdebrid.unrestrictLink(torrentInfo.links[0])
+          ),
         'Failed to unrestrict Real-Debrid link'
       );
       if (download === null) {
@@ -217,13 +227,15 @@ export class RealDebridService extends BaseService {
       ];
       const handshake = yield* realDebridPromise(
         () =>
-          window.electronAPI.ddl.download([
-            {
-              link: download.download,
-              path: targetPath,
-              headers: { 'OGI-Parallel-Limit': '1' },
-            },
-          ]),
+          Effect.runPromise(
+            electronRpc.ddl.download([
+              {
+                link: download.download,
+                path: targetPath,
+                headers: { 'OGI-Parallel-Limit': '1' },
+              },
+            ])
+          ),
         'Failed to start Real-Debrid download'
       );
       if (handshake.status === 'error' || !handshake.id) {

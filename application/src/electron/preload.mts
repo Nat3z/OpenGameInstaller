@@ -1,7 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { contextBridge, ipcRenderer } from 'electron';
-import { makeElectronRpcClient } from '@/electron/rpc/client.js';
-import { ELECTRON_RPC_CHANNEL } from '@/lib/electron-rpc.js';
+import {
+  ELECTRON_RPC_CHANNEL,
+  type ElectronRpcTransport,
+} from '@/lib/electron-rpc.js';
 
 // === Debug: Events Processed/sec Counter ===
 let dbg_eventsProcessed = 0;
@@ -23,17 +25,13 @@ const wrap = (fn: (...args: any[]) => any) => {
   };
 };
 const rpcSessionId = randomUUID();
-const rpcClient = makeElectronRpcClient((message) =>
-  ipcRenderer.invoke(ELECTRON_RPC_CHANNEL, {
-    sessionId: rpcSessionId,
-    message,
-  })
-);
-const electronRpc = rpcClient.api;
-
-window.addEventListener('unload', () => {
-  void rpcClient.close();
-});
+const electronRpcTransport: ElectronRpcTransport = {
+  invoke: (message) =>
+    ipcRenderer.invoke(ELECTRON_RPC_CHANNEL, {
+      sessionId: rpcSessionId,
+      message,
+    }),
+};
 
 setInterval(() => {
   const now = Date.now();
@@ -47,9 +45,7 @@ setInterval(() => {
 }, 3000);
 
 const electronApi = {
-  ...electronRpc,
   fs: {
-    ...electronRpc.fs,
     read: wrap((path: string) => ipcRenderer.sendSync('fs:read', path)),
     write: wrap((path: string, data: string) =>
       ipcRenderer.sendSync('fs:write', { path, data })
@@ -65,7 +61,6 @@ const electronApi = {
     stat: wrap((path: string) => ipcRenderer.sendSync('fs:stat', { path })),
   },
   app: {
-    ...electronRpc.app,
     clientReadyForEvents: wrap(() =>
       ipcRenderer.send('client-ready-for-events')
     ),
@@ -78,6 +73,7 @@ const electronApi = {
 export type ElectronApi = typeof electronApi;
 
 contextBridge.exposeInMainWorld('electronAPI', electronApi);
+contextBridge.exposeInMainWorld('electronRpcTransport', electronRpcTransport);
 
 ipcRenderer.on(
   'ddl:download-progress',

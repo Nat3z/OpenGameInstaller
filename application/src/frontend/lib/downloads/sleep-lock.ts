@@ -1,6 +1,7 @@
 import { PlatformError } from '@ogi/errors';
 import { Effect } from 'effect';
 import { get } from 'svelte/store';
+import { electronRpc } from '@/frontend/lib/electron-rpc';
 import {
   currentDownloads,
   type DownloadStatusAndInfo,
@@ -46,13 +47,13 @@ function syncSleepBlock(
   const shouldBlock = shouldBlockSleep(downloads, logs);
   if (shouldBlock === sleepBlockActive) return Effect.void;
 
-  return Effect.tryPromise({
-    try: () => window.electronAPI.powerSave.setActive(shouldBlock),
-    catch: (cause) =>
-      new PlatformError({
-        message: `Failed to update sleep lock: ${cause instanceof Error ? cause.message : String(cause)}`,
-      }),
-  }).pipe(
+  return electronRpc.powerSave.setActive(shouldBlock).pipe(
+    Effect.mapError(
+      (cause) =>
+        new PlatformError({
+          message: `Failed to update sleep lock: ${cause instanceof Error ? cause.message : String(cause)}`,
+        })
+    ),
     Effect.tap(() =>
       Effect.sync(() => {
         sleepBlockActive = shouldBlock;

@@ -1,4 +1,7 @@
 <script lang="ts">
+import { Effect } from 'effect';
+import { electronRpc } from '@/frontend/lib/electron-rpc';
+
 let { addonId, class: className }: { addonId: string; class?: string } =
   $props();
 let image = $state<string | undefined>(undefined);
@@ -8,12 +11,15 @@ $effect(() => {
   image = undefined;
 
   console.log('Getting addon icon for: ' + addonId);
-  window.electronAPI.app.getAddonIcon(addonId).then(async (iconPath) => {
-    if (iconPath) {
-      image =
-        (await window.electronAPI.app.getLocalImage(iconPath)) ?? undefined;
+  Effect.runPromise(electronRpc.app.getAddonIcon(addonId)).then(
+    async (iconPath) => {
+      if (iconPath) {
+        image =
+          (await Effect.runPromise(electronRpc.app.getLocalImage(iconPath))) ??
+          undefined;
+      }
     }
-  });
+  );
 });
 </script>
 

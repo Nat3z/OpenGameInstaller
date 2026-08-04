@@ -1,6 +1,7 @@
 import { FileSystemError, formatError } from '@ogi/errors';
 import type { SetupCommandData } from '@ogi-sdk/connect';
 import { Effect, Schedule } from 'effect';
+import { electronRpc } from '@/frontend/lib/electron-rpc';
 import {
   unrarAndReturnOutputDir,
   unzipAndReturnOutputDir,
@@ -30,15 +31,16 @@ function ensureFailedSetupsDir(): void {
 export function loadFailedSetups() {
   return Effect.sync(ensureFailedSetupsDir).pipe(
     Effect.andThen(
-      Effect.tryPromise({
-        try: () => window.electronAPI.fs.getFilesInDir(FAILED_SETUPS_DIR),
-        catch: (cause) =>
-          new FileSystemError({
-            message: 'Failed to list saved setup recoveries.',
-            path: FAILED_SETUPS_DIR,
-            cause,
-          }),
-      })
+      electronRpc.fs.getFilesInDir(FAILED_SETUPS_DIR).pipe(
+        Effect.mapError(
+          (cause) =>
+            new FileSystemError({
+              message: 'Failed to list saved setup recoveries.',
+              path: FAILED_SETUPS_DIR,
+              cause,
+            })
+        )
+      )
     ),
     Effect.map((files) => {
       const byDownloadId = new Map<string, FailedSetup>();

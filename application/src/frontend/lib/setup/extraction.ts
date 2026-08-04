@@ -1,16 +1,16 @@
 import { FileSystemError } from '@ogi/errors';
 import { Effect } from 'effect';
 import { basename } from '@/frontend/lib/core/fs';
+import { electronRpc } from '@/frontend/lib/electron-rpc';
 
-const fsPromise = <A>(
-  operation: () => Promise<A>,
+const fsEffect = <A>(
+  operation: Effect.Effect<A, unknown>,
   message: string,
   path?: string
 ): Effect.Effect<A, FileSystemError> =>
-  Effect.tryPromise({
-    try: operation,
-    catch: (cause) => new FileSystemError({ message, path, cause }),
-  });
+  operation.pipe(
+    Effect.mapError((cause) => new FileSystemError({ message, path, cause }))
+  );
 
 /** Resolves a RAR path from a direct file, downloaded directory, or file metadata. */
 export function resolveRarArchivePath(
@@ -23,8 +23,8 @@ export function resolveRarArchivePath(
     return Effect.succeed<string | null>(trimmed);
   }
 
-  return fsPromise(
-    () => window.electronAPI.fs.getFilesInDir(trimmed),
+  return fsEffect(
+    electronRpc.fs.getFilesInDir(trimmed),
     'Failed to inspect the downloaded directory.',
     trimmed
   ).pipe(
@@ -47,8 +47,8 @@ export function drillDownSingleDirectories(
 ) {
   return Effect.gen(function* () {
     let currentDir = startDir;
-    let filesInDir = yield* fsPromise(
-      () => window.electronAPI.fs.getFilesInDir(currentDir),
+    let filesInDir = yield* fsEffect(
+      electronRpc.fs.getFilesInDir(currentDir),
       'Failed to inspect extraction output.',
       currentDir
     );
@@ -66,8 +66,8 @@ export function drillDownSingleDirectories(
       });
       if (!stat?.isDirectory) break;
       currentDir = nextPath;
-      filesInDir = yield* fsPromise(
-        () => window.electronAPI.fs.getFilesInDir(currentDir),
+      filesInDir = yield* fsEffect(
+        electronRpc.fs.getFilesInDir(currentDir),
         'Failed to inspect extraction output.',
         currentDir
       );
@@ -94,13 +94,12 @@ export function unrarAndReturnOutputDir(params: {
     yield* Effect.sync(() =>
       console.log('Extracting RAR file:', rarFilePath, 'to', outputBaseDir)
     );
-    const extractedDir = yield* fsPromise(
-      () =>
-        window.electronAPI.fs.unrar({
-          outputDir: outputBaseDir,
-          rarFilePath,
-          downloadId,
-        }),
+    const extractedDir = yield* fsEffect(
+      electronRpc.fs.unrar({
+        outputDir: outputBaseDir,
+        rarFilePath,
+        downloadId,
+      }),
       'Failed to extract RAR file.',
       rarFilePath
     );
@@ -132,13 +131,12 @@ export function unzipAndReturnOutputDir(params: {
   const { zipFilePath, outputDirBase, downloadId } = params;
   return Effect.gen(function* () {
     yield* Effect.sync(() => console.log('Extracting ZIP file:', zipFilePath));
-    const queriedOutput = yield* fsPromise(
-      () =>
-        window.electronAPI.fs.unzip({
-          zipFilePath,
-          outputDir: outputDirBase,
-          downloadId,
-        }),
+    const queriedOutput = yield* fsEffect(
+      electronRpc.fs.unzip({
+        zipFilePath,
+        outputDir: outputDirBase,
+        downloadId,
+      }),
       'Failed to extract ZIP file.',
       zipFilePath
     );

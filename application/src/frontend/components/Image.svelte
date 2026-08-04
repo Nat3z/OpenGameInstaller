@@ -1,4 +1,7 @@
 <script lang="ts">
+import { Effect } from 'effect';
+import { electronRpc } from '@/frontend/lib/electron-rpc';
+
 interface Props {
   src: string;
   alt: string;
@@ -55,11 +58,13 @@ async function loadImage(currentSrc: string, currentClassifier: string) {
     }
 
     // Fetch as arraybuffer
-    const response = await window.electronAPI.app.axios<ArrayBuffer>({
-      method: 'get',
-      url: currentSrc,
-      responseType: 'arraybuffer',
-    });
+    const response = await Effect.runPromise(
+      electronRpc.app.axios<ArrayBuffer>({
+        method: 'get',
+        url: currentSrc,
+        responseType: 'arraybuffer',
+      })
+    );
     const mimeType = getMimeTypeFromUrl(currentSrc);
     // Convert to base64
     const base64 = btoa(

@@ -13,6 +13,7 @@ import {
   urlBasename,
 } from '@/frontend/lib/downloads/paths';
 import { BaseService } from '@/frontend/lib/downloads/services/BaseService';
+import { electronRpc } from '@/frontend/lib/electron-rpc';
 import type { SearchResultWithAddon } from '@/frontend/lib/tasks/runner';
 import { createNotification, currentDownloads } from '@/frontend/store.svelte';
 
@@ -62,7 +63,7 @@ function waitForTorrentReady(id: string) {
     for (let attempt = 0; attempt < 200; attempt++) {
       if (
         yield* allDebridPromise(
-          () => window.electronAPI.alldebrid.isTorrentReady(id),
+          () => Effect.runPromise(electronRpc.alldebrid.isTorrentReady(id)),
           'Failed to check AllDebrid torrent status'
         )
       ) {
@@ -102,7 +103,7 @@ export class AllDebridService extends BaseService {
         );
       }
       const worked = yield* allDebridPromise(
-        () => window.electronAPI.alldebrid.updateKey(),
+        () => Effect.runPromise(electronRpc.alldebrid.updateKey()),
         'Failed to update AllDebrid API key'
       );
       if (!worked) {
@@ -152,7 +153,10 @@ export class AllDebridService extends BaseService {
   private getTorrentIdFromMagnet(result: AllDebridSearchResult) {
     return Effect.gen(function* () {
       const magnet = yield* allDebridPromise(
-        () => window.electronAPI.alldebrid.addMagnet(result.downloadURL),
+        () =>
+          Effect.runPromise(
+            electronRpc.alldebrid.addMagnet(result.downloadURL)
+          ),
         'Failed to add magnet to AllDebrid'
       );
       return magnet.id;
@@ -188,7 +192,10 @@ export class AllDebridService extends BaseService {
         );
       }
       const torrent = yield* allDebridPromise(
-        () => window.electronAPI.alldebrid.addTorrent(result.downloadURL),
+        () =>
+          Effect.runPromise(
+            electronRpc.alldebrid.addTorrent(result.downloadURL)
+          ),
         'Failed to add torrent to AllDebrid'
       );
       if (!torrent) {
@@ -212,18 +219,20 @@ export class AllDebridService extends BaseService {
     return Effect.gen(function* () {
       const torrentId = yield* getTorrentId;
       const isReady = yield* allDebridPromise(
-        () => window.electronAPI.alldebrid.isTorrentReady(torrentId),
+        () =>
+          Effect.runPromise(electronRpc.alldebrid.isTorrentReady(torrentId)),
         'Failed to check AllDebrid torrent status'
       );
       if (!isReady) {
         yield* allDebridPromise(
-          () => window.electronAPI.alldebrid.selectTorrent(),
+          () => Effect.runPromise(electronRpc.alldebrid.selectTorrent()),
           'Failed to select AllDebrid torrent files'
         );
         yield* waitForTorrentReady(torrentId);
       }
       const torrentInfo = yield* allDebridPromise(
-        () => window.electronAPI.alldebrid.getTorrentInfo(torrentId),
+        () =>
+          Effect.runPromise(electronRpc.alldebrid.getTorrentInfo(torrentId)),
         'Failed to load AllDebrid torrent info'
       );
       const markError = () =>
@@ -248,7 +257,7 @@ export class AllDebridService extends BaseService {
       const resolvedLinks: string[] = [];
       for (const link of torrentInfo.links) {
         const download = yield* allDebridPromise(
-          () => window.electronAPI.alldebrid.unrestrictLink(link),
+          () => Effect.runPromise(electronRpc.alldebrid.unrestrictLink(link)),
           'Failed to unrestrict AllDebrid link'
         );
         if (!download) {
@@ -271,12 +280,14 @@ export class AllDebridService extends BaseService {
       );
       const handshake = yield* allDebridPromise(
         () =>
-          window.electronAPI.ddl.download(
-            resolvedLinks.map((link, index) => ({
-              link,
-              path: safePath + localNames[index],
-              headers: { 'OGI-Parallel-Limit': '1' },
-            }))
+          Effect.runPromise(
+            electronRpc.ddl.download(
+              resolvedLinks.map((link, index) => ({
+                link,
+                path: safePath + localNames[index],
+                headers: { 'OGI-Parallel-Limit': '1' },
+              }))
+            )
           ),
         'Failed to start AllDebrid download'
       );

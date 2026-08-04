@@ -5,6 +5,7 @@ import { onDestroy, onMount } from 'svelte';
 import RedistributablesProgress from '@/frontend/components/RedistributablesProgress.svelte';
 import SetupPrompt from '@/frontend/components/SetupPrompt.svelte';
 import { runDetached } from '@/frontend/lib/core/runtime';
+import { electronRpc } from '@/frontend/lib/electron-rpc';
 import {
   createNotification,
   currentDownloads,
@@ -746,7 +747,7 @@ onDestroy(() => {
               {:else if isQueued(download)}
                 <button
                   class="text-overlay-text border-none p-4 rounded-lg bg-accent hover:bg-accent-dark transition-colors"
-                  onclick={() => window.electronAPI.queue.cancel(download.id)}
+                  onclick={() => Effect.runPromise(electronRpc.queue.cancel(download.id))}
                   aria-label="Cancel Download"
                 >
                   <svg
@@ -768,7 +769,7 @@ onDestroy(() => {
                   aria-label="Pause Download"
                   onclick={async () => {
                     if (isQueued(download)) {
-                      window.electronAPI.queue.cancel(download.id);
+                      Effect.runPromise(electronRpc.queue.cancel(download.id));
                     } else {
                       await runDownloadAction(
                         pauseDownload(download.id),

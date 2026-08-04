@@ -6,6 +6,7 @@ import {
   updateDownloadStatus,
 } from '@/frontend/lib/downloads/lifecycle';
 import { safeDownloadPath } from '@/frontend/lib/downloads/paths';
+import { electronRpc } from '@/frontend/lib/electron-rpc';
 import {
   createNotification,
   type DownloadStatusAndInfo,
@@ -101,7 +102,7 @@ function restartDirectDownload(download: DownloadStatusAndInfo) {
     }
 
     const handshake = yield* downloadPromise(
-      () => window.electronAPI.ddl.download(files, download.part),
+      () => Effect.runPromise(electronRpc.ddl.download(files, download.part)),
       download,
       'Failed to restart direct download'
     );
@@ -143,8 +144,14 @@ function restartTorrentDownload(download: DownloadStatusAndInfo) {
     const path = folderPath;
     const operation =
       download.downloadType === 'torrent'
-        ? () => window.electronAPI.torrent.downloadTorrent(effectiveUrl, path)
-        : () => window.electronAPI.torrent.downloadMagnet(effectiveUrl, path);
+        ? () =>
+            Effect.runPromise(
+              electronRpc.torrent.downloadTorrent(effectiveUrl, path)
+            )
+        : () =>
+            Effect.runPromise(
+              electronRpc.torrent.downloadMagnet(effectiveUrl, path)
+            );
     const handshake = yield* downloadPromise(
       operation,
       download,

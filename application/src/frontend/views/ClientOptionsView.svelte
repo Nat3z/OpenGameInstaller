@@ -12,6 +12,7 @@ import TextModal from '@/frontend/components/modal/TextModal.svelte';
 import TitleModal from '@/frontend/components/modal/TitleModal.svelte';
 import RangeInput from '@/frontend/components/RangeInput.svelte';
 import ThemePicker from '@/frontend/components/ThemePicker.svelte';
+import { electronRpc } from '@/frontend/lib/electron-rpc';
 import { createNotification } from '@/frontend/store.svelte';
 import { fetchAddonsWithConfigure, reconnectClientSdk } from '@/frontend/utils';
 
@@ -123,7 +124,7 @@ let options: OptionsCategory[] = [
         value: 'proton_experimental',
         type: 'string',
         condition: async () =>
-          (await window.electronAPI.app.getOS()) === 'linux',
+          (await Effect.runPromise(electronRpc.app.getOS())) === 'linux',
       },
       reconfigurSteamGridDb: {
         displayName: 'Change SteamGridDB API Key',
@@ -132,7 +133,7 @@ let options: OptionsCategory[] = [
         value: '',
         type: 'action',
         condition: async () =>
-          (await window.electronAPI.app.getOS()) === 'linux',
+          (await Effect.runPromise(electronRpc.app.getOS())) === 'linux',
         action: () => {
           document.dispatchEvent(
             new CustomEvent('steamgriddb-launch', {
@@ -148,9 +149,11 @@ let options: OptionsCategory[] = [
         value: '',
         type: 'action',
         condition: async () =>
-          (await window.electronAPI.app.getOS()) !== 'win32',
+          (await Effect.runPromise(electronRpc.app.getOS())) !== 'win32',
         action: async () => {
-          const result = await window.electronAPI.app.addToDesktop();
+          const result = await Effect.runPromise(
+            electronRpc.app.addToDesktop()
+          );
           if (result.success) {
             createNotification({
               id: Math.random().toString(36).substring(7),
@@ -470,17 +473,15 @@ function getStoredOrDefaultValue(key: string) {
 }
 
 function browseForFolder(event: MouseEvent) {
-  const dialog = window.electronAPI.fs.dialog;
   const element = (event.target as HTMLElement).parentElement!!.querySelector(
     'input'
   ) as HTMLInputElement;
-  dialog.showOpenDialog({ properties: ['openDirectory'] }).then((path) => {
-    if (path && path.length > 0) {
-      if (element) {
-        element.value = path[0];
-      }
-      updateConfig();
-    }
+  Effect.runPromise(
+    electronRpc.fs.dialog.showOpenDialog({ properties: ['openDirectory'] })
+  ).then((path) => {
+    if (!path) return;
+    element.value = path;
+    updateConfig();
   });
 }
 
@@ -508,7 +509,7 @@ async function installAddons() {
     return;
   }
   updateConfig();
-  await window.electronAPI.installAddons(addons);
+  await Effect.runPromise(electronRpc.installAddons(addons));
   isInstallingAddons = false;
 }
 
@@ -524,20 +525,20 @@ async function cleanAddons() {
     isCleaningAddons = false;
     return;
   }
-  await window.electronAPI.cleanAddons(addons);
+  await Effect.runPromise(electronRpc.cleanAddons(addons));
   isCleaningAddons = false;
 }
 
 async function updateAddons() {
   isUpdatingAddons = true;
-  await window.electronAPI.updateAddons();
+  await Effect.runPromise(electronRpc.updateAddons());
   isUpdatingAddons = false;
 }
 
 async function restartAddonServer() {
   isRestartingServer = true;
   try {
-    await window.electronAPI.restartAddonServer();
+    await Effect.runPromise(electronRpc.restartAddonServer());
     await Effect.runPromise(reconnectClientSdk());
   } catch (err) {
     console.error('Failed to restart addon server:', err);
@@ -553,8 +554,8 @@ async function saveSteamGridDbKey(): Promise<void> {
   const input = document.getElementById(
     'steamgriddb-api-key'
   ) as HTMLInputElement | null;
-  const saved = await window.electronAPI.oobe.setSteamGridDBKey(
-    input?.value.trim() ?? ''
+  const saved = await Effect.runPromise(
+    electronRpc.oobe.setSteamGridDBKey(input?.value.trim() ?? '')
   );
   if (saved) {
     doSteamGridDBReconfigure = false;

@@ -9,6 +9,7 @@ import Modal from '@/frontend/components/modal/Modal.svelte';
 import SectionModal from '@/frontend/components/modal/SectionModal.svelte';
 import TextModal from '@/frontend/components/modal/TextModal.svelte';
 import TitleModal from '@/frontend/components/modal/TitleModal.svelte';
+import { electronRpc } from '@/frontend/lib/electron-rpc';
 import {
   createNotification,
   currentDownloads,
@@ -138,7 +139,7 @@ function formatSize(size: number): string {
 }
 
 onMount(async () => {
-  isOnline = await window.electronAPI.app.isOnline();
+  isOnline = await Effect.runPromise(electronRpc.app.isOnline());
   if (!isOnline) {
     loading = false;
     return;

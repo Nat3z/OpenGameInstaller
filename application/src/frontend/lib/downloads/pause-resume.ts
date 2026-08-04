@@ -13,6 +13,7 @@ import {
   type PausedDownloadState,
   restartDownload,
 } from '@/frontend/lib/downloads/restart';
+import { electronRpc } from '@/frontend/lib/electron-rpc';
 import { startRedistributableInstallation } from '@/frontend/lib/setup/setup';
 import {
   createNotification,
@@ -49,14 +50,18 @@ function backendAction(
     download.downloadType === 'direct' || download.usedDebridService
       ? () =>
           action === 'pause'
-            ? window.electronAPI.ddl.pauseDownload(download.id)
-            : window.electronAPI.ddl.resumeDownload(download.id)
+            ? Effect.runPromise(electronRpc.ddl.pauseDownload(download.id))
+            : Effect.runPromise(electronRpc.ddl.resumeDownload(download.id))
       : download.downloadType === 'torrent' ||
           download.downloadType === 'magnet'
         ? () =>
             action === 'pause'
-              ? window.electronAPI.torrent.pauseDownload(download.id)
-              : window.electronAPI.torrent.resumeDownload(download.id)
+              ? Effect.runPromise(
+                  electronRpc.torrent.pauseDownload(download.id)
+                )
+              : Effect.runPromise(
+                  electronRpc.torrent.resumeDownload(download.id)
+                )
         : undefined;
 
   return operation
@@ -238,7 +243,7 @@ export function cancelPausedDownload(downloadId: string) {
     const pausedState = pausedDownloadStates.get(downloadId);
     const item = pausedState?.downloadInfo ?? getDownloadItem(downloadId);
     pausedDownloadStates.delete(downloadId);
-    window.electronAPI.queue.cancel(downloadId);
+    Effect.runPromise(electronRpc.queue.cancel(downloadId));
     yield* deleteDownloadedItems(downloadId);
     deletePersistedDownload(downloadId);
     currentDownloads.update((downloads) =>

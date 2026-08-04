@@ -4,6 +4,7 @@ import type { LibraryInfo } from '@ogi-sdk/connect';
 import { Effect } from 'effect';
 import { get } from 'svelte/store';
 import { getApp } from '@/frontend/lib/core/library';
+import { electronRpc } from '@/frontend/lib/electron-rpc';
 import { saveFailedSetup } from '@/frontend/lib/recovery/failedSetups';
 // no direct use of EventListenerTypes in this module anymore
 import {
@@ -105,7 +106,9 @@ async function processDownloadComplete(
   let stagedOldFiles = false;
 
   // Move existing files into old_files before setup unless this update opted out.
-  const currentFiles = await window.electronAPI.fs.getFilesInDir(outputDir);
+  const currentFiles = await Effect.runPromise(
+    electronRpc.fs.getFilesInDir(outputDir)
+  );
   const filesNotToMove = [
     ...(downloadedItem.files ?? []).map((file) => file.name),
     basename(downloadedItem.downloadPath),
@@ -125,10 +128,12 @@ async function processDownloadComplete(
     console.log('Files not to move: ', filesNotToMove);
     for (const file of currentFiles) {
       if (!filesNotToMove.includes(file)) {
-        const result = await window.electronAPI.fs.move({
-          source: outputDir + '/' + file,
-          destination: outputDir + '/old_files/' + file,
-        });
+        const result = await Effect.runPromise(
+          electronRpc.fs.move({
+            source: outputDir + '/' + file,
+            destination: outputDir + '/old_files/' + file,
+          })
+        );
         if (result !== 'success') {
           console.error('Failed to move file: ', file);
         }
@@ -148,8 +153,8 @@ async function processDownloadComplete(
   async function revertOldFiles() {
     if (!stagedOldFiles) return;
     if (!window.electronAPI.fs.exists(originalOutputDir + '/old_files')) return;
-    const oldFiles = await window.electronAPI.fs.getFilesInDir(
-      originalOutputDir + '/old_files'
+    const oldFiles = await Effect.runPromise(
+      electronRpc.fs.getFilesInDir(originalOutputDir + '/old_files')
     );
     if (oldFiles.length === 0) {
       window.electronAPI.fs.delete(originalOutputDir + '/old_files');
@@ -157,10 +162,12 @@ async function processDownloadComplete(
     }
     let allMoved = true;
     for (const file of oldFiles) {
-      const result = await window.electronAPI.fs.move({
-        source: originalOutputDir + '/old_files/' + file,
-        destination: originalOutputDir + '/' + file,
-      });
+      const result = await Effect.runPromise(
+        electronRpc.fs.move({
+          source: originalOutputDir + '/old_files/' + file,
+          destination: originalOutputDir + '/' + file,
+        })
+      );
       if (result !== 'success') {
         console.error('Failed to move file: ', file);
         allMoved = false;
@@ -179,11 +186,15 @@ async function processDownloadComplete(
 
   // Handle torrent-specific logic
   if (isTorrent) {
-    let filesInDir = await window.electronAPI.fs.getFilesInDir(outputDir);
+    let filesInDir = await Effect.runPromise(
+      electronRpc.fs.getFilesInDir(outputDir)
+    );
     // keep going down the directory tree until we have something with more than one file/folder
     while (filesInDir.length === 1) {
       outputDir = outputDir + '/' + filesInDir[0];
-      filesInDir = await window.electronAPI.fs.getFilesInDir(outputDir);
+      filesInDir = await Effect.runPromise(
+        electronRpc.fs.getFilesInDir(outputDir)
+      );
     }
     outputDir = outputDir + '/';
     console.log('Newly calculated outputDir: ', outputDir);

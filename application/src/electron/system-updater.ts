@@ -11,8 +11,16 @@ export type SystemUpdateResult = {
   id: string;
   success: boolean;
   updated?: boolean;
+  /** Stop startup and close the app after this updater finishes. */
+  shutdownRequired?: boolean;
   error?: string;
 };
+
+export function requiresSystemUpdateShutdown(
+  results: readonly SystemUpdateResult[]
+): boolean {
+  return results.some((result) => result.shutdownRequired === true);
+}
 
 export interface SystemUpdater {
   id: string;
@@ -79,6 +87,9 @@ export class SystemUpdateManager {
           })
         );
         results.push(result);
+        if (result.shutdownRequired) {
+          break;
+        }
       }
 
       return results;
@@ -109,6 +120,7 @@ export class SetupAppImageUpdater implements SystemUpdater {
         id: this.id,
         success: result.success,
         updated: result.updated,
+        shutdownRequired: result.updated,
         error: result.error,
       }))
     );

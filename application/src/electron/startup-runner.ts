@@ -10,7 +10,7 @@ import {
 } from '@/electron/startup.js';
 import {
   createDefaultSystemUpdateManager,
-  type SystemUpdateResult,
+  requiresSystemUpdateShutdown,
 } from '@/electron/system-updater.js';
 import type { UpdaterCallbacks } from '@/electron/updater.js';
 
@@ -100,10 +100,6 @@ export type StartupTasksResult = {
   /** When true, an installer update is shutting the app down; do not load the main UI. */
   shutdownPending: boolean;
 };
-
-function isShutdownPendingFromUpdates(results: SystemUpdateResult[]): boolean {
-  return results.some((result) => result.updated === true);
-}
 
 /**
  * Runs all pre-launch startup tasks with splash screen feedback.
@@ -215,7 +211,7 @@ export function runStartupTasks(
           updaterCallbacks
         );
 
-      shutdownPending = isShutdownPendingFromUpdates(updateResults);
+      shutdownPending = requiresSystemUpdateShutdown(updateResults);
 
       // Final status before main window loads (skip when installer update will exit)
       if (!shutdownPending) {

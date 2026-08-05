@@ -1,6 +1,7 @@
 import { DownloadError, formatError } from '@ogi/errors';
 import { Deferred, Effect } from 'effect';
 import { get } from 'svelte/store';
+import { runDetached } from '@/frontend/lib/core/runtime';
 import {
   getDownloadItem,
   updateDownloadStatus,
@@ -239,15 +240,9 @@ export function cancelPausedDownload(downloadId: string) {
     const pausedState = pausedDownloadStates.get(downloadId);
     const item = pausedState?.downloadInfo ?? getDownloadItem(downloadId);
     pausedDownloadStates.delete(downloadId);
-    yield* electronRpc.queue.cancel(downloadId).pipe(
-      Effect.mapError(
-        (cause) =>
-          new DownloadError({
-            message: `Failed to cancel download: ${formatError(cause)}`,
-            downloadId,
-            cause,
-          })
-      )
+    runDetached(
+      electronRpc.queue.cancel(downloadId),
+      `Failed to cancel download ${downloadId}`
     );
     yield* deleteDownloadedItems(downloadId);
     deletePersistedDownload(downloadId);

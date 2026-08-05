@@ -1,4 +1,4 @@
-import { DebridError, ValidationError } from '@ogi/errors';
+import { DebridError, formatError, ValidationError } from '@ogi/errors';
 import { Effect } from 'effect';
 import { getDownloadPath } from '@/frontend/lib/core/fs';
 import { finalizeDownloadCard } from '@/frontend/lib/downloads/events';
@@ -22,7 +22,7 @@ const realDebridRpc = <A, E>(
     Effect.mapError(
       (cause) =>
         new DebridError({
-          message: `${message}: ${cause instanceof Error ? cause.message : String(cause)}`,
+          message: `${message}: ${formatError(cause)}`,
           service: 'realdebrid',
         })
     )

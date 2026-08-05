@@ -16,9 +16,10 @@ export function addToSteam({
   button,
   onSuccess,
 }: AddToSteamOptions): Effect.Effect<void, never> {
-  button.disabled = true;
-
-  return electronRpc.app.addToSteam(appID, oldSteamAppId).pipe(
+  return Effect.sync(() => {
+    button.disabled = true;
+  }).pipe(
+    Effect.flatMap(() => electronRpc.app.addToSteam(appID, oldSteamAppId)),
     Effect.tap((result) =>
       Effect.sync(() => {
         if (result.status === 'success') {

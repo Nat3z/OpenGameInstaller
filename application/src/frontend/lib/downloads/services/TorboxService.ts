@@ -1,4 +1,4 @@
-import { DebridError } from '@ogi/errors';
+import { DebridError, formatError } from '@ogi/errors';
 import { Effect } from 'effect';
 import { getConfigClientOption } from '@/frontend/lib/config/client';
 import { getDownloadPath } from '@/frontend/lib/core/fs';
@@ -27,7 +27,7 @@ const torboxRpc = <A, E>(operation: Effect.Effect<A, E>, message: string) =>
     Effect.mapError(
       (cause) =>
         new DebridError({
-          message: `${message}: ${cause instanceof Error ? cause.message : String(cause)}`,
+          message: `${message}: ${formatError(cause)}`,
           service: 'torbox' as const,
         })
     )

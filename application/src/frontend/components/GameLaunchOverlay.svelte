@@ -1,4 +1,5 @@
 <script lang="ts">
+import { formatError } from '@ogi/errors';
 import { Effect } from 'effect';
 import { onDestroy, onMount } from 'svelte';
 import { electronRpc } from '@/frontend/lib/electron-rpc';
@@ -87,8 +88,7 @@ onMount(async () => {
           error
         );
         status = 'error';
-        errorMessage =
-          error instanceof Error ? error.message : 'Hook execution failed';
+        errorMessage = formatError(error) || 'Hook execution failed';
         onError(errorMessage);
 
         const t = setTimeout(() => {
@@ -109,8 +109,7 @@ onMount(async () => {
         const error = preLaunchResult.left;
         console.error('[GameLaunchOverlay] Pre-launch hooks failed:', error);
         status = 'error';
-        errorMessage =
-          error instanceof Error ? error.message : 'Pre-launch failed';
+        errorMessage = formatError(error) || 'Pre-launch failed';
         onError(errorMessage);
         const t = setTimeout(() => {
           if (isMounted) Effect.runPromise(electronRpc.app.quit());
@@ -136,8 +135,7 @@ onMount(async () => {
       if (postLaunchResult._tag === 'Left') {
         const error = postLaunchResult.left;
         console.error('[GameLaunchOverlay] Post-launch hooks failed:', error);
-        postLaunchError =
-          error instanceof Error ? error.message : 'Post-launch failed';
+        postLaunchError = formatError(error) || 'Post-launch failed';
       }
 
       if (wrapperError || postLaunchError) {

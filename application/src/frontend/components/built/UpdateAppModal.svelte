@@ -15,7 +15,7 @@ import {
   findAddonsSupportingStorefront,
   isAddonEventAvailable,
   type SearchResultWithAddon,
-  startDownload,
+  startDownloadEffect,
 } from '@/frontend/utils';
 import { supportsStorefront } from '@/lib/storefronts';
 
@@ -221,7 +221,7 @@ async function handleDownloadClick(
   } as SearchResultWithAddon & { isUpdate: boolean; updateVersion: string };
 
   const started = await Effect.runPromise(
-    startDownload(updateResult, appID, event).pipe(
+    startDownloadEffect(updateResult, appID, event).pipe(
       Effect.as(true),
       Effect.catchAll((error) =>
         Effect.sync(() => {

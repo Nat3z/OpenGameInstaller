@@ -13,6 +13,7 @@ import PlayIcon from '@/frontend/Icons/PlayIcon.svelte';
 import SettingsFilled from '@/frontend/Icons/SettingsFilled.svelte';
 import UpdateIcon from '@/frontend/Icons/UpdateIcon.svelte';
 import { runDetached } from '@/frontend/lib/core/runtime';
+import { addToSteam } from '@/frontend/lib/core/steam';
 import { electronRpc } from '@/frontend/lib/electron-rpc';
 import {
   appUpdates,
@@ -321,50 +322,29 @@ async function migrateToUmu() {
 }
 
 function addRequiredReaddToSteam(button: HTMLButtonElement): Promise<void> {
-  button.disabled = true;
   const requiredReadd = getRequiredReadd(libraryInfo.appID);
 
   return Effect.runPromise(
-    electronRpc.app
-      .addToSteam(
-        libraryInfo.appID,
-        requiredReadd?.steamAppId ?? libraryInfo.umu?.steamShortcutReaddId
-      )
-      .pipe(
-        Effect.tap((result) =>
-          Effect.sync(() => {
-            if (result.status === 'success') {
-              completeRequiredReadd(libraryInfo.appID);
-              if (libraryInfo.umu) {
-                delete libraryInfo.umu.steamShortcutReaddId;
-                libraryInfo = { ...libraryInfo };
-              }
-              if (result.warning) {
-                createNotification({
-                  id: Math.random().toString(36).substring(7),
-                  message: result.warning,
-                  type: 'warning',
-                });
-              }
-              return;
-            }
-
-            createNotification({
-              id: Math.random().toString(36).substring(7),
-              message:
-                result.status === 'cancelled' ? result.message : result.error,
-              type: result.status === 'cancelled' ? 'info' : 'error',
-            });
-            button.disabled = false;
-          })
-        ),
-        Effect.catchAll((error) =>
-          Effect.sync(() => {
-            console.error(error);
-            button.disabled = false;
-          })
-        )
-      )
+    addToSteam({
+      appID: libraryInfo.appID,
+      oldSteamAppId:
+        requiredReadd?.steamAppId ?? libraryInfo.umu?.steamShortcutReaddId,
+      button,
+      onSuccess: (warning) => {
+        completeRequiredReadd(libraryInfo.appID);
+        if (libraryInfo.umu) {
+          delete libraryInfo.umu.steamShortcutReaddId;
+          libraryInfo = { ...libraryInfo };
+        }
+        if (warning) {
+          createNotification({
+            id: Math.random().toString(36).substring(7),
+            message: warning,
+            type: 'warning',
+          });
+        }
+      },
+    })
   );
 }
 

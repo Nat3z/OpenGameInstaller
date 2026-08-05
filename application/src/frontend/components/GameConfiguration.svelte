@@ -17,6 +17,7 @@ import InputModal from '@/frontend/components/modal/InputModal.svelte';
 import Modal from '@/frontend/components/modal/Modal.svelte';
 import TitleModal from '@/frontend/components/modal/TitleModal.svelte';
 import WineDllOverridesModal from '@/frontend/components/modal/WineDllOverridesModal.svelte';
+import { addToSteam as addToSteamEffect } from '@/frontend/lib/core/steam';
 import { electronRpc } from '@/frontend/lib/electron-rpc';
 import {
   completeRequiredReadd,
@@ -148,50 +149,22 @@ async function removeFromList() {
 }
 
 async function addToSteam(button: HTMLButtonElement) {
-  button.disabled = true;
   const requiredReadd = getRequiredReadd(gameInfo.appID);
   await Effect.runPromise(
-    electronRpc.app
-      .addToSteam(
-        gameInfo.appID,
-        requiredReadd?.steamAppId ?? gameInfo.umu?.steamShortcutReaddId
-      )
-      .pipe(
-        Effect.tap((result) =>
-          Effect.sync(() => {
-            if (result.status === 'success') {
-              completeRequiredReadd(gameInfo.appID);
-              createNotification({
-                id: Math.random().toString(36).substring(7),
-                message: result.warning ?? 'Game added to Steam',
-                type: result.warning ? 'warning' : 'success',
-              });
-              return;
-            }
-            createNotification({
-              id: Math.random().toString(36).substring(7),
-              message:
-                result.status === 'cancelled' ? result.message : result.error,
-              type: result.status === 'cancelled' ? 'warning' : 'error',
-            });
-          })
-        ),
-        Effect.catchAll((error) =>
-          Effect.sync(() => {
-            console.error(error);
-            createNotification({
-              id: Math.random().toString(36).substring(7),
-              message: 'Failed to add game to Steam',
-              type: 'error',
-            });
-          })
-        ),
-        Effect.ensuring(
-          Effect.sync(() => {
-            button.disabled = false;
-          })
-        )
-      )
+    addToSteamEffect({
+      appID: gameInfo.appID,
+      oldSteamAppId:
+        requiredReadd?.steamAppId ?? gameInfo.umu?.steamShortcutReaddId,
+      button,
+      onSuccess: (warning) => {
+        completeRequiredReadd(gameInfo.appID);
+        createNotification({
+          id: Math.random().toString(36).substring(7),
+          message: warning ?? 'Game added to Steam',
+          type: warning ? 'warning' : 'success',
+        });
+      },
+    })
   );
 }
 

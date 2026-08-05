@@ -34,12 +34,13 @@ function insertDebugApp(
     electronRpc.app.insertApp(app).pipe(
       Effect.tap((result) =>
         Effect.sync(() => {
+          const succeeded = result.includes('success');
           createNotification({
             id: Math.random().toString(36).substring(2, 9),
-            type: result.includes('success') ? 'success' : 'error',
+            type: succeeded ? 'success' : 'error',
             message: `App insertion result: ${result}`,
           });
-          showInsertAppModal = false;
+          if (succeeded) showInsertAppModal = false;
         })
       ),
       Effect.catchAll((error) =>
@@ -51,7 +52,8 @@ function insertDebugApp(
             message: `Failed to insert test app: ${error instanceof Error ? error.message : String(error)}`,
           });
         })
-      )
+      ),
+      Effect.asVoid
     )
   );
 }

@@ -1,0 +1,54 @@
+import { Effect } from 'effect';
+import { electronRpc } from '@/frontend/lib/electron-rpc';
+import { createNotification } from '@/frontend/store.svelte';
+
+interface AddToSteamOptions {
+  appID: number;
+  oldSteamAppId?: number;
+  button: HTMLButtonElement;
+  onSuccess: (warning?: string) => void;
+}
+
+/** Runs the shared Steam-add workflow and always restores the triggering button. */
+export function addToSteam({
+  appID,
+  oldSteamAppId,
+  button,
+  onSuccess,
+}: AddToSteamOptions): Effect.Effect<void, never> {
+  button.disabled = true;
+
+  return electronRpc.app.addToSteam(appID, oldSteamAppId).pipe(
+    Effect.tap((result) =>
+      Effect.sync(() => {
+        if (result.status === 'success') {
+          onSuccess(result.warning);
+          return;
+        }
+
+        createNotification({
+          id: Math.random().toString(36).substring(7),
+          message:
+            result.status === 'cancelled' ? result.message : result.error,
+          type: result.status === 'cancelled' ? 'info' : 'error',
+        });
+      })
+    ),
+    Effect.catchAll((error) =>
+      Effect.sync(() => {
+        console.error(error);
+        createNotification({
+          id: Math.random().toString(36).substring(7),
+          message: 'Failed to add game to Steam',
+          type: 'error',
+        });
+      })
+    ),
+    Effect.ensuring(
+      Effect.sync(() => {
+        button.disabled = false;
+      })
+    ),
+    Effect.asVoid
+  );
+}

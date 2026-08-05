@@ -13,7 +13,8 @@ import {
 
 /**
  * Resolves download handler from config, finds the matching service, and starts the download.
- * Resets the button and notifies on failure if startDownload throws.
+ * Preserves failures for callers that need to react to whether the download started.
+ * The download button is reset before a failure is returned.
  * @param result - Search result with addon and download URL/type
  * @param appID - Application ID for the download
  * @param event - Mouse event (used to resolve button if htmlButton not provided)
@@ -85,10 +86,19 @@ export function startDownloadEffect(
       event,
       resolvedButton ?? undefined
     );
-  }).pipe(
+  }).pipe(Effect.tapError(() => Effect.sync(resetButton)));
+}
+
+/** Starts a download and reports failures through the standard notification UI. */
+export function startDownload(
+  result: SearchResultWithAddon,
+  appID: number,
+  event: MouseEvent | null,
+  htmlButton?: HTMLButtonElement
+) {
+  return startDownloadEffect(result, appID, event, htmlButton).pipe(
     Effect.catchAll((error) =>
       Effect.sync(() => {
-        resetButton();
         console.error('startDownload failed:', error);
         createNotification({
           id: Math.random().toString(36).substring(7),
@@ -99,8 +109,6 @@ export function startDownloadEffect(
     )
   );
 }
-
-export const startDownload = startDownloadEffect;
 
 /**
  * Updates a download's status and optional fields in the currentDownloads store.

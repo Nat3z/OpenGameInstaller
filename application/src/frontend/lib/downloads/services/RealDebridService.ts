@@ -14,25 +14,26 @@ type RealDebridSearchResult = SearchResultWithAddon & {
   downloadURL: string;
 };
 
-const realDebridPromise = <A>(
-  operation: () => Promise<A>,
+const realDebridRpc = <A, E>(
+  operation: Effect.Effect<A, E>,
   message: string
 ): Effect.Effect<A, DebridError> =>
-  Effect.tryPromise({
-    try: operation,
-    catch: (cause) =>
-      new DebridError({
-        message: `${message}: ${cause instanceof Error ? cause.message : String(cause)}`,
-        service: 'realdebrid',
-      }),
-  });
+  operation.pipe(
+    Effect.mapError(
+      (cause) =>
+        new DebridError({
+          message: `${message}: ${cause instanceof Error ? cause.message : String(cause)}`,
+          service: 'realdebrid',
+        })
+    )
+  );
 
 function waitForTorrentReady(id: string) {
   return Effect.gen(function* () {
     for (let attempt = 0; attempt < 200; attempt++) {
       if (
-        yield* realDebridPromise(
-          () => Effect.runPromise(electronRpc.realdebrid.isTorrentReady(id)),
+        yield* realDebridRpc(
+          electronRpc.realdebrid.isTorrentReady(id),
           'Failed to check Real-Debrid torrent status'
         )
       ) {
@@ -72,8 +73,8 @@ export class RealDebridService extends BaseService {
         );
       }
 
-      const worked = yield* realDebridPromise(
-        () => Effect.runPromise(electronRpc.realdebrid.updateKey()),
+      const worked = yield* realDebridRpc(
+        electronRpc.realdebrid.updateKey(),
         'Failed to update Real-Debrid API key'
       );
       if (!worked) {
@@ -85,8 +86,8 @@ export class RealDebridService extends BaseService {
         );
       }
 
-      const hosts = yield* realDebridPromise(
-        () => Effect.runPromise(electronRpc.realdebrid.getHosts()),
+      const hosts = yield* realDebridRpc(
+        electronRpc.realdebrid.getHosts(),
         'Failed to load Real-Debrid hosts'
       );
       const debridResult = result as RealDebridSearchResult;
@@ -131,11 +132,8 @@ export class RealDebridService extends BaseService {
   ) {
     return Effect.gen(this, function* () {
       if (result.downloadType !== 'magnet') return;
-      const magnet = yield* realDebridPromise(
-        () =>
-          Effect.runPromise(
-            electronRpc.realdebrid.addMagnet(result.downloadURL!, host)
-          ),
+      const magnet = yield* realDebridRpc(
+        electronRpc.realdebrid.addMagnet(result.downloadURL!, host),
         'Failed to add magnet to Real-Debrid'
       );
       yield* this.finishDebridDownload(result, appID, tempId, magnet.id);
@@ -160,11 +158,8 @@ export class RealDebridService extends BaseService {
           })
         );
       }
-      const torrent = yield* realDebridPromise(
-        () =>
-          Effect.runPromise(
-            electronRpc.realdebrid.addTorrent(result.downloadURL!, host)
-          ),
+      const torrent = yield* realDebridRpc(
+        electronRpc.realdebrid.addTorrent(result.downloadURL!, host),
         'Failed to add torrent to Real-Debrid'
       );
       yield* this.finishDebridDownload(result, appID, tempId, torrent.id);
@@ -178,30 +173,24 @@ export class RealDebridService extends BaseService {
     torrentId: string
   ) {
     return Effect.gen(this, function* () {
-      const isReady = yield* realDebridPromise(
-        () =>
-          Effect.runPromise(electronRpc.realdebrid.isTorrentReady(torrentId)),
+      const isReady = yield* realDebridRpc(
+        electronRpc.realdebrid.isTorrentReady(torrentId),
         'Failed to check Real-Debrid torrent status'
       );
       if (!isReady) {
-        yield* realDebridPromise(
-          () =>
-            Effect.runPromise(electronRpc.realdebrid.selectTorrent(torrentId)),
+        yield* realDebridRpc(
+          electronRpc.realdebrid.selectTorrent(torrentId),
           'Failed to select Real-Debrid torrent files'
         );
         yield* waitForTorrentReady(torrentId);
       }
 
-      const torrentInfo = yield* realDebridPromise(
-        () =>
-          Effect.runPromise(electronRpc.realdebrid.getTorrentInfo(torrentId)),
+      const torrentInfo = yield* realDebridRpc(
+        electronRpc.realdebrid.getTorrentInfo(torrentId),
         'Failed to load Real-Debrid torrent info'
       );
-      const download = yield* realDebridPromise(
-        () =>
-          Effect.runPromise(
-            electronRpc.realdebrid.unrestrictLink(torrentInfo.links[0])
-          ),
+      const download = yield* realDebridRpc(
+        electronRpc.realdebrid.unrestrictLink(torrentInfo.links[0]),
         'Failed to unrestrict Real-Debrid link'
       );
       if (download === null) {
@@ -225,17 +214,14 @@ export class RealDebridService extends BaseService {
           downloadURL: download.download,
         },
       ];
-      const handshake = yield* realDebridPromise(
-        () =>
-          Effect.runPromise(
-            electronRpc.ddl.download([
-              {
-                link: download.download,
-                path: targetPath,
-                headers: { 'OGI-Parallel-Limit': '1' },
-              },
-            ])
-          ),
+      const handshake = yield* realDebridRpc(
+        electronRpc.ddl.download([
+          {
+            link: download.download,
+            path: targetPath,
+            headers: { 'OGI-Parallel-Limit': '1' },
+          },
+        ]),
         'Failed to start Real-Debrid download'
       );
       if (handshake.status === 'error' || !handshake.id) {

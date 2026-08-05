@@ -41,15 +41,16 @@ type PremiumizeZipGenerateResponse =
   | PremiumizeErrorResponse
   | { status: 'success'; location: string };
 
-const premiumizePromise = <A>(operation: () => Promise<A>, message: string) =>
-  Effect.tryPromise({
-    try: operation,
-    catch: (cause) =>
-      new DebridError({
-        message: `${message}: ${cause instanceof Error ? cause.message : String(cause)}`,
-        service: 'premiumize' as const,
-      }),
-  });
+const premiumizeRpc = <A, E>(operation: Effect.Effect<A, E>, message: string) =>
+  operation.pipe(
+    Effect.mapError(
+      (cause) =>
+        new DebridError({
+          message: `${message}: ${cause instanceof Error ? cause.message : String(cause)}`,
+          service: 'premiumize' as const,
+        })
+    )
+  );
 
 export class PremiumizeService extends BaseService {
   readonly types = ['premiumize-magnet', 'premiumize-torrent'];
@@ -88,33 +89,27 @@ export class PremiumizeService extends BaseService {
       }
       const { premiumizeApiKey } = options;
 
-      const responseFolder = yield* premiumizePromise(
-        () =>
-          Effect.runPromise(
-            electronRpc.app.axios({
-              method: 'POST',
-              url: `${BASE_URL}/folder/create?apikey=${premiumizeApiKey}`,
-              data: { name: 'OpenGameInstaller' },
-              headers: {
-                'Content-Type': 'application/x-www-form-urlencoded',
-                Accept: 'application/json',
-              },
-            })
-          ),
+      const responseFolder = yield* premiumizeRpc(
+        electronRpc.app.axios({
+          method: 'POST',
+          url: `${BASE_URL}/folder/create?apikey=${premiumizeApiKey}`,
+          data: { name: 'OpenGameInstaller' },
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            Accept: 'application/json',
+          },
+        }),
         'Failed to create Premiumize folder'
       );
       const folderData = responseFolder.data as ResponseFolder;
       let folderId = folderData.status === 'success' ? folderData.id : '';
       if (folderData.status === 'error') {
-        const searchResponse = yield* premiumizePromise(
-          () =>
-            Effect.runPromise(
-              electronRpc.app.axios({
-                method: 'GET',
-                url: `${BASE_URL}/folder/search?apikey=${premiumizeApiKey}&q=OpenGameInstaller`,
-                headers: { Accept: 'application/json' },
-              })
-            ),
+        const searchResponse = yield* premiumizeRpc(
+          electronRpc.app.axios({
+            method: 'GET',
+            url: `${BASE_URL}/folder/search?apikey=${premiumizeApiKey}&q=OpenGameInstaller`,
+            headers: { Accept: 'application/json' },
+          }),
           'Failed to search Premiumize folders'
         );
         const searchData = searchResponse.data as PremiumizeFolderResponse;
@@ -141,11 +136,8 @@ export class PremiumizeService extends BaseService {
 
       const formData = new FormData();
       if (result.downloadType === 'torrent') {
-        const torrentData = yield* premiumizePromise(
-          () =>
-            Effect.runPromise(
-              electronRpc.downloadTorrentInto(result.downloadURL!)
-            ),
+        const torrentData = yield* premiumizeRpc(
+          electronRpc.downloadTorrentInto(result.downloadURL!),
           'Failed to download torrent data'
         );
         formData.append('file', new Blob([torrentData.buffer as ArrayBuffer]));
@@ -153,19 +145,16 @@ export class PremiumizeService extends BaseService {
         formData.append('src', result.downloadURL!);
       }
       formData.append('folder_id', folderId);
-      const transferResponse = yield* premiumizePromise(
-        () =>
-          Effect.runPromise(
-            electronRpc.app.axios<PremiumizeTransferResponse>({
-              method: 'POST',
-              url: `${BASE_URL}/transfer/create?apikey=${premiumizeApiKey}`,
-              data: Object.fromEntries(formData.entries()),
-              headers: {
-                'Content-Type': 'multipart/form-data',
-                Accept: 'application/json',
-              },
-            })
-          ),
+      const transferResponse = yield* premiumizeRpc(
+        electronRpc.app.axios<PremiumizeTransferResponse>({
+          method: 'POST',
+          url: `${BASE_URL}/transfer/create?apikey=${premiumizeApiKey}`,
+          data: Object.fromEntries(formData.entries()),
+          headers: {
+            'Content-Type': 'multipart/form-data',
+            Accept: 'application/json',
+          },
+        }),
         'Failed to create Premiumize transfer'
       );
       if (transferResponse.data.status === 'error') {
@@ -180,14 +169,11 @@ export class PremiumizeService extends BaseService {
 
       let foundFolderId = '';
       for (let attempt = 0; attempt <= 120; attempt++) {
-        const transfersResponse = yield* premiumizePromise(
-          () =>
-            Effect.runPromise(
-              electronRpc.app.axios<PremiumizeTransfersListResponse>({
-                method: 'GET',
-                url: `${BASE_URL}/transfer/list?apikey=${premiumizeApiKey}`,
-              })
-            ),
+        const transfersResponse = yield* premiumizeRpc(
+          electronRpc.app.axios<PremiumizeTransfersListResponse>({
+            method: 'GET',
+            url: `${BASE_URL}/transfer/list?apikey=${premiumizeApiKey}`,
+          }),
           'Failed to check Premiumize transfer'
         );
         if (
@@ -213,19 +199,16 @@ export class PremiumizeService extends BaseService {
         );
       }
 
-      const zipResponse = yield* premiumizePromise(
-        () =>
-          Effect.runPromise(
-            electronRpc.app.axios<PremiumizeZipGenerateResponse>({
-              method: 'POST',
-              url: `${BASE_URL}/zip/generate?apikey=${premiumizeApiKey}`,
-              data: { 'folders[]': foundFolderId },
-              headers: {
-                'Content-Type': 'application/x-www-form-urlencoded',
-                Accept: 'application/json',
-              },
-            })
-          ),
+      const zipResponse = yield* premiumizeRpc(
+        electronRpc.app.axios<PremiumizeZipGenerateResponse>({
+          method: 'POST',
+          url: `${BASE_URL}/zip/generate?apikey=${premiumizeApiKey}`,
+          data: { 'folders[]': foundFolderId },
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            Accept: 'application/json',
+          },
+        }),
         'Failed to generate Premiumize download'
       );
       if (zipResponse.status !== 200 || zipResponse.data.status === 'error') {
@@ -247,17 +230,14 @@ export class PremiumizeService extends BaseService {
         result.name,
         zipFilename
       );
-      const handshake = yield* premiumizePromise(
-        () =>
-          Effect.runPromise(
-            electronRpc.ddl.download([
-              {
-                link: directDownloadUrl,
-                path: targetPath,
-                headers: { 'OGI-Parallel-Limit': '1' },
-              },
-            ])
-          ),
+      const handshake = yield* premiumizeRpc(
+        electronRpc.ddl.download([
+          {
+            link: directDownloadUrl,
+            path: targetPath,
+            headers: { 'OGI-Parallel-Limit': '1' },
+          },
+        ]),
         'Failed to start Premiumize download'
       );
       if (handshake.status === 'error' || !handshake.id) {

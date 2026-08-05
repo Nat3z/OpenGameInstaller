@@ -23,18 +23,19 @@ type AllDebridSearchResult = SearchResultWithAddon & {
   filename?: string;
 };
 
-const allDebridPromise = <A>(
-  operation: () => Promise<A>,
+const allDebridRpc = <A, E>(
+  operation: Effect.Effect<A, E>,
   message: string
 ): Effect.Effect<A, DebridError> =>
-  Effect.tryPromise({
-    try: operation,
-    catch: (cause) =>
-      new DebridError({
-        message: `${message}: ${cause instanceof Error ? cause.message : String(cause)}`,
-        service: 'alldebrid',
-      }),
-  });
+  operation.pipe(
+    Effect.mapError(
+      (cause) =>
+        new DebridError({
+          message: `${message}: ${cause instanceof Error ? cause.message : String(cause)}`,
+          service: 'alldebrid',
+        })
+    )
+  );
 
 function localNamesForLinks(
   links: string[],
@@ -62,8 +63,8 @@ function waitForTorrentReady(id: string) {
   return Effect.gen(function* () {
     for (let attempt = 0; attempt < 200; attempt++) {
       if (
-        yield* allDebridPromise(
-          () => Effect.runPromise(electronRpc.alldebrid.isTorrentReady(id)),
+        yield* allDebridRpc(
+          electronRpc.alldebrid.isTorrentReady(id),
           'Failed to check AllDebrid torrent status'
         )
       ) {
@@ -102,8 +103,8 @@ export class AllDebridService extends BaseService {
           })
         );
       }
-      const worked = yield* allDebridPromise(
-        () => Effect.runPromise(electronRpc.alldebrid.updateKey()),
+      const worked = yield* allDebridRpc(
+        electronRpc.alldebrid.updateKey(),
         'Failed to update AllDebrid API key'
       );
       if (!worked) {
@@ -152,11 +153,8 @@ export class AllDebridService extends BaseService {
 
   private getTorrentIdFromMagnet(result: AllDebridSearchResult) {
     return Effect.gen(function* () {
-      const magnet = yield* allDebridPromise(
-        () =>
-          Effect.runPromise(
-            electronRpc.alldebrid.addMagnet(result.downloadURL)
-          ),
+      const magnet = yield* allDebridRpc(
+        electronRpc.alldebrid.addMagnet(result.downloadURL),
         'Failed to add magnet to AllDebrid'
       );
       return magnet.id;
@@ -191,11 +189,8 @@ export class AllDebridService extends BaseService {
           })
         );
       }
-      const torrent = yield* allDebridPromise(
-        () =>
-          Effect.runPromise(
-            electronRpc.alldebrid.addTorrent(result.downloadURL)
-          ),
+      const torrent = yield* allDebridRpc(
+        electronRpc.alldebrid.addTorrent(result.downloadURL),
         'Failed to add torrent to AllDebrid'
       );
       if (!torrent) {
@@ -218,21 +213,19 @@ export class AllDebridService extends BaseService {
   ) {
     return Effect.gen(function* () {
       const torrentId = yield* getTorrentId;
-      const isReady = yield* allDebridPromise(
-        () =>
-          Effect.runPromise(electronRpc.alldebrid.isTorrentReady(torrentId)),
+      const isReady = yield* allDebridRpc(
+        electronRpc.alldebrid.isTorrentReady(torrentId),
         'Failed to check AllDebrid torrent status'
       );
       if (!isReady) {
-        yield* allDebridPromise(
-          () => Effect.runPromise(electronRpc.alldebrid.selectTorrent()),
+        yield* allDebridRpc(
+          electronRpc.alldebrid.selectTorrent(),
           'Failed to select AllDebrid torrent files'
         );
         yield* waitForTorrentReady(torrentId);
       }
-      const torrentInfo = yield* allDebridPromise(
-        () =>
-          Effect.runPromise(electronRpc.alldebrid.getTorrentInfo(torrentId)),
+      const torrentInfo = yield* allDebridRpc(
+        electronRpc.alldebrid.getTorrentInfo(torrentId),
         'Failed to load AllDebrid torrent info'
       );
       const markError = () =>
@@ -256,8 +249,8 @@ export class AllDebridService extends BaseService {
       });
       const resolvedLinks: string[] = [];
       for (const link of torrentInfo.links) {
-        const download = yield* allDebridPromise(
-          () => Effect.runPromise(electronRpc.alldebrid.unrestrictLink(link)),
+        const download = yield* allDebridRpc(
+          electronRpc.alldebrid.unrestrictLink(link),
           'Failed to unrestrict AllDebrid link'
         );
         if (!download) {
@@ -278,17 +271,14 @@ export class AllDebridService extends BaseService {
         torrentInfo.files,
         result.filename
       );
-      const handshake = yield* allDebridPromise(
-        () =>
-          Effect.runPromise(
-            electronRpc.ddl.download(
-              resolvedLinks.map((link, index) => ({
-                link,
-                path: safePath + localNames[index],
-                headers: { 'OGI-Parallel-Limit': '1' },
-              }))
-            )
-          ),
+      const handshake = yield* allDebridRpc(
+        electronRpc.ddl.download(
+          resolvedLinks.map((link, index) => ({
+            link,
+            path: safePath + localNames[index],
+            headers: { 'OGI-Parallel-Limit': '1' },
+          }))
+        ),
         'Failed to start AllDebrid download'
       );
       if (handshake.status === 'error' || !handshake.id) {

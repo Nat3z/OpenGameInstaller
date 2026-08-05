@@ -84,27 +84,36 @@ async function updateAddons() {
     button.setAttribute('disabled', 'true');
   });
 
-  try {
-    await Effect.runPromise(electronRpc.updateAddons());
-    addonUpdates.set([]);
-    await Effect.runPromise(electronRpc.restartAddonServer());
-    await Effect.runPromise(reconnectClientSdk());
-    createNotification({
-      id: Math.random().toString(36).substring(7),
-      message: 'Addons updated successfully',
-      type: 'success',
-    });
-  } catch (error) {
-    createNotification({
-      id: Math.random().toString(36).substring(7),
-      message: 'Failed to update addons',
-      type: 'error',
-    });
-  } finally {
-    buttonsToDisable.forEach((button) => {
-      button.removeAttribute('disabled');
-    });
-  }
+  await Effect.runPromise(
+    Effect.gen(function* () {
+      yield* electronRpc.updateAddons();
+      addonUpdates.set([]);
+      yield* electronRpc.restartAddonServer();
+      yield* reconnectClientSdk();
+      createNotification({
+        id: Math.random().toString(36).substring(7),
+        message: 'Addons updated successfully',
+        type: 'success',
+      });
+    }).pipe(
+      Effect.catchAll(() =>
+        Effect.sync(() =>
+          createNotification({
+            id: Math.random().toString(36).substring(7),
+            message: 'Failed to update addons',
+            type: 'error',
+          })
+        )
+      ),
+      Effect.ensuring(
+        Effect.sync(() =>
+          buttonsToDisable.forEach((button) => {
+            button.removeAttribute('disabled');
+          })
+        )
+      )
+    )
+  );
 }
 
 async function addAddon() {
@@ -115,18 +124,24 @@ async function addAddon() {
     message: 'Installing addon...',
     type: 'info',
   });
-  try {
-    await Effect.runPromise(electronRpc.installAddons([addonUrl]));
-    addonUrl = '';
-    await Effect.runPromise(reconnectClientSdk());
-  } catch (error) {
-    console.error('Failed to add addon:', error);
-    createNotification({
-      id: Math.random().toString(36).substring(7),
-      message: 'Failed to add addon',
-      type: 'error',
-    });
-  }
+  await Effect.runPromise(
+    Effect.gen(function* () {
+      yield* electronRpc.installAddons([addonUrl]);
+      addonUrl = '';
+      yield* reconnectClientSdk();
+    }).pipe(
+      Effect.catchAll((error) =>
+        Effect.sync(() => {
+          console.error('Failed to add addon:', error);
+          createNotification({
+            id: Math.random().toString(36).substring(7),
+            message: 'Failed to add addon',
+            type: 'error',
+          });
+        })
+      )
+    )
+  );
 }
 
 function openMarketplaceSourceManager() {

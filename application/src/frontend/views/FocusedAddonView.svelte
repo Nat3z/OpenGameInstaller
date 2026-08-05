@@ -296,43 +296,49 @@ async function deleteAddon() {
 
 async function deleteAddonGO() {
   if (!selectedAddon) return;
-  try {
-    const result = await Effect.runPromise(
-      electronRpc.deleteInstalledAddon(selectedAddon.id)
-    );
-    if (result.success) {
-      notifications.update((update) => [
-        ...update,
-        {
-          id: Math.random().toString(36).substring(7),
-          type: 'success',
-          message: `Addon '${selectedAddon!.name}' deleted successfully.`,
-        },
-      ]);
-      refreshAddon();
-      onBack();
-    } else {
-      notifications.update((update) => [
-        ...update,
-        {
-          id: Math.random().toString(36).substring(7),
-          type: 'error',
-          message:
-            result.message ||
-            `Failed to delete addon '${selectedAddon!.name}'.`,
-        },
-      ]);
-    }
-  } catch (e) {
-    notifications.update((update) => [
-      ...update,
-      {
-        id: Math.random().toString(36).substring(7),
-        type: 'error',
-        message: `Error deleting addon: ${e}`,
-      },
-    ]);
-  }
+  await Effect.runPromise(
+    electronRpc.deleteInstalledAddon(selectedAddon.id).pipe(
+      Effect.tap((result) =>
+        Effect.sync(() => {
+          if (result.success) {
+            notifications.update((update) => [
+              ...update,
+              {
+                id: Math.random().toString(36).substring(7),
+                type: 'success',
+                message: `Addon '${selectedAddon!.name}' deleted successfully.`,
+              },
+            ]);
+            refreshAddon();
+            onBack();
+            return;
+          }
+          notifications.update((update) => [
+            ...update,
+            {
+              id: Math.random().toString(36).substring(7),
+              type: 'error',
+              message:
+                result.message ||
+                `Failed to delete addon '${selectedAddon!.name}'.`,
+            },
+          ]);
+        })
+      ),
+      Effect.catchAll((error) =>
+        Effect.sync(() =>
+          notifications.update((update) => [
+            ...update,
+            {
+              id: Math.random().toString(36).substring(7),
+              type: 'error',
+              message: `Error deleting addon: ${error}`,
+            },
+          ])
+        )
+      )
+    )
+  );
 }
 
 function hasConfigErrors() {
@@ -370,9 +376,8 @@ async function handleActionClick(key: string) {
   };
 
   runningActions = { ...runningActions, [key]: true };
-  try {
-    await Effect.runPromise(
-      runTask(
+  await Effect.runPromise(
+    runTask(
         {
           addonSource: selectedAddon.id,
           addonName: selectedAddon.name,
@@ -385,20 +390,26 @@ async function handleActionClick(key: string) {
           storefront: '',
         },
         ''
+      ).pipe(
+      Effect.catchAll((error) =>
+        Effect.sync(() =>
+          notifications.update((update) => [
+            ...update,
+            {
+              id: Math.random().toString(36).substring(7),
+              type: 'error',
+              message: `Failed to run action: ${error}`,
+            },
+          ])
+        )
+      ),
+      Effect.ensuring(
+        Effect.sync(() => {
+          runningActions = { ...runningActions, [key]: false };
+        })
       )
-    );
-  } catch (error) {
-    notifications.update((update) => [
-      ...update,
-      {
-        id: Math.random().toString(36).substring(7),
-        type: 'error',
-        message: `Failed to run action: ${error}`,
-      },
-    ]);
-  } finally {
-    runningActions = { ...runningActions, [key]: false };
-  }
+    )
+  );
 }
 </script>
 

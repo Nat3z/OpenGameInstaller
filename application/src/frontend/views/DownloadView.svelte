@@ -145,17 +145,21 @@ async function runDownloadAction<A, E>(
   effect: Effect.Effect<A, E>,
   description: string
 ): Promise<A | undefined> {
-  try {
-    return await Effect.runPromise(effect);
-  } catch (error) {
-    console.error(`${description}:`, error);
-    createNotification({
-      id: Math.random().toString(36).substring(7),
-      message: description,
-      type: 'error',
-    });
-    return undefined;
-  }
+  return Effect.runPromise(
+    effect.pipe(
+      Effect.catchAll((error) =>
+        Effect.sync(() => {
+          console.error(`${description}:`, error);
+          createNotification({
+            id: Math.random().toString(36).substring(7),
+            message: description,
+            type: 'error',
+          });
+          return undefined;
+        })
+      )
+    )
+  );
 }
 
 async function handleRetry(failedSetup: FailedSetup) {

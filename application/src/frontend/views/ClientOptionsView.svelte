@@ -537,14 +537,23 @@ async function updateAddons() {
 
 async function restartAddonServer() {
   isRestartingServer = true;
-  try {
-    await Effect.runPromise(electronRpc.restartAddonServer());
-    await Effect.runPromise(reconnectClientSdk());
-  } catch (err) {
-    console.error('Failed to restart addon server:', err);
-  } finally {
-    isRestartingServer = false;
-  }
+  await Effect.runPromise(
+    Effect.gen(function* () {
+      yield* electronRpc.restartAddonServer();
+      yield* reconnectClientSdk();
+    }).pipe(
+      Effect.catchAll((error) =>
+        Effect.sync(() =>
+          console.error('Failed to restart addon server:', error)
+        )
+      ),
+      Effect.ensuring(
+        Effect.sync(() => {
+          isRestartingServer = false;
+        })
+      )
+    )
+  );
 }
 
 let showPassword: { [key: string]: boolean } = $state({});

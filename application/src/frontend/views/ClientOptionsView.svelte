@@ -703,13 +703,20 @@ onMount(() => {
     reasonForSteamGridLaunch = (event as CustomEvent).detail || '';
   }
   async function handleAddonConnected() {
-    try {
-      await Effect.runPromise(fetchAddonsWithConfigure());
-    } catch (error) {
-      console.error('Failed to configure addons after reconnect:', error);
-    } finally {
-      isRestartingServer = false;
-    }
+    await Effect.runPromise(
+      fetchAddonsWithConfigure().pipe(
+        Effect.catchAll((error) =>
+          Effect.sync(() =>
+            console.error('Failed to configure addons after reconnect:', error)
+          )
+        ),
+        Effect.ensuring(
+          Effect.sync(() => {
+            isRestartingServer = false;
+          })
+        )
+      )
+    );
   }
   document.addEventListener('steamgriddb-launch', steamgriddbLaunch);
   document.addEventListener('addon-connected', handleAddonConnected);

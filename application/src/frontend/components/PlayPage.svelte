@@ -259,55 +259,113 @@ async function migrateToUmu() {
   if (isMigratingToUmu) return;
   isMigratingToUmu = true;
 
-  try {
-    const steamAppIdResult = await Effect.runPromise(
-      electronRpc.app.getSteamAppId(libraryInfo.appID)
-    );
-    const oldSteamAppId =
-      steamAppIdResult.status === 'success'
-        ? steamAppIdResult.appId
-        : undefined;
+  await Effect.runPromise(
+    Effect.gen(function* () {
+      const steamAppIdResult = yield* electronRpc.app.getSteamAppId(
+        libraryInfo.appID
+      );
+      const oldSteamAppId =
+        steamAppIdResult.status === 'success'
+          ? steamAppIdResult.appId
+          : undefined;
 
-    const migrationResult = await Effect.runPromise(
-      electronRpc.app.migrateToUmu(libraryInfo.appID, oldSteamAppId)
-    );
+      const migrationResult = yield* electronRpc.app.migrateToUmu(
+        libraryInfo.appID,
+        oldSteamAppId
+      );
 
-    if (!migrationResult.success) {
+      if (!migrationResult.success) {
+        createNotification({
+          id: Math.random().toString(36).substring(7),
+          type: 'error',
+          message: migrationResult.error || 'Failed to migrate game to UMU',
+        });
+        return;
+      }
+
+      const updatedLibraryInfo = yield* electronRpc.app.getLibraryInfo(
+        libraryInfo.appID
+      );
+      if (updatedLibraryInfo) {
+        libraryInfo = updatedLibraryInfo;
+      }
+
+      // Queue Steam re-add requirement so the existing banner appears
+      // and persistence writes update-state.json automatically.
+      queueRequiredReadd(libraryInfo.appID, oldSteamAppId);
+
       createNotification({
         id: Math.random().toString(36).substring(7),
-        type: 'error',
-        message: migrationResult.error || 'Failed to migrate game to UMU',
+        type: 'success',
+        message: 'Successfully migrated game prefix to UMU',
       });
-      return;
-    }
+      showUmuMigrationCompletePrompt();
+    }).pipe(
+      Effect.catchAll((error) =>
+        Effect.sync(() => {
+          console.error(error);
+          createNotification({
+            id: Math.random().toString(36).substring(7),
+            type: 'error',
+            message: 'Failed to migrate game to UMU',
+          });
+        })
+      ),
+      Effect.ensuring(
+        Effect.sync(() => {
+          isMigratingToUmu = false;
+        })
+      )
+    )
+  );
+}
 
-    const updatedLibraryInfo = await Effect.runPromise(
-      electronRpc.app.getLibraryInfo(libraryInfo.appID)
-    );
-    if (updatedLibraryInfo) {
-      libraryInfo = updatedLibraryInfo;
-    }
+function addRequiredReaddToSteam(button: HTMLButtonElement): Promise<void> {
+  button.disabled = true;
+  const requiredReadd = getRequiredReadd(libraryInfo.appID);
 
-    // Queue Steam re-add requirement so the existing banner appears
-    // and persistence writes update-state.json automatically.
-    queueRequiredReadd(libraryInfo.appID, oldSteamAppId);
+  return Effect.runPromise(
+    electronRpc.app
+      .addToSteam(
+        libraryInfo.appID,
+        requiredReadd?.steamAppId ?? libraryInfo.umu?.steamShortcutReaddId
+      )
+      .pipe(
+        Effect.tap((result) =>
+          Effect.sync(() => {
+            if (result.status === 'success') {
+              completeRequiredReadd(libraryInfo.appID);
+              if (libraryInfo.umu) {
+                delete libraryInfo.umu.steamShortcutReaddId;
+                libraryInfo = { ...libraryInfo };
+              }
+              if (result.warning) {
+                createNotification({
+                  id: Math.random().toString(36).substring(7),
+                  message: result.warning,
+                  type: 'warning',
+                });
+              }
+              return;
+            }
 
-    createNotification({
-      id: Math.random().toString(36).substring(7),
-      type: 'success',
-      message: 'Successfully migrated game prefix to UMU',
-    });
-    showUmuMigrationCompletePrompt();
-  } catch (error) {
-    console.error(error);
-    createNotification({
-      id: Math.random().toString(36).substring(7),
-      type: 'error',
-      message: 'Failed to migrate game to UMU',
-    });
-  } finally {
-    isMigratingToUmu = false;
-  }
+            createNotification({
+              id: Math.random().toString(36).substring(7),
+              message:
+                result.status === 'cancelled' ? result.message : result.error,
+              type: result.status === 'cancelled' ? 'info' : 'error',
+            });
+            button.disabled = false;
+          })
+        ),
+        Effect.catchAll((error) =>
+          Effect.sync(() => {
+            console.error(error);
+            button.disabled = false;
+          })
+        )
+      )
+  );
 }
 
 let searchingAddons: { [key: string]: SearchResult[] | undefined } = $state({});
@@ -673,45 +731,7 @@ function handleRunTask(task: SearchResult, addonID: string) {
               class="flex flex-1 items-center justify-center gap-2 rounded-lg border-none bg-accent-light px-4 py-2 font-archivo font-semibold text-accent-dark transition-colors duration-200 hover:bg-accent-light/80 disabled:cursor-not-allowed disabled:bg-disabled/50"
               onclick={async (event) => {
                 const button = event.currentTarget as HTMLButtonElement;
-                try {
-                  button.disabled = true;
-
-                  const requiredReadd = getRequiredReadd(libraryInfo.appID);
-                  const result = await Effect.runPromise(electronRpc.app.addToSteam(
-                    libraryInfo.appID,
-                    requiredReadd?.steamAppId ??
-                      libraryInfo.umu?.steamShortcutReaddId
-                  ));
-
-                  if (result.status === 'success') {
-                    completeRequiredReadd(libraryInfo.appID);
-                    if (libraryInfo.umu) {
-                      delete libraryInfo.umu.steamShortcutReaddId;
-                      libraryInfo = { ...libraryInfo };
-                    }
-                    if (result.warning) {
-                      createNotification({
-                        id: Math.random().toString(36).substring(7),
-                        message: result.warning,
-                        type: 'warning',
-                      });
-                    }
-                  } else {
-                    createNotification({
-                      id: Math.random().toString(36).substring(7),
-                      message:
-                        result.status === 'cancelled'
-                          ? result.message
-                          : result.error,
-                      type: result.status === 'cancelled' ? 'info' : 'error',
-                    });
-                    button.disabled = false;
-                  }
-                } catch (error) {
-                  console.error(error);
-                  // Re-enable button on error
-                  button.disabled = false;
-                }
+                await addRequiredReaddToSteam(button);
               }}
             >
               <svg

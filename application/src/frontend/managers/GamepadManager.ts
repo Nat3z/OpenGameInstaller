@@ -729,27 +729,35 @@ export class GamepadNavigator {
     this.allowProgrammaticTextFocus();
     element.focus();
 
-    try {
-      // Try to open Steam keyboard overlay
-      // The keyboard injects text directly into the focused input
-      const opened = await Effect.runPromise(
-        electronRpc.app.openSteamKeyboard({
+    await Effect.runPromise(
+      electronRpc.app
+        .openSteamKeyboard({
           x: 0,
           y: 0,
           width: 500,
           height: 500,
         })
-      );
-
-      if (!opened) {
-        // Steam keyboard not available (not on Steam Deck/Big Picture)
-        // Element is already focused for manual input
-        console.log('Steam keyboard not available, element focused for input');
-      }
-    } catch (error) {
-      // Steam keyboard not available, element is already focused
-      console.log('Steam keyboard error, focusing input instead:', error);
-    }
+        .pipe(
+          Effect.tap((opened) =>
+            Effect.sync(() => {
+              if (!opened) {
+                // Steam keyboard is unavailable, but the input is already focused.
+                console.log(
+                  'Steam keyboard not available, element focused for input'
+                );
+              }
+            })
+          ),
+          Effect.catchAll((error) =>
+            Effect.sync(() =>
+              console.log(
+                'Steam keyboard error, focusing input instead:',
+                error
+              )
+            )
+          )
+        )
+    );
   }
 
   goBack() {

@@ -66,9 +66,10 @@ onMount(async () => {
         `[GameLaunchOverlay] Running ${hookType}-launch hooks for ${gameName}`
       );
 
-      try {
-        await Effect.runPromise(runLaunchAppAddons(libraryInfo, hookType));
-
+      const hookResult = await Effect.runPromise(
+        runLaunchAppAddons(libraryInfo, hookType).pipe(Effect.either)
+      );
+      if (hookResult._tag === 'Right') {
         status = 'success';
         console.log(`[GameLaunchOverlay] ${hookType}-launch hooks completed`);
 
@@ -79,7 +80,8 @@ onMount(async () => {
           }
         }, 2000);
         timeouts.push(t);
-      } catch (error) {
+      } else {
+        const error = hookResult.left;
         console.error(
           `[GameLaunchOverlay] ${hookType}-launch hooks failed:`,
           error
@@ -100,9 +102,11 @@ onMount(async () => {
         `[GameLaunchOverlay] Running wrapped launch for ${gameName}: ${wrapperCommand}`
       );
 
-      try {
-        await Effect.runPromise(runLaunchAppAddons(libraryInfo, 'pre'));
-      } catch (error) {
+      const preLaunchResult = await Effect.runPromise(
+        runLaunchAppAddons(libraryInfo, 'pre').pipe(Effect.either)
+      );
+      if (preLaunchResult._tag === 'Left') {
+        const error = preLaunchResult.left;
         console.error('[GameLaunchOverlay] Pre-launch hooks failed:', error);
         status = 'error';
         errorMessage =
@@ -126,9 +130,11 @@ onMount(async () => {
       await Effect.runPromise(electronRpc.app.showWindow());
 
       let postLaunchError: string | null = null;
-      try {
-        await Effect.runPromise(runLaunchAppAddons(libraryInfo, 'post'));
-      } catch (error) {
+      const postLaunchResult = await Effect.runPromise(
+        runLaunchAppAddons(libraryInfo, 'post').pipe(Effect.either)
+      );
+      if (postLaunchResult._tag === 'Left') {
+        const error = postLaunchResult.left;
         console.error('[GameLaunchOverlay] Post-launch hooks failed:', error);
         postLaunchError =
           error instanceof Error ? error.message : 'Post-launch failed';

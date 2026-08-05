@@ -378,19 +378,19 @@ async function handleActionClick(key: string) {
   runningActions = { ...runningActions, [key]: true };
   await Effect.runPromise(
     runTask(
-        {
-          addonSource: selectedAddon.id,
-          addonName: selectedAddon.name,
-          manifest,
-          name: actionOption.displayName,
-          downloadType: 'task' as const,
-          taskName,
-          capsuleImage: '',
-          coverImage: '',
-          storefront: '',
-        },
-        ''
-      ).pipe(
+      {
+        addonSource: selectedAddon.id,
+        addonName: selectedAddon.name,
+        manifest,
+        name: actionOption.displayName,
+        downloadType: 'task' as const,
+        taskName,
+        capsuleImage: '',
+        coverImage: '',
+        storefront: '',
+      },
+      ''
+    ).pipe(
       Effect.catchAll((error) =>
         Effect.sync(() =>
           notifications.update((update) => [

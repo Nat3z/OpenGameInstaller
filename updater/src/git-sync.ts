@@ -69,6 +69,17 @@ export function syncBleedingEdgeRepo(
       'resolve-head',
       getRepoHeadSha(repoDir)
     );
+    const remoteBranchResult = yield* Effect.either(
+      runCommand('git', ['rev-parse', '--verify', remoteBranch], {
+        cwd: repoDir,
+      })
+    );
+    if (remoteBranchResult._tag === 'Left') {
+      return yield* withOperation(
+        'checkout',
+        Effect.fail(remoteBranchResult.left)
+      );
+    }
     const checkoutExisting = yield* Effect.either(
       runCommand('git', ['checkout', targetBranch], { cwd: repoDir })
     );

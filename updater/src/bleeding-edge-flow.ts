@@ -5,6 +5,18 @@ export type BleedingEdgeSelection = {
   readonly commit: string;
 };
 
+export function normalizeBleedingEdgeSelection(
+  branch: unknown,
+  commit: unknown,
+  defaultBranch: string
+): BleedingEdgeSelection {
+  const normalizedBranch = typeof branch === 'string' ? branch.trim() : '';
+  return {
+    branch: normalizedBranch || defaultBranch,
+    commit: typeof commit === 'string' ? commit.trim() : '',
+  };
+}
+
 export function selectAndBuildBleedingEdge<A, PersistError, BuildError>(
   selection: BleedingEdgeSelection,
   persist: (

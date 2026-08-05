@@ -10,7 +10,10 @@ import path, { join } from 'path';
 import yauzl, { type ZipFile } from 'yauzl';
 import zlib from 'zlib';
 import pjson from '../package.json' with { type: 'json' };
-import { selectAndBuildBleedingEdge } from './bleeding-edge-flow.js';
+import {
+  normalizeBleedingEdgeSelection,
+  selectAndBuildBleedingEdge,
+} from './bleeding-edge-flow.js';
 import {
   type BleedingEdgeSyncResult,
   GitSyncError,
@@ -947,10 +950,7 @@ function logUpdater(message: string, ...args: unknown[]) {
   console.log(`[updater] ${message}`, ...args);
 }
 
-function showBleedingEdgeSetupError(
-  error: UpdaterError,
-  returnToPicker: boolean
-) {
+function showBleedingEdgeSetupError(error: UpdaterError) {
   const phase = error instanceof UpdateError ? error.phase : error.operation;
   const detail = phase ? `${error.message}\n\nPhase: ${phase}` : error.message;
   sendUpdaterStatus(
@@ -960,9 +960,36 @@ function showBleedingEdgeSetupError(
     error.message
   );
   dialog.showErrorBox('Bleeding Edge setup failed', detail);
-  if (returnToPicker && mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.send('show-channel-picker');
-  }
+}
+
+type UpdateChannelChoice = {
+  readonly channel?: string;
+  readonly branch?: string;
+  readonly commit?: string;
+};
+
+function waitForUpdateChannelChoice() {
+  return tryUpdatePromise<UpdateChannelChoice>(
+    'choose-update-channel',
+    (signal) =>
+      new Promise((resolve, reject) => {
+        const onChoice = (_event: unknown, payload: unknown) => {
+          signal.removeEventListener('abort', onAbort);
+          resolve(
+            typeof payload === 'object' && payload !== null
+              ? (payload as UpdateChannelChoice)
+              : {}
+          );
+        };
+        const onAbort = () => {
+          ipcMain.removeListener('choose-channel', onChoice);
+          reject(signal.reason ?? new Error('Channel selection cancelled'));
+        };
+        ipcMain.once('choose-channel', onChoice);
+        signal.addEventListener('abort', onAbort, { once: true });
+        mainWindow?.webContents.send('show-channel-picker');
+      })
+  );
 }
 
 function sleep(ms: number) {
@@ -1089,60 +1116,50 @@ function createWindow(): Effect.Effect<void, UpdaterError> {
     }
 
     if (hasArg('--gui')) {
-      mainWindow.webContents.send('show-channel-picker');
-      const choice: any = yield* tryUpdatePromise(
-        'choose-update-channel',
-        (signal) =>
-          new Promise((resolve, reject) => {
-            const onChoice = (_event, payload): void => {
-              signal.removeEventListener('abort', onAbort);
-              resolve(payload);
-            };
-            const onAbort = (): void => {
-              ipcMain.removeListener('choose-channel', onChoice);
-              reject(signal.reason ?? new Error('Channel selection cancelled'));
-            };
-            ipcMain.once('choose-channel', onChoice);
-            signal.addEventListener('abort', onAbort, { once: true });
-          })
-      );
-      const channel = choice?.channel || 'stable';
-      if (channel === 'stable') {
-        yield* tryFileSystem('select-stable-channel', undefined, () => {
-          fs.rmSync('./bleeding-edge.txt', { force: true });
-          fs.rmSync('./COMMIT_EDGE.txt', { force: true });
-        });
-        usingBleedingEdge = false;
-      } else if (channel === 'unstable') {
-        yield* tryFileSystem('select-unstable-channel', undefined, () => {
-          fs.writeFileSync('./bleeding-edge.txt', 'true');
-          fs.rmSync('./COMMIT_EDGE.txt', { force: true });
-        });
-        usingBleedingEdge = true;
-      } else if (channel === 'bleeding-edge') {
-        const selection = {
-          commit: (choice?.commit || '').trim(),
-          branch: (choice?.branch || DEFAULT_BLEEDING_EDGE_BRANCH).trim(),
-        };
-        const buildResult = yield* Effect.either(
-          selectAndBuildBleedingEdge(
-            selection,
-            (target) =>
-              tryFileSystem('write-commit-state', './COMMIT_EDGE.txt', () =>
-                writeCommitEdgeFile(target.branch, target.commit)
-              ),
-            (target) => ensureBleedingEdgeBuild(target.commit, target.branch)
-          )
-        );
-        if (buildResult._tag === 'Left') {
-          console.error(buildResult.left);
-          showBleedingEdgeSetupError(buildResult.left, true);
-          return;
-        } else {
-          mainWindow.webContents.send('text', 'Launching OpenGameInstaller');
+      while (true) {
+        const choice = yield* waitForUpdateChannelChoice();
+        const channel = choice.channel || 'stable';
+        if (channel === 'stable') {
+          yield* tryFileSystem('select-stable-channel', undefined, () => {
+            fs.rmSync('./bleeding-edge.txt', { force: true });
+            fs.rmSync('./COMMIT_EDGE.txt', { force: true });
+          });
+          usingBleedingEdge = false;
+          break;
         }
-        launchApp(true);
-        return;
+        if (channel === 'unstable') {
+          yield* tryFileSystem('select-unstable-channel', undefined, () => {
+            fs.writeFileSync('./bleeding-edge.txt', 'true');
+            fs.rmSync('./COMMIT_EDGE.txt', { force: true });
+          });
+          usingBleedingEdge = true;
+          break;
+        }
+        if (channel === 'bleeding-edge') {
+          const selection = normalizeBleedingEdgeSelection(
+            choice.branch,
+            choice.commit,
+            DEFAULT_BLEEDING_EDGE_BRANCH
+          );
+          const buildResult = yield* Effect.either(
+            selectAndBuildBleedingEdge(
+              selection,
+              (target) =>
+                tryFileSystem('write-commit-state', './COMMIT_EDGE.txt', () =>
+                  writeCommitEdgeFile(target.branch, target.commit)
+                ),
+              (target) => ensureBleedingEdgeBuild(target.commit, target.branch)
+            )
+          );
+          if (buildResult._tag === 'Left') {
+            console.error(buildResult.left);
+            showBleedingEdgeSetupError(buildResult.left);
+            continue;
+          }
+          mainWindow.webContents.send('text', 'Launching OpenGameInstaller');
+          launchApp(true);
+          return;
+        }
       }
     } else if (updateChannel === 'bleeding-edge') {
       const { branch, commit } = getCommitEdgeTarget();
@@ -1151,7 +1168,7 @@ function createWindow(): Effect.Effect<void, UpdaterError> {
       );
       if (buildResult._tag === 'Left') {
         console.error(buildResult.left);
-        showBleedingEdgeSetupError(buildResult.left, false);
+        showBleedingEdgeSetupError(buildResult.left);
         return;
       } else {
         mainWindow.webContents.send('text', 'Launching OpenGameInstaller');

@@ -174,3 +174,93 @@ test('stashes dirty files before force-aligning when rebase cannot start', async
     (await git(client, 'stash', 'show', '-p', 'stash@{0}')).stdout
   ).toContain('dirty local change');
 });
+
+test('returns a missing remote branch error without starting recovery', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'ogi-git-sync-'));
+  temporaryDirectories.push(root);
+  const remote = path.join(root, 'remote.git');
+  const seed = path.join(root, 'seed');
+  const client = path.join(root, 'client');
+  const commands: string[][] = [];
+
+  await git(root, 'init', '--bare', remote);
+  await git(root, 'init', '-b', 'main', seed);
+  await git(seed, 'config', 'user.email', 'updater-test@example.invalid');
+  await git(seed, 'config', 'user.name', 'updater-test');
+  await writeFile(path.join(seed, 'file.txt'), 'base\n');
+  await git(seed, 'add', 'file.txt');
+  await git(seed, 'commit', '-m', 'base');
+  await git(seed, 'remote', 'add', 'origin', remote);
+  await git(seed, 'push', 'origin', 'main');
+  await git(root, 'clone', '--branch', 'main', remote, client);
+
+  const error = await Effect.runPromise(
+    Effect.flip(
+      syncBleedingEdgeRepo(
+        client,
+        'missing',
+        'main',
+        (command, args, options) => {
+          commands.push(args);
+          return runCommand(command, args, options);
+        },
+        getHeadSha
+      )
+    )
+  );
+
+  expect(error.operation).toBe('checkout');
+  expect(commands.some((args) => args[0] === 'stash')).toBe(false);
+  expect(commands.some((args) => args.includes('--force'))).toBe(false);
+});
+
+test('recovers a dirty detached cache when the target branch exists', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'ogi-git-sync-'));
+  temporaryDirectories.push(root);
+  const remote = path.join(root, 'remote.git');
+  const seed = path.join(root, 'seed');
+  const client = path.join(root, 'client');
+  const commands: string[][] = [];
+
+  await git(root, 'init', '--bare', remote);
+  await git(root, 'init', '-b', 'main', seed);
+  await git(seed, 'config', 'user.email', 'updater-test@example.invalid');
+  await git(seed, 'config', 'user.name', 'updater-test');
+  await writeFile(path.join(seed, 'file.txt'), 'base\n');
+  await git(seed, 'add', 'file.txt');
+  await git(seed, 'commit', '-m', 'base');
+  await git(seed, 'remote', 'add', 'origin', remote);
+  await git(seed, 'push', 'origin', 'main');
+  await git(root, 'clone', '--branch', 'main', remote, client);
+  await git(client, 'config', 'user.email', 'updater-test@example.invalid');
+  await git(client, 'config', 'user.name', 'updater-test');
+
+  await git(client, 'checkout', '--detach');
+  await writeFile(path.join(client, 'file.txt'), 'detached commit\n');
+  await git(client, 'commit', '-am', 'detached commit');
+  await writeFile(path.join(client, 'file.txt'), 'dirty detached change\n');
+  await writeFile(path.join(seed, 'file.txt'), 'remote change\n');
+  await git(seed, 'commit', '-am', 'remote change');
+  await git(seed, 'push', 'origin', 'main');
+  const remoteSha = await Effect.runPromise(getHeadSha(seed));
+
+  const result = await Effect.runPromise(
+    syncBleedingEdgeRepo(
+      client,
+      'main',
+      'main',
+      (command, args, options) => {
+        commands.push(args);
+        return runCommand(command, args, options);
+      },
+      getHeadSha
+    )
+  );
+
+  expect(result.afterSyncSha).toBe(remoteSha);
+  expect(commands.some((args) => args[0] === 'stash')).toBe(true);
+  expect(commands.some((args) => args.includes('--force'))).toBe(true);
+  expect(
+    (await git(client, 'stash', 'show', '-p', 'stash@{0}')).stdout
+  ).toContain('dirty detached change');
+});

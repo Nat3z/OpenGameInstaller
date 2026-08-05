@@ -10,6 +10,7 @@ import path, { join } from 'path';
 import yauzl, { type ZipFile } from 'yauzl';
 import zlib from 'zlib';
 import pjson from '../package.json' with { type: 'json' };
+import { selectAndBuildBleedingEdge } from './bleeding-edge-flow.js';
 import {
   type BleedingEdgeSyncResult,
   GitSyncError,
@@ -946,6 +947,24 @@ function logUpdater(message: string, ...args: unknown[]) {
   console.log(`[updater] ${message}`, ...args);
 }
 
+function showBleedingEdgeSetupError(
+  error: UpdaterError,
+  returnToPicker: boolean
+) {
+  const phase = error instanceof UpdateError ? error.phase : error.operation;
+  const detail = phase ? `${error.message}\n\nPhase: ${phase}` : error.message;
+  sendUpdaterStatus(
+    'Bleeding Edge Failed',
+    undefined,
+    undefined,
+    error.message
+  );
+  dialog.showErrorBox('Bleeding Edge setup failed', detail);
+  if (returnToPicker && mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('show-channel-picker');
+  }
+}
+
 function sleep(ms: number) {
   return Effect.sleep(ms);
 }
@@ -1101,19 +1120,24 @@ function createWindow(): Effect.Effect<void, UpdaterError> {
         });
         usingBleedingEdge = true;
       } else if (channel === 'bleeding-edge') {
+        const selection = {
+          commit: (choice?.commit || '').trim(),
+          branch: (choice?.branch || DEFAULT_BLEEDING_EDGE_BRANCH).trim(),
+        };
         const buildResult = yield* Effect.either(
-          ensureBleedingEdgeBuild(
-            (choice?.commit || '').trim(),
-            (choice?.branch || DEFAULT_BLEEDING_EDGE_BRANCH).trim()
+          selectAndBuildBleedingEdge(
+            selection,
+            (target) =>
+              tryFileSystem('write-commit-state', './COMMIT_EDGE.txt', () =>
+                writeCommitEdgeFile(target.branch, target.commit)
+              ),
+            (target) => ensureBleedingEdgeBuild(target.commit, target.branch)
           )
         );
         if (buildResult._tag === 'Left') {
           console.error(buildResult.left);
-          mainWindow.webContents.send(
-            'text',
-            'Bleeding Edge Failed',
-            buildResult.left.message
-          );
+          showBleedingEdgeSetupError(buildResult.left, true);
+          return;
         } else {
           mainWindow.webContents.send('text', 'Launching OpenGameInstaller');
         }
@@ -1127,11 +1151,8 @@ function createWindow(): Effect.Effect<void, UpdaterError> {
       );
       if (buildResult._tag === 'Left') {
         console.error(buildResult.left);
-        mainWindow.webContents.send(
-          'text',
-          'Bleeding Edge Failed',
-          buildResult.left.message
-        );
+        showBleedingEdgeSetupError(buildResult.left, false);
+        return;
       } else {
         mainWindow.webContents.send('text', 'Launching OpenGameInstaller');
       }

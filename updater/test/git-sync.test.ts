@@ -100,3 +100,77 @@ test('synchronizes a cached branch after the remote branch is force-pushed', asy
   expect(result.afterSyncSha).toBe(remoteSha);
   expect(await Effect.runPromise(getHeadSha(client))).toBe(remoteSha);
 });
+
+test('rebases local branch commits onto the fetched remote branch', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'ogi-git-sync-'));
+  temporaryDirectories.push(root);
+  const remote = path.join(root, 'remote.git');
+  const seed = path.join(root, 'seed');
+  const client = path.join(root, 'client');
+
+  await git(root, 'init', '--bare', remote);
+  await git(root, 'init', '-b', 'main', seed);
+  await git(seed, 'config', 'user.email', 'updater-test@example.invalid');
+  await git(seed, 'config', 'user.name', 'updater-test');
+  await writeFile(path.join(seed, 'base.txt'), 'base\n');
+  await git(seed, 'add', 'base.txt');
+  await git(seed, 'commit', '-m', 'base');
+  await git(seed, 'remote', 'add', 'origin', remote);
+  await git(seed, 'push', 'origin', 'main');
+  await git(root, 'clone', '--branch', 'main', remote, client);
+  await git(client, 'config', 'user.email', 'updater-test@example.invalid');
+  await git(client, 'config', 'user.name', 'updater-test');
+
+  await writeFile(path.join(client, 'local.txt'), 'local\n');
+  await git(client, 'add', 'local.txt');
+  await git(client, 'commit', '-m', 'local change');
+  await writeFile(path.join(seed, 'remote.txt'), 'remote\n');
+  await git(seed, 'add', 'remote.txt');
+  await git(seed, 'commit', '-m', 'remote change');
+  await git(seed, 'push', 'origin', 'main');
+  const remoteSha = await Effect.runPromise(getHeadSha(seed));
+
+  const result = await Effect.runPromise(
+    syncBleedingEdgeRepo(client, 'main', 'main', runCommand, getHeadSha)
+  );
+
+  expect(result.afterSyncSha).not.toBe(remoteSha);
+  expect(
+    (await git(client, 'merge-base', 'HEAD', `origin/main`)).stdout.trim()
+  ).toBe(remoteSha);
+  expect((await git(client, 'show', 'HEAD:local.txt')).stdout).toBe('local\n');
+});
+
+test('stashes dirty files before force-aligning when rebase cannot start', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'ogi-git-sync-'));
+  temporaryDirectories.push(root);
+  const remote = path.join(root, 'remote.git');
+  const seed = path.join(root, 'seed');
+  const client = path.join(root, 'client');
+
+  await git(root, 'init', '--bare', remote);
+  await git(root, 'init', '-b', 'main', seed);
+  await git(seed, 'config', 'user.email', 'updater-test@example.invalid');
+  await git(seed, 'config', 'user.name', 'updater-test');
+  await writeFile(path.join(seed, 'file.txt'), 'base\n');
+  await git(seed, 'add', 'file.txt');
+  await git(seed, 'commit', '-m', 'base');
+  await git(seed, 'remote', 'add', 'origin', remote);
+  await git(seed, 'push', 'origin', 'main');
+  await git(root, 'clone', '--branch', 'main', remote, client);
+
+  await writeFile(path.join(client, 'file.txt'), 'dirty local change\n');
+  await writeFile(path.join(seed, 'file.txt'), 'remote change\n');
+  await git(seed, 'commit', '-am', 'remote change');
+  await git(seed, 'push', 'origin', 'main');
+  const remoteSha = await Effect.runPromise(getHeadSha(seed));
+
+  const result = await Effect.runPromise(
+    syncBleedingEdgeRepo(client, 'main', 'main', runCommand, getHeadSha)
+  );
+
+  expect(result.afterSyncSha).toBe(remoteSha);
+  expect(
+    (await git(client, 'stash', 'show', '-p', 'stash@{0}')).stdout
+  ).toContain('dirty local change');
+});

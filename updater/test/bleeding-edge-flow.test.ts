@@ -1,6 +1,16 @@
 import { expect, test } from 'bun:test';
 import { Effect } from 'effect';
-import { selectAndBuildBleedingEdge } from '../src/bleeding-edge-flow.js';
+import {
+  normalizeBleedingEdgeSelection,
+  selectAndBuildBleedingEdge,
+} from '../src/bleeding-edge-flow.js';
+
+test('uses the default branch for a whitespace-only selection', () => {
+  expect(normalizeBleedingEdgeSelection('   ', ' abc123 ', 'main')).toEqual({
+    branch: 'main',
+    commit: 'abc123',
+  });
+});
 
 test('persists a bleeding-edge selection before a build can fail', async () => {
   const events: string[] = [];

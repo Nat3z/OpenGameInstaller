@@ -2,6 +2,7 @@ import { DownloadError, formatError } from '@ogi/errors';
 import { Effect } from 'effect';
 import { get } from 'svelte/store';
 import { getConfigClientOption } from '@/frontend/lib/config/client';
+import { resetButtonOnExit } from '@/frontend/lib/downloads/button-state';
 import { ALL_SERVICES } from '@/frontend/lib/downloads/services';
 import type { SearchResultWithAddon } from '@/frontend/lib/tasks/runner';
 import {
@@ -14,7 +15,7 @@ import {
 /**
  * Resolves download handler from config, finds the matching service, and starts the download.
  * Preserves failures for callers that need to react to whether the download started.
- * The download button is reset before a failure is returned.
+ * The download button is reset whenever the service exits, including defects.
  * @param result - Search result with addon and download URL/type
  * @param appID - Application ID for the download
  * @param event - Mouse event (used to resolve button if htmlButton not provided)
@@ -36,57 +37,60 @@ export function startDownloadEffect(
     }
   };
 
-  return Effect.gen(function* () {
-    let downloadHandler: string = result.downloadType;
-    if (downloadHandler === 'torrent' || downloadHandler === 'magnet') {
-      const generalOptions = getConfigClientOption<{
-        torrentClient?: string;
-      }>('general');
-      const torrentClient = generalOptions?.torrentClient ?? 'disable';
-      if (torrentClient === 'disable') {
+  return resetButtonOnExit(
+    Effect.gen(function* () {
+      let downloadHandler: string = result.downloadType;
+      if (downloadHandler === 'torrent' || downloadHandler === 'magnet') {
+        const generalOptions = getConfigClientOption<{
+          torrentClient?: string;
+        }>('general');
+        const torrentClient = generalOptions?.torrentClient ?? 'disable';
+        if (torrentClient === 'disable') {
+          return yield* Effect.fail(
+            new DownloadError({
+              message: 'Torrenting is disabled in the settings.',
+            })
+          );
+        }
+        if (
+          torrentClient === 'real-debrid' ||
+          torrentClient === 'all-debrid' ||
+          torrentClient === 'torbox' ||
+          torrentClient === 'premiumize'
+        ) {
+          downloadHandler = `${torrentClient}-${downloadHandler}`;
+        }
+      }
+
+      const sanitizedResult = {
+        ...result,
+        name: result.name.replace(/[\\/:*?"<>|]/g, '-'),
+      };
+      const service = ALL_SERVICES.find((candidate) =>
+        candidate.types.includes(downloadHandler)
+      );
+      console.log('Service:', service);
+      if (!service) {
         return yield* Effect.fail(
           new DownloadError({
-            message: 'Torrenting is disabled in the settings.',
+            message: `No service found for download type: ${downloadHandler}`,
           })
         );
       }
-      if (
-        torrentClient === 'real-debrid' ||
-        torrentClient === 'all-debrid' ||
-        torrentClient === 'torbox' ||
-        torrentClient === 'premiumize'
-      ) {
-        downloadHandler = `${torrentClient}-${downloadHandler}`;
+
+      if (resolvedButton) {
+        resolvedButton.textContent = 'Downloading...';
+        resolvedButton.disabled = true;
       }
-    }
-
-    const sanitizedResult = {
-      ...result,
-      name: result.name.replace(/[\\/:*?"<>|]/g, '-'),
-    };
-    const service = ALL_SERVICES.find((candidate) =>
-      candidate.types.includes(downloadHandler)
-    );
-    console.log('Service:', service);
-    if (!service) {
-      return yield* Effect.fail(
-        new DownloadError({
-          message: `No service found for download type: ${downloadHandler}`,
-        })
+      yield* service.startDownload(
+        sanitizedResult,
+        appID,
+        event,
+        resolvedButton ?? undefined
       );
-    }
-
-    if (resolvedButton) {
-      resolvedButton.textContent = 'Downloading...';
-      resolvedButton.disabled = true;
-    }
-    yield* service.startDownload(
-      sanitizedResult,
-      appID,
-      event,
-      resolvedButton ?? undefined
-    );
-  }).pipe(Effect.tapError(() => Effect.sync(resetButton)));
+    }),
+    resetButton
+  );
 }
 
 /** Starts a download and reports failures through the standard notification UI. */

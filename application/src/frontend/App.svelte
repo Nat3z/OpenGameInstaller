@@ -170,17 +170,16 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 async function initializeSearch() {
-  try {
-    const addonData = await Effect.runPromise(
-      queryConnectedAddons<ConfigTemplateAndInfo>()
-    );
-    addons = addonData;
-
-    const online = await Effect.runPromise(electronRpc.app.isOnline());
-    isOnline.set(online);
-  } catch (error) {
-    console.error('Failed to initialize search:', error);
-  }
+  await Effect.runPromise(
+    Effect.gen(function* () {
+      addons = yield* queryConnectedAddons<ConfigTemplateAndInfo>();
+      isOnline.set(yield* electronRpc.app.isOnline());
+    }).pipe(
+      Effect.catchAll((error) =>
+        Effect.sync(() => console.error('Failed to initialize search:', error))
+      )
+    )
+  );
 }
 
 let activeQuery: string | null = $state(null);
@@ -419,16 +418,20 @@ document.addEventListener('all-addons-started', async () => {
     addonUpdates.set([]);
     // restart the addon server
     await Effect.runPromise(electronRpc.restartAddonServer());
-    try {
-      await Effect.runPromise(reconnectClientSdk());
-    } catch (error) {
-      console.error('Failed to reconnect to the addon server:', error);
-      createNotification({
-        id: Math.random().toString(36).substring(7),
-        message: 'Failed to reconnect to the addon server',
-        type: 'error',
-      });
-    }
+    await Effect.runPromise(
+      reconnectClientSdk().pipe(
+        Effect.catchAll((error) =>
+          Effect.sync(() => {
+            console.error('Failed to reconnect to the addon server:', error);
+            createNotification({
+              id: Math.random().toString(36).substring(7),
+              message: 'Failed to reconnect to the addon server',
+              type: 'error',
+            });
+          })
+        )
+      )
+    );
   }
 });
 document.addEventListener('addon:updated', (event) => {

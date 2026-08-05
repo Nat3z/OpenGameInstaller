@@ -26,6 +26,36 @@ let priorityModals = $state({
 let showEventsPerSec = $state(false);
 let showNotificationSideView = $state(false);
 let showInsertAppModal = $state(false);
+
+function insertDebugApp(
+  app: Parameters<typeof electronRpc.app.insertApp>[0]
+): Promise<void> {
+  return Effect.runPromise(
+    electronRpc.app.insertApp(app).pipe(
+      Effect.tap((result) =>
+        Effect.sync(() => {
+          createNotification({
+            id: Math.random().toString(36).substring(2, 9),
+            type: result.includes('success') ? 'success' : 'error',
+            message: `App insertion result: ${result}`,
+          });
+          showInsertAppModal = false;
+        })
+      ),
+      Effect.catchAll((error) =>
+        Effect.sync(() => {
+          console.error('Error inserting test app:', error);
+          createNotification({
+            id: Math.random().toString(36).substring(2, 9),
+            type: 'error',
+            message: `Failed to insert test app: ${error instanceof Error ? error.message : String(error)}`,
+          });
+        })
+      )
+    )
+  );
+}
+
 // Build test config with real StringOption instances (matches production shape)
 let isDev = window.electronAPI.isDev();
 const optionConfig: {
@@ -183,47 +213,29 @@ onMount(() => {
       text="Insert Test App with Dependencies"
       variant="primary"
       onclick={async () => {
-        try {
-          const mockAppData = {
-            name: 'Test Game with Dependencies',
-            version: '1.0.0',
-            cwd: '/path/to/game',
-            appID: 12345,
-            launchExecutable: 'game.exe',
-            launchArguments: '--debug',
-            capsuleImage:
-              'https://via.placeholder.com/600x900/428a91/ffffff?text=Test+Game',
-            coverImage:
-              'https://via.placeholder.com/920x430/428a91/ffffff?text=Cover+Image',
-            titleImage:
-              'https://via.placeholder.com/920x430/2d626a/ffffff?text=Title+Image',
-            storefront: 'steam',
-            addonsource: 'test-addon',
-            redistributables: [
-              {
-                name: 'dotnet48',
-                path: 'winetricks',
-              },
-            ],
-          };
-
-          const result = await Effect.runPromise(electronRpc.app.insertApp(mockAppData));
-
-          createNotification({
-            id: Math.random().toString(36).substring(2, 9),
-            type: result.includes('success') ? 'success' : 'error',
-            message: `App insertion result: ${result}`,
-          });
-
-          showInsertAppModal = false;
-        } catch (error) {
-          console.error('Error inserting test app:', error);
-          createNotification({
-            id: Math.random().toString(36).substring(2, 9),
-            type: 'error',
-            message: `Failed to insert test app: ${error instanceof Error ? error.message : String(error)}`,
-          });
-        }
+        const mockAppData: Parameters<typeof electronRpc.app.insertApp>[0] = {
+          name: 'Test Game with Dependencies',
+          version: '1.0.0',
+          cwd: '/path/to/game',
+          appID: 12345,
+          launchExecutable: 'game.exe',
+          launchArguments: '--debug',
+          capsuleImage:
+            'https://via.placeholder.com/600x900/428a91/ffffff?text=Test+Game',
+          coverImage:
+            'https://via.placeholder.com/920x430/428a91/ffffff?text=Cover+Image',
+          titleImage:
+            'https://via.placeholder.com/920x430/2d626a/ffffff?text=Title+Image',
+          storefront: 'steam',
+          addonsource: 'test-addon',
+          redistributables: [
+            {
+              name: 'dotnet48',
+              path: 'winetricks',
+            },
+          ],
+        };
+        await insertDebugApp(mockAppData);
       }}
     />
 
@@ -231,39 +243,21 @@ onMount(() => {
       text="Insert Test App without Dependencies"
       variant="secondary"
       onclick={async () => {
-        try {
-          const mockAppData = {
-            name: 'Test Game (No Dependencies)',
-            version: '1.0.0',
-            cwd: '/path/to/game',
-            appID: 67890,
-            launchExecutable: 'game.exe',
-            launchArguments: '',
-            capsuleImage:
-              'https://via.placeholder.com/600x900/B0DFD5/ffffff?text=Simple+Game',
-            coverImage:
-              'https://via.placeholder.com/920x430/B0DFD5/ffffff?text=Simple+Cover',
-            storefront: 'steam',
-            addonsource: 'test-addon',
-          };
-
-          const result = await Effect.runPromise(electronRpc.app.insertApp(mockAppData));
-
-          createNotification({
-            id: Math.random().toString(36).substring(2, 9),
-            type: result.includes('success') ? 'success' : 'error',
-            message: `App insertion result: ${result}`,
-          });
-
-          showInsertAppModal = false;
-        } catch (error) {
-          console.error('Error inserting test app:', error);
-          createNotification({
-            id: Math.random().toString(36).substring(2, 9),
-            type: 'error',
-            message: `Failed to insert test app: ${error instanceof Error ? error.message : String(error)}`,
-          });
-        }
+        const mockAppData: Parameters<typeof electronRpc.app.insertApp>[0] = {
+          name: 'Test Game (No Dependencies)',
+          version: '1.0.0',
+          cwd: '/path/to/game',
+          appID: 67890,
+          launchExecutable: 'game.exe',
+          launchArguments: '',
+          capsuleImage:
+            'https://via.placeholder.com/600x900/B0DFD5/ffffff?text=Simple+Game',
+          coverImage:
+            'https://via.placeholder.com/920x430/B0DFD5/ffffff?text=Simple+Cover',
+          storefront: 'steam',
+          addonsource: 'test-addon',
+        };
+        await insertDebugApp(mockAppData);
       }}
     />
 

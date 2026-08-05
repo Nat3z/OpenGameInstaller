@@ -74,8 +74,12 @@ const rpc = <
 
 const Void = Schema.Void;
 const StringArray = Schema.mutable(Schema.Array(Schema.String));
-const OptionalString = Schema.optionalElement(Schema.String);
-const OptionalNumber = Schema.optionalElement(Schema.Number);
+const OptionalString = Schema.optionalElement(
+  Schema.UndefinedOr(Schema.String)
+);
+const OptionalNumber = Schema.optionalElement(
+  Schema.UndefinedOr(Schema.Number)
+);
 const ErrorResponse = Schema.Struct({
   status: Schema.Literal('error'),
   error: Schema.String,
@@ -180,8 +184,12 @@ export const ElectronRpc = {
         Schema.String,
         OptionalString,
         OptionalString,
-        Schema.optionalElement(opaque<LibraryInfo['umu']>()),
-        Schema.optionalElement(opaque<LibraryInfo['launchEnv']>()),
+        Schema.optionalElement(
+          Schema.UndefinedOr(opaque<LibraryInfo['umu']>())
+        ),
+        Schema.optionalElement(
+          Schema.UndefinedOr(opaque<LibraryInfo['launchEnv']>())
+        ),
       ],
       Schema.Literal('success', 'app-not-found')
     ),

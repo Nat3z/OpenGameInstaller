@@ -49,6 +49,17 @@ function queuePositionLabel(position?: number) {
   return position >= 999 ? 'Waiting in queue' : `Queue position: ${position}`;
 }
 
+function hasDeterminateProgress(progress: number): boolean {
+  return Number.isFinite(progress);
+}
+
+function processingStatus(phase: string | undefined, progress: number): string {
+  const label = phase ?? 'Processing files';
+  return hasDeterminateProgress(progress)
+    ? `${label} ${Math.round(progress * 100)}%`
+    : `${label}...`;
+}
+
 let loadingAddons: Map<string, string> = $state(new Map());
 let emptyAddons: Set<string> = $state(new Set());
 let collapsedAddons: Set<string> = $state(new Set());
@@ -531,13 +542,20 @@ $effect(() => {
           {#if activeDownload && !alreadyOwns}
             <div class="p-6 bg-accent-lighter rounded-lg mb-4">
               <div class="flex items-center justify-between mb-3">
-                <h3 class="font-medium text-accent-dark">Downloading</h3>
+                <h3 class="font-medium text-accent-dark">
+                  {activeDownload.status === 'merging'
+                    ? 'Processing'
+                    : 'Downloading'}
+                </h3>
                 <span class="text-sm text-text-secondary">
                   {activeDownload.status === "downloading" ||
                   activeDownload.status === "rd-downloading"
                     ? Math.round(activeDownload.progress * 100) + "%"
                     : activeDownload.status === "merging"
-                      ? "Merging files..."
+                      ? processingStatus(
+                          activeDownload.processingPhase,
+                          activeDownload.progress,
+                        )
                       : activeDownload.status === "completed" ||
                           activeDownload.status === "redistr-downloading"
                         ? "Setting up..."
@@ -558,9 +576,13 @@ $effect(() => {
               <div class="w-full bg-accent-light rounded-full h-2 mb-3">
                 <div
                   class="bg-accent h-2 rounded-full transition-all duration-300 ease-out"
-                  style="width: {activeDownload.status === 'completed'
+                  class:animate-pulse={activeDownload.status === 'merging' &&
+                    !hasDeterminateProgress(activeDownload.progress)}
+                  style:width="{activeDownload.status === 'completed'
                     ? 100
-                    : activeDownload.progress * 100 + '%'}"
+                    : hasDeterminateProgress(activeDownload.progress)
+                      ? Math.min(Math.max(activeDownload.progress, 0) * 100, 100)
+                      : 100}%"
                 ></div>
               </div>
 
@@ -568,14 +590,20 @@ $effect(() => {
               {#if activeDownload.status === "downloading" || activeDownload.status === "rd-downloading" || activeDownload.status === "merging"}
                 <div class="flex justify-between text-xs text-accent-dark">
                   <span>
-                    {#if activeDownload.downloadSpeed > 0}
+                    {#if activeDownload.status === 'merging'}
+                      {activeDownload.processingPhase ?? 'Processing files'}
+                    {:else if activeDownload.downloadSpeed > 0}
                       {formatSpeed(activeDownload.downloadSpeed)}
                     {:else}
                       Connecting...
                     {/if}
                   </span>
                   <span>
-                    {#if activeDownload.downloadSize > 0}
+                    {#if activeDownload.status === 'merging' && hasDeterminateProgress(activeDownload.progress)}
+                      {Math.round(activeDownload.progress * 100)}%
+                    {:else if activeDownload.status === 'merging'}
+                      Working...
+                    {:else if activeDownload.downloadSize > 0}
                       {formatSize(activeDownload.downloadSize)}
                     {:else}
                       Size unknown

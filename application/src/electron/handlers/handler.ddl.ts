@@ -1369,7 +1369,8 @@ export class Download {
    * Merge chunk files for a part.
    */
   private mergeChunkFilesForPart(
-    part: PartState
+    part: PartState,
+    onProgress?: (progress: number) => void
   ): Effect.Effect<void, FileSystemError> {
     return Effect.gen(this, function* () {
       const effectiveChunkCount =
@@ -1410,9 +1411,15 @@ export class Download {
             cause,
           }),
       });
+      const expectedMergedSize = part.chunks.reduce(
+        (total, chunk) => total + (chunk.endByte - chunk.startByte + 1),
+        0
+      );
       yield* Effect.async<void, FileSystemError>((resume) => {
         let resolved = false;
         let currentChunkIndex = 0;
+        let mergedBytes = 0;
+        let lastProgressReport = 0;
         let activeChunkStream: fs.ReadStream | undefined;
         const fail = (cause: unknown, path = part.job.path) => {
           if (resolved) return;
@@ -1435,6 +1442,7 @@ export class Download {
             finalStream.end(() => {
               if (resolved) return;
               resolved = true;
+              onProgress?.(1);
               resume(Effect.void);
             });
             return;
@@ -1450,6 +1458,18 @@ export class Download {
           chunkStream.on('error', (cause) => {
             finalStream.destroy();
             fail(cause, chunkPath);
+          });
+          chunkStream.on('data', (data: string | Buffer) => {
+            mergedBytes +=
+              typeof data === 'string' ? Buffer.byteLength(data) : data.length;
+            const now = Date.now();
+            if (now - lastProgressReport < 100) return;
+            lastProgressReport = now;
+            onProgress?.(
+              expectedMergedSize > 0
+                ? Math.min(mergedBytes / expectedMergedSize, 0.99)
+                : 0
+            );
           });
           chunkStream.on('end', () => {
             ended = true;
@@ -2528,7 +2548,10 @@ export class Download {
 
       // Set status to merging before merging chunk files
       this.status = 'merging';
-      this.sendProgress({ progress: this.currentBytes / this.totalSize });
+      this.sendProgress({
+        progress: 0,
+        processingPhase: 'Merging chunks',
+      });
 
       // Merge all chunk files into the final file
       yield* this.mergeChunkFiles(job);
@@ -2606,7 +2629,9 @@ export class Download {
         this.effectiveChunkCount ??
         (this.chunks.length > 0 ? this.chunks.length : PARALLEL_CHUNK_COUNT),
     };
-    return this.mergeChunkFilesForPart(part).pipe(
+    return this.mergeChunkFilesForPart(part, (progress) =>
+      this.sendProgress({ progress, processingPhase: 'Merging chunks' })
+    ).pipe(
       Effect.tap(() =>
         Effect.sync(() => console.log('[direct] Merge complete'))
       )
@@ -2645,6 +2670,7 @@ export class Download {
     progress?: number;
     downloadSpeed?: number;
     queuePosition?: number;
+    processingPhase?: 'Merging chunks';
   }) {
     this.sendIpc('ddl:download-progress', {
       id: this.id,
@@ -2655,6 +2681,7 @@ export class Download {
       status: this.status,
       totalParts: this.totalParts,
       queuePosition: data.queuePosition ?? 1,
+      processingPhase: data.processingPhase,
     });
   }
 

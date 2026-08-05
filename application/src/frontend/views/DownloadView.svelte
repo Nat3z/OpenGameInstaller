@@ -57,6 +57,10 @@ function queuePositionLabel(position?: number) {
   if (!position || position <= 1) return '';
   return position >= 999 ? 'Waiting in queue' : `Queued #${position}`;
 }
+
+function hasDeterminateProgress(progress: number): boolean {
+  return Number.isFinite(progress);
+}
 function correctParsingSize(size: number) {
   if (size < 1024) {
     return size + 'B';
@@ -602,14 +606,24 @@ onDestroy(() => {
               {:else if download.status === 'merging'}
                 <div class="progress-section">
                   <div class="progress-bar">
-                    <div
-                      class="progress-fill"
-                      style="width: {Math.min(download.progress * 100, 100)}%"
-                    ></div>
+                    {#if hasDeterminateProgress(download.progress)}
+                      <div
+                        class="progress-fill"
+                        style:width="{Math.min(Math.max(download.progress, 0) * 100, 100)}%"
+                      ></div>
+                    {:else}
+                      <div
+                        class="progress-fill animate-pulse"
+                        style:width="100%"
+                      ></div>
+                    {/if}
                   </div>
                   <div class="progress-stats">
                     <span class="progress-percentage">
-                      Merging files...
+                      {download.processingPhase ?? 'Processing files'}...
+                      {#if hasDeterminateProgress(download.progress)}
+                        {Math.floor(download.progress * 100)}%
+                      {/if}
                       {#if download.part && download.totalParts && download.totalParts > 1}
                         <span class="text-accent-dark/70 ml-1">
                           (Part {download.part}/{download.totalParts})

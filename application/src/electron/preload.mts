@@ -85,6 +85,15 @@ ipcRenderer.on(
 );
 
 ipcRenderer.on(
+  'processing:progress',
+  wrap((_, arg) => {
+    document.dispatchEvent(
+      new CustomEvent('processing:progress', { detail: arg })
+    );
+  })
+);
+
+ipcRenderer.on(
   'ddl:download-error',
   wrap((_, arg) => {
     document.dispatchEvent(

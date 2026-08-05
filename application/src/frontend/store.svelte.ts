@@ -15,6 +15,11 @@ import { electronRpc } from '@/frontend/lib/electron-rpc';
 
 export type { CommunityAddon };
 
+export type DownloadProcessingPhase =
+  | 'Merging chunks'
+  | 'Moving files'
+  | 'Extracting archive';
+
 export type DownloadStatusAndInfo = SearchResult & {
   appID: number;
   id: string;
@@ -31,6 +36,7 @@ export type DownloadStatusAndInfo = SearchResult & {
     | 'requesting'
     | 'installing-redistributables';
   progress: number;
+  processingPhase?: DownloadProcessingPhase;
   error?: string;
   usedDebridService?:
     | 'realdebrid'

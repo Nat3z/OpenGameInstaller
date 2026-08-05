@@ -71,7 +71,15 @@ const extractArchive = (arg: {
         ],
       });
     }
-    yield* extraction(archivePath, arg.outputDir).pipe(
+    yield* extraction(archivePath, arg.outputDir, (progress) => {
+      if (arg.downloadId) {
+        sendIPCMessage('processing:progress', {
+          id: arg.downloadId,
+          phase: 'Extracting archive',
+          progress,
+        });
+      }
+    }).pipe(
       Effect.tapError((error) =>
         Effect.sync(() => {
           if (arg.downloadId) {

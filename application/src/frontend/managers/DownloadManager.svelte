@@ -16,6 +16,7 @@ import { runSetupApp, runSetupAppUpdate } from '@/frontend/lib/setup/setup';
 import {
   createNotification,
   currentDownloads,
+  type DownloadProcessingPhase,
   type DownloadStatusAndInfo,
   setupLogs,
 } from '@/frontend/store.svelte';
@@ -93,7 +94,12 @@ async function processDownloadComplete(
   }
 
   processingDownloadCompletions.add(downloadID);
-  updateDownloadStatus(downloadID, { status: 'merging' });
+  updateDownloadStatus(downloadID, {
+    status: 'merging',
+    progress: Number.NaN,
+    downloadSpeed: 0,
+    processingPhase: 'Moving files',
+  });
 
   let outputDir = dirname(downloadedItem.downloadPath);
   // make sure that
@@ -422,7 +428,11 @@ async function processDownloadComplete(
 
   try {
     // Check if this is an update download and route to appropriate setup function
-    updateDownloadStatus(downloadedItem.id, { status: 'completed' });
+    updateDownloadStatus(downloadedItem.id, {
+      status: 'completed',
+      progress: 1,
+      processingPhase: undefined,
+    });
     if (downloadedItem.isUpdate) {
       await Effect.runPromise(
         runSetupAppUpdate(downloadedItem, outputDir, isTorrent, additionalData)
@@ -470,6 +480,7 @@ function handleDownloadProgress(event: Event) {
     totalParts,
     ratio,
     status,
+    processingPhase,
   } = event.detail;
   if (queuePosition > 1) {
     console.log('Queue Position Update: ', downloadID, queuePosition);
@@ -486,6 +497,9 @@ function handleDownloadProgress(event: Event) {
 
   if (status) {
     updates.status = status;
+  }
+  if (processingPhase) {
+    updates.processingPhase = processingPhase;
   }
   if (queuePosition !== undefined) {
     updates.queuePosition = queuePosition;
@@ -535,6 +549,21 @@ document.addEventListener('setup:log', (event: Event) => {
 // -- Download Progress --
 document.addEventListener('ddl:download-progress', handleDownloadProgress);
 document.addEventListener('torrent:download-progress', handleDownloadProgress);
+
+document.addEventListener('processing:progress', (event: Event) => {
+  if (!isCustomEvent(event)) return;
+  const detail = event.detail as {
+    id: string;
+    phase: DownloadProcessingPhase;
+    progress: number | null;
+  };
+  updateDownloadStatus(detail.id, {
+    status: 'merging',
+    processingPhase: detail.phase,
+    progress: detail.progress ?? Number.NaN,
+    downloadSpeed: 0,
+  });
+});
 
 // -- Download Cancelled --
 document.addEventListener('ddl:download-cancelled', handleDownloadCancelled);

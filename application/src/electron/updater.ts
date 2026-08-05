@@ -1013,22 +1013,25 @@ export function checkIfInstallerUpdateAvailable(
 
           updateStatus('Starting Setup');
 
-          setTimeout(() => {
-            try {
-              spawn(directory, {
-                detached: true,
-                stdio: 'ignore',
-              }).unref();
-              process.exit(0);
-            } catch (spawnError: any) {
-              console.error(
-                '[updater] Failed to launch setup:',
-                spawnError.message
-              );
-              updateStatus('Update Failed', 'Please try again later');
-              process.exit(1);
-            }
-          }, 500);
+          await setTimeoutPromise(500);
+          try {
+            spawn(directory, {
+              detached: true,
+              stdio: 'ignore',
+            }).unref();
+          } catch (spawnError: any) {
+            console.error(
+              '[updater] Failed to launch setup:',
+              spawnError.message
+            );
+            updateStatus('Update Failed', 'Please try again later');
+            resolve({
+              success: false,
+              updated: false,
+              error: spawnError.message,
+            });
+            return;
+          }
           resolve({ success: true, updated: true });
         } else if (process.platform === 'linux') {
           await setTimeoutPromise(3000);
@@ -1045,43 +1048,41 @@ export function checkIfInstallerUpdateAvailable(
 
           updateStatus('Starting Setup');
 
-          setTimeout(async () => {
-            try {
-              // rename the temp-setup-OGI.AppImage to the OpenGameInstaller-Setup.AppImage
-              console.log(
-                `[updater] Renaming setup to OpenGameInstaller-Setup.AppImage`
-              );
-              rmSync('../OpenGameInstaller-Setup.AppImage', { force: true });
-              console.log(
-                `[updater] Moving over setup to OpenGameInstaller-Setup.AppImage`
-              );
-              copyFileSync(
-                '../temp-setup-OGI.AppImage',
-                '../OpenGameInstaller-Setup.AppImage'
-              );
-              rmSync('../temp-setup-OGI.AppImage', { force: true });
-              console.log(
-                `[updater] Copied setup to OpenGameInstaller-Setup.AppImage`
-              );
-
-              // set item +x permissions
-              chmodSync('../OpenGameInstaller-Setup.AppImage', 0o755);
-            } catch (moveError: any) {
-              console.error(
-                '[updater] Failed to move setup:',
-                moveError.message
-              );
-              updateStatus('Update Failed', 'Please try again later');
-              await setTimeoutPromise(3000);
-              process.exit(1);
-            }
-            updateStatus(
-              'Shutting Down OpenGameInstaller',
-              'Please open OpenGameInstaller again'
+          await setTimeoutPromise(500);
+          try {
+            // Replace the old Setup AppImage only after the download is complete.
+            console.log(
+              `[updater] Renaming setup to OpenGameInstaller-Setup.AppImage`
             );
+            rmSync('../OpenGameInstaller-Setup.AppImage', { force: true });
+            console.log(
+              `[updater] Moving over setup to OpenGameInstaller-Setup.AppImage`
+            );
+            copyFileSync(
+              '../temp-setup-OGI.AppImage',
+              '../OpenGameInstaller-Setup.AppImage'
+            );
+            rmSync('../temp-setup-OGI.AppImage', { force: true });
+            console.log(
+              `[updater] Copied setup to OpenGameInstaller-Setup.AppImage`
+            );
+            chmodSync('../OpenGameInstaller-Setup.AppImage', 0o755);
+          } catch (moveError: any) {
+            console.error('[updater] Failed to move setup:', moveError.message);
+            updateStatus('Update Failed', 'Please try again later');
             await setTimeoutPromise(3000);
-            process.exit(0);
-          }, 500);
+            resolve({
+              success: false,
+              updated: false,
+              error: moveError.message,
+            });
+            return;
+          }
+          updateStatus(
+            'Shutting Down OpenGameInstaller',
+            'Please open OpenGameInstaller again'
+          );
+          await setTimeoutPromise(3000);
           resolve({ success: true, updated: true });
         }
       } else {

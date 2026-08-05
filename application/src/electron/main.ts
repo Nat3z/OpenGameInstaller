@@ -163,11 +163,12 @@ async function handleLaunchHooks(
 
   if (mainWindow) {
     registerMainHandlers(mainWindow);
-    await startAddonRuntime();
     const startupResult = await runElectronEffect(runStartupTasks(mainWindow));
     if (startupResult.shutdownPending) {
+      shutdownForInstallerUpdate(mainWindow);
       return;
     }
+    await startAddonRuntime();
 
     // Load the main app with game ID and hook flags
     const baseUrl = isDev()
@@ -200,12 +201,13 @@ async function launchGameById(gameId: number, wrapperCommand?: string | null) {
 
   if (mainWindow) {
     registerMainHandlers(mainWindow);
-    await startAddonRuntime();
     // Run startup tasks first
     const startupResult = await runElectronEffect(runStartupTasks(mainWindow));
     if (startupResult.shutdownPending) {
+      shutdownForInstallerUpdate(mainWindow);
       return;
     }
+    await startAddonRuntime();
 
     // Load the main app with the game ID in the query params
     // The Svelte frontend will detect this and show the GameLaunchOverlay
@@ -556,8 +558,11 @@ async function startAppFlow(win: BrowserWindow) {
   }
 
   if (shutdownPending) {
+    shutdownForInstallerUpdate(win);
     return;
   }
+
+  await startAddonRuntime();
 
   // Load the main app into the same window (replaces splash)
   if (win && !win.isDestroyed()) {
@@ -574,6 +579,14 @@ async function startAppFlow(win: BrowserWindow) {
     }
     win.once('ready-to-show', onMainAppReady);
   }
+}
+
+function shutdownForInstallerUpdate(win: BrowserWindow): void {
+  if (!win.isDestroyed()) {
+    win.close();
+    return;
+  }
+  app.quit();
 }
 
 function focusMainWindow(): boolean {
@@ -804,7 +817,6 @@ app.on('ready', async () => {
 
   if (mainWindow) {
     registerMainHandlers(mainWindow);
-    await startAddonRuntime();
     await startAppFlow(mainWindow);
   }
 });
